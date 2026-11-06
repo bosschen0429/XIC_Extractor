@@ -32,6 +32,41 @@ function metric(container, value, label) {
   cell.append(el("strong", value ?? "—"), el("span", label));
   container.append(cell);
 }
+export function artifactDetails(artifacts, folder = "") {
+  const details = el("details", undefined, "artifact-details setup-tools");
+  details.append(
+    el("summary", "分析紀錄與其他檔案（進階）"),
+    el(
+      "p",
+      "一般操作請使用檢閱結果與主要矩陣；以下資料供方法追溯與除錯。",
+      "subtle",
+    ),
+  );
+  if (folder) {
+    details.append(el("p", folder, "subtle mono"));
+    details.append(
+      button(
+        "開啟輸出資料夾",
+        () => api("/api/open-local", { path: folder }),
+        "",
+        "folder",
+      ),
+    );
+  }
+  const root = folder.split(/[\\/]/).at(-1);
+  const groups = new Map();
+  for (const artifact of artifacts) {
+    const parent = artifact.path.split(/[\\/]/).at(-2);
+    const label = parent && parent !== root ? parent : "整批分析紀錄";
+    if (!groups.has(label)) {
+      const list = el("div", undefined, "artifact-list");
+      details.append(el("h3", label), list);
+      groups.set(label, list);
+    }
+    groups.get(label).append(artifactLink(artifact));
+  }
+  return details;
+}
 function resultBase(kind, result) {
   const container = $(resultIds[kind]);
   container.hidden = false;
@@ -49,34 +84,30 @@ function resultBase(kind, result) {
   titleBlock.append(title);
   const folder =
     result.output_dir || result.excel_path?.replace(/[\\/][^\\/]+$/, "");
-  if (folder) titleBlock.append(el("p", folder, "subtle mono"));
   head.append(titleBlock);
-  if (folder)
-    head.append(
-      button(
-        "開啟輸出資料夾",
-        () => api("/api/open-local", { path: folder }),
-        "",
-        "folder",
-      ),
-    );
   container.replaceChildren(head);
-  const artifacts = el("div", undefined, "artifact-list");
-  for (const artifact of result.artifacts || []) {
-    const label =
-      artifact.path === result.excel_path
-        ? artifact.name
-        : artifact.path === result.matrix_tsv
-          ? "下載矩陣 TSV"
-          : artifact.name;
-    artifacts.append(artifactLink(artifact, label));
-  }
-  return { container, artifacts };
+  const primaryPath = result.excel_path || result.matrix_tsv;
+  const artifacts = result.artifacts || [];
+  const downloads = el("div", undefined, "artifact-list");
+  const primary = artifacts.find((artifact) => artifact.path === primaryPath);
+  if (primary)
+    downloads.append(
+      artifactLink(primary, {
+        targeted: "下載結果 Excel",
+        untargeted: "下載原始矩陣",
+        curation: "下載分析用矩陣",
+      }[kind]),
+    );
+  const details = artifactDetails(
+    artifacts.filter((artifact) => artifact !== primary),
+    folder,
+  );
+  return { container, downloads, details };
 }
 export function renderResults() {
   const targeted = state.analysis.results.targeted;
   if (targeted) {
-    const { container, artifacts } = resultBase("targeted", targeted);
+    const { container, downloads, details } = resultBase("targeted", targeted);
     const metrics = el("div", undefined, "result-metrics");
     metric(metrics, targeted.total_files, "RAW 檔案");
     metric(metrics, targeted.targets?.length, "目標");
@@ -84,13 +115,13 @@ export function renderResults() {
     if (targeted.excel_path)
       container.append(
         button(
-          "在結果檢閱開啟",
+          "檢閱結果",
           () => openReview(targeted.excel_path, targeted.review_paths),
           "primary",
           "review",
         ),
       );
-    container.append(artifacts);
+    container.append(downloads);
     const warnings = el("div");
     for (const warning of targeted.istd_warnings || []) {
       const line = el("p", undefined, "result-warning");
@@ -108,10 +139,11 @@ export function renderResults() {
         "subtle",
       ),
     );
+    container.append(details);
   }
   const result = state.analysis.results.untargeted;
   if (result) {
-    const { container, artifacts } = resultBase("untargeted", result);
+    const { container, downloads, details } = resultBase("untargeted", result);
     const metrics = el("div", undefined, "result-metrics");
     metric(metrics, result.sample_count, "樣本");
     metric(metrics, result.overview?.matrix_count, "最終矩陣群組");
@@ -123,13 +155,13 @@ export function renderResults() {
     if (evidence) {
       actions.append(
         button(
-          "在結果檢閱開啟",
+          "檢閱結果",
           () => openReview(evidence, result.review_paths),
-          "",
+          "primary",
           "review",
         ),
       );
-      actions.append(
+      details.append(
         button(
           "自訂 Inspector 匯出",
           () => openInspectorExport(evidence),
@@ -139,24 +171,33 @@ export function renderResults() {
       );
     }
     if (result.matrix_tsv && result.alignment_outputs?.review_tsv)
-      actions.prepend(
+      actions.append(
         button(
-          "選用：整理矩陣",
+          "整理矩陣",
           () => openCuration(result.output_dir, result.samples),
           "",
           "sliders",
         ),
       );
-    container.append(actions, artifacts);
+    container.append(
+      el(
+        "p",
+        "先檢閱需要確認的定量；要準備下游分析資料，再整理矩陣並下載分析用矩陣。",
+        "subtle",
+      ),
+      actions,
+      downloads,
+      details,
+    );
   }
   const curated = state.analysis.results.curation;
   if (curated) {
-    const { container, artifacts } = resultBase("curation", curated);
+    const { container, downloads, details } = resultBase("curation", curated);
     const metrics = el("div", undefined, "result-metrics");
     metric(metrics, curated.kept_feature_count, "保留 feature");
     metric(metrics, curated.feature_count, "原始 feature");
-    container.append(metrics, artifacts);
-    container.append(el("p", `來源：${curated.source_dir}`, "subtle mono"));
+    container.append(metrics, downloads, details);
+    details.append(el("p", `來源：${curated.source_dir}`, "subtle mono"));
   }
 }
 export function openReview(source, reviewPaths) {

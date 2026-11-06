@@ -20,14 +20,15 @@ Excel workbook, read from batch summary to the individual results needing attent
 5. Check sample roles and exclusions in **樣本明細**. Statistical groups are
    not required or edited here. **上機資訊與樣本檔案（選用）** contains optional
    acquisition-information import and sample export. Confirmed roles and
-   exclusions are shared by both analysis workflows and matrix curation.
+   exclusions are shared by both analysis workflows and matrix curation. Exclusion
+   is a direct toggle and does not require a reason.
 6. Press **開始 Targeted 分析** in the run panel.
 7. The finished run opens its result. Each run writes a new
    `<date>_<time>_targeted_<RAW folder>` folder under **結果存放位置**.
 
 **開始新批次** clears the RAW directory, injection-order source and displayed
 samples while retaining targets, DLL, the selected strategy and result location.
-Confirmed groups and exclusions stay with their original RAW folder. Settings
+Confirmed roles and exclusions stay with their original RAW folder. Settings
 edited after a run apply to the next analysis only; an opened result keeps the
 settings it ran with.
 

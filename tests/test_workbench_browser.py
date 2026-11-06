@@ -1319,6 +1319,7 @@ def test_analysis_submit_progress_and_download(fake_runs, workbench, tmp_path, k
     _wait_for_analysis_status(page, "已完成")
     result = page.locator(f"#{'target' if kind == 'targeted' else kind}-result")
     expect(result).to_be_visible()
+    result.locator(".artifact-details > summary").click()
     link = result.get_by_role("link", name="browser-result.tsv")
     expect(link).to_be_visible()
     with page.expect_download() as download:
@@ -1369,7 +1370,62 @@ def test_analysis_feedback_retains_results_and_requires_stop_confirmation(
     expect(page.locator("#analysis-job-title")).to_contain_text("已停止")
     assert cancelled == [{"job_id": "third"}]
     expect(result).to_have_text(previous, use_inner_text=True)
-    expect(result.get_by_role("link", name="saved.tsv")).to_be_visible()
+    expect(result.locator('a[href="/api/artifacts/saved"]')).to_have_count(1)
+
+
+def test_untargeted_result_shows_one_matrix_and_groups_technical_files(
+    analysis_feedback,
+):
+    page, state = analysis_feedback
+    folder = "C:/runs/validation"
+    matrix = f"{folder}/alignment_matrix.tsv"
+    paths = [matrix, f"{folder}/sample_metadata.tsv"] + [
+        f"{folder}/{sample}/{name}"
+        for sample in ("A", "B")
+        for name in ("discovery_candidates.csv", "discovery_review.csv")
+    ]
+    state["job"].update(kind="untargeted", job_id="untargeted-result")
+    state["results"] = {
+        "untargeted": {
+            "output_dir": folder,
+            "matrix_tsv": matrix,
+            "sample_count": 2,
+            "overview": {"matrix_count": 4, "complete_count": 3, "unresolved_count": 1},
+            "evidence": {"path": f"{folder}/alignment_explanation.sqlite"},
+            "alignment_outputs": {"review_tsv": f"{folder}/alignment_review.tsv"},
+            "artifacts": [
+                {
+                    "name": path.rsplit("/", 1)[-1],
+                    "path": path,
+                    "url": f"/artifacts/{i}",
+                }
+                for i, path in enumerate(paths)
+            ],
+        }
+    }
+    page.reload()
+    _view(page, "untargeted")
+    card = page.locator("#untargeted-result")
+    expect(card.locator("a:visible")).to_have_count(1)
+    expect(card.get_by_role("link", name="下載原始矩陣", exact=True)).to_be_visible()
+    expect(card.get_by_role("button", name="檢閱結果", exact=True)).to_have_class(
+        "primary"
+    )
+    expect(card.get_by_role("button", name="整理矩陣", exact=True)).to_be_visible()
+    expect(
+        card.get_by_role("button", name="自訂 Inspector 匯出", exact=True)
+    ).to_be_hidden()
+    files = card.locator(".artifact-details")
+    expect(files).not_to_have_attribute("open", "")
+    files.locator("summary").click()
+    for sample in ("A", "B"):
+        expect(files.get_by_role("heading", name=sample, exact=True)).to_be_visible()
+    expect(
+        files.get_by_role("link", name="discovery_candidates.csv", exact=True)
+    ).to_have_count(2)
+    expect(
+        card.get_by_role("button", name="自訂 Inspector 匯出", exact=True)
+    ).to_be_visible()
 
 
 def test_istd_warning_distinguishes_confirmation_from_signal(analysis_feedback):
@@ -2763,7 +2819,7 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     page.locator("#result-back").click()
     page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
     _set_reader_path(page, str(tmp_path / "next-dll"))
-    page.get_by_role("button", name="在結果檢閱開啟", exact=True).click()
+    page.get_by_role("button", name="檢閱結果", exact=True).click()
     with page.expect_download() as pending:
         page.get_by_role("link", name="下載結果 XLSX", exact=True).click()
     assert (
@@ -3315,7 +3371,7 @@ def _placeholder_batch(raw_dir: Path, stems: tuple[str, ...]) -> None:
         os.utime(path, (1_767_000_000 + minute * 60,) * 2)
 
 
-def test_sample_save_preserves_in_progress_exclusion_reason(
+def test_sample_save_preserves_editor_selection_and_focus(
     workbench, config_dir, tmp_path, monkeypatch
 ):
     page = workbench
@@ -3331,22 +3387,17 @@ def test_sample_save_preserves_in_progress_exclusion_reason(
     pending = []
     page.route("**/api/samples/save", lambda route: pending.append(route))
     page.get_by_label("Tumor_A 角色", exact=True).select_option("pooled_qc")
-    page.get_by_label("Normal_A 排除", exact=True).check()
-    reason = page.get_by_label("Normal_A 排除原因", exact=True)
-    reason.fill("still typing")
+    selected = page.get_by_label("選取 Normal_A", exact=True)
+    selected.check()
+    other_role = page.get_by_label("Normal_A 角色", exact=True)
+    other_role.focus()
     assert len(pending) == 1
     with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
         pending.pop().continue_()
     expect(page.locator("#t-samples-source")).to_contain_text("確認的角色與排除設定")
-    expect(reason).to_have_value("still typing")
-    expect(reason).to_be_focused()
+    expect(selected).to_be_checked()
+    expect(other_role).to_be_focused()
     page.unroute("**/api/samples/save")
-    with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
-        reason.press("Tab")
-    saved = load_sample_metadata(sample_annotations_path(config_dir, batch))
-    by_stem = {row.raw_stem: row for row in saved}
-    assert by_stem["Tumor_A"].sample_role == "pooled_qc"
-    assert by_stem["Normal_A"].exclusion_reason == "still typing"
 
 
 def test_both_flows_share_roles_and_exclusions_without_statistical_groups(
@@ -3377,29 +3428,20 @@ def test_both_flows_share_roles_and_exclusions_without_statistical_groups(
     expect(page.locator("#sample-bulk-group")).to_have_count(0)
     with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
         editor.get_by_label("NormalBC1_DNA 角色", exact=True).select_option("blank")
-    # A box checked without a reason never reaches a run: closing the editor
-    # drops it, so the Untargeted payload stays as confirmed.
-    editor.get_by_label("TumorBC2_DNA 排除", exact=True).check()
-    page.keyboard.press("Escape")
-    expect(page.locator("#toasts")).to_contain_text("未填排除原因的勾選已取消")
-    expect(page.locator("#t-role-summary")).not_to_contain_text("排除")
-    page.locator("#t-samples-edit").click()
-    expect(editor.get_by_label("TumorBC2_DNA 排除", exact=True)).not_to_be_checked()
-    # Select-all picks samples; it never ticks an exclusion box.
+    expect(
+        editor.get_by_role("columnheader", name="排除原因", exact=True)
+    ).to_have_count(0)
+    expect(page.locator("#sample-bulk-reason")).to_have_count(0)
+    # Selecting samples does not exclude them; the exclusion checkbox saves directly.
     page.locator("#sample-select-all").check()
     expect(editor.locator("#sample-rows input[data-sample]:checked")).to_have_count(4)
     expect(editor.get_by_label("TumorBC2_DNA 排除", exact=True)).not_to_be_checked()
     page.locator("#sample-select-all").uncheck()
-    # The exclusion is saved once it has its reason.
-    editor.get_by_label("TumorBC2_DNA 排除", exact=True).check()
-    expect(editor.get_by_label("TumorBC2_DNA 排除原因", exact=True)).to_be_focused()
     with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
-        editor.get_by_label("TumorBC2_DNA 排除原因", exact=True).fill("clogged")
-        editor.get_by_label("TumorBC2_DNA 排除原因", exact=True).press("Tab")
+        editor.get_by_label("TumorBC2_DNA 排除", exact=True).check()
     page.keyboard.press("Escape")
-
     expect(page.locator("#t-role-summary")).to_contain_text("Blank 1")
-    expect(checklist).to_contain_text("排除的樣本1 個：clogged ×1")
+    expect(checklist).to_contain_text("排除的樣本1 個：TumorBC2_DNA")
     expect(checklist).not_to_contain_text("未標組別的研究樣本")
     expect(page.locator("#t-role-summary")).to_contain_text("排除 1")
     saved = {
@@ -3427,7 +3469,7 @@ def test_both_flows_share_roles_and_exclusions_without_statistical_groups(
     expect(editor.get_by_label("NormalBC1_DNA 角色", exact=True)).to_have_value("blank")
     page.keyboard.press("Escape")
     expect(page.locator("#untargeted-checklist")).to_contain_text(
-        "排除的樣本1 個：clogged ×1"
+        "排除的樣本1 個：TumorBC2_DNA"
     )
 
     # The Targeted run reads the confirmed file for this run only.
@@ -3586,7 +3628,7 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
     page.locator("#t-injection_order_source").fill("")
     with page.expect_response(lambda r: r.url.endswith("/api/targeted/save")):
         page.locator("#target-save").click()
-    page.get_by_role("button", name="在結果檢閱開啟", exact=True).click()
+    page.get_by_role("button", name="檢閱結果", exact=True).click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
     review = page.locator("#recorded-review")
     # Pointing the editable RAW field elsewhere, e.g. to load curves, does
@@ -3596,9 +3638,7 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
     review.get_by_role("button", name="標記排除 TumorBC102_DNA", exact=True).click()
     dialog = page.locator("#exclude-dialog")
     expect(dialog).to_contain_text("重新執行後才會套用")
-    dialog.get_by_role("button", name="標記排除", exact=True).click()
-    expect(dialog).to_be_visible()  # A reason is required.
-    page.locator("#exclude-reason").fill("噴霧不穩")
+    expect(page.locator("#exclude-reason")).to_have_count(0)
     with page.expect_response(lambda r: r.url.endswith("/api/samples/exclude")):
         dialog.get_by_role("button", name="標記排除", exact=True).click()
     expect(page.locator("#toasts")).to_contain_text(
@@ -3613,7 +3653,7 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
         saved["TumorBC102_DNA"].exclusion_reason,
     ) == (
         True,
-        "噴霧不穩",
+        "",
     )
     assert (saved["TumorBC101_DNA"].group, saved["NormalBC101_DNA"].group) == (
         "Tumor",
@@ -3631,7 +3671,7 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
     expect(page.locator("#t-samples-count")).to_have_text("3 個樣本")
     expect(page.locator("#t-role-summary")).to_contain_text("排除 1")
     expect(page.locator("#target-checklist")).to_contain_text(
-        "排除的樣本1 個：噴霧不穩 ×1"
+        "排除的樣本1 個：TumorBC102_DNA"
     )
     exported = tmp_path / "exported.tsv"
     _expand_section(page, "#t-sample-tools")
@@ -3645,7 +3685,6 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
     # With that folder loaded, a later exclusion updates the step at once.
     _open_results(page)
     review.get_by_role("button", name="標記排除 NormalBC101_DNA", exact=True).click()
-    page.locator("#exclude-reason").fill("hemolysed")
     with page.expect_response(lambda r: r.url.endswith("/api/samples/exclude")):
         dialog.get_by_role("button", name="標記排除", exact=True).click()
     _view(page, "targeted")
@@ -3737,9 +3776,7 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     _wait_for_analysis_status(page, "已完成")
 
     # After a run only the threshold is needed: folder and samples come along.
-    page.locator("#untargeted-result").get_by_role(
-        "button", name="選用：整理矩陣"
-    ).click()
+    page.locator("#untargeted-result").get_by_role("button", name="整理矩陣").click()
     expect(page.locator("#result-curation")).to_be_visible()
     expect(page.locator("#curation-source_dir")).to_have_value(str(run_output))
     expect(page.locator("#curation-input-tools")).not_to_have_attribute("open", "")
@@ -3794,7 +3831,7 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     result = page.locator("#curation-result")
     expect(result).to_contain_text("2保留 feature")
     expect(result).to_contain_text("4原始 feature")
-    expect(result.get_by_role("link", name="analysis_matrix.tsv")).to_be_visible()
+    expect(result.get_by_role("link", name="下載分析用矩陣")).to_be_visible()
     (curated,) = run_output.glob("matrix_curation_*")
     _, kept = read_tsv_with_header(curated / "analysis_matrix.tsv")
     assert [row["Mz"] for row in kept] == ["101.0000", "103.0000"]
@@ -3802,9 +3839,7 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     # An existing folder without sample data names the reason; choosing a
     # sample file makes the step available, and the last threshold returns.
     page.reload()
-    page.locator("#untargeted-result").get_by_role(
-        "button", name="選用：整理矩陣"
-    ).click()
+    page.locator("#untargeted-result").get_by_role("button", name="整理矩陣").click()
     expect(page.locator("#result-curation")).to_be_visible()
     page.locator("#curation-input-tools > summary").click()
     existing = alignment_output(tmp_path / "existing")

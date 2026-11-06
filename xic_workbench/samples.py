@@ -141,7 +141,7 @@ def exclude_sample(
     config_dir: Path,
     raw_dir: Path,
     raw_stem: str,
-    reason: str,
+    reason: str = "",
     *,
     dll_dir: Path | None,
     sequence_source: Path | None = None,
@@ -165,10 +165,9 @@ def exclude_sample(
     )
     if target is None:
         raise ValueError(f"{raw_stem} 不在這個 RAW 資料夾的樣品資訊中。")
-    if not reason.strip():
-        raise ValueError("請填寫排除原因。")
     target["excluded"] = True
-    target["exclusion_reason"] = reason.strip()
+    if reason.strip():
+        target["exclusion_reason"] = reason.strip()
     return {**save_batch_samples(config_dir, raw_dir, rows), "samples": rows}
 
 

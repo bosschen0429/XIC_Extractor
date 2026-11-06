@@ -240,17 +240,12 @@ function sampleItems(page) {
   const overview = set.overview;
   if (!overview) return items;
   if (overview.excluded.length) {
-    const reasons = new Map();
-    for (const row of overview.excluded) {
-      const reason = row.reason || "未填原因";
-      reasons.set(reason, (reasons.get(reason) || 0) + 1);
-    }
     items.push(
       checkItem(
         "info",
         "排除的樣本",
         `${overview.excluded.length} 個：` +
-          [...reasons].map(([reason, n]) => `${reason} ×${n}`).join("、"),
+          overview.excluded.map((row) => row.raw_stem).join("、"),
         edit,
       ),
     );

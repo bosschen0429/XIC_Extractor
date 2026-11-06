@@ -281,10 +281,9 @@ window.XicUi = (() => {
     const dialog = $("exclude-dialog");
     $("exclude-message").textContent =
       `把 ${sample_id} 標記為排除：之後分析這個 RAW 資料夾時不再分析它。`;
-    $("exclude-reason").value = "";
     dialog.returnValue = "cancel";
     dialog.showModal();
-    $("exclude-reason").focus();
+    $("exclude-accept").focus();
     const accepted = await new Promise(resolve =>
       dialog.addEventListener("close", () => resolve(dialog.returnValue === "ok"), { once: true }));
     if (!accepted) return;
@@ -295,7 +294,6 @@ window.XicUi = (() => {
         dll_dir,
         sequence_source,
         raw_stem: sample_id,
-        reason: $("exclude-reason").value,
       });
       document.dispatchEvent(new CustomEvent("xic:samples-confirmed", {
         detail: { raw_dir, samples: result.samples, overview: result.overview },

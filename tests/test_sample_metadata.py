@@ -67,20 +67,12 @@ def test_sample_metadata_rejects_raw_stem_sample_name_alias_collision() -> None:
         )
 
 
-def test_sample_metadata_rejects_excluded_without_reason() -> None:
-    with pytest.raises(
-        SampleMetadataError,
-        match="excluded samples require exclusion_reason",
-    ):
-        parse_sample_metadata(
-            [
-                _row(
-                    sample_name="S1",
-                    sample_role="study_sample",
-                    excluded="TRUE",
-                )
-            ]
-        )
+def test_sample_metadata_allows_exclusion_without_a_reason() -> None:
+    rows = parse_sample_metadata(
+        [_row(sample_name="S1", sample_role="study_sample", excluded="TRUE")]
+    )
+    assert rows[0].excluded is True
+    assert rows[0].exclusion_reason == ""
 
 
 def test_load_sample_metadata_rejects_wrong_schema_version(tmp_path: Path) -> None:
