@@ -1673,8 +1673,8 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
         DdaCidNlPeakSupportPolicy,
     )
     from xic_extractor.processing_identity import resolve_request_acquisition_source
-    from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
-        backfill_untargeted_cid_nl_sample_subject,
+    from xic_extractor.untargeted_execution.partition import (
+        cid_nl_backfill_acquisition,
     )
 
     job = batch.jobs[0]
@@ -1699,7 +1699,9 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
         settings=inputs.settings,
         signal_processing_profile=inputs.profile,
     )
-    recovered = backfill_untargeted_cid_nl_sample_subject(**recovery_args)
+    recovered = cid_nl_backfill_acquisition.backfill_untargeted_cid_nl_sample_subject(
+        **recovery_args
+    )
     (observation,) = recovered.assessment.candidate_peaks
     acquired = recovered.acquisition.traces[0]
     recovery_prepared = prepare_physical_signal(
@@ -1727,7 +1729,7 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
     with pytest.raises(
         capture_owner.SampleLocalCaptureError, match="question is not request-bound"
     ):
-        backfill_untargeted_cid_nl_sample_subject(
+        cid_nl_backfill_acquisition.backfill_untargeted_cid_nl_sample_subject(
             **(
                 recovery_args
                 | {
@@ -1760,7 +1762,11 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
             for offset in offsets:
                 isolated[len(isolated) // 2 + offset] = float(max(original_intensity))
             inputs.source_raws[inputs.paths[0]].intensity = isolated
-            unavailable = backfill_untargeted_cid_nl_sample_subject(**recovery_args)
+            unavailable = (
+                cid_nl_backfill_acquisition.backfill_untargeted_cid_nl_sample_subject(
+                    **recovery_args
+                )
+            )
             assert unavailable.assessment.candidate_peaks == ()
             assert unavailable.assessment.content.method_result == "HOLD"
             assert unavailable.backfill_input is None
@@ -1772,7 +1778,11 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
             )
 
         inputs.source_raws[inputs.paths[0]].intensity = original_intensity * 0.0
-        unavailable = backfill_untargeted_cid_nl_sample_subject(**recovery_args)
+        unavailable = (
+            cid_nl_backfill_acquisition.backfill_untargeted_cid_nl_sample_subject(
+                **recovery_args
+            )
+        )
         assert unavailable.assessment.candidate_peaks == ()
         assert unavailable.assessment.content.method_result == "HOLD"
         assert unavailable.backfill_input is None
@@ -1799,7 +1809,11 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
             empty_vendor.setattr(
                 vendor, "GetChromatogramData", empty_vendor_chromatogram
             )
-            empty = backfill_untargeted_cid_nl_sample_subject(**recovery_args)
+            empty = (
+                cid_nl_backfill_acquisition.backfill_untargeted_cid_nl_sample_subject(
+                    **recovery_args
+                )
+            )
         assert empty.assessment.candidate_peaks == ()
         assert empty.assessment.content.method_result == "HOLD"
         assert empty.backfill_input is None

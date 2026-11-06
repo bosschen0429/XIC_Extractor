@@ -30,15 +30,20 @@ from xic_extractor.untargeted_execution.acquisition_cache import (
     CachedUntargetedRaw,
     bind_untargeted_acquisition_cache,
 )
-from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
-from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
-    CidNlAcquisitionResult,
+from xic_extractor.untargeted_execution.partition import (
+    cid_nl_backfill_acquisition,
+    cid_nl_sample_acquisition,
+)
+from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition import (
     UntargetedCidNlBackfillAttemptResult,
     UntargetedCidNlBackfillTarget,
     UntargetedCidNlBackfillTraceBatch,
+    backfill_untargeted_cid_nl_sample_subject,
+)
+from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
+    CidNlAcquisitionResult,
     UntargetedCidNlSampleTraceBatch,
     adapt_current_discovery_sample_subject,
-    backfill_untargeted_cid_nl_sample_subject,
 )
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionError,
@@ -238,7 +243,7 @@ def _execute_initial_assessment_batch(
                 )
             )
             active_acquire = (
-                cid_nl_acquisition.acquire_untargeted_cid_nl_sample_trace_batch
+                cid_nl_sample_acquisition.acquire_untargeted_cid_nl_sample_trace_batch
             )
             trace_batch = active_acquire(
                 processing_owners=job.processing_owners,
@@ -417,7 +422,7 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
     try:
         raw = _open_job_raw(first)
         active_acquire = (
-            cid_nl_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
+            cid_nl_backfill_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
         )
         trace_batch = active_acquire(
             processing_owners=first.processing_owners,

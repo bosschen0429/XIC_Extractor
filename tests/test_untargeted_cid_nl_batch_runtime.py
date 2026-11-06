@@ -70,9 +70,11 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         )
         source_raws[raw_paths[2]] = source_raw
         candidates_by_sample["Missing"] = candidates
-        from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
+        from xic_extractor.untargeted_execution.partition import (
+            cid_nl_sample_acquisition,
+        )
 
-        acquire_peaks = cid_nl_acquisition._reacquire_peak_observations
+        acquire_peaks = cid_nl_sample_acquisition._reacquire_peak_observations
 
         def capture_without_peak(**kwargs):
             acquisition, observations, captures = acquire_peaks(**kwargs)
@@ -83,7 +85,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             return acquisition, observations, captures
 
         monkeypatch.setattr(
-            cid_nl_acquisition,
+            cid_nl_sample_acquisition,
             "_reacquire_peak_observations",
             capture_without_peak,
         )
