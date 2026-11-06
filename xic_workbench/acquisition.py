@@ -34,11 +34,9 @@ from xic_extractor.processing_identity import (
     IdentityContractError,
     fingerprint_file_content,
 )
-from xic_extractor.raw_reader import (
-    PreparedRawMassRecalibration,
-    open_raw,
-    stat_identity,
-)
+from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
+from xic_extractor.raw_reader import open_raw
+from xic_extractor.raw_source_binding import stat_identity
 from xic_inspector.sources.curve_bundle import (
     ChromatogramCurve,
     CurveBundle,

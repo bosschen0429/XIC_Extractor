@@ -733,7 +733,7 @@ def test_targeted_and_untargeted_read_one_sequence_owner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from tests.sample_metadata_sequence_parsing_fixtures import _create_synthetic_docx
-    from xic_extractor import raw_reader
+    from xic_extractor import raw_sequence
     from xic_workbench.samples import load_samples
 
     # The Word sequence numbers Blank 1 ... Normal 4; the RAW clock disagrees.
@@ -759,7 +759,7 @@ def test_targeted_and_untargeted_read_one_sequence_owner(
         )
         return header, infer_sample_role(None, sample_name=path.stem), path.stem
 
-    monkeypatch.setattr(raw_reader, "_analysis_header", analysis_header)
+    monkeypatch.setattr(raw_sequence, "_analysis_header", analysis_header)
     sequence = tmp_path / "sequence.docx"
     _create_synthetic_docx(sequence)
     config = replace(_config(tmp_path), injection_order_source=sequence)

@@ -137,7 +137,7 @@ def test_reopened_handle_reuses_probe_and_initializes_its_trailer(outcome):
 def test_batch_prepares_each_raw_once_and_preserves_sample_attribution(
     tmp_path, monkeypatch
 ):
-    from xic_extractor import raw_reader
+    from xic_extractor import raw_mass_recalibration_batch
     from xic_extractor.processing_identity import build_acquisition_source_identity
 
     inputs = []
@@ -169,8 +169,8 @@ def test_batch_prepares_each_raw_once_and_preserves_sample_attribution(
         vendor.Dispose = lambda: closed.append(path.stem)
         return _handle(vendor, mass_recalibration)
 
-    monkeypatch.setattr(raw_reader, "open_raw", open_vendor)
-    prepared = raw_reader.prepare_batch_mass_recalibration(
+    monkeypatch.setattr(raw_mass_recalibration_batch, "open_raw", open_vendor)
+    prepared = raw_mass_recalibration_batch.prepare_batch_mass_recalibration(
         inputs,
         tmp_path,
         MassRecalibration.EASY_IC_RESTORE,
@@ -183,7 +183,7 @@ def test_batch_prepares_each_raw_once_and_preserves_sample_attribution(
     assert prepared["applied"].result.baseline_lm == 1.0
     assert prepared["applied"].result.n_anchor == 3
     assert (
-        raw_reader.prepare_batch_mass_recalibration(
+        raw_mass_recalibration_batch.prepare_batch_mass_recalibration(
             inputs, tmp_path, MassRecalibration.NONE
         )
         == {}
@@ -507,7 +507,7 @@ def test_saved_legacy_fit_replays_its_formula_without_new_preparation():
 
 
 def test_legacy_policy_without_saved_fit_does_not_silently_run_a_new_model():
-    from xic_extractor.raw_reader import RawReaderError
+    from xic_extractor.raw_reader_errors import RawReaderError
 
     with pytest.raises(RawReaderError, match="replay-only"):
         _ = _handle(
@@ -516,7 +516,7 @@ def test_legacy_policy_without_saved_fit_does_not_silently_run_a_new_model():
 
 
 def test_missing_scan_lm_is_not_inferred_from_baseline():
-    from xic_extractor.raw_reader import RawReaderError
+    from xic_extractor.raw_reader_errors import RawReaderError
 
     vendor = _Vendor()
     handle = _handle(vendor)

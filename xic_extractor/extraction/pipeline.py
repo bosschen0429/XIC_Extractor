@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.raw_reader import RawReaderError, preflight_raw_reader
+from xic_extractor.raw_reader import preflight_raw_reader
+from xic_extractor.raw_reader_errors import RawReaderError
 
 from .targeted_inputs import resolve_targeted_inputs, resolve_targeted_raw_paths
 

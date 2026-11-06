@@ -10,7 +10,7 @@ from xic_extractor.extraction.scoring_factory import build_scoring_context_facto
 from xic_extractor.extraction.target_extraction import extract_raw_file_result
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.raw_reader import PreparedRawMassRecalibration
+from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import FileResult, RunOutput

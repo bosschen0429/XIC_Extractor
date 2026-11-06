@@ -39,7 +39,7 @@ from xic_extractor.presets import (
     bind_cid_nl_recipe,
     load_preset,
 )
-from xic_extractor.raw_reader import read_analysis_set
+from xic_extractor.raw_sequence import read_analysis_set
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_workbench.methods import preset_from_payload
 from xic_workbench.samples import from_payload as samples_from_payload

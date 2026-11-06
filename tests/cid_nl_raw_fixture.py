@@ -18,19 +18,16 @@ from xic_extractor.discovery.ms1_capture import (
     capture_ms1_candidates,
 )
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_local_acquisition_source_identity,
     resolve_request_acquisition_source,
 )
-from xic_extractor.raw_reader import (
-    EXPECTED_THERMO_DLLS,
+from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS, RawFileHandle, open_raw
+from xic_extractor.raw_source_binding import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
-    Ms2Scan,
-    Ms2ScanEvent,
-    RawFileHandle,
-    open_raw,
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 

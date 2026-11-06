@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from xic_extractor import raw_reader_errors
+
 
 def test_injection_header_reads_vendor_clock_source_and_method(monkeypatch):
     from contextlib import contextmanager
@@ -37,13 +39,13 @@ def test_injection_header_reads_vendor_clock_source_and_method(monkeypatch):
     assert header.instrument_method == "method.meth"
     assert closed == [True]
     handle.sample_header.creation_date = None
-    with pytest.raises(raw_reader.RawReaderError, match="creation date"):
+    with pytest.raises(raw_reader_errors.RawReaderError, match="creation date"):
         raw_reader.read_raw_injection_header(Path("copy.raw"), Path("dll"))
     assert closed == [True, True]
 
 
 def test_sld_reader_projects_sequence_rows_without_clock(monkeypatch):
-    from xic_extractor import raw_reader
+    from xic_extractor import raw_reader, raw_sequence
 
     sequence = SimpleNamespace(
         IsError=False,
@@ -68,7 +70,7 @@ def test_sld_reader_projects_sequence_rows_without_clock(monkeypatch):
     monkeypatch.setattr(raw_reader, "preflight_raw_reader", lambda dll: [])
     monkeypatch.setattr(raw_reader, "ensure_assemblies_loaded", lambda *args: None)
     monkeypatch.setattr(raw_reader.importlib, "import_module", lambda name: business)
-    rows = raw_reader.read_sld_injections(Path("sequence.sld"), Path("dll"))
+    rows = raw_sequence.read_sld_injections(Path("sequence.sld"), Path("dll"))
     assert [row.row_number for row in rows] == [1, 2, 3]
     assert [row.acquisition_source for row in rows] == [
         r"D:\original\one.raw",
@@ -77,5 +79,5 @@ def test_sld_reader_projects_sequence_rows_without_clock(monkeypatch):
     ]
     assert [row.instrument_method for row in rows] == ["one.meth", "two.meth", ""]
     sequence.IsError = True
-    with pytest.raises(raw_reader.RawReaderError, match="Unable to read"):
-        raw_reader.read_sld_injections(Path("sequence.sld"), Path("dll"))
+    with pytest.raises(raw_reader_errors.RawReaderError, match="Unable to read"):
+        raw_sequence.read_sld_injections(Path("sequence.sld"), Path("dll"))

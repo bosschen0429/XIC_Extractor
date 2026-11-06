@@ -13,7 +13,7 @@ from xic_extractor.alignment.drift_evidence import (
     mint_known_istd_reference_from_measurements,
 )
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.raw_reader import PreparedRawMassRecalibration
+from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 from xic_extractor.sample_metadata import SampleMetadata
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from xic_extractor.raw_reader import PreparedRawMassRecalibration
+    from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 
 import os
 import shutil
@@ -296,7 +296,7 @@ def prepare_untargeted_alignment_inputs(
             by_stem[stem] for stem in discovery_batch.sample_order
         )
     else:
-        from xic_extractor.raw_reader import read_analysis_set
+        from xic_extractor.raw_sequence import read_analysis_set
 
         by_path = {
             path.resolve(): entry.metadata

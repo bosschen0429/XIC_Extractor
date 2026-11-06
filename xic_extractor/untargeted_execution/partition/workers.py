@@ -24,12 +24,8 @@ from xic_extractor.peak_detection.cid_nl_peak_support_models import (
     DdaCidNlPeakSupportPolicy,
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
-from xic_extractor.raw_reader import (
-    RawFileHandle,
-    bind_expected_path_identity,
-    ensure_assemblies_loaded,
-    open_raw,
-)
+from xic_extractor.raw_reader import RawFileHandle, ensure_assemblies_loaded, open_raw
+from xic_extractor.raw_source_binding import bind_expected_path_identity
 from xic_extractor.untargeted_execution.acquisition_cache import (
     CachedUntargetedRaw,
     bind_untargeted_acquisition_cache,

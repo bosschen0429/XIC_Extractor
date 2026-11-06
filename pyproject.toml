@@ -117,6 +117,9 @@ forbidden_modules = [
     "xic_extractor.untargeted_execution",
     "xic_extractor.output",
     "xic_extractor.raw_reader",
+    "xic_extractor.raw_source_binding",
+    "xic_extractor.raw_sequence",
+    "xic_extractor.raw_mass_recalibration_batch",
 ]
 allow_indirect_imports = false
 
@@ -135,6 +138,9 @@ forbidden_modules = [
     "xic_extractor.peak_detection",
     "xic_extractor.precursor_evidence",
     "xic_extractor.raw_reader",
+    "xic_extractor.raw_source_binding",
+    "xic_extractor.raw_sequence",
+    "xic_extractor.raw_mass_recalibration_batch",
 ]
 allow_indirect_imports = false
 
@@ -149,6 +155,9 @@ forbidden_modules = [
     "xic_extractor.untargeted_execution",
     "xic_extractor.extractor",
     "xic_extractor.raw_reader",
+    "xic_extractor.raw_source_binding",
+    "xic_extractor.raw_sequence",
+    "xic_extractor.raw_mass_recalibration_batch",
 ]
 allow_indirect_imports = false
 
@@ -218,6 +227,9 @@ forbidden_modules = [
     "xic_extractor.untargeted_execution",
     "xic_extractor.extraction",
     "xic_extractor.raw_reader",
+    "xic_extractor.raw_source_binding",
+    "xic_extractor.raw_sequence",
+    "xic_extractor.raw_mass_recalibration_batch",
 ]
 allow_indirect_imports = false
 
@@ -267,7 +279,12 @@ id = "completed-evidence-readers-do-not-load-raw"
 name = "Completed discovery CSV reader does not load RAW"
 type = "forbidden"
 source_modules = ["xic_extractor.discovery.csv_reader"]
-forbidden_modules = ["xic_extractor.raw_reader"]
+forbidden_modules = [
+    "xic_extractor.raw_reader",
+    "xic_extractor.raw_source_binding",
+    "xic_extractor.raw_sequence",
+    "xic_extractor.raw_mass_recalibration_batch",
+]
 allow_indirect_imports = false
 
 [[tool.importlinter.contracts]]
@@ -281,6 +298,9 @@ source_modules = [
 forbidden_modules = [
     "xic_extractor.output",
     "xic_extractor.raw_reader",
+    "xic_extractor.raw_source_binding",
+    "xic_extractor.raw_sequence",
+    "xic_extractor.raw_mass_recalibration_batch",
     "openpyxl",
     "csv",
 ]
@@ -297,6 +317,9 @@ source_modules = [
 ]
 forbidden_modules = [
     "xic_extractor.raw_reader",
+    "xic_extractor.raw_source_binding",
+    "xic_extractor.raw_sequence",
+    "xic_extractor.raw_mass_recalibration_batch",
     "xic_extractor.alignment",
     "xic_extractor.output",
     "xic_extractor.acquisition",
@@ -356,6 +379,9 @@ forbidden_modules = [
     "xic_extractor.extractor",
     "xic_extractor.output",
     "xic_extractor.raw_reader",
+    "xic_extractor.raw_source_binding",
+    "xic_extractor.raw_sequence",
+    "xic_extractor.raw_mass_recalibration_batch",
 ]
 allow_indirect_imports = false
 
@@ -376,6 +402,9 @@ forbidden_modules = [
     "xic_extractor.extraction",
     "xic_extractor.output",
     "xic_extractor.raw_reader",
+    "xic_extractor.raw_source_binding",
+    "xic_extractor.raw_sequence",
+    "xic_extractor.raw_mass_recalibration_batch",
 ]
 allow_indirect_imports = false
 
@@ -408,3 +437,17 @@ forbidden_modules = [
 ]
 # Existing CID-NL record admission binds interpreters; shared algorithms do not.
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "mass-restoration-stays-pure"
+name = "Mass-restoration arithmetic does not acquire RAW or schedule workers"
+type = "forbidden"
+source_modules = ["xic_extractor.raw_mass_recalibration"]
+forbidden_modules = [
+    "xic_extractor.raw_reader",
+    "xic_extractor.raw_source_binding",
+    "xic_extractor.raw_sequence",
+    "xic_extractor.raw_mass_recalibration_batch",
+    "xic_extractor.execution",
+]
+allow_indirect_imports = false

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from xic_extractor.discovery.delta_mass_pipeline import run_delta_mass_discovery
 from xic_extractor.presets.apply import resolve_delta_mass_discovery
-from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.raw_reader_errors import RawReaderError
 
 
 def main(argv: Sequence[str] | None = None) -> int:

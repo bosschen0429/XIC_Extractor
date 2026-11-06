@@ -25,7 +25,8 @@ from xic_extractor.discovery.tag_profiles import (
 )
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.presets import PresetError, bind_cid_nl_recipe, load_preset
-from xic_extractor.raw_reader import RawReaderError, read_analysis_set
+from xic_extractor.raw_reader_errors import RawReaderError
+from xic_extractor.raw_sequence import read_analysis_set
 from xic_extractor.sample_metadata import SampleMetadataError
 from xic_extractor.settings_schema import (
     ARBITRATED_RESOLVER_RETIRED_MESSAGE,

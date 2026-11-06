@@ -44,7 +44,8 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.raw_reader import PreparedRawMassRecalibration, open_raw
+from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
+from xic_extractor.raw_reader import open_raw
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import (

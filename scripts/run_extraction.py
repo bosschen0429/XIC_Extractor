@@ -17,7 +17,7 @@ from xic_extractor.configuration.loader import (
     prepare_targeted_config,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
-from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.raw_reader_errors import RawReaderError
 
 
 def main(argv: Sequence[str] | None = None) -> int:

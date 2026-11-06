@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.raw_reader import PreparedRawMassRecalibration
+from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import (

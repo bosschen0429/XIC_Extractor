@@ -14,7 +14,7 @@ from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RawFileExtractionResult
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.raw_reader import PreparedRawMassRecalibration
+from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 
 
 @dataclass(frozen=True)

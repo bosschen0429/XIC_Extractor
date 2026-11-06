@@ -5,6 +5,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from xic_extractor import raw_reader_errors
+
 
 def test_importing_raw_reader_does_not_import_clr() -> None:
     module = importlib.import_module("xic_extractor.raw_reader")
@@ -15,7 +17,8 @@ def test_importing_raw_reader_does_not_import_clr() -> None:
 def test_injection_header_translates_missing_ms_device_with_file_context():
     from datetime import datetime
 
-    from xic_extractor.raw_reader import RawReaderError, _injection_header
+    from xic_extractor.raw_reader import _injection_header
+    from xic_extractor.raw_reader_errors import RawReaderError
 
     class MissingDevice(Exception):
         pass
@@ -213,7 +216,9 @@ def test_direct_assembly_loading_reports_unavailable_runtime_before_clr(
     from xic_extractor import raw_reader
 
     monkeypatch.setattr(raw_reader, "_ASSEMBLIES_LOADED", False)
-    with pytest.raises(raw_reader.RawReaderError, match="Microsoft.DotNet.Runtime.10"):
+    with pytest.raises(
+        raw_reader_errors.RawReaderError, match="Microsoft.DotNet.Runtime.10"
+    ):
         raw_reader.ensure_assemblies_loaded(tmp_path, _broken_pythonnet_runtime)
     assert not raw_reader._ASSEMBLIES_LOADED
 
@@ -258,7 +263,8 @@ def test_preflight_reports_missing_expected_thermo_dll(tmp_path: Path) -> None:
 
 
 def test_open_raw_raises_raw_reader_error_when_dll_load_fails(tmp_path: Path) -> None:
-    from xic_extractor.raw_reader import RawReaderError, open_raw
+    from xic_extractor.raw_reader import open_raw
+    from xic_extractor.raw_reader_errors import RawReaderError
 
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
@@ -274,7 +280,8 @@ def test_open_raw_raises_raw_reader_error_when_dll_load_fails(tmp_path: Path) ->
 
 
 def test_open_raw_raises_raw_reader_error_when_preflight_fails(tmp_path: Path) -> None:
-    from xic_extractor.raw_reader import RawReaderError, open_raw
+    from xic_extractor.raw_reader import open_raw
+    from xic_extractor.raw_reader_errors import RawReaderError
 
     with pytest.raises(RawReaderError, match="RawFileReader DLL directory"):
         open_raw(
@@ -287,10 +294,8 @@ def test_open_raw_raises_raw_reader_error_when_preflight_fails(tmp_path: Path) -
 def test_open_raw_disposes_vendor_handle_when_select_instrument_fails(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.raw_reader import (
-        RawReaderOpenError,
-        open_raw,
-    )
+    from xic_extractor.raw_reader import open_raw
+    from xic_extractor.raw_reader_errors import RawReaderOpenError
 
     class _SelectFailRaw(_FakeRaw):
         def SelectInstrument(self, *_args) -> None:
@@ -314,10 +319,8 @@ def test_open_raw_disposes_vendor_handle_when_select_instrument_fails(
 def test_open_raw_reports_cleanup_failure_after_vendor_open_error(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.raw_reader import (
-        RawReaderOpenError,
-        open_raw,
-    )
+    from xic_extractor.raw_reader import open_raw
+    from xic_extractor.raw_reader_errors import RawReaderOpenError
 
     class _CleanupFailRaw(_FakeRaw):
         def SelectInstrument(self, *_args) -> None:
@@ -344,10 +347,7 @@ def test_open_raw_reports_cleanup_failure_after_vendor_open_error(
 
 
 def test_open_raw_loads_only_expected_absolute_dll_paths(tmp_path: Path) -> None:
-    from xic_extractor.raw_reader import (
-        EXPECTED_THERMO_DLLS,
-        open_raw,
-    )
+    from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS, open_raw
 
     _write_expected_dlls(tmp_path)
     raw = SimpleNamespace(SelectInstrument=lambda *_: None)
@@ -446,7 +446,7 @@ def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
         _record_mint,
     )
 
-    with pytest.raises(raw_reader.RawReaderOpenError, match="select failed"):
+    with pytest.raises(raw_reader_errors.RawReaderOpenError, match="select failed"):
         raw_reader.open_raw(
             raw_path,
             tmp_path,
@@ -471,7 +471,8 @@ def test_open_raw_rejects_source_identity_for_wrong_adapter_semantics(
     observation_namespace: str,
 ) -> None:
     from xic_extractor.processing_identity import build_acquisition_source_identity
-    from xic_extractor.raw_reader import RawReaderError, open_raw
+    from xic_extractor.raw_reader import open_raw
+    from xic_extractor.raw_reader_errors import RawReaderError
 
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
@@ -497,11 +498,8 @@ def test_open_raw_rejects_source_identity_for_wrong_adapter_semantics(
 
 def test_direct_raw_handle_cannot_claim_an_acquisition_source(tmp_path: Path) -> None:
     from xic_extractor.processing_identity import build_acquisition_source_identity
-    from xic_extractor.raw_reader import (
-        RawFileHandle,
-        RawReaderError,
-        require_source_bound_raw_handle,
-    )
+    from xic_extractor.raw_reader import RawFileHandle, require_source_bound_raw_handle
+    from xic_extractor.raw_reader_errors import RawReaderError
 
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"sample-a")
@@ -522,7 +520,8 @@ def test_direct_raw_handle_cannot_claim_an_acquisition_source(tmp_path: Path) ->
 
 def test_open_raw_rejects_path_content_from_another_source(tmp_path: Path) -> None:
     from xic_extractor.processing_identity import build_acquisition_source_identity
-    from xic_extractor.raw_reader import RawReaderError, open_raw
+    from xic_extractor.raw_reader import open_raw
+    from xic_extractor.raw_reader_errors import RawReaderError
 
     _write_expected_dlls(tmp_path)
     expected_path = tmp_path / "sample-a.raw"
@@ -552,7 +551,8 @@ def test_open_raw_rejects_source_path_replacement_during_vendor_open(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.processing_identity import build_acquisition_source_identity
-    from xic_extractor.raw_reader import RawReaderError, open_raw
+    from xic_extractor.raw_reader import open_raw
+    from xic_extractor.raw_reader_errors import RawReaderError
 
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
@@ -595,6 +595,7 @@ def test_open_raw_uses_owner_verified_path_state_without_rehashing(
     local_revision: bool,
 ) -> None:
     import xic_extractor.raw_reader as raw_reader
+    from xic_extractor import raw_source_binding
     from xic_extractor.processing_identity import (
         build_acquisition_source_identity,
         build_local_acquisition_source_identity,
@@ -626,7 +627,7 @@ def test_open_raw_uses_owner_verified_path_state_without_rehashing(
         raise AssertionError("owner-verified RAW path state must not be rehashed")
 
     monkeypatch.setattr(
-        raw_reader,
+        raw_source_binding,
         "fingerprint_file_content",
         _unexpected_fingerprint,
     )
@@ -693,7 +694,7 @@ def test_open_raw_rejects_stale_owner_verified_path_state(
         message = "RAW source .*changed while the vendor handle was opening"
 
     with pytest.raises(
-        raw_reader.RawReaderError,
+        raw_reader_errors.RawReaderError,
         match=message,
     ):
         raw_reader.open_raw(
@@ -712,6 +713,7 @@ def test_open_raw_rechecks_content_after_vendor_open(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import xic_extractor.raw_reader as raw_reader
+    from xic_extractor import raw_source_binding
     from xic_extractor.processing_identity import build_acquisition_source_identity
 
     _write_expected_dlls(tmp_path)
@@ -731,13 +733,13 @@ def test_open_raw_rechecks_content_after_vendor_open(
 
     thermo.raw_file_reader_adapter.FileFactory = _mutate_after_precheck
     monkeypatch.setattr(
-        raw_reader,
+        raw_source_binding,
         "stat_identity",
         lambda _value: (1, 1, len(b"sample-a"), 1, 1),
     )
 
     with pytest.raises(
-        raw_reader.RawReaderError,
+        raw_reader_errors.RawReaderError,
         match="source content or path changed while the vendor handle was opening",
     ):
         raw_reader.open_raw(

@@ -1853,7 +1853,7 @@ def _assert_alignment_uses_configured_recovery_groups(
     )
     from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
     from xic_extractor.processing_identity import AcquisitionSourceExpectation
-    from xic_extractor.raw_reader import stat_identity
+    from xic_extractor.raw_source_binding import stat_identity
     from xic_extractor.untargeted_execution import execution as bounded_runtime
     from xic_extractor.untargeted_execution.alignment import (
         complete_untargeted_alignment,

@@ -8,7 +8,7 @@ import pytest
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
-from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 
 NEUTRAL_LOSS_DA = 116.0474
 RAW_FILE = Path("C:/data/TumorBC2312_DNA.raw")

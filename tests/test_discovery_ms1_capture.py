@@ -38,7 +38,7 @@ from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,
 )
-from xic_extractor.raw_reader import (
+from xic_extractor.raw_source_binding import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )

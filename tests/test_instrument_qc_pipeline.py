@@ -6,7 +6,7 @@ import numpy as np
 
 from xic_extractor.instrument_qc.pipeline import DEFAULT_DLL_DIR, run_sdolek_pipeline
 from xic_extractor.instrument_qc.pipeline_inputs import discover_sdolek_raws
-from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 
 
 class FakeRaw:

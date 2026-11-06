@@ -13,7 +13,7 @@ import tempfile
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -26,16 +26,14 @@ from xic_extractor.acquisition_contract import (
     serialize_acquired_trace,
 )
 from xic_extractor.configuration.mass_recalibration import MassRecalibration
-from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan, Ms2ScanEvent
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
-from xic_extractor.raw_reader import (
-    Ms2Scan,
-    Ms2ScanEvent,
-    RawFileHandle,
-    require_source_bound_raw_handle,
+from xic_extractor.raw_reader import RawFileHandle, require_source_bound_raw_handle
+from xic_extractor.raw_superwindow_source import (
+    RawSuperWindowSource,
+    ScanResolvedXICSource,
 )
-from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest
 
 _CACHE_SCHEMA = "untargeted_raw_fact_cache"
@@ -60,11 +58,7 @@ class CachedUntargetedRaw:
     ) -> None:
         self._opener = raw if callable(raw) else None
         self._mass_recalibration = mass_recalibration
-        self._handle = (
-            None
-            if callable(raw)
-            else self._require_policy(require_source_bound_raw_handle(raw, source))
-        )
+        self._handle = None if callable(raw) else self._require_policy(raw)
         self._source = source
         self._cache = _FactCache(
             cache_dir, source.acquisition_source_id, mass_recalibration
@@ -81,9 +75,7 @@ class CachedUntargetedRaw:
     def _raw(self) -> RawFileHandle:
         if self._handle is None:
             assert self._opener is not None
-            self._handle = self._require_policy(
-                require_source_bound_raw_handle(self._opener(), self._source)
-            )
+            self._handle = self._require_policy(self._opener())
         return self._handle
 
     @property
@@ -270,7 +262,7 @@ def bind_untargeted_acquisition_cache(
     """Bind a verified native handle to the optional persistent fact cache."""
 
     if cache_dir is None:
-        return require_source_bound_raw_handle(raw, source)
+        return raw
     return CachedUntargetedRaw(
         raw,
         source=source,
@@ -298,8 +290,11 @@ def acquire_untargeted_trace_batch(
 ) -> TraceAcquisitionBatch:
     if isinstance(raw, CachedUntargetedRaw):
         return raw.acquire_trace_batch(capability, requests)
-    source_bound = require_source_bound_raw_handle(raw, capability.acquisition_source)
-    return acquire_trace_batch(capability, requests, RawSuperWindowSource(source_bound))
+    return acquire_trace_batch(
+        capability,
+        requests,
+        RawSuperWindowSource(cast(ScanResolvedXICSource, raw)),
+    )
 
 
 class _FactCache:

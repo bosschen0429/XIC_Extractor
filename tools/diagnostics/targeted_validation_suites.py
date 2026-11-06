@@ -11,7 +11,7 @@ from xic_extractor.applications.targeted.output_boundary import (
     TargetedOutputBoundaryError,
 )
 from xic_extractor.configuration.models import ConfigError
-from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.raw_reader_errors import RawReaderError
 from xic_extractor.tabular_io import write_delimited_rows
 
 DEFAULT_MANUAL_DIR = Path(

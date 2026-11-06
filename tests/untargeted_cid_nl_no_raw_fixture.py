@@ -17,7 +17,7 @@ from xic_extractor.processing_identity import (
     compose_processing_owner_references,
     issue_processing_attempt,
 )
-from xic_extractor.raw_reader import (
+from xic_extractor.raw_source_binding import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )

@@ -10,7 +10,7 @@ from xic_extractor.discovery.blank_qualification import (
     get_default_background_library_path,
 )
 from xic_extractor.discovery.models import DiscoveryBatchOutputs, DiscoveryRunOutputs
-from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.raw_reader_errors import RawReaderError
 
 
 @pytest.fixture(autouse=True)

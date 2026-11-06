@@ -110,9 +110,7 @@ from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     resolve_request_acquisition_source,
 )
-from xic_extractor.raw_reader import (
-    RawReaderError,
-)
+from xic_extractor.raw_reader_errors import RawReaderError
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.untargeted_execution.acquisition_cache import (
     acquire_untargeted_trace_batch,

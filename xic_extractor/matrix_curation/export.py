@@ -199,7 +199,8 @@ def read_run_samples(source: CurationSource) -> tuple[SampleMetadata, ...] | Non
         return None
     if not source.raw_dir.is_dir():
         return None
-    from xic_extractor.raw_reader import RawReaderError, read_analysis_set
+    from xic_extractor.raw_reader_errors import RawReaderError
+    from xic_extractor.raw_sequence import read_analysis_set
 
     try:
         return read_analysis_set(source.raw_dir, source.dll_dir).sample_metadata
