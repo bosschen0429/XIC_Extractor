@@ -32,6 +32,10 @@ from xic_inspector.sources import (
     ExplanationUnavailableError,
     open_source,
 )
+from xic_inspector.sources.delta_mass import (
+    DeltaMassReviewLocator,
+    DeltaMassReviewSource,
+)
 from xic_inspector.sources.targeted_workbook import (
     TargetedWorkbookLocator,
     TargetedWorkbookSource,
@@ -42,7 +46,7 @@ def read_evidence_summary(path):
     """Read metadata from a supported saved-result source."""
     from xic_inspector.sources.cid_nl import read_summary
 
-    if Path(path).suffix.lower() == ".xlsx":
+    if Path(path).suffix.lower() in {".xlsx", ".json"}:
         return open_source(Path(path)).summary
     return read_summary(path)
 
@@ -63,6 +67,12 @@ def resolve_source(path: Path) -> Path:
         return workbooks[0]
     if len(workbooks) > 1:
         raise ValueError("資料夾有多份 XLSX；請明確選擇 Targeted XLSX 檔案。")
+    if (path / "delta_mass_candidates.csv").is_file():
+        raise FileNotFoundError(
+            "Delta Mass Discovery 尚未含檢閱曲線；先以 "
+            "tools.diagnostics.delta_mass_review 選取候選建立 review JSON，"
+            "再用 Inspector 開啟該檔。不需執行 Alignment。"
+        )
     raise FileNotFoundError(
         f"No Targeted XLSX or {EXPLANATION_ARTIFACT_NAME} in {path}; "
         "rerun Alignment（請重新執行 Alignment 產生新輸出）。"
@@ -285,7 +295,12 @@ class ReportResult:
     """Immutable result of successful report generation."""
 
     output_path: Path
-    source: EvidenceLocator | CurveBundleLocator | TargetedWorkbookLocator
+    source: (
+        EvidenceLocator
+        | CurveBundleLocator
+        | TargetedWorkbookLocator
+        | DeltaMassReviewLocator
+    )
     evidence_capability: CapabilityKind
     run_total: int
     eligible_count: int
@@ -299,7 +314,12 @@ class ReportResult:
 class PreparedReport:
     """Selected owner facts shared by interactive and offline presentation."""
 
-    source: EvidenceLocator | CurveBundleLocator | TargetedWorkbookLocator
+    source: (
+        EvidenceLocator
+        | CurveBundleLocator
+        | TargetedWorkbookLocator
+        | DeltaMassReviewLocator
+    )
     source_name: str
     evidence_capability: CapabilityKind
     run_total: int
@@ -334,6 +354,7 @@ def prepare_report(
     expected_source: EvidenceLocator
     | CurveBundleLocator
     | TargetedWorkbookLocator
+    | DeltaMassReviewLocator
     | None = None,
     on_progress: Callable[[ReportProgress], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
@@ -393,9 +414,14 @@ def prepare_report(
         }
 
     att_id = summary.get("processing_attempt_id", "")
-    if isinstance(source, (CurveBundleSource, TargetedWorkbookSource)):
+    if isinstance(
+        source, (CurveBundleSource, TargetedWorkbookSource, DeltaMassReviewSource)
+    ):
         source_locator: (
-            EvidenceLocator | CurveBundleLocator | TargetedWorkbookLocator
+            EvidenceLocator
+            | CurveBundleLocator
+            | TargetedWorkbookLocator
+            | DeltaMassReviewLocator
         ) = source.locator
         if expected_source is not None and expected_source != source_locator:
             raise InspectorError(4, "Source does not match expected_source contract")
@@ -649,6 +675,7 @@ def generate_report(
     expected_source: EvidenceLocator
     | CurveBundleLocator
     | TargetedWorkbookLocator
+    | DeltaMassReviewLocator
     | None = None,
     on_progress: Callable[[ReportProgress], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,

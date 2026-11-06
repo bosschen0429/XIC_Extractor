@@ -5,7 +5,12 @@ from xic_extractor.alignment_explanation.storage import (
     ExplanationUnavailableError,
 )
 from xic_extractor.evidence_artifacts import EvidenceLocator
-from xic_inspector.sources.curve_bundle import CurveBundleLocator, CurveBundleSource
+from xic_inspector.sources.curve_bundle import (
+    CurveBundleLocator,
+    CurveBundleSource,
+    read_review_json,
+)
+from xic_inspector.sources.delta_mass import DeltaMassReviewSource
 
 
 def __getattr__(name):
@@ -29,7 +34,15 @@ def open_source(path, *, query_only=False):
 
         return TargetedWorkbookSource(path)
     if path.suffix.lower() == ".json":
-        return CurveBundleSource(path)
+        from xic_extractor.diagnostics.delta_mass_review_data import REVIEW_SCHEMA
+
+        loaded = read_review_json(path)
+        if (
+            isinstance(loaded[0], dict)
+            and loaded[0].get("schema_version") == REVIEW_SCHEMA
+        ):
+            return DeltaMassReviewSource(path, loaded)
+        return CurveBundleSource(path, loaded=loaded)
     from xic_inspector.sources.cid_nl import CidNlSource, read_summary
     from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
 

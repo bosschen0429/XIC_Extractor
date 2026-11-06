@@ -320,6 +320,30 @@ Matrix, Backfill, counted-detection or export authority. Shape similarity never
 establishes membership by itself. Real-sample counts are method-development
 evidence, not an accuracy threshold.
 
+### Read-only candidate review
+
+Delta Mass candidates can be reviewed directly, without an Alignment handoff.
+`python -m tools.diagnostics.delta_mass_review --help` describes the bounded
+export: select candidate IDs from current Discovery output, choose the RAW/DLL
+directories, and write a review JSON. Open that JSON with
+`xic-inspector <review.json>` (or `python -m xic_inspector` in a checkout).
+
+The Inspector keeps one candidate's positions together and plots their unsmoothed
+RAW XICs on a shared intensity axis. Saved heights, ratios, shape evidence and
+statuses remain the Discovery answers; zooming does not recompute them. Ratio
+and shape reference positions are retained from the method settings.
+
+The exporter reads the selected RT windows anew, matching RAW names to saved
+samples. It does not verify the original analysis bytes or reproduce the original
+detector. Every readable MS2 in those windows remains selectable, even when its
+recorded precursor is unrelated to a pattern position. A time marker is temporal
+context, not precursor attribution, sugar-loss detection or candidate admission.
+Missing XIC/spectrum data and MS2 read errors stay visible. The Inspector reads
+only the saved review; it never acquires RAW or changes candidate or Matrix values.
+
+The review does not import historical task-specific CSV/NPZ formats, infer charge,
+impose a height-ratio gate, match fragments or group candidates across samples.
+
 ## Method-specific validation
 
 Discovery validation is method-specific. CID-NL 8RAW/85RAW fixtures are not

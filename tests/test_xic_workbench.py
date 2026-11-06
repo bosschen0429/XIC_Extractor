@@ -549,6 +549,7 @@ def test_view_endpoint_guards_unknown_ids_and_serves_only_packaged_assets(tmp_pa
         assert request("/api/views/../../pyproject.toml")[0] == 404
         for name, content_type in (
             ("inspector.js", "text/javascript; charset=utf-8"),
+            ("delta_mass.js", "text/javascript; charset=utf-8"),
             ("inspector.css", "text/css; charset=utf-8"),
         ):
             status, data, headers = request(f"/assets/{name}")

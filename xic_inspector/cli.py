@@ -34,7 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         type=Path,
         help=(
-            "Feature evidence SQLite report, Targeted XLSX, curve-bundle JSON, or an "
+            "Feature evidence SQLite report, Targeted XLSX, curve-bundle or "
+            "Delta Mass review JSON, or an "
             f"alignment output folder containing {EXPLANATION_ARTIFACT_NAME}."
         ),
     )

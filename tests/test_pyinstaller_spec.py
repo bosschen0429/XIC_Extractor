@@ -432,6 +432,7 @@ def test_pyinstaller_collects_inspector_frontend() -> None:
         )
     }
     assert collected == {
+        ("delta_mass.js", "xic_inspector/rendering/assets"),
         ("inspector.html", "xic_inspector/rendering/assets"),
         ("inspector.js", "xic_inspector/rendering/assets"),
         ("inspector.css", "xic_inspector/rendering/assets"),

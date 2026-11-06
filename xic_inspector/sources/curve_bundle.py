@@ -413,7 +413,8 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _load_bundle(path: str | Path) -> tuple[CurveBundle, str]:
+def read_review_json(path: str | Path) -> tuple[object, str]:
+    """Read a portable Inspector JSON once before selecting its source adapter."""
     source = Path(path)
     if source.stat().st_size > MAX_BUNDLE_SIZE_BYTES:
         raise _fail("$", "source exceeds 50 MiB limit")
@@ -424,7 +425,12 @@ def _load_bundle(path: str | Path) -> tuple[CurveBundle, str]:
         body = json.loads(data.decode("utf-8"), object_pairs_hook=_unique_object)
     except (UnicodeError, json.JSONDecodeError) as exc:
         raise _fail("$", "expected UTF-8 JSON") from exc
-    return _decode_bundle(body), hashlib.sha256(data).hexdigest()
+    return body, hashlib.sha256(data).hexdigest()
+
+
+def _load_bundle(path: str | Path) -> tuple[CurveBundle, str]:
+    body, digest = read_review_json(path)
+    return _decode_bundle(body), digest
 
 
 def read_curve_bundle(path: str | Path) -> CurveBundle:
@@ -460,9 +466,10 @@ def write_curve_bundle(bundle: CurveBundle, path: str | Path) -> int:
 class CurveBundleSource:
     """Project portable transition curves into the shared Inspector selection model."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, loaded: tuple[object, str] | None = None) -> None:
         self.path = path
-        self.bundle, source_sha256 = _load_bundle(path)
+        body, source_sha256 = loaded if loaded is not None else read_review_json(path)
+        self.bundle = _decode_bundle(body)
         self.locator = CurveBundleLocator(
             bundle_path=path,
             bundle_sha256=source_sha256,

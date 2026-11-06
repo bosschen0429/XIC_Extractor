@@ -12,6 +12,7 @@ look up processing principles later when a result raises a question.
 | Discover and compare features across samples | [Untargeted Discovery](untargeted-discovery.md) | `alignment_matrix.tsv`, then feature/sample evidence in the workbench |
 | Install and launch from source | [README quick start](../../README.md#run-the-html-workbench) | Local browser workspace |
 | Prepare a Matrix for downstream analysis | [Read and use the Matrix](untargeted-discovery.md#read-and-use-the-matrix) | A separate curated Matrix; source results remain unchanged |
+| Inspect a Delta Mass candidate's XICs and MS2 | [Delta Mass candidate review](../product/discovery.md#read-only-candidate-review) | An offline Inspector report; no Alignment or reclassification |
 
 Prefer illustrated pages? Open the [browser reading index](readers-index.html)
 locally, then choose the Targeted or Untargeted guide. GitHub displays HTML

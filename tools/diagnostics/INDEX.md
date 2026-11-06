@@ -27,6 +27,7 @@ workflow owner rather than chaining similarly named commands.
 | --- | --- |
 | Extract, discover, or align samples | [GUI and CLI user guides](../../docs/user/README.md) |
 | Inspect chromatograms | GUI **開啟 Inspector** or `xic-inspector`; [Workbench and review](../../docs/product/workbench.md) owns what review may mean |
+| Review sample-local Delta Mass candidates | `tools.diagnostics.delta_mass_review`, then `xic-inspector`; [Delta Mass review](#delta_mass_reviewpy) |
 | Select Matrix features for downstream analysis | GUI **矩陣整理** or `xic-matrix-curation`; [Matrix Curation](../../docs/product/matrix-curation.md) owns the steps and output |
 | Review instrument QC | `scripts.run_instrument_qc`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns its inputs and claims |
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
@@ -89,6 +90,25 @@ Compare evidence rows produced by parallel pipelines (targeted vs untargeted,
 spine vs cell) and shared-identity sidecars. The tools below share low-level
 diagnostic IO helpers where their schemas permit it, but keep separate row
 models because their output schemas are intentionally different.
+
+---
+
+### `delta_mass_review.py`
+
+**Purpose**: Acquire bounded, unsmoothed XICs and RT-window MS2 for explicitly
+selected Delta Mass candidates, then hand the saved evidence to Inspector.
+**Input**: Current `delta_mass_candidates.csv`, `delta_mass_positions.csv` and
+`delta_mass_sidecar.json` in one Discovery directory; exact candidate IDs and
+an explicitly selected RAW/DLL directory. `--help` owns the arguments.
+**Output**: A `delta_mass_candidate_review` JSON, opened with `xic-inspector`.
+**Owner**: `xic_extractor.diagnostics.delta_mass_review_acquisition` owns the
+bounded RAW read; `delta_mass_review_data` owns the saved handoff;
+`xic_inspector.sources.delta_mass` adapts it for the shared readonly view.
+**Status**: `diagnostic_only`. One RAW open and one XIC batch per selected sample;
+overlapping MS2 windows are merged. No Discovery rerun, candidate reclassification,
+new integration, precursor attribution, fragment matching, or Matrix authority.
+RAW files are matched by saved sample name, not verified as the original analysis
+bytes. The review displays the new read separately from saved candidate answers.
 
 ---
 

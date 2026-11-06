@@ -40,6 +40,8 @@
   const $ = id => root.querySelector(`[data-inspector-id="${id}"]`);
   let destroyed = false;
   const cleanups = [], frames = new Set(), timers = new Set();
+  let deltaView = null;
+  cleanups.push(() => deltaView?.destroy());
   const instance = {element: root, destroy() {
     if (destroyed) return;
     destroyed = true;
@@ -990,10 +992,11 @@
       if(row&&!row.contains(event.relatedTarget))hideCurveTooltip();
     });
   }
-  function plot(item,axis,peer=false,wide=false,width=0){
-    const shown=curvesForPlot(item,peer),drawable=shown.flatMap(curve=>seriesList(curve,axis,display.signal).map(series=>({curve,series})));
+  function plot(item,axis,peer=false,wide=false,width=0,signal=display.signal){
+    const shown=curvesForPlot(item,peer),drawable=shown.flatMap(curve=>seriesList(curve,axis,signal).map(series=>({curve,series})));
     const extra=drawable.length?[...display.overlays].filter(k=>overlays(item).includes(k)).flatMap(kind=>shown.flatMap(curve=>seriesList(curve,axis,kind).map(series=>({curve,series})))):[];
-    if(!drawable.length){const [chosen,other]=display.signal==='raw'?['原始訊號','平滑訊號']:['平滑訊號','原始訊號'];return `<div class="empty-state"><strong>${axis==='aligned'?'所選資料未提供對齊座標':shown.length?`所選來源未保存${chosen}`:'目前沒有可顯示的曲線'}</strong><p>${axis==='aligned'?'請切回原始時間；不會以原始座標代替。':shown.length?`不以${other}代替；可在上方切換訊號。`:'請確認樣本顯示勾選，或來源是否保存曲線。'}</p></div>`;}
+    if(!drawable.length&&item.delta_mass)return '<div class="empty-state">這個候選沒有可用的 RAW XIC；不以保存的 height 補畫曲線。</div>';
+    if(!drawable.length){const [chosen,other]=signal==='raw'?['原始訊號','平滑訊號']:['平滑訊號','原始訊號'];return `<div class="empty-state"><strong>${axis==='aligned'?'所選資料未提供對齊座標':shown.length?`所選來源未保存${chosen}`:'目前沒有可顯示的曲線'}</strong><p>${axis==='aligned'?'請切回原始時間；不會以原始座標代替。':shown.length?`不以${other}代替；可在上方切換訊號。`:'請確認樣本顯示勾選，或來源是否保存曲線。'}</p></div>`;}
     const reviewWindow=axis==='raw'?(state.plotWindow||(Array.isArray(item.review_rt_window)?item.review_rt_window:null)):mode==='curves'?state.plotWindow:null;
     let lo=reviewWindow?.[0]??Infinity,hi=reviewWindow?.[1]??-Infinity,lowY=0,highY=0;
     [...drawable,...extra].forEach(({series:s})=>s.rts.forEach((v,i)=>{const y=s.intensities[i];if(finite(v)&&finite(y)&&(!reviewWindow||v>=lo&&v<=hi)){if(!reviewWindow){lo=Math.min(lo,v);hi=Math.max(hi,v);}lowY=Math.min(lowY,y);highY=Math.max(highY,y);}}));
@@ -1006,19 +1009,25 @@
     for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4;svg+=`<text x="${x(v)}" y="${H-32}" text-anchor="${width&&i===0?'start':width&&i===4?'end':'middle'}" font-size="13" fill="#48534f">${rt(v)}</text>`;}
     const active=peer?null:activeCurve(item);
     if(active&&state.bounds){const left=axis==='aligned'?active.aligned_bound_left_rt:active.bound_left_rt,right=axis==='aligned'?active.aligned_bound_right_rt:active.bound_right_rt;if(finite(left)&&finite(right)){const a=Math.max(lo,Math.min(left,right)),b=Math.min(hi,Math.max(left,right));if(b>=a)svg+=`<rect data-integration-range="true" x="${x(a)}" y="${T}" width="${Math.max(0,x(b)-x(a))}" height="${IH}" fill="${color(active.sample_id)}" opacity=".09"><title>積分範圍 ${drt(left)}–${drt(right)} min</title></rect>`;}}
-    const dash=lineDash(item);
+    const dash=item.delta_mass
+      ? curve => window.XicInspectorDeltaMass.dash(curve.position_index)
+      : lineDash(item);
     [...extra.map(d=>({...d,overlay:true})),...drawable].forEach(({curve,series:s,overlay})=>{
       const focused=peer||!state.sample||curve.sample_id===state.sample;
       const opacity=mode==='curves'?curveLineOpacity(curve.sample_id,overlay):(!peer&&state.sample&&!focused?.16:.92)*(overlay?.7:1);
       const points=s.rts.map((v,i)=>finite(v)&&finite(s.intensities[i])?`${x(v)},${y(s.intensities[i])}`:'').filter(Boolean).join(' ');
       const signalName={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號',positive_signal:'基線以上訊號'}[s.kind]||'處理訊號',origin=curveOrigin(item,curve.sample_id);
       const title=mode==='curves'?'':`<title>${esc(sampleName(curve.sample_id))} · ${signalName} · ${esc(originLabel(origin))} · ${esc(curve.stage_label||curve.kind||'保留曲線')}</title>`;
-      svg+=`<polyline data-kind="${esc(s.kind)}" data-sample-id="${esc(curve.sample_id)}" data-curve-overlay="${!!overlay}" data-curve-origin="${esc(curveAcquisitionLabel(curve))}" data-curve-ref="${esc(curve.evidence_ref||'')}" data-support-origin="${originClass(origin)}" clip-path="url(#${clipId})" fill="none" stroke="${color(curve.sample_id)}" stroke-width="${overlay?1.2:s.kind==='raw'?1.7:2.2}" stroke-dasharray="${overlay?'3 3':dash(curve,origin)}" opacity="${opacity}" points="${points}">${title}</polyline>`;
+      const stroke=item.delta_mass ? `var(--dm-series-${Math.min(curve.position_index+1,3)})` : color(curve.sample_id);
+      svg+=`<polyline data-kind="${esc(s.kind)}" data-sample-id="${esc(curve.sample_id)}" data-position-label="${esc(curve.position_label||'')}" data-curve-overlay="${!!overlay}" data-curve-origin="${esc(curveAcquisitionLabel(curve))}" data-curve-ref="${esc(curve.evidence_ref||'')}" data-support-origin="${originClass(origin)}" clip-path="url(#${clipId})" fill="none" stroke="${stroke}" stroke-width="${item.delta_mass?2:overlay?1.2:s.kind==='raw'?1.7:2.2}" stroke-dasharray="${overlay?'3 3':dash(curve,origin)}" opacity="${opacity}" points="${points}">${title}</polyline>`;
+      if(item.delta_mass && s.rts.filter(v=>v>=lo&&v<=hi).length<=50){
+        s.rts.forEach((v,i)=>{if(v>=lo&&v<=hi)svg+=`<circle cx="${x(v)}" cy="${y(s.intensities[i])}" r="4" fill="${stroke}" stroke="var(--card)" stroke-width="2"/>`;});
+      }
       if(overlay||curve!==active||!state.bounds)return;
       const marks=axis==='aligned'?[['bound','左峰界',curve.aligned_bound_left_rt],['bound','右峰界',curve.aligned_bound_right_rt],['apex','積分峰頂',curve.aligned_apex_rt]]:[['bound','左峰界',curve.bound_left_rt],['bound','右峰界',curve.bound_right_rt],['apex','積分峰頂',curve.apex_rt],...(finite(curve.integration?.raw_apex_rt_min)&&(!finite(curve.apex_rt)||Math.abs(curve.integration.raw_apex_rt_min-curve.apex_rt)>1e-7)?[['raw-apex','原始訊號峰頂',curve.integration.raw_apex_rt_min]]:[])];
       marks.forEach(([kind,label,v])=>{if(finite(v))svg+=`<line data-marker="${kind}" x1="${x(v)}" x2="${x(v)}" y1="${T}" y2="${T+IH}" stroke="${color(curve.sample_id)}" stroke-dasharray="${kind==='bound'?'5 4':kind==='raw-apex'?'2 4':'1 3'}"><title>${label} ${drt(v)} min</title></line>`;});
     });
-    const hoverData=mode==='curves'?`data-curve-chart="true" data-domain-start="${lo}" data-domain-end="${hi}" data-signal-low="${lowY}" data-signal-high="${highY}" data-chart-left="${L}" data-chart-width="${IW}" data-chart-top="${T}" data-chart-height="${IH}"`:'';
+    const hoverData=mode==='curves'||item.delta_mass?`data-curve-chart="true" data-domain-start="${lo}" data-domain-end="${hi}" data-signal-low="${lowY}" data-signal-high="${highY}" data-chart-left="${L}" data-chart-width="${IW}" data-chart-top="${T}" data-chart-height="${IH}"`:'';
     return `<svg role="img" ${hoverData} aria-label="${axis==='raw'?'原始時間':'對齊時間'}層析圖" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}<text x="${L+IW/2}" y="${H-6}" text-anchor="middle" font-size="13" fill="#48534f">${axis==='raw'?'原始 RT':'對齊 RT'}（min）</text></svg>`;
   }
   function plotCard(item,axis,signalLabel,wide=false){
@@ -1091,7 +1100,17 @@
     setHTML($('workspace-content'),`<div class="detail-top"><div><p class="detail-eyebrow">CID-NL feature inclusion / identity relationship review</p><h2>${esc(item.title)} | Candidate ${esc(f.write_authorized_count)} / Existing ${esc(f.no_write_detected_baseline_preserved_count)}</h2><p class="detail-summary">${esc(f.sample_count)} samples · ${esc(f.source_peak_hypothesis_id)} → ${esc(f.successor_peak_hypothesis_id)}</p></div><span class="badge badge-rest">診斷曲線</span></div><section class="advanced-inspection" aria-label="Source / successor differential review"><div class="inspection-heading"><h3 id="inspection-title" tabindex="-1">${state.sample?esc(sampleName(state.sample)):'所有可見樣本'}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><div class="sample-legend" aria-label="樣本曲線顯示">${roster}</div><div class="charts-grid"><section class="plot-card"><h4>Source · ${esc(f.source_peak_hypothesis_id)} · m/z ${mz(f.source_mz)} · RT ${drt(f.source_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'source',sharedMax)}</div></section><section class="plot-card"><h4>Successor · ${esc(f.successor_peak_hypothesis_id)} · m/z ${mz(f.successor_mz)} · RT ${drt(f.successor_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'successor',sharedMax)}</div></section><section class="plot-card"><h4>Same-sample max relationship · log-log</h4><div class="svg-container">${differentialScatter(item)}</div></section><section class="plot-card"><h4>Review notes</h4>${differentialNotes(f)}</section></div><p class="reading-hint">兩側使用相同絕對訊號上限；黑色虛線標示各 hypothesis 中心 RT。藍色：write authorized；橘色：baseline preserved；灰色：其他。</p></section>`);
   }
   function detail(){
+    deltaView?.destroy();deltaView=null;
     const item=items.find(i=>i.id===state.id);if(!item){const excluded=filtered.filter(isCollapsedExcluded).length;setHTML($('workspace-content'),excluded?`<div class="empty-state"><strong>目前未選取項目</strong><p>左側有 ${excluded} 筆已排除候選；展開後可查看保存曲線與來源紀錄。</p></div>`:'<p class="empty-state">這份報告沒有符合的項目。</p>');return;}normalize(item);if(item.transition_review?.review_kind==='cid_nl_differential'){differentialDetail(item);return;}
+    if(item.delta_mass){
+      deltaView=window.XicInspectorDeltaMass.mount($('workspace-content'),item,{
+        renderXic(target,window,width){
+          state.plotWindow=window;
+          setHTML(target,plot(item,'raw',true,true,width,'raw'));
+        },
+      });
+      return;
+    }
     if(mode==='result'){
       setHTML($('workspace-content'),`<section class="sample-section"><h3>已保存的樣本結果</h3><div class="table-scroll"><table class="sample-table saved-table"><thead><tr><th>樣本</th><th class="num">Area</th><th>判定</th><th><span class="sr-only">依據</span></th></tr></thead><tbody>${itemRows(item).map(r=>{const value=r.quantitative_value,numeric=finite(value)&&value!==0;return `<tr class="${numeric?'':'saved-empty'}"><td><span class="sample-dot" style="background:${color(r.sample_id)}"></span>${esc(sampleName(r.sample_id))}</td><td class="num">${numeric?Number(value).toExponential(3):value===0?'<span class="result-zero">0</span>':has(r,'quantitative_value')?'<span class="result-null">空值</span>':'<span class="result-missing">—</span>'}</td><td class="saved-note">${numeric?'':esc(r.decision_label||'未提供定量決策')}</td><td class="num">${evidenceButtons(r.decision_refs,`${sampleName(r.sample_id)} 的定量依據`,'查看依據')}</td></tr>${state.evidence&&state.evidenceContext===`${sampleName(r.sample_id)} 的定量依據`?`<tr class="evidence-row"><td colspan="4">${evidencePanel(item)}</td></tr>`:''}`;}).join('')}</tbody></table></div></section>${state.evidence&&!itemRows(item).some(r=>state.evidenceContext===`${sampleName(r.sample_id)} 的定量依據`)?evidencePanel(item):''}<details class="internal-evidence"><summary>內部證據</summary>${internalPairSupportPanel(item)}</details>`);
       return;
@@ -1167,12 +1186,12 @@
   if (mode === 'offline') $('btn-report-info').addEventListener('click',event=>{dialogOpener=event.target;const r=data.selection||{},source=$('report-info-source').dataset,range=(a,b,f)=>a==null&&b==null?'不限':`${a==null?'不限':f(a)} 至 ${b==null?'不限':f(b)}`;setHTML($('report-info-body'),`<dl class="factlist"><dt>檢閱方式</dt><dd>${esc(source.strategyLabel)}</dd><dt>包含項目</dt><dd>${items.length} 筆（執行共 ${esc(source.runTotal)} 筆，${esc(source.eligibleCount)} 筆可供本次選取）</dd><dt>來源檔案</dt><dd>${esc(source.sourceName)}</dd><dt>可用資料</dt><dd>${esc(source.capabilityLabel)}</dd>${data.summary?.matrix_path?`<dt>Matrix 路徑</dt><dd>${esc(data.summary.matrix_path)}</dd>`:''}<dt>m/z 範圍</dt><dd>${range(r.mz_min,r.mz_max,mz)}</dd><dt>RT（min）</dt><dd>${range(r.rt_min,r.rt_max,rt)}</dd><dt>樣本</dt><dd>${r.sample_ids?.length?r.sample_ids.map(sampleName).map(esc).join('、'):'全部樣本'}</dd></dl>`);$('report-info-dialog').showModal();});
   $('report-info-close').addEventListener('click',()=>$('report-info-dialog').close());$('report-info-dialog').addEventListener('close',event=>{event.stopPropagation();if(!destroyed)dialogOpener?.focus();});
   function syncSignalSwitch(){
-    const curves=items.some(item=>item.curves?.length);
+    const curves=items.some(item=>item.curves?.length&&!item.delta_mass);
     root.querySelectorAll('.signal-switch,.signal-bar').forEach(el=>el.hidden=!curves);
     root.querySelectorAll('[data-signal]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.signal===display.signal)));
   }
   function refreshViews(){displayViews.forEach(view=>view());}
-  const showDisplay=()=>{syncSignalSwitch();detail();};
+  const showDisplay=()=>{syncSignalSwitch();if(data.summary?.source_kind!=='delta_mass_review')detail();};
   displayViews.add(showDisplay);cleanups.push(()=>displayViews.delete(showDisplay));
   root.addEventListener('click',event=>{
     const button=event.target.closest('[data-signal]');
