@@ -109,9 +109,10 @@ conditions set the reading order. `summarize_targeted_results` owns this order
 for the workbench and the workbook summary, so their 先看 counts match. It does
 not reclassify results.
 
-For Untargeted reports, groups with an explicitly unresolved saved decision are
-the priority queue. Ordinary missing values are not treated as abnormal or not
-detected. The default order uses unresolved-cell count, then numeric sample
+For Untargeted reports, the overview leads with the Matrix. Groups with an
+explicitly unresolved saved decision leave those samples blank; the overview
+states their count as context, one action away, not as a required review step.
+Ordinary missing values are not treated as abnormal or not detected. The default order uses unresolved-cell count, then numeric sample
 coverage; it is not a scientific score. The approximate m/z search ranks by
 distance and applies no implicit mass tolerance, so a match does not confirm
 compound identity.

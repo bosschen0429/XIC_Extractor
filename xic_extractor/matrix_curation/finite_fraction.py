@@ -78,9 +78,8 @@ class FiniteFractionStep:
     key = "finite_fraction"
     label = "有效值比例篩選"
     description = (
-        "保留在研究樣本中有足夠數值的 feature。分母是 sample_role=study_sample "
-        "且未排除的樣本；0 與有限的回填值都算有數值，空白不算。"
-        "這是數值可用率，不是偵測率。"
+        "保留在研究樣本中有足夠數值的 feature。只計未排除的研究樣本，"
+        "QC 與 Blank 不計；0 與回填值都算有數值，空白不算。"
     )
     parameters: tuple[StepParameter, ...] = (
         StepParameter(

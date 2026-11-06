@@ -21,9 +21,11 @@ input to downstream analysis, not a normalized or batch-corrected result.
    or custom NL tags and their combination. **套用至批次設定** updates the draft;
    **方法檔案工具** contains import and new-method actions. Parameters without a
    GUI control are retained.
-5. Check the sample summary. Open **樣本匯入與分組工具** to import **上機資訊**
-   or collaborator annotations and inspect unmatched or ambiguous entries.
-   Alphabetical file order is not injection order.
+5. Check sample roles and exclusions in **樣本明細**; statistical groups are
+   not inputs to this analysis. Roles and exclusions are shared with Targeted
+   and matrix curation. **上機資訊與樣本檔案（選用）** contains optional acquisition
+   information import and sample export. Alphabetical file order is not
+   injection order. Exclusion is a direct toggle and does not require a reason.
 6. Check the **內標** applicability summary below the samples. Choose or drop an
    XLSX, CSV or TSV file; **內標明細與檔案工具** contains the full table and shared
    XLSX example. Only `role=istd` rows are used;
@@ -34,11 +36,17 @@ input to downstream analysis, not a normalized or batch-corrected result.
 7. Press **開始 Untargeted 分析**. The finished run opens its result; **返回設定**
    goes back to the setup of the next analysis.
 
+Use **檢閱結果** to inspect quantitation, then **整理矩陣** to prepare a
+separate analysis matrix. The result card presents one main matrix download;
+**分析紀錄與其他檔案（進階）** holds trace files grouped by sample and the
+optional Inspector export. Candidate and physical-fact files are not ordinary
+workflow choices.
+
 **保存批次設定** saves the setup for reopening; starting analysis also saves it.
 **另存方法檔…** exports a reusable TOML without applying the edited method to the
 current batch. **開始新批次** clears RAW, acquisition information and the displayed
 samples, keeping the method, tuning, internal-standard list and result location.
-Confirmed groups and exclusions remain with their original RAW folder.
+Confirmed roles and exclusions remain with their original RAW folder.
 
 The GUI stores local Untargeted settings in `config/discovery_gui.json` and its
 edited method in `config/current_discovery_method.toml`. These are machine-local

@@ -125,8 +125,8 @@
     review.append(toolbar, range);
     const charts = node('div', undefined, 'tx-charts'); review.append(charts);
     const provenance = node('details', undefined, 'tx-provenance');
-    provenance.append(node('summary', '來源未驗證 · 檢視讀取設定'));
-    provenance.append(node('p', '依樣本名稱讀取 RAW；工作簿沒有原始 RAW 指紋，無法驗證是否為原分析檔。這是新取得的診斷曲線，峰界與數值來自已保存結果，不重新積分。'));
+    provenance.append(node('summary', '本次 RAW 讀取設定 · 尚未比對是否為分析原檔'));
+    provenance.append(node('p', '曲線已從目前選擇的 RAW 成功讀取，依樣本名稱配對。工作簿未保留可比對的原檔指紋，因此不能確認與原分析使用的是同一份檔案。峰界與面積沿用已保存結果，不重新積分；請確認下方 RAW 資料夾與檔名正確。'));
     const extraction = node('p'); provenance.append(extraction); review.append(provenance);
     let item, sample, rtWindow;
     const traces = () => item.curves.filter(curve => curve.sample_id === sample);
@@ -772,7 +772,7 @@
     const dash=lineDash(item),groups=new Map();
     const rows=catalog.filter(s=>!scope||scope.has(s.id)).map(s=>{
       const curves=bySample.get(s.id)||[], first=curves[0];
-      return {id:s.id,name:sampleName(s.id),group:s.group||data.sample_groups?.[s.id]||'未分組',curves,
+      return {id:s.id,name:sampleName(s.id),group:s.group||data.sample_groups?.[s.id]||'樣本',curves,
         dash:first?dash(first,curveOrigin(item,s.id)):'',available:curves.length>0};
     });
     for(const row of rows){

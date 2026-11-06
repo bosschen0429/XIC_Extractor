@@ -23,8 +23,8 @@ from xic_extractor.sample_metadata import SampleMetadata
 from xic_workbench.samples import from_payload, sample_annotations_path
 
 MISSING_SAMPLES = (
-    "找不到樣本資料：無法讀取這次分析的 RAW 資料夾，也沒有其他樣本資料。"
-    "請選擇樣本資料 TSV。"
+    "找不到本次分析的樣本資訊。請在「改用其他來源」補入樣本資料；"
+    "新分析會自動沿用並保存前面確認的角色、組別與排除設定。"
 )
 
 
@@ -37,12 +37,18 @@ def resolve_samples(
 ) -> tuple[tuple[SampleMetadata, ...] | None, dict[str, str] | None]:
     """Pick sample data and say where it came from.
 
-    Order: a chosen file, the run's own rows, the RAW folder's confirmed rows,
-    then the roles read from the run's RAW headers.
+    Order: a chosen file, the saved run snapshot, the run's in-memory rows,
+    confirmed folder rows, then RAW headers for older outputs.
     """
     if sample_metadata_path.strip():
         path = Path(sample_metadata_path.strip())
         return read_sample_metadata_file(path), {"kind": "file", "label": str(path)}
+    saved = source.source_dir / "sample_metadata.tsv"
+    if saved.is_file():
+        return read_sample_metadata_file(saved), {
+            "kind": "run",
+            "label": "已沿用這次分析保存的樣本資訊",
+        }
     rows = from_payload(samples)
     if rows is not None:
         return rows, {"kind": "run", "label": "本次 Untargeted 執行的樣本資料"}
@@ -89,6 +95,11 @@ def describe_source(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
         "matrix_path": str(source.matrix_path),
         "review_path": str(source.review_path),
         "sample_source": sample_source,
+        "sample_count": len(metadata or ()),
+        "study_sample_count": sum(
+            row.sample_role == "study_sample" and not row.excluded
+            for row in metadata or ()
+        ),
         "istd_source": istd_source,
         "istd_count": len(istd or ()),
         "steps": describe_steps(source, metadata, missing_samples=MISSING_SAMPLES),
@@ -126,6 +137,7 @@ def run_curation(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
         "output_dir": str(output_dir),
         "source_dir": str(source.source_dir),
         "summary_path": str(summary),
+        "matrix_tsv": str(output_dir / "analysis_matrix.tsv"),
         "feature_count": counts["feature_count"],
         "kept_feature_count": counts["kept_feature_count"],
         "published_paths": [

@@ -54,7 +54,7 @@ def test_annotation_file_is_one_per_raw_folder(tmp_path) -> None:
     assert first.name.startswith("Batch_A-") and first.suffix == ".tsv"
 
 
-def test_review_groups_use_confirmed_raw_stems_without_inference_or_raw_reads(tmp_path):
+def test_review_groups_use_confirmed_roles_by_raw_stem_without_raw_reads(tmp_path):
     config, raw_dir = tmp_path / "config", tmp_path / "raw"
     source = [
         {"sample_key": "canonical-study", "sample_stem": "Renamed_sample"},
@@ -70,7 +70,10 @@ def test_review_groups_use_confirmed_raw_stems_without_inference_or_raw_reads(tm
         [
             asdict(
                 SampleMetadata(
-                    "unrelated display alias", "RENAMED_sample", group="Study"
+                    "unrelated display alias",
+                    "RENAMED_sample",
+                    sample_role="study_sample",
+                    group="Study",
                 )
             ),
             asdict(SampleMetadata("Pool", "Pool", sample_role="pooled_qc")),
@@ -78,9 +81,11 @@ def test_review_groups_use_confirmed_raw_stems_without_inference_or_raw_reads(tm
             asdict(SampleMetadata("not in report", "extra", group="Excluded")),
         ],
     )
+    # Curves group by confirmed role; stored study groups are not shown.
     assert review_sample_groups(config, raw_dir, source) == {
-        "canonical-study": "Study",
-        "canonical-qc": "QC",
+        "canonical-study": "研究樣本",
+        "canonical-qc": "Pooled QC",
+        "TumorBC12345_DNA": "未指定",
     }
     assert review_sample_groups(config, tmp_path / "different-raw-folder", source) == {}
 
@@ -180,59 +185,25 @@ def test_confirmed_sample_metadata_preserves_qc_and_blank_roles(
     ]
 
 
-def test_read_offers_naming_suggestions_without_applying_them(
-    tmp_path, monkeypatch
-) -> None:
-    raw_dir = _raw_batch(
-        tmp_path, monkeypatch, ("TumorBC2312_DNA", "TumorBC2313_DNA", "QC_1")
-    )
-
-    result = read_batch_samples(tmp_path / "config", raw_dir, dll_dir=tmp_path)
-
-    assert result["group_suggestions"] == {
-        "TumorBC2312_DNA": "Tumor DNA",
-        "TumorBC2313_DNA": "Tumor DNA",
-        "QC_1": "QC",
-    }
-    assert all(row["group"] == "" for row in result["samples"])
-
-
-def test_overview_counts_analyzed_samples_by_group_key() -> None:
+def test_overview_lists_excluded_samples_with_their_reasons() -> None:
     rows = (
-        SampleMetadata("a", "a", sample_role="study_sample", group="Tumor"),
-        SampleMetadata("b", "b", sample_role="study_sample", group=" tumor "),
-        SampleMetadata("c", "c", sample_role="study_sample", group="Normal"),
-        SampleMetadata("d", "d", sample_role="study_sample"),
-        SampleMetadata("e", "e", sample_role="pooled_qc"),
-        SampleMetadata("f", "f", sample_role="blank"),
+        SampleMetadata("a", "a", sample_role="study_sample"),
         SampleMetadata(
             "g",
             "g",
             sample_role="study_sample",
-            group="Tumor",
             excluded=True,
             exclusion_reason="clogged",
         ),
+        SampleMetadata("h", "h", sample_role="blank", excluded=True),
     )
 
-    overview = sample_overview(rows)
-
-    assert [(g["group"], g["count"]) for g in overview["groups"]] == [
-        ("Tumor", 2),
-        ("Normal", 1),
-        ("Other", 1),
-        ("QC", 1),
-    ]
-    colors = {g["group"]: g["color"] for g in overview["groups"]}
-    assert colors["Other"] == "var(--group-other)"
-    assert colors["QC"] == "var(--group-qc)"
-    assert colors["Tumor"] != colors["Normal"]
-    # Every analyzed row carries its group's colour, whatever its spelling.
-    assert overview["row_groups"]["b"] == {"group": "tumor", "color": colors["Tumor"]}
-    assert "f" not in overview["row_groups"] and "g" not in overview["row_groups"]
-    assert overview["unassigned_study_samples"] == 1
-    assert overview["single_sample_groups"] == ["Normal"]
-    assert overview["excluded"] == [{"raw_stem": "g", "reason": "clogged"}]
+    assert sample_overview(rows) == {
+        "excluded": [
+            {"raw_stem": "g", "reason": "clogged"},
+            {"raw_stem": "h", "reason": ""},
+        ]
+    }
 
 
 def test_targeted_run_reads_confirmed_annotations_for_this_run_only(
@@ -266,101 +237,6 @@ def test_targeted_run_reads_confirmed_annotations_for_this_run_only(
     assert calls[1]["settings_overrides"] is None
 
 
-def test_collaborator_table_previews_matched_unmatched_and_ambiguous(
-    tmp_path,
-) -> None:
-    from openpyxl import Workbook
-
-    from xic_workbench.samples import preview_annotations
-
-    raw_stems = ["LiverA1", "LiverB1", "QC_1", "QC_2", "Dup_X", "DupX"]
-    pasted = (
-        "Sample\tCondition\tExclude?\tWhy\n"
-        "Liver A1\tFibrosis\t\t\n"
-        "Liver B1\tHealthy\tyes\tclot\n"
-        "Dup X\tFibrosis\t\t\n"
-        "Kidney C1\tHealthy\t\t\n"
-    )
-    columns = preview_annotations(raw_stems, text=pasted)
-    assert columns["columns"] == ["Sample", "Condition", "Exclude?", "Why"]
-    assert columns["guess"] == {"name": 0, "group": 1, "excluded": 2, "reason": 3}
-
-    preview = preview_annotations(raw_stems, text=pasted, columns=columns["guess"])
-    assert preview["matched"] == [
-        {
-            "raw_stem": "LiverA1",
-            "name": "Liver A1",
-            "group": "Fibrosis",
-            "excluded": False,
-            "exclusion_reason": "",
-        },
-        {
-            "raw_stem": "LiverB1",
-            "name": "Liver B1",
-            "group": "Healthy",
-            "excluded": True,
-            "exclusion_reason": "clot",
-        },
-    ]
-    assert preview["unmatched"] == ["Kidney C1"]
-    assert preview["ambiguous"] == ["Dup X"]
-
-    book = Workbook()
-    book.active.append(["File Name", "Group"])
-    book.active.append(["Liver A1", "Fibrosis"])
-    workbook = tmp_path / "collaborator.xlsx"
-    book.save(workbook)
-    from_file = preview_annotations(raw_stems, path=workbook)
-    assert from_file["guess"]["name"] == 0 and from_file["guess"]["group"] == 1
-    cohort = preview_annotations(raw_stems, text="Sample ID\tCohort\nLiver A1\t1\n")
-    assert cohort["guess"]["group"] == 1
-    matched = preview_annotations(
-        raw_stems, path=workbook, columns={"name": 0, "group": 1}
-    )["matched"]
-    assert [row["raw_stem"] for row in matched] == ["LiverA1"]
-
-
-def test_earlier_batch_metadata_carries_groups_by_sample_name(
-    tmp_path, monkeypatch
-) -> None:
-    from xic_workbench.samples import list_confirmed_annotations, preview_annotations
-
-    config = tmp_path / "config"
-    raw_dir = _raw_batch(tmp_path, monkeypatch, ("Tumor_A", "Normal_A"))
-    rows = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
-    rows[0].update(group="Tumor")
-    rows[1].update(excluded=True, exclusion_reason="hemolysed")
-    saved = Path(save_batch_samples(config, raw_dir, rows)["path"])
-
-    preview = preview_annotations(["Tumor-A", "Normal-A", "New_B"], path=saved)
-    assert preview["kind"] == "metadata"
-    assert [(r["raw_stem"], r["group"], r["excluded"]) for r in preview["matched"]] == [
-        ("Tumor-A", "Tumor", False),
-        ("Normal-A", "", True),
-    ]
-    assert list_confirmed_annotations(config) == [{"path": str(saved), "name": "raws"}]
-
-
-def test_earlier_metadata_binds_its_own_raw_exactly(tmp_path, monkeypatch) -> None:
-    from xic_workbench.samples import preview_annotations
-
-    config = tmp_path / "config"
-    raw_dir = _raw_batch(tmp_path, monkeypatch, ("Dup_X", "DupX", "Other"))
-    rows = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
-    rows[0].update(group="first")
-    rows[1].update(group="second")
-    saved = Path(save_batch_samples(config, raw_dir, rows)["path"])
-
-    preview = preview_annotations(["DupX", "Dup_X", "Other"], path=saved)
-
-    assert [(r["raw_stem"], r["group"]) for r in preview["matched"]] == [
-        ("DupX", "second"),
-        ("Dup_X", "first"),
-        ("Other", ""),
-    ]
-    assert preview["ambiguous"] == []
-
-
 def test_review_exclusion_keeps_the_batch_annotations(tmp_path, monkeypatch) -> None:
     import pytest
 
@@ -383,10 +259,8 @@ def test_review_exclusion_keeps_the_batch_annotations(tmp_path, monkeypatch) -> 
     assert saved["QC_1"].excluded is False
     assert result["overview"]["excluded"] == [{"raw_stem": "S1", "reason": "clogged"}]
 
-    # A confirmed folder keeps its edits; an exclusion needs its reason.
-    with pytest.raises(ValueError, match="請填寫排除原因"):
-        exclude_sample(config, raw_dir, "QC_1", " ", dll_dir=None)
-    exclude_sample(config, raw_dir, "QC_1", "carry-over", dll_dir=None)
+    # A confirmed folder keeps its edits; no reason is required.
+    exclude_sample(config, raw_dir, "QC_1", dll_dir=None)
     assert {
         row.raw_stem
         for row in load_sample_metadata(sample_annotations_path(config, raw_dir))
@@ -396,21 +270,15 @@ def test_review_exclusion_keeps_the_batch_annotations(tmp_path, monkeypatch) -> 
         exclude_sample(config, raw_dir, "Missing", "", dll_dir=None)
 
 
-def test_an_exclusion_without_reason_is_never_written(tmp_path, monkeypatch) -> None:
-    import pytest
-
+def test_an_exclusion_without_reason_is_saved_and_reused(tmp_path, monkeypatch) -> None:
     config = tmp_path / "config"
     raw_dir = _raw_batch(tmp_path, monkeypatch, ("S1", "S2"))
     rows = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
+    rows[1]["excluded"] = True
     save_batch_samples(config, raw_dir, rows)
-
-    rows[1].update(excluded=True, exclusion_reason=" ")
-    # The shared owner rejects it before anything is written.
-    with pytest.raises(ValueError, match="excluded samples require exclusion_reason"):
-        save_batch_samples(config, raw_dir, rows)
-    # The folder's file stays readable and unchanged.
     reread = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
-    assert reread[1]["excluded"] is False
+    assert reread[1]["excluded"] is True
+    assert reread[1]["exclusion_reason"] == ""
 
 
 def test_filename_preview_preserves_unknown_role_when_groups_are_saved(

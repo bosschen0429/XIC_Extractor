@@ -1096,14 +1096,11 @@ REVIEW_NAME = "same_compound_review.tsv"
 def group_outcome_review(
     result: StepResult,
     feature_ids: Sequence[str],
-    kept_by_other_steps: Sequence[bool],
     final_keep: Sequence[bool],
 ) -> tuple[list[dict[str, object]], int]:
-    """Groups another step empties, and groups with no row left at all.
+    """Report ion families whose representative a later feature filter removes.
 
-    A representative dropped by another enabled step is not replaced by one of
-    its members; each such group whose removed member would pass those steps is
-    reviewed, so systematically lost adduct-forming compounds stay visible.
+    Removed derivatives are not tested again or promoted as replacements.
     """
     index_of = {feature: index for index, feature in enumerate(feature_ids)}
     groups: dict[int, list[int]] = defaultdict(list)
@@ -1117,13 +1114,11 @@ def group_outcome_review(
         group = groups[root]
         if not final_keep[root] and not any(final_keep[index] for index in group):
             empty += 1
-        passing = [index for index in group if kept_by_other_steps[index]]
-        if not kept_by_other_steps[root] and passing:
             review.append(
                 review_row(
-                    "representative_dropped_member_passes",
+                    "group_removed_by_feature_filter",
                     feature_ids[root],
-                    sorted(feature_ids[index] for index in passing),
+                    sorted(feature_ids[index] for index in group),
                 )
             )
     return review, empty
@@ -1133,14 +1128,9 @@ class SameCompoundStep:
     key = "same_compound"
     label = "同化合物收斂"
     description = (
-        "排除同位素、Na⁺／K⁺／NH₄⁺、Mg／Ca adduct、鹽簇與聚集離子衍生列，"
-        "保留有證據的 [M+H]⁺，不改選較強的其他離子。元素或母列未定不阻擋排除。"
-        "只計直接偵測格：同一樣本 apex 差 "
-        "≤3 秒；加合物比例不穩時可由另外兩種已支持的單體加合形式共同佐證，"
-        "同位素比例與天然豐度檢查不放寬。"
-        "多種加合物、聚集離子與金屬同位素共同支持的家族，不要求先看到 [M+H]⁺。"
-        "質量關係以列中心 m/z 比對。"
-        "需要該次分析的 alignment_explanation.sqlite。"
+        "移除同一化合物的同位素、Na⁺／K⁺／NH₄⁺ 與 Mg／Ca adduct、鹽簇與聚集離子，"
+        "保留有證據的 [M+H]⁺。判定依據是同一樣本出峰時間相差 ≤3 秒，"
+        "且質量差與強度比例符合預期。"
     )
     parameters: tuple[StepParameter, ...] = ()
     needs_cell_evidence = True

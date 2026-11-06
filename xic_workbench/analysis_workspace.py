@@ -464,20 +464,6 @@ class AnalysisWorkspace:
                 values["raw_dir"], result["samples"], result["overview"]
             )
             return result
-        if action == "samples/annotations":
-            from xic_workbench.samples import (
-                list_confirmed_annotations,
-                preview_annotations,
-            )
-
-            if "raw_stems" not in values:
-                return {"confirmed": list_confirmed_annotations(self.config_dir)}
-            return preview_annotations(
-                [str(stem) for stem in values["raw_stems"]],
-                path=Path(values["path"]) if values.get("path") else None,
-                text=values.get("text"),
-                columns=values.get("columns"),
-            )
         if action == "samples/export":
             from xic_workbench.samples import export_samples
 

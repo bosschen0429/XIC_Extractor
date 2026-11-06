@@ -17,16 +17,18 @@ Excel workbook, read from batch summary to the individual results needing attent
 4. Select a saved target list and press **載入清單**, import a list, or choose
    **檢視與編輯** to open the full-height target table.
    **返回批次設定** (`Alt+Left`) preserves edits and returns to the batch summary.
-5. Check the sample summary. **樣本匯入與分組工具** contains acquisition-information
-   import, collaborator tables, previous grouping and sample export; conflicts
-   and exclusion counts remain visible without opening the tools.
+5. Check sample roles and exclusions in **樣本明細**. Statistical groups are
+   not required or edited here. **上機資訊與樣本檔案（選用）** contains optional
+   acquisition-information import and sample export. Confirmed roles and
+   exclusions are shared by both analysis workflows and matrix curation. Exclusion
+   is a direct toggle and does not require a reason.
 6. Press **開始 Targeted 分析** in the run panel.
 7. The finished run opens its result. Each run writes a new
    `<date>_<time>_targeted_<RAW folder>` folder under **結果存放位置**.
 
 **開始新批次** clears the RAW directory, injection-order source and displayed
 samples while retaining targets, DLL, the selected strategy and result location.
-Confirmed groups and exclusions stay with their original RAW folder. Settings
+Confirmed roles and exclusions stay with their original RAW folder. Settings
 edited after a run apply to the next analysis only; an opened result keeps the
 settings it ran with.
 
@@ -116,7 +118,7 @@ The normal output directory contains one XLSX only. A nonempty supplied sample
 context table remains in a hidden sheet so it can be inspected without sidecar
 files.
 
-Use **在結果檢閱開啟** after completion, or open the XLSX in the
+Use **檢閱結果** after completion, or open the XLSX in the
 workbench's result picker. Inspector shows saved values without RAW, DLLs,
 recomputation or additional output files. Start with the batch overview, select
 a target or review action, then a sample for its details. The workbook does not contain chromatogram curves.

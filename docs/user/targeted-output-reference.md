@@ -72,7 +72,7 @@ the workbook in Inspector and use its attention filter.
 | Reason | Full recorded explanation of the result |
 | Review Evidence | Additional review evidence, including diagnostic details not recoverable from the short reason alone |
 | Role | `Analyte` or `ISTD`; retained for established ISTD readers |
-| Group | Sample grouping |
+| Group | Explicit sample group; otherwise the sample role (`Sample`, `QC`, `Blank`, …) |
 | NL | Recorded neutral-loss status; retained for existing evidence readers |
 | Int / PeakWidth | Raw apex intensity and peak width |
 

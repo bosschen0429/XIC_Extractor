@@ -1,6 +1,6 @@
 // Job submission/cancellation, progress and completion feedback.
 import {
-  artifactLink,
+  artifactDetails,
   openReview,
   renderResults,
   showArtifact,
@@ -114,8 +114,14 @@ export function renderJob() {
     `[data-job-slot="${onResult ? "curation" : state.view}"]`,
   );
   if (slot && card.parentElement !== slot) slot.append(card);
+  // A completed analysis is summarized by its result card at the top of the
+  // page, so a setup page does not repeat it as a finished job.
+  const summarizedByResult =
+    !onResult && job?.status === "succeeded" && job.kind in resultIds;
   card.hidden =
-    !job || (onResult ? job.kind !== "curation" : pageOf(job) !== state.view);
+    !job ||
+    summarizedByResult ||
+    (onResult ? job.kind !== "curation" : pageOf(job) !== state.view);
   lock();
   renderActivity();
   if (!job) return;
@@ -153,6 +159,7 @@ export function renderJob() {
   } else $("analysis-progress").removeAttribute("value");
   $("analysis-stop").hidden = !isRunning();
   $("analysis-stop").disabled = job.status === "cancelling" || !job.cancellable;
+  const filesOpen = $("analysis-job-outputs").querySelector("details")?.open;
   $("analysis-job-outputs").replaceChildren();
   if (analysisDone)
     $("analysis-job-outputs").append(
@@ -167,11 +174,16 @@ export function renderJob() {
         "chevron-right",
       ),
     );
-  else
-    for (const item of job.available_outputs || []) {
-      if (item.artifact)
-        $("analysis-job-outputs").append(artifactLink(item.artifact));
+  else {
+    const artifacts = (job.available_outputs || []).flatMap((item) =>
+      item.artifact ? [item.artifact] : [],
+    );
+    if (artifacts.length) {
+      const files = artifactDetails(artifacts, job.output_dir);
+      files.open = Boolean(filesOpen);
+      $("analysis-job-outputs").append(files);
     }
+  }
   if (isRunning() || state.seenJob === job.job_id) return;
   markJobSeen(job.job_id);
   if (!state.booted) {

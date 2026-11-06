@@ -128,9 +128,10 @@ explicitly excluded file does not need to open successfully.
 
 ### Sample groups and exclusions
 
-- An explicit metadata `group` wins. Otherwise `qc` and `pooled_qc` roles
-  display `QC`, and every other role displays `Other`. Sample-name keywords
-  never assign groups; naming suggestions apply only when the user accepts them.
+- An explicit metadata `group` wins. Otherwise the role decides: `study_sample`
+  displays `Sample`, `qc` and `pooled_qc` display `QC`, `blank` displays
+  `Blank`, other known roles display their role name, and `unknown` displays
+  `Other`. Sample names never assign groups.
 - Group comparison is case-insensitive after whitespace normalization. Blank
   and `Other` mean unassigned.
 - Sequence documents and ordinary delimited tables are matched by normalized

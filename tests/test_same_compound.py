@@ -832,17 +832,15 @@ def test_group_review_follows_other_steps_and_counts_empty_groups():
         keep=(True, False, False),
     )
     review, empty = group_outcome_review(
-        result, ["R", "M1", "M2"], [False, True, False], [False, False, False]
+        result, ["R", "M1", "M2"], [False, False, False]
     )
     assert [(row["review_kind"], row["feature_id"]) for row in review] == [
-        ("representative_dropped_member_passes", "R")
+        ("group_removed_by_feature_filter", "R")
     ]
-    assert review[0]["related_feature_ids"] == "M1"
+    assert review[0]["related_feature_ids"] == "M1;M2"
     assert empty == 1
 
-    _, empty = group_outcome_review(
-        result, ["R", "M1", "M2"], [False, True, False], [True, False, False]
-    )
+    _, empty = group_outcome_review(result, ["R", "M1", "M2"], [True, False, False])
     assert empty == 0
 
 
@@ -1037,7 +1035,7 @@ def test_export_excludes_unassigned_derivative_without_inventing_a_parent(
     assert summary["steps"][0]["confirmed_mh_count"] == 1
 
 
-def test_steps_judge_independently_and_istd_overrides_their_conjunction(
+def test_derivatives_are_removed_before_feature_filtering_and_istd_is_protected(
     tmp_path, synthetic_cells
 ):
     _curation_folder(tmp_path / "alignment")
@@ -1051,11 +1049,18 @@ def test_steps_judge_independently_and_istd_overrides_their_conjunction(
 
     for feature, decision in both.items():
         for column, value in decision.items():
-            if column.startswith("finite_"):
+            if column.startswith("finite_") and feature != "F000002":
                 assert fraction_only[feature][column] == value
             if column.startswith("same_compound_"):
                 assert same_only[feature][column] == value
     assert both["F000002"]["same_compound_representative_feature_id"] == "F000001"
+    assert both["F000002"]["finite_fraction_decision"] == "not_evaluated"
+    assert both["F000002"]["finite_count"] == ""
+    assert [step["key"] for step in summary["steps"]] == [
+        "same_compound",
+        "finite_fraction",
+    ]
+    assert [step["input_feature_count"] for step in summary["steps"]] == [4, 3]
     assert both["F000001"]["same_compound_ion_form"] == CONFIRMED_MH
     assert [both[f"F00000{index}"]["decision"] for index in range(1, 5)] == [
         "drop",
@@ -1069,8 +1074,8 @@ def test_steps_judge_independently_and_istd_overrides_their_conjunction(
     assert [
         (row["review_kind"], row["feature_id"], row["related_feature_ids"])
         for row in review
-    ] == [("representative_dropped_member_passes", "F000001", "F000002")]
-    step = summary["steps"][1]
+    ] == [("group_removed_by_feature_filter", "F000001", "F000002")]
+    step = summary["steps"][0]
     assert (step["removed_feature_count"], step["empty_group_count"]) == (1, 1)
     # Without another step nothing can empty a group.
     _, review = read_tsv_with_header(output / "same_compound_review.tsv")
@@ -1095,10 +1100,8 @@ def test_steps_judge_independently_and_istd_overrides_their_conjunction(
         "drop",
     )
     assert summary["istd"]["protected_feature_count"] == 1
-    assert summary["steps"][1]["empty_group_count"] == 0
-    assert summary["steps"][1]["review_by_kind"] == {
-        "representative_dropped_member_passes": 1
-    }
+    assert summary["steps"][0]["empty_group_count"] == 0
+    assert summary["steps"][0]["review_by_kind"] == {}
 
 
 def test_same_compound_is_unavailable_without_the_run_explanation(tmp_path):

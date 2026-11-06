@@ -113,6 +113,8 @@ def test_cli_keeps_original_rows_and_records_each_decision(tmp_path):
             "key": "finite_fraction",
             "parameters": {"min_finite_fraction": 2 / 3},
             "kept_feature_count": 2,
+            "input_feature_count": 4,
+            "removed_feature_count": 2,
             "eligible_matrix_columns": ["S1", "S2", "S3"],
         }
     ]
@@ -200,13 +202,19 @@ def test_sample_data_prefers_file_then_run_then_confirmed_then_raw_headers(
     # The run's RAW folder is not on this computer: nothing to bind.
     missing = detect()
     assert missing["sample_source"] is None
-    assert "找不到樣本資料" in missing["steps"][0]["unavailable_reason"]
+
+    def finite(detection):
+        return next(
+            step for step in detection["steps"] if step["key"] == "finite_fraction"
+        )
+
+    assert "找不到本次分析的樣本資訊" in finite(missing)["unavailable_reason"]
     assert header_reads == []
 
     raw_dir.mkdir()
     from_headers = detect()
     assert from_headers["sample_source"] == {"kind": "raw", "label": str(raw_dir)}
-    assert from_headers["steps"][0]["unavailable_reason"] == ""
+    assert finite(from_headers)["unavailable_reason"] == ""
     assert header_reads == [(raw_dir, source / "dll")]
 
     confirmed = save_batch_samples(config, raw_dir, sample_payload())["path"]
@@ -219,6 +227,27 @@ def test_sample_data_prefers_file_then_run_then_confirmed_then_raw_headers(
     assert chosen["sample_source"] == {"kind": "file", "label": str(samples)}
     assert len(header_reads) == 1
     assert Path(chosen["output_dir"]).parent == source
+
+
+def test_saved_run_samples_are_reused_without_raw_or_current_batch_settings(tmp_path):
+    from xic_extractor.matrix_curation.export import (
+        locate_curation_source,
+        read_run_samples,
+    )
+    from xic_workbench.matrix_curation import describe_source, resolve_samples
+
+    folder = alignment_output(tmp_path / "alignment")
+    saved = sample_rows()
+    saved[0]["group"] = "original batch"
+    write_tsv(folder / "sample_metadata.tsv", saved, SAMPLE_METADATA_COLUMNS)
+    source = locate_curation_source(folder)
+    rows, origin = resolve_samples(tmp_path / "config", source, samples=[])
+    assert origin["kind"] == "run"
+    assert rows == read_run_samples(source)
+    assert rows[0].group == "original batch"
+    detected = describe_source(tmp_path / "config", {"source_dir": str(folder)})
+    assert detected["sample_count"] == len(saved)
+    assert detected["study_sample_count"] == 3
 
 
 def test_workbench_job_matches_cli_and_writes_inside_the_source(tmp_path):

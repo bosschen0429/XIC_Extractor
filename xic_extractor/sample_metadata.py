@@ -1006,10 +1006,6 @@ def _parse_sample_metadata_row(
             f"{source}:{row_number}: unsupported sample_role {sample_role!r}"
         )
     excluded = _parse_bool(row["excluded"], "excluded", source, row_number)
-    if excluded and not row["exclusion_reason"]:
-        raise SampleMetadataError(
-            f"{source}:{row_number}: excluded samples require exclusion_reason"
-        )
     return SampleMetadata(
         sample_name=sample_name,
         raw_stem=raw_stem,

@@ -1,5 +1,5 @@
 // Setup/result navigation, readiness checklists and unsaved-setting feedback.
-import { openCuration } from "./analysis_curation.js";
+import { loadCurationSource } from "./analysis_curation.js";
 import { renderJob } from "./analysis_jobs.js";
 import { sampleId, samplePages } from "./analysis_samples.js";
 import { setDirty, setView, state } from "./analysis_state.js";
@@ -96,14 +96,19 @@ export function prepareResult(page) {
   $("result-curation").ontoggle = () => {
     if (!$("result-curation").open) return;
     const folder = page.source.replace(/[\\/][^\\/]+$/, "");
-    if (state.curation.runSource !== folder)
-      act(() => openCuration(folder, null));
+    if (state.curation.runSource !== folder) {
+      const run = state.analysis.results.untargeted;
+      act(() => loadCurationSource(folder, run?.output_dir === folder ? run.samples : null));
+    }
   };
 }
 export function showResult() {
   if (!showingResult()) window.XicUi.navigation.push();
   showMode("result");
   window.scrollTo(0, 0);
+  // Do not leave focus on a run control moved inside the optional, closed panel.
+  $("batch-title").tabIndex = -1;
+  $("batch-title").focus({ preventScroll: true });
 }
 export function selectView(view, persist = true) {
   if (persist && (view !== state.view || showingResult()))
@@ -211,7 +216,7 @@ export function checklist(kind) {
     }),
   );
 }
-// Counts come from the server's group owner; this only words them.
+// Sample readiness covers roles and exclusions; statistical groups are not inputs.
 function sampleItems(page) {
   const set = state.sampleSets[page];
   const refresh = sampleId(page, "samples-refresh");
@@ -221,60 +226,26 @@ function sampleItems(page) {
     return [
       checkItem(
         "info",
-        "樣本與上機資訊（選用）",
+        "樣本角色（選用）",
         order
-          ? `上機資訊 ${pathTail(order)}；可先列出檔名並確認角色、組別與排除`
-          : "尚未讀取；可先列出檔名並確認角色、組別與排除",
+          ? `上機資訊 ${pathTail(order)}；可先確認角色與排除；分組不是分析輸入`
+          : "可直接分析時讀取 RAW 角色；也可在樣本明細先確認角色與排除",
         refresh,
       ),
     ];
   }
   const items = [
-    checkItem("ok", "樣本與上機資訊", `${set.rows.length} 個樣本已讀取`, edit),
+    checkItem("ok", "樣本角色", `${set.rows.length} 個樣本已讀取`, edit),
   ];
   const overview = set.overview;
   if (!overview) return items;
-  items.push(
-    checkItem(
-      "info",
-      "各組樣本數",
-      overview.groups.map((g) => `${g.group} ${g.count}`).join(" · ") ||
-        (set.rows.some((row) => row.sample_role === "unknown")
-          ? "樣本角色待確認；執行時讀取 RAW 資訊"
-          : "沒有要分析的樣本"),
-      edit,
-    ),
-  );
-  if (overview.unassigned_study_samples)
-    items.push(
-      checkItem(
-        "todo",
-        "未標組別的研究樣本",
-        `${overview.unassigned_study_samples} 個，會歸到 Other`,
-        edit,
-      ),
-    );
-  if (overview.single_sample_groups.length)
-    items.push(
-      checkItem(
-        "todo",
-        "只有 1 個樣本的組別",
-        overview.single_sample_groups.join("、"),
-        edit,
-      ),
-    );
   if (overview.excluded.length) {
-    const reasons = new Map();
-    for (const row of overview.excluded) {
-      const reason = row.reason || "未填原因";
-      reasons.set(reason, (reasons.get(reason) || 0) + 1);
-    }
     items.push(
       checkItem(
         "info",
         "排除的樣本",
         `${overview.excluded.length} 個：` +
-          [...reasons].map(([reason, n]) => `${reason} ×${n}`).join("、"),
+          overview.excluded.map((row) => row.raw_stem).join("、"),
         edit,
       ),
     );

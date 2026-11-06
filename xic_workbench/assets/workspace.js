@@ -281,10 +281,9 @@ window.XicUi = (() => {
     const dialog = $("exclude-dialog");
     $("exclude-message").textContent =
       `把 ${sample_id} 標記為排除：之後分析這個 RAW 資料夾時不再分析它。`;
-    $("exclude-reason").value = "";
     dialog.returnValue = "cancel";
     dialog.showModal();
-    $("exclude-reason").focus();
+    $("exclude-accept").focus();
     const accepted = await new Promise(resolve =>
       dialog.addEventListener("close", () => resolve(dialog.returnValue === "ok"), { once: true }));
     if (!accepted) return;
@@ -295,7 +294,6 @@ window.XicUi = (() => {
         dll_dir,
         sequence_source,
         raw_stem: sample_id,
-        reason: $("exclude-reason").value,
       });
       document.dispatchEvent(new CustomEvent("xic:samples-confirmed", {
         detail: { raw_dir, samples: result.samples, overview: result.overview },
@@ -477,11 +475,11 @@ window.XicUi = (() => {
     $("selection-empty-title").textContent = title;
     $("selection-empty-description").textContent = description;
   }
+  const reviewScopes = {matrix: "矩陣群組", unresolved: "多峰留空的群組", archive: "未採用群組", candidates: "未分組候選"};
   function emptyResultGuidance() {
     const filters = state.filters, parts = [];
     if (state.page.source_kind !== "targeted_workbook") {
-      const scopes = {matrix: "矩陣群組", unresolved: "未解決定量", archive: "未採用群組", candidates: "未分組候選"};
-      parts.push(`範圍：${scopes[state.page.review_scope] || "所有紀錄"}`);
+      parts.push(`範圍：${reviewScopes[state.page.review_scope] || "所有紀錄"}`);
     }
     if (filters.target_role) parts.push(`類別：${filters.target_role}`);
     if (filters.target_id) parts.push(`目標：${filters.target_id}`);
@@ -671,18 +669,24 @@ window.XicUi = (() => {
     };
     const lead = node("div", undefined, "overview-lead");
     const heading = node("div", undefined, "overview-heading");
-    heading.append(node("h2", summary.unresolved_count ? `先看 ${count(summary.unresolved_count)} 組未解決定量` : "矩陣中沒有未解決定量"));
+    heading.append(node("h2", `${count(summary.matrix_count)} 組進入矩陣`));
     const actions = node("div", undefined, "overview-actions");
-    if (summary.unresolved_count) openScope("先看未解決定量", "unresolved", actions, "primary");
-    openScope("查看全部矩陣群組", "matrix", actions);
+    openScope("瀏覽矩陣群組", "matrix", actions, "primary");
     heading.append(actions);
     const metrics = node("div", undefined, "overview-metrics");
-    for (const [value, label] of [[summary.matrix_count, "進入矩陣"], [summary.complete_count, "全部樣本都有值"]]) {
-      const metric = node("div"); metric.append(node("strong", count(value)), node("span", label)); metrics.append(metric);
+    const complete = node("div"); complete.append(node("strong", count(summary.complete_count)), node("span", "全部樣本都有值")); metrics.append(complete);
+    if (summary.unresolved_count) {
+      // Unresolved cells stay blank in the Matrix: a count to open, not a task.
+      const unresolved = node("button", undefined, "overview-metric-link"); unresolved.type = "button"; unresolved.dataset.idle = "";
+      unresolved.title = "有多個可能的峰、無法判定，矩陣中留空";
+      unresolved.append(node("strong", count(summary.unresolved_count)), node("span", "部分樣本多峰留空"));
+      unresolved.addEventListener("click", () => action(async () => {
+        navigation.push(); $("query-form").reset(); await query(0, {review_scope: "unresolved"});
+      }));
+      metrics.append(unresolved);
     }
     lead.append(heading, metrics);
     host.append(lead);
-    if (summary.uncalibrated_count) host.append(node("p", `${summary.uncalibrated_count} / ${summary.samples.length} 樣本未建立內標 RT 校正 · XIC 顯示原始時間，不代表內標未檢出`, "overview-unknown"));
     const table = node("table", undefined, "overview-table overview-coverage");
     const head = node("tr"); head.append(node("th", "樣本"), node("th", "有定量值的矩陣群組")); table.append(head);
     for (const sample of summary.samples) {
@@ -739,7 +743,9 @@ window.XicUi = (() => {
     $("review").hidden = false;
     $("review-empty").hidden = true;
     $("batch-title").textContent = targeted ? "Targeted 結果" : "Untargeted 結果";
-    $("batch-description").textContent = page.source.split(/[\\/]/).pop();
+    // Untargeted evidence files share one name; the run folder identifies the batch.
+    const sourceParts = page.source.split(/[\\/]/);
+    $("batch-description").textContent = targeted ? sourceParts.at(-1) : sourceParts.at(-2) || sourceParts.at(-1);
     $("batch-description").hidden = false;
     $("batch-description").className = "mono";
     $("batch-description").title = page.source;
@@ -749,7 +755,7 @@ window.XicUi = (() => {
       download.href = page.result_artifact.url;
       download.download = page.result_artifact.name;
       download.title = page.result_artifact.name;
-      download.querySelector("span").textContent = targeted ? "下載結果 XLSX" : "下載矩陣 TSV";
+      download.querySelector("span").textContent = targeted ? "下載結果 Excel" : "下載 Alignment 矩陣";
     } else {
       download.removeAttribute("href");
       download.removeAttribute("download");
@@ -760,7 +766,7 @@ window.XicUi = (() => {
       : `${count(page.samples.length)} 樣本 · ${count(page.run_total)} ${targeted ? "目標" : "項目"}`;
     const filtered = page.matched_count !== page.run_total;
     const untargetedScope = page.overview?.kind === "untargeted";
-    const scopeName = ({matrix: "矩陣群組", unresolved: "未解決定量", archive: "未採用群組", candidates: "未分組候選"})[page.review_scope];
+    const scopeName = reviewScopes[page.review_scope];
     $("list-summary").replaceChildren(
       node("strong", untargetedScope ? scopeName || "所有紀錄" : noun),
       node("span", untargetedScope ? `${count(page.matched_count)} 組`

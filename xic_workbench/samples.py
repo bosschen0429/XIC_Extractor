@@ -11,25 +11,20 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.analysis_set import ANALYSIS_SAMPLE_ROLES, discover_raw_files
+from xic_extractor.analysis_set import discover_raw_files
 from xic_extractor.raw_sequence import read_analysis_set
 from xic_extractor.sample_groups import (
-    resolve_sample_group,
     sample_group_key,
-    suggest_sample_groups,
 )
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
     SAMPLE_ROLES,
     SampleMetadata,
-    is_sample_metadata_source,
     load_and_match_sample_metadata,
     load_sample_metadata,
-    match_sample_metadata,
     parse_sample_metadata,
 )
-from xic_inspector.rendering.group_colors import group_colors
 
 ROLE_CHOICES = (
     "study_sample",
@@ -41,6 +36,17 @@ ROLE_CHOICES = (
     "system_suitability",
     "unknown",
 )
+# Mirrors the role labels of the Workbench sample editor.
+ROLE_LABELS = {
+    "study_sample": "研究樣本",
+    "qc": "QC",
+    "pooled_qc": "Pooled QC",
+    "blank": "Blank",
+    "calibrator": "校正品",
+    "solvent": "溶劑",
+    "system_suitability": "系統適用性",
+    "unknown": "未指定",
+}
 _SAMPLE_FIELDS = tuple(SAMPLE_METADATA_COLUMNS[1:])
 # Kept in the shared sample-metadata format so Targeted, Untargeted and the CLI
 # read confirmed annotations through the same sequence-source path.
@@ -58,7 +64,7 @@ def sample_annotations_path(config_dir: Path, raw_dir: Path) -> Path:
 def review_sample_groups(
     config_dir: Path, raw_dir: Path, source_samples: list[dict[str, Any]]
 ) -> dict[str, str]:
-    """Join confirmed folder annotations to report IDs through their RAW stems.
+    """Label review curves by each sample's confirmed role, via RAW stems.
 
     This is display context, not a rewrite of historical analysis metadata.
     Reading annotations needs neither RAW enumeration nor instrument headers.
@@ -66,17 +72,16 @@ def review_sample_groups(
     path = sample_annotations_path(config_dir, raw_dir)
     if not path.is_file():
         return {}
-    annotations = {
-        row.raw_stem.casefold(): resolve_sample_group(row)
+    roles = {
+        row.raw_stem.casefold(): ROLE_LABELS[row.sample_role]
         for row in load_sample_metadata(path)
     }
-    groups = {}
+    labels = {}
     for sample in source_samples:
         stem = sample.get("sample_stem", sample["sample_key"])
-        group = annotations.get(stem.casefold(), "")
-        if sample_group_key(group):
-            groups[sample["sample_key"]] = group
-    return groups
+        if label := roles.get(stem.casefold()):
+            labels[sample["sample_key"]] = label
+    return labels
 
 
 def read_batch_samples(
@@ -140,188 +145,11 @@ def _write_confirmed(path: Path, metadata: Sequence[SampleMetadata]) -> None:
     _write_rows(path, metadata)
 
 
-_TABLE_HINTS = {
-    "name": ("sample", "name", "樣品", "樣本", "檔名", "file", "raw"),
-    "group": (
-        "group",
-        "組",
-        "type",
-        "類別",
-        "condition",
-        "cohort",
-        "class",
-        "category",
-        "arm",
-    ),
-    "excluded": ("exclu", "排除"),
-    "reason": ("reason", "why", "note", "remark", "原因", "備註"),
-}
-_EXCLUDED_WORDS = {"true", "yes", "y", "1", "x", "v", "✓", "排除", "是"}
-
-
-def list_confirmed_annotations(config_dir: Path) -> list[dict[str, Any]]:
-    """Confirmed folders in this workspace, newest first, for reuse."""
-    store = Path(config_dir) / ANNOTATIONS_DIR
-    files = sorted(
-        store.glob("*.tsv") if store.is_dir() else (),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
-    return [{"path": str(path), "name": path.stem.rsplit("-", 1)[0]} for path in files]
-
-
-def preview_annotations(
-    raw_stems: Sequence[str],
-    *,
-    path: Path | None = None,
-    text: str | None = None,
-    columns: dict[str, int | None] | None = None,
-) -> dict[str, Any]:
-    """Match a collaborator table or earlier sample metadata to this batch.
-
-    Earlier sample metadata carries its own columns. Other tables first return
-    their columns; with the chosen name/group/exclusion columns they return
-    which RAW each row names, using the shared sequence-name matching.
-    """
-    if (
-        path is not None
-        and path.suffix.lower() in {".csv", ".tsv", ".txt"}
-        and is_sample_metadata_source(path)
-    ):
-        rows = load_sample_metadata(path)
-        kind = "metadata"
-    else:
-        header, body = _read_table(path, text)
-        if columns is None:
-            return {
-                "kind": "table",
-                "columns": header,
-                "guess": _guess_columns(header),
-            }
-        rows = _table_rows(body, columns)
-        kind = "table"
-    stems = list(raw_stems)
-    passes = []
-    if kind == "metadata":
-        # Earlier metadata binds its own RAW exactly; the rest, such as a new
-        # batch named the same way, falls back to sequence-name matching.
-        exact = match_sample_metadata(rows, stems, exact_raw_stems=True)
-        passes.append((exact, stems))
-        bound = {stem.casefold() for stem in exact.matched_raw_stems}
-        rows = tuple(row for row in rows if row.raw_stem.casefold() not in bound)
-        stems = list(exact.unmatched_raw_stems)
-    report = match_sample_metadata(rows, stems)
-    passes.append((report, stems))
-    by_stem = {
-        stem: row
-        for result, inputs in passes
-        for stem, row in zip(inputs, result.rows, strict=True)
-        if stem in set(result.matched_raw_stems)
-    }
-    return {
-        "kind": kind,
-        "matched": [
-            {
-                "raw_stem": stem,
-                "name": by_stem[stem].sample_name,
-                "group": by_stem[stem].group,
-                "excluded": by_stem[stem].excluded,
-                "exclusion_reason": by_stem[stem].exclusion_reason,
-            }
-            for stem in raw_stems
-            if stem in by_stem
-        ],
-        "unmatched": list(report.unmatched_sequence_names),
-        "ambiguous": list(report.ambiguous_sequence_names),
-    }
-
-
-def _read_table(
-    path: Path | None, text: str | None
-) -> tuple[list[str], list[list[str]]]:
-    if text is not None and text.strip():
-        delimiter = "\t" if "\t" in text else ","
-        raw = list(csv.reader(text.splitlines(), delimiter=delimiter))
-    elif path is not None and path.suffix.lower() in {".xlsx", ".xlsm"}:
-        from openpyxl import load_workbook
-
-        book = load_workbook(path, read_only=True, data_only=True)
-        try:
-            raw = [
-                [_cell_text(value) for value in row]
-                for row in book.worksheets[0].iter_rows(values_only=True)
-            ]
-        finally:
-            book.close()
-    elif path is not None and path.suffix.lower() in {".csv", ".tsv", ".txt"}:
-        delimiter = "," if path.suffix.lower() == ".csv" else "\t"
-        with path.open(newline="", encoding="utf-8-sig") as handle:
-            raw = list(csv.reader(handle, delimiter=delimiter))
-    else:
-        raise ValueError("請選擇 Excel、CSV、TSV 檔，或貼上兩欄以上的表格。")
-    rows = [
-        [cell.strip() for cell in row] for row in raw if any(c.strip() for c in row)
-    ]
-    if len(rows) < 2 or len(rows[0]) < 2:
-        raise ValueError("表格需要標題列，以及至少兩欄、一列資料。")
-    width = max(len(row) for row in rows)
-    rows = [row + [""] * (width - len(row)) for row in rows]
-    header = [name or f"第 {index + 1} 欄" for index, name in enumerate(rows[0])]
-    return header, rows[1:]
-
-
-def _cell_text(value: object) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, float) and value.is_integer():
-        return str(int(value))
-    return str(value)
-
-
-def _guess_columns(header: Sequence[str]) -> dict[str, int | None]:
-    guess: dict[str, int | None] = {}
-    for field, hints in _TABLE_HINTS.items():
-        guess[field] = next(
-            (
-                index
-                for index, name in enumerate(header)
-                if any(hint in name.casefold() for hint in hints)
-                and index not in guess.values()
-            ),
-            None,
-        )
-    if guess["name"] is None:
-        guess["name"] = 0
-    return guess
-
-
-def _table_rows(
-    body: Sequence[Sequence[str]], columns: dict[str, int | None]
-) -> tuple[SampleMetadata, ...]:
-    name, group, excluded, reason = (
-        columns.get(key) for key in ("name", "group", "excluded", "reason")
-    )
-    if name is None or (group is None and excluded is None):
-        raise ValueError("請指定名稱欄，以及組別欄或排除欄。")
-    return tuple(
-        SampleMetadata(
-            sample_name=row[name],
-            raw_stem=row[name],
-            group=row[group] if group is not None else "",
-            excluded=excluded is not None
-            and row[excluded].casefold() in _EXCLUDED_WORDS,
-            exclusion_reason=row[reason] if reason is not None else "",
-        )
-        for row in body
-        if row[name]
-    )
-
-
 def exclude_sample(
     config_dir: Path,
     raw_dir: Path,
     raw_stem: str,
-    reason: str,
+    reason: str = "",
     *,
     dll_dir: Path | None,
     sequence_source: Path | None = None,
@@ -345,45 +173,15 @@ def exclude_sample(
     )
     if target is None:
         raise ValueError(f"{raw_stem} 不在這個 RAW 資料夾的樣品資訊中。")
-    if not reason.strip():
-        raise ValueError("請填寫排除原因。")
     target["excluded"] = True
-    target["exclusion_reason"] = reason.strip()
+    if reason.strip():
+        target["exclusion_reason"] = reason.strip()
     return {**save_batch_samples(config_dir, raw_dir, rows), "samples": rows}
 
 
 def sample_overview(rows: Sequence[SampleMetadata]) -> dict[str, Any]:
-    """Pre-run counts over the samples that will be analyzed."""
-    groups: dict[str, dict[str, Any]] = {}
-    resolved: dict[str, str] = {}
-    unassigned = 0
-    for row in rows:
-        if row.excluded or row.sample_role not in ANALYSIS_SAMPLE_ROLES:
-            continue
-        group = resolve_sample_group(row)
-        resolved[row.raw_stem] = group
-        key = sample_group_key(group) or "other"
-        entry = groups.setdefault(key, {"group": group, "count": 0})
-        entry["count"] += 1
-        if row.sample_role == "study_sample" and not sample_group_key(row.group):
-            unassigned += 1
-    # The analyzed population is the one a Targeted run writes, so the
-    # Inspector colours the same groups the same way.
-    colors = group_colors(resolved.values())
-    for entry in groups.values():
-        entry["color"] = colors[entry["group"]]
+    """Pre-run facts the setup checklist shows."""
     return {
-        "groups": list(groups.values()),
-        "row_groups": {
-            stem: {"group": group, "color": colors[group]}
-            for stem, group in resolved.items()
-        },
-        "unassigned_study_samples": unassigned,
-        "single_sample_groups": [
-            entry["group"]
-            for entry in groups.values()
-            if entry["count"] == 1 and entry["group"] not in {"QC", "Other"}
-        ],
         "excluded": [
             {"raw_stem": row.raw_stem, "reason": row.exclusion_reason}
             for row in rows
@@ -409,11 +207,6 @@ def _keep_confirmed(
 def _with_overview(result: dict[str, Any]) -> dict[str, Any]:
     rows = from_payload(result["samples"]) or ()
     result["overview"] = sample_overview(rows)
-    names = [row.sample_name or row.raw_stem for row in rows]
-    suggested = suggest_sample_groups(names)
-    result["group_suggestions"] = {
-        row.raw_stem: suggested[name] for row, name in zip(rows, names, strict=True)
-    }
     return result
 
 

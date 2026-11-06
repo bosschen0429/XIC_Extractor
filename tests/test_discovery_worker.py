@@ -61,7 +61,11 @@ def _full_request(
     monkeypatch.setattr(
         module,
         "read_analysis_set",
-        lambda *_args: SimpleNamespace(raw_paths=(raw_path,)),
+        lambda _raw_dir, _dll_dir, samples: SimpleNamespace(
+            raw_paths=(raw_path,),
+            sample_metadata=samples
+            or (SampleMetadata("A", "A", sample_role="study_sample"),),
+        ),
     )
     monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)
     values: dict[str, Any] = {
@@ -129,7 +133,11 @@ def test_full_analysis_applies_default_runtime(
     assert summary["alignment_outputs"] == {
         "matrix_tsv": str(output_dir / "alignment_matrix.tsv"),
     }
-    assert progress == [(0, 2, "Discovery..."), (1, 2, "Alignment..."), (2, 2, "完成")]
+    assert progress == [
+        (0, 2, "Discovery..."),
+        (0, 0, "Discovery 完成；準備跨樣本對齊與 Backfill"),
+        (2, 2, "完成"),
+    ]
     assert captured_discovery["max_workers"] == 1
     run_spec = captured_discovery["run_spec"]
     assert run_spec.discovery_method.settings is settings

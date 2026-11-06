@@ -18,16 +18,19 @@ import {
   ui,
 } from "./analysis_ui.js";
 
-export function openCuration(sourceDir, samples) {
+export function loadCurationSource(sourceDir, samples) {
   updateCuration({ runSource: sourceDir, samples: samples ?? null });
   $("curation-source_dir").value = sourceDir;
   $("curation-sample_metadata").value = "";
   $("curation-istd").value = "";
+  return detectCuration();
+}
+export function openCuration(sourceDir, samples) {
   showResult();
   $("result-curation").hidden = false;
   $("result-curation").open = true;
   $("result-curation").scrollIntoView({ behavior: "smooth" });
-  return detectCuration();
+  return loadCurationSource(sourceDir, samples);
 }
 function curationPreferences() {
   return state.config.preferences.matrix_curation?.steps || {};
@@ -52,6 +55,7 @@ async function detectCuration() {
     if (request !== state.curation.request) return;
     updateCuration({ detection });
     renderCuration(detection, "");
+    schedulePreview();
   } catch (error) {
     if (request === state.curation.request) renderCuration(null, error.message);
   }
@@ -73,17 +77,15 @@ function renderCuration(detection, error) {
   };
   if (error) item("todo", "Alignment 輸出", error);
   else if (detection) {
-    item("ok", "Matrix", pathTail(detection.matrix_path));
-    item("ok", "Review", pathTail(detection.review_path));
     const source = detection.sample_source;
     item(
       source ? "ok" : "todo",
       "樣本資料",
       !source
-        ? "找不到；需要時請在上方選擇樣本資料 TSV"
+        ? "尚無樣本資訊；請展開「改用其他來源」補充"
         : {
             file: `選擇的檔案 ${pathTail(source.label)}`,
-            run: source.label,
+            run: `${source.label}（${detection.sample_count} 個樣本，${detection.study_sample_count} 個未排除研究樣本）`,
             confirmed: "RAW 資料夾已確認的樣本資訊",
             raw: `依 RAW 檔頭判定角色 ${pathTail(source.label)}`,
           }[source.kind],
@@ -93,10 +95,21 @@ function renderCuration(detection, error) {
       istd ? "ok" : "todo",
       "內標清單",
       !istd
-        ? "找不到；內標不受保護。需要時請在上方選擇目標清單"
+        ? "本次沒有宣告內標；若實際有使用，請展開「改用其他來源」補充"
         : `${istd.kind === "file" ? `選擇的檔案 ${pathTail(istd.label)}` : istd.label}（${detection.istd_count} 個內標，一律保留）`,
     );
   }
+  // A fully carried-over run shows only the way to choose another source.
+  $("curation-source-step").classList.toggle(
+    "carried",
+    Boolean(
+    detection &&
+      !error &&
+      detection.sample_source?.kind === "run" &&
+      detection.istd_source &&
+      $("curation-source_dir").value.trim() === state.curation.runSource,
+    ),
+  );
   $("curation-output").textContent = detection
     ? `新資料夾：${detection.output_dir.replace(/_\d{8}_\d{6}$/, "_<開始時間>")}`
     : "選擇 Alignment 輸出後顯示";
@@ -111,7 +124,7 @@ function renderCuration(detection, error) {
     return;
   }
   const saved = curationPreferences();
-  for (const step of detection.steps) {
+  for (const [index, step] of detection.steps.entries()) {
     const remembered = saved[step.key] || {};
     const unavailable = Boolean(step.unavailable_reason);
     const block = el("div", undefined, "curation-step");
@@ -126,8 +139,9 @@ function renderCuration(detection, error) {
       input.dataset.analysisIdle = "";
       input.checked = remembered.enabled ?? true;
     }
-    toggle.append(input, el("span", step.label));
-    block.append(toggle, el("p", step.description, "subtle"));
+    toggle.append(input, el("span", `${index + 1}. ${step.label}`));
+    toggle.title = step.description;
+    block.append(toggle);
     for (const parameter of step.parameters) {
       const field = el("label", undefined, "field");
       const value = el("input");
@@ -136,13 +150,14 @@ function renderCuration(detection, error) {
       value.min = parameter.minimum;
       value.max = parameter.maximum;
       value.id = `curation-${step.key}-${parameter.key}`;
+      value.placeholder = `${parameter.minimum}–${parameter.maximum}`;
+      value.title = parameter.help;
       value.value = remembered.parameters?.[parameter.key] ?? "";
       if (unavailable) value.disabled = true;
       else value.dataset.analysisIdle = "";
       field.append(
         el("span", parameter.label),
         value,
-        el("small", parameter.help),
       );
       block.append(field);
     }
@@ -194,20 +209,38 @@ function curationRequest() {
 }
 function invalidateCurationPreview() {
   updateCuration({ previewRequest: null });
-  $("curation-preview").textContent = "設定已變更，請更新預覽。";
+  $("curation-preview").textContent = "正在更新預覽…";
   lock();
+  schedulePreview();
+}
+// The preview follows the settings; export stays disabled until it matches.
+let previewTimer = 0;
+let previewPending = false;
+function schedulePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => {
+    if (!state.curation.detection) return;
+    previewCuration().catch((error) => {
+      $("curation-preview").textContent = error.message;
+    });
+  }, 300);
 }
 async function previewCuration() {
-  if (state.curation.previewBusy) return;
+  if (state.curation.previewBusy) {
+    previewPending = true;
+    return;
+  }
   const { values } = curationRequest();
   const submitted = JSON.stringify(values);
   updateCuration({ previewBusy: true, previewRequest: null });
-  $("curation-preview-refresh").disabled = true;
   $("curation-preview").textContent = "正在計算預覽；仍可修改設定或檢閱結果。";
   lock();
   try {
     const preview = await api("/api/matrix-curation/preview", values);
-    if (JSON.stringify(curationRequest().values) !== submitted) return;
+    if (JSON.stringify(curationRequest().values) !== submitted) {
+      previewPending = true;
+      return;
+    }
     const host = $("curation-preview");
     host.replaceChildren(
       el(
@@ -225,13 +258,14 @@ async function previewCuration() {
     );
     const table = el("table");
     const head = el("tr");
-    for (const name of ["步驟", "保留", "移除", "ISTD 保護", "無法判定"])
+    for (const name of ["步驟", "輸入", "保留", "本步移除", "ISTD 保護", "無法判定"])
       head.append(el("th", name));
     table.append(head);
     for (const step of preview.steps) {
       const row = el("tr");
       for (const value of [
         step.label,
+        step.input,
         step.kept,
         step.removed,
         step.protected,
@@ -243,7 +277,7 @@ async function previewCuration() {
         host.append(
           el(
             "p",
-            `至少 ${step.minimum_finite_count}/${step.eligible_sample_count} 個研究樣本有值（僅計未排除的 study_sample）；這是數值可用率，不是偵測率。`,
+            `至少 ${step.minimum_finite_count}/${step.eligible_sample_count} 個研究樣本有值才保留（QC、Blank 與已排除樣本不計）。`,
           ),
         );
     }
@@ -261,14 +295,17 @@ async function previewCuration() {
     updateCuration({ previewRequest: submitted });
   } finally {
     updateCuration({ previewBusy: false });
-    $("curation-preview-refresh").disabled = false;
     lock();
+    if (previewPending) {
+      previewPending = false;
+      schedulePreview();
+    }
   }
 }
 async function startCuration() {
   const { values, remembered } = curationRequest();
   if (JSON.stringify(values) !== state.curation.previewRequest)
-    throw new Error("請先更新預覽，確認保留與移除列數。");
+    throw new Error("預覽仍在更新，請稍候再產生新矩陣。");
   updateConfig({
     preferences: await api("/api/preferences", {
       matrix_curation: { steps: remembered },
@@ -279,7 +316,7 @@ async function startCuration() {
 
 export function bindCuration() {
   pathField(
-    $("curation-paths"),
+    $("curation-overrides"),
     "source_dir",
     "Alignment 輸出資料夾",
     "folder",
@@ -287,16 +324,16 @@ export function bindCuration() {
     "curation-",
   );
   pathField(
-    $("curation-paths"),
+    $("curation-overrides"),
     "sample_metadata",
     "樣本資料 TSV（選填）",
     "samples",
     "",
     "curation-",
-    "只有找不到樣本資料，或要改用另一份時才需要選擇。",
+    "通常不需選擇：會沿用這次分析的樣本角色、注射順序與排除設定。",
   );
   pathField(
-    $("curation-paths"),
+    $("curation-overrides"),
     "istd",
     "內標清單（選填）",
     "targets",
@@ -316,6 +353,5 @@ export function bindCuration() {
     act(startCuration);
   };
 
-  $("curation-preview-refresh").onclick = () => act(previewCuration);
   $("curation-form").addEventListener("input", invalidateCurationPreview);
 }

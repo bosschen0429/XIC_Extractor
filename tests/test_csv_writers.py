@@ -519,7 +519,9 @@ def test_long_csv_reports_file_processing_error() -> None:
         ("Control", "qc", "Control"),
         ("", "qc", "QC"),
         ("other", "pooled_qc", "QC"),
-        ("", "study_sample", "Other"),
+        # Ungrouped study samples and blanks stay distinguishable by role.
+        ("", "study_sample", "Sample"),
+        ("", "blank", "Blank"),
     ],
 )
 def test_long_output_group_uses_resolved_metadata(group, role, expected):

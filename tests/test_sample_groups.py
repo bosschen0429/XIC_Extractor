@@ -1,13 +1,9 @@
-import csv
-from pathlib import Path
-
 import pytest
 
 from xic_extractor.sample_groups import (
     canonicalize_sample_groups,
     resolve_sample_group,
     sample_group_key,
-    suggest_sample_groups,
 )
 from xic_extractor.sample_metadata import SampleMetadata, parse_sample_metadata
 
@@ -20,8 +16,10 @@ from xic_extractor.sample_metadata import SampleMetadata, parse_sample_metadata
         ("Other", "qc", "QC"),
         (" other ", "pooled_qc", "QC"),
         ("", "qc", "QC"),
-        ("", "study_sample", "Other"),
-        ("", "blank", "Other"),
+        ("", "study_sample", "Sample"),
+        ("", "blank", "Blank"),
+        ("Other", "solvent", "Solvent"),
+        ("", "unknown", "Other"),
     ],
 )
 def test_group_uses_explicit_annotation_then_role(group, role, expected):
@@ -58,35 +56,3 @@ def test_group_key_and_first_display_spelling_are_shared():
         for i, group in enumerate(labels)
     )
     assert tuple(row.group for row in rows) == canonicalize_sample_groups(labels)
-
-
-def test_suggestions_are_generic_and_do_not_apply_role_rules():
-    names = ["Liver_AB123_1.raw", " liver-XY999-2.mzML", "QC_1", "ABC123_2.raw"]
-    assert suggest_sample_groups(names) == {
-        "Liver_AB123_1.raw": "Liver",
-        " liver-XY999-2.mzML": "Liver",
-        "QC_1": "QC",
-        "ABC123_2.raw": "",
-    }
-
-
-def test_suggestions_for_real_sequence_names():
-    # Minimal name-only fixture from the 118-injection Word sequence in #877.
-    # Expected labels are the documented token-removal rule, not role inference.
-    with (Path(__file__).parent / "fixtures" / "sample_group_names.tsv").open(
-        encoding="utf-8", newline=""
-    ) as handle:
-        rows = list(csv.DictReader(handle, delimiter="\t"))
-    names = [row["name"] for row in rows]
-    suggestions = suggest_sample_groups(names)
-    assert suggestions == {row["name"]: row["suggested_group"] for row in rows}
-
-
-def test_suggestions_preserve_decimal_concentrations():
-    names = ["Mix_0.5ppm", "Mix_1.0ppm.RAW", "Std 2.5uM_1", "Std 2.5uM_2.mzML"]
-    assert suggest_sample_groups(names) == {
-        "Mix_0.5ppm": "Mix 0.5ppm",
-        "Mix_1.0ppm.RAW": "Mix 1.0ppm",
-        "Std 2.5uM_1": "Std 2.5uM",
-        "Std 2.5uM_2.mzML": "Std 2.5uM",
-    }

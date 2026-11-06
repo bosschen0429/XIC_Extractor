@@ -10,10 +10,11 @@ detection, peak identity, or the source Matrix.
 
 ## Steps
 
-Each enabled step judges the original Matrix with its own inputs; enabling or
-disabling one step never changes another step's decision columns. A feature is
-kept when it is an internal standard (see [Internal standards](#internal-standards))
-or every enabled step keeps it. A step that lacks a required input is shown as
+Enabled steps run in a fixed sequence: remove supported isotope/adduct and other
+derivative ions with `same_compound`, then apply `finite_fraction` to the remaining
+features. Removed derivatives are not evaluated by later filters or promoted
+when their representative is filtered out. Internal standards remain protected
+at every step (see [Internal standards](#internal-standards)). A step that lacks a required input is shown as
 unavailable with the reason. Steps are listed in
 `matrix_curation.export.STEPS`; a new step adds itself there and the page, CLI
 options and output columns follow.
@@ -221,9 +222,9 @@ Isotopes are not evidence of the ion form, and no other form is inferred.
 `unconfirmed` is not reviewed. Retained unclassified roots are not claimed to
 be known [M+H]⁺; this step does not perform complete ion identification.
 
-A representative removed by another enabled step is not replaced by one of its
-members, so the whole group may leave the curated Matrix. The review lists each
-such group whose removed member passes the other steps.
+A representative removed by a later feature filter is not replaced by one of
+its removed derivatives, so the whole ion family may leave the curated Matrix.
+The review lists these families; removed derivatives are not evaluated again.
 
 ### Internal standards
 
@@ -247,16 +248,18 @@ reconstructed from rounded m/z or RT.
 Sample data is chosen in this order:
 
 1. a sample metadata TSV/CSV the user selects;
-2. the samples of the Untargeted run that produced the folder, when curation
-   starts from that run's result;
-3. the workbench's confirmed sample data for the RAW folder named by
+2. `sample_metadata.tsv` saved with the Untargeted result, including the roles,
+   injection order and exclusions used by that run. Statistical grouping is not
+   required; curation selects eligible samples by role and exclusion only;
+3. the samples carried by the current run's result, when no saved file exists;
+4. the workbench's confirmed sample data for the RAW folder named by
    `alignment_run_metadata.json`;
-4. the roles read from that RAW folder's headers with the same reader Alignment
+5. the roles read from that RAW folder's headers with the same reader Alignment
    uses when it is given no sample data (Thermo sample type and the QC, blank
    and similar vocabulary in names). This needs the RAW folder and reader
    recorded in the run metadata on this computer.
 
-The CLI uses only the first and last sources. When none applies, the steps that
+The CLI uses the explicit file, saved result file, then RAW headers. When none applies, the steps that
 need samples are unavailable and a sample file must be selected.
 
 `same_compound` reads per-cell detection, value and apex from the folder's
@@ -274,12 +277,15 @@ the source folder.
 | `analysis_matrix.tsv` | Kept rows in original order with original tokens and all sample columns |
 | `feature_decisions.tsv` | Every source row: `source_matrix_row_index`, `feature_id`, `Mz`, `RT`, `istd_label`, each enabled step's columns, the final `decision` and `decision_reason` (`kept_by_all_steps`, `dropped_by:<steps>` or `istd_protected`) |
 | `same_compound_relations.tsv` | Each mass-related row pair that co-elutes in some sample: relation, `e_ppm`, `center_mz_basis`, direct, supporting and backfill sample counts, largest apex difference, median light/heavy ratio, log-ratio MAD, outcome and whether it contributed to excluding the heavier row; an excluded row need not have a unique parent |
-| `same_compound_review.tsv` | Pairs and groups to review: unstable ratio, ≈1.998 unexplained by the isotope rules, review-only relation, backfill-only co-elution, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), no direct co-elution with a root, representative dropped while a member passes, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
+| `same_compound_review.tsv` | Pairs and groups to review: unstable ratio, ≈1.998 unexplained by the isotope rules, review-only relation, backfill-only co-elution, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), no direct co-elution with a root, an ion family removed by a later feature filter, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
 | `sample_metadata.tsv` | Matrix column → sample identity, role, group, order and exclusion |
 | `matrix_curation_summary.json` | Enabled steps and parameters, input paths, sample data source and counts |
 
 `finite_fraction` contributes `finite_count`, `eligible_sample_count`,
 `finite_fraction`, `finite_fraction_decision` and `finite_fraction_reason`.
+Rows removed before a later step have `not_evaluated` in that step's decision
+column and blank measurement fields. Preview and summary counts describe each
+step's actual input, removals and remaining rows, not independent original-Matrix counts.
 `same_compound` contributes `same_compound_decision`, `same_compound_reason`,
 `same_compound_representative_feature_id` (removed rows),
 `same_compound_relation` and `same_compound_via_feature_ids` (the relations
@@ -306,10 +312,11 @@ belong to the analysis backend.
 ## Usage
 
 After an Untargeted run with Alignment, choose **整理矩陣** in its result. The
-page opens with that run's folder and samples; enter the threshold and choose
-**開始整理**. The run's own explanation supplies the evidence and internal
+panel opens with that run's folder, saved samples and internal standards; enter
+the threshold; the preview follows the settings, and **產生新矩陣** is enabled
+once it matches them. The run's own explanation supplies the evidence and internal
 standards for **同化合物收斂**. To curate an earlier result, choose its Alignment output folder on
-the **矩陣整理** page; select a sample data TSV only when the page reports that
+**改用其他來源（選用）** tools; select a sample data TSV only when the page reports that
 none was found, and a target list only when no internal standard list is
 found. The page remembers the last enabled steps and thresholds on this
 computer. Untargeted runs never start curation automatically.
@@ -318,8 +325,8 @@ For batches, `xic-matrix-curation --source-dir <folder> --min-finite-fraction
 <value> --same-compound` runs the same owner; a step runs when its parameters
 or, for `same_compound`, its flag are given. `--istd-list` selects a target
 list; without it the run's own standards are used.
-`--sample-metadata` selects a file; without it roles are read from the run's RAW
-headers. The module entry is `python -m scripts.run_matrix_curation`.
+`--sample-metadata` selects a file; without it the saved result's sample data is
+used, falling back to RAW headers for older outputs. The module entry is `python -m scripts.run_matrix_curation`.
 
 ## Verification
 
@@ -330,7 +337,7 @@ representative, removal through the group, ion-form
 labels, unassigned isotope and parent exclusion, ion families with/without a
 protonated row, missing/indirect family witnesses, metal dimers, rule-order,
 row-order and ID invariance, backfill exclusion, internal
-standard matching and step independence. Its thresholds come from a read-only
+standard matching and derivative-before-feature-filter ordering. Its thresholds come from a read-only
 dr95 diagnostic, not cross-batch validation.
 `tests/test_matrix_curation.py` checks independently calculated fractions and
 kept rows, including zero versus missing, role/exclusion denominators, exact
