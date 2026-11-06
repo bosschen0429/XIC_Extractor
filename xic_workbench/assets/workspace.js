@@ -687,11 +687,6 @@ window.XicUi = (() => {
     }
     lead.append(heading, metrics);
     host.append(lead);
-    if (summary.uncalibrated_count) {
-      const note = node("p", `曲線未做 RT 校正（${summary.uncalibrated_count} / ${summary.samples.length} 樣本）`, "overview-unknown");
-      note.title = "內標 RT 校正需要至少 8 個出峰時間不同的內標";
-      host.append(note);
-    }
     const table = node("table", undefined, "overview-table overview-coverage");
     const head = node("tr"); head.append(node("th", "樣本"), node("th", "有定量值的矩陣群組")); table.append(head);
     for (const sample of summary.samples) {

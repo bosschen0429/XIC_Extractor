@@ -22,16 +22,12 @@ def review_overview(path, summary):
         if destination == "matrix":
             coverage.update(numeric)
     matrix = [r for r in rows.values() if r["destination"] == "matrix"]
-    calibration = (summary["known_istd_reference"] or {}).get("calibration", {})
     return {
         "kind": "untargeted",
         "matrix_count": len(matrix),
         "unresolved_count": sum(r["unresolved_count"] > 0 for r in matrix),
         "complete_count": sum(r["numeric_count"] == sample_count for r in matrix),
         "archive_count": sum(r["destination"] == "archive" for r in rows.values()),
-        "uncalibrated_count": sum(
-            s.get("status") == "unavailable" for s in calibration.get("samples", [])
-        ),
         "samples": [
             {
                 "id": s["sample_key"],
