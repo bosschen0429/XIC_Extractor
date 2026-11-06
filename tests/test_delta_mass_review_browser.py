@@ -34,6 +34,8 @@ def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path
     expect(root.get_by_label("各位置 NL 判讀")).to_contain_text("沒有相關 MS2")
     expect(root.get_by_label("各位置 NL 判讀")).to_contain_text("未找到 NL 支持")
     expect(root.get_by_label("MS2 scan", exact=True)).not_to_be_visible()
+    expect(root.get_by_label("顯示 RT 起點")).not_to_be_visible()
+    expect(root.get_by_role("heading", name="NL 證據", exact=True)).not_to_be_visible()
     root.get_by_role("button", name="M · test-NL：有 NL 支持（2）", exact=True).click()
     expect(root.get_by_role("heading", name="NL 證據", exact=True)).to_be_in_viewport()
     expect(root.locator("[data-spectrum-scan]")).to_have_attribute(
@@ -50,6 +52,7 @@ def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path
     )
     expect(root.locator(".dm-nl-measurement").last).to_contain_text("37.5%")
     # The browsing window is display-only, not a new NL assessment.
+    root.get_by_text("詳細資料", exact=True).click()
     root.get_by_role("button", name="完整範圍", exact=True).click()
     expect(
         root.get_by_role("button", name="M · test-NL：有 NL 支持（2）", exact=True)

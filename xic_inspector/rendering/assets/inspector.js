@@ -703,7 +703,7 @@
     listed=showExcluded?[...regular,...excluded]:regular;
     if(!listed.some(i=>i.id===state.id)&&(state.id||selectFallback)){state.id=listed[0]?.id;reset();}
     $('list-count').textContent=`${filtered.length} / ${items.length} 筆`;
-    const recordButton=item=>`<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${breakable(itemTitle(item))}</span><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div><div class="record-meta">${itemName(item)} · m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}</div><div class="record-reason">${esc(reviewReason(item)||'未記錄判定說明')}</div></button>`;
+    const recordButton=item=>{const nl=item.delta_mass?.neutral_losses?.length;return `<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${breakable(itemTitle(item))}</span>${nl?'':`<span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span>`}</div><div class="record-meta">${nl?'':`${itemName(item)} · `}m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}</div><div class="record-reason">${esc(reviewReason(item)||'未記錄判定說明')}</div></button>`;};
     const excludedGroup=excluded.length?`<section class="excluded-group"><button type="button" class="excluded-toggle" data-excluded-toggle aria-expanded="${showExcluded}" ${localFilterActive?'disabled title="篩選結果會保持展開"':''}><span>已排除候選</span><span>${excluded.length} 筆 ${showExcluded?'▾':'▸'}</span></button>${showExcluded?`<div class="excluded-items">${excluded.map(recordButton).join('')}</div>`:''}</section>`:'';
     setHTML($('record-list'),regular.map(recordButton).join('')+excludedGroup||'<p class="empty-state">這份報告沒有符合的項目。請清除篩選條件。</p>');
     filterStatus();detail();
@@ -1002,7 +1002,7 @@
     let lo=reviewWindow?.[0]??Infinity,hi=reviewWindow?.[1]??-Infinity,lowY=0,highY=0;
     [...drawable,...extra].forEach(({series:s})=>s.rts.forEach((v,i)=>{const y=s.intensities[i];if(finite(v)&&finite(y)&&(!reviewWindow||v>=lo&&v<=hi)){if(!reviewWindow){lo=Math.min(lo,v);hi=Math.max(hi,v);}lowY=Math.min(lowY,y);highY=Math.max(highY,y);}}));
     if(!finite(lo)||!finite(hi))return '<div class="empty-state">未提供成對的時間與訊號數值。</div>';if(lo===hi){lo-=.5;hi+=.5;}if(lowY===highY)highY=lowY+1;
-    const W=width||(wide?1060:760),H=width?420:330,L=62,T=24,IW=W-88,IH=H-82,x=v=>L+(v-lo)/(hi-lo)*IW,y=v=>T+IH-(v-lowY)/(highY-lowY)*IH;
+    const W=width||(wide?1060:760),H=item.delta_mass?.neutral_losses?.length?260:width?420:330,L=62,T=24,IW=W-88,IH=H-82,x=v=>L+(v-lo)/(hi-lo)*IW,y=v=>T+IH-(v-lowY)/(highY-lowY)*IH;
     const clipId=`curve-window-${axis}${mode==='curves'?(width?'-main':'-zoom'):''}`;
     let svg=`<defs><clipPath id="${clipId}"><rect x="${L}" y="${T}" width="${IW}" height="${IH}"/></clipPath></defs><text x="8" y="14" font-size="13" fill="#48534f">訊號強度</text>`;
     for(let i=0;i<=4;i++){const v=lowY+(highY-lowY)*i/4;svg+=`<line x1="${L}" y1="${y(v)}" x2="${L+IW}" y2="${y(v)}" stroke="#e4e9ec"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end" font-size="13" fill="#48534f">${tickNum(v)}</text>`;}

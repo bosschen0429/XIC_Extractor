@@ -19,7 +19,10 @@
   // Beyond the three categorical hues, position identity also uses distinct dashes.
   const dash = index => index === 0 ? '' : index === 1 ? '7 4' : index === 2 ? '2 3' : `${index * 3} 4 2 4`;
   const nlStatus = status => ({supported:'有 NL 支持', no_match:'未找到 NL 支持', no_ms2:'沒有相關 MS2', no_spectrum:'缺少 spectrum', incomplete:'讀取不完整', no_peak_bounds:'缺少峰範圍', ambiguous:'峰歸屬不明', unresolved:'前驅或歸屬未確認'}[status] || status);
-  const summary = saved => (saved.neutral_losses || []).map(n => `${n.position_label}：${nlStatus(n.status)}（${n.tag}）`).join(' · ');
+  const summary = saved => {
+    const results = saved.neutral_losses || [], multiple = new Set(results.map(n => n.tag)).size > 1;
+    return results.map(n => `${n.position_label}${multiple ? ` / ${n.tag}` : ''}：${nlStatus(n.status)}`).join(' · ');
+  };
   function table(headers, rows) {
     const wrap = node('div', undefined, 'table-scroll'), result = node('table', undefined, 'sample-table dm-table');
     const head = node('tr'); headers.forEach(label => head.append(node('th', label)));
@@ -39,12 +42,16 @@
     container.replaceChildren(root);
     // Position/scan controls belong to this view, not the host's sample controls.
     root.addEventListener('change', event => event.stopPropagation());
-    root.append(node('h2', saved.method_label), node('p', saved.sample_stem, 'dm-subtitle'));
+    if (hasNl) root.append(node('h2', `m/z ${mass(saved.base_mz)} · ${number(saved.base_rt_apex_min)} min`));
+    else root.append(node('h2', saved.method_label), node('p', saved.sample_stem, 'dm-subtitle'));
+    const advanced = node('details', undefined, 'dm-advanced');
+    advanced.append(node('summary', '詳細資料'));
     if (saved.status !== 'candidate') root.append(node('p', `保存判定：${saved.status} · ${saved.reject_reason}`, 'dm-note'));
     if (!hasNl) root.append(node('p', '候選判斷沿用 Discovery；曲線與 MS2 為新讀取的診斷資料，不是原決策重播。', 'dm-note'));
     const supportButtons = [];
     if (hasNl) {
-      const answers = table(['位置', 'NL', '峰內判讀'], nlResults.map(result => {
+      const losses = [...new Set(nlResults.map(n => `${n.tag} · ${mass(n.neutral_loss_da)} Da`))];
+      const answers = table(losses.length === 1 ? ['位置', losses[0]] : ['位置', 'NL', '判讀'], nlResults.map(result => {
         const matches = result.matches.filter(m => m.status === 'supported');
         let answer = nlStatus(result.status);
         if (result.status === 'supported' && matches.length) {
@@ -55,7 +62,7 @@
           answer.addEventListener('click', () => showSupport(result));
           supportButtons.push([answer, result]);
         }
-        return [result.position_label, `${result.tag} · ${mass(result.neutral_loss_da)} Da`, answer];
+        return losses.length === 1 ? [result.position_label, answer] : [result.position_label, `${result.tag} · ${mass(result.neutral_loss_da)} Da`, answer];
       }));
       answers.setAttribute('aria-label', '各位置 NL 判讀'); answers.classList.add('dm-nl-summary'); root.append(answers);
     }
@@ -68,7 +75,7 @@
     );
     positions.setAttribute('aria-label', '保存的 Delta Mass 位置證據');
     if (hasNl) {
-      const details = node('details', undefined, 'dm-data'); details.append(node('summary', 'Delta Mass 位置證據'), positions); root.append(details);
+      advanced.append(node('h3', 'Delta Mass 位置證據'), positions);
     } else root.append(positions);
     const legend = node('div', undefined, 'dm-legend');
     saved.positions.forEach((p, index) => {
@@ -86,14 +93,15 @@
     const apply = node('button', '套用範圍'); apply.type = 'submit';
     const full = node('button', '完整範圍'); full.type = 'button';
     toolbar.append(node('span', 'RT'), start, node('span', '–'), end, node('span', 'min'), apply, full);
-    root.append(node('h3', '原始 XIC'), legend, node('p', '共用強度座標 · 未平滑、未正規化', 'dm-note'), toolbar);
+    if (hasNl) { root.append(legend); advanced.append(node('h3', '顯示範圍'), toolbar); }
+    else root.append(node('h3', '原始 XIC'), legend, node('p', '共用強度座標 · 未平滑、未正規化', 'dm-note'), toolbar);
     const chart = node('div', undefined, 'svg-container dm-xic');
-    const readout = node('output', '游標或方向鍵可查看原始 scan 數值。', 'dm-readout');
+    const readout = node('output', hasNl ? '' : '游標或方向鍵可查看原始 scan 數值。', 'dm-readout');
     readout.setAttribute('aria-live', 'polite');
     const rawTable = node('details', undefined, 'dm-data');
     rawTable.append(node('summary', '原始 XIC 數值'));
     const rawRows = node('div'); rawTable.append(rawRows);
-    root.append(chart, readout, rawTable);
+    root.append(chart, readout); (hasNl ? advanced : root).append(rawTable);
 
     const ms2 = node('section', undefined, 'dm-ms2');
     const ms2Heading = node('h3', hasNl ? 'NL 證據' : 'MS2'); ms2Heading.tabIndex = -1; ms2.append(ms2Heading);
@@ -103,6 +111,7 @@
     for (const scan of saved.spectra) scans.append(new Option(`#${scan.scan_number} · RT ${number(scan.rt_min)} · precursor ${number(scan.precursor_mz)}`, String(scan.scan_number)));
     scans.disabled = !saved.spectra.length;
     const spectrum = node('div', undefined, 'dm-spectrum'), spectrumReadout = node('output', '', 'dm-readout');
+    const spectrumDetails = node('div');
     spectrumReadout.setAttribute('aria-live', 'polite');
     const browse = node('details', undefined, 'dm-data');
     const supportNav = node('div', undefined, 'dm-support-nav'); supportNav.hidden = true;
@@ -112,14 +121,15 @@
     if (hasNl) {
       browse.append(node('summary', saved.ms2_scope === 'nl_related' ? '相關 MS2（進階查證）' : '其他 MS2（進階查證）'), contextNote, scans);
       browse.addEventListener('toggle', () => drawXic());
-      ms2.append(supportNav, spectrum, spectrumReadout, browse);
+      ms2.append(supportNav, spectrum, spectrumReadout);
+      advanced.append(browse, node('h3', 'MS2 詳細資料'), spectrumDetails);
     } else ms2.append(contextNote, scans, spectrum, spectrumReadout);
     root.append(ms2);
     if (saved.ms2_read_errors.length) {
       const failures = node('details', undefined, 'dm-errors');
       failures.append(node('summary', `${saved.ms2_read_errors.length} 筆 MS2 讀取錯誤（不能當成沒有 MS2）`));
       failures.append(table(['Scan', '讀取時間窗 (min)', '錯誤'], saved.ms2_read_errors.map(e => [String(e.scan_number), e.requested_rt_window.map(number).join('–'), e.message])));
-      ms2.append(failures);
+      (hasNl ? advanced : ms2).append(failures);
     }
     const provenance = node('details', undefined, 'dm-provenance');
     provenance.append(node('summary', '來源與擷取設定'));
@@ -131,7 +141,8 @@
       ['已取得 RT', saved.rt_window.map(number).join('–') + ' min'],
       ['RAW 對應', '依保存的 sample 名稱選檔；未驗證是否為原分析檔'],
     ]));
-    root.append(provenance);
+    (hasNl ? advanced : root).append(provenance);
+    if (hasNl) root.append(advanced);
     let window = [...saved.rt_window], selectedScan = null, width = 0, activeNl = null, supportMatches = [], supportCursor = 0;
 
     function showSupport(result) {
@@ -146,7 +157,7 @@
         const padding = Math.max(.03, (bounds[1]-bounds[0])*.15);
         setWindow([Math.max(saved.rt_window[0], bounds[0]-padding), Math.min(saved.rt_window[1], bounds[1]+padding)]);
       } else setWindow([...saved.rt_window]);
-      ms2.scrollIntoView({block:'start'}); ms2Heading.focus({preventScroll:true});
+      root.scrollIntoView({block:'start'}); ms2Heading.focus({preventScroll:true});
     }
     function stepSupport(delta) {
       supportCursor = Math.max(0, Math.min(supportMatches.length-1, supportCursor+delta));
@@ -267,31 +278,33 @@
     }
     scans.addEventListener('change', () => chooseScan(scans.value ? Number(scans.value) : null));
     function drawSpectrum() {
-      spectrum.replaceChildren(); spectrumReadout.textContent = '';
+      spectrum.replaceChildren(); spectrumDetails.replaceChildren(); spectrumReadout.textContent = '';
+      ms2.hidden = hasNl && selectedScan == null;
       supportNav.hidden = !activeNl || supportMatches.length <= 1;
       supportIndex.textContent = `${supportCursor+1} / ${supportMatches.length}`;
       previous.disabled = supportCursor === 0; next.disabled = supportCursor === supportMatches.length-1;
       const scan = saved.spectra.find(s => s.scan_number === selectedScan);
       if (!scan) {
         if (hasNl) {
-          spectrum.append(node('p', activeNl ? `支持紀錄 #${selectedScan} 缺少 spectrum。` : supportButtons.length ? '點選上方的 NL 支持結果查看證據。' : '此候選未建立 NL 支持；各位置判讀見上表。', 'dm-note'));
+          if (activeNl) spectrum.append(node('p', `支持紀錄 #${selectedScan} 缺少 spectrum。`, 'dm-note'));
           return;
         }
         const visible = saved.spectra.some(s => s.rt_min >= window[0] && s.rt_min <= window[1]);
         spectrum.append(node('p', visible ? '選擇上方 MS2 刻度或 scan。' : saved.ms2_read_errors.length ? '沒有可用 spectrum；請查看讀取錯誤。' : '此時間窗沒有 MS2。', 'dm-note'));
         return;
       }
-      spectrum.append(node('p', `Scan #${scan.scan_number} · RT ${number(scan.rt_min)} min · 記錄的 precursor m/z ${number(scan.precursor_mz)}`, 'dm-scan-heading'));
+      const scanDetails = hasNl ? spectrumDetails : spectrum;
+      scanDetails.append(node('p', `Scan #${scan.scan_number} · RT ${number(scan.rt_min)} min · 記錄的 precursor m/z ${number(scan.precursor_mz)}`, 'dm-scan-heading'));
       const match = activeNl ? supportMatches[supportCursor] : null;
       if (match) {
         const basis = {parent_ms1:'parent MS1', scan_precursor:'scan precursor', scan_monoisotopic:'monoisotopic precursor'}[match.reference_source] || match.reference_source;
-        spectrum.prepend(node('p', `${activeNl.position_label} · ${activeNl.tag}：實測 NL ${mass(match.observed_loss_da)} Da（設定 ${mass(activeNl.neutral_loss_da)} Da）`, 'dm-nl-measurement'));
-        spectrum.append(node('p', `實測前驅 ${mass(match.precursor_mz)}（${basis}） → 產物 ${mass(match.product_mz)} · 產物 / base peak ${number(match.product_base_ratio*100)}%`, 'dm-nl-measurement'));
+        spectrum.prepend(node('p', `${activeNl.position_label} · 實測 NL ${mass(match.observed_loss_da)} Da`, 'dm-nl-measurement'));
+        scanDetails.append(node('p', `實測前驅 ${mass(match.precursor_mz)}（${basis}） → 產物 ${mass(match.product_mz)} · 產物 / base peak ${number(match.product_base_ratio*100)}%`, 'dm-nl-measurement'));
       } else if (hasNl) spectrum.prepend(node('p', '手動檢閱的 MS2，不代表 NL 支持。', 'dm-note'));
       const meta = scan.precursor_metadata;
-      if (meta) spectrum.append(node('p', `Monoisotopic m/z ${number(meta.monoisotopic_mz)} · charge ${number(meta.charge)} · isolation width ${number(meta.isolation_width_da)} Da · offset ${number(meta.isolation_offset_da)} Da`, 'dm-note'));
+      if (meta) scanDetails.append(node('p', `Monoisotopic m/z ${number(meta.monoisotopic_mz)} · charge ${number(meta.charge)} · isolation width ${number(meta.isolation_width_da)} Da · offset ${number(meta.isolation_offset_da)} Da`, 'dm-note'));
       if (!scan.mz.length) { spectrum.append(node('p', '此 scan 沒有 spectrum 點。')); return; }
-      const W = Math.max(320, chart.clientWidth), H = 280, L = 62, R = W - 26, T = 24, B = H - 45;
+      const W = Math.max(320, chart.clientWidth), H = hasNl ? 230 : 280, L = 62, R = W - 26, T = 24, B = H - 45;
       let lo = Infinity, hi = -Infinity, max = 1;
       scan.mz.forEach((mz, i) => { lo = Math.min(lo, mz); hi = Math.max(hi, mz); max = Math.max(max, scan.intensity[i]); });
       if (lo === hi) { lo -= 1; hi += 1; }
@@ -334,7 +347,7 @@
       const values = node('details', undefined, 'dm-data'); values.append(node('summary', 'Spectrum 數值'));
       values.addEventListener('toggle', () => {
         if (values.open && values.children.length === 1) values.append(table(['m/z', '原始強度'], scan.mz.map((mz, i) => [String(mz), String(scan.intensity[i])])));
-      }); spectrum.append(values);
+      }); scanDetails.append(values);
     }
     setWindow(window);
     const observer = new ResizeObserver(() => {
