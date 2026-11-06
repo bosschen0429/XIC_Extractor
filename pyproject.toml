@@ -51,7 +51,7 @@ exclude = ["tests*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--tb=short"
+addopts = "-p tools.testing.pytest_temp --tb=short"
 tmp_path_retention_policy = "failed"
 markers = [
     "windows_only: exercises Windows-specific DLL loading or file-locking behavior. CI runs these only in the Windows integration lane.",

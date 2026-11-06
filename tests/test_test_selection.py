@@ -151,7 +151,12 @@ def test_change_the_derivation_cannot_place_runs_every_test(
 
 
 @pytest.mark.parametrize(
-    "owner", ["tools/testing/test_selection.py", "tools/testing/test_sharding.py"]
+    "owner",
+    [
+        "tools/testing/test_selection.py",
+        "tools/testing/test_sharding.py",
+        "tools/testing/pytest_temp.py",
+    ],
 )
 def test_selection_owner_change_runs_every_test(owner: str) -> None:
     assert select_test_files([owner]) is None
@@ -360,6 +365,7 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
         ("tests/workbench_http.py", {"browser_e2e"}),
         ("tools/testing/test_selection.py", {"packaging_build", "browser_e2e"}),
         ("tools/testing/test_sharding.py", {"packaging_build", "browser_e2e"}),
+        ("tools/testing/pytest_temp.py", {"packaging_build", "browser_e2e"}),
         ("tools/diagnostics/targeted_istd_benchmark_loaders.py", {"packaging_build"}),
         ("xic_extractor/presets/data/dna_dr.toml", {"packaging_build"}),
         ("docs/product/backfill.md", set()),
