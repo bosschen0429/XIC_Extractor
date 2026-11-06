@@ -308,7 +308,6 @@ def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_v
     assert curves["source-s1"]["integration"]["raw_apex_rt_min"] == 6.1
     assert curves["source-s1"]["processed_curves"][-1] == {
         "kind": "positive_signal",
-        "aligned_rts": [4, 5, 6, 7],
         "rts": [4, 5, 6, 7],
         "intensities": [0, 3, 6, 0],
     }
@@ -523,3 +522,9 @@ def test_generic_bundle_without_alignment_context_remains_readable(tmp_path):
     assert bundle.sample_rt_calibration is None
     assert bundle.injection_order == {}
     assert bundle.transitions == _fixture_bundle().transitions
+    projected = prepare_report(path, SelectionRequest()).payload
+    assert all(
+        "aligned_rts" not in curve
+        for item in projected["items"]
+        for curve in item["curves"]
+    )

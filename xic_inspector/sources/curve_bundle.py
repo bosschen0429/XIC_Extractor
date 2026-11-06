@@ -610,9 +610,10 @@ class CurveBundleSource:
                         },
                     }
                 )
-                align_curve(
-                    projected_curves[-1], trace.sample_label, self.rt_calibration
-                )
+                if self.rt_calibration is not None:
+                    align_curve(
+                        projected_curves[-1], trace.sample_label, self.rt_calibration
+                    )
             flag_ref = f"flags:{transition.key}"
             fields = [
                 {
