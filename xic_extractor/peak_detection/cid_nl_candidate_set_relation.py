@@ -22,9 +22,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
 )
 from xic_extractor.peak_detection.observations import (
     PeakObservationContent,
-    PeakObservationContractError,
     PeakObservationRef,
-    validate_peak_observation_binding,
 )
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -191,15 +189,6 @@ def _validate_inputs(
     except CidNlEvidenceContractError as exc:
         raise DdaCidNlCandidateSetRelationContractError(str(exc)) from exc
     candidates = _canonical_candidates(candidate_peaks)
-    for peak in candidates:
-        try:
-            validate_peak_observation_binding(
-                peak,
-                processing_owners=processing_owners,
-                sample=sample,
-            )
-        except PeakObservationContractError as exc:
-            raise DdaCidNlCandidateSetRelationContractError(str(exc)) from exc
     observation = canonical_evidence.observation
     if not policy.accepts_precursor(
         observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)

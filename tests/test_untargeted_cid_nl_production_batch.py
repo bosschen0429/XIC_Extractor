@@ -1688,7 +1688,6 @@ def test_profile_replay_rejects_changed_observation_inputs(profile_replay) -> No
         sample=trace.captured_batches[0].jobs[0].sample,
         trace=capture.trace,
         integration=integration,
-        selection_intensity=prepared.prepared.positive_signal,
         resolver_mode=inputs.peak_config.resolver_mode,
         proposal_sources=("canonical_physical_segment",),
         physical_evaluation=evaluation,

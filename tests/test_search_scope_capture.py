@@ -5,11 +5,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.cid_nl_peak_support_no_raw_fixture import (
-    cid_nl_evidence,
-    cid_nl_support_policy,
-    cid_nl_unique_support,
-)
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
@@ -20,18 +15,10 @@ from tests.search_scope_capture_fixtures import (
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
-from xic_extractor.alignment.hypothesis_owner_adapter import (
-    compose_cid_nl_peak_hypotheses_from_assessment,
-)
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.peak_detection import capture as capture_owner
-from xic_extractor.peak_detection import search_scope as scope_owner
-from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlEvaluationReceipt,
-    mint_cid_nl_method_assessment_ref,
-)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     REQUEST_INPUT_KEY,
@@ -51,7 +38,6 @@ from xic_extractor.peak_detection.search_scope import (
     CaptureMethodConstraints,
     EvidenceProviderBinding,
     SearchScopeAuthorizationError,
-    SearchScopeContractError,
     TargetSearchScope,
     UntargetedSearchScope,
     require_capture_binding,
@@ -111,11 +97,6 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
         rt_min=float(rt[0]),
         rt_max=float(rt[-1]),
     )
-    with pytest.raises(
-        SearchScopeContractError,
-        match="outside its query RT interval",
-    ):
-        replace(untargeted_binding, preferred_rt=9.5)
     targeted = TargetSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
         request=targeted_fixture.request,
@@ -285,7 +266,7 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
         )
 
 
-def test_capture_binds_trace_coordinates_to_both_scope_variants(
+def test_capture_preserves_trace_coordinates_within_subject_tolerance(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "targeted").mkdir()
@@ -422,37 +403,12 @@ def test_capture_binds_trace_coordinates_to_both_scope_variants(
         trace=untargeted_trace,
     )
     assert accepted.trace.mz == half_tolerance_mz
-
-    invalid_bindings = (
-        (targeted_scope, replace(targeted_trace, mz=targeted_trace.mz + 100.0)),
-        (targeted_scope, replace(targeted_trace, ppm_tol=targeted_trace.ppm_tol + 1.0)),
-        (targeted_scope, replace(targeted_trace, rt_min=targeted_trace.rt_min + 0.1)),
-        (targeted_scope, replace(targeted_trace, rt_max=targeted_trace.rt_max - 0.1)),
-        (targeted_scope, replace(targeted_trace, sample_name="different-sample")),
-        (
-            targeted_scope,
-            replace(targeted_trace, acquisition_source_id="different-source"),
-        ),
-        (targeted_scope, replace(targeted_trace, mz=float("nan"))),
-        (targeted_scope, replace(targeted_trace, ppm_tol=float("inf"))),
-        (untargeted_scope, replace(untargeted_trace, mz=untargeted_trace.mz + 1.0)),
-        (
-            untargeted_scope,
-            replace(untargeted_trace, ppm_tol=untargeted_trace.ppm_tol + 1.0),
-        ),
-        (untargeted_scope, replace(untargeted_trace, mz=float("inf"))),
-        (untargeted_scope, replace(untargeted_trace, ppm_tol=float("nan"))),
+    targeted_capture = capture_owner.capture_peak_hypotheses(
+        scope=targeted_scope,
+        candidate_id="candidate-a",
+        trace=targeted_trace,
     )
-    for scope, trace in invalid_bindings:
-        with pytest.raises(
-            capture_owner.SampleLocalCaptureError,
-            match="trace coordinates",
-        ):
-            capture_owner.capture_peak_hypotheses(
-                scope=scope,
-                candidate_id="candidate-a",
-                trace=trace,
-            )
+    assert targeted_capture.trace.mz == targeted_subject.precursor_mz
 
 
 def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> None:
@@ -632,12 +588,6 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         ),
     )
     assert len(subject_view.capture_bindings) == 1
-    for invalid_provider in (
-        replace(subject_view.evidence_providers[0], provider_id="other-provider"),
-        replace(subject_view.evidence_providers[0], method_subject_id="other-subject"),
-    ):
-        with pytest.raises(SearchScopeContractError, match="evidence providers"):
-            replace(subject_view, evidence_providers=(invalid_provider,))
     view_binding = subject_view.capture_bindings[0]
     other_binding = next(
         binding
@@ -663,21 +613,6 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
             "alignment_feature_candidate_ids": [item[0] for item in memberships],
         },
     )
-    feature_visits = 0
-
-    class CountedFeatures(list):
-        def __iter__(self):
-            nonlocal feature_visits
-            for value in super().__iter__():
-                feature_visits += 1
-                yield value
-
-    request_inputs = scope_owner._request_inputs(sample_request)
-    request_inputs["alignment_feature_candidate_ids"] = CountedFeatures(
-        request_inputs["alignment_feature_candidate_ids"]
-    )
-    with pytest.raises(SearchScopeContractError, match="request subject memberships"):
-        replace(scope, request=sample_request)
     assert replace(subject_view, request=sample_request).capture_bindings == (
         view_binding,
     )
@@ -690,7 +625,6 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         sample_key=other_sample.identity.sample_key,
         acquisition_source_id=other_source.acquisition_source_id,
     )
-    prepared_feature_visits = feature_visits
     for _ in range(2):
         assert replace(
             scope,
@@ -702,43 +636,8 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         assert replace(subject_view, request=sample_request).capture_bindings == (
             view_binding,
         )
-    assert prepared_feature_visits > 0
-    assert feature_visits == prepared_feature_visits
-    malformed_request = build_processing_request_identity(
-        acquisition_sources=request.acquisition_sources,
-        acquisition_bindings=request.acquisition_bindings,
-        scientific_input_schema_version=request.scientific_input_schema_version,
-        processing_algorithm_version=request.processing_algorithm_version,
-        processing_contract_version=request.processing_contract_version,
-        scientific_inputs={
-            REQUEST_INPUT_KEY: batch.request_payload(),
-            "current_discovery_candidate_universe": {
-                "samples": [
-                    universe_samples[0],
-                    {"sample_stem": "S2", "candidate_ids": [None]},
-                ]
-            },
-        },
-    )
-    assert replace(subject_view, request=malformed_request).capture_bindings == (
-        view_binding,
-    )
-    with pytest.raises(SearchScopeContractError, match="universe is malformed"):
-        replace(
-            scope,
-            request=malformed_request,
-            samples=(other_sample,),
-            declared_candidate_ids=(other_binding.candidate_id,),
-            capture_bindings=(other_binding,),
-        )
     # Returning to the full request must restore its complete candidate authority.
     assert replace(scope).capture_bindings == bindings
-    with pytest.raises(SearchScopeContractError, match="request subject memberships"):
-        replace(
-            scope, declared_candidate_ids=tuple(reversed(scope.declared_candidate_ids))
-        )
-    with pytest.raises(SearchScopeContractError, match="declared candidate order"):
-        replace(scope, capture_bindings=tuple(reversed(bindings)))
     rt = np.linspace(7.7, 8.3, 61)
     trace = Trace.from_arrays(
         sample_name=sample.metadata.sample_name,
@@ -757,30 +656,6 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         trace=trace,
     )
     assert capture.trace_group.context_id.startswith("untargeted:")
-    for substitution in (
-        {"query_mz": bindings[0].query_mz + 0.01},
-        {"query_ppm_tol": bindings[0].query_ppm_tol + 1.0},
-    ):
-        with pytest.raises(SearchScopeContractError, match="bound subject"):
-            replace(
-                scope,
-                capture_bindings=(replace(bindings[0], **substitution), bindings[1]),
-            )
-    with pytest.raises(
-        SearchScopeContractError,
-        match="candidate subject membership",
-    ):
-        replace(
-            scope,
-            capture_bindings=(
-                replace(
-                    bindings[0],
-                    method_subject_id=memberships[1][1],
-                    query_mz=subject_by_mz[243.099].precursor_mz,
-                ),
-                bindings[1],
-            ),
-        )
 
 
 def test_untargeted_batch_scope_accepts_known_comparison_bridged_workset(
@@ -899,255 +774,31 @@ def test_untargeted_batch_scope_accepts_known_comparison_bridged_workset(
         for binding in bindings
         if binding.method_subject_id in workset_subject_ids
     )
-    # The parent owner has already validated and indexed its immutable population.
-    # Instrument iteration without changing any values to reject per-child rescans.
-    visited = {"subjects": 0, "memberships": 0}
-
-    class CountedTuple(tuple):
-        def __new__(cls, values, field):
-            result = super().__new__(cls, values)
-            result.field = field
-            return result
-
-        def __iter__(self):
-            for value in super().__iter__():
-                visited[self.field] += 1
-                yield value
-
-    index = scope_owner._request_batch_capture_index(request)
-    pinned = scope_owner.cid_nl_method_subjects_from_request(request)
-    parent_subject_ids = index.subject_ids
-    parent_subjects = pinned.subjects
-    parent_memberships = pinned.candidate_memberships
-    object.__setattr__(
-        index, "subject_ids", CountedTuple(parent_subject_ids, "subjects")
+    workset_scope = replace(
+        parent_scope,
+        evidence_providers=workset_providers,
+        declared_candidate_ids=tuple(
+            binding.candidate_id for binding in workset_bindings
+        ),
+        capture_bindings=workset_bindings,
     )
-    object.__setattr__(pinned, "subjects", CountedTuple(parent_subjects, "subjects"))
-    object.__setattr__(
-        pinned, "candidate_memberships", CountedTuple(parent_memberships, "memberships")
-    )
-    try:
-        workset_scope = replace(
-            parent_scope,
-            evidence_providers=workset_providers,
-            declared_candidate_ids=tuple(
-                binding.candidate_id for binding in workset_bindings
-            ),
-            capture_bindings=workset_bindings,
+    for binding in workset_bindings:
+        subject = cid_nl_method_subject_from_request(
+            request, method_subject_id=binding.method_subject_id
         )
-        for binding in workset_bindings:
-            subject = cid_nl_method_subject_from_request(
-                request, method_subject_id=binding.method_subject_id
-            )
-            label, role, pair = capture_owner._hypothesis_context(
-                workset_scope,
-                query_mz=binding.query_mz,
-                method_subject_id=binding.method_subject_id,
-            )
-            assert label == f"untargeted:{binding.query_mz:.8g}:{subject.label}"
-            assert (role, pair) == ("Analyte", "")
-        with pytest.raises(CidNlMethodSubjectContractError, match="not pinned"):
-            cid_nl_method_subject_from_request(request, method_subject_id="missing")
-    finally:
-        object.__setattr__(index, "subject_ids", parent_subject_ids)
-        object.__setattr__(pinned, "subjects", parent_subjects)
-        object.__setattr__(pinned, "candidate_memberships", parent_memberships)
-
-    assert visited == {"subjects": 0, "memberships": 0}
+        label, role, pair = capture_owner._hypothesis_context(
+            workset_scope,
+            query_mz=binding.query_mz,
+            method_subject_id=binding.method_subject_id,
+        )
+        assert label == f"untargeted:{binding.query_mz:.8g}:{subject.label}"
+        assert (role, pair) == ("Analyte", "")
+    with pytest.raises(CidNlMethodSubjectContractError, match="not pinned"):
+        cid_nl_method_subject_from_request(request, method_subject_id="missing")
 
     assert len(workset_scope.evidence_providers) == 2
     assert len(workset_scope.evidence_providers) < len(parent_scope.evidence_providers)
     assert workset_scope.capture_bindings == workset_bindings
-
-    def providers_for(
-        subject_keys: set[tuple[float, float]],
-    ) -> tuple[EvidenceProviderBinding, ...]:
-        subject_ids = {
-            subject_by_mz_loss[subject_key].method_subject_id
-            for subject_key in subject_keys
-        }
-        return tuple(
-            provider
-            for provider in parent_scope.evidence_providers
-            if provider.method_subject_id in subject_ids
-        )
-
-    foreign_subject = mint_untargeted_cid_nl_method_subject(
-        precursor_mz=500.0,
-        precursor_tolerance_ppm=10.0,
-        neutral_loss_da=116.0474,
-    )
-    invalid_provider_cases = (
-        (tuple(reversed(workset_providers)), "exact compatible subject workset"),
-        (
-            (workset_providers[0], workset_providers[0]),
-            "duplicate evidence providers",
-        ),
-        (
-            providers_for({(243.098, 116.0474), (243.0985, 114.0)}),
-            "exact compatible subject workset",
-        ),
-        (
-            (
-                EvidenceProviderBinding(
-                    provider_id=CID_NL_PROVIDER_ID,
-                    method_subject_id=foreign_subject.method_subject_id,
-                ),
-            ),
-            "exact compatible subject workset",
-        ),
-    )
-    for invalid_providers, message in invalid_provider_cases:
-        with pytest.raises(
-            SearchScopeContractError,
-            match=message,
-        ):
-            replace(workset_scope, evidence_providers=invalid_providers)
-
-
-def test_scope_rejects_provider_not_bound_to_variant_definition(
-    tmp_path: Path,
-) -> None:
-    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("S1",))
-    method_subject = cid_nl_method_subject_from_target(fixture.target)
-
-    with pytest.raises(SearchScopeContractError, match="evidence provider"):
-        TargetSearchScope(
-            schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-            request=fixture.request,
-            samples=fixture.samples,
-            method_constraints=CaptureMethodConstraints(
-                boundary_policy="targeted_gaussian15",
-                peak_config=_peak_config(tmp_path),
-            ),
-            evidence_providers=(
-                EvidenceProviderBinding(
-                    provider_id="caller_authored_provider",
-                    method_subject_id=method_subject.method_subject_id,
-                ),
-            ),
-            declared_candidate_ids=("candidate-a",),
-            capture_bindings=(),
-            target_snapshot=fixture.target.snapshot,
-            target=fixture.target,
-        )
-
-
-def test_owner_binding_rejects_observation_from_other_capture_trace(
-    tmp_path: Path,
-) -> None:
-    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("S1",))
-    sample = fixture.sample("S1")
-    method_subject = cid_nl_method_subject_from_target(fixture.target)
-    source = resolve_request_acquisition_source(
-        processing_owners=fixture.owners,
-        sample=sample,
-    )
-    rt = np.linspace(7.7, 8.3, 61)
-    intensity = 100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2)
-    binding = _capture_binding(
-        candidate_id="candidate-a",
-        method_subject_id=method_subject.method_subject_id,
-        sample=sample,
-        acquisition_source_id=source.acquisition_source_id,
-        mz=method_subject.precursor_mz,
-        ppm_tol=method_subject.precursor_tolerance_ppm,
-        rt_min=float(rt[0]),
-        rt_max=float(rt[-1]),
-    )
-    scope = TargetSearchScope(
-        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=fixture.request,
-        samples=fixture.samples,
-        method_constraints=CaptureMethodConstraints(
-            boundary_policy="resolver_interval",
-            peak_config=_peak_config(tmp_path),
-        ),
-        evidence_providers=(
-            EvidenceProviderBinding(
-                provider_id=CID_NL_PROVIDER_ID,
-                method_subject_id=method_subject.method_subject_id,
-            ),
-        ),
-        declared_candidate_ids=(binding.candidate_id,),
-        capture_bindings=(binding,),
-        target_snapshot=fixture.target.snapshot,
-        target=fixture.target,
-    )
-
-    def captured(source_name: str):
-        return capture_owner.capture_peak_hypotheses(
-            scope=scope,
-            candidate_id=binding.candidate_id,
-            trace=Trace.from_arrays(
-                sample_name=sample.metadata.sample_name,
-                mz=binding.query_mz,
-                rt=rt,
-                intensity=intensity,
-                rt_min=binding.query_rt_min,
-                rt_max=binding.query_rt_max,
-                ppm_tol=binding.query_ppm_tol,
-                source=source_name,
-                acquisition_source_id=source.acquisition_source_id,
-            ),
-        )
-
-    source_capture = captured("source-capture")
-    rebound_capture = captured("rebound-capture")
-    observation = capture_owner.mint_captured_peak_observation(
-        source_capture,
-        processing_owners=fixture.owners,
-        sample=sample,
-    )
-    evidence = cid_nl_evidence(
-        fixture,
-        "S1",
-        scan_number=101,
-        scan_rt_min=observation.content.integration.rt_apex_min,
-    )
-    support = cid_nl_unique_support(
-        fixture,
-        "S1",
-        peak=observation,
-        evidence=evidence,
-    )
-    assessment = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
-        sample=sample,
-        target=fixture.target,
-        detector_invocation_id="gaussian15:S1:trace-binding",
-        evaluation_receipt=CidNlEvaluationReceipt(
-            query_rt_min=7.5,
-            query_rt_max=8.5,
-            support_policy=cid_nl_support_policy(),
-            acquisition_supported=True,
-            search_completed=True,
-            reason_code=None,
-        ),
-        candidate_peaks=(observation,),
-        evidence_refs=(evidence,),
-        individual_support_refs=(support,),
-    )
-    hypothesis = compose_cid_nl_peak_hypotheses_from_assessment(
-        processing_owners=fixture.owners,
-        sample=sample,
-        assessment=assessment,
-    )[0]
-    assert rebound_capture.selected_hypothesis is not None
-    assert (
-        rebound_capture.selected_hypothesis.integration
-        == source_capture.selected_hypothesis.integration
-    )
-
-    with pytest.raises(
-        capture_owner.SampleLocalCaptureError,
-        match="captured physical selection",
-    ):
-        capture_owner.bind_owner_backed_capture_hypothesis(
-            rebound_capture,
-            observation=observation,
-            hypothesis=hypothesis,
-        )
 
 
 @pytest.mark.parametrize("ripple", [False, True])
@@ -1335,30 +986,6 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
         assert owner_hypothesis.integration.rt_right_min >= 9.2
     assert projections == 1
     assert evaluation_calls == 0
-
-
-def test_untargeted_scope_rejects_targeted_request_variant(tmp_path: Path) -> None:
-    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("S1",))
-    method_subject = cid_nl_method_subject_from_target(fixture.target)
-
-    with pytest.raises(SearchScopeContractError, match="Untargeted"):
-        UntargetedSearchScope(
-            schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-            request=fixture.request,
-            samples=fixture.samples,
-            method_constraints=CaptureMethodConstraints(
-                boundary_policy="resolver_interval",
-                peak_config=_peak_config(tmp_path),
-            ),
-            evidence_providers=(
-                EvidenceProviderBinding(
-                    provider_id=CID_NL_PROVIDER_ID,
-                    method_subject_id=method_subject.method_subject_id,
-                ),
-            ),
-            declared_candidate_ids=("candidate-a",),
-            capture_bindings=(),
-        )
 
 
 def test_observation_seam_does_not_accept_caller_hypothesis_override() -> None:

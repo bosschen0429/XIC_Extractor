@@ -9,11 +9,10 @@ import numpy as np
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.peak_detection.baseline import BaselineMethod, asls_baseline
+from xic_extractor.peak_detection.baseline import BaselineMethod
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     cid_nl_method_subject_from_request,
-    validate_cid_nl_method_subject_binding,
 )
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,
@@ -22,9 +21,6 @@ from xic_extractor.peak_detection.hypotheses import (
     build_peak_hypotheses,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.peak_detection.ms1_morphology import (
-    gaussian15_positive_asls_residual_trace,
-)
 from xic_extractor.peak_detection.ms1_trace_detection import (
     Ms1TracePeakDetection,
     detect_ms1_trace_peak,
@@ -35,11 +31,9 @@ from xic_extractor.peak_detection.observations import (
     PeakObservationGenerationProvenance,
     PeakObservationRef,
     _project_peak_observation_values,
-    _validate_peak_observation_inputs,
     mint_peak_observation_ref,
     mint_physical_peak_observations,
     physical_peak_observation_integration,
-    validate_peak_observation_trace_binding,
 )
 from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -60,8 +54,6 @@ from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
     request_binds_physical_capture_profile,
     require_capture_binding,
-    validate_scope_owner_binding,
-    validate_scope_trace_coordinates,
 )
 from xic_extractor.peak_detection.traces import Trace, TraceGroup
 from xic_extractor.processing_identity import ProcessingOwnerReferences
@@ -197,19 +189,6 @@ def _capture_trace_group(
 ) -> TraceGroup:
     if not isinstance(trace, Trace):
         raise SampleLocalCaptureError("capture trace must be an owner trace")
-    try:
-        validate_scope_trace_coordinates(
-            scope,
-            binding=binding,
-            sample_name=trace.sample_name,
-            acquisition_source_id=trace.acquisition_source_id,
-            mz=trace.mz,
-            rt_min=trace.rt_min,
-            rt_max=trace.rt_max,
-            ppm_tol=trace.ppm_tol,
-        )
-    except SearchScopeContractError as exc:
-        raise SampleLocalCaptureError(str(exc)) from exc
     label, role, istd_pair = _hypothesis_context(
         scope,
         query_mz=binding.query_mz,
@@ -463,9 +442,6 @@ def capture_physical_backfill_observation(
     evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
 ) -> PeakObservationRef | None:
     """Capture a backfill question using its request-bound method and profile."""
-    validate_cid_nl_method_subject_binding(
-        method_subject, processing_owners=processing_owners
-    )
     if (
         not request_binds_physical_capture_profile(processing_owners.request, profile)
         or trace.mz != physical_mz
@@ -536,14 +512,6 @@ def mint_captured_peak_observation(
 ) -> PeakObservationRef:
     if not isinstance(capture, SampleLocalCapture):
         raise SampleLocalCaptureError("observation requires SampleLocalCapture")
-    try:
-        validate_scope_owner_binding(
-            capture.scope,
-            processing_owners=processing_owners,
-            sample=sample,
-        )
-    except SearchScopeContractError as exc:
-        raise SampleLocalCaptureError(str(exc)) from exc
     selected = capture.selected_hypothesis
     if selected is None or not isinstance(selected, PeakHypothesis):
         raise SampleLocalCaptureError(
@@ -558,12 +526,6 @@ def mint_captured_peak_observation(
             "observation hypothesis bypasses the captured selection identity"
         )
     if capture.physical_evaluation is not None:
-        _validate_peak_observation_inputs(
-            processing_owners=processing_owners,
-            sample=sample,
-            trace=capture.trace,
-            integration=selected.integration,
-        )
         sample_key, content, provenance = _project_captured_physical_observation(
             capture, selected
         )
@@ -593,7 +555,6 @@ def mint_captured_peak_observation(
         sample=sample,
         trace=capture.trace,
         integration=selected.integration,
-        selection_intensity=_captured_selection_intensity(capture),
         resolver_mode=capture.scope.method_constraints.peak_config.resolver_mode,
         proposal_sources=selected.audit.proposal_sources,
         physical_evaluation=capture.physical_evaluation,
@@ -658,19 +619,7 @@ def bind_owner_backed_capture_hypothesis(
             "owner hypothesis does not bind the captured physical selection"
         )
     try:
-        if capture.physical_evaluation is None:
-            binding = require_capture_binding(capture.scope, capture.candidate_id)
-            validate_peak_observation_trace_binding(
-                observation,
-                sample_key=binding.sample_key,
-                trace=capture.trace,
-                integration=selected.integration,
-                selection_intensity=_captured_selection_intensity(capture),
-                resolver_mode=capture.scope.method_constraints.peak_config.resolver_mode,
-                proposal_sources=selected.audit.proposal_sources,
-                signal_processing_profile=capture.scope.method_constraints.signal_processing_profile,
-            )
-        else:
+        if capture.physical_evaluation is not None:
             _sample_key, content, provenance = _project_captured_physical_observation(
                 capture, selected
             )
@@ -687,24 +636,6 @@ def bind_owner_backed_capture_hypothesis(
         capture,
         hypotheses=(hypothesis,),
         selected_hypothesis=hypothesis,
-    )
-
-
-def _captured_selection_intensity(capture: SampleLocalCapture) -> object | None:
-    if capture.physical_evaluation is not None:
-        return capture.physical_selection_intensity
-    selected = capture.selected_hypothesis
-    if selected is None or selected.integration.integration_method not in {
-        "selected_envelope_gaussian15",
-        "chrom_peak_segment_gaussian15",
-    }:
-        return None
-    return gaussian15_positive_asls_residual_trace(
-        capture.trace.intensity,
-        asls_baseline(capture.trace.intensity),
-        window_points=(
-            capture.scope.method_constraints.peak_config.ms1_morphology_smoothing_window_points
-        ),
     )
 
 

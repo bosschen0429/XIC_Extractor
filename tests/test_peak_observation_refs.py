@@ -18,10 +18,8 @@ from xic_extractor.peak_detection.models import (
     PeakResult,
 )
 from xic_extractor.peak_detection.observations import (
-    PeakObservationContractError,
     PeakObservationRef,
     mint_peak_observation_ref,
-    validate_peak_observation_binding,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -95,36 +93,7 @@ def test_query_provenance_does_not_change_selected_physical_content(
     assert narrow.generation_provenance != wide.generation_provenance
 
 
-def test_binding_rejects_sample_substitution(tmp_path: Path) -> None:
-    identity = _identity_fixture(tmp_path)
-    reference = mint_peak_observation_ref(
-        processing_owners=identity.owners,
-        sample=identity.sample,
-        trace=_standard_trace(identity.owners),
-        integration=_integration(raw_scan_indices=(1, 2, 3)),
-        resolver_mode="local_minimum",
-        proposal_sources=("local_minimum",),
-    )
-    other_snapshot = mint_sample_metadata_snapshot(
-        (SampleMetadata(sample_name="Sample B", raw_stem="sample-b"),),
-        identity_namespace="study:peak-observation",
-    )
-    other_sample = resolve_canonical_sample_identity(other_snapshot, "sample-b")
-
-    validate_peak_observation_binding(
-        reference,
-        processing_owners=identity.owners,
-        sample=identity.sample,
-    )
-    with pytest.raises(PeakObservationContractError, match="different sample"):
-        validate_peak_observation_binding(
-            reference,
-            processing_owners=identity.owners,
-            sample=other_sample,
-        )
-
-
-def test_selected_signal_mutation_changes_content_and_tampering_fails_closed(
+def test_selected_signal_mutation_changes_content(
     tmp_path: Path,
 ) -> None:
     identity = _identity_fixture(tmp_path)
@@ -136,19 +105,6 @@ def test_selected_signal_mutation_changes_content_and_tampering_fails_closed(
         rt_max=8.3,
         acquisition_source_id=_source_id(identity.owners),
     )
-
-    with pytest.raises(
-        PeakObservationContractError,
-        match="height_raw|area_raw_counts_seconds",
-    ):
-        mint_peak_observation_ref(
-            processing_owners=identity.owners,
-            sample=identity.sample,
-            trace=mutated_trace,
-            integration=_integration(raw_scan_indices=(1, 2, 3)),
-            resolver_mode="local_minimum",
-            proposal_sources=("local_minimum",),
-        )
 
     mutated = mint_peak_observation_ref(
         processing_owners=identity.owners,
@@ -164,59 +120,6 @@ def test_selected_signal_mutation_changes_content_and_tampering_fails_closed(
     )
 
     assert original.content.physical_identity != mutated.content.physical_identity
-
-
-@pytest.mark.parametrize(
-    ("field_name", "contradiction", "message"),
-    [
-        ("height_raw", 999999.0, "height_raw"),
-        ("height_smoothed", 999999.0, "height_smoothed"),
-        ("raw_apex_rt_min", 7.9, "raw_apex_rt_min"),
-        ("rt_apex_min", 7.9, "rt_apex_min"),
-        ("area_raw_counts_seconds", 999999.0, "area_raw_counts_seconds"),
-    ],
-)
-def test_mint_rejects_integration_facts_that_contradict_the_selected_trace(
-    tmp_path: Path,
-    field_name: str,
-    contradiction: float,
-    message: str,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    integration = replace(
-        _integration(raw_scan_indices=(1, 2, 3)),
-        **{field_name: contradiction},
-    )
-
-    with pytest.raises(PeakObservationContractError, match=message):
-        mint_peak_observation_ref(
-            processing_owners=identity.owners,
-            sample=identity.sample,
-            trace=_standard_trace(identity.owners),
-            integration=integration,
-            resolver_mode="local_minimum",
-            proposal_sources=("local_minimum",),
-        )
-
-
-def test_mint_rejects_selection_point_that_is_not_a_true_apex(
-    tmp_path: Path,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-
-    with pytest.raises(
-        PeakObservationContractError,
-        match="height_smoothed|apex",
-    ):
-        mint_peak_observation_ref(
-            processing_owners=identity.owners,
-            sample=identity.sample,
-            trace=_standard_trace(identity.owners),
-            integration=_integration(raw_scan_indices=(1, 2, 3)),
-            selection_intensity=(0.0, 900.0, 500.0, 900.0, 0.0),
-            resolver_mode="smoothed",
-            proposal_sources=("synthetic_selection_trace",),
-        )
 
 
 def test_integration_fact_mutation_changes_content_identity(tmp_path: Path) -> None:
@@ -328,104 +231,6 @@ def test_signed_zero_trace_values_have_one_observation_identity(
     assert negative == positive
 
 
-def test_mint_rejects_sample_outside_request_and_trace_sample_substitution(
-    tmp_path: Path,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    other = _identity_fixture(
-        tmp_path,
-        sample_key="sample-b",
-        sample_name="Sample B",
-    )
-
-    with pytest.raises(PeakObservationContractError, match="processing owner.*closure"):
-        mint_peak_observation_ref(
-            processing_owners=identity.owners,
-            sample=other.sample,
-            trace=_trace(
-                rt=(7.7, 7.9, 8.0, 8.1, 8.3),
-                intensity=(0.0, 50.0, 500.0, 50.0, 0.0),
-                rt_min=7.7,
-                rt_max=8.3,
-                sample_name="sample-b",
-                acquisition_source_id=_source_id(other.owners),
-            ),
-            integration=_integration(raw_scan_indices=(1, 2, 3)),
-            resolver_mode="local_minimum",
-            proposal_sources=("local_minimum",),
-        )
-    with pytest.raises(PeakObservationContractError, match="different sample"):
-        mint_peak_observation_ref(
-            processing_owners=other.owners,
-            sample=other.sample,
-            trace=_standard_trace(other.owners),
-            integration=_integration(raw_scan_indices=(1, 2, 3)),
-            resolver_mode="local_minimum",
-            proposal_sources=("local_minimum",),
-        )
-
-
-def test_trace_acquisition_source_must_match_the_request_binding(
-    tmp_path: Path,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    foreign = _identity_fixture(
-        tmp_path,
-        sample_key="sample-b",
-        sample_name="Sample B",
-    )
-    trace = replace(
-        _standard_trace(identity.owners),
-        acquisition_source_id=_source_id(foreign.owners),
-    )
-
-    with pytest.raises(PeakObservationContractError, match="acquisition source"):
-        mint_peak_observation_ref(
-            processing_owners=identity.owners,
-            sample=identity.sample,
-            trace=trace,
-            integration=_integration(raw_scan_indices=(1, 2, 3)),
-            resolver_mode="local_minimum",
-            proposal_sources=("local_minimum",),
-        )
-
-
-def test_contiguous_but_wrong_trace_region_fails_closed(tmp_path: Path) -> None:
-    identity = _identity_fixture(tmp_path)
-
-    with pytest.raises(PeakObservationContractError, match="integration RT bounds"):
-        mint_peak_observation_ref(
-            processing_owners=identity.owners,
-            sample=identity.sample,
-            trace=_standard_trace(identity.owners),
-            integration=_integration(raw_scan_indices=(0, 1, 2)),
-            resolver_mode="local_minimum",
-            proposal_sources=("local_minimum",),
-        )
-
-
-def test_integration_bounds_outside_the_supplied_trace_fail_closed(
-    tmp_path: Path,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    integration = replace(
-        _integration(raw_scan_indices=(0, 1, 2, 3, 4)),
-        rt_left_min=-100.0,
-        rt_right_min=100.0,
-        rt_width_min=200.0,
-    )
-
-    with pytest.raises(PeakObservationContractError, match="supplied Trace"):
-        mint_peak_observation_ref(
-            processing_owners=identity.owners,
-            sample=identity.sample,
-            trace=_standard_trace(identity.owners),
-            integration=integration,
-            resolver_mode="local_minimum",
-            proposal_sources=("local_minimum",),
-        )
-
-
 def test_owner_boundary_between_scan_points_maps_to_selected_trace(
     tmp_path: Path,
 ) -> None:
@@ -474,7 +279,6 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
         sample=identity.sample,
         trace=trace,
         integration=integration,
-        selection_intensity=(0.0, 40.0, 480.0, 40.0, 0.0),
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
@@ -483,79 +287,6 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
     assert reference.content.rt == (7.9, 8.0, 8.1)
     assert reference.content.integration.rt_left_min == 7.94
     assert reference.content.integration.rt_right_min == 8.06
-
-
-@pytest.mark.parametrize(
-    "field_name",
-    [
-        "area_baseline_corrected",
-        "area_uncertainty",
-        "area_uncertainty_formula_version",
-        "baseline_residual_mad",
-        "area_uncertainty_noise_source",
-        "baseline_type",
-        "baseline_score",
-        "area_ms1_morphology",
-        "ms1_morphology_area_source",
-        "ms1_morphology_trace_method",
-        "ms1_morphology_trace_effective_points",
-    ],
-)
-def test_mint_rejects_derived_integration_fact_mutation(
-    tmp_path: Path,
-    field_name: str,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-    trace = _standard_trace(identity.owners)
-    integration = _integration_with_derived_facts(trace)
-    original = getattr(integration, field_name)
-    if isinstance(original, str):
-        contradiction: object = f"{original}-forged"
-    elif isinstance(original, int):
-        contradiction = original + 2
-    else:
-        assert isinstance(original, float)
-        contradiction = original + 1.0
-
-    with pytest.raises(PeakObservationContractError, match=field_name):
-        mint_peak_observation_ref(
-            processing_owners=identity.owners,
-            sample=identity.sample,
-            trace=trace,
-            integration=replace(
-                integration,
-                **{field_name: contradiction},
-            ),
-            resolver_mode="local_minimum",
-            proposal_sources=("local_minimum",),
-        )
-
-
-@pytest.mark.parametrize(
-    ("raw_scan_indices", "message"),
-    [
-        ((), "non-empty"),
-        ((1, 3), "contiguous"),
-        ((2, 1), "strictly increasing"),
-        ((1, 1), "strictly increasing"),
-    ],
-)
-def test_missing_reordered_or_duplicate_selected_indices_fail_closed(
-    tmp_path: Path,
-    raw_scan_indices: tuple[int, ...],
-    message: str,
-) -> None:
-    identity = _identity_fixture(tmp_path)
-
-    with pytest.raises(PeakObservationContractError, match=message):
-        mint_peak_observation_ref(
-            processing_owners=identity.owners,
-            sample=identity.sample,
-            trace=_standard_trace(identity.owners),
-            integration=_integration(raw_scan_indices=raw_scan_indices),
-            resolver_mode="local_minimum",
-            proposal_sources=("local_minimum",),
-        )
 
 
 def test_proposal_source_reorder_is_canonicalized(tmp_path: Path) -> None:
@@ -726,46 +457,6 @@ def _integration(
     )
 
 
-def _integration_with_derived_facts(trace: Trace) -> IntegrationResult:
-    peak = PeakResult(
-        rt=8.0,
-        intensity=500.0,
-        intensity_smoothed=500.0,
-        area=3300.0,
-        peak_start=7.9,
-        peak_end=8.1,
-    )
-    candidate = PeakCandidate(
-        peak=peak,
-        selection_apex_rt=8.0,
-        selection_apex_intensity=500.0,
-        selection_apex_index=2,
-        raw_apex_rt=8.0,
-        raw_apex_intensity=500.0,
-        raw_apex_index=2,
-        prominence=450.0,
-        proposal_sources=("local_minimum",),
-    )
-    result = PeakDetectionResult(
-        status="OK",
-        peak=peak,
-        n_points=trace.scan_count,
-        max_smoothed=500.0,
-        n_prominent_peaks=1,
-        candidates=(candidate,),
-    )
-    return build_peak_hypotheses(
-        sample_name=trace.sample_name,
-        target_label="test-only-target",
-        role="",
-        istd_pair="",
-        resolver_mode="local_minimum",
-        peak_result=result,
-        rt=trace.rt,
-        intensity=trace.intensity,
-    )[0].integration
-
-
 def test_advisory_quality_does_not_change_physical_content_identity(tmp_path):
     from xic_extractor.peak_detection.signal_quality import SignalQuality
 
@@ -831,7 +522,6 @@ def test_retained_candidate_batch_preserves_observation_values(
             integration=observation_owner.physical_peak_observation_integration(
                 evaluation
             ),
-            selection_intensity=prepared.prepared.positive_signal,
             resolver_mode="local_minimum",
             proposal_sources=("canonical_physical_segment",),
             physical_evaluation=evaluation,

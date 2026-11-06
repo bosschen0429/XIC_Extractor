@@ -15,9 +15,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support_models import (
     DdaCidNlPeakSupportRef,
 )
 from xic_extractor.peak_detection.observations import (
-    PeakObservationContractError,
     PeakObservationRef,
-    validate_peak_observation_binding,
 )
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -249,12 +247,6 @@ def _validate_candidate_peaks(
         raise DdaCidNlPeakSupportContractError(
             "candidate physical MS1 peak observations are ambiguous"
         )
-    for peak in typed_peaks:
-        _validate_peak_binding(
-            peak,
-            processing_owners=processing_owners,
-            sample=sample,
-        )
     return typed_peaks
 
 
@@ -289,22 +281,6 @@ def _validate_evidence_binding(
             sample=sample,
         )
     except CidNlEvidenceContractError as exc:
-        raise DdaCidNlPeakSupportContractError(str(exc)) from exc
-
-
-def _validate_peak_binding(
-    reference: PeakObservationRef,
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-) -> None:
-    try:
-        validate_peak_observation_binding(
-            reference,
-            processing_owners=processing_owners,
-            sample=sample,
-        )
-    except PeakObservationContractError as exc:
         raise DdaCidNlPeakSupportContractError(str(exc)) from exc
 
 

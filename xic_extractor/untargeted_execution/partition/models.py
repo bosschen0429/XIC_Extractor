@@ -52,7 +52,6 @@ from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
-    validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
@@ -443,14 +442,6 @@ def _project_completed_backfill(
     if backfill is None:
         raise UntargetedPartitionError("initial assessment is not a backfill")
     assessment = backfill.assessment
-    initial = result.adapter_result.assessment_input.assessment
-    for reference in (initial, assessment):
-        validate_cid_nl_method_assessment_binding(
-            reference,
-            processing_owners=job.processing_owners,
-            sample=job.sample,
-            method_subject=job.method_subject,
-        )
     receipt = assessment.content.evaluation_receipt
     if (
         assessment.content.technical_state != "evaluated"

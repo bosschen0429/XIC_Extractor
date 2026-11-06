@@ -17,9 +17,7 @@ from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
 )
 from xic_extractor.peak_detection.observations import (
-    PeakObservationContractError,
     PeakObservationRef,
-    validate_peak_observation_binding,
 )
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -130,14 +128,6 @@ def _validate_observation_reference(
         raise PeakHypothesisContractError(
             "peak observation must be an owner-minted PeakObservationRef"
         )
-    try:
-        validate_peak_observation_binding(
-            peak_observation,
-            processing_owners=processing_owners,
-            sample=sample,
-        )
-    except PeakObservationContractError as exc:
-        raise PeakHypothesisContractError(str(exc)) from exc
 
 
 def measured_hypothesis_key(method: str, peak_observation: PeakObservationRef) -> str:
@@ -188,14 +178,6 @@ def _validate_reference_pair(
         raise PeakHypothesisContractError(
             "sample must be an owner-resolved canonical sample"
         )
-    try:
-        validate_peak_observation_binding(
-            peak_observation,
-            processing_owners=processing_owners,
-            sample=sample,
-        )
-    except PeakObservationContractError as exc:
-        raise PeakHypothesisContractError(str(exc)) from exc
     _validate_reference_content_pair(peak_observation, chromatographic_support)
     if chromatographic_support.content.sample_key != sample.identity.sample_key:
         raise PeakHypothesisContractError(

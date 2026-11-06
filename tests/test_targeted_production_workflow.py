@@ -1207,7 +1207,7 @@ def test_same_reported_peak_keeps_its_quality_reasons(tmp_path: Path) -> None:
 def test_finalization_projects_retained_candidate_answers_without_resolving_again(
     tmp_path, monkeypatch
 ):
-    from xic_extractor.peak_detection import observations
+    from xic_extractor.peak_detection import capture
 
     config, target, output = production_case(
         tmp_path,
@@ -1226,8 +1226,8 @@ def test_finalization_projects_retained_candidate_answers_without_resolving_agai
     def unexpected_resolution(*args, **kwargs):
         raise AssertionError("finalization recomputed an already-owned physical answer")
 
-    monkeypatch.setattr(observations, "prepare_physical_signal", unexpected_resolution)
-    monkeypatch.setattr(observations, "evaluate_physical_peak", unexpected_resolution)
+    monkeypatch.setattr(capture, "prepare_physical_signal", unexpected_resolution)
+    monkeypatch.setattr(capture, "evaluate_physical_peak", unexpected_resolution)
     result = execute_targeted_production_workflow(request, output)[0]
     assert tuple(d.value for d in result.completed_projection.decisions) == tuple(
         file.results[target.label].reported_peak_area for file in output.file_results
