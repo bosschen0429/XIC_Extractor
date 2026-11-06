@@ -118,7 +118,7 @@ The normal output directory contains one XLSX only. A nonempty supplied sample
 context table remains in a hidden sheet so it can be inspected without sidecar
 files.
 
-Use **在結果檢閱開啟** after completion, or open the XLSX in the
+Use **檢閱結果** after completion, or open the XLSX in the
 workbench's result picker. Inspector shows saved values without RAW, DLLs,
 recomputation or additional output files. Start with the batch overview, select
 a target or review action, then a sample for its details. The workbook does not contain chromatogram curves.
