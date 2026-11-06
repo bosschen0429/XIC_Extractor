@@ -113,12 +113,20 @@ def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path
         "data-nl-product-mz", "60"
     )
     expect(root.locator(".dm-nl-measurement").first).to_contain_text("實測 NL 40 Da")
-    expect(root.get_by_role("heading", name="NL 證據", exact=True)).to_contain_text(
-        "產物 m/z 60"
-    )
-    expect(
-        root.locator(".dm-spectrum svg text").filter(has_text="NL 產物")
-    ).to_have_count(0)
+    expect(root.locator("[data-nl-product-label]")).to_have_text("NL 產物 m/z 60")
+    expect(root.locator("[data-nl-leader]")).to_have_count(1)
+    for width in (420, 1915):
+        page.set_viewport_size({"width": width, "height": 884})
+        expect(root.locator("[data-nl-product-label]")).to_be_visible()
+        assert root.locator(".dm-spectrum svg").evaluate("""svg => {
+            const box=svg.querySelector('[data-nl-product-label]').getBBox();
+            const stems=[...svg.querySelectorAll('line[x1][y1][x2][y2]')]
+                .filter(line=>line.getAttribute('x1')===line.getAttribute('x2'));
+            const top=Math.min(...stems.flatMap(line=>[
+                +line.getAttribute('y1'),+line.getAttribute('y2')]));
+            return box.y+box.height < top && box.x>=0
+                && box.x+box.width<=svg.viewBox.baseVal.width;
+        }""")
     expect(root.locator(".dm-xic [data-nl-boundary]")).to_have_count(2)
     root.get_by_role("button", name="下一筆支持").click()
     expect(root.locator("[data-spectrum-scan]")).to_have_attribute(

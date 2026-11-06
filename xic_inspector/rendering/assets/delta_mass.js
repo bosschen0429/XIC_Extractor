@@ -322,7 +322,7 @@
       const meta = scan.precursor_metadata;
       if (meta) scanDetails.append(node('p', `Monoisotopic m/z ${number(meta.monoisotopic_mz)} · charge ${number(meta.charge)} · isolation width ${number(meta.isolation_width_da)} Da · offset ${number(meta.isolation_offset_da)} Da`, 'dm-note'));
       if (!scan.mz.length) { spectrum.append(node('p', '此 scan 沒有 spectrum 點。')); return; }
-      const W = Math.max(320, chart.clientWidth), H = hasNl ? 230 : 280, L = 62, R = W - 26, T = 24, B = H - 45;
+      const W = Math.max(320, chart.clientWidth), H = (hasNl ? 230 : 280) + (match ? 28 : 0), L = 62, R = W - 26, T = match ? 52 : 24, B = H - 45;
       let lo = Infinity, hi = -Infinity, max = 1;
       scan.mz.forEach((mz, i) => { lo = Math.min(lo, mz); hi = Math.max(hi, mz); max = Math.max(max, scan.intensity[i]); });
       if (lo === hi) { lo -= 1; hi += 1; }
@@ -334,7 +334,7 @@
         svg.append(mark('text', {x:x(mz), y:B+20, 'text-anchor':'middle', fill:'var(--muted)'}, mz.toFixed(1)));
         svg.append(mark('text', {x:L-7, y:y(value)+4, 'text-anchor':'end', fill:'var(--muted)'}, number(value)));
       }
-      svg.append(mark('text', {x:L, y:14, fill:'var(--muted)'}, '原始強度'));
+      svg.append(mark('text', {x:match ? 8 : L, y:T-10, fill:'var(--muted)'}, '原始強度'));
       svg.append(mark('text', {x:(L+R)/2, y:H-3, 'text-anchor':'middle', fill:'var(--muted)'}, 'm/z'));
       scan.mz.forEach((mz, i) => svg.append(mark('line', {x1:x(mz), x2:x(mz), y1:B, y2:y(scan.intensity[i]), stroke:'var(--accent)', 'stroke-width':1.5})));
       const highlight = mark('line', {stroke:'var(--ink)', 'stroke-width':3}); svg.append(highlight);
@@ -343,7 +343,9 @@
         if (index >= 0) {
           const product = mark('line', {x1:x(match.product_mz), x2:x(match.product_mz), y1:B, y2:y(scan.intensity[index]), stroke:'var(--ink)', 'stroke-width':3, 'data-nl-product-mz':match.product_mz});
           product.append(mark('title', {}, `NL 實測產物 m/z ${match.product_mz}`)); svg.append(product);
-          ms2Heading.append(document.createTextNode(' · '), node('span', `產物 m/z ${mass(match.product_mz)}`, 'dm-product-label'));
+          // A dedicated annotation lane stays above every spectrum peak.
+          svg.append(mark('text', {x:(L+R)/2, y:18, 'text-anchor':'middle', 'font-weight':600, fill:'var(--ink)', 'data-nl-product-label':true}, `NL 產物 m/z ${mass(match.product_mz)}`));
+          svg.append(mark('path', {d:`M${(L+R)/2},26 L${x(match.product_mz)},${T-8} L${x(match.product_mz)},${y(scan.intensity[index])-3}`, fill:'none', stroke:'var(--muted)', 'stroke-dasharray':'3 3', 'pointer-events':'none', 'data-nl-leader':true}));
         } else spectrum.append(node('p', '保存的 NL 產物不在此 spectrum 中，未繪製產物標記。', 'dm-note'));
       }
       function showPeak(index) {
