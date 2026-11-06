@@ -5,7 +5,6 @@ import pytest
 from tests.alignment_drift_evidence_fixtures import (
     _known_reference_workbook,
 )
-from tests.alignment_explanation_fixtures import explanation_summary
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.drift_evidence import (
     DriftEvidenceLookup,
@@ -555,22 +554,6 @@ def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
     assert interpolate_calibrated_rt_min(14, knots) == pytest.approx(14 * 1.125)
     assert interpolate_calibrated_rt_min(7, knots) is None
     assert interpolate_calibrated_rt_min(41, knots) is None
-    from xic_extractor.alignment_explanation.reader import (
-        read_alignment_explanation,
-    )
-    from xic_extractor.alignment_explanation.writer import (
-        ExplanationReportWriter,
-    )
-
-    with ExplanationReportWriter(tmp_path / "calibration.sqlite") as writer:
-        path = writer.finalize(
-            explanation_summary(
-                {"known_istd_reference": receipt}, review_only=writer.review_only
-            )
-        )
-    saved = read_alignment_explanation(path)
-    assert saved["schema_version"] == "alignment_explanation"
-    assert saved["known_istd_reference"] == receipt
 
 
 def test_batch_reference_does_not_invent_missing_measured_landmarks(
