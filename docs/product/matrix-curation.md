@@ -313,7 +313,8 @@ belong to the analysis backend.
 
 After an Untargeted run with Alignment, choose **整理矩陣** in its result. The
 panel opens with that run's folder, saved samples and internal standards; enter
-the threshold, choose **更新預覽**, then **產生新矩陣**. The run's own explanation supplies the evidence and internal
+the threshold; the preview follows the settings, and **產生新矩陣** is enabled
+once it matches them. The run's own explanation supplies the evidence and internal
 standards for **同化合物收斂**. To curate an earlier result, choose its Alignment output folder on
 **改用其他來源（選用）** tools; select a sample data TSV only when the page reports that
 none was found, and a target list only when no internal standard list is

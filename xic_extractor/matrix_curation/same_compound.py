@@ -1128,14 +1128,9 @@ class SameCompoundStep:
     key = "same_compound"
     label = "同化合物收斂"
     description = (
-        "排除同位素、Na⁺／K⁺／NH₄⁺、Mg／Ca adduct、鹽簇與聚集離子衍生列，"
-        "保留有證據的 [M+H]⁺，不改選較強的其他離子。元素或母列未定不阻擋排除。"
-        "只計直接偵測格：同一樣本 apex 差 "
-        "≤3 秒；加合物比例不穩時可由另外兩種已支持的單體加合形式共同佐證，"
-        "同位素比例與天然豐度檢查不放寬。"
-        "多種加合物、聚集離子與金屬同位素共同支持的家族，不要求先看到 [M+H]⁺。"
-        "質量關係以列中心 m/z 比對。"
-        "需要該次分析的 alignment_explanation.sqlite。"
+        "移除同一化合物的同位素、Na⁺／K⁺／NH₄⁺ 與 Mg／Ca adduct、鹽簇與聚集離子，"
+        "保留有證據的 [M+H]⁺。判定依據是同一樣本出峰時間相差 ≤3 秒，"
+        "且質量差與強度比例符合預期。"
     )
     parameters: tuple[StepParameter, ...] = ()
     needs_cell_evidence = True

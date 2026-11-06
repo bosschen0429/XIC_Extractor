@@ -55,6 +55,7 @@ async function detectCuration() {
     if (request !== state.curation.request) return;
     updateCuration({ detection });
     renderCuration(detection, "");
+    schedulePreview();
   } catch (error) {
     if (request === state.curation.request) renderCuration(null, error.message);
   }
@@ -76,8 +77,6 @@ function renderCuration(detection, error) {
   };
   if (error) item("todo", "Alignment 輸出", error);
   else if (detection) {
-    item("ok", "Matrix", pathTail(detection.matrix_path));
-    item("ok", "Review", pathTail(detection.review_path));
     const source = detection.sample_source;
     item(
       source ? "ok" : "todo",
@@ -130,7 +129,8 @@ function renderCuration(detection, error) {
       input.checked = remembered.enabled ?? true;
     }
     toggle.append(input, el("span", `${index + 1}. ${step.label}`));
-    block.append(toggle, el("p", step.description, "subtle"));
+    toggle.title = step.description;
+    block.append(toggle);
     for (const parameter of step.parameters) {
       const field = el("label", undefined, "field");
       const value = el("input");
@@ -139,13 +139,14 @@ function renderCuration(detection, error) {
       value.min = parameter.minimum;
       value.max = parameter.maximum;
       value.id = `curation-${step.key}-${parameter.key}`;
+      value.placeholder = `${parameter.minimum}–${parameter.maximum}`;
+      value.title = parameter.help;
       value.value = remembered.parameters?.[parameter.key] ?? "";
       if (unavailable) value.disabled = true;
       else value.dataset.analysisIdle = "";
       field.append(
         el("span", parameter.label),
         value,
-        el("small", parameter.help),
       );
       block.append(field);
     }
@@ -197,20 +198,38 @@ function curationRequest() {
 }
 function invalidateCurationPreview() {
   updateCuration({ previewRequest: null });
-  $("curation-preview").textContent = "設定已變更，請更新預覽。";
+  $("curation-preview").textContent = "正在更新預覽…";
   lock();
+  schedulePreview();
+}
+// The preview follows the settings; export stays disabled until it matches.
+let previewTimer = 0;
+let previewPending = false;
+function schedulePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => {
+    if (!state.curation.detection) return;
+    previewCuration().catch((error) => {
+      $("curation-preview").textContent = error.message;
+    });
+  }, 300);
 }
 async function previewCuration() {
-  if (state.curation.previewBusy) return;
+  if (state.curation.previewBusy) {
+    previewPending = true;
+    return;
+  }
   const { values } = curationRequest();
   const submitted = JSON.stringify(values);
   updateCuration({ previewBusy: true, previewRequest: null });
-  $("curation-preview-refresh").disabled = true;
   $("curation-preview").textContent = "正在計算預覽；仍可修改設定或檢閱結果。";
   lock();
   try {
     const preview = await api("/api/matrix-curation/preview", values);
-    if (JSON.stringify(curationRequest().values) !== submitted) return;
+    if (JSON.stringify(curationRequest().values) !== submitted) {
+      previewPending = true;
+      return;
+    }
     const host = $("curation-preview");
     host.replaceChildren(
       el(
@@ -247,7 +266,7 @@ async function previewCuration() {
         host.append(
           el(
             "p",
-            `至少 ${step.minimum_finite_count}/${step.eligible_sample_count} 個研究樣本有值（僅計未排除的 study_sample）；這是數值可用率，不是偵測率。`,
+            `至少 ${step.minimum_finite_count}/${step.eligible_sample_count} 個研究樣本有值才保留（QC、Blank 與已排除樣本不計）。`,
           ),
         );
     }
@@ -265,14 +284,17 @@ async function previewCuration() {
     updateCuration({ previewRequest: submitted });
   } finally {
     updateCuration({ previewBusy: false });
-    $("curation-preview-refresh").disabled = false;
     lock();
+    if (previewPending) {
+      previewPending = false;
+      schedulePreview();
+    }
   }
 }
 async function startCuration() {
   const { values, remembered } = curationRequest();
   if (JSON.stringify(values) !== state.curation.previewRequest)
-    throw new Error("請先更新預覽，確認保留與移除列數。");
+    throw new Error("預覽仍在更新，請稍候再產生新矩陣。");
   updateConfig({
     preferences: await api("/api/preferences", {
       matrix_curation: { steps: remembered },
@@ -297,7 +319,7 @@ export function bindCuration() {
     "samples",
     "",
     "curation-",
-    "通常不需選擇：會沿用這次分析的角色、組別、注射順序與排除設定。",
+    "通常不需選擇：會沿用這次分析的樣本角色、注射順序與排除設定。",
   );
   pathField(
     $("curation-overrides"),
@@ -320,6 +342,5 @@ export function bindCuration() {
     act(startCuration);
   };
 
-  $("curation-preview-refresh").onclick = () => act(previewCuration);
   $("curation-form").addEventListener("input", invalidateCurationPreview);
 }

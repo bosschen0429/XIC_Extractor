@@ -1095,7 +1095,7 @@ def test_new_batch_preserves_method_but_uses_the_new_folders_samples(
     _expand_section(page, f"#{prefix}sample-tools")
     page.locator(f"#{prefix}samples-refresh").click()
     expect(page.locator(f"#{prefix}samples-source")).to_contain_text(
-        "已沿用這個 RAW 資料夾確認的角色與排除設定"
+        "沿用已確認的角色與排除"
     )
     _wait_for_analysis_status(page, "已完成")
     fake_runs.release.set()
@@ -1407,7 +1407,9 @@ def test_untargeted_result_shows_one_matrix_and_groups_technical_files(
     _view(page, "untargeted")
     card = page.locator("#untargeted-result")
     expect(card.locator("a:visible")).to_have_count(1)
-    expect(card.get_by_role("link", name="下載原始矩陣", exact=True)).to_be_visible()
+    expect(
+        card.get_by_role("link", name="下載 Alignment 矩陣", exact=True)
+    ).to_be_visible()
     expect(card.get_by_role("button", name="檢閱結果", exact=True)).to_have_class(
         "primary"
     )
@@ -1475,7 +1477,7 @@ def test_saved_result_needs_no_curve_source_until_requested(workbench, tmp_path)
     page.locator("#source").fill(str(report))
     page.locator("#open-form button[type=submit]").click()
     expect(page.locator("#result-download")).to_be_visible()
-    page.get_by_role("button", name="查看全部矩陣群組").click()
+    page.get_by_role("button", name="瀏覽矩陣群組").click()
     expect(page.locator("#recorded-review")).to_be_visible()
     expect(page.locator("#raw-dir")).not_to_be_visible()
     page.locator(".acquisition-panel > summary").click()
@@ -1530,7 +1532,7 @@ def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
     page.locator("#source").fill(str(report))
     expect(page.locator("#raw-dir")).to_have_value("")
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="查看全部矩陣群組").click()
+    page.get_by_role("button", name="瀏覽矩陣群組").click()
     expect(page.locator("#untargeted-search-mode")).to_have_value("nearest")
     expect(page.locator("#rt-min")).to_be_visible()
     expect(page.locator("#rt-min")).to_have_value("")
@@ -1585,7 +1587,7 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
     page.locator("#source").fill(str(report))
     expect(page.locator("#raw-dir")).to_have_value("")
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="查看全部矩陣群組").click()
+    page.get_by_role("button", name="瀏覽矩陣群組").click()
     page.locator("#untargeted-search-mode").select_option("exact")
     page.locator("#mz-min").fill("123.4")
     page.locator("#mz-max").fill("123.4")
@@ -1718,7 +1720,7 @@ def test_review_download_survives_reload_and_keeps_original_product(
     page.locator("#source").fill(str(source))
     page.locator("#open-form button[type=submit]").click()
     link = page.get_by_role(
-        "link", name="下載結果 XLSX" if targeted else "下載矩陣 TSV", exact=True
+        "link", name="下載結果 Excel" if targeted else "下載 Alignment 矩陣", exact=True
     )
     expect(link).to_be_visible()
     page.reload()
@@ -1742,9 +1744,11 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     expect(page.locator("#raw-dir")).to_have_value("")
     page.locator("#open-form button[type=submit]").click()
     overview = page.locator("#targeted-overview")
-    expect(overview.get_by_role("heading", name="先看 1 組未解決定量")).to_be_visible()
+    # The overview leads with the Matrix; unresolved groups are context only.
+    expect(overview.get_by_role("heading", name="3 組進入矩陣")).to_be_visible()
+    expect(overview.get_by_role("button", name="瀏覽矩陣群組")).to_have_class("primary")
     expect(page.locator("#review")).to_be_hidden()
-    overview.get_by_role("button", name="先看未解決定量", exact=True).click()
+    overview.get_by_role("button", name="1 部分樣本多峰留空").click()
     expect(page.locator("#item-list button")).to_have_count(1)
     expect(page.locator("#inline-curve-status")).to_contain_text("尚未讀取 RAW 曲線")
     saved = page.locator("#recorded-review")
@@ -1753,7 +1757,7 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     expect(saved.locator("[data-inspector-id='svg-raw']")).to_have_count(0)
     page.locator("#back-to-overview").click()
     expect(overview).to_be_visible()
-    overview.get_by_role("button", name="查看全部矩陣群組").click()
+    overview.get_by_role("button", name="瀏覽矩陣群組").click()
     expect(page.locator("#item-list button")).to_have_count(3)
     page.locator("#back-to-overview").click()
     overview.locator("summary").click()
@@ -1812,7 +1816,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     page.locator("#open-form button[type=submit]").click()
     selected_view = None
     if sample_count > 1:
-        page.get_by_role("button", name="查看全部矩陣群組").click()
+        page.get_by_role("button", name="瀏覽矩陣群組").click()
         _configure_curve_sources(page, tmp_path, tmp_path)
         page.locator("#load-curves").click()
         _wait_for_curve_report(page, inline=True)
@@ -1890,8 +1894,12 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
         config_dir,
         tmp_path,
         [
-            asdict(SampleMetadata(sid, sid, group=group))
-            for sid, group in (("S1", "Study"), ("S2", "Study"), ("S3", "QC"))
+            asdict(SampleMetadata(sid, sid, sample_role=role, group="Stored"))
+            for sid, role in (
+                ("S1", "study_sample"),
+                ("S2", "study_sample"),
+                ("S3", "qc"),
+            )
         ],
     )
     originals = [path.read_bytes() for path in (report, matrix)]
@@ -1901,7 +1909,7 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="查看全部矩陣群組").click()
+    page.get_by_role("button", name="瀏覽矩陣群組").click()
     _configure_curve_sources(page, tmp_path, tmp_path)
     page.locator("#load-curves").click()
     review = _wait_for_curve_report(page, inline=True)
@@ -1912,13 +1920,13 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     )
     review.get_by_role("button", name="聚焦 S3", exact=True).hover()
     expect(review.get_by_role("tooltip")).to_contain_text("依群組位置擷取")
-    # Display controls consume the saved groups, without another RAW read.
-    review.get_by_role("checkbox", name="顯示 Study 整組", exact=True).uncheck()
+    # Curves group by confirmed role, without another RAW read.
+    review.get_by_role("checkbox", name="顯示 研究樣本 整組", exact=True).uncheck()
     expect(curves).to_have_count(1)
     expect(curves).to_have_attribute("data-sample-id", "S3")
     review.get_by_role("checkbox", name="顯示 QC 整組", exact=True).uncheck()
     expect(curves).to_have_count(0)
-    review.get_by_role("checkbox", name="顯示 Study 整組", exact=True).check()
+    review.get_by_role("checkbox", name="顯示 研究樣本 整組", exact=True).check()
     expect(curves).to_have_count(2)
     review.get_by_role("checkbox", name="顯示 QC 整組", exact=True).check()
     expect(curves).to_have_count(3)
@@ -1934,7 +1942,7 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
         config_dir,
         tmp_path,
         [
-            asdict(SampleMetadata(sid, sid, group="Edited later"))
+            asdict(SampleMetadata(sid, sid, sample_role="blank"))
             for sid in ("S1", "S2", "S3")
         ],
     )
@@ -1943,7 +1951,7 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
         ".then(response=>response.json())",
         view_id,
     )
-    assert captured["sample_groups"] == {"S1": "Study", "S2": "Study", "S3": "QC"}
+    assert captured["sample_groups"] == {"S1": "研究樣本", "S2": "研究樣本", "S3": "QC"}
     exported = page.evaluate(
         """async id=>{
         const response=await fetch(`/reports/${id}.html`,{
@@ -2821,7 +2829,7 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     _set_reader_path(page, str(tmp_path / "next-dll"))
     page.get_by_role("button", name="檢閱結果", exact=True).click()
     with page.expect_download() as pending:
-        page.get_by_role("link", name="下載結果 XLSX", exact=True).click()
+        page.get_by_role("link", name="下載結果 Excel", exact=True).click()
     assert (
         Path(pending.value.path()).read_bytes()
         == fake_runs.targeted_workbook.read_bytes()
@@ -3290,7 +3298,7 @@ def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
     page.locator("#source").fill(str(report))
     expect(page.locator("#raw-dir")).to_have_value("")
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="查看全部矩陣群組").click()
+    page.get_by_role("button", name="瀏覽矩陣群組").click()
     page.locator("#untargeted-search-mode").select_option(mode)
     if mode == "nearest":
         page.locator("#nearest-mz").fill("123.4")
@@ -3394,7 +3402,7 @@ def test_sample_save_preserves_editor_selection_and_focus(
     assert len(pending) == 1
     with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
         pending.pop().continue_()
-    expect(page.locator("#t-samples-source")).to_contain_text("確認的角色與排除設定")
+    expect(page.locator("#t-samples-source")).to_contain_text("沿用已確認的角色與排除")
     expect(selected).to_be_checked()
     expect(other_role).to_be_focused()
     page.unroute("**/api/samples/save")
@@ -3463,7 +3471,7 @@ def test_both_flows_share_roles_and_exclusions_without_statistical_groups(
     _expand_section(page, "#sample-tools")
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-count")).to_have_text("4 個樣本")
-    expect(page.locator("#samples-source")).to_contain_text("確認的角色與排除設定")
+    expect(page.locator("#samples-source")).to_contain_text("沿用已確認的角色與排除")
     page.locator("#samples-edit").click()
     expect(editor.get_by_label("TumorBC2_DNA 排除", exact=True)).to_be_checked()
     expect(editor.get_by_label("NormalBC1_DNA 角色", exact=True)).to_have_value("blank")
@@ -3796,7 +3804,6 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
         "alignment_explanation.sqlite"
     )
     expect(page.locator("#curation-source")).to_contain_text("內標清單")
-    page.locator("#curation-finite_fraction-min_finite_fraction").fill("0.6")
     from xic_workbench import matrix_curation
 
     preview = matrix_curation.preview_curation
@@ -3809,7 +3816,8 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
         return preview(*args, **kwargs)
 
     monkeypatch.setattr(matrix_curation, "preview_curation", slow_preview)
-    page.locator("#curation-preview-refresh").click()
+    # The preview follows the threshold without a separate refresh action.
+    page.locator("#curation-finite_fraction-min_finite_fraction").fill("0.6")
     try:
         assert entered.wait(HANDSHAKE_TIMEOUT_S)
         expect(page.locator("#curation-preview")).to_contain_text("正在計算")
@@ -3831,7 +3839,7 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     result = page.locator("#curation-result")
     expect(result).to_contain_text("2保留 feature")
     expect(result).to_contain_text("4原始 feature")
-    expect(result.get_by_role("link", name="下載分析用矩陣")).to_be_visible()
+    expect(result.get_by_role("link", name="下載整理後矩陣")).to_be_visible()
     (curated,) = run_output.glob("matrix_curation_*")
     _, kept = read_tsv_with_header(curated / "analysis_matrix.tsv")
     assert [row["Mz"] for row in kept] == ["101.0000", "103.0000"]
@@ -3855,7 +3863,6 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     expect(page.locator("#curation-finite_fraction-min_finite_fraction")).to_have_value(
         "0.6"
     )
-    page.locator("#curation-preview-refresh").click()
     expect(page.locator("#curation-preview")).to_contain_text("保留 2 列、移除 2 列")
     expect(page.locator("#curation-preview")).to_contain_text("至少 2/3 個研究樣本有值")
     expect(page.locator("#curation-preview")).to_contain_text("本次沒有 ISTD 保護")
@@ -3991,7 +3998,7 @@ def test_sample_refresh_keeps_the_latest_action_when_sequence_blurs(
     _expand_section(page, "#sample-tools")
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-count")).to_have_text("4 個樣本")
-    expect(page.locator("#samples-source")).to_contain_text("確認的角色與排除設定")
+    expect(page.locator("#samples-source")).to_contain_text("沿用已確認的角色與排除")
 
 
 def test_late_automatic_sample_preview_cannot_replace_newer_manual_read(

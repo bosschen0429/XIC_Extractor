@@ -114,8 +114,14 @@ export function renderJob() {
     `[data-job-slot="${onResult ? "curation" : state.view}"]`,
   );
   if (slot && card.parentElement !== slot) slot.append(card);
+  // A completed analysis is summarized by its result card at the top of the
+  // page, so a setup page does not repeat it as a finished job.
+  const summarizedByResult =
+    !onResult && job?.status === "succeeded" && job.kind in resultIds;
   card.hidden =
-    !job || (onResult ? job.kind !== "curation" : pageOf(job) !== state.view);
+    !job ||
+    summarizedByResult ||
+    (onResult ? job.kind !== "curation" : pageOf(job) !== state.view);
   lock();
   renderActivity();
   if (!job) return;

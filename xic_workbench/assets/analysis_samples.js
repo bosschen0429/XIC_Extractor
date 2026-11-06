@@ -132,9 +132,8 @@ export function mountSampleSteps() {
   }
 }
 const sourceNotes = {
-  confirmed:
-    "已沿用這個 RAW 資料夾確認的角色與排除設定；後續資料整理直接共用。",
-  sequence: "樣本資訊來自上機資訊；修改後自動儲存，兩種分析與資料整理共用。",
+  confirmed: "沿用已確認的角色與排除",
+  sequence: "來自上機資訊",
 };
 export function renderRoleSummary(page) {
   const set = state.sampleSets[page];

@@ -54,7 +54,7 @@ def test_annotation_file_is_one_per_raw_folder(tmp_path) -> None:
     assert first.name.startswith("Batch_A-") and first.suffix == ".tsv"
 
 
-def test_review_groups_use_confirmed_raw_stems_without_inference_or_raw_reads(tmp_path):
+def test_review_groups_use_confirmed_roles_by_raw_stem_without_raw_reads(tmp_path):
     config, raw_dir = tmp_path / "config", tmp_path / "raw"
     source = [
         {"sample_key": "canonical-study", "sample_stem": "Renamed_sample"},
@@ -70,7 +70,10 @@ def test_review_groups_use_confirmed_raw_stems_without_inference_or_raw_reads(tm
         [
             asdict(
                 SampleMetadata(
-                    "unrelated display alias", "RENAMED_sample", group="Study"
+                    "unrelated display alias",
+                    "RENAMED_sample",
+                    sample_role="study_sample",
+                    group="Study",
                 )
             ),
             asdict(SampleMetadata("Pool", "Pool", sample_role="pooled_qc")),
@@ -78,9 +81,11 @@ def test_review_groups_use_confirmed_raw_stems_without_inference_or_raw_reads(tm
             asdict(SampleMetadata("not in report", "extra", group="Excluded")),
         ],
     )
+    # Curves group by confirmed role; stored study groups are not shown.
     assert review_sample_groups(config, raw_dir, source) == {
-        "canonical-study": "Study",
-        "canonical-qc": "QC",
+        "canonical-study": "研究樣本",
+        "canonical-qc": "Pooled QC",
+        "TumorBC12345_DNA": "未指定",
     }
     assert review_sample_groups(config, tmp_path / "different-raw-folder", source) == {}
 

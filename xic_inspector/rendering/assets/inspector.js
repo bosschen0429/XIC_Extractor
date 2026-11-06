@@ -772,7 +772,7 @@
     const dash=lineDash(item),groups=new Map();
     const rows=catalog.filter(s=>!scope||scope.has(s.id)).map(s=>{
       const curves=bySample.get(s.id)||[], first=curves[0];
-      return {id:s.id,name:sampleName(s.id),group:s.group||data.sample_groups?.[s.id]||'未分組',curves,
+      return {id:s.id,name:sampleName(s.id),group:s.group||data.sample_groups?.[s.id]||'樣本',curves,
         dash:first?dash(first,curveOrigin(item,s.id)):'',available:curves.length>0};
     });
     for(const row of rows){

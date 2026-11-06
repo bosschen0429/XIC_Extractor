@@ -35,12 +35,7 @@ function metric(container, value, label) {
 export function artifactDetails(artifacts, folder = "") {
   const details = el("details", undefined, "artifact-details setup-tools");
   details.append(
-    el("summary", "分析紀錄與其他檔案（進階）"),
-    el(
-      "p",
-      "一般操作請使用檢閱結果與主要矩陣；以下資料供方法追溯與除錯。",
-      "subtle",
-    ),
+    el("summary", "其他檔案"),
   );
   if (folder) {
     details.append(el("p", folder, "subtle mono"));
@@ -94,8 +89,8 @@ function resultBase(kind, result) {
     downloads.append(
       artifactLink(primary, {
         targeted: "下載結果 Excel",
-        untargeted: "下載原始矩陣",
-        curation: "下載分析用矩陣",
+        untargeted: "下載 Alignment 矩陣",
+        curation: "下載整理後矩陣",
       }[kind]),
     );
   const details = artifactDetails(
@@ -132,23 +127,14 @@ export function renderResults() {
       warnings.append(line);
     }
     if (warnings.childElementCount) container.append(warnings);
-    container.append(
-      el(
-        "p",
-        "樣本量值與需檢閱項目集中在結果檢閱；XLSX 保留同一份結果。",
-        "subtle",
-      ),
-    );
     container.append(details);
   }
   const result = state.analysis.results.untargeted;
   if (result) {
     const { container, downloads, details } = resultBase("untargeted", result);
     const metrics = el("div", undefined, "result-metrics");
-    metric(metrics, result.sample_count, "樣本");
-    metric(metrics, result.overview?.matrix_count, "最終矩陣群組");
-    metric(metrics, result.overview?.complete_count, "全部樣本有量值的群組");
-    metric(metrics, result.overview?.unresolved_count, "含未解決定量的群組");
+    metric(metrics, result.overview?.matrix_count, "矩陣群組");
+    metric(metrics, result.overview?.complete_count, "全部樣本都有值");
     container.append(metrics);
     const actions = el("div", undefined, "button-row");
     const evidence = result.evidence?.path || result.evidence?.report_path;
@@ -179,16 +165,9 @@ export function renderResults() {
           "sliders",
         ),
       );
-    container.append(
-      el(
-        "p",
-        "先檢閱需要確認的定量；要準備下游分析資料，再整理矩陣並下載分析用矩陣。",
-        "subtle",
-      ),
-      actions,
-      downloads,
-      details,
-    );
+    container.append(actions, details);
+    // The matrix download sits with the result actions, not on its own row.
+    actions.append(...downloads.childNodes);
   }
   const curated = state.analysis.results.curation;
   if (curated) {

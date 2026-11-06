@@ -38,6 +38,17 @@ ROLE_CHOICES = (
     "system_suitability",
     "unknown",
 )
+# Mirrors the role labels of the Workbench sample editor.
+ROLE_LABELS = {
+    "study_sample": "研究樣本",
+    "qc": "QC",
+    "pooled_qc": "Pooled QC",
+    "blank": "Blank",
+    "calibrator": "校正品",
+    "solvent": "溶劑",
+    "system_suitability": "系統適用性",
+    "unknown": "未指定",
+}
 _SAMPLE_FIELDS = tuple(SAMPLE_METADATA_COLUMNS[1:])
 # Kept in the shared sample-metadata format so Targeted, Untargeted and the CLI
 # read confirmed annotations through the same sequence-source path.
@@ -55,7 +66,7 @@ def sample_annotations_path(config_dir: Path, raw_dir: Path) -> Path:
 def review_sample_groups(
     config_dir: Path, raw_dir: Path, source_samples: list[dict[str, Any]]
 ) -> dict[str, str]:
-    """Join confirmed folder annotations to report IDs through their RAW stems.
+    """Label review curves by each sample's confirmed role, via RAW stems.
 
     This is display context, not a rewrite of historical analysis metadata.
     Reading annotations needs neither RAW enumeration nor instrument headers.
@@ -63,17 +74,16 @@ def review_sample_groups(
     path = sample_annotations_path(config_dir, raw_dir)
     if not path.is_file():
         return {}
-    annotations = {
-        row.raw_stem.casefold(): resolve_sample_group(row)
+    roles = {
+        row.raw_stem.casefold(): ROLE_LABELS[row.sample_role]
         for row in load_sample_metadata(path)
     }
-    groups = {}
+    labels = {}
     for sample in source_samples:
         stem = sample.get("sample_stem", sample["sample_key"])
-        group = annotations.get(stem.casefold(), "")
-        if sample_group_key(group):
-            groups[sample["sample_key"]] = group
-    return groups
+        if label := roles.get(stem.casefold()):
+            labels[sample["sample_key"]] = label
+    return labels
 
 
 def read_batch_samples(
