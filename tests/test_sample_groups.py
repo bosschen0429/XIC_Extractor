@@ -16,8 +16,10 @@ from xic_extractor.sample_metadata import SampleMetadata, parse_sample_metadata
         ("Other", "qc", "QC"),
         (" other ", "pooled_qc", "QC"),
         ("", "qc", "QC"),
-        ("", "study_sample", "Other"),
-        ("", "blank", "Other"),
+        ("", "study_sample", "Sample"),
+        ("", "blank", "Blank"),
+        ("Other", "solvent", "Solvent"),
+        ("", "unknown", "Other"),
     ],
 )
 def test_group_uses_explicit_annotation_then_role(group, role, expected):

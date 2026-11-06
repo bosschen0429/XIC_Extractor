@@ -185,42 +185,25 @@ def test_confirmed_sample_metadata_preserves_qc_and_blank_roles(
     ]
 
 
-def test_overview_counts_analyzed_samples_by_group_key() -> None:
+def test_overview_lists_excluded_samples_with_their_reasons() -> None:
     rows = (
-        SampleMetadata("a", "a", sample_role="study_sample", group="Tumor"),
-        SampleMetadata("b", "b", sample_role="study_sample", group=" tumor "),
-        SampleMetadata("c", "c", sample_role="study_sample", group="Normal"),
-        SampleMetadata("d", "d", sample_role="study_sample"),
-        SampleMetadata("e", "e", sample_role="pooled_qc"),
-        SampleMetadata("f", "f", sample_role="blank"),
+        SampleMetadata("a", "a", sample_role="study_sample"),
         SampleMetadata(
             "g",
             "g",
             sample_role="study_sample",
-            group="Tumor",
             excluded=True,
             exclusion_reason="clogged",
         ),
+        SampleMetadata("h", "h", sample_role="blank", excluded=True),
     )
 
-    overview = sample_overview(rows)
-
-    assert [(g["group"], g["count"]) for g in overview["groups"]] == [
-        ("Tumor", 2),
-        ("Normal", 1),
-        ("Other", 1),
-        ("QC", 1),
-    ]
-    colors = {g["group"]: g["color"] for g in overview["groups"]}
-    assert colors["Other"] == "var(--group-other)"
-    assert colors["QC"] == "var(--group-qc)"
-    assert colors["Tumor"] != colors["Normal"]
-    # Every analyzed row carries its group's colour, whatever its spelling.
-    assert overview["row_groups"]["b"] == {"group": "tumor", "color": colors["Tumor"]}
-    assert "f" not in overview["row_groups"] and "g" not in overview["row_groups"]
-    assert overview["unassigned_study_samples"] == 1
-    assert overview["single_sample_groups"] == ["Normal"]
-    assert overview["excluded"] == [{"raw_stem": "g", "reason": "clogged"}]
+    assert sample_overview(rows) == {
+        "excluded": [
+            {"raw_stem": "g", "reason": "clogged"},
+            {"raw_stem": "h", "reason": ""},
+        ]
+    }
 
 
 def test_targeted_run_reads_confirmed_annotations_for_this_run_only(

@@ -26,12 +26,24 @@ def canonicalize_sample_groups(groups: Iterable[str]) -> tuple[str, ...]:
     )
 
 
+# Without an explicit group, the role still tells study samples from blanks.
+_ROLE_GROUPS = {
+    "study_sample": "Sample",
+    "qc": "QC",
+    "pooled_qc": "QC",
+    "blank": "Blank",
+    "calibrator": "Calibrator",
+    "solvent": "Solvent",
+    "system_suitability": "System Suitability",
+}
+
+
 def resolve_sample_group(
     metadata: SampleMetadata | None = None, *, sample_role: SampleRole = "unknown"
 ) -> str:
-    """Explicit group, then QC role, then Other; never infer from names."""
+    """Explicit group, then the role; an unknown role is Other. Never use names."""
     if metadata is not None:
         if sample_group_key(metadata.group):
             return " ".join(metadata.group.split())
         sample_role = metadata.sample_role
-    return "QC" if sample_role in {"qc", "pooled_qc"} else "Other"
+    return _ROLE_GROUPS.get(sample_role, "Other")

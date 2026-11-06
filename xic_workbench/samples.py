@@ -11,10 +11,9 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.analysis_set import ANALYSIS_SAMPLE_ROLES, discover_raw_files
+from xic_extractor.analysis_set import discover_raw_files
 from xic_extractor.raw_sequence import read_analysis_set
 from xic_extractor.sample_groups import (
-    resolve_sample_group,
     sample_group_key,
 )
 from xic_extractor.sample_metadata import (
@@ -26,7 +25,6 @@ from xic_extractor.sample_metadata import (
     load_sample_metadata,
     parse_sample_metadata,
 )
-from xic_inspector.rendering.group_colors import group_colors
 
 ROLE_CHOICES = (
     "study_sample",
@@ -182,37 +180,8 @@ def exclude_sample(
 
 
 def sample_overview(rows: Sequence[SampleMetadata]) -> dict[str, Any]:
-    """Pre-run counts over the samples that will be analyzed."""
-    groups: dict[str, dict[str, Any]] = {}
-    resolved: dict[str, str] = {}
-    unassigned = 0
-    for row in rows:
-        if row.excluded or row.sample_role not in ANALYSIS_SAMPLE_ROLES:
-            continue
-        group = resolve_sample_group(row)
-        resolved[row.raw_stem] = group
-        key = sample_group_key(group) or "other"
-        entry = groups.setdefault(key, {"group": group, "count": 0})
-        entry["count"] += 1
-        if row.sample_role == "study_sample" and not sample_group_key(row.group):
-            unassigned += 1
-    # The analyzed population is the one a Targeted run writes, so the
-    # Inspector colours the same groups the same way.
-    colors = group_colors(resolved.values())
-    for entry in groups.values():
-        entry["color"] = colors[entry["group"]]
+    """Pre-run facts the setup checklist shows."""
     return {
-        "groups": list(groups.values()),
-        "row_groups": {
-            stem: {"group": group, "color": colors[group]}
-            for stem, group in resolved.items()
-        },
-        "unassigned_study_samples": unassigned,
-        "single_sample_groups": [
-            entry["group"]
-            for entry in groups.values()
-            if entry["count"] == 1 and entry["group"] not in {"QC", "Other"}
-        ],
         "excluded": [
             {"raw_stem": row.raw_stem, "reason": row.exclusion_reason}
             for row in rows
