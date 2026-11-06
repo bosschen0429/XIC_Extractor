@@ -271,9 +271,13 @@ def _position(value: object) -> ReviewPosition:
         position_status=_text(row, "position_status"),
         raw_rt=rt,
         raw_intensity=intensity,
-        feature_id=_text(row, "feature_id", allow_empty=True),
+        feature_id=(
+            _text(row, "feature_id", allow_empty=True) if "feature_id" in row else ""
+        ),
         peak_rt_window=(
-            None if row["peak_rt_window"] is None else _window(row["peak_rt_window"])
+            None
+            if row.get("peak_rt_window") is None
+            else _window(row["peak_rt_window"])
         ),
     )
 

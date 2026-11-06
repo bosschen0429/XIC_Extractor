@@ -195,6 +195,19 @@ def test_mismatched_spectrum_arrays_are_an_explicit_source_error(tmp_path):
         prepare_report(path, SelectionRequest())
 
 
+def test_raw_only_review_needs_no_nl_feature_metadata(tmp_path):
+    payload = {"schema_version": REVIEW_SCHEMA, **asdict(review_fixture())}
+    for candidate in payload["candidates"]:
+        for position in candidate["positions"]:
+            position.pop("feature_id")
+            position.pop("peak_rt_window")
+    path = tmp_path / "raw-only.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    prepared = prepare_report(path, SelectionRequest())
+    assert prepared.selected_count == 2
+    assert prepared.payload["items"][0]["delta_mass"]["neutral_losses"] == ()
+
+
 def test_expected_source_rejects_changed_review_at_same_path(tmp_path):
     path = write_review(tmp_path)
     prepared = prepare_report(path, SelectionRequest())
