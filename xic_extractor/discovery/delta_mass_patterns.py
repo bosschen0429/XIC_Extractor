@@ -205,6 +205,11 @@ def prepare_delta_mass_candidates(
     counts["layer_2_passed"] = len(candidates)
     requests = []
     request_positions = []
+    confirmation_window = (
+        settings.shape_window_sec
+        if settings.lowest_position or settings.base_support_positions
+        else max(settings.shape_window_sec, settings.correlation_window_sec)
+    )
     for index, candidate in enumerate(candidates):
         needed = {
             i
@@ -237,8 +242,8 @@ def prepare_delta_mass_candidates(
             requests.append(
                 XICRequest(
                     p.expected_mz,
-                    max(0, candidate.base_rt_apex_min - settings.shape_window_sec / 60),
-                    candidate.base_rt_apex_min + settings.shape_window_sec / 60,
+                    max(0, candidate.base_rt_apex_min - confirmation_window / 60),
+                    candidate.base_rt_apex_min + confirmation_window / 60,
                     settings.mz_tolerance_ppm,
                 )
             )
@@ -275,13 +280,25 @@ def complete_delta_mass_candidates(
     settings: DeltaMassPatternSettings,
 ) -> tuple[DeltaMassCandidate, ...]:
     """Consume the single acquisition batch; confirm missing positions then shape."""
-    # Keep native acquisition windows: cropping a wider trace by exact RT would
-    # change the vendor's scan-rounded endpoints and therefore shape decisions.
     split = len(prepared.request_positions)
     trace_map = dict(zip(prepared.request_positions, traces[:split], strict=True))
     background_trace_map = dict(
         zip(prepared.background_positions, traces[split:], strict=True)
     )
+    shape_traces = {}
+    for key, acquired_trace in trace_map.items():
+        wider_trace = background_trace_map.get(key)
+        if (
+            wider_trace is None
+            and settings.correlation_window_sec >= settings.shape_window_sec
+        ):
+            # This is already the requested correlation window: keep vendor endpoints.
+            shape_traces[key] = acquired_trace
+            continue
+        trace = wider_trace if wider_trace is not None else acquired_trace
+        center = prepared.candidates[key[0]].base_rt_apex_min
+        inside = np.abs((trace.rt - center) * 60) <= settings.correlation_window_sec
+        shape_traces[key] = XICTrace(trace.rt[inside], trace.intensity[inside])
     for index, candidate in enumerate(prepared.candidates):
         if candidate.status == "rejected":
             continue
@@ -293,7 +310,7 @@ def complete_delta_mass_candidates(
             ),
             0,
         )
-        shape_reference = trace_map.get((index, reference_index))
+        shape_reference = shape_traces.get((index, reference_index))
         ratio_index = next(
             (
                 i
@@ -302,7 +319,6 @@ def complete_delta_mass_candidates(
             ),
             0,
         )
-        base_was_missing = candidate.positions[0].partner_source == "missing"
         anchor_index = next(
             i for i, p in enumerate(candidate.positions) if p.partner_source == "anchor"
         )
@@ -310,12 +326,21 @@ def complete_delta_mass_candidates(
             if position.partner_source != "missing":
                 continue
             trace = trace_map[index, position_index]
+            if (
+                (index, position_index) not in background_trace_map
+                and settings.correlation_window_sec > settings.shape_window_sec
+            ):
+                inside = (
+                    np.abs((trace.rt - candidate.base_rt_apex_min) * 60)
+                    <= settings.shape_window_sec
+                )
+                trace = XICTrace(trace.rt[inside], trace.intensity[inside])
             reference = (
-                trace_map[index, anchor_index]
+                shape_traces[index, anchor_index]
                 if position_index == 0
                 else shape_reference
             )
-            r = _shape_correlation(reference, trace)
+            r = _shape_correlation(reference, shape_traces[index, position_index])
             position.shape_r = r
             position.shape_r_threshold = settings.min_shape_r
             if trace.intensity.size:
@@ -331,12 +356,9 @@ def complete_delta_mass_candidates(
                 and position.apex_rt_min is not None
             ):
                 candidate.base_height = position.height
-                candidate.base_rt_apex_min = position.apex_rt_min
             confirmed = (
                 position.height is not None
                 and position.height > 0
-                and position.apex_delta_sec is not None
-                and abs(position.apex_delta_sec) <= position.apex_threshold_sec
                 and r is not None
                 and r >= settings.min_shape_r
             )
@@ -345,16 +367,8 @@ def complete_delta_mass_candidates(
                 position.partner_source = "raw"
             else:
                 _reject(candidate, 4, "partner_not_confirmed_in_raw")
-        # The measured base owns ratio evidence and apex deltas for all partners.
-        if base_was_missing and candidate.base_height is not None:
-            for position in candidate.positions:
-                if position.apex_rt_min is not None:
-                    position.apex_delta_sec = (
-                        position.apex_rt_min - candidate.base_rt_apex_min
-                    ) * 60
-                    if abs(position.apex_delta_sec) > position.apex_threshold_sec:
-                        position.position_status = "fail"
-                        _reject(candidate, 4, "apex_out_of_range")
+        # RAW apex differences are evidence; the hypothesis RT remains the
+        # original reference for table partners, correlation and signal gates.
         for position in candidate.positions:
             _record_ratio(position, candidate.positions[ratio_index].height)
         if candidate.status == "rejected":
@@ -363,7 +377,7 @@ def complete_delta_mass_candidates(
             if position.position_label not in settings.discriminating_positions:
                 continue
             position.shape_r = _shape_correlation(
-                shape_reference, trace_map[index, position_index]
+                shape_reference, shape_traces[index, position_index]
             )
             position.shape_r_threshold = settings.min_shape_r
             if position.shape_r is None or position.shape_r < settings.min_shape_r:

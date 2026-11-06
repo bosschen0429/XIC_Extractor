@@ -47,6 +47,7 @@ class DeltaMassPatternSettings:
     min_base_support: float = 0.25
     shape_reference_position: str = ""
     ratio_reference_position: str = ""
+    correlation_window_sec: float = 20.0
 
     def __post_init__(self) -> None:
         if not isinstance(self.method_label, str) or not self.method_label.strip():
@@ -110,9 +111,16 @@ class DeltaMassPatternSettings:
             self.apex_floor_sec,
             self.scan_interval_multiplier,
             self.shape_window_sec,
+            self.correlation_window_sec,
         ):
             if not math.isfinite(value) or value <= 0:
                 raise ValueError("method tolerances must be finite and positive")
+        if (self.lowest_position or self.base_support_positions) and (
+            self.correlation_window_sec > self.background_outer_sec
+        ):
+            raise ValueError(
+                "correlation window must fit within the acquired background window"
+            )
         require_finite_real(self.min_shape_r, name="min_shape_r")
         if not -1 <= self.min_shape_r <= 1:
             raise ValueError("min_shape_r must be between -1 and 1")

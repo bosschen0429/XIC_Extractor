@@ -257,6 +257,9 @@ def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
             overrides, "scan_interval_multiplier", 1.25
         ),
         shape_window_sec=_positive_float_setting(overrides, "shape_window_sec", 10),
+        correlation_window_sec=_positive_float_setting(
+            overrides, "correlation_window_sec", 20
+        ),
         min_shape_r=cast(float, overrides.get("min_shape_r", 0.9)),
         lowest_position=_str_setting(overrides, "lowest_position", ""),
         base_support_positions=roles["base_support_positions"],

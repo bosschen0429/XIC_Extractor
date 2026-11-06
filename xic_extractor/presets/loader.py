@@ -64,6 +64,7 @@ DELTA_MASS_DISCOVERY_OVERRIDE_KEYS = frozenset(
         "apex_floor_sec",
         "scan_interval_multiplier",
         "shape_window_sec",
+        "correlation_window_sec",
         "min_shape_r",
         "lowest_position",
         "base_support_positions",

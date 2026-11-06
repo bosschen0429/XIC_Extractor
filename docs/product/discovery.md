@@ -271,7 +271,7 @@ does not enable it; an explicit opt-in requires method-appropriate validation.
 
 Delta Mass finds sample-local MS1 peak combinations at preset-defined mass
 separations. A candidate must satisfy the mass differences and co-elution;
-designated discriminating positions also need apex-region shape correlation.
+designated discriminating positions also need local peak-shape correlation.
 The method supports two or more positions and has no built-in chemistry.
 
 1. Only detector-qualified features anchor a hypothesis, in the roles the
@@ -282,12 +282,26 @@ The method supports two or more positions and has no built-in chemistry.
 3. Measured height ratios are compared with the preset's reference ranges and
    recorded as `ratio_status`. Ratios are evidence only: out-of-range ratios do
    not reject candidates, and expected abundance never predicts missing signal.
-4. Missing positions are confirmed in RAW by apex alignment and apex-region
-   Pearson correlation. A two-position method needs its partner in the feature
-   table; RAW never completes a solitary seed.
-5. Discriminating positions are shape-checked. An optional `lowest_position`
+4. Missing positions are confirmed in RAW by positive measured height and
+   Pearson correlation at or above `min_shape_r`. Their measured apex offsets
+   remain evidence, not a second admission gate. Filling a missing base does
+   not move the hypothesis RT or recheck table partners against its RAW apex.
+   A two-position method needs its partner in the feature table; RAW never
+   completes a solitary seed. The table-partner apex gate in step 2 remains.
+5. Missing and discriminating positions use `correlation_window_sec` (default
+   ±20 s) around the original hypothesis RT. When background traces are already
+   acquired, correlation uses that wider evidence without additional RAW
+   requests. Otherwise the existing confirmation requests cover the correlation
+   window. An optional `lowest_position`
    must have the lowest background-subtracted RAW height and clear background
    support.
+
+`shape_window_sec` retains the original RAW-apex/height and signal peak region
+(±10 s in Pt presets); it is independent of `correlation_window_sec`. Background
+flanks remain 20–30 s. The signal gate's heights, background, noise and base
+support calculations do not widen with the correlation window. The candidate
+reference RT stays at its original base/table-anchor location; a RAW-completed
+position's measured apex is retained in the positions table.
 
 Background is the median of the lower-median flank of two configured intervals
 around the base apex; the lower flank limits contamination from a neighbouring

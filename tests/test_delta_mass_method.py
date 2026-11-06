@@ -264,7 +264,7 @@ def test_one_feature_cannot_fill_both_positions_inside_a_ppm_window():
     )
 
 
-def test_missing_raw_position_requires_an_aligned_apex():
+def test_missing_raw_position_records_apex_offset_without_a_second_gate():
     import numpy as np
 
     from xic_extractor.discovery.delta_mass_patterns import (
@@ -298,8 +298,8 @@ def test_missing_raw_position_requires_an_aligned_apex():
         ),
         settings,
     )
-    assert completed[0].rejected_at_layer == 4
-    assert completed[0].reject_reason == "partner_not_confirmed_in_raw"
+    assert completed[0].status == "candidate"
+    assert completed[0].positions[2].apex_delta_sec == pytest.approx(1.8)
 
 
 def test_smoothing_seconds_convert_to_scan_points_without_changing_shared_default():
@@ -328,7 +328,7 @@ def test_smoothing_seconds_convert_to_scan_points_without_changing_shared_defaul
     assert LocalMs1FeatureSettings().gaussian_window_points == baseline
 
 
-def test_raw_base_apex_owns_reported_deltas_and_table_partner_gate():
+def test_raw_base_measurement_does_not_move_hypothesis_rt_or_regate_table_partners():
     import numpy as np
 
     from xic_extractor.discovery.delta_mass_patterns import (
@@ -359,10 +359,11 @@ def test_raw_base_apex_owns_reported_deltas_and_table_partner_gate():
         XICTrace(times, np.array([0, 40, 80, 40, 0])),
     )
     candidate = complete_delta_mass_candidates(prepared, traces, settings)[0]
-    assert candidate.base_rt_apex_min == 1.01
-    assert candidate.positions[0].apex_delta_sec == 0
-    assert candidate.positions[2].apex_delta_sec < -1.7
-    assert candidate.rejected_at_layer == 4
+    assert candidate.base_rt_apex_min == 1.0
+    assert candidate.positions[0].apex_rt_min == 1.01
+    assert candidate.positions[0].apex_delta_sec == pytest.approx(0.6)
+    assert candidate.positions[2].apex_delta_sec == pytest.approx(-1.2)
+    assert candidate.status == "candidate"
 
 
 def test_table_base_owns_partner_mass_windows_even_from_a_heavy_anchor():
@@ -451,7 +452,7 @@ def test_lowest_position_requires_measured_net_height_and_background_support(
         y = baseline + sign * h * np.exp(-0.5 * (seconds / 3) ** 2)
         y[seconds <= -20] = baseline + np.arange(-5, 6) * noise
         # An adjacent peak must not become this peak's background or shape input.
-        y[seconds >= 20] = 1e6
+        y[seconds >= 25] = 1e6
         mask = (
             abs(seconds) < 20
             if expected_reason == "local_background_unavailable"
@@ -556,3 +557,127 @@ def test_base_support_uses_pooled_raw_net_heights_without_a_heavy_ratio_gate(
         assert candidate.base_support_status == ("fail" if expected_reason else "pass")
     else:
         assert candidate.base_support_status == "not_required"
+
+
+@pytest.mark.parametrize("shifted,expected", [(False, "candidate"), (True, "rejected")])
+def test_wide_flat_peak_uses_shoulders_not_apex_jitter(shifted, expected):
+    import numpy as np
+
+    from xic_extractor.discovery.delta_mass_patterns import (
+        complete_delta_mass_candidates,
+    )
+    from xic_extractor.xic_models import XICTrace
+
+    settings = DeltaMassPatternSettings(
+        pattern_id="wide",
+        method_label="wide",
+        positions=(
+            DeltaMassPosition("base", 0, 1, 1),
+            DeltaMassPosition("middle", 7, 0.4, 0.6),
+            DeltaMassPosition("end", 13, 0.1, 0.4),
+        ),
+        anchor_positions=("base",),
+        discriminating_positions=("end",),
+        lowest_position="end",
+        min_height_above_background=1.0,
+    )
+    prepared = prepare_delta_mass_candidates(
+        (feature("base", 300), feature("middle", 307, 50)),
+        settings,
+        scan_interval_sec=1.0,
+    )
+    assert len(prepared.requests) == 5  # Existing two short + three background reads.
+    seconds = np.arange(-30.0, 31.0)
+    rt = 1 + seconds / 60
+    peak = np.clip((20 - np.abs(seconds)) * 12.5, 0, 100)
+    base = peak.copy()
+    base[seconds == 0] += 3
+    partner = peak * 0.3
+    partner[seconds == 8] += 1
+    if shifted:
+        partner = np.clip((20 - np.abs(seconds - 20)) * 12.5, 0, 100) * 0.3
+    signals = {300.0: 100 + base, 307.0: 100 + peak * 0.5, 313.0: 100 + partner}
+    traces = tuple(
+        XICTrace(
+            rt[(rt >= r.rt_min) & (rt <= r.rt_max)],
+            signals[r.mz][(rt >= r.rt_min) & (rt <= r.rt_max)],
+        )
+        for r in prepared.requests
+    )
+    candidate = complete_delta_mass_candidates(prepared, traces, settings)[0]
+    assert candidate.status == expected
+    if not shifted:
+        assert candidate.positions[2].apex_delta_sec == pytest.approx(8.0)
+        assert candidate.positions[2].shape_r >= 0.9
+        assert candidate.positions[2].height_above_background == 31.0
+    else:
+        assert candidate.reject_reason == "partner_not_confirmed_in_raw"
+
+
+@pytest.mark.parametrize("correlation_window", [10.0, 20.0])
+def test_correlation_window_never_widens_signal_peak_region(correlation_window):
+    import numpy as np
+
+    from xic_extractor.discovery.delta_mass_patterns import (
+        complete_delta_mass_candidates,
+    )
+    from xic_extractor.xic_models import XICTrace
+
+    settings = DeltaMassPatternSettings(
+        pattern_id="separate-windows",
+        method_label="separate-windows",
+        positions=(
+            DeltaMassPosition("base", 0, 1, 1),
+            DeltaMassPosition("middle", 7, 0.5, 0.5),
+            DeltaMassPosition("end", 13, 0.25, 0.25),
+        ),
+        anchor_positions=("base",),
+        discriminating_positions=("end",),
+        lowest_position="end",
+        base_support_positions=("middle",),
+        min_shape_r=-1.0,
+        min_height_above_background=1.0,
+        correlation_window_sec=correlation_window,
+    )
+    prepared = prepare_delta_mass_candidates(
+        (feature("base", 300), feature("middle", 307, 50), feature("end", 313, 25)),
+        settings,
+        scan_interval_sec=1.0,
+    )
+    assert len(prepared.requests) == 5
+    assert [round((r.rt_max - r.rt_min) * 60) for r in prepared.requests] == [
+        20,
+        20,
+        60,
+        60,
+        60,
+    ]
+    seconds = np.arange(-30.0, 31.0)
+    rt = 1 + seconds / 60
+    signals = {}
+    for mz, height in ((300.0, 100.0), (307.0, 50.0), (313.0, 25.0)):
+        y = 100 + height * np.exp(-0.5 * (seconds / 3) ** 2)
+        y[abs(seconds) >= 20] = 100
+        y[seconds == 15] = (
+            1000  # Inside the wider correlation window, outside signal peak.
+        )
+        signals[mz] = y
+    traces = tuple(
+        XICTrace(
+            rt[(rt >= r.rt_min) & (rt <= r.rt_max)],
+            signals[r.mz][(rt >= r.rt_min) & (rt <= r.rt_max)],
+        )
+        for r in prepared.requests
+    )
+    candidate = complete_delta_mass_candidates(prepared, traces, settings)[0]
+    assert candidate.status == "candidate"
+    assert [p.raw_peak_height for p in candidate.positions] == [200.0, 150.0, 125.0]
+    assert [p.height_above_background for p in candidate.positions] == [
+        100.0,
+        50.0,
+        25.0,
+    ]
+    assert [p.local_background for p in candidate.positions] == [100.0, 100.0, 100.0]
+    assert [p.background_noise for p in candidate.positions] == [0.0, 0.0, 0.0]
+    assert candidate.base_expected_net_height == 100.0
+    assert candidate.base_support_score == 1.0
