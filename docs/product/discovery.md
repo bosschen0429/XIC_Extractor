@@ -357,6 +357,11 @@ NL support opens the corresponding spectrum, highlights its measured product,
 and focuses the XIC on the saved peak with the scan time and bounds marked.
 Several support records use previous/next evidence controls; manual MS2 lookup
 is collapsed as secondary inspection and never inherits an NL-support label.
+Supported candidates appear first. Routine no-match and no-MS2 messages are
+omitted from the view rather than repeated or moved into a disclosure; the
+candidate and its XIC remain accessible. Actual ambiguity, unresolved evidence
+and incomplete reads remain visible. The JSON and CSV keep every position's
+answer unchanged.
 
 NL-enabled exports retain only spectra referenced by the completed position
 answers (related opportunities and matched evidence), rather than duplicating

@@ -512,7 +512,7 @@
   const result=row=>!has(row,'quantitative_value')?'<span class="result-missing">無單一結果</span>':row.quantitative_value===null?'<span class="result-null">空值</span>':`<span class="${row.quantitative_value===0?'result-zero':'result-number'}">${num(row.quantitative_value)}</span>${row.quantity_unit?` <span class="result-unit">${esc(row.quantity_unit)}</span>`:''}`;
   const isCollapsedExcluded=item=>item.kind==='candidate'&&item.stratum==='excluded', queryReport=data.selection?.strategy==='query'||$('report-info-source')?.dataset.strategy==='query';
   const primaryItems=items.filter(item=>['group','row'].includes(item.kind)&&!isCollapsedExcluded(item));
-  const initialItem=queryReport?items[0]:primaryItems.reduce((best,item)=>(item.review_summary?.observed_sample_count??-1)>(best?.review_summary?.observed_sample_count??-1)?item:best,null)||items.find(item=>!isCollapsedExcluded(item));
+  const initialItem=nlReview?(items.find(item=>item.delta_mass.neutral_losses.some(n=>n.status==='supported'))||items[0]):queryReport?items[0]:primaryItems.reduce((best,item)=>(item.review_summary?.observed_sample_count??-1)>(best?.review_summary?.observed_sample_count??-1)?item:best,null)||items.find(item=>!isCollapsedExcluded(item));
   const state={id:initialItem?.id,sample:null,candidate:'',capture:'',visible:new Set(samples.map(s=>s.id)),bounds:true,evidence:'',evidenceContext:'',excludedOpen:queryReport};
   const curveUi={model:null,query:'',collapsed:new Set(),pinned:null,hover:null,observer:null};
   cleanups.push(()=>curveUi.observer?.disconnect());
@@ -712,12 +712,13 @@
   function list(selectFallback=true){
     filtered=filteredItems();
     const regular=filtered.filter(item=>!isCollapsedExcluded(item)), excluded=filtered.filter(isCollapsedExcluded), localFilterActive=$('search').value.trim()!==''||['mz-min','mz-max','rt-min','rt-max'].some(id=>$(id).value!==''), showExcluded=state.excludedOpen||localFilterActive;
+    if (nlReview) regular.sort((a,b) => Number(b.delta_mass.neutral_losses.some(n => n.status === 'supported')) - Number(a.delta_mass.neutral_losses.some(n => n.status === 'supported')));
     listed=showExcluded?[...regular,...excluded]:regular;
     if(!listed.some(i=>i.id===state.id)&&(state.id||selectFallback)){state.id=listed[0]?.id;reset();}
     $('list-count').textContent=nlReview
       ? `${filtered.length === items.length ? items.length : `${filtered.length} / ${items.length}`} 筆${Number(fields.RUN_TOTAL) !== items.length ? `（全批 ${fields.RUN_TOTAL}）` : ''}`
       : `${filtered.length} / ${items.length} 筆`;
-    const recordButton=item=>{const nl=item.delta_mass?.neutral_losses?.length;return `<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${breakable(itemTitle(item))}</span>${nl?'':`<span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span>`}</div><div class="record-meta">${nl?'':`${itemName(item)} · `}m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}</div><div class="record-reason">${esc(reviewReason(item,true)||'未記錄判定說明')}</div></button>`;};
+    const recordButton=item=>{const nl=item.delta_mass?.neutral_losses?.length,reason=reviewReason(item,true);return `<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${breakable(itemTitle(item))}</span>${nl?'':`<span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span>`}</div><div class="record-meta">${nl?'':`${itemName(item)} · `}m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}</div>${reason||!nl?`<div class="record-reason">${esc(reason||'未記錄判定說明')}</div>`:''}</button>`;};
     const excludedGroup=excluded.length?`<section class="excluded-group"><button type="button" class="excluded-toggle" data-excluded-toggle aria-expanded="${showExcluded}" ${localFilterActive?'disabled title="篩選結果會保持展開"':''}><span>已排除候選</span><span>${excluded.length} 筆 ${showExcluded?'▾':'▸'}</span></button>${showExcluded?`<div class="excluded-items">${excluded.map(recordButton).join('')}</div>`:''}</section>`:'';
     setHTML($('record-list'),regular.map(recordButton).join('')+excludedGroup||'<p class="empty-state">這份報告沒有符合的項目。請清除篩選條件。</p>');
     filterStatus();detail();

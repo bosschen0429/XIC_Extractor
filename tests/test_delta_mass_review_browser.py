@@ -1,5 +1,6 @@
 """Candidate positions, RAW coordinates and MS2 scan identity in the real view."""
 
+import json
 import re
 from dataclasses import replace
 
@@ -25,14 +26,14 @@ pytest_plugins = ("tests.browser_diagnostics",)
 
 
 @pytest.mark.parametrize(
-    "status,short,full",
+    "status,full",
     [
-        ("no_match", "NL：未見支持", "未找到 NL 支持"),
-        ("no_ms2", "NL：無相關 MS2", "沒有相關 MS2"),
+        ("no_match", "未找到 NL 支持"),
+        ("no_ms2", "沒有相關 MS2"),
     ],
 )
-def test_sidebar_collapses_equal_nl_results_but_keeps_detail_and_search(
-    review_page, tmp_path, status, short, full
+def test_empty_nl_results_are_omitted_not_moved_into_details(
+    review_page, tmp_path, status, full
 ):
     candidate = review_fixture().candidates[0]
     candidate = replace(
@@ -49,13 +50,9 @@ def test_sidebar_collapses_equal_nl_results_but_keeps_detail_and_search(
     page = review_page
     page.set_viewport_size({"width": 792, "height": 884})
     page.goto(report.as_uri())
-    expect(page.locator(".record-reason")).to_have_text(short)
-    expect(
-        page.get_by_label("各位置 NL 判讀").get_by_role(
-            "cell", name=short.removeprefix("NL："), exact=True
-        )
-    ).to_have_count(1)
-    expect(page.get_by_label("各位置 NL 判讀")).to_contain_text("M / partner / third")
+    expect(page.locator(".record-reason")).to_have_count(0)
+    expect(page.get_by_label("各位置 NL 判讀")).to_have_count(0)
+    expect(page.locator(".dm-review").get_by_text(full, exact=False)).to_have_count(0)
     expect(page.locator(".scope-summary")).not_to_be_visible()
     expect(page.locator(".header-actions > .badge")).to_have_count(0)
     page.get_by_label("本頁搜尋").fill(full)
@@ -73,6 +70,28 @@ def test_compact_candidate_count_still_discloses_a_sampled_report(
     expect(review_page.locator(".list-header")).to_contain_text("全批 2")
 
 
+def test_read_failure_remains_visible_when_empty_results_are_silent(
+    review_page, tmp_path
+):
+    candidate = review_fixture().candidates[0]
+    candidate = replace(
+        candidate,
+        spectra=(),
+        ms2_read_errors=(ReviewReadError(11, (1.0, 3.0), "read failed"),),
+        neutral_losses=tuple(
+            ReviewNlPosition(p.label, "test-NL", 40.0, "incomplete", (), ())
+            for p in candidate.positions
+        ),
+    )
+    source = tmp_path / "incomplete.json"
+    write_delta_mass_review(DeltaMassReview("saved", (candidate,)), source)
+    output = tmp_path / "incomplete.html"
+    generate_report(source, SelectionRequest(), output)
+    review_page.goto(output.as_uri())
+    expect(review_page.locator(".record-reason")).to_have_text("NL：讀取不完整")
+    expect(review_page.get_by_label("各位置 NL 判讀")).to_contain_text("讀取不完整")
+
+
 def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path):
     page = review_page
     source = write_nl_review(tmp_path)
@@ -81,8 +100,7 @@ def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path
     page.goto(output.as_uri())
     root = page.locator(".dm-review")
     expect(page.locator(".record-button").first).to_contain_text("M 支持")
-    expect(root.get_by_label("各位置 NL 判讀")).to_contain_text("無相關 MS2")
-    expect(root.get_by_label("各位置 NL 判讀")).to_contain_text("未見支持")
+    expect(root.get_by_label("各位置 NL 判讀").locator("tbody tr")).to_have_count(1)
     expect(root.get_by_label("MS2 scan", exact=True)).not_to_be_visible()
     expect(root.get_by_label("顯示 RT 起點")).not_to_be_visible()
     expect(root.get_by_role("heading", name="NL 證據", exact=True)).not_to_be_visible()
@@ -113,10 +131,34 @@ def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path
     expect(root).to_contain_text("手動檢閱的 MS2，不代表 NL 支持")
     page.get_by_role("button", name=re.compile("^sample-b")).click()
     expect(root.locator("[data-spectrum-scan]")).to_have_count(0)
-    expect(root.get_by_label("各位置 NL 判讀")).to_contain_text("無相關 MS2")
+    expect(root.get_by_label("各位置 NL 判讀")).to_have_count(0)
     expect(root.get_by_role("button", name="下一筆支持")).not_to_be_visible()
     page.set_viewport_size({"width": 420, "height": 900})
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
+def test_supported_candidate_leads_without_discarding_quiet_candidates(
+    review_page, tmp_path
+):
+    source = write_nl_review(tmp_path)
+    payload = json.loads(source.read_text())
+    payload["candidates"][1]["sample_stem"] = "0-quiet"
+    payload["candidates"][1]["candidate_id"] = "0-quiet|200"
+    payload["candidates"][1]["raw_file"] = "0-quiet.raw"
+    source.write_text(json.dumps(payload), encoding="utf-8")
+    output = tmp_path / "ranked.html"
+    generate_report(source, SelectionRequest(), output)
+    page = review_page
+    page.goto(output.as_uri())
+    expect(page.locator(".record-button")).to_have_count(2)
+    expect(page.locator(".record-button").first).to_contain_text("sample-a")
+    expect(page.locator(".record-button").last.locator(".record-reason")).to_have_count(
+        0
+    )
+    page.get_by_role("button", name="M · test-NL：有 NL 支持（2）", exact=True).click()
+    expect(page.locator("[data-spectrum-scan]")).to_have_attribute(
+        "data-spectrum-scan", "11"
+    )
 
 
 def _open(page, tmp_path):

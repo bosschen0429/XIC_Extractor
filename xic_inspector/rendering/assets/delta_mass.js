@@ -20,10 +20,11 @@
   const dash = index => index === 0 ? '' : index === 1 ? '7 4' : index === 2 ? '2 3' : `${index * 3} 4 2 4`;
   const nlStatus = status => ({supported:'有 NL 支持', no_match:'未找到 NL 支持', no_ms2:'沒有相關 MS2', no_spectrum:'缺少 spectrum', incomplete:'讀取不完整', no_peak_bounds:'缺少峰範圍', ambiguous:'峰歸屬不明', unresolved:'前驅或歸屬未確認'}[status] || status);
   const nlShortStatus = status => ({supported:'支持', no_match:'未見支持', no_ms2:'無相關 MS2'}[status] || nlStatus(status));
+  const findings = saved => (saved.neutral_losses || []).filter(n => ['supported','ambiguous','unresolved','incomplete'].includes(n.status));
   const summary = (saved, compact = false) => {
-    const results = saved.neutral_losses || [], multiple = new Set(results.map(n => n.tag)).size > 1;
+    const results = compact ? findings(saved) : saved.neutral_losses || [], multiple = new Set(results.map(n => n.tag)).size > 1;
     const label = compact ? nlShortStatus : nlStatus;
-    if (compact && results.length && results.every(n => n.status === results[0].status)) return `NL：${label(results[0].status)}`;
+    if (compact && results.length && results.length === saved.neutral_losses.length && results[0].status !== 'supported' && results.every(n => n.status === results[0].status)) return `NL：${label(results[0].status)}`;
     return results.map(n => `${n.position_label}${multiple ? ` / ${n.tag}` : ''}${compact ? ' ' : '：'}${label(n.status)}`).join(' · ');
   };
   function table(headers, rows) {
@@ -52,10 +53,11 @@
     if (saved.status !== 'candidate') root.append(node('p', `保存判定：${saved.status} · ${saved.reject_reason}`, 'dm-note'));
     if (!hasNl) root.append(node('p', '候選判斷沿用 Discovery；曲線與 MS2 為新讀取的診斷資料，不是原決策重播。', 'dm-note'));
     const supportButtons = [];
-    if (hasNl) {
-      const losses = [...new Set(nlResults.map(n => `${n.tag} · ${mass(n.neutral_loss_da)} Da`))];
+    const visibleResults = findings(saved);
+    if (hasNl && visibleResults.length) {
+      const losses = [...new Set(visibleResults.map(n => `${n.tag} · ${mass(n.neutral_loss_da)} Da`))];
       const rows = [];
-      for (const result of nlResults) {
+      for (const result of visibleResults) {
         // Only identical non-support answers collapse. Supporting positions
         // keep distinct actions so their evidence can never be crossed.
         const same = result.status !== 'supported' && rows.find(row => row.result.status === result.status && row.result.tag === result.tag && row.result.neutral_loss_da === result.neutral_loss_da);
