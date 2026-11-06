@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-_TMP_ROOT = Path(__file__).resolve().parent.parent / "tmp_runtime"
 _CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 _CONFIG_SNAPSHOT = pytest.StashKey[dict[str, str]]()
 
@@ -53,12 +52,6 @@ def isolated_config_dir(
     monkeypatch.setattr(config_io, "CONFIG_DIR", directory)
     monkeypatch.setattr(untargeted_config, "CONFIG_DIR", directory)
     return directory
-
-
-def pytest_configure() -> None:
-    if "PYTEST_DEBUG_TEMPROOT" not in os.environ:
-        _TMP_ROOT.mkdir(parents=True, exist_ok=True)
-        os.environ["PYTEST_DEBUG_TEMPROOT"] = str(_TMP_ROOT)
 
 
 @pytest.fixture(autouse=True)

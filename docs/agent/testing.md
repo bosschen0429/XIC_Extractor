@@ -196,6 +196,13 @@ passing pytest.
 ## Verification
 
 Pytest manages temporary files under the worktree's ignored `tmp_runtime/`.
+The lightweight `tools.testing.pytest_temp` plugin is loaded by project
+`addopts`, including `--noconftest` runs such as the census. Keep project
+`addopts`; runs that override it load this plugin explicitly with `-p`.
+Temporary-directory initialization errors stop before test assertions with
+`ENVIRONMENT_BLOCKED` and exit code 4; they are environment failures, not
+census or product assertion failures. Other test errors retain their usual
+failure status.
 Ordinary `tmp_path` retention uses the call outcome, not teardown failures;
 browser evidence follows the full-lifecycle policy above. Concurrent sessions use
 distinct numbered directories. `PYTEST_DEBUG_TEMPROOT` and `--basetemp` allow explicit
