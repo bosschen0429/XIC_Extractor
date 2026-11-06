@@ -184,6 +184,11 @@ def test_batch_cli_answers_each_candidate_without_manual_scan_selection(
             precursor = 100.0 if self.name == "sample-a" else 200.0
             product = 80.0 if self.name == "sample-a" else 180.03
             yield Ms2ScanEvent(
+                Ms2Scan(99, 2.0, 999.0, np.array([979.0]), np.array([100.0]), 100.0),
+                None,
+                99,
+            )
+            yield Ms2ScanEvent(
                 Ms2Scan(
                     11,
                     2.0,
@@ -250,6 +255,9 @@ def test_batch_cli_answers_each_candidate_without_manual_scan_selection(
     assert len(candidates) == 3
     a = candidates[ids[0]]
     b = candidates[ids[2]]
+    assert a.ms2_scope == "nl_related"
+    assert {s.scan_number for s in a.spectra} == {11, 12}
+    assert {s.scan_number for s in b.spectra} == {11}
     assert [(n.position_label, n.status) for n in a.neutral_losses] == [
         ("M", "supported"),
         ("partner", "supported"),

@@ -255,6 +255,23 @@ def acquire_delta_mass_review(
                             settings=nl_settings,
                         ),
                     )
+                    # The NL answer owns relevance. Do not duplicate thousands
+                    # of unrelated context spectra in every candidate's report.
+                    related_scans = {
+                        scan
+                        for n in result.neutral_losses
+                        for scan in (
+                            *n.related_scan_numbers,
+                            *(m.scan_number for m in n.matches),
+                        )
+                    }
+                    result = replace(
+                        result,
+                        spectra=tuple(
+                            s for s in result.spectra if s.scan_number in related_scans
+                        ),
+                        ms2_scope="nl_related",
+                    )
                 acquired[candidate.candidate_id] = result
     return DeltaMassReview(
         str(discovery_directory.resolve()),

@@ -106,6 +106,9 @@ the per-sample detected-feature tables. `--help` owns the arguments.
 With NL assessment, a sibling `.nl.csv` answers the candidate/tag intersection
 and per-position statuses without scan browsing. Supporting spectra and
 precursor evidence remain in JSON for checking the answer.
+Inspector presents those per-position answers and opens supporting evidence
+directly. NL-enabled JSON keeps only answer-referenced spectra; plain review
+retains all RT-window MS2.
 **Owner**: `xic_extractor.diagnostics.delta_mass_review_acquisition` owns the
 bounded RAW read; `delta_mass_review_data` owns the saved handoff;
 `xic_inspector.sources.delta_mass` adapts it for the shared readonly view.

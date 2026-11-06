@@ -512,4 +512,9 @@
 .xic-inspector .dm-scan-heading { font-variant-numeric:tabular-nums;font-size:13px; }
 .xic-inspector .dm-provenance { border-top:1px solid var(--line);padding-top:12px; }
 .xic-inspector .dm-errors { color:var(--warn); }
+.xic-inspector .dm-nl-support { background:var(--card);color:var(--accent-ink); }
+.xic-inspector .dm-nl-summary td:first-child { white-space:nowrap; }
+.xic-inspector .dm-nl-support[aria-pressed="true"] { border-color:var(--accent);background:var(--accent-soft); }
+.xic-inspector .dm-support-nav { display:flex;align-items:center;gap:10px;margin:8px 0; }
+.xic-inspector .dm-nl-measurement { font-size:13px;font-variant-numeric:tabular-nums;margin:8px 0; }
 @media (max-width:700px) { .xic-inspector .dm-range input { width:88px; } }

@@ -335,7 +335,7 @@ and shape reference positions are retained from the method settings.
 
 The exporter reads the selected RT windows anew, matching RAW names to saved
 samples. It does not verify the original analysis bytes or reproduce the original
-detector. Every readable MS2 in those windows remains selectable, even when its
+detector. Without NL assessment, every readable MS2 in those windows remains selectable, even when its
 recorded precursor is unrelated to a pattern position. A time marker is temporal
 context, not precursor attribution, sugar-loss detection or candidate admission.
 Missing XIC/spectrum data and MS2 read errors stay visible. The Inspector reads
@@ -351,8 +351,19 @@ which saved Delta Mass candidates also have peak-scoped NL evidence, without
 manual scan selection. A preset is explicit, never guessed from a sample name.
 The JSON retains the evidence; its sibling `.nl.csv` contains one candidate/tag
 row with each position's result and supporting scan references. This summary,
-not scan browsing, is the entry for cross-method assessment. The Inspector's
-existing curve view is not yet an NL-summary interface.
+not scan browsing, is the entry for cross-method assessment. Inspector also
+shows the saved position results in its candidate list and detail table. Clicking
+NL support opens the corresponding spectrum, highlights its measured product,
+and focuses the XIC on the saved peak with the scan time and bounds marked.
+Several support records use previous/next evidence controls; manual MS2 lookup
+is collapsed as secondary inspection and never inherits an NL-support label.
+
+NL-enabled exports retain only spectra referenced by the completed position
+answers (related opportunities and matched evidence), rather than duplicating
+unrelated RT-window spectra per candidate. `ms2_scope` distinguishes this from
+the unfiltered review. The XIC context, position answers and support references
+are unchanged. Inspector renders saved NL values and never re-matches fragments
+or recomputes the verdict when zooming.
 
 The adapter reuses Discovery's scan matcher, parent-MS1 acquisition and
 precursor-loss assessment, then the shared CID-NL interval-relation owner.

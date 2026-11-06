@@ -105,6 +105,7 @@ class ReviewCandidate:
     spectra: tuple[ReviewSpectrum, ...] = ()
     ms2_read_errors: tuple[ReviewReadError, ...] = ()
     neutral_losses: tuple[ReviewNlPosition, ...] = ()
+    ms2_scope: str = "rt_window"
 
 
 @dataclass(frozen=True)
@@ -245,6 +246,7 @@ def _candidate(value: object) -> ReviewCandidate:
         spectra=spectra,
         ms2_read_errors=tuple(errors),
         neutral_losses=tuple(_neutral_loss(n) for n in row.get("neutral_losses", [])),
+        ms2_scope=_text(row, "ms2_scope") if "ms2_scope" in row else "rt_window",
     )
 
 

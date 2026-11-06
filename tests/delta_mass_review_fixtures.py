@@ -1,6 +1,6 @@
 """Analytical candidate/scan examples, independent of the detection algorithm."""
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from xic_extractor.configuration.delta_mass import (
@@ -10,6 +10,8 @@ from xic_extractor.configuration.delta_mass import (
 from xic_extractor.diagnostics.delta_mass_review_data import (
     DeltaMassReview,
     ReviewCandidate,
+    ReviewNlMatch,
+    ReviewNlPosition,
     ReviewPosition,
     ReviewSpectrum,
     write_delta_mass_review,
@@ -176,4 +178,48 @@ def review_fixture() -> DeltaMassReview:
 def write_review(directory: Path) -> Path:
     path = directory / "delta-review.json"
     write_delta_mass_review(review_fixture(), path)
+    return path
+
+
+def write_nl_review(directory: Path) -> Path:
+    review = review_fixture()
+    a, b = review.candidates
+    a = replace(
+        a,
+        positions=tuple(replace(p, peak_rt_window=(1.8, 2.2)) for p in a.positions),
+        spectra=(
+            replace(
+                a.spectra[0],
+                precursor_mz=100.0,
+                precursor_metadata=None,
+                mz=(60.0, 90.0),
+                intensity=(20.0, 100.0),
+            ),
+            a.spectra[1],
+        ),
+        neutral_losses=(
+            ReviewNlPosition(
+                "M",
+                "test-NL",
+                40.0,
+                "supported",
+                (11, 22),
+                (
+                    ReviewNlMatch(
+                        11, 100.0, 60.0, 0.2, 40.0, 0.0, "scan_precursor", "supported"
+                    ),
+                    ReviewNlMatch(
+                        22, 100.0, 60.0, 0.375, 40.0, 0.0, "scan_precursor", "supported"
+                    ),
+                ),
+            ),
+            ReviewNlPosition("partner", "test-NL", 40.0, "no_ms2", (), ()),
+            ReviewNlPosition("third", "test-NL", 40.0, "no_match", (11,), ()),
+        ),
+    )
+    b = replace(
+        b, neutral_losses=(ReviewNlPosition("M", "test-NL", 40.0, "no_ms2", (), ()),)
+    )
+    path = directory / "nl-review.json"
+    write_delta_mass_review(replace(review, candidates=(a, b)), path)
     return path

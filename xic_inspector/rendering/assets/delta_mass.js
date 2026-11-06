@@ -14,15 +14,18 @@
     return element;
   };
   const number = value => value == null ? '—' : Number(value.toPrecision(7)).toLocaleString('en-US');
+  const mass = value => value == null ? '—' : value.toLocaleString('en-US', {maximumFractionDigits:6});
   const color = index => `var(--dm-series-${Math.min(index + 1, 3)})`;
   // Beyond the three categorical hues, position identity also uses distinct dashes.
   const dash = index => index === 0 ? '' : index === 1 ? '7 4' : index === 2 ? '2 3' : `${index * 3} 4 2 4`;
+  const nlStatus = status => ({supported:'有 NL 支持', no_match:'未找到 NL 支持', no_ms2:'沒有相關 MS2', no_spectrum:'缺少 spectrum', incomplete:'讀取不完整', no_peak_bounds:'缺少峰範圍', ambiguous:'峰歸屬不明', unresolved:'前驅或歸屬未確認'}[status] || status);
+  const summary = saved => (saved.neutral_losses || []).map(n => `${n.position_label}：${nlStatus(n.status)}（${n.tag}）`).join(' · ');
   function table(headers, rows) {
     const wrap = node('div', undefined, 'table-scroll'), result = node('table', undefined, 'sample-table dm-table');
     const head = node('tr'); headers.forEach(label => head.append(node('th', label)));
     const thead = node('thead'); thead.append(head); result.append(thead);
     const body = node('tbody');
-    for (const values of rows) { const row = node('tr'); values.forEach(value => row.append(node('td', value))); body.append(row); }
+    for (const values of rows) { const row = node('tr'); values.forEach(value => { const cell = node('td'); if (value instanceof Node) cell.append(value); else cell.textContent = value; row.append(cell); }); body.append(row); }
     result.append(body); wrap.append(result); return wrap;
   }
   function nearest(values, target) {
@@ -32,12 +35,30 @@
   }
   function mount(container, item, {renderXic}) {
     const saved = item.delta_mass, root = node('section', undefined, 'dm-review');
+    const nlResults = saved.neutral_losses || [], hasNl = nlResults.length > 0;
     container.replaceChildren(root);
     // Position/scan controls belong to this view, not the host's sample controls.
     root.addEventListener('change', event => event.stopPropagation());
     root.append(node('h2', saved.method_label), node('p', saved.sample_stem, 'dm-subtitle'));
     if (saved.status !== 'candidate') root.append(node('p', `保存判定：${saved.status} · ${saved.reject_reason}`, 'dm-note'));
-    root.append(node('p', '候選判斷沿用 Discovery；曲線與 MS2 為新讀取的診斷資料，不是原決策重播。', 'dm-note'));
+    if (!hasNl) root.append(node('p', '候選判斷沿用 Discovery；曲線與 MS2 為新讀取的診斷資料，不是原決策重播。', 'dm-note'));
+    const supportButtons = [];
+    if (hasNl) {
+      const answers = table(['位置', 'NL', '峰內判讀'], nlResults.map(result => {
+        const matches = result.matches.filter(m => m.status === 'supported');
+        let answer = nlStatus(result.status);
+        if (result.status === 'supported' && matches.length) {
+          answer = node('button', `有 NL 支持（${new Set(matches.map(m => m.scan_number)).size}）`, 'dm-nl-support');
+          answer.type = 'button';
+          answer.setAttribute('aria-label', `${result.position_label} · ${result.tag}：${answer.textContent}`);
+          answer.setAttribute('aria-pressed', 'false');
+          answer.addEventListener('click', () => showSupport(result));
+          supportButtons.push([answer, result]);
+        }
+        return [result.position_label, `${result.tag} · ${mass(result.neutral_loss_da)} Da`, answer];
+      }));
+      answers.setAttribute('aria-label', '各位置 NL 判讀'); answers.classList.add('dm-nl-summary'); root.append(answers);
+    }
     const positions = table(
       ['位置 · 設定 ΔDa', '擷取 m/z', '保存 apex (min)', '保存 height', `Height / ${saved.ratio_reference_label}`, 'Ratio 證據（不篩選）', `Shape r / ${saved.shape_reference_label}`, '保存狀態'],
       saved.positions.map(p => [
@@ -45,7 +66,10 @@
         number(p.height), number(p.height_ratio_to_base), p.ratio_status || '—', number(p.shape_r), p.position_status,
       ]),
     );
-    positions.setAttribute('aria-label', '保存的 Delta Mass 位置證據'); root.append(positions);
+    positions.setAttribute('aria-label', '保存的 Delta Mass 位置證據');
+    if (hasNl) {
+      const details = node('details', undefined, 'dm-data'); details.append(node('summary', 'Delta Mass 位置證據'), positions); root.append(details);
+    } else root.append(positions);
     const legend = node('div', undefined, 'dm-legend');
     saved.positions.forEach((p, index) => {
       const entry = node('span'), key = mark('svg', {viewBox:'0 0 30 12', width:30, height:12, 'aria-hidden':true});
@@ -72,14 +96,25 @@
     root.append(chart, readout, rawTable);
 
     const ms2 = node('section', undefined, 'dm-ms2');
-    ms2.append(node('h3', 'MS2'), node('p', '時間窗內的 MS2；未判定與候選的前驅關係。', 'dm-note'));
+    const ms2Heading = node('h3', hasNl ? 'NL 證據' : 'MS2'); ms2Heading.tabIndex = -1; ms2.append(ms2Heading);
+    const contextNote = node('p', saved.ms2_scope === 'nl_related' ? '已保存的 NL 相關 MS2；是否支持依上方判讀。' : '時間窗內的 MS2；未判定與候選的前驅關係。', 'dm-note');
     const scans = node('select'); scans.setAttribute('aria-label', 'MS2 scan');
     scans.append(new Option('選擇 MS2 scan', ''));
     for (const scan of saved.spectra) scans.append(new Option(`#${scan.scan_number} · RT ${number(scan.rt_min)} · precursor ${number(scan.precursor_mz)}`, String(scan.scan_number)));
     scans.disabled = !saved.spectra.length;
     const spectrum = node('div', undefined, 'dm-spectrum'), spectrumReadout = node('output', '', 'dm-readout');
     spectrumReadout.setAttribute('aria-live', 'polite');
-    ms2.append(scans, spectrum, spectrumReadout); root.append(ms2);
+    const browse = node('details', undefined, 'dm-data');
+    const supportNav = node('div', undefined, 'dm-support-nav'); supportNav.hidden = true;
+    const previous = node('button', '上一筆支持'), next = node('button', '下一筆支持'), supportIndex = node('span');
+    previous.type = next.type = 'button';
+    supportNav.append(previous, supportIndex, next);
+    if (hasNl) {
+      browse.append(node('summary', saved.ms2_scope === 'nl_related' ? '相關 MS2（進階查證）' : '其他 MS2（進階查證）'), contextNote, scans);
+      browse.addEventListener('toggle', () => drawXic());
+      ms2.append(supportNav, spectrum, spectrumReadout, browse);
+    } else ms2.append(contextNote, scans, spectrum, spectrumReadout);
+    root.append(ms2);
     if (saved.ms2_read_errors.length) {
       const failures = node('details', undefined, 'dm-errors');
       failures.append(node('summary', `${saved.ms2_read_errors.length} 筆 MS2 讀取錯誤（不能當成沒有 MS2）`));
@@ -88,6 +123,7 @@
     }
     const provenance = node('details', undefined, 'dm-provenance');
     provenance.append(node('summary', '來源與擷取設定'));
+    if (hasNl) provenance.append(node('p', 'NL 為保存峰範圍內的診斷證據，不改 Delta Mass 判定或定量資格；顯示範圍不重算判讀。', 'dm-note'));
     provenance.append(table(['項目', '內容'], [
       ['Candidate', saved.candidate_id], ['保存狀態', saved.status], ['保存原因', saved.reject_reason || '—'],
       ['Discovery', saved.discovery_directory], ['本次 RAW', saved.raw_file],
@@ -96,7 +132,29 @@
       ['RAW 對應', '依保存的 sample 名稱選檔；未驗證是否為原分析檔'],
     ]));
     root.append(provenance);
-    let window = [...saved.rt_window], selectedScan = null, width = 0;
+    let window = [...saved.rt_window], selectedScan = null, width = 0, activeNl = null, supportMatches = [], supportCursor = 0;
+
+    function showSupport(result) {
+      browse.open = false;
+      activeNl = result;
+      supportMatches = result.matches.filter(m => m.status === 'supported').slice().sort((a,b) => a.scan_number-b.scan_number);
+      supportCursor = 0;
+      supportButtons.forEach(([button, answer]) => button.setAttribute('aria-pressed', String(answer === result)));
+      selectedScan = supportMatches[0].scan_number;
+      const bounds = saved.positions.find(p => p.label === result.position_label)?.peak_rt_window;
+      if (bounds) {
+        const padding = Math.max(.03, (bounds[1]-bounds[0])*.15);
+        setWindow([Math.max(saved.rt_window[0], bounds[0]-padding), Math.min(saved.rt_window[1], bounds[1]+padding)]);
+      } else setWindow([...saved.rt_window]);
+      ms2.scrollIntoView({block:'start'}); ms2Heading.focus({preventScroll:true});
+    }
+    function stepSupport(delta) {
+      supportCursor = Math.max(0, Math.min(supportMatches.length-1, supportCursor+delta));
+      selectedScan = supportMatches[supportCursor].scan_number;
+      if (!saved.spectra.some(s => s.scan_number === selectedScan && s.rt_min >= window[0] && s.rt_min <= window[1])) setWindow([...saved.rt_window]);
+      else { scans.value = String(selectedScan); drawSpectrum(); drawXic(); }
+    }
+    previous.addEventListener('click', () => stepSupport(-1)); next.addEventListener('click', () => stepSupport(1));
 
     function updateRawTable() {
       if (!rawTable.open) return;
@@ -127,7 +185,14 @@
       const d = svg.dataset, lo = +d.domainStart, hi = +d.domainEnd;
       const x = value => +d.chartLeft + (value - lo) / (hi - lo) * +d.chartWidth;
       const ticks = mark('g', {'aria-label':'MS2 時間點'});
-      const visibleScans = saved.spectra.filter(scan => scan.rt_min >= lo && scan.rt_min <= hi).sort((a, b) => a.rt_min - b.rt_min);
+      const evidenceScans = new Set((activeNl ? [activeNl] : nlResults).flatMap(n => n.matches.filter(m => m.status === 'supported').map(m => m.scan_number)));
+      const visibleScans = saved.spectra.filter(scan => scan.rt_min >= lo && scan.rt_min <= hi && (!hasNl || browse.open || evidenceScans.has(scan.scan_number))).sort((a, b) => a.rt_min - b.rt_min);
+      const peakBounds = saved.positions.find(p => p.label === activeNl?.position_label)?.peak_rt_window;
+      if (peakBounds) peakBounds.forEach(rt => {
+        if (rt < lo || rt > hi) return;
+        ticks.append(mark('line', {x1:x(rt), x2:x(rt), y1:+d.chartTop+20, y2:+d.chartTop + +d.chartHeight, stroke:'var(--muted)', 'stroke-dasharray':'4 4', 'data-nl-boundary':rt, 'pointer-events':'none'}));
+      });
+      if (peakBounds && peakBounds[1] >= lo && peakBounds[0] <= hi) ticks.append(mark('text', {x:x(Math.max(lo, peakBounds[0]))+4, y:+d.chartTop+32, fill:'var(--muted)'}, `${activeNl.position_label} 保存峰界`));
       for (const [index, scan] of visibleScans.entries()) {
         const active = scan.scan_number === selectedScan;
         const tick = mark('line', {
@@ -153,7 +218,11 @@
       svg.append(ticks);
       svg.addEventListener('click', event => {
         const scan = event.target.closest('[data-ms2-scan]');
-        if (scan) chooseScan(Number(scan.dataset.ms2Scan));
+        if (scan) {
+          const id = Number(scan.dataset.ms2Scan), index = supportMatches.findIndex(m => m.scan_number === id);
+          if (activeNl && index >= 0) { supportCursor = index; selectedScan = id; scans.value = String(id); drawSpectrum(); drawXic(); }
+          else chooseScan(id);
+        }
       });
       svg.addEventListener('pointermove', event => {
         const box = svg.getBoundingClientRect();
@@ -177,7 +246,7 @@
       scans.replaceChildren(new Option('選擇 MS2 scan', ''));
       for (const scan of visible) scans.append(new Option(`#${scan.scan_number} · RT ${number(scan.rt_min)} · precursor ${number(scan.precursor_mz)}`, String(scan.scan_number)));
       scans.disabled = !visible.length;
-      if (!visible.some(s => s.scan_number === selectedScan)) selectedScan = null;
+      if (!activeNl && !visible.some(s => s.scan_number === selectedScan)) selectedScan = null;
       scans.value = selectedScan == null ? '' : String(selectedScan);
       start.setCustomValidity(''); drawXic(); drawSpectrum();
     }
@@ -191,19 +260,34 @@
     });
     full.addEventListener('click', () => setWindow([...saved.rt_window]));
     function chooseScan(id) {
+      activeNl = null; supportMatches = [];
+      supportButtons.forEach(([button]) => button.setAttribute('aria-pressed', 'false'));
       selectedScan = id; scans.value = id == null ? '' : String(id);
       drawSpectrum(); drawXic();
     }
     scans.addEventListener('change', () => chooseScan(scans.value ? Number(scans.value) : null));
     function drawSpectrum() {
       spectrum.replaceChildren(); spectrumReadout.textContent = '';
+      supportNav.hidden = !activeNl || supportMatches.length <= 1;
+      supportIndex.textContent = `${supportCursor+1} / ${supportMatches.length}`;
+      previous.disabled = supportCursor === 0; next.disabled = supportCursor === supportMatches.length-1;
       const scan = saved.spectra.find(s => s.scan_number === selectedScan);
       if (!scan) {
+        if (hasNl) {
+          spectrum.append(node('p', activeNl ? `支持紀錄 #${selectedScan} 缺少 spectrum。` : supportButtons.length ? '點選上方的 NL 支持結果查看證據。' : '此候選未建立 NL 支持；各位置判讀見上表。', 'dm-note'));
+          return;
+        }
         const visible = saved.spectra.some(s => s.rt_min >= window[0] && s.rt_min <= window[1]);
         spectrum.append(node('p', visible ? '選擇上方 MS2 刻度或 scan。' : saved.ms2_read_errors.length ? '沒有可用 spectrum；請查看讀取錯誤。' : '此時間窗沒有 MS2。', 'dm-note'));
         return;
       }
       spectrum.append(node('p', `Scan #${scan.scan_number} · RT ${number(scan.rt_min)} min · 記錄的 precursor m/z ${number(scan.precursor_mz)}`, 'dm-scan-heading'));
+      const match = activeNl ? supportMatches[supportCursor] : null;
+      if (match) {
+        const basis = {parent_ms1:'parent MS1', scan_precursor:'scan precursor', scan_monoisotopic:'monoisotopic precursor'}[match.reference_source] || match.reference_source;
+        spectrum.prepend(node('p', `${activeNl.position_label} · ${activeNl.tag}：實測 NL ${mass(match.observed_loss_da)} Da（設定 ${mass(activeNl.neutral_loss_da)} Da）`, 'dm-nl-measurement'));
+        spectrum.append(node('p', `實測前驅 ${mass(match.precursor_mz)}（${basis}） → 產物 ${mass(match.product_mz)} · 產物 / base peak ${number(match.product_base_ratio*100)}%`, 'dm-nl-measurement'));
+      } else if (hasNl) spectrum.prepend(node('p', '手動檢閱的 MS2，不代表 NL 支持。', 'dm-note'));
       const meta = scan.precursor_metadata;
       if (meta) spectrum.append(node('p', `Monoisotopic m/z ${number(meta.monoisotopic_mz)} · charge ${number(meta.charge)} · isolation width ${number(meta.isolation_width_da)} Da · offset ${number(meta.isolation_offset_da)} Da`, 'dm-note'));
       if (!scan.mz.length) { spectrum.append(node('p', '此 scan 沒有 spectrum 點。')); return; }
@@ -223,6 +307,14 @@
       svg.append(mark('text', {x:(L+R)/2, y:H-3, 'text-anchor':'middle', fill:'var(--muted)'}, 'm/z'));
       scan.mz.forEach((mz, i) => svg.append(mark('line', {x1:x(mz), x2:x(mz), y1:B, y2:y(scan.intensity[i]), stroke:'var(--accent)', 'stroke-width':1.5})));
       const highlight = mark('line', {stroke:'var(--ink)', 'stroke-width':3}); svg.append(highlight);
+      if (match) {
+        const index = scan.mz.indexOf(match.product_mz);
+        if (index >= 0) {
+          const product = mark('line', {x1:x(match.product_mz), x2:x(match.product_mz), y1:B, y2:y(scan.intensity[index]), stroke:'var(--ink)', 'stroke-width':3, 'data-nl-product-mz':match.product_mz});
+          product.append(mark('title', {}, `NL 實測產物 m/z ${match.product_mz}`)); svg.append(product);
+          svg.append(mark('text', {x:x(match.product_mz), y:Math.max(T+14, y(scan.intensity[index])-8), 'text-anchor':x(match.product_mz)>(L+R)/2?'end':'start', fill:'var(--ink)'}, `NL 產物 ${mass(match.product_mz)}`));
+        } else spectrum.append(node('p', '保存的 NL 產物不在此 spectrum 中，未繪製產物標記。', 'dm-note'));
+      }
       function showPeak(index) {
         const mz = scan.mz[index], intensity = scan.intensity[index];
         for (const [key, value] of Object.entries({x1:x(mz), x2:x(mz), y1:B, y2:y(intensity)})) highlight.setAttribute(key, value);
@@ -251,5 +343,5 @@
     observer.observe(chart);
     return {destroy() { observer.disconnect(); root.remove(); }};
   }
-  window.XicInspectorDeltaMass = Object.freeze({mount, dash});
+  window.XicInspectorDeltaMass = Object.freeze({mount, dash, summary});
 })();
