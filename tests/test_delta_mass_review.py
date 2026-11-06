@@ -103,6 +103,10 @@ def test_selected_raws_are_batched_and_saved_evidence_is_not_reclassified(
     ]
     assert main(args) == 0
     review = decode_delta_mass_review(json.loads(output.read_text()))
+    partner = review.candidates[0].positions[1]
+    assert partner.delta_da == 3.0000001234
+    assert partner.feature_mz == 103.0000001234
+    assert partner.query_mz == 103.0  # Display precision must not change acquisition.
     assert [c[1] for c in calls if c[0] == "open"] == ["sample-a", "sample-b"]
     assert [c for c in calls if c[0] == "xic"] == [
         ("xic", "sample-a", 6),

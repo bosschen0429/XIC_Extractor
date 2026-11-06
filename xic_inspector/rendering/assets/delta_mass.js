@@ -50,6 +50,14 @@
     root.addEventListener('change', event => event.stopPropagation());
     if (hasNl) root.append(node('h2', `m/z ${mass(saved.base_mz)} · ${number(saved.base_rt_apex_min)} min`));
     else root.append(node('h2', saved.method_label), node('p', saved.sample_stem, 'dm-subtitle'));
+    const massReference = saved.positions.reduce((a,b) => a.delta_da <= b.delta_da ? a : b);
+    for (const position of saved.positions) {
+      if (position === massReference) continue;
+      const measured = position.feature_mz != null && massReference.feature_mz != null;
+      const gap = node('p', `Δm/z ${position.label} − ${massReference.label}：${measured ? `實測 ${mass(position.feature_mz-massReference.feature_mz)} · ` : ''}設定 ${mass(position.delta_da-massReference.delta_da)}`, 'dm-mass-gap');
+      gap.setAttribute('aria-label', `${position.label} − ${massReference.label} 的 Δm/z`);
+      root.append(gap);
+    }
     const advanced = node('details', undefined, 'dm-advanced');
     advanced.append(node('summary', '詳細資料'));
     if (saved.status !== 'candidate') root.append(node('p', `保存判定：${saved.status} · ${saved.reject_reason}`, 'dm-note'));

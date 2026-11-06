@@ -33,7 +33,10 @@ def write_discovery(directory: Path) -> tuple[str, ...]:
         pattern_id="three-position",
         method_label="Three positions",
         positions=tuple(
-            DeltaMassPosition(label, float(i * 3), 0.8, 1.25)
+            # Sidecar/feature precision exceeds the display-oriented position CSV.
+            DeltaMassPosition(
+                label, float(i * 3) + (0.0000001234 if i else 0), 0.8, 1.25
+            )
             for i, label in enumerate(("M", "partner", "third"))
         ),
         anchor_positions=("M",),
@@ -132,6 +135,7 @@ def review_fixture() -> DeltaMassReview:
                         delta_da=float(i * 3),
                         expected_mz=base + i * 3,
                         observed_mz=base + i * 3,
+                        feature_mz=base + i * 3 + (0.000321 if i else 0),
                         apex_rt_min=2.0,
                         height=80.0 * (i + 1),
                         height_ratio_to_base=2.5 if i == 0 else 1.0,

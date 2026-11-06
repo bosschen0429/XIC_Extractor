@@ -35,6 +35,7 @@ class ReviewPosition:
     raw_intensity: tuple[float, ...] = ()
     feature_id: str = ""
     peak_rt_window: tuple[float, float] | None = None
+    feature_mz: float | None = None
 
     @property
     def query_mz(self) -> float:
@@ -273,6 +274,7 @@ def _position(value: object) -> ReviewPosition:
         position_status=_text(row, "position_status"),
         raw_rt=rt,
         raw_intensity=intensity,
+        feature_mz=_optional_number(row.get("feature_mz"), "feature m/z"),
         feature_id=(
             _text(row, "feature_id", allow_empty=True) if "feature_id" in row else ""
         ),

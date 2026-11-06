@@ -93,21 +93,27 @@ def acquire_delta_mass_review(
         raw_path = raw_paths[sample]
         feature_path = discovery_directory / sample / "detected_features.csv"
         features = (
-            load_detected_features_csv(feature_path)
-            if nl_settings is not None and feature_path.is_file()
-            else ()
+            load_detected_features_csv(feature_path) if feature_path.is_file() else ()
         )
         feature_bounds = {
             f.feature_id: (f.rt_start_min, f.rt_end_min)
             for f in features
-            if f.sample_stem == sample
+            if nl_settings is not None
+            and f.sample_stem == sample
             and f.rt_start_min is not None
             and f.rt_end_min is not None
+        }
+        feature_masses = {
+            f.feature_id: f.mz for f in features if f.sample_stem == sample
         }
         bounded_candidates = []
         for candidate in candidates:
             bounded_positions = tuple(
-                replace(p, peak_rt_window=feature_bounds.get(p.feature_id))
+                replace(
+                    p,
+                    peak_rt_window=feature_bounds.get(p.feature_id),
+                    feature_mz=feature_masses.get(p.feature_id),
+                )
                 for p in candidate.positions
             )
             # NL asks about complete saved peaks, not just display padding.
@@ -319,6 +325,7 @@ def _read_selected_candidates(
     method = sidecar.get("method", {}) if isinstance(sidecar, dict) else {}
     if not isinstance(method, dict):
         raise ValueError("Delta Mass sidecar method must be an object")
+    configured_positions = {p["label"]: p for p in method.get("positions", [])}
     try:
         ppm = float(method["mz_tolerance_ppm"])
     except (KeyError, TypeError, ValueError) as exc:
@@ -351,7 +358,9 @@ def _read_selected_candidates(
         parsed = tuple(
             ReviewPosition(
                 label=p["position_label"],
-                delta_da=_required_number(p, "delta_da"),
+                delta_da=_required_number(
+                    configured_positions.get(p["position_label"], p), "delta_da"
+                ),
                 expected_mz=_required_number(p, "expected_mz"),
                 observed_mz=_saved_number(p, "observed_mz"),
                 apex_rt_min=_saved_number(p, "apex_rt_min"),
