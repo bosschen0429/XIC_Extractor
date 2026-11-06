@@ -501,6 +501,51 @@ def test_curve_export_acquires_two_distinct_sample_curves_with_progress(
     )
 
 
+def test_review_replays_direct_and_backfilled_physical_extraction_conditions(
+    tmp_path, monkeypatch
+):
+    # The first two precursors are 499/501, deliberately distinct from the
+    # acquired physical ions. S3 has a Backfill value but no Discovery candidate.
+    expected = {"S1": (499.012, 20.0), "S2": (501.018, 17.0), "S3": (500.123, 23.0)}
+    report, _ = _group_with_missing_apex_review(tmp_path, extraction_by_sample=expected)
+    acquired = {}
+
+    @contextmanager
+    def raw(path, dll, **kwargs):
+        class Raw:
+            def extract_xic(self, mz, lower, upper, ppm):
+                acquired[path.stem] = (mz, ppm)
+                rt = np.linspace(lower, upper, 51)
+                return rt, 1000 * np.exp(-(((rt - 8) / 0.08) ** 2))
+
+        yield Raw()
+
+    monkeypatch.setattr(acquisition, "open_raw", raw)
+    output = tmp_path / "physical-replay.json"
+    export_explanation_curves(
+        report,
+        output,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        group_id="G1",
+        sample_ids=tuple(expected),
+    )
+    assert acquired == expected
+    assert {
+        trace.sample_id: (trace.mz, trace.ppm)
+        for trace in read_curve_bundle(output).transitions[0].traces
+    } == expected
+    acquired.clear()
+    export_explanation_curves(
+        report,
+        tmp_path / "physical-candidate.json",
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        candidate_id="C1",
+    )
+    assert acquired == {"S1": expected["S1"]}
+
+
 def test_curve_export_skips_a_sample_without_usable_signal(tmp_path, monkeypatch):
     review, group_id, sample_ids, _ = _two_sample_curve_review(tmp_path, monkeypatch)
     _install_distinct_curve_raws(monkeypatch, [], empty={"S1"})
@@ -588,7 +633,7 @@ def test_curve_export_sample_scope_opens_only_selected_raw(tmp_path, monkeypatch
 
 
 @pytest.mark.parametrize("sample_ids", [("S1", "S2", "S3"), ("S3",)])
-def test_group_missing_apex_uses_group_medians_without_changing_saved_results(
+def test_group_missing_apex_uses_saved_group_position_without_changing_results(
     tmp_path, monkeypatch, sample_ids
 ):
     review, matrix = _group_with_missing_apex_review(tmp_path)

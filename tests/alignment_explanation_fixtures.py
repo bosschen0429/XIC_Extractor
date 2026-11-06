@@ -24,6 +24,8 @@ def explanation_summary(values, *, review_only=False):
         "initial_edge_coverage": {},
         "audit_availability": {},
         "known_istd_reference": None,
+        "sample_rt_calibration": None,
+        "injection_order": {},
         **values,
     }
     summary["samples"] = [

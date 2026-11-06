@@ -145,9 +145,10 @@ class ReviewWorkspace:
                 raise
             except ExplanationError as exc:
                 # The technical reason travels as detail, not as the headline.
+                rerun = "Alignment" if path.suffix.lower() == ".sqlite" else "分析"
                 raise ValueError(
                     "無法讀取這份結果：可能由舊版本產生或檔案已損壞，"
-                    "請用目前版本重新執行分析。"
+                    f"請用目前版本重新執行 {rerun}。"
                 ) from exc
             sample_ids = tuple(sample["sample_key"] for sample in summary["samples"])
             if not sample_ids:
@@ -370,7 +371,7 @@ class ReviewWorkspace:
             return copy.deepcopy(self._detail)
 
     def start_curves(self, values: dict[str, Any]) -> dict[str, Any]:
-        allowed = {"item_id", "sample_ids", "raw_dir", "dll_dir", "ppm", "padding_min"}
+        allowed = {"item_id", "sample_ids", "raw_dir", "dll_dir", "padding_min"}
         if set(values) - allowed:
             raise ValueError("曲線要求包含不支援的欄位。")
         samples = _ids(values.get("sample_ids"))
@@ -413,7 +414,6 @@ class ReviewWorkspace:
                 "group_id": description["group_id"],
                 "candidate_id": description["candidate_id"],
                 "sample_ids": samples,
-                "ppm": values.get("ppm", 5.0),
                 "padding_min": values.get("padding_min", 0.5),
             }
             if description["target_id"]:

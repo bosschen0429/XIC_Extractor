@@ -23,6 +23,7 @@ from xic_inspector.selection.canonical import (
     Witness,
     build_canonical_ref,
 )
+from xic_inspector.sources.rt_replay import align_curve, read_calibration
 
 BUNDLE_SCHEMA_VERSION = "xic_curve_bundle"
 MAX_BUNDLE_SIZE_BYTES = 50 * 1024 * 1024
@@ -98,6 +99,8 @@ class TransitionCurves:
 class CurveBundle:
     transitions: tuple[TransitionCurves, ...]
     schema_version: str = BUNDLE_SCHEMA_VERSION
+    sample_rt_calibration: dict[str, Any] | None = None
+    injection_order: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,7 +251,24 @@ def _validate_differential_flags(flags: dict[str, Any], where: str) -> None:
 
 
 def _decode_bundle(value: object) -> CurveBundle:
-    root = _mapping(value, "$", {"schema_version", "transitions"})
+    # Generic portable bundles need no Alignment estimate. Untargeted producers
+    # explicitly carry the final explanation's calibration and injection order.
+    if isinstance(value, dict):
+        value = {"sample_rt_calibration": None, "injection_order": {}, **value}
+    root = _mapping(
+        value,
+        "$",
+        {"schema_version", "transitions", "sample_rt_calibration", "injection_order"},
+    )
+    read_calibration(root["sample_rt_calibration"])
+    orders = root["injection_order"]
+    if not isinstance(orders, dict) or any(
+        not isinstance(stem, str)
+        or isinstance(order, bool)
+        or not isinstance(order, int)
+        for stem, order in orders.items()
+    ):
+        raise _fail("$.injection_order", "expected sample stems and integer orders")
     if root.get("schema_version") != BUNDLE_SCHEMA_VERSION:
         raise _fail("$.schema_version", f"expected {BUNDLE_SCHEMA_VERSION}")
     entries = root.get("transitions")
@@ -377,7 +397,11 @@ def _decode_bundle(value: object) -> CurveBundle:
         transitions.append(
             TransitionCurves(key, window, flags, tuple(traces), quantifications)
         )
-    return CurveBundle(tuple(transitions))
+    return CurveBundle(
+        tuple(transitions),
+        sample_rt_calibration=root["sample_rt_calibration"],
+        injection_order=orders,
+    )
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -456,7 +480,10 @@ class CurveBundleSource:
                         f"conflicting label for sample {trace.sample_id!r}",
                     )
                 labels[trace.sample_id] = trace.sample_label
+        self.rt_calibration = read_calibration(self.bundle.sample_rt_calibration)
         self.summary = {
+            "sample_rt_calibration": self.bundle.sample_rt_calibration,
+            "injection_order": self.bundle.injection_order,
             "schema_version": self.bundle.schema_version,
             "plot_evidence_capability": "retained_curves",
             "processing_attempt_id": str(path.resolve()),
@@ -583,6 +610,10 @@ class CurveBundleSource:
                         },
                     }
                 )
+                if self.rt_calibration is not None:
+                    align_curve(
+                        projected_curves[-1], trace.sample_label, self.rt_calibration
+                    )
             flag_ref = f"flags:{transition.key}"
             fields = [
                 {

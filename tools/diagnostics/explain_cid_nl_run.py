@@ -43,7 +43,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--raw-dir", type=Path)
     parser.add_argument("--dll-dir", type=Path)
     parser.add_argument("--curve-padding-min", type=float, default=0.5)
-    parser.add_argument("--curve-ppm", type=float, default=5.0)
     args = parser.parse_args(argv)
     if sum(option is not None for option in (args.compact_to, args.curve_bundle)) > 1:
         parser.error("Choose only one of --compact-to or --curve-bundle")
@@ -72,7 +71,6 @@ def main(argv: list[str] | None = None) -> int:
                 candidate_id=args.candidate_id,
                 group_id=args.group_id,
                 padding_min=args.curve_padding_min,
-                ppm=args.curve_ppm,
             )
             print(json.dumps(result, indent=2))
             if result["unusable_samples"]:

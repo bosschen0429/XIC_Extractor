@@ -561,11 +561,12 @@
   function sampleAlignment(item,row){
     const curves=(item.curves||[]).filter(c=>c.sample_id===row.sample_id&&c.raw_rts?.length), aligned=curves.filter(c=>c.aligned_rts?.length).length;
     if(!curves.length)return {kind:'unavailable',label:'校正：無曲線'};
+    if(curves.some(c=>c.rt_alignment_methods?.includes('raw_fallback')))return {kind:'unavailable',label:'無 RT 估計；顯示原始 RT'};
     if(!aligned)return {kind:'unavailable',label:'校正：對齊未提供'};
     if(aligned<curves.length)return {kind:'partial',label:`校正：${aligned}/${curves.length} 段有對齊座標`};
     return {kind:'complete',label:'校正：對齊可用'};
   }
-  const injectionOrders=data.summary?.known_istd_reference?.calibration?.injection_order||{};
+  const injectionOrders=data.summary?.injection_order||{};
   const rel={node:null,pair:null,reviews:false,axis:'raw',captures:{}};
   const shortName=name=>String(name||'未提供樣本').replace('Breast_Cancer_Tissue_pooled_','').replace('Benignfat','Fat ').replace('_DNA','');
   function relationshipModel(item){
@@ -619,9 +620,9 @@
         svg+=`<path d="${lanePath(xs,ys,x,y)}" class="lane-raw" data-kind="${esc(display.signal)}" data-support-origin="${originClass(n.row?.support_origin)}" stroke-dasharray="${curveDash(item,n.row?.support_origin)}"/>`;
         if(finite(apex))svg+=`<line x1="${x(apex)}" x2="${x(apex)}" y1="4" y2="76" class="lane-apex"/>`;
         chart=`<svg viewBox="0 0 690 100" preserveAspectRatio="none" aria-label="${esc(n.label)} 的${axis==='aligned'?'校正':'原始'}時間曲線"><title>${esc(n.label)} · ${esc(c.stage_label)} · ${display.signal==='smoothed'?'平滑':'原始'}最高強度 ${num(max)}</title>${svg}</svg>`;}
-      return `<article class="relationship-lane" data-lane-member="${esc(n.id)}" data-injection-order="${n.order??''}"><div class="lane-label"><div class="lane-name"><span class="injection-order">${n.order===null?'?':String(n.order).padStart(2,'0')}</span>${esc(shortName(n.label))}</div><span class="reading-hint">${esc(c?.stage_label||'支持曲線未提供')}</span>${n.curves.length>1?`<select data-lane-capture="${esc(n.id)}" aria-label="${esc(n.label)} 曲線選擇">${n.curves.map(v=>`<option value="${esc(v.evidence_ref)}" ${v===c?'selected':''}>${esc(v.stage_label||v.kind)}</option>`).join('')}</select>`:''}<details><summary>定量與來源</summary><p>正式結果：${result(n.row||{})}</p>${c?`<p>記錄峰頂：${drt(c.apex_rt)} min<br>積分範圍：${drt(c.bound_left_rt)}–${drt(c.bound_right_rt)} min<br>當次原始計數面積：${num(c.area)} counts·s</p>${evidenceButtons([c.evidence_ref],`${n.label} 的支持曲線`,'查看曲線來源')}`:''}${evidenceButtons(n.row?.decision_refs,`${n.label} 的正式結果`)}${evidenceButtons(originRefs(n.row?.support_origin),`${n.label} 的支持來源`,'查看支持記錄')}</details></div><div class="lane-chart">${chart}</div></article>`;
+      return `<article class="relationship-lane" data-lane-member="${esc(n.id)}" data-injection-order="${n.order??''}"><div class="lane-label"><div class="lane-name"><span class="injection-order">${n.order===null?'?':String(n.order).padStart(2,'0')}</span>${esc(shortName(n.label))}</div><span class="reading-hint">${esc(c?.stage_label||'支持曲線未提供')}${axis==='aligned'&&c?.rt_alignment_label?' · '+esc(c.rt_alignment_label):''}</span>${n.curves.length>1?`<select data-lane-capture="${esc(n.id)}" aria-label="${esc(n.label)} 曲線選擇">${n.curves.map(v=>`<option value="${esc(v.evidence_ref)}" ${v===c?'selected':''}>${esc(v.stage_label||v.kind)}</option>`).join('')}</select>`:''}<details><summary>定量與來源</summary><p>正式結果：${result(n.row||{})}</p>${c?`<p>記錄峰頂：${drt(c.apex_rt)} min<br>積分範圍：${drt(c.bound_left_rt)}–${drt(c.bound_right_rt)} min<br>當次原始計數面積：${num(c.area)} counts·s</p>${evidenceButtons([c.evidence_ref],`${n.label} 的支持曲線`,'查看曲線來源')}`:''}${evidenceButtons(n.row?.decision_refs,`${n.label} 的正式結果`)}${evidenceButtons(originRefs(n.row?.support_origin),`${n.label} 的支持來源`,'查看支持記錄')}</details></div><div class="lane-chart">${chart}</div></article>`;
     }).join('');
-    return `<section class="relationship-curves" aria-label="依進樣順序的跨樣本曲線"><div class="relation-section-heading"><div><h3>${rel.pair?'這兩個樣本的曲線':rel.node?'這個樣本的曲線':'跨樣本曲線'}</h3><p class="reading-hint">${nodes.length} 個樣本 · 依進樣先後，由上而下 · 共用${axis==='aligned'?'校正':'原始'}時間軸 · 各自最高點縮放；? 表示順序未提供</p></div><div class="relation-options"><div class="axis-switch"><button type="button" data-time-axis="raw" aria-pressed="${axis==='raw'}">原始 RT</button><button type="button" data-time-axis="aligned" aria-pressed="${axis==='aligned'}">校正 RT</button></div></div></div><div id="relationship-lanes">${lanes||'<p class="lane-missing">目前沒有可見樣本；可在樣本結果中恢復顯示。</p>'}</div><p class="reading-hint">藍：${display.signal==='smoothed'?'平滑訊號':'原始訊號'} · 線型依支持來源（實線：初始探索；長虛線：重新擷取；點虛線：Backfill） · 紫色虛線：記錄峰頂。校正座標缺失時不以原始 RT 代替。</p></section>`;
+    return `<section class="relationship-curves" aria-label="依進樣順序的跨樣本曲線"><div class="relation-section-heading"><div><h3>${rel.pair?'這兩個樣本的曲線':rel.node?'這個樣本的曲線':'跨樣本曲線'}</h3><p class="reading-hint">${nodes.length} 個樣本 · 依進樣先後，由上而下 · 共用${axis==='aligned'?'校正':'原始'}時間軸 · 各自最高點縮放；? 表示順序未提供</p></div><div class="relation-options"><div class="axis-switch"><button type="button" data-time-axis="raw" aria-pressed="${axis==='raw'}">原始 RT</button><button type="button" data-time-axis="aligned" aria-pressed="${axis==='aligned'}">校正 RT</button></div></div></div><div id="relationship-lanes">${lanes||'<p class="lane-missing">目前沒有可見樣本；可在樣本結果中恢復顯示。</p>'}</div><p class="reading-hint">藍：${display.signal==='smoothed'?'平滑訊號':'原始訊號'} · 線型依支持來源（實線：初始探索；長虛線：重新擷取；點虛線：Backfill） · 紫色虛線：記錄峰頂。只有無 RT 估計的樣本顯示原始 RT，並標示「無 RT 估計」。</p></section>`;
   }
   function internalPairSupportPanel(item){
     const model=relationshipModel(item);
@@ -848,6 +849,7 @@
     const name=document.createElement('strong'),note=document.createElement('span');
     name.textContent=row.name;
     note.textContent=origin||(row.available?[...new Set(row.curves.map(curveAcquisitionLabel))].join(' / '):'無曲線');
+    if(curveWorkspaceAxis()==='aligned'&&row.available)note.textContent+=' · '+[...new Set(row.curves.map(c=>c.rt_alignment_label).filter(Boolean))].join(' / ');
     tip.replaceChildren(name,note);
     if(detail){const value=document.createElement('span');value.textContent=detail;tip.append(value);}
     tip.hidden=false;
@@ -862,15 +864,18 @@
     const element=$('svg-raw');if(!element||destroyed)return;
     const width=Math.max(280,element.clientWidth);
     curveUi.width=width;
-    setHTML(element,plot(curveUi.model.item,'raw',false,true,width));
+    const item=curveUi.model.item,axis=curveWorkspaceAxis();
+    const fallback=axis==='aligned'?[...new Set((item.curves||[]).filter(c=>state.visible.has(c.sample_id)&&c.rt_alignment_methods?.includes('raw_fallback')).map(c=>sampleName(c.sample_id)))]:[];
+    setHTML(element,plot(item,axis,false,true,width)+(fallback.length?`<p class="alignment-summary partial">無 RT 估計，顯示原始 RT：${fallback.map(esc).join('、')}</p>`:''));
     curveUi.geometry=new WeakMap();
     applyCurveEmphasis();
   }
+  function curveWorkspaceAxis(){return data.summary?.sample_rt_calibration?'aligned':'raw';}
   function renderCurveWorkspace(item){
     const model=curveSidebarModel(item);
     hideCurveTooltip();$('curve-tooltip')?.remove();
     curveUi.observer?.disconnect();
-    setHTML($('workspace-content'),`<section class="curve-section" id="curve-workspace"><div class="curve-group-controls"><div class="curve-group-options" role="group" aria-label="顯示組別">${model.groups.length>1?model.groups.map(group=>`<label class="curve-group-option"><input type="checkbox" data-curve-group="${esc(group.name)}" aria-label="顯示 ${esc(group.name)} 整組"><span>${esc(group.name)}</span></label>`).join(''):''}<div class="curve-bulk-actions"><button type="button" data-curve-all="true" aria-label="全部顯示">全選</button><button type="button" data-curve-all="false" aria-label="全部隱藏">清空</button></div></div>${signalSwitchMarkup}</div><div class="curve-sample-workspace"><aside class="curve-sidebar" aria-label="樣本曲線顯示"><div class="curve-list-tools"><input type="search" id="curve-search" aria-label="搜尋樣本名稱" placeholder="搜尋樣本" value="${esc(curveUi.query)}"><button type="button" id="curve-clear-focus" data-curve-clear aria-label="解除聚焦" title="解除聚焦" hidden>×</button></div><div class="curve-sample-list" id="curve-sample-list">${curveSampleList(model)}</div></aside><section class="curve-main" aria-label="層析圖"><div class="curve-plot-tools">${rtViewControls(item)}${overlayControl(item)}<button type="button" class="zoom-btn" data-zoom="raw" aria-label="放大層析圖">放大 ↗</button></div><div class="svg-container" id="svg-raw"></div></section></div><div class="curve-tooltip" id="curve-tooltip" role="tooltip" hidden></div></section>`);
+    setHTML($('workspace-content'),`<section class="curve-section" id="curve-workspace"><div class="curve-group-controls"><div class="curve-group-options" role="group" aria-label="顯示組別">${model.groups.length>1?model.groups.map(group=>`<label class="curve-group-option"><input type="checkbox" data-curve-group="${esc(group.name)}" aria-label="顯示 ${esc(group.name)} 整組"><span>${esc(group.name)}</span></label>`).join(''):''}<div class="curve-bulk-actions"><button type="button" data-curve-all="true" aria-label="全部顯示">全選</button><button type="button" data-curve-all="false" aria-label="全部隱藏">清空</button></div></div>${signalSwitchMarkup}</div><div class="curve-sample-workspace"><aside class="curve-sidebar" aria-label="樣本曲線顯示"><div class="curve-list-tools"><input type="search" id="curve-search" aria-label="搜尋樣本名稱" placeholder="搜尋樣本" value="${esc(curveUi.query)}"><button type="button" id="curve-clear-focus" data-curve-clear aria-label="解除聚焦" title="解除聚焦" hidden>×</button></div><div class="curve-sample-list" id="curve-sample-list">${curveSampleList(model)}</div></aside><section class="curve-main" aria-label="層析圖"><div class="curve-plot-tools">${rtViewControls(item)}${overlayControl(item)}<button type="button" class="zoom-btn" data-zoom="${curveWorkspaceAxis()}" aria-label="放大層析圖">放大 ↗</button></div><div class="svg-container" id="svg-raw"></div></section></div><div class="curve-tooltip" id="curve-tooltip" role="tooltip" hidden></div></section>`);
     syncSignalSwitch();syncCurveSelection();drawCurveWorkspacePlot();
     curveUi.observer=new ResizeObserver(()=>{
       if($('svg-raw')?.clientWidth!==curveUi.width)drawCurveWorkspacePlot();
@@ -989,7 +994,7 @@
     const shown=curvesForPlot(item,peer),drawable=shown.flatMap(curve=>seriesList(curve,axis,display.signal).map(series=>({curve,series})));
     const extra=drawable.length?[...display.overlays].filter(k=>overlays(item).includes(k)).flatMap(kind=>shown.flatMap(curve=>seriesList(curve,axis,kind).map(series=>({curve,series})))):[];
     if(!drawable.length){const [chosen,other]=display.signal==='raw'?['原始訊號','平滑訊號']:['平滑訊號','原始訊號'];return `<div class="empty-state"><strong>${axis==='aligned'?'所選資料未提供對齊座標':shown.length?`所選來源未保存${chosen}`:'目前沒有可顯示的曲線'}</strong><p>${axis==='aligned'?'請切回原始時間；不會以原始座標代替。':shown.length?`不以${other}代替；可在上方切換訊號。`:'請確認樣本顯示勾選，或來源是否保存曲線。'}</p></div>`;}
-    const reviewWindow=axis==='raw'?(state.plotWindow||(Array.isArray(item.review_rt_window)?item.review_rt_window:null)):null;
+    const reviewWindow=axis==='raw'?(state.plotWindow||(Array.isArray(item.review_rt_window)?item.review_rt_window:null)):mode==='curves'?state.plotWindow:null;
     let lo=reviewWindow?.[0]??Infinity,hi=reviewWindow?.[1]??-Infinity,lowY=0,highY=0;
     [...drawable,...extra].forEach(({series:s})=>s.rts.forEach((v,i)=>{const y=s.intensities[i];if(finite(v)&&finite(y)&&(!reviewWindow||v>=lo&&v<=hi)){if(!reviewWindow){lo=Math.min(lo,v);hi=Math.max(hi,v);}lowY=Math.min(lowY,y);highY=Math.max(highY,y);}}));
     if(!finite(lo)||!finite(hi))return '<div class="empty-state">未提供成對的時間與訊號數值。</div>';if(lo===hi){lo-=.5;hi+=.5;}if(lowY===highY)highY=lowY+1;
@@ -1024,7 +1029,13 @@
   }
   function rtViewControls(item) {
     if (!Array.isArray(item.review_rt_window)) return '';
-    const window = state.plotWindow || item.review_rt_window;
+    let alignedWindow=null;
+    if(mode==='curves'&&curveWorkspaceAxis()==='aligned'){
+      let lower=Infinity,upper=-Infinity;
+      for(const curve of item.curves||[])for(const value of curve.aligned_rts||[])if(finite(value)){lower=Math.min(lower,value);upper=Math.max(upper,value);}
+      if(finite(lower)&&finite(upper))alignedWindow=[lower,upper];
+    }
+    const window = state.plotWindow || alignedWindow || item.review_rt_window;
     return `<div class="rt-range"><span aria-hidden="true">RT</span><input id="plot-rt-start" type="number" step="any" value="${drt(window[0])}" aria-label="顯示 RT 起點"><span aria-hidden="true">–</span><input id="plot-rt-end" type="number" step="any" value="${drt(window[1])}" aria-label="顯示 RT 終點"><button type="button" data-rt-view="apply" aria-label="套用範圍">套用</button><button type="button" class="text-action" data-rt-view="full" aria-label="完整已載入範圍">全部</button></div>`;
   }
   function fieldValue(value){
@@ -1106,7 +1117,7 @@
     if (button.dataset.rtView === 'full') {
       let lower = Infinity, upper = -Infinity;
       for (const curve of item.curves || []) {
-        const rt = curve.raw_rts || [];
+        const rt = mode==='curves'&&curveWorkspaceAxis()==='aligned'?curve.aligned_rts||[]:curve.raw_rts||[];
         if (rt.length) { lower = Math.min(lower, rt[0]); upper = Math.max(upper, rt[rt.length - 1]); }
       }
       if (!finite(lower) || !finite(upper) || lower >= upper) return;

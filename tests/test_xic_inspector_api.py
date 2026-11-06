@@ -1477,62 +1477,54 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
         assert item["related_groups"][0]["edge_refs"] == ["edge-shared-multirow"]
 
 
-def test_curve_projects_declared_same_sample_rt_calibration_without_extrapolation(
-    tmp_path,
-):
+def test_curve_replays_final_rt_estimate_including_boundary_shift(tmp_path):
+    from xic_extractor.alignment.sample_rt_calibration import (
+        BatchRtCalibration,
+        RtCalibrationPolicy,
+        RtEstimateSupport,
+        SampleRtCalibration,
+    )
+    from xic_extractor.rt_calibration_codec import rt_calibration_payload
+
     report, _, _ = create_inspector_report(tmp_path)
+    sample = SampleRtCalibration(
+        "s1",
+        "calibrated",
+        ((0.9, 1.8), (1.1, 2.2)),
+        None,
+        None,
+        "unmeasured",
+        estimate_support=RtEstimateSupport((0.9, 1.1), 1.0, 0.1, 0.0),
+    )
+    calibration = BatchRtCalibration(
+        RtCalibrationPolicy(), (), {"s1": sample}, None, None, None
+    )
     with sqlite3.connect(report) as connection:
         summary = json.loads(
             connection.execute(
                 "SELECT payload FROM metadata WHERE key='summary'"
             ).fetchone()[0]
         )
-        summary["known_istd_reference"] = {
-            "calibration": {
-                "schema_version": "known_istd_calibration_duration_search",
-                "rt_unit": "minute",
-                "interpolation": "piecewise_linear",
-                "extrapolation": "unavailable",
-                "samples": [
-                    {
-                        "sample_stem": "s1",
-                        "knots": [[0.8, 1.6], [1.2, 2.4]],
-                        "domain_rt_min": [0.8, 1.2],
-                        "status": "available",
-                    }
-                ],
-            }
-        }
+        summary["sample_rt_calibration"] = rt_calibration_payload(calibration)
+        summary["injection_order"] = {"s1": 7, "s2": 3}
         connection.execute(
-            "UPDATE metadata SET payload=? WHERE key='summary'",
-            (json.dumps(summary),),
+            "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
         )
-
     output = tmp_path / "aligned.html"
     generate_report(report, SelectionRequest(), output)
-    curve = read_report_payload(output)["items"][0]["curves"][0]
-
+    payload = read_report_payload(output)
+    curve = payload["items"][0]["curves"][0]
     assert curve["raw_rts"] == [0.8, 0.9, 1.0, 1.1, 1.2]
-    assert curve["aligned_rts"] == pytest.approx([1.6, 1.8, 2.0, 2.2, 2.4])
+    # y=2*x inside [0.9,1.1]; hold endpoint shifts 0.9/1.1 outside.
+    assert curve["aligned_rts"] == pytest.approx([1.7, 1.8, 2.0, 2.2, 2.3])
     assert curve["aligned_bound_left_rt"] == pytest.approx(1.8)
     assert curve["aligned_bound_right_rt"] == pytest.approx(2.2)
     assert curve["aligned_apex_rt"] == pytest.approx(2.0)
-
-    with sqlite3.connect(report) as connection:
-        summary["known_istd_reference"]["calibration"]["samples"][0].update(
-            knots=[[0.9, 1.8], [1.1, 2.2]], domain_rt_min=[0.9, 1.1]
-        )
-        connection.execute(
-            "UPDATE metadata SET payload=? WHERE key='summary'",
-            (json.dumps(summary),),
-        )
-    outside = tmp_path / "outside.html"
-    generate_report(report, SelectionRequest(), outside)
-    outside_curve = read_report_payload(outside)["items"][0]["curves"][0]
-    assert "aligned_rts" not in outside_curve
+    assert curve["rt_alignment_methods"] == ["boundary_shift", "loess"]
+    assert payload["summary"]["injection_order"] == {"s1": 7, "s2": 3}
 
 
-def test_declared_malformed_rt_calibration_is_rejected(tmp_path):
+def test_obsolete_istd_display_calibration_requires_rerun_alignment(tmp_path):
     report, _, _ = create_inspector_report(tmp_path)
     with sqlite3.connect(report) as connection:
         summary = json.loads(
@@ -1540,28 +1532,12 @@ def test_declared_malformed_rt_calibration_is_rejected(tmp_path):
                 "SELECT payload FROM metadata WHERE key='summary'"
             ).fetchone()[0]
         )
-        summary["known_istd_reference"] = {
-            "calibration": {
-                "schema_version": "known_istd_calibration_duration_search",
-                "rt_unit": "minute",
-                "interpolation": "piecewise_linear",
-                "extrapolation": "unavailable",
-                "samples": [
-                    {
-                        "sample_stem": "s1",
-                        "knots": [[0.8, 1.6], [0.7, 2.4]],
-                        "domain_rt_min": [0.8, 0.7],
-                        "status": "available",
-                    }
-                ],
-            }
-        }
+        summary.pop("sample_rt_calibration")
+        summary["known_istd_reference"] = {"calibration": {"samples": []}}
         connection.execute(
-            "UPDATE metadata SET payload=? WHERE key='summary'",
-            (json.dumps(summary),),
+            "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
         )
-
-    with pytest.raises(InspectorError) as caught:
+    with pytest.raises(InspectorError, match="重新執行 Alignment") as caught:
         generate_report(report, SelectionRequest(), tmp_path / "invalid.html")
     assert caught.value.code == 4
 

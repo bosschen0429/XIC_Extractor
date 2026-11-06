@@ -102,6 +102,9 @@ def read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
     if row is None:
         raise ExplanationError("malformed explanation: missing completion summary")
     summary = decode_object(row[0])
+    reference = summary.get("known_istd_reference")
+    if isinstance(reference, dict) and "calibration" in reference:
+        raise ExplanationError("檢閱資料仍使用舊版 RT 校正格式；請重新執行 Alignment。")
     if summary.get("schema_version") not in (SCHEMA_VERSION, REVIEW_SCHEMA_VERSION):
         raise ExplanationError(
             "不支援此解釋資料格式；請重新執行 Alignment 產生新輸出。"
@@ -130,6 +133,8 @@ def read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
         "initial_edge_coverage",
         "audit_availability",
         "known_istd_reference",
+        "sample_rt_calibration",
+        "injection_order",
     }:
         raise ExplanationError(
             "explanation summary fields do not match the schema; rerun Alignment"

@@ -18,6 +18,7 @@ from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetBatchApplicationResult,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
@@ -92,6 +93,9 @@ class CompletedUntargetBatchWorkflowResult:
     capture_evidence: (
         tuple[RetainedCaptureEvidence, ...] | ImmutableSequence[RetainedCaptureEvidence]
     ) = field(default=(), repr=False, compare=False)
+    sample_rt_frame: SampleRtFrame | None = field(
+        default=None, repr=False, compare=False
+    )
     _resources: _CompletedResultResources = field(
         default_factory=_CompletedResultResources, repr=False, compare=False
     )
@@ -106,6 +110,7 @@ class CompletedUntargetBatchWorkflowResult:
         application_result: FinalizedUntargetBatchApplicationResult,
         store: StreamedResultStore,
         retain_partition_spool: bool = False,
+        sample_rt_frame: SampleRtFrame | None = None,
     ) -> CompletedUntargetBatchWorkflowResult:
         """Own the lazy result views and the store that keeps them readable.
 
@@ -115,6 +120,7 @@ class CompletedUntargetBatchWorkflowResult:
         """
         return cls(
             application_result=application_result,
+            sample_rt_frame=sample_rt_frame,
             method_assessments=store.sequence("method_assessments"),
             initial_groups=store.sequence("initial_groups"),
             initial_edges=store.sequence("initial_edges"),

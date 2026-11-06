@@ -13,6 +13,7 @@ from playwright.sync_api import expect
 
 from tests.workbench_browser_fixtures import browser as browser
 from tests.xic_inspector_curve_bundle_fixtures import _fixture_bundle
+from tests.xic_inspector_html_fixtures import build_origin_curve_payload
 from tests.xic_inspector_targeted_workbook_fixtures import write_rare_detection_workbook
 from xic_inspector.api import SelectionRequest, prepare_report
 from xic_inspector.rendering.html_builder import build_report_html
@@ -94,6 +95,100 @@ def _sample_sidebar_payload():
             }
         ],
     }, samples + [missing]
+
+
+def test_workbench_curve_plot_uses_saved_aligned_coordinates_and_labels_raw_fallback(
+    review_page,
+):
+    page = review_page
+    payload, catalog = _sample_sidebar_payload()
+    payload["summary"] = {"sample_rt_calibration": {"schema": "sample_rt_calibration"}}
+    for index, curve in enumerate(payload["items"][0]["curves"]):
+        shift = index + 10 if index < 7 else 0
+        curve["aligned_rts"] = [rt + shift for rt in curve["raw_rts"]]
+        curve["rt_alignment_methods"] = ["loess" if index < 7 else "raw_fallback"]
+        curve["rt_alignment_label"] = (
+            "校正 RT：loess" if index < 7 else "無 RT 估計；顯示原始 RT"
+        )
+        for processed in curve["processed_curves"]:
+            processed["aligned_rts"] = [rt + shift for rt in processed["rts"]]
+    page.set_content('<div id="host"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        """({payload,catalog})=>XicInspector.mount(
+        document.getElementById('host'),payload,{mode:'curves',samples:catalog})""",
+        {"payload": payload, "catalog": catalog},
+    )
+    root = page.locator("#host")
+    chart = _control(root, "svg-raw").locator("svg")
+    expect(chart).to_have_attribute("aria-label", "對齊時間層析圖")
+    expect(root).to_contain_text(
+        "無 RT 估計，顯示原始 RT：long_shared_sample_filename_7_QC7"
+    )
+    plotted = chart.evaluate("""svg=>Object.fromEntries(
+        [...svg.querySelectorAll('polyline')].map(line=>{
+          const d=svg.dataset,x=line.points[2].x;
+          return [line.dataset.sampleId,+d.domainStart+
+            (x-Number(d.chartLeft))/Number(d.chartWidth)*
+            (Number(d.domainEnd)-Number(d.domainStart))];
+        }))""")
+    assert plotted == pytest.approx(
+        {f"sample-{i}": 11.5 + i if i < 7 else 1.5 for i in range(8)}
+    )
+    root.get_by_role("button", name="聚焦 long_shared_sample_filename_0_QC0").hover()
+    expect(root.get_by_role("tooltip")).to_contain_text("校正 RT：loess")
+    root.get_by_role("button", name="放大層析圖").click()
+    expect(_control(root, "zoom-title")).to_contain_text("對齊時間")
+    expect(_control(root, "zoom-container").locator("svg")).to_have_attribute(
+        "aria-label", "對齊時間層析圖"
+    )
+    _control(root, "zoom-close").click()
+    root.get_by_label("顯示 RT 起點").fill("11")
+    root.get_by_label("顯示 RT 終點").fill("14")
+    root.get_by_role("button", name="套用範圍").click()
+    expect(chart).to_have_attribute("data-domain-start", "11")
+    expect(chart).to_have_attribute("data-domain-end", "14")
+
+
+def test_inspector_reads_injection_order_from_final_calibration_summary(review_page):
+    payload = build_origin_curve_payload()
+    payload["summary"] = {
+        "sample_rt_calibration": None,
+        "injection_order": {"Sample 0": 8, "Sample 1": 3, "Sample 2": 6},
+    }
+    item = payload["items"][0]
+    item["relationship_availability"] = "recorded"
+    item["relationship_members"] = [
+        {"subject_id": f"M{i}", "sample_id": f"S{i}", "sample_label": f"Sample {i}"}
+        for i in range(3)
+    ]
+    item["internal_pair_support"] = [
+        {
+            "edge_ref": "edge-01",
+            "left_subject_id": "M0",
+            "right_subject_id": "M1",
+            "support_kind": "direct",
+        }
+    ]
+    page = review_page
+    page.set_content('<div id="host"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        "payload=>XicInspector.mount(document.getElementById('host'),payload)", payload
+    )
+    lanes = page.locator("#host .relationship-lane")
+    expect(lanes).to_have_count(3)
+    assert lanes.evaluate_all("nodes=>nodes.map(n=>n.dataset.laneMember)") == [
+        "M1",
+        "M2",
+        "M0",
+    ]
+    assert lanes.evaluate_all("nodes=>nodes.map(n=>n.dataset.injectionOrder)") == [
+        "3",
+        "6",
+        "8",
+    ]
+    expect(page.locator("#host .relation-number")).to_have_text(["03", "06", "08"])
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])

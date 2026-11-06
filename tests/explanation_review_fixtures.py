@@ -36,7 +36,7 @@ def _install_distinct_curve_raws(monkeypatch, opened, cancelled=None, empty=()):
     monkeypatch.setattr("xic_workbench.acquisition.open_raw", raw)
 
 
-def _group_with_missing_apex_review(tmp_path):
+def _group_with_missing_apex_review(tmp_path, *, extraction_by_sample=None):
     from dataclasses import asdict
 
     from xic_extractor.processing_identity import build_acquisition_source_identity
@@ -58,6 +58,11 @@ def _group_with_missing_apex_review(tmp_path):
     matrix.write_text("saved matrix with an empty S3 cell", encoding="utf-8")
     report = tmp_path / "review.sqlite"
     keys = [("C1", "S1"), ("C2", "S2")]
+    extraction = extraction_by_sample or {
+        "S1": (499.0, 20.0),
+        "S2": (501.0, 20.0),
+        "S3": (500.0, 20.0),
+    }
     with ExplanationReportWriter(report, review_only=True) as writer:
         for (cid, sid), mz, rt in zip(keys, (499.0, 501.0), (7.9, 8.1), strict=True):
             writer.add_candidate(
@@ -77,8 +82,18 @@ def _group_with_missing_apex_review(tmp_path):
                     "candidate_id": cid,
                     "sample_key": sid,
                     "observations": [
-                        {"physical_peak_key": cid, "rt_apex_min": rt},
-                        {"physical_peak_key": "other-group", "rt_apex_min": 99},
+                        {
+                            "physical_peak_key": cid,
+                            "rt_apex_min": rt,
+                            "mz": extraction[sid][0],
+                            "ppm": extraction[sid][1],
+                        },
+                        {
+                            "physical_peak_key": "other-group",
+                            "rt_apex_min": 99,
+                            "mz": extraction[sid][0],
+                            "ppm": extraction[sid][1],
+                        },
                     ],
                 },
                 [(cid, sid)],
@@ -91,6 +106,30 @@ def _group_with_missing_apex_review(tmp_path):
                 "member_subjects": [
                     {"sample_key": sid, "physical_peak_keys": [cid]}
                     for cid, sid in keys
+                ],
+                "xic_extractions": [
+                    {
+                        "sample_key": sid,
+                        "physical_peak_key": cid,
+                        "rt_apex_min": rt,
+                        "mz": extraction[sid][0],
+                        "ppm": extraction[sid][1],
+                    }
+                    for (cid, sid), mz, rt in zip(
+                        keys, (499.0, 501.0), (7.9, 8.1), strict=True
+                    )
+                ]
+                + [
+                    {
+                        "sample_key": "S3",
+                        "physical_peak_key": "backfilled-peak"
+                        if extraction_by_sample
+                        else None,
+                        "rt_apex_min": 8.0,
+                        "mz": extraction["S3"][0],
+                        "ppm": extraction["S3"][1],
+                        "group_position": not bool(extraction_by_sample),
+                    }
                 ],
             },
             keys,
@@ -112,7 +151,11 @@ def _group_with_missing_apex_review(tmp_path):
                     "variant": "numeric" if value else "unavailable",
                     "value": value,
                 }
-                for sid, value in (("S1", 100), ("S2", 200), ("S3", None))
+                for sid, value in (
+                    ("S1", 100),
+                    ("S2", 200),
+                    ("S3", 300 if extraction_by_sample else None),
+                )
             ],
             {"S1": 0, "S2": 1, "S3": 2},
         )

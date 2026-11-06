@@ -132,7 +132,12 @@ the published Matrix hash. It cannot authorize a writer or prove readiness.
 - Explanation publication follows successful Matrix writing. If explanation IO
   fails, the command fails and the Matrix can remain without a report.
 - Edge records name their RT basis (`raw` or `drift_corrected`). Aligned-time
-  plots apply the saved calibration knots without refitting or extrapolating.
+  plots replay the final frozen `SampleRtFrame` calibration, never the bootstrap
+  ISTD-reference fit. Raw and processed curves, apex and integration bounds use
+  the same graded query: `loess` inside the fitted span, `boundary_shift` outside
+  it, or `median_shift` when only qualified shift observations are available.
+  A sample with no estimate displays raw RT and is explicitly labelled as such.
+  Injection order is retained independently of ISTD-reference provenance.
   Display alignment cannot repair grouping that was built without the intended
   ISTD input.
 - `ms1_apex_mz` is the measured MS1 apex m/z for that candidate and sample.
