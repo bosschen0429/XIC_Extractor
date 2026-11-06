@@ -13,6 +13,7 @@ from tests.cid_nl_raw_fixture import (
     _open_bound_raw,
     _peak_config,
     _settings,
+    bind_physical_capture,
 )
 from tests.untargeted_cid_nl_real_data_adapter_fixtures import (
     build_sample_adapter_fixture,
@@ -40,7 +41,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     fresh_available: bool,
     precursor_case: str,
 ) -> None:
-    import json
     from types import SimpleNamespace
     from unittest.mock import Mock
 
@@ -62,16 +62,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         evaluate_physical_peak,
         prepare_physical_signal,
     )
-    from xic_extractor.peak_detection.search_scope import (
-        PHYSICAL_CAPTURE_INPUT_KEY,
-        physical_capture_input_payload,
-    )
     from xic_extractor.peak_detection.traces import trace_from_xic_request
-    from xic_extractor.processing_identity import (
-        build_processing_request_identity,
-        compose_processing_owner_references,
-        issue_processing_attempt,
-    )
     from xic_extractor.untargeted_execution.partition import (
         cid_nl_sample_acquisition as adapter,
     )
@@ -212,26 +203,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             binding.physical_fact_record for binding in discovery.physical_bindings
         )
     )
-    old_request = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=old_request.acquisition_sources,
-        acquisition_bindings=old_request.acquisition_bindings,
-        scientific_input_schema_version=old_request.scientific_input_schema_version,
-        processing_algorithm_version=old_request.processing_algorithm_version,
-        processing_contract_version=old_request.processing_contract_version,
-        scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
-        | {
-            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
-                profile,
-            )
-        },
-    )
-    owners = compose_processing_owner_references(
-        request=request,
-        attempt=issue_processing_attempt(),
-        sample_snapshot=fixture.owners.sample_snapshot,
-        sample_resolutions=fixture.samples,
-    )
+    owners = bind_physical_capture(fixture.owners, {}, profile=profile)
     if not fresh_available:
         source_raw.intensity = np.zeros_like(source_raw.rt)
     evaluate = Mock(wraps=evaluate_physical_peak)
@@ -603,8 +575,6 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
 def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
     tmp_path: Path,
 ) -> None:
-    import json
-
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
@@ -613,15 +583,6 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         capture_ms1_candidates,
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
-    from xic_extractor.peak_detection.search_scope import (
-        PHYSICAL_CAPTURE_INPUT_KEY,
-        physical_capture_input_payload,
-    )
-    from xic_extractor.processing_identity import (
-        build_processing_request_identity,
-        compose_processing_owner_references,
-        issue_processing_attempt,
-    )
 
     fixture = build_sample_adapter_fixture(tmp_path)
     source_raw = _FakeRaw((7.8, 8.2))
@@ -652,26 +613,7 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         ms1_centroid_mz=lambda *_: None,
     )
     assert len(discovery.candidates) == 2
-    old_request = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=old_request.acquisition_sources,
-        acquisition_bindings=old_request.acquisition_bindings,
-        scientific_input_schema_version=old_request.scientific_input_schema_version,
-        processing_algorithm_version=old_request.processing_algorithm_version,
-        processing_contract_version=old_request.processing_contract_version,
-        scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
-        | {
-            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
-                profile,
-            )
-        },
-    )
-    owners = compose_processing_owner_references(
-        request=request,
-        attempt=issue_processing_attempt(),
-        sample_snapshot=fixture.owners.sample_snapshot,
-        sample_resolutions=fixture.samples,
-    )
+    owners = bind_physical_capture(fixture.owners, {}, profile=profile)
     result = adapt_current_discovery_sample_subject(
         processing_owners=owners,
         sample=fixture.sample("S1"),

@@ -46,39 +46,13 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
     width: float,
     tolerance: float | None,
 ) -> None:
-    import json
-
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
-    )
-    from xic_extractor.peak_detection.search_scope import (
-        PHYSICAL_CAPTURE_INPUT_KEY,
-        physical_capture_input_payload,
-    )
-    from xic_extractor.processing_identity import (
-        build_processing_request_identity,
-        compose_processing_owner_references,
-        issue_processing_attempt,
     )
 
     fixture = build_sample_adapter_fixture(tmp_path, sample_stem=sample)
     profile = SignalProcessingProfile()
-    original = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=original.acquisition_sources,
-        acquisition_bindings=original.acquisition_bindings,
-        scientific_input_schema_version=original.scientific_input_schema_version,
-        processing_algorithm_version=original.processing_algorithm_version,
-        processing_contract_version=original.processing_contract_version,
-        scientific_inputs=json.loads(original.normalized_scientific_inputs_json)
-        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile)},
-    )
-    owners = compose_processing_owner_references(
-        request=request,
-        attempt=issue_processing_attempt(),
-        sample_snapshot=fixture.owners.sample_snapshot,
-        sample_resolutions=fixture.samples,
-    )
+    owners = bind_physical_capture(fixture.owners, {}, profile=profile)
     source = _FakeRaw((7.8, 8.5))
     if tolerance is not None:
         source.rt = np.linspace(6.5, 9.5, 1201)
@@ -298,39 +272,13 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
 def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
     tmp_path: Path,
 ) -> None:
-    import json
-
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
-    )
-    from xic_extractor.peak_detection.search_scope import (
-        PHYSICAL_CAPTURE_INPUT_KEY,
-        physical_capture_input_payload,
-    )
-    from xic_extractor.processing_identity import (
-        build_processing_request_identity,
-        compose_processing_owner_references,
-        issue_processing_attempt,
     )
 
     fixture = build_sample_adapter_fixture(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
-    old = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=old.acquisition_sources,
-        acquisition_bindings=old.acquisition_bindings,
-        scientific_input_schema_version=old.scientific_input_schema_version,
-        processing_algorithm_version=old.processing_algorithm_version,
-        processing_contract_version=old.processing_contract_version,
-        scientific_inputs=json.loads(old.normalized_scientific_inputs_json)
-        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile)},
-    )
-    owners = compose_processing_owner_references(
-        request=request,
-        attempt=issue_processing_attempt(),
-        sample_snapshot=fixture.owners.sample_snapshot,
-        sample_resolutions=fixture.samples,
-    )
+    owners = bind_physical_capture(fixture.owners, {}, profile=profile)
     fixture = replace(fixture, owners=owners)
     source_raw = _FakeRaw(())
     source_raw.rt = np.linspace(6.0, 10.0, 801)
@@ -380,39 +328,13 @@ def test_physical_backfill_context_is_not_search_permission(
     target_center: float,
     query_gate: tuple[float | None, bool],
 ) -> None:
-    import json
-
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
-    )
-    from xic_extractor.peak_detection.search_scope import (
-        PHYSICAL_CAPTURE_INPUT_KEY,
-        physical_capture_input_payload,
-    )
-    from xic_extractor.processing_identity import (
-        build_processing_request_identity,
-        compose_processing_owner_references,
-        issue_processing_attempt,
     )
 
     fixture = build_sample_adapter_fixture(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
-    old = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=old.acquisition_sources,
-        acquisition_bindings=old.acquisition_bindings,
-        scientific_input_schema_version=old.scientific_input_schema_version,
-        processing_algorithm_version=old.processing_algorithm_version,
-        processing_contract_version=old.processing_contract_version,
-        scientific_inputs=json.loads(old.normalized_scientific_inputs_json)
-        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile)},
-    )
-    owners = compose_processing_owner_references(
-        request=request,
-        attempt=issue_processing_attempt(),
-        sample_snapshot=fixture.owners.sample_snapshot,
-        sample_resolutions=fixture.samples,
-    )
+    owners = bind_physical_capture(fixture.owners, {}, profile=profile)
     fixture = replace(fixture, owners=owners)
     source_raw = _FakeRaw(())
     source_raw.rt = np.linspace(6.0, 10.0, 801)
@@ -660,8 +582,6 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
     tmp_path: Path,
     side: int,
 ) -> None:
-    import json
-
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
@@ -672,36 +592,14 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
         CidNlEvaluationReceipt,
         mint_cid_nl_method_assessment_ref,
     )
-    from xic_extractor.peak_detection.search_scope import (
-        PHYSICAL_CAPTURE_INPUT_KEY,
-        physical_capture_input_payload,
-    )
     from xic_extractor.peak_detection.traces import Trace
     from xic_extractor.processing_identity import (
-        build_processing_request_identity,
-        compose_processing_owner_references,
-        issue_processing_attempt,
         resolve_request_acquisition_source,
     )
 
     fixture = build_sample_adapter_fixture(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
-    old = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=old.acquisition_sources,
-        acquisition_bindings=old.acquisition_bindings,
-        scientific_input_schema_version=old.scientific_input_schema_version,
-        processing_algorithm_version=old.processing_algorithm_version,
-        processing_contract_version=old.processing_contract_version,
-        scientific_inputs=json.loads(old.normalized_scientific_inputs_json)
-        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile)},
-    )
-    owners = compose_processing_owner_references(
-        request=request,
-        attempt=issue_processing_attempt(),
-        sample_snapshot=fixture.owners.sample_snapshot,
-        sample_resolutions=fixture.samples,
-    )
+    owners = bind_physical_capture(fixture.owners, {}, profile=profile)
     fixture = replace(fixture, owners=owners)
 
     sample = fixture.sample("S1")
