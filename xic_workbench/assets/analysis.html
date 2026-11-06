@@ -160,7 +160,6 @@
             <label class="field"
               >方法<select id="u-preset" data-analysis-idle></select
             ></label>
-            <p class="subtle">完整分析包含 Backfill，搜尋跨樣本缺格。</p>
             <div id="method-preview" class="chip-row method-preview"></div>
             <details class="method-section">
               <summary>調整本次方法參數</summary>
@@ -236,11 +235,10 @@
   <div class="analysis-layout">
     <div class="analysis-main">
       <form id="curation-form" class="steps">
-        <section class="card step">
+        <section id="curation-source-step" class="card step">
           <div class="step-head">
-            <span class="step-no">1</span>
             <div>
-              <h2>沿用本次分析資料</h2>
+              <h2>資料來源</h2>
             </div>
           </div>
           <div class="step-body">
@@ -253,7 +251,6 @@
         </section>
         <section class="card step">
           <div class="step-head">
-            <span class="step-no">2</span>
             <div>
               <h2>整理步驟</h2>
             </div>

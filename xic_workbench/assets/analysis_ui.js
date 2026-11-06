@@ -12,11 +12,9 @@ export const $ = (id) => document.getElementById(id);
 export const ui = window.XicUi;
 // The location holds every run; each analysis writes a new folder inside it.
 export const OUTPUT_LABEL = "結果存放位置";
-export const OUTPUT_HELP =
-  "每次分析會在這裡新建一個資料夾（日期時間_類型_RAW 資料夾名），不覆蓋舊結果。";
 export const pathFields = [
   ["raw_dir", "RAW 資料夾", "folder"],
-  ["output_dir", OUTPUT_LABEL, "folder", OUTPUT_HELP],
+  ["output_dir", OUTPUT_LABEL, "folder"],
   ["dll_dir", "RawFileReader DLL 資料夾", "folder"],
 ];
 export async function api(path, values) {

@@ -947,3 +947,20 @@
   height: 38px;
   min-height: 38px;
 }
+#curation-source-step.carried .step-head,
+#curation-source-step.carried #curation-source {
+  display: none;
+}
+#curation-source-step.carried {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+#curation-source-step.carried .step-body {
+  margin-top: 0;
+}
+/* Curation steps carry no step numbers, so their bodies are not indented. */
+#curation-form .step-body {
+  margin-left: 0;
+}

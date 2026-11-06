@@ -15,7 +15,6 @@ import {
 } from "./analysis_state.js";
 import {
   $,
-  OUTPUT_HELP,
   OUTPUT_LABEL,
   act,
   api,
@@ -84,7 +83,6 @@ export function renderSettings(values) {
         "folder",
         outputDir,
         "t-",
-        OUTPUT_HELP,
       );
     if (spec.key === "injection_order_source") {
       const value = String(values[spec.key] || "");

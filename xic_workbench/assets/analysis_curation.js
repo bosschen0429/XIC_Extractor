@@ -99,6 +99,17 @@ function renderCuration(detection, error) {
         : `${istd.kind === "file" ? `選擇的檔案 ${pathTail(istd.label)}` : istd.label}（${detection.istd_count} 個內標，一律保留）`,
     );
   }
+  // A fully carried-over run shows only the way to choose another source.
+  $("curation-source-step").classList.toggle(
+    "carried",
+    Boolean(
+    detection &&
+      !error &&
+      detection.sample_source?.kind === "run" &&
+      detection.istd_source &&
+      $("curation-source_dir").value.trim() === state.curation.runSource,
+    ),
+  );
   $("curation-output").textContent = detection
     ? `新資料夾：${detection.output_dir.replace(/_\d{8}_\d{6}$/, "_<開始時間>")}`
     : "選擇 Alignment 輸出後顯示";
