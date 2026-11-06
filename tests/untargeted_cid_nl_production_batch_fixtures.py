@@ -670,8 +670,18 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
             assert len(candidates[path.stem]) == 1
             assert all(candidate.ms1_peak_found for candidate in candidates[path.stem])
             if not family_precursor_delta:
-                left, right = discovery.physical_evaluations
-                assert left.work_item.xic_rt_max > right.work_item.xic_rt_min
+                # Both NL receipts identify one measured peak, not two records.
+                (record,) = discovery.physical_evaluations
+                assert record.work_item.xic_rt_min <= min(query_rts)
+                assert record.work_item.xic_rt_max >= max(query_rts)
+                (candidate,) = discovery.candidates
+                # The physical raw apex must not replace the retained NL time.
+                observed_nl_rts = tuple(seed.rt for seed in seeds)
+                assert candidate.best_seed_rt in observed_nl_rts
+                assert record.work_item.query_rt_min not in observed_nl_rts
+                assert candidate.ms1_seed_delta_min == pytest.approx(
+                    candidate.ms1_apex_rt - candidate.best_seed_rt
+                )
             rt_min = min(
                 record.work_item.xic_rt_min for record in discovery.physical_evaluations
             )

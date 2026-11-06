@@ -101,12 +101,12 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
         expected_run_spec=spec,
         expected_acquisition_input=spec.acquisition_inputs[0],
     )
-    # One merged feature candidate with two member work items.
-    assert len(persisted) == 2
+    # Both NL events reference one measured peak; publication retains it once.
+    assert len(persisted) == 1
     by_stage = {record.stage: record for record in recorder.records}
     assert by_stage["discover.write_physical_facts_sidecar"].metrics == {
-        "work_count": 2,
-        "record_count": 2,
+        "work_count": 1,
+        "record_count": 1,
         "byte_size": outputs.physical_facts_json.stat().st_size,
     }
     assert by_stage["discover.publish_outputs"].metrics == {

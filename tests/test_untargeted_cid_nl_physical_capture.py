@@ -18,9 +18,6 @@ from tests.cid_nl_raw_fixture import (
 from tests.untargeted_cid_nl_real_data_adapter_fixtures import (
     build_sample_adapter_fixture,
 )
-from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition import (
-    backfill_untargeted_cid_nl_sample_subject,
-)
 from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
     acquire_untargeted_cid_nl_sample_trace_batch,
     adapt_current_discovery_sample_subject,
@@ -32,10 +29,11 @@ from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition impo
     [
         (True, "shifted"),
         (False, "shifted"),
+        (True, "inferred"),
         (False, "inferred"),
     ],
 )
-def test_changed_physical_query_evaluates_once_and_preserves_support(
+def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     fresh_available: bool,
@@ -176,9 +174,11 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
     )
-    # Different mass queries still require Alignment's comparison context.
-    # Identical queries already share their final context in Discovery.
-    assert len(discovery.candidates) == 2
+    # Both requests observe one channel/peak; retain both NL events on one result.
+    assert len(discovery.candidates) == 1
+    assert set(discovery.candidates[0].seed_scan_ids) == {
+        seed.scan_number for seed in seeds
+    }
     legacy_records = tuple(
         DiscoveryPhysicalFactRecord(
             work_item=record.work_item,
@@ -215,6 +215,23 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         ):
             if hasattr(module, name):
                 monkeypatch.setattr(module, name, spy)
+    if not fresh_available:
+        # A shared unchanged request reuses its result; changed RAW under the
+        # same acquisition identity must fail, not silently remeasure it.
+        with pytest.raises(ValueError, match="physical capture data"):
+            adapt_current_discovery_sample_subject(
+                processing_owners=owners,
+                sample=fixture.sample("S1"),
+                method_subject=fixture.method_subject,
+                candidates=discovery.candidates,
+                settings=settings,
+                peak_config=peak_config,
+                raw=raw,
+                signal_processing_profile=profile,
+                physical_records=legacy_records,
+            )
+        assert evaluate.call_count == prepare.call_count == 0
+        return
     result = adapt_current_discovery_sample_subject(
         processing_owners=owners,
         sample=fixture.sample("S1"),
@@ -236,16 +253,14 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     # universe holds that peak once.
     assert len(assessment.candidate_peaks) == (1 if fresh_available else 0)
     assert result.acquisition is not None
-    assert len(result.acquisition.traces) == 2
+    assert len(result.acquisition.traces) == 1
     states = []
     changed_questions = 0
     captures = {capture.candidate_id: capture for capture in result.captures}
-    assert len(captures) == 2
-    # A candidate that selected an already selected peak on its own shifted
-    # trace reads that peak once more on the first trace.
-    shared_reads = 1 if shifted_mass and fresh_available else 0
-    assert evaluate.call_count == 2 + shared_reads
-    assert prepare.call_count == 2 + shared_reads
+    assert len(captures) == 1
+    # The shared complete query is unchanged, so Alignment only reads its result.
+    assert evaluate.call_count == 0
+    assert prepare.call_count == 0
     for record in legacy_records:
         candidate = next(
             item
@@ -280,12 +295,8 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             for item in capture.scope.capture_bindings
             if item.candidate_id == record.candidate_id
         )
-        assert binding.source_physical_evaluation is record.evaluation
+        assert binding.source_physical_evaluation is None
         assert binding.physical_evaluation is capture.physical_evaluation
-        assert (
-            binding.source_physical_evaluation.question.selection_policy_version
-            == "baseline_peak_contains_query"
-        )
         assert (
             capture.physical_evaluation.question.selection_policy_version
             == "baseline_peak_contains_query"
@@ -342,8 +353,8 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             == integration.area_baseline_corrected
         )
         assert observed.content.integration.rt_apex_min == integration.rt_apex_min
-    assert states == (["available"] * 2 if fresh_available else ["unavailable"] * 2)
-    assert changed_questions == 2
+    assert states == (["available"] if fresh_available else ["unavailable"])
+    assert changed_questions == 0
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
         processing_owners=owners,
         sample=fixture.sample("S1"),
@@ -372,36 +383,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     assert [item.physical_evaluation for item in reused.captures] == [
         item.physical_evaluation for item in result.captures
     ]
-    if precursor_case == "inferred":
-        from xic_extractor.untargeted_execution.partition.workers import (
-            _backfill_support_context,
-        )
-
-        assert assessment.content.reason_codes == (
-            "qualifying_cid_nl_without_usable_ms1_peak",
-        )
-        support = _backfill_support_context(result)
-        # The group search finds a peak in its own window. It still needs the
-        # measured parent evidence from the empty initial capture to qualify it.
-        source_raw.intensity = 1000.0 * np.exp(
-            -0.5 * ((source_raw.rt - center) / 0.035) ** 2
-        )
-        recovery = backfill_untargeted_cid_nl_sample_subject(
-            processing_owners=owners,
-            sample=fixture.sample("S1"),
-            method_subject=fixture.method_subject,
-            group_center_rt=center,
-            group_center_mz=500.0,
-            support_policy=support.support_policy,
-            peak_config=peak_config,
-            raw=raw,
-            initial_assessment=support.initial_assessment,
-            settings=settings,
-            signal_processing_profile=profile,
-        )
-        assert recovery.assessment.content.method_result == "SUPPORT"
-        assert len(recovery.assessment.candidate_peaks) == 1
-        assert len(recovery.assessment.evidence_refs) == 2
     with pytest.raises(ValueError, match="physical capture data"):
         capture_owner.capture_reacquired_physical_peak(
             scope=capture.scope,

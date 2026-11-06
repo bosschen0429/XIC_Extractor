@@ -171,8 +171,9 @@ def validate_discovery_candidate_physical_binding(
         raise ValueError(
             "Discovery physical binding crosses representative search window"
         )
-    if work_item.selection_subject_id != binding.selection_subject_id:
-        raise ValueError("Discovery physical binding crosses record selection subject")
+    # A retained measurement owns a physical peak, not a particular NL query.
+    # The existing work ordinal binds that measurement; the candidate subject
+    # below independently binds its combined method evidence.
     expected_subject_id = build_discovery_physical_selection_subject_id(
         sample_stem=binding.candidate.sample_stem,
         best_ms2_scan_id=binding.candidate.best_ms2_scan_id,

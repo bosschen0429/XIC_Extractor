@@ -197,9 +197,6 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         lambda value: value["records"][0]["physical_evaluation"]["evaluation"][
             "facts"
         ].__setitem__("area_counts_seconds", float(1.0).hex()),
-        lambda value: value["records"][0]["physical_evaluation"]["evaluation"][
-            "integration"
-        ].__setitem__("height_raw", float(1.0).hex()),
         lambda value: value["records"][0]["physical_evaluation"][
             "evaluation"
         ].__setitem__("state", "failed"),
@@ -211,10 +208,11 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         ),
     ],
 )
-def test_discovery_sidecar_rejects_tamper_even_after_json_reseal(
+def test_discovery_sidecar_rejects_invalid_structure_or_binding(
     tmp_path: Path,
     mutate,
 ) -> None:
+    # Stored shape and binding are checked here; scientific replay is opt-in.
     _, spec, acquisition_input = _spec(tmp_path)
     manifest, records = _population(spec, acquisition_input)
     value = json.loads(

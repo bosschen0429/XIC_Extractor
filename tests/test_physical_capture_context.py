@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
-from tests.discovery_ms1_capture_fixtures import _FakeRaw, _gaussian, _seed, _settings
+from tests.discovery_ms1_capture_fixtures import (
+    _BoundedRaw,
+    _FakeRaw,
+    _gaussian,
+    _seed,
+    _settings,
+)
 from xic_extractor.acquisition import physical_capture
 from xic_extractor.acquisition.physical_capture import (
     PhysicalPeakCapture,
@@ -15,30 +21,7 @@ from xic_extractor.acquisition.physical_capture import (
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.ms1_capture import capture_ms1_candidates
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
-from xic_extractor.xic_models import XICRequest, XICTrace
-
-
-class _BoundedRaw(_FakeRaw):
-    """Fixed acquired samples, with the actual requested scan window."""
-
-    def scan_window_for_request(self, request):
-        return (
-            int(np.searchsorted(self.rt, request.rt_min, side="left")),
-            int(np.searchsorted(self.rt, request.rt_max, side="right")) - 1,
-        )
-
-    def retention_time_for_scan(self, scan_number):
-        return float(self.rt[scan_number])
-
-    def extract_xic_many(self, requests):
-        super().extract_xic_many(requests)
-        return tuple(
-            XICTrace.from_arrays(
-                self.rt[left : right + 1], self.intensity[left : right + 1]
-            )
-            for request in requests
-            for left, right in (self.scan_window_for_request(request),)
-        )
+from xic_extractor.xic_models import XICRequest
 
 
 def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch):
@@ -46,12 +29,41 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
     intensity = _gaussian(rt, center=4.8, sigma=0.04, height=1000.0)
     intensity += _gaussian(rt, center=5.25, sigma=0.05, height=2000.0)
     raw = _BoundedRaw(rt=rt, intensity=intensity)
-    counts = {"prepare": 0, "enumerate": 0}
+    counts = {
+        "prepare": 0,
+        "enumerate": 0,
+        "raw_split": 0,
+        "measure": 0,
+        "descriptor": 0,
+    }
     prepare = physical_capture.prepare_physical_signal
     # This is the unchanged physical owner, not a substitute peak detector.
     from xic_extractor.peak_detection import physical_peak_evaluation as owner
 
     enumerate_segments = owner.enumerate_physical_segment_universe
+    raw_split = physical_capture.discovery_raw_peak_components
+    measure = owner.measure_chrom_peak_component
+    descriptor = owner._physical_raw_descriptor_projection
+
+    def counted_raw_split(*args, **kwargs):
+        counts["raw_split"] += 1
+        return raw_split(*args, **kwargs)
+
+    def counted_measure(*args, **kwargs):
+        counts["measure"] += 1
+        return measure(*args, **kwargs)
+
+    def counted_descriptor(*args, **kwargs):
+        counts["descriptor"] += 1
+        return descriptor(*args, **kwargs)
+
+    monkeypatch.setattr(
+        physical_capture, "discovery_raw_peak_components", counted_raw_split
+    )
+    monkeypatch.setattr(owner, "measure_chrom_peak_component", counted_measure)
+    monkeypatch.setattr(
+        owner, "_physical_raw_descriptor_projection", counted_descriptor
+    )
 
     def counted_prepare(*args, **kwargs):
         counts["prepare"] += 1
@@ -107,7 +119,15 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
         replay.evaluation.facts.area_counts_seconds
         == left.evaluation.facts.area_counts_seconds
     )
-    assert counts == {"prepare": 1, "enumerate": 1}
+    # Two physical peaks are measured once each, regardless of NL duplicates
+    # or a later query for the same raw basin.
+    assert counts == {
+        "prepare": 1,
+        "enumerate": 1,
+        "raw_split": 1,
+        "measure": 2,
+        "descriptor": 2,
+    }
 
 
 def test_sparse_extension_reunites_contexts_without_repeating_extension():
@@ -140,7 +160,7 @@ def test_sparse_extension_reunites_contexts_without_repeating_extension():
     assert left.evaluation.facts is None
 
 
-def test_nearby_xic_centers_and_ppm_are_not_collapsed():
+def test_mass_channel_uses_existing_ppm_rule_without_isotope_or_ppm_merging():
     rt = np.linspace(4.0, 6.0, 801)
     raw = _FakeRaw(
         rt=rt, intensity=_gaussian(rt, center=5.0, sigma=0.04, height=1000.0)
@@ -164,10 +184,27 @@ def test_nearby_xic_centers_and_ppm_are_not_collapsed():
         ),
     )
     captured = capture.capture(searches)
-    assert [result.search.request for result in captured] == [
-        s.request for s in searches
-    ]
+    # Every mass window is actually read. Equality over the complete final
+    # signal, not candidate mass tolerance alone, permits shared preparation.
+    # Different ppm windows and isotope-separated channels stay separate.
+    assert captured[0].search.request == captured[1].search.request
+    assert captured[0].work_ordinal == captured[1].work_ordinal
+    assert captured[2].search.request.ppm_tol == 10.0
     assert capture.initial_request_count == 3
+    isotope = replace(
+        first,
+        selection_subject_id="isotope",
+        request=replace(first.request, mz=501.0033548),
+    )
+    isotope_capture = PhysicalPeakCapture(
+        raw,
+        acquisition_source=raw.acquisition_source,
+        adapter_namespace="tests.isotope_channels",
+        profile=TEST_PROFILE,
+    )
+    separated = isotope_capture.capture((first, isotope))
+    assert separated[0].search.request.mz != separated[1].search.request.mz
+    assert isotope_capture.initial_request_count == 2
 
 
 def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
@@ -201,11 +238,16 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
             ms1_centroid_mz=lambda *_: None,
         )
         measured = [c for c in result.candidates if c.ms1_peak_found]
+        assert len(result.physical_evaluations) == 2
+        assert (
+            len({b.representative_work_ordinal for b in result.physical_bindings}) == 2
+        )
         assert sorted(c.ms1_apex_rt for c in measured) == pytest.approx([5.0, 5.15])
-        assert {c.seed_scan_ids for c in measured} == {(10,), (11,)}
+        # The analytic second Gaussian remains one raw basin past its 10%
+        # quantitative return; its tail event is not an orphan component.
+        assert {c.seed_scan_ids for c in measured} == {(10,), (11, 12)}
         orphan = [c for c in result.candidates if not c.ms1_peak_found]
-        assert len(orphan) == 1 and orphan[0].seed_scan_ids == (12,)
-        assert orphan[0].discovery_candidate_state == "review_only_orphan_nl"
+        assert orphan == []
         assert result.measurements.initial_request_count == 1
         snapshot = sorted(
             (
@@ -221,3 +263,46 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
         if previous is not None:
             assert snapshot == previous
         previous = snapshot
+
+
+def test_identical_narrow_probes_do_not_substitute_final_mass_windows():
+    rt = np.linspace(1.0, 8.0, 1401)
+    common = _gaussian(rt, center=5.0, sigma=0.3, height=1000.0)
+    extra = _gaussian(rt, center=4.0, sigma=0.1, height=1500.0)
+    extra[rt >= 5.5] = 0.0
+
+    class MassResolvedRaw(_BoundedRaw):
+        def extract_xic_many(self, requests):
+            from xic_extractor.xic_models import XICTrace
+
+            return tuple(
+                XICTrace.from_arrays(
+                    rt[(rt >= request.rt_min) & (rt <= request.rt_max)],
+                    (common + (extra if request.mz > 500.0 else 0))[
+                        (rt >= request.rt_min) & (rt <= request.rt_max)
+                    ],
+                )
+                for request in requests
+            )
+
+    raw = MassResolvedRaw(rt=rt, intensity=common)
+    capture = PhysicalPeakCapture(
+        raw,
+        acquisition_source=raw.acquisition_source,
+        adapter_namespace="tests.final_mass_windows",
+        profile=TEST_PROFILE,
+    )
+    searches = tuple(
+        PhysicalPeakSearch(str(i), 6.2, XICRequest(mz, 5.6, 6.8, 20.0), True)
+        for i, mz in enumerate((500.0, 500.001))
+    )
+    first, second = capture.capture(searches)
+    assert capture.initial_request_count == capture.reacquisition_request_count == 2
+    assert first.search.request.mz == 500.0
+    assert second.search.request.mz == 500.001
+    assert first.work_ordinal != second.work_ordinal
+    assert not np.array_equal(
+        first.acquired_trace.trace.intensity, second.acquired_trace.trace.intensity
+    )
+    assert first.evaluation.facts is not None
+    assert second.evaluation.facts is not None

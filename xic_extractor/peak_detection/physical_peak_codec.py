@@ -1,4 +1,4 @@
-"""Strict physical peak evaluation persistence and rehydration."""
+"""Strict physical result decoding, with explicit opt-in scientific replay."""
 
 from __future__ import annotations
 
@@ -207,7 +207,7 @@ def deserialize_physical_peak_evaluation(
     SignalProcessingProfile,
     PhysicalPeakEvaluation,
 ]:
-    """Strictly parse and rehydrate one persisted physical evaluation."""
+    """Decode the recorded result without repeating scientific processing."""
 
     raw_payload = payload.encode("utf-8") if isinstance(payload, str) else payload
     if not isinstance(raw_payload, bytes):
@@ -246,26 +246,18 @@ def deserialize_physical_peak_evaluation(
     evaluation = physical_evaluation_from_payload(
         evaluation_value, profile=profile, rt=rt, raw=raw
     )
-    rehydrated = rehydrate_physical_peak_evaluation(
-        rt,
-        raw,
-        profile=profile,
-        expected=evaluation,
-        request_context_rt_start_min=evaluation.question.context_rt_start_min,
-        request_context_rt_end_min=evaluation.question.context_rt_end_min,
-    )
-    # Replay validates the decision. Reuse the parsed inputs for byte-canonical output.
+    # Canonical validation checks the stored representation, not a new decision.
     canonical = _canonical_physical_json_bytes(
         {
             "schema_version": _PERSISTED_PHYSICAL_EVALUATION_SCHEMA,
             "profile": profile_content,
             "trace": trace,
-            "evaluation": _physical_evaluation_payload(rehydrated),
+            "evaluation": _physical_evaluation_payload(evaluation),
         }
     )
     if canonical != raw_payload:
         raise ValueError("physical evaluation payload is not canonical")
-    return rt, raw, profile, rehydrated
+    return rt, raw, profile, evaluation
 
 
 def _persisted_physical_payload(

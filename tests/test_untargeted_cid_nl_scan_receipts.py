@@ -80,11 +80,14 @@ def test_unproven_inferred_members_keep_independent_scan_receipts(
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
     )
-    assert len(candidates) == 3
+    # Shared physical measurements combine events, never their exact scan receipts.
+    assert len(candidates) == 2
+    assert {scan for c in candidates for scan in c.seed_scan_ids} == {
+        scan.scan_number for scan in source_raw.scans
+    }
     for candidate in candidates:
         assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
         assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
-        assert len(candidate.seed_scan_ids) == 1
         seeds = read_complete_discovery_scan_seeds(
             source_raw,
             candidates=(candidate,),
@@ -92,6 +95,15 @@ def test_unproven_inferred_members_keep_independent_scan_receipts(
             include_inferred=True,
         )
         assert {scan.scan_number for scan, _ in seeds} == set(candidate.seed_scan_ids)
+        products_by_scan = {
+            scan.scan_number: float(scan.masses[0]) for scan in source_raw.scans
+        }
+        assert all(
+            seed.product_mz == products_by_scan[scan.scan_number]
+            and seed.precursor_mz == seed.product_mz + 116.0474
+            and not seed.supports_direct_nl
+            for scan, seed in seeds
+        )
 
 
 @pytest.mark.parametrize(
@@ -278,7 +290,7 @@ def test_strict_replay_retains_two_recorded_precursors_from_one_scan(tmp_path):
 
 
 @pytest.mark.parametrize("preserve_configured_losses", [False, True])
-def test_unmerged_same_scan_products_keep_exact_canonical_seeds(
+def test_same_peak_same_scan_products_keep_exact_canonical_seed(
     tmp_path: Path, preserve_configured_losses: bool
 ) -> None:
     import json
@@ -303,15 +315,14 @@ def test_unmerged_same_scan_products_keep_exact_canonical_seeds(
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
     )
-    assert len(candidates) == 2
-    assert {c.product_mz for c in candidates} == {canonical_product, absorbed_product}
+    # Spectral alternatives from one scan share a peak and one canonical event.
+    assert len(candidates) == 1
+    assert candidates[0].product_mz == canonical_product
     for candidate in candidates:
         assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
         evidence = json.loads(candidate.tag_evidence_json)["DNA_dR"]
-        assert (
-            evidence["scan_receipts"][str(candidate.best_ms2_scan_id)]["product_mz"]
-            == candidate.product_mz
-        )
+        assert evidence["scan_ids"] == [candidate.best_ms2_scan_id]
+        assert evidence["scan_count"] == 2
         seeds = read_complete_discovery_scan_seeds(
             source_raw,
             candidates=(candidate,),
@@ -319,7 +330,11 @@ def test_unmerged_same_scan_products_keep_exact_canonical_seeds(
             include_inferred=True,
             preserve_configured_losses=preserve_configured_losses,
         )
-        expected_products = {candidate.product_mz}
+        expected_products = (
+            {canonical_product, absorbed_product}
+            if preserve_configured_losses
+            else {canonical_product}
+        )
         assert {seed.product_mz for _, seed in seeds} == expected_products
         assert all(seed.precursor_mz == seed.product_mz + 116.0474 for _, seed in seeds)
 

@@ -93,7 +93,9 @@ def test_physical_capture_accepts_search_coordinates_without_method_evidence() -
     assert facts.area_counts_seconds == pytest.approx(
         1000.0 * 0.04 * np.sqrt(2.0 * np.pi) * 60.0, rel=0.06
     )
-    assert first.evaluation.question.query_rt_min == search.query_rt_min
+    # NL is a lookup coordinate; the retained measurement is localized at raw apex.
+    assert first.search.query_rt_min == search.query_rt_min
+    assert first.evaluation.question.query_rt_min == pytest.approx(9.02)
     assert first.trace_quality == "clean"
 
 
@@ -127,7 +129,9 @@ def test_capture_runs_physical_peak_detection() -> None:
             "parent_ms1_ion_ambiguous",
             "ms1_feature_nl_rescued",
         ),
-        ((500.001,), 8.6, "compatible", "ms1_feature_nl_rescued"),
+        # Parent and NL are in the same single raw Gaussian basin even though
+        # the earlier parent misses the canonical quantitative return.
+        ((500.001,), 8.6, "compatible", "ms1_feature_nl_supported"),
     ],
 )
 def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
@@ -322,9 +326,9 @@ def test_single_seed_with_ms1_peak_is_medium_priority() -> None:
     assert candidate.reason == "single MS2 NL seed; MS1 peak found"
 
 
-@pytest.mark.parametrize("sigma, peak_found", [(0.12, False), (0.15, True)])
-def test_far_ms1_peak_requires_query_containment_before_priority(
-    sigma: float, peak_found: bool
+@pytest.mark.parametrize("sigma", [0.12, 0.15])
+def test_single_raw_basin_keeps_events_outside_quantitative_return(
+    sigma: float,
 ) -> None:
     group = _group(
         (
@@ -341,19 +345,14 @@ def test_far_ms1_peak_requires_query_containment_before_priority(
     )
     candidate = next(c for c in candidates if 20 in c.seed_scan_ids)
 
-    assert candidate.ms1_peak_found == peak_found
-    if peak_found:
-        # The wider peak contains the query but its apex is still offset.
-        assert candidate.ms1_seed_delta_min == pytest.approx(0.26)
-        assert candidate.review_priority == "MEDIUM"
-        assert candidate.seed_scan_ids == (20,)
-        assert any(
-            c.seed_scan_ids == (10,) and not c.ms1_peak_found for c in candidates
-        )
-    else:
-        # The narrower peak's 10% return excludes the query altogether.
-        assert candidate.ms1_seed_delta_min is None
-        assert candidate.ms1_area is None
+    # Each analytic input is one positive Gaussian with no intervening raw
+    # valley. Its 10% return is an integration bound, not a different NL owner.
+    assert candidate.ms1_peak_found
+    assert candidate.ms1_seed_delta_min == pytest.approx(0.26)
+    assert candidate.review_priority == "MEDIUM"
+    assert candidate.seed_scan_ids == (10, 20)
+    assert candidate.ms1_area is not None and candidate.ms1_area > 0
+    assert not any(not c.ms1_peak_found for c in candidates)
 
 
 def test_capture_merges_candidates_inside_same_ms1_peak_boundary() -> None:
@@ -379,9 +378,8 @@ def test_capture_merges_candidates_inside_same_ms1_peak_boundary() -> None:
     assert candidate.ms1_area is not None and candidate.ms1_area > 0
     assert candidate.ms2_product_max_intensity == 9000.0
     assert candidate.review_priority == "HIGH"
-    assert candidate.reason == (
-        "MS2 NL seeds merged by shared MS1 peak; MS1 peak found near seed RT"
-    )
+    # Evidence is combined before candidate creation, not by merging quantities.
+    assert candidate.reason == "strong MS2 NL seed group; MS1 peak found near seed RT"
 
 
 def test_cross_tag_candidates_merge_only_when_ms1_peak_overlaps() -> None:
@@ -1161,9 +1159,13 @@ def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
     batches = result.measurements.acquisition_batches
     runtime_metrics = _acquisition_totals(batches)
     acquired = [trace for batch in batches for trace in batch.traces]
-    assert runtime_metrics.logical_xic_request_count == 2
-    assert result.measurements.exact_scan_window_count == 2
-    assert runtime_metrics.adapter_chromatogram_call_count == 1
+    # exact_trace is a strictly increasing ramp: both questions require the
+    # one bounded continuation. The two overlapping channels share each round.
+    assert result.measurements.initial_request_count == 2
+    assert result.measurements.reacquisition_request_count == 2
+    assert runtime_metrics.logical_xic_request_count == 4
+    assert result.measurements.exact_scan_window_count == 4
+    assert runtime_metrics.adapter_chromatogram_call_count == 2
     for item in acquired:
         exact = raw.exact_trace(item.coordinate.request)
         assert item.trace.rt.tolist() == exact.rt.tolist()
