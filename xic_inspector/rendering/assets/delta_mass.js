@@ -19,9 +19,11 @@
   // Beyond the three categorical hues, position identity also uses distinct dashes.
   const dash = index => index === 0 ? '' : index === 1 ? '7 4' : index === 2 ? '2 3' : `${index * 3} 4 2 4`;
   const nlStatus = status => ({supported:'有 NL 支持', no_match:'未找到 NL 支持', no_ms2:'沒有相關 MS2', no_spectrum:'缺少 spectrum', incomplete:'讀取不完整', no_peak_bounds:'缺少峰範圍', ambiguous:'峰歸屬不明', unresolved:'前驅或歸屬未確認'}[status] || status);
-  const summary = saved => {
+  const summary = (saved, compact = false) => {
     const results = saved.neutral_losses || [], multiple = new Set(results.map(n => n.tag)).size > 1;
-    return results.map(n => `${n.position_label}${multiple ? ` / ${n.tag}` : ''}：${nlStatus(n.status)}`).join(' · ');
+    const label = status => compact ? ({supported:'支持', no_match:'未見支持', no_ms2:'無相關 MS2'}[status] || nlStatus(status)) : nlStatus(status);
+    if (compact && results.length && results.every(n => n.status === results[0].status)) return `NL：${label(results[0].status)}`;
+    return results.map(n => `${n.position_label}${multiple ? ` / ${n.tag}` : ''}${compact ? ' ' : '：'}${label(n.status)}`).join(' · ');
   };
   function table(headers, rows) {
     const wrap = node('div', undefined, 'table-scroll'), result = node('table', undefined, 'sample-table dm-table');

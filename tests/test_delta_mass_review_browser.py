@@ -14,6 +14,7 @@ from tests.delta_mass_review_fixtures import (
 from tests.workbench_browser_fixtures import browser as browser
 from xic_extractor.diagnostics.delta_mass_review_data import (
     DeltaMassReview,
+    ReviewNlPosition,
     ReviewReadError,
     write_delta_mass_review,
 )
@@ -23,6 +24,39 @@ pytestmark = pytest.mark.browser_e2e
 pytest_plugins = ("tests.browser_diagnostics",)
 
 
+@pytest.mark.parametrize(
+    "status,short,full",
+    [
+        ("no_match", "NL：未見支持", "未找到 NL 支持"),
+        ("no_ms2", "NL：無相關 MS2", "沒有相關 MS2"),
+    ],
+)
+def test_sidebar_collapses_equal_nl_results_but_keeps_detail_and_search(
+    review_page, tmp_path, status, short, full
+):
+    candidate = review_fixture().candidates[0]
+    candidate = replace(
+        candidate,
+        neutral_losses=tuple(
+            ReviewNlPosition(p.label, "test-NL", 40.0, status, (), ())
+            for p in candidate.positions
+        ),
+    )
+    source = tmp_path / "summary.json"
+    write_delta_mass_review(DeltaMassReview("saved", (candidate,)), source)
+    report = tmp_path / "summary.html"
+    generate_report(source, SelectionRequest(), report)
+    page = review_page
+    page.set_viewport_size({"width": 792, "height": 884})
+    page.goto(report.as_uri())
+    expect(page.locator(".record-reason")).to_have_text(short)
+    expect(
+        page.get_by_label("各位置 NL 判讀").get_by_role("cell", name=full, exact=True)
+    ).to_have_count(3)
+    page.get_by_label("本頁搜尋").fill(full)
+    expect(page.locator(".record-button")).to_have_count(1)
+
+
 def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path):
     page = review_page
     source = write_nl_review(tmp_path)
@@ -30,7 +64,7 @@ def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path
     generate_report(source, SelectionRequest(), output)
     page.goto(output.as_uri())
     root = page.locator(".dm-review")
-    expect(page.locator(".record-button").first).to_contain_text("M：有 NL 支持")
+    expect(page.locator(".record-button").first).to_contain_text("M 支持")
     expect(root.get_by_label("各位置 NL 判讀")).to_contain_text("沒有相關 MS2")
     expect(root.get_by_label("各位置 NL 判讀")).to_contain_text("未找到 NL 支持")
     expect(root.get_by_label("MS2 scan", exact=True)).not_to_be_visible()

@@ -499,7 +499,7 @@
   const itemTitle=item=>item.title||'已記錄的結果';
   // Long identifiers wrap after their separators instead of inside a word.
   const breakable=text=>esc(text).replace(/([|_\/])/g,'$1<wbr>');
-  const reviewReason=item=>item.delta_mass?.neutral_losses?.length ? window.XicInspectorDeltaMass.summary(item.delta_mass) : item.reason_label;
+  const reviewReason=(item,compact=false)=>item.delta_mass?.neutral_losses?.length ? window.XicInspectorDeltaMass.summary(item.delta_mass,compact) : item.reason_label;
   const badge=item=>item.badge_label||({attention:'需留意',excluded:'已排除',rest:'已記錄'}[item.stratum]||'既有結果');
   const result=row=>!has(row,'quantitative_value')?'<span class="result-missing">無單一結果</span>':row.quantitative_value===null?'<span class="result-null">空值</span>':`<span class="${row.quantitative_value===0?'result-zero':'result-number'}">${num(row.quantitative_value)}</span>${row.quantity_unit?` <span class="result-unit">${esc(row.quantity_unit)}</span>`:''}`;
   const isCollapsedExcluded=item=>item.kind==='candidate'&&item.stratum==='excluded', queryReport=data.selection?.strategy==='query'||$('report-info-source')?.dataset.strategy==='query';
@@ -703,7 +703,7 @@
     listed=showExcluded?[...regular,...excluded]:regular;
     if(!listed.some(i=>i.id===state.id)&&(state.id||selectFallback)){state.id=listed[0]?.id;reset();}
     $('list-count').textContent=`${filtered.length} / ${items.length} 筆`;
-    const recordButton=item=>{const nl=item.delta_mass?.neutral_losses?.length;return `<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${breakable(itemTitle(item))}</span>${nl?'':`<span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span>`}</div><div class="record-meta">${nl?'':`${itemName(item)} · `}m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}</div><div class="record-reason">${esc(reviewReason(item)||'未記錄判定說明')}</div></button>`;};
+    const recordButton=item=>{const nl=item.delta_mass?.neutral_losses?.length;return `<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${breakable(itemTitle(item))}</span>${nl?'':`<span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span>`}</div><div class="record-meta">${nl?'':`${itemName(item)} · `}m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}</div><div class="record-reason">${esc(reviewReason(item,true)||'未記錄判定說明')}</div></button>`;};
     const excludedGroup=excluded.length?`<section class="excluded-group"><button type="button" class="excluded-toggle" data-excluded-toggle aria-expanded="${showExcluded}" ${localFilterActive?'disabled title="篩選結果會保持展開"':''}><span>已排除候選</span><span>${excluded.length} 筆 ${showExcluded?'▾':'▸'}</span></button>${showExcluded?`<div class="excluded-items">${excluded.map(recordButton).join('')}</div>`:''}</section>`:'';
     setHTML($('record-list'),regular.map(recordButton).join('')+excludedGroup||'<p class="empty-state">這份報告沒有符合的項目。請清除篩選條件。</p>');
     filterStatus();detail();
