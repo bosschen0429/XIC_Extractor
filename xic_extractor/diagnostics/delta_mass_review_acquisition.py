@@ -6,16 +6,26 @@ import json
 import math
 from collections import defaultdict
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 
+from xic_extractor.configuration.cid_nl_profile import CidNlMassPolicy
+from xic_extractor.diagnostics.delta_mass_nl_review import assess_review_neutral_losses
 from xic_extractor.diagnostics.delta_mass_review_data import (
     DeltaMassReview,
     ReviewCandidate,
+    ReviewNlMethod,
     ReviewPosition,
     ReviewReadError,
     ReviewSpectrum,
 )
+from xic_extractor.discovery.detected_features import load_detected_features_csv
+from xic_extractor.discovery.models import DiscoverySeed
+from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+from xic_extractor.discovery.strict_seed_receipts import read_parent_ms1_observations
+from xic_extractor.precursor_evidence import PrecursorMassScope
+from xic_extractor.presets.apply import apply_to_discovery
+from xic_extractor.presets.loader import load_preset
 from xic_extractor.raw_reader import open_raw
 from xic_extractor.tabular_io import read_delimited_rows
 from xic_extractor.xic_models import XICRequest
@@ -49,10 +59,11 @@ _POSITION_FIELDS = (
 def acquire_delta_mass_review(
     discovery_directory: Path,
     *,
-    candidate_ids: Sequence[str],
+    candidate_ids: Sequence[str] | None,
     raw_directory: Path,
     dll_directory: Path,
     padding_min: float = 2.0,
+    nl_preset: str | None = None,
 ) -> DeltaMassReview:
     """Read each selected RAW once; batch XICs and merge overlapping MS2 windows.
 
@@ -64,6 +75,7 @@ def acquire_delta_mass_review(
     selected = _read_selected_candidates(
         discovery_directory, candidate_ids, padding_min
     )
+    nl_settings = apply_to_discovery(load_preset(nl_preset)) if nl_preset else None
     by_sample: dict[str, list[ReviewCandidate]] = defaultdict(list)
     for candidate in selected:
         by_sample[candidate.sample_stem].append(candidate)
@@ -79,6 +91,58 @@ def acquire_delta_mass_review(
     acquired: dict[str, ReviewCandidate] = {}
     for sample, candidates in by_sample.items():
         raw_path = raw_paths[sample]
+        feature_path = discovery_directory / sample / "detected_features.csv"
+        features = (
+            load_detected_features_csv(feature_path)
+            if nl_settings is not None and feature_path.is_file()
+            else ()
+        )
+        feature_bounds = {
+            f.feature_id: (f.rt_start_min, f.rt_end_min)
+            for f in features
+            if f.sample_stem == sample
+            and f.rt_start_min is not None
+            and f.rt_end_min is not None
+        }
+        bounded_candidates = []
+        for candidate in candidates:
+            bounded_positions = tuple(
+                replace(p, peak_rt_window=feature_bounds.get(p.feature_id))
+                for p in candidate.positions
+            )
+            # NL asks about complete saved peaks, not just display padding.
+            windows = [
+                candidate.rt_window,
+                *(
+                    p.peak_rt_window
+                    for p in bounded_positions
+                    if p.peak_rt_window is not None
+                ),
+            ]
+            bounded_candidates.append(
+                replace(
+                    candidate,
+                    positions=bounded_positions,
+                    rt_window=(min(w[0] for w in windows), max(w[1] for w in windows)),
+                )
+            )
+        candidates = bounded_candidates
+        targets = (
+            tuple(
+                (p.query_mz, p.query_mz * nl_settings.precursor_mz_tolerance_ppm * 1e-6)
+                for c in candidates
+                for p in c.positions
+            )
+            if nl_settings
+            else ()
+        )
+        nl_scope = (
+            PrecursorMassScope.around(
+                targets, maximum_inference_radius_da=nl_settings.ms2_precursor_tol_da
+            )
+            if nl_settings
+            else None
+        )
         with open_raw(raw_path, dll_dir=dll_directory) as reader:
             start, end = reader.acquisition_rt_bounds()
             candidates = [
@@ -101,6 +165,7 @@ def acquire_delta_mass_review(
             traces = dict(zip(requests, reader.extract_xic_many(requests), strict=True))
             spectra: dict[int, ReviewSpectrum] = {}
             errors: list[ReviewReadError] = []
+            seeds: list[DiscoverySeed] = []
             for lo, hi in _merged_windows([c.rt_window for c in candidates]):
                 for event in reader.iter_ms2_scans(lo, hi):
                     if event.scan is None:
@@ -124,6 +189,30 @@ def acquire_delta_mass_review(
                         tuple(float(v) for v in scan.masses),
                         tuple(float(v) for v in scan.intensities),
                     )
+                    if (
+                        nl_scope is not None
+                        and nl_settings is not None
+                        and nl_scope(scan.precursor_mz, scan.precursor_metadata)
+                    ):
+                        seeds.extend(
+                            seed
+                            for seed in discovery_seeds_from_scan(
+                                scan, raw_file=raw_path, settings=nl_settings
+                            )
+                            if any(
+                                abs(seed.precursor_mz - mz) <= tolerance
+                                for mz, tolerance in targets
+                            )
+                        )
+            qualified_seeds = (
+                read_parent_ms1_observations(
+                    reader,
+                    tuple(seeds),
+                    tolerance_ppm=nl_settings.precursor_mz_tolerance_ppm,
+                )
+                if nl_settings
+                else ()
+            )
             for candidate in candidates:
                 positions = []
                 for position in candidate.positions:
@@ -140,7 +229,7 @@ def acquire_delta_mass_review(
                         )
                     )
                 lo, hi = candidate.rt_window
-                acquired[candidate.candidate_id] = replace(
+                result = replace(
                     candidate,
                     raw_file=str(raw_path.resolve()),
                     positions=tuple(positions),
@@ -156,18 +245,40 @@ def acquire_delta_mass_review(
                         and error.requested_rt_window[1] >= lo
                     ),
                 )
+                if nl_settings is not None:
+                    result = replace(
+                        result,
+                        neutral_losses=assess_review_neutral_losses(
+                            result,
+                            features=features,
+                            seeds=qualified_seeds,
+                            settings=nl_settings,
+                        ),
+                    )
+                acquired[candidate.candidate_id] = result
     return DeltaMassReview(
         str(discovery_directory.resolve()),
         tuple(acquired[c.candidate_id] for c in selected),
+        ReviewNlMethod(
+            nl_preset,
+            CidNlMassPolicy(
+                **{
+                    f.name: getattr(nl_settings, f.name)
+                    for f in fields(CidNlMassPolicy)
+                }
+            ),
+        )
+        if nl_preset and nl_settings
+        else None,
     )
 
 
 def _read_selected_candidates(
-    directory: Path, candidate_ids: Sequence[str], padding_min: float
+    directory: Path, candidate_ids: Sequence[str] | None, padding_min: float
 ) -> tuple[ReviewCandidate, ...]:
-    if not candidate_ids:
+    if candidate_ids is not None and not candidate_ids:
         raise ValueError(
-            "Select at least one candidate ID; review never scans all candidates"
+            "Select at least one candidate ID, or request all candidates explicitly"
         )
     rows = read_delimited_rows(
         directory / "delta_mass_candidates.csv",
@@ -175,6 +286,10 @@ def _read_selected_candidates(
         delimiter=",",
         encoding="utf-8-sig",
     )
+    if candidate_ids is None:
+        candidate_ids = [r["candidate_id"] for r in rows if r["status"] == "candidate"]
+        if not candidate_ids:
+            raise ValueError("No saved Delta Mass candidates to review")
     positions = read_delimited_rows(
         directory / "delta_mass_positions.csv",
         required_columns=_POSITION_FIELDS,
@@ -228,6 +343,7 @@ def _read_selected_candidates(
                 shape_r=_saved_number(p, "shape_r"),
                 ratio_status=p["ratio_status"],
                 position_status=p["position_status"],
+                feature_id=p.get("feature_id", ""),
             )
             for p in matched_positions
         )

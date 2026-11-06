@@ -19,6 +19,10 @@ from xic_extractor.discovery.delta_mass_patterns import (
     DeltaMassCandidate,
     DeltaMassPositionResult,
 )
+from xic_extractor.discovery.detected_features import (
+    DetectedFeature,
+    write_detected_features_csv,
+)
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 
 
@@ -59,6 +63,7 @@ def write_discovery(directory: Path) -> tuple[str, ...]:
                         delta_da=p.delta_da,
                         expected_mz=base + p.delta_da,
                         observed_mz=base + p.delta_da,
+                        feature_id=f"{candidate_id}|{p.label}",
                         ratio_min=p.ratio_min,
                         ratio_max=p.ratio_max,
                         apex_threshold_sec=1.0,
@@ -76,6 +81,31 @@ def write_discovery(directory: Path) -> tuple[str, ...]:
     write_delta_mass_outputs(
         directory, candidates, {"method": asdict(settings)}, settings
     )
+    for sample in {c.sample_stem for c in candidates}:
+        sample_dir = directory / sample
+        sample_dir.mkdir()
+        write_detected_features_csv(
+            sample_dir / "detected_features.csv",
+            tuple(
+                DetectedFeature(
+                    sample,
+                    p.feature_id,
+                    None,
+                    p.expected_mz,
+                    c.base_rt_apex_min,
+                    c.base_rt_apex_min - 0.2,
+                    c.base_rt_apex_min + 0.2,
+                    100.0,
+                    None,
+                    "OK",
+                    None,
+                    "external",
+                )
+                for c in candidates
+                if c.sample_stem == sample
+                for p in c.positions
+            ),
+        )
     return tuple(c.candidate_id for c in candidates)
 
 

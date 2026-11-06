@@ -344,6 +344,39 @@ only the saved review; it never acquires RAW or changes candidate or Matrix valu
 The review does not import historical task-specific CSV/NPZ formats, infer charge,
 impose a height-ratio gate, match fragments or group candidates across samples.
 
+#### Candidate-level NL intersections
+
+The same review entry accepts `--all-candidates --nl-preset dna_dr` to answer
+which saved Delta Mass candidates also have peak-scoped NL evidence, without
+manual scan selection. A preset is explicit, never guessed from a sample name.
+The JSON retains the evidence; its sibling `.nl.csv` contains one candidate/tag
+row with each position's result and supporting scan references. This summary,
+not scan browsing, is the entry for cross-method assessment. The Inspector's
+existing curve view is not yet an NL-summary interface.
+
+The adapter reuses Discovery's scan matcher, parent-MS1 acquisition and
+precursor-loss assessment, then the shared CID-NL interval-relation owner.
+It uses each position's saved detected-feature bounds and the complete nearby
+feature population, including unselected competitors. Display padding does not
+define a peak and selecting fewer candidates cannot remove overlap ambiguity.
+Missing feature bounds remain unavailable; RAW-completed positions without a
+saved feature are not assigned a fabricated peak interval.
+
+An intersection means the saved Delta Mass status is `candidate` and **at
+least one named position** has NL support for that tag. It does not mean both
+positions support NL or that all configured tags are jointly satisfied. Each
+position remains separate: `supported`, `ambiguous`, `unresolved`, `no_match`,
+`no_ms2`, `no_spectrum`, `incomplete`, or `no_peak_bounds`. `no_match` means the
+configured method did not establish support, not chemical absence. Inferred
+product-plus-loss evidence cannot confirm itself: it needs the existing
+parent-MS1 check. Overlap/boundary evidence stays ambiguous under the shared
+relation rule.
+
+These are fresh `diagnostic_only` assessments on saved detector intervals, not
+a rerun of formal CID-NL physical qualification. Delta Mass statuses, ratios,
+shape evidence, Discovery files and Matrix eligibility are unchanged. A saved
+Delta Mass rejection cannot become an intersection merely because NL is seen.
+
 ## Method-specific validation
 
 Discovery validation is method-specific. CID-NL 8RAW/85RAW fixtures are not

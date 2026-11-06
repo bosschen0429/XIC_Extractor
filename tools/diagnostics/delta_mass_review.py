@@ -1,4 +1,4 @@
-"""Export selected Delta Mass XICs and window MS2 for offline Inspector review."""
+"""Review Delta Mass candidates and optional peak-scoped NL intersections."""
 
 from __future__ import annotations
 
@@ -9,21 +9,39 @@ from pathlib import Path
 from xic_extractor.diagnostics.delta_mass_review_acquisition import (
     acquire_delta_mass_review,
 )
-from xic_extractor.diagnostics.delta_mass_review_data import write_delta_mass_review
+from xic_extractor.diagnostics.delta_mass_review_data import (
+    write_delta_mass_nl_summary,
+    write_delta_mass_review,
+)
 from xic_extractor.raw_reader_errors import RawReaderError
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--discovery-dir", required=True, type=Path)
-    parser.add_argument(
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument(
         "--candidate-id",
-        required=True,
         action="append",
         help="Exact saved candidate ID; repeat to review several",
     )
+    selection.add_argument(
+        "--all-candidates",
+        action="store_true",
+        help=(
+            "Review every saved status=candidate row; "
+            "no manual candidate or scan selection"
+        ),
+    )
     parser.add_argument("--raw-dir", required=True, type=Path)
     parser.add_argument("--dll-dir", required=True, type=Path)
+    parser.add_argument(
+        "--nl-preset",
+        help=(
+            "Explicit CID-NL preset (e.g. dna_dr): assess NL inside saved feature "
+            "bounds; never inferred from sample names"
+        ),
+    )
     parser.add_argument(
         "--padding-min",
         type=float,
@@ -51,8 +69,13 @@ def main(argv: list[str] | None = None) -> int:
             raw_directory=args.raw_dir,
             dll_directory=args.dll_dir,
             padding_min=args.padding_min,
+            nl_preset=args.nl_preset,
         )
         write_delta_mass_review(review, args.output)
+        if review.nl_method is not None:
+            summary = args.output.with_suffix(".nl.csv")
+            write_delta_mass_nl_summary(review, summary)
+            print(f"Candidate-level NL intersections: {summary.resolve()}")
     except (OSError, ValueError, RawReaderError) as exc:
         print(f"Delta Mass review failed: {exc}", file=sys.stderr)
         return 2

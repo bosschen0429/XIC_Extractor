@@ -12,7 +12,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.configuration.cid_nl_profile import CidNlMassPolicy
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+from xic_extractor.tabular_io import write_delimited_rows
 
 REVIEW_SCHEMA = "delta_mass_candidate_review"
 
@@ -31,6 +33,8 @@ class ReviewPosition:
     position_status: str
     raw_rt: tuple[float, ...] = ()
     raw_intensity: tuple[float, ...] = ()
+    feature_id: str = ""
+    peak_rt_window: tuple[float, float] | None = None
 
     @property
     def query_mz(self) -> float:
@@ -55,6 +59,34 @@ class ReviewReadError:
 
 
 @dataclass(frozen=True)
+class ReviewNlMatch:
+    scan_number: int
+    precursor_mz: float
+    product_mz: float
+    product_base_ratio: float
+    observed_loss_da: float | None
+    loss_error_ppm: float | None
+    reference_source: str
+    status: str
+
+
+@dataclass(frozen=True)
+class ReviewNlPosition:
+    position_label: str
+    tag: str
+    neutral_loss_da: float
+    status: str
+    related_scan_numbers: tuple[int, ...]
+    matches: tuple[ReviewNlMatch, ...]
+
+
+@dataclass(frozen=True)
+class ReviewNlMethod:
+    preset: str
+    mass_policy: CidNlMassPolicy
+
+
+@dataclass(frozen=True)
 class ReviewCandidate:
     candidate_id: str
     sample_stem: str
@@ -72,12 +104,14 @@ class ReviewCandidate:
     rt_window: tuple[float, float]
     spectra: tuple[ReviewSpectrum, ...] = ()
     ms2_read_errors: tuple[ReviewReadError, ...] = ()
+    neutral_losses: tuple[ReviewNlPosition, ...] = ()
 
 
 @dataclass(frozen=True)
 class DeltaMassReview:
     discovery_directory: str
     candidates: tuple[ReviewCandidate, ...]
+    nl_method: ReviewNlMethod | None = None
 
 
 def write_delta_mass_review(review: DeltaMassReview, path: Path) -> None:
@@ -85,6 +119,73 @@ def write_delta_mass_review(review: DeltaMassReview, path: Path) -> None:
     text = json.dumps(payload, ensure_ascii=False, allow_nan=False) + "\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def write_delta_mass_nl_summary(review: DeltaMassReview, path: Path) -> None:
+    """One candidate/tag row; expose the position vector, not a new admission rule.
+
+    An intersection here means a saved Delta Mass candidate has NL support at
+    at least one explicitly named position. It never implies both positions,
+    a conjunction of all NL tags, chemical identity or Matrix eligibility.
+    """
+    rows = []
+    for candidate in review.candidates:
+        for tag in dict.fromkeys(n.tag for n in candidate.neutral_losses):
+            evidence = [n for n in candidate.neutral_losses if n.tag == tag]
+            supported = [n.position_label for n in evidence if n.status == "supported"]
+            scans = sorted(
+                {
+                    m.scan_number
+                    for n in evidence
+                    for m in n.matches
+                    if m.status == "supported"
+                }
+            )
+            rows.append(
+                {
+                    "sample_stem": candidate.sample_stem,
+                    "candidate_id": candidate.candidate_id,
+                    "base_mz": candidate.base_mz,
+                    "base_rt_apex_min": candidate.base_rt_apex_min,
+                    "delta_mass_status": candidate.status,
+                    "nl_tag": tag,
+                    "neutral_loss_da": evidence[0].neutral_loss_da,
+                    "intersection_status": "delta_mass_rejected"
+                    if candidate.status != "candidate"
+                    else "supported"
+                    if supported
+                    else "not_established",
+                    "supported_positions": ";".join(supported),
+                    "position_results": ";".join(
+                        f"{n.position_label}:{n.status}" for n in evidence
+                    ),
+                    "related_scan_count": len(
+                        {scan for n in evidence for scan in n.related_scan_numbers}
+                    ),
+                    "support_scan_count": len(scans),
+                    "support_scan_ids": ";".join(map(str, scans)),
+                }
+            )
+    write_delimited_rows(
+        path,
+        rows,
+        (
+            "sample_stem",
+            "candidate_id",
+            "base_mz",
+            "base_rt_apex_min",
+            "delta_mass_status",
+            "nl_tag",
+            "neutral_loss_da",
+            "intersection_status",
+            "supported_positions",
+            "position_results",
+            "related_scan_count",
+            "support_scan_count",
+            "support_scan_ids",
+        ),
+        formatter=str,
+    )
 
 
 def decode_delta_mass_review(payload: object) -> DeltaMassReview:
@@ -96,7 +197,15 @@ def decode_delta_mass_review(payload: object) -> DeltaMassReview:
     identities = [(row.sample_stem, row.candidate_id) for row in candidates]
     if not candidates or len(identities) != len(set(identities)):
         raise ValueError("Review must contain distinct sample/candidate pairs")
-    return DeltaMassReview(_text(root, "discovery_directory"), candidates)
+    method = root.get("nl_method")
+    if method is not None:
+        method = _mapping(method, "NL method")
+        policy = _mapping(method["mass_policy"], "NL mass policy")
+        method = ReviewNlMethod(
+            _text(method, "preset"),
+            CidNlMassPolicy(**{k: _number(v, k) for k, v in policy.items()}),
+        )
+    return DeltaMassReview(_text(root, "discovery_directory"), candidates, method)
 
 
 def _candidate(value: object) -> ReviewCandidate:
@@ -135,6 +244,7 @@ def _candidate(value: object) -> ReviewCandidate:
         rt_window=_window(row["rt_window"]),
         spectra=spectra,
         ms2_read_errors=tuple(errors),
+        neutral_losses=tuple(_neutral_loss(n) for n in row.get("neutral_losses", [])),
     )
 
 
@@ -161,6 +271,41 @@ def _position(value: object) -> ReviewPosition:
         position_status=_text(row, "position_status"),
         raw_rt=rt,
         raw_intensity=intensity,
+        feature_id=_text(row, "feature_id", allow_empty=True),
+        peak_rt_window=(
+            None if row["peak_rt_window"] is None else _window(row["peak_rt_window"])
+        ),
+    )
+
+
+def _neutral_loss(value: object) -> ReviewNlPosition:
+    row = _mapping(value, "NL position")
+    matches = []
+    for value in _rows(row, "matches"):
+        match = _mapping(value, "NL match")
+        matches.append(
+            ReviewNlMatch(
+                scan_number=_scan_number(match["scan_number"]),
+                precursor_mz=_positive(match["precursor_mz"], "precursor m/z"),
+                product_mz=_positive(match["product_mz"], "product m/z"),
+                product_base_ratio=_number(
+                    match["product_base_ratio"], "product ratio"
+                ),
+                observed_loss_da=_optional_number(match["observed_loss_da"], "loss Da"),
+                loss_error_ppm=_optional_number(match["loss_error_ppm"], "loss ppm"),
+                reference_source=_text(match, "reference_source"),
+                status=_text(match, "status"),
+            )
+        )
+    return ReviewNlPosition(
+        position_label=_text(row, "position_label"),
+        tag=_text(row, "tag"),
+        neutral_loss_da=_positive(row["neutral_loss_da"], "neutral loss Da"),
+        status=_text(row, "status"),
+        related_scan_numbers=tuple(
+            _scan_number(n) for n in _rows(row, "related_scan_numbers")
+        ),
+        matches=tuple(matches),
     )
 
 

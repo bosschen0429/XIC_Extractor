@@ -96,17 +96,24 @@ models because their output schemas are intentionally different.
 ### `delta_mass_review.py`
 
 **Purpose**: Acquire bounded, unsmoothed XICs and RT-window MS2 for explicitly
-selected Delta Mass candidates, then hand the saved evidence to Inspector.
+selected Delta Mass candidates, with optional candidate-level NL intersections.
 **Input**: Current `delta_mass_candidates.csv`, `delta_mass_positions.csv` and
 `delta_mass_sidecar.json` in one Discovery directory; exact candidate IDs and
-an explicitly selected RAW/DLL directory. `--help` owns the arguments.
+an explicitly selected RAW/DLL directory. `--all-candidates` selects saved
+passing candidates; `--nl-preset` explicitly selects the NL question and uses
+the per-sample detected-feature tables. `--help` owns the arguments.
 **Output**: A `delta_mass_candidate_review` JSON, opened with `xic-inspector`.
+With NL assessment, a sibling `.nl.csv` answers the candidate/tag intersection
+and per-position statuses without scan browsing. Supporting spectra and
+precursor evidence remain in JSON for checking the answer.
 **Owner**: `xic_extractor.diagnostics.delta_mass_review_acquisition` owns the
 bounded RAW read; `delta_mass_review_data` owns the saved handoff;
 `xic_inspector.sources.delta_mass` adapts it for the shared readonly view.
 **Status**: `diagnostic_only`. One RAW open and one XIC batch per selected sample;
 overlapping MS2 windows are merged. No Discovery rerun, candidate reclassification,
-new integration, precursor attribution, fragment matching, or Matrix authority.
+new integration, fragment pairing, or Matrix authority. Optional NL assessment
+reuses shared CID-NL matching and interval relations on saved detector bounds;
+it does not rerun formal physical qualification or change candidate admission.
 RAW files are matched by saved sample name, not verified as the original analysis
 bytes. The review displays the new read separately from saved candidate answers.
 
