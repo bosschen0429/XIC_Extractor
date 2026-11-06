@@ -39,10 +39,10 @@
     if (saved.status !== 'candidate') root.append(node('p', `保存判定：${saved.status} · ${saved.reject_reason}`, 'dm-note'));
     root.append(node('p', '候選判斷沿用 Discovery；曲線與 MS2 為新讀取的診斷資料，不是原決策重播。', 'dm-note'));
     const positions = table(
-      ['位置 · 設定 ΔDa', '擷取 m/z', '保存 apex (min)', '保存 height', `Height / ${saved.ratio_reference_label}`, `Shape r / ${saved.shape_reference_label}`, '保存狀態'],
+      ['位置 · 設定 ΔDa', '擷取 m/z', '保存 apex (min)', '保存 height', `Height / ${saved.ratio_reference_label}`, 'Ratio 證據（不篩選）', `Shape r / ${saved.shape_reference_label}`, '保存狀態'],
       saved.positions.map(p => [
         `${p.label} · ${number(p.delta_da)}`, number(p.observed_mz ?? p.expected_mz), number(p.apex_rt_min),
-        number(p.height), number(p.height_ratio_to_base), number(p.shape_r), p.position_status,
+        number(p.height), number(p.height_ratio_to_base), p.ratio_status || '—', number(p.shape_r), p.position_status,
       ]),
     );
     positions.setAttribute('aria-label', '保存的 Delta Mass 位置證據'); root.append(positions);
@@ -127,22 +127,27 @@
       const d = svg.dataset, lo = +d.domainStart, hi = +d.domainEnd;
       const x = value => +d.chartLeft + (value - lo) / (hi - lo) * +d.chartWidth;
       const ticks = mark('g', {'aria-label':'MS2 時間點'});
-      for (const scan of saved.spectra) {
-        if (scan.rt_min < lo || scan.rt_min > hi) continue;
+      const visibleScans = saved.spectra.filter(scan => scan.rt_min >= lo && scan.rt_min <= hi).sort((a, b) => a.rt_min - b.rt_min);
+      for (const [index, scan] of visibleScans.entries()) {
         const active = scan.scan_number === selectedScan;
         const tick = mark('line', {
           x1:x(scan.rt_min), x2:x(scan.rt_min), y1:+d.chartTop,
           y2:+d.chartTop + (active ? +d.chartHeight : 12),
           stroke:active ? 'var(--accent)' : 'var(--subtle)',
           'stroke-width':active ? 2 : 1,
+          'pointer-events':'none',
           'data-ms2-scan':scan.scan_number,
         });
         tick.append(mark('title', {}, `MS2 #${scan.scan_number} · RT ${number(scan.rt_min)} · precursor ${number(scan.precursor_mz)}`));
+        // Bound adjacent hit regions at their midpoint: dense runs must not
+        // silently select the last painted scan instead of the nearest time.
+        const left = Math.max(x(scan.rt_min) - 6, index ? x((visibleScans[index - 1].rt_min + scan.rt_min) / 2) : +d.chartLeft);
+        const right = Math.min(x(scan.rt_min) + 6, index + 1 < visibleScans.length ? x((scan.rt_min + visibleScans[index + 1].rt_min) / 2) : +d.chartLeft + +d.chartWidth);
         const hit = mark('rect', {
-          x:x(scan.rt_min)-6, y:+d.chartTop, width:12, height:24,
+          x:left, y:+d.chartTop, width:Math.max(0, right-left), height:24,
           fill:'transparent', 'data-ms2-scan':scan.scan_number,
         });
-        hit.append(mark('title', {}, `選擇 MS2 #${scan.scan_number}`));
+        hit.append(mark('title', {}, `MS2 #${scan.scan_number} · RT ${number(scan.rt_min)} · precursor ${number(scan.precursor_mz)}`));
         ticks.append(tick, hit);
       }
       svg.append(ticks);

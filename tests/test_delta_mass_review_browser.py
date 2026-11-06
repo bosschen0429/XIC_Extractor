@@ -44,6 +44,10 @@ def test_offline_positions_share_a_scale_and_keep_original_scan_values(
     root = _open(page, tmp_path)
     expect(root.get_by_text("未平滑、未正規化", exact=False)).to_be_visible()
     expect(root.get_by_role("columnheader", name="Height / partner")).to_be_visible()
+    expect(
+        root.get_by_role("columnheader", name="Ratio 證據（不篩選）")
+    ).to_be_visible()
+    expect(root.get_by_role("cell", name="outside", exact=True)).to_be_visible()
     chart = root.locator(".dm-xic svg")
     expect(chart.locator("polyline")).to_have_count(3)
     assert chart.evaluate("""svg => [...svg.querySelectorAll('polyline')].map(line => {
@@ -65,6 +69,41 @@ def test_offline_positions_share_a_scale_and_keep_original_scan_values(
     root.locator(".dm-data summary").first.click()
     expect(root.locator(".dm-data").first).to_contain_text("200")
     assert not requests
+
+
+def test_dense_ms2_markers_select_the_nearest_time_not_the_last_hitbox(
+    review_page, tmp_path
+):
+    candidate = review_fixture().candidates[0]
+    candidate = replace(
+        candidate,
+        spectra=tuple(
+            replace(candidate.spectra[0], scan_number=number, rt_min=rt)
+            for number, rt in ((11, 1.999), (22, 2.0), (33, 2.001))
+        ),
+    )
+    source = tmp_path / "dense.json"
+    write_delta_mass_review(DeltaMassReview("saved-discovery", (candidate,)), source)
+    output = tmp_path / "dense.html"
+    generate_report(source, SelectionRequest(), output)
+    page = review_page
+    page.goto(output.as_uri())
+    chart = page.locator(".dm-xic svg")
+    chart.wait_for()
+    for number in (11, 22, 33):
+        point = chart.evaluate(
+            """(svg, number) => {
+            const tick = svg.querySelector(`line[data-ms2-scan="${number}"]`);
+            return new DOMPoint(+tick.getAttribute('x1'), +tick.getAttribute('y1') + 6)
+                .matrixTransform(svg.getScreenCTM()).toJSON();
+        }""",
+            number,
+        )
+        page.mouse.click(point["x"], point["y"])
+        expect(page.get_by_label("MS2 scan", exact=True)).to_have_value(str(number))
+        expect(page.locator("[data-spectrum-scan]")).to_have_attribute(
+            "data-spectrum-scan", str(number)
+        )
 
 
 def test_ms2_scan_selection_does_not_attribute_time_context_to_the_candidate(
