@@ -51,10 +51,26 @@ def test_sidebar_collapses_equal_nl_results_but_keeps_detail_and_search(
     page.goto(report.as_uri())
     expect(page.locator(".record-reason")).to_have_text(short)
     expect(
-        page.get_by_label("各位置 NL 判讀").get_by_role("cell", name=full, exact=True)
-    ).to_have_count(3)
+        page.get_by_label("各位置 NL 判讀").get_by_role(
+            "cell", name=short.removeprefix("NL："), exact=True
+        )
+    ).to_have_count(1)
+    expect(page.get_by_label("各位置 NL 判讀")).to_contain_text("M / partner / third")
+    expect(page.locator(".scope-summary")).not_to_be_visible()
+    expect(page.locator(".header-actions > .badge")).to_have_count(0)
     page.get_by_label("本頁搜尋").fill(full)
     expect(page.locator(".record-button")).to_have_count(1)
+    expect(page.locator(".filter-chip")).to_have_count(0)
+
+
+def test_compact_candidate_count_still_discloses_a_sampled_report(
+    review_page, tmp_path
+):
+    source = write_nl_review(tmp_path)
+    output = tmp_path / "sampled.html"
+    generate_report(source, SelectionRequest(limit=1), output)
+    review_page.goto(output.as_uri())
+    expect(review_page.locator(".list-header")).to_contain_text("全批 2")
 
 
 def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path):
@@ -65,8 +81,8 @@ def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path
     page.goto(output.as_uri())
     root = page.locator(".dm-review")
     expect(page.locator(".record-button").first).to_contain_text("M 支持")
-    expect(root.get_by_label("各位置 NL 判讀")).to_contain_text("沒有相關 MS2")
-    expect(root.get_by_label("各位置 NL 判讀")).to_contain_text("未找到 NL 支持")
+    expect(root.get_by_label("各位置 NL 判讀")).to_contain_text("無相關 MS2")
+    expect(root.get_by_label("各位置 NL 判讀")).to_contain_text("未見支持")
     expect(root.get_by_label("MS2 scan", exact=True)).not_to_be_visible()
     expect(root.get_by_label("顯示 RT 起點")).not_to_be_visible()
     expect(root.get_by_role("heading", name="NL 證據", exact=True)).not_to_be_visible()
@@ -91,13 +107,13 @@ def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path
     expect(
         root.get_by_role("button", name="M · test-NL：有 NL 支持（2）", exact=True)
     ).to_be_visible()
-    root.get_by_text("其他 MS2（進階查證）", exact=True).click()
+    root.get_by_text("其他 MS2", exact=True).click()
     root.get_by_label("MS2 scan", exact=True).select_option("11")
     expect(root.locator("[data-nl-product-mz]")).to_have_count(0)
     expect(root).to_contain_text("手動檢閱的 MS2，不代表 NL 支持")
     page.get_by_role("button", name=re.compile("^sample-b")).click()
     expect(root.locator("[data-spectrum-scan]")).to_have_count(0)
-    expect(root.get_by_label("各位置 NL 判讀")).to_contain_text("沒有相關 MS2")
+    expect(root.get_by_label("各位置 NL 判讀")).to_contain_text("無相關 MS2")
     expect(root.get_by_role("button", name="下一筆支持")).not_to_be_visible()
     page.set_viewport_size({"width": 420, "height": 900})
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")

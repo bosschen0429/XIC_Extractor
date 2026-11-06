@@ -19,9 +19,10 @@
   // Beyond the three categorical hues, position identity also uses distinct dashes.
   const dash = index => index === 0 ? '' : index === 1 ? '7 4' : index === 2 ? '2 3' : `${index * 3} 4 2 4`;
   const nlStatus = status => ({supported:'有 NL 支持', no_match:'未找到 NL 支持', no_ms2:'沒有相關 MS2', no_spectrum:'缺少 spectrum', incomplete:'讀取不完整', no_peak_bounds:'缺少峰範圍', ambiguous:'峰歸屬不明', unresolved:'前驅或歸屬未確認'}[status] || status);
+  const nlShortStatus = status => ({supported:'支持', no_match:'未見支持', no_ms2:'無相關 MS2'}[status] || nlStatus(status));
   const summary = (saved, compact = false) => {
     const results = saved.neutral_losses || [], multiple = new Set(results.map(n => n.tag)).size > 1;
-    const label = status => compact ? ({supported:'支持', no_match:'未見支持', no_ms2:'無相關 MS2'}[status] || nlStatus(status)) : nlStatus(status);
+    const label = compact ? nlShortStatus : nlStatus;
     if (compact && results.length && results.every(n => n.status === results[0].status)) return `NL：${label(results[0].status)}`;
     return results.map(n => `${n.position_label}${multiple ? ` / ${n.tag}` : ''}${compact ? ' ' : '：'}${label(n.status)}`).join(' · ');
   };
@@ -53,18 +54,27 @@
     const supportButtons = [];
     if (hasNl) {
       const losses = [...new Set(nlResults.map(n => `${n.tag} · ${mass(n.neutral_loss_da)} Da`))];
-      const answers = table(losses.length === 1 ? ['位置', losses[0]] : ['位置', 'NL', '判讀'], nlResults.map(result => {
+      const rows = [];
+      for (const result of nlResults) {
+        // Only identical non-support answers collapse. Supporting positions
+        // keep distinct actions so their evidence can never be crossed.
+        const same = result.status !== 'supported' && rows.find(row => row.result.status === result.status && row.result.tag === result.tag && row.result.neutral_loss_da === result.neutral_loss_da);
+        if (same) same.labels.push(result.position_label);
+        else rows.push({result, labels:[result.position_label]});
+      }
+      const answers = table(losses.length === 1 ? ['位置', losses[0]] : ['位置', 'NL', '判讀'], rows.map(({result, labels}) => {
         const matches = result.matches.filter(m => m.status === 'supported');
-        let answer = nlStatus(result.status);
+        let answer = nlShortStatus(result.status);
         if (result.status === 'supported' && matches.length) {
-          answer = node('button', `有 NL 支持（${new Set(matches.map(m => m.scan_number)).size}）`, 'dm-nl-support');
+          const count = new Set(matches.map(m => m.scan_number)).size;
+          answer = node('button', count > 1 ? `有支持（${count}）` : '有支持', 'dm-nl-support');
           answer.type = 'button';
-          answer.setAttribute('aria-label', `${result.position_label} · ${result.tag}：${answer.textContent}`);
+          answer.setAttribute('aria-label', `${result.position_label} · ${result.tag}：有 NL 支持（${count}）`);
           answer.setAttribute('aria-pressed', 'false');
           answer.addEventListener('click', () => showSupport(result));
           supportButtons.push([answer, result]);
         }
-        return losses.length === 1 ? [result.position_label, answer] : [result.position_label, `${result.tag} · ${mass(result.neutral_loss_da)} Da`, answer];
+        return losses.length === 1 ? [labels.join(' / '), answer] : [labels.join(' / '), `${result.tag} · ${mass(result.neutral_loss_da)} Da`, answer];
       }));
       answers.setAttribute('aria-label', '各位置 NL 判讀'); answers.classList.add('dm-nl-summary'); root.append(answers);
     }
@@ -101,12 +111,13 @@
     const readout = node('output', hasNl ? '' : '游標或方向鍵可查看原始 scan 數值。', 'dm-readout');
     readout.setAttribute('aria-live', 'polite');
     const rawTable = node('details', undefined, 'dm-data');
-    rawTable.append(node('summary', '原始 XIC 數值'));
+    rawTable.append(node('summary', hasNl ? 'XIC 數值' : '原始 XIC 數值'));
     const rawRows = node('div'); rawTable.append(rawRows);
     root.append(chart, readout); (hasNl ? advanced : root).append(rawTable);
 
     const ms2 = node('section', undefined, 'dm-ms2');
     const ms2Heading = node('h3', hasNl ? 'NL 證據' : 'MS2'); ms2Heading.tabIndex = -1; ms2.append(ms2Heading);
+    if (hasNl) { ms2Heading.setAttribute('aria-label', 'NL 證據'); ms2Heading.classList.add('dm-nl-measurement'); }
     const contextNote = node('p', saved.ms2_scope === 'nl_related' ? '已保存的 NL 相關 MS2；是否支持依上方判讀。' : '時間窗內的 MS2；未判定與候選的前驅關係。', 'dm-note');
     const scans = node('select'); scans.setAttribute('aria-label', 'MS2 scan');
     scans.append(new Option('選擇 MS2 scan', ''));
@@ -121,10 +132,10 @@
     previous.type = next.type = 'button';
     supportNav.append(previous, supportIndex, next);
     if (hasNl) {
-      browse.append(node('summary', saved.ms2_scope === 'nl_related' ? '相關 MS2（進階查證）' : '其他 MS2（進階查證）'), contextNote, scans);
+      browse.append(node('summary', saved.ms2_scope === 'nl_related' ? '相關 MS2' : '其他 MS2'), contextNote, scans);
       browse.addEventListener('toggle', () => drawXic());
       ms2.append(supportNav, spectrum, spectrumReadout);
-      advanced.append(browse, node('h3', 'MS2 詳細資料'), spectrumDetails);
+      advanced.append(browse, spectrumDetails);
     } else ms2.append(contextNote, scans, spectrum, spectrumReadout);
     root.append(ms2);
     if (saved.ms2_read_errors.length) {
@@ -205,7 +216,7 @@
         if (rt < lo || rt > hi) return;
         ticks.append(mark('line', {x1:x(rt), x2:x(rt), y1:+d.chartTop+20, y2:+d.chartTop + +d.chartHeight, stroke:'var(--muted)', 'stroke-dasharray':'4 4', 'data-nl-boundary':rt, 'pointer-events':'none'}));
       });
-      if (peakBounds && peakBounds[1] >= lo && peakBounds[0] <= hi) ticks.append(mark('text', {x:x(Math.max(lo, peakBounds[0]))+4, y:+d.chartTop+32, fill:'var(--muted)'}, `${activeNl.position_label} 保存峰界`));
+      if (peakBounds && peakBounds[1] >= lo && peakBounds[0] <= hi) ticks.append(mark('text', {x:x(Math.max(lo, peakBounds[0]))+4, y:+d.chartTop+32, fill:'var(--muted)'}, `${activeNl.position_label} 峰界`));
       for (const [index, scan] of visibleScans.entries()) {
         const active = scan.scan_number === selectedScan;
         const tick = mark('line', {
@@ -281,6 +292,7 @@
     scans.addEventListener('change', () => chooseScan(scans.value ? Number(scans.value) : null));
     function drawSpectrum() {
       spectrum.replaceChildren(); spectrumDetails.replaceChildren(); spectrumReadout.textContent = '';
+      ms2Heading.textContent = hasNl ? 'NL 證據' : 'MS2';
       ms2.hidden = hasNl && selectedScan == null;
       supportNav.hidden = !activeNl || supportMatches.length <= 1;
       supportIndex.textContent = `${supportCursor+1} / ${supportMatches.length}`;
@@ -300,7 +312,7 @@
       const match = activeNl ? supportMatches[supportCursor] : null;
       if (match) {
         const basis = {parent_ms1:'parent MS1', scan_precursor:'scan precursor', scan_monoisotopic:'monoisotopic precursor'}[match.reference_source] || match.reference_source;
-        spectrum.prepend(node('p', `${activeNl.position_label} · 實測 NL ${mass(match.observed_loss_da)} Da`, 'dm-nl-measurement'));
+        ms2Heading.textContent = `${activeNl.position_label} · 實測 NL ${mass(match.observed_loss_da)} Da`;
         scanDetails.append(node('p', `實測前驅 ${mass(match.precursor_mz)}（${basis}） → 產物 ${mass(match.product_mz)} · 產物 / base peak ${number(match.product_base_ratio*100)}%`, 'dm-nl-measurement'));
       } else if (hasNl) spectrum.prepend(node('p', '手動檢閱的 MS2，不代表 NL 支持。', 'dm-note'));
       const meta = scan.precursor_metadata;

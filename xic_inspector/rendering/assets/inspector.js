@@ -477,6 +477,14 @@
     : (mode === 'curves' ? '' : `<div class="signal-bar">${signalSwitchMarkup}</div>`) + detailMarkup + dialogMarkup;
   setHTML(root, chrome.replace(/%%([A-Z_]+)%%/g, (_, key) => esc(fields[key] ?? '')));
   const items=Array.isArray(data.items)?data.items:[], samples=Array.isArray(data.samples)?data.samples:[];
+  const nlReview = items.length > 0 && items.every(item => item.delta_mass?.neutral_losses?.length);
+  if (mode === 'offline' && nlReview) {
+    root.querySelector('.scope-summary').hidden = true;
+    root.querySelector('.header-actions > .badge').remove();
+    root.querySelector('.list-header > span').textContent = '候選';
+    root.querySelector('.advanced-filters > summary').textContent = '篩選';
+    $('search').placeholder = '搜尋樣本、m/z、判讀';
+  }
   // The host supplies the complete saved-source catalog, even when this view
   // contains fewer traces. Colour identity must not depend on loaded curves.
   const catalog=Array.isArray(options.samples)?options.samples:samples;
@@ -693,7 +701,11 @@
   function filterStatus(){
     const active=[];if($('search').value.trim())active.push(`搜尋「${$('search').value.trim()}」`);
     for(const [lo,hi,label] of [['mz-min','mz-max','m/z'],['rt-min','rt-max','RT']])if($(lo).value||$(hi).value)active.push(`${label} ${$(lo).value||'不限'}–${$(hi).value||'不限'}`);
-    setHTML($('active-filters'),active.length?`<span class="active-label">本頁已套用</span>${active.map(x=>`<span class="filter-chip">${esc(x)}</span>`).join('')}<button type="button" id="clear-inline">清除</button>`:'');
+    setHTML($('active-filters'),active.length?`${nlReview?'':`<span class="active-label">本頁已套用</span>${active.map(x=>`<span class="filter-chip">${esc(x)}</span>`).join('')}`}<button type="button" id="clear-inline">清除</button>`:'');
+    if (nlReview) {
+      const rangeCount = active.length - Number(Boolean($('search').value.trim()));
+      root.querySelector('.advanced-filters > summary').textContent = rangeCount ? `篩選（${rangeCount}）` : '篩選';
+    }
     const excluded=filtered.filter(isCollapsedExcluded).length;
     $('loaded-range').textContent=active.length?`符合篩選 ${filtered.length} 個${excluded?`，其中 ${excluded} 個為已排除候選`:''}`:'';
   }
@@ -702,7 +714,9 @@
     const regular=filtered.filter(item=>!isCollapsedExcluded(item)), excluded=filtered.filter(isCollapsedExcluded), localFilterActive=$('search').value.trim()!==''||['mz-min','mz-max','rt-min','rt-max'].some(id=>$(id).value!==''), showExcluded=state.excludedOpen||localFilterActive;
     listed=showExcluded?[...regular,...excluded]:regular;
     if(!listed.some(i=>i.id===state.id)&&(state.id||selectFallback)){state.id=listed[0]?.id;reset();}
-    $('list-count').textContent=`${filtered.length} / ${items.length} 筆`;
+    $('list-count').textContent=nlReview
+      ? `${filtered.length === items.length ? items.length : `${filtered.length} / ${items.length}`} 筆${Number(fields.RUN_TOTAL) !== items.length ? `（全批 ${fields.RUN_TOTAL}）` : ''}`
+      : `${filtered.length} / ${items.length} 筆`;
     const recordButton=item=>{const nl=item.delta_mass?.neutral_losses?.length;return `<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${breakable(itemTitle(item))}</span>${nl?'':`<span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span>`}</div><div class="record-meta">${nl?'':`${itemName(item)} · `}m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}</div><div class="record-reason">${esc(reviewReason(item,true)||'未記錄判定說明')}</div></button>`;};
     const excludedGroup=excluded.length?`<section class="excluded-group"><button type="button" class="excluded-toggle" data-excluded-toggle aria-expanded="${showExcluded}" ${localFilterActive?'disabled title="篩選結果會保持展開"':''}><span>已排除候選</span><span>${excluded.length} 筆 ${showExcluded?'▾':'▸'}</span></button>${showExcluded?`<div class="excluded-items">${excluded.map(recordButton).join('')}</div>`:''}</section>`:'';
     setHTML($('record-list'),regular.map(recordButton).join('')+excludedGroup||'<p class="empty-state">這份報告沒有符合的項目。請清除篩選條件。</p>');
