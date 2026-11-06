@@ -346,7 +346,7 @@ the entire forecast in raw RT, without mixing coordinate systems. Saved frozen
 
 ### Decide membership
 
-[Final grouping](../../xic_extractor/alignment/feature_membership_inference.py)
+[Final grouping](../../xic_extractor/alignment/feature_membership_inference/finalization.py)
 selects a feasible complete configuration rather than withdrawing a choice
 because another one is close. This policy applies to Untargeted final/regroup
 membership, not bootstrap or Targeted selection. Backfill admission applies the
