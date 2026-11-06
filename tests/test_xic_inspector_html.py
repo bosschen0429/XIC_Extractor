@@ -12,6 +12,7 @@ import pytest
 
 from tests.xic_inspector_html_fixtures import (
     _evaluate_report_functions,
+    build_origin_curve_payload,
 )
 from xic_inspector.rendering.html_builder import (
     MAX_HTML_SIZE_BYTES,
@@ -23,36 +24,7 @@ from xic_inspector.rendering.html_builder import (
 
 @pytest.fixture
 def origin_curve_payload() -> dict:
-    kinds = ["discovery_support", "reacquired_support", "backfill_support"]
-    labels = ["初始探索支持", "重新擷取支持", "Backfill（回填）支持"]
-    samples = [{"id": f"S{i}", "label": f"Sample {i}"} for i in range(3)]
-    rows = [
-        {
-            "sample_id": f"S{i}",
-            "support_origin": {
-                "kind": kind,
-                "label": labels[i],
-                "capture_refs": [f"curve-{i}"],
-            },
-        }
-        for i, kind in enumerate(kinds)
-    ]
-    curves = [
-        {
-            "sample_id": f"S{i}",
-            "evidence_ref": f"curve-{i}",
-            "raw_rts": [1.0, 1.1, 1.2],
-            "raw_intensities": [0.0, 10.0 + i, 0.0],
-            "processed_curves": [
-                {"kind": "smoothed", "intensities": [0.0, 8.0 + i, 0.0]}
-            ],
-        }
-        for i in range(3)
-    ]
-    return {
-        "samples": samples,
-        "items": [{"id": "group", "kind": "group", "samples": rows, "curves": curves}],
-    }
+    return build_origin_curve_payload()
 
 
 def test_support_origin_styles_fixture_curves_in_both_views(

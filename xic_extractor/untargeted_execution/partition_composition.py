@@ -137,6 +137,11 @@ class UntargetedBatchGroupingPreparation:
             )
         )
 
+    @property
+    def frozen_rt_frame(self) -> SampleRtFrame | None:
+        """The final batch map retained for persisted review consumers."""
+        return self._rt_frame
+
     def finalize_grouping(
         self,
         batch: UntargetedPartitionInputs,

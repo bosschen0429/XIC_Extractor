@@ -308,6 +308,7 @@ def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_v
     assert curves["source-s1"]["integration"]["raw_apex_rt_min"] == 6.1
     assert curves["source-s1"]["processed_curves"][-1] == {
         "kind": "positive_signal",
+        "aligned_rts": [4, 5, 6, 7],
         "rts": [4, 5, 6, 7],
         "intensities": [0, 3, 6, 0],
     }
@@ -439,3 +440,86 @@ def test_saved_bundle_requires_complete_trace_fields(tmp_path, change):
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(bundle_source.CurveBundleError, match="rerun"):
         read_curve_bundle(path)
+
+
+def test_bundle_replays_final_graded_rt_for_each_sample_and_signal(tmp_path):
+    from xic_extractor.alignment.sample_rt_calibration import (
+        BatchRtCalibration,
+        RtCalibrationPolicy,
+        RtEstimateSupport,
+        SampleRtCalibration,
+    )
+    from xic_extractor.rt_calibration_codec import rt_calibration_payload
+
+    def sample(stem, knots, shift):
+        return SampleRtCalibration(
+            stem,
+            "calibrated" if knots else "insufficient_anchors",
+            knots,
+            None,
+            None,
+            "unmeasured",
+            estimate_support=RtEstimateSupport((5.0, 6.0), shift, 0.1, 0.01),
+        )
+
+    # Independently chosen piecewise maps; their endpoints deliberately differ
+    # from the global median to distinguish endpoint from median extrapolation.
+    samples = {
+        "sample-one": sample("sample-one", ((5.0, 6.0), (6.0, 8.0)), 1.5),
+        "sample-two": sample("sample-two", ((5.0, 4.0), (6.0, 4.5)), -1.25),
+        "median-only": sample("median-only", (), 0.25),
+    }
+    calibration = BatchRtCalibration(
+        RtCalibrationPolicy(), (), samples, None, None, None
+    )
+    base = _fixture_bundle().transitions[0]
+    traces = base.traces + tuple(
+        replace(base.traces[0], trace_id=stem, sample_id=stem, sample_label=stem)
+        for stem in ("median-only", "unavailable")
+    )
+    bundle = CurveBundle(
+        (replace(base, traces=traces),),
+        sample_rt_calibration=rt_calibration_payload(calibration),
+        injection_order={"sample-one": 8, "sample-two": 3, "median-only": 6},
+    )
+    path = tmp_path / "aligned.json"
+    write_curve_bundle(bundle, path)
+    payload = prepare_report(path, SelectionRequest()).payload
+    curves = {c["sample_id"]: c for c in payload["items"][0]["curves"]}
+    # Raw RTs [4,5,6,7], y=2*x-4 / 0.5*x+1.5 inside [5,6];
+    # outer coordinates retain each nearest endpoint offset.
+    expected = {
+        "sample-1": [5, 6, 8, 9],
+        "sample-2": [3, 4, 4.5, 5.5],
+        "median-only": [4.25, 5.25, 6.25, 7.25],
+        "unavailable": [4, 5, 6, 7],
+    }
+    for sid, rts in expected.items():
+        curve = curves[sid]
+        assert list(curve["raw_rts"]) == [4, 5, 6, 7]
+        assert curve["aligned_rts"] == pytest.approx(rts)
+        assert curve["aligned_bound_left_rt"] == pytest.approx(rts[0])
+        assert curve["aligned_apex_rt"] == pytest.approx(rts[2])
+        assert curve["aligned_bound_right_rt"] == pytest.approx(rts[3])
+        for processed in curve["processed_curves"]:
+            assert processed["aligned_rts"] == pytest.approx(rts)
+    assert curves["sample-1"]["rt_alignment_methods"] == ["boundary_shift", "loess"]
+    assert curves["sample-2"]["rt_alignment_methods"] == ["boundary_shift", "loess"]
+    assert curves["median-only"]["rt_alignment_methods"] == ["median_shift"]
+    assert curves["unavailable"]["rt_alignment_methods"] == ["raw_fallback"]
+    assert "原始 RT" in curves["unavailable"]["rt_alignment_label"]
+    assert payload["summary"]["injection_order"] == bundle.injection_order
+
+
+def test_generic_bundle_without_alignment_context_remains_readable(tmp_path):
+    from dataclasses import asdict
+
+    payload = asdict(_fixture_bundle())
+    payload.pop("sample_rt_calibration")
+    payload.pop("injection_order")
+    path = tmp_path / "portable.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    bundle = read_curve_bundle(path)
+    assert bundle.sample_rt_calibration is None
+    assert bundle.injection_order == {}
+    assert bundle.transitions == _fixture_bundle().transitions

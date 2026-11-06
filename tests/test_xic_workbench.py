@@ -424,6 +424,7 @@ def test_http_open_explains_unreadable_report_in_plain_language(tmp_path):
         status, body, _ = request("/api/open", {"source": str(report)})
     assert status == 400
     assert body["error"].startswith("無法讀取這份結果")
+    assert "重新執行 Alignment" in body["error"]
     assert body["detail"]
 
 

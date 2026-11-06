@@ -554,3 +554,16 @@ the other topics:
   [Untargeted Discovery](../user/untargeted-discovery.md),
   [Diagnostics Index](../../tools/diagnostics/INDEX.md),
   [Workbench and review](workbench.md).
+
+### Persisted RT replay
+
+Explanation summaries retain the final frozen batch `sample_rt_calibration`,
+including fitted knots and distinct qualified observation positions with their
+`estimate_support`. The bootstrap `known_istd_reference` retains measured identity
+provenance and target snapshots, not a second display calibration. Inspector and
+Workbench replay the same estimate owner without refitting: `loess` within the
+fit, continuous endpoint `boundary_shift` outside it, and qualified
+`median_shift` for samples without a curve. Only samples with no estimate fall
+back to raw RT, with an explicit label. This changes display coordinates, not
+measured signal, area, grouping or quantification. Injection order is preserved
+separately. Obsolete explanation layouts require rerunning Alignment.

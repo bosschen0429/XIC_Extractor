@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import statistics
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable
@@ -52,6 +51,29 @@ class CurveAcquisitionCancelled(Exception):
     """The caller cancelled diagnostic curve acquisition."""
 
 
+def _saved_xic_query(observation: dict[str, Any], candidate_id: str | None):
+    """Validate persisted replay coordinates once at the RAW acquisition boundary."""
+    for field in ("mz", "ppm", "rt_apex_min"):
+        value = observation.get(field)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value < 0
+            or (field != "rt_apex_min" and value == 0)
+        ):
+            raise ExplanationError(
+                "檢閱資料缺少有效的定量擷取條件；請重新執行 Alignment。"
+            )
+    return {
+        "candidate_id": candidate_id,
+        "mz": observation["mz"],
+        "ppm": observation["ppm"],
+        "rt": observation["rt_apex_min"],
+        "group_position": observation.get("group_position", False),
+    }
+
+
 def export_explanation_curves(
     report: Path,
     output: Path,
@@ -61,7 +83,6 @@ def export_explanation_curves(
     candidate_id: str | None = None,
     group_id: str | None = None,
     padding_min: float = 0.5,
-    ppm: float = 5.0,
     sample_ids: tuple[str, ...] = (),
     is_cancelled: Callable[[], bool] | None = None,
     on_progress: Callable[[int, int, str], None] | None = None,
@@ -76,8 +97,8 @@ def export_explanation_curves(
         raise ExplanationError(
             "Choose exactly one candidate ID or group ID for curve export"
         )
-    if not math.isfinite(padding_min + ppm) or padding_min <= 0 or ppm <= 0:
-        raise ExplanationError("Curve padding and ppm must be positive and finite")
+    if not math.isfinite(padding_min) or padding_min <= 0:
+        raise ExplanationError("Curve padding must be positive and finite")
     if output.resolve() == report.resolve() or output.exists():
         raise FileExistsError(f"Curve output must be a new file: {output}")
 
@@ -98,6 +119,15 @@ def export_explanation_curves(
     selected: dict[tuple[str, str], dict[str, Any]] = {}
     for cid in candidate_ids:
         detail = read_alignment_explanation(report, candidate_id=cid)
+        if group_id is not None:
+            for group in detail["records"].get("final_groups", []):
+                if group["feature_id"] != group_id:
+                    continue
+                for observation in group["xic_extractions"]:
+                    sid = observation["sample_key"]
+                    oid = observation["physical_peak_key"] or "group-position"
+                    selected[sid, oid] = _saved_xic_query(observation, None)
+            continue
         for candidate in detail["candidates"]:
             sid = candidate["sample_key"]
             terminals = [
@@ -105,45 +135,18 @@ def export_explanation_curves(
                 for terminal in detail["records"].get("terminal_subjects", [])
                 if terminal["sample_key"] == sid and terminal["candidate_id"] == cid
             ]
-            allowed = None
-            if group_id is not None:
-                allowed = {
-                    oid
-                    for group in detail["records"].get("final_groups", [])
-                    if group["feature_id"] == group_id
-                    for member in group["member_subjects"]
-                    if member["sample_key"] == sid
-                    for oid in member["physical_peak_keys"]
-                }
             for terminal in terminals:
                 for observation in terminal.get("observations", []):
                     oid = observation["physical_peak_key"]
-                    if allowed is not None and oid not in allowed:
-                        continue
-                    selected[sid, oid] = {
-                        "candidate_id": cid,
-                        "mz": candidate["precursor_mz"],
-                        "rt": observation["rt_apex_min"],
-                    }
+                    selected[sid, oid] = _saved_xic_query(observation, cid)
 
     observed_samples = {sid for sid, _ in selected}
     unobserved_samples = requested_samples - observed_samples
-    if unobserved_samples and (group_id is None or not selected):
+    if unobserved_samples:
         raise ExplanationError(
             "Requested samples have no retained apex coordinates for this selection: "
             f"{sorted(unobserved_samples)}. Diagnostic curves require an observed apex."
         )
-    if unobserved_samples:
-        # A requested group member without its own apex is read at the group's
-        # observed position, so a missed peak can still be seen; the trace says so.
-        position = {
-            "candidate_id": None,
-            "mz": statistics.median(o["mz"] for o in selected.values()),
-            "rt": statistics.median(o["rt"] for o in selected.values()),
-            "group_position": True,
-        }
-        for sid in unobserved_samples:
-            selected[sid, "group-position"] = position
     if requested_samples:
         selected = {
             key: observation
@@ -206,7 +209,9 @@ def export_explanation_curves(
                 _check_cancel(is_cancelled)
                 lower = max(0.0, observation["rt"] - padding_min)
                 upper = observation["rt"] + padding_min
-                rt, intensity = raw.extract_xic(observation["mz"], lower, upper, ppm)
+                rt, intensity = raw.extract_xic(
+                    observation["mz"], lower, upper, observation["ppm"]
+                )
                 prepared = prepare_physical_signal(
                     rt, intensity, profile=profile
                 ).prepared
@@ -220,7 +225,7 @@ def export_explanation_curves(
                         role="diagnostic_reacquisition",
                         raw_identity=expectation.source.acquisition_source_id,
                         mz=observation["mz"],
-                        ppm=ppm,
+                        ppm=observation["ppm"],
                         extraction_rt_window=(lower, upper),
                         producer="explanation_selected_xic",
                         producer_version="1",
@@ -265,7 +270,9 @@ def export_explanation_curves(
                 },
                 traces=tuple(traces),
             ),
-        )
+        ),
+        sample_rt_calibration=summary["sample_rt_calibration"],
+        injection_order=summary["injection_order"],
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     _check_cancel(is_cancelled)

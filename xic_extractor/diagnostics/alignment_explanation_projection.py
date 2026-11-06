@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence, Siz
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from statistics import median
 from typing import TYPE_CHECKING, Any
 
 from xic_extractor.alignment.cross_sample.neighborhood_graph import (
@@ -28,6 +29,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_batch_from_request,
 )
 from xic_extractor.peak_detection.traces import Trace
+from xic_extractor.rt_calibration_codec import rt_calibration_payload
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.config import AlignmentConfig
@@ -46,6 +48,16 @@ if TYPE_CHECKING:
 
 def _fields(value: Any, *names: str) -> dict[str, Any]:
     return {name: getattr(value, name) for name in names}
+
+
+def _review_xic_coordinates(ref: Any) -> dict[str, Any]:
+    """Retain the actual physical query, not the candidate's MS2 evidence mass."""
+    return {
+        "physical_peak_key": ref.content.physical_peak_key,
+        "rt_apex_min": ref.content.integration.rt_apex_min,
+        "mz": ref.content.mz,
+        "ppm": ref.generation_provenance.query_ppm_tol,
+    }
 
 
 def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
@@ -579,7 +591,11 @@ def prepare_alignment_explanation(
                 emit_assessment(assessment)
 
         def emit_group(
-            stage: str, group: Any, methods: set[str], feature_id: str | None = None
+            stage: str,
+            group: Any,
+            methods: set[str],
+            feature_id: str | None = None,
+            xic_extractions: Sequence[dict[str, Any]] = (),
         ) -> None:
             related = set()
             if stage == "initial_groups":
@@ -619,6 +635,8 @@ def prepare_alignment_explanation(
                     for member in group.member_subjects
                 ],
             }
+            if stage == "final_groups":
+                group_payload["xic_extractions"] = list(xic_extractions)
             inference_basis = (
                 group.inference_basis
                 if isinstance(group, CrossSamplePeakGroupHypothesis)
@@ -658,10 +676,7 @@ def prepare_alignment_explanation(
                         hypothesis_id=hypothesis.hypothesis_id,
                         physical_peak_keys=physical_ids,
                         observations=[
-                            {
-                                "physical_peak_key": locate(ref.content),
-                                "rt_apex_min": ref.content.integration.rt_apex_min,
-                            }
+                            _review_xic_coordinates(ref)
                             for ref in hypothesis.peak_observation_refs
                         ],
                     )
@@ -687,12 +702,101 @@ def prepare_alignment_explanation(
                 row_count += 1
                 matrix_row_count += row.route.destination == "matrix"
                 feature_ids[row.group.group_hypothesis_id] = feature_id_label(row_count)
+            xic_by_group: dict[str, list[dict[str, Any]]] = defaultdict(list)
+            context_by_group = {
+                cell.group_hypothesis_id: cell.effective_cells[0].group_context
+                for cell in core.cell_observations
+                if cell.effective_cells
+            }
+            frame = completed.sample_rt_frame
+            sample_stems = {
+                sample.identity.sample_key: sample.metadata.raw_stem
+                for sample in samples.values()
+            }
+            group_positions = {}
+            for group in core.final_population:
+                peaks = [
+                    peak
+                    for member in group.member_subjects
+                    for peak in member.physical_peaks
+                ]
+                raw_positions = [peak.integration.rt_apex_min for peak in peaks]
+                common_positions = [
+                    estimate.rt_min
+                    for peak in peaks
+                    if frame is not None
+                    and (
+                        estimate := frame.estimate_rt(
+                            sample_stems[peak.sample_key], peak.integration.rt_apex_min
+                        )
+                    )
+                    is not None
+                ]
+                if raw_positions:
+                    group_positions[group.group_hypothesis_id] = (
+                        median(raw_positions),
+                        median(common_positions) if common_positions else None,
+                    )
+            for final_cell in core.cell_observations:
+                refs = {
+                    ref.content.physical_peak_key: ref
+                    for ref in (
+                        *final_cell.direct_observations,
+                        *(
+                            ref
+                            for hypothesis in final_cell.direct_hypotheses
+                            for ref in hypothesis.peak_observation_refs
+                        ),
+                    )
+                }
+                for ref in refs.values():
+                    xic_by_group[final_cell.group_hypothesis_id].append(
+                        {
+                            "sample_key": final_cell.sample_key,
+                            **_review_xic_coordinates(ref),
+                        }
+                    )
+                if refs:
+                    continue
+                # Empty cells remain inspectable at the recorded physical group
+                # position. This is explicitly diagnostic, not an invented peak.
+                context = (
+                    final_cell.effective_cells[0].group_context
+                    if final_cell.effective_cells
+                    else context_by_group.get(final_cell.group_hypothesis_id)
+                )
+                if context is None:
+                    continue
+                position = group_positions.get(final_cell.group_hypothesis_id)
+                if position is None:
+                    continue
+                raw_position, common_position = position
+                estimate = (
+                    frame.estimate_observed_rt(
+                        final_cell.canonical_sample.metadata.raw_stem, common_position
+                    )
+                    if frame is not None and common_position is not None
+                    else None
+                )
+                xic_by_group[final_cell.group_hypothesis_id].append(
+                    {
+                        "sample_key": final_cell.sample_key,
+                        "physical_peak_key": None,
+                        "rt_apex_min": estimate.rt_min
+                        if estimate is not None
+                        else raw_position,
+                        "mz": context.group.family_center_mz,
+                        "ppm": context.method_subject.precursor_tolerance_ppm,
+                        "group_position": True,
+                    }
+                )
             for group in core.final_population:
                 emit_group(
                     "final_groups",
                     group,
                     methods,
                     feature_ids.get(group.group_hypothesis_id),
+                    xic_by_group[group.group_hypothesis_id],
                 )
             risks_by_group_sample: dict[tuple[str, str], list[dict[str, Any]]] = (
                 defaultdict(list)
@@ -856,8 +960,22 @@ def prepare_alignment_explanation(
                     )
                 },
             }
+            frame = completed.sample_rt_frame
+            calibration = frame.calibration_for_snapshot if frame is not None else None
+            summary["sample_rt_calibration"] = (
+                rt_calibration_payload(calibration) if calibration is not None else None
+            )
+            summary["injection_order"] = {
+                stem: sample.metadata.injection_order
+                for stem, sample in samples.items()
+                if sample.metadata.injection_order is not None
+            }
             summary["known_istd_reference"] = (
-                dict(known_istd_reference_provenance)
+                {
+                    key: value
+                    for key, value in known_istd_reference_provenance.items()
+                    if key != "calibration"
+                }
                 if known_istd_reference_provenance is not None
                 else None
             )

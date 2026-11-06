@@ -86,8 +86,9 @@ member's Discovery candidate carries an apex MS1 reading (`ms1_apex_mz`), the
 row reports the mean of those readings instead
 (`center_mz_basis = discovery_ms1_apex_mean`). An inferred precursor's
 observed m/z is product + loss and can sit 15–20 ppm from the MS1 ion; the
-reading changes only the reported value, not grouping, traces, Backfill or
-cell values.
+physical MS1 reading supplies Alignment's XIC extraction and grouping mass;
+Backfill uses the frozen group's physical mass. Review XICs replay each
+observation's saved extraction mass and ppm tolerance, not its MS2 evidence key.
 
 `feature_id` is a report-scoped group label, not canonical group identity;
 the Matrix itself carries no ID column. A change to public keys, filenames,

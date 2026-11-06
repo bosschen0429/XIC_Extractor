@@ -699,6 +699,7 @@ class UntargetedPartitionPipelineAdapter:
             application_result=application_result,
             store=store,
             retain_partition_spool=self._retain_partition_spool,
+            sample_rt_frame=self._batch_preparation.frozen_rt_frame,
         )
 
 

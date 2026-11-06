@@ -8,13 +8,11 @@ records.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
 from xic_extractor.alignment_explanation.reader import (
     ExplanationMetadata,
     open_review_cells,
@@ -48,6 +46,7 @@ from xic_inspector.selection.canonical import (
 from xic_inspector.selection.strata import classify_scoped_stratum
 from xic_inspector.sources import cid_nl_presentation as presentation
 from xic_inspector.sources import cid_nl_relationships as relationships
+from xic_inspector.sources.rt_replay import align_curve, read_calibration
 
 
 def read_summary(path: str | Path) -> dict[str, Any]:
@@ -92,14 +91,13 @@ class CidNlSource:
             tuple[str, str], dict[RecordKey, dict[str, Any]]
         ] = {}
         self.related_items: dict[str, list[tuple[CanonicalItem, tuple[str, ...]]]] = {}
-        self.calibration_by_sample_stem: dict[str, tuple[tuple[float, float], ...]] = {}
 
         for sample in self.summary.get("samples", []):
             sid = sample.get("sample_key")
             sample_stem = sample.get("sample_stem")
             if isinstance(sid, str) and isinstance(sample_stem, str):
                 self.sample_labels[sid] = sample_stem
-        self.calibration_by_sample_stem = self._read_calibration(self.summary)
+        self.rt_calibration = read_calibration(self.summary["sample_rt_calibration"])
         for (_, sid), candidate in self.candidates.items():
             sample_stem = candidate.get("sample_stem")
             if isinstance(sample_stem, str) and sample_stem:
@@ -163,90 +161,6 @@ class CidNlSource:
                 self.related_items[item.serialized_ref]
             )
         return sorted(items, key=lambda item: item.sort_key)
-
-    @staticmethod
-    def _read_calibration(summary) -> dict[str, tuple[tuple[float, float], ...]]:
-        reference = summary.get("known_istd_reference")
-        if reference is None:
-            return {}
-        if not isinstance(reference, dict):
-            raise ExplanationError("known_istd_reference must be an object")
-        calibration = reference.get("calibration")
-        if calibration is None:
-            return {}
-        if not isinstance(calibration, dict):
-            raise ExplanationError("known_istd_reference.calibration must be an object")
-        if calibration.get("schema_version") not in {
-            "known_istd_calibration",
-            "known_istd_calibration_duration_search",
-        }:
-            raise ExplanationError("Invalid known ISTD calibration schema_version")
-        expected = {
-            "rt_unit": "minute",
-            "interpolation": "piecewise_linear",
-            "extrapolation": "unavailable",
-        }
-        for field, value in expected.items():
-            if calibration.get(field) != value:
-                actual = calibration.get(field)
-                raise ExplanationError(
-                    f"Invalid known ISTD calibration {field}: {actual!r}"
-                )
-        samples = calibration.get("samples")
-        if not isinstance(samples, list):
-            raise ExplanationError("known ISTD calibration samples must be a list")
-        result = {}
-        for sample in samples:
-            if not isinstance(sample, dict):
-                raise ExplanationError(
-                    "known ISTD calibration sample must be an object"
-                )
-            stem = sample.get("sample_stem")
-            status = sample.get("status")
-            if not isinstance(stem, str) or not stem or stem in result:
-                raise ExplanationError("known ISTD calibration sample_stem is invalid")
-            if status == "unavailable":
-                continue
-            if status != "available":
-                raise ExplanationError(
-                    "known ISTD calibration sample status is invalid"
-                )
-            raw_knots = sample.get("knots")
-            domain = sample.get("domain_rt_min")
-            if not isinstance(raw_knots, list) or len(raw_knots) < 2:
-                raise ExplanationError(
-                    "available known ISTD calibration needs two knots"
-                )
-            knots = []
-            for knot in raw_knots:
-                if not isinstance(knot, list) or len(knot) != 2:
-                    raise ExplanationError(
-                        "known ISTD calibration knot must be an RT pair"
-                    )
-                x, y = knot
-                if (
-                    isinstance(x, bool)
-                    or isinstance(y, bool)
-                    or not isinstance(x, (int, float))
-                    or not isinstance(y, (int, float))
-                    or not math.isfinite(x)
-                    or not math.isfinite(y)
-                ):
-                    raise ExplanationError(
-                        "known ISTD calibration knots must be finite"
-                    )
-                knots.append((float(x), float(y)))
-            if any(
-                a[0] >= b[0] or a[1] > b[1]
-                for a, b in zip(knots, knots[1:], strict=False)
-            ):
-                raise ExplanationError("known ISTD calibration knots must be monotone")
-            if domain != [knots[0][0], knots[-1][0]]:
-                raise ExplanationError(
-                    "known ISTD calibration domain does not match knots"
-                )
-            result[stem] = tuple(knots)
-        return result
 
     def _selection_item(
         self, kind, identifier, gid, keys, scope, payload
@@ -983,44 +897,9 @@ class CidNlSource:
             "integration": integration,
             "provenance": payload.get("provenance"),
         }
-        sample_stem = self.sample_labels.get(payload.get("sample_id"))
-        knots = (
-            self.calibration_by_sample_stem.get(sample_stem)
-            if sample_stem is not None
-            else None
+        align_curve(
+            result,
+            self.sample_labels.get(payload.get("sample_id")),
+            self.rt_calibration,
         )
-        if knots:
-            aligned_rts = [interpolate_calibrated_rt_min(value, knots) for value in rts]
-            left = integration.get("rt_left_min")
-            right = integration.get("rt_right_min")
-            aligned_left = (
-                interpolate_calibrated_rt_min(left, knots)
-                if isinstance(left, (int, float))
-                else None
-            )
-            aligned_right = (
-                interpolate_calibrated_rt_min(right, knots)
-                if isinstance(right, (int, float))
-                else None
-            )
-            apex = integration.get("rt_apex_min", integration.get("apex_rt_min"))
-            aligned_apex = (
-                interpolate_calibrated_rt_min(apex, knots)
-                if isinstance(apex, (int, float))
-                else None
-            )
-            if (
-                aligned_rts
-                and all(value is not None for value in aligned_rts)
-                and all(
-                    value is not None
-                    for value in (aligned_left, aligned_right, aligned_apex)
-                )
-            ):
-                result.update(
-                    aligned_rts=aligned_rts,
-                    aligned_bound_left_rt=aligned_left,
-                    aligned_bound_right_rt=aligned_right,
-                    aligned_apex_rt=aligned_apex,
-                )
         return result

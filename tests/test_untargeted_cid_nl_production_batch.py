@@ -205,6 +205,33 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
             rows = list(csv.DictReader(handle, delimiter="\t"))
         assert rows and all(row["Missing"] == "" for row in rows)
         assert all(float(rows[0][stem]) > 0 for stem in stems[:4])
+        from xic_extractor.alignment_explanation.reader import (
+            read_alignment_explanation,
+        )
+        from xic_extractor.diagnostics.alignment_explanation_projection import (
+            write_alignment_explanation,
+        )
+
+        report = write_alignment_explanation(
+            tmp_path / "no-input-review.sqlite",
+            completed=completed,
+            candidates_by_sample=candidates_by_sample,
+            matrix_path=destination,
+            alignment_config=alignment_config,
+        )
+        detail = read_alignment_explanation(
+            report, candidate_id=selected_candidates[stems[0]].candidate_id
+        )
+        missing_queries = [
+            query
+            for group in detail["records"]["final_groups"]
+            for query in group["xic_extractions"]
+            if query["sample_key"] == missing.sample_key
+        ]
+        assert len(missing_queries) == 1
+        assert missing_queries[0]["group_position"] is True
+        assert missing_queries[0]["rt_apex_min"] == pytest.approx(7.98, abs=0.02)
+        assert missing_queries[0]["ppm"] == settings.precursor_mz_tolerance_ppm
 
 
 def test_sample_job_builder_rejects_changed_request_bound_inputs(

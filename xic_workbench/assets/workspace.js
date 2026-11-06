@@ -735,7 +735,6 @@ window.XicUi = (() => {
     $("group-curve-settings").hidden = targeted;
     $("sample-count").hidden = targeted;
     $("targeted-curve-help").hidden = !targeted;
-    $("ppm").closest("label").hidden = targeted;
     const selectedSample = $("target-sample").value;
     $("target-sample").replaceChildren(new Option("全部樣本", ""), ...(page.all_samples || page.samples).map(s => new Option(s.label, s.id)));
     $("target-sample").value = selectedSample;
@@ -1069,7 +1068,6 @@ window.XicUi = (() => {
       sample_ids: [...state.samples],
       raw_dir: $("raw-dir").value,
       dll_dir: $("dll-dir").value,
-      ppm: Number($("ppm").value),
       padding_min: Number($("padding").value),
     };
     const key = JSON.stringify([state.detail.view_id, request]);
