@@ -56,7 +56,7 @@ from xic_extractor.untargeted_execution.acquisition_cache import (
     acquire_untargeted_trace_batch,
     bind_untargeted_acquisition_cache,
 )
-from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
+from xic_extractor.untargeted_execution.partition import cid_nl_sample_acquisition
 from xic_extractor.untargeted_execution.partition import execution as runtime_module
 from xic_extractor.untargeted_execution.partition import models as partition_models
 from xic_extractor.untargeted_execution.partition import workers as partition_workers
@@ -1255,14 +1255,16 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
         if job.method_subject == subjects[1] and job.sample.metadata.raw_stem == "S1"
     )
     acquired_candidates = []
-    real_acquire = cid_nl_acquisition.acquire_untargeted_cid_nl_sample_trace_batch
+    real_acquire = (
+        cid_nl_sample_acquisition.acquire_untargeted_cid_nl_sample_trace_batch
+    )
 
     def record_acquire(**kwargs):
         acquired_candidates.append((kwargs["sample"], kwargs["candidates"]))
         return real_acquire(**kwargs)
 
     monkeypatch.setattr(
-        cid_nl_acquisition,
+        cid_nl_sample_acquisition,
         "acquire_untargeted_cid_nl_sample_trace_batch",
         record_acquire,
     )

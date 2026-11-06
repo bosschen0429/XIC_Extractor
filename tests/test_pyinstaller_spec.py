@@ -156,7 +156,13 @@ from xic_extractor.untargeted_execution.partition.request import (
 from xic_extractor.untargeted_execution.partition.workers import (
     _SampleInitialWorkerRequest,
 )
-from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
+from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition import (
+    UntargetedCidNlBackfillTarget,
+)
+from xic_extractor.untargeted_execution.partition.cid_nl_raw_source import (
+    CidNlRawSource,
+)
+from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
     CidNlAcquisitionResult,
 )
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
@@ -195,6 +201,8 @@ installed_objects = {
     "build_partition_context": build_partition_context,
     "_SampleInitialWorkerRequest": _SampleInitialWorkerRequest,
     "CidNlAcquisitionResult": CidNlAcquisitionResult,
+    "UntargetedCidNlBackfillTarget": UntargetedCidNlBackfillTarget,
+    "CidNlRawSource": CidNlRawSource,
 }
 for public_name, public_object in installed_objects.items():
     module = sys.modules[public_object.__module__]

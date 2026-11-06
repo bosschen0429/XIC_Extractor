@@ -58,7 +58,7 @@ from xic_extractor.peak_detection.observations import mint_peak_observation_ref
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
+from xic_extractor.untargeted_execution.partition import cid_nl_backfill_acquisition
 from xic_extractor.untargeted_execution.partition import models as partition_models
 from xic_extractor.untargeted_execution.partition.execution import execute_partition
 from xic_extractor.untargeted_execution.partition.models import (
@@ -547,7 +547,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
     )
     opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     recovery_calls = []
-    acquire = cid_nl_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
+    acquire = cid_nl_backfill_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
 
     def acquire_recovery(**kwargs):
         recovery_calls.append(kwargs["sample"].metadata.raw_stem)
@@ -556,7 +556,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         return acquire(**kwargs)
 
     monkeypatch.setattr(
-        cid_nl_acquisition,
+        cid_nl_backfill_acquisition,
         "acquire_untargeted_cid_nl_backfill_trace_batch",
         acquire_recovery,
     )

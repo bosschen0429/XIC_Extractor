@@ -70,9 +70,11 @@ from xic_extractor.processing_identity import (
     ResolvedCanonicalSampleIdentity,
     resolve_request_acquisition_source,
 )
-from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
-    CidNlAcquisitionResult,
+from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition import (
     UntargetedCidNlBackfillAttemptResult,
+)
+from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
+    CidNlAcquisitionResult,
     _bounded_subject_candidates,
 )
 from xic_extractor.untargeted_execution.partition.request import (

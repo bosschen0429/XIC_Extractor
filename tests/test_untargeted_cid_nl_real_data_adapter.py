@@ -34,13 +34,17 @@ from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
 )
-from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
-    CidNlAcquisitionError,
+from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition import (
     UntargetedCidNlBackfillTarget,
     acquire_untargeted_cid_nl_backfill_trace_batch,
+    backfill_untargeted_cid_nl_sample_subject,
+)
+from xic_extractor.untargeted_execution.partition.cid_nl_raw_source import (
+    CidNlAcquisitionError,
+)
+from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
     acquire_untargeted_cid_nl_sample_trace_batch,
     adapt_current_discovery_sample_subject,
-    backfill_untargeted_cid_nl_sample_subject,
 )
 
 
@@ -91,7 +95,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         issue_processing_attempt,
     )
     from xic_extractor.untargeted_execution.partition import (
-        cid_nl_acquisition as adapter,
+        cid_nl_sample_acquisition as adapter,
     )
 
     fixture = build_untargeted_cid_nl_no_raw_fixture(
@@ -683,7 +687,7 @@ def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     physical_records = {}
-    from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
+    from xic_extractor.untargeted_execution.partition import cid_nl_sample_acquisition
 
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
@@ -701,7 +705,7 @@ def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
     fixture = replace(
         fixture, owners=bind_physical_capture(fixture.owners, physical_records)
     )
-    resolve_relations = cid_nl_acquisition.resolve_cid_nl_method_relations
+    resolve_relations = cid_nl_sample_acquisition.resolve_cid_nl_method_relations
     successful_relations = []
 
     def fail_later_relation(**kwargs):
@@ -712,7 +716,9 @@ def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
         return resolved
 
     monkeypatch.setattr(
-        cid_nl_acquisition, "resolve_cid_nl_method_relations", fail_later_relation
+        cid_nl_sample_acquisition,
+        "resolve_cid_nl_method_relations",
+        fail_later_relation,
     )
     with pytest.raises(RuntimeError, match="later relation resolution failed"):
         adapt_current_discovery_sample_subject(

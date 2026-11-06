@@ -18,8 +18,10 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
-from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
+from xic_extractor.untargeted_execution.partition.cid_nl_raw_source import (
     CidNlAcquisitionError,
+)
+from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
     adapt_current_discovery_sample_subject,
 )
 from xic_extractor.untargeted_execution.partition.execution import execute_partition
