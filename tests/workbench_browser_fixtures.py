@@ -17,6 +17,7 @@ from xic_workbench.workspace import ReviewWorkspace
 
 @pytest.fixture(scope="module")
 def browser():
+    expect.set_options(timeout=5_000 * DEADLINE_SCALE)
     with sync_playwright() as playwright:
         # CI leaves this unset and uses the browser pinned by uv.lock.
         channel = os.environ.get("XIC_PLAYWRIGHT_CHANNEL")

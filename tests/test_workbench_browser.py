@@ -35,14 +35,11 @@ from xic_workbench.workspace import ReviewWorkspace
 pytestmark = pytest.mark.browser_e2e
 pytest_plugins = ("tests.browser_diagnostics",)
 
-EXPECT_TIMEOUT_MS = 5_000 * DEADLINE_SCALE
 # Background jobs include server work and polling before UI content is ready.
 # Keep content assertions at the expect deadline after this boundary.
 BACKGROUND_JOB_TIMEOUT_MS = 30_000 * DEADLINE_SCALE
 # A test thread holding a server request until the browser reaches a state.
 HANDSHAKE_TIMEOUT_S = 10 * DEADLINE_SCALE
-
-expect.set_options(timeout=EXPECT_TIMEOUT_MS)
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
