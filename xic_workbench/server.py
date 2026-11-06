@@ -32,6 +32,40 @@ _ASSETS = {
     "/assets/workspace.css": ("workspace.css", "text/css; charset=utf-8"),
     "/assets/analysis.html": ("analysis.html", "text/html; charset=utf-8"),
     "/assets/analysis.js": ("analysis.js", "text/javascript; charset=utf-8"),
+    "/assets/analysis_state.js": (
+        "analysis_state.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/assets/analysis_ui.js": ("analysis_ui.js", "text/javascript; charset=utf-8"),
+    "/assets/analysis_setup.js": (
+        "analysis_setup.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/assets/analysis_targeted.js": (
+        "analysis_targeted.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/assets/analysis_untargeted.js": (
+        "analysis_untargeted.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/assets/analysis_samples.js": (
+        "analysis_samples.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/assets/analysis_jobs.js": ("analysis_jobs.js", "text/javascript; charset=utf-8"),
+    "/assets/analysis_results.js": (
+        "analysis_results.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/assets/analysis_curation.js": (
+        "analysis_curation.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/assets/analysis_reader.js": (
+        "analysis_reader.js",
+        "text/javascript; charset=utf-8",
+    ),
     "/assets/analysis.css": ("analysis.css", "text/css; charset=utf-8"),
 }
 _EXAMPLES = {"/examples/targeted-method.xlsx", "/examples/targets.xlsx"}

@@ -498,6 +498,36 @@ def test_interactive_views_keep_original_sample_snapshots_and_export_lazily(
             assert len(rendered) == index
 
 
+def test_analysis_module_graph_is_served_with_javascript_mime(tmp_path):
+    from importlib.resources import files
+
+    with workbench_client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
+        status, html, _ = request("/")
+        assert status == 200
+        assert re.search(rb'<script\s+type="module"\s+src="/assets/analysis.js"', html)
+        pending = {"analysis.js"}
+        visited = set()
+        while pending:
+            name = pending.pop()
+            visited.add(name)
+            status, data, headers = request(f"/assets/{name}")
+            assert status == 200, name
+            assert headers["Content-Type"] == "text/javascript; charset=utf-8"
+            assert data == files("xic_workbench").joinpath("assets", name).read_bytes()
+            imports = set(re.findall(rb'from "\./([^"/]+\.js)"', data))
+            pending.update(
+                item.decode() for item in imports if item.decode() not in visited
+            )
+        # A misspelled entry/import must not make a smaller graph pass silently.
+        shipped_modules = {
+            asset.name
+            for asset in files("xic_workbench").joinpath("assets").iterdir()
+            if asset.name.startswith("analysis") and asset.name.endswith(".js")
+        }
+        assert visited == shipped_modules
+        assert request("/assets/../server.py")[0] == 404
+
+
 def test_view_endpoint_guards_unknown_ids_and_serves_only_packaged_assets(tmp_path):
     from importlib.resources import files
 
