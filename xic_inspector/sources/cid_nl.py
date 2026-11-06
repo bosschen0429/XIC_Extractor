@@ -1,8 +1,9 @@
 """Load and scope retained CID-NL evidence for the shared Inspector.
 
 The scientific reader owns payload validation. This adapter owns record kinds,
-exact link projection, scoped status interpretation and curve projection;
-cid_nl_presentation assembles the selected data's labels and readable records.
+scoped status interpretation and curve projection; cid_nl_relationships derives
+evidence relationships, while cid_nl_presentation assembles labels and readable
+records.
 """
 
 from __future__ import annotations
@@ -11,10 +12,9 @@ import math
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
-from xic_extractor.alignment_explanation.query import recorded_observations
 from xic_extractor.alignment_explanation.reader import (
     ExplanationMetadata,
     open_review_cells,
@@ -43,11 +43,11 @@ from xic_extractor.alignment_explanation.storage import (
 )
 from xic_inspector.selection.canonical import (
     CanonicalItem,
-    Witness,
     build_canonical_ref,
 )
 from xic_inspector.selection.strata import classify_scoped_stratum
 from xic_inspector.sources import cid_nl_presentation as presentation
+from xic_inspector.sources import cid_nl_relationships as relationships
 
 
 def read_summary(path: str | Path) -> dict[str, Any]:
@@ -83,9 +83,10 @@ class CidNlSource:
         self.attempt_id = self.summary.get("processing_attempt_id", "")
         self.records = metadata.records
         self.candidates = metadata.candidates
-        self.links: dict[tuple[str, str], set[tuple[str, str]]] = {}
-        self.record_links: dict[tuple[str, RecordKey], set[tuple[str, str]]] = {}
-        self.initial_edge_refs_by_member: dict[str, set[str]] = {}
+        self.links, self.record_links = relationships.index_record_links(metadata.links)
+        self.initial_edge_refs_by_member = relationships.index_member_edges(
+            self.records
+        )
         self.sample_labels: dict[str, str] = {}
         self.row_cell_decisions: dict[
             tuple[str, str], dict[RecordKey, dict[str, Any]]
@@ -103,13 +104,6 @@ class CidNlSource:
             sample_stem = candidate.get("sample_stem")
             if isinstance(sample_stem, str) and sample_stem:
                 self.sample_labels.setdefault(sid, sample_stem)
-        for edge_ref, edge in self.records.get("initial_edges", {}).items():
-            for field in ("left_subject_id", "right_subject_id"):
-                member_id = edge.get(field)
-                if isinstance(member_id, str):
-                    self.initial_edge_refs_by_member.setdefault(member_id, set()).add(
-                        cast(str, edge_ref)
-                    )
         for rid, fact in self.records.get("cell_decisions", {}).items():
             group_id = fact.get("feature_id")
             row_key_id = fact.get("feature_id")
@@ -117,11 +111,6 @@ class CidNlSource:
                 self.row_cell_decisions.setdefault((group_id, row_key_id), {})[rid] = (
                     fact
                 )
-        for cid, sid, kind, rid in metadata.links:
-            key = cid, sid
-            record = kind, rid
-            self.links.setdefault(key, set()).add(record)
-            self.record_links.setdefault(record, set()).add(key)
 
     def load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
         if self._compact_selection and not self._query_only:
@@ -145,13 +134,15 @@ class CidNlSource:
         for rid, payload in self.records.get("rows", {}).items():
             gid = payload.get("feature_id")
             row_groups.add(gid)
-            keys = self._linked("rows", rid)
+            keys = relationships.linked_candidates(self.record_links, "rows", rid)
             grouped.update(keys)
             item = build_item("row", rid, gid, keys, sample_ids, payload)
             items.append(item)
             item_keys[item.serialized_ref] = keys
         for gid, payload in self.records.get("final_groups", {}).items():
-            keys = self._linked("final_groups", gid)
+            keys = relationships.linked_candidates(
+                self.record_links, "final_groups", gid
+            )
             grouped.update(keys)
             if gid not in row_groups:
                 item = build_item("group", gid, gid, keys, sample_ids, payload)
@@ -162,50 +153,15 @@ class CidNlSource:
                 item = build_item("candidate", key[0], None, {key}, sample_ids, payload)
                 items.append(item)
                 item_keys[item.serialized_ref] = {key}
-        item_by_ref = {item.serialized_ref: item for item in items}
-        edge_links = {
-            edge_ref: self.record_links.get(("initial_edges", edge_ref), set())
-            for edge_ref in self.records.get("initial_edges", {})
-        }
-        item_refs_by_key: dict[tuple[str, str], set[str]] = {}
-        for item_ref, keys in item_keys.items():
-            for key in keys:
-                item_refs_by_key.setdefault(key, set()).add(item_ref)
-        peer_edges: dict[str, dict[str, set[str]]] = {
-            item_ref: {} for item_ref in item_keys
-        }
-        for edge_ref, linked_keys in edge_links.items():
-            participating_refs = {
-                item_ref
-                for key in linked_keys
-                for item_ref in item_refs_by_key.get(key, ())
-            }
-            for item_ref in participating_refs:
-                peer_refs = {
-                    peer_ref
-                    for key in linked_keys - item_keys[item_ref]
-                    for peer_ref in item_refs_by_key.get(key, ())
-                    if peer_ref != item_ref
-                }
-                for peer_ref in peer_refs:
-                    peer_edges[item_ref].setdefault(peer_ref, set()).add(
-                        cast(str, edge_ref)
-                    )
-        for item in items:
-            peers = peer_edges[item.serialized_ref]
-            ranked = sorted(
-                peers.items(),
-                key=lambda entry: (
-                    min(self._edge_priority(ref) for ref in entry[1]),
-                    min(entry[1]),
-                    entry[0],
-                ),
+        self.related_items.update(
+            relationships.related_items(
+                self.records, self.record_links, items, item_keys
             )
-            self.related_items[item.serialized_ref] = [
-                (item_by_ref[peer_ref], tuple(sorted(refs)))
-                for peer_ref, refs in ranked
-            ]
-            item.details["review_summary"]["related_group_count"] = len(ranked)
+        )
+        for item in items:
+            item.details["review_summary"]["related_group_count"] = len(
+                self.related_items[item.serialized_ref]
+            )
         return sorted(items, key=lambda item: item.sort_key)
 
     @staticmethod
@@ -292,54 +248,15 @@ class CidNlSource:
             result[stem] = tuple(knots)
         return result
 
-    def _edge_priority(self, edge_ref: str) -> int:
-        edge = self.records.get("initial_edges", {}).get(edge_ref, {})
-        evidence = edge.get("initial_evidence", {})
-        decision = evidence.get("decision")
-        return 0 if decision in {"blocked_edge", "split_edge", "split"} else 1
-
-    def _linked(self, kind: str, rid: RecordKey) -> set[tuple[str, str]]:
-        return set(self.record_links.get((kind, rid), ()))
-
-    def _witnesses(self, kind, identifier, gid, scoped) -> list[Witness]:
-        """Candidate/observation coordinates shared by selection and presentation."""
-        group = self.records.get("final_groups", {}).get(gid, {})
-        members_by_sample: dict[str, set[str]] = {}
-        for member in group.get("member_subjects", []):
-            members_by_sample.setdefault(member.get("sample_key"), set()).update(
-                member.get("physical_peak_keys", [])
-            )
-        witnesses: list[Witness] = []
-        for cid, sid in scoped:
-            candidate = self.candidates[cid, sid]
-            observations = recorded_observations(
-                candidate,
-                self.links.get((cid, sid), ()),
-                self.records,
-                members_by_sample.get(sid),
-            )
-            witnesses.extend(
-                Witness(
-                    sample_key=sid,
-                    candidate_id=cid,
-                    group_hypothesis_id=gid,
-                    row_key_id=identifier if kind == "row" else None,
-                    precursor_mz=candidate.get("precursor_mz"),
-                    rt_apex_min=observation.get("rt_apex_min"),
-                    observation_id=observation.get("physical_peak_key"),
-                    sample_stem=candidate.get("sample_stem"),
-                )
-                for observation in observations
-            )
-        return witnesses
-
     def _selection_item(
         self, kind, identifier, gid, keys, scope, payload
     ) -> CanonicalItem:
         """Reduce scoped facts once; never construct per-sample presentation."""
         scoped = sorted(key for key in keys if key[1] in scope)
         sample_ids = {sid for _, sid in scoped}
-        witnesses = self._witnesses(kind, identifier, gid, scoped)
+        witnesses = relationships.witnesses(
+            self.records, self.candidates, self.links, kind, identifier, gid, scoped
+        )
         if self._query_only:
             sample_ids.update(self._row_samples.get(identifier, set()) & scope)
             _, ref = build_canonical_ref(
@@ -438,7 +355,9 @@ class CidNlSource:
         fact_samples: dict[tuple[str, RecordKey], set[str]] = {}
         cell_bound_samples: set[str] = set()
         rid: RecordKey
-        witnesses = self._witnesses(kind, identifier, gid, scoped)
+        witnesses = relationships.witnesses(
+            self.records, self.candidates, self.links, kind, identifier, gid, scoped
+        )
         for cid, sid in scoped:
             linked = self.links.get((cid, sid), set())
             for record_kind, rid in linked:
@@ -859,7 +778,9 @@ class CidNlSource:
                 )
                 for sid in item.sample_ids
             ]
-            pair_support = self._internal_pair_support(item)
+            pair_support = relationships.internal_pair_support(
+                self.records, self.initial_edge_refs_by_member, self.sample_labels, item
+            )
             relationship_availability = (
                 "recorded"
                 if pair_support
@@ -879,7 +800,9 @@ class CidNlSource:
                         ].get("ms1_apex_mz")
                         for w in item.witnesses
                     },
-                    relationship_members=self._relationship_members(item),
+                    relationship_members=relationships.relationship_members(
+                        self.records, self.sample_labels, item
+                    ),
                     internal_pair_support=pair_support,
                     relationship_availability=relationship_availability,
                     related_groups=[
@@ -897,88 +820,6 @@ class CidNlSource:
                 )
             )
         return rendered
-
-    def _relationship_members(self, item: CanonicalItem) -> list[dict[str, Any]]:
-        group_id = item.details["source"].get("feature_id")
-        group = self.records.get("final_groups", {}).get(group_id, {})
-        return [
-            {
-                "subject_id": member["subject_id"],
-                "sample_id": member.get("sample_key"),
-                "sample_label": self._member_sample_label(member["subject_id"], member),
-            }
-            for member in group.get("member_subjects", [])
-            if isinstance(member, dict) and isinstance(member.get("subject_id"), str)
-        ]
-
-    def _internal_pair_support(self, item: CanonicalItem) -> list[dict[str, Any]]:
-        source = item.details["source"]
-        group_id = source.get("feature_id")
-        group = self.records.get("final_groups", {}).get(group_id, {})
-        members = group.get("member_subjects")
-        if not isinstance(members, list):
-            return []
-        members_by_id = {
-            member["subject_id"]: member
-            for member in members
-            if isinstance(member, dict) and isinstance(member.get("subject_id"), str)
-        }
-        edge_refs = {
-            edge_ref
-            for member_id in members_by_id
-            for edge_ref in self.initial_edge_refs_by_member.get(member_id, ())
-        }
-        projected = []
-        for edge_ref in sorted(edge_refs):
-            edge = self.records.get("initial_edges", {}).get(edge_ref, {})
-            left_id = edge.get("left_subject_id")
-            right_id = edge.get("right_subject_id")
-            if left_id not in members_by_id or right_id not in members_by_id:
-                continue
-            # Membership above admits only the string IDs collected from members.
-            left_id = cast(str, left_id)
-            right_id = cast(str, right_id)
-            disposition = edge.get("disposition")
-            if disposition not in {"eligible", "review_only"}:
-                continue
-            evidence = edge.get("initial_evidence")
-            evidence = evidence if isinstance(evidence, dict) else {}
-            projected.append(
-                {
-                    "edge_ref": edge_ref,
-                    "left_subject_id": left_id,
-                    "right_subject_id": right_id,
-                    "left_sample_label": self._member_sample_label(
-                        left_id, members_by_id[left_id]
-                    ),
-                    "right_sample_label": self._member_sample_label(
-                        right_id, members_by_id[right_id]
-                    ),
-                    "support_kind": (
-                        "direct" if disposition == "eligible" else "review_only"
-                    ),
-                    "disposition": disposition,
-                    "decision": evidence.get("decision"),
-                    "reason": evidence.get("reason"),
-                    "score": evidence.get("score"),
-                    "rt_basis": evidence.get("rt_basis"),
-                    "rt_raw_delta_sec": evidence.get("rt_raw_delta_sec"),
-                    "rt_drift_corrected_delta_sec": evidence.get(
-                        "rt_drift_corrected_delta_sec"
-                    ),
-                }
-            )
-        return projected
-
-    def _member_sample_label(self, member_id: str, member: dict[str, Any]) -> str:
-        sample_id = member.get("sample_key")
-        if isinstance(sample_id, str) and sample_id in self.sample_labels:
-            return self.sample_labels[sample_id]
-        for field in ("sample_label", "sample_stem", "label"):
-            label = member.get(field)
-            if isinstance(label, str) and label:
-                return label
-        return sample_id if isinstance(sample_id, str) and sample_id else member_id
 
     def _project_curves(self, item, raw_curves, captures):
         keys = {(w.candidate_id, w.sample_key) for w in item.witnesses}
@@ -1034,7 +875,9 @@ class CidNlSource:
                     continue
                 applies = any(
                     sid == sample_id
-                    for _candidate_id, sid in self._record_link_keys(item, record)
+                    for _candidate_id, sid in relationships.record_link_keys(
+                        self.links, item, record
+                    )
                 )
                 if applies:
                     refs.append(record["ref"])
@@ -1070,7 +913,7 @@ class CidNlSource:
                 item,
                 record,
                 available_refs,
-                scope=self._record_scope(item, record),
+                scope=relationships.record_scope(self.links, item, record),
                 sample_labels=self.sample_labels,
             )
             for record in item.details["records"]
@@ -1101,94 +944,19 @@ class CidNlSource:
                 existing["technical_refs"] + curve_record["technical_refs"]
             )
             readable[index] = curve_record
-        self._add_related_links(item, curves, readable)
-        return readable
-
-    def _add_related_links(
-        self,
-        item: CanonicalItem,
-        curves: list[dict[str, Any]],
-        readable: list[dict[str, Any]],
-    ) -> None:
-        records_by_ref = {record["ref"]: record for record in item.details["records"]}
-        targets = [
-            (record, self._record_link_keys(item, record))
-            for record in item.details["records"]
-            if record["kind"] in {"method_assessments", "initial_edges"}
-        ]
-        curves_by_ref = {
-            curve["evidence_ref"]: curve
-            for curve in curves
-            if curve.get("evidence_ref") is not None
-        }
-        for readable_record in readable:
-            ref = readable_record["ref"]
-            record = records_by_ref.get(ref)
-            if ref in curves_by_ref:
-                curve = curves_by_ref[ref]
-                sample_id = curve.get("sample_id")
-                source_keys = {
-                    (candidate_id, sample_id)
-                    for candidate_id in curve.get("candidate_ids", [])
-                    if sample_id is not None
-                }
-            elif record is not None and record["kind"] == "cell_decisions":
-                source_keys = self._record_link_keys(item, record)
-            else:
-                continue
-            related = []
-            for target, target_keys in targets:
-                if not source_keys.intersection(target_keys):
-                    continue
-                related.append(
-                    presentation.related_record_link(target["kind"], target["ref"])
-                )
-            readable_record["links"] = presentation.dedupe_entries(
-                readable_record["links"] + related
-            )
-
-    def _record_scope(
-        self, item: CanonicalItem, record: dict[str, Any]
-    ) -> tuple[list[str], list[str]]:
-        item_keys = self._item_keys(item)
-        linked_keys = self._record_link_keys(item, record)
-        facts = record["facts"]
-        recorded_sample = facts.get("sample_key", facts.get("sample_id"))
-        if recorded_sample is not None:
-            sample_ids = [recorded_sample] if recorded_sample in item.sample_ids else []
-            linked_keys = {key for key in linked_keys if key[1] == recorded_sample}
-        else:
-            sample_ids = sorted({sample_id for _, sample_id in linked_keys})
-        recorded_candidate = facts.get("candidate_id")
-        candidate_ids = {candidate_id for candidate_id, _ in linked_keys}
-        if recorded_candidate is not None and any(
-            candidate_id == recorded_candidate
-            and (recorded_sample is None or sample_id == recorded_sample)
-            for candidate_id, sample_id in item_keys
-        ):
-            candidate_ids.add(recorded_candidate)
-        return sample_ids, sorted(candidate_ids)
-
-    @staticmethod
-    def _item_keys(item: CanonicalItem) -> set[tuple[str, str]]:
-        return {
-            (witness.candidate_id, witness.sample_key) for witness in item.witnesses
-        }
-
-    def _record_link_keys(
-        self, item: CanonicalItem, record: dict[str, Any]
-    ) -> set[tuple[str, str]]:
-        linked_keys = {
-            key
-            for key in self._item_keys(item)
-            if (record["kind"], record["ref"]) in self.links.get(key, set())
-        }
-        recorded_sample = record["facts"].get(
-            "sample_key", record["facts"].get("sample_id")
+        related_refs = relationships.related_record_refs(
+            self.links, item, curves, (record["ref"] for record in readable)
         )
-        if recorded_sample is not None:
-            linked_keys = {key for key in linked_keys if key[1] == recorded_sample}
-        return linked_keys
+        for record in readable:
+            if record["ref"] in related_refs:
+                record["links"] = presentation.dedupe_entries(
+                    record["links"]
+                    + [
+                        presentation.related_record_link(kind, ref)
+                        for kind, ref in related_refs[record["ref"]]
+                    ]
+                )
+        return readable
 
     def _curve(self, payload):
         curves = payload.get("curves", {})
