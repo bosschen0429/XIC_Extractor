@@ -20,7 +20,7 @@ from xic_extractor.presets import (
     load_preset,
     save_preset,
 )
-from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.raw_reader_errors import RawReaderError
 
 
 @pytest.fixture(autouse=True)

@@ -23,11 +23,10 @@ from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.processing_identity import (
     build_local_acquisition_source_identity,
 )
-from xic_extractor.raw_reader import (
-    EXPECTED_THERMO_DLLS,
+from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS, open_raw
+from xic_extractor.raw_source_binding import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
-    open_raw,
 )
 from xic_extractor.untargeted_execution.partition import execution as runtime_module
 from xic_extractor.untargeted_execution.partition import workers as partition_workers
@@ -166,4 +165,7 @@ def install_runtime_raws(
 
     monkeypatch.setattr(partition_workers, "open_raw", _open_runtime_raw)
     monkeypatch.setattr("xic_extractor.raw_reader.open_raw", _open_runtime_raw)
+    monkeypatch.setattr(
+        "xic_extractor.raw_mass_recalibration_batch.open_raw", _open_runtime_raw
+    )
     return opened

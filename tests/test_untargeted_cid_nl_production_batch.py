@@ -14,7 +14,7 @@ import pytest
 import xic_extractor.alignment.cid_nl_completion as cid_nl_completion_owner
 import xic_extractor.discovery.processing_run_spec_adapter as processing_spec_adapter
 import xic_extractor.processing_identity as identity_owner
-import xic_extractor.raw_reader as raw_reader_owner
+import xic_extractor.raw_source_binding as raw_source_binding_owner
 import xic_extractor.untargeted_execution.alignment as alignment_adapter
 import xic_extractor.untargeted_execution.partition.request as input_owner
 from tests.alignment_explanation_fixtures import explanation_summary
@@ -1096,7 +1096,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
     preparation_fingerprints = []
     runtime_fingerprints = []
     preparation_fingerprint = identity_owner.fingerprint_file_content
-    fingerprint = raw_reader_owner.fingerprint_file_content
+    fingerprint = raw_source_binding_owner.fingerprint_file_content
 
     def count_preparation_fingerprint(path, **kwargs):
         preparation_fingerprints.append(path)
@@ -1107,7 +1107,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         return fingerprint(path)
 
     monkeypatch.setattr(
-        raw_reader_owner, "fingerprint_file_content", count_runtime_fingerprint
+        raw_source_binding_owner, "fingerprint_file_content", count_runtime_fingerprint
     )
     monkeypatch.setattr(
         identity_owner, "fingerprint_file_content", count_preparation_fingerprint
@@ -2582,7 +2582,9 @@ def test_production_reuses_source_verification_across_runtime_opens(
         return fingerprint(source, **kwargs)
 
     monkeypatch.setattr(identity_owner, "fingerprint_file_content", count_fingerprint)
-    monkeypatch.setattr(raw_reader_owner, "fingerprint_file_content", count_fingerprint)
+    monkeypatch.setattr(
+        raw_source_binding_owner, "fingerprint_file_content", count_fingerprint
+    )
     plan = prepare_eager_untargeted_plan(**arguments)
     opened = install_runtime_raws(
         monkeypatch, sources_by_path={path: raw}, tmp_path=tmp_path
@@ -2712,7 +2714,9 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
         return fingerprint(source, **kwargs)
 
     monkeypatch.setattr(identity_owner, "fingerprint_file_content", count_fingerprint)
-    monkeypatch.setattr(raw_reader_owner, "fingerprint_file_content", count_fingerprint)
+    monkeypatch.setattr(
+        raw_source_binding_owner, "fingerprint_file_content", count_fingerprint
+    )
     reused = prepare_eager_untargeted_plan(
         **arguments,
         acquisition_source_expectations=expectations,

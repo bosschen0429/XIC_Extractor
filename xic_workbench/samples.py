@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.analysis_set import ANALYSIS_SAMPLE_ROLES, discover_raw_files
-from xic_extractor.raw_reader import read_analysis_set
+from xic_extractor.raw_sequence import read_analysis_set
 from xic_extractor.sample_groups import (
     resolve_sample_group,
     sample_group_key,

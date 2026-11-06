@@ -1430,7 +1430,7 @@ def test_declared_strict_scan_subset_rejects_non_exact_events(variant: str) -> N
         StrictSeedReceiptError,
         _read_exact_scans,
     )
-    from xic_extractor.raw_reader import Ms2ScanEvent
+    from xic_extractor.ms2_scan_models import Ms2ScanEvent
 
     candidate = SimpleNamespace(
         candidate_id="candidate-1",

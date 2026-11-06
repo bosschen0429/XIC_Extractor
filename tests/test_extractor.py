@@ -11,6 +11,7 @@ from tests.targeted_fixtures import ScopedMs2WindowReader
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import NLResult
 from xic_extractor.extraction.result_models import ExtractionResult
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.output.excel_pipeline import (
     _diagnostics_to_rows,
     _run_output_to_long_rows,
@@ -27,7 +28,7 @@ from xic_extractor.peak_detection.models import (
 )
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.signal_quality import SignalQuality
-from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent, RawReaderError
+from xic_extractor.raw_reader_errors import RawReaderError
 
 _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 

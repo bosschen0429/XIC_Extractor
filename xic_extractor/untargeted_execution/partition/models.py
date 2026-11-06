@@ -13,7 +13,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from xic_extractor.raw_reader import PreparedRawMassRecalibration
+    from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.completion_evidence import (

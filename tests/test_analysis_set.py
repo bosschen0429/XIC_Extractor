@@ -6,13 +6,14 @@ import pytest
 from tests.analysis_set_fixtures import (
     header,
 )
+from xic_extractor import raw_reader_errors
 from xic_extractor.analysis_set import discover_raw_files, select_analysis_set
 from xic_extractor.injection_timeline import (
     PerturbationPolicy,
     build_injection_timeline,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.raw_reader import stat_identity
+from xic_extractor.raw_source_binding import stat_identity
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -22,7 +23,7 @@ def test_batch_header_reads_overlap_without_changing_acquisition_order(
 ) -> None:
     from threading import Barrier
 
-    from xic_extractor import raw_reader
+    from xic_extractor import raw_sequence
 
     paths = [tmp_path / "A.raw", tmp_path / "B.raw"]
     for path in paths:
@@ -38,8 +39,8 @@ def test_batch_header_reads_overlap_without_changing_acquisition_order(
             path.stem,
         )
 
-    monkeypatch.setattr(raw_reader, "_analysis_header", read_header)
-    result = raw_reader.read_analysis_set(tmp_path, tmp_path, raw_paths=paths)
+    monkeypatch.setattr(raw_sequence, "_analysis_header", read_header)
+    result = raw_sequence.read_analysis_set(tmp_path, tmp_path, raw_paths=paths)
     assert [(entry.raw_stem, entry.injection_order) for entry in result.analyzed] == [
         ("B", 1),
         ("A", 2),
@@ -122,7 +123,7 @@ def test_retained_alignment_keeps_full_root_injection_order(
     )
     from tests.cid_nl_runtime_fixtures import build_discovery_receipts
     from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
-    from xic_extractor.raw_reader import read_analysis_set
+    from xic_extractor.raw_sequence import read_analysis_set
     from xic_extractor.untargeted_execution.alignment import (
         prepare_untargeted_alignment_inputs,
     )
@@ -145,7 +146,7 @@ def test_retained_alignment_keeps_full_root_injection_order(
         for i, path in enumerate(paths)
     }
     monkeypatch.setattr(
-        "xic_extractor.raw_reader._analysis_header", lambda p, d: facts[p]
+        "xic_extractor.raw_sequence._analysis_header", lambda p, d: facts[p]
     )
     selected_paths = paths[1:]
     if retained_copy:
@@ -375,7 +376,7 @@ def test_unreadable_raw_stops_only_when_it_would_be_analyzed() -> None:
 
 
 def test_reader_stops_on_an_unreadable_analysis_raw(tmp_path: Path) -> None:
-    from xic_extractor.raw_reader import read_analysis_set
+    from xic_extractor.raw_sequence import read_analysis_set
 
     (tmp_path / "S1.raw").write_bytes(b"not a raw")
     with pytest.raises(ValueError, match="S1.raw"):
@@ -383,7 +384,7 @@ def test_reader_stops_on_an_unreadable_analysis_raw(tmp_path: Path) -> None:
 
 
 def test_selected_analysis_does_not_open_explicit_context(tmp_path, monkeypatch):
-    from xic_extractor import raw_reader
+    from xic_extractor import raw_sequence
 
     paths = {name: tmp_path / f"{name}.raw" for name in ("S1", "S2", "Blank", "old")}
     for path in paths.values():
@@ -399,14 +400,14 @@ def test_selected_analysis_does_not_open_explicit_context(tmp_path, monkeypatch)
             path.stem,
         )
 
-    monkeypatch.setattr(raw_reader, "_analysis_header", read_header)
+    monkeypatch.setattr(raw_sequence, "_analysis_header", read_header)
     metadata = (
         SampleMetadata("S1", "S1", group="Exposure"),
         SampleMetadata("S2", "S2", sample_role="qc"),
         SampleMetadata("Blank", "Blank", sample_role="blank"),
         SampleMetadata("old", "old", excluded=True, exclusion_reason="replaced"),
     )
-    analysis = raw_reader.read_analysis_set(
+    analysis = raw_sequence.read_analysis_set(
         tmp_path, tmp_path, metadata, include_context=False
     )
     assert set(opened) == {"S1.raw", "S2.raw"}
@@ -422,23 +423,23 @@ def test_selected_analysis_does_not_open_explicit_context(tmp_path, monkeypatch)
 def test_selected_unreadable_header_reports_the_file_and_original_reason(
     tmp_path, monkeypatch
 ):
-    from xic_extractor import raw_reader
+    from xic_extractor import raw_sequence
 
     (tmp_path / "S1.raw").write_bytes(b"")
 
     def fail_header(path, dll_dir):
-        raise raw_reader.RawReaderError("no MS controller")
+        raise raw_reader_errors.RawReaderError("no MS controller")
 
-    monkeypatch.setattr(raw_reader, "_analysis_header", fail_header)
+    monkeypatch.setattr(raw_sequence, "_analysis_header", fail_header)
     with pytest.raises(ValueError, match="S1.raw.*no MS controller"):
-        raw_reader.read_analysis_set(tmp_path, tmp_path)
+        raw_sequence.read_analysis_set(tmp_path, tmp_path)
 
 
 def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
     tmp_path: Path, monkeypatch
 ) -> None:
     from tests.sample_metadata_sequence_parsing_fixtures import _create_synthetic_docx
-    from xic_extractor import raw_reader
+    from xic_extractor import raw_sequence
 
     # Two batches in one root; the Word sequence covers the newer one only and
     # numbers it Blank 1 ... Normal 4, against the RAW clock below.
@@ -458,11 +459,13 @@ def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
         h = header(str(path.resolve()), clock[rel])
         return h, "study_sample", f"header {path.stem}"
 
-    monkeypatch.setattr(raw_reader, "_analysis_header", analysis_header)
+    monkeypatch.setattr(raw_sequence, "_analysis_header", analysis_header)
     sequence = tmp_path / "sequence.docx"
     _create_synthetic_docx(sequence)
 
-    result = raw_reader.read_analysis_set(tmp_path, tmp_path, sequence_source=sequence)
+    result = raw_sequence.read_analysis_set(
+        tmp_path, tmp_path, sequence_source=sequence
+    )
 
     rows = {row.raw_stem: row for row in result.sample_metadata}
     assert [row.raw_stem for row in result.sample_metadata] == [
@@ -488,7 +491,7 @@ def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
 def test_repeated_sequence_names_match_injections_not_nested_copies(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from xic_extractor import raw_reader
+    from xic_extractor import raw_sequence
 
     # A nested copy of A_1 is the same injection; it must not add a third
     # candidate for the two repeated "A" rows.
@@ -501,13 +504,15 @@ def test_repeated_sequence_names_match_injections_not_nested_copies(
         rel = path.relative_to(tmp_path).with_suffix("").as_posix()
         return header(str(path.resolve()), clock[rel]), "study_sample", path.stem
 
-    monkeypatch.setattr(raw_reader, "_analysis_header", analysis_header)
+    monkeypatch.setattr(raw_sequence, "_analysis_header", analysis_header)
     sequence = tmp_path / "sequence.csv"
     sequence.write_text(
         "Order,Raw File,Sample Name,Role\n1,A,A,QC\n2,A,A,QC\n", encoding="utf-8"
     )
 
-    result = raw_reader.read_analysis_set(tmp_path, tmp_path, sequence_source=sequence)
+    result = raw_sequence.read_analysis_set(
+        tmp_path, tmp_path, sequence_source=sequence
+    )
 
     assert [(row.raw_stem, row.sample_role) for row in result.sample_metadata] == [
         ("A_1", "qc"),
@@ -521,7 +526,8 @@ def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
     from contextlib import nullcontext
     from types import SimpleNamespace
 
-    from xic_extractor import raw_reader
+    from xic_extractor import raw_reader as native_reader
+    from xic_extractor import raw_sequence
 
     raw = tmp_path / "S1.raw"
     raw.write_bytes(b"x")
@@ -540,14 +546,14 @@ def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
             )
         )
 
-    monkeypatch.setattr(raw_reader, "open_raw", fake_open)
+    monkeypatch.setattr(native_reader, "open_raw", fake_open)
     monkeypatch.setattr(
-        raw_reader,
+        native_reader,
         "_injection_header",
         lambda handle, path: header(str(path.resolve()), 0),
     )
-    first = raw_reader.read_analysis_set(tmp_path, tmp_path)
-    second = raw_reader.read_analysis_set(tmp_path, tmp_path)
+    first = raw_sequence.read_analysis_set(tmp_path, tmp_path)
+    second = raw_sequence.read_analysis_set(tmp_path, tmp_path)
     assert first == second
     assert first.analyzed[0].role_source == "raw_header"
     assert opens == [raw]
@@ -557,7 +563,7 @@ def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
     replacement.write_bytes(b"y")
     os.utime(replacement, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
     replacement.replace(raw)
-    replaced = raw_reader.read_analysis_set(tmp_path, tmp_path)
+    replaced = raw_sequence.read_analysis_set(tmp_path, tmp_path)
     assert replaced.analyzed[0].metadata.sample_name == "header y"
     assert opens == [raw, raw]
 

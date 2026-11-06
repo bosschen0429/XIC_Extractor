@@ -25,7 +25,8 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.configuration.targets import read_istd_targets
 from xic_extractor.discovery.blank_qualification import BlankBackgroundLibrary
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
-from xic_extractor.raw_reader import preflight_raw_reader, read_analysis_set
+from xic_extractor.raw_reader import preflight_raw_reader
+from xic_extractor.raw_sequence import read_analysis_set
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 # The 85RAW root also holds injected samples outside the study design.

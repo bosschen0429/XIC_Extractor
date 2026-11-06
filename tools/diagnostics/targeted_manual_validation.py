@@ -23,7 +23,7 @@ from xic_extractor import extractor
 from xic_extractor.configuration.loader import load_config_snapshot
 from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.extraction.result_models import RunOutput
-from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.raw_reader_errors import RawReaderError
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
     CANONICAL_SETTINGS_DESCRIPTIONS,

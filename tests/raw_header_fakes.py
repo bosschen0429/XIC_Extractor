@@ -34,7 +34,7 @@ def install_fake_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
         )
         return header, infer_sample_role(None, sample_name=path.stem), path.stem
 
-    monkeypatch.setattr("xic_extractor.raw_reader._analysis_header", analysis_header)
+    monkeypatch.setattr("xic_extractor.raw_sequence._analysis_header", analysis_header)
 
 
 def install_raw_sample_headers(
@@ -47,9 +47,9 @@ def install_raw_sample_headers(
     ``sample_header`` returns the vendor sample header (name, type, comment,
     method); ``clock_minutes`` places each RAW on the acquisition clock.
     """
-    from xic_extractor import raw_reader
+    from xic_extractor import raw_reader, raw_sequence
 
-    monkeypatch.setattr(raw_reader, "_ANALYSIS_HEADER_CACHE", {})
+    monkeypatch.setattr(raw_sequence, "_ANALYSIS_HEADER_CACHE", {})
     monkeypatch.setattr(
         raw_reader,
         "open_raw",

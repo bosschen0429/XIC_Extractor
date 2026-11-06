@@ -31,7 +31,7 @@ from xic_extractor.processing_run_spec import (
     ProcessingRunSpec,
     compile_processing_run_spec,
 )
-from xic_extractor.raw_reader import (
+from xic_extractor.raw_source_binding import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
     bind_expected_path_identity,

@@ -59,7 +59,8 @@ from xic_extractor.presets import (
     load_preset,
 )
 from xic_extractor.presets.models import Preset
-from xic_extractor.raw_reader import RawReaderError, read_analysis_set
+from xic_extractor.raw_reader_errors import RawReaderError
+from xic_extractor.raw_sequence import read_analysis_set
 from xic_extractor.sample_metadata import SampleMetadataError
 from xic_extractor.untargeted_execution.input_planning import (
     is_supported_alignment_discovery,

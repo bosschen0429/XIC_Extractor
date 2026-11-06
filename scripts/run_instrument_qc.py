@@ -18,7 +18,7 @@ from xic_extractor.instrument_qc.sequence_manifest_writers import (
     write_sequence_manifest_markdown,
     write_sequence_manifest_tsv,
 )
-from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.raw_reader_errors import RawReaderError
 
 
 def build_parser() -> argparse.ArgumentParser:

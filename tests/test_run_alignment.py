@@ -30,10 +30,10 @@ from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
 )
 from xic_extractor.processing_identity import build_local_acquisition_source_identity
-from xic_extractor.raw_reader import (
+from xic_extractor.raw_reader_errors import RawReaderError
+from xic_extractor.raw_source_binding import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
-    RawReaderError,
 )
 
 

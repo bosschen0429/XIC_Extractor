@@ -1,12 +1,11 @@
+"""Thermo DLL loading and native RAW/SLD I/O adapter."""
+
 import importlib
 import math
-import os
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
-from functools import partial
 from pathlib import Path, PureWindowsPath
 from threading import Lock
 from types import SimpleNamespace
@@ -18,24 +17,13 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionReceipt,
     _mint_raw_acquisition_session_receipt,
 )
-from xic_extractor.analysis_set import (
-    ANALYSIS_SAMPLE_ROLES,
-    AnalysisSet,
-    discover_raw_files,
-    select_analysis_set,
-)
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
+    MassRecalibrationResult,
     resolve_mass_recalibration,
-)
-from xic_extractor.configuration.mass_recalibration import (
-    MassRecalibrationResult as MassRecalibrationResult,
 )
 from xic_extractor.injection_timeline import (
     InjectionHeader,
-    PerturbationPolicy,
-    ScheduledInjection,
-    build_injection_timeline,
 )
 from xic_extractor.ms1_scan_index import MS1Scan, build_ms1_scan_index
 from xic_extractor.ms2_scan_models import (
@@ -46,19 +34,25 @@ from xic_extractor.ms2_scan_models import (
 )
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import (
-    AcquisitionSourceExpectation,
     AcquisitionSourceIdentity,
-    IdentityContractError,
-    fingerprint_file_content,
+)
+from xic_extractor.raw_mass_recalibration import (
+    PreparedRawMassRecalibration,
+    is_recorded_precursor,
+    mass_restoration_scale,
+    matches_parent_centroid,
+    resolve_mass_restoration,
+    restore_ms1_spectrum,
+    restore_ms2_precursor,
+    restored_xic,
+)
+from xic_extractor.raw_reader_errors import RawReaderError, RawReaderOpenError
+from xic_extractor.raw_source_binding import (
+    _verify_expected_acquisition_source,
+    _verify_source_path_still_bound,
+    bind_expected_path_identity,
 )
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
-from xic_extractor.sample_metadata import (
-    SampleMetadata,
-    SampleRole,
-    SequenceMatchReport,
-    infer_sample_role,
-    load_and_match_sample_metadata,
-)
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 # RawFileReader 8 package set; OpenMcdf is its only runtime dependency.
@@ -73,38 +67,11 @@ DOTNET_INSTALL_COMMAND = "winget install Microsoft.DotNet.Runtime.10"
 _DOTNET_RUNTIME_CONFIG = Path(__file__).parent.joinpath(
     "configuration", "data", "thermo_dotnet.runtimeconfig.json"
 )
-THERMO_RAW_ACQUISITION_FORMAT = "thermo_raw"
-THERMO_RAW_OBSERVATION_NAMESPACE = "thermo_raw_file_reader:Device.MS:1"
 _LM_CORRECTION_TRAILER = "lm correction (ppm)"
 _LM_FOUND_TRAILER = "number of lm found"
-# MS2 headers round the selected precursor to 1e-4 m/z.
-_RECORDED_PRECURSOR_ROUNDING_MZ = 1e-4
-_CARBON_ISOTOPE_SPACING_DA = 1.0033548
 
 _ASSEMBLIES_LOADED = False
 _ASSEMBLY_LOAD_LOCK = Lock()
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedRawMassRecalibration:
-    """One run's mass result for an already identified RAW source."""
-
-    acquisition: AcquisitionSourceExpectation
-    result: MassRecalibrationResult
-
-
-class RawReaderError(Exception):
-    """Raised when Thermo raw reader setup or file opening fails."""
-
-
-class RawReaderOpenError(RawReaderError):
-    """Raised after a vendor open attempt with explicit cleanup truth."""
-
-    def __init__(self, message: str, *, cleanup_failed: bool) -> None:
-        super().__init__(message)
-        if not isinstance(cleanup_failed, bool):
-            raise TypeError("cleanup_failed must be a bool")
-        self.cleanup_failed = cleanup_failed
 
 
 @dataclass(frozen=True)
@@ -117,12 +84,6 @@ class _ThermoApi:
     ms2_order: Any
     ms1_order: Any = None
     header_errors: tuple[type[Exception], ...] = ()
-
-
-@dataclass(frozen=True)
-class _VerifiedAcquisitionSourceBinding:
-    source: AcquisitionSourceIdentity
-    path_identity: tuple[int, int, int, int, int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,19 +208,11 @@ class RawFileHandle:
             found = _finite_float_or_none(values[found_index])
             if lm is not None and found is not None and found > 0:
                 anchors.append(lm)
-        if polarities == {"Negative"}:
-            return replace(result, outcome="not_applicable", reason="negative_polarity")
-        if polarities != {"Positive"}:
-            return replace(result, reason="unsupported_or_mixed_polarity")
-        if lm_index is None or found_index is None:
-            return replace(result, reason="missing_lock_mass_trailers")
-        if not anchors:
-            return replace(result, reason="no_ms1_lock_mass_anchor")
-        return replace(
+        return resolve_mass_restoration(
             result,
-            outcome="applied",
-            baseline_lm=float(np.median(anchors)),
-            n_anchor=len(anchors),
+            polarities,
+            anchors,
+            has_lock_mass_trailers=lm_index is not None and found_index is not None,
         )
 
     def use_mass_recalibration_result(self, result: MassRecalibrationResult) -> None:
@@ -613,25 +566,13 @@ class RawFileHandle:
                 )
 
     def _mass_scale(self, scan_number: int) -> float:
-        """Recorded m/z divided by baseline m/z (legacy replay uses its fit)."""
+        """Cache the restoration scale after reading this scan's native trailer."""
         scale = self._mass_scale_by_scan.get(scan_number)
-        if scale is not None:
-            return scale
-        result = self.mass_recalibration_result
-        correction_ppm = self._scan_lm(scan_number)
-        if correction_ppm is None:
-            raise RawReaderError(
-                f"scan {scan_number} lacks a finite 'LM Correction (ppm)' value"
+        if scale is None:
+            scale = mass_restoration_scale(
+                self.mass_recalibration_result, self._scan_lm(scan_number), scan_number
             )
-        if result.policy is MassRecalibration.EASY_IC_RESTORE:
-            assert result.baseline_lm is not None
-            # Mechanism-supported ppm approximation, not absolute recalibration.
-            shift_ppm = 2.0 * (correction_ppm - result.baseline_lm)
-        else:
-            assert result.a is not None and result.b is not None
-            shift_ppm = result.a + result.b * correction_ppm
-        scale = 1.0 + shift_ppm * 1e-6
-        self._mass_scale_by_scan[scan_number] = scale
+            self._mass_scale_by_scan[scan_number] = scale
         return scale
 
     def _recalibrated_ms1_spectrum(
@@ -653,94 +594,45 @@ class RawFileHandle:
             intensities = np.asarray(
                 getattr(centroids, "Intensities", None) or [], dtype=float
             )
-            valid = (
-                np.isfinite(masses)
-                & np.isfinite(intensities)
-                & (masses > 0)
-                & (intensities > 0)
-            )
-            order = np.argsort(masses[valid], kind="stable")
-            spectrum = (
+            spectrum = restore_ms1_spectrum(
                 float(raw.RetentionTimeFromScanNumber(scan_number)),
-                masses[valid][order] / self._mass_scale(scan_number),
-                intensities[valid][order],
+                masses,
+                intensities,
+                self._mass_scale(scan_number),
             )
         self._recalibrated_ms1[scan_number] = spectrum
         return spectrum
 
     def _recalibrated_xic(self, request: XICRequest) -> XICTrace:
-        """Sum policy-adjusted MS1 centroids per scan within the XIC window."""
+        """Read native MS1 facts before integrating in restored coordinates."""
         start_scan, end_scan = self.scan_window_for_request(request)
-        tolerance = request.mz * request.ppm_tol / 1e6
-        rts: list[float] = []
-        values: list[float] = []
+        spectra = []
         for scan_number in range(start_scan, end_scan + 1):
             spectrum = self._recalibrated_ms1_spectrum(scan_number)
-            if spectrum is None:
-                continue
-            rt, masses, intensities = spectrum
-            low = np.searchsorted(masses, request.mz - tolerance, side="left")
-            high = np.searchsorted(masses, request.mz + tolerance, side="right")
-            rts.append(rt)
-            values.append(float(intensities[low:high].sum()))
-        return XICTrace.from_arrays(rts, values) if rts else XICTrace.empty()
+            if spectrum is not None:
+                spectra.append(spectrum)
+        return restored_xic(spectra, request)
 
     def _recalibrate_ms2_precursor(
-        self,
-        scan_number: int,
-        precursor_mz: float,
-        metadata: Ms2PrecursorMetadata,
+        self, scan_number: int, precursor_mz: float, metadata: Ms2PrecursorMetadata
     ) -> tuple[float, Ms2PrecursorMetadata]:
-        """Precursor readings use their parent MS1; fragments use their own scan.
-
-        A filter precursor matching the recorded mono, a charge-resolved M+n,
-        or a parent centroid is measured; inclusion-list setpoints stay unchanged.
-        """
-        monoisotopic = metadata.monoisotopic_mz
+        """Read parent facts here; mass-coordinate decisions remain pure."""
         if metadata.master_scan_number is None:
-            if monoisotopic is None:
+            if metadata.monoisotopic_mz is None:
                 return precursor_mz, metadata
             raise RawReaderError(
                 f"MS2 scan {scan_number} records a precursor without its parent MS1"
             )
         parent_scale = self._mass_scale(metadata.master_scan_number)
-        measured_precursor = (
-            monoisotopic is not None
-            and abs(precursor_mz - monoisotopic) <= _RECORDED_PRECURSOR_ROUNDING_MZ
-        )
-        if monoisotopic is not None and metadata.charge is not None:
-            # Compare in the recorded coordinate system, before correcting M.
-            # Both measured masses share the parent scale, including spacing.
-            spacing = _CARBON_ISOTOPE_SPACING_DA * parent_scale / metadata.charge
-            isotope_number = round((precursor_mz - monoisotopic) / spacing)
-            if isotope_number >= 1:
-                measured_precursor = (
-                    abs(precursor_mz - (monoisotopic + isotope_number * spacing))
-                    <= _RECORDED_PRECURSOR_ROUNDING_MZ
-                )
-        if not measured_precursor:
+        measured = is_recorded_precursor(precursor_mz, metadata, parent_scale)
+        if not measured:
             parent = self._recalibrated_ms1_spectrum(metadata.master_scan_number)
             if parent is not None:
-                selected = precursor_mz / parent_scale
-                index = int(np.searchsorted(parent[1], selected))
-                # A selected parent centroid remains a measured precursor even
-                # when the vendor's mono estimate is missing or imprecise. Allow
-                # only arithmetic roundoff here, not a mass-tolerance window
-                # that could turn an inclusion-list setpoint into a measurement.
-                measured_precursor = any(
-                    math.isclose(selected, float(mass), rel_tol=1e-12, abs_tol=0.0)
-                    for mass in parent[1][max(0, index - 1) : index + 1]
+                measured = matches_parent_centroid(
+                    precursor_mz / parent_scale, parent[1]
                 )
-        if measured_precursor:
-            precursor_mz = precursor_mz / parent_scale
-        return (
-            precursor_mz,
-            replace(
-                metadata,
-                monoisotopic_mz=(
-                    None if monoisotopic is None else monoisotopic / parent_scale
-                ),
-            ),
+        return restore_ms2_precursor(
+            precursor_mz, metadata, parent_scale, measured=measured
         )
 
     def _build_chromatogram_settings(self, mz: float, ppm_tol: float) -> Any:
@@ -787,17 +679,6 @@ class _SourceBoundRawFileHandle(RawFileHandle):
     @property
     def raw_open_receipt(self) -> RawAcquisitionSessionReceipt | None:
         return self._raw_open_receipt
-
-
-def require_source_bound_raw_handle(
-    raw: object,
-    expected: AcquisitionSourceIdentity,
-) -> RawFileHandle:
-    if not isinstance(raw, _SourceBoundRawFileHandle):
-        raise RawReaderError("RAW handle has no acquisition source binding")
-    if raw.acquisition_source != expected:
-        raise RawReaderError("RAW handle is bound to a different acquisition source")
-    return raw
 
 
 def open_raw(
@@ -896,61 +777,6 @@ def open_raw(
     return handle
 
 
-def prepare_batch_mass_recalibration(
-    inputs: Sequence[tuple[Path, AcquisitionSourceIdentity]],
-    dll_dir: Path,
-    policy: MassRecalibration,
-    *,
-    workers: int = 1,
-    backend: str = "thread",
-    should_cancel: Callable[[], bool] | None = None,
-) -> dict[str, PreparedRawMassRecalibration]:
-    """Prepare once per sample, close every handle, and share only small results."""
-    if policy is MassRecalibration.NONE:
-        return {}
-
-    from xic_extractor.execution.workers import WorkerAdmissionPool
-
-    results: dict[str, PreparedRawMassRecalibration] = {}
-
-    def collect(_completed, _total, _item, result):
-        stem, prepared = result
-        results[stem] = prepared
-
-    with WorkerAdmissionPool(max_workers=workers, backend=backend) as pool:
-        pool.run_windowed(
-            inputs,
-            partial(_prepare_raw_mass_recalibration, dll_dir=dll_dir, policy=policy),
-            on_completed=collect,
-            should_cancel=should_cancel,
-        )
-    if pool.first_error is not None:
-        raise pool.first_error
-    return results
-
-
-def _prepare_raw_mass_recalibration(
-    item: tuple[Path, AcquisitionSourceIdentity],
-    *,
-    dll_dir: Path,
-    policy: MassRecalibration,
-) -> tuple[str, PreparedRawMassRecalibration]:
-    path, source = item
-    binding = _verify_expected_acquisition_source(path, source)
-    assert binding is not None
-    with open_raw(
-        path,
-        dll_dir,
-        mass_recalibration=policy,
-        expected_acquisition_source=source,
-        _expected_path_identity=binding.path_identity,
-    ) as raw:
-        return path.stem, PreparedRawMassRecalibration(
-            AcquisitionSourceExpectation(source, binding.path_identity),
-            raw.mass_recalibration_result,
-        )
-
-
 def read_raw_injection_header(path: Path, dll_dir: Path) -> InjectionHeader:
     """Read chronology facts only, without spectra or content hashing."""
     with open_raw(path, dll_dir=dll_dir) as handle:
@@ -979,207 +805,6 @@ def _injection_header(handle: RawFileHandle, path: Path) -> InjectionHeader:
     )
 
 
-def read_analysis_set(
-    raw_root: Path,
-    dll_dir: Path,
-    sample_metadata: Sequence[SampleMetadata] | None = None,
-    *,
-    sequence_source: Path | None = None,
-    raw_paths: Sequence[Path] | None = None,
-    include_context: bool = True,
-    progress: Callable[[int, int, str], None] | None = None,
-    should_cancel: Callable[[], bool] | None = None,
-) -> AnalysisSet:
-    """Resolve who each RAW below root is and when it was injected.
-
-    ``raw_paths`` names the RAW files when a caller already holds them (for
-    example a Discovery batch); otherwise files below ``raw_root`` are discovered.
-    With ``include_context=False``, explicit non-analysis annotations are resolved
-    before I/O; those files remain unordered context without opening their RAW.
-
-    The RAW headers own order (acquisition clock, older batches first) and the
-    sample name. 上機資訊 (``sequence_source``) and workbench rows
-    (``sample_metadata``, RAW-keyed) only annotate role, group, batch, and
-    exclusion; a document may cover just some of the RAW. An unreadable RAW
-    that would be analyzed stops resolution, because its order would be a
-    guess; one that would not be analyzed is listed in ``unreadable``.
-    """
-    root = Path(raw_root)
-    paths = tuple(raw_paths) if raw_paths is not None else discover_raw_files(root)
-    # Skipping explicit context files needs annotations before any RAW is read.
-    # Filenames cannot tell copies of one injection apart, so this match only
-    # selects files to skip; final annotations match the injection timeline.
-    overrides = _sequence_overrides(
-        load_and_match_sample_metadata(sequence_source, [path.stem for path in paths])
-        if sequence_source is not None and not include_context
-        else None,
-        sample_metadata,
-    )
-    headers: list[InjectionHeader] = []
-    header_rows: dict[str, SampleMetadata] = {}
-    unread: dict[str, SampleMetadata] = {}
-    unread_errors: dict[str, str] = {}
-    unopened: dict[str, SampleMetadata] = {}
-    header_paths: list[tuple[int, Path]] = []
-    for index, path in enumerate(paths):
-        if should_cancel is not None and should_cancel():
-            raise InterruptedError("RAW 樣本準備已停止。")
-        annotation = overrides.get(path.stem.casefold())
-        if (
-            not include_context
-            and annotation is not None
-            and (
-                annotation.excluded
-                or (
-                    annotation.sample_role != "unknown"
-                    and annotation.sample_role not in ANALYSIS_SAMPLE_ROLES
-                )
-            )
-        ):
-            unopened[str(path.resolve())] = replace(
-                annotation, batch_id=annotation.batch_id or root.name
-            )
-            continue
-        header_paths.append((index, path))
-    # Each task owns and closes its vendor handle. Results retain path association;
-    # acquisition clocks, not thread completion order, determine injection order.
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        pending = [
-            (index, path, pool.submit(_analysis_header, path, dll_dir))
-            for index, path in header_paths
-        ]
-        try:
-            for index, path, future in pending:
-                if should_cancel is not None and should_cancel():
-                    raise InterruptedError("RAW 樣本準備已停止。")
-                if progress is not None:
-                    progress(index, len(paths), f"讀取 RAW 檔頭：{path.name}")
-                try:
-                    header, role, header_name = future.result()
-                except (RawReaderError, ValueError) as exc:
-                    unread_errors[str(path.resolve())] = str(exc)
-                    unread[str(path.resolve())] = SampleMetadata(
-                        sample_name=path.stem,
-                        raw_stem=path.stem,
-                        sample_role=infer_sample_role(None, sample_name=path.stem),
-                        batch_id=root.name,
-                    )
-                    continue
-                headers.append(header)
-                header_rows[header.raw_path] = SampleMetadata(
-                    sample_name=header_name,
-                    raw_stem=path.stem,
-                    sample_role=role,
-                    batch_id=root.name,
-                )
-        finally:
-            # Cancellation waits only for open handles, never all queued files.
-            for _index, _path, future in pending:
-                future.cancel()
-    timeline = build_injection_timeline(headers, PerturbationPolicy())
-    sequence = (
-        load_and_match_sample_metadata(
-            sequence_source,
-            (
-                *(injection.raw_stem for injection in timeline),
-                *(Path(path).stem for path in unopened),
-            ),
-        )
-        if sequence_source is not None
-        else None
-    )
-    return select_analysis_set(
-        timeline,
-        header_rows,
-        tuple(_sequence_overrides(sequence, sample_metadata).values()),
-        unreadable=unread,
-        sequence=sequence,
-        unopened_context=unopened,
-        unreadable_errors=unread_errors,
-    )
-
-
-def _sequence_overrides(
-    sequence: SequenceMatchReport | None,
-    sample_metadata: Sequence[SampleMetadata] | None,
-) -> dict[str, SampleMetadata]:
-    """Matched sequence rows, then workbench rows, keyed by RAW stem."""
-    matched = set(sequence.matched_raw_stems) if sequence is not None else set()
-    overrides = {
-        row.raw_stem.casefold(): row
-        for row in (sequence.rows if sequence is not None else ())
-        if row.raw_stem in matched
-    }
-    overrides.update({row.raw_stem.casefold(): row for row in sample_metadata or ()})
-    return overrides
-
-
-_ANALYSIS_HEADER_CACHE: dict[
-    tuple[str, tuple[int, int, int, int, int], str],
-    tuple[InjectionHeader, SampleRole, str],
-] = {}
-
-
-def _analysis_header(
-    path: Path, dll_dir: Path
-) -> tuple[InjectionHeader, SampleRole, str]:
-    """Header facts are immutable for an unchanged file; reuse across resolutions."""
-    stat = path.stat()
-    key = (str(path.resolve()), stat_identity(stat), str(dll_dir))
-    cached = _ANALYSIS_HEADER_CACHE.get(key)
-    if cached is not None:
-        return cached
-    with open_raw(path, dll_dir=dll_dir) as handle:
-        header = _injection_header(handle, path)
-        sample = handle.sample_header
-    facts = (header, _raw_sample_role(path, sample), str(sample.sample_name or ""))
-    _ANALYSIS_HEADER_CACHE[key] = facts
-    return facts
-
-
-def _raw_sample_role(path: Path, sample: RawSampleHeader) -> SampleRole:
-    # Header SampleName is free text; use the filename and method vocabulary
-    # consistently for analysis membership and auto-derived metadata.
-    return infer_sample_role(
-        sample.sample_type,
-        sample_name=path.stem,
-        comment=" ".join(
-            (
-                sample.sample_name,
-                PureWindowsPath(sample.instrument_method).stem,
-                sample.comment,
-            )
-        ),
-    )
-
-
-def read_sld_injections(path: Path, dll_dir: Path) -> tuple[ScheduledInjection, ...]:
-    """Read an optional Xcalibur sequence; it supplies no acquisition clock."""
-    errors = preflight_raw_reader(dll_dir)
-    if errors:
-        raise RawReaderError("; ".join(errors))
-    ensure_assemblies_loaded(dll_dir.resolve(), importlib.import_module)
-    business = importlib.import_module("ThermoFisher.CommonCore.Data.Business")
-    sequence = business.SequenceFileReaderFactory.ReadFile(str(path.resolve()))
-    if sequence is None or sequence.IsError or not sequence.IsOpen:
-        raise RawReaderError(f"Unable to read Xcalibur sequence: {path}")
-    entries = []
-    for index, sample in enumerate(sequence.Samples, start=1):
-        filename = str(sample.RawFileName or "").strip()
-        if filename and not filename.lower().endswith(".raw"):
-            filename += ".raw"
-        source = PureWindowsPath(str(sample.Path or "")) / filename
-        entries.append(
-            ScheduledInjection(
-                sequence_path=str(path.resolve()),
-                row_number=index,
-                acquisition_source=str(source) if filename else "",
-                instrument_method=str(sample.InstrumentMethodFile or "").strip(),
-            )
-        )
-    return tuple(entries)
-
-
 def _dispose_after_failed_open(raw_file: Any | None) -> Exception | None:
     if raw_file is None:
         return None
@@ -1188,134 +813,6 @@ def _dispose_after_failed_open(raw_file: Any | None) -> Exception | None:
     except Exception as exc:
         return exc
     return None
-
-
-def _verify_expected_acquisition_source(
-    path: Path,
-    expected: AcquisitionSourceIdentity | None,
-) -> _VerifiedAcquisitionSourceBinding | None:
-    if expected is None:
-        return None
-    if not isinstance(expected, AcquisitionSourceIdentity):
-        raise RawReaderError(
-            "expected_acquisition_source must be an AcquisitionSourceIdentity"
-        )
-    if expected.local_file_revision is not None:
-        return bind_expected_path_identity(path, expected, expected.local_file_revision)
-    if (
-        expected.acquisition_format != THERMO_RAW_ACQUISITION_FORMAT
-        or expected.observation_namespace != THERMO_RAW_OBSERVATION_NAMESPACE
-    ):
-        raise RawReaderError(
-            "expected acquisition source does not describe the Thermo RAW "
-            "MS-controller-1 adapter"
-        )
-    try:
-        before = path.stat()
-        fingerprint = fingerprint_file_content(path)
-        after = path.stat()
-    except IdentityContractError as exc:
-        raise RawReaderError(
-            "unable to verify the expected acquisition source"
-        ) from exc
-    except OSError as exc:
-        raise RawReaderError(
-            "unable to verify the expected acquisition source"
-        ) from exc
-    if not os.path.samestat(before, after) or stat_identity(before) != stat_identity(
-        after
-    ):
-        raise RawReaderError("RAW source path changed while it was being verified")
-    if (
-        fingerprint.content_sha256 != expected.content_sha256
-        or fingerprint.byte_size != expected.byte_size
-    ):
-        raise RawReaderError(
-            "RAW path content does not match expected acquisition source"
-        )
-    return _VerifiedAcquisitionSourceBinding(
-        source=expected,
-        path_identity=stat_identity(after),
-    )
-
-
-def bind_expected_path_identity(
-    path: Path,
-    expected: AcquisitionSourceIdentity | None,
-    expected_path_identity: tuple[int, int, int, int, int],
-) -> _VerifiedAcquisitionSourceBinding:
-    if not isinstance(expected, AcquisitionSourceIdentity):
-        raise RawReaderError(
-            "expected path identity requires an AcquisitionSourceIdentity"
-        )
-    if (
-        expected.acquisition_format != THERMO_RAW_ACQUISITION_FORMAT
-        or expected.observation_namespace != THERMO_RAW_OBSERVATION_NAMESPACE
-    ):
-        raise RawReaderError(
-            "expected acquisition source does not describe the Thermo RAW "
-            "MS-controller-1 adapter"
-        )
-    try:
-        current = stat_identity(path.stat())
-    except OSError as exc:
-        raise RawReaderError("unable to verify the expected RAW path state") from exc
-    if current != expected_path_identity or current[2] != expected.byte_size:
-        raise RawReaderError(
-            "RAW path state does not match expected acquisition source"
-        )
-    return _VerifiedAcquisitionSourceBinding(
-        source=expected,
-        path_identity=current,
-    )
-
-
-def _verify_source_path_still_bound(
-    path: Path,
-    binding: _VerifiedAcquisitionSourceBinding | None,
-    *,
-    verify_content: bool = True,
-) -> None:
-    if binding is None:
-        return
-    if not verify_content:
-        try:
-            current_path_identity = stat_identity(path.stat())
-        except OSError as exc:
-            raise RawReaderError(
-                "RAW source path changed while the vendor handle was opening"
-            ) from exc
-        if current_path_identity != binding.path_identity:
-            raise RawReaderError(
-                "RAW source path changed while the vendor handle was opening"
-            )
-        return
-    try:
-        current_binding = _verify_expected_acquisition_source(
-            path,
-            binding.source,
-        )
-    except RawReaderError as exc:
-        raise RawReaderError(
-            "RAW source content or path changed while the vendor handle was opening"
-        ) from exc
-    if (
-        current_binding is None
-        or current_binding.path_identity != binding.path_identity
-    ):
-        raise RawReaderError(
-            "RAW source content or path changed while the vendor handle was opening"
-        )
-
-
-def stat_identity(value: os.stat_result) -> tuple[int, int, int, int, int]:
-    return (
-        value.st_dev,
-        value.st_ino,
-        value.st_size,
-        value.st_mtime_ns,
-        value.st_ctime_ns,
-    )
 
 
 def preflight_raw_reader(
@@ -1495,3 +992,33 @@ def _finite_float_or_none(value: Any) -> float | None:
 def _positive_float_or_none(value: Any) -> float | None:
     parsed = _finite_float_or_none(value)
     return parsed if parsed is not None and parsed > 0.0 else None
+
+
+def read_raw_headers(
+    path: Path, dll_dir: Path
+) -> tuple[InjectionHeader, RawSampleHeader]:
+    """Read chronology and sample facts using one selected native handle."""
+    with open_raw(path, dll_dir=dll_dir) as handle:
+        return _injection_header(handle, path), handle.sample_header
+
+
+def read_sequence_samples(
+    path: Path, dll_dir: Path
+) -> tuple[tuple[str, str, str], ...]:
+    """Copy SLD sample fields out of the vendor API before sequence projection."""
+    errors = preflight_raw_reader(dll_dir)
+    if errors:
+        raise RawReaderError("; ".join(errors))
+    ensure_assemblies_loaded(dll_dir.resolve(), importlib.import_module)
+    business = importlib.import_module("ThermoFisher.CommonCore.Data.Business")
+    sequence = business.SequenceFileReaderFactory.ReadFile(str(path.resolve()))
+    if sequence is None or sequence.IsError or not sequence.IsOpen:
+        raise RawReaderError(f"Unable to read Xcalibur sequence: {path}")
+    return tuple(
+        (
+            str(sample.RawFileName or "").strip(),
+            str(sample.Path or ""),
+            str(sample.InstrumentMethodFile or "").strip(),
+        )
+        for sample in sequence.Samples
+    )

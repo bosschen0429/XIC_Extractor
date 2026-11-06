@@ -44,10 +44,8 @@ from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
     alignment_metadata,
 )
-from xic_extractor.raw_reader import (
-    PreparedRawMassRecalibration,
-    prepare_batch_mass_recalibration,
-)
+from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
+from xic_extractor.raw_mass_recalibration_batch import prepare_batch_mass_recalibration
 from xic_extractor.untargeted_execution.alignment import (
     complete_untargeted_alignment,
     execute_prepared_alignment,

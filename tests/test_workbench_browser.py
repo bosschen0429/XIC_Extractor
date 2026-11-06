@@ -595,7 +595,7 @@ def test_targeted_reports_sequence_warnings_before_analysis_and_after_reload(
     from types import SimpleNamespace
 
     from tests.analysis_set_fixtures import header
-    from xic_extractor.raw_reader import RawReaderError
+    from xic_extractor.raw_reader_errors import RawReaderError
 
     page = workbench
     raw = tmp_path / "raw"
@@ -615,7 +615,7 @@ def test_targeted_reports_sequence_warnings_before_analysis_and_after_reload(
             path.stem,
         )
 
-    monkeypatch.setattr("xic_extractor.raw_reader._analysis_header", read_header)
+    monkeypatch.setattr("xic_extractor.raw_sequence._analysis_header", read_header)
     release = threading.Event()
 
     class Service:

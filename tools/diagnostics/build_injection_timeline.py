@@ -16,11 +16,8 @@ from xic_extractor.injection_timeline import (
     build_injection_timeline,
     compare_sequence,
 )
-from xic_extractor.raw_reader import (
-    preflight_raw_reader,
-    read_raw_injection_header,
-    read_sld_injections,
-)
+from xic_extractor.raw_reader import preflight_raw_reader, read_raw_injection_header
+from xic_extractor.raw_sequence import read_sld_injections
 
 
 def _datetime_json(value: object) -> str:

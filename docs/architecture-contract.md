@@ -149,6 +149,17 @@ consumes. These are in-memory seams, not a registry: another method needs its
 own evidence adapter. A revisit does not reopen grouping, and a scheduling
 partition is never a feature boundary.
 
+## RAW Acquisition Owners
+
+- `raw_reader` owns Thermo DLL loading, native handle lifetime and copying
+  RAW/SLD facts into Python values. DLL access stays in the adapter.
+- `raw_source_binding` verifies file revisions at admission, cache replay and
+  before/after vendor opening; it does not interpret spectra.
+- `raw_sequence` resolves analysis membership and chronology from adapter facts.
+- `raw_mass_recalibration` owns in-memory restoration decisions and arithmetic;
+  `raw_mass_recalibration_batch` prepares source-bound results through the adapter
+  and schedules workers. Neither responsibility is implemented by a facade.
+
 ## Dependency Direction
 
 Startup-sensitive entry points and lightweight readers keep heavy,

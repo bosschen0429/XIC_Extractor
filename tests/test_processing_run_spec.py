@@ -113,7 +113,7 @@ def test_run_spec_reuses_verified_sources_without_rehashing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from xic_extractor.discovery import processing_run_spec_adapter as adapter
-    from xic_extractor.raw_reader import RawReaderError
+    from xic_extractor.raw_reader_errors import RawReaderError
 
     paths = _raws(tmp_path)
     expected = adapter.compile_discovery_processing_run_spec_with_expectations(

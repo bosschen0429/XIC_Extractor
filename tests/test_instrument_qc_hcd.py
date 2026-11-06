@@ -11,7 +11,7 @@ from xic_extractor.instrument_qc.hcd_registry import (
     resolve_hcd_product_group,
 )
 from xic_extractor.instrument_qc.models import SDOLEKTrendRow
-from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.sequence_document import (
     activation_method_from_instrument_method,
 )

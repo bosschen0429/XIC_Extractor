@@ -190,7 +190,9 @@ def test_sample_data_prefers_file_then_run_then_confirmed_then_raw_headers(
         header_reads.append((root, dll_dir))
         return SimpleNamespace(sample_metadata=from_payload(sample_payload()))
 
-    monkeypatch.setattr("xic_extractor.raw_reader.read_analysis_set", read_analysis_set)
+    monkeypatch.setattr(
+        "xic_extractor.raw_sequence.read_analysis_set", read_analysis_set
+    )
 
     def detect(**values):
         return describe_source(config, {"source_dir": str(source), **values})

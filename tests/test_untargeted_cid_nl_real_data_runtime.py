@@ -49,9 +49,7 @@ from xic_extractor.processing_identity import (
     compose_processing_owner_references,
     issue_processing_attempt,
 )
-from xic_extractor.raw_reader import (
-    RawReaderError,
-)
+from xic_extractor.raw_reader_errors import RawReaderError
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.acquisition_cache import (
     CachedUntargetedRaw,

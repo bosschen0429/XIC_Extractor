@@ -618,6 +618,7 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "processing-identity-stays-inner",
         "sample-metadata-no-instrument-qc",
         "grouping-and-cell-consume-method-answers",
+        "mass-restoration-stays-pure",
     }
     direct_only = {
         "alignment-domain-models-stay-pure",

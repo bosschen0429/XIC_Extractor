@@ -33,10 +33,8 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     UntargetedCidNlMethodSubjectBatch,
 )
-from xic_extractor.raw_reader import (
-    PreparedRawMassRecalibration,
-    ensure_assemblies_loaded,
-)
+from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
+from xic_extractor.raw_reader import ensure_assemblies_loaded
 from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )

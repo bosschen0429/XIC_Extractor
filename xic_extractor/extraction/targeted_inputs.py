@@ -33,10 +33,10 @@ from xic_extractor.processing_identity import (
     build_local_acquisition_source_identity,
     build_processing_request_identity,
 )
-from xic_extractor.raw_reader import (
+from xic_extractor.raw_sequence import read_analysis_set
+from xic_extractor.raw_source_binding import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
-    read_analysis_set,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 

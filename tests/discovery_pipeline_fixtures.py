@@ -19,12 +19,9 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
-)
-from xic_extractor.raw_reader import (
-    Ms2Scan,
-    Ms2ScanEvent,
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
