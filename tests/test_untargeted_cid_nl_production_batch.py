@@ -828,7 +828,6 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
     )
     from xic_extractor.alignment import completion as workflow_owner
     from xic_extractor.alignment import grouping_bootstrap as bootstrap_owner
-    from xic_extractor.peak_detection import observations as observation_owner
     from xic_extractor.untargeted_execution import partition_composition as production
 
     mint_captured = production.mint_captured_peak_observation
@@ -839,8 +838,6 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         counts = {"prepare": 0, "evaluate": 0}
         real_capture_prepare = capture_owner.prepare_physical_signal
         real_capture_evaluate = capture_owner.evaluate_physical_peak
-        real_observation_prepare = observation_owner.prepare_physical_signal
-        real_observation_evaluate = observation_owner.evaluate_physical_peak
 
         def count_capture_prepare(*call_args, **call_kwargs):
             counts["prepare"] += 1
@@ -850,30 +847,12 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
             counts["evaluate"] += 1
             return real_capture_evaluate(*call_args, **call_kwargs)
 
-        def count_observation_prepare(*call_args, **call_kwargs):
-            counts["prepare"] += 1
-            return real_observation_prepare(*call_args, **call_kwargs)
-
-        def count_observation_evaluate(*call_args, **call_kwargs):
-            counts["evaluate"] += 1
-            return real_observation_evaluate(*call_args, **call_kwargs)
-
         with monkeypatch.context() as mint_patch:
             mint_patch.setattr(
                 capture_owner, "prepare_physical_signal", count_capture_prepare
             )
             mint_patch.setattr(
                 capture_owner, "evaluate_physical_peak", count_capture_evaluate
-            )
-            mint_patch.setattr(
-                observation_owner,
-                "prepare_physical_signal",
-                count_observation_prepare,
-            )
-            mint_patch.setattr(
-                observation_owner,
-                "evaluate_physical_peak",
-                count_observation_evaluate,
             )
             result = mint_captured(capture, *args, **kwargs)
         mint_args.append((capture, args, kwargs))
@@ -896,7 +875,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         workflow_owner, "project_untarget_matrix", record_matrix_projection
     )
     bind_capture = capture_owner.bind_owner_backed_capture_hypothesis
-    evaluate_physical = observation_owner.evaluate_physical_peak
+    evaluate_physical = capture_owner.evaluate_physical_peak
     binding_rechecks = []
     bound_captures = []
 
@@ -908,10 +887,9 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
             return evaluate_physical(*args, **evaluation_kwargs)
 
         with monkeypatch.context() as binding_patch:
-            for owner in (capture_owner, observation_owner):
-                binding_patch.setattr(
-                    owner, "evaluate_physical_peak", record_evaluation
-                )
+            binding_patch.setattr(
+                capture_owner, "evaluate_physical_peak", record_evaluation
+            )
             bound = bind_capture(capture, **kwargs)
         binding_rechecks.append(len(rechecks))
         bound_captures.append((capture, kwargs))
@@ -1661,51 +1639,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     close_and_verify_persisted_curves()
 
 
-def test_profile_replay_rejects_changed_observation_inputs(profile_replay) -> None:
-    inputs = profile_replay.inputs
+def test_profile_replay_rejects_crossed_physical_capture(profile_replay) -> None:
     trace = profile_replay.trace
-
-    from xic_extractor.configuration.signal_processing_profile import (
-        SignalProcessingProfile,
-    )
     from xic_extractor.peak_detection import capture as capture_owner
-    from xic_extractor.peak_detection.observations import (
-        PeakObservationContractError,
-        mint_peak_observation_ref,
-        physical_peak_observation_integration,
-    )
-
-    capture = trace.captured_peaks[0]
-    evaluation = capture.physical_evaluation
-    assert evaluation is not None
-    integration = physical_peak_observation_integration(evaluation)
-    prepared = prepare_physical_signal(
-        capture.trace.rt, capture.trace.intensity, profile=inputs.profile
-    )
-    assert prepared.prepared is not None
-    observation_args = dict(
-        processing_owners=trace.captured_batches[0].jobs[0].processing_owners,
-        sample=trace.captured_batches[0].jobs[0].sample,
-        trace=capture.trace,
-        integration=integration,
-        selection_intensity=prepared.prepared.positive_signal,
-        resolver_mode=inputs.peak_config.resolver_mode,
-        proposal_sources=("canonical_physical_segment",),
-        physical_evaluation=evaluation,
-        signal_processing_profile=inputs.profile,
-    )
-    for substitution in (
-        {"signal_processing_profile": SignalProcessingProfile(window_points=21)},
-        {"trace": replace(capture.trace, intensity=capture.trace.intensity + 1.0)},
-        {
-            "integration": replace(
-                integration,
-                area_baseline_corrected=integration.area_baseline_corrected + 1.0,
-            )
-        },
-    ):
-        with pytest.raises((PeakObservationContractError, ValueError)):
-            mint_peak_observation_ref(**(observation_args | substitution))
 
     bound_capture, binding_args = trace.bound_captures[0]
     changed_source = capture_owner.capture_peak_hypotheses(

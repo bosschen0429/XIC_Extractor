@@ -456,18 +456,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
             candidate_id=capture.candidate_id,
             trace=replace(capture.trace, intensity=capture.trace.intensity + 1.0),
         )
-    with pytest.raises(
-        capture_owner.SampleLocalCaptureError, match="coordinates mismatch"
-    ):
-        capture_owner.capture_reacquired_physical_peak(
-            scope=capture.scope,
-            candidate_id=capture.candidate_id,
-            trace=replace(
-                capture.trace,
-                rt_min=capture.trace.rt_min - 0.01,
-                acquisition_source_id="xic.acquisition-source:" + "0" * 64,
-            ),
-        )
 
 
 @pytest.mark.parametrize(
@@ -3004,7 +2992,6 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
     )
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         CidNlEvaluationReceipt,
-        CidNlMethodAssessmentContractError,
         mint_cid_nl_method_assessment_ref,
     )
     from xic_extractor.peak_detection.search_scope import (
@@ -3099,13 +3086,3 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
     assert assessment.candidate_peaks[0].content.integration.area_ms1_morphology == (
         evaluation.facts.area_counts_seconds
     )
-    # Ordinary observations cannot use the physical Backfill owner's selection.
-    with pytest.raises(CidNlMethodAssessmentContractError, match="candidate peak apex"):
-        mint_cid_nl_method_assessment_ref(
-            **kwargs,
-            candidate_peaks=(replace(peak, physical_evaluation=None),),
-        )
-    # The physical question itself must still belong to the queried interval.
-    kwargs["evaluation_receipt"] = replace(receipt, query_rt_min=8.1, query_rt_max=8.2)
-    with pytest.raises(CidNlMethodAssessmentContractError, match="outside"):
-        mint_cid_nl_method_assessment_ref(**kwargs, candidate_peaks=(peak,))

@@ -118,7 +118,6 @@ def _view(
         integration=physical_peak_observation_integration(evaluation),
         physical_evaluation=evaluation,
         signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
-        selection_intensity=prepared.prepared.positive_signal,
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum", "gaussian15"),
     )

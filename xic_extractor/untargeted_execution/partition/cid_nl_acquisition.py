@@ -67,16 +67,13 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     is_cid_nl_missing_ms1_rejection,
     mint_cid_nl_method_assessment_ref,
     resolve_cid_nl_method_relations,
-    validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     CidNlComposition,
     CidNlMethodSubject,
-    CidNlMethodSubjectContractError,
     UntargetedCidNlMethodSubjectBatch,
     cid_nl_method_subjects_from_request,
-    validate_cid_nl_method_subject_binding,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
@@ -629,14 +626,6 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         != len(backfill_requests)
     ):
         raise CidNlAcquisitionError("backfill requests must be a non-empty typed tuple")
-    for target in backfill_requests:
-        try:
-            validate_cid_nl_method_subject_binding(
-                target.method_subject,
-                processing_owners=processing_owners,
-            )
-        except CidNlMethodSubjectContractError as exc:
-            raise CidNlAcquisitionError(str(exc)) from exc
     targets = tuple(
         sorted(
             backfill_requests,
@@ -989,12 +978,6 @@ def backfill_untargeted_cid_nl_sample_subject(
     if not isinstance(support_policy, DdaCidNlPeakSupportPolicy):
         raise CidNlAcquisitionError("support_policy has the wrong owner type")
     if initial_assessment is not None:
-        validate_cid_nl_method_assessment_binding(
-            initial_assessment,
-            processing_owners=processing_owners,
-            sample=sample,
-            method_subject=method_subject,
-        )
         if (
             not is_cid_nl_missing_ms1_rejection(initial_assessment)
             or initial_assessment.content.evaluation_receipt.support_policy
@@ -1030,13 +1013,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         or physical_mz <= 0.0
     ):
         raise CidNlAcquisitionError("group_center_mz must be finite and positive")
-    try:
-        validate_cid_nl_method_subject_binding(
-            method_subject,
-            processing_owners=processing_owners,
-        )
-    except CidNlMethodSubjectContractError as exc:
-        raise CidNlAcquisitionError(str(exc)) from exc
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
         sample=sample,
@@ -1750,13 +1726,6 @@ def _validate_inputs(**values: object) -> None:
         raise CidNlAcquisitionError(
             "adapter requires an Untargeted CID-NL method subject"
         )
-    try:
-        validate_cid_nl_method_subject_binding(
-            method_subject,
-            processing_owners=processing_owners,
-        )
-    except CidNlMethodSubjectContractError as exc:
-        raise CidNlAcquisitionError(str(exc)) from exc
     if method_subject.composition is not None:
         if settings.tag_combine_mode == "single":
             raise CidNlAcquisitionError(

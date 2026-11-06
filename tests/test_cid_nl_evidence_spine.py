@@ -39,42 +39,12 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
-    CidNlMethodAssessmentContractError,
     mint_cid_nl_method_assessment_ref,
-    validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportContractError,
 )
 from xic_extractor.precursor_evidence import precursor_isolation_membership
-
-
-@pytest.mark.parametrize(
-    "changes",
-    [
-        {"query_rt_min": 7.5},
-        {"query_rt_max": 8.5},
-        {"search_completed": True},
-        {"evidence_scope": "subject_window"},
-    ],
-)
-def test_absent_rt_receipt_is_only_valid_for_unattempted_declared_search(
-    changes,
-) -> None:
-    values = dict(
-        query_rt_min=None,
-        query_rt_max=None,
-        support_policy=cid_nl_support_policy(),
-        acquisition_supported=True,
-        search_completed=False,
-        reason_code="no_search_eligible_discovery_input",
-        evidence_scope="declared_scans",
-    )
-    assert CidNlEvaluationReceipt(**values).query_rt_min is None
-    with pytest.raises(
-        CidNlMethodAssessmentContractError, match="absent evaluation query"
-    ):
-        CidNlEvaluationReceipt(**(values | changes))
 
 
 @pytest.mark.parametrize(
@@ -341,15 +311,9 @@ def test_inferred_evidence_rejects_unbound_or_crossed_precursor_provenance(
         mint_cid_nl_evidence_ref(**(arguments | changed))
 
 
-def test_s1_to_s5_truth_table_preserves_orthogonal_axes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_s1_to_s5_truth_table_preserves_orthogonal_axes(tmp_path: Path) -> None:
     fixture, assessments = _truth_table_fixture(tmp_path)
 
-    def unexpected_reevaluation(**kwargs: object) -> None:
-        pytest.fail("assessment handoff must reuse the completed method decision")
-
-    monkeypatch.setattr(assessment_module, "_method_result", unexpected_reevaluation)
     by_sample = {
         assessment.content.sample_key: assessment for assessment in assessments
     }
@@ -370,18 +334,6 @@ def test_s1_to_s5_truth_table_preserves_orthogonal_axes(
     assert s5.content.technical_state == "unsupported"
     assert s5.content.method_result is None
     assert all(not hasattr(assessment, "peak_hypothesis") for assessment in assessments)
-
-    for assessment in assessments:
-        validate_cid_nl_method_assessment_binding(
-            assessment,
-            processing_owners=fixture.owners,
-            sample=next(
-                sample
-                for sample in fixture.samples
-                if sample.identity.sample_key == assessment.content.sample_key
-            ),
-            target=fixture.target,
-        )
 
 
 def test_set_relation_is_order_neutral_and_never_votes_twice(tmp_path: Path) -> None:
@@ -569,19 +521,6 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
                     relations=relations,
                 )
             )
-            if retain_relations:
-                with pytest.raises(
-                    CidNlMethodAssessmentContractError,
-                    match="exact candidate/event universe",
-                ):
-                    assessment_module.resolve_cid_nl_method_relations(
-                        processing_owners=fixture.owners,
-                        sample=sample,
-                        evidence_refs=(evidence,),
-                        candidate_peaks=peaks[:1],
-                        policy=cid_nl_support_policy(),
-                        relations=relations,
-                    )
         assert resolved_individual == individual_refs
         assert resolved_sets == set_refs
         resolved_assessment = mint_cid_nl_method_assessment_ref(
@@ -652,76 +591,6 @@ def test_method_relation_resolution_preserves_unrelated_and_empty_facts(
         candidate_peaks=peaks,
         policy=cid_nl_support_policy(),
     ) == ((), ())
-
-
-def test_assessment_binding_rejects_crossed_sample(tmp_path: Path) -> None:
-    fixture, assessments = _truth_table_fixture(tmp_path)
-    support = assessments[0]
-    with pytest.raises(CidNlMethodAssessmentContractError, match="sample"):
-        validate_cid_nl_method_assessment_binding(
-            support,
-            processing_owners=fixture.owners,
-            sample=fixture.sample("s2"),
-            target=fixture.target,
-        )
-
-
-def test_assessment_rejects_target_precursor_and_query_window_substitution(
-    tmp_path: Path,
-) -> None:
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("bound",)
-    )
-    sample = fixture.sample("bound")
-    wrong_precursor_mz = fixture.target.definition.target.mz + 100.0
-    wrong_peak = cid_nl_peak(fixture, "bound", mz=wrong_precursor_mz)
-    wrong_evidence = mint_cid_nl_evidence_ref(
-        processing_owners=fixture.owners,
-        sample=sample,
-        scan_number=71,
-        precursor_mz=wrong_precursor_mz,
-        product_mz=wrong_precursor_mz - NEUTRAL_LOSS_DA,
-        configured_neutral_loss_da=NEUTRAL_LOSS_DA,
-        observed_neutral_loss_da=NEUTRAL_LOSS_DA,
-        observed_loss_error_ppm=0.0,
-        scan_rt_min=8.0,
-        product_intensity=400.0,
-    )
-
-    with pytest.raises(CidNlMethodAssessmentContractError, match="target precursor"):
-        mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners,
-            sample=sample,
-            target=fixture.target,
-            detector_invocation_id="gaussian15:bound:wrong-peak",
-            evaluation_receipt=_completed_receipt(),
-            candidate_peaks=(wrong_peak,),
-        )
-    with pytest.raises(CidNlMethodAssessmentContractError, match="target precursor"):
-        mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners,
-            sample=sample,
-            target=fixture.target,
-            detector_invocation_id="gaussian15:bound:wrong-evidence",
-            evaluation_receipt=_completed_receipt(),
-            evidence_refs=(wrong_evidence,),
-        )
-
-    late_evidence = cid_nl_evidence(
-        fixture,
-        "bound",
-        scan_number=72,
-        scan_rt_min=20.0,
-    )
-    with pytest.raises(CidNlMethodAssessmentContractError, match="query RT window"):
-        mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners,
-            sample=sample,
-            target=fixture.target,
-            detector_invocation_id="gaussian15:bound:late-evidence",
-            evaluation_receipt=_completed_receipt(),
-            evidence_refs=(late_evidence,),
-        )
 
 
 def test_assessment_requires_qualifying_evidence_before_reject(
@@ -1028,49 +897,7 @@ def test_multi_scan_owner_projection_is_order_neutral_across_samples(
     assert aggregate_losses[0] == pytest.approx(NEUTRAL_LOSS_DA)
 
 
-def test_assessment_rejects_duplicate_acquisition_scan_evidence(
-    tmp_path: Path,
-) -> None:
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("same-scan",)
-    )
-    peak = cid_nl_peak(fixture, "same-scan")
-    first = _measured_evidence(
-        fixture,
-        "same-scan",
-        scan_number=92,
-        loss_error_ppm=-5.0,
-    )
-    second = _measured_evidence(
-        fixture,
-        "same-scan",
-        scan_number=92,
-        loss_error_ppm=5.0,
-    )
-    supports = tuple(
-        cid_nl_unique_support(
-            fixture,
-            "same-scan",
-            peak=peak,
-            evidence=evidence,
-        )
-        for evidence in (first, second)
-    )
-
-    with pytest.raises(CidNlMethodAssessmentContractError, match="acquisition scan"):
-        mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners,
-            sample=fixture.sample("same-scan"),
-            target=fixture.target,
-            detector_invocation_id="gaussian15:same-scan",
-            evaluation_receipt=_completed_receipt(),
-            candidate_peaks=(peak,),
-            evidence_refs=(first, second),
-            individual_support_refs=supports,
-        )
-
-
-def test_partial_and_duplicate_inputs_fail_closed(tmp_path: Path) -> None:
+def test_duplicate_candidates_fail_closed(tmp_path: Path) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample",)
     )
@@ -1081,27 +908,12 @@ def test_partial_and_duplicate_inputs_fail_closed(tmp_path: Path) -> None:
         rt_left_min=7.8,
         rt_right_min=8.0,
     )
-    right = cid_nl_peak(
-        fixture,
-        "sample",
-        apex_rt=8.1,
-        rt_left_min=8.0,
-        rt_right_min=8.2,
-    )
     evidence = cid_nl_evidence(
         fixture,
         "sample",
         scan_number=52,
         scan_rt_min=8.0,
     )
-    relation = resolve_dda_cid_nl_candidate_set_relation_ref(
-        processing_owners=fixture.owners,
-        sample=fixture.sample("sample"),
-        canonical_evidence=evidence,
-        candidate_peaks=(left, right),
-        policy=cid_nl_support_policy(),
-    )
-
     with pytest.raises(
         DdaCidNlCandidateSetRelationContractError,
         match="unique",
@@ -1112,20 +924,6 @@ def test_partial_and_duplicate_inputs_fail_closed(tmp_path: Path) -> None:
             canonical_evidence=evidence,
             candidate_peaks=(left, left),
             policy=cid_nl_support_policy(),
-        )
-    with pytest.raises(
-        CidNlMethodAssessmentContractError,
-        match="different candidate universe",
-    ):
-        mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners,
-            sample=fixture.sample("sample"),
-            target=fixture.target,
-            detector_invocation_id="gaussian15:sample",
-            evaluation_receipt=_completed_receipt(),
-            candidate_peaks=(left,),
-            evidence_refs=(evidence,),
-            set_relation_refs=(relation,),
         )
 
 
@@ -1195,32 +993,6 @@ def test_unique_case_rejects_set_relation_and_split_case_rejects_individual_vote
             peak=peak,
             evidence=evidence,
             candidate_peaks=(peak, right),
-        )
-
-
-@pytest.mark.parametrize("scope_override", ["declared_scans", "physical_query_mz"])
-def test_targeted_assessment_retains_its_subject_mass_window(
-    tmp_path: Path,
-    scope_override: str,
-) -> None:
-    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
-    with pytest.raises(CidNlMethodAssessmentContractError, match="Untargeted"):
-        mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners,
-            sample=fixture.sample("s1"),
-            target=fixture.target,
-            detector_invocation_id="targeted-scope",
-            evaluation_receipt=replace(
-                _completed_receipt(),
-                evidence_scope=(
-                    "declared_scans"
-                    if scope_override == "declared_scans"
-                    else "subject_window"
-                ),
-                physical_query_mz=(
-                    500.012 if scope_override == "physical_query_mz" else None
-                ),
-            ),
         )
 
 

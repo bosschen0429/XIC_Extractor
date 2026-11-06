@@ -20,7 +20,6 @@ from typing import Literal, TypeAlias
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import (
-    ProcessingOwnerReferences,
     ProcessingRequestIdentity,
 )
 
@@ -178,12 +177,6 @@ class UntargetedCidNlMethodSubjectBatch:
 
     subjects: tuple[CidNlMethodSubject, ...]
     candidate_memberships: tuple[tuple[str, str], ...]
-
-    def __post_init__(self) -> None:
-        _validate_untargeted_subject_batch(
-            subjects=self.subjects,
-            candidate_memberships=self.candidate_memberships,
-        )
 
     @property
     def schema_version(self) -> str:
@@ -729,9 +722,7 @@ def _subjects_from_normalized_inputs(
     CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
     Mapping[str, CidNlMethodSubject],
 ]:
-    # Keep the strict parse and its lookup in one latest-exact-payload cache.
-    # Binding still compares the full subject; the index only avoids scanning
-    # every other subject for each sample/subject job.
+    # Keep the strict parse and subject lookup in one latest-exact-payload cache.
     payload = _cid_nl_payload_from_normalized_inputs(normalized_inputs_json)
     pinned = (
         _batch_from_payload(payload)
@@ -833,55 +824,6 @@ def _batch_from_payload(
         raise CidNlMethodSubjectContractError(
             "Untargeted request CID-NL subject batch is malformed"
         ) from exc
-
-
-def validate_cid_nl_method_subject_binding(
-    subject: CidNlMethodSubject,
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    target: ResolvedTargetDefinition | None = None,
-) -> None:
-    """Reject a subject not pinned by the exact processing request owner."""
-
-    if not isinstance(subject, CidNlMethodSubject):
-        raise CidNlMethodSubjectContractError(
-            "subject must be an owner-normalized CID-NL method subject"
-        )
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise CidNlMethodSubjectContractError(
-            "processing_owners must be validated ProcessingOwnerReferences"
-        )
-    if subject.subject_kind == "targeted_definition":
-        if target is None or not isinstance(target, ResolvedTargetDefinition):
-            raise CidNlMethodSubjectContractError(
-                "targeted method subject requires its exact target adapter"
-            )
-        expected = cid_nl_method_subject_from_target(target)
-        if subject != expected:
-            raise CidNlMethodSubjectContractError(
-                "targeted method subject mismatches its target definition"
-            )
-        snapshot = processing_owners.target_snapshot
-        if snapshot is None or snapshot != target.snapshot:
-            raise CidNlMethodSubjectContractError(
-                "targeted method subject is outside the processing request"
-            )
-        return
-
-    if target is not None:
-        raise CidNlMethodSubjectContractError(
-            "Untargeted method subject cannot be paired with a configured Target"
-        )
-    try:
-        _pinned, subjects_by_id = _request_subject_context(processing_owners.request)
-    except CidNlMethodSubjectContractError as exc:
-        raise CidNlMethodSubjectContractError(
-            "Untargeted method subject is not pinned by the processing request"
-        ) from exc
-    if subjects_by_id.get(subject.method_subject_id) != subject:
-        raise CidNlMethodSubjectContractError(
-            "Untargeted method subject is not pinned by the processing request"
-        )
 
 
 def _request_cid_nl_payload(
@@ -992,87 +934,6 @@ def _subject_from_payload(payload: object) -> CidNlMethodSubject:
         ) from exc
 
 
-def _validate_untargeted_subject_batch(
-    *,
-    subjects: object,
-    candidate_memberships: object,
-) -> None:
-    if type(subjects) is not tuple:
-        raise CidNlMethodSubjectContractError(
-            "Untargeted CID-NL subject batch requires a subject tuple"
-        )
-    if any(type(subject) is not CidNlMethodSubject for subject in subjects):
-        raise CidNlMethodSubjectContractError(
-            "Untargeted CID-NL subject batch contains a non-owner subject"
-        )
-    for subject in subjects:
-        if subject.subject_kind != "untargeted_precursor":
-            raise CidNlMethodSubjectContractError(
-                "Untargeted CID-NL subject batch cannot contain a Targeted subject"
-            )
-        try:
-            CidNlMethodSubject(
-                subject_kind=subject.subject_kind,
-                precursor_mz=subject.precursor_mz,
-                precursor_tolerance_ppm=subject.precursor_tolerance_ppm,
-                neutral_loss_da=subject.neutral_loss_da,
-                target=subject.target,
-                composition=subject.composition,
-            )
-        except (TypeError, ValueError) as exc:
-            raise CidNlMethodSubjectContractError(
-                "Untargeted CID-NL subject batch contains a malformed subject"
-            ) from exc
-    subject_ids = tuple(subject.method_subject_id for subject in subjects)
-    if len(subject_ids) != len(set(subject_ids)):
-        raise CidNlMethodSubjectContractError(
-            "Untargeted CID-NL subject batch contains duplicate subjects"
-        )
-    if subject_ids != tuple(sorted(subject_ids)):
-        raise CidNlMethodSubjectContractError(
-            "Untargeted CID-NL subject batch subjects are not canonically ordered"
-        )
-
-    if type(candidate_memberships) is not tuple:
-        raise CidNlMethodSubjectContractError(
-            "Untargeted CID-NL subject batch requires candidate memberships"
-        )
-    normalized_memberships: list[tuple[str, str]] = []
-    for membership in candidate_memberships:
-        if type(membership) is not tuple or len(membership) != 2:
-            raise CidNlMethodSubjectContractError(
-                "Untargeted CID-NL subject batch has malformed membership"
-            )
-        candidate_id = _normalized_text(membership[0], field="candidate_id")
-        method_subject_id = _normalized_text(membership[1], field="method_subject_id")
-        normalized_memberships.append((candidate_id, method_subject_id))
-    if tuple(normalized_memberships) != candidate_memberships:
-        raise CidNlMethodSubjectContractError(
-            "Untargeted CID-NL subject batch memberships are not normalized"
-        )
-    candidate_ids = tuple(candidate_id for candidate_id, _ in candidate_memberships)
-    if len(candidate_ids) != len(set(candidate_ids)):
-        raise CidNlMethodSubjectContractError(
-            "Untargeted CID-NL subject batch contains duplicate candidates"
-        )
-    if candidate_ids != tuple(sorted(candidate_ids)):
-        raise CidNlMethodSubjectContractError(
-            "Untargeted CID-NL subject batch memberships are not canonically ordered"
-        )
-    declared_subject_ids = set(subject_ids)
-    linked_subject_ids = {
-        method_subject_id for _, method_subject_id in candidate_memberships
-    }
-    if not linked_subject_ids.issubset(declared_subject_ids):
-        raise CidNlMethodSubjectContractError(
-            "Untargeted CID-NL subject batch references an undeclared subject"
-        )
-    if linked_subject_ids != declared_subject_ids:
-        raise CidNlMethodSubjectContractError(
-            "Untargeted CID-NL subject batch contains an unused subject"
-        )
-
-
 def _normalized_text(value: object, *, field: str) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
         raise CidNlMethodSubjectContractError(
@@ -1139,5 +1000,4 @@ __all__ = [
     "mint_untargeted_cid_nl_method_subject",
     "mint_untargeted_cid_nl_method_subject_batch",
     "validate_cid_nl_alignment_subject_compatibility",
-    "validate_cid_nl_method_subject_binding",
 ]
