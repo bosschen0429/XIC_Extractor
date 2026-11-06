@@ -29,7 +29,7 @@ from xic_extractor.configuration.mass_recalibration import MassRecalibration
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan, Ms2ScanEvent
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
-from xic_extractor.raw_reader import RawFileHandle, require_source_bound_raw_handle
+from xic_extractor.raw_reader import RawFileHandle
 from xic_extractor.raw_superwindow_source import (
     RawSuperWindowSource,
     ScanResolvedXICSource,
@@ -269,18 +269,6 @@ def bind_untargeted_acquisition_cache(
         cache_dir=cache_dir,
         mass_recalibration=raw.mass_recalibration,
     )
-
-
-def require_owner_bound_untargeted_raw(
-    raw: object, source: AcquisitionSourceIdentity
-) -> RawFileHandle | CachedUntargetedRaw:
-    if isinstance(raw, CachedUntargetedRaw):
-        if raw.acquisition_source != source:
-            raise UntargetedAcquisitionCacheError(
-                "cached RAW handle is bound to a different acquisition source"
-            )
-        return raw
-    return require_source_bound_raw_handle(raw, source)
 
 
 def acquire_untargeted_trace_batch(
@@ -666,5 +654,4 @@ __all__ = [
     "UntargetedAcquisitionCacheError",
     "acquire_untargeted_trace_batch",
     "bind_untargeted_acquisition_cache",
-    "require_owner_bound_untargeted_raw",
 ]

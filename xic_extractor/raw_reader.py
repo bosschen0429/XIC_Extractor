@@ -681,17 +681,6 @@ class _SourceBoundRawFileHandle(RawFileHandle):
         return self._raw_open_receipt
 
 
-def require_source_bound_raw_handle(
-    raw: object,
-    expected: AcquisitionSourceIdentity,
-) -> RawFileHandle:
-    if not isinstance(raw, _SourceBoundRawFileHandle):
-        raise RawReaderError("RAW handle has no acquisition source binding")
-    if raw.acquisition_source != expected:
-        raise RawReaderError("RAW handle is bound to a different acquisition source")
-    return raw
-
-
 def open_raw(
     path: Path,
     dll_dir: Path,

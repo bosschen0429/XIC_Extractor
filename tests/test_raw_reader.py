@@ -496,28 +496,6 @@ def test_open_raw_rejects_source_identity_for_wrong_adapter_semantics(
         )
 
 
-def test_direct_raw_handle_cannot_claim_an_acquisition_source(tmp_path: Path) -> None:
-    from xic_extractor.processing_identity import build_acquisition_source_identity
-    from xic_extractor.raw_reader import RawFileHandle, require_source_bound_raw_handle
-    from xic_extractor.raw_reader_errors import RawReaderError
-
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"sample-a")
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:1",
-    )
-    raw = _FakeRaw()
-    handle = RawFileHandle(raw, _fake_thermo(raw))
-
-    with pytest.raises(
-        RawReaderError,
-        match="has no acquisition source binding",
-    ):
-        require_source_bound_raw_handle(handle, source)
-
-
 def test_open_raw_rejects_path_content_from_another_source(tmp_path: Path) -> None:
     from xic_extractor.processing_identity import build_acquisition_source_identity
     from xic_extractor.raw_reader import open_raw

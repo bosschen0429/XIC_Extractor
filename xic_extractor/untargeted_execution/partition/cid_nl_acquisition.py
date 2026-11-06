@@ -13,7 +13,7 @@ import math
 from dataclasses import dataclass, replace
 from dataclasses import field as dataclass_field
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 import numpy as np
 
@@ -110,11 +110,9 @@ from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     resolve_request_acquisition_source,
 )
-from xic_extractor.raw_reader_errors import RawReaderError
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.untargeted_execution.acquisition_cache import (
     acquire_untargeted_trace_batch,
-    require_owner_bound_untargeted_raw,
 )
 from xic_extractor.xic_models import XICRequest
 
@@ -503,12 +501,6 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
         processing_owners=processing_owners,
         sample=sample,
     )
-    try:
-        bound_raw = require_owner_bound_untargeted_raw(raw, source)
-    except RawReaderError as exc:
-        raise CidNlAcquisitionError(
-            "raw handle is not owner-bound to the resolved acquisition source"
-        ) from exc
     capability = mint_trace_acquisition_capability(
         source,
         adapter_namespace=f"{_ADAPTER_NAMESPACE}.sample_batch",
@@ -526,9 +518,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     # in this batch but is never supplied to the integration owner.
     context_indices = tuple(range(len(requests), len(requests) + len(context_requests)))
     acquisition = _freeze_acquisition(
-        acquire_untargeted_trace_batch(
-            capability, (*requests, *context_requests), bound_raw
-        )
+        acquire_untargeted_trace_batch(capability, (*requests, *context_requests), raw)
     )
     contexts = []
     for index in context_indices:
@@ -649,12 +639,6 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         processing_owners=processing_owners,
         sample=sample,
     )
-    try:
-        bound_raw = require_owner_bound_untargeted_raw(raw, source)
-    except RawReaderError as exc:
-        raise CidNlAcquisitionError(
-            "raw handle is not owner-bound to the resolved acquisition source"
-        ) from exc
     half_window = peak_config.nl_rt_anchor_half_window_min
     physical_context = PHYSICAL_CAPTURE_INPUT_KEY in json.loads(
         processing_owners.request.normalized_scientific_inputs_json
@@ -696,7 +680,7 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     acquisition = _freeze_acquisition(
-        acquire_untargeted_trace_batch(capability, tuple(unique), bound_raw)
+        acquire_untargeted_trace_batch(capability, tuple(unique), raw)
     )
     return UntargetedCidNlBackfillTraceBatch(
         sample_key=sample.identity.sample_key,
@@ -819,14 +803,8 @@ def adapt_current_discovery_sample_subject(
         sample=sample,
     )
     try:
-        bound_raw = require_owner_bound_untargeted_raw(raw, source)
-    except RawReaderError as exc:
-        raise CidNlAcquisitionError(
-            "raw handle is not owner-bound to the resolved acquisition source"
-        ) from exc
-    try:
         scan_seeds = read_complete_discovery_scan_seeds(
-            bound_raw,
+            raw,
             candidates=seed_candidates + support_seed_candidates,
             settings=settings,
             preserve_configured_losses=method_subject.composition is not None,
@@ -853,7 +831,7 @@ def adapt_current_discovery_sample_subject(
         candidates=peak_candidates,
         settings=settings,
         peak_config=peak_config,
-        raw=bound_raw,
+        raw=raw,
         source=source,
         search_scope=search_scope,
         method_subject=method_subject,
@@ -870,7 +848,7 @@ def adapt_current_discovery_sample_subject(
         )
     )
     verified_seeds = read_parent_ms1_observations(
-        bound_raw,
+        raw,
         tuple(seed for _scan, seed in scan_seeds),
         tolerance_ppm=settings.precursor_mz_tolerance_ppm,
     )
@@ -1069,12 +1047,6 @@ def backfill_untargeted_cid_nl_sample_subject(
             raise CidNlAcquisitionError(
                 "backfill requires owner-opened RAW or preacquired traces"
             )
-        try:
-            bound_raw = require_owner_bound_untargeted_raw(raw, source)
-        except RawReaderError as exc:
-            raise CidNlAcquisitionError(
-                "raw handle is not owner-bound to the resolved acquisition source"
-            ) from exc
         capability = mint_trace_acquisition_capability(
             source,
             adapter_namespace=f"{_ADAPTER_NAMESPACE}.backfill",
@@ -1084,7 +1056,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             acquire_untargeted_trace_batch(
                 capability,
                 (request, context_request),
-                bound_raw,
+                raw,
             )
         )
         acquired = acquisition.traces[0]
@@ -1185,13 +1157,13 @@ def backfill_untargeted_cid_nl_sample_subject(
             raise CidNlAcquisitionError(
                 "backfill composition mismatches the method subject"
             )
-        bound_raw = require_owner_bound_untargeted_raw(raw, source)
         backfill_evidence, backfill_support, backfill_sets = (
             _composite_backfill_evidence(
                 processing_owners=processing_owners,
                 sample=sample,
                 method_subject=method_subject,
-                raw=bound_raw,
+                # Composite workers retain RAW even with preacquired traces.
+                raw=cast(CidNlRawSource, raw),
                 settings=settings,
                 query_rt_min=query_rt_min,
                 query_rt_max=query_rt_max,
