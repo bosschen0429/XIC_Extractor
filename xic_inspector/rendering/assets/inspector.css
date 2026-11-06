@@ -517,6 +517,7 @@
 .xic-inspector .dm-nl-support[aria-pressed="true"] { border-color:var(--accent);background:var(--accent-soft); }
 .xic-inspector .dm-support-nav { display:flex;align-items:center;gap:10px;margin:8px 0; }
 .xic-inspector .dm-nl-measurement { font-size:13px;font-variant-numeric:tabular-nums;margin:8px 0; }
+.xic-inspector .dm-product-label { display:inline-block; }
 .xic-inspector .dm-readout:empty { display:none; }
 .xic-inspector .dm-advanced { margin-top:16px;border-top:1px solid var(--line);padding-top:10px; }
 .xic-inspector .dm-advanced > summary { cursor:pointer;color:var(--muted);font-size:13px; }

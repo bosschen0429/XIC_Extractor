@@ -99,7 +99,7 @@ def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path
     generate_report(source, SelectionRequest(), output)
     page.goto(output.as_uri())
     root = page.locator(".dm-review")
-    expect(page.locator(".record-button").first).to_contain_text("M 支持")
+    expect(page.locator(".record-button").first).to_contain_text("M 有 test-NL 支持")
     expect(root.get_by_label("各位置 NL 判讀").locator("tbody tr")).to_have_count(1)
     expect(root.get_by_label("MS2 scan", exact=True)).not_to_be_visible()
     expect(root.get_by_label("顯示 RT 起點")).not_to_be_visible()
@@ -113,6 +113,12 @@ def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path
         "data-nl-product-mz", "60"
     )
     expect(root.locator(".dm-nl-measurement").first).to_contain_text("實測 NL 40 Da")
+    expect(root.get_by_role("heading", name="NL 證據", exact=True)).to_contain_text(
+        "產物 m/z 60"
+    )
+    expect(
+        root.locator(".dm-spectrum svg text").filter(has_text="NL 產物")
+    ).to_have_count(0)
     expect(root.locator(".dm-xic [data-nl-boundary]")).to_have_count(2)
     root.get_by_role("button", name="下一筆支持").click()
     expect(root.locator("[data-spectrum-scan]")).to_have_attribute(

@@ -25,7 +25,9 @@
     const results = compact ? findings(saved) : saved.neutral_losses || [], multiple = new Set(results.map(n => n.tag)).size > 1;
     const label = compact ? nlShortStatus : nlStatus;
     if (compact && results.length && results.length === saved.neutral_losses.length && results[0].status !== 'supported' && results.every(n => n.status === results[0].status)) return `NL：${label(results[0].status)}`;
-    return results.map(n => `${n.position_label}${multiple ? ` / ${n.tag}` : ''}${compact ? ' ' : '：'}${label(n.status)}`).join(' · ');
+    return results.map(n => compact
+      ? n.status === 'supported' ? `${n.position_label} 有 ${n.tag} 支持` : `${n.position_label} / ${n.tag}：${label(n.status)}`
+      : `${n.position_label}${multiple ? ` / ${n.tag}` : ''}：${label(n.status)}`).join(' · ');
   };
   function table(headers, rows) {
     const wrap = node('div', undefined, 'table-scroll'), result = node('table', undefined, 'sample-table dm-table');
@@ -341,7 +343,7 @@
         if (index >= 0) {
           const product = mark('line', {x1:x(match.product_mz), x2:x(match.product_mz), y1:B, y2:y(scan.intensity[index]), stroke:'var(--ink)', 'stroke-width':3, 'data-nl-product-mz':match.product_mz});
           product.append(mark('title', {}, `NL 實測產物 m/z ${match.product_mz}`)); svg.append(product);
-          svg.append(mark('text', {x:x(match.product_mz), y:Math.max(T+14, y(scan.intensity[index])-8), 'text-anchor':x(match.product_mz)>(L+R)/2?'end':'start', fill:'var(--ink)'}, `NL 產物 ${mass(match.product_mz)}`));
+          ms2Heading.append(document.createTextNode(' · '), node('span', `產物 m/z ${mass(match.product_mz)}`, 'dm-product-label'));
         } else spectrum.append(node('p', '保存的 NL 產物不在此 spectrum 中，未繪製產物標記。', 'dm-note'));
       }
       function showPeak(index) {
