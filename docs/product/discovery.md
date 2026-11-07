@@ -348,6 +348,9 @@ Choose `--nl-preset` explicitly to assess NL inside saved feature bounds.
 Without it, only XICs are acquired; there is no manual MS2 browsing mode.
 The Inspector shows unsmoothed RAW XICs on a shared intensity axis, position
 labels, configured ΔDa, m/z, saved statuses and feature bounds.
+Review XICs use the same expected m/z centers as Discovery, retained at
+round-trip precision in the position CSV. Observed partner masses remain
+available for feature/precursor evidence; they do not silently recenter the XICs.
 Clicking NL support opens its exact spectrum, measured product and XIC bounds;
 multiple supporting scans remain navigable without a scan search.
 The existing NL matcher, parent-MS1 evidence and peak attribution own the answer.

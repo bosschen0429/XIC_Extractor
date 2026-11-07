@@ -126,9 +126,9 @@
       answers.setAttribute('aria-label', '各位置 NL 判讀'); answers.classList.add('dm-nl-summary'); root.append(answers);
     }
     const positions = table(
-      ['位置 · 設定 ΔDa', 'm/z', '保存狀態', 'Feature 峰界 (min)'],
+      ['位置 · 設定 ΔDa', 'XIC 擷取 m/z', '保存狀態', 'Feature 峰界 (min)'],
       saved.positions.map(p => [
-        `${labelFor(p.label)} · ${number(p.delta_da)}`, number(p.observed_mz ?? p.expected_mz),
+        `${labelFor(p.label)} · ${number(p.delta_da)}`, number(p.expected_mz),
         p.position_status, p.peak_rt_window?.map(number).join('–') || '—',
       ]),
     );

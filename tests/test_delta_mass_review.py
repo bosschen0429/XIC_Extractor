@@ -139,6 +139,61 @@ def test_unknown_candidate_fails_before_raw_acquisition(tmp_path, monkeypatch):
         )
 
 
+def test_review_queries_the_exact_discovery_center_not_the_partner_mass(
+    tmp_path, monkeypatch
+):
+    import csv
+
+    ids = write_discovery(tmp_path)
+    path = tmp_path / "delta_mass_positions.csv"
+    with path.open(encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        columns = reader.fieldnames
+        rows = list(reader)
+    for row in rows:
+        if row["candidate_id"] == ids[0] and row["position_label"] == "partner":
+            row["observed_mz"] = "103.008"
+    with path.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "sample-a.raw").touch()
+
+    class Reader:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def acquisition_rt_bounds(self):
+            return 0.0, 5.0
+
+        def extract_xic_many(self, requests):
+            return tuple(
+                XICTrace.from_arrays([1.5, 2.0, 2.5], [0.0, r.mz, 0.0])
+                for r in requests
+            )
+
+    monkeypatch.setattr(acquisition, "open_raw", lambda *args, **kwargs: Reader())
+    candidate = acquisition.acquire_delta_mass_review(
+        tmp_path,
+        candidate_ids=[ids[0]],
+        raw_directory=raw,
+        dll_directory=tmp_path,
+        padding_min=0.5,
+    ).candidates[0]
+    partner = next(p for p in candidate.positions if p.label == "partner")
+    assert partner.raw_intensity[1] == 103.0000001234
+    assert partner.expected_mz == 103.0000001234
+    assert partner.observed_mz == 103.008
+    assert (
+        partner.query_mz == 103.008
+    )  # Precursor/NL evidence keeps its measured center.
+
+
 def test_discovery_directory_points_to_review_export_not_alignment(tmp_path):
     write_discovery(tmp_path)
     with pytest.raises(

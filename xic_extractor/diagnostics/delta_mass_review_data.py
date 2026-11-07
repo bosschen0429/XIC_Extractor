@@ -34,6 +34,7 @@ class ReviewPosition:
 
     @property
     def query_mz(self) -> float:
+        """Precursor/NL evidence center; XICs use Discovery's expected_mz."""
         return self.observed_mz if self.observed_mz is not None else self.expected_mz
 
 

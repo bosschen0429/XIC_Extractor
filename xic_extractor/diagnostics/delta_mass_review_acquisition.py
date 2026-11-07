@@ -159,7 +159,7 @@ def acquire_delta_mass_review(
                 )
             requests = tuple(
                 dict.fromkeys(
-                    XICRequest(p.query_mz, *c.rt_window, c.xic_ppm)
+                    XICRequest(p.expected_mz, *c.rt_window, c.xic_ppm)
                     for c in candidates
                     for p in c.positions
                 )
@@ -224,7 +224,9 @@ def acquire_delta_mass_review(
                 for position in candidate.positions:
                     trace = traces[
                         XICRequest(
-                            position.query_mz, *candidate.rt_window, candidate.xic_ppm
+                            position.expected_mz,
+                            *candidate.rt_window,
+                            candidate.xic_ppm,
                         )
                     ]
                     positions.append(
