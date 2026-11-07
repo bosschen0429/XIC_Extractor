@@ -70,16 +70,26 @@ def test_compact_candidate_count_still_discloses_a_sampled_report(
     expect(review_page.locator(".list-header")).to_contain_text("全批 2")
 
 
-def test_read_failure_remains_visible_when_empty_results_are_silent(
-    review_page, tmp_path
+@pytest.mark.parametrize(
+    "status,label",
+    [
+        ("incomplete", "讀取不完整"),
+        ("no_peak_bounds", "缺少峰範圍"),
+        ("no_spectrum", "缺少 spectrum"),
+    ],
+)
+def test_evidence_limitations_remain_visible_when_empty_results_are_silent(
+    review_page, tmp_path, status, label
 ):
     candidate = review_fixture().candidates[0]
     candidate = replace(
         candidate,
         spectra=(),
-        ms2_read_errors=(ReviewReadError(11, (1.0, 3.0), "read failed"),),
+        ms2_read_errors=(ReviewReadError(11, (1.0, 3.0), "read failed"),)
+        if status == "incomplete"
+        else (),
         neutral_losses=tuple(
-            ReviewNlPosition(p.label, "test-NL", 40.0, "incomplete", (), ())
+            ReviewNlPosition(p.label, "test-NL", 40.0, status, (), ())
             for p in candidate.positions
         ),
     )
@@ -88,8 +98,9 @@ def test_read_failure_remains_visible_when_empty_results_are_silent(
     output = tmp_path / "incomplete.html"
     generate_report(source, SelectionRequest(), output)
     review_page.goto(output.as_uri())
-    expect(review_page.locator(".record-reason")).to_have_text("NL：讀取不完整")
-    expect(review_page.get_by_label("各位置 NL 判讀")).to_contain_text("讀取不完整")
+    expect(review_page.locator(".record-reason")).to_have_text(f"NL：{label}")
+    expect(review_page.get_by_label("各位置 NL 判讀")).to_contain_text(label)
+    expect(review_page.locator(".dm-nl-support")).to_have_count(0)
 
 
 def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path):

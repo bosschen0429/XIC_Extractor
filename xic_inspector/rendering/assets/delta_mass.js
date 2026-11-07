@@ -20,7 +20,7 @@
   const dash = index => index === 0 ? '' : index === 1 ? '7 4' : index === 2 ? '2 3' : `${index * 3} 4 2 4`;
   const nlStatus = status => ({supported:'有 NL 支持', no_match:'未找到 NL 支持', no_ms2:'沒有相關 MS2', no_spectrum:'缺少 spectrum', incomplete:'讀取不完整', no_peak_bounds:'缺少峰範圍', ambiguous:'峰歸屬不明', unresolved:'前驅或歸屬未確認'}[status] || status);
   const nlShortStatus = status => ({supported:'支持', no_match:'未見支持', no_ms2:'無相關 MS2'}[status] || nlStatus(status));
-  const findings = saved => (saved.neutral_losses || []).filter(n => ['supported','ambiguous','unresolved','incomplete'].includes(n.status));
+  const findings = saved => (saved.neutral_losses || []).filter(n => ['supported','ambiguous','unresolved','incomplete','no_peak_bounds','no_spectrum'].includes(n.status));
   const summary = (saved, compact = false) => {
     const results = compact ? findings(saved) : saved.neutral_losses || [], multiple = new Set(results.map(n => n.tag)).size > 1;
     const label = compact ? nlShortStatus : nlStatus;
