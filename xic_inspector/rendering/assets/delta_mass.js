@@ -75,14 +75,13 @@
     if (saved.envelope) {
       const e = saved.envelope, section = node('section', undefined, 'dm-envelope');
       section.setAttribute('aria-label', 'Pt 包絡比較');
-      section.append(node('h3', e.status === 'available' ? `最接近的小模型：${e.model}` : envelopeSummary(saved)));
+      section.append(node('h3', e.status === 'available' ? `最接近模型：${e.model}` : envelopeSummary(saved)));
       if (e.status === 'available') {
-        section.append(node('p', '比較四個位置的強度比例：把 BASE 設為 100，看實測比例是否接近模型預期。', 'dm-note'));
         const relative = value => (value * 100).toLocaleString('en-US', {maximumFractionDigits:1});
         section.append(table(['位置', '實測（BASE = 100）', '模型預期（BASE = 100）'], e.position_labels.map((label, i) => [labelFor(label), relative(e.observed_relative[i]), relative(e.expected_relative[i])])));
-        section.append(node('p', `包絡偏差 ${number(e.spread)}（1 最一致，越大越不一致）· 模型碳數 ${e.carbon_count} · 同步 ${e.core_scan_count} scans`, 'dm-note'));
+        section.append(node('p', `偏差 ${number(e.spread)}（1 最一致）· C ${e.carbon_count} · 同步 ${e.core_scan_count} scans`, 'dm-note'));
       }
-      section.append(node('p', '固定單電荷四位置的小模型比較；只供排序與檢閱，不確認 Pt 身分，也不改原候選判定。', 'dm-note'));
+      section.append(node('p', '單電荷模型；不確認 Pt 身分、不改原候選判定。', 'dm-note'));
       root.append(section);
     }
     const massReference = saved.positions.reduce((a,b) => a.delta_da <= b.delta_da ? a : b);
@@ -96,7 +95,10 @@
     }
     const advanced = node('details', undefined, 'dm-advanced');
     advanced.append(node('summary', '詳細資料'));
-    if (saved.status !== 'candidate') root.append(node('p', `保存判定：${saved.status} · ${saved.reject_reason}`, 'dm-note'));
+    if (saved.status !== 'candidate') {
+      const reason = {partner_not_confirmed_in_raw:'RAW 補量條件未通過',discriminating_shape_below_threshold:'峰形相關未達標',apex_out_of_range:'峰頂時間差超限'}[saved.reject_reason];
+      root.append(node('p', reason ? `來源判定：未通過（${reason}）` : `來源判定：${saved.status} · ${saved.reject_reason}`, 'dm-note'));
+    }
     const supportButtons = [];
     const visibleResults = findings(saved);
     if (visibleResults.length) {

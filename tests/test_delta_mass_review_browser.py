@@ -401,7 +401,7 @@ def test_missing_xic_and_failed_ms2_remain_unavailable_not_negative(
     page = review_page
     page.goto(output.as_uri())
     root = page.locator(".dm-review")
-    expect(root).to_contain_text("保存判定：rejected")
+    expect(root).to_contain_text("來源判定：rejected")
     expect(root).to_contain_text("沒有可用的 RAW XIC")
     expect(root).to_contain_text("third（無曲線）")
     expect(root.locator(".dm-xic polyline")).to_have_count(0)
