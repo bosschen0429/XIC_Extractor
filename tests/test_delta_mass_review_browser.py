@@ -99,7 +99,7 @@ def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path
     generate_report(source, SelectionRequest(), output)
     page.goto(output.as_uri())
     root = page.locator(".dm-review")
-    expect(root.get_by_label("partner − M 的 Δm/z", exact=True)).to_have_text(
+    expect(root.get_by_label("Δm/z partner − M", exact=True)).to_have_text(
         "Δm/z partner − M：實測 3.000321 · 設定 3"
     )
     expect(page.locator(".record-button").first).to_contain_text("M 有 test-NL 支持")

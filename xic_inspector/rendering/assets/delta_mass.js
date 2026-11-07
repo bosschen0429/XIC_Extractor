@@ -54,8 +54,9 @@
     for (const position of saved.positions) {
       if (position === massReference) continue;
       const measured = position.feature_mz != null && massReference.feature_mz != null;
-      const gap = node('p', `Δm/z ${position.label} − ${massReference.label}：${measured ? `實測 ${mass(position.feature_mz-massReference.feature_mz)} · ` : ''}設定 ${mass(position.delta_da-massReference.delta_da)}`, 'dm-mass-gap');
-      gap.setAttribute('aria-label', `${position.label} − ${massReference.label} 的 Δm/z`);
+      const gapLabel = saved.positions.length === 2 ? 'Δm/z' : `Δm/z ${position.label} − ${massReference.label}`;
+      const gap = node('p', `${gapLabel}：${measured ? `實測 ${mass(position.feature_mz-massReference.feature_mz)} · ` : ''}設定 ${mass(position.delta_da-massReference.delta_da)}`, 'dm-mass-gap');
+      gap.setAttribute('aria-label', gapLabel);
       root.append(gap);
     }
     const advanced = node('details', undefined, 'dm-advanced');
