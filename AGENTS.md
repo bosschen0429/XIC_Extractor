@@ -13,7 +13,7 @@ rules own general operating defaults.
 | Readiness claim, scientific decision, or change to published values | [`product-validation-contract.md`](docs/agent/product-validation-contract.md) and [Writer Authority](docs/product/decision-policy.md#writer-authority) |
 | Choosing, adding or running tests (local default: `python -m tools.testing.test_selection`); UI demonstration | [`testing.md`](docs/agent/testing.md) |
 | Owner boundary, persisted schema, runtime lifecycle, write authority, public contract | [`architecture-public-contracts.md`](docs/agent/architecture-public-contracts.md); [`architecture-contract.md`](docs/architecture-contract.md) when the owner boundary moves |
-| UI styling or theme roles | [UI Presentation](docs/architecture-contract.md#ui-presentation) |
+| UI information hierarchy, interactions, wording, styling or theme roles | [UI Presentation](docs/architecture-contract.md#ui-presentation) |
 | Imports in startup-sensitive or lightweight readers | [Dependency Direction](docs/architecture-contract.md#dependency-direction) |
 | Issue scope, implementation completion, push, PR, review, long RAW run | [`delivery.md`](docs/agent/delivery.md) |
 | Current-format Untargeted output as test input | Regenerate with `.venv\Scripts\python.exe -m scripts.run_tissue_validation --dataset 8`; older runs under `output/` are not current-format input |
