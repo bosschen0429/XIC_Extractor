@@ -477,8 +477,9 @@
     : (mode === 'curves' ? '' : `<div class="signal-bar">${signalSwitchMarkup}</div>`) + detailMarkup + dialogMarkup;
   setHTML(root, chrome.replace(/%%([A-Z_]+)%%/g, (_, key) => esc(fields[key] ?? '')));
   const items=Array.isArray(data.items)?data.items:[], samples=Array.isArray(data.samples)?data.samples:[];
+  const deltaReview = data.summary?.source_kind === 'delta_mass_review';
   const nlReview = items.length > 0 && items.every(item => item.delta_mass?.neutral_losses?.length);
-  if (mode === 'offline' && nlReview) {
+  if (mode === 'offline' && deltaReview) {
     root.querySelector('.scope-summary').hidden = true;
     root.querySelector('.header-actions > .badge').remove();
     root.querySelector('.list-header > span').textContent = '候選';
@@ -507,7 +508,7 @@
   const itemTitle=item=>item.title||'已記錄的結果';
   // Long identifiers wrap after their separators instead of inside a word.
   const breakable=text=>esc(text).replace(/([|_\/])/g,'$1<wbr>');
-  const reviewReason=(item,compact=false)=>item.delta_mass?.neutral_losses?.length ? window.XicInspectorDeltaMass.summary(item.delta_mass,compact) : item.reason_label;
+  const reviewReason=(item,compact=false)=>item.delta_mass ? window.XicInspectorDeltaMass.summary(item.delta_mass,compact) : item.reason_label;
   const badge=item=>item.badge_label||({attention:'需留意',excluded:'已排除',rest:'已記錄'}[item.stratum]||'既有結果');
   const result=row=>!has(row,'quantitative_value')?'<span class="result-missing">無單一結果</span>':row.quantitative_value===null?'<span class="result-null">空值</span>':`<span class="${row.quantitative_value===0?'result-zero':'result-number'}">${num(row.quantitative_value)}</span>${row.quantity_unit?` <span class="result-unit">${esc(row.quantity_unit)}</span>`:''}`;
   const isCollapsedExcluded=item=>item.kind==='candidate'&&item.stratum==='excluded', queryReport=data.selection?.strategy==='query'||$('report-info-source')?.dataset.strategy==='query';
@@ -701,8 +702,8 @@
   function filterStatus(){
     const active=[];if($('search').value.trim())active.push(`搜尋「${$('search').value.trim()}」`);
     for(const [lo,hi,label] of [['mz-min','mz-max','m/z'],['rt-min','rt-max','RT']])if($(lo).value||$(hi).value)active.push(`${label} ${$(lo).value||'不限'}–${$(hi).value||'不限'}`);
-    setHTML($('active-filters'),active.length?`${nlReview?'':`<span class="active-label">本頁已套用</span>${active.map(x=>`<span class="filter-chip">${esc(x)}</span>`).join('')}`}<button type="button" id="clear-inline">清除</button>`:'');
-    if (nlReview) {
+    setHTML($('active-filters'),active.length?`${deltaReview?'':`<span class="active-label">本頁已套用</span>${active.map(x=>`<span class="filter-chip">${esc(x)}</span>`).join('')}`}<button type="button" id="clear-inline">清除</button>`:'');
+    if (deltaReview) {
       const rangeCount = active.length - Number(Boolean($('search').value.trim()));
       root.querySelector('.advanced-filters > summary').textContent = rangeCount ? `篩選（${rangeCount}）` : '篩選';
     }
@@ -715,10 +716,10 @@
     if (nlReview) regular.sort((a,b) => Number(b.delta_mass.neutral_losses.some(n => n.status === 'supported')) - Number(a.delta_mass.neutral_losses.some(n => n.status === 'supported')));
     listed=showExcluded?[...regular,...excluded]:regular;
     if(!listed.some(i=>i.id===state.id)&&(state.id||selectFallback)){state.id=listed[0]?.id;reset();}
-    $('list-count').textContent=nlReview
+    $('list-count').textContent=deltaReview
       ? `${filtered.length === items.length ? items.length : `${filtered.length} / ${items.length}`} 筆${Number(fields.RUN_TOTAL) !== items.length ? `（全批 ${fields.RUN_TOTAL}）` : ''}`
       : `${filtered.length} / ${items.length} 筆`;
-    const recordButton=item=>{const nl=item.delta_mass?.neutral_losses?.length,reason=reviewReason(item,true);return `<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${breakable(itemTitle(item))}</span>${nl?'':`<span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span>`}</div><div class="record-meta">${nl?'':`${itemName(item)} · `}m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}</div>${reason||!nl?`<div class="record-reason">${esc(reason||'未記錄判定說明')}</div>`:''}</button>`;};
+    const recordButton=item=>{const dm=item.delta_mass,reason=reviewReason(item,true);return `<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${breakable(itemTitle(item))}</span>${dm?'':`<span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span>`}</div><div class="record-meta">${dm?'':`${itemName(item)} · `}m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}</div>${reason||!dm?`<div class="record-reason">${esc(reason||'未記錄判定說明')}</div>`:''}</button>`;};
     const excludedGroup=excluded.length?`<section class="excluded-group"><button type="button" class="excluded-toggle" data-excluded-toggle aria-expanded="${showExcluded}" ${localFilterActive?'disabled title="篩選結果會保持展開"':''}><span>已排除候選</span><span>${excluded.length} 筆 ${showExcluded?'▾':'▸'}</span></button>${showExcluded?`<div class="excluded-items">${excluded.map(recordButton).join('')}</div>`:''}</section>`:'';
     setHTML($('record-list'),regular.map(recordButton).join('')+excludedGroup||'<p class="empty-state">這份報告沒有符合的項目。請清除篩選條件。</p>');
     filterStatus();detail();
@@ -1008,16 +1009,16 @@
       if(row&&!row.contains(event.relatedTarget))hideCurveTooltip();
     });
   }
-  function plot(item,axis,peer=false,wide=false,width=0,signal=display.signal){
+  function plot(item,axis,peer=false,wide=false,width=0,signal=display.signal,presentation={}){
     const shown=curvesForPlot(item,peer),drawable=shown.flatMap(curve=>seriesList(curve,axis,signal).map(series=>({curve,series})));
     const extra=drawable.length?[...display.overlays].filter(k=>overlays(item).includes(k)).flatMap(kind=>shown.flatMap(curve=>seriesList(curve,axis,kind).map(series=>({curve,series})))):[];
-    if(!drawable.length&&item.delta_mass)return '<div class="empty-state">這個候選沒有可用的 RAW XIC；不以保存的 height 補畫曲線。</div>';
+    if(!drawable.length&&presentation.emptyMessage)return `<div class="empty-state">${esc(presentation.emptyMessage)}</div>`;
     if(!drawable.length){const [chosen,other]=signal==='raw'?['原始訊號','平滑訊號']:['平滑訊號','原始訊號'];return `<div class="empty-state"><strong>${axis==='aligned'?'所選資料未提供對齊座標':shown.length?`所選來源未保存${chosen}`:'目前沒有可顯示的曲線'}</strong><p>${axis==='aligned'?'請切回原始時間；不會以原始座標代替。':shown.length?`不以${other}代替；可在上方切換訊號。`:'請確認樣本顯示勾選，或來源是否保存曲線。'}</p></div>`;}
     const reviewWindow=axis==='raw'?(state.plotWindow||(Array.isArray(item.review_rt_window)?item.review_rt_window:null)):mode==='curves'?state.plotWindow:null;
     let lo=reviewWindow?.[0]??Infinity,hi=reviewWindow?.[1]??-Infinity,lowY=0,highY=0;
     [...drawable,...extra].forEach(({series:s})=>s.rts.forEach((v,i)=>{const y=s.intensities[i];if(finite(v)&&finite(y)&&(!reviewWindow||v>=lo&&v<=hi)){if(!reviewWindow){lo=Math.min(lo,v);hi=Math.max(hi,v);}lowY=Math.min(lowY,y);highY=Math.max(highY,y);}}));
     if(!finite(lo)||!finite(hi))return '<div class="empty-state">未提供成對的時間與訊號數值。</div>';if(lo===hi){lo-=.5;hi+=.5;}if(lowY===highY)highY=lowY+1;
-    const W=width||(wide?1060:760),H=item.delta_mass?.neutral_losses?.length?260:width?420:330,L=62,T=24,IW=W-88,IH=H-82,x=v=>L+(v-lo)/(hi-lo)*IW,y=v=>T+IH-(v-lowY)/(highY-lowY)*IH;
+    const W=width||(wide?1060:760),H=presentation.height??(width?420:330),L=62,T=24,IW=W-88,IH=H-82,x=v=>L+(v-lo)/(hi-lo)*IW,y=v=>T+IH-(v-lowY)/(highY-lowY)*IH;
     const clipId=`curve-window-${axis}${mode==='curves'?(width?'-main':'-zoom'):''}`;
     let svg=`<defs><clipPath id="${clipId}"><rect x="${L}" y="${T}" width="${IW}" height="${IH}"/></clipPath></defs><text x="8" y="14" font-size="13" fill="#48534f">訊號強度</text>`;
     for(let i=0;i<=4;i++){const v=lowY+(highY-lowY)*i/4;svg+=`<line x1="${L}" y1="${y(v)}" x2="${L+IW}" y2="${y(v)}" stroke="#e4e9ec"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end" font-size="13" fill="#48534f">${tickNum(v)}</text>`;}
@@ -1025,25 +1026,23 @@
     for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4;svg+=`<text x="${x(v)}" y="${H-32}" text-anchor="${width&&i===0?'start':width&&i===4?'end':'middle'}" font-size="13" fill="#48534f">${rt(v)}</text>`;}
     const active=peer?null:activeCurve(item);
     if(active&&state.bounds){const left=axis==='aligned'?active.aligned_bound_left_rt:active.bound_left_rt,right=axis==='aligned'?active.aligned_bound_right_rt:active.bound_right_rt;if(finite(left)&&finite(right)){const a=Math.max(lo,Math.min(left,right)),b=Math.min(hi,Math.max(left,right));if(b>=a)svg+=`<rect data-integration-range="true" x="${x(a)}" y="${T}" width="${Math.max(0,x(b)-x(a))}" height="${IH}" fill="${color(active.sample_id)}" opacity=".09"><title>積分範圍 ${drt(left)}–${drt(right)} min</title></rect>`;}}
-    const dash=item.delta_mass
-      ? curve => window.XicInspectorDeltaMass.dash(curve.position_index)
-      : lineDash(item);
+    const dash=lineDash(item);
     [...extra.map(d=>({...d,overlay:true})),...drawable].forEach(({curve,series:s,overlay})=>{
       const focused=peer||!state.sample||curve.sample_id===state.sample;
       const opacity=mode==='curves'?curveLineOpacity(curve.sample_id,overlay):(!peer&&state.sample&&!focused?.16:.92)*(overlay?.7:1);
       const points=s.rts.map((v,i)=>finite(v)&&finite(s.intensities[i])?`${x(v)},${y(s.intensities[i])}`:'').filter(Boolean).join(' ');
       const signalName={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號',positive_signal:'基線以上訊號'}[s.kind]||'處理訊號',origin=curveOrigin(item,curve.sample_id);
       const title=mode==='curves'?'':`<title>${esc(sampleName(curve.sample_id))} · ${signalName} · ${esc(originLabel(origin))} · ${esc(curve.stage_label||curve.kind||'保留曲線')}</title>`;
-      const stroke=item.delta_mass ? `var(--dm-series-${Math.min(curve.position_index+1,3)})` : color(curve.sample_id);
-      svg+=`<polyline data-kind="${esc(s.kind)}" data-sample-id="${esc(curve.sample_id)}" data-position-label="${esc(curve.position_label||'')}" data-curve-overlay="${!!overlay}" data-curve-origin="${esc(curveAcquisitionLabel(curve))}" data-curve-ref="${esc(curve.evidence_ref||'')}" data-support-origin="${originClass(origin)}" clip-path="url(#${clipId})" fill="none" stroke="${stroke}" stroke-width="${item.delta_mass?2:overlay?1.2:s.kind==='raw'?1.7:2.2}" stroke-dasharray="${overlay?'3 3':dash(curve,origin)}" opacity="${opacity}" points="${points}">${title}</polyline>`;
-      if(item.delta_mass && s.rts.filter(v=>v>=lo&&v<=hi).length<=50){
+      const style=presentation.curveStyle?.(curve)||{},stroke=style.stroke??color(curve.sample_id);
+      svg+=`<polyline data-kind="${esc(s.kind)}" data-sample-id="${esc(curve.sample_id)}" data-position-label="${esc(curve.position_label||'')}" data-curve-overlay="${!!overlay}" data-curve-origin="${esc(curveAcquisitionLabel(curve))}" data-curve-ref="${esc(curve.evidence_ref||'')}" data-support-origin="${originClass(origin)}" clip-path="url(#${clipId})" fill="none" stroke="${stroke}" stroke-width="${style.width??(overlay?1.2:s.kind==='raw'?1.7:2.2)}" stroke-dasharray="${overlay?'3 3':style.dash??dash(curve,origin)}" opacity="${opacity}" points="${points}">${title}</polyline>`;
+      if(presentation.pointLimit>0 && s.rts.filter(v=>v>=lo&&v<=hi).length<=presentation.pointLimit){
         s.rts.forEach((v,i)=>{if(v>=lo&&v<=hi)svg+=`<circle cx="${x(v)}" cy="${y(s.intensities[i])}" r="4" fill="${stroke}" stroke="var(--card)" stroke-width="2"/>`;});
       }
       if(overlay||curve!==active||!state.bounds)return;
       const marks=axis==='aligned'?[['bound','左峰界',curve.aligned_bound_left_rt],['bound','右峰界',curve.aligned_bound_right_rt],['apex','積分峰頂',curve.aligned_apex_rt]]:[['bound','左峰界',curve.bound_left_rt],['bound','右峰界',curve.bound_right_rt],['apex','積分峰頂',curve.apex_rt],...(finite(curve.integration?.raw_apex_rt_min)&&(!finite(curve.apex_rt)||Math.abs(curve.integration.raw_apex_rt_min-curve.apex_rt)>1e-7)?[['raw-apex','原始訊號峰頂',curve.integration.raw_apex_rt_min]]:[])];
       marks.forEach(([kind,label,v])=>{if(finite(v))svg+=`<line data-marker="${kind}" x1="${x(v)}" x2="${x(v)}" y1="${T}" y2="${T+IH}" stroke="${color(curve.sample_id)}" stroke-dasharray="${kind==='bound'?'5 4':kind==='raw-apex'?'2 4':'1 3'}"><title>${label} ${drt(v)} min</title></line>`;});
     });
-    const hoverData=mode==='curves'||item.delta_mass?`data-curve-chart="true" data-domain-start="${lo}" data-domain-end="${hi}" data-signal-low="${lowY}" data-signal-high="${highY}" data-chart-left="${L}" data-chart-width="${IW}" data-chart-top="${T}" data-chart-height="${IH}"`:'';
+    const hoverData=mode==='curves'||presentation.coordinateData?`data-curve-chart="true" data-domain-start="${lo}" data-domain-end="${hi}" data-signal-low="${lowY}" data-signal-high="${highY}" data-chart-left="${L}" data-chart-width="${IW}" data-chart-top="${T}" data-chart-height="${IH}"`:'';
     return `<svg role="img" ${hoverData} aria-label="${axis==='raw'?'原始時間':'對齊時間'}層析圖" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}<text x="${L+IW/2}" y="${H-6}" text-anchor="middle" font-size="13" fill="#48534f">${axis==='raw'?'原始 RT':'對齊 RT'}（min）</text></svg>`;
   }
   function plotCard(item,axis,signalLabel,wide=false){
@@ -1120,9 +1119,9 @@
     const item=items.find(i=>i.id===state.id);if(!item){const excluded=filtered.filter(isCollapsedExcluded).length;setHTML($('workspace-content'),excluded?`<div class="empty-state"><strong>目前未選取項目</strong><p>左側有 ${excluded} 筆已排除候選；展開後可查看保存曲線與來源紀錄。</p></div>`:'<p class="empty-state">這份報告沒有符合的項目。</p>');return;}normalize(item);if(item.transition_review?.review_kind==='cid_nl_differential'){differentialDetail(item);return;}
     if(item.delta_mass){
       deltaView=window.XicInspectorDeltaMass.mount($('workspace-content'),item,{
-        renderXic(target,window,width){
+        renderXic(target,window,width,presentation){
           state.plotWindow=window;
-          setHTML(target,plot(item,'raw',true,true,width,'raw'));
+          setHTML(target,plot(item,'raw',true,true,width,'raw',presentation));
         },
       });
       return;

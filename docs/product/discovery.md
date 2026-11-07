@@ -355,6 +355,11 @@ context, not precursor attribution, sugar-loss detection or candidate admission.
 Missing XIC/spectrum data and MS2 read errors stay visible. The Inspector reads
 only the saved review; it never acquires RAW or changes candidate or Matrix values.
 
+With or without NL assessment, the view uses the same candidate header, XIC,
+selected spectrum and details layout. Position tables, display-range controls
+and manual MS2 lookup live in details; NL support adds a direct evidence action,
+not a separate layout. Read-error summaries remain visible outside details.
+
 The review does not import historical task-specific CSV/NPZ formats, infer charge,
 impose a height-ratio gate, match fragments or group candidates across samples.
 

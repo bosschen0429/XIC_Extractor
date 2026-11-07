@@ -201,7 +201,11 @@ def test_offline_positions_share_a_scale_and_keep_original_scan_values(
     )
     page.route(re.compile(r"^https?://"), lambda route: route.abort())
     root = _open(page, tmp_path)
-    expect(root.get_by_text("未平滑、未正規化", exact=False)).to_be_visible()
+    expect(root.get_by_label("顯示 RT 起點")).not_to_be_visible()
+    expect(
+        root.get_by_role("columnheader", name="Height / partner")
+    ).not_to_be_visible()
+    root.get_by_text("詳細資料", exact=True).click()
     expect(root.get_by_role("columnheader", name="Height / partner")).to_be_visible()
     expect(
         root.get_by_role("columnheader", name="Ratio 證據（不篩選）")
@@ -209,6 +213,14 @@ def test_offline_positions_share_a_scale_and_keep_original_scan_values(
     expect(root.get_by_role("cell", name="outside", exact=True)).to_be_visible()
     chart = root.locator(".dm-xic svg")
     expect(chart.locator("polyline")).to_have_count(3)
+    assert chart.locator("polyline").evaluate_all(
+        "lines => lines.map(line => [line.getAttribute('stroke'), "
+        "line.getAttribute('stroke-dasharray'), line.getAttribute('stroke-width')])"
+    ) == [
+        ["var(--dm-series-1)", "", "2"],
+        ["var(--dm-series-2)", "7 4", "2"],
+        ["var(--dm-series-3)", "2 3", "2"],
+    ]
     assert chart.evaluate("""svg => [...svg.querySelectorAll('polyline')].map(line => {
         const d=svg.dataset, y=line.points[2].y;
         return Number(d.signalLow)+(Number(d.signalHigh)-Number(d.signalLow))*
@@ -247,6 +259,8 @@ def test_dense_ms2_markers_select_the_nearest_time_not_the_last_hitbox(
     generate_report(source, SelectionRequest(), output)
     page = review_page
     page.goto(output.as_uri())
+    page.get_by_text("詳細資料", exact=True).click()
+    page.get_by_text("其他 MS2", exact=True).click()
     chart = page.locator(".dm-xic svg")
     chart.wait_for()
     for number in (11, 22, 33):
@@ -270,6 +284,8 @@ def test_ms2_scan_selection_does_not_attribute_time_context_to_the_candidate(
 ):
     page = review_page
     root = _open(page, tmp_path)
+    root.get_by_text("詳細資料", exact=True).click()
+    root.get_by_text("其他 MS2", exact=True).click()
     expect(root).to_contain_text("未判定與候選的前驅關係")
     scans = root.get_by_label("MS2 scan", exact=True)
     scans.select_option("11")
@@ -294,24 +310,44 @@ def test_ms2_scan_selection_does_not_attribute_time_context_to_the_candidate(
     root.get_by_role("button", name="套用範圍", exact=True).click()
     expect(scans).to_be_disabled()
     expect(root.locator("[data-spectrum-scan]")).to_have_count(0)
-    expect(root).to_contain_text("此時間窗沒有 MS2")
     root.get_by_role("button", name="完整範圍").click()
     expect(scans).to_be_enabled()
     page.get_by_role("button", name=re.compile("^sample-b")).click()
-    expect(root).to_contain_text("sample-b")
+    expect(
+        root.get_by_role("heading", name="m/z 200 · 2 min", exact=True)
+    ).to_be_visible()
     expect(scans).to_be_disabled()
     expect(root.locator("[data-spectrum-scan]")).to_have_count(0)
 
 
-def test_narrow_layout_and_sample_filter_keep_positions_together(review_page, tmp_path):
+@pytest.mark.parametrize("with_nl", [False, True])
+def test_narrow_layout_and_sample_filter_keep_positions_together(
+    review_page, tmp_path, with_nl
+):
     page = review_page
     page.set_viewport_size({"width": 420, "height": 900})
-    root = _open(page, tmp_path)
-    expect(root.get_by_role("heading", name="Three positions")).to_be_visible()
+    source = write_nl_review(tmp_path) if with_nl else write_review(tmp_path)
+    output = tmp_path / "layout.html"
+    generate_report(source, SelectionRequest(), output)
+    page.goto(output.as_uri())
+    root = page.locator(".dm-review")
+    expect(
+        root.get_by_role("heading", name="m/z 100 · 2 min", exact=True)
+    ).to_be_visible()
+    expect(root.get_by_label("顯示 RT 起點")).not_to_be_visible()
+    expect(root.get_by_label("MS2 scan", exact=True)).not_to_be_visible()
+    expect(root.get_by_label("保存的 Delta Mass 位置證據")).not_to_be_visible()
+    expect(root.locator(".dm-xic svg")).to_be_visible()
+    assert (
+        root.locator(".dm-xic svg").evaluate("svg => svg.viewBox.baseVal.height") == 260
+    )
+    expect(page.locator(".scope-summary")).not_to_be_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.get_by_role("textbox", name="本頁搜尋").fill("sample-b")
     expect(page.locator(".record-button")).to_have_count(1)
-    expect(root).to_contain_text("sample-b")
+    expect(
+        root.get_by_role("heading", name="m/z 200 · 2 min", exact=True)
+    ).to_be_visible()
 
 
 def test_missing_xic_and_failed_ms2_remain_unavailable_not_negative(
@@ -339,6 +375,6 @@ def test_missing_xic_and_failed_ms2_remain_unavailable_not_negative(
     expect(root).to_contain_text("沒有可用的 RAW XIC")
     expect(root).to_contain_text("third（無曲線）")
     expect(root.locator(".dm-xic polyline")).to_have_count(0)
-    expect(root).to_contain_text("沒有可用 spectrum；請查看讀取錯誤")
+    expect(root.locator(".dm-errors summary")).to_be_visible()
     root.locator(".dm-errors summary").click()
     expect(root.locator(".dm-errors")).to_contain_text("read failed")
