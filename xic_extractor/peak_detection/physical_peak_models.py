@@ -108,6 +108,23 @@ class PhysicalSegment:
     segment_class: str
     boundary_stop_reason: str
     evidence_sources: tuple[str, ...]
+    # Worker-local assignment made when this raw component is measured.
+    # Completed readers decode retained answers and never rebuild this live map.
+    raw_component: RawPeakComponent | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True, slots=True)
+class RawPeakComponent:
+    """Acquired valley basin and its observed raw apex."""
+
+    start_index: int
+    end_index: int
+    apex_index: int
+    clips_left_edge: bool
+    clips_right_edge: bool
+    # Raw segmentation's return extent is for bounded acquisition planning only.
+    left_return_index: int | None = None
+    right_return_index: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -27,12 +27,12 @@ from xic_extractor.xic_models import XICTrace
 @pytest.mark.parametrize(
     "centroids, expected",
     [
-        ((500.013,), 1),
-        ((500.013, 500.019), 2),
-        ((), 2),
+        ((500.013,), 3),
+        ((500.013, 500.019), 3),
+        ((), 3),
     ],
 )
-def test_representative_change_closes_only_centroid_proven_duplicate_views(
+def test_distinct_mass_window_signals_are_not_closed_by_post_measurement_centroids(
     tmp_path: Path, centroids: tuple[float, ...], expected: int
 ) -> None:
     batches = []
@@ -91,9 +91,9 @@ def test_representative_change_closes_only_centroid_proven_duplicate_views(
         ms1_centroid_mz=lambda *_: None,
     )
     assert len(result.candidates) == expected
-    assert len(batches) == 1
-    assert len(batches[0]) == 6
-    assert len({scan for scan, _, _ in batches[0]}) == 3
+    # Mass-compatible centroids do not make distinct acquired signals equal.
+    # Candidate construction no longer runs a post-area reconciliation read.
+    assert batches == []
     published = read_discovery_candidates_csv(
         write_discovery_candidates_csv(tmp_path / "candidates.csv", result.candidates)
     )
@@ -104,16 +104,19 @@ def test_representative_change_closes_only_centroid_proven_duplicate_views(
     assert sorted(
         n for b in result.physical_bindings for n in b.member_source_ordinals
     ) == [0, 1, 2]
-    if expected == 1:
-        candidate = result.candidates[0]
-        binding = result.physical_bindings[0]
-        assert candidate.seed_scan_ids == (10, 11, 12)
-        assert binding.representative_source_ordinal == 2
-        assert binding.member_source_ordinals == (0, 1, 2)
+    assert len(result.physical_evaluations) == 3
+    assert all(
+        len(binding.member_work_ordinals) == 1 for binding in result.physical_bindings
+    )
+    assert sorted(
+        scan for candidate in result.candidates for scan in candidate.seed_scan_ids
+    ) == [10, 11, 12]
+    for candidate, binding in zip(
+        result.candidates, result.physical_bindings, strict=True
+    ):
         assert (
             candidate.ms1_area == binding.physical_evaluation.facts.area_counts_seconds
         )
-        # One measured area, not the sum of the duplicate views.
         assert candidate.ms1_area == pytest.approx(
             1000 * 0.06 * np.sqrt(2 * np.pi) * 60, rel=0.06
         )

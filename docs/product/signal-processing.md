@@ -27,7 +27,7 @@ trace edge lacks observed boundary context and has no numeric physical answer
 ### Edge-reaching intervals
 
 Fresh boundaries stop at the first observed return to 10% of the canonical
-apex residual, bounded by adjacent separating valleys. An edge-reaching interval
+apex residual, bounded by adjacent separating valleys. Outside Discovery, an edge-reaching interval
 can instead use a fully observed return at the greater of that same 10% level
 and the local original-signal noise MAD, with the return samples retained. This
 alternative must keep the same apex and lie within the original interval;
@@ -40,8 +40,13 @@ stability/quantitation tradeoff explicit in the versioned selection policy. A
 context window can still contain a different candidate population. The
 bounded tolerance is not a guarantee of window invariance.
 
-Point queries use `baseline_peak_contains_query`; membership and integration
-share the selected bounds, including inter-scan tails. Group-guided recovery
+Ordinary point queries use `baseline_peak_contains_query`; membership and integration
+share the selected bounds, including inter-scan tails. Discovery instead assigns
+an NL event to its acquired raw valley-separated component, including an event
+beyond that component's canonical quantitative return. Raw valleys bound which
+component is measured; AsLS, Gaussian and canonical integration remain unchanged.
+An acquired raw apex at a trace edge requests one bounded same-channel extension;
+an unresolved edge still has no numeric answer. Group-guided recovery
 uses `unique_baseline_peak_in_context`: its center locates the search context
 and need not fall inside the peak, and multiple local peaks remain ambiguous and
 non-numeric.
@@ -136,12 +141,13 @@ selection question.
 
 Sampling support alone also accepts shallow ripples on a background plateau.
 Fresh qualification therefore compares the selected canonical peak's relief
-above its nearest left and right canonical valleys with fluctuations in the
-same original interval. These valleys are found between adjacent canonical
-maxima before seed filtering or envelope merging; an endpoint's actual value
-is used when that side has no neighboring maximum. One flat top is not its
-own neighbor. The higher valley supplies the reference level, not the deepest
-minimum anywhere in the selected envelope.
+above its accepted left and right component boundaries with fluctuations in the
+same original interval. Segmentation's supported lobes and clear-valley cuts own
+these boundaries: an uncut surface ripple cannot introduce another contrast
+valley. Each boundary's actual canonical value supplies the reference; an earlier
+10% return can be more conservative than the separating valley itself. The higher
+boundary supplies the reference level, not the deepest minimum anywhere in the
+selected envelope.
 The relief must be at least four times the unscaled MAD of normalized local
 three-point differences in the original signal. Each interior point is compared
 with linear interpolation between its immediate neighbors, using actual RT
@@ -155,7 +161,7 @@ without numeric facts or integration.
 The local-relief rule is a local contrast requirement, not the full residual
 height above an AsLS floor. The rule uses the existing prepared arrays without
 recomputation.
-Unlike whole-contour topographic prominence, this nearest-valley relief cannot
+Unlike whole-contour topographic prominence, this boundary relief cannot
 borrow height from a distant trough. The half-top sampling core still uses
 whole-interval prominence; replacing the final contrast numerator does not
 move that core or change the noise estimator. The factor 4 is an explicit
@@ -176,8 +182,7 @@ relax Discovery, Backfill or non-ISTD Targeted qualification.
 
 Known limits are conservative false negatives, not proof of signal absence.
 In very short peaks the three-point noise estimate can include peak curvature;
-small canonical ripples can give a broad real peak very little nearest-valley
-relief. A dropout can also suppress a weaker lobe's seed and merge an otherwise
+an acquired dropout can suppress a weaker lobe's seed and merge an otherwise
 resolved pair. These limitations remain explicit regression cases, not
 exceptions or alternate calculations in the owner.
 

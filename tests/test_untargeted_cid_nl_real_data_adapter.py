@@ -145,7 +145,7 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
     } == {inferred_scan.scan_number}
 
 
-def test_adapter_preserves_direct_support_without_absorbing_inferred_scan(
+def test_adapter_keeps_direct_support_separate_from_same_peak_inferred_evidence(
     tmp_path: Path,
 ) -> None:
     scenario = build_sample_adapter_scenario(tmp_path)
@@ -170,21 +170,13 @@ def test_adapter_preserves_direct_support_without_absorbing_inferred_scan(
     )
 
     candidates = scenario.discover(source_raw)
-    assert len(candidates) == 2
-    (inferred_only,) = tuple(
-        c for c in candidates if c.discovery_candidate_state == "ms1_feature_nl_rescued"
-    )
-    assert inferred_only.seed_scan_ids == (inferred.scan_number,)
-    candidates = tuple(
-        c
-        for c in candidates
-        if c.discovery_candidate_state == "ms1_feature_nl_supported"
-    )
+    # One physical peak retains every event without promoting inference to strict NL.
     (candidate,) = candidates
-    assert candidate.precursor_mz_basis == "scan_precursor"
+    assert candidate.precursor_mz_basis == "mixed"
     assert candidate.best_ms2_scan_id == representative.scan_number
     assert set(candidate.seed_scan_ids) == {
         first.scan_number,
+        inferred.scan_number,
         representative.scan_number,
     }
     inferred_product_mz = float(source_raw.scans[1].masses[0])
@@ -205,6 +197,11 @@ def test_adapter_preserves_direct_support_without_absorbing_inferred_scan(
         for evidence in assessment.evidence_refs
         if evidence.observation.precursor_mz_basis == "scan_precursor"
     } == {first.scan_number, representative.scan_number}
+    assert {
+        evidence.observation.scan_number
+        for evidence in assessment.evidence_refs
+        if evidence.observation.precursor_mz_basis == "product_plus_neutral_loss"
+    } == {inferred.scan_number}
 
 
 @pytest.mark.parametrize("ms1_present", [True, False])

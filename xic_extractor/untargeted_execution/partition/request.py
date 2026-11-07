@@ -272,7 +272,6 @@ def build_partition_context(
             or work.best_ms2_scan_id != candidate.best_ms2_scan_id
             or work.precursor_mz != candidate.precursor_mz
             or work.product_mz != candidate.product_mz
-            or work.query_rt_min != candidate.best_seed_rt
             or work.xic_rt_min != candidate.ms1_search_rt_min
             or work.xic_rt_max != candidate.ms1_search_rt_max
             or record.evaluation.prepared.profile != signal_processing_profile

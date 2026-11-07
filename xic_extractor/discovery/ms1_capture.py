@@ -45,18 +45,12 @@ from xic_extractor.discovery.priority import (
 )
 from xic_extractor.discovery.strict_seed_receipts import read_parent_ms1_observations
 from xic_extractor.mass_accuracy import weighted_ion_mz, within_ppm
-from xic_extractor.peak_detection.cid_nl_method_subject import (
-    CidNlComposition,
-    CidNlPhysicalCandidateFact,
-    CidNlPhysicalProof,
-    group_cid_nl_physical_subject_units,
-)
 from xic_extractor.peak_detection.physical_peak_evaluation import (
-    mint_physical_peak_question,
+    unique_physical_segment_at_rt,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
+    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PhysicalPeakEvaluation,
-    PhysicalSegment,
 )
 from xic_extractor.precursor_evidence import MS1MassWindowSource
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
@@ -188,16 +182,6 @@ def capture_ms1_candidates(
             searches, physical_capture.capture(searches), strict=True
         )
     }
-    captured_peaks = tuple(
-        captured_by_question[
-            (
-                _selection_subject_id(plan.group),
-                select_representative_seed(plan.group.seeds).rt,
-                plan.request,
-            )
-        ]
-        for plan in plans
-    )
     batches = physical_capture.acquisition_batches
 
     scan_windows_by_batch = tuple(
@@ -231,63 +215,106 @@ def capture_ms1_candidates(
     if measurement_observer is not None:
         measurement_observer(measurements)
 
-    physical_fact_by_index: dict[int, DiscoveryPhysicalFactRecord] = {}
-    apex_readings: dict[int, tuple[float | None, bool]] = {}
-    candidates: list[DiscoveryCandidate] = []
-    candidate_plans: list[_DiscoveryMs1RequestPlan] = []
-    physical_indices: list[int] = []
-    for plan, captured in zip(plans, captured_peaks, strict=True):
-        if captured.work_ordinal not in physical_fact_by_index:
-            physical_fact_by_index[captured.work_ordinal] = _cid_nl_physical_record(
-                plan.group, captured
-            )
-        for group in _groups_for_physical_peaks(
-            plan.group, captured.evaluation, settings
-        ):
-            selected = physical_capture.reselect(
-                captured,
-                selection_subject_id=_selection_subject_id(group),
-                query_rt_min=select_representative_seed(group.seeds).rt,
-            )
-            index = selected.work_ordinal
-            fact = physical_fact_by_index.get(index)
-            if fact is None:
-                fact = _cid_nl_physical_record(group, selected)
-                physical_fact_by_index[index] = fact
-            candidate = _candidate_from_physical_record(
-                group,
-                physical_fact_record=fact,
-                trace_quality=selected.trace_quality,
-                settings=settings,
-            )
-            candidate_plan = replace(plan, group=group, request=selected.search.request)
-            if index not in apex_readings:
-                # Read the retained peak after reacquisition and seed
-                # partitioning; shared physical questions reuse the reading.
-                apex_readings[index] = _apex_ion_reading(
-                    candidate_plan,
-                    selected.acquired_trace,
-                    selected.evaluation,
-                    ms1_centroid_mz=ms1_centroid_mz,
-                )
-            ion_mz, _doubly_charged = apex_readings[index]
-            if ion_mz is not None:
-                candidate = replace(candidate, ms1_apex_mz=ion_mz)
-            candidates.append(candidate)
-            candidate_plans.append(candidate_plan)
-            physical_indices.append(index)
-    # Complete each source's method admission before merging. A valid neighbor
-    # cannot lend NL or isotope eligibility to a rejected source wrapper.
+    # Parent-ion proof belongs to each NL event. Resolve it once before choosing
+    # the combined peak's method representative; an unsupported primary tag
+    # cannot borrow another tag's proof merely because both locate this peak.
     retained_seeds = tuple(
-        seed
-        for candidate, plan in zip(candidates, candidate_plans, strict=True)
-        if candidate.ms1_peak_found
-        for seed in plan.group.seeds
+        dict.fromkeys(
+            seed
+            for plan in plans
+            for seed in plan.group.seeds
+            if captured_by_question[
+                (_selection_subject_id(plan.group), seed.rt, plan.request)
+            ].evaluation.facts
+            is not None
+        )
     )
     measured = read_parent_ms1_observations(
         raw, retained_seeds, tolerance_ppm=settings.precursor_mz_tolerance_ppm
     )
     measured_by_seed = dict(zip(retained_seeds, measured, strict=True))
+    measured_by_seed.update((seed, seed) for seed in measured)
+
+    physical_fact_by_index: dict[int, DiscoveryPhysicalFactRecord] = {}
+    apex_readings: dict[int, tuple[float | None, bool]] = {}
+    candidates: list[DiscoveryCandidate] = []
+    candidate_plans: list[_DiscoveryMs1RequestPlan] = []
+    physical_indices: list[int] = []
+    # NL events locate an already measured raw peak. Collect their evidence
+    # before creating a candidate; they do not mint competing peak quantities.
+    seeds_by_work: dict[int, list[DiscoverySeed]] = {}
+    tags_by_work: dict[int, list[str]] = {}
+    plan_by_work: dict[int, _DiscoveryMs1RequestPlan] = {}
+    capture_by_work: dict[int, CapturedPhysicalPeak] = {}
+    for plan in plans:
+        for seed in plan.group.seeds:
+            captured = captured_by_question[
+                (_selection_subject_id(plan.group), seed.rt, plan.request)
+            ]
+            index = captured.work_ordinal
+            seeds_by_work.setdefault(index, []).append(measured_by_seed.get(seed, seed))
+            tags_by_work.setdefault(index, []).extend(plan.group.matched_tag_names)
+            plan_by_work.setdefault(index, plan)
+            capture_by_work.setdefault(index, captured)
+    for index in sorted(seeds_by_work):
+        seeds = list(dict.fromkeys(seeds_by_work[index]))
+        group = build_discovery_seed_group(seeds, settings=settings)
+        matched_tags = candidate_merge.ordered_tag_names(
+            tuple(tags_by_work[index]), settings=settings
+        )
+        supported_seeds = [
+            seed
+            for seed in seeds
+            if seed.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
+        ]
+        representative_seeds = supported_seeds or seeds
+        representative_tags = candidate_merge.ordered_tag_names(
+            (seed.neutral_loss_tag for seed in representative_seeds), settings=settings
+        )
+        primary_seeds = [
+            seed
+            for seed in representative_seeds
+            if seed.neutral_loss_tag == representative_tags[0]
+        ]
+        primary_group = build_discovery_seed_group(primary_seeds, settings=settings)
+        # The configured tag order still owns the public representative;
+        # abundance only chooses the best event within that tag.
+        group = replace(
+            primary_group,
+            seeds=group.seeds,
+            rt_seed_min=group.rt_seed_min,
+            rt_seed_max=group.rt_seed_max,
+            precursor_mz_basis=group.precursor_mz_basis,
+            neutral_loss_error_basis=group.neutral_loss_error_basis,
+            max_scan_precursor_abs_delta_da=group.max_scan_precursor_abs_delta_da,
+            tag_evidence_json=group.tag_evidence_json,
+            matched_tag_names=matched_tags,
+        )
+        captured = capture_by_work[index]
+        fact = _cid_nl_physical_record(group, captured)
+        physical_fact_by_index[index] = fact
+        candidate = _candidate_from_physical_record(
+            group,
+            physical_fact_record=fact,
+            trace_quality=captured.trace_quality,
+            settings=settings,
+        )
+        candidate_plan = replace(
+            plan_by_work[index], group=group, request=captured.search.request
+        )
+        apex_readings[index] = _apex_ion_reading(
+            candidate_plan,
+            captured.acquired_trace,
+            captured.evaluation,
+            ms1_centroid_mz=ms1_centroid_mz,
+        )
+        ion_mz, _doubly_charged = apex_readings[index]
+        if ion_mz is not None:
+            candidate = replace(candidate, ms1_apex_mz=ion_mz)
+        candidates.append(candidate)
+        candidate_plans.append(candidate_plan)
+        physical_indices.append(index)
+    # Complete the peak's method admission from each retained event's own proof.
     source_result = candidate_merge.DiscoveryCandidateMergeResult(
         candidates=tuple(candidates),
         bindings=tuple(
@@ -299,6 +326,9 @@ def capture_ms1_candidates(
         source_result,
         candidate_plans,
         candidates,
+        source_evaluations=tuple(
+            physical_fact_by_index[index].evaluation for index in physical_indices
+        ),
         measured_by_seed=measured_by_seed,
         settings=settings,
     )
@@ -309,34 +339,12 @@ def capture_ms1_candidates(
         source_result, doubly_charged_by_source
     )
     candidates = list(source_result.candidates)
-    merge_result = candidate_merge.merge_candidates_by_ms1_peak_with_lineage(
-        candidates,
-        settings=settings,
-        ms1_centroid_mz=ms1_centroid_mz,
-    )
-    merge_result = _verify_precursor_evidence(
-        merge_result,
-        candidate_plans,
-        candidates,
-        measured_by_seed=measured_by_seed,
-        settings=settings,
-    )
-    closed = _close_duplicate_physical_views(
-        raw,
-        merge_result,
-        tuple(physical_fact_by_index[index] for index in physical_indices),
-        settings=settings,
-    )
-    if len(closed.candidates) < len(merge_result.candidates):
-        merge_result = _verify_precursor_evidence(
-            closed,
-            candidate_plans,
-            candidates,
-            measured_by_seed=measured_by_seed,
-            settings=settings,
-        )
-    # Only retained questions enter the sidecar. Per-seed context probes above
-    # are not independent persisted work items.
+    # Channels were closed before acquisition with the all-pairs mass rule.
+    # Re-merging their representatives here would transitively bridge separate
+    # channels and choose between measurements after the fact.
+    merge_result = source_result
+    # The sidecar stores each physical peak once. Candidate links carry its
+    # method evidence and any cross-channel candidate merge membership.
     retained_ordinals = {
         ordinal: index for index, ordinal in enumerate(sorted(physical_fact_by_index))
     }
@@ -369,9 +377,16 @@ def capture_ms1_candidates(
             representative_work_ordinal=physical_indices[
                 binding.representative_source_ordinal
             ],
-            selection_subject_id=physical_fact_by_index[
-                physical_indices[binding.representative_source_ordinal]
-            ].selection_subject_id,
+            selection_subject_id=build_discovery_physical_selection_subject_id(
+                sample_stem=merge_result.candidates[binding.final_ordinal].sample_stem,
+                best_ms2_scan_id=merge_result.candidates[
+                    binding.final_ordinal
+                ].best_ms2_scan_id,
+                precursor_mz=merge_result.candidates[
+                    binding.final_ordinal
+                ].precursor_mz,
+                product_mz=merge_result.candidates[binding.final_ordinal].product_mz,
+            ),
             physical_fact_record=physical_fact_by_index[
                 physical_indices[binding.representative_source_ordinal]
             ],
@@ -397,129 +412,28 @@ def capture_ms1_candidates(
     )
 
 
+def _representative_method_seed(group: DiscoverySeedGroup) -> DiscoverySeed:
+    # The group's primary mass pair was selected from an eligible event. Its
+    # scan/RT must come from that same event, not a stronger unsupported event
+    # of the same tag retained only as evidence.
+    primary = tuple(
+        seed for seed in group.seeds if seed.neutral_loss_tag == group.neutral_loss_tag
+    )
+    exact = tuple(
+        seed
+        for seed in primary
+        if seed.precursor_mz == group.precursor_mz
+        and seed.product_mz == group.product_mz
+    )
+    return select_representative_seed(exact or primary or group.seeds)
+
+
 def _selection_subject_id(group: DiscoverySeedGroup) -> str:
     return build_discovery_physical_selection_subject_id(
         sample_stem=group.sample_stem,
-        best_ms2_scan_id=select_representative_seed(group.seeds).scan_number,
+        best_ms2_scan_id=_representative_method_seed(group).scan_number,
         precursor_mz=group.precursor_mz,
         product_mz=group.product_mz,
-    )
-
-
-def _close_duplicate_physical_views(
-    raw: DiscoveryMs1Source,
-    merged: candidate_merge.DiscoveryCandidateMergeResult,
-    records: Sequence[DiscoveryPhysicalFactRecord],
-    *,
-    settings: DiscoverySettings,
-) -> candidate_merge.DiscoveryCandidateMergeResult:
-    """Acquire bounded ion evidence for representatives left by greedy merging.
-
-    A later member can move a group's representative into another retained
-    group's peak. Only same-apex, overlapping windows need this reconciliation;
-    centroid acquisition stays here, while the physical owner decides identity.
-    """
-    proofs: dict[str, CidNlPhysicalProof] = {}
-    buckets: dict[float, list[tuple[float, float, str]]] = {}
-    for candidate, binding in zip(merged.candidates, merged.bindings, strict=True):
-        if candidate.discovery_candidate_state != "ms1_feature_nl_supported":
-            continue
-        record = records[binding.representative_source_ordinal]
-        peak = record.evaluation.facts
-        if peak is None:
-            continue
-        work = record.work_item
-        proof = CidNlPhysicalProof(
-            acquisition_source_id=work.acquisition_source_id,
-            apex_rt_min=peak.apex_rt_min,
-            left_rt_min=peak.left_rt_min,
-            right_rt_min=peak.right_rt_min,
-            xic_mz=work.xic_mz,
-            xic_ppm_tol=work.xic_ppm_tol,
-            rt=record.acquired_trace.trace.rt,
-            raw=record.acquired_trace.trace.intensity,
-        )
-        proofs[candidate.candidate_id] = proof
-        radius = proof.xic_mz * proof.xic_ppm_tol * 1e-6
-        buckets.setdefault(proof.apex_rt_min, []).append(
-            (proof.xic_mz - radius, proof.xic_mz + radius, candidate.candidate_id)
-        )
-    eligible: set[str] = set()
-    for intervals in buckets.values():
-        upper = float("-inf")
-        previous = ""
-        for low, high, candidate_id in sorted(intervals):
-            if low <= upper:
-                eligible.update((previous, candidate_id))
-            if high > upper:
-                upper, previous = high, candidate_id
-    windows_by_id: dict[str, tuple[tuple[int, float, float], ...]] = {}
-    for candidate_id in sorted(eligible):
-        proof = proofs[candidate_id]
-        rt = np.asarray(proof.rt)
-        apex = int(np.searchsorted(rt, proof.apex_rt_min))
-        if not 0 < apex < len(rt) - 1:
-            continue
-        if not (
-            proof.left_rt_min <= rt[apex - 1] and rt[apex + 1] <= proof.right_rt_min
-        ):
-            continue
-        radius = proof.xic_mz * proof.xic_ppm_tol * 1e-6
-        windows_by_id[candidate_id] = tuple(
-            (
-                raw.scan_window_for_request(
-                    XICRequest(
-                        proof.xic_mz, float(point), float(point), proof.xic_ppm_tol
-                    )
-                )[0],
-                proof.xic_mz - radius,
-                proof.xic_mz + radius,
-            )
-            for point in rt[apex - 1 : apex + 2]
-        )
-    requests = tuple(
-        dict.fromkeys(
-            window for windows in windows_by_id.values() for window in windows
-        )
-    )
-    if not requests:
-        return merged
-    observations = dict(zip(requests, raw.read_ms1_mass_windows(requests), strict=True))
-    acquired_proofs = {}
-    for candidate_id, windows in windows_by_id.items():
-        scans = tuple(
-            scan for window in windows if (scan := observations[window]) is not None
-        )
-        if len(scans) == len(windows):
-            acquired_proofs[candidate_id] = replace(
-                proofs[candidate_id], apex_centroids=scans
-            )
-    composition = (
-        CidNlComposition(
-            tags=tuple(
-                (p.tag, p.neutral_loss_da) for p in settings.neutral_loss_profiles
-            ),
-            combine_mode=settings.tag_combine_mode,
-        )
-        if len(settings.neutral_loss_profiles) > 1
-        and settings.tag_combine_mode != "single"
-        else None
-    )
-    units = group_cid_nl_physical_subject_units(
-        tuple(
-            CidNlPhysicalCandidateFact(
-                candidate.candidate_id,
-                candidate.physical_mz,
-                candidate.configured_neutral_loss_da,
-                acquired_proofs.get(candidate.candidate_id),
-            )
-            for candidate in merged.candidates
-        ),
-        composition=composition,
-        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-    )
-    return candidate_merge.close_physical_candidate_units(
-        merged, units, settings=settings
     )
 
 
@@ -536,38 +450,12 @@ def _physical_search(
     )
 
 
-def _groups_for_physical_peaks(
-    group: DiscoverySeedGroup,
-    evaluation: PhysicalPeakEvaluation,
-    settings: DiscoverySettings,
-) -> tuple[DiscoverySeedGroup, ...]:
-    """Partition a seed group by owner-selected physical segments, not RT gaps."""
-    by_segment: dict[tuple[PhysicalSegment, ...], list[DiscoverySeed]] = {}
-    for seed in group.seeds:
-        question = mint_physical_peak_question(
-            evaluation.prepared,
-            evaluation.segment_universe,
-            query_rt_min=seed.rt,
-            selection_policy_version=evaluation.question.selection_policy_version,
-        )
-        key = question.admissible_segments
-        # Unmapped or ambiguous seeds retain their own diagnostic lineage;
-        # they are not members of the representative's resolved peak.
-        by_segment.setdefault(key, []).append(seed)
-    if len(by_segment) == 1:
-        return (group,)
-    return tuple(
-        build_discovery_seed_group(seeds, settings=settings)
-        for seeds in by_segment.values()
-        if seeds
-    )
-
-
 def _verify_precursor_evidence(
     merged: candidate_merge.DiscoveryCandidateMergeResult,
     plans: Sequence[_DiscoveryMs1RequestPlan],
     original_candidates: Sequence[DiscoveryCandidate],
     *,
+    source_evaluations: Sequence[PhysicalPeakEvaluation],
     measured_by_seed: dict[DiscoverySeed, DiscoverySeed],
     settings: DiscoverySettings,
 ) -> candidate_merge.DiscoveryCandidateMergeResult:
@@ -614,7 +502,10 @@ def _verify_precursor_evidence(
                     )
                 )
         has_support = _candidate_has_precursor_support(
-            candidate, support_events, settings=settings
+            candidate,
+            support_events,
+            evaluation=source_evaluations[binding.representative_source_ordinal],
+            settings=settings,
         )
         if not has_support:
             for (
@@ -624,7 +515,12 @@ def _verify_precursor_evidence(
                 original_candidates, binding, settings=settings
             ):
                 if _candidate_has_precursor_support(
-                    rebuilt, support_events, settings=settings
+                    rebuilt,
+                    support_events,
+                    evaluation=source_evaluations[
+                        replacement_binding.representative_source_ordinal
+                    ],
+                    settings=settings,
                 ):
                     candidate = rebuilt
                     bindings[-1] = replacement_binding
@@ -646,16 +542,26 @@ def _candidate_has_precursor_support(
     candidate: DiscoveryCandidate,
     support_events: Sequence[tuple[float, float, float]],
     *,
+    evaluation: PhysicalPeakEvaluation,
     settings: DiscoverySettings,
 ) -> bool:
+    selected = evaluation.answer.selected_segment
+    if selected is None:
+        return False
+    universe = evaluation.segment_universe
     return any(
         within_ppm(
             reference_mz, candidate.physical_mz, settings.precursor_mz_tolerance_ppm
         )
-        and candidate.ms1_peak_rt_start is not None
-        and candidate.ms1_peak_rt_end is not None
-        and candidate.ms1_peak_rt_start <= support_rt <= candidate.ms1_peak_rt_end
-        and candidate.ms1_peak_rt_start <= scan_rt <= candidate.ms1_peak_rt_end
+        and all(
+            unique_physical_segment_at_rt(
+                universe,
+                rt,
+                selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+            )
+            == selected
+            for rt in (support_rt, scan_rt)
+        )
         for reference_mz, support_rt, scan_rt in support_events
     )
 
@@ -832,10 +738,10 @@ def _cid_nl_physical_record(
             work_ordinal=captured.work_ordinal,
             acquisition_source_id=coordinate.capability.acquisition_source.acquisition_source_id,
             sample_stem=group.sample_stem,
-            best_ms2_scan_id=select_representative_seed(group.seeds).scan_number,
+            best_ms2_scan_id=_representative_method_seed(group).scan_number,
             precursor_mz=group.precursor_mz,
             product_mz=group.product_mz,
-            query_rt_min=captured.search.query_rt_min,
+            query_rt_min=question.query_rt_min,
             context_rt_start_min=question.context_rt_start_min,
             context_rt_end_min=question.context_rt_end_min,
             xic_mz=request.mz,
@@ -856,13 +762,13 @@ def _candidate_from_physical_record(
     settings: DiscoverySettings,
 ) -> DiscoveryCandidate:
     """Combine CID-NL evidence with completed physical facts, without recomputing."""
-    best_seed = select_representative_seed(group.seeds)
+    best_seed = _representative_method_seed(group)
     physical_work = physical_fact_record.work_item
     physical_evaluation = physical_fact_record.evaluation
     rt_min, rt_max = physical_work.xic_rt_min, physical_work.xic_rt_max
     ms1_fields = _ms1_fields_from_physical_evaluation(
         physical_evaluation,
-        work_item=physical_work,
+        seed_rt_min=best_seed.rt,
         trace_quality=trace_quality,
         settings=settings,
     )
@@ -893,7 +799,7 @@ def _candidate_from_physical_record(
         product_mz=group.product_mz,
         observed_neutral_loss_da=group.observed_neutral_loss_da,
         best_seed=best_seed,
-        seed_scan_ids=tuple(seed.scan_number for seed in group.seeds),
+        seed_scan_ids=tuple(sorted({seed.scan_number for seed in group.seeds})),
         neutral_loss_tag=group.neutral_loss_tag,
         configured_neutral_loss_da=group.configured_neutral_loss_da,
         neutral_loss_mass_error_ppm=group.neutral_loss_mass_error_ppm,
@@ -987,7 +893,7 @@ class _Ms1Fields:
 def _ms1_fields_from_physical_evaluation(
     evaluation: PhysicalPeakEvaluation,
     *,
-    work_item: DiscoveryPhysicalWorkItem,
+    seed_rt_min: float,
     trace_quality: str,
     settings: DiscoverySettings,
 ) -> _Ms1Fields:
@@ -1004,7 +910,7 @@ def _ms1_fields_from_physical_evaluation(
         apex_rt=facts.apex_rt_min,
         area=facts.area_counts_seconds,
         height=facts.height,
-        seed_delta_min=facts.apex_rt_min - work_item.query_rt_min,
+        seed_delta_min=facts.apex_rt_min - seed_rt_min,
         peak_rt_start=facts.left_rt_min,
         peak_rt_end=facts.right_rt_min,
         trace_quality=trace_quality,

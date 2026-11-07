@@ -733,7 +733,6 @@ def _restore_physical_candidate(
     values: dict[str, Any] = {
         "precursor_mz": work.precursor_mz,
         "product_mz": work.product_mz,
-        "best_seed_rt": work.query_rt_min,
         "ms1_search_rt_min": work.xic_rt_min,
         "ms1_search_rt_max": work.xic_rt_max,
     }
@@ -745,7 +744,9 @@ def _restore_physical_candidate(
             ms1_peak_rt_end=facts.right_rt_min,
             ms1_area=facts.area_counts_seconds,
             ms1_height=facts.height,
-            ms1_seed_delta_min=facts.apex_rt_min - work.query_rt_min,
+            # The physical question is canonical to the measured peak; the
+            # retained CSV receipt still owns the representative NL event RT.
+            ms1_seed_delta_min=facts.apex_rt_min - candidate.best_seed_rt,
         )
     for name, value in values.items():
         candidate_val = getattr(candidate, name)

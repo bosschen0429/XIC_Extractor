@@ -1000,15 +1000,24 @@ def test_acquired_peak_top_not_low_alternating_neighbors_supplies_support(
     )
     if not background_fragments:
         assert result.state == "unavailable"
-        assert result.reason == "insufficient_original_xic_continuity"
         assert result.facts is None and result.integration is None
-        selected = next(
-            segment
-            for segment in result.segment_universe.segments
-            if segment.left_rt_min <= 5.0 <= segment.right_rt_min
-        )
-        original = raw[selected.start_index : selected.end_index]
-        assert noise_shape_severity(original)[0] == 2
+        if policy == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY:
+            # The query itself is the acquired 10%-height valley between two
+            # alternating raw maxima, not a uniquely owned raw peak. This is
+            # still non-numeric; no original-support gate has been relaxed.
+            middle = len(raw) // 2
+            assert raw[middle] < 0.5 * min(raw[middle - 1], raw[middle + 1])
+            assert result.reason == "ambiguous_segment_candidates"
+            assert len(result.question.admissible_segments) == 2
+        else:
+            assert result.reason == "insufficient_original_xic_continuity"
+            selected = next(
+                segment
+                for segment in result.segment_universe.segments
+                if segment.left_rt_min <= 5.0 <= segment.right_rt_min
+            )
+            original = raw[selected.start_index : selected.end_index]
+            assert noise_shape_severity(original)[0] == 2
     else:
         assert result.state == "available" and result.integration is not None
 
@@ -1134,7 +1143,7 @@ def test_constant_background_cannot_supply_acquired_support_to_an_impulse(
 @pytest.mark.parametrize(
     "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
 )
-def test_resolved_peak_on_background_keeps_its_canonical_integration(
+def test_background_component_generator_respects_query_ownership_policy(
     width: float,
     background: float,
     slope: float,
@@ -1150,9 +1159,29 @@ def test_resolved_peak_on_background_keeps_its_canonical_integration(
         query_rt_min=5.0,
         selection_policy_version=policy,
     )
-    assert result.state == "available"
-    assert result.integration is not None
-    assert result.facts is not None
+    if policy == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY and slope:
+        # The generator reveals an injected Gaussian, but no measured NL or
+        # baseline decomposition is available to a raw-basin question. On this
+        # rising total signal the retained raw owner is the clipped right edge,
+        # not an independently resolved component at the injected center.
+        assert int(np.argmax(raw)) == len(raw) - 1
+        from scipy.signal import find_peaks
+
+        (local_maximum,) = find_peaks(raw)[0]
+        valley = local_maximum + int(np.argmin(raw[local_maximum:]))
+        # Independent input topology: its shallow raw dip does not meet the
+        # fixed clear-valley split, nor the fixed envelope-relative prominence.
+        assert raw[valley] > 0.5 * raw[local_maximum]
+        assert raw[local_maximum] - raw[valley] < (
+            prepared.prepared.profile.segment_min_prominence_fraction * max(raw)
+        )
+        assert result.state == "unavailable"
+        assert result.reason == "incomplete_peak_context"
+        assert result.facts is None and result.integration is None
+    else:
+        assert result.state == "available"
+        assert result.integration is not None
+        assert result.facts is not None
 
 
 @pytest.mark.parametrize("positive_points", [2, 3])
@@ -1277,7 +1306,9 @@ def test_other_peak_support_cannot_backfill_a_singleton_or_resolve_ambiguity(
     assert result.integration is None
 
 
-def test_wide_peak_with_shallow_nearest_valleys_exposes_local_contrast_limit() -> None:
+def test_wide_supported_peak_does_not_use_uncut_top_ripples_as_contrast_valleys() -> (
+    None
+):
     rt = np.linspace(0.0, 6.0, 601)
     center = 3.0
     sigma = 0.8
@@ -1285,8 +1316,8 @@ def test_wide_peak_with_shallow_nearest_valleys_exposes_local_contrast_limit() -
     rng = np.random.default_rng(479)
     analytic_envelope = amplitude * np.exp(-0.5 * ((rt - center) / sigma) ** 2)
     # Bounded raw measurement noise is at most 1.25% of the analytic apex.
-    # The known broad positive exposes an accepted limitation: nearest-valley
-    # relief can reject a real envelope with small surface ripples.
+    # The known broad positive is one resolved component. Its small surface
+    # ripples cannot create contrast boundaries that segmentation did not cut.
     raw = 300.0 + analytic_envelope + rng.uniform(-150.0, 150.0, rt.size)
 
     result = evaluate_physical_peak(
@@ -1294,9 +1325,10 @@ def test_wide_peak_with_shallow_nearest_valleys_exposes_local_contrast_limit() -
         query_rt_min=center,
     )
 
-    assert result.state == "unavailable"
-    assert result.reason == "insufficient_local_peak_contrast"
-    assert result.facts is None
+    assert result.state == "available"
+    assert result.facts is not None
+    analytic_area = amplitude * sigma * np.sqrt(2 * np.pi) * 60.0
+    assert result.facts.area_counts_seconds == pytest.approx(analytic_area, rel=0.15)
     (segment,) = result.segment_universe.segments
     assert segment.apex_rt_min == pytest.approx(center, abs=0.03)
     assert segment.left_rt_min <= center - 1.5 * sigma
@@ -1382,8 +1414,10 @@ def test_tenth_height_return_uses_canonical_apex_not_coarse_envelope(sigma) -> N
         query_rt_min=float(rt[right + 1]),
         selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     )
-    assert tail.state == "unavailable" and tail.reason == "no_selection"
-    assert tail.facts is None
+    # The analytical single Gaussian has no separating raw valley here.
+    # Its canonical 10% return still controls area, not NL membership.
+    assert tail.state == "available"
+    assert tail.facts == peak.facts
 
 
 @pytest.mark.parametrize(
@@ -1659,7 +1693,7 @@ def test_no_selection_policy_roundtrip_preserves_physical_context(
 
 
 @pytest.mark.parametrize("terminal", ["available", "unavailable", "failed"])
-def test_physical_evaluation_persistence_rehydrates_terminal_owner_state(
+def test_physical_evaluation_persistence_decodes_terminal_owner_state(
     terminal: str,
 ) -> None:
     profile = SignalProcessingProfile(window_points=3)
@@ -1720,7 +1754,6 @@ def test_physical_evaluation_persistence_rehydrates_terminal_owner_state(
         ),
         lambda value: value["trace"]["rt"].__setitem__(0, "-0x0.0p+0"),
         lambda value: value["trace"]["rt"].__setitem__(0, "0x0p+0"),
-        lambda value: value["trace"]["raw"].__setitem__(0, (11.0).hex()),
         lambda value: value["profile"].__setitem__("window_points", 3.0),
         lambda value: value.__setitem__(
             "profile", dict(reversed(tuple(value["profile"].items())))
@@ -1733,7 +1766,9 @@ def test_physical_evaluation_persistence_rehydrates_terminal_owner_state(
         ),
     ],
 )
-def test_physical_evaluation_persistence_rejects_resealed_owner_tamper(mutate) -> None:
+def test_physical_evaluation_persistence_rejects_invalid_stored_structure(
+    mutate,
+) -> None:
     profile = SignalProcessingProfile(window_points=3)
     rt = np.linspace(0.0, 3.0, 31)
     raw = np.full(31, 10.0)
@@ -1758,7 +1793,7 @@ def test_physical_evaluation_persistence_rejects_resealed_owner_tamper(mutate) -
         )
 
 
-def test_sidecar_write_is_pure_and_external_read_rehydrates_once_per_record(
+def test_sidecar_write_and_external_read_do_not_repeat_scientific_processing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1798,7 +1833,46 @@ def test_sidecar_write_is_pure_and_external_read_rehydrates_once_per_record(
         expected_work_manifest=manifest,
     )
     assert len(restored) == len(records)
-    assert calls == {"prepare": len(records), "evaluate": len(records)}
+    # A reader returns the producer's recorded measurements, not a replay.
+    assert calls == {"prepare": 0, "evaluate": 0}
+    assert tuple(record.evaluation for record in restored) == tuple(
+        record.evaluation for record in records
+    )
+
+
+def test_explicit_scientific_replay_rejects_changed_raw_input() -> None:
+    from xic_extractor.peak_detection.physical_peak_codec import (
+        rehydrate_physical_peak_evaluation,
+    )
+
+    profile = SignalProcessingProfile(window_points=3)
+    rt = np.linspace(0.0, 3.0, 31)
+    raw = np.full(31, 10.0)
+    raw[7:10] += [30.0, 100.0, 30.0]
+    evaluation = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw, profile=profile), query_rt_min=0.8
+    )
+    value = json.loads(
+        serialize_physical_peak_evaluation(
+            rt, raw, profile=profile, evaluation=evaluation
+        )
+    )
+    value["trace"]["raw"][0] = (11.0).hex()
+    recorded_rt, changed_raw, _, recorded = deserialize_physical_peak_evaluation(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    )
+    # Decoding preserves stored results; only an explicit replay tests the science.
+    assert recorded.facts == evaluation.facts
+    assert recorded.integration == evaluation.integration
+    with pytest.raises(ValueError, match="does not match live owner result"):
+        rehydrate_physical_peak_evaluation(
+            recorded_rt,
+            changed_raw,
+            profile=profile,
+            expected=recorded,
+            request_context_rt_start_min=recorded.question.context_rt_start_min,
+            request_context_rt_end_min=recorded.question.context_rt_end_min,
+        )
 
 
 @pytest.mark.parametrize("point_count", [1501, 3001])
@@ -1833,7 +1907,13 @@ def test_middle_query_selects_the_unresolved_envelope_not_a_component(
         assert answer.facts.right_rt_min > 13.0
         assert answer.requires_overlap_review
     assert answers[0].integration == answers[1].integration
-    assert answers[0].answer.selected_segment == (answers[1].answer.selected_segment)
+    # Measurement is unchanged; the Discovery interval is raw-valley-owned,
+    # whereas ordinary point segmentation reports its canonical valley label.
+    assert answers[0].facts == answers[1].facts
+    assert (
+        set(answers[0].answer.selected_segment.evidence_sources)
+        - set(answers[1].answer.selected_segment.evidence_sources)
+    ) <= {"local_minimum_valley"}
 
 
 @pytest.mark.parametrize("point_count", [301, 1801])

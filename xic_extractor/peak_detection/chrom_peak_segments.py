@@ -104,6 +104,42 @@ class _AdjacentPeakRelation:
     relation_class: Literal["clear_split", "shoulder_overlap"]
 
 
+def measure_chrom_peak_component(
+    rt: np.ndarray,
+    intensity: np.ndarray,
+    baseline: np.ndarray,
+    *,
+    start_index: int,
+    end_index: int,
+    policy: ChromPeakSegmentPolicy,
+) -> ChromPeakSegment:
+    """Measure one already resolved valley basin with the existing boundary walk.
+
+    The component owner has chosen the peak. Do not enumerate a new coarse
+    population on this sub-context: a neighboring convolution lobe could move
+    its seed to the cut boundary and erase the acquired component.
+    """
+    residual = np.maximum(intensity - baseline, 0.0)
+    apex = start_index + int(np.argmax(residual[start_index:end_index]))
+    seed = _ApexSeed(
+        index=apex,
+        height=float(residual[apex]),
+        threshold=policy.baseline_return_threshold(float(residual[apex])),
+    )
+    return _segment_from_seed(
+        rt,
+        intensity,
+        baseline,
+        _morphology_trace(rt, residual, policy),
+        _trace_interval(rt, start_index, end_index),
+        seed=seed,
+        left_relation=None,
+        right_relation=None,
+        policy=policy,
+        envelope_seeds=(seed,),
+    )
+
+
 def enumerate_chrom_peak_segments(
     rt_values: np.ndarray,
     intensity_values: np.ndarray,
@@ -711,28 +747,14 @@ def _valley_index(values: np.ndarray, left_peak: int, right_peak: int) -> int:
 
 
 def local_apex_prominence(signal: np.ndarray, apex_index: int) -> float:
-    """Measure relief against immediate canonical valleys in a complete segment.
+    """Relief on one owner-segmented canonical component.
 
-    Use every canonical maximum before seed qualification or envelope merging.
-    A side without another maximum uses the existing segment endpoint's value;
-    a distant lower background must not deepen a nearer shallow valley.
+    Segmentation has already resolved independent lobes and their valleys.
+    Unsplit surface maxima cannot create another contrast boundary. A selected
+    endpoint is either that accepted separating valley or the earlier canonical
+    return; use its actual value, never a lower interior or distant minimum.
     """
-    peaks = _local_peak_indices(signal)
-    # argmax selects the first flat-top sample; find_peaks selects its middle.
-    # Those representations are one apex, not neighboring components.
-    plateau_left = plateau_right = apex_index
-    while plateau_left > 0 and signal[plateau_left - 1] == signal[apex_index]:
-        plateau_left -= 1
-    while (
-        plateau_right + 1 < len(signal)
-        and signal[plateau_right + 1] == signal[apex_index]
-    ):
-        plateau_right += 1
-    before = [index for index in peaks if index < plateau_left]
-    after = [index for index in peaks if index > plateau_right]
-    left = _valley_index(signal, before[-1], apex_index) if before else 0
-    right = _valley_index(signal, apex_index, after[0]) if after else len(signal) - 1
-    return float(signal[apex_index]) - max(float(signal[left]), float(signal[right]))
+    return float(signal[apex_index]) - max(float(signal[0]), float(signal[-1]))
 
 
 def _segment_from_seed(

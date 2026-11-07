@@ -65,11 +65,29 @@ subjects and an empty Matrix.
 
 ### Physical qualification
 
+Within a sample, overlapping or adjacent RT requests share their RT planning.
+Every distinct precursor center and ppm window is actually acquired; mass
+compatibility alone does not make extraction windows interchangeable. Compatible
+mass queries may share preparation only when their signals are exactly equal
+over the final complete acquired range. Different signals, ppm windows and
+isotope-separated channels remain separate. A bounded raw-only read probe can
+extend the shared context before its single canonical preparation and segment
+measurement; it does not quantify each NL request independently.
+
+Each raw valley-separated peak owns one measurement. NL events only locate
+that owner and contribute their independent method evidence. Multiple events
+on that peak produce one retained physical record and candidate with all scan
+receipts, not competing areas. Existing candidate links retain that binding;
+completed readers decode the stored result without preparing or evaluating the
+signal again. The canonical measurement query is the raw apex, while
+`best_seed_rt` remains the representative NL event's RT.
+
 Discovery uses the shared physical peak owner. An ordinary candidate needs two
 adjacent acquired points supporting its half-prominence top, and relief above
-the nearest valleys of at least four times the local raw-noise MAD. A valley at
+the accepted component boundaries of at least four times the local raw-noise MAD. A valley at
 or below half the smaller apex separates peaks; a shallow shoulder stays one
-envelope. This gate can reject short or rippled real signals. It is not
+envelope; uncut top ripples do not create contrast boundaries. This gate can reject
+short real signals. It is not
 chemical identity and does not replace cross-sample support. The
 [signal processing rationale](signal-processing.md) owns the
 method and its evidence.
@@ -155,14 +173,14 @@ does not upgrade precursor identity or grant Matrix authority.
 - One RT seed group can contain several physical peaks. Seeds are partitioned
   by the physical owner's peak selection. Scans outside or between peaks keep
   separate diagnostic lineage and do not support another peak.
-- Independently admitted candidates of one sample are one Discovery peak when
-  their MS1 traces share the apex scan and their precursor m/z agree within
-  `precursor_mz_tolerance_ppm`. An inferred precursor carries the MS2 product
-  error, and a window that clips an ion reports only part of its peak. For
-  candidates up to twice the tolerance apart, they are one peak when the other
-  apex lies inside the higher candidate's bounds and the most intense MS1
-  centroids at the two apexes agree within the tolerance. The merged candidate
-  keeps the higher candidate's m/z, peak and area.
+- The physical owner prepares each retained trace population once and measures
+  each raw peak once; NL events share that measurement, not competing areas.
+  Different m/z windows share a population only after acquisition: they use the
+  same ppm tolerance, their m/z values are compatible with every member, and
+  their complete acquired RT and raw-intensity arrays are exactly equal with
+  positive signal. A shared apex, nearby m/z or matching apex centroids alone
+  does not merge candidates after measurement. Observed-signal sharing does
+  not establish chemical identity.
 
 Discovery `feature_id` labels candidates sharing one MS1 peak within one sample,
 RAW source and tag. Members have matching apexes, overlapping bounds and

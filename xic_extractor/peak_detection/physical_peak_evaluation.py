@@ -18,9 +18,11 @@ from xic_extractor.peak_detection.baseline import (
     asls_baseline_on_rt,
 )
 from xic_extractor.peak_detection.chrom_peak_segments import (
+    ChromPeakSegmentEnumeration,
     ChromPeakSegmentPolicy,
     enumerate_chrom_peak_segments,
     local_apex_prominence,
+    measure_chrom_peak_component,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import (
@@ -50,6 +52,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PreparedSignal,
     PreparedSignalProjection,
     PreparedSignalResult,
+    RawPeakComponent,
 )
 from xic_extractor.peak_detection.signal_quality import (
     BACKFILL_MIN_CONTRAST_SIGMA,
@@ -204,6 +207,7 @@ def enumerate_physical_segment_universe(
     request_context_rt_start_min: float | None = None,
     request_context_rt_end_min: float | None = None,
     selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
+    discovery_components: tuple[RawPeakComponent, ...] | None = None,
 ) -> PhysicalSegmentUniverse:
     if not isinstance(prepared_result, PreparedSignalResult):
         raise TypeError("prepared_result must be a PreparedSignalResult")
@@ -218,26 +222,22 @@ def enumerate_physical_segment_universe(
     state = prepared_result.projection.state
     reason = prepared_result.projection.reason
     physical_segments: tuple[PhysicalSegment, ...] = ()
+    raw_components: tuple[RawPeakComponent, ...] | None = None
     prepared = prepared_result.prepared
     if state == "available" and prepared is not None:
         rt = np.asarray(prepared.rt, dtype=float)
         signal = np.asarray(prepared.positive_signal, dtype=float)
         acquired = np.asarray(prepared.raw, dtype=float)
         zero_baseline = np.zeros_like(signal)
-        segment_policy = ChromPeakSegmentPolicy(
-            morphology_trace_method="rt_envelope",
-            min_apex_fraction_of_context=0.0,
-            morphology_trace_window_points=prepared.profile.window_points,
-            morphology_min_sigma_rt=prepared.profile.boundary_min_sigma_rt,
-            baseline_return_fraction=0.10,
-            baseline_return_min_residual=0.0,
-            include_baseline_return_samples=True,
-            clear_valley_max_fraction=0.50,
-            min_prominence_noise_sigma=DISCOVERY_MIN_CONTRAST_SIGMA,
-            min_prominence_fraction_of_envelope=(
-                prepared.profile.segment_min_prominence_fraction
-            ),
-        )
+        segment_policy = _physical_segment_policy(prepared.profile)
+        if selection_policy_version == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY:
+            raw_components = (
+                discovery_components
+                if discovery_components is not None
+                else discovery_raw_peak_components(
+                    prepared.rt, prepared.raw, prepared.profile
+                )
+            )
         if selection_policy_version == PHYSICAL_PEAK_ENVELOPE_POLICY:
             # Valleys carry separation evidence even above the baseline. Keep
             # sustained lobes separate, while small top ripples stay together.
@@ -249,43 +249,66 @@ def enumerate_physical_segment_universe(
                 min_prominence_noise_sigma=0.0,
                 localize_split_representatives=True,
             )
-        enumeration = enumerate_chrom_peak_segments(
-            rt,
-            signal,
-            zero_baseline,
-            quantitation_context_rt_start=context_start,
-            quantitation_context_rt_end=context_end,
-            policy=segment_policy,
-            acquired_intensity_values=acquired,
-        )
+
+        def enumerate_signal(policy: ChromPeakSegmentPolicy):
+            # Raw valleys constrain ownership. Preparation remains on the whole
+            # acquired trace; neither Gaussian nor AsLS is cropped or refitted.
+            if raw_components:
+                return ChromPeakSegmentEnumeration(
+                    status="OK",
+                    segments=tuple(
+                        measure_chrom_peak_component(
+                            rt,
+                            signal,
+                            zero_baseline,
+                            start_index=c.start_index,
+                            end_index=c.end_index,
+                            policy=policy,
+                        )
+                        for c in raw_components
+                    ),
+                    n_points=len(rt),
+                    morphology_trace_method=policy.morphology_trace_method,
+                    morphology_trace_window_points=policy.morphology_trace_window_points,
+                    morphology_trace_effective_points=policy.morphology_trace_window_points,
+                )
+            return enumerate_chrom_peak_segments(
+                rt,
+                signal,
+                zero_baseline,
+                quantitation_context_rt_start=context_start,
+                quantitation_context_rt_end=context_end,
+                policy=policy,
+                acquired_intensity_values=acquired,
+            )
+
+        enumeration = enumerate_signal(segment_policy)
         if enumeration.status == "OK":
             segments = enumeration.segments
-            if any(
+            if selection_policy_version != DISCOVERY_PHYSICAL_PEAK_POINT_POLICY and any(
                 s.interval.start_index == 0 or s.interval.end_index == len(rt)
                 for s in segments
             ):
                 # Context-dependent baseline estimates can bridge a nearly
                 # returned peak to an acquired edge. Only recover a fully
                 # observed return; complete segments keep their exact values.
-                near_baseline = enumerate_chrom_peak_segments(
-                    rt,
-                    signal,
-                    zero_baseline,
-                    quantitation_context_rt_start=context_start,
-                    quantitation_context_rt_end=context_end,
-                    policy=replace(
+                near_baseline = enumerate_signal(
+                    replace(
                         segment_policy,
                         baseline_return_min_residual=(
                             short_scale_noise_sigma(rt, acquired) or 0.0
                         )
                         / MAD_TO_SIGMA,
                     ),
-                    acquired_intensity_values=acquired,
                 )
                 alternatives = {s.apex_index: s for s in near_baseline.segments}
                 recovered = []
-                for segment in segments:
-                    alternative = alternatives.get(segment.apex_index)
+                for index, segment in enumerate(segments):
+                    alternative = (
+                        near_baseline.segments[index]
+                        if raw_components
+                        else alternatives.get(segment.apex_index)
+                    )
                     interval = segment.interval
                     if (
                         (interval.start_index == 0 or interval.end_index == len(rt))
@@ -298,8 +321,17 @@ def enumerate_physical_segment_universe(
                         segment = alternative
                     recovered.append(segment)
                 segments = tuple(recovered)
-            physical_segments = tuple(
-                _physical_segment_from_chrom(segment) for segment in segments
+            physical_segments = (
+                tuple(
+                    replace(
+                        _physical_segment_from_chrom(segment), raw_component=component
+                    )
+                    for segment, component in zip(segments, raw_components, strict=True)
+                )
+                if raw_components
+                else tuple(
+                    _physical_segment_from_chrom(segment) for segment in segments
+                )
             )
             if selection_policy_version != PHYSICAL_PEAK_ENVELOPE_POLICY:
                 physical_segments = _censoring_aware_segments(
@@ -331,6 +363,98 @@ def enumerate_physical_segment_universe(
         state=state,
         reason=reason,
         segments=physical_segments,
+    )
+
+
+def _physical_segment_policy(
+    profile: SignalProcessingProfile,
+) -> ChromPeakSegmentPolicy:
+    return ChromPeakSegmentPolicy(
+        morphology_trace_method="rt_envelope",
+        min_apex_fraction_of_context=0.0,
+        morphology_trace_window_points=profile.window_points,
+        morphology_min_sigma_rt=profile.boundary_min_sigma_rt,
+        baseline_return_fraction=0.10,
+        baseline_return_min_residual=0.0,
+        include_baseline_return_samples=True,
+        clear_valley_max_fraction=0.50,
+        min_prominence_noise_sigma=DISCOVERY_MIN_CONTRAST_SIGMA,
+        min_prominence_fraction_of_envelope=profile.segment_min_prominence_fraction,
+    )
+
+
+def discovery_raw_peak_components(
+    rt_values: object,
+    raw_values: object,
+    profile: SignalProcessingProfile,
+) -> tuple[RawPeakComponent, ...]:
+    """Split acquired basins before preparation; usable for bounded read probes."""
+    rt = np.asarray(rt_values, dtype=float)
+    raw = np.asarray(raw_values, dtype=float)
+    if (
+        rt.ndim != 1
+        or raw.ndim != 1
+        or rt.shape != raw.shape
+        or not np.all(np.isfinite(rt))
+        or not np.all(np.isfinite(raw))
+        or not np.all(np.diff(rt) > 0)
+        or len(rt) < 3
+    ):
+        return ()
+    enumeration = enumerate_chrom_peak_segments(
+        rt,
+        raw,
+        np.zeros_like(raw),
+        policy=_physical_segment_policy(profile),
+        acquired_intensity_values=raw,
+    )
+    peaks = enumeration.segments
+    valleys = tuple(
+        left.apex_index + int(np.argmin(raw[left.apex_index : right.apex_index + 1]))
+        for left, right in zip(peaks, peaks[1:], strict=False)
+    )
+    return tuple(
+        RawPeakComponent(
+            start_index=valleys[index - 1] if index else 0,
+            end_index=valleys[index] + 1 if index < len(valleys) else len(rt),
+            apex_index=peak.apex_index,
+            clips_left_edge=peak.apex_index == 0,
+            clips_right_edge=peak.apex_index == len(rt) - 1,
+            left_return_index=peak.interval.start_index,
+            right_return_index=peak.interval.end_index,
+        )
+        for index, peak in enumerate(peaks)
+    )
+
+
+def _raw_component_segments_at_rt(
+    universe: PhysicalSegmentUniverse, query_rt: float
+) -> tuple[PhysicalSegment, ...]:
+    if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
+        return ()
+    rt = universe.prepared.rt
+    return tuple(
+        segment
+        for segment in universe.segments
+        if (c := segment.raw_component) is not None
+        if (universe.context_rt_start_min if c.start_index == 0 else rt[c.start_index])
+        <= query_rt
+        <= (
+            universe.context_rt_end_min
+            if c.end_index == len(rt)
+            else rt[c.end_index - 1]
+        )
+    )
+
+
+def discovery_raw_peak_context_edges(
+    universe: PhysicalSegmentUniverse, query_rt: float
+) -> tuple[bool, bool]:
+    """Which acquired edges still clip the raw component containing this NL."""
+    segments = _raw_component_segments_at_rt(universe, query_rt)
+    return (
+        any(s.raw_component.clips_left_edge for s in segments if s.raw_component),
+        any(s.raw_component.clips_right_edge for s in segments if s.raw_component),
     )
 
 
@@ -463,6 +587,17 @@ def _censoring_aware_segments(
             segment_class="isolated_peak",
             boundary_stop_reason="detection_density_return",
             evidence_sources=("local_hit_density_enrichment", "near_detection_limit"),
+            raw_component=(
+                RawPeakComponent(
+                    start_index=left,
+                    end_index=right,
+                    apex_index=(raw_apex := left + int(np.argmax(raw[left:right]))),
+                    clips_left_edge=raw_apex == 0,
+                    clips_right_edge=raw_apex == len(raw) - 1,
+                )
+                if any(s.raw_component is not None for s in segments)
+                else None
+            ),
         )
         replacements.append(provisional)
     retained = [
@@ -545,6 +680,8 @@ def _admissible_physical_segments(
         raise ValueError("physical question crosses boundary policy")
     if selection_policy_version == PHYSICAL_PEAK_NO_SELECTION_POLICY:
         return ()
+    if selection_policy_version == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY:
+        return _raw_component_segments_at_rt(universe, query_rt)
     if selection_policy_version in {
         PHYSICAL_PEAK_WINDOW_POLICY,
         PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
@@ -589,7 +726,10 @@ def _admissible_physical_segments(
 
 
 def unique_physical_segment_at_rt(
-    universe: PhysicalSegmentUniverse, query_rt_min: float
+    universe: PhysicalSegmentUniverse,
+    query_rt_min: float,
+    *,
+    selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
 ) -> PhysicalSegment | None:
     """Project point ownership from an already evaluated segment universe.
 
@@ -597,7 +737,7 @@ def unique_physical_segment_at_rt(
     or another validation of the authoritative universe.
     """
     admissible = _admissible_physical_segments(
-        universe, query_rt_min, PHYSICAL_PEAK_POINT_POLICY, None
+        universe, query_rt_min, selection_policy_version, None
     )
     return admissible[0] if len(admissible) == 1 else None
 
@@ -738,7 +878,16 @@ def answer_physical_peak_question(
     selected: PhysicalSegment | None = None
     background_qualified = False
     if state == "available":
-        if not question.admissible_segments:
+        if (
+            question.selection_policy_version == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
+            and any(
+                c.clips_left_edge or c.clips_right_edge
+                for segment in question.admissible_segments
+                if (c := segment.raw_component) is not None
+            )
+        ):
+            state, reason = "unavailable", "incomplete_peak_context"
+        elif not question.admissible_segments:
             state = "unavailable"
             reason = (
                 "no_peak_in_sample_local_window"
@@ -963,7 +1112,15 @@ def validate_physical_peak_question(question: PhysicalPeakQuestion) -> None:
         question.selection_policy_version,
     )
     query_rt = _finite_physical_float(question.query_rt_min, field="query_rt_min")
-    if question.admissible_segments != _admissible_physical_segments(
+    if question.selection_policy_version == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY:
+        # The live raw basin is worker-local. A completed reader validates the
+        # persisted references, not another segmentation of the recorded trace.
+        if any(
+            segment not in question.universe.segments
+            for segment in question.admissible_segments
+        ):
+            raise ValueError("physical question references a foreign segment")
+    elif question.admissible_segments != _admissible_physical_segments(
         question.universe,
         query_rt,
         question.selection_policy_version,
