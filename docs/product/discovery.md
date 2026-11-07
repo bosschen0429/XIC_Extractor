@@ -292,6 +292,13 @@ separations. A candidate must satisfy the mass differences and co-elution;
 designated discriminating positions also need apex-region shape correlation.
 The method supports two or more positions and has no built-in chemistry.
 
+The built-in Pt presets restore Easy-IC mass coordinates before constructing
+features. Matching, RAW confirmation and review use that same per-sample mass
+result. The sidecar saves it for review replay; older sidecars without a mass
+policy retain vendor coordinates. Restoration changes the measured input, not
+the configured 20 ppm window, apex tolerance or R threshold. Pt envelope models
+remain review-only.
+
 1. Only detector-qualified features anchor a hypothesis, in the roles the
    preset names. The matcher trusts that qualification.
 2. Partners are searched in both mass directions from the lowest-mass position,

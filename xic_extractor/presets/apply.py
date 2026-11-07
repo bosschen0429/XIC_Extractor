@@ -197,6 +197,9 @@ def resolve_delta_mass_discovery(preset_name: str) -> DeltaMassDiscoveryStrategy
         settings=settings,
         cid_nl_composite=any(tag.strategy == "neutral_loss" for tag in preset.tags),
         smoothing_window_sec=smoothing,
+        mass_recalibration=resolve_mass_recalibration(
+            preset.discovery_overrides.get("mass_recalibration", "none")
+        ),
     )
 
 

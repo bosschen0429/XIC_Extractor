@@ -8,18 +8,30 @@ import numpy as np
 import pytest
 
 from scripts.run_delta_mass_discovery import main
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibration,
+    MassRecalibrationResult,
+    deserialize_mass_recalibration_result,
+)
 from xic_extractor.discovery import delta_mass_pipeline
 from xic_extractor.ms1_scan_index import build_ms1_scan_index
 from xic_extractor.xic_models import XICTrace
 
 
 @pytest.mark.parametrize("signal_gate", [False, True])
+@pytest.mark.parametrize("mass_policy", ["none", "easy_ic_restore"])
 @pytest.mark.parametrize("composite", [False, True])
 @pytest.mark.parametrize(
     "ratio_max, expected_ratio_status", [(0.6, "within_range"), (0.45, "above_range")]
 )
 def test_raw_cli_preserves_sample_attribution_and_batches_trace_acquisition(
-    tmp_path, monkeypatch, composite, ratio_max, expected_ratio_status, signal_gate
+    tmp_path,
+    monkeypatch,
+    composite,
+    ratio_max,
+    expected_ratio_status,
+    signal_gate,
+    mass_policy,
 ):
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
@@ -48,7 +60,9 @@ smoothing_window_sec = 1
         encoding="utf-8",
     )
     preset.write_text(
-        preset.read_text().replace("ratio_max=0.6", f"ratio_max={ratio_max}")
+        preset.read_text()
+        .replace("ratio_max=0.6", f"ratio_max={ratio_max}")
+        .replace("[discovery]", f'[discovery]\nmass_recalibration = "{mass_policy}"')
     )
     if signal_gate:
         preset.write_text(
@@ -104,6 +118,14 @@ smoothing_window_sec = 1
             self.height = 1e6 if path.stem == "first" else 2e6
             self.times = np.arange(9) / 60 + 1
             self.signal = np.array([0.03, 0.1, 0.3, 0.7, 1, 0.7, 0.3, 0.1, 0.03])
+            self.mass_recalibration_result = MassRecalibrationResult(
+                "applied" if mass_policy == "easy_ic_restore" else "none",
+                policy=MassRecalibration(mass_policy),
+                baseline_lm=(1.0 if path.stem == "first" else 2.0)
+                if mass_policy != "none"
+                else None,
+                n_anchor=3 if mass_policy != "none" else 0,
+            )
 
         def __enter__(self):
             return self
@@ -159,9 +181,11 @@ smoothing_window_sec = 1
                 for r in requests
             )
 
-    monkeypatch.setattr(
-        delta_mass_pipeline, "open_raw", lambda path, dll_dir: Raw(path)
-    )
+    def open_reader(path, dll_dir, *, mass_recalibration):
+        assert mass_recalibration == MassRecalibration(mass_policy)
+        return Raw(path)
+
+    monkeypatch.setattr(delta_mass_pipeline, "open_raw", open_reader)
     output = tmp_path / "result"
     assert (
         main(
@@ -227,6 +251,14 @@ smoothing_window_sec = 1
         if row["position_label"] == "heavy"
     )
     sidecar = json.loads((output / "delta_mass_sidecar.json").read_text())
+    assert sidecar["method"]["mass_recalibration"] == mass_policy
+    results = [
+        deserialize_mass_recalibration_result(s["mass_recalibration"])
+        for s in sidecar["samples"]
+    ]
+    assert [r.baseline_lm for r in results] == (
+        [1.0, 2.0] if mass_policy != "none" else [None, None]
+    )
     assert sidecar["status"] == "diagnostic_only"
     assert sidecar["method"]["height_ratio_policy"] == "evidence_only"
     assert sidecar["method"]["base_support_positions"] == (

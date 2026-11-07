@@ -69,8 +69,12 @@ Each RAW's mass result is saved where its review can replay it:
 Saved `easy_ic_probe` results keep their original `a + b * LM` formula; a probe
 policy without its saved fit cannot be replayed and raises a read error.
 Re-analysis must select restoration or `none` explicitly. Direct `open_raw`
-callers default to `none`; Delta Mass, QC and blank-library acquisition are
-unchanged.
+callers default to `none`; QC and blank-library acquisition are unchanged.
+The built-in Pt Delta Mass presets select `easy_ic_restore` before feature
+construction. Their MS1 index, partner matching and XICs use the same restored
+coordinates. Custom Delta Mass presets default to `none` unless they explicitly
+select a mass policy. Delta Mass sidecars retain the per-sample restoration
+results; review reuses those results instead of estimating new baselines.
 
 ## CID-NL Recipe Binding
 

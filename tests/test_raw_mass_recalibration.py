@@ -109,6 +109,39 @@ def test_recalibrated_ms1_centroid_reads_return_true_masses():
     assert observations[1] is None
 
 
+@pytest.mark.parametrize(
+    "policy", [MassRecalibration.NONE, MassRecalibration.EASY_IC_RESTORE]
+)
+def test_ms1_index_and_xic_share_mass_coordinates_and_centroid_reads(policy):
+    vendor = _Vendor()
+    original_filter = vendor.GetFilterForScanNumber
+
+    def scan_filter(scan):
+        result = original_filter(scan)
+        if result.MSOrder == "Ms1":
+            result.MSOrder = "Ms"
+        return result
+
+    vendor.GetFilterForScanNumber = scan_filter
+    handle = RawFileHandle(
+        vendor, SimpleNamespace(ms1_order="Ms", ms2_order="Ms2"), policy
+    )
+    index = handle.read_ms1_scan_index(centroid=True)
+    target = next(scan for scan in index if scan.scan_number == 3)
+    expected = (
+        TRUE_MZ
+        if policy is MassRecalibration.EASY_IC_RESTORE
+        else _recorded(TRUE_MZ, 3)
+    )
+    assert target.masses[0] == pytest.approx(expected)
+    assert target.intensities.tolist() == [300, 7]
+    if policy is MassRecalibration.EASY_IC_RESTORE:
+        reads = vendor.centroid_reads
+        trace = handle.extract_xic_many((XICRequest(TRUE_MZ, 9.9, 10.05, 5),))[0]
+        assert trace.intensity.tolist() == [100, 300]
+        assert vendor.centroid_reads == reads
+
+
 @pytest.mark.parametrize("outcome", ["applied", "unavailable"])
 def test_reopened_handle_reuses_probe_and_initializes_its_trailer(outcome):
     vendor = _Vendor()
