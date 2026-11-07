@@ -15,19 +15,41 @@
   };
   const number = value => value == null ? '—' : Number(value.toPrecision(7)).toLocaleString('en-US');
   const mass = value => value == null ? '—' : value.toLocaleString('en-US', {maximumFractionDigits:6});
-  const color = index => `var(--dm-series-${Math.min(index + 1, 3)})`;
-  // Beyond the three categorical hues, position identity also uses distinct dashes.
+  const color = index => `var(--dm-series-${Math.min(index + 1, 4)})`;
+  // Four distinct hues cover Pt; additional positions also use distinct dashes.
   const dash = index => index === 0 ? '' : index === 1 ? '7 4' : index === 2 ? '2 3' : `${index * 3} 4 2 4`;
+  const positionName = (saved, label) => {
+    const name = label.toLowerCase();
+    if (name === 'base' || name === 'light') return 'BASE';
+    const plus = /^plus[_ ](.+)$/i.exec(label);
+    if (plus) return `PLUS ${plus[1]}`;
+    if (name === 'heavy') {
+      const position = saved.positions.find(p => p.label === label);
+      return position ? `PLUS ${number(position.delta_da)}` : 'PLUS';
+    }
+    return label;
+  };
   const nlStatus = status => ({supported:'有 NL 支持', no_match:'未找到 NL 支持', no_ms2:'沒有相關 MS2', no_spectrum:'缺少 spectrum', incomplete:'讀取不完整', no_peak_bounds:'缺少峰範圍', ambiguous:'峰歸屬不明', unresolved:'前驅或歸屬未確認'}[status] || status);
   const nlShortStatus = status => ({supported:'支持', no_match:'未見支持', no_ms2:'無相關 MS2'}[status] || nlStatus(status));
   const findings = saved => (saved.neutral_losses || []).filter(n => ['supported','ambiguous','unresolved','incomplete','no_peak_bounds','no_spectrum'].includes(n.status));
+  const envelopeReason = (reason, saved) => {
+    const [code, positions] = (reason || '').split(':');
+    const text = {missing_position:'缺少位置',no_trace:'沒有 XIC',rt_grid_mismatch:'四位置 scan 時間不一致',invalid_observations:'觀測資料無效',insufficient_background:'背景區間資料不足',no_base_signal:'base 沒有淨訊號',nonpositive_core:'核心淨訊號不大於零',mass_below_model:'超出單電荷模型範圍'}[code] || code;
+    return positions ? `${text}：${positions.split(',').map(p => positionName(saved,p)).join(', ')}` : text;
+  };
+  const envelopeSummary = saved => {
+    const e = saved.envelope;
+    if (!e) return '';
+    return e.status === 'available' ? `${e.model} · 包絡偏差 ${number(e.spread)}` : `包絡無法比較：${envelopeReason(e.reason,saved)}`;
+  };
   const summary = (saved, compact = false) => {
     const results = compact ? findings(saved) : saved.neutral_losses || [], multiple = new Set(results.map(n => n.tag)).size > 1;
     const label = compact ? nlShortStatus : nlStatus;
-    if (compact && results.length && results.length === saved.neutral_losses.length && results[0].status !== 'supported' && results.every(n => n.status === results[0].status)) return `NL：${label(results[0].status)}`;
-    return results.map(n => compact
-      ? n.status === 'supported' ? `${n.position_label} 有 ${n.tag} 支持` : `${n.position_label} / ${n.tag}：${label(n.status)}`
-      : `${n.position_label}${multiple ? ` / ${n.tag}` : ''}：${label(n.status)}`).join(' · ');
+    if (compact && results.length && results.length === saved.neutral_losses.length && results[0].status !== 'supported' && results.every(n => n.status === results[0].status)) return [envelopeSummary(saved), `NL：${label(results[0].status)}`].filter(Boolean).join(' · ');
+    const nl = results.map(n => compact
+      ? n.status === 'supported' ? `${positionName(saved,n.position_label)} 有 ${n.tag} 支持` : `${positionName(saved,n.position_label)} / ${n.tag}：${label(n.status)}`
+      : `${positionName(saved,n.position_label)}${multiple ? ` / ${n.tag}` : ''}：${label(n.status)}`).join(' · ');
+    return [envelopeSummary(saved), nl].filter(Boolean).join(' · ');
   };
   function table(headers, rows) {
     const wrap = node('div', undefined, 'table-scroll'), result = node('table', undefined, 'sample-table dm-table');
@@ -44,16 +66,30 @@
   }
   function mount(container, item, {renderXic}) {
     const saved = item.delta_mass, root = node('section', undefined, 'dm-review');
+    const labelFor = label => positionName(saved, label);
     const nlResults = saved.neutral_losses || [];
     container.replaceChildren(root);
     // Position/scan controls belong to this view, not the host's sample controls.
     root.addEventListener('change', event => event.stopPropagation());
     root.append(node('h2', `m/z ${mass(saved.base_mz)} · ${number(saved.base_rt_apex_min)} min`));
+    if (saved.envelope) {
+      const e = saved.envelope, section = node('section', undefined, 'dm-envelope');
+      section.setAttribute('aria-label', 'Pt 包絡比較');
+      section.append(node('h3', e.status === 'available' ? `最接近的小模型：${e.model}` : envelopeSummary(saved)));
+      if (e.status === 'available') {
+        section.append(node('p', '比較四個位置的強度比例：把 BASE 設為 100，看實測比例是否接近模型預期。', 'dm-note'));
+        const relative = value => (value * 100).toLocaleString('en-US', {maximumFractionDigits:1});
+        section.append(table(['位置', '實測（BASE = 100）', '模型預期（BASE = 100）'], e.position_labels.map((label, i) => [labelFor(label), relative(e.observed_relative[i]), relative(e.expected_relative[i])])));
+        section.append(node('p', `包絡偏差 ${number(e.spread)}（1 最一致，越大越不一致）· 模型碳數 ${e.carbon_count} · 同步 ${e.core_scan_count} scans`, 'dm-note'));
+      }
+      section.append(node('p', '固定單電荷四位置的小模型比較；只供排序與檢閱，不確認 Pt 身分，也不改原候選判定。', 'dm-note'));
+      root.append(section);
+    }
     const massReference = saved.positions.reduce((a,b) => a.delta_da <= b.delta_da ? a : b);
     for (const position of saved.positions) {
       if (position === massReference) continue;
       const measured = position.feature_mz != null && massReference.feature_mz != null;
-      const gapLabel = saved.positions.length === 2 ? 'Δm/z' : `Δm/z ${position.label} − ${massReference.label}`;
+      const gapLabel = saved.positions.length === 2 ? 'Δm/z' : `Δm/z ${labelFor(position.label)} − ${labelFor(massReference.label)}`;
       const gap = node('p', `${gapLabel}：${measured ? `實測 ${mass(position.feature_mz-massReference.feature_mz)} · ` : ''}設定 ${mass(position.delta_da-massReference.delta_da)}`, 'dm-mass-gap');
       gap.setAttribute('aria-label', gapLabel);
       root.append(gap);
@@ -70,8 +106,8 @@
         // Only identical non-support answers collapse. Supporting positions
         // keep distinct actions so their evidence can never be crossed.
         const same = result.status !== 'supported' && rows.find(row => row.result.status === result.status && row.result.tag === result.tag && row.result.neutral_loss_da === result.neutral_loss_da);
-        if (same) same.labels.push(result.position_label);
-        else rows.push({result, labels:[result.position_label]});
+        if (same) same.labels.push(labelFor(result.position_label));
+        else rows.push({result, labels:[labelFor(result.position_label)]});
       }
       const answers = table(losses.length === 1 ? ['位置', losses[0]] : ['位置', 'NL', '判讀'], rows.map(({result, labels}) => {
         const matches = result.matches.filter(m => m.status === 'supported');
@@ -80,7 +116,7 @@
           const count = new Set(matches.map(m => m.scan_number)).size;
           answer = node('button', count > 1 ? `有支持（${count}）` : '有支持', 'dm-nl-support');
           answer.type = 'button';
-          answer.setAttribute('aria-label', `${result.position_label} · ${result.tag}：有 NL 支持（${count}）`);
+          answer.setAttribute('aria-label', `${labelFor(result.position_label)} · ${result.tag}：有 NL 支持（${count}）`);
           answer.setAttribute('aria-pressed', 'false');
           answer.addEventListener('click', () => showSupport(result));
           supportButtons.push([answer, result]);
@@ -92,7 +128,7 @@
     const positions = table(
       ['位置 · 設定 ΔDa', 'm/z', '保存狀態', 'Feature 峰界 (min)'],
       saved.positions.map(p => [
-        `${p.label} · ${number(p.delta_da)}`, number(p.observed_mz ?? p.expected_mz),
+        `${labelFor(p.label)} · ${number(p.delta_da)}`, number(p.observed_mz ?? p.expected_mz),
         p.position_status, p.peak_rt_window?.map(number).join('–') || '—',
       ]),
     );
@@ -102,7 +138,7 @@
     saved.positions.forEach((p, index) => {
       const entry = node('span'), key = mark('svg', {viewBox:'0 0 30 12', width:30, height:12, 'aria-hidden':true});
       key.append(mark('line', {x1:0, x2:30, y1:6, y2:6, stroke:color(index), 'stroke-width':2, 'stroke-dasharray':dash(index)}));
-      const label = item.curves[index]?.raw_rts.length ? p.label : `${p.label}（無曲線）`;
+      const label = item.curves[index]?.raw_rts.length ? labelFor(p.label) : `${labelFor(p.label)}（無曲線）`;
       entry.append(key, document.createTextNode(label)); legend.append(entry);
     });
     root.append(legend);
@@ -176,7 +212,7 @@
     function updateRawTable() {
       if (!rawTable.open) return;
       rawRows.replaceChildren(table(['位置', 'RT (min)', '原始強度'], item.curves.flatMap(curve => curve.raw_rts.flatMap((rt, i) =>
-        rt >= window[0] && rt <= window[1] ? [[curve.position_label, String(rt), String(curve.raw_intensities[i])]] : [],
+        rt >= window[0] && rt <= window[1] ? [[labelFor(curve.position_label), String(rt), String(curve.raw_intensities[i])]] : [],
       ))));
     }
     rawTable.addEventListener('toggle', updateRawTable);
@@ -184,7 +220,7 @@
       const d = svg.dataset, lo = +d.domainStart, hi = +d.domainEnd;
       const rows = item.curves.filter(c => c.raw_rts.length).map(c => {
         const index = nearest(c.raw_rts, target);
-        return `${c.position_label}: RT ${number(c.raw_rts[index])} · ${number(c.raw_intensities[index])}`;
+        return `${labelFor(c.position_label)}: RT ${number(c.raw_rts[index])} · ${number(c.raw_intensities[index])}`;
       });
       readout.textContent = rows.join('　');
       let crosshair = svg.querySelector('[data-dm-crosshair]');
@@ -209,7 +245,7 @@
         if (rt < lo || rt > hi) return;
         ticks.append(mark('line', {x1:x(rt), x2:x(rt), y1:+d.chartTop+20, y2:+d.chartTop + +d.chartHeight, stroke:'var(--muted)', 'stroke-dasharray':'4 4', 'data-nl-boundary':rt, 'pointer-events':'none'}));
       });
-      if (peakBounds && peakBounds[1] >= lo && peakBounds[0] <= hi) ticks.append(mark('text', {x:x(Math.max(lo, peakBounds[0]))+4, y:+d.chartTop+32, fill:'var(--muted)'}, `${activeNl.position_label} 峰界`));
+      if (peakBounds && peakBounds[1] >= lo && peakBounds[0] <= hi) ticks.append(mark('text', {x:x(Math.max(lo, peakBounds[0]))+4, y:+d.chartTop+32, fill:'var(--muted)'}, `${labelFor(activeNl.position_label)} 峰界`));
       for (const [index, scan] of visibleScans.entries()) {
         const active = scan.scan_number === selectedScan;
         const tick = mark('line', {
@@ -284,7 +320,7 @@
       const match = activeNl ? supportMatches[supportCursor] : null;
       if (match) {
         const basis = {parent_ms1:'parent MS1', scan_precursor:'scan precursor', scan_monoisotopic:'monoisotopic precursor'}[match.reference_source] || match.reference_source;
-        ms2Heading.textContent = `${activeNl.position_label} · 實測 NL ${mass(match.observed_loss_da)} Da`;
+        ms2Heading.textContent = `${labelFor(activeNl.position_label)} · 實測 NL ${mass(match.observed_loss_da)} Da`;
         spectrumDetails.append(node('p', `實測前驅 ${mass(match.precursor_mz)}（${basis}） → 產物 ${mass(match.product_mz)} · 產物 / base peak ${number(match.product_base_ratio*100)}%`, 'dm-nl-measurement'));
       }
       const meta = scan.precursor_metadata;

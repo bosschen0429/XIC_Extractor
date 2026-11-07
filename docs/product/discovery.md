@@ -353,6 +353,22 @@ multiple supporting scans remain navigable without a scan search.
 The existing NL matcher, parent-MS1 evidence and peak attribution own the answer.
 Missing evidence, ambiguous attribution and read errors remain distinguishable.
 Review does not consume shape correlations or independently measured height ratios.
+For `pattern_id=pt`, review also compares the synchronous base/+1/+2/+4 net
+intensities with Pt+C, Pt+C+Cl, Pt+C+S and Pt+C+2S models. The base defines one
+half-height core around the local apex; all four positions use those same scans.
+The reported spread is the largest intensity/model amount divided by the smallest
+at the best carbon count: closer to 1 means a closer fit, not confirmed identity.
+Inspector orders the loaded candidates by this score and shows the model,
+carbon count, core scan count and observed/expected ratios. Missing or incompatible
+traces show an unavailable reason rather than a fabricated score. This comparison
+uses fixed singly charged positions, not charge/origin search, fine-structure
+attribution or RT fitting. No spread threshold is applied and no candidate status
+or Discovery CSV is changed. Older reviews without this evidence remain readable.
+The comparison table expresses both observations and model expectations with
+BASE set to 100. Display names use BASE/PLUS N rather than Light/Heavy or
+internal `base`/`plus_*` identifiers; custom Heavy positions use their configured
+mass offset. Exact Δm/z remains visible separately, and saved position IDs do not
+change. Four Pt curves have distinct colors as well as distinct line patterns.
 RAW files are matched by saved sample name, not verified as the original bytes.
 These are new diagnostic reads, not a replay of the original detector.
 Inspector reads the saved report only and never acquires RAW.

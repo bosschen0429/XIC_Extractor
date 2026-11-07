@@ -23,6 +23,7 @@ from xic_extractor.discovery.detected_features import load_detected_features_csv
 from xic_extractor.discovery.models import DiscoverySeed
 from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
 from xic_extractor.discovery.strict_seed_receipts import read_parent_ms1_observations
+from xic_extractor.evidence.pt_envelope import EnvelopeTrace, compare_pt_envelope
 from xic_extractor.precursor_evidence import PrecursorMassScope
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
@@ -250,6 +251,18 @@ def acquire_delta_mass_review(
                         and error.requested_rt_window[1] >= lo
                     ),
                 )
+                if result.pattern_id == "pt":
+                    result = replace(
+                        result,
+                        envelope=compare_pt_envelope(
+                            tuple(
+                                EnvelopeTrace(p.label, p.raw_rt, p.raw_intensity)
+                                for p in result.positions
+                            ),
+                            base_mz=result.base_mz,
+                            rt_apex_min=result.base_rt_apex_min,
+                        ),
+                    )
                 if nl_settings is not None:
                     result = replace(
                         result,
