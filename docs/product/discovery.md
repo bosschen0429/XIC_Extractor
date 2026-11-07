@@ -338,6 +338,28 @@ Matrix, Backfill, counted-detection or export authority. Shape similarity never
 establishes membership by itself. Real-sample counts are method-development
 evidence, not an accuracy threshold.
 
+### Read-only candidate review
+
+Review answers: candidate → position XICs → NL assessment → supporting MS2.
+Export selected IDs, or all saved candidates, with
+`python -m tools.diagnostics.delta_mass_review --help`; open the JSON with
+`xic-inspector <review.json>` (or `python -m xic_inspector`).
+Choose `--nl-preset` explicitly to assess NL inside saved feature bounds.
+Without it, only XICs are acquired; there is no manual MS2 browsing mode.
+The Inspector shows unsmoothed RAW XICs on a shared intensity axis, position
+labels, configured ΔDa, m/z, saved statuses and feature bounds.
+Clicking NL support opens its exact spectrum, measured product and XIC bounds;
+multiple supporting scans remain navigable without a scan search.
+The existing NL matcher, parent-MS1 evidence and peak attribution own the answer.
+Missing evidence, ambiguous attribution and read errors remain distinguishable.
+Review does not consume shape correlations or independently measured height ratios.
+RAW files are matched by saved sample name, not verified as the original bytes.
+These are new diagnostic reads, not a replay of the original detector.
+Inspector reads the saved report only and never acquires RAW.
+NL support is `diagnostic_only`, not chemical identity or full CID-NL qualification.
+Neither review nor a support click changes Discovery, candidate admission or Matrix
+eligibility; absence of support is not proof of chemical absence.
+
 ## Method-specific validation
 
 Discovery validation is method-specific. CID-NL 8RAW/85RAW fixtures are not

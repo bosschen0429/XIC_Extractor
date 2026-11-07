@@ -17,6 +17,7 @@ from tests.xic_inspector_html_fixtures import build_origin_curve_payload
 from tests.xic_inspector_targeted_workbook_fixtures import write_rare_detection_workbook
 from xic_inspector.api import SelectionRequest, prepare_report
 from xic_inspector.rendering.html_builder import build_report_html
+from xic_inspector.rendering.template import INSPECTOR_JS
 from xic_inspector.sources.curve_bundle import (
     CurveBundle,
     SampleQuantification,
@@ -43,7 +44,7 @@ def _curve_source(tmp_path):
 def _load_view_assets(page):
     assets = files("xic_inspector.rendering").joinpath("assets")
     page.add_style_tag(content=assets.joinpath("inspector.css").read_text("utf-8"))
-    page.add_script_tag(content=assets.joinpath("inspector.js").read_text("utf-8"))
+    page.add_script_tag(content=INSPECTOR_JS)
 
 
 def _control(root, name):

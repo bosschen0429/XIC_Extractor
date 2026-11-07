@@ -92,6 +92,8 @@ models because their output schemas are intentionally different.
 
 ---
 
+### `delta_mass_review.py` — [Delta Mass review](../../docs/product/discovery.md#read-only-candidate-review)
+
 ### `explain_cid_nl_run.py`
 
 **Purpose**: Read the normal CID-NL execution explanation artifact and return a

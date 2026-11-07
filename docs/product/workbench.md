@@ -119,6 +119,13 @@ compound identity.
 
 ## Retained evidence and diagnostics
 
+Delta Mass Discovery has a separate sample-local review source, not an Alignment
+result. Its selected-candidate JSON supports shared-scale RAW XICs and individual
+MS2 spectra in the same Inspector. The
+[candidate review contract](discovery.md#read-only-candidate-review) owns the
+new-read versus saved-answer distinction; the diagnostic export CLI owns RAW
+access. This does not add a Delta Mass Matrix or an analysis form in Workbench.
+
 `alignment_explanation.sqlite` is the shared, method-neutral Alignment
 evidence file. Its content is `diagnostic_only`: it records request/attempt
 provenance, effective configuration, retained candidate/group/cell facts and
