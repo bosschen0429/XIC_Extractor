@@ -20,7 +20,6 @@ discriminating_positions = ["plus_4"]
 apex_floor_sec = 1.0
 scan_interval_multiplier = 1.25
 shape_window_sec = 10.0
-correlation_window_sec = 20.0
 min_shape_r = 0.9
 lowest_position = "plus_4"
 base_support_positions = ["plus_1", "plus_2"]

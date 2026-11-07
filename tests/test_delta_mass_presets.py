@@ -6,19 +6,6 @@ from xic_extractor.presets.apply import apply_to_delta_mass_discovery
 from xic_extractor.presets.models import Preset, PresetTag
 
 
-@pytest.mark.parametrize("preset", ["pt_pattern", "pt_pattern_cid_nl_dr"])
-def test_pt_correlation_window_is_separate_from_signal_region(preset):
-    from xic_extractor.presets.apply import resolve_delta_mass_discovery
-
-    settings = resolve_delta_mass_discovery(preset).settings
-    assert settings.correlation_window_sec == 20.0
-    assert settings.shape_window_sec == 10.0
-    assert (settings.background_inner_sec, settings.background_outer_sec) == (
-        20.0,
-        30.0,
-    )
-
-
 @pytest.mark.parametrize(
     "bad_position",
     [

@@ -78,7 +78,6 @@ class DeltaMassCondition:
             apex_floor_sec=self.apex_floor_sec,
             scan_interval_multiplier=self.scan_interval_multiplier,
             shape_window_sec=self.shape_window_sec,
-            correlation_window_sec=self.shape_window_sec,
             min_shape_r=self.min_shape_r,
             shape_reference_position=self.quant_position,
             ratio_reference_position=self.quant_position,
