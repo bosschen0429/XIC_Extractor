@@ -136,16 +136,8 @@ def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path
         "data-spectrum-scan", "22"
     )
     expect(root.locator(".dm-nl-measurement").last).to_contain_text("37.5%")
-    # The browsing window is display-only, not a new NL assessment.
-    root.get_by_text("詳細資料", exact=True).click()
-    root.get_by_role("button", name="完整範圍", exact=True).click()
-    expect(
-        root.get_by_role("button", name="M · test-NL：有 NL 支持（2）", exact=True)
-    ).to_be_visible()
-    root.get_by_text("其他 MS2", exact=True).click()
-    root.get_by_label("MS2 scan", exact=True).select_option("11")
-    expect(root.locator("[data-nl-product-mz]")).to_have_count(0)
-    expect(root).to_contain_text("手動檢閱的 MS2，不代表 NL 支持")
+    expect(root.get_by_label("MS2 scan", exact=True)).to_have_count(0)
+    expect(root.get_by_label("顯示 RT 起點")).to_have_count(0)
     page.get_by_role("button", name=re.compile("^sample-b")).click()
     expect(root.locator("[data-spectrum-scan]")).to_have_count(0)
     expect(root.get_by_label("各位置 NL 判讀")).to_have_count(0)
@@ -201,16 +193,13 @@ def test_offline_positions_share_a_scale_and_keep_original_scan_values(
     )
     page.route(re.compile(r"^https?://"), lambda route: route.abort())
     root = _open(page, tmp_path)
-    expect(root.get_by_label("顯示 RT 起點")).not_to_be_visible()
-    expect(
-        root.get_by_role("columnheader", name="Height / partner")
-    ).not_to_be_visible()
+    expect(root.get_by_label("MS2 scan", exact=True)).to_have_count(0)
+    expect(root.locator("[data-ms2-scan]")).to_have_count(0)
     root.get_by_text("詳細資料", exact=True).click()
-    expect(root.get_by_role("columnheader", name="Height / partner")).to_be_visible()
+    expect(root.get_by_role("columnheader", name="Feature 峰界 (min)")).to_be_visible()
     expect(
-        root.get_by_role("columnheader", name="Ratio 證據（不篩選）")
-    ).to_be_visible()
-    expect(root.get_by_role("cell", name="outside", exact=True)).to_be_visible()
+        root.get_by_role("columnheader", name=re.compile("Ratio|Shape|Height"))
+    ).to_have_count(0)
     chart = root.locator(".dm-xic svg")
     expect(chart.locator("polyline")).to_have_count(3)
     assert chart.locator("polyline").evaluate_all(
@@ -226,98 +215,12 @@ def test_offline_positions_share_a_scale_and_keep_original_scan_values(
         return Number(d.signalLow)+(Number(d.signalHigh)-Number(d.signalLow))*
             (Number(d.chartTop)+Number(d.chartHeight)-y)/Number(d.chartHeight);
     })""") == pytest.approx([100.0, 200.0, 300.0])
-    original = chart.locator("polyline").first.get_attribute("points")
-    root.get_by_label("顯示 RT 起點").fill("1.8")
-    root.get_by_label("顯示 RT 終點").fill("2.2")
-    root.get_by_role("button", name="套用範圍", exact=True).click()
-    expect(chart).to_have_attribute("data-domain-start", "1.8")
-    expect(chart).to_have_attribute("data-domain-end", "2.2")
-    root.get_by_role("button", name="完整範圍").click()
-    expect(chart.locator("polyline").first).to_have_attribute("points", original)
     chart.focus()
     chart.press("ArrowRight")
     expect(root.locator(".dm-readout").first).to_contain_text("partner: RT 1.9 · 40")
     root.locator(".dm-data summary").first.click()
     expect(root.locator(".dm-data").first).to_contain_text("200")
     assert not requests
-
-
-def test_dense_ms2_markers_select_the_nearest_time_not_the_last_hitbox(
-    review_page, tmp_path
-):
-    candidate = review_fixture().candidates[0]
-    candidate = replace(
-        candidate,
-        spectra=tuple(
-            replace(candidate.spectra[0], scan_number=number, rt_min=rt)
-            for number, rt in ((11, 1.999), (22, 2.0), (33, 2.001))
-        ),
-    )
-    source = tmp_path / "dense.json"
-    write_delta_mass_review(DeltaMassReview("saved-discovery", (candidate,)), source)
-    output = tmp_path / "dense.html"
-    generate_report(source, SelectionRequest(), output)
-    page = review_page
-    page.goto(output.as_uri())
-    page.get_by_text("詳細資料", exact=True).click()
-    page.get_by_text("其他 MS2", exact=True).click()
-    chart = page.locator(".dm-xic svg")
-    chart.wait_for()
-    for number in (11, 22, 33):
-        point = chart.evaluate(
-            """(svg, number) => {
-            const tick = svg.querySelector(`line[data-ms2-scan="${number}"]`);
-            return new DOMPoint(+tick.getAttribute('x1'), +tick.getAttribute('y1') + 6)
-                .matrixTransform(svg.getScreenCTM()).toJSON();
-        }""",
-            number,
-        )
-        page.mouse.click(point["x"], point["y"])
-        expect(page.get_by_label("MS2 scan", exact=True)).to_have_value(str(number))
-        expect(page.locator("[data-spectrum-scan]")).to_have_attribute(
-            "data-spectrum-scan", str(number)
-        )
-
-
-def test_ms2_scan_selection_does_not_attribute_time_context_to_the_candidate(
-    review_page, tmp_path
-):
-    page = review_page
-    root = _open(page, tmp_path)
-    root.get_by_text("詳細資料", exact=True).click()
-    root.get_by_text("其他 MS2", exact=True).click()
-    expect(root).to_contain_text("未判定與候選的前驅關係")
-    scans = root.get_by_label("MS2 scan", exact=True)
-    scans.select_option("11")
-    expect(root.locator("[data-spectrum-scan]")).to_have_attribute(
-        "data-spectrum-scan", "11"
-    )
-    expect(root).to_contain_text("記錄的 precursor m/z 999")
-    expect(root).to_contain_text("charge 2")
-    spectrum = root.locator("[data-spectrum-scan]")
-    spectrum.focus()
-    spectrum.press("ArrowRight")
-    expect(root.locator(".dm-readout").last).to_have_text("m/z 80 · 原始強度 100")
-    marker = root.locator('.dm-xic rect[data-ms2-scan="22"]')
-    marker.click()
-    expect(scans).to_have_value("22")
-    expect(root.locator("[data-spectrum-scan]")).to_have_attribute(
-        "data-spectrum-scan", "22"
-    )
-    expect(root).to_contain_text("記錄的 precursor m/z 100")
-    root.get_by_label("顯示 RT 起點").fill("1")
-    root.get_by_label("顯示 RT 終點").fill("1.5")
-    root.get_by_role("button", name="套用範圍", exact=True).click()
-    expect(scans).to_be_disabled()
-    expect(root.locator("[data-spectrum-scan]")).to_have_count(0)
-    root.get_by_role("button", name="完整範圍").click()
-    expect(scans).to_be_enabled()
-    page.get_by_role("button", name=re.compile("^sample-b")).click()
-    expect(
-        root.get_by_role("heading", name="m/z 200 · 2 min", exact=True)
-    ).to_be_visible()
-    expect(scans).to_be_disabled()
-    expect(root.locator("[data-spectrum-scan]")).to_have_count(0)
 
 
 @pytest.mark.parametrize("with_nl", [False, True])

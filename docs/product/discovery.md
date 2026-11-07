@@ -322,81 +322,25 @@ evidence, not an accuracy threshold.
 
 ### Read-only candidate review
 
-Delta Mass candidates can be reviewed directly, without an Alignment handoff.
-`python -m tools.diagnostics.delta_mass_review --help` describes the bounded
-export: select candidate IDs from current Discovery output, choose the RAW/DLL
-directories, and write a review JSON. Open that JSON with
-`xic-inspector <review.json>` (or `python -m xic_inspector` in a checkout).
-
-The Inspector keeps one candidate's positions together and plots their unsmoothed
-RAW XICs on a shared intensity axis. Saved heights, ratios, shape evidence and
-statuses remain the Discovery answers; zooming does not recompute them. Ratio
-and shape reference positions are retained from the method settings.
-
-The exporter reads the selected RT windows anew, matching RAW names to saved
-samples. It does not verify the original analysis bytes or reproduce the original
-detector. Without NL assessment, every readable MS2 in those windows remains selectable, even when its
-recorded precursor is unrelated to a pattern position. A time marker is temporal
-context, not precursor attribution, sugar-loss detection or candidate admission.
-Missing XIC/spectrum data and MS2 read errors stay visible. The Inspector reads
-only the saved review; it never acquires RAW or changes candidate or Matrix values.
-
-With or without NL assessment, the view uses the same candidate header, XIC,
-selected spectrum and details layout. Position tables, display-range controls
-and manual MS2 lookup live in details; NL support adds a direct evidence action,
-not a separate layout. Read-error summaries remain visible outside details.
-
-The review does not import historical task-specific CSV/NPZ formats, infer charge,
-impose a height-ratio gate, match fragments or group candidates across samples.
-
-#### Candidate-level NL intersections
-
-The same review entry accepts `--all-candidates --nl-preset dna_dr` to answer
-which saved Delta Mass candidates also have peak-scoped NL evidence, without
-manual scan selection. A preset is explicit, never guessed from a sample name.
-The JSON retains the evidence; its sibling `.nl.csv` contains one candidate/tag
-row with each position's result and supporting scan references. This summary,
-not scan browsing, is the entry for cross-method assessment. Inspector also
-shows the saved position results in its candidate list and detail table. Clicking
-NL support opens the corresponding spectrum, highlights its measured product,
-and focuses the XIC on the saved peak with the scan time and bounds marked.
-Several support records use previous/next evidence controls; manual MS2 lookup
-is collapsed as secondary inspection and never inherits an NL-support label.
-Supported candidates appear first. Routine no-match and no-MS2 messages are
-omitted from the view rather than repeated or moved into a disclosure; the
-candidate and its XIC remain accessible. Actual ambiguity, unresolved evidence
-and incomplete reads remain visible. The JSON and CSV keep every position's
-answer unchanged.
-
-NL-enabled exports retain only spectra referenced by the completed position
-answers (related opportunities and matched evidence), rather than duplicating
-unrelated RT-window spectra per candidate. `ms2_scope` distinguishes this from
-the unfiltered review. The XIC context, position answers and support references
-are unchanged. Inspector renders saved NL values and never re-matches fragments
-or recomputes the verdict when zooming.
-
-The adapter reuses Discovery's scan matcher, parent-MS1 acquisition and
-precursor-loss assessment, then the shared CID-NL interval-relation owner.
-It uses each position's saved detected-feature bounds and the complete nearby
-feature population, including unselected competitors. Display padding does not
-define a peak and selecting fewer candidates cannot remove overlap ambiguity.
-Missing feature bounds remain unavailable; RAW-completed positions without a
-saved feature are not assigned a fabricated peak interval.
-
-An intersection means the saved Delta Mass status is `candidate` and **at
-least one named position** has NL support for that tag. It does not mean both
-positions support NL or that all configured tags are jointly satisfied. Each
-position remains separate: `supported`, `ambiguous`, `unresolved`, `no_match`,
-`no_ms2`, `no_spectrum`, `incomplete`, or `no_peak_bounds`. `no_match` means the
-configured method did not establish support, not chemical absence. Inferred
-product-plus-loss evidence cannot confirm itself: it needs the existing
-parent-MS1 check. Overlap/boundary evidence stays ambiguous under the shared
-relation rule.
-
-These are fresh `diagnostic_only` assessments on saved detector intervals, not
-a rerun of formal CID-NL physical qualification. Delta Mass statuses, ratios,
-shape evidence, Discovery files and Matrix eligibility are unchanged. A saved
-Delta Mass rejection cannot become an intersection merely because NL is seen.
+Review answers: candidate → position XICs → NL assessment → supporting MS2.
+Export selected IDs, or all saved candidates, with
+`python -m tools.diagnostics.delta_mass_review --help`; open the JSON with
+`xic-inspector <review.json>` (or `python -m xic_inspector`).
+Choose `--nl-preset` explicitly to assess NL inside saved feature bounds.
+Without it, only XICs are acquired; there is no manual MS2 browsing mode.
+The Inspector shows unsmoothed RAW XICs on a shared intensity axis, position
+labels, configured ΔDa, m/z, saved statuses and feature bounds.
+Clicking NL support opens its exact spectrum, measured product and XIC bounds;
+multiple supporting scans remain navigable without a scan search.
+The existing NL matcher, parent-MS1 evidence and peak attribution own the answer.
+Missing evidence, ambiguous attribution and read errors remain distinguishable.
+Review does not consume shape correlations or independently measured height ratios.
+RAW files are matched by saved sample name, not verified as the original bytes.
+These are new diagnostic reads, not a replay of the original detector.
+Inspector reads the saved report only and never acquires RAW.
+NL support is `diagnostic_only`, not chemical identity or full CID-NL qualification.
+Neither review nor a support click changes Discovery, candidate admission or Matrix
+eligibility; absence of support is not proof of chemical absence.
 
 ## Method-specific validation
 

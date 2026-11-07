@@ -7,7 +7,6 @@ import subprocess
 import sys
 from dataclasses import asdict
 
-import numpy as np
 import pytest
 
 from tests.delta_mass_review_fixtures import (
@@ -21,7 +20,6 @@ from xic_extractor.diagnostics.delta_mass_review_data import (
     REVIEW_SCHEMA,
     decode_delta_mass_review,
 )
-from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.xic_models import XICTrace
 from xic_inspector.api import (
     InspectorError,
@@ -36,6 +34,21 @@ def test_selected_raws_are_batched_and_saved_evidence_is_not_reclassified(
 ):
     discovery = tmp_path / "discovery"
     candidate_ids = write_discovery(discovery)
+    import csv
+
+    position_path = discovery / "delta_mass_positions.csv"
+    with position_path.open(encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        columns = [
+            c
+            for c in reader.fieldnames
+            if c not in {"shape_r", "height_ratio_to_base", "ratio_status", "height"}
+        ]
+    with position_path.open("w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
     before = {p.name: p.read_bytes() for p in discovery.iterdir() if p.is_file()}
     raw = tmp_path / "raw"
     raw.mkdir()
@@ -65,26 +78,7 @@ def test_selected_raws_are_batched_and_saved_evidence_is_not_reclassified(
             )
 
         def iter_ms2_scans(self, lo, hi):
-            calls.append(("ms2", self.name, lo, hi))
-            # The out-of-precursor spectrum must remain available as RT context.
-            yield Ms2ScanEvent(
-                Ms2Scan(
-                    11,
-                    2.0,
-                    999.0,
-                    np.array([50.0, 80.0]),
-                    np.array([20.0, 100.0]),
-                    100.0,
-                ),
-                None,
-                11,
-            )
-            yield Ms2ScanEvent(None, "scan unreadable", 12)
-            yield Ms2ScanEvent(
-                Ms2Scan(13, hi + 0.01, 100.0, np.array([50.0]), np.array([20.0]), 20.0),
-                None,
-                13,
-            )
+            pytest.fail("MS2 must not be read without an NL preset")
 
     monkeypatch.setattr(acquisition, "open_raw", lambda path, **kwargs: Reader(path))
     output = tmp_path / "review.json"
@@ -112,20 +106,17 @@ def test_selected_raws_are_batched_and_saved_evidence_is_not_reclassified(
         ("xic", "sample-a", 6),
         ("xic", "sample-b", 3),
     ]
-    assert [c for c in calls if c[0] == "ms2"] == [
-        ("ms2", "sample-a", 1.5, 2.7),
-        ("ms2", "sample-b", 1.5, 2.5),
-    ]
+    assert not [c for c in calls if c[0] == "ms2"]
     for candidate, peak in zip(review.candidates, (100.0, 110.0, 200.0), strict=True):
         assert candidate.positions[0].raw_intensity == (0.0, peak, 0.0)
-        assert candidate.positions[0].height_ratio_to_base == 2.5
-        assert candidate.positions[0].ratio_status == "outside"
+        assert candidate.positions[0].peak_rt_window is not None
         assert candidate.status == "candidate"
-        assert candidate.ratio_reference_label == "partner"
+        assert candidate.spectra == ()
+        assert candidate.ms2_read_errors == ()
         assert (
-            len(candidate.spectra) == 1 and candidate.spectra[0].precursor_mz == 999.0
+            not {"shape_r", "height_ratio_to_base", "ratio_status"}
+            & asdict(candidate.positions[0]).keys()
         )
-        assert candidate.ms2_read_errors[0].scan_number == 12
     assert before == {
         p.name: p.read_bytes() for p in discovery.iterdir() if p.is_file()
     }

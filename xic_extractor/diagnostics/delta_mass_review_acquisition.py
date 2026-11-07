@@ -48,10 +48,6 @@ _POSITION_FIELDS = (
     "expected_mz",
     "observed_mz",
     "apex_rt_min",
-    "height",
-    "height_ratio_to_base",
-    "shape_r",
-    "ratio_status",
     "position_status",
 )
 
@@ -67,8 +63,8 @@ def acquire_delta_mass_review(
 ) -> DeltaMassReview:
     """Read each selected RAW once; batch XICs and merge overlapping MS2 windows.
 
-    All MS2 in the requested RT windows are retained, irrespective of precursor.
-    Temporal proximity does not attribute a spectrum to a pattern position.
+    Without an NL preset only XICs are acquired. MS2 is retained solely as
+    evidence for the unchanged candidate-level NL assessment.
     """
     if not math.isfinite(padding_min) or padding_min <= 0:
         raise ValueError("padding_min must be positive and finite")
@@ -98,8 +94,7 @@ def acquire_delta_mass_review(
         feature_bounds = {
             f.feature_id: (f.rt_start_min, f.rt_end_min)
             for f in features
-            if nl_settings is not None
-            and f.sample_stem == sample
+            if f.sample_stem == sample
             and f.rt_start_min is not None
             and f.rt_end_min is not None
         }
@@ -172,7 +167,11 @@ def acquire_delta_mass_review(
             spectra: dict[int, ReviewSpectrum] = {}
             errors: list[ReviewReadError] = []
             seeds: list[DiscoverySeed] = []
-            for lo, hi in _merged_windows([c.rt_window for c in candidates]):
+            for lo, hi in (
+                _merged_windows([c.rt_window for c in candidates])
+                if nl_settings
+                else ()
+            ):
                 for event in reader.iter_ms2_scans(lo, hi):
                     if event.scan is None:
                         errors.append(
@@ -276,7 +275,6 @@ def acquire_delta_mass_review(
                         spectra=tuple(
                             s for s in result.spectra if s.scan_number in related_scans
                         ),
-                        ms2_scope="nl_related",
                     )
                 acquired[candidate.candidate_id] = result
     return DeltaMassReview(
@@ -363,11 +361,6 @@ def _read_selected_candidates(
                 ),
                 expected_mz=_required_number(p, "expected_mz"),
                 observed_mz=_saved_number(p, "observed_mz"),
-                apex_rt_min=_saved_number(p, "apex_rt_min"),
-                height=_saved_number(p, "height"),
-                height_ratio_to_base=_saved_number(p, "height_ratio_to_base"),
-                shape_r=_saved_number(p, "shape_r"),
-                ratio_status=p["ratio_status"],
                 position_status=p["position_status"],
                 feature_id=p.get("feature_id", ""),
             )
@@ -379,7 +372,11 @@ def _read_selected_candidates(
             raise ValueError(f"Invalid saved m/z or RT: {candidate_id}")
         apices = [
             base_rt,
-            *(p.apex_rt_min for p in parsed if p.apex_rt_min is not None),
+            *(
+                _required_number(p, "apex_rt_min")
+                for p in matched_positions
+                if p["apex_rt_min"] != ""
+            ),
         ]
         selected.append(
             ReviewCandidate(
@@ -391,10 +388,6 @@ def _read_selected_candidates(
                 reject_reason=row["reject_reason"],
                 base_mz=base_mz,
                 base_rt_apex_min=base_rt,
-                ratio_reference_label=method.get("ratio_reference_position")
-                or min(parsed, key=lambda p: p.delta_da).label,
-                shape_reference_label=method.get("shape_reference_position")
-                or min(parsed, key=lambda p: p.delta_da).label,
                 positions=parsed,
                 raw_file="",
                 xic_ppm=ppm,

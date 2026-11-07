@@ -498,8 +498,6 @@
 .xic-inspector .dm-table td { overflow-wrap:anywhere; }
 .xic-inspector .dm-legend { display:flex;flex-wrap:wrap;gap:10px 20px;margin:10px 0; }
 .xic-inspector .dm-legend span { display:inline-flex;align-items:center;gap:6px;color:var(--ink); }
-.xic-inspector .dm-range { display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:10px 0; }
-.xic-inspector .dm-range input { width:105px;padding:4px 7px; }
 .xic-inspector .dm-xic { min-width:0; }
 .xic-inspector .dm-xic [data-ms2-scan] { cursor:pointer; }
 .xic-inspector .dm-readout { display:block;min-height:24px;font-size:12px;font-variant-numeric:tabular-nums;color:var(--muted);overflow-wrap:anywhere; }
@@ -521,4 +519,3 @@
 .xic-inspector .dm-advanced { margin-top:16px;border-top:1px solid var(--line);padding-top:10px; }
 .xic-inspector .dm-advanced > summary { cursor:pointer;color:var(--muted);font-size:13px; }
 .xic-inspector .dm-advanced h3 { margin:14px 0 8px; }
-@media (max-width:700px) { .xic-inspector .dm-range input { width:88px; } }

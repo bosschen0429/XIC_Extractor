@@ -255,7 +255,6 @@ def test_batch_cli_answers_each_candidate_without_manual_scan_selection(
     assert len(candidates) == 3
     a = candidates[ids[0]]
     b = candidates[ids[2]]
-    assert a.ms2_scope == "nl_related"
     assert {s.scan_number for s in a.spectra} == {11, 12}
     assert {s.scan_number for s in b.spectra} == {11}
     assert [(n.position_label, n.status) for n in a.neutral_losses] == [

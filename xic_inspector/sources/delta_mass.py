@@ -66,7 +66,7 @@ class DeltaMassReviewSource:
                             sample_key=candidate.sample_stem,
                             candidate_id=candidate.candidate_id,
                             precursor_mz=p.query_mz,
-                            rt_apex_min=p.apex_rt_min,
+                            rt_apex_min=candidate.base_rt_apex_min,
                             sample_stem=candidate.sample_stem,
                         )
                         for p in candidate.positions

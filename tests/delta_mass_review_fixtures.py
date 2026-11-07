@@ -127,8 +127,6 @@ def review_fixture() -> DeltaMassReview:
                 reject_reason="",
                 base_mz=base,
                 base_rt_apex_min=2.0,
-                ratio_reference_label="partner",
-                shape_reference_label="M",
                 positions=tuple(
                     ReviewPosition(
                         label=label,
@@ -136,11 +134,6 @@ def review_fixture() -> DeltaMassReview:
                         expected_mz=base + i * 3,
                         observed_mz=base + i * 3,
                         feature_mz=base + i * 3 + (0.000321 if i else 0),
-                        apex_rt_min=2.0,
-                        height=80.0 * (i + 1),
-                        height_ratio_to_base=2.5 if i == 0 else 1.0,
-                        shape_r=0.95,
-                        ratio_status="outside" if i == 0 else "within",
                         position_status="pass",
                         raw_rt=(1.0, 1.9, 2.0, 2.1, 3.0),
                         raw_intensity=tuple(
