@@ -173,14 +173,14 @@ does not upgrade precursor identity or grant Matrix authority.
 - One RT seed group can contain several physical peaks. Seeds are partitioned
   by the physical owner's peak selection. Scans outside or between peaks keep
   separate diagnostic lineage and do not support another peak.
-- Independently admitted candidates of one sample are one Discovery peak when
-  their MS1 traces share the apex scan and their precursor m/z agree within
-  `precursor_mz_tolerance_ppm`. An inferred precursor carries the MS2 product
-  error, and a window that clips an ion reports only part of its peak. For
-  candidates up to twice the tolerance apart, they are one peak when the other
-  apex lies inside the higher candidate's bounds and the most intense MS1
-  centroids at the two apexes agree within the tolerance. The merged candidate
-  keeps the higher candidate's m/z, peak and area.
+- The physical owner prepares each retained trace population once and measures
+  each raw peak once; NL events share that measurement, not competing areas.
+  Different m/z windows share a population only after acquisition: they use the
+  same ppm tolerance, their m/z values are compatible with every member, and
+  their complete acquired RT and raw-intensity arrays are exactly equal with
+  positive signal. A shared apex, nearby m/z or matching apex centroids alone
+  does not merge candidates after measurement. Observed-signal sharing does
+  not establish chemical identity.
 
 Discovery `feature_id` labels candidates sharing one MS1 peak within one sample,
 RAW source and tag. Members have matching apexes, overlapping bounds and
