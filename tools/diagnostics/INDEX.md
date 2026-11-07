@@ -27,7 +27,6 @@ workflow owner rather than chaining similarly named commands.
 | --- | --- |
 | Extract, discover, or align samples | [GUI and CLI user guides](../../docs/user/README.md) |
 | Inspect chromatograms | GUI **開啟 Inspector** or `xic-inspector`; [Workbench and review](../../docs/product/workbench.md) owns what review may mean |
-| Review sample-local Delta Mass candidates | [Delta Mass review](../../docs/product/discovery.md#read-only-candidate-review) |
 | Select Matrix features for downstream analysis | GUI **矩陣整理** or `xic-matrix-curation`; [Matrix Curation](../../docs/product/matrix-curation.md) owns the steps and output |
 | Review instrument QC | `scripts.run_instrument_qc`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns its inputs and claims |
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
@@ -92,6 +91,8 @@ diagnostic IO helpers where their schemas permit it, but keep separate row
 models because their output schemas are intentionally different.
 
 ---
+
+### `delta_mass_review.py` — [Delta Mass review](../../docs/product/discovery.md#read-only-candidate-review)
 
 ### `explain_cid_nl_run.py`
 
