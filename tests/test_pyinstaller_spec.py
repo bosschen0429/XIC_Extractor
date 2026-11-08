@@ -256,6 +256,7 @@ metadata_output.write_text(
 """
 PACKAGING_SOURCE_DIRECTORIES = (
     "config",
+    "docs",
     "packaging",
     "scripts",
     "tools",
@@ -730,19 +731,32 @@ def test_final_pyinstaller_archive_runs_html_workbench_smoke(
             == (PROJECT_ROOT / "xic_extractor/configuration/data" / name).read_bytes()
         )
     # Exercise the archive that would be delivered, rather than rebuilding a probe.
-    archive_path = Path(
-        shutil.make_archive(
-            str(artifact_root / "delivered"),
-            "zip",
-            root_dir=dist_root,
-            base_dir="XIC_Extractor",
-        )
+    version = tomllib.loads(
+        (packaging_source / "pyproject.toml").read_text(encoding="utf-8")
+    )["project"]["version"]
+    archive_path = artifact_root / f"XIC_Extractor-Windows-v{version}-dev.zip"
+    _run_packaging_command(
+        (
+            sys.executable,
+            "-m",
+            "tools.distribution",
+            str(final_output),
+            str(archive_path),
+        ),
+        cwd=packaging_source,
+        timeout_seconds=60,
     )
     archive_hash = hashlib.sha256(archive_path.read_bytes()).hexdigest()
     extracted_root = artifact_root / "delivered-extracted"
     shutil.unpack_archive(archive_path, extracted_root)
     smoke_report = extracted_root / "smoke.json"
-    executable = extracted_root / "XIC_Extractor" / "XIC_Extractor.exe"
+    application = extracted_root / archive_path.stem
+    assert (application / "開始使用.html").is_file()
+    assert (application / "docs/user/targeted-extraction.guide.html").is_file()
+    assert (application / "docs/user/untargeted-discovery.html").is_file()
+    assert not list(application.rglob("*.py"))
+    assert not (application / "_internal/scripts").exists()
+    executable = application / "XIC_Extractor.exe"
     _run_packaging_command(
         (str(executable), "--smoke-test", str(smoke_report)),
         cwd=extracted_root,

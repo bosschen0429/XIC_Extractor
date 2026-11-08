@@ -89,23 +89,8 @@ jobs:
         env:
           ARTIFACT_STEM: ${{ steps.meta.outputs.artifact_stem }}
         run: |
-          $artifactStem = $env:ARTIFACT_STEM
-          $stageDir = Join-Path $env:RUNNER_TEMP $artifactStem
-          $archivePath = Join-Path "dist" "$artifactStem.zip"
-
-          if (Test-Path $stageDir) {
-            Remove-Item $stageDir -Recurse -Force
-          }
-          if (Test-Path $archivePath) {
-            Remove-Item $archivePath -Force
-          }
-
-          New-Item -ItemType Directory -Path $stageDir | Out-Null
-          Copy-Item "dist\XIC_Extractor\*" $stageDir -Recurse
-          New-Item -ItemType Directory -Path (Join-Path $stageDir "output") -Force | Out-Null
-          Copy-Item "README.md" (Join-Path $stageDir "README.md")
-
-          Compress-Archive -Path $stageDir -DestinationPath $archivePath -Force
+          & .\.venv\Scripts\python.exe -m tools.distribution "dist\XIC_Extractor" "dist\$env:ARTIFACT_STEM.zip"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Smoke the delivered archive
         id: smoke_archive

@@ -10,6 +10,7 @@ look up processing principles later when a result raises a question.
 | --- | --- | --- |
 | Measure a known target list | [Targeted Extraction](targeted-extraction.md) | Workbook `摘要`, then `需檢查` when present |
 | Discover and compare features across samples | [Untargeted Discovery](untargeted-discovery.md) | `alignment_matrix.tsv`, then feature/sample evidence in the workbench |
+| Launch the Windows application ZIP | [Packaged quick start](../../packaging/quick-start.md) | Double-click `XIC_Extractor.exe`; no Python installation needed |
 | Install and launch from source | [README quick start](../../README.md#run-the-html-workbench) | Local browser workspace |
 | Prepare a Matrix for downstream analysis | [Read and use the Matrix](untargeted-discovery.md#read-and-use-the-matrix) | A separate curated Matrix; source results remain unchanged |
 | Inspect a Delta Mass candidate's XICs and MS2 | [Delta Mass candidate review](../product/discovery.md#read-only-candidate-review) | An offline Inspector report; no Alignment or reclassification |

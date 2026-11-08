@@ -135,6 +135,11 @@ Repo root 留給專案級設定、必要入口與主要目錄。Git、套件與�
   TOML 與 package data；app icon 在同一目錄。
   搬移這些路徑要同步更新 spec 與 build workflow，並驗證打包後的程式；原始碼入口
   不能證明打包結果。
+  `tools/distribution.py` 統一組裝交付 ZIP；build workflow 與 clean-source packaging
+  test 共用此入口。它只發佈程式、離線使用指南、使用者範本與授權聲明，不複製 repo
+  README、開發目錄或 Python 原始碼。文件選集由組裝入口維護；Markdown 轉成 HTML，
+  與既有圖解頁分開命名，圖片及範本連結指向包內檔案。首次操作說明來自
+  `packaging/quick-start.md`。
 - **Config 與 output：** `xic_extractor/configuration/loader.py` 由 config 的
   上層目錄導出 `output/`。搬移 `config/` 或 `output/` 時，驗證 HTML 工作區與 CLI
   的路徑。

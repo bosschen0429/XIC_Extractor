@@ -34,7 +34,15 @@ contracts before running an analysis.
 
 ### Run the HTML workbench
 
-The analysis workflow runs on **Windows 10 or 11** with Python **3.15**.
+**Windows application ZIP:** download the `XIC_Extractor-Windows-*.zip` asset
+from [Releases](https://github.com/bosschen0429/XIC_Extractor/releases), not a
+Source code archive. Extract the whole folder and double-click
+`XIC_Extractor.exe`; keep `_internal/` beside it. No Python, uv or Git installation
+is needed. Open `開始使用.html` for setup and the bundled offline guides. The
+application package does not contain the repository's development scripts or
+Python source. See the [packaged quick start](packaging/quick-start.md).
+
+**From source:** the analysis workflow runs on **Windows 10 or 11** with Python **3.15**.
 To run from source, install a current version of `uv`, then open PowerShell:
 
 ```powershell
