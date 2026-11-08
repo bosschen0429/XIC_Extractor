@@ -1,23 +1,13 @@
 """Exercise curation draft/preview/export through the shipped Interface."""
 
-import base64
 import json
-import shutil
-import subprocess
-from importlib.resources import files
 
 import pytest
 
+from tests.javascript_fixtures import run_asset_case
+
 
 def _run_curation_case(case):
-    node = shutil.which("node")
-    assert node is not None, "Node.js is required to test the shipped JavaScript"
-    source = (
-        files("xic_workbench")
-        .joinpath("assets/analysis_curation_session.js")
-        .read_bytes()
-    )
-    module = "data:text/javascript;base64," + base64.b64encode(source).decode()
     harness = """
 import assert from 'node:assert/strict';
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -79,19 +69,9 @@ async function ready(fixture) {
   assert.equal(fixture.session.snapshot.canExport, true);
 }
 """
-    completed = subprocess.run(
-        [node, "--input-type=module"],
-        input=(
-            f"import {{createCurationSession}} from {json.dumps(module)};\n"
-            + harness
-            + case
-        ),
-        text=True,
-        encoding="utf-8",
-        capture_output=True,
-        timeout=20,
+    run_asset_case(
+        "analysis_curation_session.js", "createCurationSession", harness, case
     )
-    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def test_export_uses_the_previewed_draft_and_owns_readonly_snapshots():

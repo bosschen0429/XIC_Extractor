@@ -1,19 +1,13 @@
 """Exercise the shipped Analysis Session through its intention/observation seam."""
 
-import base64
 import json
-import shutil
-import subprocess
-from importlib.resources import files
 
 import pytest
 
+from tests.javascript_fixtures import run_asset_case
+
 
 def _run_session_case(case):
-    node = shutil.which("node")
-    assert node is not None, "Node.js is required to test the shipped JavaScript"
-    source = files("xic_workbench").joinpath("assets/analysis_session.js").read_bytes()
-    module = "data:text/javascript;base64," + base64.b64encode(source).decode()
     harness = """
 import assert from 'node:assert/strict';
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -43,19 +37,7 @@ const progress = (status, id = 'job', results = previous) => structuredClone({
   job: {job_id: id, kind: 'targeted', status, cancellable: true}, results,
 });
 """
-    result = subprocess.run(
-        [node, "--input-type=module"],
-        input=(
-            f"import {{createAnalysisSession}} from {json.dumps(module)};\n"
-            + harness
-            + case
-        ),
-        text=True,
-        encoding="utf-8",
-        capture_output=True,
-        timeout=20,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
+    run_asset_case("analysis_session.js", "createAnalysisSession", harness, case)
 
 
 def test_restore_is_silent_and_each_new_completion_is_delivered_once():

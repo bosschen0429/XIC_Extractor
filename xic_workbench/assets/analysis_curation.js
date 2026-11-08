@@ -250,41 +250,42 @@ export function bindCuration() {
     event.preventDefault();
     act(() => curation.export());
   };
-  const edit = (event) => {
-    const block = event.target.closest("[data-step]");
-    if (block) {
-      const key = block.dataset.step;
-      const step = curation.snapshot.detection?.steps.find(
-        (step) => step.key === key,
-      );
-      if (!step) return;
-      curation.setStep(key, {
-        enabled: $(`curation-step-${key}`).checked,
-        parameters: Object.fromEntries(
-          step.parameters.map((parameter) => [
-            parameter.key,
-            $(`curation-${key}-${parameter.key}`).value,
-          ]),
-        ),
-      });
-    } else {
-      if (
-        !["curation-source_dir", "curation-sample_metadata", "curation-istd"].includes(
-          event.target.id,
-        )
-      )
-        return;
-      curation.setSources(
-        {
-          source_dir: $("curation-source_dir").value,
-          sample_metadata_path: $("curation-sample_metadata").value,
-          istd_path: $("curation-istd").value,
-        },
-        // A committed selection can reread changed contents at the same path.
-        { refresh: event.type === "change" },
-      );
-    }
+  const sourceFields = {
+    source_dir: $("curation-source_dir"),
+    sample_metadata_path: $("curation-sample_metadata"),
+    istd_path: $("curation-istd"),
   };
-  $("curation-form").addEventListener("input", edit);
-  $("curation-form").addEventListener("change", edit);
+  const editSources = (event) => {
+    curation.setSources(
+      Object.fromEntries(
+        Object.entries(sourceFields).map(([key, field]) => [key, field.value]),
+      ),
+      // A committed selection can reread changed contents at the same path.
+      { refresh: event.type === "change" },
+    );
+  };
+  for (const field of Object.values(sourceFields)) {
+    field.addEventListener("input", editSources);
+    field.addEventListener("change", editSources);
+  }
+  const editStep = (event) => {
+    const block = event.target.closest("[data-step]");
+    if (!block) return;
+    const key = block.dataset.step;
+    const step = curation.snapshot.detection?.steps.find(
+      (step) => step.key === key,
+    );
+    if (!step) return;
+    curation.setStep(key, {
+      enabled: $(`curation-step-${key}`).checked,
+      parameters: Object.fromEntries(
+        step.parameters.map((parameter) => [
+          parameter.key,
+          $(`curation-${key}-${parameter.key}`).value,
+        ]),
+      ),
+    });
+  };
+  $("curation-steps").addEventListener("input", editStep);
+  $("curation-steps").addEventListener("change", editStep);
 }

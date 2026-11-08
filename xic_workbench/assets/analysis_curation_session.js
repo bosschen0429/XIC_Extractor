@@ -28,7 +28,7 @@ export function createCurationSession(
   let sourceError = "";
   let message = "請選擇 Alignment 輸出資料夾。";
   let revision = 0;
-  let flight = null;
+  let requestPending = false;
   let timer = null;
   let exporting = false;
   let disposed = false;
@@ -122,7 +122,7 @@ export function createCurationSession(
   }
   async function refresh() {
     timer = null;
-    if (disposed || flight || !sources.source_dir) return;
+    if (disposed || requestPending || !sources.source_dir) return;
     const kind = detection ? "preview" : "source";
     let draft;
     if (kind === "preview") {
@@ -134,8 +134,8 @@ export function createCurationSession(
         return;
       }
     }
-    const reading = { revision, kind };
-    flight = reading;
+    const requestRevision = revision;
+    requestPending = true;
     message =
       kind === "source"
         ? "正在讀取整理來源…"
@@ -156,9 +156,9 @@ export function createCurationSession(
     } catch (error) {
       failure = error;
     }
-    flight = null;
+    requestPending = false;
     if (disposed) return;
-    if (reading.revision !== revision) {
+    if (requestRevision !== revision) {
       schedule();
       return;
     }

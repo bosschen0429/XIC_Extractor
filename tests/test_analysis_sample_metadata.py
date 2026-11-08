@@ -1,21 +1,9 @@
 """Exercise the shipped sample owner's intention/snapshot Interface."""
 
-import base64
-import json
-import shutil
-import subprocess
-from importlib.resources import files
+from tests.javascript_fixtures import run_asset_case
 
 
 def _run_metadata_case(case):
-    node = shutil.which("node")
-    assert node is not None, "Node.js is required to test the shipped JavaScript"
-    source = (
-        files("xic_workbench")
-        .joinpath("assets/analysis_sample_metadata.js")
-        .read_bytes()
-    )
-    module = "data:text/javascript;base64," + base64.b64encode(source).decode()
     harness = """
 import assert from 'node:assert/strict';
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -45,19 +33,7 @@ const job = (id = 'read', page = 'targeted') => ({
   job_id: id, kind: 'samples', page, status: 'succeeded',
 });
 """
-    completed = subprocess.run(
-        [node, "--input-type=module"],
-        input=(
-            f"import {{createSampleMetadata}} from {json.dumps(module)};\n"
-            + harness
-            + case
-        ),
-        text=True,
-        encoding="utf-8",
-        capture_output=True,
-        timeout=20,
-    )
-    assert completed.returncode == 0, completed.stdout + completed.stderr
+    run_asset_case("analysis_sample_metadata.js", "createSampleMetadata", harness, case)
 
 
 def test_retained_samples_restore_independently_of_the_latest_job_kind():

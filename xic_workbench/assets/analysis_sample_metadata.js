@@ -28,9 +28,12 @@ export function createSampleMetadata({ request, inputs, jobBusy = () => false })
   function publish(changed, replaced = false) {
     for (const listener of listeners) listener({ pages: changed, replaced });
   }
-  function capture(page, paths = inputs(page), advance = true) {
-    if (advance) revisions[page] += 1;
+  function captureRead(page, paths = inputs(page)) {
     return { page, paths: { ...paths }, revisions: { ...revisions } };
+  }
+  function beginRead(page, paths) {
+    revisions[page] += 1;
+    return captureRead(page, paths);
   }
   const matching = (page, paths) =>
     Object.entries(paths).every(([key, value]) => inputs(page)[key] === value);
@@ -115,13 +118,13 @@ export function createSampleMetadata({ request, inputs, jobBusy = () => false })
     },
     async preview(page, validate = () => true) {
       const { raw_dir, sequence_source } = inputs(page);
-      const read = capture(page, { raw_dir, sequence_source });
+      const read = beginRead(page, { raw_dir, sequence_source });
       if (!(await validate()) || !current(read)) return false;
       const result = await request("/api/samples/preview", read.paths);
       return adopt(read, result);
     },
     prepareJob({ page, raw_dir, dll_dir, sequence_source }) {
-      const read = capture(page, { raw_dir, dll_dir, sequence_source });
+      const read = beginRead(page, { raw_dir, dll_dir, sequence_source });
       return (job) => {
         jobRead = { id: job.job_id, read };
       };
@@ -136,13 +139,13 @@ export function createSampleMetadata({ request, inputs, jobBusy = () => false })
         const page = initial.job.page || "untargeted";
         jobRead = {
           id: initial.job.job_id,
-          read: capture(page, inputs(page), false),
+          read: captureRead(page),
         };
       }
       const result = initial.results.samples;
       if (!result?.input_paths) return false;
       const page = result.page || "untargeted";
-      return adopt(capture(page, result.input_paths, false), result);
+      return adopt(captureRead(page, result.input_paths), result);
     },
     async exclude(values) {
       requireWritable();
@@ -152,7 +155,7 @@ export function createSampleMetadata({ request, inputs, jobBusy = () => false })
       // whose preview has not populated any rows yet.
       const reads = pages
         .filter((page) => inputs(page).raw_dir === rawDir)
-        .map((page) => capture(page, { raw_dir: rawDir }));
+        .map((page) => beginRead(page, { raw_dir: rawDir }));
       return writeFolder(
         rawDir,
         () => request("/api/samples/exclude", submitted),
@@ -191,7 +194,7 @@ export function createSampleMetadata({ request, inputs, jobBusy = () => false })
         revisions[other] += 1;
         sets[other] = Object.freeze({ ...sets[other], rows });
       }
-      const read = capture(page, inputs(page), false);
+      const read = captureRead(page);
       const rawDir = read.paths.raw_dir;
       publish(changed);
       return writeFolder(

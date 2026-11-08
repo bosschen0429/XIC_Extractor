@@ -30,7 +30,7 @@ export function createAnalysisSession(
   let data = freezeSnapshot(structuredClone(initial));
   let seenCompletion = terminal(data.job) ? data.job.job_id : null;
   let lastCompletionAt = null;
-  let pending = null;
+  let commandPending = false;
   let confirming = false;
   let revision = 0;
   let poll = null;
@@ -40,7 +40,7 @@ export function createAnalysisSession(
   const listeners = new Set();
 
   function snapshot() {
-    const busy = running(data.job) || pending !== null || confirming;
+    const busy = running(data.job) || commandPending || confirming;
     return Object.freeze({
       job: data.job,
       results: data.results,
@@ -50,7 +50,7 @@ export function createAnalysisSession(
       canCancel:
         data.job?.status === "running" &&
         Boolean(data.job.cancellable) &&
-        pending === null &&
+        !commandPending &&
         !confirming,
       connection: failures >= 3 ? "offline" : "online",
       lastCompletionAt,
@@ -75,7 +75,7 @@ export function createAnalysisSession(
 
   async function readProgress() {
     tick += 1;
-    if (poll || pending !== null || (failures >= 3 && tick % 6)) return;
+    if (poll || commandPending || (failures >= 3 && tick % 6)) return;
     const reading = { revision };
     poll = reading;
     let response;
@@ -120,7 +120,7 @@ export function createAnalysisSession(
       if (!current.canStart) throw new Error("請等待目前工作完成或先停止。");
       const submitted = structuredClone(inputs);
       const context = prepareStart(kind, submitted);
-      pending = "start";
+      commandPending = true;
       revision += 1;
       publish();
       let accepted = false;
@@ -135,7 +135,7 @@ export function createAnalysisSession(
         await acceptedStart(kind, submitted, data.job, context);
         return data.job;
       } finally {
-        pending = null;
+        commandPending = false;
         if (accepted) publishAccepted();
         else publish();
       }
@@ -154,7 +154,7 @@ export function createAnalysisSession(
           !data.job.cancellable
         )
           return;
-        pending = "cancel";
+        commandPending = true;
         revision += 1;
         publish();
         let accepted = false;
@@ -166,7 +166,7 @@ export function createAnalysisSession(
           accepted = true;
           return data.job;
         } finally {
-          pending = null;
+          commandPending = false;
           if (accepted) publishAccepted();
         }
       } finally {
