@@ -202,9 +202,14 @@ class _Repository:
             references = (*self._file_references(path, directories=True), *owners)
         # Code that names the file in a string (importlib.resources, a
         # subprocess command, a data path) depends on it like an importer.
-        owners.update(_naming(self.module_sources, references))
+        document_path = path if path.endswith(".md") else None
+        owners.update(
+            _naming(self.module_sources, references, document_path=document_path)
+        )
         tests.update(self._tests_importing(owners))
-        tests.update(_naming(self.test_sources, references))
+        tests.update(
+            _naming(self.test_sources, references, document_path=document_path)
+        )
         if not tests and not path.endswith(".py"):
             return None
         return tests
@@ -226,9 +231,12 @@ class _Repository:
         references.append(parts[-1])
         if not directories:
             return tuple(references)
-        # Code that builds a data file name from its stem quotes the stem.
-        stem = Path(path).stem
-        references.extend((f'"{stem}"', f"'{stem}'"))
+        # Resource keys (e.g. preset names) can identify data without a suffix
+        # at the caller. Documents instead need filename evidence, not just an
+        # unrelated setting key such as "alignment".
+        if Path(path).suffix != ".md":
+            stem = Path(path).stem
+            references.extend((f'"{stem}"', f"'{stem}'"))
         # A package root is named by nearly every path inside it; its imports
         # are what the graph follows, so start below it.
         top = 2 if parts[0] in self.packages else 1
@@ -297,11 +305,22 @@ def _owning_package(path: str) -> str:
     return ".".join(Path(path).parent.parts)
 
 
-def _naming(sources: dict[str, str], references: Sequence[str]) -> set[str]:
+def _naming(
+    sources: dict[str, str],
+    references: Sequence[str],
+    *,
+    document_path: str | None = None,
+) -> set[str]:
+    # Keep constructed document names ('guide' + '.md' or f'{name}.md') without
+    # treating every matching setting key as a document reader.
+    suffix = Path(document_path).suffix if document_path is not None else ""
+    stem = Path(document_path).stem if document_path is not None else ""
+    quoted_stems = (f'"{stem}"', f"'{stem}'")
     return {
         name
         for name, source in sources.items()
         if any(reference in source for reference in references)
+        or (suffix and suffix in source and any(key in source for key in quoted_stems))
     }
 
 

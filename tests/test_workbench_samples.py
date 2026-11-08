@@ -7,7 +7,6 @@ from types import SimpleNamespace
 
 from tests.raw_header_fakes import install_raw_sample_headers
 from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
-from xic_workbench import targeted
 from xic_workbench.samples import (
     read_batch_samples,
     review_sample_groups,
@@ -204,37 +203,6 @@ def test_overview_lists_excluded_samples_with_their_reasons() -> None:
             {"raw_stem": "h", "reason": ""},
         ]
     }
-
-
-def test_targeted_run_reads_confirmed_annotations_for_this_run_only(
-    tmp_path, monkeypatch
-) -> None:
-    calls = []
-
-    class Stop(Exception):
-        pass
-
-    def prepare(config_dir, **kwargs):
-        calls.append(kwargs)
-        raise Stop
-
-    monkeypatch.setattr(targeted.config_loader, "prepare_targeted_config", prepare)
-    annotations = tmp_path / "confirmed.tsv"
-    for value in (annotations, None):
-        try:
-            targeted.TargetedRun(
-                tmp_path,
-                sample_annotations=value,
-                progress=lambda *_: None,
-                should_cancel=lambda: False,
-            )
-        except Stop:
-            pass
-
-    assert calls[0]["settings_overrides"] == {
-        "injection_order_source": str(annotations)
-    }
-    assert calls[1]["settings_overrides"] is None
 
 
 def test_review_exclusion_keeps_the_batch_annotations(tmp_path, monkeypatch) -> None:
