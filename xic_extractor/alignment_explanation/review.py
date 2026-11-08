@@ -226,6 +226,7 @@ def encode_row_evidence(
         "sample_key",
         "variant",
         "value",
+        "apex_rt_min",
         "source",
         "support_origin",
         "observation_ids",
@@ -317,6 +318,11 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
         "sample_key": (decision.subject.canonical_sample.identity.sample_key),
         "variant": decision.variant,
         "value": decision.value,
+        "apex_rt_min": (
+            decision.selected_integration.rt_apex_min
+            if decision.selected_integration is not None
+            else None
+        ),
         "source": decision.source,
         "evidence_states": evidence.evidence_states,
         "reason_codes": sorted(

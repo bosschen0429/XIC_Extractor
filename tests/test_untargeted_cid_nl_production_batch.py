@@ -1474,9 +1474,13 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         assert metadata["matrix_center_weight_basis"] == row.center_weight_basis
 
 
+@pytest.mark.parametrize(
+    "output_level", ("machine", "validation-minimal", "validation", "debug")
+)
 def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     tmp_path: Path,
     monkeypatch,
+    output_level: str,
 ) -> None:
     physical_records = {}
     sample_stems = ("Support1", "Support2", "Support3", "MS1Only", "NoPeak")
@@ -1644,3 +1648,62 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     assert cell_rows["NoPeak"]["status"] == "absent"
     assert cell_rows["NoPeak"]["source_candidate_id"] == ""
     assert cell_rows["NoPeak"]["missing_observation_state"] == "unavailable"
+
+    from xic_extractor.alignment_explanation.published_cells import read_published_cells
+    from xic_extractor.alignment_explanation.reader import read_explanation_metadata
+    from xic_extractor.diagnostics.alignment_explanation_projection import (
+        write_alignment_explanation,
+    )
+    from xic_extractor.diagnostics.duplicate_quantification import (
+        summarize_duplicate_quantification,
+    )
+
+    # Workbench omits the optional cell ledger. Every consumer must still get
+    # the selected apex from the saved owner decision, including MS1-only cells.
+    published = tmp_path / "published"
+    published_outputs = output_paths(
+        published,
+        output_level=output_level,
+        emit_alignment_cells=False,
+        emit_alignment_status_matrix=False,
+    )
+    write_outputs_atomic(
+        published_outputs,
+        writer_inputs.matrix,
+        metadata={},
+        production_decisions=writer_inputs.production_decisions,
+    )
+    write_alignment_explanation(
+        published / "alignment_explanation.sqlite",
+        completed=completed,
+        candidates_by_sample=candidates_by_sample,
+        matrix_path=published_outputs.matrix_tsv,
+        alignment_config=alignment_config,
+    )
+    cells = read_published_cells(published)
+    assert {(cell.sample, cell.direct, cell.apex_rt_min) for cell in cells} == {
+        ("Support1", True, 7.97),
+        ("Support2", True, 7.99),
+        ("Support3", True, 8.01),
+        ("MS1Only", False, 8.03),
+    }
+    assert {cell.sample: cell.value for cell in cells} == {
+        stem: owner_decisions[stem].value for stem in sample_stems[:4]
+    }
+    assert summarize_duplicate_quantification(cells)["valued_cells"] == 4
+    assert published_outputs.matrix_tsv.read_bytes() == outputs.matrix_tsv.read_bytes()
+    metadata = read_explanation_metadata(published / "alignment_explanation.sqlite")
+    stems_by_key = {
+        sample["sample_key"]: sample["sample_stem"]
+        for sample in metadata.summary["samples"]
+    }
+    assert {
+        stems_by_key[sample_key]: fact["apex_rt_min"]
+        for (_, sample_key), fact in metadata.records["cell_decisions"].items()
+    } == {
+        "Support1": 7.97,
+        "Support2": 7.99,
+        "Support3": 8.01,
+        "MS1Only": 8.03,
+        "NoPeak": None,
+    }

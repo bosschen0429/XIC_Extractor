@@ -199,8 +199,9 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
 
 
 @pytest.mark.parametrize("scenario", ("positive", "all_hold", "review_only"))
+@pytest.mark.parametrize("missing_cell_column", ("support_origin", "apex_rt_min"))
 def test_default_review_keeps_values_and_query_without_curves(
-    tmp_path, monkeypatch, scenario
+    tmp_path, monkeypatch, scenario, missing_cell_column
 ):
     completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, scenario
@@ -290,7 +291,7 @@ def test_default_review_keeps_values_and_query_without_curves(
         ]
     # Missing required columns cannot be supplied by compatibility reading.
     with sqlite3.connect(report) as db:
-        db.execute("ALTER TABLE cells DROP COLUMN support_origin")
+        db.execute(f"ALTER TABLE cells DROP COLUMN {missing_cell_column}")
     with pytest.raises(ExplanationError, match="rerun"):
         CidNlSource(report, query_only=True)
 
