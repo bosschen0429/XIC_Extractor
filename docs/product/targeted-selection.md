@@ -86,6 +86,25 @@ Analyte selection is deferred until all acquired samples are available. Known
 ISTD anchoring remains sample-local and supplies the existing paired-reference
 transfer; batch interpretation does not silently replace an established anchor.
 
+ISTD identity compares measured bodies before giving positive chemistry priority.
+An unconfirmed body can challenge the reference-nearest chemically supported body
+when it meets the existing anchor-selection prominence ratio, using whole-body
+support rather than unrelated global MS1 intensity. Each body's physical bounds
+define its nearest and farthest distances from the supplied reference RT. A body
+wholly farther away than another such body does not compete on chemical support
+alone. Overlapping distance ranges retain chemical preference, then reference
+apex proximity and body support. This is not a fixed RT gate or a nearest-apex
+rule: weak reference residues cannot displace a confirmed standard, and genuine
+drift remains possible. Selection never changes the candidate's NL answer or
+itself promotes an unconfirmed peak to a credible ISTD anchor.
+
+The selection answer carries the chosen region and its admissible candidate
+scope together. Extraction binds that scope to the retained physical candidates;
+production method assessment consumes it without rebuilding reference identity.
+All acquired candidates and their NL answers remain diagnostic evidence. A
+positive class loss on an identity-rejected alternate cannot mark the selected
+unconfirmed ISTD as already supported and bypass its Backfill assessment.
+
 Targeted retains its finite full-acquisition region universe even when the
 number of background lobes exceeds the generic capture budget. Background
 complexity must not turn every observed body into an empty candidate set.

@@ -1,7 +1,6 @@
 # XIC Extractor Agent Contract
 
-XIC-specific invariants and where to find the detailed rules. Global Codex
-rules own general operating defaults.
+XIC-specific task routing and invariants; global rules own general defaults.
 
 ## Where To Look
 
@@ -24,19 +23,22 @@ rules own general operating defaults.
 
 ## Always On
 
-- **Structure:** use Codebase Memory (CBM) for callers, dependencies and impact
-  once its index matches this checkout; read current source for exact text and
-  negative claims.
+- **Single-case data checks:** read the sample/XIC settings and original data
+  first. Answer and stop once the evidence resolves the question; trace code or
+  widen validation only for a concrete contradiction or requested fix.
+  ND/rejection is a program decision, not proof of absent signal.
+- **Code navigation:** for code-level questions or changes, use Codebase Memory
+  (CBM) for callers, dependencies and impact once its index matches this checkout;
+  read current source for exact text and negative claims.
 - **Change locality:** ownership, serialization, identity, derived-fact and
   internal-defense changes follow
   [Change Locality](docs/architecture-contract.md#change-locality).
 - **Domain purity:** core algorithms work on in-memory domain models. Never mix
   RAW/DLL I/O, multiprocessing, byte hashing or output formatting into
   mathematical or alignment algorithms.
-- **Batch cost:** move shared preparation out of loops and measure call counts
-  at small scale before scaling up. Deep diagnostics, full re-validation and
-  audits run on demand, not in the normal path, unless they decide this
-  output's correctness and nothing cheaper does.
+- **Batch cost:** prepare shared inputs outside loops; measure call counts before
+  scaling. Deep diagnostics, full re-validation and audits run on demand unless
+  no cheaper check can decide this output's correctness.
 - **Current state only:** code, comments, tests and docs describe current
   behavior and non-obvious constraints. History stays in Git and PRs.
 - **Module naming:** name modules for their capability, following
@@ -45,8 +47,7 @@ rules own general operating defaults.
   ignored `output/`; a tracked artifact needs a current consumer.
 - **Performance:** use `xic-performance-diagnosis` for timing, locality or
   performance comparisons.
-- **Evidence:** report the Evidence label and the method's actual oracle.
-  Passing tests prove regression coverage, not scientific or production
-  readiness.
+- **Evidence:** report the Evidence label and actual oracle. Passing tests prove
+  regression coverage, not scientific or production readiness.
 - **Merge:** acceptance evidence and hosted checks on the final remote SHA
   must both be satisfied; see [Acceptance Review](docs/agent/delivery.md#acceptance-review).

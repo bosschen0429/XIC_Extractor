@@ -131,13 +131,14 @@ class ExplanationReportWriter:
         record_id = self._record_rowids["rows", row_id]
         evidence = encode_row_evidence(cells, samples)
         self._connection().executemany(
-            "INSERT INTO cells VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO cells VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 (
                     record_id,
                     samples[cell["sample_key"]],
                     cell["variant"],
                     cell.get("value"),
+                    cell.get("apex_rt_min"),
                     cell.get("source"),
                     cell.get("support_origin", "unavailable"),
                     json.dumps(cell.get("observation_ids", []), separators=(",", ":")),

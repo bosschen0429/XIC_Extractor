@@ -2092,8 +2092,11 @@ def test_publication_lists_samples_in_injection_order(tmp_path: Path) -> None:
     assert areas[0] == pytest.approx(areas[1] * 2.5, rel=1e-2)
 
 
+@pytest.mark.parametrize(
+    "dropout_mode", ["no_ms2", "remote_nl", "remote_nl_local_fail"]
+)
 def test_istd_backfill_keeps_a_drifting_target_as_one_group(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dropout_mode: str
 ) -> None:
     """A fixed Target is one identity however far its RT drifts over the run."""
     from contextlib import nullcontext
@@ -2135,19 +2138,26 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
         istd_pair="",
     )
 
+    analyte = replace(
+        istd, label="Analyte", mz=mz - 4.0, is_istd=False, istd_pair=istd.label
+    )
+
     class Raw(ScopedMs2WindowReader):
         def __init__(self, name):
             self.name = name
 
         def acquisition_rt_bounds(self):
-            return 0.5, 4.7
+            return 0.5, 4.7 if dropout_mode == "no_ms2" else 10.2
 
         def extract_xic(self, _mz, rt_min, rt_max, _ppm):
             rt = np.linspace(rt_min, rt_max, 2401)
-            return rt, 10 + 5000.0 * np.exp(-(((rt - apex[self.name]) / 0.02) ** 2))
+            intensity = 10 + 5000.0 * np.exp(-(((rt - apex[self.name]) / 0.02) ** 2))
+            if self.name == "S3" and dropout_mode != "no_ms2":
+                intensity += 5000.0 * np.exp(-(((rt - 9.7) / 0.02) ** 2))
+            return rt, intensity
 
         def iter_ms2_scans(self, rt_min, rt_max):
-            # S3 acquired no MS2 on its peak: its direct method answer is HOLD.
+            # S3 has no qualifying local NL: its direct target answer is HOLD.
             rt = apex[self.name]
             if self.name != "S3" and rt_min <= rt <= rt_max:
                 yield Ms2ScanEvent(
@@ -2163,6 +2173,21 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
                     scan_number=1,
                 )
 
+            if self.name == "S3" and dropout_mode != "no_ms2":
+                yield Ms2ScanEvent(
+                    Ms2Scan(
+                        1, 9.7, mz, np.array([mz - loss]), np.array([500.0]), 500.0
+                    ),
+                    None,
+                    1,
+                )
+                if dropout_mode == "remote_nl_local_fail":
+                    yield Ms2ScanEvent(
+                        Ms2Scan(2, rt, mz, np.array([110.0]), np.array([500.0]), 500.0),
+                        None,
+                        2,
+                    )
+
     monkeypatch.setattr(pipeline, "preflight_raw_reader", lambda _path: [])
     monkeypatch.setattr(
         target_extraction,
@@ -2170,25 +2195,65 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
         lambda path, *_a, **_k: nullcontext(Raw(path.stem)),
     )
     workbook_path = tmp_path / "drift.xlsx"
-    execution = TargetedApplicationService(pipeline.run_pipeline).execute_application(
+    acquired = {}
+
+    def acquire(*args, **kwargs):
+        output = pipeline.run_pipeline(*args, **kwargs)
+        acquired.update(
+            {f.sample_name: f.results[istd.label] for f in output.file_results}
+        )
+        return output
+
+    execution = TargetedApplicationService(acquire).execute_application(
         build_targeted_application_request(
             config,
-            [istd],
+            [istd, analyte],
             injection_order={name: order for order, name in enumerate(apex, 1)},
             excel_output_path=workbook_path,
         )
     )
-    [finalized] = execution.finalized_results
+    source = acquired["S3"]
+    assert source.reported_rt == pytest.approx(2.6, abs=0.01)
+    assert not source.selected_cid_nl_supported
+    assert target_extraction.credible_istd_anchor_rt(source) is None
+    [finalized] = [
+        item
+        for item in execution.finalized_results
+        if item.completed_projection.row_binding.target.definition.target.is_istd
+    ]
     accepted = [
         decision
         for decision in finalized.scientific_core.targeted_backfill_decisions
         if decision.disposition == "candidate_mapped"
     ]
     assert len(accepted) == 1
+    if dropout_mode != "no_ms2":
+        # The unrelated class-loss observation remains true and inspectable,
+        # but is outside this ISTD's identity-admitted candidate population.
+        assert source.cid_nl_relations.supported_candidate_indexes
+        assert source.context_admissible_candidate_indexes is not None
+        assert not set(
+            source.cid_nl_relations.supported_candidate_indexes
+        ).intersection(source.context_admissible_candidate_indexes)
     workbook = load_workbook(workbook_path, read_only=True, data_only=True)
     values = iter(workbook["XIC Results"].values)
     headers = next(values)
-    rows = {row[0]: dict(zip(headers, row, strict=True)) for row in values}
+    rows = {(row[0], row[1]): dict(zip(headers, row, strict=True)) for row in values}
     workbook.close()
-    assert rows["S3"]["Counted Detection"] == "TRUE"
-    assert rows["S3"]["RT"] == pytest.approx(2.6, abs=0.01)
+    assert rows["S3", istd.label]["Counted Detection"] == "TRUE"
+    assert rows["S3", istd.label]["RT"] == pytest.approx(2.6, abs=0.01)
+    published = next(
+        f for f in execution.active_output.file_results if f.sample_name == "S3"
+    ).results[istd.label]
+    assert not published.selected_cid_nl_supported
+    assert published.candidate_ms2_evidence.nl_status == (
+        "NL_FAIL" if dropout_mode == "remote_nl_local_fail" else "NO_MS2"
+    )
+    # The final paired-position owner consumes the accepted ISTD identity;
+    # the analyte has no own NL and receives no direct chemical support.
+    assert rows["S3", analyte.label]["Counted Detection"] == "TRUE"
+    paired = next(
+        f for f in execution.active_output.file_results if f.sample_name == "S3"
+    ).results[analyte.label]
+    assert not paired.selected_cid_nl_supported
+    assert "paired_istd_identity" in paired.targeted_product_projection.support_reasons

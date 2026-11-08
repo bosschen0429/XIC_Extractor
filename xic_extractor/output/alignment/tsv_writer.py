@@ -63,9 +63,8 @@ ALIGNMENT_REVIEW_COLUMNS = (
     "family_product_mz",
     "family_observed_neutral_loss_da",
     "has_anchor",
-    "event_cluster_count",
-    "event_cluster_ids",
-    "event_member_count",
+    "physical_peak_count",
+    "physical_peak_keys",
     "detected_count",
     "absent_count",
     "unchecked_count",
@@ -541,9 +540,8 @@ def _review_rows(
                     cluster.family_observed_neutral_loss_da
                 ),
                 "has_anchor": cluster.has_anchor,
-                "event_cluster_count": len(cluster.event_cluster_ids),
-                "event_cluster_ids": ";".join(cluster.event_cluster_ids),
-                "event_member_count": cluster.event_member_count,
+                "physical_peak_count": len(cluster.physical_peak_keys),
+                "physical_peak_keys": ";".join(cluster.physical_peak_keys),
                 "detected_count": detected_count,
                 "absent_count": absent_count,
                 "unchecked_count": unchecked_count,
@@ -728,9 +726,7 @@ def _warning(
         return "no_anchor"
     if sample_count > 0 and unchecked_count / sample_count > 0.5:
         return "high_unchecked"
-    if backfilled_count > detected_count and (
-        detected_count == 0 or not _has_detected_owner_evidence(cluster)
-    ):
+    if backfilled_count > 0 and detected_count == 0:
         return "high_backfill_dependency"
     return ""
 
@@ -749,9 +745,6 @@ def _reason(
         f"{present_count}/{sample_count} present",
         f"{backfilled_count} MS1 backfilled",
     ]
-    event_cluster_count = len(cluster.event_cluster_ids)
-    if event_cluster_count > 1:
-        parts.append(f"merged {event_cluster_count} event clusters")
     if duplicate_assigned_count:
         parts.append(f"{duplicate_assigned_count} duplicate-assigned")
     if ambiguous_owner_count:
@@ -763,10 +756,3 @@ def _rt_delta_sec(left_rt: float | None, right_rt: float | None) -> float | None
     if left_rt is None or right_rt is None:
         return None
     return (left_rt - right_rt) * 60.0
-
-
-def _has_detected_owner_evidence(row: FinalizedUntargetMatrixRow) -> bool:
-    evidence = row.evidence
-    return evidence == "single_sample_local_owner" or evidence.startswith(
-        "owner_complete_link;"
-    )

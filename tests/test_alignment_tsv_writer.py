@@ -31,9 +31,8 @@ REVIEW_COLUMNS = [
     "family_product_mz",
     "family_observed_neutral_loss_da",
     "has_anchor",
-    "event_cluster_count",
-    "event_cluster_ids",
-    "event_member_count",
+    "physical_peak_count",
+    "physical_peak_keys",
     "detected_count",
     "absent_count",
     "unchecked_count",
@@ -108,9 +107,8 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         "family_product_mz": "384.076",
         "family_observed_neutral_loss_da": "116.047",
         "has_anchor": "TRUE",
-        "event_cluster_count": "1",
-        "event_cluster_ids": "ALN000001#peak-0",
-        "event_member_count": "1",
+        "physical_peak_count": "1",
+        "physical_peak_keys": "ALN000001#peak-0",
         "detected_count": "2",
         "absent_count": "1",
         "unchecked_count": "0",
@@ -129,7 +127,7 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         "include_in_primary_matrix": "TRUE",
         "row_flags": "finalized_route:matrix",
         "representative_samples": "sample-a;sample-b;sample-d",
-        "family_evidence": "",
+        "family_evidence": "finalized_untargeted_owner_complete",
         "warning": "",
         "reason": "anchor family; 3/4 present; 1 MS1 backfilled",
     }
@@ -147,12 +145,10 @@ def test_write_alignment_review_tsv_warning_precedence(tmp_path: Path):
             _cluster(
                 cluster_id="ALN000005",
                 has_anchor=True,
-                fold_evidence="owner_complete_link;owner_count=2",
             ),
             _cluster(
                 cluster_id="ALN000006",
                 has_anchor=True,
-                fold_evidence="owner_complete_link;owner_count=2",
             ),
         ),
         cells=(
@@ -188,6 +184,37 @@ def test_write_alignment_review_tsv_warning_precedence(tmp_path: Path):
         "",
         "high_backfill_dependency",
     ]
+
+
+def test_review_uses_physical_members_and_owner_counts_not_evidence_text(tmp_path):
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
+
+    matrix = AlignmentMatrix(
+        clusters=(_cluster(member_count=3),),
+        cells=(
+            _cell("direct", "detected", area=10.0),
+            _cell("backfill-a", "backfilled", area=20.0),
+            _cell("backfill-b", "backfilled", area=30.0),
+        ),
+        sample_order=("direct", "backfill-a", "backfill-b"),
+    )
+    (row,) = _read_tsv(
+        write_alignment_review_tsv(
+            tmp_path / "review.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
+    assert row["physical_peak_count"] == "3"
+    assert row["physical_peak_keys"] == (
+        "ALN000001#peak-0;ALN000001#peak-1;ALN000001#peak-2"
+    )
+    assert (
+        not {"event_cluster_count", "event_cluster_ids", "event_member_count"}
+        & row.keys()
+    )
+    assert row["warning"] == ""
+    assert row["reason"] == "anchor family; 3/3 present; 2 MS1 backfilled"
 
 
 def test_write_alignment_review_tsv_reports_duplicate_assigned_cells(tmp_path: Path):
@@ -280,7 +307,7 @@ def test_write_alignment_matrix_tsv_blanks_missing_and_invalid_areas(tmp_path: P
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = AlignmentMatrix(
-        clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
+        clusters=(_cluster(),),
         cells=(
             _cell("detected-positive", "detected", area=1234.567),
             _cell("detected-positive-2", "detected", area=2345.0),
@@ -345,7 +372,7 @@ def test_write_alignment_matrix_tsv_uses_stable_numeric_text_without_value_drift
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = AlignmentMatrix(
-        clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
+        clusters=(_cluster(),),
         cells=(
             _cell("small", "detected", area=0.00123456),
             _cell("large", "detected", area=123456789.0),
@@ -386,7 +413,6 @@ def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
         clusters=(
             _cluster(
                 center_mz=500.123456,
-                fold_evidence="owner_complete_link;owner_count=2",
             ),
         ),
         cells=(
@@ -441,7 +467,6 @@ def test_alignment_matrix_mz_format_is_display_only_for_small_mz(
         clusters=(
             _cluster(
                 center_mz=5.123456,
-                fold_evidence="owner_complete_link;owner_count=2",
             ),
         ),
         cells=(
@@ -691,7 +716,6 @@ def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
         clusters=(
             _cluster(
                 center_rt=8.49123456,
-                fold_evidence="owner_complete_link;owner_count=2",
             ),
         ),
         cells=(
@@ -741,7 +765,6 @@ def test_alignment_matrix_mz_format_preserves_nonfinite_blank_semantics(
         clusters=(
             _cluster(
                 center_mz=center_mz,
-                fold_evidence="owner_complete_link;owner_count=2",
             ),
         ),
         cells=(
@@ -768,7 +791,7 @@ def test_write_alignment_matrix_tsv_prefers_ms1_morphology_area(
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = AlignmentMatrix(
-        clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
+        clusters=(_cluster(),),
         cells=(
             _cell(
                 "sample-a",
@@ -826,7 +849,7 @@ def test_alignment_writers_preserve_physical_owner_area_source(
         morphology_area_source=area_source,
     )
     matrix = AlignmentMatrix(
-        clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
+        clusters=(_cluster(),),
         cells=(
             _cell(
                 "sample-a",
@@ -929,7 +952,6 @@ def test_write_alignment_matrix_tsv_excludes_archived_rows(
         clusters=(
             _cluster(
                 cluster_id="ALN000001",
-                fold_evidence="owner_complete_link;owner_count=2",
             ),
             _cluster(
                 cluster_id="ALN000002",
@@ -938,7 +960,6 @@ def test_write_alignment_matrix_tsv_excludes_archived_rows(
             ),
             _cluster(
                 cluster_id="ALN000003",
-                fold_evidence="owner_complete_link;owner_count=2",
                 destination="archive",
             ),
         ),
@@ -979,7 +1000,7 @@ def test_write_alignment_review_tsv_maps_product_rows(
     )
 
     matrix = AlignmentMatrix(
-        clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
+        clusters=(_cluster(),),
         cells=(
             _cell("sample-a", "detected", area=100.0),
             _cell("sample-b", "detected", area=110.0),
@@ -1030,11 +1051,9 @@ def test_write_alignment_matrix_rejects_duplicate_source_candidate_writes(
         clusters=(
             _cluster(
                 cluster_id="ALN000001",
-                fold_evidence="owner_complete_link;owner_count=2",
             ),
             _cluster(
                 cluster_id="ALN000002",
-                fold_evidence="owner_complete_link;owner_count=2",
             ),
         ),
         cells=(
@@ -1423,7 +1442,7 @@ def _cluster(
     neutral_loss_tag: str = "DNA_dR",
     has_anchor: bool = True,
     member_count: int = 0,
-    fold_evidence: str = "",
+    evidence_status: str = "finalized_untargeted_owner_complete",
     destination: Literal["matrix", "archive"] = "matrix",
 ) -> FinalizedUntargetMatrixRow:
     return FinalizedUntargetMatrixRow(
@@ -1439,7 +1458,7 @@ def _cluster(
         family_observed_neutral_loss_da=116.047,
         neutral_loss_tag=neutral_loss_tag,
         has_anchor=has_anchor,
-        evidence_status=fold_evidence,
+        evidence_status=evidence_status,
     )
 
 
@@ -1449,12 +1468,10 @@ def _display_collision_matrix() -> AlignmentMatrix:
             _cluster(
                 cluster_id="ALN000001",
                 center_mz=500.123441,
-                fold_evidence="owner_complete_link;owner_count=2",
             ),
             _cluster(
                 cluster_id="ALN000002",
                 center_mz=500.123449,
-                fold_evidence="owner_complete_link;owner_count=2",
             ),
         ),
         cells=(
@@ -1567,7 +1584,7 @@ def test_advisory_signal_quality_is_sample_scoped_and_matrix_unchanged(tmp_path)
         for sid, value in (("S1", 1000.0), ("S2", 2000.0))
     )
     before = AlignmentMatrix(
-        clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
+        clusters=(_cluster(),),
         cells=cells,
         sample_order=("S1", "S2"),
     )

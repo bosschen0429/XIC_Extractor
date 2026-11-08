@@ -199,7 +199,7 @@ def _quality_review_report(
         observation = NS(
             content=NS(
                 physical_peak_key=f"obs-{sid}",
-                integration=NS(signal_quality=quality),
+                integration=NS(signal_quality=quality, rt_apex_min=1.0),
             ),
             capture_stage="initial_capture",
         )
@@ -217,6 +217,7 @@ def _quality_review_report(
             variant="quantified",
             value=value,
             source="raw_trapezoid",
+            selected_integration=observation.content.integration,
         )
         cells.append(review_cell(decision))
         if membership_risks is not None:

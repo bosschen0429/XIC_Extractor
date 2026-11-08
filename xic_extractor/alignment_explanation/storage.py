@@ -71,6 +71,7 @@ def read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
             "sample",
             "variant",
             "value",
+            "apex_rt_min",
             "source",
             "support_origin",
             "observation_ids",
@@ -228,7 +229,7 @@ def create_schema(db: sqlite3.Connection, *, review_only: bool) -> None:
         CREATE TABLE cells (
             row_record_id INTEGER REFERENCES records(id) DEFERRABLE INITIALLY DEFERRED,
             sample INTEGER REFERENCES samples(id) DEFERRABLE INITIALLY DEFERRED,
-            variant TEXT NOT NULL, value REAL, source TEXT,
+            variant TEXT NOT NULL, value REAL, apex_rt_min REAL, source TEXT,
             support_origin TEXT NOT NULL,
             observation_ids TEXT NOT NULL, PRIMARY KEY(row_record_id,sample)
         ) WITHOUT ROWID;

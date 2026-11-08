@@ -226,9 +226,8 @@ report tables. It does not assert group identity across different input sets.
 | Column | Type | Description |
 | --- | --- | --- |
 | has_anchor | bool | Has anchor evidence |
-| event_cluster_count | int | Merged event cluster count |
-| event_cluster_ids | string | Semicolon-separated cluster IDs |
-| event_member_count | int | Total member count |
+| physical_peak_count | int | Number of physical peaks in the finalized group |
+| physical_peak_keys | string | Semicolon-separated physical peak keys; not event cluster IDs |
 | detected_count | int | Detected sample count |
 | absent_count | int | Absent sample count |
 | unchecked_count | int | Unchecked sample count |
@@ -270,15 +269,24 @@ report tables. It does not assert group identity across different input sets.
 | Column | Type | Description |
 | --- | --- | --- |
 | representative_samples | string | Up to 5 sample names with detection |
-| family_evidence | string | Family fold evidence type |
+| family_evidence | string | Evidence status recorded by the finalized owner |
 | warning | string | Warning flag (`no_anchor`, `high_unchecked`, `high_backfill_dependency`) |
 | reason | string | Comprehensive description |
+
+`high_backfill_dependency` marks rows with Backfill cells but no direct
+detection. Review uses the recorded cell decisions, not the wording of
+`family_evidence`, to determine this warning. Physical peak counts do not
+indicate how many event clusters were merged.
 
 ## Explanation format and reruns
 
 The file is `alignment_explanation.sqlite`, requested explicitly with
 `--emit-alignment-explanation`. Its candidate records retain each sample's
 measured `ms1_apex_mz`; missing measurements are null, not the row-center m/z.
+Its cell table retains `apex_rt_min` directly from the owner's selected
+integration, including MS1-only Backfill. Downstream cell readers do not infer
+this apex from observation order or optional TSV ledgers; cells with no
+selected integration retain null.
 The SQLite explanation uses `alignment_explanation` (full audit) or
 `alignment_explanation_review` (compact review), with `curve_payload`
 for retained curves. Curve provenance records query and selection context,

@@ -42,6 +42,13 @@ For an ISTD, the same frozen direct-support group and `PeakTrajectory` locate
 the missing sample without requiring a paired ISTD. The same support gate and
 conservative mapper apply; recovered samples never become direct SUPPORT votes.
 
+Targeted's selection owner supplies the identity-admitted candidate scope.
+Method assessment binds that scope while retaining the full acquired NL evidence;
+an unrelated, rejected alternate's positive NL cannot turn an unconfirmed chosen
+ISTD into sample-level SUPPORT and skip its HOLD recovery. Admission to this
+assessment does not itself authorize Backfill or a paired anchor: localization,
+physical qualification and the accepted recovery decision still apply.
+
 The mapper consumes the complete retained candidate assessment and applies the
 shared background-qualified physical Backfill question within the localized
 window. It does not discard non-qualifying MS2 events to manufacture an empty

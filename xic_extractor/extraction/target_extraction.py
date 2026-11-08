@@ -368,6 +368,7 @@ def extract_one_target(
             candidate_ms2_evidence_builder=candidate_assessment.candidate_ms2_evidence.get,
             prepared_result=prepared,
         )
+    context_selection = None
     if defer_selection:
         from xic_extractor.peak_detection.models import PeakDetectionResult
 
@@ -383,10 +384,11 @@ def extract_one_target(
 
         population = candidate_assessment.population_context()
         context = TargetedBatchContext((population,))
-        selected_region = context.select(population, is_istd=target.is_istd)
+        context_selection = context.select(population, is_istd=target.is_istd)
+        selected_region = context_selection.selected_region
         peak_result = candidate_assessment.score_selected_segment(
             selected_segment=selected_region.segment if selected_region else None,
-            competing_region_count=len(context.competing_regions(population)),
+            competing_region_count=context_selection.competing_region_count,
             scoring_context_builder=scoring_context_builder,
             paired_istd_anchor_rt=istd_rt_in_this_sample,
         )
@@ -406,6 +408,7 @@ def extract_one_target(
     result = candidate_assessment.complete_result(
         peak_result,
         scoring_context_builder=scoring_context_builder,
+        context_selection=context_selection,
     )
     peak_result = result.peak_result
     shape_metrics = selected_shape_metrics(prepared, peak_result)

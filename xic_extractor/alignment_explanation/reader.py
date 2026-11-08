@@ -63,7 +63,8 @@ def read_review_cells(
         details = decode_row_evidence(evidence, sample_count=len(samples))
         scalars = list(
             connection.execute(
-                "SELECT sample,variant,value,source,support_origin,observation_ids "
+                "SELECT sample,variant,value,apex_rt_min,source,"
+                "support_origin,observation_ids "
                 "FROM cells WHERE row_record_id=? ORDER BY sample",
                 (row_id,),
             )
@@ -72,13 +73,14 @@ def read_review_cells(
             raise ExplanationError(
                 "row evidence and cell samples differ; rerun Alignment"
             )
-        for sample, variant, value, source, origin, observations in scalars:
+        for sample, variant, value, apex, source, origin, observations in scalars:
             sid = samples[sample]
             result[feature_id, sid] = {
                 "feature_id": feature_id,
                 "sample_key": sid,
                 "variant": variant,
                 "value": value,
+                "apex_rt_min": apex,
                 "source": source,
                 "evidence_states": details[sample]["evidence_states"],
                 "reason_codes": details[sample]["reason_codes"],
@@ -142,28 +144,16 @@ def read_group_candidate_ids(path: Path, group_id: str) -> list[str]:
         ]
 
 
-def read_observation_apices(path: Path) -> dict[str, float]:
-    """Apex RT of each terminal observation, by physical peak key."""
-    with open_readonly(path) as db:
-        return {
-            observation["physical_peak_key"]: float(observation["rt_apex_min"])
-            for (payload,) in db.execute(
-                "SELECT payload FROM records WHERE kind='terminal_subjects'"
-            )
-            for observation in decode_object(payload).get("observations") or ()
-        }
-
-
 def read_row_cell_values(
     path: Path, feature_ids: Container[str]
-) -> Iterator[tuple[str, str, Any, Any, Any]]:
-    """Read value, support origin and observation locators without cold evidence."""
+) -> Iterator[tuple[str, str, float | None, str, float | None]]:
+    """Read owner value, support origin and selected apex without cold evidence."""
     from itertools import chain, groupby
 
     with open_readonly(path) as db:
         rows = db.execute(
             "SELECT r.id,r.payload,s.sample_key,c.value,"
-            "c.support_origin,c.observation_ids "
+            "c.support_origin,c.apex_rt_min "
             "FROM cells c JOIN records r ON r.id=c.row_record_id "
             "JOIN samples s ON s.id=c.sample ORDER BY c.row_record_id,c.sample"
         )
@@ -172,8 +162,8 @@ def read_row_cell_values(
             feature_id = decode_object(first[1])["feature_id"]
             if feature_id not in feature_ids:
                 continue
-            for _, _, sample, value, origin, observations in chain((first,), cells):
-                yield feature_id, sample, value, origin, json.loads(observations)
+            for _, _, sample, value, origin, apex in chain((first,), cells):
+                yield feature_id, sample, value, origin, apex
 
 
 def read_explanation_metadata(
