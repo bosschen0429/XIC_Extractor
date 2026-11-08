@@ -108,6 +108,82 @@ def test_path_named_by_a_test_or_a_register_is_selected_without_an_import(
     )
 
 
+def test_document_reference_does_not_turn_a_settings_key_into_a_dependency(
+    selection_repo: Path,
+) -> None:
+    guide = selection_repo / "docs/alignment.md"
+    guide.parent.mkdir()
+    guide.write_text("Implementation: selpkg/core.py\n", encoding="utf-8")
+    (selection_repo / "selpkg/settings.py").write_text(
+        "CONFIG = {'alignment': {}}\n", encoding="utf-8"
+    )
+    (selection_repo / "seltests/test_alignment_settings.py").write_text(
+        "from selpkg.settings import CONFIG\n", encoding="utf-8"
+    )
+    (selection_repo / "selpkg/guide_reader.py").write_text(
+        "def read_guide(folder):\n"
+        "    name = 'alignment'\n"
+        "    return (folder / f'{name}.md').read_text()\n",
+        encoding="utf-8",
+    )
+    (selection_repo / "seltests/test_alignment_guide.py").write_text(
+        "from selpkg.guide_reader import read_guide\n", encoding="utf-8"
+    )
+    with (selection_repo / "seltests/test_unrelated.py").open(
+        "a", encoding="utf-8"
+    ) as f:
+        f.write("KEY = 'alignment'\n")
+    subprocess.run(
+        ["git", "-C", str(selection_repo), "add", "docs/alignment.md"], check=True
+    )
+
+    assert _select(selection_repo, "selpkg/core.py") == (
+        "seltests/test_alignment_guide.py",
+        "seltests/test_consumer.py",
+        "seltests/test_docs.py",
+        "seltests/test_scanner.py",
+    )
+
+
+@pytest.mark.parametrize(
+    "reader",
+    [
+        "GUIDE = ROOT / ('alignment' + '.md')\n",
+        "NAME = 'alignment'\nGUIDE = ROOT / f'{NAME}.md'\n",
+    ],
+)
+def test_constructed_filename_selects_readers_without_selecting_an_unrelated_key(
+    selection_repo: Path,
+    reader: str,
+) -> None:
+    (selection_repo / "seltests/test_joined_resource.py").write_text(
+        reader, encoding="utf-8"
+    )
+    with (selection_repo / "seltests/test_unrelated.py").open(
+        "a", encoding="utf-8"
+    ) as f:
+        f.write("KEY = 'alignment'\n")
+
+    assert _select(selection_repo, "resources/guides/alignment.md") == (
+        "seltests/test_joined_resource.py",
+    )
+
+
+def test_resource_key_in_a_subprocess_still_selects_its_test(
+    selection_repo: Path,
+) -> None:
+    (selection_repo / "seltests/test_preset_subprocess.py").write_text(
+        'SCRIPT = "from selpkg.resource_loader import load_preset; '
+        "load_preset('rna_case')\"\n",
+        encoding="utf-8",
+    )
+
+    assert _select(selection_repo, "resources/presets/rna_case.toml") == (
+        "seltests/test_preset_subprocess.py",
+        "seltests/test_resource.py",
+    )
+
+
 @pytest.mark.parametrize(
     ("changed", "expected"),
     (
