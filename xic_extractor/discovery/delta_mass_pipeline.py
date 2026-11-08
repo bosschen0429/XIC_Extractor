@@ -10,6 +10,9 @@ from pathlib import Path
 
 import numpy as np
 
+from xic_extractor.configuration.mass_recalibration import (
+    serialize_mass_recalibration_result,
+)
 from xic_extractor.discovery.delta_mass_csv import (
     DeltaMassDiscoveryOutputs,
     write_delta_mass_outputs,
@@ -51,7 +54,10 @@ def detector_settings_for_interval(
     points = max(
         1, 2 * round((strategy.smoothing_window_sec / interval_sec - 1) / 2) + 1
     )
-    return LocalMs1FeatureSettings(gaussian_window_points=points)
+    return LocalMs1FeatureSettings(
+        gaussian_window_points=points,
+        feature_link_ppm=strategy.settings.mz_tolerance_ppm,
+    )
 
 
 def run_delta_mass_discovery(
@@ -79,7 +85,10 @@ def run_delta_mass_discovery(
     samples = []
     for raw_path in raw_paths:
         started = time.perf_counter()
-        with open_raw(raw_path, dll_dir=dll_dir) as reader:
+        with open_raw(
+            raw_path, dll_dir=dll_dir, mass_recalibration=strategy.mass_recalibration
+        ) as reader:
+            mass_result = reader.mass_recalibration_result
             index = reader.read_ms1_scan_index(centroid=True)
             intervals = np.diff([scan.rt for scan in index]) * 60
             interval = (
@@ -132,6 +141,7 @@ def run_delta_mass_discovery(
                 "layer_4_xic_requests": len(prepared.requests),
                 "layer_4_seconds": acquisition_seconds,
                 "median_ms1_scan_interval_sec": interval,
+                "mass_recalibration": serialize_mass_recalibration_result(mass_result),
                 "gaussian_window_points": detector.gaussian_window_points,
                 "detector_seconds": summary.wall_time_sec,
                 "total_seconds": time.perf_counter() - started,
@@ -141,9 +151,11 @@ def run_delta_mass_discovery(
         "preset": strategy.label,
         "method": {
             **asdict(strategy.settings),
+            "mass_recalibration": strategy.mass_recalibration.value,
             "height_ratio_policy": "evidence_only",
             "detector": {
                 "smoothing_window_sec": strategy.smoothing_window_sec,
+                "feature_link_ppm": strategy.settings.mz_tolerance_ppm,
                 "spectrum_mode": "vendor_centroid",
             },
         },

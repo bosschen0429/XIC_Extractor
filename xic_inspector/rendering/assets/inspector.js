@@ -479,10 +479,13 @@
   const items=Array.isArray(data.items)?data.items:[], samples=Array.isArray(data.samples)?data.samples:[];
   const deltaReview = data.summary?.source_kind === 'delta_mass_review';
   const nlReview = items.length > 0 && items.every(item => item.delta_mass?.neutral_losses?.length);
+  const envelopeReview = deltaReview && items.some(item => item.delta_mass?.envelope?.status === 'available');
+  const envelopeScore = item => item.delta_mass?.envelope?.status === 'available' ? item.delta_mass.envelope.spread : Infinity;
+  const compareEnvelope = (a,b) => envelopeScore(a)-envelopeScore(b);
   if (mode === 'offline' && deltaReview) {
     root.querySelector('.scope-summary').hidden = true;
     root.querySelector('.header-actions > .badge').remove();
-    root.querySelector('.list-header > span').textContent = '候選';
+    root.querySelector('.list-header > span').textContent = envelopeReview ? '候選 · 本頁依包絡偏差排序' : '候選';
     root.querySelector('.advanced-filters > summary').textContent = '篩選';
     $('search').placeholder = '搜尋樣本、m/z、判讀';
   }
@@ -513,7 +516,7 @@
   const result=row=>!has(row,'quantitative_value')?'<span class="result-missing">無單一結果</span>':row.quantitative_value===null?'<span class="result-null">空值</span>':`<span class="${row.quantitative_value===0?'result-zero':'result-number'}">${num(row.quantitative_value)}</span>${row.quantity_unit?` <span class="result-unit">${esc(row.quantity_unit)}</span>`:''}`;
   const isCollapsedExcluded=item=>item.kind==='candidate'&&item.stratum==='excluded', queryReport=data.selection?.strategy==='query'||$('report-info-source')?.dataset.strategy==='query';
   const primaryItems=items.filter(item=>['group','row'].includes(item.kind)&&!isCollapsedExcluded(item));
-  const initialItem=nlReview?(items.find(item=>item.delta_mass.neutral_losses.some(n=>n.status==='supported'))||items[0]):queryReport?items[0]:primaryItems.reduce((best,item)=>(item.review_summary?.observed_sample_count??-1)>(best?.review_summary?.observed_sample_count??-1)?item:best,null)||items.find(item=>!isCollapsedExcluded(item));
+  const initialItem=envelopeReview?[...items].sort(compareEnvelope)[0]:nlReview?(items.find(item=>item.delta_mass.neutral_losses.some(n=>n.status==='supported'))||items[0]):queryReport?items[0]:primaryItems.reduce((best,item)=>(item.review_summary?.observed_sample_count??-1)>(best?.review_summary?.observed_sample_count??-1)?item:best,null)||items.find(item=>!isCollapsedExcluded(item));
   const state={id:initialItem?.id,sample:null,candidate:'',capture:'',visible:new Set(samples.map(s=>s.id)),bounds:true,evidence:'',evidenceContext:'',excludedOpen:queryReport};
   const curveUi={model:null,query:'',collapsed:new Set(),pinned:null,hover:null,observer:null};
   cleanups.push(()=>curveUi.observer?.disconnect());
@@ -713,7 +716,8 @@
   function list(selectFallback=true){
     filtered=filteredItems();
     const regular=filtered.filter(item=>!isCollapsedExcluded(item)), excluded=filtered.filter(isCollapsedExcluded), localFilterActive=$('search').value.trim()!==''||['mz-min','mz-max','rt-min','rt-max'].some(id=>$(id).value!==''), showExcluded=state.excludedOpen||localFilterActive;
-    if (nlReview) regular.sort((a,b) => Number(b.delta_mass.neutral_losses.some(n => n.status === 'supported')) - Number(a.delta_mass.neutral_losses.some(n => n.status === 'supported')));
+    if (envelopeReview) regular.sort(compareEnvelope);
+    else if (nlReview) regular.sort((a,b) => Number(b.delta_mass.neutral_losses.some(n => n.status === 'supported')) - Number(a.delta_mass.neutral_losses.some(n => n.status === 'supported')));
     listed=showExcluded?[...regular,...excluded]:regular;
     if(!listed.some(i=>i.id===state.id)&&(state.id||selectFallback)){state.id=listed[0]?.id;reset();}
     $('list-count').textContent=deltaReview

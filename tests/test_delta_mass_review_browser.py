@@ -189,6 +189,122 @@ def _open(page, tmp_path):
     return page.locator(".dm-review")
 
 
+def test_pt_envelope_orders_review_without_reclassifying_candidates(
+    review_page, tmp_path
+):
+    from xic_extractor.evidence.pt_envelope import PtEnvelopeComparison
+
+    candidates = review_fixture().candidates
+    review = DeltaMassReview(
+        "saved",
+        (
+            replace(
+                candidates[0],
+                envelope=PtEnvelopeComparison(
+                    "available",
+                    model="Pt+C",
+                    carbon_count=3,
+                    spread=4.0,
+                    core_scan_count=5,
+                    observed_relative=(1.0, 0.2, 0.1, 0.01),
+                    expected_relative=(1.0, 1.0, 0.8, 0.2),
+                ),
+            ),
+            replace(
+                candidates[1],
+                envelope=PtEnvelopeComparison(
+                    "available",
+                    model="Pt+C+S",
+                    carbon_count=8,
+                    spread=1.2,
+                    core_scan_count=10,
+                    observed_relative=(1.0, 1.1, 0.8, 0.3),
+                    expected_relative=(1.0, 1.1, 0.8, 0.3),
+                ),
+            ),
+            replace(
+                candidates[0],
+                candidate_id="no-envelope",
+                sample_stem="no-envelope",
+                envelope=PtEnvelopeComparison("unavailable", "rt_grid_mismatch"),
+            ),
+        ),
+    )
+    source = tmp_path / "pt-review.json"
+    write_delta_mass_review(review, source)
+    output = tmp_path / "pt-review.html"
+    generate_report(source, SelectionRequest(), output)
+    page = review_page
+    page.goto(output.as_uri())
+    expect(page.locator(".record-button").first).to_contain_text("sample-b")
+    expect(page.locator(".record-button").last).to_contain_text("no-envelope")
+    expect(page.get_by_label("Pt 包絡比較")).to_contain_text("Pt+C+S")
+    expect(page.get_by_label("Pt 包絡比較")).to_contain_text("不改原候選判定")
+    expect(page.get_by_label("Pt 包絡比較")).to_contain_text("同步 10 scans")
+    envelope = page.get_by_label("Pt 包絡比較")
+    expect(
+        envelope.get_by_role("columnheader", name="實測（BASE = 100）")
+    ).to_be_visible()
+    expect(
+        envelope.get_by_role("row", name=re.compile(r"PLUS 1\s+110\s+110"))
+    ).to_be_visible()
+    page.locator(".record-button").last.click()
+    expect(page.get_by_label("Pt 包絡比較")).to_contain_text("四位置 scan 時間不一致")
+    expect(page.locator(".record-button")).to_have_count(3)
+
+
+@pytest.mark.parametrize(
+    "labels,deltas,display",
+    [
+        (("light", "heavy"), (0.0, 2.0), ("BASE", "PLUS 2")),
+        (
+            ("base", "plus_1", "plus_2", "plus_4"),
+            (0.0, 1.002111, 2.002271, 4.005214),
+            ("BASE", "PLUS 1", "PLUS 2", "PLUS 4"),
+        ),
+    ],
+)
+def test_position_names_and_colors_distinguish_every_curve(
+    review_page, tmp_path, labels, deltas, display
+):
+    candidate = review_fixture().candidates[0]
+    candidate = replace(
+        candidate,
+        positions=tuple(
+            replace(
+                candidate.positions[0],
+                label=label,
+                delta_da=delta,
+                expected_mz=candidate.base_mz + delta,
+                raw_intensity=tuple(
+                    v * (i + 1) for v in candidate.positions[0].raw_intensity
+                ),
+            )
+            for i, (label, delta) in enumerate(zip(labels, deltas, strict=True))
+        ),
+    )
+    source = tmp_path / "named.json"
+    write_delta_mass_review(DeltaMassReview("saved", (candidate,)), source)
+    original = source.read_bytes()
+    output = tmp_path / "named.html"
+    generate_report(source, SelectionRequest(), output)
+    page = review_page
+    page.goto(output.as_uri())
+    assert page.locator(".dm-legend > span").all_text_contents() == list(display)
+    for theme in ("light", "dark"):
+        page.evaluate("theme => document.documentElement.dataset.theme = theme", theme)
+        colors = page.locator(".dm-xic polyline").evaluate_all(
+            "lines => lines.map(line => getComputedStyle(line).stroke)"
+        )
+        assert len(set(colors)) == len(labels)
+        page.screenshot(path=str(tmp_path / f"position-colors-{theme}.png"))
+    page.locator(".dm-xic svg").focus()
+    page.locator(".dm-xic svg").press("ArrowRight")
+    expect(page.locator(".dm-readout").first).to_contain_text("BASE: RT")
+    expect(page.locator(".dm-readout").first).to_contain_text(display[1] + ": RT")
+    assert source.read_bytes() == original
+
+
 def test_offline_positions_share_a_scale_and_keep_original_scan_values(
     review_page, tmp_path
 ):
@@ -285,7 +401,7 @@ def test_missing_xic_and_failed_ms2_remain_unavailable_not_negative(
     page = review_page
     page.goto(output.as_uri())
     root = page.locator(".dm-review")
-    expect(root).to_contain_text("保存判定：rejected")
+    expect(root).to_contain_text("來源判定：rejected")
     expect(root).to_contain_text("沒有可用的 RAW XIC")
     expect(root).to_contain_text("third（無曲線）")
     expect(root.locator(".dm-xic polyline")).to_have_count(0)

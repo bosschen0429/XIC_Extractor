@@ -9,7 +9,7 @@ from pathlib import Path
 
 from xic_extractor.configuration.delta_mass import DeltaMassPatternSettings
 from xic_extractor.discovery.delta_mass_patterns import DeltaMassCandidate
-from xic_extractor.tabular_io import write_delimited_rows
+from xic_extractor.tabular_io import format_machine_float, write_delimited_rows
 
 CANDIDATE_COLUMNS = (
     "sample_stem",
@@ -111,6 +111,8 @@ def write_delta_mass_outputs(
         rows.append(row)
         for position in candidate.positions:
             position_fields = asdict(position)
+            # Review reuses the actual Discovery XIC center, not a display-rounded mass.
+            position_fields["expected_mz"] = format_machine_float(position.expected_mz)
             position_fields["height_ratio_to_base"] = position_fields.pop(
                 "height_ratio"
             )

@@ -307,6 +307,14 @@ def complete_delta_mass_candidates(
             i for i, p in enumerate(candidate.positions) if p.partner_source == "anchor"
         )
         for position_index, position in enumerate(candidate.positions):
+            acquired_trace = trace_map.get((index, position_index), shape_reference)
+            if acquired_trace is not None and acquired_trace.rt.size >= 2:
+                # Include acquired zero-signal scans: signal gaps are not scan cadence.
+                interval_sec = float(np.median(np.diff(acquired_trace.rt))) * 60
+                position.apex_threshold_sec = max(
+                    settings.apex_floor_sec,
+                    settings.scan_interval_multiplier * interval_sec,
+                )
             if position.partner_source != "missing":
                 continue
             trace = trace_map[index, position_index]

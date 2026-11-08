@@ -347,7 +347,22 @@ class RawFileHandle:
         return float(self._raw_file.RetentionTimeFromScanNumber(scan_number))
 
     def read_ms1_scan_index(self, *, centroid: bool = False) -> tuple[MS1Scan, ...]:
-        return build_ms1_scan_index(self._raw_file, centroid=centroid)
+        index = build_ms1_scan_index(self._raw_file, centroid=centroid)
+        if self.mass_recalibration_result.outcome != "applied":
+            return index
+        restored = []
+        for scan in index:
+            scale = self._mass_scale(scan.scan_number)
+            if centroid:
+                spectrum = restore_ms1_spectrum(
+                    scan.rt, scan.masses, scan.intensities, scale
+                )
+                self._recalibrated_ms1[scan.scan_number] = spectrum
+                rt, masses, intensities = spectrum
+            else:
+                rt, masses, intensities = scan.rt, scan.masses / scale, scan.intensities
+            restored.append(MS1Scan(scan.scan_number, rt, masses, intensities))
+        return tuple(restored)
 
     def batch_xic_source(self) -> RawSuperWindowSource:
         """Overlapping scan windows share one native chromatogram read."""

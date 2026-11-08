@@ -10,6 +10,13 @@ from dataclasses import fields, replace
 from pathlib import Path
 
 from xic_extractor.configuration.cid_nl_profile import CidNlMassPolicy
+from xic_extractor.configuration.mass_recalibration import (
+    VENDOR_MASS_RECALIBRATION_RESULT,
+    MassRecalibration,
+    MassRecalibrationResult,
+    deserialize_mass_recalibration_result,
+    resolve_mass_recalibration,
+)
 from xic_extractor.diagnostics.delta_mass_nl_review import assess_review_neutral_losses
 from xic_extractor.diagnostics.delta_mass_review_data import (
     DeltaMassReview,
@@ -23,6 +30,7 @@ from xic_extractor.discovery.detected_features import load_detected_features_csv
 from xic_extractor.discovery.models import DiscoverySeed
 from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
 from xic_extractor.discovery.strict_seed_receipts import read_parent_ms1_observations
+from xic_extractor.evidence.pt_envelope import EnvelopeTrace, compare_pt_envelope
 from xic_extractor.precursor_evidence import PrecursorMassScope
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
@@ -68,7 +76,7 @@ def acquire_delta_mass_review(
     """
     if not math.isfinite(padding_min) or padding_min <= 0:
         raise ValueError("padding_min must be positive and finite")
-    selected = _read_selected_candidates(
+    selected, mass_results = _read_selected_candidates(
         discovery_directory, candidate_ids, padding_min
     )
     nl_settings = apply_to_discovery(load_preset(nl_preset)) if nl_preset else None
@@ -144,7 +152,12 @@ def acquire_delta_mass_review(
             if nl_settings
             else None
         )
-        with open_raw(raw_path, dll_dir=dll_directory) as reader:
+        mass_result = mass_results.get(sample, VENDOR_MASS_RECALIBRATION_RESULT)
+        with open_raw(
+            raw_path, dll_dir=dll_directory, mass_recalibration=mass_result.policy
+        ) as reader:
+            if mass_result.policy is not MassRecalibration.NONE:
+                reader.use_mass_recalibration_result(mass_result)
             start, end = reader.acquisition_rt_bounds()
             candidates = [
                 replace(
@@ -158,7 +171,7 @@ def acquire_delta_mass_review(
                 )
             requests = tuple(
                 dict.fromkeys(
-                    XICRequest(p.query_mz, *c.rt_window, c.xic_ppm)
+                    XICRequest(p.expected_mz, *c.rt_window, c.xic_ppm)
                     for c in candidates
                     for p in c.positions
                 )
@@ -223,7 +236,9 @@ def acquire_delta_mass_review(
                 for position in candidate.positions:
                     trace = traces[
                         XICRequest(
-                            position.query_mz, *candidate.rt_window, candidate.xic_ppm
+                            position.expected_mz,
+                            *candidate.rt_window,
+                            candidate.xic_ppm,
                         )
                     ]
                     positions.append(
@@ -250,6 +265,18 @@ def acquire_delta_mass_review(
                         and error.requested_rt_window[1] >= lo
                     ),
                 )
+                if result.pattern_id == "pt":
+                    result = replace(
+                        result,
+                        envelope=compare_pt_envelope(
+                            tuple(
+                                EnvelopeTrace(p.label, p.raw_rt, p.raw_intensity)
+                                for p in result.positions
+                            ),
+                            base_mz=result.base_mz,
+                            rt_apex_min=result.base_rt_apex_min,
+                        ),
+                    )
                 if nl_settings is not None:
                     result = replace(
                         result,
@@ -296,7 +323,7 @@ def acquire_delta_mass_review(
 
 def _read_selected_candidates(
     directory: Path, candidate_ids: Sequence[str] | None, padding_min: float
-) -> tuple[ReviewCandidate, ...]:
+) -> tuple[tuple[ReviewCandidate, ...], dict[str, MassRecalibrationResult]]:
     if candidate_ids is not None and not candidate_ids:
         raise ValueError(
             "Select at least one candidate ID, or request all candidates explicitly"
@@ -323,6 +350,18 @@ def _read_selected_candidates(
     method = sidecar.get("method", {}) if isinstance(sidecar, dict) else {}
     if not isinstance(method, dict):
         raise ValueError("Delta Mass sidecar method must be an object")
+    policy = resolve_mass_recalibration(method.get("mass_recalibration", "none"))
+    mass_results = {}
+    if policy is not MassRecalibration.NONE:
+        for sample in sidecar.get("samples", []):
+            result = deserialize_mass_recalibration_result(
+                sample.get("mass_recalibration", "")
+            )
+            if result.policy is not policy:
+                raise ValueError(
+                    "Delta Mass sample lacks the run's saved mass restoration result"
+                )
+            mass_results[sample["sample_stem"]] = result
     configured_positions = {p["label"]: p for p in method.get("positions", [])}
     try:
         ppm = float(method["mz_tolerance_ppm"])
@@ -397,7 +436,13 @@ def _read_selected_candidates(
                 ),
             )
         )
-    return tuple(selected)
+    if policy is not MassRecalibration.NONE:
+        missing = {c.sample_stem for c in selected} - mass_results.keys()
+        if missing:
+            raise ValueError(
+                f"Missing saved mass restoration for samples: {sorted(missing)}"
+            )
+    return tuple(selected), mass_results
 
 
 def _saved_number(row: dict[str, str], field: str) -> float | None:

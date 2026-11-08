@@ -8,6 +8,7 @@ name = "Pt pattern"
 pattern_id = "pt"
 
 [discovery]
+mass_recalibration = "easy_ic_restore"
 method_label = "pt_pattern"
 delta_mass_mz_tolerance_ppm = 20.0
 anchor_positions = ["base", "plus_1"]

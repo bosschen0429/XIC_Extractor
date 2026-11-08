@@ -56,6 +56,7 @@ DISCOVERY_TUNING_OVERRIDE_KEYS = frozenset(
 
 DELTA_MASS_DISCOVERY_OVERRIDE_KEYS = frozenset(
     {
+        "mass_recalibration",
         "method_label",
         "delta_mass_mz_tolerance_ppm",
         "positions",

@@ -13,6 +13,7 @@ name = "DNA_dR"
 value = 116.0474
 
 [discovery]
+mass_recalibration = "easy_ic_restore"
 method_label = "pt_pattern_cid_nl_dr"
 delta_mass_mz_tolerance_ppm = 20.0
 anchor_positions = ["base", "plus_1"]

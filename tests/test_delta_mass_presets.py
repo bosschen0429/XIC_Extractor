@@ -6,6 +6,19 @@ from xic_extractor.presets.apply import apply_to_delta_mass_discovery
 from xic_extractor.presets.models import Preset, PresetTag
 
 
+@pytest.mark.parametrize("name", ["pt_pattern", "pt_pattern_cid_nl_dr"])
+def test_pt_discovery_restores_mass_coordinates_without_relaxing_gates(name):
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+    from xic_extractor.presets.apply import resolve_delta_mass_discovery
+
+    strategy = resolve_delta_mass_discovery(name)
+    assert strategy.mass_recalibration is MassRecalibration.EASY_IC_RESTORE
+    assert strategy.settings.mz_tolerance_ppm == 20
+    assert strategy.settings.min_shape_r == 0.9
+    assert strategy.settings.apex_floor_sec == 1
+    assert strategy.settings.scan_interval_multiplier == 1.25
+
+
 @pytest.mark.parametrize(
     "bad_position",
     [

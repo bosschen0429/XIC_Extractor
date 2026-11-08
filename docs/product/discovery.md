@@ -292,6 +292,17 @@ separations. A candidate must satisfy the mass differences and co-elution;
 designated discriminating positions also need apex-region shape correlation.
 The method supports two or more positions and has no built-in chemistry.
 
+The built-in Pt presets restore Easy-IC mass coordinates before constructing
+features. Matching, RAW confirmation and review use that same per-sample mass
+result. The sidecar saves it for review replay; older sidecars without a mass
+policy retain vendor coordinates. Restoration changes the measured input, not
+the configured 20 ppm window, apex tolerance or R threshold. Pt envelope models
+remain review-only.
+
+The Delta Mass ppm setting also controls feature mass linking, so a tolerance
+comparison starts before hypotheses are selected. Detector mass-dispersion
+quality limits are separate and are not changed by this window setting.
+
 1. Only detector-qualified features anchor a hypothesis, in the roles the
    preset names. The matcher trusts that qualification.
 2. Partners are searched in both mass directions from the lowest-mass position,
@@ -301,7 +312,10 @@ The method supports two or more positions and has no built-in chemistry.
    recorded as `ratio_status`. Ratios are evidence only: out-of-range ratios do
    not reject candidates, and expected abundance never predicts missing signal.
 4. Missing positions are confirmed in RAW by apex alignment and apex-region
-   Pearson correlation. A two-position method needs its partner in the feature
+   Pearson correlation. RAW apex tolerance uses the median interval of the
+   acquired XIC times, including zero-intensity scans, with the same floor and
+   multiplier. It does not reuse the whole-file interval used for initial
+   table matching. A two-position method needs its partner in the feature
    table; RAW never completes a solitary seed.
 5. Discriminating positions are shape-checked. An optional `lowest_position`
    must have the lowest background-subtracted RAW height and clear background
@@ -348,11 +362,30 @@ Choose `--nl-preset` explicitly to assess NL inside saved feature bounds.
 Without it, only XICs are acquired; there is no manual MS2 browsing mode.
 The Inspector shows unsmoothed RAW XICs on a shared intensity axis, position
 labels, configured ΔDa, m/z, saved statuses and feature bounds.
+Review XICs use the same expected m/z centers as Discovery, retained at
+round-trip precision in the position CSV. Observed partner masses remain
+available for feature/precursor evidence; they do not silently recenter the XICs.
 Clicking NL support opens its exact spectrum, measured product and XIC bounds;
 multiple supporting scans remain navigable without a scan search.
 The existing NL matcher, parent-MS1 evidence and peak attribution own the answer.
 Missing evidence, ambiguous attribution and read errors remain distinguishable.
 Review does not consume shape correlations or independently measured height ratios.
+For `pattern_id=pt`, review also compares the synchronous base/+1/+2/+4 net
+intensities with Pt+C, Pt+C+Cl, Pt+C+S and Pt+C+2S models. The base defines one
+half-height core around the local apex; all four positions use those same scans.
+The reported spread is the largest intensity/model amount divided by the smallest
+at the best carbon count: closer to 1 means a closer fit, not confirmed identity.
+Inspector orders the loaded candidates by this score and shows the model,
+carbon count, core scan count and observed/expected ratios. Missing or incompatible
+traces show an unavailable reason rather than a fabricated score. This comparison
+uses fixed singly charged positions, not charge/origin search, fine-structure
+attribution or RT fitting. No spread threshold is applied and no candidate status
+or Discovery CSV is changed. Older reviews without this evidence remain readable.
+The comparison table expresses both observations and model expectations with
+BASE set to 100. Display names use BASE/PLUS N rather than Light/Heavy or
+internal `base`/`plus_*` identifiers; custom Heavy positions use their configured
+mass offset. Exact Δm/z remains visible separately, and saved position IDs do not
+change. Four Pt curves have distinct colors as well as distinct line patterns.
 RAW files are matched by saved sample name, not verified as the original bytes.
 These are new diagnostic reads, not a replay of the original detector.
 Inspector reads the saved report only and never acquires RAW.

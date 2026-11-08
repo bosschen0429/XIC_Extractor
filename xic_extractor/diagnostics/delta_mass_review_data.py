@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, TypeVar, cast
 
 from xic_extractor.configuration.cid_nl_profile import CidNlMassPolicy
+from xic_extractor.evidence.pt_envelope import PtEnvelopeComparison
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.tabular_io import write_delimited_rows
 
@@ -33,6 +34,7 @@ class ReviewPosition:
 
     @property
     def query_mz(self) -> float:
+        """Precursor/NL evidence center; XICs use Discovery's expected_mz."""
         return self.observed_mz if self.observed_mz is not None else self.expected_mz
 
 
@@ -98,6 +100,7 @@ class ReviewCandidate:
     spectra: tuple[ReviewSpectrum, ...] = ()
     ms2_read_errors: tuple[ReviewReadError, ...] = ()
     neutral_losses: tuple[ReviewNlPosition, ...] = ()
+    envelope: PtEnvelopeComparison | None = None
 
 
 @dataclass(frozen=True)
@@ -243,6 +246,20 @@ def decode_delta_mass_review(payload: object) -> DeltaMassReview:
                 neutral_losses=losses,
                 ms2_read_errors=errors,
                 rt_window=tuple(row["rt_window"]),
+                envelope=(
+                    _record(
+                        PtEnvelopeComparison,
+                        row["envelope"],
+                        core_rt_window=_tuple_or_none(
+                            row["envelope"].get("core_rt_window")
+                        ),
+                        position_labels=tuple(row["envelope"]["position_labels"]),
+                        observed_relative=tuple(row["envelope"]["observed_relative"]),
+                        expected_relative=tuple(row["envelope"]["expected_relative"]),
+                    )
+                    if row.get("envelope") is not None
+                    else None
+                ),
             )
         )
     method = root.get("nl_method")

@@ -29,6 +29,96 @@ from xic_inspector.api import (
 )
 
 
+def test_restored_review_requires_saved_result_instead_of_reestimating(tmp_path):
+    discovery = tmp_path / "discovery"
+    ids = write_discovery(discovery)
+    path = discovery / "delta_mass_sidecar.json"
+    sidecar = json.loads(path.read_text())
+    sidecar["method"]["mass_recalibration"] = "easy_ic_restore"
+    path.write_text(json.dumps(sidecar))
+    with pytest.raises(ValueError, match="Missing saved mass restoration"):
+        acquisition.acquire_delta_mass_review(
+            discovery, candidate_ids=ids, raw_directory=tmp_path, dll_directory=tmp_path
+        )
+
+
+def test_review_reuses_each_samples_saved_mass_restoration_before_acquiring(
+    tmp_path, monkeypatch
+):
+    from xic_extractor.configuration.mass_recalibration import (
+        MassRecalibration,
+        MassRecalibrationResult,
+        serialize_mass_recalibration_result,
+    )
+
+    discovery = tmp_path / "discovery"
+    ids = write_discovery(discovery)
+    sidecar_path = discovery / "delta_mass_sidecar.json"
+    sidecar = json.loads(sidecar_path.read_text())
+    sidecar["method"]["mass_recalibration"] = "easy_ic_restore"
+    saved = {
+        sample: MassRecalibrationResult(
+            "applied",
+            policy=MassRecalibration.EASY_IC_RESTORE,
+            baseline_lm=baseline,
+            n_anchor=3,
+        )
+        for sample, baseline in [("sample-a", 1.0), ("sample-b", 2.0)]
+    }
+    sidecar["samples"] = [
+        {
+            "sample_stem": sample,
+            "mass_recalibration": serialize_mass_recalibration_result(result),
+        }
+        for sample, result in saved.items()
+    ]
+    sidecar_path.write_text(json.dumps(sidecar))
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    for sample in saved:
+        (raw / f"{sample}.raw").touch()
+
+    class Reader:
+        def __init__(self, path):
+            self.sample = path.stem
+            self.result = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def use_mass_recalibration_result(self, result):
+            assert result == saved[self.sample]
+            self.result = result
+
+        def acquisition_rt_bounds(self):
+            assert self.result is not None
+            return 0, 5
+
+        def extract_xic_many(self, requests):
+            return tuple(
+                XICTrace.from_arrays([1, 2, 3], [0, self.result.baseline_lm * 100, 0])
+                for _ in requests
+            )
+
+    def open_reader(path, *, dll_dir, mass_recalibration):
+        assert mass_recalibration is MassRecalibration.EASY_IC_RESTORE
+        return Reader(path)
+
+    monkeypatch.setattr(acquisition, "open_raw", open_reader)
+    review = acquisition.acquire_delta_mass_review(
+        discovery, candidate_ids=ids, raw_directory=raw, dll_directory=tmp_path
+    )
+    assert [c.positions[0].raw_intensity[1] for c in review.candidates] == [
+        100,
+        100,
+        200,
+    ]
+    assert [c.base_mz for c in review.candidates] == [100, 110, 200]
+
+
 def test_selected_raws_are_batched_and_saved_evidence_is_not_reclassified(
     tmp_path, monkeypatch
 ):
@@ -137,6 +227,61 @@ def test_unknown_candidate_fails_before_raw_acquisition(tmp_path, monkeypatch):
             raw_directory=tmp_path,
             dll_directory=tmp_path,
         )
+
+
+def test_review_queries_the_exact_discovery_center_not_the_partner_mass(
+    tmp_path, monkeypatch
+):
+    import csv
+
+    ids = write_discovery(tmp_path)
+    path = tmp_path / "delta_mass_positions.csv"
+    with path.open(encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        columns = reader.fieldnames
+        rows = list(reader)
+    for row in rows:
+        if row["candidate_id"] == ids[0] and row["position_label"] == "partner":
+            row["observed_mz"] = "103.008"
+    with path.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "sample-a.raw").touch()
+
+    class Reader:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def acquisition_rt_bounds(self):
+            return 0.0, 5.0
+
+        def extract_xic_many(self, requests):
+            return tuple(
+                XICTrace.from_arrays([1.5, 2.0, 2.5], [0.0, r.mz, 0.0])
+                for r in requests
+            )
+
+    monkeypatch.setattr(acquisition, "open_raw", lambda *args, **kwargs: Reader())
+    candidate = acquisition.acquire_delta_mass_review(
+        tmp_path,
+        candidate_ids=[ids[0]],
+        raw_directory=raw,
+        dll_directory=tmp_path,
+        padding_min=0.5,
+    ).candidates[0]
+    partner = next(p for p in candidate.positions if p.label == "partner")
+    assert partner.raw_intensity[1] == 103.0000001234
+    assert partner.expected_mz == 103.0000001234
+    assert partner.observed_mz == 103.008
+    assert (
+        partner.query_mz == 103.008
+    )  # Precursor/NL evidence keeps its measured center.
 
 
 def test_discovery_directory_points_to_review_export_not_alignment(tmp_path):

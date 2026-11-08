@@ -489,8 +489,8 @@
 }
 
 /* Candidate review reuses the Inspector surface and semantic text/status roles. */
-.xic-inspector { --dm-series-1:#2a78d6;--dm-series-2:#eb6834;--dm-series-3:#1baf7a; }
-:is([data-theme="dark"] .xic-inspector, .xic-inspector[data-theme="dark"]) { --dm-series-1:#3987e5;--dm-series-2:#d95926;--dm-series-3:#199e70; }
+.xic-inspector { --dm-series-1:#2a78d6;--dm-series-2:#eb6834;--dm-series-3:#1baf7a;--dm-series-4:#eda100; }
+:is([data-theme="dark"] .xic-inspector, .xic-inspector[data-theme="dark"]) { --dm-series-1:#3987e5;--dm-series-2:#d95926;--dm-series-3:#199e70;--dm-series-4:#c98500; }
 .xic-inspector .dm-review h2 { font-size:21px;overflow-wrap:anywhere; }
 .xic-inspector .dm-review h3 { font-size:16px;margin-top:20px; }
 .xic-inspector .dm-note { font-size:12px;color:var(--muted);margin:5px 0 12px; }
