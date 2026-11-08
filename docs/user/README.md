@@ -1,81 +1,80 @@
-# User Guides
+# XIC Extractor 使用說明
 
-Start with the analysis you want to complete. Each workflow guide takes you
-through inputs, execution, reading the result, and troubleshooting. You can
-look up processing principles later when a result raises a question.
+從一批 Thermo RAW 檔取得可判讀的定量結果。先選擇要完成的分析，遇到問題再查
+原理或欄位；不必先理解程式架構。本指南與附圖都可離線閱讀。
 
-## Run An Analysis And Read The Result
+<a id="start"></a>
+## 開始使用
 
-| Task | Guide | First result to inspect |
+1. **完整解壓縮應用程式 ZIP**，放在可寫入的資料夾，不要直接在 ZIP 內執行。
+2. 雙擊 **XIC_Extractor.exe**，程式會開啟本機瀏覽器工作區。不需要安裝 Python、uv 或 Git。
+3. 第一次使用先完成下方的 reader 設定，再選擇分析。
+
+程式內右上角的 **使用說明與快捷鍵**可開啟同一份指南。程式關閉後，也可以直接用
+瀏覽器開啟資料夾內的 **開始使用.html**；不需啟動程式或連線網路。
+
+<a id="reader-setup"></a>
+## 首次設定
+
+RAW 分析需要 **.NET 8 或更新版本**與 **Thermo RawFileReader 8.0.42**。
+
+1. 依工作區的設定提示，確認缺少的是 .NET、reader，還是 reader 資料夾未選好。
+2. 若缺 .NET，依提示安裝並重新啟動程式。
+3. 若缺 reader，閱讀連結中的 Thermo 授權，接受後按 **下載並設定 RawFileReader**。
+   已有相容 reader 時，可直接選取其資料夾。
+
+首次下載外部依賴需要網路；文件與結果檢閱不需要網路。Xcalibur 不必安裝，也不會
+被修改。不要以舊 Xcalibur DLL 取代支援的 reader。
+
+## 選擇分析
+
+| 我想完成的工作 | 需要準備 | 從這裡開始 |
 | --- | --- | --- |
-| Measure a known target list | [Targeted Extraction](targeted-extraction.md) | Workbook `摘要`, then `需檢查` when present |
-| Discover and compare features across samples | [Untargeted Discovery](untargeted-discovery.md) | `alignment_matrix.tsv`, then feature/sample evidence in the workbench |
-| Launch the Windows application ZIP | [Packaged quick start](../../packaging/quick-start.md) | Double-click `XIC_Extractor.exe`; no Python installation needed |
-| Install and launch from source | [README quick start](../../README.md#run-the-html-workbench) | Local browser workspace |
-| Prepare a Matrix for downstream analysis | [Read and use the Matrix](untargeted-discovery.md#read-and-use-the-matrix) | A separate curated Matrix; source results remain unchanged |
-| Inspect a Delta Mass candidate's XICs and MS2 | [Delta Mass candidate review](../product/discovery.md#read-only-candidate-review) | An offline Inspector report; no Alignment or reclassification |
+| 已知目標清單的定量 | RAW 資料夾、目標表或已保存的 XLSX 方法 | [Targeted 操作指南](targeted-extraction.html) |
+| 探索並比較樣本中的 features | RAW 資料夾、CID-NL 方法、樣本角色及適用內標 | [Untargeted 操作指南](untargeted-discovery.html) |
 
-Prefer illustrated pages? Open the [browser reading index](readers-index.html)
-locally, then choose the Targeted or Untargeted guide. GitHub displays HTML
-source rather than the rendered guide; Markdown links work directly on GitHub.
-The Markdown workflow pages own the operation instructions; the illustrated
-pages explain the same workflow and link to the detailed references.
+Targeted 範本可直接從工作區的目標清單卡下載，也可複製本包的
+[方法範本](../../xic_extractor/configuration/data/targeted-method.xlsx)或
+[目標表](../../xic_extractor/configuration/data/targets.xlsx)後編輯。
+Untargeted 可從 dR、R、MeR 方法開始，再依樣本與分析目的調整。
 
-## Reader Setup
+## 判讀與重開結果
 
-RAW analysis uses Windows, .NET 8 or later, and RawFileReader **8.0.42**. The
-workbench setup notice checks the dependencies. Read the linked Thermo license,
-accept it, then click **下載並設定 RawFileReader**. The installer sets the shared
-DLL folder for both workflows. Xcalibur is not needed and is not modified.
+- **Targeted：**先看工作簿的 `摘要`，再看 `需檢查`。在工作區選擇目標與樣本，
+  檢閱保存的判斷；要重新擷取 XIC 時，才需要相應 RAW 檔與 reader。
+- **Untargeted：**先看 `alignment_matrix.tsv`。在工作區檢閱 feature、樣本與缺格的
+  依據；候選表不是完成的 Matrix，feature 也不等於已確認的化合物。
+- **重開結果：**使用工作區的 **開啟既有結果**，選擇 Targeted 工作簿或完成的批次結果資料夾。
+  查看保存的結果不會重新選峰或改寫原始定量。
+- **整理 Matrix：**在完成的 Untargeted 結果選 **整理矩陣**，確認步驟與輸入。
+  整理會產生另一份結果，原始 Matrix 保留；它不代替 normalization 或下游統計。
 
-If .NET is missing, run the notice's command
-(`winget install Microsoft.DotNet.Runtime.10`), then restart the workbench.
+不確定數字代表什麼時，先讀[峰、偵測、面積與缺格的處理原理](processing-guide.html)。
+需要方法情境時再看[DNA adduct CID-NL 解說案例](raw-to-final-matrix-product-story.html)；
+案例不是所有方法的驗證證明。
 
-For manual reader installation from the source checkout:
+## 遇到問題
 
-```powershell
-uv run xic-install-thermo-reader --help
-# Read the Thermo license linked in help before accepting it.
-uv run xic-install-thermo-reader --accept-thermo-license
-```
-
-The default folder is `%LOCALAPPDATA%\XIC_Extractor\RawFileReader-8.0.42`;
-`--destination` selects another folder. The installer downloads RawFileReader,
-CommonCore.Data, and OpenMcdf from official sources, checks pinned hashes, and
-replaces only those DLLs. Manual installation retains existing workspace
-settings: select the installed folder in the workbench afterward.
-
-The workbench button also updates local DLL settings and replaces a startup
-override for that session. If you launch with `--dll-dir` or
-`THERMO_RAWFILE_READER_DLL_DIR`, update or remove that external setting before
-the next launch; installation does not change it.
-
-Use `uv run xic-workbench --help` for startup options such as `--no-open`,
-`--port`, and `--config-dir`. Console-free launcher logs are in
-`output/launcher/`.
-
-## Understand A Result
-
-You do not need all of these pages. Choose the question that brought you here.
-
-| Question | Read |
+| 遇到的情況 | 下一步 |
 | --- | --- |
-| What do the two workflows share, and what do they deliver? | [Short processing map](core-modules-explainer.html) |
-| Why is a candidate, a matched feature, or an area not yet the same as a detection? | [Processing principles: the A/B/C sample story](processing-guide.html) |
-| How does that reasoning apply to DNA adduct CID-NL analysis? | [Worked example](raw-to-final-matrix-product-story.html) |
-| Which exact rule governs this result? | [Product topic index](../product/README.md) |
-| How are implementation, execution, and review separated? | [System guide](system-guide.html), then the [architecture reading guide](../architecture-contract.md#reading-the-code) |
+| 雙擊後沒有工作區 | 確認已完整解壓縮，EXE 旁仍有 `_internal/`；查看 `output/launcher/` 啟動記錄 |
+| RAW 分析無法開始或 DLL 讀取失敗 | 回到工作區的 reader 設定提示，確認 .NET、reader 版本與資料夾 |
+| 輸入表無法匯入 | 依錯誤訊息修正檔案、列與欄位；使用範本，不以舊格式強行載入 |
+| 想關閉程式或停止分析 | 正在分析時用工作區的停止控制；結束時用 **結束工作區**，不要只依賴關閉分頁 |
+| 矩陣出現缺格或結果異常 | 先查樣本角色、方法及保存的判斷，再看 XIC；不要直接把缺格改成零 |
 
-## Look Up A Field Or Method
+<a id="reference"></a>
+## 查閱細節
 
-| Reference | Use it for |
-| --- | --- |
-| [Targeted configuration](targeted-config-reference.md) | Method/target-table XLSX, local work state, identification method definitions |
-| [Targeted output](targeted-output-reference.md) | Workbook sheets, columns, units, and saved evidence |
-| [Untargeted presets](untargeted-preset-guide.md) | Method editing, TOML, and supported settings |
-| [Untargeted output](untargeted-output-reference.md) | Discovery CSVs, Alignment TSVs, and explanation storage |
-| [Matrix Curation](../product/matrix-curation.md) | Curation steps, inputs, interpretation, and separate outputs |
+只有需要查細節時才讀這些參考；不必選擇另一套文件入口。
 
-For operator validation, use the [Targeted validation route](targeted-extraction.md#validation)
-or [local Alignment validation](../agent/local-execution.md#alignment-and-handoff).
-For maintaining the diagrams, see [guide assets](assets/README.md).
+- Targeted：[逐步操作](targeted-extraction.md)、[方法與目標表欄位](targeted-config-reference.md)、[輸出欄位](targeted-output-reference.md)。
+- Untargeted：[逐步操作與 Matrix 使用](untargeted-discovery.md)、[方法設定](untargeted-preset-guide.md)、[輸出欄位](untargeted-output-reference.md)。
+
+## 檔案與更新
+
+保留 EXE 旁的 `_internal/`，它是必要依賴，不用手動操作。移動程式時請移動整個資料夾。
+`docs/` 是指南與圖片，`examples/` 是可複製的範本，`licenses/` 是第三方授權聲明。
+`config/` 會保留本機設定，預設結果與啟動記錄在 `output/`；分析結果以工作區顯示的路徑為準。
+
+更新或刪除舊版前，另外保留自己的方法、設定與分析結果。

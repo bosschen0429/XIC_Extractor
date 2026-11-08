@@ -1,0 +1,296 @@
+"""Publish and read the application's single offline user guide.
+
+Source checkouts render the authored user pages lazily. Wheels contain the same
+rendered files; frozen applications read the files delivered beside the EXE.
+No development documents or repository path is an HTTP resource.
+"""
+
+from __future__ import annotations
+
+import mimetypes
+import os
+import re
+import sys
+from functools import cache
+from html import escape
+from html.parser import HTMLParser
+from pathlib import Path
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
+
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
+USER_PAGES = (
+    "README.md",
+    "targeted-extraction.md",
+    "targeted-extraction.html",
+    "targeted-config-reference.md",
+    "targeted-output-reference.md",
+    "untargeted-discovery.md",
+    "untargeted-discovery.html",
+    "untargeted-preset-guide.md",
+    "untargeted-output-reference.md",
+    "processing-guide.html",
+    "raw-to-final-matrix-product-story.html",
+)
+START_PAGE = Path("開始使用.html")
+
+EXAMPLES = ("targeted-method.xlsx", "targets.xlsx", "targets.csv")
+
+PAGE_STYLE = """
+body { margin: 2rem auto; padding: 0 1.5rem; max-width: 76rem;
+  font: 17px/1.7 system-ui, 'Microsoft JhengHei', sans-serif; color: #243342; }
+a { color: #145b90; } pre { padding: 1rem; overflow: auto; background: #f2f5f7; }
+code { font-size: .9em; } table { border-collapse: collapse; width: 100%; }
+th, td { padding: .5rem; border: 1px solid #ccd4dc; text-align: left; }
+img, svg { max-width: 100%; height: auto; } h1, h2, h3 { line-height: 1.3; }
+"""
+
+
+def _markdown_html(source: str) -> str:
+    from markdown_it import MarkdownIt
+
+    renderer = MarkdownIt("commonmark", {"html": True}).enable("table")
+    tokens = renderer.parse(source)
+    used_ids: dict[str, int] = {}
+    for i, token in enumerate(tokens):
+        if token.type != "heading_open":
+            continue
+        inline = tokens[i + 1]
+        text = "".join(
+            child.content
+            for child in inline.children or []
+            if child.type in {"text", "code_inline"}
+        )
+        slug = re.sub(r"[^\w\- ]", "", text.lower()).replace(" ", "-")
+        occurrence = used_ids.get(slug, 0)
+        used_ids[slug] = occurrence + 1
+        token.attrSet("id", f"{slug}-{occurrence}" if occurrence else slug)
+    body = renderer.renderer.render(tokens, renderer.options, {})
+    title = next((t.content for t in tokens if t.type == "inline"), "XIC Extractor")
+    return (
+        '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        f"<title>{escape(title)}</title><style>{PAGE_STYLE}</style></head>"
+        f"<body>{body}</body></html>"
+    )
+
+
+class _OfflineLinks(HTMLParser):
+    """Rewrite source links and collect only the assets used by published pages."""
+
+    def __init__(self, source: Path, destinations: dict[Path, Path]):
+        super().__init__(convert_charrefs=False)
+        self.source = source
+        self.destinations = destinations
+        self.output: list[str] = []
+        self.assets: set[Path] = set()
+
+    def _link(self, value: str, *, resource: bool) -> str:
+        url = urlsplit(value)
+        if url.scheme or url.netloc:
+            if resource and url.scheme != "data":
+                raise ValueError(f"Offline guide loads a network resource: {value}")
+            return value
+        if not url.path:
+            return value
+        target = Path(os.path.normpath(self.source.parent / unquote(url.path)))
+        if target not in self.destinations:
+            if target.parts[:3] == ("docs", "user", "assets") and target.suffix in {
+                ".png",
+                ".svg",
+                ".css",
+            }:
+                self.destinations[target] = target
+                self.assets.add(target)
+            else:
+                raise ValueError(f"Unpublished local link in {self.source}: {value}")
+        destination = self.destinations[target]
+        relative = os.path.relpath(
+            destination, self.destinations[self.source].parent
+        ).replace(os.sep, "/")
+        return urlunsplit(("", "", quote(relative), url.query, url.fragment))
+
+    def handle_starttag(self, tag, attrs):
+        rewritten = []
+        for name, value in attrs:
+            if value is not None and name in {"href", "src"}:
+                value = self._link(value, resource=name == "src" or tag == "link")
+            rewritten.append((name, value))
+        attributes = "".join(
+            f' {name}="{escape(value, quote=True)}"'
+            if value is not None
+            else f" {name}"
+            for name, value in rewritten
+        )
+        self.output.append(f"<{tag}{attributes}>")
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        self.output[-1] = self.output[-1][:-1] + "/>"
+
+    def handle_endtag(self, tag):
+        self.output.append(f"</{tag}>")
+
+    def handle_data(self, data):
+        self.output.append(data)
+
+    def handle_entityref(self, name):
+        self.output.append(f"&{name};")
+
+    def handle_charref(self, name):
+        self.output.append(f"&#{name};")
+
+    def handle_decl(self, decl):
+        self.output.append(f"<!{decl}>")
+
+    def handle_comment(self, data):
+        self.output.append(f"<!--{data}-->")
+
+
+class _GuideReferences(HTMLParser):
+    def __init__(self, html: str):
+        super().__init__()
+        self.ids: set[str] = set()
+        self.references: list[tuple[str, bool]] = []
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        for name, value in attrs:
+            if value is None:
+                continue
+            if name == "id":
+                self.ids.add(value)
+            if name in {"href", "src"}:
+                self.references.append((value, name == "src" or tag == "link"))
+
+
+def render_user_guides(source_root: Path) -> dict[Path, bytes]:
+    """Render the selected user pages and their linked assets for publication."""
+    destinations = {}
+    for name in USER_PAGES:
+        source = Path("docs/user") / name
+        if name == "README.md":
+            destination = START_PAGE
+        else:
+            destination = (
+                source.with_suffix(".guide.html") if source.suffix == ".md" else source
+            )
+        destinations[source] = destination
+    for name in EXAMPLES:
+        destinations[Path("xic_extractor/configuration/data") / name] = (
+            Path("examples") / name
+        )
+    rendered = {}
+    assets = set()
+    for source, destination in list(destinations.items()):
+        if destination.parts[0] == "examples":
+            continue
+        text = (source_root / source).read_text(encoding="utf-8")
+        html = _markdown_html(text) if source.suffix == ".md" else text
+        links = _OfflineLinks(source, destinations)
+        links.feed(html)
+        links.close()
+        assets.update(links.assets)
+        html = "".join(links.output)
+        if destination != START_PAGE:
+            home = quote(
+                os.path.relpath(START_PAGE, destination.parent).replace(os.sep, "/")
+            )
+            nav = (
+                '<nav style="padding:12px;border-bottom:1px solid #ccd4dc;'
+                'font:16px system-ui;background:#fff;color:#243342">'
+                f'<a href="{home}">使用說明首頁</a></nav>'
+            )
+            html = re.sub(r"(<body\b[^>]*>)", r"\g<1>" + nav, html, count=1)
+        rendered[destination] = html.encode("utf-8")
+    for source in assets | {
+        Path("xic_extractor/configuration/data") / name for name in EXAMPLES
+    }:
+        rendered[destinations[source]] = (source_root / source).read_bytes()
+    rendered[Path("licenses/Archify.txt")] = (
+        source_root / "docs/user/assets/archify-LICENSE.txt"
+    ).read_bytes()
+    _check_links(rendered)
+    return rendered
+
+
+def _check_links(rendered: dict[Path, bytes]) -> None:
+    pages = {
+        p: _GuideReferences(data.decode("utf-8"))
+        for p, data in rendered.items()
+        if p.suffix == ".html"
+    }
+    for page, links in pages.items():
+        for reference, resource in links.references:
+            url = urlsplit(reference)
+            if url.scheme or url.netloc:
+                if resource and url.scheme != "data":
+                    raise ValueError(
+                        f"Offline guide loads a network resource: {reference}"
+                    )
+                continue
+            target = (
+                Path(os.path.normpath(page.parent / unquote(url.path)))
+                if url.path
+                else page
+            )
+            if target not in rendered:
+                raise ValueError(f"Missing offline file in {page.name}: {reference}")
+            if (
+                url.fragment
+                and target in pages
+                and unquote(url.fragment) not in pages[target].ids
+            ):
+                raise ValueError(f"Missing offline anchor in {page.name}: {reference}")
+
+
+@cache
+def _source_guides() -> dict[Path, bytes]:
+    return render_user_guides(SOURCE_ROOT)
+
+
+def read_user_guide(relative_url: str) -> tuple[bytes, str] | None:
+    """Read a public help resource, never an arbitrary application file."""
+    value = unquote(relative_url) or START_PAGE.as_posix()
+    relative = Path(value)
+    if (
+        relative.is_absolute()
+        or relative.drive
+        or ".." in relative.parts
+        or "\\" in value
+    ):
+        return None
+    allowed = (
+        relative == START_PAGE
+        or (
+            relative.parts[:2] == ("docs", "user")
+            and relative.suffix in {".html", ".css", ".png", ".svg"}
+        )
+        or (
+            relative.parts[:1] == ("examples",)
+            and relative.name in EXAMPLES
+            and len(relative.parts) == 2
+        )
+    )
+    if not allowed:
+        return None
+    if (
+        not getattr(sys, "frozen", False)
+        and (SOURCE_ROOT / "docs/user/README.md").is_file()
+    ):
+        data = _source_guides().get(relative)
+        if data is None:
+            return None
+    else:
+        directory = (
+            Path(sys.executable).parent
+            if getattr(sys, "frozen", False)
+            else Path(__file__).with_name("assets") / "help"
+        )
+        resource = (directory / relative).resolve()
+        if not resource.is_relative_to(directory.resolve()) or not resource.is_file():
+            return None
+        data = resource.read_bytes()
+    content_type = mimetypes.guess_type(relative.name)[0] or "application/octet-stream"
+    if relative.suffix in {".html", ".css", ".svg"}:
+        content_type += "; charset=utf-8"
+    return data, content_type

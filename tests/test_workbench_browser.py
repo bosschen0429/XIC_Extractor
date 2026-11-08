@@ -43,6 +43,36 @@ HANDSHAKE_TIMEOUT_S = 10 * DEADLINE_SCALE
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
+def test_help_opens_task_guide_without_changing_the_analysis(workbench, theme):
+    page = workbench
+    if theme == "dark":
+        page.get_by_role("button", name="切換深色模式").click()
+    original_raw = page.locator("#t-data_dir").input_value()
+    page.get_by_role("button", name="使用說明與快捷鍵").click()
+    expect(page.get_by_role("heading", name="使用說明與快捷鍵")).to_be_visible()
+    with page.expect_popup() as opened:
+        page.get_by_role("link", name="開啟使用說明").click()
+    guide = opened.value
+    try:
+        expect(
+            guide.get_by_role("heading", name="XIC Extractor 使用說明")
+        ).to_be_visible()
+        guide.get_by_role("link", name="Targeted 操作指南", exact=True).click()
+        expect(
+            guide.get_by_role(
+                "heading", name=re.compile("從目標清單.*走到可使用的批次結果")
+            )
+        ).to_be_visible()
+        guide.get_by_role("link", name="使用說明首頁", exact=True).first.click()
+        expect(
+            guide.get_by_role("heading", name="XIC Extractor 使用說明")
+        ).to_be_visible()
+        assert page.locator("#t-data_dir").input_value() == original_raw
+    finally:
+        guide.close()
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
 @pytest.mark.parametrize("workbench_defaults", [{"dll_dir": "missing-launch-reader"}])
 def test_reader_setup_acceptance_install_and_reload(
     workbench, config_dir, tmp_path, monkeypatch, theme

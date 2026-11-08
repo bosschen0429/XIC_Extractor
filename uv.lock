@@ -1242,6 +1242,7 @@ version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "ijson" },
+    { name = "markdown-it-py" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "openpyxl" },
@@ -1253,7 +1254,6 @@ dependencies = [
 dev = [
     { name = "grimp" },
     { name = "import-linter" },
-    { name = "markdown-it-py" },
     { name = "packaging" },
     { name = "playwright" },
     { name = "pyinstaller" },
@@ -1276,7 +1276,7 @@ requires-dist = [
     { name = "grimp", marker = "extra == 'dev'", specifier = ">=3.15,<4" },
     { name = "ijson", specifier = ">=3.4,<4" },
     { name = "import-linter", marker = "extra == 'dev'", specifier = ">=2.13,<3" },
-    { name = "markdown-it-py", marker = "extra == 'dev'", specifier = ">=4.2,<5" },
+    { name = "markdown-it-py", specifier = ">=4.2,<5" },
     { name = "matplotlib", specifier = ">=3.10.9" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "openpyxl", specifier = ">=3.1" },

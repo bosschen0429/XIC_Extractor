@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=69", "wheel", "markdown-it-py>=4.2,<5"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,6 +8,7 @@ version = "1.0.1"
 requires-python = ">=3.15,<3.16"
 dependencies = [
     "ijson>=3.4,<4",
+    "markdown-it-py>=4.2,<5",
     "matplotlib>=3.10.9",
     "numpy>=1.26",
     "openpyxl>=3.1",
@@ -19,7 +20,6 @@ dependencies = [
 dev = [
     "grimp>=3.15,<4",
     "import-linter>=2.13,<3",
-    "markdown-it-py>=4.2,<5",
     "packaging>=24",
     "playwright>=1.56,<2",
     "pyinstaller>=6.22,<7",
@@ -43,6 +43,9 @@ xic-workbench = "xic_workbench.cli:main"
 [tool.setuptools.packages.find]
 include = ["scripts*", "tools*", "xic_extractor*", "xic_inspector*", "xic_workbench*"]
 exclude = ["tests*"]
+
+[tool.setuptools.cmdclass]
+build_py = "tools.build_user_guides.BuildPy"
 
 [tool.setuptools.package-data]
 "xic_inspector.rendering" = ["assets/*.html", "assets/*.js", "assets/*.css"]

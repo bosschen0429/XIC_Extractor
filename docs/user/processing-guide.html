@@ -77,7 +77,6 @@
     @media (max-width: 610px) { .page { width: min(100% - 28px, 1100px); } .hero { padding-top: 35px; } .topic-head { gap: 12px; } .intro, .grid, .terms-grid, .owner { margin-left: 0; } .grid, .terms-grid { grid-template-columns: 1fr; } .story { padding: 19px; } .card { padding: 18px; } }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   </style>
-  <link rel="stylesheet" href="assets/guide-maps.css">
 </head>
 <body>
 <main class="page">
@@ -89,7 +88,7 @@
     <p class="lead">從 A、B 的候選峰與 C 的缺格出發，依序問：看到什麼、能否對應、能量到多少，以及結果該如何使用。這是理解順序，不是函式執行時序。</p>
   </div>
 <aside class="hero-aside"><strong>這篇回答「為什麼」</strong>
-<p>要實際操作，請先走 <a href="targeted-extraction.html">Targeted</a> 或 <a href="untargeted-discovery.html">Untargeted 指南</a>。只想看全貌，可讀 <a href="core-modules-explainer.html">一頁處理地圖</a>。</p>
+<p>要實際操作，請先走 <a href="targeted-extraction.html">Targeted</a> 或 <a href="untargeted-discovery.html">Untargeted 指南</a>。</p>
 </aside>
 </div>
 </header>
@@ -101,13 +100,7 @@
 <div class="path" aria-label="理解順序"><span>候選訊號</span><b>→</b><span>峰與面積</span><b>→</b><span>跨樣本對應</span><b>→</b><span>必要時重訪</span><b>→</b><span>結果與使用</span>
 </div>
 </div>
-  <section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
-<h2 id="flow-map-title">看見峰、成為成員、得到數值，是三個問題</h2>
-<p class="guide-map-intro">圖中把證據、跨樣本關係與結果分開。細節由下面的同一個例子串起，不必先記住模組名稱。</p>
-<div class="guide-map-toolbar">
-<p>這是概念與責任圖，不是逐函式時序。</p><a href="assets/evidence-decisions.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a>
-</div><img class="guide-map-frame" src="assets/evidence-decisions.svg" alt="從峰證據、跨樣本群組到格值的責任圖" loading="lazy">
-</section>
+
 <section class="topic" id="discovery" aria-labelledby="discovery-title">
   <div class="topic-head"><span class="topic-no">01</span>
 <h2 id="discovery-title">Discovery：哪些訊號值得往下看？</h2>
@@ -123,7 +116,7 @@
 <p>A 的線索指向一段 MS1 訊號。此時可以記錄候選與來源，但不能只因 B 的 m/z 接近，就說它們是同一個 feature。</p>
 </div>
   </div>
-  <p class="owner">精確候選與方法邊界：<a href="../product/discovery.md">Discovery</a>；設定：<a href="untargeted-preset-guide.md">Preset 參考</a>。</p>
+
 </section>
 <section class="topic" id="peak" aria-labelledby="peak-title">
   <div class="topic-head"><span class="topic-no">02</span>
@@ -140,7 +133,7 @@
 <p>局部候選若只含一部分峰，需要足夠的周邊 trace 才能判讀邊界。較大的面積或較漂亮的峰，不能單獨證明它就是這個目標。</p>
 </div>
   </div>
-  <p class="owner">精確規則：<a href="../product/signal-processing.md#quantitation-context">定量脈絡</a>、<a href="../product/signal-processing.md">訊號處理</a>與<a href="../product/signal-processing.md#boundary-and-area-owners">面積規則</a>。</p>
+
 </section>
 <section class="topic" id="alignment" aria-labelledby="alignment-title">
   <div class="topic-head"><span class="topic-no">03</span>
@@ -157,7 +150,7 @@
 <p>如果 A、B 附近還有競爭峰，需要保留競爭與不確定性，而不是把所有近峰合成已確認身分。建立可用群組脈絡後，才有依據追查 C 的缺格。</p>
 </div>
   </div>
-  <p class="owner">方法原則、現行做法與未解問題：<a href="../product/alignment.md">Alignment</a>；候選與群組的差別：<a href="../product/alignment.md#group-identity-and-disposition">峰錨點與群組邊界</a>。</p>
+
 </section>
 <section class="topic" id="backfill" aria-labelledby="backfill-title">
   <div class="topic-head"><span class="topic-no">04</span>
@@ -174,7 +167,7 @@
 <p>有本地證據且後續判斷支持時，C 可得到有來源的數值；訊號不足或對應不明時，可保留無可用值；未搜尋與已搜尋但沒有結果也不能混為一談。</p>
 </div>
   </div>
-  <p class="owner">重訪條件、觀察結果與套用邊界：<a href="../product/backfill.md">Backfill</a>。</p>
+
 </section>
 <section class="topic" id="decisions" aria-labelledby="decisions-title">
   <div class="topic-head"><span class="topic-no">05</span>
@@ -191,21 +184,21 @@
 <p>即使 C 保留了可用面積，是否計入偵測仍由工作流規則判定。反過來，一筆已計入的結果也可能需要檢閱。看到回填表的面積，不能先假定主矩陣一定用了它。</p>
 </div>
   </div>
-  <p class="owner">精確判斷：<a href="../product/decision-policy.md">Decision Policy</a>；Targeted 的選擇與計數：<a href="../product/targeted-selection.md">Targeted Selection</a>。</p>
+
 </section>
   <section class="topic" id="kernel" aria-labelledby="kernel-title">
 <div class="topic-head"><span class="topic-no">06</span>
 <h2 id="kernel-title">兩種入口，共用判斷，不同交付</h2>
 </div>
 <p class="intro">Targeted 已有目標表，搜尋受到目標約束、結果對應固定目標；Untargeted 依方法探索，再從成立的群組形成 feature 列。兩者共用峰證據、跨樣本關係與格值判斷，不代表所有方法的證據解讀都相同。</p>
-<p class="owner">正式交接與投影順序：<a href="../product/domain-glossary.md#product-shape">Domain Glossary</a>、<a href="../product/decision-policy.md">Decision Policy</a>。要查模組與依賴，再讀 <a href="system-guide.html">系統導覽</a>。</p>
+
 </section>
   <section class="topic" id="matrix" aria-labelledby="matrix-title">
 <div class="topic-head"><span class="topic-no">07</span>
 <h2 id="matrix-title">Matrix 是完成判斷的結果，不是所有候選的集合</h2>
 </div>
 <p class="intro">Untargeted 的主矩陣交付 feature × sample 數值；判讀所需的來源與 review 資訊另有保存位置。候選、診斷表和檢閱圖不會因為看得到，就自動變成主矩陣格值。</p>
-<p class="owner">格值、空白與伴隨資料：<a href="../product/quant-matrix.md">Quant Matrix</a>；欄位：<a href="untargeted-output-reference.md">輸出參考</a>。</p>
+
 </section>
   <section class="topic" id="results" aria-labelledby="results-title">
 <div class="topic-head"><span class="topic-no">08</span>
@@ -237,15 +230,13 @@
 <p><strong>ObservationRevisit</strong>：依既有脈絡重訪本地觀察，不是插值。</p>
 <p><strong>ProductionCellDecision</strong>：對明確的目標／群組格子，決定可用數值或不寫入的理由。</p>
 </div>
-<p class="owner">完整定義查 <a href="../product/domain-glossary.md">Domain Glossary</a>，不必先背完才能操作。</p>
+
 </section>
   <section class="next">
 <h2>想看方法怎麼套用？</h2>
-<p><a href="raw-to-final-matrix-product-story.html">DNA adduct CID-NL 示意案例</a>把這些問題放回中性流失與 MS1 峰的情境。要找精確規則，使用 <a href="../product/README.md">產品問題索引</a>。</p>
+<p><a href="raw-to-final-matrix-product-story.html">DNA adduct CID-NL 示意案例</a>把這些問題放回中性流失與 MS1 峰的情境。</p>
 </section>
-  <footer>
-<p>這是概念解說，不是科學驗證結果；精確行為以各段連結的產品與證據規則為準。</p><a href="readers-index.html">回文件入口</a>
-</footer>
+  <footer><p>概念解說不能取代方法驗證；請保留原始結果，依樣本證據判讀。</p><a href="README.md">回使用說明首頁</a></footer>
 </main>
 </body>
 </html>

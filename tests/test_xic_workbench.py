@@ -47,6 +47,27 @@ def test_workbench_startup_skips_heavy_branch_imports(tmp_path):
     assert completed.returncode == 0, completed.stderr
 
 
+def test_help_serves_user_guides_and_templates_without_exposing_repository(tmp_path):
+    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    with workbench_client(workspace) as request:
+        status, guide, headers = request("/help/")
+        assert status == 200
+        assert "text/html" in headers["Content-Type"]
+        assert "XIC Extractor 使用說明" in guide.decode("utf-8")
+        status, page, _ = request("/help/docs/user/targeted-extraction.html")
+        assert status == 200
+        assert "source checkout" not in page.decode("utf-8")
+        status, example, _ = request("/help/examples/targets.xlsx")
+        assert status == 200 and example[:2] == b"PK"
+        for path in (
+            "../config/workspace.json",
+            "%2e%2e/config/workspace.json",
+            "docs/development/command-line.md",
+            "docs/user/targeted-extraction.md",
+        ):
+            assert request("/help/" + path)[0] == 404
+
+
 def test_http_accepts_page_asset_burst_before_dispatch(tmp_path):
     """A page's parallel asset connections can arrive before the accept loop runs."""
     workspace = ReviewWorkspace(config_dir=tmp_path)

@@ -82,7 +82,6 @@
     @media (max-width:540px) { .page { width:min(100% - 28px,1100px); } .hero { padding-top:34px; } .steps li { min-height:0; } }
     @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
   </style>
-  <link rel="stylesheet" href="assets/guide-maps.css">
 </head>
 <body>
 <main class="page">
@@ -90,24 +89,19 @@
 <p class="eyebrow">XIC Extractor · 探索特徵</p>
 <h1>從方法探索，<br>走到可比較的 Matrix</h1>
 <p class="lead">依方法找候選、對齊樣本，再讀懂格值與缺格。需要時檢閱曲線、整理矩陣，最後把結果交給下游；對齊的 feature 不自動等於已鑑定化合物。</p>
-<p><a href="readers-index.html">回文件入口</a> · <a href="untargeted-discovery.md">完整操作指南</a>
+<p><a href="untargeted-discovery.md">完整操作指南</a>
 </p>
 </header>
-  <nav class="jump" aria-label="頁面章節"><a href="#workflow">跑一次分析</a><a href="#modes">選模式</a><a href="#inputs">確認輸入</a><a href="#outputs">讀 Matrix</a><a href="#review">檢閱與整理</a><a href="#troubleshooting">遇到問題</a>
+  <nav class="jump" aria-label="頁面章節"><a href="#workflow">跑一次分析</a><a href="#modes">分析範圍</a><a href="#inputs">確認輸入</a><a href="#outputs">讀 Matrix</a><a href="#review">檢閱與整理</a><a href="#troubleshooting">遇到問題</a>
 </nav>
-  <section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
-<h2 id="flow-map-title">模式決定從哪裡開始、在哪裡停下</h2>
-<div class="guide-map-toolbar">
-<p>這張圖說明各模式的範圍，不是函式時序。</p><a href="assets/untargeted-modes.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a>
-</div><img class="guide-map-frame" src="assets/untargeted-modes.svg" alt="Untargeted 完整分析、只探索與只對齊的模式圖" loading="lazy">
-</section>
+
   <section id="workflow">
 <p class="eyebrow">01 · 執行</p>
-<h2>新批次從 full 開始</h2>
+<h2>新批次從 RAW 資料夾開始</h2>
 <figure class="snapshot"><img src="assets/untargeted-workspace.png" alt="Untargeted 工作區畫面"><figcaption>Untargeted 工作區：執行範圍、資料與輸出、內標清單，右側為執行前確認。</figcaption></figure>
-<p>首次使用先依 <a href="../../README.md#run-the-html-workbench">啟動與 reader 設定</a>打開工作台；source checkout 使用 <code>uv run xic-workbench</code>。</p>
+<p>首次使用先依<a href="README.md#reader-setup">啟動與 reader 設定</a>完成準備，再選擇分析。</p>
 <ol>
-<li>選 <strong>Untargeted Discovery</strong> 與適合的模式。</li>
+<li>選擇 <strong>Untargeted</strong>，執行完整分析。</li>
 <li>指定 RAW 與輸出資料夾，確認共用 reader 設定。</li>
 <li>匯入並核對上機資訊、樣本配對與注射順序；確認內標清單是否適用於所選方法。</li>
 <li>選 CID-NL 起始方法，用 <strong>編輯方法…</strong>確認 tags 與組合，再套用。</li>
@@ -115,16 +109,7 @@
 </ol>
 <p>詳細操作及可選輸入查 <a href="untargeted-discovery.md#workflow">逐步操作指南</a>。方法如何匯入、編輯與保存查 <a href="untargeted-preset-guide.md">Preset 參考</a>。</p>
 </section>
-  <section id="modes">
-<p class="eyebrow">02 · 模式</p>
-<h2>要探索、對齊，還是兩者都做？</h2>
-<ul>
-<li><strong>full</strong>：從 RAW 資料夾進行探索與跨樣本 Alignment。</li>
-<li><strong>discovery_only</strong>：GUI 檢查單一 RAW 的候選，不交付跨樣本 Matrix。</li>
-<li><strong>align_only</strong>：使用既有 <code>discovery_batch_index.csv</code> 與 RAW 資料夾進行 Alignment。</li>
-</ul>
-<p>整個資料夾的 discovery-only batch 使用 CLI Discovery workflow。精確輸入見 <a href="untargeted-discovery.md#cli-workflows">模式說明</a>，不必用一份候選表冒充完成矩陣。</p>
-</section>
+  <section id="modes"><p class="eyebrow">02 · 分析範圍</p><h2>工作區執行完整分析</h2><p>選擇 RAW 資料夾後，工作區會執行 Discovery、跨樣本 Alignment 與 Backfill。它不是只產生候選清單的模式選擇器；候選表本身也不是完成的 feature matrix。</p></section>
   <section id="inputs">
 <p class="eyebrow">03 · 輸入</p>
 <h2>方法、樣本順序與內標各回答不同問題</h2>
@@ -135,7 +120,7 @@
 <p class="eyebrow">04 · 結果</p>
 <h2>先分清楚候選與完成的 Matrix</h2>
 <p><code>alignment_matrix.tsv</code> 的列是 feature、欄是 sample、格內是發布的 area；它不是候選清單，也不是已完成 normalization 的結果。</p>
-<p><code>discovery_candidates.csv</code> 回答單樣本找到哪些候選；<code>alignment_review.tsv</code> 與完成的 evidence report 支持群組／格值判讀。GUI 與 CLI 的預設輸出層級不同，詳細檔案與條件查 <a href="untargeted-discovery.md#outputs">輸出指南</a>，欄位查 <a href="untargeted-output-reference.md">輸出參考</a>。</p>
+<p><code>discovery_candidates.csv</code> 回答單樣本找到哪些候選；<code>alignment_review.tsv</code> 與完成的 evidence report 支持群組／格值判讀。詳細檔案與條件查 <a href="untargeted-discovery.md#outputs">輸出指南</a>，欄位查 <a href="untargeted-output-reference.md">輸出參考</a>。</p>
 </section>
   <section id="review">
 <p class="eyebrow">05 · 檢閱與使用</p>
@@ -148,7 +133,7 @@
 <li>按需要選 <strong>整理矩陣</strong>，在 <strong>矩陣整理</strong>確認來源與樣本、啟用步驟與必要門檻。未具備輸入的步驟會標示無法執行。</li>
 <li>讀摘要與 <code>feature_decisions.tsv</code>，確認保留／移除原因，再使用保留的矩陣。新結果寫到獨立資料夾，不覆寫原始 Matrix。</li>
 </ol>
-<p>有效值比例是 availability，不是 detection rate：零與有限的回填值可算有效，空白不算；樣本角色決定分母。精確規則與其他整理步驟查 <a href="../product/matrix-curation.md">Matrix Curation</a>。</p>
+<p>有效值比例是 availability，不是 detection rate：零與有限的回填值可算有效，空白不算；樣本角色決定分母。</p>
 <p><a href="untargeted-discovery.md#read-and-use-the-matrix">逐步讀取與使用指南 →</a>。Normalization、校正與統計仍是分開的下游工作。</p>
 </section>
   <section id="troubleshooting">
@@ -158,9 +143,7 @@
 <p><a href="untargeted-discovery.md#troubleshooting">完整 troubleshooting</a> · <a href="targeted-extraction.html">已有固定目標清單？改走 Targeted</a>
 </p>
 </section>
-  <footer>
-<p>操作與格式以 <a href="untargeted-discovery.md">Markdown 指南</a>及其參考文件為準；方法與判斷查 <a href="../product/README.md">產品規則</a>。</p><a href="readers-index.html">回文件入口</a>
-</footer>
+  <footer><p>需要細節時，查閱<a href="untargeted-discovery.md">逐步操作</a>或<a href="untargeted-output-reference.md">輸出欄位參考</a>。</p><a href="README.md">回使用說明首頁</a></footer>
 </main>
 </body>
 </html>

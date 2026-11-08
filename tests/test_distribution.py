@@ -62,6 +62,10 @@ def test_distribution_has_offline_guides_examples_and_no_developer_tree(
     assert (app / "_internal/runtime.dll").read_bytes() == b"dependency"
     assert not (app / "docs/user/system-guide.html").exists()
     assert not (app / "docs/agent").exists()
+    assert not (app / "docs/product").exists()
+    assert not (app / "docs/development").exists()
+    assert not (app / "docs/user/index.html").exists()
+    assert not (app / "docs/user/readers-index.html").exists()
     assert not list(app.rglob("*.architecture.json"))
     assert not list(app.rglob("*.py"))
     assert (app / "licenses/Archify.txt").read_bytes() == (
@@ -80,6 +84,11 @@ def test_distribution_has_offline_guides_examples_and_no_developer_tree(
         p.resolve(): GuideLinks(p.read_text(encoding="utf-8"))
         for p in app.rglob("*.html")
     }
+    for page in pages:
+        text = page.read_text(encoding="utf-8")
+        assert "uv run" not in text
+        assert "development-reference" not in text
+        assert "source checkout" not in text
     failures = []
     for page, links in pages.items():
         for reference, resource in links.references:
@@ -98,7 +107,7 @@ def test_distribution_has_offline_guides_examples_and_no_developer_tree(
     detailed = (app / "docs/user/targeted-extraction.guide.html").read_text("utf-8")
     illustrated = (app / "docs/user/targeted-extraction.html").read_text("utf-8")
     assert "<table>" in detailed and "Review The Batch" in detailed
-    assert "assets/targeted-workflow.svg" in illustrated
+    assert "assets/targeted-workspace.png" in illustrated
     assert not (app / "docs/user/README.md").exists()
 
 

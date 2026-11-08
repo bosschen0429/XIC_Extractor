@@ -1,8 +1,7 @@
 # Untargeted Preset Guide
 
 Presets are TOML files that bundle discovery and alignment settings into a
-named method. Built-ins live in `xic_extractor/presets/data/`; custom methods
-can be saved anywhere and selected in the GUI or passed to CLI scripts.
+named method. Choose a built-in method in the workbench, or import your own saved TOML method.
 
 ## Configure A Method In The GUI
 
@@ -25,7 +24,7 @@ In **Untargeted Discovery → 分析方法**:
    omitted from the TOML. Finite, non-negative crop bounds are owner-validated
    and limited to the acquired span. Compound target windows are unchanged.
 
-The saved file is accepted by the same CLI `--preset` input. It includes the
+The saved TOML is reusable in later analyses. It includes the
 effective Discovery values and preset-owned runtime option, so export does not
 silently revert to defaults. It excludes RAW/output paths and GUI state.
 Alignment and Backfill strategies are handled by the platform.
@@ -35,12 +34,9 @@ re-import it to select the new content. Restart loads the saved locator afresh;
 a missing or invalid file is shown as unavailable instead of silently falling
 back to a built-in method.
 
-For current CID-NL entry points, one preset selection is bound before execution
-to the existing route. GUI `full` runs RAW -> Discovery -> the retained
-finalized CID-NL batch -> the canonical Matrix writer; `align_only` starts from
-an existing Discovery index and enters the same retained batch;
-`discovery_only` stops at Discovery. Normal presets do not run Standard Peak.
-Presets do not expose a public workflow graph or `[workflow]` TOML section.
+The workbench executes the selected method from RAW through Discovery,
+Alignment and Backfill to the completed Matrix. A saved method selects
+scientific settings; it does not turn the workbench into a partial-workflow editor.
 
 ## Available Presets
 
@@ -50,8 +46,7 @@ Presets do not expose a public workflow graph or `[workflow]` TOML section.
 | `rna_ribose` | R | CID neutral loss | 132.0423 | Ribose neutral-loss starting method |
 | `rna_mer` | MeR | CID neutral loss | 146.0579 | MeR neutral-loss starting method |
 
-The GUI starting list contains only dR, R, and MeR. Other CLI presets retain
-their existing support; GUI editing currently accepts only pure CID-NL methods.
+The GUI starting list contains only dR, R, and MeR. The workbench method editor accepts pure CID-NL methods only.
 
 ---
 
@@ -85,25 +80,6 @@ value = 116.0474                 # neutral loss mass (Da)
   remain on the separate delta-mass Discovery path.
 - `value` must be a finite number (not boolean, infinity, or NaN).
 
-## Run The Saved Method With CLI
-
-Pass the same TOML to both stages:
-
-```powershell
-.venv/Scripts/python.exe -m scripts.run_discovery --raw-dir RAW_DIR --dll-dir DLL_DIR --preset method.toml --output-dir output/discovery
-.venv/Scripts/python.exe -m scripts.run_alignment --discovery-batch-index output/discovery/discovery_batch_index.csv --raw-dir RAW_DIR --dll-dir DLL_DIR --preset method.toml --output-dir output/alignment --output-level production
-```
-
-Keep the complete Discovery output directory together when moving or reusing
-results. Alignment needs its accompanying physical-fact and receipt files to
-verify the method and exact peak inputs; the candidate CSV alone is insufficient.
-
-Discovery tuning flags override only explicitly supplied values. `--preset`
-cannot be combined with separate tag selectors such as `--feature-list` or
-`--neutral-loss-da`; edit the method file to change its tags.
-
----
-
 ## Discovery Defaults
 
 These values apply unless overridden in the `[discovery]` section.
@@ -126,12 +102,9 @@ These values apply unless overridden in the `[discovery]` section.
 
 ## Alignment Defaults
 
-Alignment uses the retained CID-NL batch route. Presets do not select an
-owner-build XIC backend; `owner_build_xic_backend` is not accepted.
-
-All former `standard_peak_backfill*` and `backfill_expansion*` alignment keys
-are retired from normal presets. Supplying one is an error; there is no ignored
-compatibility mode or replacement publication choice.
+The workbench uses the shared Alignment and Backfill rules. It does not offer
+an alternative XIC backend or a publication-policy selector. If a saved method
+is rejected, follow the named setting error rather than assuming it was ignored.
 
 ---
 
@@ -145,9 +118,3 @@ preset defaults and take precedence. They include:
 - Tolerance values (`nl_tolerance_ppm`, `precursor_mz_tolerance_ppm`)
 - Product search, intensity ratio, seed-gap, and MS1 padding values
 - Resolver mode
-
-Owner Build backend remains preset/CLI-owned. Former Standard Peak Backfill
-chunk/publication settings are retired from every normal GUI, preset, and CLI
-route; supplying their compatibility fields or flags fails closed.
-
-Overrides are stored in `config/discovery_gui.json` (machine-local, untracked).

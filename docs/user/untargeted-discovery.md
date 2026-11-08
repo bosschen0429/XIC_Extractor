@@ -10,8 +10,7 @@ input to downstream analysis, not a normalized or batch-corrected result.
 
 ## Workflow
 
-1. Open `XIC_Extractor.exe`, or run `uv run xic-workbench` in a developer
-   checkout. On first use, follow the [reader setup notice](../../README.md#run-the-html-workbench)
+1. Open `XIC_Extractor.exe`. On first use, follow the [reader setup notice](README.md#reader-setup)
    to install RawFileReader 8.0.42 and, if needed, .NET 8 or later.
 2. Select **Untargeted**. The GUI always runs the complete analysis with Backfill.
 3. Set the RAW folder. **結果存放位置** has a default; each run creates its own
@@ -48,32 +47,19 @@ current batch. **開始新批次** clears RAW, acquisition information and the d
 samples, keeping the method, tuning, internal-standard list and result location.
 Confirmed roles and exclusions remain with their original RAW folder.
 
-The GUI stores local Untargeted settings in `config/discovery_gui.json` and its
-edited method in `config/current_discovery_method.toml`. These are machine-local
-state and should stay untracked.
+The workbench retains the current Untargeted setup locally. Export a named method when you want to reuse or share its scientific settings; local paths are not part of that method.
 
-GUI and CLI default to each RAW file's full acquisition RT range, read from
+The workbench defaults to each RAW file's full acquisition RT range, read from
 instrument metadata. Optional RT cropping accepts one or both finite,
 non-negative bounds; an unspecified end remains automatic. Explicit cropping
 is limited to the acquired span. Target-list RT windows remain compound search
 windows, not acquisition bounds.
 
-## CLI Workflows
-
-| Mode | Use when | Input |
-| --- | --- | --- |
-| `full` | You want discovery plus cross-sample alignment | RAW directory |
-| `discovery_only` | You want to inspect candidates from one RAW file | Single RAW file |
-| `align_only` | Discovery was already run and you want to align existing outputs | RAW directory plus `discovery_batch_index.csv` |
-
-These partial workflows are CLI uses. The GUI always runs the complete analysis
-from a RAW directory, including Backfill; it has no mode selector.
-
 ## Inputs
 
 | Input | Role |
 | --- | --- |
-| RAW directory or RAW file | Thermo data to discover or align |
+| RAW directory | Thermo sample files for the complete analysis |
 | DLL directory | RawFileReader 8.0.42 folder selected by setup; not the Xcalibur folder |
 | Output directory | Where candidate and Alignment artifacts are written |
 | Acquisition information | Word sequence table supplying file/sample matching and injection order |
@@ -88,26 +74,11 @@ its method settings do not change the Untargeted method. There is no separate
 Untargeted list to maintain. A supplied file with no internal standards shows an
 error; clearing the field runs without an internal-standard list.
 
-### Alignment CLI inputs
-
-The Alignment CLI resolves ISTD input before RAW acquisition. An explicit
-targets CSV or reference workbook takes precedence; otherwise it uses the same
-[bundled target template](../../xic_extractor/configuration/data/targets.csv) as the HTML workbench's fresh default and prints the
-resolved source and ISTD count. Missing or invalid input fails before RAW work.
-An intentional uncorrected CLI run requires `--allow-uncorrected`, which cannot
-be combined with either ISTD input. The Python API retains its explicit optional
-input contract.
-
-Sample metadata is supplied to Alignment separately from Discovery; see
-[Alignment sample input](../product/sample-metadata-qc.md#alignment-input).
-Use current CLI help for the complete option list.
-
 ## Outputs
 
 GUI Alignment writes `alignment_matrix.tsv` with its bound identity and the
 review/provenance tables from the `machine` output level. The identity supports
-the results panel's **篩選匯出…** action. The CLI still defaults to the Matrix-only
-`production` output level.
+the results panel's **篩選匯出…** action.
 
 Successful retained CID-NL publication also saves `alignment_explanation.sqlite`
 alongside its runtime marker for Inspector evidence.
@@ -148,24 +119,14 @@ Start with the file that matches your review question:
 For the finite-value fraction step, zero and finite backfilled values count
 as available; blank/nonfinite cells do not. QC, blank, unknown-role and excluded
 samples are outside the denominator. This is availability filtering, not a
-detection rate. The [Matrix Curation contract](../product/matrix-curation.md)
-defines each step, inputs, decisions and output files. Normalization, calibration
+detection rate. Read each step's input requirements and the saved curation decisions before using its result. Normalization, calibration
 and statistical analysis remain separate downstream decisions.
 
-Saved results can be reopened with `uv run xic-workbench "path/to/batch-output"`.
+Use **開啟既有結果** in the workbench to reopen the completed batch folder.
 Review and offline reports explain the saved result; they do not change its
 peak selection, area, or group membership. Use the
 [output reference](untargeted-output-reference.md) to look up a column rather
 than guessing its meaning from a number.
-
-## Further Reading
-
-For maintainer-facing product contracts behind this workflow, see:
-
-- [Workbench and review](../product/workbench.md)
-- [Discovery](../product/discovery.md)
-- [Alignment](../product/alignment.md)
-- [Presets](../product/presets.md)
 
 ## Troubleshooting
 
@@ -175,5 +136,4 @@ For maintainer-facing product contracts behind this workflow, see:
 | DLL load failure | Follow the reader setup notice; use RawFileReader 8.0.42 with .NET 8 or later, then restart the workbench |
 | Inspector is unavailable | Check the Inspector status below the output buttons; a completed run needs a published evidence source |
 | Matrix selection is disabled | The result needs its bound identity; rerun Alignment for older Matrix-only outputs |
-| Need only alignment | Use `align_only` with an existing `discovery_batch_index.csv` |
 | Results look unexpected | Verify RAW inputs and method settings; use the supported RawFileReader version rather than matching Xcalibur |
