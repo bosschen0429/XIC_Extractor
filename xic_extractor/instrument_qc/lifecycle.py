@@ -3,10 +3,12 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import shutil
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import mkdtemp
 from typing import Iterable
 
 from xic_extractor.instrument_qc.models import (
@@ -102,19 +104,7 @@ def append_lifecycle_dataset(
         "blank_row_count": 0,
         "diagnostic_counts": _format_counts(_diagnostic_counts(output.diagnostics)),
     }
-    _append_rows(paths.runs_tsv, RUN_COLUMNS, [run_row])
-    _append_rows(
-        paths.sdolek_tsv,
-        ROW_COLUMNS,
-        [_trend_row(run_id, row) for row in output.trend_rows],
-    )
-    _append_rows(
-        paths.mixstds_tsv,
-        ROW_COLUMNS,
-        [_trend_row(run_id, row) for row in output.mixstds_rows],
-    )
-    _append_rows(paths.blank_tsv, BLANK_COLUMNS, [])
-    _write_summary(paths.summary_json, paths.runs_tsv)
+    _append_lifecycle_files(paths, run_row, output)
     return LifecycleAppendResult(
         run_id=run_id,
         run_fingerprint=fingerprint,
@@ -143,6 +133,76 @@ def _lifecycle_paths(root: Path) -> _LifecyclePaths:
         blank_tsv=root / "instrument_qc_lifecycle_blank.tsv",
         summary_json=root / "instrument_qc_lifecycle_summary.json",
     )
+
+
+def _append_lifecycle_files(
+    paths: _LifecyclePaths,
+    run_row: dict[str, object],
+    output: InstrumentQCRunOutput,
+) -> None:
+    """Render the whole append before publishing; restore history on I/O failure."""
+    root = paths.runs_tsv.parent
+    root.mkdir(parents=True, exist_ok=True)
+    staging = Path(mkdtemp(prefix=".lifecycle-", dir=root))
+    staged = _lifecycle_paths(staging)
+    final_paths = (
+        paths.sdolek_tsv,
+        paths.mixstds_tsv,
+        paths.blank_tsv,
+        paths.summary_json,
+        paths.runs_tsv,
+    )
+    retain_staging = False
+    try:
+        for final in final_paths:
+            if final.exists():
+                shutil.copyfile(final, staging / final.name)
+        run_id = str(run_row["run_id"])
+        _append_rows(staged.runs_tsv, RUN_COLUMNS, [run_row])
+        _append_rows(
+            staged.sdolek_tsv,
+            ROW_COLUMNS,
+            [_trend_row(run_id, row) for row in output.trend_rows],
+        )
+        _append_rows(
+            staged.mixstds_tsv,
+            ROW_COLUMNS,
+            [_trend_row(run_id, row) for row in output.mixstds_rows],
+        )
+        _append_rows(staged.blank_tsv, BLANK_COLUMNS, [])
+        _write_summary(staged.summary_json, staged.runs_tsv)
+
+        changed: list[tuple[Path, Path | None]] = []
+        try:
+            for final in final_paths:
+                backup = staging / f"{final.name}.previous" if final.exists() else None
+                if backup is not None:
+                    final.replace(backup)
+                changed.append((final, backup))
+                (staging / final.name).replace(final)
+        except OSError as publication_error:
+            rollback_errors = []
+            for final, backup in reversed(changed):
+                try:
+                    if backup is not None:
+                        backup.replace(final)
+                    else:
+                        final.unlink(missing_ok=True)
+                except OSError as exc:
+                    rollback_errors.append(exc)
+            if rollback_errors:
+                retain_staging = True
+                raise OSError(
+                    "Lifecycle append rollback failed; "
+                    f"recoverable files retained at {staging}"
+                ) from ExceptionGroup(
+                    "lifecycle publication and rollback failures",
+                    [publication_error, *rollback_errors],
+                )
+            raise
+    finally:
+        if not retain_staging:
+            shutil.rmtree(staging, ignore_errors=True)
 
 
 def _run_fingerprint(

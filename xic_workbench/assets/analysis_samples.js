@@ -1,28 +1,19 @@
 // Shared sample roles, exclusions and optional acquisition-information import.
-import { startJob } from "./analysis_jobs.js";
+import { analysis } from "./analysis_jobs.js";
 import { checklist } from "./analysis_setup.js";
-import {
-  clearSampleSet,
-  confirmSampleSet,
-  currentSampleAction,
-  mirrorSampleSet,
-  receiveConfirmedSamples,
-  replaceSamples,
-  sampleAction,
-  state,
-  updateSample,
-} from "./analysis_state.js";
+import { createSampleMetadata } from "./analysis_sample_metadata.js";
 import {
   $,
   act,
   api,
   done,
   el,
+  lock,
   requestPath,
   ui,
 } from "./analysis_ui.js";
 
-// Editor-only state; committed sample rows are owned by analysis_state.js.
+// Editor-only state; sampleMetadata owns committed rows and async adoption.
 let editing = "untargeted";
 const roles = [
   "study_sample",
@@ -62,6 +53,18 @@ export const samplePages = {
     step: 3,
   },
 };
+export const sampleMetadata = createSampleMetadata({
+  request: api,
+  jobBusy: () => Boolean(analysis?.snapshot.busy),
+  inputs: (page) => {
+    const spec = samplePages[page];
+    return {
+      raw_dir: $(spec.rawDir).value,
+      dll_dir: $(spec.dll).value,
+      sequence_source: $(spec.sequence).value,
+    };
+  },
+});
 export const sampleId = (page, part) => `${samplePages[page].prefix}${part}`;
 export function renderSampleSummary(summary, prefix = "samples") {
   const notes = [];
@@ -136,7 +139,7 @@ const sourceNotes = {
   sequence: "來自上機資訊",
 };
 export function renderRoleSummary(page) {
-  const set = state.sampleSets[page];
+  const set = sampleMetadata.forPage(page);
   const counts = new Map();
   for (const sample of set.rows.filter((row) => !row.excluded))
     counts.set(sample.sample_role, (counts.get(sample.sample_role) || 0) + 1);
@@ -163,36 +166,6 @@ export function renderRoleSummary(page) {
     : "";
   checklist(page);
 }
-export function applySampleResult(page, result, action) {
-  if (!currentSampleAction(action)) return false;
-  replaceSamples(page, result);
-  renderSampleSummary(result.summary, sampleId(page, "samples"));
-  renderRoleSummary(page);
-  if (result.summary?.confirmed) mirrorSamples(page, action);
-  if (editing === page && $("sample-editor").open) renderSamples();
-  return true;
-}
-// The other flow on the same folder shows the same confirmed rows.
-function mirrorSamples(page, action) {
-  const rawDir = $(samplePages[page].rawDir).value;
-  for (const [other, spec] of Object.entries(samplePages))
-    if (
-      other !== page &&
-      $(spec.rawDir).value === rawDir &&
-      state.sampleRevisions[other] === action.revisions[other]
-    ) {
-      mirrorSampleSet(page, other);
-      renderRoleSummary(other);
-    }
-}
-export function clearSamples(page) {
-  sampleAction(page);
-  clearSampleSet(page);
-  $(sampleId(page, "samples-summary")).textContent = "";
-  $(sampleId(page, "samples-conflicts")).hidden = true;
-  renderRoleSummary(page);
-  if (editing === page && $("sample-editor").open) renderSamples();
-}
 function sampleCell(control) {
   const td = el("td");
   td.append(control);
@@ -200,7 +173,7 @@ function sampleCell(control) {
 }
 function renderSamples() {
   const page = editing;
-  const set = state.sampleSets[page];
+  const set = sampleMetadata.forPage(page);
   renderRoleSummary(page);
   const filter = $("sample-filter").value.trim().toLowerCase();
   const body = $("sample-rows");
@@ -226,21 +199,29 @@ function renderSamples() {
     tr.append(el("td", row.raw_stem ?? "—", "mono"));
     tr.append(el("td", row.sample_name || row.raw_stem));
     const select = el("select");
+    select.dataset.sampleEdit = "";
     select.setAttribute("aria-label", `${row.raw_stem} 角色`);
     roleOptions(select, row.sample_role);
     select.addEventListener("change", () => {
-      updateSample(row, { sample_role: select.value });
-      act(() => persistSamples(page));
+      act(() =>
+        sampleMetadata.edit(page, [row.raw_stem], {
+          sample_role: select.value,
+        }),
+      );
     });
     tr.append(sampleCell(select));
     const excluded = el("input");
+    excluded.dataset.sampleEdit = "";
     excluded.type = "checkbox";
     excluded.checked = Boolean(row.excluded);
     excluded.setAttribute("aria-label", `${row.raw_stem} 排除`);
     excluded.addEventListener("change", () => {
-      updateSample(row, { excluded: excluded.checked });
       tr.classList.toggle("excluded", excluded.checked);
-      act(() => persistSamples(page));
+      act(() =>
+        sampleMetadata.edit(page, [row.raw_stem], {
+          excluded: excluded.checked,
+        }),
+      );
     });
     tr.append(sampleCell(excluded));
     body.append(tr);
@@ -262,6 +243,7 @@ function renderSamples() {
   $("sample-editor-count").textContent = filter
     ? `顯示 ${shown} ／ 共 ${set.rows.length} 個樣本`
     : `共 ${set.rows.length} 個樣本`;
+  lock();
 }
 function selectedSamples() {
   const selected = new Set(
@@ -270,49 +252,19 @@ function selectedSamples() {
     ),
   );
   if (!selected.size) ui.toast("請先勾選要套用的樣本。");
-  return state.sampleSets[editing].rows.filter((row) =>
+  return sampleMetadata.forPage(editing).rows.filter((row) =>
     selected.has(row.raw_stem),
   );
 }
 function applyToSelected(change) {
   const rows = selectedSamples();
   if (!rows.length) return;
-  for (const row of rows) updateSample(row, change);
+  act(() => sampleMetadata.edit(editing, rows.map((row) => row.raw_stem), change));
   renderSamples();
-  act(() => persistSamples(editing));
-}
-// Edits confirm the folder's sample metadata at once; both flows read it.
-async function persistSamples(page) {
-  const set = state.sampleSets[page];
-  if (!set.rows.length) return;
-  const rawDir = $(samplePages[page].rawDir).value;
-  const action = sampleAction(page);
-  const saved = await api("/api/samples/save", {
-    raw_dir: rawDir,
-    samples: set.rows,
-  });
-  if (!currentSampleAction(action)) return;
-  confirmSampleSet(page, saved.overview);
-  mirrorSamples(page, action);
-  renderRoleSummary(page);
-}
-export async function previewSamples(page, action) {
-  const spec = samplePages[page];
-  const values = {
-    raw_dir: $(spec.rawDir).value,
-    sequence_source: $(spec.sequence).value,
-  };
-  const result = await api("/api/samples/preview", values);
-  if (
-    $(spec.rawDir).value !== values.raw_dir ||
-    $(spec.sequence).value !== values.sequence_source
-  )
-    return;
-  applySampleResult(page, result, action);
 }
 async function scanSamples(page, importSequence = false) {
   const spec = samplePages[page];
-  await startJob("samples", {
+  await analysis.start("samples", {
     page,
     raw_dir: $(spec.rawDir).value,
     dll_dir: $(spec.dll).value,
@@ -324,11 +276,25 @@ async function scanSamples(page, importSequence = false) {
 // Jobs
 
 export function bindSamples() {
+  sampleMetadata.subscribe(({ pages, replaced }) => {
+    for (const page of pages) {
+      const summary = sampleMetadata.forPage(page).summary;
+      if (summary) renderSampleSummary(summary, sampleId(page, "samples"));
+      else {
+        $(sampleId(page, "samples-summary")).textContent = "";
+        $(sampleId(page, "samples-conflicts")).hidden = true;
+      }
+      renderRoleSummary(page);
+    }
+    if (replaced && pages.includes(editing) && $("sample-editor").open)
+      renderSamples();
+    lock();
+  });
   for (const [page, spec] of Object.entries(samplePages)) {
     for (const part of ["samples-refresh", "samples-import"])
-      $(sampleId(page, part)).addEventListener("pointerdown", () =>
-        sampleAction(page),
-      );
+      $(sampleId(page, part)).addEventListener("pointerdown", (event) => {
+        if (!event.currentTarget.disabled) sampleMetadata.interrupt(page);
+      });
     $(sampleId(page, "samples-refresh")).onclick = () =>
       act(() => scanSamples(page));
     $(sampleId(page, "samples-import")).onclick = () =>
@@ -346,14 +312,14 @@ export function bindSamples() {
         );
         if (path) {
           await api("/api/samples/export", {
-            samples: state.sampleSets[page].rows,
+            samples: sampleMetadata.forPage(page).rows,
             path,
           });
           done(`樣本資料已匯出：${path}`);
         }
       });
     // A different 上機資訊 makes the loaded rows stale until read again.
-    $(spec.sequence).addEventListener("input", () => clearSamples(page));
+    $(spec.sequence).addEventListener("input", () => sampleMetadata.clear(page));
   }
   $("sample-filter").oninput = renderSamples;
   $("sample-select-all").onchange = () =>
@@ -361,16 +327,8 @@ export function bindSamples() {
       .querySelectorAll("input[data-sample]")
       .forEach((node) => (node.checked = $("sample-select-all").checked));
   roleOptions($("sample-bulk-role"), "study_sample");
-  // A change confirmed elsewhere, such as an exclusion marked in review.
-  document.addEventListener("xic:samples-confirmed", (event) => {
-    const { raw_dir, samples, overview } = event.detail;
-    for (const [page, spec] of Object.entries(samplePages)) {
-      const set = state.sampleSets[page];
-      if (!set.rows.length || $(spec.rawDir).value !== raw_dir) continue;
-      receiveConfirmedSamples(page, samples, overview);
-      renderRoleSummary(page);
-    }
-  });
+  for (const id of ["sample-apply-role", "sample-exclude", "sample-include"])
+    $(id).dataset.sampleEdit = "";
   $("sample-apply-role").onclick = () =>
     applyToSelected({ sample_role: $("sample-bulk-role").value });
   $("sample-exclude").onclick = () => applyToSelected({ excluded: true });

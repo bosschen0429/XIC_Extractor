@@ -1,6 +1,6 @@
 // Target tables, named identification methods and Targeted batch settings.
-import { startJob } from "./analysis_jobs.js";
-import { clearSamples, samplePages } from "./analysis_samples.js";
+import { analysis } from "./analysis_jobs.js";
+import { sampleMetadata, samplePages } from "./analysis_samples.js";
 import { checklist, dirty, setMethodState } from "./analysis_setup.js";
 import {
   addTarget,
@@ -663,7 +663,7 @@ export function bindTargeted() {
   $("targeted-form").addEventListener("submit", (event) => {
     event.preventDefault();
     act(() =>
-      startJob("targeted", {
+      analysis.start("targeted", {
         settings: settingsValues(),
         targets: state.targets,
         identification_methods: state.identificationMethods,
@@ -701,7 +701,7 @@ export function bindTargeted() {
     $("t-data_dir").value = "";
     $("t-injection_order_source").value = "";
     updateTargetedSettings({ data_dir: "", injection_order_source: "" });
-    clearSamples("targeted");
+    sampleMetadata.clear("targeted");
     $("target-result").hidden = true;
     dirty("targeted");
     focusField("t-data_dir");
@@ -716,7 +716,7 @@ export function bindTargeted() {
     ) {
       $("t-injection_order_source").value = "";
       event.target.dataset.batchPath = event.target.value;
-      clearSamples("targeted");
+      sampleMetadata.clear("targeted");
     }
   });
   $("target-edit").onclick = () => {

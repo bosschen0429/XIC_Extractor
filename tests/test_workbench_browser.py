@@ -224,6 +224,59 @@ def test_analysis_poll_waits_for_previous_response(workbench):
         page.unroute("**/api/analysis")
 
 
+@pytest.mark.parametrize("transition", ["start", "cancel"])
+def test_delayed_analysis_poll_cannot_undo_job_action(workbench, fake_runs, transition):
+    page = workbench
+    pending = []
+    page.evaluate("window.heldAnalysisPolls = 0")
+
+    def hold_snapshot(route):
+        pending.append(route)
+        page.evaluate("window.heldAnalysisPolls += 1")
+
+    page.clock.install()
+    if transition == "cancel":
+        _start(page, "targeted")
+        expect(page.locator("#analysis-stop")).to_be_enabled()
+    page.route("**/api/analysis", hold_snapshot)
+    try:
+        with page.expect_request("**/api/analysis"):
+            page.clock.run_for(1500)
+        page.wait_for_function("window.heldAnalysisPolls === 1")
+        assert len(pending) == 1
+        old_route = pending.pop()
+        old_response = old_route.fetch()
+        if transition == "start":
+            assert old_response.json()["job"] is None
+            _start(page, "targeted")
+            expect(
+                page.locator("button[form=targeted-form][type=submit]")
+            ).to_be_disabled()
+        else:
+            assert old_response.json()["job"]["status"] == "running"
+            page.locator("#analysis-stop").click()
+            page.locator("#confirm-accept").click()
+            expect(page.locator("#analysis-stop")).to_be_disabled()
+        with page.expect_response("**/api/analysis") as delivered:
+            old_route.fulfill(response=old_response)
+        delivered.value.finished()
+        # The next poll proves the old callback has finished. Hold this response
+        # too, so a fresh snapshot cannot hide the regression under test.
+        with page.expect_request("**/api/analysis"):
+            page.clock.run_for(1500)
+        page.wait_for_function("window.heldAnalysisPolls === 2")
+        expect(page.locator("#analysis-job")).to_be_visible()
+        expect(page.locator("button[form=targeted-form][type=submit]")).to_be_disabled()
+        if transition == "cancel":
+            expect(page.locator("#analysis-stop")).to_be_disabled()
+    finally:
+        for route in pending:
+            with page.expect_response("**/api/analysis") as released:
+                route.continue_()
+            released.value.finished()
+        page.unroute("**/api/analysis", hold_snapshot)
+
+
 @dataclass
 class FakeRuns:
     """Gate completion on an event so polling/progress assertions cannot race."""
@@ -3438,6 +3491,87 @@ def test_sample_save_preserves_editor_selection_and_focus(
     page.unroute("**/api/samples/save")
 
 
+def test_an_open_sample_editor_follows_another_tabs_job(
+    workbench, fake_runs, config_dir, tmp_path, monkeypatch
+):
+    page = workbench
+    install_fake_raw_headers(monkeypatch)
+    batch = tmp_path / "raw"
+    _placeholder_batch(batch, ("Tumor_A", "Normal_A"))
+    rows = read_batch_samples(config_dir, batch, dll_dir=tmp_path)["samples"]
+    save_batch_samples(config_dir, batch, rows)
+    _expand_section(page, "#t-sample-tools")
+    page.locator("#t-samples-refresh").click()
+    expect(page.locator("#t-samples-count")).to_have_text("2 個樣本")
+    page.locator("#t-samples-edit").click()
+    role = page.get_by_label("Tumor_A 角色", exact=True)
+    excluded = page.get_by_label("Normal_A 排除", exact=True)
+    other = page.context.new_page()
+    try:
+        other.goto(page.url)
+        expect(other.locator("body")).not_to_have_class("booting")
+        _start(other, "targeted")
+        expect(role).to_be_disabled()
+        expect(excluded).to_be_disabled()
+        expect(page.locator("#sample-apply-role")).to_be_disabled()
+        fake_runs.release.set()
+        expect(role).to_be_enabled()
+        expect(excluded).to_be_enabled()
+        expect(role).to_have_value("study_sample")
+        expect(excluded).not_to_be_checked()
+    finally:
+        fake_runs.release.set()
+        other.close()
+
+
+def test_sample_edits_save_in_order_and_persist_the_latest_role(
+    workbench, config_dir, tmp_path, monkeypatch
+):
+    page = workbench
+    install_fake_raw_headers(monkeypatch)
+    batch = tmp_path / "raw"
+    _placeholder_batch(batch, ("Tumor_A", "Normal_A"))
+    rows = read_batch_samples(config_dir, batch, dll_dir=tmp_path)["samples"]
+    save_batch_samples(config_dir, batch, rows)
+    _expand_section(page, "#t-sample-tools")
+    page.locator("#t-samples-refresh").click()
+    expect(page.locator("#t-samples-count")).to_have_text("2 個樣本")
+    page.locator("#t-samples-edit").click()
+    pending = []
+
+    def hold_save(route):
+        pending.append(route)
+        page.evaluate("window.heldSampleSaves = (window.heldSampleSaves || 0) + 1")
+
+    page.route("**/api/samples/save", hold_save)
+    try:
+        role = page.get_by_label("Tumor_A 角色", exact=True)
+        with page.expect_request("**/api/samples/save"):
+            role.select_option("qc")
+        # A completed status round-trip lets the second change's fetch reach
+        # the route if it was dispatched while the first write is still held.
+        with page.expect_response("**/api/analysis") as observed:
+            role.select_option("blank")
+        observed.value.finished()
+        assert len(pending) == 1, "Overlapping saves can publish an older edit last"
+        with page.expect_request("**/api/samples/save"):
+            pending.pop(0).continue_()
+        page.wait_for_function("window.heldSampleSaves === 2")
+        with page.expect_response("**/api/samples/save") as saved:
+            pending.pop(0).continue_()
+        saved.value.finished()
+        persisted = read_batch_samples(config_dir, batch, dll_dir=tmp_path)["samples"]
+        assert {row["raw_stem"]: row["sample_role"] for row in persisted} == {
+            "Tumor_A": "blank",
+            "Normal_A": "study_sample",
+        }
+        expect(role).to_have_value("blank")
+    finally:
+        for route in pending:
+            route.continue_()
+        page.unroute("**/api/samples/save")
+
+
 def test_both_flows_share_roles_and_exclusions_without_statistical_groups(
     workbench, fake_runs, config_dir, tmp_path, monkeypatch
 ):
@@ -3786,6 +3920,117 @@ def test_an_import_reaches_the_other_flow_and_its_run(
     _wait_for_analysis_status(page, "已完成")
 
 
+def _open_curation_folder(page, tmp_path, fake_runs):
+    from tests.matrix_curation_fixtures import alignment_output, sample_rows
+    from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
+    from xic_extractor.tabular_io import write_tsv
+
+    output = alignment_output(tmp_path / "results")
+    write_tsv(output / "sample_metadata.tsv", sample_rows(), SAMPLE_METADATA_COLUMNS)
+    fake_runs.result = {
+        "matrix_tsv": str(output / "alignment_matrix.tsv"),
+        "alignment_outputs": {"review_tsv": str(output / "alignment_review.tsv")},
+    }
+    _view(page, "untargeted")
+    page.locator("#u-output_dir").fill(str(output))
+    _start(page, "untargeted")
+    fake_runs.release.set()
+    _wait_for_analysis_status(page, "已完成")
+    page.locator("#untargeted-result").get_by_role("button", name="整理矩陣").click()
+    threshold = page.locator("#curation-finite_fraction-min_finite_fraction")
+    expect(threshold).to_be_enabled()
+    threshold.fill("0.6")
+    expect(page.locator("#curation-export")).to_be_enabled()
+    return output
+
+
+def test_reselecting_same_curation_metadata_refreshes_preview(
+    workbench, fake_runs, tmp_path, monkeypatch
+):
+    from tests.matrix_curation_fixtures import sample_rows
+    from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
+    from xic_extractor.tabular_io import write_tsv
+
+    page = workbench
+    _open_curation_folder(page, tmp_path, fake_runs)
+    rows = sample_rows()
+    metadata = tmp_path / "chosen-samples.tsv"
+    write_tsv(metadata, rows, SAMPLE_METADATA_COLUMNS)
+    page.locator("#curation-input-tools > summary").click()
+    page.locator("#curation-sample_metadata").fill(str(metadata))
+    page.locator("#curation-sample_metadata").press("Tab")
+    threshold = page.locator("#curation-finite_fraction-min_finite_fraction")
+    expect(threshold).to_be_enabled()
+    threshold.fill("0.6")
+    expect(page.locator("#curation-preview")).to_contain_text("保留 2 列")
+    expect(page.locator("#curation-export")).to_be_enabled()
+
+    # S1 leaves the study denominator: only one fixture feature has finite
+    # values in both remaining study samples (S2/S3), rather than two of three.
+    for row in rows:
+        if row["raw_stem"] == "S1":
+            row["sample_role"] = "qc"
+    write_tsv(metadata, rows, SAMPLE_METADATA_COLUMNS)
+    # Substitute only the native OS picker; use the real Browse event wiring.
+    monkeypatch.setattr("xic_workbench.server.choose_path", lambda *_: str(metadata))
+    with page.expect_response("**/api/matrix-curation/source"):
+        page.locator('[data-browse="curation-sample_metadata"]').click()
+    expect(threshold).to_be_enabled()
+    threshold.fill("0.6")
+    expect(page.locator("#curation-preview")).to_contain_text("保留 1 列")
+    expect(page.locator("#curation-export")).to_be_enabled()
+
+
+def test_editing_curation_source_invalidates_steps_before_blur(
+    workbench, tmp_path, fake_runs
+):
+    from tests.matrix_curation_fixtures import alignment_output
+
+    page = workbench
+    _open_curation_folder(page, tmp_path, fake_runs)
+    another = alignment_output(tmp_path / "another-output")
+    page.locator("#curation-input-tools > summary").click()
+    pending = []
+    page.route("**/api/matrix-curation/source", lambda route: pending.append(route))
+    try:
+        source = page.locator("#curation-source_dir")
+        source.fill(str(another))
+        expect(source).to_be_focused()
+        expect(page.locator("#curation-export")).to_be_disabled()
+        expect(page.locator("#curation-steps [data-step]")).to_have_count(0)
+    finally:
+        for route in pending:
+            route.continue_()
+        page.unroute("**/api/matrix-curation/source")
+
+
+def test_curation_does_not_export_changed_settings_while_preferences_are_saving(
+    workbench, tmp_path, fake_runs
+):
+    page = workbench
+    output = _open_curation_folder(page, tmp_path, fake_runs)
+    pending = []
+
+    def hold_preferences(route):
+        pending.append(route)
+        page.evaluate("window.curationPreferencesHeld = true")
+
+    page.route("**/api/preferences", hold_preferences)
+    try:
+        page.locator("#curation-export").click()
+        page.wait_for_function("window.curationPreferencesHeld === true")
+        page.locator("#curation-finite_fraction-min_finite_fraction").fill("0.8")
+        with page.expect_response("**/api/preferences") as saved:
+            pending.pop().continue_()
+        saved.value.finished()
+        expect(page.locator("#toasts")).to_contain_text("設定已變更")
+        assert not list(output.glob("matrix_curation_*"))
+    finally:
+        for route in pending:
+            route.continue_()
+        page.unroute("**/api/preferences")
+
+
 def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     workbench, fake_runs, config_dir, tmp_path, monkeypatch
 ):
@@ -4114,28 +4359,23 @@ def test_folder_picker_automatically_lists_samples(workbench, tmp_path, monkeypa
     expect(workbench.locator("#t-samples-count")).to_have_text("2 個樣本")
 
 
-def test_startup_controls_wait_for_initial_method(workbench, monkeypatch):
-    from xic_workbench import methods
-
+@pytest.mark.parametrize("initial_request", ("method", "istd"))
+def test_startup_controls_wait_for_initial_data(workbench, initial_request):
     page = workbench
-    method_details = methods.method_details
-    entered, release = threading.Event(), threading.Event()
-
-    def held_method(*args, **kwargs):
-        entered.set()
-        assert release.wait(HANDSHAKE_TIMEOUT_S)
-        return method_details(*args, **kwargs)
-
-    monkeypatch.setattr(methods, "method_details", held_method)
-    page.reload()
+    pending = []
+    endpoint = f"**/api/{initial_request}"
+    page.route(endpoint, lambda route: pending.append(route))
     try:
-        assert entered.wait(HANDSHAKE_TIMEOUT_S)
-        # A visible but not-yet-wired control must not accept keyboard focus.
+        with page.expect_request(endpoint):
+            page.reload()
+        # Controls must stay inert until all initial data and observers are ready.
         theme = page.locator("#theme-toggle")
         theme.focus()
         expect(theme).not_to_be_focused()
     finally:
-        release.set()
+        for route in pending:
+            route.continue_()
+        page.unroute(endpoint)
     with page.expect_response("**/api/preferences"):
         page.locator("#theme-toggle").click()
     expect(page.locator("html")).to_have_attribute("data-theme", "dark")

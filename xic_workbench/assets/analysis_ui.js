@@ -1,12 +1,9 @@
+import { curation } from "./analysis_curation.js";
 // Transport and reusable DOM/form controls shared by analysis views.
-import { previewSamples } from "./analysis_samples.js";
+import { analysis } from "./analysis_jobs.js";
+import { sampleMetadata } from "./analysis_samples.js";
 import { checklist } from "./analysis_setup.js";
-import {
-  currentSampleAction,
-  isRunning,
-  sampleAction,
-  state,
-} from "./analysis_state.js";
+import { state } from "./analysis_state.js";
 
 export const $ = (id) => document.getElementById(id);
 export const ui = window.XicUi;
@@ -69,9 +66,17 @@ export function pathTail(path, parts = 2) {
     : String(path || "");
 }
 export function isBusy() {
-  return state.importing || window.XicReview.busy || isRunning();
+  return (
+    state.importing ||
+    window.XicReview.busy ||
+    Boolean(analysis?.snapshot.busy) ||
+    sampleMetadata.saving
+  );
 }
 export function lock() {
+  document.querySelectorAll("[data-sample-edit]").forEach((node) => {
+    node.disabled = !sampleMetadata.canEdit;
+  });
   document
     .querySelectorAll("[data-analysis-idle]")
     .forEach(
@@ -81,7 +86,7 @@ export function lock() {
           (node.dataset.rtBound === "true" && !$("u-rt-crop")?.checked)),
     );
   if ($("curation-export"))
-    $("curation-export").disabled = isBusy() || !state.curation?.previewRequest;
+    $("curation-export").disabled = isBusy() || !curation?.snapshot.canExport;
 }
 export const isTemplatePath = (value) =>
   value.startsWith("<") || /[\\/]your[\\/]/i.test(value);
@@ -192,11 +197,9 @@ export function pathField(
   input.addEventListener("change", () =>
     act(async () => {
       const page = prefix === "t-" ? "targeted" : "untargeted";
-      const action = ["data_dir", "raw_dir"].includes(key)
-        ? sampleAction(page)
-        : null;
-      if ((await validate()) && action && currentSampleAction(action))
-        await previewSamples(page, action);
+      if (["data_dir", "raw_dir"].includes(key))
+        await sampleMetadata.preview(page, validate);
+      else await validate();
     }),
   );
   if (input.value && key !== "dll_dir") act(validate);

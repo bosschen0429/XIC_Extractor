@@ -37,6 +37,18 @@ _ASSETS = {
         "analysis_state.js",
         "text/javascript; charset=utf-8",
     ),
+    "/assets/analysis_session.js": (
+        "analysis_session.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/assets/analysis_sample_metadata.js": (
+        "analysis_sample_metadata.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/assets/analysis_curation_session.js": (
+        "analysis_curation_session.js",
+        "text/javascript; charset=utf-8",
+    ),
     "/assets/analysis_ui.js": ("analysis_ui.js", "text/javascript; charset=utf-8"),
     "/assets/analysis_setup.js": (
         "analysis_setup.js",
