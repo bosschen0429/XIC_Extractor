@@ -13,7 +13,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 閱讀順序：[Repo 結構樹](project-layout.md#repository-tree) →
 [入口](#entry-points-and-handoffs) → [模組責任表](#ownership-map) →
 [依賴方向](#dependency-direction)。只想理解分析概念，從
-[人讀版核心導覽](user/core-modules-explainer.html)開始。
+[人讀版核心導覽](development/core-modules-explainer.html)開始。
 
 ### Entry Points And Handoffs
 

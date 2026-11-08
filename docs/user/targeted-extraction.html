@@ -81,7 +81,6 @@
     @media (max-width:540px) { .page { width:min(100% - 28px,1100px); } .hero { padding-top:34px; } .steps li { min-height:0; } }
     @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
   </style>
-  <link rel="stylesheet" href="assets/guide-maps.css">
 </head>
 <body>
 <main class="page">
@@ -89,22 +88,17 @@
 <p class="eyebrow">XIC Extractor · 已知目標</p>
 <h1>從目標清單，<br>走到可使用的批次結果</h1>
 <p class="lead">準備目標與 RAW，執行後由整批摘要縮到需要查看的樣本。主要交付是一份 workbook；有疑問時再看 XIC，不必先理解程式模組。</p>
-<p><a href="readers-index.html">回文件入口</a> · <a href="targeted-extraction.md">完整 Markdown 操作指南</a>
+<p><a href="targeted-extraction.md">完整操作指南</a>
 </p>
 </header>
-  <nav class="jump" aria-label="頁面章節"><a href="#workflow">跑一個批次</a><a href="#inputs">準備輸入</a><a href="#outputs">讀 workbook</a><a href="#review">檢閱結果</a><a href="#cli">命令列</a><a href="#troubleshooting">遇到問題</a>
+  <nav class="jump" aria-label="頁面章節"><a href="#workflow">跑一個批次</a><a href="#inputs">準備輸入</a><a href="#outputs">讀 workbook</a><a href="#review">檢閱結果</a><a href="#troubleshooting">遇到問題</a>
 </nav>
-  <section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
-<h2 id="flow-map-title">先完成工作，再追問數字</h2>
-<div class="guide-map-toolbar">
-<p>這張圖說明準備、判斷與交付的關係，不是函式執行時序。</p><a href="assets/targeted-workflow.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a>
-</div><img class="guide-map-frame" src="assets/targeted-workflow.svg" alt="Targeted 從目標清單與 RAW 到 workbook 和檢閱的流程圖" loading="lazy">
-</section>
+
   <section id="workflow">
 <p class="eyebrow">01 · 執行</p>
 <h2>跑一個批次</h2>
 <figure class="snapshot"><img src="assets/targeted-workspace.png" alt="Targeted 工作區畫面"><figcaption>Targeted 工作區：資料與輸出、樣本、目標清單，右側為執行前確認。</figcaption></figure>
-<p>首次使用先依 <a href="../../README.md#run-the-html-workbench">啟動與 reader 設定</a>打開工作台；source checkout 使用 <code>uv run xic-workbench</code>。</p>
+<p>首次使用先依<a href="README.md#reader-setup">啟動與 reader 設定</a>完成準備，再選擇分析。</p>
 <ol>
 <li>選 <strong>Targeted Extraction</strong>，指定本批 RAW 資料夾。</li>
 <li>載入已保存的清單／方法，或從目標卡下載 XLSX 範例、編輯並匯入。</li>
@@ -138,11 +132,7 @@
 </ol>
 <p>空白不是自動的零，面積也不證明化合物身分。需要理解原因時，讀 <a href="processing-guide.html#decisions">結果判讀原理</a>；要重現操作，回 <a href="targeted-extraction.md#review-the-batch">逐步閱讀指南</a>。</p>
 </section>
-  <section id="cli">
-<p class="eyebrow">05 · 自動化</p>
-<h2>命令列使用同一條分析路徑</h2>
-<p>在 source checkout 執行 <code>uv run xic-extractor-cli --help</code>。使用已保存的 XLSX 方法與新批 RAW；精確參數與範例查 <a href="targeted-extraction.md#cli">CLI 操作段落</a>。科學方法與本機執行設定是不同輸入。</p>
-</section>
+
   <section id="troubleshooting">
 <p class="eyebrow">06 · 遇到問題</p>
 <h2>先定位失敗，再決定是否重跑</h2>
@@ -150,9 +140,7 @@
 <p><a href="targeted-extraction.md#troubleshooting">完整 troubleshooting</a> · <a href="untargeted-discovery.html">想探索未列出的特徵？改走 Untargeted</a>
 </p>
 </section>
-  <footer>
-<p>操作與格式以 <a href="targeted-extraction.md">Markdown 指南</a>及其參考文件為準；精確選擇規則查 <a href="../product/targeted-selection.md">Targeted Selection</a>。</p><a href="readers-index.html">回文件入口</a>
-</footer>
+  <footer><p>需要細節時，查閱<a href="targeted-extraction.md">逐步操作</a>或<a href="targeted-output-reference.md">輸出欄位參考</a>。</p><a href="README.md">回使用說明首頁</a></footer>
 </main>
 </body>
 </html>

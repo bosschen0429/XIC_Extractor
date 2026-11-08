@@ -72,11 +72,12 @@ RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
     ),
     # Include whole shipped package roots: an installed/frozen import can depend
     # on any of their code or data. A shortlist of entry points misses package
-    # inputs and resources, while ordinary documentation can still skip.
+    # inputs and resources, including the offline user documentation.
     "packaging_build": re.compile(
-        r"^((pyproject\.toml|uv\.lock)$"
+        r"^((pyproject\.toml|uv\.lock|MANIFEST\.in)$"
         r"|\.github/workflows/(build|ci)\.yml$"
         r"|tests/test_pyinstaller_spec\.py$"
+        r"|docs/user/"
         r"|(xic_extractor|xic_inspector|xic_workbench|scripts|tools|packaging|config)/)"
     ),
 }

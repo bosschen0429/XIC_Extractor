@@ -42,7 +42,6 @@ a = Analysis(
             os.path.join(ROOT, "xic_extractor", "configuration", "data"),
             "xic_extractor/configuration/data",
         ),
-        (os.path.join(ROOT, "scripts"), "scripts"),
     ]
     + preset_datas
     + discovery_datas
@@ -54,7 +53,6 @@ a = Analysis(
         "openpyxl",
         "openpyxl.styles",
         "openpyxl.utils",
-        "scripts.csv_to_excel",
         "xic_inspector.api",
         "xic_inspector.sources.cid_nl",
         "xic_inspector.rendering.html_builder",

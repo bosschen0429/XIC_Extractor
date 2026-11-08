@@ -371,7 +371,6 @@
       .source-list { columns: 1; }
     }
   </style>
-  <link rel="stylesheet" href="assets/guide-maps.css">
 </head>
 <body>
 <div class="page">
@@ -391,17 +390,13 @@
     <section id="overview">
 <h2>問題：同一批樣本中，哪些候選值得比較？</h2>
 <p class="section-intro">我們選擇一個 CID-NL 方法，從 Thermo RAW 找出符合指定中性流失關係的訊號，再問：這個訊號是否有可量測的 MS1 峰？不同樣本的觀察是否能對應？得到的面積代表什麼？</p>
-<div class="guide-map">
-<div class="guide-map-toolbar">
-<p>這是責任地圖，不是函式時序；Pt 診斷支線不是本案例的 Matrix 入口。</p><a href="assets/raw-matrix-journey.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a>
-</div><img class="guide-map-frame" src="assets/raw-matrix-journey.svg" alt="CID-NL 從 RAW 到 Matrix 的責任圖，另列 Pt 診斷支線" loading="lazy">
-</div>
+
 </section>
     <section id="discovery">
 <h2>1 · 中性流失線索：為什麼先把 A 列為候選？</h2>
 <p>方法指定要尋找的前驅／碎片質量差。A 的 MS2 若符合設定的 neutral-loss 關係，就提供值得追查的線索。Discovery 保留來源，並結合 MS1 訊號形成候選。</p>
 <div class="callout"><strong>線索不是身分證明。</strong>相同中性流失可能由不同物質產生；候選不能直接當作已鑑定的 DNA adduct。某個樣本未觸發相應 MS2，也不能單憑這件事推論化合物不存在。</div>
-<p>設定與候選規則查 <a href="../product/discovery.md">Discovery</a>、<a href="../product/presets.md">Presets</a>。</p>
+
 </section>
     <section id="xic">
 <h2>2 · 本地曲線：這個候選在色譜上長什麼樣？</h2>
@@ -411,7 +406,7 @@
     <section id="peak">
 <h2>3 · 峰與面積：A 的數值積分了哪一段？</h2>
 <p>物理峰判讀依一致的訊號準備、邊界與積分規則取得面積。如果鄰近有第二個峰，較大或較乾淨不代表就是這次線索所支持的峰；需要保留假說與不確定性。</p>
-<p>本案例不重列演算法與公式；精確訊號與面積規則見 <a href="../product/signal-processing.md">訊號處理</a>。缺少可用積分時，不能由輸出程式補造面積。</p>
+<p>本案例不重列演算法與公式；缺少可用積分時，不能由輸出程式補造面積。</p>
 </section>
     <section id="alignment">
 <h2>4 · 跨樣本與缺格：B 能與 A 比較，C 又怎麼辦？</h2>
@@ -425,7 +420,6 @@
 <p>群組與直接支持符合條件時，Backfill 可在 C 的本地範圍重找訊號。找到的觀察仍需判斷對應與可量化性；找不到也不從 A、B 推算一個面積。</p>
 </article>
 </div>
-<p>這些判斷的方法與限制分別由 <a href="../product/alignment.md">Alignment</a>、<a href="../product/backfill.md">Backfill</a> 與 <a href="../product/decision-policy.md">判定政策</a>維護。</p>
 </section>
     <section id="matrix">
 <h2>5 · 使用 Matrix：保留問題的答案，而不是只保留數字</h2>
@@ -441,21 +435,11 @@
     <section id="design">
 <h2>其他方法：沿用問題，不照搬 CID-NL 的答案</h2>
 <p>Delta Mass／Pt pattern 可以從 MS1 質量模式提出不同候選；它的證據需求與驗證不能由本案例推導。Untargeted Pt 診斷候選與曲線本身不構成 Alignment／Matrix 支援，也不能因為 preset 存在就視為已啟用定量。</p>
-<p>候選、方法可用性與產品輸出要分開確認。查 <a href="../product/discovery.md#delta-mass-discovery">Delta Mass Discovery</a> 的精確邊界及其連結的現行狀態；不要把這個案例泛化到其他 provider 或工作流。</p>
+<p>候選、方法可用性與產品輸出要分開確認；不要把本案例的結論泛化到其他方法或工作流程。</p>
 </section>
-    <section id="sources">
-<h2>要核對規則，從你的疑問找文件</h2>
-<ul>
-<li>候選如何提出：<a href="../product/discovery.md">Discovery</a>。</li>
-<li>峰與面積如何支持：<a href="../product/signal-processing.md">訊號處理</a>。</li>
-<li>為什麼寫值、計數或留空：<a href="../product/decision-policy.md">Decision Policy</a>、<a href="../product/quant-matrix.md">Quant Matrix</a>。</li>
-<li>欄位怎麼讀：<a href="untargeted-output-reference.md">Untargeted 輸出參考</a>。</li>
-</ul>
-</section>
+    <section id="sources"><h2>下一步</h2><p>依<a href="untargeted-discovery.html">Untargeted 操作指南</a>執行，並查閱<a href="untargeted-output-reference.md">輸出欄位參考</a>。</p></section>
   </main>
-  <footer>
-<p>這是方法情境解說，不授予方法 readiness 或輸出權限。精確行為與支援範圍查 <a href="../product/README.md">產品文件</a>及其方法證據。</p><a href="readers-index.html">回文件入口</a>
-</footer>
+  <footer><p>概念解說不能取代方法驗證；請保留原始結果，依樣本證據判讀。</p><a href="README.md">回使用說明首頁</a></footer>
 </div>
 </body>
 </html>

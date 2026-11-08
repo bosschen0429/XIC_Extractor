@@ -5,7 +5,7 @@ inside its run directory. It opens on `摘要`; `需檢查` follows when some re
 need a look first, then `面積`, `XIC Results`, `Targets`,
 `Run Metadata` and `欄位說明`.
 Inspector reads this layout. Opening a workbook for review does not modify it or create sidecar files.
-The design rules are in [Targeted Workbook](../product/targeted-workbook.md).
+
 
 ## 摘要: start here
 

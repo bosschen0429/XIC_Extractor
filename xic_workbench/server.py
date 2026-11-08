@@ -24,6 +24,7 @@ from xic_inspector.api import InspectorError, read_evidence_summary, resolve_sou
 from xic_workbench.analysis_workspace import json_value
 from xic_workbench.browser_lifetime import BrowserLifetime
 from xic_workbench.native_picker import PickerBusy, choose_path
+from xic_workbench.user_guide import read_user_guide
 from xic_workbench.workspace import ReviewWorkspace, WorkspaceBusy
 
 _ASSETS = {
@@ -221,6 +222,13 @@ def create_server(
                 asset, content_type = _ASSETS[url.path]
                 data = files("xic_workbench").joinpath("assets", asset).read_bytes()
                 self._send(200, data, content_type)
+            elif url.path.startswith("/help/"):
+                help_resource = read_user_guide(url.path.removeprefix("/help/"))
+                if help_resource is None:
+                    self._send(404, {"error": "找不到這份使用說明。"})
+                else:
+                    data, content_type = help_resource
+                    self._send(200, data, content_type)
             elif url.path in _INSPECTOR_ASSETS:
                 asset, content_type = _INSPECTOR_ASSETS[url.path]
                 data = (

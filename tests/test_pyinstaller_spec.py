@@ -75,6 +75,10 @@ from xic_extractor.configuration.targeted_method_files import (
     load_targeted_method, load_target_table,
 )
 examples = targets_template_path().parent
+from xic_workbench.user_guide import read_user_guide
+guide = read_user_guide("")
+if guide is None or "XIC Extractor 使用說明" not in guide[0].decode("utf-8"):
+    raise RuntimeError("installed workbench is missing its offline guide")
 method = load_targeted_method(examples / "targeted-method.xlsx")
 target_rows = load_target_table(examples / "targets.xlsx")
 if not method.targets or list(method.target_rows) != target_rows:
@@ -256,6 +260,7 @@ metadata_output.write_text(
 """
 PACKAGING_SOURCE_DIRECTORIES = (
     "config",
+    "docs",
     "packaging",
     "scripts",
     "tools",
@@ -301,6 +306,7 @@ def packaging_source(tmp_path_factory: pytest.TempPathFactory) -> Path:
     source_root.mkdir()
 
     shutil.copy2(PROJECT_ROOT / "pyproject.toml", source_root / "pyproject.toml")
+    shutil.copy2(PROJECT_ROOT / "MANIFEST.in", source_root / "MANIFEST.in")
     for directory in PACKAGING_SOURCE_DIRECTORIES:
         if directory == "config":
             # A package must not depend on or copy a developer's ignored state.
@@ -553,8 +559,10 @@ def test_built_wheel_contains_workbench_and_matching_target_template(
             if PurePosixPath(member).name.casefold()
             == TARGET_TEMPLATE_RELATIVE.name.casefold()
         ]
-        assert resource_members == [TARGET_TEMPLATE_ARCHIVE_PATH]
-        resource_bytes = wheel.read(resource_members[0].as_posix())
+        help_example = PurePosixPath("xic_workbench/assets/help/examples/targets.csv")
+        assert set(resource_members) == {TARGET_TEMPLATE_ARCHIVE_PATH, help_example}
+        resource_bytes = wheel.read(TARGET_TEMPLATE_ARCHIVE_PATH.as_posix())
+        assert wheel.read(help_example.as_posix()) == resource_bytes
 
     _assert_resource_bytes_match_source(resource_bytes)
 
@@ -730,19 +738,32 @@ def test_final_pyinstaller_archive_runs_html_workbench_smoke(
             == (PROJECT_ROOT / "xic_extractor/configuration/data" / name).read_bytes()
         )
     # Exercise the archive that would be delivered, rather than rebuilding a probe.
-    archive_path = Path(
-        shutil.make_archive(
-            str(artifact_root / "delivered"),
-            "zip",
-            root_dir=dist_root,
-            base_dir="XIC_Extractor",
-        )
+    version = tomllib.loads(
+        (packaging_source / "pyproject.toml").read_text(encoding="utf-8")
+    )["project"]["version"]
+    archive_path = artifact_root / f"XIC_Extractor-Windows-v{version}-dev.zip"
+    _run_packaging_command(
+        (
+            sys.executable,
+            "-m",
+            "tools.distribution",
+            str(final_output),
+            str(archive_path),
+        ),
+        cwd=packaging_source,
+        timeout_seconds=60,
     )
     archive_hash = hashlib.sha256(archive_path.read_bytes()).hexdigest()
     extracted_root = artifact_root / "delivered-extracted"
     shutil.unpack_archive(archive_path, extracted_root)
     smoke_report = extracted_root / "smoke.json"
-    executable = extracted_root / "XIC_Extractor" / "XIC_Extractor.exe"
+    application = extracted_root / archive_path.stem
+    assert (application / "開始使用.html").is_file()
+    assert (application / "docs/user/targeted-extraction.guide.html").is_file()
+    assert (application / "docs/user/untargeted-discovery.html").is_file()
+    assert not list(application.rglob("*.py"))
+    assert not (application / "_internal/scripts").exists()
+    executable = application / "XIC_Extractor.exe"
     _run_packaging_command(
         (str(executable), "--smoke-test", str(smoke_report)),
         cwd=extracted_root,
@@ -751,6 +772,7 @@ def test_final_pyinstaller_archive_runs_html_workbench_smoke(
     report = json.loads(smoke_report.read_text(encoding="utf-8"))
     assert report["status"] == "passed"
     assert report["frozen"] and report["server_started"] and report["preset_roundtrip"]
+    assert report["user_guide"]
     assert Path(report["executable"]).resolve() == executable.resolve()
     assert report["resources"]["target_rows"] > 0
     assert report["resources"]["background_ions"] > 0

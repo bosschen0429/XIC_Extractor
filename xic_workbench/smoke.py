@@ -63,6 +63,16 @@ def run_smoke(report_path: Path) -> int:
         for asset in _ASSETS:
             if not request(asset):
                 raise RuntimeError(f"Empty frontend asset: {asset}")
+        if "XIC Extractor 使用說明" not in request("/help/").decode("utf-8"):
+            raise RuntimeError("Delivered application is missing its user guide")
+        for resource in (
+            "/help/docs/user/targeted-extraction.html",
+            "/help/docs/user/assets/targeted-workspace.png",
+            "/help/examples/targets.xlsx",
+        ):
+            if not request(resource):
+                raise RuntimeError(f"Empty user-guide resource: {resource}")
+        report["user_guide"] = True
         from xic_extractor.configuration.paths import targets_template_path
         from xic_extractor.configuration.targeted_method_files import load_target_table
 

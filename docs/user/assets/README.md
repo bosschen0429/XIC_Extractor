@@ -2,15 +2,16 @@
 
 Maintenance reference for the diagrams embedded in the [user guides](../README.md).
 
-The human-facing HTML guides use topic maps to supplement their explanations;
-they are not separate product contracts. The reading index has a native HTML
-navigation map: each page node is a relative link to that guide, usable by mouse
-or keyboard without JavaScript. Edit those links in `../readers-index.html`, not
-in an Archify specification. The other guides embed static SVG topic maps.
+Implementation responsibility maps are linked from the
+[developer reading path](../../development/README.md); they are not separate
+product contracts and are not published in the application ZIP. User guides keep
+operational screenshots and scientific explanations. The single user entry is
+`../README.md`; publication renders it as `開始使用.html`. Edit its task links
+there, not in an Archify specification. The other guides embed static SVG maps.
 
 | Guide | Diagram asset stem | Question |
 | --- | --- | --- |
-| Reading index | Native links in `../readers-index.html` | Which guide should I read next? |
+| User entry | Task links in `../README.md` | What should I do next? |
 | Core guide | `core-processing-map` | What processing and decisions are shared? |
 | Targeted | `targeted-workflow` | How do I prepare, run, and review a batch? |
 | Untargeted | `untargeted-modes` | Where does each run mode start and stop? |

@@ -1,0 +1,1 @@
+recursive-include docs/user *.md *.html *.png *.svg *.css *.txt

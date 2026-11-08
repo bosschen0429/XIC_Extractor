@@ -245,7 +245,7 @@ and credible-anchor decisions rather than adding a separate rule that makes all
 candidates unusable whenever multiple candidates appear. An imported reference
 workbook retains its declared measurement contract; the reader does not add MS2
 qualification. See the
-[Untargeted guide](../user/untargeted-discovery.md#alignment-cli-inputs) for CLI
+[Untargeted guide](../development/command-line.md#alignment-cli-inputs) for CLI
 input selection.
 
 | Mechanism | Current source and use |

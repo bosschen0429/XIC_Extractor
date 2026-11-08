@@ -101,7 +101,7 @@
     @media (max-width: 540px) { .page { width: min(100% - 28px, 1120px); } .hero { padding-top: 34px; } .panel { padding: 19px; } .pipeline { grid-template-columns: 1fr; } .pipeline li::after { display: none; } .inspector-path { grid-template-columns: 1fr; } .path-arrow { line-height: 1; transform: rotate(90deg); } .state-line li:not(:last-child)::after { display: none; } }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   </style>
-  <link rel="stylesheet" href="assets/guide-maps.css">
+  <link rel="stylesheet" href="../user/assets/guide-maps.css">
 </head>
 <body>
   <div class="page">
@@ -114,7 +114,7 @@
         </div>
         <aside class="hero-aside" aria-label="閱讀重點">
           <strong>不是操作的必經章節</strong>
-          <p><a href="targeted-extraction.html#review">Targeted 結果檢閱</a>與 <a href="untargeted-discovery.html#review">Untargeted 結果使用</a>由操作指南說明。本頁回答背後的責任與依賴。</p>
+          <p><a href="../user/targeted-extraction.html#review">Targeted 結果檢閱</a>與 <a href="../user/untargeted-discovery.html#review">Untargeted 結果使用</a>由操作指南說明。本頁回答背後的責任與依賴。</p>
         </aside>
       </div>
     </header>
@@ -124,15 +124,15 @@
       <a href="#architecture">模組與依賴</a>
       <a href="#runtime">執行生命週期</a>
       <a href="#inspector">完成證據檢視</a>
-      <a href="readers-index.html">回文件入口</a>
+      <a href="README.md">回文件入口</a>
     </nav>
 
     <main>
 <section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
 <h2 id="flow-map-title">分清楚誰判斷、誰執行、誰發布</h2>
 <p class="guide-map-intro">入口負責協調，科學 owner 完成答案；runtime 管資源與收尾，不因此取得選峰或 writer 權限。</p>
-<div class="guide-map-toolbar"><p>先看處理與判斷的關係，再沿下方說明閱讀。</p><a href="assets/execution-boundaries.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a></div>
-<img class="guide-map-frame" src="assets/execution-boundaries.svg" alt="分清楚誰判斷、誰執行、誰發布：流程圖" loading="lazy">
+<div class="guide-map-toolbar"><p>先看處理與判斷的關係，再沿下方說明閱讀。</p><a href="../user/assets/execution-boundaries.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a></div>
+<img class="guide-map-frame" src="../user/assets/execution-boundaries.svg" alt="分清楚誰判斷、誰執行、誰發布：流程圖" loading="lazy">
 <p class="guide-map-caption">這是概念與責任導覽，不是逐函式執行時序。若圖不易閱讀或無法載入，可另開完整圖，或直接讀<a href="#runtime">執行生命週期說明</a>。</p>
 </section>
       <section id="architecture" aria-labelledby="architecture-heading">
@@ -208,13 +208,13 @@
 <p>自包含 HTML 保存選定的曲線與記錄，供離線檢閱；它不回寫原始結果，也不是方法 activation 或 publication 的授權。</p>
 </div>
 </div>
-        <p>檢閱能做與不能做什麼查 <a href="../product/workbench.md">Workbench and review</a>；命令參數查各命令的 <code>--help</code>。一般使用者回 <a href="processing-guide.html#results">結果使用路徑</a>。</p>
+        <p>檢閱能做與不能做什麼查 <a href="../product/workbench.md">Workbench and review</a>；命令參數查各命令的 <code>--help</code>。一般使用者回 <a href="../user/processing-guide.html#results">結果使用路徑</a>。</p>
       </section>
     </main>
 
     <footer>
       <p>這頁是人類閱讀導覽。正式 owner 仍是 <a href="../architecture-contract.md"><code>docs/architecture-contract.md</code></a>（模組責任與依賴）、<a href="../product/workbench.md"><code>docs/product/workbench.md</code></a>（只讀檢視）。精確 API、欄位與實際能力以 owner 文件及現行程式為準。</p>
-      <p><a href="readers-index.html">回文件入口</a></p>
+      <p><a href="README.md">回文件入口</a></p>
     </footer>
   </div>
 </body>

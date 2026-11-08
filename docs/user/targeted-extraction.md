@@ -9,8 +9,7 @@ Excel workbook, read from batch summary to the individual results needing attent
 
 ## Workflow
 
-1. Open `XIC_Extractor.exe`, or run `uv run xic-workbench` in a developer
-   checkout. On first use, follow the [reader setup notice](../../README.md#run-the-html-workbench)
+1. Open `XIC_Extractor.exe`. On first use, follow the [reader setup notice](README.md#reader-setup)
    to install RawFileReader 8.0.42 and, if needed, .NET 8 or later.
 2. Select **Targeted**.
 3. Set the RAW folder and result location. The local DLL setting is retained.
@@ -32,18 +31,14 @@ Confirmed roles and exclusions stay with their original RAW folder. Settings
 edited after a run apply to the next analysis only; an opened result keeps the
 settings it ran with.
 
-The GUI and CLI use the same Targeted pipeline and `config/workspace.json` current
-work state. A fresh workspace has no selected targets. Download the method or
+The workbench saves the current setup locally. A fresh workspace has no selected targets. Download the method or
 target-table XLSX example from the target-list card and save a copy. Drag the file
 onto the import area or click **選擇檔案** (no pasted path). Workbench detects the
 file type and previews targets and ISTD pairs; **確認匯入並取代** applies the list,
 while **取消** leaves current work unchanged. **保存批次設定** saves the current
 setup for reopening; starting analysis also saves it. **另存清單** creates a
 reusable XLSX, without changing the current batch.
-Reading settings never creates or imports old CSV working copies.
-
-Keep real machine paths in ignored runtime files. Do not commit local RAW, DLL,
-or private lab paths. The [field reference](targeted-config-reference.md) owns
+The [field reference](targeted-config-reference.md) owns
 workbook sheet names and the exact editable fields.
 
 ## Inputs
@@ -91,8 +86,7 @@ the sample acquisition span, even without MS2, and uses the shared Discovery
 CID-NL event and physical-peak owners. Missing NL does not count as direct support.
 Conservative, confirmed-peer ISTD Backfill keeps its separate provenance.
 
-The CLI accepts `--method <file.xlsx>` and `--data-dir <new-batch>`; execution
-inputs are frozen at start. Local settings contain RAW/DLL paths, sample metadata and worker count. The [field reference](targeted-config-reference.md) is the input contract.
+Execution inputs are fixed when an analysis starts. Local settings retain RAW/DLL paths, sample metadata and worker count. The [field reference](targeted-config-reference.md) is the input contract.
 Old target/scientific-settings formats are rejected, not silently converted.
 
 ## Main Output
@@ -135,7 +129,7 @@ a target or review action, then a sample for its details. The workbook does not 
 
 For missing MS2, the formal projection applies the ISTD/analyte role and
 support policy. Missing MS2 is not direct CID-NL support; there is no detection
-override. The [Decision Policy](../product/decision-policy.md) owns these rules.
+override.
 
 ## Review The Batch
 
@@ -159,41 +153,6 @@ zero. For the reasoning, see the [processing story](processing-guide.html#decisi
 for exact fields, use the [output reference](targeted-output-reference.md).
 Review does not overwrite the saved scientific result; changed analysis inputs
 require a new run.
-
-## CLI
-
-Developer checkout:
-
-```powershell
-uv run python -m scripts.run_extraction --base-dir .
-```
-
-Installed entry point:
-
-```powershell
-uv run xic-extractor-cli --base-dir .
-```
-
-Useful overrides:
-
-| Argument | Meaning |
-| --- | --- |
-| `--base-dir` | Directory containing `config/` and `output/` |
-| `--data-dir` | One-run RAW directory override |
-| `--method` | Saved target-intent XLSX (`Method` + `Targets`) |
-| `--injection-order-source` | Explicit injection order for this batch |
-
-Execution scheduling is automatic; actual workers are recorded in run metadata.
-
-## Validation
-
-Result review is described [above](#review-the-batch). Operator validation uses
-`.venv\Scripts\python.exe tools\diagnostics\targeted_validation.py --help` for suite
-selection, dry-run and baseline comparison through the finalized Targeted
-application. Manual-2RAW calibration separately compares acquisition RT/area
-against the supplied manual measurements. For developer environment and
-RAW-run constraints, see [Local Execution](../agent/local-execution.md).
-Regression checks do not establish method-wide scientific readiness.
 
 ## Troubleshooting
 

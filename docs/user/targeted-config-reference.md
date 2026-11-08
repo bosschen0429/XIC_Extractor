@@ -18,11 +18,10 @@ machine values and an empty target list. Read operations do not create files.
 | `injection_order_source` | Optional sample metadata (Word, Excel, CSV or TSV); RAW headers own injection order and sample names |
 | `parallel_workers` | Local worker count; blank uses the shared execution-profile default |
 
-Shared physical and selection policy is platform-owned. The normal GUI and
-Targeted CLI do not offer smoothing, anchor-window, Dirty Matrix or backend
-controls. Custom Delta Mass methods own their mass and co-elution tolerances.
-The GUI execution-resources section can save the shared worker count. The run metadata records the effective
-policy and actual resource allocation.
+The workflows share physical-peak and selection rules. Execution resources
+control the worker count, not the scientific method. Custom Delta Mass methods
+store mass and co-elution tolerances in their method definitions. Run metadata
+records the effective settings and resource allocation.
 
 ## Target intent (`Targets` worksheet)
 
@@ -86,12 +85,6 @@ examples, not evidence that the listed method is appropriate for your samples.
 6. Save the workspace or **另存清單**. XLSX export includes the definitions, so a
    later import preserves the complete method, not only target rows.
 
-CLI uses the same method admission and execution:
-
-```powershell
-.venv\Scripts\python.exe -m scripts.run_extraction --method C:\methods\my-method.xlsx
-```
-
 The `Identification Methods` worksheet has one row per CID-NL condition and
 one row per Delta Mass ion:
 
@@ -111,8 +104,7 @@ Overlapping ion windows are rejected. Two-position methods require a measured
 partner. Unmet methods do not fall back to MS1-only. `Method Evidence` explains
 matched/not-matched/not-acquired conditions for each candidate; missing MS2 is
 not counted as a chemical failure, but cannot fulfill CID-NL. Inspector reads saved
-method/evidence rows without rerunning analysis. Synthetic tests provide
-`diagnostic_only` evidence, not scientific validation of a user-designed method.
+method/evidence rows without rerunning analysis. A configurable method is not automatically a scientifically validated method; evaluate its suitability for your samples separately.
 
 Drag a file into the target-list import area or use **選擇檔案**. XLSX content
 automatically distinguishes a method from a target table; CSV/TSV are target tables.

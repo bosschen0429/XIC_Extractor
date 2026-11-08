@@ -369,6 +369,10 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
         ("tools/diagnostics/targeted_istd_benchmark_loaders.py", {"packaging_build"}),
         ("xic_extractor/presets/data/dna_dr.toml", {"packaging_build"}),
         ("docs/product/backfill.md", set()),
+        ("MANIFEST.in", {"packaging_build"}),
+        ("docs/development/command-line.md", set()),
+        ("docs/user/assets/targeted-workspace.png", {"packaging_build"}),
+        ("docs/architecture-contract.md", set()),
         ("README.md", set()),
         ("pyproject.toml.example", set()),
         (".codex/skills/foo/SKILL.md", set()),
@@ -390,7 +394,7 @@ def test_local_run_skips_markers_unrelated_to_the_change(
     monkeypatch.setattr(
         test_selection,
         "changed_paths",
-        lambda base, head=None: ["docs/product/backfill.md"],
+        lambda base, head=None: ["docs/architecture-contract.md"],
     )
     monkeypatch.setattr(
         test_selection, "select_test_files", lambda _changed: ("tests/test_a.py",)
