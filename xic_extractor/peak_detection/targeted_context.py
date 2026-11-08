@@ -236,6 +236,57 @@ class TargetedPeerRegionTransfer:
         )
 
 
+def _select_istd_reference_region(
+    population: TargetedPopulationContext,
+) -> TargetedRegionContext:
+    reference = population.reference_rt_min
+
+    def reference_order(region: TargetedRegionContext) -> tuple[float, ...]:
+        return (
+            abs(region.segment.apex_rt_min - reference),
+            -region.body_support,
+            region.segment.left_rt_min,
+            region.segment.right_rt_min,
+        )
+
+    positive = tuple(r for r in population.regions if r.chemical_support)
+    candidates = population.regions
+    if positive:
+        reference_body = min(positive, key=reference_order)
+        # A weak near-reference residue cannot displace a confirmed standard.
+        # Compare against that reference's body, not unrelated global MS1 signal;
+        # a smaller confirmed standard must survive a dominant interference.
+        candidates = tuple(
+            r
+            for r in candidates
+            if r.chemical_support
+            or r.body_support
+            >= reference_body.body_support * ANCHOR_SELECTION_MIN_INTENSITY_RATIO
+        )
+
+    # Each measured body spans a range of distances from the reference. Remove
+    # bodies that are wholly farther away than another substantive body before
+    # chemistry votes. Overlapping ranges remain competitors: NL can still
+    # prefer a farther apex, without a fixed RT window or a nearest-apex veto.
+    closest_extent = min(
+        max(
+            abs(r.segment.left_rt_min - reference),
+            abs(r.segment.right_rt_min - reference),
+        )
+        for r in candidates
+    )
+    local = tuple(
+        r
+        for r in candidates
+        if max(
+            r.segment.left_rt_min - reference, reference - r.segment.right_rt_min, 0.0
+        )
+        <= closest_extent
+    )
+    positive = tuple(r for r in local if r.chemical_support)
+    return min(positive or local, key=reference_order)
+
+
 @dataclass(frozen=True)
 class TargetedBatchContext:
     populations: tuple[TargetedPopulationContext, ...]
@@ -514,18 +565,7 @@ class TargetedBatchContext:
             return None
         population = replace(population, regions=plausible)
         if is_istd:
-            # Known standards retain their reference identity preference. Poor
-            # chromatography affects review, not whether a contour was measured.
-            positive = tuple(r for r in plausible if r.chemical_support)
-            return min(
-                positive or plausible,
-                key=lambda r: (
-                    abs(r.segment.apex_rt_min - population.reference_rt_min),
-                    -r.body_support,
-                    r.segment.left_rt_min,
-                    r.segment.right_rt_min,
-                ),
-            )
+            return _select_istd_reference_region(population)
         candidates = self._reference_competitors(population)
         peers = tuple(
             (p, r)
