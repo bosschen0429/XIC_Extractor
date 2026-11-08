@@ -224,6 +224,59 @@ def test_analysis_poll_waits_for_previous_response(workbench):
         page.unroute("**/api/analysis")
 
 
+@pytest.mark.parametrize("transition", ["start", "cancel"])
+def test_delayed_analysis_poll_cannot_undo_job_action(workbench, fake_runs, transition):
+    page = workbench
+    pending = []
+    page.evaluate("window.heldAnalysisPolls = 0")
+
+    def hold_snapshot(route):
+        pending.append(route)
+        page.evaluate("window.heldAnalysisPolls += 1")
+
+    page.clock.install()
+    if transition == "cancel":
+        _start(page, "targeted")
+        expect(page.locator("#analysis-stop")).to_be_enabled()
+    page.route("**/api/analysis", hold_snapshot)
+    try:
+        with page.expect_request("**/api/analysis"):
+            page.clock.run_for(1500)
+        page.wait_for_function("window.heldAnalysisPolls === 1")
+        assert len(pending) == 1
+        old_route = pending.pop()
+        old_response = old_route.fetch()
+        if transition == "start":
+            assert old_response.json()["job"] is None
+            _start(page, "targeted")
+            expect(
+                page.locator("button[form=targeted-form][type=submit]")
+            ).to_be_disabled()
+        else:
+            assert old_response.json()["job"]["status"] == "running"
+            page.locator("#analysis-stop").click()
+            page.locator("#confirm-accept").click()
+            expect(page.locator("#analysis-stop")).to_be_disabled()
+        with page.expect_response("**/api/analysis") as delivered:
+            old_route.fulfill(response=old_response)
+        delivered.value.finished()
+        # The next poll proves the old callback has finished. Hold this response
+        # too, so a fresh snapshot cannot hide the regression under test.
+        with page.expect_request("**/api/analysis"):
+            page.clock.run_for(1500)
+        page.wait_for_function("window.heldAnalysisPolls === 2")
+        expect(page.locator("#analysis-job")).to_be_visible()
+        expect(page.locator("button[form=targeted-form][type=submit]")).to_be_disabled()
+        if transition == "cancel":
+            expect(page.locator("#analysis-stop")).to_be_disabled()
+    finally:
+        for route in pending:
+            with page.expect_response("**/api/analysis") as released:
+                route.continue_()
+            released.value.finished()
+        page.unroute("**/api/analysis", hold_snapshot)
+
+
 @dataclass
 class FakeRuns:
     """Gate completion on an event so polling/progress assertions cannot race."""

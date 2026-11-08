@@ -216,10 +216,14 @@ try {
     // Slow responses must not fill the browser's connection pool with status
     // requests and starve the user's query, report, and curve requests.
     polling = true;
+    const previousAnalysis = state.analysis;
     try {
-      setAnalysisState(await api("/api/analysis"));
+      const analysis = await api("/api/analysis");
       recordOnline();
       setOffline(false);
+      // A start/cancel reply accepted during this request owns the newer state.
+      if (state.analysis !== previousAnalysis) return;
+      setAnalysisState(analysis);
       renderJob();
     } catch {
       recordOffline();
