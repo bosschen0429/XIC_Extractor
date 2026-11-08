@@ -264,6 +264,56 @@ def test_one_feature_cannot_fill_both_positions_inside_a_ppm_window():
     )
 
 
+@pytest.mark.parametrize("kind", ["adjacent", "two_scans", "poor_shape", "missing"])
+def test_raw_apex_tolerance_uses_acquired_scan_times_without_relaxing_shape(kind):
+    import numpy as np
+
+    from xic_extractor.discovery.delta_mass_patterns import (
+        complete_delta_mass_candidates,
+    )
+    from xic_extractor.xic_models import XICTrace
+
+    settings = DeltaMassPatternSettings(
+        pattern_id="three",
+        method_label="three",
+        positions=(
+            DeltaMassPosition("base", 0, 1, 1),
+            DeltaMassPosition("middle", 7, 0.4, 0.6),
+            DeltaMassPosition("end", 13, 0.1, 0.3),
+        ),
+        anchor_positions=("base",),
+        discriminating_positions=(),
+    )
+    prepared = prepare_delta_mass_candidates(
+        (feature("base", 300), feature("middle", 307, 50)),
+        settings,
+        scan_interval_sec=0.35,
+    )
+    times = 1 + np.arange(-10, 10.1, 2.5) / 60
+    base = np.array([0, 20, 50, 95, 100, 98, 96, 40, 0], dtype=float)
+    partner = {
+        "adjacent": [0, 20, 50, 95, 98, 100, 96, 40, 0],
+        "two_scans": [0, 20, 50, 95, 98, 96, 100, 40, 0],
+        "poor_shape": [90, 80, 0, 40, 100, 20, 10, 0, 10],
+        "missing": [0] * 9,
+    }[kind]
+    candidate = complete_delta_mass_candidates(
+        prepared,
+        (XICTrace.from_arrays(times, base), XICTrace.from_arrays(times, partner)),
+        settings,
+    )[0]
+    position = candidate.positions[2]
+    # Includes zero-intensity scans; using only positive points would change cadence.
+    assert position.apex_threshold_sec == pytest.approx(2.5 * 1.25)
+    assert position.shape_r_threshold == 0.9
+    assert candidate.status == ("candidate" if kind == "adjacent" else "rejected")
+    if kind in ("adjacent", "two_scans"):
+        assert position.shape_r > 0.99
+        assert position.apex_delta_sec == pytest.approx(
+            2.5 if kind == "adjacent" else 5
+        )
+
+
 def test_missing_raw_position_requires_an_aligned_apex():
     import numpy as np
 
@@ -294,7 +344,7 @@ def test_missing_raw_position_requires_an_aligned_apex():
         prepared,
         (
             XICTrace(times, np.array([0, 50, 100, 50, 0])),
-            XICTrace(times, np.array([0, 0, 10, 20, 10])),
+            XICTrace(times, np.array([0, 0, 0, 10, 20])),
         ),
         settings,
     )
@@ -326,6 +376,28 @@ def test_smoothing_seconds_convert_to_scan_points_without_changing_shared_defaul
     assert detector_settings_for_interval(strategy, 1.31).gaussian_window_points == 5
     assert detector_settings_for_interval(strategy, 0.245).gaussian_window_points == 27
     assert LocalMs1FeatureSettings().gaussian_window_points == baseline
+
+
+@pytest.mark.parametrize("ppm", [10, 20])
+def test_delta_mass_ppm_also_controls_feature_linking_without_changing_shared_default(
+    ppm,
+):
+    from dataclasses import replace
+
+    from xic_extractor.discovery.delta_mass_pipeline import (
+        detector_settings_for_interval,
+    )
+    from xic_extractor.discovery.local_ms1_features import LocalMs1FeatureSettings
+    from xic_extractor.presets.apply import resolve_delta_mass_discovery
+
+    strategy = resolve_delta_mass_discovery("pt_pattern")
+    strategy = replace(
+        strategy, settings=replace(strategy.settings, mz_tolerance_ppm=ppm)
+    )
+    detector = detector_settings_for_interval(strategy, 0.35)
+    assert detector.feature_link_ppm == ppm
+    assert detector.max_ok_mz_ppm_std == LocalMs1FeatureSettings().max_ok_mz_ppm_std
+    assert LocalMs1FeatureSettings().feature_link_ppm == 20
 
 
 def test_raw_base_apex_owns_reported_deltas_and_table_partner_gate():

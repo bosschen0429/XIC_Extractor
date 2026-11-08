@@ -299,6 +299,10 @@ policy retain vendor coordinates. Restoration changes the measured input, not
 the configured 20 ppm window, apex tolerance or R threshold. Pt envelope models
 remain review-only.
 
+The Delta Mass ppm setting also controls feature mass linking, so a tolerance
+comparison starts before hypotheses are selected. Detector mass-dispersion
+quality limits are separate and are not changed by this window setting.
+
 1. Only detector-qualified features anchor a hypothesis, in the roles the
    preset names. The matcher trusts that qualification.
 2. Partners are searched in both mass directions from the lowest-mass position,
@@ -308,7 +312,10 @@ remain review-only.
    recorded as `ratio_status`. Ratios are evidence only: out-of-range ratios do
    not reject candidates, and expected abundance never predicts missing signal.
 4. Missing positions are confirmed in RAW by apex alignment and apex-region
-   Pearson correlation. A two-position method needs its partner in the feature
+   Pearson correlation. RAW apex tolerance uses the median interval of the
+   acquired XIC times, including zero-intensity scans, with the same floor and
+   multiplier. It does not reuse the whole-file interval used for initial
+   table matching. A two-position method needs its partner in the feature
    table; RAW never completes a solitary seed.
 5. Discriminating positions are shape-checked. An optional `lowest_position`
    must have the lowest background-subtracted RAW height and clear background

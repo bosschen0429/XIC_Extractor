@@ -54,7 +54,10 @@ def detector_settings_for_interval(
     points = max(
         1, 2 * round((strategy.smoothing_window_sec / interval_sec - 1) / 2) + 1
     )
-    return LocalMs1FeatureSettings(gaussian_window_points=points)
+    return LocalMs1FeatureSettings(
+        gaussian_window_points=points,
+        feature_link_ppm=strategy.settings.mz_tolerance_ppm,
+    )
 
 
 def run_delta_mass_discovery(
@@ -152,6 +155,7 @@ def run_delta_mass_discovery(
             "height_ratio_policy": "evidence_only",
             "detector": {
                 "smoothing_window_sec": strategy.smoothing_window_sec,
+                "feature_link_ppm": strategy.settings.mz_tolerance_ppm,
                 "spectrum_mode": "vendor_centroid",
             },
         },
