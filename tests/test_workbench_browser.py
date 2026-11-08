@@ -3920,6 +3920,80 @@ def test_an_import_reaches_the_other_flow_and_its_run(
     _wait_for_analysis_status(page, "已完成")
 
 
+def _open_curation_folder(page, tmp_path, fake_runs):
+    from tests.matrix_curation_fixtures import alignment_output, sample_rows
+    from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
+    from xic_extractor.tabular_io import write_tsv
+
+    output = alignment_output(tmp_path / "results")
+    write_tsv(output / "sample_metadata.tsv", sample_rows(), SAMPLE_METADATA_COLUMNS)
+    fake_runs.result = {
+        "matrix_tsv": str(output / "alignment_matrix.tsv"),
+        "alignment_outputs": {"review_tsv": str(output / "alignment_review.tsv")},
+    }
+    _view(page, "untargeted")
+    page.locator("#u-output_dir").fill(str(output))
+    _start(page, "untargeted")
+    fake_runs.release.set()
+    _wait_for_analysis_status(page, "已完成")
+    page.locator("#untargeted-result").get_by_role("button", name="整理矩陣").click()
+    threshold = page.locator("#curation-finite_fraction-min_finite_fraction")
+    expect(threshold).to_be_enabled()
+    threshold.fill("0.6")
+    expect(page.locator("#curation-export")).to_be_enabled()
+    return output
+
+
+def test_editing_curation_source_invalidates_steps_before_blur(
+    workbench, tmp_path, fake_runs
+):
+    from tests.matrix_curation_fixtures import alignment_output
+
+    page = workbench
+    _open_curation_folder(page, tmp_path, fake_runs)
+    another = alignment_output(tmp_path / "another-output")
+    page.locator("#curation-input-tools > summary").click()
+    pending = []
+    page.route("**/api/matrix-curation/source", lambda route: pending.append(route))
+    try:
+        source = page.locator("#curation-source_dir")
+        source.fill(str(another))
+        expect(source).to_be_focused()
+        expect(page.locator("#curation-export")).to_be_disabled()
+        expect(page.locator("#curation-steps [data-step]")).to_have_count(0)
+    finally:
+        for route in pending:
+            route.continue_()
+        page.unroute("**/api/matrix-curation/source")
+
+
+def test_curation_does_not_export_changed_settings_while_preferences_are_saving(
+    workbench, tmp_path, fake_runs
+):
+    page = workbench
+    output = _open_curation_folder(page, tmp_path, fake_runs)
+    pending = []
+
+    def hold_preferences(route):
+        pending.append(route)
+        page.evaluate("window.curationPreferencesHeld = true")
+
+    page.route("**/api/preferences", hold_preferences)
+    try:
+        page.locator("#curation-export").click()
+        page.wait_for_function("window.curationPreferencesHeld === true")
+        page.locator("#curation-finite_fraction-min_finite_fraction").fill("0.8")
+        with page.expect_response("**/api/preferences") as saved:
+            pending.pop().continue_()
+        saved.value.finished()
+        expect(page.locator("#toasts")).to_contain_text("設定已變更")
+        assert not list(output.glob("matrix_curation_*"))
+    finally:
+        for route in pending:
+            route.continue_()
+        page.unroute("**/api/preferences")
+
+
 def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     workbench, fake_runs, config_dir, tmp_path, monkeypatch
 ):

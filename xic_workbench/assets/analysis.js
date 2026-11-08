@@ -1,5 +1,5 @@
 "use strict";
-import { bindCuration } from "./analysis_curation.js";
+import { bindCuration, curation } from "./analysis_curation.js";
 import { analysis, bindJobs, renderJob } from "./analysis_jobs.js";
 import { bindReader, renderReaderSetup } from "./analysis_reader.js";
 import { bindResults, renderResults } from "./analysis_results.js";
@@ -80,6 +80,7 @@ async function shutdown() {
   await api("/api/shutdown", {});
   stopWindowTracking?.();
   stopAnalysis?.();
+  curation?.dispose();
   markClosed();
   const screen = el("div", undefined, "closed-screen");
   const inner = el("div");

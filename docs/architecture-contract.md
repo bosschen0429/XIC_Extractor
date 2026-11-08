@@ -107,6 +107,14 @@ one another so sequence-import jobs cannot overlap those writes. Ending Analysis
 observation does not cancel the server job; execution and publication authority
 remain with their Python owners.
 
+The [Curation Session](../xic_workbench/assets/analysis_curation_session.js) owns
+the source and step draft, debounced single-flight reads, and preview-backed
+export admission. A draft edit retires its previous preview immediately; export
+rechecks that draft after saving preferences. The view renders snapshots and
+submits intentions, without request equality checks or lifecycle timers.
+Preview admission concerns the frontend draft, not scientific writer authority;
+curation calculations and publication remain with their Python owners.
+
 ## Configuration Documents
 
 | Owner | Responsibility |

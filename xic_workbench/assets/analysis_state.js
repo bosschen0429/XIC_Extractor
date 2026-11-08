@@ -8,7 +8,6 @@ export const state = {
   importing: false,
   view: "targeted",
   dirty: { targeted: false, untargeted: false },
-  curation: { runSource: "", samples: null, detection: null, request: 0 },
 };
 export function initializeConfig(config) {
   state.config = config;
@@ -59,10 +58,4 @@ export function markClosed() {
 }
 export function markBooted() {
   state.booted = true;
-}
-export function updateCuration(values) {
-  Object.assign(state.curation, values);
-}
-export function beginCurationDetection() {
-  return ++state.curation.request;
 }

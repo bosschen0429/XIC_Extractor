@@ -1,12 +1,8 @@
-// Matrix curation source detection, parameters, preview and export.
+// Matrix curation presentation and intention adapters; Session owns the draft.
+import { createCurationSession } from "./analysis_curation_session.js";
 import { analysis } from "./analysis_jobs.js";
 import { showResult } from "./analysis_setup.js";
-import {
-  beginCurationDetection,
-  state,
-  updateConfig,
-  updateCuration,
-} from "./analysis_state.js";
+import { state, updateConfig } from "./analysis_state.js";
 import {
   $,
   act,
@@ -18,12 +14,13 @@ import {
   ui,
 } from "./analysis_ui.js";
 
+export let curation = null;
+
 export function loadCurationSource(sourceDir, samples) {
-  updateCuration({ runSource: sourceDir, samples: samples ?? null });
   $("curation-source_dir").value = sourceDir;
   $("curation-sample_metadata").value = "";
   $("curation-istd").value = "";
-  return detectCuration();
+  curation.load(sourceDir, samples);
 }
 export function openCuration(sourceDir, samples) {
   showResult();
@@ -32,35 +29,8 @@ export function openCuration(sourceDir, samples) {
   $("result-curation").scrollIntoView({ behavior: "smooth" });
   return loadCurationSource(sourceDir, samples);
 }
-function curationPreferences() {
-  return state.config.preferences.matrix_curation?.steps || {};
-}
-async function detectCuration() {
-  invalidateCurationPreview();
-  const request = beginCurationDetection();
-  const sourceDir = $("curation-source_dir").value.trim();
-  updateCuration({ detection: null });
-  if (!sourceDir) {
-    renderCuration(null, "");
-    return;
-  }
-  try {
-    const detection = await api("/api/matrix-curation/source", {
-      source_dir: sourceDir,
-      sample_metadata_path: $("curation-sample_metadata").value.trim(),
-      istd_path: $("curation-istd").value.trim(),
-      samples:
-        sourceDir === state.curation.runSource ? state.curation.samples : null,
-    });
-    if (request !== state.curation.request) return;
-    updateCuration({ detection });
-    renderCuration(detection, "");
-    schedulePreview();
-  } catch (error) {
-    if (request === state.curation.request) renderCuration(null, error.message);
-  }
-}
-function renderCuration(detection, error) {
+function renderCuration(snapshot) {
+  const { detection, sourceError: error } = snapshot;
   const list = $("curation-source");
   list.replaceChildren();
   const item = (tone, label, detail) => {
@@ -103,11 +73,11 @@ function renderCuration(detection, error) {
   $("curation-source-step").classList.toggle(
     "carried",
     Boolean(
-    detection &&
-      !error &&
-      detection.sample_source?.kind === "run" &&
-      detection.istd_source &&
-      $("curation-source_dir").value.trim() === state.curation.runSource,
+      detection &&
+        !error &&
+        detection.sample_source?.kind === "run" &&
+        detection.istd_source &&
+        snapshot.sources.source_dir === snapshot.runSource,
     ),
   );
   $("curation-output").textContent = detection
@@ -120,12 +90,10 @@ function renderCuration(detection, error) {
     if (error) note.append(ui.icon("alert"));
     note.append(error || "選擇 Alignment 輸出資料夾後，會列出可用的整理步驟。");
     container.append(note);
-    lock();
     return;
   }
-  const saved = curationPreferences();
   for (const [index, step] of detection.steps.entries()) {
-    const remembered = saved[step.key] || {};
+    const remembered = snapshot.settings[step.key];
     const unavailable = Boolean(step.unavailable_reason);
     const block = el("div", undefined, "curation-step");
     block.dataset.step = step.key;
@@ -137,7 +105,7 @@ function renderCuration(detection, error) {
     if (unavailable) input.disabled = true;
     else {
       input.dataset.analysisIdle = "";
-      input.checked = remembered.enabled ?? true;
+      input.checked = remembered.enabled;
     }
     toggle.append(input, el("span", `${index + 1}. ${step.label}`));
     toggle.title = step.description;
@@ -152,7 +120,7 @@ function renderCuration(detection, error) {
       value.id = `curation-${step.key}-${parameter.key}`;
       value.placeholder = `${parameter.minimum}–${parameter.maximum}`;
       value.title = parameter.help;
-      value.value = remembered.parameters?.[parameter.key] ?? "";
+      value.value = remembered.parameters[parameter.key];
       if (unavailable) value.disabled = true;
       else value.dataset.analysisIdle = "";
       field.append(
@@ -171,150 +139,73 @@ function renderCuration(detection, error) {
     }
     container.append(block);
   }
-  lock();
 }
-function curationRequest() {
-  const detection = state.curation.detection;
-  if (!detection) throw new Error("請先選擇可讀取的 Alignment 輸出資料夾。");
-  const steps = {};
-  const remembered = { ...curationPreferences() };
-  for (const step of detection.steps) {
-    if (step.unavailable_reason) continue;
-    const enabled = $(`curation-step-${step.key}`).checked;
-    const parameters = {};
-    for (const parameter of step.parameters) {
-      const input = $(`curation-${step.key}-${parameter.key}`);
-      if (enabled && input.value.trim() === "")
-        throw new Error(`請輸入「${step.label}」的${parameter.label}。`);
-      if (input.value.trim() !== "")
-        parameters[parameter.key] = Number(input.value);
-    }
-    remembered[step.key] = { enabled, parameters };
-    if (enabled) steps[step.key] = parameters;
-  }
-  if (!Object.keys(steps).length)
-    throw new Error("請至少啟用一個可用的整理步驟。");
-  const sourceDir = detection.source_dir;
-  return {
-    remembered,
-    values: {
-      source_dir: sourceDir,
-      sample_metadata_path: $("curation-sample_metadata").value.trim(),
-      istd_path: $("curation-istd").value.trim(),
-      samples:
-        sourceDir === state.curation.runSource ? state.curation.samples : null,
-      steps,
-    },
-  };
-}
-function invalidateCurationPreview() {
-  updateCuration({ previewRequest: null });
-  $("curation-preview").textContent = "正在更新預覽…";
-  lock();
-  schedulePreview();
-}
-// The preview follows the settings; export stays disabled until it matches.
-let previewTimer = 0;
-let previewPending = false;
-function schedulePreview() {
-  clearTimeout(previewTimer);
-  previewTimer = setTimeout(() => {
-    if (!state.curation.detection) return;
-    previewCuration().catch((error) => {
-      $("curation-preview").textContent = error.message;
-    });
-  }, 300);
-}
-async function previewCuration() {
-  if (state.curation.previewBusy) {
-    previewPending = true;
+function renderPreview(snapshot) {
+  const host = $("curation-preview");
+  const preview = snapshot.preview;
+  if (!preview) {
+    host.textContent = snapshot.message;
     return;
   }
-  const { values } = curationRequest();
-  const submitted = JSON.stringify(values);
-  updateCuration({ previewBusy: true, previewRequest: null });
-  $("curation-preview").textContent = "正在計算預覽；仍可修改設定或檢閱結果。";
-  lock();
-  try {
-    const preview = await api("/api/matrix-curation/preview", values);
-    if (JSON.stringify(curationRequest().values) !== submitted) {
-      previewPending = true;
-      return;
-    }
-    const host = $("curation-preview");
-    host.replaceChildren(
-      el(
-        "p",
-        `原始 ${preview.feature_count} 列 → 保留 ${preview.kept} 列、移除 ${preview.removed} 列。`,
-      ),
-    );
-    host.append(
-      el(
-        "p",
-        preview.istd_count
-          ? `本次 ${preview.istd_count} 個內標，保護 ${preview.protected} 列。`
-          : "本次沒有 ISTD 保護。",
-      ),
-    );
-    const table = el("table");
-    const head = el("tr");
-    for (const name of ["步驟", "輸入", "保留", "本步移除", "ISTD 保護", "無法判定"])
-      head.append(el("th", name));
-    table.append(head);
-    for (const step of preview.steps) {
-      const row = el("tr");
-      for (const value of [
-        step.label,
-        step.input,
-        step.kept,
-        step.removed,
-        step.protected,
-        step.undetermined,
-      ])
-        row.append(el("td", String(value)));
-      table.append(row);
-      if (step.eligible_sample_count != null)
-        host.append(
-          el(
-            "p",
-            `至少 ${step.minimum_finite_count}/${step.eligible_sample_count} 個研究樣本有值才保留（QC、Blank 與已排除樣本不計）。`,
-          ),
-        );
-    }
-    host.append(table);
-    for (const step of state.curation.detection.steps.filter(
-      (step) => step.unavailable_reason,
-    ))
+  host.replaceChildren(
+    el(
+      "p",
+      `原始 ${preview.feature_count} 列 → 保留 ${preview.kept} 列、移除 ${preview.removed} 列。`,
+    ),
+  );
+  host.append(
+    el(
+      "p",
+      preview.istd_count
+        ? `本次 ${preview.istd_count} 個內標，保護 ${preview.protected} 列。`
+        : "本次沒有 ISTD 保護。",
+    ),
+  );
+  const table = el("table");
+  const head = el("tr");
+  for (const name of ["步驟", "輸入", "保留", "本步移除", "ISTD 保護", "無法判定"])
+    head.append(el("th", name));
+  table.append(head);
+  for (const step of preview.steps) {
+    const row = el("tr");
+    for (const value of [
+      step.label,
+      step.input,
+      step.kept,
+      step.removed,
+      step.protected,
+      step.undetermined,
+    ])
+      row.append(el("td", String(value)));
+    table.append(row);
+    if (step.eligible_sample_count != null)
       host.append(
         el(
           "p",
-          `${step.label}：未執行，${preview.feature_count} 列無法判定；${step.unavailable_reason}`,
-          "subtle",
+          `至少 ${step.minimum_finite_count}/${step.eligible_sample_count} 個研究樣本有值才保留（QC、Blank 與已排除樣本不計）。`,
         ),
       );
-    updateCuration({ previewRequest: submitted });
-  } finally {
-    updateCuration({ previewBusy: false });
-    lock();
-    if (previewPending) {
-      previewPending = false;
-      schedulePreview();
-    }
   }
-}
-async function startCuration() {
-  const { values, remembered } = curationRequest();
-  if (JSON.stringify(values) !== state.curation.previewRequest)
-    throw new Error("預覽仍在更新，請稍候再產生新矩陣。");
-  updateConfig({
-    preferences: await api("/api/preferences", {
-      matrix_curation: { steps: remembered },
-    }),
-  });
-  await analysis.start("curation", values);
+  host.append(table);
+  for (const step of snapshot.detection.steps.filter(
+    (step) => step.unavailable_reason,
+  ))
+    host.append(
+      el(
+        "p",
+        `${step.label}：未執行，${preview.feature_count} 列無法判定；${step.unavailable_reason}`,
+        "subtle",
+      ),
+    );
 }
 
 export function bindCuration() {
+  curation = createCurationSession({
+    request: api,
+    startJob: (kind, values) => analysis.start(kind, values),
+    preferences: state.config.preferences.matrix_curation?.steps || {},
+    adoptPreferences: (preferences) => updateConfig({ preferences }),
+  });
   pathField(
     $("curation-overrides"),
     "source_dir",
@@ -341,17 +232,49 @@ export function bindCuration() {
     "curation-",
     "預設使用該次分析的內標清單；舊輸出找不到時才需要選擇。",
   );
-  for (const id of [
-    "curation-source_dir",
-    "curation-sample_metadata",
-    "curation-istd",
-  ])
-    $(id).addEventListener("change", () => act(detectCuration));
-  renderCuration(null, "");
+  let displayedDetection;
+  let displayedError;
+  curation.subscribe((snapshot) => {
+    if (
+      snapshot.detection !== displayedDetection ||
+      snapshot.sourceError !== displayedError
+    ) {
+      displayedDetection = snapshot.detection;
+      displayedError = snapshot.sourceError;
+      renderCuration(snapshot);
+    }
+    renderPreview(snapshot);
+    lock();
+  });
   $("curation-form").onsubmit = (event) => {
     event.preventDefault();
-    act(startCuration);
+    act(() => curation.export());
   };
-
-  $("curation-form").addEventListener("input", invalidateCurationPreview);
+  const edit = (event) => {
+    const block = event.target.closest("[data-step]");
+    if (block) {
+      const key = block.dataset.step;
+      const step = curation.snapshot.detection?.steps.find(
+        (step) => step.key === key,
+      );
+      if (!step) return;
+      curation.setStep(key, {
+        enabled: $(`curation-step-${key}`).checked,
+        parameters: Object.fromEntries(
+          step.parameters.map((parameter) => [
+            parameter.key,
+            $(`curation-${key}-${parameter.key}`).value,
+          ]),
+        ),
+      });
+    } else {
+      curation.setSources({
+        source_dir: $("curation-source_dir").value,
+        sample_metadata_path: $("curation-sample_metadata").value,
+        istd_path: $("curation-istd").value,
+      });
+    }
+  };
+  $("curation-form").addEventListener("input", edit);
+  $("curation-form").addEventListener("change", edit);
 }

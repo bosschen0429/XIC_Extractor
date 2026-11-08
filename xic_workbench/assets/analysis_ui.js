@@ -1,3 +1,4 @@
+import { curation } from "./analysis_curation.js";
 // Transport and reusable DOM/form controls shared by analysis views.
 import { analysis } from "./analysis_jobs.js";
 import { sampleMetadata } from "./analysis_samples.js";
@@ -85,7 +86,7 @@ export function lock() {
           (node.dataset.rtBound === "true" && !$("u-rt-crop")?.checked)),
     );
   if ($("curation-export"))
-    $("curation-export").disabled = isBusy() || !state.curation?.previewRequest;
+    $("curation-export").disabled = isBusy() || !curation?.snapshot.canExport;
 }
 export const isTemplatePath = (value) =>
   value.startsWith("<") || /[\\/]your[\\/]/i.test(value);
