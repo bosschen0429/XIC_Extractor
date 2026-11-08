@@ -4167,28 +4167,23 @@ def test_folder_picker_automatically_lists_samples(workbench, tmp_path, monkeypa
     expect(workbench.locator("#t-samples-count")).to_have_text("2 個樣本")
 
 
-def test_startup_controls_wait_for_initial_method(workbench, monkeypatch):
-    from xic_workbench import methods
-
+@pytest.mark.parametrize("initial_request", ("method", "istd"))
+def test_startup_controls_wait_for_initial_data(workbench, initial_request):
     page = workbench
-    method_details = methods.method_details
-    entered, release = threading.Event(), threading.Event()
-
-    def held_method(*args, **kwargs):
-        entered.set()
-        assert release.wait(HANDSHAKE_TIMEOUT_S)
-        return method_details(*args, **kwargs)
-
-    monkeypatch.setattr(methods, "method_details", held_method)
-    page.reload()
+    pending = []
+    endpoint = f"**/api/{initial_request}"
+    page.route(endpoint, lambda route: pending.append(route))
     try:
-        assert entered.wait(HANDSHAKE_TIMEOUT_S)
-        # A visible but not-yet-wired control must not accept keyboard focus.
+        with page.expect_request(endpoint):
+            page.reload()
+        # Controls must stay inert until all initial data and observers are ready.
         theme = page.locator("#theme-toggle")
         theme.focus()
         expect(theme).not_to_be_focused()
     finally:
-        release.set()
+        for route in pending:
+            route.continue_()
+        page.unroute(endpoint)
     with page.expect_response("**/api/preferences"):
         page.locator("#theme-toggle").click()
     expect(page.locator("html")).to_have_attribute("data-theme", "dark")

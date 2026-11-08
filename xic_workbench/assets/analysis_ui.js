@@ -1,9 +1,9 @@
 // Transport and reusable DOM/form controls shared by analysis views.
+import { analysis } from "./analysis_jobs.js";
 import { previewSamples } from "./analysis_samples.js";
 import { checklist } from "./analysis_setup.js";
 import {
   currentSampleAction,
-  isRunning,
   sampleAction,
   state,
 } from "./analysis_state.js";
@@ -69,7 +69,9 @@ export function pathTail(path, parts = 2) {
     : String(path || "");
 }
 export function isBusy() {
-  return state.importing || window.XicReview.busy || isRunning();
+  return (
+    state.importing || window.XicReview.busy || Boolean(analysis?.snapshot.busy)
+  );
 }
 export function lock() {
   document

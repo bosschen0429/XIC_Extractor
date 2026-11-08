@@ -93,6 +93,15 @@ meanings. If a role is missing, extend the owning style definitions and their
 fallbacks instead of borrowing an unrelated token. Verify the component in the
 themes and fallbacks the UI actually supports.
 
+Workbench's [Analysis Session](../xic_workbench/assets/analysis_session.js)
+owns client-side job commands, response ordering, observation lifetime,
+connection status and once-only completion delivery. Its consumers submit
+intentions and read immutable snapshots; rendering does not advance lifecycle.
+`analysis_jobs.js` composes that Module with application-setting adoption and
+presentation. Editable sample data is copied into its settings owner rather
+than mutating a retained job result. Ending observation does not cancel the
+server job; execution and publication authority remain with their Python owners.
+
 ## Configuration Documents
 
 | Owner | Responsibility |

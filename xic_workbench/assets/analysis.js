@@ -1,14 +1,12 @@
 "use strict";
 import { bindCuration } from "./analysis_curation.js";
-import { bindJobs, pageOf, renderJob, stopJob } from "./analysis_jobs.js";
+import { analysis, bindJobs, renderJob } from "./analysis_jobs.js";
 import { bindReader, renderReaderSetup } from "./analysis_reader.js";
 import { bindResults, renderResults } from "./analysis_results.js";
 import {
-  applySampleResult,
   bindSamples,
   mountSampleSteps,
   renderRoleSummary,
-  samplePages,
 } from "./analysis_samples.js";
 import {
   bindSetup,
@@ -22,14 +20,8 @@ import {
 } from "./analysis_setup.js";
 import {
   initializeConfig,
-  isRunning,
   markBooted,
   markClosed,
-  recordOffline,
-  recordOnline,
-  sampleAction,
-  setAnalysisState,
-  setSampleJobAction,
   state,
 } from "./analysis_state.js";
 import {
@@ -62,7 +54,7 @@ import {
 registerNavigation();
 window.XicAnalysis = {
   get busy() {
-    return isRunning();
+    return analysis?.snapshot.busy || false;
   },
 };
 
@@ -85,6 +77,7 @@ async function shutdown() {
   if (!accepted) return;
   await api("/api/shutdown", {});
   stopWindowTracking?.();
+  stopAnalysis?.();
   markClosed();
   const screen = el("div", undefined, "closed-screen");
   const inner = el("div");
@@ -98,11 +91,8 @@ async function shutdown() {
   screen.append(inner);
   document.body.append(screen);
 }
-function setOffline(offline) {
-  document.body.classList.toggle("offline", offline);
-  $("offline-banner").hidden = !offline;
-}
 let stopWindowTracking;
+let stopAnalysis;
 try {
   const response = await fetch("/assets/analysis.html");
   if (!response.ok) throw new Error("分析頁面無法載入。");
@@ -160,33 +150,13 @@ try {
   bindTargeted();
   bindUntargeted();
   bindSamples();
-  bindJobs();
+  const observeAnalysis = bindJobs(state.config.analysis);
   bindCuration();
   bindResults();
   bindShell();
   targetCount();
   renderRoleSummary("targeted");
   renderRoleSummary("untargeted");
-  setAnalysisState(state.config.analysis);
-  if (state.analysis.job?.kind === "samples")
-    setSampleJobAction(
-      state.analysis.job.job_id,
-      sampleAction(pageOf(state.analysis.job), false),
-    );
-  const loadedSamples = state.analysis.results.samples;
-  const loadedPage = loadedSamples?.page || "untargeted";
-  const loadedSpec = samplePages[loadedPage];
-  if (
-    loadedSamples?.input_paths &&
-    loadedSamples.input_paths.raw_dir === $(loadedSpec.rawDir).value &&
-    loadedSamples.input_paths.dll_dir === $(loadedSpec.dll).value &&
-    loadedSamples.input_paths.sequence_source === $(loadedSpec.sequence).value
-  )
-    applySampleResult(
-      loadedPage,
-      loadedSamples,
-      sampleAction(loadedPage, false),
-    );
   renderResults();
   selectView(
     ["targeted", "untargeted"].includes(state.config.preferences.view)
@@ -203,35 +173,11 @@ try {
   markBooted();
   checklist("targeted");
   checklist("untargeted");
+  await act(reloadIstd);
+  stopAnalysis = observeAnalysis();
   document.body.classList.remove("booting");
   document.body.inert = false;
   document.body.removeAttribute("aria-busy");
-  await act(reloadIstd);
-  let tick = 0;
-  let polling = false;
-  setInterval(async () => {
-    tick += 1;
-    if (polling || state.closed || (state.offlineCount >= 3 && tick % 6))
-      return;
-    // Slow responses must not fill the browser's connection pool with status
-    // requests and starve the user's query, report, and curve requests.
-    polling = true;
-    const previousAnalysis = state.analysis;
-    try {
-      const analysis = await api("/api/analysis");
-      recordOnline();
-      setOffline(false);
-      // A start/cancel reply accepted during this request owns the newer state.
-      if (state.analysis !== previousAnalysis) return;
-      setAnalysisState(analysis);
-      renderJob();
-    } catch {
-      recordOffline();
-      if (state.offlineCount >= 3) setOffline(true);
-    } finally {
-      polling = false;
-    }
-  }, 750);
 } catch (error) {
   document.body.classList.remove("booting");
   document.body.inert = false;
@@ -263,7 +209,7 @@ function bindShell() {
       selectView({ 1: "targeted", 2: "untargeted" }[event.key]);
     } else if (event.key === ".") {
       event.preventDefault();
-      act(stopJob);
+      act(() => analysis.cancel());
     } else if (event.key === "Enter") {
       event.preventDefault();
       // Starting belongs to setup; a shown result never launches a hidden form.

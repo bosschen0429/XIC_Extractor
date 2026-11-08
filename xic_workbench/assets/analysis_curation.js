@@ -1,5 +1,5 @@
 // Matrix curation source detection, parameters, preview and export.
-import { startJob } from "./analysis_jobs.js";
+import { analysis } from "./analysis_jobs.js";
 import { showResult } from "./analysis_setup.js";
 import {
   beginCurationDetection,
@@ -311,7 +311,7 @@ async function startCuration() {
       matrix_curation: { steps: remembered },
     }),
   });
-  await startJob("curation", values);
+  await analysis.start("curation", values);
 }
 
 export function bindCuration() {

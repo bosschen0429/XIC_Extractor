@@ -1,5 +1,5 @@
-// Shared analysis data and its only write owner. Views read state and submit
-// transitions here; DOM controls and uncommitted editor drafts stay with views.
+// Settings and editable sample data. The Analysis Session owns job lifecycle;
+// DOM controls and uncommitted editor drafts stay with views.
 const emptySamples = () => ({
   rows: [],
   overview: null,
@@ -11,25 +11,12 @@ export const state = {
   identificationMethods: {},
   sampleSets: { targeted: emptySamples(), untargeted: emptySamples() },
   sampleRevisions: { targeted: 0, untargeted: 0 },
-  sampleJobAction: null,
   method: null,
-  analysis: { job: null, results: {} },
   importing: false,
   view: "targeted",
   dirty: { targeted: false, untargeted: false },
-  seenJob: null,
-  offlineCount: 0,
   curation: { runSource: "", samples: null, detection: null, request: 0 },
 };
-export function isRunning() {
-  return ["running", "cancelling"].includes(state.analysis.job?.status);
-}
-export function setAnalysisState(analysis) {
-  const wasBusy = isRunning();
-  state.analysis = analysis;
-  if (wasBusy !== isRunning())
-    document.dispatchEvent(new CustomEvent("xic:analysis-busy"));
-}
 export function initializeConfig(config) {
   state.config = config;
   state.targets = config.targets;
@@ -74,29 +61,11 @@ export function setIdentificationMethods(methods, oldName, newName) {
     for (const target of state.targets)
       if (target.method === oldName) target.method = newName;
 }
-export function setSampleJobAction(jobId, action) {
-  state.sampleJobAction = { jobId, action };
-}
-export function resetSeenJob() {
-  state.seenJob = null;
-}
-export function markJobSeen(jobId) {
-  state.seenJob = jobId;
-}
-export function markJobFinished() {
-  state.seenAt = Date.now();
-}
 export function markClosed() {
   state.closed = true;
 }
 export function markBooted() {
   state.booted = true;
-}
-export function recordOnline() {
-  state.offlineCount = 0;
-}
-export function recordOffline() {
-  state.offlineCount += 1;
 }
 export function updateCuration(values) {
   Object.assign(state.curation, values);
@@ -109,8 +78,8 @@ export function updateSample(row, values) {
 }
 export function replaceSamples(page, result) {
   state.sampleSets[page] = {
-    rows: result.samples,
-    overview: result.overview || null,
+    rows: structuredClone(result.samples),
+    overview: structuredClone(result.overview || null),
     source: result.summary?.annotation_source || "",
   };
 }

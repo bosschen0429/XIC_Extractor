@@ -1,5 +1,5 @@
 // Shared sample roles, exclusions and optional acquisition-information import.
-import { startJob } from "./analysis_jobs.js";
+import { analysis } from "./analysis_jobs.js";
 import { checklist } from "./analysis_setup.js";
 import {
   clearSampleSet,
@@ -312,7 +312,7 @@ export async function previewSamples(page, action) {
 }
 async function scanSamples(page, importSequence = false) {
   const spec = samplePages[page];
-  await startJob("samples", {
+  await analysis.start("samples", {
     page,
     raw_dir: $(spec.rawDir).value,
     dll_dir: $(spec.dll).value,

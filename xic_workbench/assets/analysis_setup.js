@@ -1,6 +1,6 @@
 // Setup/result navigation, readiness checklists and unsaved-setting feedback.
 import { loadCurationSource } from "./analysis_curation.js";
-import { renderJob } from "./analysis_jobs.js";
+import { analysis, renderJob } from "./analysis_jobs.js";
 import { sampleId, samplePages } from "./analysis_samples.js";
 import { setDirty, setView, state } from "./analysis_state.js";
 import { settingsValues } from "./analysis_targeted.js";
@@ -97,7 +97,7 @@ export function prepareResult(page) {
     if (!$("result-curation").open) return;
     const folder = page.source.replace(/[\\/][^\\/]+$/, "");
     if (state.curation.runSource !== folder) {
-      const run = state.analysis.results.untargeted;
+      const run = analysis.snapshot.results.untargeted;
       act(() => loadCurationSource(folder, run?.output_dir === folder ? run.samples : null));
     }
   };

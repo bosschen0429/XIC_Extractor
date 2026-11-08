@@ -1,28 +1,23 @@
-// Job submission/cancellation, progress and completion feedback.
+// Analysis workflow composition, job presentation and completion effects.
 import {
   artifactDetails,
   openReview,
   renderResults,
   showArtifact,
 } from "./analysis_results.js";
-import { applySampleResult, renderSampleSummary } from "./analysis_samples.js";
+import {
+  applySampleResult,
+  renderSampleSummary,
+  samplePages,
+} from "./analysis_samples.js";
+import { createAnalysisSession } from "./analysis_session.js";
 import {
   dirty,
   selectView,
   setMethodState,
   showingResult,
 } from "./analysis_setup.js";
-import {
-  isRunning,
-  markJobFinished,
-  markJobSeen,
-  resetSeenJob,
-  sampleAction,
-  setAnalysisState,
-  setSampleJobAction,
-  state,
-  updateConfig,
-} from "./analysis_state.js";
+import { sampleAction, state, updateConfig } from "./analysis_state.js";
 import {
   $,
   act,
@@ -35,6 +30,9 @@ import {
   status,
   ui,
 } from "./analysis_ui.js";
+
+export let analysis = null;
+let sampleJobAction = null;
 
 const jobLabels = {
   running: "執行中",
@@ -57,53 +55,57 @@ export const resultIds = {
   curation: "curation-result",
 };
 export const pageOf = (job) => job?.page || jobPage[job?.kind] || "untargeted";
-export async function startJob(kind, values) {
+function prepareStart(kind, values) {
   if (isBusy()) throw new Error("請等待目前工作完成或先停止。");
   if (kind === "targeted" && !values.targets.length)
     throw new Error("目標清單是空的：按「檢視與編輯」新增，或匯入目標清單。");
-  const action = kind === "samples" ? sampleAction(values.page) : null;
-  setAnalysisState(await api("/api/analysis/start", { kind, values }));
+  return kind === "samples" ? sampleAction(values.page) : null;
+}
+
+async function acceptedStart(kind, values, job, action) {
   if (kind === "untargeted") {
     updateConfig({ untargeted: values });
     dirty("untargeted", false);
   }
-  if (action) setSampleJobAction(state.analysis.job.job_id, action);
+  if (action) sampleJobAction = { jobId: job.job_id, action };
   if (kind === "targeted") {
     updateConfig({ settings: { ...values.settings } });
     updateConfig({ targeted_method: await api("/api/targeted/method", {}) });
     setMethodState(state.config.targeted_method);
     dirty("targeted", false);
   }
-  resetSeenJob();
-  renderJob();
   status("工作已開始。關閉分頁不會停止分析。");
 }
+
 function renderActivity() {
-  const job = state.analysis.job;
+  const snapshot = analysis.snapshot;
+  const job = snapshot.job;
   const pill = $("activity");
   const page = pageOf(job);
-  const recentlyFinished = state.seenAt && Date.now() - state.seenAt < 20000;
+  const recentlyFinished =
+    snapshot.lastCompletionAt && Date.now() - snapshot.lastCompletionAt < 20000;
   const visible =
-    job && (isRunning() || (state.view !== page && recentlyFinished));
+    job && (snapshot.running || (state.view !== page && recentlyFinished));
   pill.hidden = !visible;
   if (!visible) return;
   const percent =
     job.total > 0 ? ` ${Math.round((job.completed / job.total) * 100)}%` : "";
   pill.className = `activity-pill${job.status === "succeeded" ? " done" : job.status === "failed" ? " failed" : ""}`;
   pill.replaceChildren(
-    isRunning()
+    snapshot.running
       ? el("span", undefined, "spinner")
       : ui.icon(job.status === "succeeded" ? "check-circle" : "alert"),
-    `${jobNames[job.kind]} · ${jobLabels[job.status]}${isRunning() ? percent : ""}`,
+    `${jobNames[job.kind]} · ${jobLabels[job.status]}${snapshot.running ? percent : ""}`,
   );
   pill.onclick = () => selectView(page);
 }
 export function renderJob() {
-  const job = state.analysis.job;
+  const snapshot = analysis.snapshot;
+  const job = snapshot.job;
   const sampleSummary =
     job?.kind === "targeted"
       ? job.sample_summary
-      : state.analysis.results.targeted?.sample_summary;
+      : snapshot.results.targeted?.sample_summary;
   $("target-samples-review").hidden = !sampleSummary;
   if (sampleSummary) renderSampleSummary(sampleSummary, "target-samples");
   const card = $("analysis-job");
@@ -125,9 +127,9 @@ export function renderJob() {
   lock();
   renderActivity();
   if (!job) return;
-  card.className = `card job-card ${isRunning() ? "running" : job.status}`;
+  card.className = `card job-card ${snapshot.running ? "running" : job.status}`;
   $("analysis-job-icon").replaceChildren(
-    isRunning()
+    snapshot.running
       ? el("span", undefined, "spinner")
       : ui.icon(
           job.status === "succeeded"
@@ -139,7 +141,7 @@ export function renderJob() {
   );
   $("analysis-job-title").textContent =
     `${jobNames[job.kind]} · ${jobLabels[job.status]}`;
-  $("analysis-job-message").textContent = isRunning()
+  $("analysis-job-message").textContent = snapshot.running
     ? [job.stage, job.message].filter(Boolean).join(" · ")
     : job.error ||
       {
@@ -149,7 +151,7 @@ export function renderJob() {
       }[job.status];
   const progressText = job.total ? `${job.completed} / ${job.total} · ` : "";
   $("analysis-job-time").textContent =
-    `${progressText}${isRunning() ? "已經過" : "耗時"} ${ui.formatDuration(job.elapsed_seconds)}`;
+    `${progressText}${snapshot.running ? "已經過" : "耗時"} ${ui.formatDuration(job.elapsed_seconds)}`;
   const analysisDone = job.status === "succeeded" && job.kind in resultIds;
   $("analysis-job-output").hidden = !job.output_dir || analysisDone;
   $("analysis-job-output").textContent = job.output_dir || "";
@@ -157,8 +159,8 @@ export function renderJob() {
     $("analysis-progress").max = job.total;
     $("analysis-progress").value = job.completed;
   } else $("analysis-progress").removeAttribute("value");
-  $("analysis-stop").hidden = !isRunning();
-  $("analysis-stop").disabled = job.status === "cancelling" || !job.cancellable;
+  $("analysis-stop").hidden = !snapshot.running;
+  $("analysis-stop").disabled = !snapshot.canCancel;
   const filesOpen = $("analysis-job-outputs").querySelector("details")?.open;
   $("analysis-job-outputs").replaceChildren();
   if (analysisDone)
@@ -184,35 +186,30 @@ export function renderJob() {
       $("analysis-job-outputs").append(files);
     }
   }
-  if (isRunning() || state.seenJob === job.job_id) return;
-  markJobSeen(job.job_id);
-  if (!state.booted) {
-    renderResults();
-    return;
-  }
-  markJobFinished();
+}
+
+function completeJob(snapshot, job) {
+  const card = $("analysis-job");
   if (job.status === "succeeded") {
     if (job.kind === "samples") {
-      const result = state.analysis.results.samples;
+      const result = snapshot.results.samples;
       const page = result.page || "untargeted";
       const action =
-        state.sampleJobAction?.jobId === job.job_id
-          ? state.sampleJobAction.action
-          : null;
+        sampleJobAction?.jobId === job.job_id ? sampleJobAction.action : null;
       if (applySampleResult(page, result, action)) {
         if (page === "untargeted") dirty("untargeted");
         done(`已讀取 ${result.samples.length} 個樣本。`);
       }
     } else if (job.kind === "curation")
-      done(`矩陣整理完成：${state.analysis.results.curation.output_dir}`);
+      done(`矩陣整理完成：${snapshot.results.curation.output_dir}`);
     else if (job.kind === "inspector") {
-      done(`Inspector 匯出完成：${state.analysis.results.inspector.output}`);
-      const artifact = state.analysis.results.inspector.artifacts?.[0];
+      done(`Inspector 匯出完成：${snapshot.results.inspector.output}`);
+      const artifact = snapshot.results.inspector.artifacts?.[0];
       if (artifact) showArtifact(artifact);
     } else {
       dirty(job.kind, false);
       done(`${jobNames[job.kind]}完成，結果已列在下方。`);
-      const result = state.analysis.results[job.kind];
+      const result = snapshot.results[job.kind];
       const source =
         result.excel_path ||
         result.evidence?.path ||
@@ -231,24 +228,60 @@ export function renderJob() {
     );
   renderResults();
 }
-export async function stopJob() {
-  if (!isRunning() || !state.analysis.job.cancellable) return;
-  const accepted = await ui.confirm({
-    title: `停止${jobNames[state.analysis.job.kind]}？`,
+function confirmCancel(job) {
+  return ui.confirm({
+    title: `停止${jobNames[job.kind]}？`,
     message:
       "已發布的結果會保留；正在執行的步驟會先完成清理再停止。先前的可用結果不受影響。",
     accept: "停止工作",
     danger: true,
   });
-  if (!accepted) return;
-  setAnalysisState(
-    await api("/api/analysis/cancel", {
-      job_id: state.analysis.job.job_id,
-    }),
-  );
-  renderJob();
 }
 
-export function bindJobs() {
-  $("analysis-stop").onclick = () => act(stopJob);
+function restoreSamples(initial) {
+  if (initial.job?.kind === "samples")
+    sampleJobAction = {
+      jobId: initial.job.job_id,
+      action: sampleAction(pageOf(initial.job), false),
+    };
+  const loadedSamples = initial.results.samples;
+  const loadedPage = loadedSamples?.page || "untargeted";
+  const loadedSpec = samplePages[loadedPage];
+  if (
+    loadedSamples?.input_paths &&
+    loadedSamples.input_paths.raw_dir === $(loadedSpec.rawDir).value &&
+    loadedSamples.input_paths.dll_dir === $(loadedSpec.dll).value &&
+    loadedSamples.input_paths.sequence_source === $(loadedSpec.sequence).value
+  )
+    applySampleResult(
+      loadedPage,
+      loadedSamples,
+      sampleAction(loadedPage, false),
+    );
+}
+
+export function bindJobs(initial) {
+  analysis = createAnalysisSession(initial, {
+    request: api,
+    prepareStart,
+    acceptedStart,
+    confirmCancel,
+  });
+  restoreSamples(analysis.snapshot);
+  $("analysis-stop").onclick = () => act(() => analysis.cancel());
+  let wasBusy = false;
+  // Bootstrap attaches observation once the initial views are ready. Merely
+  // restoring a job must not race the initial Review/ISTD restoration.
+  return () =>
+    analysis.subscribe((snapshot, completed) => {
+      if (wasBusy !== snapshot.busy) {
+        wasBusy = snapshot.busy;
+        document.dispatchEvent(new CustomEvent("xic:analysis-busy"));
+      }
+      const offline = snapshot.connection === "offline";
+      document.body.classList.toggle("offline", offline);
+      $("offline-banner").hidden = !offline;
+      renderJob();
+      if (completed) completeJob(snapshot, completed);
+    });
 }

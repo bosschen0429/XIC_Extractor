@@ -1,5 +1,5 @@
 // Target tables, named identification methods and Targeted batch settings.
-import { startJob } from "./analysis_jobs.js";
+import { analysis } from "./analysis_jobs.js";
 import { clearSamples, samplePages } from "./analysis_samples.js";
 import { checklist, dirty, setMethodState } from "./analysis_setup.js";
 import {
@@ -663,7 +663,7 @@ export function bindTargeted() {
   $("targeted-form").addEventListener("submit", (event) => {
     event.preventDefault();
     act(() =>
-      startJob("targeted", {
+      analysis.start("targeted", {
         settings: settingsValues(),
         targets: state.targets,
         identification_methods: state.identificationMethods,

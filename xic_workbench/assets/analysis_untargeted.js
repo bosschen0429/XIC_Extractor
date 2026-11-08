@@ -1,5 +1,5 @@
 // Untargeted method selection/editor, tuning controls and ISTD imports.
-import { startJob } from "./analysis_jobs.js";
+import { analysis } from "./analysis_jobs.js";
 import { clearSamples } from "./analysis_samples.js";
 import { checklist, dirty } from "./analysis_setup.js";
 import {
@@ -348,7 +348,7 @@ export function bindUntargeted() {
 
   $("untargeted-form").addEventListener("submit", (event) => {
     event.preventDefault();
-    act(() => startJob("untargeted", untargetedValues()));
+    act(() => analysis.start("untargeted", untargetedValues()));
   });
 
   $("untargeted-save").onclick = () => act(() => saveUntargeted());

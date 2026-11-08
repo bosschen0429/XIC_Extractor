@@ -1,6 +1,6 @@
 // Completed-result summaries, artifact viewing and Inspector export selection.
 import { openCuration } from "./analysis_curation.js";
-import { resultIds, startJob } from "./analysis_jobs.js";
+import { analysis, resultIds } from "./analysis_jobs.js";
 import { state } from "./analysis_state.js";
 import { $, act, api, button, el, ui } from "./analysis_ui.js";
 
@@ -100,7 +100,7 @@ function resultBase(kind, result) {
   return { container, downloads, details };
 }
 export function renderResults() {
-  const targeted = state.analysis.results.targeted;
+  const targeted = analysis.snapshot.results.targeted;
   if (targeted) {
     const { container, downloads, details } = resultBase("targeted", targeted);
     const metrics = el("div", undefined, "result-metrics");
@@ -129,7 +129,7 @@ export function renderResults() {
     if (warnings.childElementCount) container.append(warnings);
     container.append(details);
   }
-  const result = state.analysis.results.untargeted;
+  const result = analysis.snapshot.results.untargeted;
   if (result) {
     const { container, downloads, details } = resultBase("untargeted", result);
     const metrics = el("div", undefined, "result-metrics");
@@ -169,7 +169,7 @@ export function renderResults() {
     // The matrix download sits with the result actions, not on its own row.
     actions.append(...downloads.childNodes);
   }
-  const curated = state.analysis.results.curation;
+  const curated = analysis.snapshot.results.curation;
   if (curated) {
     const { container, downloads, details } = resultBase("curation", curated);
     const metrics = el("div", undefined, "result-metrics");
@@ -238,7 +238,7 @@ export function bindResults() {
           .map((v) => v.trim())
           .filter(Boolean);
       }
-      await startJob("inspector", {
+      await analysis.start("inspector", {
         source: exportSource,
         output: $("export-output").value,
         selection,
