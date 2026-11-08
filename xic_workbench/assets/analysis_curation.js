@@ -268,11 +268,21 @@ export function bindCuration() {
         ),
       });
     } else {
-      curation.setSources({
-        source_dir: $("curation-source_dir").value,
-        sample_metadata_path: $("curation-sample_metadata").value,
-        istd_path: $("curation-istd").value,
-      });
+      if (
+        !["curation-source_dir", "curation-sample_metadata", "curation-istd"].includes(
+          event.target.id,
+        )
+      )
+        return;
+      curation.setSources(
+        {
+          source_dir: $("curation-source_dir").value,
+          sample_metadata_path: $("curation-sample_metadata").value,
+          istd_path: $("curation-istd").value,
+        },
+        // A committed selection can reread changed contents at the same path.
+        { refresh: event.type === "change" },
+      );
     }
   };
   $("curation-form").addEventListener("input", edit);

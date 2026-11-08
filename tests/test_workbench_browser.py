@@ -3944,6 +3944,43 @@ def _open_curation_folder(page, tmp_path, fake_runs):
     return output
 
 
+def test_reselecting_same_curation_metadata_refreshes_preview(
+    workbench, fake_runs, tmp_path, monkeypatch
+):
+    from tests.matrix_curation_fixtures import sample_rows
+    from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
+    from xic_extractor.tabular_io import write_tsv
+
+    page = workbench
+    _open_curation_folder(page, tmp_path, fake_runs)
+    rows = sample_rows()
+    metadata = tmp_path / "chosen-samples.tsv"
+    write_tsv(metadata, rows, SAMPLE_METADATA_COLUMNS)
+    page.locator("#curation-input-tools > summary").click()
+    page.locator("#curation-sample_metadata").fill(str(metadata))
+    page.locator("#curation-sample_metadata").press("Tab")
+    threshold = page.locator("#curation-finite_fraction-min_finite_fraction")
+    expect(threshold).to_be_enabled()
+    threshold.fill("0.6")
+    expect(page.locator("#curation-preview")).to_contain_text("保留 2 列")
+    expect(page.locator("#curation-export")).to_be_enabled()
+
+    # S1 leaves the study denominator: only one fixture feature has finite
+    # values in both remaining study samples (S2/S3), rather than two of three.
+    for row in rows:
+        if row["raw_stem"] == "S1":
+            row["sample_role"] = "qc"
+    write_tsv(metadata, rows, SAMPLE_METADATA_COLUMNS)
+    # Substitute only the native OS picker; use the real Browse event wiring.
+    monkeypatch.setattr("xic_workbench.server.choose_path", lambda *_: str(metadata))
+    with page.expect_response("**/api/matrix-curation/source"):
+        page.locator('[data-browse="curation-sample_metadata"]').click()
+    expect(threshold).to_be_enabled()
+    threshold.fill("0.6")
+    expect(page.locator("#curation-preview")).to_contain_text("保留 1 列")
+    expect(page.locator("#curation-export")).to_be_enabled()
+
+
 def test_editing_curation_source_invalidates_steps_before_blur(
     workbench, tmp_path, fake_runs
 ):

@@ -202,13 +202,15 @@ export function createCurationSession(
       });
       schedule(0);
     },
-    setSources(values) {
+    setSources(values, { refresh = false } = {}) {
       if (disposed) return;
       const next = Object.fromEntries(
         Object.keys(sources).map((key) => [key, values[key].trim()]),
       );
       if (
-        sourceError || Object.keys(next).some((key) => next[key] !== sources[key])
+        refresh ||
+        sourceError ||
+        Object.keys(next).some((key) => next[key] !== sources[key])
       )
         replaceSources(next);
     },
