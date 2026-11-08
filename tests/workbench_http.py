@@ -6,15 +6,21 @@ import threading
 from contextlib import contextmanager
 
 
+def unavailable_guide(relative_url):
+    raise AssertionError(
+        f"This HTTP scenario did not supply a user guide: {relative_url}"
+    )
+
+
 @contextmanager
-def workbench_client(workspace):
+def workbench_client(workspace, *, read_user_guide=unavailable_guide):
     """Yield requests returning (status, JSON-or-bytes payload, headers).
 
     This context owns the workspace and closes it even if the session handshake fails.
     """
     from xic_workbench.server import create_server
 
-    server = create_server(workspace, port=0)
+    server = create_server(workspace, port=0, read_user_guide=read_user_guide)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     connection = http.client.HTTPConnection(*server.server_address, timeout=10)

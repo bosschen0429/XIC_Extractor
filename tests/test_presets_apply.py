@@ -5,7 +5,8 @@ from dataclasses import FrozenInstanceError, fields
 import pytest
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.presets import (
     PresetError,
     apply_to_alignment,

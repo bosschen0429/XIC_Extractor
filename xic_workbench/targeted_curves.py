@@ -6,9 +6,7 @@ import math
 from pathlib import Path
 from typing import Any, Callable, cast
 
-from xic_extractor.alignment_explanation.storage import (
-    ExplanationError,
-)
+from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.analysis_set import discover_raw_files
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,

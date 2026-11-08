@@ -19,7 +19,7 @@ from xic_extractor.discovery.blank_qualification import (
     resolve_background_library,
     serialize_background_library,
 )
-from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
     IdentityContractError,

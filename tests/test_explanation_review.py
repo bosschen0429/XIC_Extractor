@@ -18,13 +18,11 @@ from tests.explanation_review_fixtures import (
     _install_distinct_curve_raws,
     _quality_review_report,
 )
+from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
     read_explanation_metadata,
-)
-from xic_extractor.alignment_explanation.storage import (
-    ExplanationError,
 )
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,

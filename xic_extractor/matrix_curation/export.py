@@ -113,11 +113,9 @@ def locate_curation_source(source_dir: Path) -> CurationSource:
 
 def cell_evidence_problem(source: CurationSource) -> str:
     """Why per-cell detection evidence cannot be read, or an empty string."""
+    from xic_extractor.alignment_explanation.errors import ExplanationError
     from xic_extractor.alignment_explanation.reader import (
         read_explanation_summary,
-    )
-    from xic_extractor.alignment_explanation.storage import (
-        ExplanationError,
     )
 
     if source.explanation_path is None:
@@ -136,11 +134,9 @@ def read_run_istd(source: CurationSource) -> tuple[IstdWindow, ...] | None:
     """The internal standards the run declared, or None when it cannot be read."""
     if source.explanation_path is None:
         return None
+    from xic_extractor.alignment_explanation.errors import ExplanationError
     from xic_extractor.alignment_explanation.reader import (
         read_explanation_summary,
-    )
-    from xic_extractor.alignment_explanation.storage import (
-        ExplanationError,
     )
 
     try:

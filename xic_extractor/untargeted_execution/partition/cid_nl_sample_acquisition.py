@@ -20,12 +20,9 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.models import (
-    MS1_FEATURE_BACKED_STATES,
-    DiscoveryCandidate,
-    DiscoverySettings,
-)
+from xic_extractor.discovery.models import MS1_FEATURE_BACKED_STATES, DiscoveryCandidate
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_seed_receipts import (
     StrictSeedReceiptError,
     read_complete_discovery_scan_seeds,

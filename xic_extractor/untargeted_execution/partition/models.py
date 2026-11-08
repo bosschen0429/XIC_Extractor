@@ -48,8 +48,9 @@ from xic_extractor.discovery.batch_contract import (
     validate_alignment_feature_selection,
     validate_candidate_universe_payload,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )

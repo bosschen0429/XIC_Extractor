@@ -111,9 +111,9 @@ def test_superseded_delta_binding_cannot_silently_become_ms1(retired):
 
 
 def test_workbench_persists_definitions_and_row_methods(tmp_path):
-    from xic_workbench.analysis_workspace import AnalysisWorkspace
+    from tests.workbench_config_fixtures import analysis_workspace
 
-    workspace = AnalysisWorkspace(tmp_path / "config", {})
+    workspace = analysis_workspace(tmp_path / "config", {})
     legacy = {**row(), "cid_nl_tag": "dR"}
     del legacy["method"]
     workspace.action(

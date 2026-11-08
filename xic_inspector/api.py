@@ -13,6 +13,8 @@ from typing import Any, Literal
 from xic_extractor.alignment_explanation.storage import (
     EXPLANATION_ARTIFACT_NAME,
 )
+from xic_inspector.errors import InspectorCancelled as InspectorCancelled
+from xic_inspector.errors import InspectorError as InspectorError
 from xic_inspector.rendering.group_colors import group_colors
 from xic_inspector.rendering.html_builder import (
     build_report_html,
@@ -82,24 +84,6 @@ def resolve_source(path: Path) -> Path:
 StrategyKind = Literal["sample", "attention", "query"]
 CapabilityKind = Literal["retained_curves", "metadata_only"]
 ProgressStage = Literal["metadata", "selection", "curves", "render", "write"]
-
-
-class InspectorError(Exception):
-    """Base error for XIC Inspector with deterministic exit/failure code."""
-
-    def __init__(self, code: int, message: str, cause: Exception | None = None) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        if cause is not None:
-            self.__cause__ = cause
-
-
-class InspectorCancelled(InspectorError):
-    """Raised when report generation is explicitly cancelled."""
-
-    def __init__(self, message: str = "Report generation cancelled") -> None:
-        super().__init__(code=130, message=message)
 
 
 @dataclass(frozen=True, slots=True)

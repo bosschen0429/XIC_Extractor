@@ -11,11 +11,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.alignment_explanation.errors import (
+    CandidateNotFoundError,
+    ExplanationError,
+)
+
 from .review import REVIEW_SCHEMA_VERSION, decode_row_evidence
 from .storage import (
     CANDIDATE_SELECT,
-    CandidateNotFoundError,
-    ExplanationError,
     RecordKey,
     decode_candidate,
     decode_object,

@@ -45,8 +45,9 @@ def test_injection_header_translates_missing_ms_device_with_file_context():
 
 
 def test_default_ms2_acquisition_uses_each_raw_span_without_fixed_ceiling() -> None:
-    from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+    from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.discovery.settings import DiscoverySettings
     from xic_extractor.raw_reader import RawFileHandle
 
     settings = DiscoverySettings(neutral_loss_profile=NeutralLossProfile("NL", 116.0))
@@ -961,8 +962,9 @@ def test_raw_monoisotopic_precursor_recovers_direct_nl_without_widening_isolatio
     parent: int,
     product: float,
 ) -> None:
-    from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+    from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
     from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+    from xic_extractor.discovery.settings import DiscoverySettings
     from xic_extractor.raw_reader import RawFileHandle
 
     scan_filter = _FakeScanFilterWithReaction(precursor_mz=selected)

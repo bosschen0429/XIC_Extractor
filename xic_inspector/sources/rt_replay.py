@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from xic_extractor.alignment_explanation.storage import ExplanationError
+from xic_extractor.alignment_explanation.errors import ExplanationError
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration

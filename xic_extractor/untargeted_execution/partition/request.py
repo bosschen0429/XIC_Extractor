@@ -24,14 +24,14 @@ from xic_extractor.discovery.batch_contract import (
     validate_candidate_universe_payload,
     validate_discovery_candidate_universe,
 )
-from xic_extractor.discovery.models import (
-    DiscoveryCandidate,
-    DiscoverySettings,
-    discovery_settings_identity_fields,
-)
+from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalFactRecord,
     validate_discovery_physical_fact_record,
+)
+from xic_extractor.discovery.settings import (
+    DiscoverySettings,
+    discovery_settings_identity_fields,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY,

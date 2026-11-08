@@ -21,11 +21,9 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
 )
-from xic_extractor.discovery.models import (
-    DiscoveryCandidate,
-    DiscoverySettings,
-)
+from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
 )

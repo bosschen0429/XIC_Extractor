@@ -9,9 +9,10 @@ import pytest
 
 import xic_extractor.processing_identity as processing_identity_module
 from tests.raw_header_fakes import install_fake_raw_headers
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
-from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.extraction.targeted_inputs import (
     TARGETED_PROCESSING_ALGORITHM_VERSION,
     TARGETED_PROCESSING_CONTRACT_VERSION,

@@ -7,19 +7,19 @@ from dataclasses import replace
 import pytest
 from playwright.sync_api import expect
 
+from tests.browser_runtime import browser as browser
 from tests.delta_mass_review_fixtures import (
+    mount_review_html,
     review_fixture,
     write_nl_review,
     write_review,
 )
-from tests.workbench_browser_fixtures import browser as browser
 from xic_extractor.diagnostics.delta_mass_review_data import (
     DeltaMassReview,
     ReviewNlPosition,
     ReviewReadError,
     write_delta_mass_review,
 )
-from xic_inspector.api import SelectionRequest, generate_report
 
 pytestmark = pytest.mark.browser_e2e
 pytest_plugins = ("tests.browser_diagnostics",)
@@ -46,7 +46,7 @@ def test_empty_nl_results_are_omitted_not_moved_into_details(
     source = tmp_path / "summary.json"
     write_delta_mass_review(DeltaMassReview("saved", (candidate,)), source)
     report = tmp_path / "summary.html"
-    generate_report(source, SelectionRequest(), report)
+    mount_review_html(source, report)
     page = review_page
     page.set_viewport_size({"width": 792, "height": 884})
     page.goto(report.as_uri())
@@ -65,7 +65,7 @@ def test_compact_candidate_count_still_discloses_a_sampled_report(
 ):
     source = write_nl_review(tmp_path)
     output = tmp_path / "sampled.html"
-    generate_report(source, SelectionRequest(limit=1), output)
+    mount_review_html(source, output, limit=1)
     review_page.goto(output.as_uri())
     expect(review_page.locator(".list-header")).to_contain_text("全批 2")
 
@@ -96,7 +96,7 @@ def test_evidence_limitations_remain_visible_when_empty_results_are_silent(
     source = tmp_path / "incomplete.json"
     write_delta_mass_review(DeltaMassReview("saved", (candidate,)), source)
     output = tmp_path / "incomplete.html"
-    generate_report(source, SelectionRequest(), output)
+    mount_review_html(source, output)
     review_page.goto(output.as_uri())
     expect(review_page.locator(".record-reason")).to_have_text(f"NL：{label}")
     expect(review_page.get_by_label("各位置 NL 判讀")).to_contain_text(label)
@@ -107,7 +107,7 @@ def test_nl_result_opens_exact_support_without_scan_search(review_page, tmp_path
     page = review_page
     source = write_nl_review(tmp_path)
     output = tmp_path / "nl.html"
-    generate_report(source, SelectionRequest(), output)
+    mount_review_html(source, output)
     page.goto(output.as_uri())
     root = page.locator(".dm-review")
     expect(root.get_by_label("Δm/z partner − M", exact=True)).to_have_text(
@@ -167,7 +167,7 @@ def test_supported_candidate_leads_without_discarding_quiet_candidates(
     payload["candidates"][1]["raw_file"] = "0-quiet.raw"
     source.write_text(json.dumps(payload), encoding="utf-8")
     output = tmp_path / "ranked.html"
-    generate_report(source, SelectionRequest(), output)
+    mount_review_html(source, output)
     page = review_page
     page.goto(output.as_uri())
     expect(page.locator(".record-button")).to_have_count(2)
@@ -184,7 +184,7 @@ def test_supported_candidate_leads_without_discarding_quiet_candidates(
 def _open(page, tmp_path):
     source = write_review(tmp_path)
     output = tmp_path / "review.html"
-    generate_report(source, SelectionRequest(strategy="query", mz_min=99), output)
+    mount_review_html(source, output, strategy="query")
     page.goto(output.as_uri())
     return page.locator(".dm-review")
 
@@ -233,7 +233,7 @@ def test_pt_envelope_orders_review_without_reclassifying_candidates(
     source = tmp_path / "pt-review.json"
     write_delta_mass_review(review, source)
     output = tmp_path / "pt-review.html"
-    generate_report(source, SelectionRequest(), output)
+    mount_review_html(source, output)
     page = review_page
     page.goto(output.as_uri())
     expect(page.locator(".record-button").first).to_contain_text("sample-b")
@@ -287,7 +287,7 @@ def test_position_names_and_colors_distinguish_every_curve(
     write_delta_mass_review(DeltaMassReview("saved", (candidate,)), source)
     original = source.read_bytes()
     output = tmp_path / "named.html"
-    generate_report(source, SelectionRequest(), output)
+    mount_review_html(source, output)
     page = review_page
     page.goto(output.as_uri())
     assert page.locator(".dm-legend > span").all_text_contents() == list(display)
@@ -358,7 +358,7 @@ def test_narrow_layout_and_sample_filter_keep_positions_together(
     page.set_viewport_size({"width": 420, "height": 900})
     source = write_nl_review(tmp_path) if with_nl else write_review(tmp_path)
     output = tmp_path / "layout.html"
-    generate_report(source, SelectionRequest(), output)
+    mount_review_html(source, output)
     page.goto(output.as_uri())
     root = page.locator(".dm-review")
     expect(
@@ -397,7 +397,7 @@ def test_missing_xic_and_failed_ms2_remain_unavailable_not_negative(
     source = tmp_path / "partial.json"
     write_delta_mass_review(DeltaMassReview("saved-discovery", (candidate,)), source)
     output = tmp_path / "partial.html"
-    generate_report(source, SelectionRequest(), output)
+    mount_review_html(source, output)
     page = review_page
     page.goto(output.as_uri())
     root = page.locator(".dm-review")

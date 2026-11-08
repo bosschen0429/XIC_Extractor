@@ -5,15 +5,15 @@ import threading
 
 import pytest
 
+from tests.workbench_config_fixtures import ConfigurationWorkspace
 from tests.workbench_http import workbench_client
 from xic_workbench import server as server_module
-from xic_workbench.workspace import ReviewWorkspace
 
 
 def test_session_handshake_failure_closes_client_server_and_workspace(
     tmp_path, monkeypatch
 ):
-    workspace = ReviewWorkspace(config_dir=tmp_path)
+    workspace = ConfigurationWorkspace(config_dir=tmp_path)
     workspace_closed = threading.Event()
     server_stopped = threading.Event()
     servers = []

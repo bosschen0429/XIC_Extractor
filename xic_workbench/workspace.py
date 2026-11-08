@@ -12,11 +12,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from xic_extractor.alignment_explanation.review import REVIEW_SCHEMA_VERSION
-from xic_extractor.alignment_explanation.storage import (
+from xic_extractor.alignment_explanation.errors import (
     ExplanationError,
     ExplanationUnavailableError,
 )
+from xic_extractor.alignment_explanation.review import REVIEW_SCHEMA_VERSION
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (
     InspectorCancelled,
@@ -31,10 +31,8 @@ from xic_inspector.rendering.html_builder import (
     write_report_atomically,
 )
 from xic_inspector.sources.targeted_workbook import TargetedWorkbookLocator
-
-
-class WorkspaceBusy(ValueError):
-    """A running acquisition must finish or be cancelled first."""
+from xic_workbench.analysis_workspace import AnalysisWorkspace
+from xic_workbench.errors import WorkspaceBusy as WorkspaceBusy
 
 
 def _text(value: Any, name: str) -> str:
@@ -52,14 +50,9 @@ def _ids(value: Any) -> tuple[str, ...]:
 class ReviewWorkspace:
     """Keep source selection and acquisition jobs outside the offline Inspector."""
 
-    def __init__(
-        self, *, defaults: dict[str, str] | None = None, config_dir: Path | None = None
-    ) -> None:
-        from xic_workbench.analysis_workspace import AnalysisWorkspace
-        from xic_workbench.config_io import CONFIG_DIR
-
-        self.defaults = dict(defaults or {})
-        self.analysis = AnalysisWorkspace(config_dir or CONFIG_DIR, self.defaults)
+    def __init__(self, analysis: AnalysisWorkspace) -> None:
+        self.defaults = analysis.defaults
+        self.analysis = analysis
         self._temporary = TemporaryDirectory(prefix="xic-workbench-")
         self._folder = Path(self._temporary.name)
         self._lock = threading.RLock()
@@ -132,6 +125,14 @@ class ReviewWorkspace:
                 if self.analysis.jobs.busy:
                     raise WorkspaceBusy("分析仍在執行；完成或停止後才能修改設定。")
             return self.analysis.action(action, values)
+
+    @staticmethod
+    def evidence_summary(source: str) -> dict[str, Any]:
+        return read_evidence_summary(resolve_source(Path(source)))
+
+    def preview_curation(self, values: dict[str, Any]) -> dict[str, Any]:
+        # Preview is read-only: do not hold the mutable workspace lock.
+        return self.analysis.curation.preview_curation(self.analysis.config_dir, values)
 
     def open(self, source: Any) -> dict[str, Any]:
         path = resolve_source(

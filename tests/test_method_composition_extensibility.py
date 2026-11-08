@@ -19,7 +19,8 @@ from xic_extractor.alignment_explanation.storage import (
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
 )
-from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.presets import PresetTag, load_preset
 from xic_extractor.presets.apply import bind_cid_nl_recipe
 from xic_extractor.processing_run_spec import (

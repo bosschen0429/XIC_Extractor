@@ -20,14 +20,11 @@ from tests.discovery_ms1_capture_fixtures import (
 )
 from xic_extractor.acquisition_contract import AcquisitionContractError
 from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.models import (
-    DiscoveryCandidate,
-    DiscoverySeedGroup,
-    DiscoverySettings,
-)
+from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySeedGroup
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_candidates,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,

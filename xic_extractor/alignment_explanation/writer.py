@@ -10,15 +10,12 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.alignment_explanation.errors import ExplanationError
+
 from .curves import validate_curve_payload
 from .query import build_query_index
 from .review import REVIEW_SCHEMA_VERSION, encode_row_evidence
-from .storage import (
-    SCHEMA_VERSION,
-    ExplanationError,
-    create_schema,
-    encode_object,
-)
+from .storage import SCHEMA_VERSION, create_schema, encode_object
 
 
 class ExplanationReportWriter:

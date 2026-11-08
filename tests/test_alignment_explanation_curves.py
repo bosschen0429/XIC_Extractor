@@ -13,12 +13,10 @@ from pathlib import Path
 import pytest
 
 from tests.alignment_explanation_fixtures import curve_provenance, explanation_summary
+from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
-)
-from xic_extractor.alignment_explanation.storage import (
-    ExplanationError,
 )
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,

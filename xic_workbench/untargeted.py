@@ -27,11 +27,12 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
-from xic_extractor.discovery.models import DiscoveryBatchOutputs, DiscoverySettings
+from xic_extractor.discovery.models import DiscoveryBatchOutputs
 from xic_extractor.discovery.pipeline import run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.presets import (
     BoundCidNlRecipe,

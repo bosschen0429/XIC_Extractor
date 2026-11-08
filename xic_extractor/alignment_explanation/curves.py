@@ -7,13 +7,12 @@ from collections.abc import Mapping
 from dataclasses import fields
 from typing import Any
 
+from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.signal_quality import SignalQuality
-
-from .storage import ExplanationError
 
 VALID_CURVE_KINDS = frozenset(
     {

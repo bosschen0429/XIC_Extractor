@@ -21,8 +21,9 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.models import DiscoverySeed, DiscoverySettings
+from xic_extractor.discovery.models import DiscoverySeed
 from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_seed_receipts import resolve_discovery_scan_events
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (

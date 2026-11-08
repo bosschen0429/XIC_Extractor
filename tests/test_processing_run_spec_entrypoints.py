@@ -13,10 +13,10 @@ from scripts.run_discovery import (
 )
 from tests.discovery_worker_fixtures import _alignment_outputs
 from tests.processing_run_spec_fixtures import _raws, _settings
-from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.presets import PresetError
 from xic_extractor.processing_run_spec import (
     ProcessingRunSpec,

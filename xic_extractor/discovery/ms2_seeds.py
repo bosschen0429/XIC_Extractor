@@ -8,12 +8,9 @@ from typing import Protocol
 
 import numpy as np
 
-from xic_extractor.discovery.models import (
-    DiscoverySeed,
-    DiscoverySettings,
-    NeutralLossProfile,
-    PrecursorMzBasis,
-)
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
+from xic_extractor.discovery.models import DiscoverySeed, PrecursorMzBasis
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.precursor_evidence import (

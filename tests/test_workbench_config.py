@@ -4,8 +4,8 @@ import json
 
 import pytest
 
+from tests.workbench_config_fixtures import analysis_workspace
 from xic_workbench import config_io, untargeted_config
-from xic_workbench.analysis_workspace import AnalysisWorkspace
 
 
 def test_saving_builtin_method_keeps_existing_config_shape(tmp_path):
@@ -40,7 +40,8 @@ def test_blank_discovery_preset_uses_default_without_rewriting_config(tmp_path, 
 
 
 def test_missing_discovery_preset_is_not_replaced_with_default(tmp_path):
-    from xic_extractor.presets import PresetError, load_preset
+    from xic_extractor.presets.loader import load_preset
+    from xic_extractor.presets.models import PresetError
 
     missing = str(tmp_path / "missing.toml")
     untargeted_config.write_untargeted_config({"preset": missing}, config_dir=tmp_path)
@@ -141,7 +142,7 @@ def test_untargeted_save_routes_dll_to_canonical_and_preserves_unrelated_control
         ),
         encoding="utf-8",
     )
-    workspace = AnalysisWorkspace(tmp_path, {})
+    workspace = analysis_workspace(tmp_path, {})
     try:
         workspace.action(
             "untargeted/save", {"dll_dir": "shared-dll", "raw_dir": "new-batch"}
@@ -175,7 +176,7 @@ def test_preferences_write_only_theme_view_and_preserves_existing_other_keys(tmp
 def test_launch_dll_override_is_transient_and_both_workflows_share_it(tmp_path):
     config_io.write_settings({"dll_dir": "persisted-dll"}, config_dir=tmp_path)
     before = (tmp_path / "workspace.json").read_bytes()
-    workspace = AnalysisWorkspace(tmp_path, {"dll_dir": "launch-dll"})
+    workspace = analysis_workspace(tmp_path, {"dll_dir": "launch-dll"})
     try:
         bootstrap = workspace.bootstrap()
         assert bootstrap["settings"]["dll_dir"] == "launch-dll"
@@ -217,7 +218,7 @@ def test_bootstrap_resolves_effective_settings_once(tmp_path, monkeypatch):
     from xic_extractor.configuration import settings as settings_owner
 
     config_io.write_settings({"dll_dir": "saved-dll"}, config_dir=tmp_path)
-    workspace = AnalysisWorkspace(
+    workspace = analysis_workspace(
         tmp_path, {"dll_dir": "launch-dll", "raw_dir": "batch"}
     )
     calls = []
@@ -239,10 +240,10 @@ def test_bootstrap_resolves_effective_settings_once(tmp_path, monkeypatch):
 
 
 def test_default_workspace_save_and_cli_share_isolated_settings(isolated_config_dir):
+    from tests.workbench_config_fixtures import ConfigurationWorkspace
     from xic_extractor.configuration.execution_profile import load_execution_profile
-    from xic_workbench.workspace import ReviewWorkspace
 
-    workspace = ReviewWorkspace()
+    workspace = ConfigurationWorkspace()
     try:
         workspace.analysis.action(
             "targeted/save",
@@ -299,7 +300,7 @@ def test_reader_setup_installs_and_points_both_workflows_at_rawfilereader(
     defaults = {"raw_dir": "batch", "source": "report"}
     if launch_override:
         defaults["dll_dir"] = str(tmp_path / "launch-reader")
-    workspace = AnalysisWorkspace(tmp_path, defaults)
+    workspace = analysis_workspace(tmp_path, defaults)
     try:
         assert workspace.bootstrap()["thermo_reader"]["dll_errors"]
         with pytest.raises(ValueError, match="accept license"):

@@ -23,10 +23,7 @@ from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.discovery.models import (
-    DiscoveryCandidate,
-    DiscoverySettings,
-)
+from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.discovery.physical_fact_persistence import (
     IndexedDiscoveryPhysicalFacts,
 )
@@ -34,6 +31,7 @@ from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalFactRecord,
     admits_cid_nl_alignment,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlComposition,
     CidNlMethodSubject,

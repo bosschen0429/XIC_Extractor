@@ -13,14 +13,11 @@ from xic_extractor.acquisition_contract import (
     acquire_trace_batch,
     mint_trace_acquisition_capability,
 )
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.models import (
-    DiscoveryPhysicalWorkItem,
-    DiscoverySettings,
-    NeutralLossProfile,
-)
+from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem
 from xic_extractor.discovery.physical_fact_persistence import (
     DiscoveryPhysicalFactRecord,
     deserialize_discovery_physical_fact_sidecar,
@@ -29,6 +26,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,

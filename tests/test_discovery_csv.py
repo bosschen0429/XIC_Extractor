@@ -5,6 +5,7 @@ from tests.discovery_csv_fixtures import (
     _candidate,
     _read_csv,
 )
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.discovery.csv_writer import (
     _format_csv_value,
     write_discovery_candidates_csv,
@@ -17,9 +18,8 @@ from xic_extractor.discovery.models import (
     DISCOVERY_REVIEW_COLUMNS,
     DiscoveryCandidate,
     DiscoverySeed,
-    DiscoverySettings,
-    NeutralLossProfile,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 
 EXPECTED_CANDIDATE_REVIEW_COLUMNS = (
     "review_priority",

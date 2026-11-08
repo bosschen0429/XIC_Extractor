@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.alignment_explanation.storage import ExplanationError
+from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.diagnostics.delta_mass_review_data import (
     REVIEW_SCHEMA,
     decode_delta_mass_review,

@@ -1,6 +1,6 @@
 """Current evidence source binding for the shared Inspector workflow."""
 
-from xic_extractor.alignment_explanation.storage import (
+from xic_extractor.alignment_explanation.errors import (
     ExplanationError,
     ExplanationUnavailableError,
 )

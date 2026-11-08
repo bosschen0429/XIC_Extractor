@@ -6,12 +6,10 @@ from pathlib import Path
 import numpy as np
 
 from tests.cid_nl_raw_fixture import fake_acquisition_source
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.models import (
-    DiscoverySeed,
-    DiscoverySettings,
-    NeutralLossProfile,
-)
+from xic_extractor.discovery.models import DiscoverySeed
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
 )

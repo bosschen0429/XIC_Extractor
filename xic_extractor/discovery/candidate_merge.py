@@ -6,7 +6,6 @@ from typing import Any, Literal, cast
 
 from xic_extractor.discovery.models import (
     DiscoveryCandidate,
-    DiscoverySettings,
     GroupPrecursorMzBasis,
     NeutralLossErrorBasis,
     assign_discovery_candidate_state,
@@ -15,6 +14,7 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.priority import (
     assign_review_priority,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import (
     within_ppm,
 )

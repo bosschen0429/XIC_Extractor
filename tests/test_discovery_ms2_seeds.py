@@ -5,9 +5,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 
 NEUTRAL_LOSS_DA = 116.0474

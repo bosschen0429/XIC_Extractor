@@ -2,39 +2,24 @@
 
 from __future__ import annotations
 
-import os
 import threading
 from contextlib import ExitStack
 
 import pytest
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
 
+from tests.browser_runtime import ACTION_TIMEOUT_MS as ACTION_TIMEOUT_MS
+from tests.browser_runtime import DEADLINE_SCALE as DEADLINE_SCALE
+from tests.browser_runtime import browser as browser
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
+from xic_workbench.application import create_workspace
 from xic_workbench.config_io import write_settings, write_targets
 from xic_workbench.server import create_server
-from xic_workbench.workspace import ReviewWorkspace
-
-
-@pytest.fixture(scope="module")
-def browser():
-    expect.set_options(timeout=5_000 * DEADLINE_SCALE)
-    with sync_playwright() as playwright:
-        # CI leaves this unset and uses the browser pinned by uv.lock.
-        channel = os.environ.get("XIC_PLAYWRIGHT_CHANNEL")
-        browser = playwright.chromium.launch(
-            **({"channel": channel} if channel else {})
-        )
-        yield browser
-        browser.close()
-
+from xic_workbench.user_guide import read_user_guide
 
 # Deadlines are hang watchdogs, not latency requirements. Hosted CI VMs can
 # stall for several seconds at a time, so CI scales every browser wait by one
 # factor; local runs keep Playwright's defaults.
-DEADLINE_SCALE = int(os.environ.get("XIC_BROWSER_DEADLINE_SCALE", "1"))
-
-
-ACTION_TIMEOUT_MS = 10_000 * DEADLINE_SCALE
 
 
 @pytest.fixture
@@ -92,9 +77,9 @@ def workbench(
         lambda: config_dir.parent / "managed-reader",
     )
     with ExitStack() as cleanup:
-        workspace = ReviewWorkspace(config_dir=config_dir, defaults=workbench_defaults)
+        workspace = create_workspace(config_dir=config_dir, defaults=workbench_defaults)
         cleanup.callback(workspace.close)
-        server = create_server(workspace, port=0)
+        server = create_server(workspace, port=0, read_user_guide=read_user_guide)
         cleanup.callback(server.server_close)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()

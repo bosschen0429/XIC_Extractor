@@ -10,23 +10,12 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any
 
+from .errors import ExplanationError, ExplanationUnavailableError
 from .review import REVIEW_SCHEMA_VERSION, validate_membership_risks
 
 EXPLANATION_ARTIFACT_NAME = "alignment_explanation.sqlite"
 SCHEMA_VERSION = "alignment_explanation"
 RecordKey = str | tuple[str, str]
-
-
-class ExplanationError(ValueError):
-    """The requested diagnostic cannot be interpreted."""
-
-
-class ExplanationUnavailableError(ExplanationError):
-    """No completed explanation is available."""
-
-
-class CandidateNotFoundError(ExplanationError):
-    """The exact candidate ID is absent from this run."""
 
 
 def encode_object(value: Mapping[str, Any]) -> str:

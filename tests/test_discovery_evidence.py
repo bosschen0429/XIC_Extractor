@@ -1,6 +1,7 @@
 from dataclasses import replace
 from pathlib import Path
 
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
     DiscoveryEvidenceProfile,
@@ -8,11 +9,8 @@ from xic_extractor.discovery.evidence_config import (
     DiscoveryEvidenceWeights,
 )
 from xic_extractor.discovery.evidence_score import score_discovery_evidence
-from xic_extractor.discovery.models import (
-    DiscoveryCandidate,
-    DiscoverySettings,
-    NeutralLossProfile,
-)
+from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.settings import DiscoverySettings
 
 
 def test_default_evidence_profile_pins_weights() -> None:

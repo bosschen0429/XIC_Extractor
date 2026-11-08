@@ -13,6 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     ExplanationMetadata,
     open_review_cells,
@@ -35,10 +36,7 @@ from xic_extractor.alignment_explanation.review import (
 from xic_extractor.alignment_explanation.review import (
     attention_reason as _attention_reason,
 )
-from xic_extractor.alignment_explanation.storage import (
-    ExplanationError,
-    RecordKey,
-)
+from xic_extractor.alignment_explanation.storage import RecordKey
 from xic_inspector.selection.canonical import (
     CanonicalItem,
     build_canonical_ref,

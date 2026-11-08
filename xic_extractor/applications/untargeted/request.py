@@ -22,7 +22,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
     resolve_signal_processing_profile,
 )
-from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.input_planning import (

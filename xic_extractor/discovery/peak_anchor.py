@@ -2,7 +2,8 @@ from collections import deque
 from dataclasses import replace
 
 from xic_extractor.discovery.evidence_score import score_discovery_evidence
-from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import is_within_mz_tolerance
 
 _APEX_RT_EPSILON_MIN = 1e-6

@@ -1,16 +1,14 @@
 from dataclasses import replace
 from pathlib import Path
 
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
     DiscoveryEvidenceProfile,
 )
-from xic_extractor.discovery.models import (
-    DiscoveryCandidate,
-    DiscoverySettings,
-    NeutralLossProfile,
-)
+from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.discovery.peak_anchor import assign_peak_anchors
+from xic_extractor.discovery.settings import DiscoverySettings
 
 
 def test_assign_peak_anchors_groups_candidates_sharing_ms1_peak() -> None:

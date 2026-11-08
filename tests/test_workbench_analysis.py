@@ -18,9 +18,11 @@ from tests.workbench_http import workbench_client
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_extractor.raw_reader import RawSampleHeader
 from xic_inspector.api import SelectionRequest, prepare_report
+from xic_workbench import matrix_curation
 from xic_workbench.analysis_workspace import AnalysisWorkspace
+from xic_workbench.application import create_workspace
+from xic_workbench.errors import WorkspaceBusy
 from xic_workbench.jobs import AnalysisJobs
-from xic_workbench.workspace import ReviewWorkspace, WorkspaceBusy
 
 
 @pytest.mark.parametrize("outcome", ["succeeded", "failed", "cancelled"])
@@ -141,7 +143,7 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
     monkeypatch.setattr(targeted, "TargetedRun", Run)
     monkeypatch.setattr("xic_workbench.config_io.write_settings", lambda *a, **kw: None)
     monkeypatch.setattr("xic_workbench.config_io.write_targets", lambda *a, **kw: None)
-    workspace = ReviewWorkspace(config_dir=tmp_path)
+    workspace = create_workspace(config_dir=tmp_path)
     jobs = workspace.analysis.jobs
     with workbench_client(workspace) as request:
         try:
@@ -182,7 +184,7 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
 
 
 def test_http_analysis_configuration_roundtrip_without_qt(tmp_path):
-    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    workspace = create_workspace(config_dir=tmp_path / "config")
     with workbench_client(workspace) as request:
         status, config, _ = request("/api/config")
         assert status == 200
@@ -220,7 +222,12 @@ def test_http_analysis_configuration_roundtrip_without_qt(tmp_path):
 
 
 def test_artifact_urls_serve_only_registered_published_files(tmp_path):
-    analysis = AnalysisWorkspace(tmp_path / "config", {})
+    analysis = AnalysisWorkspace(
+        tmp_path / "config",
+        {},
+        jobs=AnalysisJobs(tmp_path / "config"),
+        curation=matrix_curation,
+    )
     published = tmp_path / "published.html"
     published.write_text("<h1>Published report</h1>")
     analysis.jobs._results["targeted"] = {"published_paths": [str(published)]}
@@ -571,7 +578,7 @@ def test_http_targeted_bootstrap_explains_active_source(tmp_path):
     from xic_extractor.configuration.workspace_state import save_workspace
 
     save_workspace(config_dir, settings={"parallel_workers": "0"})
-    workspace = ReviewWorkspace(config_dir=config_dir)
+    workspace = create_workspace(config_dir=config_dir)
     with workbench_client(workspace) as request:
         status, config, _ = request("/api/config")
         assert status == 200
@@ -590,7 +597,10 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
 
     save_workspace(config_dir, settings={"parallel_workers": "0"})
     workspace = AnalysisWorkspace(
-        config_dir, {"raw_dir": "C:/launch-batch", "dll_dir": "C:/preferred-dll"}
+        config_dir,
+        {"raw_dir": "C:/launch-batch", "dll_dir": "C:/preferred-dll"},
+        jobs=AnalysisJobs(config_dir),
+        curation=matrix_curation,
     )
     try:
         config = workspace.bootstrap()
@@ -605,9 +615,9 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
 
 def test_http_retired_method_overrides_and_reset_are_not_accepted(tmp_path):
     from tests.workbench_http import workbench_client
-    from xic_workbench.workspace import ReviewWorkspace
+    from xic_workbench.application import create_workspace
 
-    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    workspace = create_workspace(config_dir=tmp_path / "config")
     with workbench_client(workspace) as request:
         _, config, _ = request("/api/config")
         settings = {**config["settings"], "ms2_precursor_tol_da": "1.2"}

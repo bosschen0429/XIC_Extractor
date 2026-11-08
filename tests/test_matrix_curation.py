@@ -251,26 +251,36 @@ def test_saved_run_samples_are_reused_without_raw_or_current_batch_settings(tmp_
 
 
 def test_workbench_job_matches_cli_and_writes_inside_the_source(tmp_path):
-    from tests.workbench_analysis_fixtures import _terminal
-    from xic_workbench.jobs import AnalysisJobs
+    import time
+
+    from tests.workbench_lifecycle_fixtures import _launch, _request
     from xic_workbench.samples import save_batch_samples
 
     config = tmp_path / "config"
     raw_dir = tmp_path / "raw"
     source = alignment_output(tmp_path / "alignment", raw_dir=raw_dir)
     save_batch_samples(config, raw_dir, sample_payload())
-    jobs = AnalysisJobs(config)
-    try:
-        jobs.start(
-            "curation",
+    # Launch the shipped entry point: no workspace, job or application substitute.
+    with _launch(config) as (_process, url):
+        status, state = _request(
+            url,
+            "/api/analysis/start",
             {
-                "source_dir": str(source),
-                "steps": {"finite_fraction": {"min_finite_fraction": 0.6}},
+                "kind": "curation",
+                "values": {
+                    "source_dir": str(source),
+                    "steps": {"finite_fraction": {"min_finite_fraction": 0.6}},
+                },
             },
         )
-        job = _terminal(jobs)["job"]
-    finally:
-        jobs.close()
+        assert status == 202, state
+        deadline = time.monotonic() + 20
+        while state["job"]["status"] in {"running", "cancelling"}:
+            assert time.monotonic() < deadline, state
+            time.sleep(0.02)
+            status, state = _request(url, "/api/analysis")
+            assert status == 200, state
+        job = state["job"]
     assert job["status"] == "succeeded", job
     output = Path(job["result"]["output_dir"])
     assert output.parent == source
