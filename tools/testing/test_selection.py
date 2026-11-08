@@ -7,6 +7,7 @@ script, document, or data file to the tests that read it. Anything the
 derivation cannot place runs the whole suite.
 
     python -m tools.testing.test_selection             # tests this branch affects
+    python -m tools.testing.test_selection -- -n 0     # same, in one process
     python -m tools.testing.test_selection --print     # show the selection only
     python -m tools.testing.test_selection --all       # every ordinary test
 """
@@ -16,6 +17,7 @@ from __future__ import annotations
 import argparse
 import ast
 import io
+import os
 import re
 import shutil
 import subprocess
@@ -353,21 +355,33 @@ def ci_plan(base: str, head: str) -> SelectionPlan | None:
     return plan_for_change(paths, base_expression=CI_BASE_MARKER_EXPRESSION)
 
 
+# Packaging builds verify installed and frozen artifacts. CI runs them for every
+# change that can affect packaging; local runs include them only on request.
+LOCAL_SKIPPED_MARKERS = ("packaging_build",)
+
+
 def _local_plan(*, run_all: bool, all_markers: bool) -> SelectionPlan:
-    required = ""
     if run_all and all_markers:
-        return SelectionPlan(files=None, marker_expression=required)
+        return SelectionPlan(files=None, marker_expression="")
     base = _local_change_base()
     paths = changed_paths(base) if base else None
     if paths is None:
         print("Could not diff against origin/master; running every test", flush=True)
-        return SelectionPlan(files=None, marker_expression=required)
-    plan = plan_for_change(paths, base_expression=required)
+        plan = SelectionPlan(files=None, marker_expression="")
+    else:
+        plan = plan_for_change(paths, base_expression="")
     if all_markers:
-        plan = SelectionPlan(files=plan.files, marker_expression=required)
-    if run_all:
-        plan = SelectionPlan(files=None, marker_expression=plan.marker_expression)
-    return plan
+        return SelectionPlan(files=plan.files, marker_expression="")
+    clauses = [clause for clause in plan.marker_expression.split(" and ") if clause]
+    clauses += [
+        f"not {marker}"
+        for marker in LOCAL_SKIPPED_MARKERS
+        if f"not {marker}" not in clauses
+    ]
+    return SelectionPlan(
+        files=None if run_all else plan.files,
+        marker_expression=" and ".join(clauses),
+    )
 
 
 def _run_plan(plan: SelectionPlan, pytest_args: Sequence[str]) -> int:
@@ -378,22 +392,165 @@ def _run_plan(plan: SelectionPlan, pytest_args: Sequence[str]) -> int:
     if owned_pytest_args is None:
         print("Invalid pytest marker selection", file=sys.stderr)
         return 2
-    print(f"Markers: {_marker_expression(owned_pytest_args) or '(none)'}", flush=True)
+    marker_expression = _marker_expression(owned_pytest_args)
+    print(f"Markers: {marker_expression or '(none)'}", flush=True)
     if plan.files is None:
         print("Running every test", flush=True)
-        return subprocess.call([*_pytest_command(), *owned_pytest_args])
-    if not plan.files:
+    elif not plan.files:
         print("No tests are affected by this change", flush=True)
         return 0
-    print(f"Running {len(plan.files)} affected test files", flush=True)
-    exit_code = subprocess.call([*_pytest_command(), *owned_pytest_args, *plan.files])
-    if exit_code == 5:
+    else:
+        print(f"Running {len(plan.files)} affected test files", flush=True)
+    files = plan.files or ()
+    parallel_options, other_args = _split_parallel_options(
+        owned_pytest_args[2:] if marker_expression else owned_pytest_args
+    )
+    if not _runs_in_parallel(parallel_options, other_args):
+        exit_codes = [subprocess.call([*_pytest_command(), *owned_pytest_args, *files])]
+    else:
+        exit_codes = _run_parallel_then_serial(
+            marker_expression,
+            _with_default_parallelism(parallel_options),
+            other_args,
+            plan.files,
+        )
+    return _settle_exit_codes(exit_codes, every_test=plan.files is None)
+
+
+# Mirrors CI: xdist owns parallelism, and serial_ci tests run after the parallel
+# session because their bounded subprocess or build timeouts are not
+# parallel-safe.
+SERIAL_MARKER = "serial_ci"
+
+
+def _with_default_parallelism(parallel_options: Sequence[str]) -> tuple[str, ...]:
+    options = tuple(parallel_options)
+    if _requested_workers(options) is None:
+        options = ("-n", "auto", *options)
+    if not any(option.split("=", 1)[0] == "--dist" for option in options):
+        options = (*options, "--dist", "worksteal")
+    return options
+
+
+def _run_parallel_then_serial(
+    marker_expression: str,
+    parallel_options: Sequence[str],
+    other_args: Sequence[str],
+    files: tuple[str, ...] | None,
+) -> list[int]:
+    parallel_markers = _and_markers(marker_expression, f"not {SERIAL_MARKER}")
+    print(f"Parallel session ({' '.join(parallel_options)})", flush=True)
+    # Native BLAS pools must not multiply the worker budget.
+    environment = {"OPENBLAS_NUM_THREADS": "1", **os.environ}
+    exit_codes = [
+        subprocess.call(
+            [
+                *_pytest_command(),
+                "-m",
+                parallel_markers,
+                *parallel_options,
+                *other_args,
+                *(files or ()),
+            ],
+            env=environment,
+        )
+    ]
+    serial_files = _files_naming_serial_marker(files)
+    if serial_files:
+        print(f"Serial session ({SERIAL_MARKER})", flush=True)
+        exit_codes.append(
+            subprocess.call(
+                [
+                    *_pytest_command(),
+                    "-m",
+                    _and_markers(marker_expression, SERIAL_MARKER),
+                    *other_args,
+                    *serial_files,
+                ]
+            )
+        )
+    return exit_codes
+
+
+def _settle_exit_codes(exit_codes: Sequence[int], *, every_test: bool) -> int:
+    failures = [code for code in exit_codes if code not in (0, 5)]
+    if failures:
+        return failures[0]
+    if all(code == 5 for code in exit_codes):
+        if every_test:
+            return 5
         # A selected subset can contain only tests excluded by the marker gates.
         print(
             "No tests ran after filtering; no verification was performed.", flush=True
         )
-        return 0
-    return exit_code
+    return 0
+
+
+def _and_markers(*expressions: str) -> str:
+    present = [expression for expression in expressions if expression]
+    if len(present) == 1:
+        return present[0]
+    return " and ".join(f"({expression})" for expression in present)
+
+
+def _files_naming_serial_marker(files: tuple[str, ...] | None) -> tuple[str, ...]:
+    """Test files that can hold serial tests: a marked file names the marker."""
+    candidates = (
+        files
+        if files is not None
+        else tuple(path.as_posix() for path in discover_test_files())
+    )
+    return tuple(
+        path
+        for path in candidates
+        if SERIAL_MARKER in Path(path).read_text(encoding="utf-8")
+    )
+
+
+def _split_parallel_options(
+    pytest_args: Sequence[str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Separate caller xdist scheduling options from other pytest arguments."""
+    parallel: list[str] = []
+    remaining: list[str] = []
+    index = 0
+    while index < len(pytest_args):
+        argument = pytest_args[index]
+        name = argument.split("=", 1)[0]
+        if name in ("--numprocesses", "--dist", "--maxprocesses"):
+            width = 1 if "=" in argument else 2
+        elif argument == "-n":
+            width = 2
+        elif argument.startswith("-n"):
+            width = 1
+        else:
+            remaining.append(argument)
+            index += 1
+            continue
+        parallel.extend(pytest_args[index : index + width])
+        index += width
+    return tuple(parallel), tuple(remaining)
+
+
+def _runs_in_parallel(
+    parallel_options: Sequence[str], other_args: Sequence[str]
+) -> bool:
+    if find_spec("xdist") is None:
+        return False
+    if any(argument in ("no:xdist", "-pno:xdist") for argument in other_args):
+        return False
+    return _requested_workers(parallel_options) != "0"
+
+
+def _requested_workers(parallel_options: Sequence[str]) -> str | None:
+    for index, argument in enumerate(parallel_options):
+        if argument in ("-n", "--numprocesses") and index + 1 < len(parallel_options):
+            return parallel_options[index + 1]
+        if argument.startswith("--numprocesses="):
+            return argument.split("=", 1)[1]
+        if argument.startswith("-n") and argument != "-n":
+            return argument[2:]
+    return None
 
 
 def _intersect_marker_selection(
@@ -483,7 +640,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--all-markers",
         action="store_true",
-        help="Run relevance-gated tests even when this change does not touch them",
+        help=(
+            "Also run relevance-gated tests this change does not touch, and "
+            "packaging builds"
+        ),
     )
     parser.add_argument(
         "--ci-plan",
