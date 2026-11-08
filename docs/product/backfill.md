@@ -125,7 +125,7 @@ batch calibration for the target sample. If that inverse is unsupported, refit
 the whole forecast in observed coordinates. Both XIC bounds
 and preferred-peak selection use this query RT. Insufficient calibration and
 missing-context fallbacks have explicit bases; neither means measured zero
-shift. See [Alignment RT coordinates](alignment.md#prepare-rt-coordinates).
+shift. See [RT calibration](rt-calibration.md).
 
 Forecast acceptance is narrower than the acquired context: same-cohort direct
 reference samples are held out one at a time using that same trajectory

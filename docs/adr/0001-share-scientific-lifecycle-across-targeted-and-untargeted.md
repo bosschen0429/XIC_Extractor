@@ -35,7 +35,6 @@ application contracts rather than separate fishing methods.
   RT/QC policy, and other behavior promotions require separate expected-diff
   authority.
 
-Current contracts: `docs/architecture-contract.md`,
-`docs/agent/architecture-public-contracts.md`, and
+Current contracts: `docs/architecture-contract.md` and
 `docs/product/domain-glossary.md` (Product Shape). Active delivery map: GitHub #301;
 initial execution frontier: #316.

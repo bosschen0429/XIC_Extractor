@@ -18,6 +18,7 @@ conceptual journey.
 | --- | --- |
 | What evidence does my method search, and what do the inputs mean? | [Discovery](discovery.md), [Presets](presets.md), [Sample metadata and QC](sample-metadata-qc.md), [RAW evidence is a query](discovery.md#raw-evidence-is-a-query) |
 | How does a trace support a peak and an area? | [Signal processing](signal-processing.md) |
+| How are RT differences between injections corrected? | [RT calibration](rt-calibration.md) |
 | Which observations belong to the same cross-sample feature? | [Alignment](alignment.md), [Untargeted method](untargeted-method.md) |
 | What happens when a sample lacks usable evidence? | [Backfill](backfill.md) |
 | Why is an area counted, flagged, written or left blank? | [Decision policy](decision-policy.md), [Targeted selection](targeted-selection.md) |

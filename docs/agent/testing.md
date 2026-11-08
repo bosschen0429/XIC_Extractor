@@ -98,6 +98,14 @@ For local changes, use the selector as the default validation entry point:
 
     .venv\Scripts\python.exe -m tools.testing.test_selection
 
+Like CI, the selector runs the selection under xdist (`-n auto --dist
+worksteal`, with `OPENBLAS_NUM_THREADS=1` unless already set), then runs
+`serial_ci` tests in a separate session without workers. Pass xdist options
+after `--` to override the worker count; `-n 0` runs one session in one
+process. Local runs skip `packaging_build`: CI builds the wheel and frozen
+archive for every change that can affect them. Use `--all-markers`, or run
+`tests/test_pyinstaller_spec.py` directly, to build locally.
+
 For a known failure or a bounded behavior, run its existing pytest file or node
 directly. Use the selector's `--all` option when intentionally broadening to all
 test files. Plain `pytest` without a target still collects the whole suite; it

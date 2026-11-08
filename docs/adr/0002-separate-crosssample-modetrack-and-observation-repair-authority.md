@@ -43,7 +43,6 @@ ModeTrack and its coupled-neighborhood refinement were later retired without a
 replacement trajectory owner (#601); the CrossSample and ObservationRepair
 authorities above remain current.
 
-Current contracts: `docs/architecture-contract.md`,
-`docs/agent/architecture-public-contracts.md`, and
+Current contracts: `docs/architecture-contract.md` and
 `docs/product/alignment.md` (Group identity and disposition). Delivery tickets: GitHub #302,
 #303, and #304.

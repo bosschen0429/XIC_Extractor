@@ -58,7 +58,6 @@ _GIT_LOCAL_ENVIRONMENT_VARIABLES = frozenset(
 )
 
 ARCHITECTURE_OWNER = "docs/architecture-contract.md"
-PUBLIC_CONTRACT_OWNER = "docs/agent/architecture-public-contracts.md"
 LAYOUT_OWNER = "docs/project-layout.md"
 
 # Historical immutable provenance may be exempted only with a path, value, and
@@ -72,7 +71,7 @@ VERSIONED_IDENTIFIER = re.compile(
 CENSUS_OWNER_REFS: Mapping[str, str] = {
     "python_modules": LAYOUT_OWNER,
     "internal_static_imports": ARCHITECTURE_OWNER,
-    "project_entrypoint_declarations": PUBLIC_CONTRACT_OWNER,
+    "project_entrypoint_declarations": ARCHITECTURE_OWNER,
     "package_discovery_patterns": LAYOUT_OWNER,
 }
 

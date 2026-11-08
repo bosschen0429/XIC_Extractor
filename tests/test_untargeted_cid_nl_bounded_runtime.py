@@ -191,11 +191,11 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
             adapter.close_process_worker_pools()
             store.cleanup()
 
-    one_feature_at_a_time = run(24)
+    # One feature per partition, in reversed order, must reproduce the single
+    # partition holding every feature: capacity and order both change.
     all_features_together = run(24 * 12)
-    assert one_feature_at_a_time == all_features_together
-    assert run(24, reverse_initial=True) == one_feature_at_a_time
-    calibration, groups = one_feature_at_a_time
+    assert run(24, reverse_initial=True) == all_features_together
+    calibration, groups = all_features_together
     assert len(calibration.knots) == 9
     assert calibration.has_support("S12")
     assert calibration.offset_min("S12", 8.0) == pytest.approx(0.1, abs=0.005)

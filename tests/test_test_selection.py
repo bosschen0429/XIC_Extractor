@@ -176,18 +176,163 @@ def test_selection_prefers_uv_runner_when_pytest_is_not_importable(
 
 
 def _capture_calls(
-    monkeypatch: pytest.MonkeyPatch, exit_code: int = 0
+    monkeypatch: pytest.MonkeyPatch,
+    exit_code: int = 0,
+    *,
+    xdist: bool = False,
 ) -> list[list[str]]:
     commands: list[list[str]] = []
     monkeypatch.setattr(
         test_selection, "_pytest_command", lambda: ["python", "-m", "pytest"]
     )
     monkeypatch.setattr(
+        test_selection, "find_spec", lambda name: object() if xdist else None
+    )
+    monkeypatch.setattr(
         test_selection.subprocess,
         "call",
-        lambda command: commands.append(command) or exit_code,
+        lambda command, **_kwargs: commands.append(command) or exit_code,
     )
     return commands
+
+
+@pytest.fixture
+def serial_split_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[str, str]:
+    """One ordinary test file and one that marks a serial test."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tests").mkdir()
+    Path("tests/test_plain.py").write_text("def test_plain(): pass\n", encoding="utf-8")
+    Path("tests/test_build.py").write_text(
+        "import pytest\n\n@pytest.mark.serial_ci\ndef test_build(): pass\n",
+        encoding="utf-8",
+    )
+    return ("tests/test_plain.py", "tests/test_build.py")
+
+
+def _record_sessions(
+    monkeypatch: pytest.MonkeyPatch, exit_codes: tuple[int, ...] = (0, 0)
+) -> list[tuple[list[str], dict[str, str] | None]]:
+    sessions: list[tuple[list[str], dict[str, str] | None]] = []
+    remaining = list(exit_codes)
+    monkeypatch.setattr(
+        test_selection, "_pytest_command", lambda: ["python", "-m", "pytest"]
+    )
+    monkeypatch.setattr(test_selection, "find_spec", lambda name: object())
+
+    def call(command: list[str], env: dict[str, str] | None = None) -> int:
+        sessions.append((command, env))
+        return remaining.pop(0)
+
+    monkeypatch.setattr(test_selection.subprocess, "call", call)
+    return sessions
+
+
+def test_local_run_parallelizes_then_runs_serial_tests_outside_xdist(
+    monkeypatch: pytest.MonkeyPatch, serial_split_files: tuple[str, str]
+) -> None:
+    monkeypatch.delenv("OPENBLAS_NUM_THREADS", raising=False)
+    sessions = _record_sessions(monkeypatch)
+    plan = SelectionPlan(files=serial_split_files, marker_expression="not browser_e2e")
+
+    assert test_selection._run_plan(plan, ("-q",)) == 0
+
+    (parallel, parallel_env), (serial, serial_env) = sessions
+    assert parallel == [
+        "python",
+        "-m",
+        "pytest",
+        "-m",
+        "(not browser_e2e) and (not serial_ci)",
+        "-n",
+        "auto",
+        "--dist",
+        "worksteal",
+        "-q",
+        *serial_split_files,
+    ]
+    assert parallel_env is not None and parallel_env["OPENBLAS_NUM_THREADS"] == "1"
+    assert serial == [
+        "python",
+        "-m",
+        "pytest",
+        "-m",
+        "(not browser_e2e) and (serial_ci)",
+        "-q",
+        "tests/test_build.py",
+    ]
+    assert serial_env is None
+
+
+def test_local_run_keeps_caller_worker_count_and_blas_setting(
+    monkeypatch: pytest.MonkeyPatch, serial_split_files: tuple[str, str]
+) -> None:
+    monkeypatch.setenv("OPENBLAS_NUM_THREADS", "4")
+    sessions = _record_sessions(monkeypatch)
+    plan = SelectionPlan(files=serial_split_files, marker_expression="")
+
+    assert test_selection._run_plan(plan, ("--numprocesses=3", "-x")) == 0
+
+    (parallel, parallel_env), (serial, _env) = sessions
+    assert parallel[3:6] == ["-m", "not serial_ci", "--numprocesses=3"]
+    assert parallel_env is not None and parallel_env["OPENBLAS_NUM_THREADS"] == "4"
+    assert serial[3:] == ["-m", "serial_ci", "-x", "tests/test_build.py"]
+
+
+@pytest.mark.parametrize("pytest_args", (("-n", "0"), ("-n0",), ("-p", "no:xdist")))
+def test_local_run_without_parallelism_is_one_session(
+    monkeypatch: pytest.MonkeyPatch,
+    serial_split_files: tuple[str, str],
+    pytest_args: tuple[str, ...],
+) -> None:
+    sessions = _record_sessions(monkeypatch, exit_codes=(0,))
+    plan = SelectionPlan(files=serial_split_files, marker_expression="owned")
+
+    assert test_selection._run_plan(plan, pytest_args) == 0
+
+    assert [command for command, _env in sessions] == [
+        ["python", "-m", "pytest", "-m", "owned", *pytest_args, *serial_split_files]
+    ]
+
+
+def test_local_run_skips_serial_session_when_no_file_marks_serial_tests(
+    monkeypatch: pytest.MonkeyPatch, serial_split_files: tuple[str, str]
+) -> None:
+    sessions = _record_sessions(monkeypatch, exit_codes=(0,))
+    plan = SelectionPlan(files=serial_split_files[:1], marker_expression="")
+
+    assert test_selection._run_plan(plan, ()) == 0
+    assert len(sessions) == 1
+
+
+@pytest.mark.parametrize(
+    ("files", "exit_codes", "expected"),
+    (
+        ("selected", (1, 0), 1),
+        ("selected", (0, 1), 1),
+        ("selected", (2, 1), 2),
+        ("selected", (0, 5), 0),
+        ("selected", (5, 0), 0),
+        ("selected", (5, 5), 0),
+        ("every", (5, 5), 5),
+    ),
+)
+def test_local_run_reports_failure_from_either_session(
+    monkeypatch: pytest.MonkeyPatch,
+    serial_split_files: tuple[str, str],
+    files: str,
+    exit_codes: tuple[int, int],
+    expected: int,
+) -> None:
+    sessions = _record_sessions(monkeypatch, exit_codes=exit_codes)
+    plan = SelectionPlan(
+        files=serial_split_files if files == "selected" else None,
+        marker_expression="",
+    )
+
+    assert test_selection._run_plan(plan, ()) == expected
+    assert len(sessions) == 2
 
 
 def test_selected_run_intersects_caller_marker_and_passes_selected_files(
@@ -343,8 +488,8 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
         ("uv.lock", {"packaging_build", "browser_e2e"}),
         ("packaging/xic_extractor.spec", {"packaging_build"}),
         (".github/workflows/build.yml", {"packaging_build"}),
-        (".github/workflows/ci.yml", {"packaging_build", "browser_e2e"}),
-        ("tests/test_test_selection.py", set()),
+        (".github/workflows/ci.yml", {"packaging_build", "browser_e2e", "ci_workflow"}),
+        ("tests/test_test_selection.py", {"ci_workflow"}),
         ("tests/test_pyinstaller_spec.py", {"packaging_build"}),
         (
             "xic_extractor/discovery/data/default_background_library_15min.json.gz",
@@ -363,9 +508,18 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
         ("tests/test_xic_inspector_api.py", set()),
         ("tests/inspector_fixtures.py", {"browser_e2e"}),
         ("tests/workbench_http.py", {"browser_e2e"}),
-        ("tools/testing/test_selection.py", {"packaging_build", "browser_e2e"}),
-        ("tools/testing/test_sharding.py", {"packaging_build", "browser_e2e"}),
-        ("tools/testing/pytest_temp.py", {"packaging_build", "browser_e2e"}),
+        (
+            "tools/testing/test_selection.py",
+            {"packaging_build", "browser_e2e", "ci_workflow"},
+        ),
+        (
+            "tools/testing/test_sharding.py",
+            {"packaging_build", "browser_e2e", "ci_workflow"},
+        ),
+        (
+            "tools/testing/pytest_temp.py",
+            {"packaging_build", "browser_e2e", "ci_workflow"},
+        ),
         ("tools/diagnostics/targeted_istd_benchmark_loaders.py", {"packaging_build"}),
         ("xic_extractor/presets/data/dna_dr.toml", {"packaging_build"}),
         ("docs/product/backfill.md", set()),
@@ -403,12 +557,40 @@ def test_local_run_skips_markers_unrelated_to_the_change(
     plan = test_selection._local_plan(run_all=False, all_markers=False)
     assert plan == SelectionPlan(
         files=("tests/test_a.py",),
-        marker_expression="not browser_e2e and not packaging_build",
+        marker_expression="not browser_e2e and not packaging_build and not ci_workflow",
     )
     assert test_selection._local_plan(run_all=False, all_markers=True) == (
         SelectionPlan(files=("tests/test_a.py",), marker_expression="")
     )
     assert test_selection._local_plan(run_all=True, all_markers=False).files is None
+
+
+def test_local_run_leaves_packaging_builds_to_ci_unless_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(test_selection, "_local_change_base", lambda: "base")
+    monkeypatch.setattr(
+        test_selection,
+        "changed_paths",
+        lambda base, head=None: [
+            "xic_extractor/applications/untargeted/application.py"
+        ],
+    )
+    monkeypatch.setattr(
+        test_selection, "select_test_files", lambda _changed: ("tests/test_a.py",)
+    )
+
+    assert test_selection._local_plan(run_all=False, all_markers=False) == (
+        SelectionPlan(
+            files=("tests/test_a.py",),
+            marker_expression=(
+                "not browser_e2e and not ci_workflow and not packaging_build"
+            ),
+        )
+    )
+    assert test_selection._local_plan(run_all=False, all_markers=True) == (
+        SelectionPlan(files=("tests/test_a.py",), marker_expression="")
+    )
 
 
 def test_local_run_runs_every_test_when_git_cannot_diff(
@@ -417,7 +599,7 @@ def test_local_run_runs_every_test_when_git_cannot_diff(
     monkeypatch.setattr(test_selection, "_local_change_base", lambda: None)
 
     assert test_selection._local_plan(run_all=False, all_markers=False) == (
-        SelectionPlan(files=None, marker_expression="")
+        SelectionPlan(files=None, marker_expression="not packaging_build")
     )
 
 
@@ -503,6 +685,7 @@ def _render_ci_step(run: str, event: str, *, before: str = "before") -> str:
     return run
 
 
+@pytest.mark.ci_workflow
 @pytest.mark.parametrize(
     ("event", "changed", "files", "failed_phase", "failed_code", "expected_exit"),
     (
@@ -723,6 +906,7 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
         assert not (in_browser and "browser_e2e" not in marked)
 
 
+@pytest.mark.ci_workflow
 @pytest.mark.parametrize(
     ("before", "changed", "required"),
     [
@@ -783,6 +967,7 @@ def test_push_browser_lane_follows_the_pushed_range(
         ]
 
 
+@pytest.mark.ci_workflow
 @pytest.mark.parametrize(
     "failed_lane,result",
     [(None, "success")]

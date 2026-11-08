@@ -162,7 +162,7 @@ Matrix access.
   positions with nonzero final robust weight. The v3 sidecar also freezes
   qualified measured support for explicitly weak median/boundary-shift queries;
   these do not upgrade strong support. See the
-  [graded RT contract](../../docs/product/alignment.md#current-implementation)
+  [graded RT contract](../../docs/product/rt-calibration.md#graded-query-support)
   for final membership and localization behavior.
 - Measured data decides a perturbation; the
   [injection timeline](../../docs/product/sample-metadata-qc.md#injection-timeline-diagnostic)
