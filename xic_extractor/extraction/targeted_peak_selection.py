@@ -72,6 +72,7 @@ from xic_extractor.peak_detection.selection_decision import (
 )
 from xic_extractor.peak_detection.targeted_context import (
     TargetedPopulationContext,
+    TargetedRegionSelection,
     describe_targeted_region,
     observed_component_apex_rts,
 )
@@ -251,6 +252,7 @@ class TargetedCandidateAssessment:
         peak_result: PeakDetectionResult,
         *,
         scoring_context_builder: ScoringContextBuilder | None,
+        context_selection: TargetedRegionSelection | None = None,
     ) -> ExtractionResult:
         selection = select_targeted_peak(
             config=self.config,
@@ -295,7 +297,24 @@ class TargetedCandidateAssessment:
                 else None
             ),
         )
-        return replace(result, targeted_candidate_assessment=self)
+        admissible_segments = (
+            {region.segment for region in context_selection.admissible_regions}
+            if context_selection is not None
+            else None
+        )
+        return replace(
+            result,
+            targeted_candidate_assessment=self,
+            context_admissible_candidate_indexes=(
+                tuple(
+                    index
+                    for index, candidate in enumerate(self.candidate_evaluations)
+                    if candidate.physical_segment in admissible_segments
+                )
+                if admissible_segments is not None
+                else None
+            ),
+        )
 
 
 def targeted_physical_peak_policy(target: Target, reference_rt: float | None) -> str:

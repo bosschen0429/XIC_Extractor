@@ -132,29 +132,24 @@ def complete_targeted_candidate_batch(
                 candidate_ms2_evidence_builder=assessment.candidate_ms2_evidence.get,
             )
             population = batch.population_by_cell[(file.sample_name, label)]
-            selected_region = batch.select(population)
+            context_selection = batch.select(population)
+            selected_region = context_selection.selected_region
             peak_result = assessment.score_selected_segment(
                 selected_segment=selected_region.segment if selected_region else None,
-                competing_region_count=len(batch.competing_regions(population)),
+                competing_region_count=context_selection.competing_region_count,
                 scoring_context_builder=builder,
                 paired_istd_anchor_rt=assessment.paired_istd_anchor_rt,
             )
             result = assessment.complete_result(
-                peak_result, scoring_context_builder=builder
-            )
-            result = replace(
-                result,
-                context_admissible_candidate_indexes=tuple(
-                    index
-                    for index, region in enumerate(population.regions)
-                    if region.independent_body_supported
-                ),
+                peak_result,
+                scoring_context_builder=builder,
+                context_selection=context_selection,
             )
             projection = result.targeted_product_projection
             evaluation = result.physical_evaluation
             review = []
             if result.peak is not None:
-                if len(batch.competing_regions(population)) > 1:
+                if context_selection.competing_region_count > 1:
                     review.append("targeted_competing_regions")
                 selected = (
                     evaluation.answer.selected_segment

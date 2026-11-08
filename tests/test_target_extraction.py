@@ -910,6 +910,11 @@ def test_istd_reference_body_competes_with_remote_nl_peak(tmp_path, local_ms2):
         region.chemical_support and abs(region.segment.apex_rt_min - 9.7) < 0.03
         for region in result.targeted_candidate_assessment.population_context().regions
     )
+    assert result.context_admissible_candidate_indexes is not None
+    assert [
+        result.candidate_physical_evaluations[index].integration.rt_apex_min
+        for index in result.context_admissible_candidate_indexes
+    ] == pytest.approx([23.0], abs=0.03)
 
 
 @pytest.mark.parametrize(
@@ -970,7 +975,7 @@ def test_istd_reference_selection_is_not_nearest_apex_always(
             regions=ordered,
         )
         selected = TargetedBatchContext((population,)).select(population, is_istd=True)
-        assert selected == confirmed
+        assert selected.selected_region == confirmed
 
 
 @pytest.mark.parametrize("is_istd", [True, False])

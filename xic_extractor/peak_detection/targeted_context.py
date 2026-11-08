@@ -236,9 +236,20 @@ class TargetedPeerRegionTransfer:
         )
 
 
+@dataclass(frozen=True)
+class TargetedRegionSelection:
+    """One identity choice and the retained scope of its method assessment."""
+
+    selected_region: TargetedRegionContext | None
+    admissible_regions: tuple[TargetedRegionContext, ...]
+    competing_region_count: int
+
+
 def _select_istd_reference_region(
     population: TargetedPopulationContext,
-) -> TargetedRegionContext:
+    *,
+    competing_region_count: int,
+) -> TargetedRegionSelection:
     reference = population.reference_rt_min
 
     def reference_order(region: TargetedRegionContext) -> tuple[float, ...]:
@@ -284,7 +295,9 @@ def _select_istd_reference_region(
         <= closest_extent
     )
     positive = tuple(r for r in local if r.chemical_support)
-    return min(positive or local, key=reference_order)
+    return TargetedRegionSelection(
+        min(positive or local, key=reference_order), local, competing_region_count
+    )
 
 
 @dataclass(frozen=True)
@@ -553,19 +566,26 @@ class TargetedBatchContext:
 
     def select(
         self, population: TargetedPopulationContext, *, is_istd: bool = False
-    ) -> TargetedRegionContext | None:
+    ) -> TargetedRegionSelection:
+        admissible = tuple(
+            r for r in population.regions if r.independent_body_supported
+        )
+        competing_region_count = len(self.competing_regions(population))
         plausible = tuple(
             r
-            for r in population.regions
-            if r.independent_body_supported
-            and self.plausible(population, r)
+            for r in admissible
+            if self.plausible(population, r)
             and (is_istd or not self.cross_sample_region_conflict(population, r))
         )
         if not plausible:
-            return None
+            return TargetedRegionSelection(
+                None, () if is_istd else admissible, competing_region_count
+            )
         population = replace(population, regions=plausible)
         if is_istd:
-            return _select_istd_reference_region(population)
+            return _select_istd_reference_region(
+                population, competing_region_count=competing_region_count
+            )
         candidates = self._reference_competitors(population)
         peers = tuple(
             (p, r)
@@ -587,15 +607,19 @@ class TargetedBatchContext:
             reference += median(
                 r.segment.apex_rt_min - self.reference_rt(p) for p, r in peers
             )
-        return min(
-            candidates,
-            key=lambda r: (
-                self._match_cost(r, reference, tuple(peer for _, peer in peers)),
-                -r.body_support,
-                r.segment.apex_rt_min,
-                r.segment.left_rt_min,
-                r.segment.right_rt_min,
+        return TargetedRegionSelection(
+            min(
+                candidates,
+                key=lambda r: (
+                    self._match_cost(r, reference, tuple(peer for _, peer in peers)),
+                    -r.body_support,
+                    r.segment.apex_rt_min,
+                    r.segment.left_rt_min,
+                    r.segment.right_rt_min,
+                ),
             ),
+            admissible,
+            competing_region_count,
         )
 
     @cached_property

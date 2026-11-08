@@ -98,6 +98,13 @@ rule: weak reference residues cannot displace a confirmed standard, and genuine
 drift remains possible. Selection never changes the candidate's NL answer or
 itself promotes an unconfirmed peak to a credible ISTD anchor.
 
+The selection answer carries the chosen region and its admissible candidate
+scope together. Extraction binds that scope to the retained physical candidates;
+production method assessment consumes it without rebuilding reference identity.
+All acquired candidates and their NL answers remain diagnostic evidence. A
+positive class loss on an identity-rejected alternate cannot mark the selected
+unconfirmed ISTD as already supported and bypass its Backfill assessment.
+
 Targeted retains its finite full-acquisition region universe even when the
 number of background lobes exceeds the generic capture budget. Background
 complexity must not turn every observed body into an empty candidate set.
