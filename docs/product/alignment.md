@@ -237,10 +237,9 @@ disambiguate the witness. Known-identity constraints retain their separate path.
 
 Alignment projects sample observations onto a shared retention-time coordinate
 frame before final membership and localization. The fit, anchor qualification,
-and LOESS model are owned by
-[`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py);
-see [Retention Time Calibration](rt-calibration.md) for anchor rules, support
-floors, and graded query details.
+and LOESS model are described in
+[Retention Time Calibration](rt-calibration.md), including the implementation
+owner, anchor rules, support floors, and graded query details.
 
 Final grouping rebuilds correspondence in the frozen frame and carries those
 trajectories to localization. Weak estimates multiply RT costs by 0.5 in

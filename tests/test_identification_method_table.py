@@ -3,7 +3,7 @@
 import pytest
 from openpyxl import Workbook, load_workbook
 
-from xic_extractor.alignment_explanation.storage import ExplanationError
+from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.configuration.identification_method_table import (
     METHOD_TABLE_SHEET,
 )

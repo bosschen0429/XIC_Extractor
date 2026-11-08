@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 
 
 def _settings() -> DiscoverySettings:

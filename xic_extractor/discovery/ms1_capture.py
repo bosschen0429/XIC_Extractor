@@ -30,7 +30,6 @@ from xic_extractor.discovery.models import (
     DiscoveryPhysicalWorkItem,
     DiscoverySeed,
     DiscoverySeedGroup,
-    DiscoverySettings,
     assign_discovery_candidate_state,
     build_discovery_physical_selection_subject_id,
 )
@@ -43,6 +42,7 @@ from xic_extractor.discovery.priority import (
     assign_review_priority,
     build_candidate_reason,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_seed_receipts import read_parent_ms1_observations
 from xic_extractor.mass_accuracy import weighted_ion_mz, within_ppm
 from xic_extractor.peak_detection.physical_peak_evaluation import (

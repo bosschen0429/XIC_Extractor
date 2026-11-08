@@ -9,23 +9,22 @@ import re
 import secrets
 import socket
 import threading
+from collections.abc import Callable
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from xic_extractor.alignment_explanation.storage import (
-    ExplanationError,
-)
+from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.configuration.models import ConfigError
-from xic_extractor.presets import PresetError
-from xic_inspector.api import InspectorError, read_evidence_summary, resolve_source
-from xic_workbench.analysis_workspace import json_value
+from xic_extractor.presets.models import PresetError
+from xic_inspector.errors import InspectorError
 from xic_workbench.browser_lifetime import BrowserLifetime
+from xic_workbench.errors import WorkspaceBusy
+from xic_workbench.json_transport import json_value
 from xic_workbench.native_picker import PickerBusy, choose_path
-from xic_workbench.user_guide import read_user_guide
-from xic_workbench.workspace import ReviewWorkspace, WorkspaceBusy
+from xic_workbench.session import WorkbenchSession
 
 _ASSETS = {
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -95,7 +94,7 @@ class _WorkbenchHTTPServer(ThreadingHTTPServer):
     request_queue_size = socket.SOMAXCONN
 
     browser_lifetime: BrowserLifetime | None = None
-    workspace: ReviewWorkspace
+    workspace: WorkbenchSession
 
     def service_actions(self) -> None:
         if (
@@ -111,8 +110,9 @@ class _ResponseDisconnected(Exception):
 
 
 def create_server(
-    workspace: ReviewWorkspace,
+    workspace: WorkbenchSession,
     *,
+    read_user_guide: Callable[[str], tuple[bytes, str] | None],
     port: int = 0,
     desktop_key: str | None = None,
     browser_lifetime: BrowserLifetime | None = None,
@@ -377,11 +377,9 @@ def create_server(
                     read_headers=False,
                 )
             elif path == "/api/matrix-curation/preview":
-                from xic_workbench.matrix_curation import preview_curation
-
                 # Read-only computation runs on this HTTP request thread, without
                 # holding the mutable workspace lock or blocking status/queries.
-                result = preview_curation(workspace.analysis.config_dir, values)
+                result = workspace.preview_curation(values)
             elif path == "/api/analysis/start":
                 if not isinstance(values.get("values"), dict):
                     raise ValueError("請提供分析設定。")
@@ -392,7 +390,7 @@ def create_server(
             elif path == "/api/analysis/cancel":
                 result = workspace.analysis.jobs.cancel(values["job_id"])
             elif path == "/api/evidence-summary":
-                result = read_evidence_summary(resolve_source(Path(values["source"])))
+                result = workspace.evidence_summary(values["source"])
             elif path == "/api/shutdown":
                 if not workspace.request_shutdown():
                     raise WorkspaceBusy("請先停止或等待目前工作完成。")

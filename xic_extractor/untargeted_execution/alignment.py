@@ -34,7 +34,7 @@ from xic_extractor.discovery.batch_contract import (
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.discovery.csv_writer import format_discovery_csv_value
 from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.discovery.physical_fact_persistence import (
     DetachedIndexedDiscoveryPhysicalFacts,
     IndexedDiscoveryPhysicalFacts,
@@ -44,6 +44,7 @@ from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRe
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_with_expectations,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.execution.workers import WorkerAdmissionPool

@@ -11,8 +11,9 @@ from pathlib import Path
 
 from xic_extractor.discovery.blank_qualification import get_default_background_library
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
+from xic_workbench.application import create_workspace
 from xic_workbench.server import _ASSETS, create_server
-from xic_workbench.workspace import ReviewWorkspace
+from xic_workbench.user_guide import read_user_guide
 
 
 def run_smoke(report_path: Path) -> int:
@@ -24,8 +25,8 @@ def run_smoke(report_path: Path) -> int:
         "executable": sys.executable,
         "stage": "server_startup",
     }
-    workspace = ReviewWorkspace(config_dir=report_path.parent / "smoke-config")
-    server = create_server(workspace)
+    workspace = create_workspace(config_dir=report_path.parent / "smoke-config")
+    server = create_server(workspace, read_user_guide=read_user_guide)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     connection = http.client.HTTPConnection(

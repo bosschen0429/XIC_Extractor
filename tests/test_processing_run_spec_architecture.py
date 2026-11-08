@@ -55,7 +55,8 @@ def test_run_spec_runtime_local_imports_keep_forbidden_modules_absent() -> None:
         import xic_extractor.processing_identity as identity
         import xic_extractor.configuration.signal_processing_profile
         import xic_extractor.processing_run_spec as owner
-        from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+        from xic_extractor.discovery.settings import DiscoverySettings
+        from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 
         prohibited = {
             "xic_extractor.discovery.pipeline",

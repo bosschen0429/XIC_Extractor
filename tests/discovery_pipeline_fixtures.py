@@ -8,17 +8,15 @@ from typing import Any, cast
 import numpy as np
 
 from tests.cid_nl_raw_fixture import fake_acquisition_source
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.mass_recalibration import MassRecalibrationResult
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery import pipeline as _pipeline
-from xic_extractor.discovery.models import (
-    DiscoveryRunOutputs,
-    DiscoverySettings,
-    NeutralLossProfile,
-)
+from xic_extractor.discovery.models import DiscoveryRunOutputs
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,

@@ -8,6 +8,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
+from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import read_review_cells
 from xic_extractor.alignment_explanation.review import (
     REVIEW_SCHEMA_VERSION,
@@ -15,7 +16,6 @@ from xic_extractor.alignment_explanation.review import (
 )
 from xic_extractor.alignment_explanation.storage import (
     CANDIDATE_SELECT,
-    ExplanationError,
     decode_candidate,
     decode_object,
     open_readonly,

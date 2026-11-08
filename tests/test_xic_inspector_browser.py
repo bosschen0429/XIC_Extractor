@@ -11,7 +11,7 @@ from importlib.resources import files
 import pytest
 from playwright.sync_api import expect
 
-from tests.workbench_browser_fixtures import browser as browser
+from tests.browser_runtime import browser as browser
 from tests.xic_inspector_curve_bundle_fixtures import _fixture_bundle
 from tests.xic_inspector_html_fixtures import build_origin_curve_payload
 from tests.xic_inspector_targeted_workbook_fixtures import write_rare_detection_workbook

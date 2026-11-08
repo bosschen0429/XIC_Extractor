@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import read_review_cells
 from xic_extractor.alignment_explanation.review import (
     ORIGIN_FLAGS,
@@ -24,7 +25,6 @@ from xic_extractor.alignment_explanation.review import (
 )
 from xic_extractor.alignment_explanation.storage import (
     CANDIDATE_SELECT,
-    ExplanationError,
     decode_candidate,
     decode_object,
     open_readonly,

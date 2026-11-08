@@ -388,7 +388,7 @@ def test_production_batch_preserves_bounded_subject_membership(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=ppm
     )
     peak_config = _peak_config(tmp_path)
-    from xic_extractor.discovery.models import NeutralLossProfile
+    from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 
     physical_records = {}
     candidates = tuple(

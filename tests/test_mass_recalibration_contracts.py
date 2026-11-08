@@ -7,7 +7,7 @@ import pytest
 
 from tests.alignment_pipeline_helpers import physical_facts_fingerprint_beside
 from xic_extractor.configuration.mass_recalibration import MassRecalibration
-from xic_extractor.discovery.models import discovery_settings_identity_fields
+from xic_extractor.discovery.settings import discovery_settings_identity_fields
 from xic_extractor.presets import apply_to_discovery, load_preset
 from xic_extractor.presets.serialization import save_preset
 from xic_extractor.processing_run_spec import (

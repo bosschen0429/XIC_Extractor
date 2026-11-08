@@ -17,14 +17,14 @@ from tests.alignment_explanation_fixtures import (
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetBatchApplicationResult,
 )
+from xic_extractor.alignment_explanation.errors import (
+    CandidateNotFoundError,
+    ExplanationError,
+)
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
     read_explanation_metadata,
-)
-from xic_extractor.alignment_explanation.storage import (
-    CandidateNotFoundError,
-    ExplanationError,
 )
 from xic_extractor.alignment_explanation.writer import (
     write_explanation_report,
@@ -37,11 +37,9 @@ from xic_extractor.immutable_sequence import ImmutableSequence
 
 
 def test_missing_report_is_unavailable(tmp_path):
+    from xic_extractor.alignment_explanation.errors import ExplanationUnavailableError
     from xic_extractor.alignment_explanation.reader import (
         read_alignment_explanation,
-    )
-    from xic_extractor.alignment_explanation.storage import (
-        ExplanationUnavailableError,
     )
 
     with pytest.raises(ExplanationUnavailableError, match="unavailable"):

@@ -124,10 +124,10 @@ def test_workbench_export_import_carries_method_without_mutating_preview_state(
 ):
     import base64
 
-    from xic_workbench.analysis_workspace import AnalysisWorkspace
+    from tests.workbench_config_fixtures import analysis_workspace
     from xic_workbench.target_import import preview_target_upload
 
-    workspace = AnalysisWorkspace(tmp_path / "config", {})
+    workspace = analysis_workspace(tmp_path / "config", {})
     values = {
         "settings": {"data_dir": str(tmp_path), "dll_dir": str(tmp_path)},
         "targets": [target_row()],

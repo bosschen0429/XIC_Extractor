@@ -15,7 +15,6 @@ from tests.discovery_pipeline_fixtures import _settings
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_candidates,
 )
@@ -28,6 +27,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.execution.timing import TimingRecorder
 
 

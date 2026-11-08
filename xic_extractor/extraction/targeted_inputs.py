@@ -17,8 +17,8 @@ from xic_extractor.configuration.target_identity import (
     target_list_snapshot_payload,
 )
 from xic_extractor.configuration.targeted_strategy import strategy_receipt
-from xic_extractor.discovery.models import (
-    DiscoveryCandidate,
+from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.settings import (
     DiscoverySettings,
     discovery_settings_identity_fields,
 )

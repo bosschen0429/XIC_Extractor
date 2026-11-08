@@ -6,12 +6,12 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.execution_profile import load_execution_profile
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.discovery.blank_qualification import (
     extract_blank_background_library,
 )
-from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
@@ -19,6 +19,7 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
 from xic_extractor.discovery.sample_process_execution import (
     DiscoveryProcessExecutionError,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.tag_profiles import (
     load_feature_tag_profiles,
     resolve_selected_tag_profiles,

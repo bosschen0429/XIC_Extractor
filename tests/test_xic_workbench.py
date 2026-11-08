@@ -22,16 +22,17 @@ from tests.inspector_fixtures import (
     create_review_batch,
 )
 from tests.workbench_http import workbench_client
+from tests.workbench_review_fixtures import review_workspace
 from xic_workbench.server import create_server
-from xic_workbench.workspace import ReviewWorkspace
+from xic_workbench.user_guide import read_user_guide
 
 
 def test_workbench_startup_skips_heavy_branch_imports(tmp_path):
     """These packages dominate cold start; the first page load does not need them."""
     script = (
         "import sys; from pathlib import Path; import xic_workbench.cli; "
-        "from xic_workbench.workspace import ReviewWorkspace; "
-        f"workspace = ReviewWorkspace(config_dir=Path({str(tmp_path)!r})); "
+        "from xic_workbench.application import create_workspace; "
+        f"workspace = create_workspace(config_dir=Path({str(tmp_path)!r})); "
         "workspace.analysis.bootstrap(); workspace.analysis.state(); "
         "workspace.state(); workspace.close(); "
         "loaded = {'scipy', 'openpyxl'} & set(sys.modules); "
@@ -48,8 +49,8 @@ def test_workbench_startup_skips_heavy_branch_imports(tmp_path):
 
 
 def test_help_serves_user_guides_and_templates_without_exposing_repository(tmp_path):
-    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
-    with workbench_client(workspace) as request:
+    workspace = review_workspace(config_dir=tmp_path / "config")
+    with workbench_client(workspace, read_user_guide=read_user_guide) as request:
         status, guide, headers = request("/help/")
         assert status == 200
         assert "text/html" in headers["Content-Type"]
@@ -70,8 +71,8 @@ def test_help_serves_user_guides_and_templates_without_exposing_repository(tmp_p
 
 def test_http_accepts_page_asset_burst_before_dispatch(tmp_path):
     """A page's parallel asset connections can arrive before the accept loop runs."""
-    workspace = ReviewWorkspace(config_dir=tmp_path)
-    server = create_server(workspace)
+    workspace = review_workspace(config_dir=tmp_path)
+    server = create_server(workspace, read_user_guide=read_user_guide)
     connections = []
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     try:
@@ -104,7 +105,7 @@ def test_http_accepts_page_asset_burst_before_dispatch(tmp_path):
 def test_nearest_review_query_exposes_owner_ranking_and_preserves_exact(tmp_path):
     report, matrix = create_nearest_review_batch(tmp_path)
     before = [path.read_bytes() for path in (report, matrix)]
-    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    workspace = review_workspace(config_dir=tmp_path / "config")
     try:
         workspace.open(str(report))
         exact = workspace.query({"mz_min": 123.4, "mz_max": 123.4})
@@ -175,7 +176,7 @@ def test_review_overview_does_not_retain_decoded_cells_for_the_population(
 def test_review_overview_separates_matrix_priority_and_internal_evidence(tmp_path):
     report, matrix = create_review_batch(tmp_path)
     before = [p.read_bytes() for p in (report, matrix)]
-    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    workspace = review_workspace(config_dir=tmp_path / "config")
     try:
         page = workspace.open(str(report))
         overview = page["overview"]
@@ -241,7 +242,9 @@ def test_example_downloads_are_fixed_public_resources_not_local_files(tmp_path):
     config.mkdir()
     private = config / "workspace.json"
     private.write_text("private-local-state", encoding="utf-8")
-    with workbench_client(ReviewWorkspace(config_dir=config)) as request:
+    with workbench_client(
+        review_workspace(config_dir=config), read_user_guide=read_user_guide
+    ) as request:
         for name in ("targeted-method.xlsx", "targets.xlsx"):
             status, payload, headers = request(f"/examples/{name}")
             assert status == 200
@@ -274,7 +277,7 @@ def test_example_downloads_are_fixed_public_resources_not_local_files(tmp_path):
 def test_disconnected_response_does_not_send_an_error_or_acknowledge_completion(
     tmp_path, monkeypatch, failure_type, successful_writes, application_failure
 ):
-    workspace = ReviewWorkspace(config_dir=tmp_path)
+    workspace = review_workspace(config_dir=tmp_path)
     acknowledgements = []
     writes = []
     server_errors = []
@@ -318,7 +321,7 @@ def test_disconnected_response_does_not_send_an_error_or_acknowledge_completion(
         return server
 
     monkeypatch.setattr("xic_workbench.server.create_server", controlled_server)
-    with workbench_client(workspace) as request:
+    with workbench_client(workspace, read_user_guide=read_user_guide) as request:
         with pytest.raises(
             (http.client.RemoteDisconnected, http.client.IncompleteRead)
         ):
@@ -335,13 +338,13 @@ def test_disconnected_response_does_not_send_an_error_or_acknowledge_completion(
 def test_application_io_failure_is_still_reported_to_a_connected_client(
     tmp_path, monkeypatch, failure_type
 ):
-    workspace = ReviewWorkspace(config_dir=tmp_path)
+    workspace = review_workspace(config_dir=tmp_path)
 
     def unavailable():
         raise failure_type("application input unavailable")
 
     monkeypatch.setattr(workspace.analysis, "state", unavailable)
-    with workbench_client(workspace) as request:
+    with workbench_client(workspace, read_user_guide=read_user_guide) as request:
         status, payload, _headers = request("/api/analysis")
 
     assert status == 400
@@ -358,7 +361,9 @@ def test_http_reuses_connection_for_assets_and_status(tmp_path, monkeypatch):
         return connection, address
 
     monkeypatch.setattr(ThreadingHTTPServer, "get_request", record_accept)
-    with workbench_client(ReviewWorkspace(config_dir=tmp_path)) as request:
+    with workbench_client(
+        review_workspace(config_dir=tmp_path), read_user_guide=read_user_guide
+    ) as request:
         for _ in range(6):
             assert request("/assets/analysis.js")[0] == 200
             status, payload, _ = request("/api/analysis")
@@ -368,7 +373,9 @@ def test_http_reuses_connection_for_assets_and_status(tmp_path, monkeypatch):
 
 
 def test_http_closes_rejected_request_before_accepting_another(tmp_path):
-    with workbench_client(ReviewWorkspace(config_dir=tmp_path)) as request:
+    with workbench_client(
+        review_workspace(config_dir=tmp_path), read_user_guide=read_user_guide
+    ) as request:
         status, _, headers = request(
             "/api/open", {"source": "."}, headers={"Cookie": ""}
         )
@@ -380,7 +387,9 @@ def test_http_closes_rejected_request_before_accepting_another(tmp_path):
 def test_http_query_detail_export_and_invalid_open_preserve_source(tmp_path):
     db, matrix, _ = create_inspector_report(tmp_path)
     before = [hashlib.sha256(path.read_bytes()).hexdigest() for path in (db, matrix)]
-    with workbench_client(ReviewWorkspace()) as request:
+    with workbench_client(
+        review_workspace(), read_user_guide=read_user_guide
+    ) as request:
         status, page, _ = request("/api/open", {"source": str(tmp_path)})
         assert status == 200
         assert (page["run_total"], page["matched_count"], page["selected_count"]) == (
@@ -441,7 +450,9 @@ def test_http_open_explains_unreadable_report_in_plain_language(tmp_path):
     report = tmp_path / "alignment_explanation.sqlite"
     with sqlite3.connect(report) as connection:
         connection.execute("CREATE TABLE unrelated (value TEXT)")
-    with workbench_client(ReviewWorkspace()) as request:
+    with workbench_client(
+        review_workspace(), read_user_guide=read_user_guide
+    ) as request:
         status, body, _ = request("/api/open", {"source": str(report)})
     assert status == 400
     assert body["error"].startswith("無法讀取這份結果")
@@ -472,7 +483,10 @@ def test_interactive_views_keep_original_sample_snapshots_and_export_lazily(
     monkeypatch.setattr(
         "xic_workbench.workspace.build_report_html", record_snapshot_render
     )
-    with workbench_client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
+    with workbench_client(
+        review_workspace(config_dir=tmp_path / "config"),
+        read_user_guide=read_user_guide,
+    ) as request:
         assert request("/api/open", {"source": str(report)})[0] == 200
         views = []
         for sample_id, expected_value in (("S1", 100), ("S2", 200)):
@@ -523,7 +537,10 @@ def test_interactive_views_keep_original_sample_snapshots_and_export_lazily(
 def test_analysis_module_graph_is_served_with_javascript_mime(tmp_path):
     from importlib.resources import files
 
-    with workbench_client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
+    with workbench_client(
+        review_workspace(config_dir=tmp_path / "config"),
+        read_user_guide=read_user_guide,
+    ) as request:
         status, html, _ = request("/")
         assert status == 200
         assert re.search(rb'<script\s+type="module"\s+src="/assets/analysis.js"', html)
@@ -554,7 +571,10 @@ def test_view_endpoint_guards_unknown_ids_and_serves_only_packaged_assets(tmp_pa
     from importlib.resources import files
 
     db, _, _ = create_inspector_report(tmp_path)
-    with workbench_client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
+    with workbench_client(
+        review_workspace(config_dir=tmp_path / "config"),
+        read_user_guide=read_user_guide,
+    ) as request:
         _, page, _ = request("/api/open", {"source": str(db)})
         _, detail, _ = request("/api/detail", {"item_id": page["items"][0]["id"]})
         url = f"/api/views/{detail['view_id']}"
@@ -606,7 +626,9 @@ def test_http_rejects_cross_origin_or_unidentified_api_calls(
         return send(connection, data)
 
     monkeypatch.setattr(http.client.HTTPConnection, "send", delayed_body)
-    with workbench_client(ReviewWorkspace()) as request:
+    with workbench_client(
+        review_workspace(), read_user_guide=read_user_guide
+    ) as request:
         assert request("/api/open", {"source": "."}, headers=headers)[0] == 403
 
 
@@ -622,7 +644,9 @@ def test_pick_returns_the_native_choice_and_starts_from_the_field(
         return "" if kind == "folder" else str(tmp_path / "chosen.sqlite")
 
     monkeypatch.setattr(server, "choose_path", choose)
-    with workbench_client(ReviewWorkspace()) as request:
+    with workbench_client(
+        review_workspace(), read_user_guide=read_user_guide
+    ) as request:
         status, body, _ = request(
             "/api/pick", {"kind": "report", "path": str(tmp_path)}
         )
@@ -656,7 +680,10 @@ def test_opened_results_download_original_bytes_and_switch_with_source(tmp_path)
 
     workbook = write_rare_detection_workbook(tmp_path / "分析結果.xlsx")
     report, matrix = create_review_batch(tmp_path)
-    with workbench_client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
+    with workbench_client(
+        review_workspace(config_dir=tmp_path / "config"),
+        read_user_guide=read_user_guide,
+    ) as request:
         urls = []
         for source, product in ((workbook, workbook), (report, matrix)):
             status, page, _ = request("/api/open", {"source": str(source)})
@@ -691,7 +718,9 @@ def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypat
         raise acquisition.CurveAcquisitionCancelled()
 
     monkeypatch.setattr(acquisition, "export_explanation_curves", blocked_export)
-    with workbench_client(ReviewWorkspace()) as request:
+    with workbench_client(
+        review_workspace(), read_user_guide=read_user_guide
+    ) as request:
         _, page, _ = request("/api/open", {"source": str(db)})
         item_id = page["items"][0]["id"]
         _, detail, _ = request("/api/detail", {"item_id": item_id})
@@ -785,8 +814,12 @@ def test_two_servers_keep_independent_sessions_with_shared_browser_cookies(tmp_p
     from http.cookies import SimpleCookie
 
     with (
-        workbench_client(ReviewWorkspace(config_dir=tmp_path / "a")) as a,
-        workbench_client(ReviewWorkspace(config_dir=tmp_path / "b")) as b,
+        workbench_client(
+            review_workspace(config_dir=tmp_path / "a"), read_user_guide=read_user_guide
+        ) as a,
+        workbench_client(
+            review_workspace(config_dir=tmp_path / "b"), read_user_guide=read_user_guide
+        ) as b,
     ):
         jar = SimpleCookie()
         for request in (a, b, a):

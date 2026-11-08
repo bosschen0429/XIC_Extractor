@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from xic_workbench.workspace import WorkspaceBusy
+from xic_workbench.errors import WorkspaceBusy
 
 
 def new_run_folder(root: Path, kind: str, raw_dir: str) -> Path:

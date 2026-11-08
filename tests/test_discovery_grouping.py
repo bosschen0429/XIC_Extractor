@@ -3,12 +3,10 @@ from pathlib import Path
 
 import pytest
 
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.models import (
-    DiscoverySeed,
-    DiscoverySettings,
-    NeutralLossProfile,
-)
+from xic_extractor.discovery.models import DiscoverySeed
+from xic_extractor.discovery.settings import DiscoverySettings
 
 NEUTRAL_LOSS_DA = 116.0474
 RAW_FILE = Path("C:/data/TumorBC2312_DNA.raw")

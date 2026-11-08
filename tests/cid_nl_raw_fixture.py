@@ -8,16 +8,17 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_candidates,
 )
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,

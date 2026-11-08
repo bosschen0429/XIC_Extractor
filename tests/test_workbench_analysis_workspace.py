@@ -3,12 +3,12 @@
 import pytest
 
 from tests.targeted_fixtures import targeted_rows
+from tests.workbench_config_fixtures import ConfigurationWorkspace
 from tests.workbench_http import workbench_client
-from xic_workbench.workspace import ReviewWorkspace
 
 
 def test_untargeted_method_preview_does_not_replace_the_saved_batch(tmp_path):
-    from xic_extractor.presets import load_preset
+    from xic_extractor.presets.loader import load_preset
     from xic_workbench.methods import method_details, save_method
     from xic_workbench.untargeted_config import read_untargeted_config
 
@@ -19,7 +19,7 @@ def test_untargeted_method_preview_does_not_replace_the_saved_batch(tmp_path):
     saved_bytes = current.read_bytes()
     draft["name"] = "Edited method"
     draft["overrides"]["ms2_precursor_tol_da"] = 0.37
-    with workbench_client(ReviewWorkspace(config_dir=tmp_path)) as request:
+    with workbench_client(ConfigurationWorkspace(config_dir=tmp_path)) as request:
         status, preview, _ = request("/api/method", {"draft": draft})
         assert status == 200
         assert preview["path"] == str(current)
@@ -47,7 +47,7 @@ def test_invalid_untargeted_method_preview_writes_nothing(tmp_path):
 
     draft = method_details("dna_dr")["draft"]
     draft["tags"] = []
-    with workbench_client(ReviewWorkspace(config_dir=tmp_path)) as request:
+    with workbench_client(ConfigurationWorkspace(config_dir=tmp_path)) as request:
         assert request("/api/method", {"draft": draft})[0] == 400
     assert not (tmp_path / "current_discovery_method.toml").exists()
     assert not (tmp_path / "discovery_gui.json").exists()
@@ -55,7 +55,7 @@ def test_invalid_untargeted_method_preview_writes_nothing(tmp_path):
 
 def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_path):
     config_dir = tmp_path / "config"
-    workspace = ReviewWorkspace(config_dir=config_dir)
+    workspace = ConfigurationWorkspace(config_dir=config_dir)
     with workbench_client(workspace) as request:
         _, original, _ = request("/api/config")
         settings = original["settings"]
@@ -128,7 +128,7 @@ def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_
     ],
 )
 def test_method_save_rejects_invalid_name_without_writing(tmp_path, name):
-    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    workspace = ConfigurationWorkspace(config_dir=tmp_path / "config")
     with workbench_client(workspace) as request:
         _, config, _ = request("/api/config")
         status, _, _ = request(
@@ -141,7 +141,7 @@ def test_method_save_rejects_invalid_name_without_writing(tmp_path, name):
 
 
 def test_existing_method_rejected_and_bootstrap_omits_incomplete_folders(tmp_path):
-    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    workspace = ConfigurationWorkspace(config_dir=tmp_path / "config")
     with workbench_client(workspace) as request:
         _, config, _ = request("/api/config")
         values = {
@@ -174,7 +174,7 @@ def test_istd_upload_uses_shared_target_files_without_changing_targeted(tmp_path
     from xic_extractor.configuration.targets import read_istd_targets
 
     source = targets_template_path().parent / name
-    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    workspace = ConfigurationWorkspace(config_dir=tmp_path / "config")
     with workbench_client(workspace) as request:
         original = request("/api/config")[1]
         status, result, _ = request(
@@ -203,7 +203,7 @@ def test_istd_upload_uses_shared_target_files_without_changing_targeted(tmp_path
 def test_istd_upload_rejects_invalid_content_without_writing(tmp_path):
     import base64
 
-    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    workspace = ConfigurationWorkspace(config_dir=tmp_path / "config")
     with workbench_client(workspace) as request:
         for name, payload in [
             ("bad.xls", b"bad"),
@@ -238,7 +238,7 @@ def test_istd_http_preview_and_upload_share_method_applicability(
 
     source = targets_template_path().with_suffix(".xlsx")
     snapshot = method_details(method)["draft"]
-    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    workspace = ConfigurationWorkspace(config_dir=tmp_path / "config")
     with workbench_client(workspace) as request:
         for action, values in [
             ("istd", {"path": str(source)}),

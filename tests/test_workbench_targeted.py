@@ -50,7 +50,7 @@ def test_settings_round_trip_rejects_hidden_science_without_migrating(tmp_path):
 
 
 def test_method_summary_names_strategy_without_revision():
-    from xic_workbench.targeted import method_summary
+    from xic_workbench.targeted_config import method_summary
 
     assert method_summary({}) == {
         "label": "共用 Targeted 策略",
@@ -139,7 +139,7 @@ def test_excel_target_import_without_target_rows_is_rejected(tmp_path: Path) -> 
 
 
 def test_targeted_fields_are_batch_and_machine_only():
-    from xic_workbench.targeted import setting_fields
+    from xic_workbench.targeted_config import setting_fields
 
     fields = {field["key"]: field for field in setting_fields()}
     assert set(fields) == {

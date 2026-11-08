@@ -4,7 +4,8 @@ from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
     DiscoveryEvidenceThresholds,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.settings import DiscoverySettings
 
 
 @dataclass(frozen=True)

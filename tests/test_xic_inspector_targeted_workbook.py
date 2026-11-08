@@ -10,6 +10,7 @@ import pytest
 from openpyxl import Workbook, load_workbook
 
 from tests.workbench_http import workbench_client
+from tests.workbench_review_fixtures import review_workspace
 from tests.xic_inspector_targeted_workbook_fixtures import (
     install_targeted_raws,
     write_rare_detection_workbook,
@@ -20,7 +21,6 @@ from xic_inspector.api import (
     prepare_report,
     resolve_source,
 )
-from xic_workbench.workspace import ReviewWorkspace
 
 
 @pytest.fixture
@@ -240,7 +240,7 @@ def test_targeted_http_loads_nd_sample_curves_without_changing_workbook(
     batch.mkdir()
     (raw_dir / "Sample A.raw").rename(batch / "Sample A.raw")
     before = workbook.read_bytes()
-    with workbench_client(ReviewWorkspace()) as request:
+    with workbench_client(review_workspace()) as request:
         _, page, _ = request("/api/open", {"source": str(workbook)})
         item = next(item for item in page["items"] if item["title"] == "Analyte")
         assert item["observed_sample_ids"] == []
@@ -274,9 +274,7 @@ def test_targeted_http_loads_nd_sample_curves_without_changing_workbook(
 def test_targeted_curve_rejects_ambiguous_raw_before_acquisition(
     workbook, tmp_path, monkeypatch
 ):
-    from xic_extractor.alignment_explanation.storage import (
-        ExplanationError,
-    )
+    from xic_extractor.alignment_explanation.errors import ExplanationError
     from xic_workbench.targeted_curves import export_targeted_curves
 
     raw_dir = tmp_path / "raw"
@@ -308,9 +306,7 @@ def test_targeted_curve_failure_does_not_publish_or_modify_results(
     tmp_path,
     failure,
 ):
-    from xic_extractor.alignment_explanation.storage import (
-        ExplanationError,
-    )
+    from xic_extractor.alignment_explanation.errors import ExplanationError
     from xic_workbench.acquisition import CurveAcquisitionCancelled
     from xic_workbench.targeted_curves import export_targeted_curves
 
@@ -333,7 +329,7 @@ def test_targeted_curve_failure_does_not_publish_or_modify_results(
 def test_targeted_http_review_preserves_values_scope_and_source(workbook):
     before = hashlib.sha256(workbook.read_bytes()).hexdigest()
     files = set(workbook.parent.iterdir())
-    with workbench_client(ReviewWorkspace()) as request:
+    with workbench_client(review_workspace()) as request:
         status, page, _ = request("/api/open", {"source": str(workbook.parent)})
         assert status == 200
         assert page["source_kind"] == "targeted_workbook"
@@ -629,7 +625,7 @@ def test_workspace_role_query_roundtrips_and_all_restores_legacy_targets(
     role_workbook, tmp_path
 ):
     before = role_workbook.read_bytes()
-    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    workspace = review_workspace(config_dir=tmp_path / "config")
     try:
         initial = workspace.open(str(role_workbook))
         page = workspace.query({"target_role": "ISTD", "target_id": "Compound B"})

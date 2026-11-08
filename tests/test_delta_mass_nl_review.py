@@ -9,6 +9,7 @@ import numpy as np
 
 from tests.delta_mass_review_fixtures import review_fixture, write_discovery
 from tools.diagnostics.delta_mass_review import main
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.diagnostics import delta_mass_review_acquisition as acquisition
 from xic_extractor.diagnostics.delta_mass_nl_review import assess_review_neutral_losses
 from xic_extractor.diagnostics.delta_mass_review_data import (
@@ -18,8 +19,8 @@ from xic_extractor.diagnostics.delta_mass_review_data import (
     write_delta_mass_nl_summary,
 )
 from xic_extractor.discovery.detected_features import DetectedFeature
-from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan, Ms2ScanEvent
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.xic_models import XICTrace

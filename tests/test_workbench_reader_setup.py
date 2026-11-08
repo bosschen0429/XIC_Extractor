@@ -2,10 +2,10 @@
 
 import pytest
 
+from tests.workbench_config_fixtures import ConfigurationWorkspace
 from tests.workbench_http import workbench_client
 from xic_extractor import raw_reader, thermo_reader_install
 from xic_workbench.config_io import read_settings, write_dll_dir
-from xic_workbench.workspace import ReviewWorkspace
 
 
 @pytest.fixture
@@ -39,7 +39,7 @@ def test_bootstrap_selects_installed_reader_only_for_missing_or_legacy_defaults(
     write_dll_dir(selected, config_dir=config)
     before = (config / "workspace.json").read_bytes()
     with workbench_client(
-        ReviewWorkspace(config_dir=config, defaults=defaults)
+        ConfigurationWorkspace(config_dir=config, defaults=defaults)
     ) as request:
         status, data, _ = request("/api/config")
         assert status == 200
@@ -57,7 +57,7 @@ def test_using_installed_reader_replaces_an_old_launch_override_and_persists(
     tmp_path, installed_reader
 ):
     config = tmp_path / "config"
-    workspace = ReviewWorkspace(
+    workspace = ConfigurationWorkspace(
         config_dir=config, defaults={"dll_dir": "missing-reader"}
     )
     with workbench_client(workspace) as request:

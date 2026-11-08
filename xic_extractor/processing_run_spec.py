@@ -19,7 +19,7 @@ from typing import (
 )
 
 if TYPE_CHECKING:
-    from xic_extractor.discovery.models import DiscoverySettings
+    from xic_extractor.discovery.settings import DiscoverySettings
 
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
@@ -659,12 +659,13 @@ def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
             schema_version=str(content["schema_version"]),
         )
 
+    from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
     from xic_extractor.discovery.evidence_config import (
         DiscoveryEvidenceProfile,
         DiscoveryEvidenceThresholds,
         DiscoveryEvidenceWeights,
     )
-    from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+    from xic_extractor.discovery.settings import DiscoverySettings
 
     settings_value = _mapping(content["settings"], label="Discovery settings")
     recalibration_value = settings_value.get("mass_recalibration")
@@ -844,12 +845,13 @@ def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
 
 
 def _validate_discovery_settings(settings: DiscoverySettings) -> None:
+    from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
     from xic_extractor.discovery.evidence_config import (
         DiscoveryEvidenceProfile,
         DiscoveryEvidenceThresholds,
         DiscoveryEvidenceWeights,
     )
-    from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+    from xic_extractor.discovery.settings import DiscoverySettings
     from xic_extractor.settings_schema import RESOLVER_MODES
 
     if not isinstance(settings, DiscoverySettings):

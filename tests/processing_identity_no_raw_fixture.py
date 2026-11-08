@@ -11,7 +11,8 @@ from xic_extractor.configuration.target_identity import (
     resolve_target_definition,
     target_list_snapshot_payload,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.extraction.targeted_inputs import (
     ResolvedTargetedInputs,
     build_targeted_processing_request_identity,

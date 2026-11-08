@@ -2,29 +2,47 @@
 
 from __future__ import annotations
 
-import dataclasses
 import os
 import re
 import shutil
 import sys
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-from xic_workbench.jobs import AnalysisJobs
+from xic_workbench.json_transport import json_value
 
 
-def json_value(value: Any) -> Any:
-    """Project path-bearing application receipts onto the JSON transport."""
-    if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return json_value(dataclasses.asdict(value))
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, dict):
-        return {key: json_value(item) for key, item in value.items()}
-    if isinstance(value, (tuple, list)):
-        return [json_value(item) for item in value]
-    return value
+class AnalysisJobControl(Protocol):
+    @property
+    def busy(self) -> bool: ...
+
+    @property
+    def has_unseen_completion(self) -> bool: ...
+
+    def acknowledge_completion(self, job_id: str) -> None: ...
+
+    def state(self) -> dict[str, Any]: ...
+
+    def start(self, kind: str, values: dict[str, Any]) -> dict[str, Any]: ...
+
+    def cancel(self, job_id: str) -> dict[str, Any]: ...
+
+    def remember_samples(
+        self, raw_dir: str, rows: list[dict[str, Any]], overview: dict[str, Any]
+    ) -> None: ...
+
+    def close(self) -> None: ...
+
+
+class CurationOperations(Protocol):
+    def describe_source(
+        self, config_dir: Path, values: dict[str, Any]
+    ) -> dict[str, Any]: ...
+
+    def preview_curation(
+        self, config_dir: Path, values: dict[str, Any]
+    ) -> dict[str, Any]: ...
 
 
 def _validate_path(value: str, kind: Any) -> dict[str, Any]:
@@ -63,10 +81,18 @@ def _validate_path(value: str, kind: Any) -> dict[str, Any]:
 
 
 class AnalysisWorkspace:
-    def __init__(self, config_dir: Path, defaults: dict[str, str]) -> None:
+    def __init__(
+        self,
+        config_dir: Path,
+        defaults: dict[str, str],
+        *,
+        jobs: AnalysisJobControl,
+        curation: CurationOperations,
+    ) -> None:
         self.config_dir = config_dir
         self.defaults = defaults
-        self.jobs = AnalysisJobs(config_dir)
+        self.jobs = jobs
+        self.curation = curation
         self._files: dict[str, Path] = {}
 
     def bootstrap(self) -> dict[str, Any]:
@@ -82,7 +108,7 @@ class AnalysisWorkspace:
             read_targets,
         )
         from xic_workbench.methods import list_methods
-        from xic_workbench.targeted import method_summary, setting_fields
+        from xic_workbench.targeted_config import method_summary, setting_fields
         from xic_workbench.untargeted_config import read_untargeted_config
 
         raw = read_settings(config_dir=self.config_dir)
@@ -293,7 +319,7 @@ class AnalysisWorkspace:
                 apply_targeted_method,
                 load_targeted_method,
             )
-            from xic_workbench.targeted import method_summary
+            from xic_workbench.targeted_config import method_summary
 
             method = load_targeted_method(Path(values["path"]))
             settings = apply_targeted_method(values["settings"], method)
@@ -314,7 +340,7 @@ class AnalysisWorkspace:
                 write_preferences,
                 write_work,
             )
-            from xic_workbench.targeted import method_summary
+            from xic_workbench.targeted_config import method_summary
 
             settings = write_work(
                 values["settings"],
@@ -336,7 +362,7 @@ class AnalysisWorkspace:
                 resolve_settings,
             )
             from xic_workbench.config_io import read_settings
-            from xic_workbench.targeted import method_summary
+            from xic_workbench.targeted_config import method_summary
 
             raw = (
                 values["settings"]
@@ -469,12 +495,10 @@ class AnalysisWorkspace:
 
             return export_samples(values["samples"], Path(values["path"]))
         if action == "matrix-curation/source":
-            from xic_workbench.matrix_curation import describe_source
-
-            return describe_source(self.config_dir, values)
+            return self.curation.describe_source(self.config_dir, values)
         if action in {"istd", "istd/upload"}:
             from xic_extractor.configuration.targets import read_istd_targets
-            from xic_extractor.presets import apply_to_discovery
+            from xic_extractor.presets.apply import apply_to_discovery
             from xic_workbench.methods import preset_from_payload
             from xic_workbench.target_import import import_istd_upload
 

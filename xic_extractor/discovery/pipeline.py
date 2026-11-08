@@ -29,7 +29,6 @@ from xic_extractor.discovery.models import (
     DiscoveryCandidate,
     DiscoveryPhysicalWorkItem,
     DiscoveryRunOutputs,
-    DiscoverySettings,
 )
 from xic_extractor.discovery.ms1_capture import (
     _DiscoveryMs1Measurements,
@@ -53,6 +52,7 @@ from xic_extractor.discovery.sample_process_execution import (
     raise_if_discovery_cancelled,
     run_discovery_batch_process,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.processing_run_spec import (

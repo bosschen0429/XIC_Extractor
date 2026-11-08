@@ -11,10 +11,6 @@ from typing import TYPE_CHECKING, Any, TypedDict
 from xic_extractor.analysis_set import discover_raw_files
 from xic_extractor.configuration import loader as config_loader
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.settings_schema import (
-    CANONICAL_SETTINGS_DEFAULTS,
-    METHOD_KEYS,
-)
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
@@ -216,52 +212,3 @@ def _is_detected(
     if result.nl.status in {"OK", "WARN"}:
         return True
     return config.count_no_ms2_as_detected and result.nl.status == "NO_MS2"
-
-
-# Labels and controls are presentation only; METHOD_KEYS owns method membership.
-_SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
-    ("data_dir", "RAW 資料夾", "folder", {}),
-    (
-        "injection_order_source",
-        "上機資訊",
-        "file",
-        {
-            # The same 上機資訊 files as Untargeted.
-            "browse": "metadata",
-            "help": "Word、Excel、CSV 或 TSV。補充樣本角色、組別與排除標記；"
-            "注射順序與樣本名稱以 RAW 為準。",
-        },
-    ),
-    ("dll_dir", "RawFileReader DLL 資料夾", "folder", {}),
-)
-
-
-def setting_fields() -> list[dict[str, Any]]:
-    fields = []
-    for key, label, kind, options in _SETTING_FIELDS:
-        scope = (
-            "method"
-            if key in METHOD_KEYS
-            else "batch"
-            if key in {"data_dir", "injection_order_source"}
-            else "environment"
-            if key == "dll_dir"
-            else "runtime"
-            if key.startswith("parallel_")
-            else "output"
-        )
-        fields.append(
-            dict(
-                key=key,
-                label=label,
-                kind=kind,
-                scope=scope,
-                default=CANONICAL_SETTINGS_DEFAULTS[key],
-                **options,
-            )
-        )
-    return fields
-
-
-def method_summary(settings: dict[str, str]) -> dict[str, Any]:
-    return {"label": "共用 Targeted 策略", "custom_keys": [], "differences": []}

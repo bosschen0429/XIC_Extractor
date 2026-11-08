@@ -388,7 +388,7 @@ def test_delta_mass_ppm_also_controls_feature_linking_without_changing_shared_de
         detector_settings_for_interval,
     )
     from xic_extractor.discovery.local_ms1_features import LocalMs1FeatureSettings
-    from xic_extractor.presets.apply import resolve_delta_mass_discovery
+    from xic_extractor.presets.delta_mass import resolve_delta_mass_discovery
 
     strategy = resolve_delta_mass_discovery("pt_pattern")
     strategy = replace(

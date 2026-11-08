@@ -9,11 +9,12 @@ import os
 import webbrowser
 from pathlib import Path
 
+from xic_workbench.application import create_workspace
 from xic_workbench.browser_lifetime import BrowserLifetime
 from xic_workbench.config_io import CONFIG_DIR
 from xic_workbench.desktop_instance import DesktopInstance
 from xic_workbench.server import create_server
-from xic_workbench.workspace import ReviewWorkspace
+from xic_workbench.user_guide import read_user_guide
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -57,10 +58,11 @@ def main(argv: list[str] | None = None) -> int:
             if not args.no_open:
                 webbrowser.open(desktop.url)
             return 0
-        workspace = ReviewWorkspace(defaults=defaults, config_dir=args.config_dir)
+        workspace = create_workspace(defaults=defaults, config_dir=args.config_dir)
         try:
             server = create_server(
                 workspace,
+                read_user_guide=read_user_guide,
                 port=args.port,
                 desktop_key=desktop.key,
                 browser_lifetime=BrowserLifetime(

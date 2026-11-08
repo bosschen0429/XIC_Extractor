@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.discovery.settings import DiscoverySettings
 
 CidNlRecipeRoute = Literal[
     "full",

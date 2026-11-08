@@ -30,7 +30,7 @@ def preview_target_upload(name: object, content: object, settings: dict) -> dict
         apply_targeted_method,
         load_targeted_method,
     )
-    from xic_workbench.targeted import method_summary
+    from xic_workbench.targeted_config import method_summary
 
     with uploaded_target_file(name, content) as path:
         is_method = False

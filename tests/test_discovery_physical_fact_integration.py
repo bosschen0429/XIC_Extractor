@@ -30,7 +30,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.csv_writer import build_discovery_review_note
-from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem, DiscoverySettings
+from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_candidates,
 )
@@ -42,6 +42,7 @@ from xic_extractor.discovery.pipeline import run_discovery
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     answer_physical_peak_question,
     evaluate_physical_peak,

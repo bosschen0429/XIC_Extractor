@@ -1,5 +1,6 @@
 """Analytical candidate/scan examples, independent of the detection algorithm."""
 
+import json
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -26,6 +27,51 @@ from xic_extractor.discovery.detected_features import (
     write_detected_features_csv,
 )
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+from xic_inspector.rendering.html_builder import build_report_html
+from xic_inspector.sources.delta_mass import DeltaMassReviewSource
+
+
+def mount_review_html(source: Path, output: Path, *, limit=30, strategy="sample"):
+    """Mount the production source adapter and renderer with a bounded UI fixture.
+
+    File order selects the fixture's items; API tests own query/sampling policy.
+    Browser assertions protect the resulting DOM and SVG, not source dispatch.
+    """
+    adapter = DeltaMassReviewSource(
+        source, (json.loads(source.read_text(encoding="utf-8")), "browser-fixture")
+    )
+    samples = adapter.summary["samples"]
+    items = adapter.load_items({s["sample_key"] for s in samples})
+    rendered = adapter.load_render_items(
+        items[:limit], capability="retained_curves", check_cancel=lambda: None
+    )
+    payload = {
+        "summary": adapter.summary,
+        "selection": {
+            "strategy": strategy,
+            "limit": limit,
+            "offset": 0,
+            "review_scope": "all",
+            "case_counts": {},
+        },
+        "samples": [
+            {"id": s["sample_key"], "label": s["sample_stem"]} for s in samples
+        ],
+        "items": rendered,
+    }
+    output.write_text(
+        build_report_html(
+            title="Inspector",
+            evidence_capability="retained_curves",
+            strategy=strategy,
+            run_total=len(items),
+            eligible_count=len(items),
+            selected_count=len(rendered),
+            source_db_name=source.name,
+            payload_data=payload,
+        ),
+        encoding="utf-8",
+    )
 
 
 def write_discovery(directory: Path) -> tuple[str, ...]:

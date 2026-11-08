@@ -8,12 +8,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable
 
+from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_explanation,
     read_group_candidate_ids,
-)
-from xic_extractor.alignment_explanation.storage import (
-    ExplanationError,
 )
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,

@@ -8,9 +8,10 @@ from tests.workbench_lifecycle_fixtures import (
     _launch,
     _request,
 )
+from xic_workbench.application import create_workspace
 from xic_workbench.browser_lifetime import BrowserLifetime
 from xic_workbench.server import create_server
-from xic_workbench.workspace import ReviewWorkspace
+from xic_workbench.user_guide import read_user_guide
 
 
 def test_repeated_desktop_launch_reuses_the_existing_workspace(tmp_path):
@@ -57,9 +58,11 @@ def test_reload_grace_and_expired_tabs_allow_reconnection_before_exit():
 
 @contextmanager
 def _timed_server(config):
-    workspace = ReviewWorkspace(config_dir=config)
+    workspace = create_workspace(config_dir=config)
     server = create_server(
-        workspace, browser_lifetime=BrowserLifetime(grace=0, startup_timeout=None)
+        workspace,
+        browser_lifetime=BrowserLifetime(grace=0, startup_timeout=None),
+        read_user_guide=read_user_guide,
     )
     thread = threading.Thread(
         target=lambda: server.serve_forever(poll_interval=0.02), daemon=True

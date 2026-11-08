@@ -709,7 +709,7 @@ def discovery_settings_for_tag(tag: str):
     from dataclasses import asdict
 
     from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
-    from xic_extractor.discovery.models import DiscoverySettings
+    from xic_extractor.discovery.settings import DiscoverySettings
 
     profile = targeted_tag_profile(tag)
     values = asdict(profile)

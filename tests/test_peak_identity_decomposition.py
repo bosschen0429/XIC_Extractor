@@ -14,16 +14,13 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE, fake_acquisition_source
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.models import (
-    DiscoveryCandidate,
-    DiscoverySeed,
-    DiscoverySettings,
-    NeutralLossProfile,
-)
+from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySeed
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_candidates,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.peak_detection.hypotheses import (
     IntegrationResult,

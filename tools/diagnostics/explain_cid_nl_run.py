@@ -7,12 +7,10 @@ import json
 import sys
 from pathlib import Path
 
+from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_explanation,
     read_candidate_examples,
-)
-from xic_extractor.alignment_explanation.storage import (
-    ExplanationError,
 )
 
 

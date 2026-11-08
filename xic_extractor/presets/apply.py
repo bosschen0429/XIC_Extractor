@@ -5,8 +5,9 @@ from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.mass_recalibration import resolve_mass_recalibration
-from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.presets.loader import (
     DISCOVERY_TUNING_OVERRIDE_KEYS,
     load_preset,
@@ -22,9 +23,6 @@ from xic_extractor.settings_schema import RESOLVER_MODES
 
 if TYPE_CHECKING:
     from xic_extractor.configuration.delta_mass import DeltaMassPatternSettings
-    from xic_extractor.discovery.delta_mass_strategy import (
-        DeltaMassDiscoveryStrategy,
-    )
 
 _POSITIVE_FLOAT_FIELDS = frozenset(
     {
@@ -175,30 +173,6 @@ def apply_to_discovery(
             _str_setting(
                 tuning, "mass_recalibration", baseline.mass_recalibration.value
             )
-        ),
-    )
-
-
-def resolve_delta_mass_discovery(preset_name: str) -> DeltaMassDiscoveryStrategy:
-    """Resolve a preset into the method and detector settings for one run."""
-    from xic_extractor.discovery.delta_mass_strategy import DeltaMassDiscoveryStrategy
-
-    preset = load_preset(preset_name)
-    settings = apply_to_delta_mass_discovery(preset)
-    detector = preset.discovery_overrides.get("detector", {})
-    if not isinstance(detector, Mapping):
-        raise PresetError("discovery.detector must be a table")
-    unknown = set(detector) - {"smoothing_window_sec"}
-    if unknown:
-        raise PresetError(f"unknown delta-mass detector setting: {sorted(unknown)[0]}")
-    smoothing = _positive_float_setting(detector, "smoothing_window_sec", 6.6)
-    return DeltaMassDiscoveryStrategy(
-        label=preset_name,
-        settings=settings,
-        cid_nl_composite=any(tag.strategy == "neutral_loss" for tag in preset.tags),
-        smoothing_window_sec=smoothing,
-        mass_recalibration=resolve_mass_recalibration(
-            preset.discovery_overrides.get("mass_recalibration", "none")
         ),
     )
 

@@ -1,4 +1,5 @@
-from xic_extractor.discovery.models import DiscoverySettings, ReviewPriority
+from xic_extractor.discovery.models import ReviewPriority
+from xic_extractor.discovery.settings import DiscoverySettings
 
 _RT_DELTA_EPSILON_MIN = 1e-9
 

@@ -7,10 +7,10 @@ from pathlib import Path
 from xic_extractor.discovery.models import (
     DiscoverySeed,
     DiscoverySeedGroup,
-    DiscoverySettings,
     GroupPrecursorMzBasis,
     NeutralLossErrorBasis,
 )
+from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import neutral_loss_match, within_ppm
 from xic_extractor.precursor_evidence import precursor_isolation_membership
 
