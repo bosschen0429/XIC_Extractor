@@ -98,9 +98,14 @@ owns client-side job commands, response ordering, observation lifetime,
 connection status and once-only completion delivery. Its consumers submit
 intentions and read immutable snapshots; rendering does not advance lifecycle.
 `analysis_jobs.js` composes that Module with application-setting adoption and
-presentation. Editable sample data is copied into its settings owner rather
-than mutating a retained job result. Ending observation does not cancel the
-server job; execution and publication authority remain with their Python owners.
+presentation. [Sample metadata](../xic_workbench/assets/analysis_sample_metadata.js)
+owns sample rows, read recency, cross-flow sharing and ordered folder-scoped
+edits and Review exclusions. Consumers read immutable page snapshots and submit
+edits by RAW stem; they do not coordinate revisions or mutate retained job
+results. Within one Workbench page, metadata writes and Analysis jobs exclude
+one another so sequence-import jobs cannot overlap those writes. Ending Analysis
+observation does not cancel the server job; execution and publication authority
+remain with their Python owners.
 
 ## Configuration Documents
 

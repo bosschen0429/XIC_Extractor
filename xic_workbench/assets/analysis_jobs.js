@@ -6,9 +6,8 @@ import {
   showArtifact,
 } from "./analysis_results.js";
 import {
-  applySampleResult,
+  sampleMetadata,
   renderSampleSummary,
-  samplePages,
 } from "./analysis_samples.js";
 import { createAnalysisSession } from "./analysis_session.js";
 import {
@@ -17,7 +16,7 @@ import {
   setMethodState,
   showingResult,
 } from "./analysis_setup.js";
-import { sampleAction, state, updateConfig } from "./analysis_state.js";
+import { state, updateConfig } from "./analysis_state.js";
 import {
   $,
   act,
@@ -32,7 +31,6 @@ import {
 } from "./analysis_ui.js";
 
 export let analysis = null;
-let sampleJobAction = null;
 
 const jobLabels = {
   running: "執行中",
@@ -59,15 +57,15 @@ function prepareStart(kind, values) {
   if (isBusy()) throw new Error("請等待目前工作完成或先停止。");
   if (kind === "targeted" && !values.targets.length)
     throw new Error("目標清單是空的：按「檢視與編輯」新增，或匯入目標清單。");
-  return kind === "samples" ? sampleAction(values.page) : null;
+  return kind === "samples" ? sampleMetadata.prepareJob(values) : null;
 }
 
-async function acceptedStart(kind, values, job, action) {
+async function acceptedStart(kind, values, job, acceptSampleRead) {
   if (kind === "untargeted") {
     updateConfig({ untargeted: values });
     dirty("untargeted", false);
   }
-  if (action) sampleJobAction = { jobId: job.job_id, action };
+  if (acceptSampleRead) acceptSampleRead(job);
   if (kind === "targeted") {
     updateConfig({ settings: { ...values.settings } });
     updateConfig({ targeted_method: await api("/api/targeted/method", {}) });
@@ -190,13 +188,14 @@ export function renderJob() {
 
 function completeJob(snapshot, job) {
   const card = $("analysis-job");
+  const samplesApplied =
+    job.kind === "samples" &&
+    sampleMetadata.completeJob(job, snapshot.results.samples);
   if (job.status === "succeeded") {
     if (job.kind === "samples") {
       const result = snapshot.results.samples;
       const page = result.page || "untargeted";
-      const action =
-        sampleJobAction?.jobId === job.job_id ? sampleJobAction.action : null;
-      if (applySampleResult(page, result, action)) {
+      if (samplesApplied) {
         if (page === "untargeted") dirty("untargeted");
         done(`已讀取 ${result.samples.length} 個樣本。`);
       }
@@ -238,28 +237,6 @@ function confirmCancel(job) {
   });
 }
 
-function restoreSamples(initial) {
-  if (initial.job?.kind === "samples")
-    sampleJobAction = {
-      jobId: initial.job.job_id,
-      action: sampleAction(pageOf(initial.job), false),
-    };
-  const loadedSamples = initial.results.samples;
-  const loadedPage = loadedSamples?.page || "untargeted";
-  const loadedSpec = samplePages[loadedPage];
-  if (
-    loadedSamples?.input_paths &&
-    loadedSamples.input_paths.raw_dir === $(loadedSpec.rawDir).value &&
-    loadedSamples.input_paths.dll_dir === $(loadedSpec.dll).value &&
-    loadedSamples.input_paths.sequence_source === $(loadedSpec.sequence).value
-  )
-    applySampleResult(
-      loadedPage,
-      loadedSamples,
-      sampleAction(loadedPage, false),
-    );
-}
-
 export function bindJobs(initial) {
   analysis = createAnalysisSession(initial, {
     request: api,
@@ -267,7 +244,7 @@ export function bindJobs(initial) {
     acceptedStart,
     confirmCancel,
   });
-  restoreSamples(analysis.snapshot);
+  sampleMetadata.restore(analysis.snapshot);
   $("analysis-stop").onclick = () => act(() => analysis.cancel());
   let wasBusy = false;
   // Bootstrap attaches observation once the initial views are ready. Merely

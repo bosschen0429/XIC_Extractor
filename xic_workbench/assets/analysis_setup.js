@@ -1,7 +1,7 @@
 // Setup/result navigation, readiness checklists and unsaved-setting feedback.
 import { loadCurationSource } from "./analysis_curation.js";
 import { analysis, renderJob } from "./analysis_jobs.js";
-import { sampleId, samplePages } from "./analysis_samples.js";
+import { sampleId, sampleMetadata, samplePages } from "./analysis_samples.js";
 import { setDirty, setView, state } from "./analysis_state.js";
 import { settingsValues } from "./analysis_targeted.js";
 import {
@@ -218,7 +218,7 @@ export function checklist(kind) {
 }
 // Sample readiness covers roles and exclusions; statistical groups are not inputs.
 function sampleItems(page) {
-  const set = state.sampleSets[page];
+  const set = sampleMetadata.forPage(page);
   const refresh = sampleId(page, "samples-refresh");
   const edit = sampleId(page, "samples-edit");
   if (!set.rows.length) {

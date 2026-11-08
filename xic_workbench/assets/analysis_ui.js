@@ -1,12 +1,8 @@
 // Transport and reusable DOM/form controls shared by analysis views.
 import { analysis } from "./analysis_jobs.js";
-import { previewSamples } from "./analysis_samples.js";
+import { sampleMetadata } from "./analysis_samples.js";
 import { checklist } from "./analysis_setup.js";
-import {
-  currentSampleAction,
-  sampleAction,
-  state,
-} from "./analysis_state.js";
+import { state } from "./analysis_state.js";
 
 export const $ = (id) => document.getElementById(id);
 export const ui = window.XicUi;
@@ -70,10 +66,16 @@ export function pathTail(path, parts = 2) {
 }
 export function isBusy() {
   return (
-    state.importing || window.XicReview.busy || Boolean(analysis?.snapshot.busy)
+    state.importing ||
+    window.XicReview.busy ||
+    Boolean(analysis?.snapshot.busy) ||
+    sampleMetadata.saving
   );
 }
 export function lock() {
+  document.querySelectorAll("[data-sample-edit]").forEach((node) => {
+    node.disabled = !sampleMetadata.canEdit;
+  });
   document
     .querySelectorAll("[data-analysis-idle]")
     .forEach(
@@ -194,11 +196,9 @@ export function pathField(
   input.addEventListener("change", () =>
     act(async () => {
       const page = prefix === "t-" ? "targeted" : "untargeted";
-      const action = ["data_dir", "raw_dir"].includes(key)
-        ? sampleAction(page)
-        : null;
-      if ((await validate()) && action && currentSampleAction(action))
-        await previewSamples(page, action);
+      if (["data_dir", "raw_dir"].includes(key))
+        await sampleMetadata.preview(page, validate);
+      else await validate();
     }),
   );
   if (input.value && key !== "dll_dir") act(validate);

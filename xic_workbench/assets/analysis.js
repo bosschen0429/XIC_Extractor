@@ -7,6 +7,7 @@ import {
   bindSamples,
   mountSampleSteps,
   renderRoleSummary,
+  sampleMetadata,
 } from "./analysis_samples.js";
 import {
   bindSetup,
@@ -53,6 +54,7 @@ import {
 
 registerNavigation();
 window.XicAnalysis = {
+  excludeSamples: sampleMetadata.exclude,
   get busy() {
     return analysis?.snapshot.busy || false;
   },

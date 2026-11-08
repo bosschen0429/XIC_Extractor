@@ -1,6 +1,6 @@
 // Untargeted method selection/editor, tuning controls and ISTD imports.
 import { analysis } from "./analysis_jobs.js";
-import { clearSamples } from "./analysis_samples.js";
+import { sampleMetadata } from "./analysis_samples.js";
 import { checklist, dirty } from "./analysis_setup.js";
 import {
   setImporting,
@@ -47,7 +47,7 @@ function untargetedValues() {
     values.overrides[control.key] =
       input.type === "number" ? Number(input.value) : input.value;
   }
-  const rows = state.sampleSets.untargeted.rows;
+  const rows = sampleMetadata.forPage("untargeted").rows;
   values.samples = rows.length ? rows : null;
   if (state.method) {
     values.preset_snapshot = structuredClone(state.method.draft);
@@ -422,7 +422,7 @@ export function bindUntargeted() {
     $("u-raw_dir").value = "";
     sampleRawDir = "";
     $("sequence-source").value = "";
-    clearSamples("untargeted");
+    sampleMetadata.clear("untargeted");
     $("untargeted-result").hidden = true;
     dirty("untargeted");
     focusField("u-raw_dir");
@@ -434,7 +434,7 @@ export function bindUntargeted() {
     sampleRawDir = nextRawDir;
     $("sequence-source").value = "";
     updateUntargetedSettings({ sequence_source: "" });
-    clearSamples("untargeted");
+    sampleMetadata.clear("untargeted");
     dirty("untargeted");
   });
   $("sequence-source").addEventListener("change", () => dirty("untargeted"));

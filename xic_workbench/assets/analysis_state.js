@@ -1,16 +1,9 @@
-// Settings and editable sample data. The Analysis Session owns job lifecycle;
+// Application settings. Analysis Session and sampleMetadata own jobs and samples;
 // DOM controls and uncommitted editor drafts stay with views.
-const emptySamples = () => ({
-  rows: [],
-  overview: null,
-  source: "",
-});
 export const state = {
   config: null,
   targets: [],
   identificationMethods: {},
-  sampleSets: { targeted: emptySamples(), untargeted: emptySamples() },
-  sampleRevisions: { targeted: 0, untargeted: 0 },
   method: null,
   importing: false,
   view: "targeted",
@@ -72,46 +65,4 @@ export function updateCuration(values) {
 }
 export function beginCurationDetection() {
   return ++state.curation.request;
-}
-export function updateSample(row, values) {
-  Object.assign(row, values);
-}
-export function replaceSamples(page, result) {
-  state.sampleSets[page] = {
-    rows: structuredClone(result.samples),
-    overview: structuredClone(result.overview || null),
-    source: result.summary?.annotation_source || "",
-  };
-}
-export function mirrorSampleSet(page, other) {
-  state.sampleRevisions[other] += 1;
-  state.sampleSets[other] = state.sampleSets[page];
-}
-export function clearSampleSet(page) {
-  state.sampleSets[page] = emptySamples();
-}
-export function confirmSampleSet(page, overview) {
-  state.sampleSets[page].overview = overview;
-  state.sampleSets[page].source = "confirmed";
-}
-export function receiveConfirmedSamples(page, samples, overview) {
-  sampleAction(page);
-  state.sampleSets[page] = {
-    ...state.sampleSets[page],
-    rows: samples,
-    overview,
-    source: "confirmed",
-  };
-}
-// Revisions belong to user actions, including validation before a preview.
-// Completed requests may update only the display they still own.
-export function sampleAction(page, advance = true) {
-  if (advance) state.sampleRevisions[page] += 1;
-  return { page, revisions: { ...state.sampleRevisions } };
-}
-export function currentSampleAction(action) {
-  return (
-    action &&
-    state.sampleRevisions[action.page] === action.revisions[action.page]
-  );
 }

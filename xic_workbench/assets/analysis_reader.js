@@ -1,5 +1,5 @@
 // Shared RAW reader setup and debounced environment validation.
-import { clearSamples, samplePages } from "./analysis_samples.js";
+import { sampleMetadata, samplePages } from "./analysis_samples.js";
 import { checklist, dirty } from "./analysis_setup.js";
 import {
   state,
@@ -15,7 +15,7 @@ function setDllDir(value) {
   readerValidation++;
   clearTimeout(readerTimer);
   if (state.config.settings.dll_dir !== value)
-    for (const page of Object.keys(samplePages)) clearSamples(page);
+    for (const page of Object.keys(samplePages)) sampleMetadata.clear(page);
   updateTargetedSettings({ dll_dir: value });
   updateUntargetedSettings({ dll_dir: value });
   for (const id of ["t-dll_dir", "u-dll_dir", "dll-dir"]) {

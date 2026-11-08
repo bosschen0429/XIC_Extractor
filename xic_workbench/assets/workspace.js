@@ -289,15 +289,12 @@ window.XicUi = (() => {
     if (!accepted) return;
     try {
       const { raw_dir, dll_dir, sequence_source } = state.runFolder;
-      const result = await api("/api/samples/exclude", {
+      await window.XicAnalysis.excludeSamples({
         raw_dir,
         dll_dir,
         sequence_source,
         raw_stem: sample_id,
       });
-      document.dispatchEvent(new CustomEvent("xic:samples-confirmed", {
-        detail: { raw_dir, samples: result.samples, overview: result.overview },
-      }));
       window.XicUi.toast(
         `已標記排除 ${sample_id}。目前結果不變；重新執行後才會套用。`, "ok");
     } catch (error) {
