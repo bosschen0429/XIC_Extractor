@@ -852,6 +852,132 @@ def test_target_peak_evidence_does_not_reward_missing_or_foreign_ms2(
     assert result.nl_token != "OK"
 
 
+@pytest.mark.parametrize("local_ms2", [False, True])
+def test_istd_reference_body_competes_with_remote_nl_peak(tmp_path, local_ms2):
+    target = _intent_target(23.5)
+    config = _strategy_config(tmp_path)
+    rt = np.linspace(0.0, 30.0, 3001)
+    intensity = (
+        10.0
+        + 1200.0 * np.exp(-0.5 * ((rt - 9.7) / 0.08) ** 2)
+        + 1000.0 * np.exp(-0.5 * ((rt - 23.0) / 0.10) ** 2)
+    )
+    scans = [
+        Ms2Scan(
+            1,
+            9.7,
+            target.mz,
+            np.array([target.mz - target.neutral_loss_da]),
+            np.array([1000.0]),
+            1000.0,
+        )
+    ]
+    if local_ms2:
+        scans.append(
+            Ms2Scan(2, 23.0, target.mz, np.array([110.0]), np.array([1000.0]), 1000.0)
+        )
+
+    class Raw(ScopedMs2WindowReader):
+        def acquisition_rt_bounds(self):
+            return 0.0, 30.0
+
+        def extract_xic(self, *args):
+            return rt, intensity
+
+        def iter_ms2_scans(self, *args):
+            return iter(Ms2ScanEvent(scan, None, scan.scan_number) for scan in scans)
+
+    results = {}
+    target_extraction.extract_one_target(
+        Raw(),
+        config,
+        "sample",
+        target,
+        reference_rt=None,
+        results=results,
+        diagnostics=[],
+        scoring_context_factory=build_scoring_context_factory(config=config),
+    )
+    result = results[target.label]
+    # The measured reference body, not the distant class-loss observation, is
+    # this standard's identity. Selecting it must not manufacture missing NL.
+    assert result.reported_rt == pytest.approx(23.0, abs=0.03)
+    assert not result.selected_cid_nl_supported
+    assert result.candidate_ms2_evidence.nl_status == (
+        "NL_FAIL" if local_ms2 else "NO_MS2"
+    )
+    assert any(
+        region.chemical_support and abs(region.segment.apex_rt_min - 9.7) < 0.03
+        for region in result.targeted_candidate_assessment.population_context().regions
+    )
+    assert result.context_admissible_candidate_indexes is not None
+    assert [
+        result.candidate_physical_evaluations[index].integration.rt_apex_min
+        for index in result.context_admissible_candidate_indexes
+    ] == pytest.approx([23.0], abs=0.03)
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ["weak_reference", "chemical_competition", "unrelated_dominant_body", "real_drift"],
+)
+def test_istd_reference_selection_is_not_nearest_apex_always(
+    physical_candidate_input, scenario
+):
+    from xic_extractor.peak_detection.targeted_context import (
+        TargetedBatchContext,
+        TargetedPopulationContext,
+        describe_targeted_region,
+    )
+
+    prepared, universe = physical_candidate_input
+    unconfirmed, confirmed = (
+        describe_targeted_region(
+            prepared.prepared,
+            segment,
+            measurement_available=True,
+            chemical_support=segment.apex_rt_min == 1.0,
+        )
+        for segment in universe.segments
+    )
+    reference = 3.5
+    if scenario in {"weak_reference", "unrelated_dominant_body"}:
+        factor = 0.01 if scenario == "weak_reference" else 1000.0
+        unconfirmed = replace(
+            unconfirmed,
+            segment=replace(
+                unconfirmed.segment,
+                left_rt_min=12.0,
+                apex_rt_min=13.0,
+                right_rt_min=14.0,
+                height=unconfirmed.segment.height * factor,
+                area_counts_seconds=unconfirmed.segment.area_counts_seconds * factor,
+            ),
+            acquired_rt_start_min=12.0,
+            acquired_rt_end_min=14.0,
+            body_support=unconfirmed.body_support * factor,
+        )
+        reference = 13.0 if scenario == "weak_reference" else 1.0
+    regions = (confirmed,) if scenario == "real_drift" else (unconfirmed, confirmed)
+    if scenario == "real_drift":
+        reference = 30.0
+    # Adjacent physical bodies have overlapping reference-distance ranges:
+    # positive chemistry can still choose the farther apex. A tiny near body
+    # cannot displace a confirmed drifting standard; global MS1 dominance is
+    # likewise not permission to erase a smaller confirmed reference peak.
+    for ordered in (regions, regions[::-1]):
+        population = TargetedPopulationContext(
+            sample_name="sample",
+            target_label="ISTD",
+            mz=258.1085,
+            ppm_tol=20.0,
+            reference_rt_min=reference,
+            regions=ordered,
+        )
+        selected = TargetedBatchContext((population,)).select(population, is_istd=True)
+        assert selected.selected_region == confirmed
+
+
 @pytest.mark.parametrize("is_istd", [True, False])
 def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
     tmp_path, is_istd

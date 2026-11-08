@@ -173,7 +173,7 @@ def test_unavailable_istd_alternate_does_not_block_workbook_publication(
         )
     )
     source = acquired[0]
-    assert source.context_admissible_candidate_indexes is None
+    assert source.context_admissible_candidate_indexes is not None
     assert any(e.state != "available" for e in source.candidate_physical_evaluations)
     published = execution.active_output.file_results[0].results[target.label]
     assert published.reported_rt == pytest.approx(9.0, abs=0.01)
@@ -189,8 +189,8 @@ def test_unavailable_istd_alternate_does_not_block_workbook_publication(
         assert assessments == []
     else:
         assessment = assessments[0]
-        assert len(assessment.candidate_peaks) == sum(
-            e.state == "available" for e in source.candidate_physical_evaluations
+        assert len(assessment.candidate_peaks) == len(
+            source.context_admissible_candidate_indexes
         )
         assert all(
             peak.physical_evaluation.state == "available"
