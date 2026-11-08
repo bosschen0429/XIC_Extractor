@@ -82,6 +82,13 @@ RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
         r"|docs/user/"
         r"|(xic_extractor|xic_inspector|xic_workbench|scripts|tools|packaging|config)/)"
     ),
+    # PowerShell replays of the CI workflow steps read only the workflow and the
+    # selection tooling those steps call.
+    "ci_workflow": re.compile(
+        r"^(\.github/workflows/ci\.yml"
+        r"|tools/testing/(test_selection|test_sharding|pytest_temp)\.py"
+        r"|tests/test_test_selection\.py)$"
+    ),
 }
 # The main CI pytest session: the census runs once in the lint job, and serial
 # tests run after the parallel session.

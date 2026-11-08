@@ -488,8 +488,8 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
         ("uv.lock", {"packaging_build", "browser_e2e"}),
         ("packaging/xic_extractor.spec", {"packaging_build"}),
         (".github/workflows/build.yml", {"packaging_build"}),
-        (".github/workflows/ci.yml", {"packaging_build", "browser_e2e"}),
-        ("tests/test_test_selection.py", set()),
+        (".github/workflows/ci.yml", {"packaging_build", "browser_e2e", "ci_workflow"}),
+        ("tests/test_test_selection.py", {"ci_workflow"}),
         ("tests/test_pyinstaller_spec.py", {"packaging_build"}),
         (
             "xic_extractor/discovery/data/default_background_library_15min.json.gz",
@@ -508,9 +508,18 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
         ("tests/test_xic_inspector_api.py", set()),
         ("tests/inspector_fixtures.py", {"browser_e2e"}),
         ("tests/workbench_http.py", {"browser_e2e"}),
-        ("tools/testing/test_selection.py", {"packaging_build", "browser_e2e"}),
-        ("tools/testing/test_sharding.py", {"packaging_build", "browser_e2e"}),
-        ("tools/testing/pytest_temp.py", {"packaging_build", "browser_e2e"}),
+        (
+            "tools/testing/test_selection.py",
+            {"packaging_build", "browser_e2e", "ci_workflow"},
+        ),
+        (
+            "tools/testing/test_sharding.py",
+            {"packaging_build", "browser_e2e", "ci_workflow"},
+        ),
+        (
+            "tools/testing/pytest_temp.py",
+            {"packaging_build", "browser_e2e", "ci_workflow"},
+        ),
         ("tools/diagnostics/targeted_istd_benchmark_loaders.py", {"packaging_build"}),
         ("xic_extractor/presets/data/dna_dr.toml", {"packaging_build"}),
         ("docs/product/backfill.md", set()),
@@ -548,7 +557,7 @@ def test_local_run_skips_markers_unrelated_to_the_change(
     plan = test_selection._local_plan(run_all=False, all_markers=False)
     assert plan == SelectionPlan(
         files=("tests/test_a.py",),
-        marker_expression="not browser_e2e and not packaging_build",
+        marker_expression="not browser_e2e and not packaging_build and not ci_workflow",
     )
     assert test_selection._local_plan(run_all=False, all_markers=True) == (
         SelectionPlan(files=("tests/test_a.py",), marker_expression="")
@@ -574,7 +583,9 @@ def test_local_run_leaves_packaging_builds_to_ci_unless_requested(
     assert test_selection._local_plan(run_all=False, all_markers=False) == (
         SelectionPlan(
             files=("tests/test_a.py",),
-            marker_expression="not browser_e2e and not packaging_build",
+            marker_expression=(
+                "not browser_e2e and not ci_workflow and not packaging_build"
+            ),
         )
     )
     assert test_selection._local_plan(run_all=False, all_markers=True) == (
@@ -674,6 +685,7 @@ def _render_ci_step(run: str, event: str, *, before: str = "before") -> str:
     return run
 
 
+@pytest.mark.ci_workflow
 @pytest.mark.parametrize(
     ("event", "changed", "files", "failed_phase", "failed_code", "expected_exit"),
     (
@@ -894,6 +906,7 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
         assert not (in_browser and "browser_e2e" not in marked)
 
 
+@pytest.mark.ci_workflow
 @pytest.mark.parametrize(
     ("before", "changed", "required"),
     [
@@ -954,6 +967,7 @@ def test_push_browser_lane_follows_the_pushed_range(
         ]
 
 
+@pytest.mark.ci_workflow
 @pytest.mark.parametrize(
     "failed_lane,result",
     [(None, "success")]
