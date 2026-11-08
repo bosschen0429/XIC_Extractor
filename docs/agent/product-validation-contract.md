@@ -27,7 +27,7 @@ are evidence, never authority.
 Candidate rows, diagnostic sidecars, quality explanations, round-trip oracles,
 ISTD comparisons, and review packets are evidence or routing inputs. They never
 grant writer authority; only the workflow writers described in
-[Writer Transaction Authority](architecture-public-contracts.md#writer-transaction-authority)
+[Writer Transaction Authority](../architecture-contract.md#writer-transaction-authority)
 publish values. No readiness word by itself grants Matrix, selected-value, or
 counted-detection authority, and tests passing alone never establish production
 readiness.

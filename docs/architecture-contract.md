@@ -54,67 +54,6 @@ adapter；通過 `pyproject.toml` 的 `[tool.importlinter]` 不代表所有 I/O 
   observable delta and rollback. When changing a public entry point, show its
   inputs, outputs and key failures with existing tests or a minimal example.
 
-## UI Presentation
-
-Workbench and Inspector organize the interface around the user's question and
-next decision, rather than the controls or internal data available to display.
-Implementation and review use these principles:
-
-- **Answer → evidence → details.** Define the minimum workflow by the answer
-  the user can obtain. Reuse the domain owner's search and evaluation before
-  presenting results; the renderer exposes those results and links directly to
-  their evidence. Manual scan browsing serves additional investigation, not
-  work the existing method can already do.
-- **Remove before hiding.** Delete redundant labels, counts and explanations
-  before moving useful secondary information into details. Collapsing clutter
-  alone does not simplify the workflow.
-- **Concise, not ambiguous.** Omit relationships obvious from context, but keep
-  the quantities and relationships needed for interpretation. A two-position
-  comparison can say `Δm/z` without repeating both position names; a support
-  label must still identify what evidence supports what result.
-- **Quiet routine results, visible limitations.** An overview need not repeat
-  the same no-finding message for every item. Keep distinctions such as no
-  matching evidence versus no acquired data available, and surface failures or
-  uncertainty when they affect the user's interpretation or next action.
-- **Keep annotations connected.** Place labels near their evidence, with space
-  or leader lines where needed. Moving a label out of a plot must preserve its
-  visual association with the marked feature.
-
-Verify the answer-to-evidence journey with representative data in the actual
-interface. Check that the user can identify the result and reach its evidence
-without searching internal records or reconstructing missing relationships;
-working controls and passing tests alone do not establish this. When a user
-requests a principle applied across a view, inspect that view for the same
-problem; a local annotation alone does not authorize a wider redesign.
-
-Workbench and Inspector choose style tokens by semantic role, not by current
-color: warnings, selection, disabled controls and actions keep their own
-meanings. If a role is missing, extend the owning style definitions and their
-fallbacks instead of borrowing an unrelated token. Verify the component in the
-themes and fallbacks the UI actually supports.
-
-Workbench's [Analysis Session](../xic_workbench/assets/analysis_session.js)
-owns client-side job commands, response ordering, observation lifetime,
-connection status and once-only completion delivery. Its consumers submit
-intentions and read immutable snapshots; rendering does not advance lifecycle.
-`analysis_jobs.js` composes that Module with application-setting adoption and
-presentation. [Sample metadata](../xic_workbench/assets/analysis_sample_metadata.js)
-owns sample rows, read recency, cross-flow sharing and ordered folder-scoped
-edits and Review exclusions. Consumers read immutable page snapshots and submit
-edits by RAW stem; they do not coordinate revisions or mutate retained job
-results. Within one Workbench page, metadata writes and Analysis jobs exclude
-one another so sequence-import jobs cannot overlap those writes. Ending Analysis
-observation does not cancel the server job; execution and publication authority
-remain with their Python owners.
-
-The [Curation Session](../xic_workbench/assets/analysis_curation_session.js) owns
-the source and step draft, debounced single-flight reads, and preview-backed
-export admission. A draft edit retires its previous preview immediately; export
-rechecks that draft after saving preferences. The view renders snapshots and
-submits intentions, without request equality checks or lifecycle timers.
-Preview admission concerns the frontend draft, not scientific writer authority;
-curation calculations and publication remain with their Python owners.
-
 ## Configuration Documents
 
 | Owner | Responsibility |
@@ -166,6 +105,57 @@ HEAD, CI against the base commit). It is a syntactic trigger: validators and
 hashing are not gated, and renames or indirect calls limit coverage. There is no
 suppression flag. A blocked change removes the unnecessary machinery or gets an
 explicit maintainer decision; the agent does not grant its own exception.
+
+### Executable Census And Dependency Gate
+
+The architecture census is disposable evidence, not an authority registry. It
+derives current module paths, static imports, declared console scripts, and
+package patterns from source.
+
+- `[tool.importlinter]` in `pyproject.toml` owns the coarse static dependency floor.
+- `scripts/check_architecture_census.py` owns the census integrity, naming,
+  and internal-defense growth gates.
+- Dynamic loaders, installed entry points, frozen applications, workflow
+  checks, diagnostics indexes, and test selection remain with their respective
+  executable owners.
+- A dependency ignore is temporary migration debt: it needs a named owner and
+  rationale, and unmatched-ignore alerting must remove it when the edge closes.
+- Optional census output belongs outside the repository or under an ignored
+  path. It is review/debug evidence only.
+
+## Boundary Projection Closure
+
+For a non-trivial source-to-target conversion, identify the source owner,
+target consumer, identity/cardinality, preserved facts, deliberate loss, and
+the oracle that protects the consumer. Durable binding needs a current
+persisted/replay consumer or an actual admission/authority boundary; internal
+handoffs reuse established owner facts. Apply
+[Change Locality](#change-locality) before adding identity, proof, or
+construction machinery.
+
+- Preserve composite identity through maps and joins using the owner's domain keys.
+- Validate cardinality at the semantic owner.
+- Preserve terminal failure and provenance when a current consumer relies on
+  them.
+- Give persisted or canonical schemas a new semantic name when their meaning
+  changes; content changes retain the name.
+- Keep adapters translational: they may reject invalid projections but must
+  not silently recompute, collapse, or invent owner facts.
+- A lossy projection is valid only when its current consumer and reduced claim
+  are explicit. Missing owner evidence means the claim is unavailable, not
+  inferred zero or success.
+
+Persisted bytes prove their own shape and binding, not every statement stored
+inside them. Rehydrate only decision-bearing content: fields that select
+identity or value, grant writer authority, change product output, or determine
+a current domain/runtime result. Audit-only labels, counts, locators, and copied
+hashes remain telemetry unless a current consumer uses them to decide.
+
+Alignment Backfill records are owned by
+`xic_extractor.alignment.backfill.evidence_contract`; the strict TSV reader
+alone mints `EvidenceQueryResult`. The public label is compatibility
+metadata, not canonical identity proof. Exact headers, identity tuples and
+validation rules are owned by that reader, the writer and their tests.
 
 ## System Shape
 
@@ -249,12 +239,26 @@ forbidden dependency.
   review](product/workbench.md) defines what review may mean.
 - Delta-mass method modules work on in-memory features and traces; their
   pipeline owns RAW acquisition and diagnostic CSV/JSON, which no product path
-  consumes (`tests/test_delta_mass_boundaries.py`).
+  consumes.
 - Keep a compatibility facade only for a real external consumer. When replacing
   an internal surface, remove the old implementation, alias, tests and shim.
-
-[`architecture-public-contracts.md`](agent/architecture-public-contracts.md)
-owns public, persisted, writer and runtime authority rules.
+- The Untargeted application invokes retained CID-NL execution; Alignment has
+  no extraction imports. Alignment owns the pure finalized Matrix projection;
+  `output/alignment/` owns artifact selection, formatting, streaming or
+  materialization and atomic writing. The Untargeted execution adapter never
+  writes. Formal Alignment completion binds the candidate views, Matrix m/z
+  lookup, config and completed ISTD provenance before handoff; publication
+  does not reconstruct them from independent caller inputs. Low-level runtime
+  results remain available to explicit-input diagnostic consumers. The completed
+  result owns private-store retention and release, shared across its
+  immutable views; prepared Discovery resources transfer to that result.
+  Application publication owns cancellation and explanation lifetime through
+  writing and closes the result on every exit. Acquisition worker/cache lifetime
+  remains separate. GUI and CLI receive durable published outputs only.
+  `tests/test_docs_architecture_census.py` pins these execution boundaries.
+- Formal Untargeted partitions consume the pure CID-NL input contract in
+  `alignment/cid_nl_inputs.py` and require a resolved signal-processing profile
+  with Discovery physical facts.
 
 ## Ownership Map
 
@@ -288,6 +292,30 @@ owns public, persisted, writer and runtime authority rules.
 Model fields, exports and construction sites are in source; query CBM before
 moving an owner rather than expanding this table.
 
+### Workbench client modules
+
+Workbench's [Analysis Session](../xic_workbench/assets/analysis_session.js)
+owns client-side job commands, response ordering, observation lifetime,
+connection status and once-only completion delivery. Its consumers submit
+intentions and read immutable snapshots; rendering does not advance lifecycle.
+`analysis_jobs.js` composes that Module with application-setting adoption and
+presentation. [Sample metadata](../xic_workbench/assets/analysis_sample_metadata.js)
+owns sample rows, read recency, cross-flow sharing and ordered folder-scoped
+edits and Review exclusions. Consumers read immutable page snapshots and submit
+edits by RAW stem; they do not coordinate revisions or mutate retained job
+results. Within one Workbench page, metadata writes and Analysis jobs exclude
+one another so sequence-import jobs cannot overlap those writes. Ending Analysis
+observation does not cancel the server job; execution and publication authority
+remain with their Python owners.
+
+The [Curation Session](../xic_workbench/assets/analysis_curation_session.js) owns
+the source and step draft, debounced single-flight reads, and preview-backed
+export admission. A draft edit retires its previous preview immediately; export
+rechecks that draft after saving preferences. The view renders snapshots and
+submits intentions, without request equality checks or lifecycle timers.
+Preview admission concerns the frontend draft, not scientific writer authority;
+curation calculations and publication remain with their Python owners.
+
 ## Evidence And Decision Boundaries
 
 Evidence providers enter through `EvidenceVector`, `PeakHypothesis`, model
@@ -309,6 +337,39 @@ selection and `AuditTrail` before any Matrix change; activation rules are in
   `physical_peak_candidate_adapter.answer_selected_physical_candidate`, which owns
   candidate-to-segment binding and reuse of prepared evaluations.
   `candidate_scoring` owns evidence scoring and score summaries.
+
+## Writer Transaction Authority
+
+A finalizer must not reconstruct writer authority from caller-authored rows,
+manifests, diffs, receipts, counts, or a surrounding hash chain.
+
+- Rehydrate persisted review evidence once into an immutable typed review set
+  with an explicit claim.
+- The writer finalizer accepts the current typed scientific owner result, that
+  owner-validated review set, and output-location mechanics.
+- Identity, selected value, eligibility, manifest rows, counts, rollback, and
+  terminal status are derived inside the transaction.
+- Audit receipts may contribute lineage but cannot select a cell, value,
+  state, or writer decision.
+- Publish final output only after the writer, expected-diff, rollback, and
+  terminal-receipt oracles succeed.
+
+Targeted and Untargeted retain their existing writer owners and publication
+mechanics. A new transaction shape requires a current consumer, authority
+boundary, compatibility impact, and rollback oracle.
+
+## Runtime Execution
+
+`xic_extractor.execution.partitions` schedules partitioned work and decides the
+batch outcome: a batch completes every partition and its global closure, or it
+fails or cancels as a whole. Runtime completion grants no scientific, artifact,
+writer, or publication authority.
+
+- A real execution failure outranks cancellation observed by sibling work.
+- Missing timing observations remain unavailable with a reason. They never
+  become inferred zero.
+- Timing counts describe cost and locality only; they do not select a cell,
+  value, state, or writer decision.
 
 ## Module Naming
 
@@ -348,3 +409,23 @@ Adding, removing or renaming an entry point updates
 - Shared models or protocols are justified when they prevent an import cycle or
   schema drift.
 - [`testing.md`](agent/testing.md) owns test selection and RAW/workbook validation.
+
+## Public Contracts
+
+A command is public when declared in `[project.scripts]` or named by an explicit
+product/downstream contract. Being under `scripts/`, runnable, imported, tested,
+or packaged is not sufficient.
+
+Treat these as public unless an approved change says otherwise:
+
+- declared console scripts and contract-bearing commands
+- `xic_extractor.extractor.run`
+- `xic_extractor.signal_processing.find_peak_and_area`
+- `scripts.csv_to_excel.run`
+- config keys and example/default settings
+- TSV/CSV schemas
+- workbook sheets, order, hidden states, and columns
+- HTML report path naming and run metadata keys
+- persisted identifiers and matrix row/cell identity
+- domain-selected peaks, areas, values, and counted detections
+- cross-repository handoff schemas and contracts

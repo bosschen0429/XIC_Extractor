@@ -141,7 +141,7 @@ the published Matrix hash. It cannot authorize a writer or prove readiness.
 - Edge records name their RT basis (`raw` or `drift_corrected`). Aligned-time
   plots replay the final frozen `SampleRtFrame` calibration, never the bootstrap
   ISTD-reference fit. Raw and processed curves, apex and integration bounds use
-  the same graded query: `loess` inside the fitted span, `boundary_shift` outside
+  the same [graded query](rt-calibration.md#graded-query-support): `loess` inside the fitted span, `boundary_shift` outside
   it, or `median_shift` when only qualified shift observations are available.
   A sample with no estimate displays raw RT and is explicitly labelled as such.
   Injection order is retained independently of ISTD-reference provenance.

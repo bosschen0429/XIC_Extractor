@@ -57,7 +57,7 @@ questions:
 
 The Targeted workbook and the Untargeted Matrix are published only by their
 workflow writers, under
-[Writer Transaction Authority](../agent/architecture-public-contracts.md#writer-transaction-authority).
+[Writer Transaction Authority](../architecture-contract.md#writer-transaction-authority).
 Writers render finalized cell decisions; they never recompute them.
 
 Evidence providers, candidate rows, write-ready labels, quality blockers,
