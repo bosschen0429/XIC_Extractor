@@ -129,14 +129,14 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:composition",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values

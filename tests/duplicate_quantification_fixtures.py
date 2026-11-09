@@ -32,7 +32,7 @@ def publish_owner_run(tmp_path, monkeypatch, level):
     write_alignment_explanation(
         output_dir / EXPLANATION_ARTIFACT_NAME,
         completed=completed,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         matrix_path=outputs.matrix_tsv,
         alignment_config=config,
     )

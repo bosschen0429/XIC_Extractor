@@ -6,8 +6,8 @@ from pathlib import Path, PureWindowsPath
 from xic_extractor.discovery.models import (
     DISCOVERY_EVENT_COLUMNS,
     DISCOVERY_PEAK_COLUMNS,
-    DiscoveryEvent,
     DiscoveryPeak,
+    EventAttachment,
     discovery_event_output_sort_key,
     discovery_peak_output_sort_key,
 )
@@ -30,7 +30,7 @@ def write_discovery_peaks_csv(path: Path, peaks: Iterable[DiscoveryPeak]) -> Pat
     )
 
 
-def write_discovery_events_csv(path: Path, events: Iterable[DiscoveryEvent]) -> Path:
+def write_discovery_events_csv(path: Path, events: Iterable[EventAttachment]) -> Path:
     """One row per strict NL event with its peak or its unattached reason."""
     return _write_csv(
         path,
@@ -64,7 +64,7 @@ def format_discovery_csv_value(column: str, value: object) -> str:
         return ""
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
-    if column in {"seed_scan_ids", "matched_tag_names"}:
+    if column in {"event_scan_ids", "matched_tag_names"}:
         if isinstance(value, str):
             return value
         if isinstance(value, tuple):

@@ -14,7 +14,7 @@ from tests.discovery_pipeline_fixtures import _settings
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.ion_channels import build_discovery_channels
+from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_peaks,
 )
@@ -61,7 +61,7 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
     )
     result = capture_ms1_peaks(
         _OwnerBoundBatchRaw(source),
-        build_discovery_channels(seeds, settings=settings),
+        build_discovery_ions(seeds, settings=settings),
         acquisition_source=source,
         settings=settings,
         signal_processing_profile=profile,
@@ -86,7 +86,7 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
     outputs = publish_discovery_batch_sample(
         raw_path,
         result.peaks,
-        result.events,
+        result.attachments,
         output_dir=tmp_path,
         sample_output_dir=tmp_path / "out",
         acquisition_source=source,

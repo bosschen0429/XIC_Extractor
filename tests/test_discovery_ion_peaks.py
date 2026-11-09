@@ -15,7 +15,7 @@ from tests.discovery_ms1_capture_fixtures import (
     _seed,
     _settings,
 )
-from xic_extractor.discovery.ion_channels import build_discovery_channels
+from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import within_ppm
@@ -25,7 +25,7 @@ from xic_extractor.xic_models import XICTrace
 def _capture(raw, seeds, settings: DiscoverySettings):
     return capture_ms1_peaks(
         raw,
-        build_discovery_channels(seeds, settings=settings),
+        build_discovery_ions(seeds, settings=settings),
         acquisition_source=raw.acquisition_source,
         settings=settings,
         signal_processing_profile=TEST_PROFILE,
@@ -34,7 +34,7 @@ def _capture(raw, seeds, settings: DiscoverySettings):
 
 
 def _events_by_scan(result):
-    return {event.ms2_scan_number: event for event in result.events}
+    return {event.ms2_scan_number: event for event in result.attachments}
 
 
 def _two_peak_raw(*, first: float, second: float, sigma: float = 0.04) -> _FakeRaw:
@@ -60,9 +60,9 @@ def test_events_across_a_broad_peak_measure_one_peak() -> None:
 
     (peak,) = result.peaks
     assert peak.attached_event_count == 3
-    assert peak.seed_scan_ids == (10, 20, 30)
+    assert peak.event_scan_ids == (10, 20, 30)
     assert peak.admitted
-    assert {event.peak_id for event in result.events} == {peak.peak_id}
+    assert {event.peak_id for event in result.attachments} == {peak.peak_id}
 
 
 def test_isomers_at_one_mass_are_two_peaks_on_one_channel() -> None:
@@ -70,15 +70,15 @@ def test_isomers_at_one_mass_are_two_peaks_on_one_channel() -> None:
     seeds = (_seed(scan_number=10, rt=7.6), _seed(scan_number=20, rt=8.2))
     settings = _settings(ms1_search_padding_min=0.2)
 
-    (channel,) = build_discovery_channels(seeds, settings=settings)
+    (channel,) = build_discovery_ions(seeds, settings=settings)
     result = _capture(raw, seeds, settings)
 
-    assert channel.seeds == seeds
+    assert channel.events == seeds
     assert len(result.peaks) == 2
-    assert {peak.channel_mz for peak in result.peaks} == {channel.mz}
+    assert {peak.xic_mz for peak in result.peaks} == {channel.mz}
     events = _events_by_scan(result)
     assert events[10].peak_id != events[20].peak_id
-    assert all(event.peak_id for event in result.events)
+    assert all(event.peak_id for event in result.attachments)
 
 
 @pytest.mark.parametrize("order", list(itertools.permutations(range(3))))
@@ -91,14 +91,14 @@ def test_channels_never_chain_masses_beyond_the_tolerance(order) -> None:
     )
     settings = _settings(precursor_mz_tolerance_ppm=10.0)
 
-    channels = build_discovery_channels(seeds, settings=settings)
+    channels = build_discovery_ions(seeds, settings=settings)
 
-    assert [sorted(s.precursor_mz for s in c.seeds) for c in channels] == [
+    assert [sorted(s.precursor_mz for s in c.events) for c in channels] == [
         [500.000, 500.004],
         [500.008],
     ]
     for channel in channels:
-        for left, right in itertools.combinations(channel.seeds, 2):
+        for left, right in itertools.combinations(channel.events, 2):
             assert within_ppm(left.precursor_mz, right.precursor_mz, 10.0)
 
 
@@ -108,7 +108,7 @@ def test_coeluting_ions_within_the_tolerance_share_one_channel() -> None:
         _seed(scan_number=11, rt=8.0, precursor_mz=500.0080, product_intensity=9e3),
     )
 
-    (channel,) = build_discovery_channels(seeds, settings=_settings())
+    (channel,) = build_discovery_ions(seeds, settings=_settings())
 
     # The stronger event's measured ion sets the XIC mass.
     assert channel.mz == 500.0080
@@ -130,7 +130,7 @@ def test_an_event_on_a_shared_valley_attaches_to_the_earlier_peak() -> None:
         events = _events_by_scan(result)
         assert events[20].peak_id == events[10].peak_id != events[30].peak_id
     assert results[0].peaks == results[1].peaks
-    assert results[0].events == results[1].events
+    assert results[0].attachments == results[1].attachments
 
 
 def test_multitag_events_of_one_ion_attach_to_one_peak() -> None:
@@ -155,7 +155,7 @@ def test_multitag_events_of_one_ion_attach_to_one_peak() -> None:
     assert peak.matched_tag_names == ("dR", "R")
     assert peak.attached_event_count == 3
     assert peak.neutral_loss_tag == "dR"
-    assert {event.peak_id for event in result.events} == {peak.peak_id}
+    assert {event.peak_id for event in result.attachments} == {peak.peak_id}
 
 
 def test_every_event_attaches_to_one_peak_or_records_why_not() -> None:
@@ -174,13 +174,13 @@ def test_every_event_attaches_to_one_peak_or_records_why_not() -> None:
     result = _capture(raw, seeds, _settings(ms1_search_padding_min=0.2))
 
     events = _events_by_scan(result)
-    assert len(result.events) == len(seeds)
+    assert len(result.attachments) == len(seeds)
     assert events[10].peak_id and not events[10].unattached_reason
     assert events[20].unattached_reason == "parent_ms1_unavailable"
-    assert events[30].unattached_reason == "outside_peak_bounds"
+    assert events[30].unattached_reason == "rt_outside_peak"
     # The second peak was measured on the channel, but no event attaches.
     (unattached_peak,) = (p for p in result.peaks if not p.attached_event_count)
-    assert unattached_peak.admission_reason == "no_attached_event"
+    assert unattached_peak.status == "no_nl_event"
     assert not unattached_peak.admitted
 
 
@@ -204,8 +204,8 @@ def test_seed_order_does_not_change_peaks_or_events() -> None:
         random.Random(seed).shuffle(shuffled)
         result = _capture(raw, tuple(shuffled), settings)
         assert result.peaks == expected.peaks
-        assert sorted(result.events, key=lambda e: e.ms2_scan_number) == sorted(
-            expected.events, key=lambda e: e.ms2_scan_number
+        assert sorted(result.attachments, key=lambda e: e.ms2_scan_number) == sorted(
+            expected.attachments, key=lambda e: e.ms2_scan_number
         )
 
 
@@ -245,7 +245,7 @@ def test_an_event_without_a_measured_peak_is_recorded_without_a_peak() -> None:
     result = _capture(raw, (_seed(scan_number=10, rt=7.9),), _settings())
 
     assert result.peaks == ()
-    (event,) = result.events
+    (event,) = result.attachments
     assert not event.peak_id
     assert event.unattached_reason
 
@@ -277,11 +277,13 @@ def test_adjacent_channels_measure_their_shared_peak_once() -> None:
         _seed(scan_number=12, rt=9.03, precursor_mz=500.0051, product_intensity=5e3),
     )
     settings = _settings()
-    channels = build_discovery_channels(seeds, settings=settings)
+    channels = build_discovery_ions(seeds, settings=settings)
 
     result = _capture(raw, seeds, settings)
 
     assert len(channels) == 2
     (peak,) = result.peaks
-    assert {event.peak_id for event in result.events if event.peak_id} == {peak.peak_id}
-    assert all(event.peak_id for event in result.events)
+    assert {event.peak_id for event in result.attachments if event.peak_id} == {
+        peak.peak_id
+    }
+    assert all(event.peak_id for event in result.attachments)

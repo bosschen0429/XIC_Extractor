@@ -177,7 +177,7 @@ def test_retained_alignment_keeps_full_root_injection_order(
     monkeypatch.setattr(
         "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",
         lambda **options: (
-            options["candidates_by_sample"],
+            options["peaks_by_sample"],
             physical_records,
             tuple(
                 AcquisitionSourceExpectation(
@@ -190,7 +190,7 @@ def test_retained_alignment_keeps_full_root_injection_order(
     prepared = prepare_untargeted_alignment_inputs(
         signal_processing_profile=TEST_PROFILE,
         discovery_batch=batch,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "out",
@@ -257,7 +257,7 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
     monkeypatch.setattr(
         "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",
         lambda **options: (
-            options["candidates_by_sample"],
+            options["peaks_by_sample"],
             physical_records,
             tuple(
                 AcquisitionSourceExpectation(
@@ -282,7 +282,7 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
     prepared = prepare_untargeted_alignment_inputs(
         signal_processing_profile=TEST_PROFILE,
         discovery_batch=batch,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "out",

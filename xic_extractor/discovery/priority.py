@@ -7,11 +7,11 @@ _RT_DELTA_EPSILON_MIN = 1e-9
 def assign_review_priority(
     *,
     attached_event_count: int,
-    ms1_seed_delta_min: float,
+    ms1_event_delta_min: float,
     settings: DiscoverySettings,
 ) -> ReviewPriority:
     if attached_event_count >= 2 and _within_padding(
-        ms1_seed_delta_min, settings=settings
+        ms1_event_delta_min, settings=settings
     ):
         return "HIGH"
     return "MEDIUM"
@@ -20,13 +20,13 @@ def assign_review_priority(
 def build_peak_reason(
     *,
     attached_event_count: int,
-    ms1_seed_delta_min: float,
+    ms1_event_delta_min: float,
     settings: DiscoverySettings,
 ) -> str:
     if attached_event_count < 1:
         return "MS1 peak found; no NL event attaches"
     if attached_event_count >= 2:
-        if _within_padding(ms1_seed_delta_min, settings=settings):
+        if _within_padding(ms1_event_delta_min, settings=settings):
             return "strong MS2 NL event set; MS1 peak found near event RT"
         return "MS1 peak offset from event RT"
     return "single MS2 NL event; MS1 peak found"

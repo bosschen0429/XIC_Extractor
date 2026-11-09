@@ -71,7 +71,7 @@ def test_adapter_rejects_candidate_morphology_different_from_physical_receipt(
             processing_owners=fixture.owners,
             sample=fixture.sample("S1"),
             method_subject=fixture.method_subject,
-            candidates=(candidate,),
+            peaks=(candidate,),
             settings=settings,
             peak_config=config,
             raw=raw,
@@ -91,13 +91,13 @@ def test_runtime_retains_physical_receipt_failure(tmp_path, monkeypatch):
         method_subject=fixture.method_subject,
         settings=settings,
         peak_config=config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         sample_identity_namespace="study:physical-receipt",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate=records,
+        physical_records_by_peak=records,
     )
     install_runtime_raw(
         monkeypatch, source_raw=source, raw_path=paths[0], tmp_path=tmp_path

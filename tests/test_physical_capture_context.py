@@ -18,7 +18,7 @@ from xic_extractor.acquisition.physical_capture import (
     PhysicalPeakCapture,
     PhysicalPeakSearch,
 )
-from xic_extractor.discovery.ion_channels import build_discovery_channels
+from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest
@@ -215,16 +215,16 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
         _seed(scan_number=i + 10, rt=t) for i, t in enumerate((5.0, 5.15, 5.3))
     )
     settings = _settings()
-    grouped = build_discovery_channels(seeds, settings=settings)
+    grouped = build_discovery_ions(seeds, settings=settings)
     separate = tuple(
-        build_discovery_channels((seed,), settings=settings)[0] for seed in seeds
+        build_discovery_ions((seed,), settings=settings)[0] for seed in seeds
     )
     variants = (
         grouped,
         separate,
         tuple(reversed(separate)),
         separate + separate,
-        build_discovery_channels(seeds + seeds, settings=settings),
+        build_discovery_ions(seeds + seeds, settings=settings),
     )
     previous = None
     for groups in variants:
@@ -251,16 +251,16 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
         assert sorted(c.ms1_apex_rt for c in measured) == pytest.approx([5.0, 5.15])
         # The analytic second Gaussian remains one raw basin past its 10%
         # quantitative return; its tail event is not an orphan component.
-        assert {c.seed_scan_ids for c in measured} == {(10,), (11, 12)}
+        assert {c.event_scan_ids for c in measured} == {(10,), (11, 12)}
         assert result.measurements.initial_request_count == 1
         snapshot = sorted(
             (
-                c.seed_scan_ids,
+                c.event_scan_ids,
                 c.ms1_apex_rt,
                 c.ms1_area,
                 c.ms1_peak_rt_start,
                 c.ms1_peak_rt_end,
-                c.admission_reason,
+                c.status,
             )
             for c in result.peaks
         )

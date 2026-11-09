@@ -264,14 +264,14 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:grouping-window-invariance",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
@@ -397,14 +397,14 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:sample-query-rt",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
@@ -532,14 +532,14 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         sample_identity_namespace="study:rejected-bounded-recovery",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
@@ -706,13 +706,13 @@ def test_runtime_recovers_every_authorized_rt_group(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         sample_identity_namespace="study:multi-group-recovery",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in candidates.values()
             for c in values
@@ -757,7 +757,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                 work_unit_key=sample.metadata.raw_stem,
                 signal_processing_profile=context.signal_processing_profile,
                 physical_records=tuple(
-                    context.physical_records_by_candidate[c.peak_id]
+                    context.physical_records_by_peak[c.peak_id]
                     for c in (candidates[sample.metadata.raw_stem])
                 ),
             )
@@ -1253,14 +1253,14 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         sample_identity_namespace="study:shared-recovery-claim",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
@@ -1403,14 +1403,14 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         sample_identity_namespace="study:shared-ms1-only-backfill",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
@@ -1513,7 +1513,7 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
         tmp_path / "backfill.sqlite",
         full_audit=False,
         completed=completed,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
@@ -1618,14 +1618,14 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         sample_identity_namespace="study:ms1-only-backfill",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
@@ -1785,14 +1785,14 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         sample_identity_namespace="study:support-elsewhere",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
@@ -1884,8 +1884,8 @@ def _assert_alignment_uses_configured_recovery_groups(
     monkeypatch.setattr(
         "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",
         lambda **options: (
-            options["candidates_by_sample"],
-            kwargs["physical_records_by_candidate"],
+            options["peaks_by_sample"],
+            kwargs["physical_records_by_peak"],
             tuple(
                 AcquisitionSourceExpectation(
                     kwargs["discovery_receipts_by_sample"][
@@ -1908,7 +1908,7 @@ def _assert_alignment_uses_configured_recovery_groups(
             event_csvs={stem: None for stem in candidates},
             peak_receipts=kwargs["discovery_receipts_by_sample"],
         ),
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         sample_metadata=kwargs["sample_metadata"],
         raw_dir=tmp_path,
         dll_dir=tmp_path,

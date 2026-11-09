@@ -45,11 +45,11 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
-    from xic_extractor.discovery.ion_channels import build_discovery_channels
+    from xic_extractor.discovery.ion_grouping import build_discovery_ions
     from xic_extractor.discovery.ms1_capture import (
         capture_ms1_peaks,
     )
-    from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.discovery.ms2_events import collect_strict_nl_events
     from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
     from xic_extractor.peak_detection import capture as capture_owner
@@ -162,12 +162,12 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
 
         monkeypatch.setattr(vendor, "GetChromatogramData", mass_filtered_chromatogram)
     source = fixture.owners.request.acquisition_sources[0]
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw, raw_file=fixture.source_paths["S1"], settings=settings
     )
     discovery = capture_ms1_peaks(
         raw,
-        build_discovery_channels(seeds, settings=settings),
+        build_discovery_ions(seeds, settings=settings),
         acquisition_source=source,
         settings=settings,
         signal_processing_profile=profile,
@@ -175,7 +175,9 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     )
     # Both requests observe one channel/peak; retain both NL events on one result.
     assert len(discovery.peaks) == 1
-    assert set(discovery.peaks[0].seed_scan_ids) == {seed.scan_number for seed in seeds}
+    assert set(discovery.peaks[0].event_scan_ids) == {
+        seed.scan_number for seed in seeds
+    }
     legacy_records = tuple(
         DiscoveryPhysicalFactRecord(
             work_item=record.work_item,
@@ -220,7 +222,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
                 processing_owners=owners,
                 sample=fixture.sample("S1"),
                 method_subject=fixture.method_subject,
-                candidates=discovery.peaks,
+                peaks=discovery.peaks,
                 settings=settings,
                 peak_config=peak_config,
                 raw=raw,
@@ -233,7 +235,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         processing_owners=owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=discovery.peaks,
+        peaks=discovery.peaks,
         settings=settings,
         peak_config=peak_config,
         raw=raw,
@@ -265,7 +267,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         acquired = next(
             item
             for item in result.acquisition.traces
-            if item.coordinate.request.mz == candidate.precursor_mz
+            if item.coordinate.request.mz == candidate.best_event_precursor_mz
         )
         assert (
             acquired.coordinate.request.ppm_tol == settings.precursor_mz_tolerance_ppm
@@ -353,7 +355,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
         processing_owners=owners,
         sample=fixture.sample("S1"),
-        candidates=discovery.peaks,
+        peaks=discovery.peaks,
         settings=settings,
         raw=raw,
         signal_processing_profile=profile,
@@ -364,7 +366,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         processing_owners=owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=discovery.peaks,
+        peaks=discovery.peaks,
         settings=settings,
         peak_config=peak_config,
         raw=raw,
@@ -407,11 +409,11 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
-    from xic_extractor.discovery.ion_channels import build_discovery_channels
+    from xic_extractor.discovery.ion_grouping import build_discovery_ions
     from xic_extractor.discovery.ms1_capture import (
         capture_ms1_peaks,
     )
-    from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.discovery.ms2_events import collect_strict_nl_events
     from xic_extractor.peak_detection.cid_nl_method_subject import (
         REQUEST_INPUT_KEY,
         mint_untargeted_cid_nl_method_subject,
@@ -465,8 +467,8 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
     profile = SignalProcessingProfile(window_points=15)
     discovery = capture_ms1_peaks(
         raw,
-        build_discovery_channels(
-            collect_strict_nl_seeds(
+        build_discovery_ions(
+            collect_strict_nl_events(
                 raw, raw_file=fixture.source_paths["S1"], settings=settings
             ),
             settings=settings,
@@ -517,7 +519,7 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
         processing_owners=owners,
         sample=fixture.sample("S1"),
         method_subject=method_subject,
-        candidates=(candidate,),
+        peaks=(candidate,),
         settings=settings,
         peak_config=peak_config,
         raw=raw,
@@ -545,7 +547,11 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
             record.evaluation.facts.area_counts_seconds / (1 + interference_abundance)
         )
     )
-    assert candidate.precursor_mz == record.work_item.xic_mz == pytest.approx(500.016)
+    assert (
+        candidate.best_event_precursor_mz
+        == record.work_item.xic_mz
+        == pytest.approx(500.016)
+    )
 
 
 def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
@@ -554,11 +560,11 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
-    from xic_extractor.discovery.ion_channels import build_discovery_channels
+    from xic_extractor.discovery.ion_grouping import build_discovery_ions
     from xic_extractor.discovery.ms1_capture import (
         capture_ms1_peaks,
     )
-    from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 
     fixture = build_sample_adapter_fixture(tmp_path)
     source_raw = _FakeRaw((7.8, 8.2))
@@ -577,12 +583,12 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
     peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
     raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw, raw_file=fixture.source_paths["S1"], settings=settings
     )
     discovery = capture_ms1_peaks(
         raw,
-        build_discovery_channels(seeds, settings=settings),
+        build_discovery_ions(seeds, settings=settings),
         acquisition_source=fixture.owners.request.acquisition_sources[0],
         settings=settings,
         signal_processing_profile=profile,
@@ -594,7 +600,7 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         processing_owners=owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=discovery.peaks,
+        peaks=discovery.peaks,
         settings=settings,
         peak_config=peak_config,
         raw=raw,

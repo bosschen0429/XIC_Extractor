@@ -56,10 +56,10 @@ from xic_extractor.xic_models import XICTrace
 def _bind_mock_publication_inputs(completed, kwargs):
     completed.processing_attempt_id = "attempt-test"
     completed.initial_groups = ()
-    candidates = kwargs["candidates_by_sample"]
+    candidates = kwargs["peaks_by_sample"]
     reference = kwargs.get("known_istd_reference")
     completed.publication_inputs = SimpleNamespace(
-        candidates_by_sample=candidates.feature_view(),
+        peaks_by_sample=candidates.feature_view(),
         ms1_apex_mz_by_candidate=candidates.ms1_apex_mz_by_candidate,
         alignment_config=kwargs["alignment_config"],
         known_istd_reference_provenance=(
@@ -540,9 +540,9 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         retain_partition_memory=False,
     )
     assert len(completed.application_result.children) == 3
-    candidates = plan.context.candidates_by_sample
+    candidates = plan.context.peaks_by_sample
     completed = completed.bind_publication_inputs(
-        candidates_by_sample=candidates, alignment_config=config
+        peaks_by_sample=candidates, alignment_config=config
     )
     output_dir = tmp_path / "out"
     output_dir.mkdir()
@@ -581,7 +581,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         write_alignment_explanation(
             reference,
             completed=completed,
-            candidates_by_sample=candidates,
+            peaks_by_sample=candidates,
             matrix_path=matrix_path,
             alignment_config=config,
         )
@@ -837,7 +837,7 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
     )
     arguments = dict(
         completed=completed,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
@@ -1210,7 +1210,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
             inferred = [
                 row
                 for row in csv.DictReader(handle)
-                if float(row["precursor_mz"]) == 700.0
+                if float(row["best_event_precursor_mz"]) == 700.0
             ]
         assert len(inferred) == 1
         assert inferred[0]["precursor_mz_basis"] == "product_plus_neutral_loss"

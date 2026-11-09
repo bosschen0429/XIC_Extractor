@@ -15,8 +15,8 @@ import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE, fake_acquisition_source
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.discovery.ion_channels import build_discovery_channels
-from xic_extractor.discovery.models import DiscoveryPeak, DiscoverySeed
+from xic_extractor.discovery.ion_grouping import build_discovery_ions
+from xic_extractor.discovery.models import DiscoveryEvent, DiscoveryPeak
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_peaks,
 )
@@ -135,11 +135,11 @@ def test_ms2_evidence_changes_without_changing_ms1_integration_or_id() -> None:
 
 def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> None:
     settings = _discovery_settings(ms1_search_padding_min=0.20)
-    first_group = build_discovery_channels(
+    first_group = build_discovery_ions(
         (_seed(scan_number=10, rt=7.90),),
         settings=settings,
     )[0]
-    second_group = build_discovery_channels(
+    second_group = build_discovery_ions(
         (_seed(scan_number=20, rt=8.10),),
         settings=settings,
     )[0]
@@ -255,8 +255,8 @@ def _discovery_settings(*, ms1_search_padding_min: float) -> DiscoverySettings:
     )
 
 
-def _seed(*, scan_number: int, rt: float) -> DiscoverySeed:
-    return DiscoverySeed(
+def _seed(*, scan_number: int, rt: float) -> DiscoveryEvent:
+    return DiscoveryEvent(
         raw_file=_RAW_FILE,
         sample_stem="SampleA",
         scan_number=scan_number,
@@ -304,7 +304,7 @@ def _discovery_ms1_peak_probe(
     candidate: DiscoveryPeak,
 ) -> tuple[object, ...]:
     return (
-        candidate.precursor_mz,
+        candidate.best_event_precursor_mz,
         candidate.ms1_apex_rt,
         candidate.ms1_peak_rt_start,
         candidate.ms1_peak_rt_end,

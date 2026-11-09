@@ -166,6 +166,6 @@ def _candidate() -> DiscoveryPeak:
         ms1_apex_rt=7.84,
         ms1_area=500_000.0,
         ms2_product_max_intensity=50_000.0,
-        ms1_seed_delta_min=0.01,
+        ms1_event_delta_min=0.01,
         ms1_scan_support_score=0.8,
     )

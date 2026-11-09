@@ -16,16 +16,15 @@ from xic_extractor.discovery.evidence_config import DEFAULT_EVIDENCE_PROFILE
 from xic_extractor.discovery.models import (
     DISCOVERY_EVENT_COLUMNS,
     DISCOVERY_PEAK_COLUMNS,
-    DiscoveryEvent,
+    EventAttachment,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
 
 
-def test_peak_table_leads_with_review_and_admission_fields() -> None:
-    assert DISCOVERY_PEAK_COLUMNS[:9] == (
+def test_peak_table_leads_with_review_and_status_fields() -> None:
+    assert DISCOVERY_PEAK_COLUMNS[:8] == (
         "review_priority",
-        "admitted",
-        "admission_reason",
+        "status",
         "evidence_tier",
         "evidence_score",
         "ms2_support",
@@ -38,7 +37,7 @@ def test_peak_table_leads_with_review_and_admission_fields() -> None:
 
 def test_event_table_records_attachment_or_reason() -> None:
     assert DISCOVERY_EVENT_COLUMNS[-3:] == (
-        "channel_mz",
+        "xic_mz",
         "peak_id",
         "unattached_reason",
     )
@@ -46,23 +45,22 @@ def test_event_table_records_attachment_or_reason() -> None:
 
 def test_peak_csv_round_trips_through_the_reader(tmp_path: Path) -> None:
     peak = _peak(
-        seed_scan_ids=(6095, 6100, 6112),
+        event_scan_ids=(6095, 6100, 6112),
         matched_tag_names=("DNA_dR", "R"),
-        requires_overlap_review=True,
+        status="overlap",
         ms1_apex_mz=258.1083,
     )
     path = write_discovery_peaks_csv(tmp_path / "nested" / "peaks.csv", [peak])
 
     (row,) = _read_csv(path)
-    assert row["admitted"] == "FALSE"
-    assert row["admission_reason"] == "requires_overlap_review"
-    assert row["seed_scan_ids"] == "6095;6100;6112"
+    assert row["status"] == "overlap"
+    assert row["event_scan_ids"] == "6095;6100;6112"
     assert row["raw_file"] == "C:\\data\\Sample_1.raw"
     (restored,) = read_discovery_peaks_csv(path)
     assert restored.peak_id == peak.peak_id
-    assert restored.seed_scan_ids == peak.seed_scan_ids
+    assert restored.event_scan_ids == peak.event_scan_ids
     assert restored.matched_tag_names == peak.matched_tag_names
-    assert restored.admission_reason == "requires_overlap_review"
+    assert restored.status == "overlap"
     assert restored.ms1_apex_mz == pytest.approx(258.1083)
 
 
@@ -108,22 +106,22 @@ def test_peak_csv_escapes_text_for_csv_and_spreadsheets(tmp_path: Path) -> None:
 
 
 def test_seed_scan_ids_formatter_does_not_join_string_characters() -> None:
-    assert format_discovery_csv_value("seed_scan_ids", (6095, 6100)) == "6095;6100"
-    assert format_discovery_csv_value("seed_scan_ids", "6095;6100") == "6095;6100"
+    assert format_discovery_csv_value("event_scan_ids", (6095, 6100)) == "6095;6100"
+    assert format_discovery_csv_value("event_scan_ids", "6095;6100") == "6095;6100"
 
 
 def test_event_csv_writes_one_row_per_event_in_rt_order(tmp_path: Path) -> None:
     events = [
-        DiscoveryEvent(
-            seed=_seed(scan_number=20, rt=8.2),
-            channel_mz=500.0,
-            supports_nl=True,
-            unattached_reason="outside_peak_bounds",
+        EventAttachment(
+            event=_seed(scan_number=20, rt=8.2),
+            xic_mz=500.0,
+            precursor_verified=True,
+            unattached_reason="rt_outside_peak",
         ),
-        DiscoveryEvent(
-            seed=_seed(scan_number=10, rt=7.6),
-            channel_mz=500.0,
-            supports_nl=True,
+        EventAttachment(
+            event=_seed(scan_number=10, rt=7.6),
+            xic_mz=500.0,
+            precursor_verified=True,
             peak_id="Sample@mz500_rt7.6000",
         ),
     ]
@@ -132,18 +130,18 @@ def test_event_csv_writes_one_row_per_event_in_rt_order(tmp_path: Path) -> None:
 
     assert [row["ms2_scan_number"] for row in rows] == ["10", "20"]
     assert rows[0]["peak_id"] == "Sample@mz500_rt7.6000"
-    assert rows[1]["unattached_reason"] == "outside_peak_bounds"
+    assert rows[1]["unattached_reason"] == "rt_outside_peak"
     assert rows[1]["peak_id"] == ""
 
 
 def test_an_event_cannot_both_attach_and_record_a_reason() -> None:
     with pytest.raises(ValueError, match="one peak or records one reason"):
-        DiscoveryEvent(
-            seed=_seed(scan_number=10, rt=7.6),
-            channel_mz=500.0,
-            supports_nl=True,
+        EventAttachment(
+            event=_seed(scan_number=10, rt=7.6),
+            xic_mz=500.0,
+            precursor_verified=True,
             peak_id="peak",
-            unattached_reason="outside_peak_bounds",
+            unattached_reason="rt_outside_peak",
         )
 
 

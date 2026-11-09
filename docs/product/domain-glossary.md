@@ -74,11 +74,13 @@ tests.
   counts, reasons and review routing. It never selects the cell value.
 - `feature_id`: in Alignment output, the report-scoped `F000001` label of one
   published group. It carries no identity across reports.
-- `ion channel`: one sample's CID-NL events grouped by their MS1-measured ion
-  within the precursor tolerance; tag, product and RT never split it.
-- `Discovery peak`: one physical MS1 peak on one ion channel, one row of
-  `discovery_peaks.csv`, identified by `peak_id`. Its `admission_reason`
-  decides whether it enters Alignment.
+- `Discovery ion`: one sample's CID-NL events grouped by their MS1-measured ion
+  within the precursor tolerance; tag, product and RT never split it. Its
+  `xic_mz` is the XIC center, read before acquisition.
+- `Discovery peak`: one physical MS1 peak on one ion's XIC, one row of
+  `discovery_peaks.csv`, identified by `peak_id`. Its `status` decides whether
+  it enters Alignment; its `physical_mz` is the measured mass (the apex
+  reading of an inferred precursor, else `xic_mz`).
 - `Discovery event`: one strict NL event (MS2 scan, tag and product), one row
   of `discovery_events.csv`. It attaches to one peak or records why it does not.
 - `final Matrix`: the immutable grid produced after cell and row-inclusion

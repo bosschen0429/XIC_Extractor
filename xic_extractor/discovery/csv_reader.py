@@ -15,9 +15,11 @@ from xic_extractor.discovery.batch_contract import (
 )
 from xic_extractor.discovery.models import (
     DISCOVERY_PEAK_COLUMNS,
+    PEAK_STATUSES,
     DiscoveryPeak,
     GroupPrecursorMzBasis,
     NeutralLossErrorBasis,
+    PeakStatus,
 )
 from xic_extractor.processing_identity import IdentityContractError
 
@@ -217,19 +219,19 @@ def _parse_peak_row(
         peak_id=_machine_text(peak_id),
         raw_file=_raw_file_path(_machine_field(row, "raw_file")),
         sample_stem=_machine_field(row, "sample_stem"),
-        channel_mz=number("channel_mz"),
-        precursor_mz=number("precursor_mz"),
-        product_mz=number("product_mz"),
-        observed_neutral_loss_da=number("observed_neutral_loss_da"),
+        xic_mz=number("xic_mz"),
+        best_event_precursor_mz=number("best_event_precursor_mz"),
+        best_event_product_mz=number("best_event_product_mz"),
+        best_event_neutral_loss_da=number("best_event_neutral_loss_da"),
         neutral_loss_tag=text("neutral_loss_tag"),
         configured_neutral_loss_da=number("configured_neutral_loss_da"),
         neutral_loss_mass_error_ppm=optional("neutral_loss_mass_error_ppm"),
         best_ms2_scan_id=integer("best_ms2_scan_id"),
-        best_seed_rt=number("best_seed_rt"),
-        seed_scan_ids=_parse_int_tuple(path, row_number, row, "seed_scan_ids"),
+        best_event_rt=number("best_event_rt"),
+        event_scan_ids=_parse_int_tuple(path, row_number, row, "event_scan_ids"),
         attached_event_count=integer("attached_event_count"),
-        rt_seed_min=number("rt_seed_min"),
-        rt_seed_max=number("rt_seed_max"),
+        event_rt_min=number("event_rt_min"),
+        event_rt_max=number("event_rt_max"),
         ms2_product_max_intensity=number("ms2_product_max_intensity"),
         ms1_search_rt_min=number("ms1_search_rt_min"),
         ms1_search_rt_max=number("ms1_search_rt_max"),
@@ -238,15 +240,13 @@ def _parse_peak_row(
         ms1_height=number("ms1_height"),
         ms1_peak_rt_start=number("ms1_peak_rt_start"),
         ms1_peak_rt_end=number("ms1_peak_rt_end"),
-        ms1_seed_delta_min=number("ms1_seed_delta_min"),
+        ms1_event_delta_min=number("ms1_event_delta_min"),
         ms1_trace_quality=text("ms1_trace_quality"),
         review_priority=text("review_priority"),  # type: ignore[arg-type]
         reason=text("reason"),
+        status=_parse_status(path, row_number, row),
         ms1_scan_support_score=optional("ms1_scan_support_score"),
         ms1_apex_mz=optional("ms1_apex_mz"),
-        requires_overlap_review=flag("requires_overlap_review"),
-        doubly_charged_isotope=flag("doubly_charged_isotope"),
-        blank_background=flag("blank_background"),
         evidence_score=integer("evidence_score"),
         evidence_tier=text("evidence_tier"),
         ms2_support=text("ms2_support"),
@@ -305,6 +305,16 @@ def _parse_neutral_loss_error_basis(
             f"of {allowed}: {value!r}"
         )
     return cast(NeutralLossErrorBasis, value)
+
+
+def _parse_status(path: Path, row_number: int, row: dict[str, str]) -> PeakStatus:
+    value = _required_text(path, row_number, row, "status")
+    if value not in PEAK_STATUSES:
+        raise ValueError(
+            f"{path}: row {row_number}: status must be one of "
+            f"{', '.join(PEAK_STATUSES)}: {value!r}"
+        )
+    return cast(PeakStatus, value)
 
 
 def _parse_precursor_mz_basis(

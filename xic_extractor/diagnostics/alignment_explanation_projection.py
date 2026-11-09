@@ -236,7 +236,7 @@ def write_alignment_explanation(
     path: Path,
     *,
     completed: CompletedUntargetBatchWorkflowResult,
-    candidates_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
+    peaks_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
     matrix_path: Path,
     alignment_config: AlignmentConfig,
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
@@ -249,7 +249,7 @@ def write_alignment_explanation(
     with prepare_alignment_explanation(
         path,
         completed=completed,
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         alignment_config=alignment_config,
         ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
         known_istd_reference_provenance=known_istd_reference_provenance,
@@ -267,7 +267,7 @@ def prepare_alignment_explanation(
     path: Path,
     *,
     completed: CompletedUntargetBatchWorkflowResult,
-    candidates_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
+    peaks_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
     alignment_config: AlignmentConfig,
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     known_istd_reference_provenance: Mapping[str, object] | None = None,
@@ -370,7 +370,7 @@ def prepare_alignment_explanation(
                 elif kind == "rows":
                     reasons.update((payload["route"]["reason"],))
 
-        for stem, declared in candidates_by_sample.items():
+        for stem, declared in peaks_by_sample.items():
             sid = samples[stem].identity.sample_key
             for candidate in phase_items("candidates", declared):
                 key = candidate.peak_id, sid
@@ -382,11 +382,11 @@ def prepare_alignment_explanation(
                     {
                         **_fields(
                             candidate,
-                            "admission_reason",
-                            "precursor_mz",
                             "configured_neutral_loss_da",
                             "neutral_loss_tag",
                         ),
+                        "peak_status": candidate.status,
+                        "precursor_mz": candidate.best_event_precursor_mz,
                         "candidate_id": candidate.peak_id,
                         "sample_stem": stem,
                         "sample_key": sid,
@@ -580,7 +580,7 @@ def prepare_alignment_explanation(
                         "candidate_id",
                         "sample_key",
                         "method_subject_id",
-                        "admission_reason",
+                        "peak_status",
                         "reason_code",
                     ),
                 },

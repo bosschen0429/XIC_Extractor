@@ -36,7 +36,7 @@ from xic_extractor.processing_identity import (
 
 def _physical_index_jobs(tmp_path: Path, *, count: int):
     from xic_extractor.discovery.batch_contract import (
-        DISCOVERY_PEAK_ARTIFACT_SCHEMA_VERSION,
+        DISCOVERY_PEAK_CSV_SCHEMA_VERSION,
         DiscoveryPeakUniverseReceipt,
     )
     from xic_extractor.untargeted_execution.alignment import _PhysicalIndexJob
@@ -71,9 +71,9 @@ def _physical_index_jobs(tmp_path: Path, *, count: int):
             sample_stem=acquisition_input.sample_stem,
             acquisition_source=acquisition_input.acquisition_source,
             peak_count=0,
-            peak_artifact_schema_version=(DISCOVERY_PEAK_ARTIFACT_SCHEMA_VERSION),
-            peak_artifact_sha256="0" * 64,
-            peak_artifact_byte_size=0,
+            peak_csv_schema_version=(DISCOVERY_PEAK_CSV_SCHEMA_VERSION),
+            peak_csv_sha256="0" * 64,
+            peak_csv_byte_size=0,
             physical_facts_sha256=fingerprint.content_sha256,
             physical_facts_byte_size=fingerprint.byte_size,
         )

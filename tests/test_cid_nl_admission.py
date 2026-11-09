@@ -21,9 +21,9 @@ from xic_extractor.discovery.csv_reader import (
     read_owner_bound_discovery_peaks_csv,
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.discovery.ion_channels import build_discovery_channels
+from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
-from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 from xic_extractor.discovery.physical_fact_persistence import (
     write_discovery_physical_fact_sidecar,
 )
@@ -49,8 +49,10 @@ def test_peak_index_uses_ms1_mass_not_event_precursor(tmp_path, apex_mz, expecte
     (peak,) = _current_candidates(
         _FakeRaw((8.0,)), raw_file=raw_path, settings=_settings()
     )
-    # CSV carries distinct channel, event estimate and optional apex reading.
-    peak = replace(peak, precursor_mz=500.004, channel_mz=500.0, ms1_apex_mz=apex_mz)
+    # CSV carries distinct XIC center, event estimate and optional apex reading.
+    peak = replace(
+        peak, best_event_precursor_mz=500.004, xic_mz=500.0, ms1_apex_mz=apex_mz
+    )
     receipts = build_discovery_receipts(tmp_path, (raw_path,), {"sample": (peak,)})
     batch = DiscoveryBatchInput(
         sample_order=("sample",),
@@ -97,26 +99,26 @@ def test_review_rows_never_become_alignment_roots(
         if path.stem == "Clean2":
             raw.intensity *= 2
         raws[path] = raw
-        seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
+        seeds = collect_strict_nl_events(raw, raw_file=path, settings=settings)
         capture = capture_ms1_peaks(
             raw,
-            build_discovery_channels(seeds, settings=settings),
+            build_discovery_ions(seeds, settings=settings),
             acquisition_source=source.acquisition_source,
             settings=settings,
             signal_processing_profile=TEST_PROFILE,
             ms1_centroid_mz=lambda *_: None,
         )
-        assert len(capture.events) == len(seeds)
+        assert len(capture.attachments) == len(seeds)
         if path.stem == "Orphan":
             assert not capture.peaks
-            assert all(event.unattached_reason for event in capture.events)
+            assert all(event.unattached_reason for event in capture.attachments)
         else:
             (peak,) = capture.peaks
             assert (
-                peak.admission_reason
+                peak.status
                 == {
-                    "Rescued": "no_attached_event",
-                    "Overlap": "requires_overlap_review",
+                    "Rescued": "no_nl_event",
+                    "Overlap": "overlap",
                     "Clean1": "admitted",
                     "Clean2": "admitted",
                 }[path.stem]
@@ -149,10 +151,10 @@ def test_review_rows_never_become_alignment_roots(
     source = DiscoveryInputSource(batch)
     for peaks in candidates.values():
         for peak in peaks:
-            assert source.locations[peak.peak_id].physical_mz == peak.channel_mz
+            assert source.locations[peak.peak_id].physical_mz == peak.xic_mz
     prepared = prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
-        candidates_by_sample=source if indexed else candidates,
+        peaks_by_sample=source if indexed else candidates,
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "inputs",

@@ -27,10 +27,10 @@ from xic_extractor.discovery.cid_nl_search import (
 from xic_extractor.discovery.evidence_score import score_peak_evidence
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
-    DiscoveryEvent,
     DiscoveryPeak,
     DiscoveryPhysicalWorkItem,
     DiscoveryRunOutputs,
+    EventAttachment,
 )
 from xic_extractor.discovery.ms1_capture import (
     _DiscoveryMs1Measurements,
@@ -82,7 +82,7 @@ RawOpener = Callable[[Path, Path], AbstractContextManager[DiscoveryRawHandle]]
 @dataclass(frozen=True)
 class _DiscoverySampleResult:
     peaks: tuple[DiscoveryPeak, ...]
-    events: tuple[DiscoveryEvent, ...]
+    attachments: tuple[EventAttachment, ...]
     ms1_measurements: _DiscoveryMs1Measurements | None
     raw_open_receipt: RawAcquisitionSessionReceipt | None
     physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...]
@@ -124,7 +124,7 @@ def _apply_blank_qualification_if_enabled(
             fold_change_threshold=settings.blank_fold_change_threshold,
         )
         stage.metrics["excluded_background_count"] = sum(
-            peak.blank_background for peak in qualified
+            peak.status == "blank" for peak in qualified
         )
         return qualified
 
@@ -160,7 +160,7 @@ def run_discovery(
     publication = output_publication.publish_discovery_batch_sample(
         raw_path,
         discovery_result.peaks,
-        discovery_result.events,
+        discovery_result.attachments,
         output_dir=output_dir,
         sample_output_dir=output_dir,
         acquisition_source=acquisition_input.acquisition_source,
@@ -242,7 +242,7 @@ def run_discovery_batch(
         publication = output_publication.publish_discovery_batch_sample(
             raw_path,
             discovery_result.peaks,
-            discovery_result.events,
+            discovery_result.attachments,
             output_dir=output_dir,
             acquisition_source=acquisition_source,
             timing_recorder=recorder,
@@ -407,7 +407,7 @@ def _discover_completed_sample(
     )
     return _DiscoverySampleResult(
         peaks=peaks,
-        events=acquired.events,
+        attachments=acquired.attachments,
         ms1_measurements=acquired.ms1_measurements,
         raw_open_receipt=acquired.raw_open_receipt,
         physical_work_manifest=acquired.physical_work_manifest,
@@ -475,7 +475,7 @@ def _acquire_discovery_sample(
             completed = True
             return _DiscoverySampleResult(
                 peaks=acquisition_result.peaks,
-                events=acquisition_result.events,
+                attachments=acquisition_result.attachments,
                 ms1_measurements=acquisition_result.measurements,
                 raw_open_receipt=raw_open_receipt,
                 physical_work_manifest=acquisition_result.physical_work_manifest,

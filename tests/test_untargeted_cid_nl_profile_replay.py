@@ -81,7 +81,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     }
     assert {
         sample: tuple(candidate.peak_id for candidate in sample_candidates)
-        for sample, sample_candidates in publication.candidates_by_sample.items()
+        for sample, sample_candidates in publication.peaks_by_sample.items()
     } == {
         sample: tuple(candidate.peak_id for candidate in sample_candidates)
         for sample, sample_candidates in inputs.candidates.items()
@@ -236,7 +236,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         tmp_path / "producer-evidence.sqlite",
         full_audit=True,
         completed=completed,
-        candidates_by_sample=inputs.candidates,
+        peaks_by_sample=inputs.candidates,
         matrix_path=matrix_path,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     )
@@ -380,10 +380,13 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert len(batch.subject_batch.subjects) == 1
         for result in trace.runtime_results[0].sample_results:
             stem = result.job.sample.metadata.raw_stem
-            (candidate,) = batch.context.candidates_by_sample[stem]
-            record = batch.context.physical_records_by_candidate[candidate.peak_id]
-            assert record.work_item.precursor_mz == candidate.precursor_mz
-            assert record.acquired_trace.coordinate.request.mz == candidate.precursor_mz
+            (candidate,) = batch.context.peaks_by_sample[stem]
+            record = batch.context.physical_records_by_peak[candidate.peak_id]
+            assert record.work_item.precursor_mz == candidate.best_event_precursor_mz
+            assert (
+                record.acquired_trace.coordinate.request.mz
+                == candidate.best_event_precursor_mz
+            )
             assert record.evaluation.facts == inputs.physical_facts[stem]
             assert fixture_assessment(result).content.method_result == (
                 "HOLD" if case.method_mode == "intersection" else "SUPPORT"
@@ -762,10 +765,10 @@ def test_profile_replay_rejects_changed_partition_inputs(
                 **(sample_inputs | changed), subject_work_units=subject_work_units
             )
     if not case.indexed_input:
-        wrong_records = dict(batch.context.physical_records_by_candidate)
+        wrong_records = dict(batch.context.physical_records_by_peak)
         keys = tuple(wrong_records)
         wrong_records[keys[0]] = wrong_records[keys[1]]
-        with pytest.raises(IdentityContractError, match="crossed candidate"):
+        with pytest.raises(IdentityContractError, match="crossed peak"):
             alignment_adapter.prepare_eager_untargeted_plan(
                 raw_paths=inputs.paths,
                 sample_metadata=tuple(
@@ -773,10 +776,10 @@ def test_profile_replay_rejects_changed_partition_inputs(
                 ),
                 settings=inputs.settings,
                 peak_config=inputs.peak_config,
-                candidates_by_sample=batch.context.candidates_by_sample,
+                peaks_by_sample=batch.context.peaks_by_sample,
                 discovery_receipts_by_sample=inputs.receipts,
                 dll_dir=tmp_path,
                 sample_identity_namespace="test:physical-replay",
                 signal_processing_profile=inputs.profile,
-                physical_records_by_candidate=wrong_records,
+                physical_records_by_peak=wrong_records,
             )

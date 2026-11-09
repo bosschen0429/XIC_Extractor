@@ -36,7 +36,7 @@ def score_discovery_evidence(
         max(0, candidate.attached_event_count) * weights.seed_event_per,
     )
 
-    delta = abs(candidate.ms1_seed_delta_min)
+    delta = abs(candidate.ms1_event_delta_min)
     if delta <= thresholds.rt_aligned_max_min:
         score += weights.rt_aligned
     elif delta <= thresholds.rt_near_max_min:
@@ -124,7 +124,7 @@ def classify_rt_alignment(
     *,
     thresholds: DiscoveryEvidenceThresholds = DEFAULT_EVIDENCE_PROFILE.thresholds,
 ) -> str:
-    delta = abs(candidate.ms1_seed_delta_min)
+    delta = abs(candidate.ms1_event_delta_min)
     if delta <= thresholds.rt_aligned_max_min:
         return "aligned"
     if delta <= thresholds.rt_near_max_min:

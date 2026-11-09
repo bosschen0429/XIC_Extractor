@@ -75,7 +75,7 @@ class SampleAdapterScenario:
             processing_owners=self.fixture.owners,
             sample=self.fixture.sample("S1"),
             method_subject=self.fixture.method_subject,
-            candidates=candidates,
+            peaks=candidates,
             settings=self.settings,
             peak_config=self.peak_config,
             raw=raw,
@@ -98,4 +98,4 @@ def build_sample_adapter_scenario(tmp_path: Path) -> SampleAdapterScenario:
 
 def _without_ms1_peak(candidate: DiscoveryPeak) -> DiscoveryPeak:
     """A peak held at peak level: its MS2 events remain, its MS1 peak is not used."""
-    return replace(candidate, requires_overlap_review=True)
+    return replace(candidate, status="overlap")

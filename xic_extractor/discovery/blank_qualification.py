@@ -347,7 +347,7 @@ def apply_blank_qualification_to_peaks(
 
     updated: list[DiscoveryPeak] = []
     for candidate in peaks:
-        matches = library.match(candidate.precursor_mz, ppm_tol=ppm_tol)
+        matches = library.match(candidate.best_event_precursor_mz, ppm_tol=ppm_tol)
         if not matches:
             updated.append(candidate)
             continue
@@ -366,7 +366,7 @@ def apply_blank_qualification_to_peaks(
             updated.append(
                 replace(
                     candidate,
-                    blank_background=True,
+                    status="blank",
                     review_priority="LOW",
                     reason=reason_msg,
                 )

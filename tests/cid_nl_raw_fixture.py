@@ -13,13 +13,13 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.ion_channels import build_discovery_channels
+from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_peaks,
 )
-from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 from xic_extractor.discovery.settings import DiscoverySettings
-from xic_extractor.discovery.strict_seed_receipts import read_parent_ms1_observations
+from xic_extractor.discovery.strict_event_receipts import read_parent_ms1_observations
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -49,11 +49,11 @@ def _current_candidates(
     physical_records=None,
 ):
     """Produce canonical Discovery peaks and optionally retain their facts."""
-    seeds = collect_strict_nl_seeds(raw, raw_file=raw_file, settings=settings)
+    seeds = collect_strict_nl_events(raw, raw_file=raw_file, settings=settings)
     seeds = read_parent_ms1_observations(
         raw, seeds, tolerance_ppm=settings.precursor_mz_tolerance_ppm
     )
-    channels = build_discovery_channels(seeds, settings=settings)
+    channels = build_discovery_ions(seeds, settings=settings)
     source = raw.acquisition_source
     if source is None:
         source = (

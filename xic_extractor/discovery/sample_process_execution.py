@@ -24,9 +24,9 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.discovery import output_publication
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
-    DiscoveryEvent,
     DiscoveryPeak,
     DiscoveryPhysicalWorkItem,
+    EventAttachment,
 )
 from xic_extractor.discovery.ms1_capture import _DiscoveryMs1Measurements
 from xic_extractor.discovery.physical_fact_record import (
@@ -124,7 +124,7 @@ class DiscoveredSample(Protocol):
     def peaks(self) -> tuple[DiscoveryPeak, ...]: ...
 
     @property
-    def events(self) -> tuple[DiscoveryEvent, ...]: ...
+    def attachments(self) -> tuple[EventAttachment, ...]: ...
 
     @property
     def ms1_measurements(self) -> _DiscoveryMs1Measurements | None: ...
@@ -419,7 +419,7 @@ def run_discovery_sample_process_job(
         publication = output_publication.publish_discovery_batch_sample(
             job.raw_path,
             discovery_result.peaks,
-            discovery_result.events,
+            discovery_result.attachments,
             output_dir=job.output_dir,
             acquisition_source=job.acquisition_source,
             timing_recorder=recorder,

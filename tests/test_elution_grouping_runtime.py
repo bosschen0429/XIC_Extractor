@@ -17,11 +17,11 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.ion_channels import build_discovery_channels
+from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_peaks,
 )
-from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution import (
@@ -76,10 +76,10 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         )
         raw, _ = _open_bound_raw(fixture, sample, source, tmp_path=tmp_path)
         with raw:
-            seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
+            seeds = collect_strict_nl_events(raw, raw_file=path, settings=settings)
             discovery = capture_ms1_peaks(
                 raw,
-                build_discovery_channels(seeds, settings=settings),
+                build_discovery_ions(seeds, settings=settings),
                 acquisition_source=raw.acquisition_source,
                 settings=settings,
                 signal_processing_profile=profile,
@@ -105,14 +105,14 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         ),
         settings=settings,
         peak_config=config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:elution-pattern",
         signal_processing_profile=profile,
-        physical_records_by_candidate=records,
+        physical_records_by_peak=records,
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     import xic_extractor.untargeted_execution.partition.workers as workers
@@ -298,10 +298,10 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
         )
         raw, _ = _open_bound_raw(fixture, sample, source, tmp_path=tmp_path)
         with raw:
-            seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
+            seeds = collect_strict_nl_events(raw, raw_file=path, settings=settings)
             discovery = capture_ms1_peaks(
                 raw,
-                build_discovery_channels(seeds, settings=settings),
+                build_discovery_ions(seeds, settings=settings),
                 acquisition_source=raw.acquisition_source,
                 settings=settings,
                 signal_processing_profile=profile,
@@ -328,14 +328,14 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
         ),
         settings=settings,
         peak_config=config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:hold-reuse-beside-searches",
         signal_processing_profile=profile,
-        physical_records_by_candidate=records,
+        physical_records_by_peak=records,
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     import xic_extractor.untargeted_execution.partition.workers as workers

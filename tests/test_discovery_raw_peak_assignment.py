@@ -10,7 +10,7 @@ from tests.discovery_ms1_capture_fixtures import (
     _seed,
     _settings,
 )
-from xic_extractor.discovery.ion_channels import build_discovery_channels
+from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.peak_detection.chrom_peak_segments import local_apex_prominence
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -45,9 +45,7 @@ def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl(
     raw_values = _gaussian(rt, center=5.0, sigma=0.5, height=1000.0)
     raw = _BoundedRaw(rt=rt, intensity=raw_values)
     settings = _settings()
-    groups = build_discovery_channels(
-        (_seed(scan_number=10, rt=6.3),), settings=settings
-    )
+    groups = build_discovery_ions((_seed(scan_number=10, rt=6.3),), settings=settings)
     result = capture_ms1_peaks(
         raw,
         groups,
@@ -61,8 +59,8 @@ def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl(
     assert candidate.ms1_apex_rt == pytest.approx(5.0, abs=0.03)
     # The NL event sits beyond the peak's right bound plus the attachment
     # tolerance, so the measured peak is kept without NL support.
-    assert candidate.ms1_peak_rt_end + 0.1 < candidate.best_seed_rt
-    assert candidate.admission_reason == "no_attached_event"
+    assert candidate.ms1_peak_rt_end + 0.1 < candidate.best_event_rt
+    assert candidate.status == "no_nl_event"
     assert result.measurements.reacquisition_request_count == 1
 
 

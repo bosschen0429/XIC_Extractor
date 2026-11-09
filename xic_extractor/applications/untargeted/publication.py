@@ -101,7 +101,7 @@ def publish_untargeted_outputs(
                     prepare_alignment_explanation(
                         output_dir / EXPLANATION_ARTIFACT_NAME,
                         completed=completed,
-                        candidates_by_sample=inputs.candidates_by_sample,
+                        peaks_by_sample=inputs.peaks_by_sample,
                         alignment_config=inputs.alignment_config,
                         ms1_apex_mz_by_candidate=inputs.ms1_apex_mz_by_candidate,
                         known_istd_reference_provenance=inputs.known_istd_reference_provenance,

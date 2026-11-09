@@ -19,8 +19,8 @@ from tests.cid_nl_raw_fixture import (
 def test_scan_event_prefers_independent_direct_loss_over_stronger_inference(
     tmp_path: Path, reverse_products: bool
 ) -> None:
-    from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
-    from xic_extractor.discovery.strict_seed_receipts import (
+    from xic_extractor.discovery.ms2_events import discovery_events_from_scan
+    from xic_extractor.discovery.strict_event_receipts import (
         resolve_discovery_scan_events,
     )
 
@@ -37,7 +37,7 @@ def test_scan_event_prefers_independent_direct_loss_over_stronger_inference(
         base_peak=12000.0,
     )
     settings = _settings()
-    seeds = discovery_seeds_from_scan(
+    seeds = discovery_events_from_scan(
         scan, raw_file=tmp_path / "S1.RAW", settings=settings
     )
     assert len(seeds) == 2
@@ -58,8 +58,8 @@ def test_scan_event_prefers_independent_direct_loss_over_stronger_inference(
 def test_unproven_inferred_members_keep_independent_scan_receipts(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.strict_seed_receipts import (
-        read_complete_discovery_scan_seeds,
+    from xic_extractor.discovery.strict_event_receipts import (
+        read_complete_discovery_scan_events,
     )
 
     source_raw = _FakeRaw((7.98, 8.0, 8.02))
@@ -82,21 +82,21 @@ def test_unproven_inferred_members_keep_independent_scan_receipts(
     )
     # One measured peak combines the events, never their exact scan receipts.
     assert len(candidates) == 1
-    assert {scan for c in candidates for scan in c.seed_scan_ids} == {
+    assert {scan for c in candidates for scan in c.event_scan_ids} == {
         scan.scan_number for scan in source_raw.scans
     }
     for candidate in candidates:
-        assert candidate.admission_reason == "no_attached_event"
+        assert candidate.status == "no_nl_event"
         assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
-        seeds = read_complete_discovery_scan_seeds(
+        seeds = read_complete_discovery_scan_events(
             source_raw,
-            candidates=(candidate,),
+            peaks=(candidate,),
             settings=settings,
             include_inferred=True,
         )
         # Strict replay keeps each located scan only within its own receipt.
         replayed = {scan.scan_number for scan, _ in seeds}
-        assert replayed <= set(candidate.seed_scan_ids)
+        assert replayed <= set(candidate.event_scan_ids)
         assert candidate.best_ms2_scan_id in replayed
         products_by_scan = {
             scan.scan_number: float(scan.masses[0]) for scan in source_raw.scans
@@ -123,8 +123,8 @@ def test_shared_apex_merge_keeps_each_absorbed_scan_receipt(
     shifts: tuple[float, ...],
     supported_scan_count: int,
 ) -> None:
-    from xic_extractor.discovery.strict_seed_receipts import (
-        read_complete_discovery_scan_seeds,
+    from xic_extractor.discovery.strict_event_receipts import (
+        read_complete_discovery_scan_events,
     )
 
     source_raw = _FakeRaw(scan_rts)
@@ -149,19 +149,19 @@ def test_shared_apex_merge_keeps_each_absorbed_scan_receipt(
     )
     # A scan beyond the precursor tolerance of the channel anchor measures its
     # own ion channel rather than being absorbed.
-    candidate = max(candidates, key=lambda item: len(item.seed_scan_ids))
-    assert len(candidate.seed_scan_ids) == supported_scan_count
+    candidate = max(candidates, key=lambda item: len(item.event_scan_ids))
+    assert len(candidate.event_scan_ids) == supported_scan_count
 
-    seeds = read_complete_discovery_scan_seeds(
+    seeds = read_complete_discovery_scan_events(
         source_raw,
-        candidates=(candidate,),
+        peaks=(candidate,),
         settings=settings,
     )
 
     # An absorbed scan outside the final precursor window still reconstructs
     # against its own receipt but cannot support this candidate's mass.
     assert [scan.scan_number for scan, _ in seeds] == list(
-        candidate.seed_scan_ids[:supported_scan_count]
+        candidate.event_scan_ids[:supported_scan_count]
     )
 
 
@@ -169,17 +169,17 @@ def test_shared_apex_merge_keeps_each_absorbed_scan_receipt(
 def test_declared_strict_scan_subset_rejects_non_exact_events(variant: str) -> None:
     from types import SimpleNamespace
 
-    from xic_extractor.discovery.strict_seed_receipts import (
-        StrictSeedReceiptError,
+    from xic_extractor.discovery.strict_event_receipts import (
+        StrictEventReceiptError,
         _read_exact_scans,
     )
     from xic_extractor.ms2_scan_models import Ms2ScanEvent
 
     candidate = SimpleNamespace(
         peak_id="peak-1",
-        seed_scan_ids=(11, 12),
-        rt_seed_min=8.0,
-        rt_seed_max=8.2,
+        event_scan_ids=(11, 12),
+        event_rt_min=8.0,
+        event_rt_max=8.2,
     )
 
     def scan(number):
@@ -203,14 +203,14 @@ def test_declared_strict_scan_subset_rejects_non_exact_events(variant: str) -> N
         def iter_ms2_scan_subset(self, _rt_min, _rt_max, _scan_numbers):
             return iter(events)
 
-    with pytest.raises(StrictSeedReceiptError, match="not exact"):
+    with pytest.raises(StrictEventReceiptError, match="not exact"):
         _read_exact_scans(_SubsetRaw(), candidate)
 
 
 def test_scan_seed_enumeration_runs_once_per_declared_scan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from xic_extractor.discovery import strict_seed_receipts
+    from xic_extractor.discovery import strict_event_receipts
 
     source_raw = _FakeRaw((7.98, 8.0, 8.02))
     settings = _settings()
@@ -219,30 +219,30 @@ def test_scan_seed_enumeration_runs_once_per_declared_scan(
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
     )
-    assert len(candidate.seed_scan_ids) > 1
+    assert len(candidate.event_scan_ids) > 1
 
     enumerated: list[int] = []
-    enumerate_seeds = strict_seed_receipts.discovery_seeds_from_scan
+    enumerate_seeds = strict_event_receipts.discovery_events_from_scan
 
     def counted(scan, **kwargs):
         enumerated.append(scan.scan_number)
         return enumerate_seeds(scan, **kwargs)
 
-    monkeypatch.setattr(strict_seed_receipts, "discovery_seeds_from_scan", counted)
+    monkeypatch.setattr(strict_event_receipts, "discovery_events_from_scan", counted)
 
     # Candidates declaring the same scan share one enumeration, and the
     # candidate-specific receipts stay identical to the single-candidate read.
-    repeated = strict_seed_receipts.read_complete_discovery_scan_seeds(
+    repeated = strict_event_receipts.read_complete_discovery_scan_events(
         source_raw,
-        candidates=(candidate, candidate),
+        peaks=(candidate, candidate),
         settings=settings,
     )
-    assert sorted(enumerated) == sorted(set(candidate.seed_scan_ids))
+    assert sorted(enumerated) == sorted(set(candidate.event_scan_ids))
 
     enumerated.clear()
-    single = strict_seed_receipts.read_complete_discovery_scan_seeds(
+    single = strict_event_receipts.read_complete_discovery_scan_events(
         source_raw,
-        candidates=(candidate,),
+        peaks=(candidate,),
         settings=settings,
     )
     assert [scan.scan_number for scan, _ in repeated] == [
@@ -252,8 +252,8 @@ def test_scan_seed_enumeration_runs_once_per_declared_scan(
 
 
 def test_strict_replay_retains_two_recorded_precursors_from_one_scan(tmp_path):
-    from xic_extractor.discovery.strict_seed_receipts import (
-        read_complete_discovery_scan_seeds,
+    from xic_extractor.discovery.strict_event_receipts import (
+        read_complete_discovery_scan_events,
     )
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 
@@ -278,8 +278,8 @@ def test_strict_replay_retains_two_recorded_precursors_from_one_scan(tmp_path):
         settings=settings,
     )
     assert len(candidates) == 2
-    seeds = read_complete_discovery_scan_seeds(
-        source_raw, candidates=candidates, settings=settings
+    seeds = read_complete_discovery_scan_events(
+        source_raw, peaks=candidates, settings=settings
     )
     assert len(seeds) == 4
     assert {seed.precursor_mz_basis for _, seed in seeds} == {
@@ -301,8 +301,8 @@ def test_same_peak_same_scan_products_keep_exact_canonical_seed(
 ) -> None:
     import json
 
-    from xic_extractor.discovery.strict_seed_receipts import (
-        read_complete_discovery_scan_seeds,
+    from xic_extractor.discovery.strict_event_receipts import (
+        read_complete_discovery_scan_events,
     )
 
     source_raw = _FakeRaw((8.0,), scan_precursor_mz=255.15606689453125)
@@ -323,15 +323,15 @@ def test_same_peak_same_scan_products_keep_exact_canonical_seed(
     )
     # Spectral alternatives from one scan share a peak and one canonical event.
     assert len(candidates) == 1
-    assert candidates[0].product_mz == canonical_product
+    assert candidates[0].best_event_product_mz == canonical_product
     for candidate in candidates:
-        assert candidate.admission_reason == "no_attached_event"
+        assert candidate.status == "no_nl_event"
         evidence = json.loads(candidate.tag_evidence_json)["DNA_dR"]
         assert evidence["scan_ids"] == [candidate.best_ms2_scan_id]
         assert evidence["scan_count"] == 2
-        seeds = read_complete_discovery_scan_seeds(
+        seeds = read_complete_discovery_scan_events(
             source_raw,
-            candidates=(candidate,),
+            peaks=(candidate,),
             settings=settings,
             include_inferred=True,
             preserve_configured_losses=preserve_configured_losses,
@@ -349,7 +349,7 @@ def test_same_peak_same_scan_products_keep_exact_canonical_seed(
 def test_duplicate_exact_canonical_seed_is_rejected(
     tmp_path: Path, monkeypatch, preserve_configured_losses: bool
 ) -> None:
-    from xic_extractor.discovery import strict_seed_receipts
+    from xic_extractor.discovery import strict_event_receipts
 
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
@@ -358,17 +358,19 @@ def test_duplicate_exact_canonical_seed_is_rejected(
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
     )
-    enumerate_seeds = strict_seed_receipts.discovery_seeds_from_scan
+    enumerate_seeds = strict_event_receipts.discovery_events_from_scan
 
     def duplicated(scan, **kwargs):
         seeds = enumerate_seeds(scan, **kwargs)
         return seeds + seeds
 
-    monkeypatch.setattr(strict_seed_receipts, "discovery_seeds_from_scan", duplicated)
-    with pytest.raises(strict_seed_receipts.StrictSeedReceiptError, match="not unique"):
-        strict_seed_receipts.read_complete_discovery_scan_seeds(
+    monkeypatch.setattr(strict_event_receipts, "discovery_events_from_scan", duplicated)
+    with pytest.raises(
+        strict_event_receipts.StrictEventReceiptError, match="not unique"
+    ):
+        strict_event_receipts.read_complete_discovery_scan_events(
             source_raw,
-            candidates=(candidate,),
+            peaks=(candidate,),
             settings=settings,
             preserve_configured_losses=preserve_configured_losses,
         )

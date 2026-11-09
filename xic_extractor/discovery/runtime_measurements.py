@@ -80,8 +80,8 @@ def record_discovery_ms1_measurements(
         ),
         (
             "discovery_ms1_input_channel_count",
-            measurements.input_channel_count,
-            "channels",
+            measurements.input_ion_count,
+            "ions",
             discovery_source,
         ),
         (
@@ -153,7 +153,7 @@ def _record_unavailable_discovery_ms1_measurements(
         ("xic_batch_count", "batches"),
         ("adapter_chromatogram_call_count", "calls"),
         ("trace_point_count", "points"),
-        ("discovery_ms1_input_channel_count", "channels"),
+        ("discovery_ms1_input_channel_count", "ions"),
         ("discovery_ms1_input_event_count", "events"),
         ("discovery_ms1_exact_scan_window_count", "windows"),
         ("discovery_ms1_predicted_chunked_call_count", "calls"),

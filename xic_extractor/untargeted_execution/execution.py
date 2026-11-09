@@ -122,8 +122,8 @@ def materialize_untargeted_partition(
         )
         context = replace(
             plan.context,
-            candidates_by_sample=candidates,
-            physical_records_by_candidate=records,
+            peaks_by_sample=candidates,
+            physical_records_by_peak=records,
         )
         assert plan.dll_dir is not None
         templates: list[UntargetedPartitionJob] = []

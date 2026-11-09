@@ -24,9 +24,9 @@ from xic_extractor.discovery.csv_writer import (
 from xic_extractor.discovery.models import (
     DISCOVERY_EVENT_COLUMNS,
     DISCOVERY_PEAK_COLUMNS,
-    DiscoveryEvent,
     DiscoveryPeak,
     DiscoveryRunOutputs,
+    EventAttachment,
     ReviewPriority,
 )
 from xic_extractor.discovery.physical_fact_record import (
@@ -74,7 +74,7 @@ class PublishedDiscoverySample:
 def publish_discovery_batch_sample(
     raw_path: Path,
     peaks: tuple[DiscoveryPeak, ...],
-    events: tuple[DiscoveryEvent, ...],
+    events: tuple[EventAttachment, ...],
     *,
     output_dir: Path,
     acquisition_source: AcquisitionSourceIdentity,
@@ -133,7 +133,7 @@ def publish_discovery_batch_sample(
 def _write_sample_outputs(
     output_dir: Path,
     peaks: tuple[DiscoveryPeak, ...],
-    events: tuple[DiscoveryEvent, ...],
+    events: tuple[EventAttachment, ...],
     *,
     timing_recorder: TimingRecorder,
     sample_stem: str,
@@ -284,7 +284,7 @@ def _batch_index_row(
     raw_path: Path,
     outputs: DiscoveryRunOutputs,
     peaks: tuple[DiscoveryPeak, ...],
-    events: tuple[DiscoveryEvent, ...],
+    events: tuple[EventAttachment, ...],
     receipt: DiscoveryPeakUniverseReceipt,
     index_parent: Path,
 ) -> dict[str, str]:

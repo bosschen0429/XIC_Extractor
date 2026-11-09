@@ -215,7 +215,7 @@ def _assert_jobs_match_direct_construction(batch) -> None:
     candidate_keys = {
         (sample.identity.sample_key, memberships[candidate.peak_id])
         for sample in context.samples
-        for candidate in context.candidates_by_sample[sample.metadata.raw_stem]
+        for candidate in context.peaks_by_sample[sample.metadata.raw_stem]
         if candidate.peak_id in memberships
     }
     expected = tuple(
@@ -223,7 +223,7 @@ def _assert_jobs_match_direct_construction(batch) -> None:
             processing_owners=context.processing_owners,
             sample=sample,
             method_subject=subject,
-            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            candidates=context.peaks_by_sample[sample.metadata.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[
                 sample.metadata.raw_stem
             ],
@@ -245,7 +245,7 @@ def _assert_jobs_match_direct_construction(batch) -> None:
             physical_records=tuple(
                 record
                 for _candidate_id, record in sorted(
-                    context.physical_records_by_candidate.items()
+                    context.physical_records_by_peak.items()
                 )
                 if record.work_item.sample_stem == sample.metadata.raw_stem
             ),
@@ -467,11 +467,11 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
     from xic_extractor.discovery.csv_reader import (
         read_owner_bound_discovery_peaks_csv,
     )
-    from xic_extractor.discovery.ion_channels import build_discovery_channels
+    from xic_extractor.discovery.ion_grouping import build_discovery_ions
     from xic_extractor.discovery.ms1_capture import (
         capture_ms1_peaks,
     )
-    from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.discovery.ms2_events import collect_strict_nl_events
     from xic_extractor.discovery.physical_fact_persistence import (
         write_discovery_physical_fact_sidecar,
     )
@@ -599,12 +599,12 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         with partition_workers.open_raw(
             path, tmp_path, expected_acquisition_source=source.acquisition_source
         ) as discovery_raw:
-            seeds = collect_strict_nl_seeds(
+            seeds = collect_strict_nl_events(
                 discovery_raw, raw_file=path, settings=settings
             )
             discovery = capture_ms1_peaks(
                 discovery_raw,
-                build_discovery_channels(seeds, settings=settings),
+                build_discovery_ions(seeds, settings=settings),
                 acquisition_source=source.acquisition_source,
                 settings=settings,
                 signal_processing_profile=profile,
@@ -651,10 +651,10 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                 (candidate,) = discovery.peaks
                 # The physical raw apex must not replace the retained NL time.
                 observed_nl_rts = tuple(seed.rt for seed in seeds)
-                assert candidate.best_seed_rt in observed_nl_rts
+                assert candidate.best_event_rt in observed_nl_rts
                 assert record.work_item.query_rt_min not in observed_nl_rts
-                assert candidate.ms1_seed_delta_min == pytest.approx(
-                    candidate.ms1_apex_rt - candidate.best_seed_rt
+                assert candidate.ms1_event_delta_min == pytest.approx(
+                    candidate.ms1_apex_rt - candidate.best_event_rt
                 )
             rt_min = min(
                 record.work_item.xic_rt_min for record in discovery.physical_evaluations
@@ -966,9 +966,9 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                 (
                     sample_stem,
                     candidate.candidate_id,
-                    candidate.seed_scan_ids,
-                    candidate.rt_seed_min,
-                    candidate.rt_seed_max,
+                    candidate.event_scan_ids,
+                    candidate.event_rt_min,
+                    candidate.event_rt_max,
                 )
                 for sample_stem, sample_candidates in candidates.items()
                 for candidate in sample_candidates
@@ -992,7 +992,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                     set(adapter.source_candidate_ids) == expected_source_candidate_ids
                 )
                 assert (
-                    captured_batches[0].context.physical_records_by_candidate
+                    captured_batches[0].context.physical_records_by_peak
                     == source_records
                 )
                 expected_capture_candidate_ids = {
@@ -1000,7 +1000,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                     for candidate in candidates[stem]
                     if (
                         candidate.peak_id in expected_source_candidate_ids
-                        and candidate.passes_peak_gates
+                        and candidate.is_clean_peak
                     )
                 }
                 expected_trace_count = 1 if expected_capture_candidate_ids else 0
@@ -1077,7 +1077,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
     obsolete_marker.write_bytes(b"obsolete attempt status")
     completed = alignment_adapter.complete_untargeted_alignment(
         discovery_batch=discovery_batch,
-        candidates_by_sample=(
+        peaks_by_sample=(
             DiscoveryInputSource(discovery_batch) if indexed_input else candidates
         ),
         raw_dir=tmp_path,
@@ -1162,7 +1162,7 @@ def _subject_proof_record(
     return SimpleNamespace(
         work_item=SimpleNamespace(
             acquisition_source_id=source,
-            xic_mz=candidate.precursor_mz if xic_mz is None else xic_mz,
+            xic_mz=candidate.best_event_precursor_mz if xic_mz is None else xic_mz,
             xic_ppm_tol=xic_ppm,
         ),
         evaluation=SimpleNamespace(
@@ -1207,14 +1207,14 @@ def _source_verification_inputs(tmp_path: Path):
             ),
             settings=settings,
             peak_config=peak_config,
-            candidates_by_sample={"S1": candidates},
+            peaks_by_sample={"S1": candidates},
             discovery_receipts_by_sample=build_discovery_receipts(
                 tmp_path, (path,), {"S1": candidates}
             ),
             dll_dir=tmp_path,
             sample_identity_namespace="study:source-verification",
             signal_processing_profile=TEST_PROFILE,
-            physical_records_by_candidate=physical_records,
+            physical_records_by_peak=physical_records,
         ),
     )
 

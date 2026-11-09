@@ -35,11 +35,11 @@ from xic_extractor.untargeted_execution.partition import workers as partition_wo
 def build_discovery_receipts(
     root: Path,
     raw_paths: tuple[Path, ...],
-    candidates_by_sample: dict[str, tuple[DiscoveryPeak, ...]],
+    peaks_by_sample: dict[str, tuple[DiscoveryPeak, ...]],
 ) -> dict[str, DiscoveryPeakUniverseReceipt]:
     receipts: dict[str, DiscoveryPeakUniverseReceipt] = {}
     for raw_path in raw_paths:
-        candidates = candidates_by_sample[raw_path.stem]
+        candidates = peaks_by_sample[raw_path.stem]
         candidate_csv = root / f"{raw_path.stem}.owner-candidates.csv"
         write_discovery_peaks_csv(candidate_csv, candidates)
         source = build_local_acquisition_source_identity(

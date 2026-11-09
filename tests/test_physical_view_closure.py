@@ -105,7 +105,7 @@ def test_distinct_mass_window_signals_are_not_closed_by_post_measurement_centroi
     }
     assert len(result.physical_evaluations) == expected
     assert sorted(
-        scan for candidate in result.peaks for scan in candidate.seed_scan_ids
+        scan for candidate in result.peaks for scan in candidate.event_scan_ids
     ) == [10, 11, 12]
     for candidate, binding in zip(result.peaks, result.physical_bindings, strict=True):
         assert (

@@ -19,7 +19,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     canonical_signal_processing_profile_bytes,
 )
 from xic_extractor.discovery.batch_contract import (
-    CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+    PEAK_UNIVERSE_SCHEMA_VERSION,
     DiscoveryPeakUniverseReceipt,
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
@@ -257,17 +257,17 @@ def _physical_subject_candidate_fact(
 
 def prepare_untargeted_subject_membership(
     *,
-    candidates_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
+    peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
     settings: DiscoverySettings,
-    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
+    physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord],
 ) -> UntargetedCidNlMethodSubjectBatch:
     """Resolve exact subject membership for a closed precursor working set."""
     candidates = tuple(
         candidate
-        for sample_candidates in candidates_by_sample.values()
+        for sample_candidates in peaks_by_sample.values()
         for candidate in sample_candidates
         if admits_cid_nl_alignment(
-            candidate, physical_records_by_candidate.get(candidate.peak_id)
+            candidate, physical_records_by_peak.get(candidate.peak_id)
         )
     )
     candidate_ids = tuple(candidate.peak_id for candidate in candidates)
@@ -285,7 +285,7 @@ def prepare_untargeted_subject_membership(
             or neutral_loss_da <= 0.0
         ):
             raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
-    physical_records = physical_records_by_candidate
+    physical_records = physical_records_by_peak
     subject_units = group_cid_nl_physical_subject_units(
         tuple(
             _physical_subject_candidate_fact(
@@ -330,7 +330,7 @@ def prepare_eager_untargeted_plan(
     sample_metadata: tuple[SampleMetadata, ...],
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
-    candidates_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
+    peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
     discovery_receipts_by_sample: Mapping[
         str,
         DiscoveryPeakUniverseReceipt,
@@ -338,7 +338,7 @@ def prepare_eager_untargeted_plan(
     dll_dir: Path,
     sample_identity_namespace: str,
     signal_processing_profile: SignalProcessingProfile,
-    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
+    physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord],
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
     | None = None,
 ) -> UntargetedInputPlan:
@@ -351,9 +351,9 @@ def prepare_eager_untargeted_plan(
     if not isinstance(dll_dir, Path):
         raise TypeError("dll_dir must be a Path")
     subject_batch = prepare_untargeted_subject_membership(
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         settings=settings,
-        physical_records_by_candidate=physical_records_by_candidate,
+        physical_records_by_peak=physical_records_by_peak,
     )
     context = build_partition_context(
         raw_paths=raw_paths,
@@ -361,11 +361,11 @@ def prepare_eager_untargeted_plan(
         method_subject=subject_batch,
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=discovery_receipts_by_sample,
         sample_identity_namespace=sample_identity_namespace,
         signal_processing_profile=signal_processing_profile,
-        physical_records_by_candidate=physical_records_by_candidate,
+        physical_records_by_peak=physical_records_by_peak,
         acquisition_source_expectations=acquisition_source_expectations,
         feature_candidate_ids=tuple(
             cid for cid, _ in subject_batch.candidate_memberships
@@ -373,9 +373,7 @@ def prepare_eager_untargeted_plan(
     )
     ordered_physical_records = tuple(
         record
-        for _candidate_id, record in sorted(
-            context.physical_records_by_candidate.items()
-        )
+        for _candidate_id, record in sorted(context.physical_records_by_peak.items())
     )
     physical_records_by_sample: dict[str, list[DiscoveryPhysicalFactRecord]] = {}
     for record in ordered_physical_records:
@@ -396,7 +394,7 @@ def prepare_eager_untargeted_plan(
                 )
                 for subject in subject_batch.subjects[:1]
             ),
-            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            candidates=context.peaks_by_sample[sample.metadata.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[
                 sample.metadata.raw_stem
             ],
@@ -545,9 +543,9 @@ def prepare_indexed_untargeted_plan(
                 "sample_stem": stem,
                 "peak_count": receipt.peak_count,
                 "candidate_ids": list(source.candidate_ids(stem)),
-                "peak_artifact_schema_version": (receipt.peak_artifact_schema_version),
-                "peak_artifact_sha256": receipt.peak_artifact_sha256,
-                "peak_artifact_byte_size": receipt.peak_artifact_byte_size,
+                "peak_csv_schema_version": (receipt.peak_csv_schema_version),
+                "peak_csv_sha256": receipt.peak_csv_sha256,
+                "peak_csv_byte_size": receipt.peak_csv_byte_size,
                 "acquisition_source_id": (
                     receipt.acquisition_source.acquisition_source_id
                 ),
@@ -567,7 +565,7 @@ def prepare_indexed_untargeted_plan(
         metadata_by_stem={sample.raw_stem: sample for sample in sample_metadata},
         sources_by_stem={stem: item.source for stem, item in expectations.items()},
         source_expectations=expectations,
-        candidate_map={stem: () for stem in source},
+        peak_map={stem: () for stem in source},
         receipt_map={
             stem: receipt for stem, receipt in receipts.items() if receipt is not None
         },
@@ -575,7 +573,7 @@ def prepare_indexed_untargeted_plan(
         sample_identity_namespace=sample_identity_namespace,
         signal_processing_profile=profile,
         candidate_universe={
-            "schema_version": CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+            "schema_version": PEAK_UNIVERSE_SCHEMA_VERSION,
             "samples": entries,
         },
         physical_capture={

@@ -253,7 +253,7 @@ def _ordered_exclusions(
     positions: list[tuple[str, int, int]],
     planning_exclusions: tuple[UntargetedCandidateExclusion, ...],
 ) -> ImmutableSequence:
-    """Restore canonical candidate order with finite result windows."""
+    """Restore canonical peak order with finite result windows."""
     all_positions = list(positions)
     # Planning exclusions have no acquisition partition or assessment payload.
     all_positions.extend(
@@ -432,10 +432,10 @@ def prepare_untargeted_partition_grouping(
     for results in results_by_subject.values():
         results.sort(key=lambda result: result.job.sample.identity.sample_key)
     capture_by_candidate = _runtime_captures_by_candidate(batch, sample_results)
-    candidate_by_id = {
-        candidate.peak_id: candidate
-        for candidates in batch.context.candidates_by_sample.values()
-        for candidate in candidates
+    peak_by_id = {
+        peak.peak_id: peak
+        for peaks in batch.context.peaks_by_sample.values()
+        for peak in peaks
     }
     unsupported_subjects = {}
     for subject in batch.subject_batch.subjects:
@@ -462,7 +462,7 @@ def prepare_untargeted_partition_grouping(
             candidate_id,
         )
         for candidate_id, method_subject_id in batch.subject_batch.candidate_memberships
-        if candidate_by_id[candidate_id].passes_peak_gates
+        if peak_by_id[candidate_id].is_clean_peak
         and method_subject_id not in unsupported_subjects
     )
     exclusions = tuple(
@@ -470,9 +470,9 @@ def prepare_untargeted_partition_grouping(
             candidate_id=candidate_id,
             method_subject_id=method_subject_id,
             sample_key=batch.context.sample(
-                candidate_by_id[candidate_id].sample_stem
+                peak_by_id[candidate_id].sample_stem
             ).identity.sample_key,
-            admission_reason=candidate_by_id[candidate_id].admission_reason,
+            peak_status=peak_by_id[candidate_id].status,
             reason_code=(
                 "composite_requirement_not_supported"
                 if method_subject_id in unsupported_subjects
@@ -498,7 +498,7 @@ def prepare_untargeted_partition_grouping(
         for candidate_id, method_subject_id in (
             batch.subject_batch.candidate_memberships
         )
-        if not candidate_by_id[candidate_id].passes_peak_gates
+        if not peak_by_id[candidate_id].is_clean_peak
         or method_subject_id in unsupported_subjects
     )
     # Partitioning changes execution ownership. Scientific composition keeps
@@ -983,15 +983,15 @@ def _runtime_captures_by_candidate(
     for result in sample_results:
         for capture in result.adapter_result.captures:
             if capture.candidate_id in captures:
-                raise RuntimeError("runtime capture duplicated a candidate")
+                raise RuntimeError("runtime capture duplicated a peak")
             captures[capture.candidate_id] = capture
     partition_ids = {key for key, _ in batch.subject_batch.candidate_memberships}
     expected = {
-        candidate.peak_id
-        for candidates in batch.context.candidates_by_sample.values()
-        for candidate in candidates
-        if candidate.peak_id in partition_ids and candidate.passes_peak_gates
+        peak.peak_id
+        for peaks in batch.context.peaks_by_sample.values()
+        for peak in peaks
+        if peak.peak_id in partition_ids and peak.is_clean_peak
     }
     if set(captures) != expected:
-        raise RuntimeError("runtime capture does not close capture-eligible candidates")
+        raise RuntimeError("runtime capture does not close capture-eligible peaks")
     return captures

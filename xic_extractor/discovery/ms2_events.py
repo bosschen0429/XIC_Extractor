@@ -9,7 +9,7 @@ from typing import Protocol
 import numpy as np
 
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.discovery.models import DiscoverySeed, PrecursorMzBasis
+from xic_extractor.discovery.models import DiscoveryEvent, PrecursorMzBasis
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
@@ -26,55 +26,55 @@ class AcquisitionSpanMS2Source(Protocol):
         """Yield MS2 events; unspecified ends use this source's acquisition span."""
 
 
-def collect_strict_nl_seeds(
+def collect_strict_nl_events(
     raw: AcquisitionSpanMS2Source,
     *,
     raw_file: Path,
     settings: DiscoverySettings,
-) -> tuple[DiscoverySeed, ...]:
-    seeds: list[DiscoverySeed] = []
-    for event in raw.iter_ms2_scans(settings.rt_min, settings.rt_max):
-        if event.parse_error is not None or event.scan is None:
+) -> tuple[DiscoveryEvent, ...]:
+    events: list[DiscoveryEvent] = []
+    for read in raw.iter_ms2_scans(settings.rt_min, settings.rt_max):
+        if read.parse_error is not None or read.scan is None:
             continue
 
-        seeds.extend(
-            discovery_seeds_from_scan(
-                event.scan,
+        events.extend(
+            discovery_events_from_scan(
+                read.scan,
                 raw_file=raw_file,
                 settings=settings,
             )
         )
 
-    return tuple(seeds)
+    return tuple(events)
 
 
-def discovery_seeds_from_scan(
+def discovery_events_from_scan(
     scan: Ms2Scan,
     *,
     raw_file: Path,
     settings: DiscoverySettings,
-) -> tuple[DiscoverySeed, ...]:
-    """Apply the canonical Discovery seed owner to one already-read MS2 scan."""
-    seeds: list[DiscoverySeed] = []
+) -> tuple[DiscoveryEvent, ...]:
+    """Apply the canonical Discovery event owner to one already-read MS2 scan."""
+    events: list[DiscoveryEvent] = []
     for profile in settings.neutral_loss_profiles:
-        seeds.extend(
-            _seeds_from_scan_profile(
+        events.extend(
+            _events_from_scan_profile(
                 scan,
                 raw_file=raw_file,
                 settings=settings,
                 profile=profile,
             )
         )
-    return tuple(seeds)
+    return tuple(events)
 
 
-def _seeds_from_scan_profile(
+def _events_from_scan_profile(
     scan: Ms2Scan,
     *,
     raw_file: Path,
     settings: DiscoverySettings,
     profile: NeutralLossProfile,
-) -> tuple[DiscoverySeed, ...]:
+) -> tuple[DiscoveryEvent, ...]:
     neutral_loss_da = profile.neutral_loss_da
     references = recorded_precursor_references(scan, settings.nl_tolerance_ppm)
     if not references or scan.base_peak <= 0.0 or neutral_loss_da <= 0.0:
@@ -110,7 +110,7 @@ def _seeds_from_scan_profile(
         & (inferred_precursors > 0.0)
     )
 
-    candidates: list[DiscoverySeed] = []
+    candidates: list[DiscoveryEvent] = []
     direct_indices: set[int] = set()
     for precursor_mz, basis in references:
         direct_mask = _direct_product_mask(
@@ -121,7 +121,7 @@ def _seeds_from_scan_profile(
             neutral_loss_da=neutral_loss_da,
             intensity_floor=intensity_floor,
         )
-        direct_candidates: list[DiscoverySeed] = []
+        direct_candidates: list[DiscoveryEvent] = []
         for index in np.flatnonzero(direct_mask & finite_signal_mask):
             product_mz = float(masses[int(index)])
             observed_loss_da = precursor_mz - product_mz
@@ -144,12 +144,12 @@ def _seeds_from_scan_profile(
                 continue
 
             # A recorded mono NL match does not prove which MS1 window has a
-            # physical peak. Preserve a distinct inferred search until the
+            # physical candidate. Preserve a distinct inferred search until the
             # physical owner can qualify it with independent precursor evidence.
             if basis == "scan_precursor" or precursor_mz == inferred_precursors[index]:
                 direct_indices.add(int(index))
             direct_candidates.append(
-                _build_seed(
+                _build_event(
                     raw_file=raw_file,
                     scan=scan,
                     profile=profile,
@@ -164,7 +164,7 @@ def _seeds_from_scan_profile(
                 )
             )
         if direct_candidates:
-            candidates.append(min(direct_candidates, key=_seed_candidate_rank))
+            candidates.append(min(direct_candidates, key=_event_candidate_rank))
 
     for index in np.flatnonzero(inferred_mask & finite_signal_mask):
         if int(index) in direct_indices:
@@ -172,7 +172,7 @@ def _seeds_from_scan_profile(
         product_mz = float(masses[int(index)])
         precursor_mz = product_mz + neutral_loss_da
         candidates.append(
-            _build_seed(
+            _build_event(
                 raw_file=raw_file,
                 scan=scan,
                 profile=profile,
@@ -189,12 +189,12 @@ def _seeds_from_scan_profile(
 
     return tuple(
         sorted(
-            _dedupe_seed_candidates(candidates),
-            key=lambda seed: (
-                seed.precursor_mz,
-                seed.product_mz,
-                seed.scan_number,
-                seed.neutral_loss_tag,
+            _dedupe_event_candidates(candidates),
+            key=lambda event: (
+                event.precursor_mz,
+                event.product_mz,
+                event.scan_number,
+                event.neutral_loss_tag,
             ),
         )
     )
@@ -227,7 +227,7 @@ def _direct_product_mask(
     )
 
 
-def _build_seed(
+def _build_event(
     *,
     raw_file: Path,
     scan: Ms2Scan,
@@ -240,8 +240,8 @@ def _build_seed(
     observed_loss_error_ppm: float | None,
     tolerance_ppm: float,
     precursor_mz_basis: PrecursorMzBasis,
-) -> DiscoverySeed:
-    return DiscoverySeed(
+) -> DiscoveryEvent:
+    return DiscoveryEvent(
         raw_file=raw_file,
         sample_stem=raw_file.stem,
         scan_number=scan.scan_number,
@@ -271,10 +271,10 @@ def _build_seed(
     )
 
 
-def _dedupe_seed_candidates(
-    candidates: list[DiscoverySeed],
-) -> tuple[DiscoverySeed, ...]:
-    best_by_key: dict[tuple[int, int, str], DiscoverySeed] = {}
+def _dedupe_event_candidates(
+    candidates: list[DiscoveryEvent],
+) -> tuple[DiscoveryEvent, ...]:
+    best_by_key: dict[tuple[int, int, str], DiscoveryEvent] = {}
     for candidate in candidates:
         key = (
             round(candidate.precursor_mz * 1_000_000),
@@ -282,20 +282,20 @@ def _dedupe_seed_candidates(
             candidate.neutral_loss_tag,
         )
         existing = best_by_key.get(key)
-        if existing is None or _seed_candidate_rank(candidate) < _seed_candidate_rank(
+        if existing is None or _event_candidate_rank(candidate) < _event_candidate_rank(
             existing
         ):
             best_by_key[key] = candidate
     return tuple(best_by_key.values())
 
 
-def _seed_candidate_rank(seed: DiscoverySeed) -> tuple[float, float, int]:
+def _event_candidate_rank(event: DiscoveryEvent) -> tuple[float, float, int]:
     return (
-        seed.observed_loss_error_ppm
-        if seed.observed_loss_error_ppm is not None
+        event.observed_loss_error_ppm
+        if event.observed_loss_error_ppm is not None
         else float("inf"),
-        -seed.product_intensity,
-        seed.scan_number,
+        -event.product_intensity,
+        event.scan_number,
     )
 
 

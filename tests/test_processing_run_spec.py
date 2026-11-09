@@ -682,7 +682,7 @@ def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(
         run_spec=spec,
     )
     states = {
-        output.peaks_csv.parent.name: _read_csv(output.peaks_csv)[0]["admission_reason"]
+        output.peaks_csv.parent.name: _read_csv(output.peaks_csv)[0]["status"]
         for output in result.per_sample
     }
-    assert states == {"A": "system_background", "B": "admitted"}
+    assert states == {"A": "blank", "B": "admitted"}

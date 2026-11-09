@@ -14,7 +14,6 @@ from xic_extractor.discovery.batch_contract import validate_discovery_peak_artif
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
     _machine_field,
-    _parse_bool,
     _parse_peak_row,
     _require_columns,
 )
@@ -87,7 +86,7 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
                     if row is None:
                         break
                     cid = _machine_field(row, "peak_id")
-                    mz = float(row["ms1_apex_mz"] or row["channel_mz"])
+                    mz = float(row["ms1_apex_mz"] or row["xic_mz"])
                     if not cid or cid in self.locations:
                         raise ValueError(
                             "Discovery peak identity must be globally unique"
@@ -103,7 +102,7 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
                         stem,
                         mz,
                         float(row["configured_neutral_loss_da"]),
-                        _parse_bool(path, row_number, row, "admitted"),
+                        row["status"] == "admitted",
                         row["precursor_mz_basis"],
                         offset,
                         stream.tell() - offset,

@@ -62,7 +62,7 @@ def test_candidate_measured_mz_roundtrip_without_center_fallback(
     report = write_alignment_explanation(
         tmp_path / "measured.sqlite",
         completed=completed,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
         ms1_apex_mz_by_candidate=measured,
@@ -77,7 +77,7 @@ def test_candidate_measured_mz_roundtrip_without_center_fallback(
         ]
         assert candidate["sample_stem"] == stem
         assert candidate["ms1_apex_mz"] == expected
-        assert candidate["precursor_mz"] == candidates[stem][0].precursor_mz
+        assert candidate["precursor_mz"] == candidates[stem][0].best_event_precursor_mz
 
 
 def test_old_named_folder_requires_rerun_instead_of_fallback(tmp_path):
@@ -98,7 +98,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         tmp_path / "report.sqlite",
         full_audit=True,
         completed=completed,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
@@ -223,7 +223,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             report,
             full_audit=True,
             completed=completed,
-            candidates_by_sample=candidates,
+            peaks_by_sample=candidates,
             matrix_path=matrix,
             alignment_config=config,
         )
@@ -235,7 +235,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             tmp_path / "missing_audit.sqlite",
             full_audit=True,
             completed=missing_audit,
-            candidates_by_sample=candidates,
+            peaks_by_sample=candidates,
             matrix_path=matrix,
             alignment_config=config,
         )
@@ -281,7 +281,7 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
         tmp_path, monkeypatch, "all_hold"
     )
     kwargs = dict(
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
@@ -364,7 +364,7 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
     )
     application = completed.application_result
     kwargs = dict(
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
@@ -431,7 +431,7 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
             report,
             full_audit=True,
             completed=completed,
-            candidates_by_sample=candidates,
+            peaks_by_sample=candidates,
             matrix_path=matrix,
             alignment_config=config,
             progress_callback=interrupted,

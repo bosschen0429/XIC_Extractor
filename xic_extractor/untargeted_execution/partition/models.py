@@ -43,10 +43,10 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.discovery.batch_contract import (
     ALIGNMENT_FEATURE_INPUT_KEY,
-    CANDIDATE_UNIVERSE_INPUT_KEY,
+    PEAK_UNIVERSE_INPUT_KEY,
     DiscoveryPeakUniverseReceipt,
     validate_alignment_feature_selection,
-    validate_candidate_universe_payload,
+    validate_peak_universe_payload,
 )
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
@@ -587,7 +587,7 @@ def _validate_request_bound_inputs(
         raise UntargetedPartitionError(
             "peak settings do not match the processing request"
         )
-    universe = request_inputs.get(CANDIDATE_UNIVERSE_INPUT_KEY)
+    universe = request_inputs.get(PEAK_UNIVERSE_INPUT_KEY)
     sample_entry = universe_by_sample.get(job.sample.metadata.raw_stem)
     if sample_entry is None:
         raise UntargetedPartitionError(
@@ -651,8 +651,8 @@ def _request_input_index(
         raise UntargetedPartitionError(
             "processing request scientific inputs must be a mapping"
         )
-    entries = validate_candidate_universe_payload(
-        values.get(CANDIDATE_UNIVERSE_INPUT_KEY),
+    entries = validate_peak_universe_payload(
+        values.get(PEAK_UNIVERSE_INPUT_KEY),
         expected_sample_stems=expected_sample_stems,
     )
     by_sample = MappingProxyType(
@@ -742,11 +742,11 @@ def _validate_partition_candidates(
     receipt = job.discovery_receipt
     expected_receipt_values = (
         (
-            "peak_artifact_schema_version",
-            receipt.peak_artifact_schema_version,
+            "peak_csv_schema_version",
+            receipt.peak_csv_schema_version,
         ),
-        ("peak_artifact_sha256", receipt.peak_artifact_sha256),
-        ("peak_artifact_byte_size", receipt.peak_artifact_byte_size),
+        ("peak_csv_sha256", receipt.peak_csv_sha256),
+        ("peak_csv_byte_size", receipt.peak_csv_byte_size),
         (
             "acquisition_source_id",
             receipt.acquisition_source.acquisition_source_id,

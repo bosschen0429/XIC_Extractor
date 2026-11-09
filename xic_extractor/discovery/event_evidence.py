@@ -7,7 +7,7 @@ from dataclasses import asdict
 from typing import Literal
 
 from xic_extractor.discovery.models import (
-    DiscoverySeed,
+    DiscoveryEvent,
     GroupPrecursorMzBasis,
     NeutralLossErrorBasis,
 )
@@ -51,125 +51,127 @@ def tag_intersection_status(
 
 
 def select_representative_event(
-    seeds: Iterable[DiscoverySeed], *, settings: DiscoverySettings
-) -> DiscoverySeed:
+    events: Iterable[DiscoveryEvent], *, settings: DiscoverySettings
+) -> DiscoveryEvent:
     """Configured tag order first; abundance chooses within that tag."""
     return min(
-        seeds,
-        key=lambda seed: (
-            tag_rank(seed.neutral_loss_tag, settings=settings),
-            -seed.product_intensity,
-            abs(seed.observed_loss_error_ppm)
-            if seed.observed_loss_error_ppm is not None
+        events,
+        key=lambda event: (
+            tag_rank(event.neutral_loss_tag, settings=settings),
+            -event.product_intensity,
+            abs(event.observed_loss_error_ppm)
+            if event.observed_loss_error_ppm is not None
             else float("inf"),
-            seed.rt,
-            seed.scan_number,
-            seed.neutral_loss_tag,
-            seed.product_mz,
+            event.rt,
+            event.scan_number,
+            event.neutral_loss_tag,
+            event.product_mz,
         ),
     )
 
 
-def select_representative_seed(seeds: Iterable[DiscoverySeed]) -> DiscoverySeed:
+def _strongest_event(events: Iterable[DiscoveryEvent]) -> DiscoveryEvent:
     """Select by intensity, then measured loss error, RT and scan number."""
     return min(
-        seeds,
-        key=lambda seed: (
-            -seed.product_intensity,
-            abs(seed.observed_loss_error_ppm)
-            if seed.observed_loss_error_ppm is not None
+        events,
+        key=lambda event: (
+            -event.product_intensity,
+            abs(event.observed_loss_error_ppm)
+            if event.observed_loss_error_ppm is not None
             else float("inf"),
-            seed.rt,
-            seed.scan_number,
+            event.rt,
+            event.scan_number,
         ),
     )
 
 
-def merge_seed_evidence(
-    seeds: list[DiscoverySeed], *, settings: DiscoverySettings
+def merge_event_evidence(
+    events: list[DiscoveryEvent], *, settings: DiscoverySettings
 ) -> str:
     """Per-tag scan receipts that strict replay checks each scan against."""
     by_tag: dict[str, dict[str, object]] = {}
-    seeds_by_tag: dict[str, list[DiscoverySeed]] = {}
-    for seed in seeds:
-        seeds_by_tag.setdefault(seed.neutral_loss_tag, []).append(seed)
-    for tag, tag_seeds in seeds_by_tag.items():
-        best_seed = select_representative_seed(tag_seeds)
+    events_by_tag: dict[str, list[DiscoveryEvent]] = {}
+    for event in events:
+        events_by_tag.setdefault(event.neutral_loss_tag, []).append(event)
+    for tag, tag_events in events_by_tag.items():
+        best_event = _strongest_event(tag_events)
         receipts: dict[str, object] = {}
         entry: dict[str, object] = {
-            "scan_count": len(tag_seeds),
-            "scan_ids": sorted({seed.scan_number for seed in tag_seeds}),
+            "scan_count": len(tag_events),
+            "scan_ids": sorted({event.scan_number for event in tag_events}),
             "scan_receipts": receipts,
-            "rt_min": min(seed.rt for seed in tag_seeds),
-            "rt_max": max(seed.rt for seed in tag_seeds),
-            "precursor_mz_basis": events_precursor_mz_basis(tag_seeds),
-            "scan_precursor_mz": best_seed.scan_precursor_mz,
-            "precursor_metadata": asdict(best_seed.precursor_metadata)
-            if best_seed.precursor_metadata is not None
+            "rt_min": min(event.rt for event in tag_events),
+            "rt_max": max(event.rt for event in tag_events),
+            "precursor_mz_basis": events_precursor_mz_basis(tag_events),
+            "scan_precursor_mz": best_event.scan_precursor_mz,
+            "precursor_metadata": asdict(best_event.precursor_metadata)
+            if best_event.precursor_metadata is not None
             else None,
-            "scan_precursor_delta_da": scan_precursor_delta_da(best_seed),
+            "scan_precursor_delta_da": scan_precursor_delta_da(best_event),
             "max_scan_precursor_abs_delta_da": max(
-                abs(scan_precursor_delta_da(seed) or 0.0) for seed in tag_seeds
+                abs(scan_precursor_delta_da(event) or 0.0) for event in tag_events
             ),
-            "product_mz": best_seed.product_mz,
-            "max_intensity": best_seed.product_intensity,
-            "neutral_loss_error_ppm": best_seed.observed_loss_error_ppm,
+            "product_mz": best_event.product_mz,
+            "max_intensity": best_event.product_intensity,
+            "neutral_loss_error_ppm": best_event.observed_loss_error_ppm,
         }
-        for index, seed in enumerate(tag_seeds):
+        for index, event in enumerate(tag_events):
             receipt: dict[str, object] = {
-                "precursor_mz": seed.precursor_mz,
-                "product_mz": seed.product_mz,
-                "scan_rt": seed.rt,
-                "precursor_mz_basis": seed.precursor_mz_basis,
-                "scan_precursor_mz": seed.scan_precursor_mz,
-                "neutral_loss_error_ppm": seed.observed_loss_error_ppm,
+                "precursor_mz": event.precursor_mz,
+                "product_mz": event.product_mz,
+                "scan_rt": event.rt,
+                "precursor_mz_basis": event.precursor_mz_basis,
+                "scan_precursor_mz": event.scan_precursor_mz,
+                "neutral_loss_error_ppm": event.observed_loss_error_ppm,
                 "precursor_isolation_membership": precursor_isolation_membership(
-                    seed.precursor_mz, seed.scan_precursor_mz, seed.precursor_metadata
+                    event.precursor_mz,
+                    event.scan_precursor_mz,
+                    event.precursor_metadata,
                 ),
-                "supports_direct_nl": seed.supports_direct_nl,
+                "supports_direct_nl": event.supports_direct_nl,
             }
-            if seed.precursor_mz_basis == "product_plus_neutral_loss":
+            if event.precursor_mz_basis == "product_plus_neutral_loss":
                 receipt["ms1_precursor_observation"] = (
-                    asdict(seed.ms1_precursor_observation)
-                    if seed.ms1_precursor_observation is not None
+                    asdict(event.ms1_precursor_observation)
+                    if event.ms1_precursor_observation is not None
                     else None
                 )
                 receipt["precursor_verification"] = asdict(
-                    seed.assess_precursor_loss(settings.nl_tolerance_ppm)
+                    event.assess_precursor_loss(settings.nl_tolerance_ppm)
                 )
-            receipts[str(seed.scan_number)] = receipt
+            receipts[str(event.scan_number)] = receipt
             if (
-                (index == 0 or seed is best_seed)
-                and math.isfinite(seed.precursor_mz)
-                and seed.precursor_mz > 0
-                and math.isfinite(seed.product_mz)
-                and seed.product_mz > 0
+                (index == 0 or event is best_event)
+                and math.isfinite(event.precursor_mz)
+                and event.precursor_mz > 0
+                and math.isfinite(event.product_mz)
+                and event.product_mz > 0
             ):
                 loss_error_da, loss_window_da, _ = neutral_loss_match(
-                    seed.precursor_mz,
-                    seed.product_mz,
-                    seed.configured_neutral_loss_da,
+                    event.precursor_mz,
+                    event.product_mz,
+                    event.configured_neutral_loss_da,
                     settings.nl_tolerance_ppm,
-                    observed_loss_da=seed.observed_neutral_loss_da,
+                    observed_loss_da=event.observed_neutral_loss_da,
                 )
                 entry["neutral_loss_error_da"] = (
-                    loss_error_da if seed.observed_loss_error_ppm is not None else None
+                    loss_error_da if event.observed_loss_error_ppm is not None else None
                 )
                 entry["neutral_loss_window_da"] = loss_window_da
         by_tag[tag] = entry
     return json.dumps(by_tag, sort_keys=True, separators=(",", ":"))
 
 
-def scan_precursor_delta_da(seed: DiscoverySeed) -> float | None:
-    if seed.scan_precursor_mz is None:
+def scan_precursor_delta_da(event: DiscoveryEvent) -> float | None:
+    if event.scan_precursor_mz is None:
         return None
-    return seed.scan_precursor_mz - seed.precursor_mz
+    return event.scan_precursor_mz - event.precursor_mz
 
 
 def events_precursor_mz_basis(
-    seeds: list[DiscoverySeed],
+    events: list[DiscoveryEvent],
 ) -> GroupPrecursorMzBasis:
-    values = {seed.precursor_mz_basis for seed in seeds}
+    values = {event.precursor_mz_basis for event in events}
     if values == {"scan_precursor"}:
         return "scan_precursor"
     if values == {"scan_monoisotopic"}:
@@ -180,9 +182,9 @@ def events_precursor_mz_basis(
 
 
 def events_neutral_loss_error_basis(
-    seeds: list[DiscoverySeed],
+    events: list[DiscoveryEvent],
 ) -> NeutralLossErrorBasis:
-    values = {_neutral_loss_error_basis(seed) for seed in seeds}
+    values = {_neutral_loss_error_basis(event) for event in events}
     if values == {"measured_scan_precursor_product"}:
         return "measured_scan_precursor_product"
     if values == {"recorded_monoisotopic_precursor_product"}:
@@ -192,19 +194,19 @@ def events_neutral_loss_error_basis(
     return "mixed"
 
 
-def _neutral_loss_error_basis(seed: DiscoverySeed) -> NeutralLossErrorBasis:
-    if seed.precursor_mz_basis == "scan_monoisotopic":
+def _neutral_loss_error_basis(event: DiscoveryEvent) -> NeutralLossErrorBasis:
+    if event.precursor_mz_basis == "scan_monoisotopic":
         return "recorded_monoisotopic_precursor_product"
-    if seed.precursor_mz_basis == "product_plus_neutral_loss":
+    if event.precursor_mz_basis == "product_plus_neutral_loss":
         return "configured_loss_inferred_precursor"
     return "measured_scan_precursor_product"
 
 
-def max_scan_precursor_abs_delta_da(seeds: list[DiscoverySeed]) -> float | None:
+def max_scan_precursor_abs_delta_da(events: list[DiscoveryEvent]) -> float | None:
     values = [
         abs(delta)
-        for seed in seeds
-        if (delta := scan_precursor_delta_da(seed)) is not None
+        for event in events
+        if (delta := scan_precursor_delta_da(event)) is not None
     ]
     if not values:
         return None

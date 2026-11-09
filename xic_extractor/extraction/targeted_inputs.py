@@ -194,21 +194,19 @@ def bind_targeted_physical_capture_request(
 
 
 def targeted_real_data_candidate_universe_payload(
-    candidates_by_sample: Mapping[str, Sequence[DiscoveryPeak]] | None,
+    peaks_by_sample: Mapping[str, Sequence[DiscoveryPeak]] | None,
     *,
     expected_sample_stems: Sequence[str],
 ) -> dict[str, object]:
     """Bind one complete, order-insensitive Discovery universe per sample."""
 
     sample_stems = _canonical_candidate_universe_sample_stems(expected_sample_stems)
-    if candidates_by_sample is not None and not isinstance(
-        candidates_by_sample, Mapping
-    ):
+    if peaks_by_sample is not None and not isinstance(peaks_by_sample, Mapping):
         raise IdentityContractError("candidate universe must be a sample-keyed mapping")
     declared = (
         {sample_stem: () for sample_stem in sample_stems}
-        if candidates_by_sample is None
-        else dict(candidates_by_sample)
+        if peaks_by_sample is None
+        else dict(peaks_by_sample)
     )
     if any(not isinstance(key, str) for key in declared):
         raise IdentityContractError("candidate universe sample keys must be text")

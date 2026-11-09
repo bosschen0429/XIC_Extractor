@@ -269,12 +269,12 @@ def test_read_discovery_candidates_csv_parses_full_candidate_row(
     assert candidate.review_priority == "HIGH"
     assert candidate.evidence_score == 82
     assert candidate.peak_id == "Sample_1@mz500.123456_rt8.4800"
-    assert candidate.channel_mz == pytest.approx(500.123456)
+    assert candidate.xic_mz == pytest.approx(500.123456)
     assert candidate.admitted
-    assert candidate.precursor_mz == pytest.approx(500.123456)
-    assert candidate.product_mz == pytest.approx(384.076056)
-    assert candidate.observed_neutral_loss_da == pytest.approx(116.0474)
-    assert candidate.best_seed_rt == pytest.approx(8.49)
+    assert candidate.best_event_precursor_mz == pytest.approx(500.123456)
+    assert candidate.best_event_product_mz == pytest.approx(384.076056)
+    assert candidate.best_event_neutral_loss_da == pytest.approx(116.0474)
+    assert candidate.best_event_rt == pytest.approx(8.49)
     assert candidate.attached_event_count == 3
     assert candidate.ms1_apex_rt == pytest.approx(8.48)
     assert candidate.ms1_area == pytest.approx(123456.7)
@@ -282,8 +282,8 @@ def test_read_discovery_candidates_csv_parses_full_candidate_row(
     assert candidate.raw_file == Path("C:/raw/Sample_1.raw")
     assert candidate.sample_stem == "Sample_1"
     assert candidate.best_ms2_scan_id == 6095
-    assert candidate.seed_scan_ids == (6095, 6098, 6102)
-    assert candidate.ms1_seed_delta_min == pytest.approx(-0.01)
+    assert candidate.event_scan_ids == (6095, 6098, 6102)
+    assert candidate.ms1_event_delta_min == pytest.approx(-0.01)
     assert candidate.ms1_scan_support_score == pytest.approx(0.8)
     assert candidate.neutral_loss_error_basis == "measured_scan_precursor_product"
     assert candidate.precursor_mz_basis == "scan_precursor"
@@ -411,9 +411,9 @@ def test_read_discovery_candidates_csv_rejects_invalid_basis_enum(
     ("column", "value"),
     [
         ("evidence_score", "not-int"),
-        ("precursor_mz", "not-float"),
-        ("requires_overlap_review", "maybe"),
-        ("seed_scan_ids", "1;two"),
+        ("best_event_precursor_mz", "not-float"),
+        ("status", "maybe"),
+        ("event_scan_ids", "1;two"),
     ],
 )
 def test_read_discovery_candidates_csv_rejects_malformed_typed_fields_with_row_number(
@@ -449,7 +449,7 @@ def test_discovery_input_source_defers_typed_rows_and_loads_selected_features(
             tmp_path,
             sample="Sample_1",
             scan=6096,
-            state="no_attached_event",
+            state="no_nl_event",
         ),
     ]
     batch = _discovery_input_batch(tmp_path, {"Sample_1": rows})
@@ -490,14 +490,14 @@ def test_discovery_input_source_keeps_unadmitted_peaks_out_of_features(
             tmp_path,
             sample="Sample_1",
             scan=6096,
-            state="no_attached_event",
+            state="no_nl_event",
             basis="scan_precursor",
         ),
         _indexed_candidate_row(
             tmp_path,
             sample="Sample_1",
             scan=6097,
-            state="no_attached_event",
+            state="no_nl_event",
             basis="mixed",
             mz=500.223456,
         ),
@@ -505,7 +505,7 @@ def test_discovery_input_source_keeps_unadmitted_peaks_out_of_features(
             tmp_path,
             sample="Sample_1",
             scan=6098,
-            state="no_attached_event",
+            state="no_nl_event",
             basis="product_plus_neutral_loss",
         ),
     ]
@@ -514,7 +514,7 @@ def test_discovery_input_source_keeps_unadmitted_peaks_out_of_features(
             tmp_path,
             sample="Sample_2",
             scan=7096,
-            state="no_attached_event",
+            state="no_nl_event",
             basis="scan_precursor",
         )
     ]
@@ -618,18 +618,17 @@ def _indexed_candidate_row(
     admitted = state == "admitted"
     return _candidate_row(
         peak_id=f"{sample}@mz{mz:.6f}_rt{scan}",
-        channel_mz=f"{mz:.6f}",
-        precursor_mz=f"{mz:.6f}",
-        product_mz=f"{product_mz:.6f}",
+        xic_mz=f"{mz:.6f}",
+        best_event_precursor_mz=f"{mz:.6f}",
+        best_event_product_mz=f"{product_mz:.6f}",
         scan_precursor_mz=f"{mz:.6f}",
         raw_file=str(root / f"{sample}.raw"),
         sample_stem=sample,
         best_ms2_scan_id=str(scan),
-        seed_scan_ids=str(scan),
+        event_scan_ids=str(scan),
         precursor_mz_basis=basis,
         reason=reason,
-        admitted="TRUE" if admitted else "FALSE",
-        admission_reason=state,
+        status=state,
         attached_event_count="1" if admitted else "0",
     )
 
@@ -649,31 +648,27 @@ def _write_csv(
 def _candidate_row(**overrides: str) -> dict[str, str]:
     row = {
         "review_priority": "HIGH",
-        "admitted": "TRUE",
-        "admission_reason": "admitted",
+        "status": "admitted",
         "evidence_tier": "A",
         "evidence_score": "82",
         "ms2_support": "strong",
         "ms1_support": "clean",
         "rt_alignment": "aligned",
         "peak_id": "Sample_1@mz500.123456_rt8.4800",
-        "channel_mz": "500.123456",
-        "precursor_mz": "500.123456",
-        "product_mz": "384.076056",
-        "observed_neutral_loss_da": "116.0474",
+        "xic_mz": "500.123456",
+        "best_event_precursor_mz": "500.123456",
+        "best_event_product_mz": "384.076056",
+        "best_event_neutral_loss_da": "116.0474",
         "ms1_apex_rt": "8.48",
         "ms1_area": "123456.7",
         "attached_event_count": "3",
-        "best_seed_rt": "8.49",
+        "best_event_rt": "8.49",
         "ms2_product_max_intensity": "9876.5",
         "reason": "strict NL seed",
-        "requires_overlap_review": "FALSE",
-        "doubly_charged_isotope": "FALSE",
-        "blank_background": "FALSE",
         "raw_file": "C:/raw/Sample_1.raw",
         "sample_stem": "Sample_1",
         "best_ms2_scan_id": "6095",
-        "seed_scan_ids": "6095;6098;6102",
+        "event_scan_ids": "6095;6098;6102",
         "neutral_loss_tag": "DNA_dR",
         "configured_neutral_loss_da": "116.0474",
         "neutral_loss_mass_error_ppm": "2.5",
@@ -682,11 +677,11 @@ def _candidate_row(**overrides: str) -> dict[str, str]:
         "scan_precursor_mz": "500.123456",
         "scan_precursor_delta_da": "0.0",
         "max_scan_precursor_abs_delta_da": "0.0",
-        "rt_seed_min": "8.45",
-        "rt_seed_max": "8.55",
+        "event_rt_min": "8.45",
+        "event_rt_max": "8.55",
         "ms1_search_rt_min": "8.25",
         "ms1_search_rt_max": "8.75",
-        "ms1_seed_delta_min": "-0.01",
+        "ms1_event_delta_min": "-0.01",
         "ms1_peak_rt_start": "8.40",
         "ms1_peak_rt_end": "8.60",
         "ms1_height": "2222.2",

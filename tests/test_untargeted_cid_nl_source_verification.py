@@ -148,7 +148,7 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
         )
     arguments = dict(
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate=physical_records,
+        physical_records_by_peak=physical_records,
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -161,7 +161,7 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
@@ -199,7 +199,7 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
     assert reused.context.processing_owners.request == (
         baseline.context.processing_owners.request
     )
-    assert reused.context.candidates_by_sample == baseline.context.candidates_by_sample
+    assert reused.context.peaks_by_sample == baseline.context.peaks_by_sample
     assert reused.excluded_candidates == baseline.excluded_candidates
 
 

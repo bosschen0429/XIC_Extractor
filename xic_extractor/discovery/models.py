@@ -28,41 +28,45 @@ NeutralLossErrorBasis = Literal[
     "configured_loss_inferred_precursor",
     "mixed",
 ]
-AdmissionReason = Literal[
+PeakStatus = Literal[
     "admitted",
-    "system_background",
-    "doubly_charged_isotope",
-    "requires_overlap_review",
-    "no_attached_event",
+    "blank",
+    "doubly_charged",
+    "overlap",
+    "no_nl_event",
 ]
+"""Whether a peak enters Alignment, and if not, the first reason that holds it."""
+PEAK_STATUSES: tuple[PeakStatus, ...] = (
+    "admitted",
+    "blank",
+    "doubly_charged",
+    "overlap",
+    "no_nl_event",
+)
 
 DISCOVERY_PEAK_COLUMNS = (
     "review_priority",
-    "admitted",
-    "admission_reason",
+    "status",
     "evidence_tier",
     "evidence_score",
     "ms2_support",
     "ms1_support",
     "rt_alignment",
     "peak_id",
-    "channel_mz",
-    "precursor_mz",
-    "product_mz",
-    "observed_neutral_loss_da",
+    "xic_mz",
+    "best_event_precursor_mz",
+    "best_event_product_mz",
+    "best_event_neutral_loss_da",
     "ms1_apex_rt",
     "ms1_area",
     "attached_event_count",
-    "best_seed_rt",
+    "best_event_rt",
     "ms2_product_max_intensity",
     "reason",
-    "requires_overlap_review",
-    "doubly_charged_isotope",
-    "blank_background",
     "raw_file",
     "sample_stem",
     "best_ms2_scan_id",
-    "seed_scan_ids",
+    "event_scan_ids",
     "neutral_loss_tag",
     "configured_neutral_loss_da",
     "neutral_loss_mass_error_ppm",
@@ -71,11 +75,11 @@ DISCOVERY_PEAK_COLUMNS = (
     "scan_precursor_mz",
     "scan_precursor_delta_da",
     "max_scan_precursor_abs_delta_da",
-    "rt_seed_min",
-    "rt_seed_max",
+    "event_rt_min",
+    "event_rt_max",
     "ms1_search_rt_min",
     "ms1_search_rt_max",
-    "ms1_seed_delta_min",
+    "ms1_event_delta_min",
     "ms1_peak_rt_start",
     "ms1_peak_rt_end",
     "ms1_height",
@@ -106,15 +110,15 @@ DISCOVERY_EVENT_COLUMNS = (
     "parent_ms1_mz",
     "observed_neutral_loss_da",
     "neutral_loss_mass_error_ppm",
-    "supports_nl",
-    "channel_mz",
+    "precursor_verified",
+    "xic_mz",
     "peak_id",
     "unattached_reason",
 )
 
 
 @dataclass(frozen=True)
-class DiscoverySeed:
+class DiscoveryEvent:
     raw_file: Path
     sample_stem: str
     scan_number: int
@@ -159,17 +163,17 @@ class DiscoverySeed:
 
 
 @dataclass(frozen=True, slots=True)
-class DiscoveryChannel:
+class DiscoveryIon:
     """One sample's MS1 ion: every strict NL event whose measured ion it is.
 
-    The channel is fixed before acquisition and carries no tag, product or RT
-    identity; physical peak boundaries separate its peaks in RT.
+    ``mz`` is the XIC center. The ion is fixed before acquisition and carries no
+    tag, product or RT identity; physical peak boundaries separate its peaks in RT.
     """
 
     raw_file: Path
     sample_stem: str
     mz: float
-    seeds: tuple[DiscoverySeed, ...]
+    events: tuple[DiscoveryEvent, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,7 +253,7 @@ class DiscoveryPhysicalWorkItem:
     def peak_id(self) -> str:
         return build_discovery_peak_id(
             sample_stem=self.sample_stem,
-            channel_mz=self.xic_mz,
+            xic_mz=self.xic_mz,
             peak_rt_min=self.query_rt_min,
         )
 
@@ -265,30 +269,33 @@ class DiscoveryPhysicalWorkItem:
 
 @dataclass(frozen=True)
 class DiscoveryPeak:
-    """One physical MS1 peak on one ion channel, with the NL events locating it.
+    """One physical MS1 peak on one ion's XIC, with the NL events locating it.
 
-    Peak facts come from the physical measurement. Evidence fields (scan IDs,
-    tag evidence, RT range, product intensity) cover every event locating the
-    peak; ``attached_event_count`` counts those that attach and admit it. The
-    representative event is attached when any event attaches.
+    ``xic_mz`` is the XIC center, the ion's MS1 reading before acquisition;
+    ``physical_mz`` is the mass the peak was measured at. ``best_event_*`` fields
+    are the representative event's values. Peak facts come from the physical
+    measurement. Evidence fields (scan IDs, tag evidence, RT range, product
+    intensity) cover every event locating the peak; ``attached_event_count``
+    counts those that attach and admit it. The representative event is attached
+    when any event attaches.
     """
 
     peak_id: str
     raw_file: Path
     sample_stem: str
-    channel_mz: float
-    precursor_mz: float
-    product_mz: float
-    observed_neutral_loss_da: float
+    xic_mz: float
+    best_event_precursor_mz: float
+    best_event_product_mz: float
+    best_event_neutral_loss_da: float
     neutral_loss_tag: str
     configured_neutral_loss_da: float
     neutral_loss_mass_error_ppm: float | None
     best_ms2_scan_id: int
-    best_seed_rt: float
-    seed_scan_ids: tuple[int, ...]
+    best_event_rt: float
+    event_scan_ids: tuple[int, ...]
     attached_event_count: int
-    rt_seed_min: float
-    rt_seed_max: float
+    event_rt_min: float
+    event_rt_max: float
     ms2_product_max_intensity: float
     ms1_search_rt_min: float
     ms1_search_rt_max: float
@@ -297,16 +304,14 @@ class DiscoveryPeak:
     ms1_height: float
     ms1_peak_rt_start: float
     ms1_peak_rt_end: float
-    ms1_seed_delta_min: float
+    ms1_event_delta_min: float
     ms1_trace_quality: str
     review_priority: ReviewPriority
     reason: str
+    status: PeakStatus
     ms1_scan_support_score: float | None = None
     # Qualified MS1 ion reading at the apex of an inferred precursor.
     ms1_apex_mz: float | None = None
-    requires_overlap_review: bool = False
-    doubly_charged_isotope: bool = False
-    blank_background: bool = False
     evidence_score: int = 0
     evidence_tier: str = "E"
     ms2_support: str = "weak"
@@ -331,53 +336,41 @@ class DiscoveryPeak:
     is_provisional: bool = False
 
     @property
-    def admission_reason(self) -> AdmissionReason:
-        """Peak-level gates first, then NL attachment."""
-        if self.blank_background:
-            return "system_background"
-        if self.doubly_charged_isotope:
-            return "doubly_charged_isotope"
-        if self.requires_overlap_review:
-            return "requires_overlap_review"
-        if self.attached_event_count < 1:
-            return "no_attached_event"
-        return "admitted"
-
-    @property
-    def passes_peak_gates(self) -> bool:
+    def is_clean_peak(self) -> bool:
         """No peak-level gate holds this peak, whatever its NL attachment."""
-        return self.admission_reason in {"admitted", "no_attached_event"}
+        return self.status in {"admitted", "no_nl_event"}
 
     @property
     def admitted(self) -> bool:
         """Whether this peak enters CID-NL Alignment."""
-        return self.admission_reason == "admitted"
+        return self.status == "admitted"
 
     @property
     def physical_mz(self) -> float:
-        """Mass of the measured ion, independent of MS2 receipts."""
-        return self.channel_mz if self.ms1_apex_mz is None else self.ms1_apex_mz
+        """Measured peak mass: the apex reading of an inferred precursor, else
+        ``xic_mz``. Independent of MS2 receipts."""
+        return self.xic_mz if self.ms1_apex_mz is None else self.ms1_apex_mz
 
 
 UnattachedReason = str
 """Why an event attaches to no peak.
 
-``no_peak_at_rt`` or another physical evaluation reason when the channel has no
+``no_peak_at_rt`` or another physical evaluation reason when the ion has no
 measured peak at the event RT; a precursor assessment status (for example
 ``parent_ms1_ion_missing`` or ``outside_nominal_isolation``) when the event's
-precursor is not verified; ``precursor_outside_peak_mass`` when the verified
-precursor is not the measured ion; ``outside_peak_bounds`` when the MS2 scan or
+precursor is not verified; ``mass_outside_peak`` when the verified
+precursor is not the measured ion; ``rt_outside_peak`` when the MS2 scan or
 its parent MS1 scan falls outside the peak bounds plus the attachment margin.
 """
 
 
 @dataclass(frozen=True, slots=True)
-class DiscoveryEvent:
+class EventAttachment:
     """One strict NL event and the peak it attaches to, or why it attaches to none."""
 
-    seed: DiscoverySeed
-    channel_mz: float
-    supports_nl: bool
+    event: DiscoveryEvent
+    xic_mz: float
+    precursor_verified: bool
     peak_id: str = ""
     unattached_reason: UnattachedReason = ""
 
@@ -389,59 +382,59 @@ class DiscoveryEvent:
 
     @property
     def sample_stem(self) -> str:
-        return self.seed.sample_stem
+        return self.event.sample_stem
 
     @property
     def ms2_scan_number(self) -> int:
-        return self.seed.scan_number
+        return self.event.scan_number
 
     @property
     def ms2_rt(self) -> float:
-        return self.seed.rt
+        return self.event.rt
 
     @property
     def neutral_loss_tag(self) -> str:
-        return self.seed.neutral_loss_tag
+        return self.event.neutral_loss_tag
 
     @property
     def product_mz(self) -> float:
-        return self.seed.product_mz
+        return self.event.product_mz
 
     @property
     def product_intensity(self) -> float:
-        return self.seed.product_intensity
+        return self.event.product_intensity
 
     @property
     def precursor_mz(self) -> float:
-        return self.seed.precursor_mz
+        return self.event.precursor_mz
 
     @property
     def precursor_mz_basis(self) -> str:
-        return self.seed.precursor_mz_basis
+        return self.event.precursor_mz_basis
 
     @property
     def scan_precursor_mz(self) -> float | None:
-        return self.seed.scan_precursor_mz
+        return self.event.scan_precursor_mz
 
     @property
     def parent_ms1_rt(self) -> float | None:
-        observation = self.seed.ms1_precursor_observation
+        observation = self.event.ms1_precursor_observation
         return None if observation is None else observation.rt_min
 
     @property
     def parent_ms1_mz(self) -> float | None:
-        observation = self.seed.ms1_precursor_observation
+        observation = self.event.ms1_precursor_observation
         if observation is None or len(observation.centroid_mzs) != 1:
             return None
         return observation.centroid_mzs[0]
 
     @property
     def observed_neutral_loss_da(self) -> float:
-        return self.seed.observed_neutral_loss_da
+        return self.event.observed_neutral_loss_da
 
     @property
     def neutral_loss_mass_error_ppm(self) -> float | None:
-        return self.seed.observed_loss_error_ppm
+        return self.event.observed_loss_error_ppm
 
 
 _DISCOVERY_PRIORITY_RANK = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
@@ -459,12 +452,12 @@ def discovery_peak_output_sort_key(peak: DiscoveryPeak) -> tuple[object, ...]:
         -peak.attached_event_count,
         -peak.ms2_product_max_intensity,
         -peak.ms1_area,
-        peak.best_seed_rt,
+        peak.best_event_rt,
         peak.peak_id,
     )
 
 
-def discovery_event_output_sort_key(event: DiscoveryEvent) -> tuple[object, ...]:
+def discovery_event_output_sort_key(event: EventAttachment) -> tuple[object, ...]:
     return (
         event.ms2_rt,
         event.ms2_scan_number,
@@ -492,10 +485,10 @@ class DiscoveryBatchOutputs:
 def build_discovery_peak_id(
     *,
     sample_stem: str,
-    channel_mz: float,
+    xic_mz: float,
     peak_rt_min: float,
 ) -> str:
-    return f"{sample_stem}@mz{_format_id_mz(channel_mz)}_rt{peak_rt_min:.4f}"
+    return f"{sample_stem}@mz{_format_id_mz(xic_mz)}_rt{peak_rt_min:.4f}"
 
 
 def build_discovery_physical_selection_subject_id(

@@ -21,10 +21,10 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.models import DiscoverySeed
-from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+from xic_extractor.discovery.models import DiscoveryEvent
+from xic_extractor.discovery.ms2_events import discovery_events_from_scan
 from xic_extractor.discovery.settings import DiscoverySettings
-from xic_extractor.discovery.strict_seed_receipts import resolve_discovery_scan_events
+from xic_extractor.discovery.strict_event_receipts import resolve_discovery_scan_events
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationRef,
@@ -696,7 +696,7 @@ def _composite_backfill_evidence(
     individual_refs: list[DdaCidNlPeakSupportRef] = []
     set_refs: list[DdaCidNlCandidateSetRelationRef] = []
     scan_numbers: set[int] = set()
-    subject_seeds: list[DiscoverySeed] = []
+    subject_seeds: list[DiscoveryEvent] = []
     for event in raw.iter_ms2_scans(query_rt_min, query_rt_max):
         if event.parse_error is not None or event.scan is None:
             raise CidNlAcquisitionError(
@@ -710,7 +710,7 @@ def _composite_backfill_evidence(
         scan_numbers.add(scan.scan_number)
         subject_seeds.extend(
             seed
-            for seed in discovery_seeds_from_scan(
+            for seed in discovery_events_from_scan(
                 scan, raw_file=Path(sample.metadata.raw_stem), settings=settings
             )
             if seed.supports_direct_nl

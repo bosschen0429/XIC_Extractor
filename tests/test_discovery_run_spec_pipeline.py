@@ -161,9 +161,7 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         assert {row["peak_id"] for row in events if row["peak_id"]} <= {
             item.peak_id for item in candidates
         }
-        assert any(
-            not row["peak_id"] and float(row["channel_mz"]) < 600 for row in events
-        )
+        assert any(not row["peak_id"] and float(row["xic_mz"]) < 600 for row in events)
         receipt = batch.peak_receipts[acquisition.sample_stem]
         assert receipt.peak_count == 2
         assert (

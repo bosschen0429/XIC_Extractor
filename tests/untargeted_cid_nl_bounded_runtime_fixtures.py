@@ -96,7 +96,11 @@ def _plan(
         if scenario == "cross_subject_recovery":
             precursor = 500.0 if path == paths[0] else 500.004
             candidates[path.stem] = (
-                tuple(c for c in sample_candidates if c.precursor_mz == precursor)
+                tuple(
+                    c
+                    for c in sample_candidates
+                    if c.best_event_precursor_mz == precursor
+                )
                 if path in paths[:2]
                 else ()
             )
@@ -117,14 +121,14 @@ def _plan(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:bounded-runtime",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values

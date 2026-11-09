@@ -30,7 +30,7 @@ peak. `pt_pattern + cid_nl(dR)` intersects Delta Mass hypotheses with existing
 `neutral_loss(tag=DNA_dR)` evidence. Delta Mass evaluates its own hypotheses
 first, then annotates whether the base matches CID-NL(dR). That annotation uses
 admitted CID-NL peaks and the sample-local predicate on the peak's
-`channel_mz` and apex RT; it does not alter CID-NL decisions.
+`xic_mz` and apex RT; it does not alter CID-NL decisions.
 
 ## CID-NL peaks and events
 
@@ -43,7 +43,7 @@ the configured loss when its absolute loss error is at most
 loss tolerance combines them. The reported loss-error ppm is relative to the
 configured loss mass; it is not the acceptance gate.
 
-### Ion channels, peaks and events
+### Ions, peaks and events
 
 CID-NL Discovery publishes two tables per sample. `discovery_peaks.csv` has one
 row per physical MS1 peak. `discovery_events.csv` has one row per strict NL
@@ -51,49 +51,50 @@ event, keyed by MS2 scan, tag and product; a scan matching two tags is two
 events. Each event names the peak it attaches to (`peak_id`) or why it attaches
 to none (`unattached_reason`), never both.
 
-- **Ion channel.** Events are grouped only by their MS1-measured ion: the
-  recorded scan precursor, or the single parent-MS1 centroid of an inferred
-  precursor. Product + loss is the fallback only when the parent scan reads no
-  single ion. A channel opens at the lowest unassigned ion and takes every ion
-  within the precursor ppm tolerance of that anchor, so no ion bridges two
-  channels. Tag, product and RT never split a channel. The channel XIC m/z is
-  the representative event's ion: an MS1-measured ion first, then the
-  configured tag order, then product intensity.
-- **Peak.** Each raw valley-separated peak on a channel is one row and one
-  measurement. `peak_id` is `{sample}@mz{channel_mz}_rt{raw apex RT}`. Adjacent
-  channel XICs overlap, so one ion can be acquired twice: measurements whose
+- **Ion.** Events are grouped only by their MS1-measured ion: the recorded
+  scan precursor, or the single parent-MS1 centroid of an inferred precursor.
+  Product + loss is the fallback only when the parent scan reads no single ion.
+  A group opens at the lowest unassigned ion and takes every ion within the
+  precursor ppm tolerance of that anchor, so no ion bridges two groups. Tag,
+  product and RT never split an ion. Its XIC center, `xic_mz`, is the
+  representative event's MS1 reading before acquisition: an MS1-measured ion
+  first, then the configured tag order, then product intensity.
+- **Peak.** Each raw valley-separated peak on an ion's XIC is one row and one
+  measurement. `peak_id` is `{sample}@mz{xic_mz}_rt{raw apex RT}`. Adjacent
+  XICs overlap, so one ion can be acquired twice: measurements whose
   XIC masses lie within the precursor tolerance of the lowest one and that share
   its raw apex scan are one peak. The kept measurement locates the most events,
   then has the larger area, then the lower mass; the grouping is anchored and
   does not chain.
 - **Valley.** An event on a valley shared by two peaks belongs to the earlier
   peak.
-- **Evidence.** `seed_scan_ids`, tag evidence, the seed RT range and
+- **Evidence.** `event_scan_ids`, tag evidence, the event RT range and
   `ms2_product_max_intensity` cover every event located on the peak, attached or
   not, because Alignment re-reads and re-judges them. `attached_event_count` and
-  admission count attached events only.
+  `status` count attached events only. The `best_event_*` columns are the
+  representative event's values, not the peak's measured mass.
 
 | `unattached_reason` | Meaning |
 | --- | --- |
 | a precursor status (`parent_ms1_ion_missing`, `neutral_loss_mismatch`, …) | The precursor does not verify the loss (see [precursor basis](#precursor-basis)) |
-| `precursor_outside_peak_mass` | The verified precursor lies outside the peak's precursor ppm window |
-| `outside_peak_bounds` | The MS2 scan, or the parent MS1 scan of an inferred precursor, lies outside the peak bounds ± 0.1 min |
-| `no_peak_at_rt`, or a physical evaluation reason | The channel has no measurable physical peak at the event RT |
+| `mass_outside_peak` | The verified precursor lies outside the peak's precursor ppm window |
+| `rt_outside_peak` | The MS2 scan, or the parent MS1 scan of an inferred precursor, lies outside the peak bounds ± 0.1 min |
+| `no_peak_at_rt`, or a physical evaluation reason | The ion's XIC has no measurable physical peak at the event RT |
 
-### Peak admission
+### Peak status
 
-`admission_reason` decides what may enter Alignment. When several apply, the
-first row of this table wins.
+`status` decides what may enter Alignment. When several apply, the first row of
+this table wins.
 
-| `admission_reason` | Meaning | Enters Alignment |
+| `status` | Meaning | Enters Alignment |
 | --- | --- | --- |
-| `system_background` | Demoted by [blank qualification](#blank-qualification) | No |
-| `doubly_charged_isotope` | The MS1 ion reads as a doubly charged isotope ([accurate-mass reading](#accurate-mass-reading)) | No |
-| `requires_overlap_review` | A shoulder or overlapping envelope whose MS2 cannot be attributed to one peak | No |
-| `no_attached_event` | A measurable MS1 peak without an [attached](#cid-nl-support-relations), precursor-verified NL event | No; review only |
+| `blank` | Demoted by [blank qualification](#blank-qualification) | No |
+| `doubly_charged` | The MS1 ion reads as a doubly charged isotope ([accurate-mass reading](#accurate-mass-reading)) | No |
+| `overlap` | A shoulder or overlapping envelope whose MS2 cannot be attributed to one peak | No |
+| `no_nl_event` | A measurable MS1 peak without an [attached](#cid-nl-support-relations), precursor-verified NL event | No; review only |
 | `admitted` | At least one attached event and none of the above | Yes |
 
-`admitted` is `TRUE` only for the last row. Rows that are not admitted cannot
+Peaks that are not `admitted` cannot
 choose query centers, merge into admitted peaks, mint method subjects, supply
 support scans or authorize Backfill. A legitimate group can still find a new
 MS1-only observation in another sample through [Backfill](backfill.md); that
@@ -116,7 +117,7 @@ that owner and contribute their independent method evidence. Multiple events
 on that peak produce one retained physical record and peak row with all scan
 receipts, not competing areas. Completed readers decode the stored result
 without preparing or evaluating the signal again. The canonical measurement
-query is the raw apex, while `best_seed_rt` remains the representative NL
+query is the raw apex, while `best_event_rt` remains the representative NL
 event's RT.
 
 Discovery uses the shared physical peak owner. An ordinary candidate needs two
@@ -190,7 +191,7 @@ original precursor and product remain the keys for MS2 scan replay.
 
 Product + loss assumes a singly charged precursor. When the MS1 ion is read
 with a centroid one doubly charged ¹³C spacing (0.50168 m/z) above it in most
-scans, the peak's `admission_reason` is `doubly_charged_isotope`. Its bounds,
+scans, the peak's `status` is `doubly_charged`. Its bounds,
 area and reason remain visible; it cannot reach Alignment or a Matrix value. A
 separate singly charged ion keeps its own admission.
 
@@ -206,9 +207,9 @@ does not upgrade precursor identity or grant Matrix authority.
 
 ### Shared measurements
 
-- Distinct channels can share one MS2 scan. Sharing a scan does not make their
+- Distinct ions can share one MS2 scan. Sharing a scan does not make their
   peaks duplicates; evidence scoring ranks them without deleting either.
-- One channel can contain several physical peaks. Events are partitioned by the
+- One ion's XIC can contain several physical peaks. Events are partitioned by the
   physical owner's peak selection. Events outside or between peaks stay in the
   event table with their reason and do not support another peak.
 - The physical owner prepares each retained trace population once and measures
@@ -234,7 +235,7 @@ lab has no mature DIA method.
   within the peak bounds ± 0.1 min. The margin covers DDA sampling a peak's foot
   or tail just past its 10%-height return. An RT outside the bounds that lies
   inside another measured peak of the same trace never attaches through the
-  margin. A peak with no attached event is `no_attached_event`.
+  margin. A peak with no attached event is `no_nl_event`.
 
 - **Strict support.** A scan strictly inside exactly one candidate peak, with no
   positive-width overlap with another m/z-compatible peak, supports that peak
@@ -323,7 +324,7 @@ does not enable it; an explicit opt-in requires method-appropriate validation.
   software filtering does not recreate an unacquired spectrum.
 - When enabled, a peak matched within 10 ppm keeps its admission only when its
   MS1 height is at least 3× the blank's maximum intensity. Below that its
-  `admission_reason` is `system_background`. Qualification changes eligibility
+  `status` is `blank`. Qualification changes eligibility
   only; it does not change the peak's boundaries, apex or area.
 
 ## Delta Mass Discovery

@@ -7,8 +7,8 @@ import numpy as np
 
 from tests.cid_nl_raw_fixture import fake_acquisition_source
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.discovery.ion_channels import build_discovery_channels
-from xic_extractor.discovery.models import DiscoverySeed
+from xic_extractor.discovery.ion_grouping import build_discovery_ions
+from xic_extractor.discovery.models import DiscoveryEvent
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -52,10 +52,10 @@ def _gaussian(
 
 
 def _channel(
-    seeds: tuple[DiscoverySeed, ...],
+    seeds: tuple[DiscoveryEvent, ...],
     **settings_overrides: float,
 ):
-    return build_discovery_channels(seeds, settings=_settings(**settings_overrides))[0]
+    return build_discovery_ions(seeds, settings=_settings(**settings_overrides))[0]
 
 
 def _seed(
@@ -66,8 +66,8 @@ def _seed(
     product_mz: float = 383.9526,
     product_intensity: float = 10000.0,
     observed_loss_error_ppm: float = 0.0,
-) -> DiscoverySeed:
-    return DiscoverySeed(
+) -> DiscoveryEvent:
+    return DiscoveryEvent(
         raw_file=RAW_FILE,
         sample_stem="TumorBC2312_DNA",
         scan_number=scan_number,

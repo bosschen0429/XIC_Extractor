@@ -12,8 +12,8 @@ from typing import Protocol
 import numpy as np
 
 from xic_extractor.configuration.cid_nl_profile import PrecursorReferenceRequirement
-from xic_extractor.discovery.models import DiscoveryPeak, DiscoverySeed
-from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+from xic_extractor.discovery.models import DiscoveryEvent, DiscoveryPeak
+from xic_extractor.discovery.ms2_events import discovery_events_from_scan
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
@@ -26,11 +26,11 @@ _WRITER_ROUNDING_ABS_TOL = 5e-6
 _WRITER_ROUNDING_REL_TOL = 5e-6
 
 
-class StrictSeedReceiptError(ValueError):
+class StrictEventReceiptError(ValueError):
     """Raised when current Discovery scan receipts cannot be reconstructed."""
 
 
-class StrictSeedReceiptRaw(Protocol):
+class StrictEventReceiptRaw(Protocol):
     def iter_ms2_scan_subset(
         self, rt_min: float, rt_max: float, scan_numbers: frozenset[int]
     ) -> Iterator[Ms2ScanEvent]:
@@ -39,87 +39,87 @@ class StrictSeedReceiptRaw(Protocol):
 
 def read_parent_ms1_observations(
     raw: MS1MassWindowSource,
-    seeds: tuple[DiscoverySeed, ...],
+    events: tuple[DiscoveryEvent, ...],
     *,
     tolerance_ppm: float,
-) -> tuple[DiscoverySeed, ...]:
-    """Attach fresh parent-MS1 facts without changing a seed's search provenance."""
+) -> tuple[DiscoveryEvent, ...]:
+    """Attach fresh parent-MS1 facts without changing an event's search provenance."""
     windows: dict[int, tuple[int, float, float]] = {}
-    for index, seed in enumerate(seeds):
-        metadata = seed.precursor_metadata
+    for index, event in enumerate(events):
+        metadata = event.precursor_metadata
         if (
-            seed.precursor_mz_basis != "product_plus_neutral_loss"
+            event.precursor_mz_basis != "product_plus_neutral_loss"
             or metadata is None
             or metadata.master_scan_number is None
         ):
             continue
-        radius = seed.precursor_mz * tolerance_ppm * 1e-6
+        radius = event.precursor_mz * tolerance_ppm * 1e-6
         windows[index] = (
             metadata.master_scan_number,
-            seed.precursor_mz - radius,
-            seed.precursor_mz + radius,
+            event.precursor_mz - radius,
+            event.precursor_mz + radius,
         )
     if not windows:
-        return seeds
+        return events
     requests = tuple(dict.fromkeys(windows.values()))
     observations = dict(zip(requests, raw.read_ms1_mass_windows(requests), strict=True))
     return tuple(
-        replace(seed, ms1_precursor_observation=observations[windows[index]])
+        replace(event, ms1_precursor_observation=observations[windows[index]])
         if index in windows
-        else seed
-        for index, seed in enumerate(seeds)
+        else event
+        for index, event in enumerate(events)
     )
 
 
-def read_complete_discovery_scan_seeds(
-    raw: StrictSeedReceiptRaw,
+def read_complete_discovery_scan_events(
+    raw: StrictEventReceiptRaw,
     *,
-    candidates: tuple[DiscoveryPeak, ...],
+    peaks: tuple[DiscoveryPeak, ...],
     settings: DiscoverySettings,
     preserve_configured_losses: bool = False,
     include_inferred: bool = False,
-) -> tuple[tuple[Ms2Scan, DiscoverySeed], ...]:
-    """Return declared seeds, retaining their direct or inferred precursor basis."""
+) -> tuple[tuple[Ms2Scan, DiscoveryEvent], ...]:
+    """Return declared events, retaining their direct or inferred precursor basis."""
 
-    by_scan: dict[tuple[int, float, float, float], tuple[Ms2Scan, DiscoverySeed]] = {}
-    scan_seed_memo: _ScanSeedMemo = {}
-    for candidate in candidates:
-        for scan in _read_exact_scans(raw, candidate):
-            seeds = _read_exact_seed(
+    by_scan: dict[tuple[int, float, float, float], tuple[Ms2Scan, DiscoveryEvent]] = {}
+    scan_event_memo: _ScanEventMemo = {}
+    for peak in peaks:
+        for scan in _read_exact_scans(raw, peak):
+            events = _read_exact_event(
                 scan,
-                raw_file=candidate.raw_file,
-                candidate=candidate,
+                raw_file=peak.raw_file,
+                peak=peak,
                 settings=settings,
                 preserve_configured_losses=preserve_configured_losses,
                 include_inferred=include_inferred,
-                scan_seed_memo=scan_seed_memo,
+                scan_event_memo=scan_event_memo,
             )
-            for seed in seeds:
+            for event in events:
                 key = (
                     scan.scan_number,
-                    seed.configured_neutral_loss_da
+                    event.configured_neutral_loss_da
                     if preserve_configured_losses
                     else 0.0,
-                    seed.precursor_mz,
-                    seed.product_mz,
+                    event.precursor_mz,
+                    event.product_mz,
                 )
                 existing = by_scan.get(key)
-                if existing is not None and existing[1] != seed:
-                    raise StrictSeedReceiptError(
-                        f"scan {scan.scan_number}: candidate receipts disagree on "
+                if existing is not None and existing[1] != event:
+                    raise StrictEventReceiptError(
+                        f"scan {scan.scan_number}: peak receipts disagree on "
                         "canonical strict evidence"
                     )
-                by_scan[key] = (scan, seed)
+                by_scan[key] = (scan, event)
     return tuple(by_scan[scan_number] for scan_number in sorted(by_scan))
 
 
 def resolve_discovery_scan_events(
-    seeds: tuple[DiscoverySeed, ...],
+    events: tuple[DiscoveryEvent, ...],
     *,
     settings: DiscoverySettings,
     preserve_configured_losses: bool = False,
     precursor_reference_requirement: PrecursorReferenceRequirement = "independent_mass",
-) -> tuple[DiscoverySeed, ...]:
+) -> tuple[DiscoveryEvent, ...]:
     """Resolve one evidence event per scan/loss after all parent facts are read.
 
     Receipt replay retains alternatives. The provider prefers independent NL
@@ -132,85 +132,87 @@ def resolve_discovery_scan_events(
         tag: index for index, tag in enumerate(settings.selected_tag_names)
     }
 
-    def rank(seed: DiscoverySeed) -> tuple[bool, float, float, int, float, float, str]:
-        assessment = seed.assess_precursor_loss(settings.nl_tolerance_ppm)
+    def rank(
+        event: DiscoveryEvent,
+    ) -> tuple[bool, float, float, int, float, float, str]:
+        assessment = event.assess_precursor_loss(settings.nl_tolerance_ppm)
         error = assessment.observed_loss_error_ppm
         return (
             not assessment.supports_reference(precursor_reference_requirement),
             abs(error) if error is not None else float("inf"),
-            -seed.product_intensity,
-            tag_precedence.get(seed.neutral_loss_tag, len(tag_precedence)),
-            seed.precursor_mz,
-            seed.product_mz,
-            seed.precursor_mz_basis,
+            -event.product_intensity,
+            tag_precedence.get(event.neutral_loss_tag, len(tag_precedence)),
+            event.precursor_mz,
+            event.product_mz,
+            event.precursor_mz_basis,
         )
 
-    by_event: dict[tuple[int, float], DiscoverySeed] = {}
-    for seed in sorted(seeds, key=rank):
+    by_event: dict[tuple[int, float], DiscoveryEvent] = {}
+    for event in sorted(events, key=rank):
         key = (
-            seed.scan_number,
-            seed.configured_neutral_loss_da if preserve_configured_losses else 0.0,
+            event.scan_number,
+            event.configured_neutral_loss_da if preserve_configured_losses else 0.0,
         )
-        by_event.setdefault(key, seed)
+        by_event.setdefault(key, event)
     return tuple(by_event[key] for key in sorted(by_event))
 
 
 def _read_exact_scans(
-    raw: StrictSeedReceiptRaw,
-    candidate: DiscoveryPeak,
+    raw: StrictEventReceiptRaw,
+    peak: DiscoveryPeak,
 ) -> tuple[Ms2Scan, ...]:
-    declared = tuple(sorted(set(candidate.seed_scan_ids)))
+    declared = tuple(sorted(set(peak.event_scan_ids)))
     if not declared:
-        raise StrictSeedReceiptError(
-            f"{candidate.peak_id}: candidate declares no strict MS2 scans"
+        raise StrictEventReceiptError(
+            f"{peak.peak_id}: peak declares no strict MS2 scans"
         )
     matches_by_scan: dict[int, list[Ms2Scan]] = {
         scan_number: [] for scan_number in declared
     }
-    rt_min = candidate.rt_seed_min - _WRITER_ROUNDING_ABS_TOL
-    rt_max = candidate.rt_seed_max + _WRITER_ROUNDING_ABS_TOL
-    for event in raw.iter_ms2_scan_subset(rt_min, rt_max, frozenset(declared)):
+    rt_min = peak.event_rt_min - _WRITER_ROUNDING_ABS_TOL
+    rt_max = peak.event_rt_max + _WRITER_ROUNDING_ABS_TOL
+    for read in raw.iter_ms2_scan_subset(rt_min, rt_max, frozenset(declared)):
         if (
-            event.parse_error is None
-            and event.scan is not None
-            and event.scan.scan_number in matches_by_scan
+            read.parse_error is None
+            and read.scan is not None
+            and read.scan.scan_number in matches_by_scan
         ):
-            matches_by_scan[event.scan.scan_number].append(event.scan)
+            matches_by_scan[read.scan.scan_number].append(read.scan)
     if any(len(matches_by_scan[scan_number]) != 1 for scan_number in declared):
-        raise StrictSeedReceiptError(
-            f"{candidate.peak_id}: declared strict MS2 scans are not exact"
+        raise StrictEventReceiptError(
+            f"{peak.peak_id}: declared strict MS2 scans are not exact"
         )
     return tuple(matches_by_scan[scan_number][0] for scan_number in declared)
 
 
-_ScanSeedMemo = dict[tuple[Path, int], tuple[Ms2Scan, tuple[DiscoverySeed, ...]]]
+_ScanEventMemo = dict[tuple[Path, int], tuple[Ms2Scan, tuple[DiscoveryEvent, ...]]]
 
 
-def _scan_seeds(
+def _scan_events(
     scan: Ms2Scan,
     *,
     raw_file: Path,
     settings: DiscoverySettings,
-    memo: _ScanSeedMemo | None,
-) -> tuple[DiscoverySeed, ...]:
-    """Enumerate one scan's seeds once per exact scan, not once per candidate.
+    memo: _ScanEventMemo | None,
+) -> tuple[DiscoveryEvent, ...]:
+    """Enumerate one scan's events once per exact scan, not once per peak.
 
     Seed enumeration depends only on the scan numerics, its RAW file, and the
-    settings, so candidates that declare the same scan reuse one enumeration.
+    settings, so peaks that declare the same scan reuse one enumeration.
     A memo entry is reused only when the scan it was built from is numerically
     identical; anything else recomputes. Candidate-specific receipt matching
     stays in the caller.
     """
 
     if memo is None:
-        return discovery_seeds_from_scan(scan, raw_file=raw_file, settings=settings)
+        return discovery_events_from_scan(scan, raw_file=raw_file, settings=settings)
     key = (raw_file, scan.scan_number)
     cached = memo.get(key)
     if cached is not None and _same_scan_numerics(cached[0], scan):
         return cached[1]
-    seeds = discovery_seeds_from_scan(scan, raw_file=raw_file, settings=settings)
-    memo[key] = (scan, seeds)
-    return seeds
+    events = discovery_events_from_scan(scan, raw_file=raw_file, settings=settings)
+    memo[key] = (scan, events)
+    return events
 
 
 def _same_scan_numerics(left: Ms2Scan, right: Ms2Scan) -> bool:
@@ -225,71 +227,71 @@ def _same_scan_numerics(left: Ms2Scan, right: Ms2Scan) -> bool:
     )
 
 
-def _read_exact_seed(
+def _read_exact_event(
     scan: Ms2Scan,
     *,
     raw_file: Path,
-    candidate: DiscoveryPeak,
+    peak: DiscoveryPeak,
     settings: DiscoverySettings,
     preserve_configured_losses: bool = False,
     include_inferred: bool = False,
-    scan_seed_memo: _ScanSeedMemo | None = None,
-) -> tuple[DiscoverySeed, ...]:
-    representative = scan.scan_number == candidate.best_ms2_scan_id
+    scan_event_memo: _ScanEventMemo | None = None,
+) -> tuple[DiscoveryEvent, ...]:
+    representative = scan.scan_number == peak.best_ms2_scan_id
     tag_product_receipts, precursor_receipt = _scan_receipts(
-        candidate,
+        peak,
         scan_number=scan.scan_number,
     )
-    scan_seeds = _scan_seeds(
+    scan_seeds = _scan_events(
         scan,
         raw_file=raw_file,
         settings=settings,
-        memo=scan_seed_memo,
+        memo=scan_event_memo,
     )
     matches = tuple(
-        seed
-        for seed in scan_seeds
-        if seed.scan_number in candidate.seed_scan_ids
+        event
+        for event in scan_seeds
+        if event.scan_number in peak.event_scan_ids
         and (
-            seed.precursor_mz_basis in RECORDED_PRECURSOR_BASES
-            or candidate.precursor_mz_basis == "mixed"
+            event.precursor_mz_basis in RECORDED_PRECURSOR_BASES
+            or peak.precursor_mz_basis == "mixed"
             or include_inferred
         )
         and any(
-            seed.neutral_loss_tag == tag_name
+            event.neutral_loss_tag == tag_name
             and (
                 (
                     not representative
-                    and seed.precursor_mz_basis == "product_plus_neutral_loss"
+                    and event.precursor_mz_basis == "product_plus_neutral_loss"
                 )
                 or _within_ppm(
-                    seed.product_mz,
+                    event.product_mz,
                     product_mz,
                     settings.product_mz_tolerance_ppm,
                 )
                 or (
                     # A shared-apex merge can retain another product's receipt
                     # under the same scan. The canonical row still owns its
-                    # representative; reconstruct it from native scan seeds.
+                    # representative; reconstruct it from native scan events.
                     representative
-                    and tag_name == candidate.neutral_loss_tag
-                    and _receipt_close(seed.precursor_mz, candidate.precursor_mz)
-                    and _receipt_close(seed.product_mz, candidate.product_mz)
+                    and tag_name == peak.neutral_loss_tag
+                    and _receipt_close(event.precursor_mz, peak.best_event_precursor_mz)
+                    and _receipt_close(event.product_mz, peak.best_event_product_mz)
                 )
             )
             for tag_name, product_mz in tag_product_receipts.items()
         )
         and _within_ppm(
-            seed.precursor_mz,
-            candidate.precursor_mz,
+            event.precursor_mz,
+            peak.best_event_precursor_mz,
             settings.precursor_mz_tolerance_ppm,
         )
         and (
             preserve_configured_losses
             or not representative
             or (
-                _receipt_close(seed.precursor_mz, candidate.precursor_mz)
-                and _receipt_close(seed.product_mz, candidate.product_mz)
+                _receipt_close(event.precursor_mz, peak.best_event_precursor_mz)
+                and _receipt_close(event.product_mz, peak.best_event_product_mz)
             )
         )
     )
@@ -298,9 +300,9 @@ def _read_exact_seed(
             include_inferred
             and not representative
             and any(
-                seed.precursor_mz_basis == "product_plus_neutral_loss"
-                and seed.neutral_loss_tag in tag_product_receipts
-                for seed in scan_seeds
+                event.precursor_mz_basis == "product_plus_neutral_loss"
+                and event.neutral_loss_tag in tag_product_receipts
+                for event in scan_seeds
             )
         ):
             # MS1 merging compares group representatives, so an older inferred
@@ -311,84 +313,88 @@ def _read_exact_seed(
             not representative
             and precursor_receipt is not None
             and any(
-                seed.neutral_loss_tag in tag_product_receipts
+                event.neutral_loss_tag in tag_product_receipts
                 and _within_ppm(
-                    seed.product_mz,
-                    tag_product_receipts[seed.neutral_loss_tag],
+                    event.product_mz,
+                    tag_product_receipts[event.neutral_loss_tag],
                     settings.product_mz_tolerance_ppm,
                 )
                 and _within_ppm(
-                    seed.precursor_mz,
+                    event.precursor_mz,
                     precursor_receipt,
                     settings.precursor_mz_tolerance_ppm,
                 )
-                for seed in scan_seeds
+                for event in scan_seeds
             )
         ):
             # A shared-apex merge absorbed this scan with its own receipt; it
             # reconstructs there but lies outside the final precursor window.
             return ()
         if representative:
-            raise StrictSeedReceiptError(
-                f"{candidate.peak_id}: exact canonical Discovery seed is not unique"
+            raise StrictEventReceiptError(
+                f"{peak.peak_id}: exact canonical Discovery event is not unique"
             )
-        raise StrictSeedReceiptError(
-            f"{candidate.peak_id}: strict scan {scan.scan_number} does not "
-            "reconstruct one canonical Discovery seed"
+        raise StrictEventReceiptError(
+            f"{peak.peak_id}: strict scan {scan.scan_number} does not "
+            "reconstruct one canonical Discovery event"
         )
     if representative:
         canonical_matches = tuple(
-            seed
-            for seed in matches
-            if seed.neutral_loss_tag == candidate.neutral_loss_tag
-            and _receipt_close(seed.precursor_mz, candidate.precursor_mz)
-            and _receipt_close(seed.product_mz, candidate.product_mz)
+            event
+            for event in matches
+            if event.neutral_loss_tag == peak.neutral_loss_tag
+            and _receipt_close(event.precursor_mz, peak.best_event_precursor_mz)
+            and _receipt_close(event.product_mz, peak.best_event_product_mz)
         )
         # Nearby native products may share the writer-rounding window without
         # sharing canonical identity. Prefer the persisted full-precision pair;
         # if rounding removed that identity, require an unambiguous receipt.
         exact_matches = tuple(
-            seed
-            for seed in canonical_matches
-            if seed.precursor_mz == candidate.precursor_mz
-            and seed.product_mz == candidate.product_mz
+            event
+            for event in canonical_matches
+            if event.precursor_mz == peak.best_event_precursor_mz
+            and event.product_mz == peak.best_event_product_mz
         )
         if len(exact_matches or canonical_matches) != 1:
-            raise StrictSeedReceiptError(
-                f"{candidate.peak_id}: exact canonical Discovery seed is not unique"
+            raise StrictEventReceiptError(
+                f"{peak.peak_id}: exact canonical Discovery event is not unique"
             )
     tag_precedence = {
         tag_name: index for index, tag_name in enumerate(settings.selected_tag_names)
     }
     if preserve_configured_losses:
         return tuple(
-            seed
-            for seed in matches
-            if include_inferred or seed.precursor_mz_basis in RECORDED_PRECURSOR_BASES
+            event
+            for event in matches
+            if include_inferred or event.precursor_mz_basis in RECORDED_PRECURSOR_BASES
         )
     if include_inferred:
         selected_tag = min(
             matches,
-            key=lambda seed: tag_precedence.get(
-                seed.neutral_loss_tag,
+            key=lambda event: tag_precedence.get(
+                event.neutral_loss_tag,
                 len(tag_precedence),
             ),
         ).neutral_loss_tag
-        return tuple(seed for seed in matches if seed.neutral_loss_tag == selected_tag)
+        return tuple(
+            event for event in matches if event.neutral_loss_tag == selected_tag
+        )
     # MS1 merging can retain inferred members beyond the final representative's
     # product window. They only account for declared scans here; the direct
     # product check still applies to each recorded reference. Reconstruction
     # preserves source facts; the method owner decides isolation/support.
     matches = tuple(
-        seed for seed in matches if seed.precursor_mz_basis in RECORDED_PRECURSOR_BASES
+        event
+        for event in matches
+        if event.precursor_mz_basis in RECORDED_PRECURSOR_BASES
     )
     if not matches:
         return ()
     return (
         min(
             matches,
-            key=lambda seed: tag_precedence.get(
-                seed.neutral_loss_tag,
+            key=lambda event: tag_precedence.get(
+                event.neutral_loss_tag,
                 len(tag_precedence),
             ),
         ),
@@ -396,29 +402,27 @@ def _read_exact_seed(
 
 
 def _scan_receipts(
-    candidate: DiscoveryPeak,
+    peak: DiscoveryPeak,
     *,
     scan_number: int,
 ) -> tuple[dict[str, float], float | None]:
     """Return one scan's per-tag product receipts and absorbed precursor receipt.
 
-    A scan absorbed by a shared-apex merge keeps the receipt of the candidate
-    that first claimed it; any other scan uses the candidate's own product.
+    A scan absorbed by a shared-apex merge keeps the receipt of the peak
+    that first claimed it; any other scan uses the peak's own product.
     """
     try:
-        payload = json.loads(candidate.tag_evidence_json)
+        payload = json.loads(peak.tag_evidence_json)
     except (json.JSONDecodeError, TypeError) as exc:
-        raise StrictSeedReceiptError(
-            f"{candidate.peak_id}: tag evidence is not valid JSON"
+        raise StrictEventReceiptError(
+            f"{peak.peak_id}: tag evidence is not valid JSON"
         ) from exc
     if not isinstance(payload, dict):
-        raise StrictSeedReceiptError(
-            f"{candidate.peak_id}: tag evidence must be an object"
-        )
+        raise StrictEventReceiptError(f"{peak.peak_id}: tag evidence must be an object")
 
     receipts: dict[str, float] = {}
     precursor_receipt: float | None = None
-    matched_tags = set(candidate.matched_tag_names)
+    matched_tags = set(peak.matched_tag_names)
     for raw_tag_name, raw_evidence in payload.items():
         tag_name = str(raw_tag_name)
         if tag_name not in matched_tags or not isinstance(raw_evidence, dict):
@@ -441,8 +445,8 @@ def _scan_receipts(
                 or not math.isfinite(float(raw_precursor_mz))
                 or float(raw_precursor_mz) <= 0.0
             ):
-                raise StrictSeedReceiptError(
-                    f"{candidate.peak_id}: tag {tag_name!r} lacks a valid "
+                raise StrictEventReceiptError(
+                    f"{peak.peak_id}: tag {tag_name!r} lacks a valid "
                     f"precursor receipt for strict scan {scan_number}"
                 )
             precursor_receipt = float(raw_precursor_mz)
@@ -452,15 +456,14 @@ def _scan_receipts(
             or not math.isfinite(float(raw_product_mz))
             or float(raw_product_mz) <= 0.0
         ):
-            raise StrictSeedReceiptError(
-                f"{candidate.peak_id}: tag {tag_name!r} lacks a valid "
+            raise StrictEventReceiptError(
+                f"{peak.peak_id}: tag {tag_name!r} lacks a valid "
                 f"product receipt for strict scan {scan_number}"
             )
         receipts[tag_name] = float(raw_product_mz)
     if not receipts:
-        raise StrictSeedReceiptError(
-            f"{candidate.peak_id}: strict scan {scan_number} lacks owning "
-            "per-tag provenance"
+        raise StrictEventReceiptError(
+            f"{peak.peak_id}: strict scan {scan_number} lacks owning per-tag provenance"
         )
     return receipts, precursor_receipt
 
@@ -478,9 +481,9 @@ def _receipt_close(observed: float, receipt: float) -> bool:
 
 
 __all__ = [
-    "StrictSeedReceiptError",
-    "StrictSeedReceiptRaw",
-    "read_complete_discovery_scan_seeds",
+    "StrictEventReceiptError",
+    "StrictEventReceiptRaw",
+    "read_complete_discovery_scan_events",
     "resolve_discovery_scan_events",
     "read_parent_ms1_observations",
 ]

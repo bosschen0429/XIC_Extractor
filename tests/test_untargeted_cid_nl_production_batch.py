@@ -100,8 +100,8 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     missing_raw = _FakeRaw((7.98,))
     missing_raw.intensity[:] = 0.0
     source_raws[raw_paths[4]] = missing_raw
-    candidates_by_sample = {stem: (selected_candidates[stem],) for stem in stems[:4]}
-    candidates_by_sample["Missing"] = ()
+    peaks_by_sample = {stem: (selected_candidates[stem],) for stem in stems[:4]}
+    peaks_by_sample["Missing"] = ()
     batch = build_dense_partition(
         raw_paths=raw_paths,
         sample_metadata=tuple(
@@ -115,18 +115,18 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
-            candidates_by_sample,
+            peaks_by_sample,
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:compatible-source-subject",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
-            for values in (candidates_by_sample).values()
+            for values in (peaks_by_sample).values()
             for c in values
         },
     )
@@ -215,7 +215,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         report = write_alignment_explanation(
             tmp_path / "no-input-review.sqlite",
             completed=completed,
-            candidates_by_sample=candidates_by_sample,
+            peaks_by_sample=peaks_by_sample,
             matrix_path=destination,
             alignment_config=alignment_config,
         )
@@ -269,14 +269,14 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample={"S1": candidates},
+        peaks_by_sample={"S1": candidates},
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, (raw_path,), {"S1": candidates}
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:production-batch",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in ({"S1": candidates}).values()
             for c in values
@@ -394,13 +394,13 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
     monkeypatch.setattr(
         alignment_adapter,
         "_load_physical_replay_inputs",
-        lambda **kwargs: (kwargs["candidates_by_sample"], {}, None),
+        lambda **kwargs: (kwargs["peaks_by_sample"], {}, None),
     )
 
     result = alignment_adapter.complete_untargeted_alignment(
         signal_processing_profile=TEST_PROFILE,
         discovery_batch=discovery_batch,
-        candidates_by_sample={"S1": candidates},
+        peaks_by_sample={"S1": candidates},
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "out",
@@ -422,14 +422,14 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
     assert result.application_result is application_result
     assert result.discovery_inputs is not None
     result.close()
-    assert result.publication_inputs.candidates_by_sample == {"S1": candidates}
+    assert result.publication_inputs.peaks_by_sample == {"S1": candidates}
     assert result.publication_inputs.alignment_config == AlignmentConfig()
     assert result.publication_inputs.known_istd_reference is None
     assert [name for name, _kwargs in calls] == ["build", "execute"]
     build_kwargs = calls[0][1]
     assert isinstance(build_kwargs, dict)
     assert build_kwargs["raw_paths"] == (raw_path,)
-    assert build_kwargs["candidates_by_sample"] == {"S1": candidates}
+    assert build_kwargs["peaks_by_sample"] == {"S1": candidates}
     assert build_kwargs["discovery_receipts_by_sample"] == receipts
     sample_metadata = build_kwargs["sample_metadata"]
     assert isinstance(sample_metadata, tuple)
@@ -468,7 +468,7 @@ def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -
             sample_metadata=(SampleMetadata(sample_name="S1", raw_stem="S1"),),
             settings=crossed_settings,
             peak_config=peak_config,
-            candidates_by_sample={"S1": candidates},
+            peaks_by_sample={"S1": candidates},
             discovery_receipts_by_sample=build_discovery_receipts(
                 tmp_path,
                 (raw_path,),
@@ -477,7 +477,7 @@ def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -
             dll_dir=tmp_path,
             sample_identity_namespace="study:production-batch",
             signal_processing_profile=TEST_PROFILE,
-            physical_records_by_candidate={
+            physical_records_by_peak={
                 c.peak_id: physical_records[c.peak_id]
                 for values in ({"S1": candidates}).values()
                 for c in values
@@ -519,7 +519,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample={"S1": candidates},
+        peaks_by_sample={"S1": candidates},
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             (raw_path,),
@@ -528,7 +528,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         dll_dir=tmp_path,
         sample_identity_namespace="study:production-batch",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in ({"S1": candidates}).values()
             for c in values
@@ -725,14 +725,14 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         settings=settings,
         physical_records=physical_records,
     )
-    candidates_by_sample: dict[str, tuple[DiscoveryPeak, ...]] = {
+    peaks_by_sample: dict[str, tuple[DiscoveryPeak, ...]] = {
         "Support": support_candidates[:1],
         "Hold": direct_hold_candidates[:1],
     }
     if scenario in {"hold_no_input", "support_no_input"}:
-        candidates_by_sample["Hold"] = ()
+        peaks_by_sample["Hold"] = ()
     if ambiguous:
-        candidates_by_sample["Hold"] = direct_hold_candidates
+        peaks_by_sample["Hold"] = direct_hold_candidates
     if scenario == "other_support":
         for raw_path in raw_paths:
             first_raw = observation_only_raw((7.98,))
@@ -754,10 +754,12 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
             source_raw = second_raw
             source_raw.scans = (first_raw.scans[0], second_raw.scans[0])
             source_raws[raw_path] = source_raw
-            first, second = sorted(nearby, key=lambda item: item.precursor_mz)
-            candidates_by_sample[raw_path.stem] = (first, second)
+            first, second = sorted(
+                nearby, key=lambda item: item.best_event_precursor_mz
+            )
+            peaks_by_sample[raw_path.stem] = (first, second)
     if above_threshold:
-        candidates_by_sample["Support2"] = _current_candidates(
+        peaks_by_sample["Support2"] = _current_candidates(
             source_raws[raw_paths[2]],
             raw_file=raw_paths[2],
             settings=settings,
@@ -781,18 +783,18 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
-            candidates_by_sample,
+            peaks_by_sample,
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:production-hold",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
-            for values in (candidates_by_sample).values()
+            for values in (peaks_by_sample).values()
             for c in values
         },
     )
@@ -804,12 +806,12 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
 
     admitted = {
         c.peak_id
-        for values in candidates_by_sample.values()
+        for values in peaks_by_sample.values()
         for c in values
-        if c.admission_reason == "admitted"
+        if c.status == "admitted"
     }
     rejected = {
-        c.peak_id for values in candidates_by_sample.values() for c in values
+        c.peak_id for values in peaks_by_sample.values() for c in values
     } - admitted
     assert (
         len(admitted)
@@ -886,14 +888,14 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:canonical-batch",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
@@ -1025,14 +1027,14 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:known-istd",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
@@ -1178,7 +1180,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     }
     if recovery_case != "positive":
         source_raws[raw_paths[-1]].intensity[:] = 0.0
-    candidates_by_sample = {
+    peaks_by_sample = {
         raw_path.stem: (
             _current_candidates(
                 source_raws[raw_path],
@@ -1189,7 +1191,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         )
         for raw_path in raw_paths[:-1]
     }
-    candidates_by_sample["Hold"] = ()
+    peaks_by_sample["Hold"] = ()
     batch = build_dense_partition(
         raw_paths=raw_paths,
         sample_metadata=tuple(
@@ -1203,18 +1205,18 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
-            candidates_by_sample,
+            peaks_by_sample,
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:production-recovery",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
-            for values in (candidates_by_sample).values()
+            for values in (peaks_by_sample).values()
             for c in values
         },
     )
@@ -1364,10 +1366,10 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     # Discovery's apex MS1 readings replace the reported center only; members
     # without a reading and the repaired cell do not dilute it.
     direct_candidates = [
-        candidate for values in candidates_by_sample.values() for candidate in values
+        candidate for values in peaks_by_sample.values() for candidate in values
     ]
     readings = {
-        candidate.peak_id: candidate.precursor_mz * (1 - (12 + index) * 1e-6)
+        candidate.peak_id: candidate.best_event_precursor_mz * (1 - (12 + index) * 1e-6)
         for index, candidate in enumerate(direct_candidates[:-1])
     }
     reported = project_completed_untarget_batch_writer_inputs(
@@ -1496,7 +1498,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         if raw_path.stem == "NoPeak":
             source_raw.intensity[:] = 0.0
         source_raws[raw_path] = source_raw
-    candidates_by_sample = {
+    peaks_by_sample = {
         raw_path.stem: tuple(
             _current_candidates(
                 source_raws[raw_path],
@@ -1507,8 +1509,8 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         )
         for raw_path in raw_paths
     }
-    assert all(len(candidates_by_sample[stem]) == 1 for stem in sample_stems[:3])
-    assert candidates_by_sample["MS1Only"] == candidates_by_sample["NoPeak"] == ()
+    assert all(len(peaks_by_sample[stem]) == 1 for stem in sample_stems[:3])
+    assert peaks_by_sample["MS1Only"] == peaks_by_sample["NoPeak"] == ()
     for raw_path in raw_paths[3:]:
         assert (
             tuple(
@@ -1531,16 +1533,16 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, raw_paths, candidates_by_sample
+            tmp_path, raw_paths, peaks_by_sample
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:ms1-only-publication",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
+        physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
-            for values in (candidates_by_sample).values()
+            for values in (peaks_by_sample).values()
             for c in values
         },
     )
@@ -1635,7 +1637,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     for stem in sample_stems[:3]:
         assert cell_rows[stem]["status"] == "detected"
         assert cell_rows[stem]["source_candidate_id"] == (
-            candidates_by_sample[stem][0].peak_id
+            peaks_by_sample[stem][0].peak_id
         )
     assert cell_rows["MS1Only"]["status"] == "backfilled"
     assert cell_rows["MS1Only"]["source_candidate_id"] == ""
@@ -1672,7 +1674,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     write_alignment_explanation(
         published / "alignment_explanation.sqlite",
         completed=completed,
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         matrix_path=published_outputs.matrix_tsv,
         alignment_config=alignment_config,
     )

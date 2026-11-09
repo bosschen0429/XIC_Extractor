@@ -224,8 +224,8 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         return _peak(
             raw_file=Path("test.raw"),
             sample_stem="test",
-            precursor_mz=precursor_mz,
-            channel_mz=precursor_mz,
+            best_event_precursor_mz=precursor_mz,
+            xic_mz=precursor_mz,
             ms1_height=height,
             ms1_area=height,
             attached_event_count=2,
@@ -266,8 +266,7 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         return
 
     # c_background is not admitted
-    assert qualified[0].blank_background
-    assert qualified[0].admission_reason == "system_background"
+    assert qualified[0].status == "blank"
     assert qualified[0].review_priority == "LOW"
     assert "system background: blank m/z 300.1000" in qualified[0].reason
 
