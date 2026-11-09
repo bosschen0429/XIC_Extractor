@@ -466,11 +466,11 @@ def _candidate_universe_entry(
     )
     return {
         "sample_stem": sample_stem,
-        "candidate_count": len(ordered),
+        "peak_count": len(ordered),
         "candidate_ids": list(candidate_ids),
-        "candidate_artifact_schema_version": (receipt.peak_artifact_schema_version),
-        "candidate_artifact_sha256": receipt.peak_artifact_sha256,
-        "candidate_artifact_byte_size": receipt.peak_artifact_byte_size,
+        "peak_artifact_schema_version": (receipt.peak_artifact_schema_version),
+        "peak_artifact_sha256": receipt.peak_artifact_sha256,
+        "peak_artifact_byte_size": receipt.peak_artifact_byte_size,
         "acquisition_source_id": receipt.acquisition_source.acquisition_source_id,
     }
 

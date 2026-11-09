@@ -3,7 +3,6 @@
 from dataclasses import replace
 
 import pytest
-from xic_extractor.discovery.grouping import group_discovery_seeds
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE, _FakeRaw, _peak_config, _settings
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
@@ -16,6 +15,7 @@ from xic_extractor.discovery.csv_reader import (
     read_owner_bound_discovery_peaks_csv,
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
+from xic_extractor.discovery.ion_channels import build_discovery_channels
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
 from xic_extractor.discovery.physical_fact_persistence import (
@@ -38,11 +38,8 @@ from xic_extractor.untargeted_execution.execution import (
 
 @pytest.mark.parametrize("indexed", [False, True], ids=["eager", "indexed"])
 @pytest.mark.parametrize("with_supported", [False, True], ids=["all_review", "mixed"])
-@pytest.mark.parametrize(
-    "legacy_overlap_label", [False, True], ids=["current_csv", "legacy_csv"]
-)
 def test_review_rows_never_become_alignment_roots(
-    tmp_path, monkeypatch, indexed, with_supported, legacy_overlap_label
+    tmp_path, monkeypatch, indexed, with_supported
 ):
     stems = ("Rescued", "Overlap", "Orphan") + (
         ("Clean1", "Clean2") if with_supported else ()
@@ -75,45 +72,39 @@ def test_review_rows_never_become_alignment_roots(
         seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
         capture = capture_ms1_peaks(
             raw,
-            group_discovery_seeds(seeds, settings=settings),
+            build_discovery_channels(seeds, settings=settings),
             acquisition_source=source.acquisition_source,
             settings=settings,
             signal_processing_profile=TEST_PROFILE,
             ms1_centroid_mz=lambda *_: None,
         )
-        (candidate,) = capture.candidates
-        assert (
-            candidate.discovery_candidate_state
-            == {
-                "Orphan": "review_only_orphan_nl",
-                "Rescued": "ms1_feature_nl_rescued",
-                "Overlap": "review_only_unresolved_peak_attribution",
-                "Clean1": "ms1_feature_nl_supported",
-                "Clean2": "ms1_feature_nl_supported",
-            }[path.stem]
-        )
-        (expected_ids if path.stem.startswith("Clean") else rejected_ids).add(
-            candidate.candidate_id
-        )
-        if legacy_overlap_label and path.stem == "Overlap":
-            # Previously published CSVs called unresolved envelopes supported.
-            # The authoritative sidecar must still veto them in both routes.
-            candidate = replace(
-                candidate, discovery_candidate_state="ms1_feature_nl_supported"
+        assert len(capture.events) == len(seeds)
+        if path.stem == "Orphan":
+            assert not capture.peaks
+            assert all(event.unattached_reason for event in capture.events)
+        else:
+            (peak,) = capture.peaks
+            assert (
+                peak.admission_reason
+                == {
+                    "Rescued": "no_attached_event",
+                    "Overlap": "requires_overlap_review",
+                    "Clean1": "admitted",
+                    "Clean2": "admitted",
+                }[path.stem]
             )
+            (expected_ids if peak.admitted else rejected_ids).add(peak.peak_id)
         folder = tmp_path / path.stem
         folder.mkdir()
         write_discovery_physical_fact_sidecar(
             folder / "discovery_physical_facts.json",
             run_spec=spec,
             acquisition_input=source,
-            work_manifest=capture.physical_work_manifest
-            if candidate.ms1_peak_found
-            else (),
-            records=capture.physical_evaluations if candidate.ms1_peak_found else (),
+            work_manifest=capture.physical_work_manifest,
+            records=capture.physical_evaluations,
         )
         receipts.update(
-            build_discovery_receipts(folder, (path,), {path.stem: (candidate,)})
+            build_discovery_receipts(folder, (path,), {path.stem: capture.peaks})
         )
         csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
         candidates[path.stem] = read_owner_bound_discovery_peaks_csv(
@@ -121,10 +112,10 @@ def test_review_rows_never_become_alignment_roots(
         )
     batch = DiscoveryBatchInput(
         sample_order=stems,
-        candidate_csvs=csvs,
+        peak_csvs=csvs,
         raw_files={p.stem: p for p in paths},
-        review_csvs={stem: None for stem in stems},
-        candidate_receipts=receipts,
+        event_csvs={stem: None for stem in stems},
+        peak_receipts=receipts,
     )
     opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     prepared = prepare_untargeted_alignment_inputs(
@@ -155,7 +146,7 @@ def test_review_rows_never_become_alignment_roots(
         if with_supported:
             partition = materialize_untargeted_partition(plan, plan.subject_batch)
             assert {
-                c.candidate_id for job in partition.jobs for c in job.candidates
+                c.peak_id for job in partition.jobs for c in job.candidates
             } == expected_ids
             assert all(not job.support_candidates for job in partition.jobs)
             # An accepted root does not authorize an unresolved MS1-only refill.

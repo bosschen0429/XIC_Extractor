@@ -130,7 +130,6 @@ def _settings() -> DiscoverySettings:
         neutral_loss_profile=NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),
         rt_min=7.5,
         rt_max=8.6,
-        seed_rt_gap_min=0.20,
         ms1_search_padding_min=0.20,
         resolver_mode="local_minimum",
     )
@@ -146,7 +145,6 @@ def _multi_tag_settings() -> DiscoverySettings:
         tag_combine_mode="union",
         rt_min=7.5,
         rt_max=8.6,
-        seed_rt_gap_min=0.20,
         ms1_search_padding_min=0.20,
         resolver_mode="local_minimum",
     )

@@ -742,11 +742,11 @@ def _validate_partition_candidates(
     receipt = job.discovery_receipt
     expected_receipt_values = (
         (
-            "candidate_artifact_schema_version",
+            "peak_artifact_schema_version",
             receipt.peak_artifact_schema_version,
         ),
-        ("candidate_artifact_sha256", receipt.peak_artifact_sha256),
-        ("candidate_artifact_byte_size", receipt.peak_artifact_byte_size),
+        ("peak_artifact_sha256", receipt.peak_artifact_sha256),
+        ("peak_artifact_byte_size", receipt.peak_artifact_byte_size),
         (
             "acquisition_source_id",
             receipt.acquisition_source.acquisition_source_id,

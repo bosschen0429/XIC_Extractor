@@ -18,7 +18,7 @@ from xic_extractor.discovery.batch_contract import (
     DiscoveryPeakUniverseReceipt,
     mint_discovery_peak_universe_receipt,
 )
-from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
+from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.processing_identity import (
     build_local_acquisition_source_identity,
@@ -41,7 +41,7 @@ def build_discovery_receipts(
     for raw_path in raw_paths:
         candidates = candidates_by_sample[raw_path.stem]
         candidate_csv = root / f"{raw_path.stem}.owner-candidates.csv"
-        write_discovery_candidates_csv(candidate_csv, candidates)
+        write_discovery_peaks_csv(candidate_csv, candidates)
         source = build_local_acquisition_source_identity(
             raw_path,
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
@@ -50,9 +50,9 @@ def build_discovery_receipts(
         receipts[raw_path.stem] = mint_discovery_peak_universe_receipt(
             sample_stem=raw_path.stem,
             acquisition_source=source,
-            candidate_csv=candidate_csv,
+            peak_csv=candidate_csv,
             physical_facts=physical_facts_fingerprint_beside(candidate_csv),
-            candidates=candidates,
+            peaks=candidates,
         )
     return receipts
 
