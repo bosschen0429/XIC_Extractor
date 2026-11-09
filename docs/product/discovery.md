@@ -30,7 +30,11 @@ peak. `pt_pattern + cid_nl(dR)` intersects Delta Mass hypotheses with existing
 `neutral_loss(tag=DNA_dR)` evidence. Delta Mass evaluates its own hypotheses
 first, then annotates whether the base matches CID-NL(dR). That annotation uses
 admitted CID-NL peaks and the sample-local predicate on the peak's
-`peak_mz` and apex RT; it does not alter CID-NL decisions.
+`peak_mz` and apex RT; it does not alter CID-NL decisions. An unmatched base
+records why: a non-admitted dR peak inside the window (`not_admitted`, with
+its status), an admitted dR peak of the same ion outside the RT window
+(`outside_rt_tolerance`), or neither (`no_cid_nl_peak`). Base m/z and apex RT
+are written at full precision so the published table reproduces the join.
 
 ## CID-NL peaks and events
 
