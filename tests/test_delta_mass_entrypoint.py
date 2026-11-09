@@ -8,12 +8,18 @@ import numpy as np
 import pytest
 
 from scripts.run_delta_mass_discovery import main
+from xic_extractor.configuration.delta_mass import (
+    DeltaMassPatternSettings,
+    DeltaMassPosition,
+)
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
     deserialize_mass_recalibration_result,
 )
 from xic_extractor.discovery import delta_mass_pipeline
+from xic_extractor.discovery.delta_mass_csv import write_delta_mass_outputs
+from xic_extractor.discovery.delta_mass_patterns import DeltaMassCandidate
 from xic_extractor.ms1_scan_index import build_ms1_scan_index
 from xic_extractor.xic_models import XICTrace
 
@@ -235,6 +241,9 @@ smoothing_window_sec = 1
     assert [r["cid_nl_base_peak_id"] for r in rows] == (
         ["cid-first", ""] if composite else ["", ""]
     )
+    assert [
+        (r["cid_nl_base_unmatched_reason"], r["cid_nl_base_peak_status"]) for r in rows
+    ] == ([("", ""), ("not_admitted", "no_nl_event")] if composite else [("", "")] * 2)
     with (output / "delta_mass_positions.csv").open(
         newline="", encoding="utf-8"
     ) as handle:
@@ -293,3 +302,103 @@ smoothing_window_sec = 1
         (output / name / "detected_features.csv").is_file()
         for name in ("first", "second")
     )
+
+
+def test_cid_nl_join_records_unmatched_reason_and_reproduces_from_published_table(
+    tmp_path,
+):
+    """Each unmatched base says why; the written table re-joins identically.
+
+    The base m/z sits 19.99999 ppm from its peak, so the ``.6g`` display value
+    (379.123) falls outside 20 ppm and would flip the match on recomputation.
+    """
+    base_mz = 379.1234
+    edge_peak_mz = base_mz * (1 + 19.99999e-6)
+    peaks = [
+        ("edge", "matched", "admitted", edge_peak_mz, 2.0),
+        ("crowded", "overlapping", "overlap", 500.0, 3.0),
+        ("crowded", "split", "doubly_charged", 500.0, 3.1),
+        ("late", "late-peak", "admitted", 600.0, 5.0),
+        ("alone", "other-ion", "admitted", 700.0, 2.0),
+        ("alone", "unrelated-tag", "admitted", 800.0, 2.0),
+    ]
+    cid_csv = tmp_path / "cid.csv"
+    with cid_csv.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            ["peak_id", "sample_stem", "matched_tag_names", "status", "peak_mz"]
+            + ["ms1_apex_rt"]
+        )
+        for sample, peak_id, status, mz, rt in peaks:
+            tag = "Other" if peak_id == "unrelated-tag" else "DNA_dR"
+            writer.writerow([peak_id, sample, tag, status, repr(mz), rt])
+    settings = DeltaMassPatternSettings(
+        pattern_id="synthetic",
+        method_label="synthetic",
+        positions=(
+            DeltaMassPosition("base", 0, 1, 1),
+            DeltaMassPosition("heavy", 7, 0.4, 0.6),
+        ),
+        anchor_positions=("base",),
+        discriminating_positions=(),
+    )
+
+    def candidate(sample, mz, rt):
+        return DeltaMassCandidate(
+            sample_stem=sample,
+            method_label="synthetic",
+            pattern_id="synthetic",
+            candidate_id=sample,
+            anchor_position="base",
+            anchor_feature_id=sample,
+            base_mz=mz,
+            base_rt_apex_min=rt,
+            base_height=1.0,
+            positions=(),
+        )
+
+    cid_rows = delta_mass_pipeline._load_cid_nl_peak_rows(cid_csv)
+    joined = delta_mass_pipeline._join_cid_nl(
+        (
+            candidate("edge", base_mz, 2.0 + 29.999 / 60),
+            candidate("crowded", 500.0, 3.0),
+            candidate("late", 600.0, 3.0),
+            candidate("alone", 800.0, 2.0),
+        ),
+        cid_rows,
+    )
+    write_delta_mass_outputs(tmp_path / "dm", joined, {}, settings)
+    with (tmp_path / "dm" / "delta_mass_candidates.csv").open(
+        newline="", encoding="utf-8"
+    ) as handle:
+        published = list(csv.DictReader(handle))
+    assert [
+        (
+            r["cid_nl_base_status"],
+            r["cid_nl_base_peak_id"],
+            r["cid_nl_base_unmatched_reason"],
+            r["cid_nl_base_peak_status"],
+        )
+        for r in published
+    ] == [
+        ("matched", "matched", "", ""),
+        ("unmatched", "", "not_admitted", "doubly_charged;overlap"),
+        ("unmatched", "", "outside_rt_tolerance", ""),
+        ("unmatched", "", "no_cid_nl_peak", ""),
+    ]
+    rejoined = delta_mass_pipeline._join_cid_nl(
+        tuple(
+            candidate(
+                r["sample_stem"], float(r["base_mz"]), float(r["base_rt_apex_min"])
+            )
+            for r in published
+        ),
+        cid_rows,
+    )
+    assert [
+        (c.cid_nl_base_status, c.cid_nl_base_peak_id, c.cid_nl_base_unmatched_reason)
+        for c in rejoined
+    ] == [
+        (c.cid_nl_base_status, c.cid_nl_base_peak_id, c.cid_nl_base_unmatched_reason)
+        for c in joined
+    ]

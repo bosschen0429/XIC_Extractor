@@ -173,24 +173,45 @@ def run_delta_mass_discovery(
 def _join_cid_nl(
     candidates: tuple[DeltaMassCandidate, ...], rows: tuple[_CidNlPeakRow, ...]
 ) -> tuple[DeltaMassCandidate, ...]:
-    """Join detector-local bases by the existing bounded m/z/RT predicate."""
-    eligible = _eligible_cid_nl_rows(rows)
+    """Join detector-local bases by the existing bounded m/z/RT predicate.
+
+    Only admitted dR peaks join. An unmatched base records why, checked in
+    order: a non-admitted dR peak inside the join window (``not_admitted``,
+    with its status), an admitted dR peak of the same ion outside the RT
+    window (``outside_rt_tolerance``), otherwise ``no_cid_nl_peak``.
+    """
+    dr_rows_by_sample: dict[str, list[_CidNlPeakRow]] = {}
+    for row in rows:
+        if _ALLOWED_CID_NL_TAG in row.matched_tag_names:
+            dr_rows_by_sample.setdefault(row.sample_stem, []).append(row)
     joined = []
     for candidate in candidates:
-        candidate.cid_nl_base_status = "unmatched"
-        matches = [
-            row
-            for row in eligible
-            if row.sample_stem == candidate.sample_stem
-            and _fallback_matches(candidate, row)
-        ]
-        if not matches:
+        sample_rows = dr_rows_by_sample.get(candidate.sample_stem, ())
+        admitted = [row for row in sample_rows if row.status in _JOINABLE_STATUSES]
+        matches = [row for row in admitted if _fallback_matches(candidate, row)]
+        if matches:
+            match = _best_fallback_match(candidate, matches)
+            candidate.cid_nl_base_status = "matched"
+            candidate.cid_nl_base_peak_id = match.peak_id
+            candidate.cid_nl_base_join_mode = "mz_rt_fallback"
             joined.append(candidate)
             continue
-        match = _best_fallback_match(candidate, matches)
-        candidate.cid_nl_base_status = "matched"
-        candidate.cid_nl_base_peak_id = match.peak_id
-        candidate.cid_nl_base_join_mode = "mz_rt_fallback"
+        candidate.cid_nl_base_status = "unmatched"
+        in_window_statuses = sorted(
+            {
+                row.status
+                for row in sample_rows
+                if row.status not in _JOINABLE_STATUSES
+                and _fallback_matches(candidate, row)
+            }
+        )
+        if in_window_statuses:
+            candidate.cid_nl_base_unmatched_reason = "not_admitted"
+            candidate.cid_nl_base_peak_status = ";".join(in_window_statuses)
+        elif any(_mz_matches(candidate, row) for row in admitted):
+            candidate.cid_nl_base_unmatched_reason = "outside_rt_tolerance"
+        else:
+            candidate.cid_nl_base_unmatched_reason = "no_cid_nl_peak"
         joined.append(candidate)
     return tuple(joined)
 
@@ -218,8 +239,9 @@ def _load_cid_nl_peak_rows(path: Path) -> tuple[_CidNlPeakRow, ...]:
     """Load the measured CID-NL peaks a delta-mass base may join.
 
     Every row must carry ``peak_id``, ``sample_stem`` and ``status``.
-    Only admitted peaks join; a measured peak without an attached NL event
-    does not supply dR support.
+    Rows of every status load; only admitted peaks join, and the others only
+    explain why a base did not match. A measured peak without an attached NL
+    event does not supply dR support.
     """
 
     rows = read_delimited_rows(
@@ -238,8 +260,6 @@ def _load_cid_nl_peak_rows(path: Path) -> tuple[_CidNlPeakRow, ...]:
                 identity, field=field, row_label=label
             )
         status = _required_text(row.get("status"), "status", label)
-        if status not in _JOINABLE_STATUSES:
-            continue
         parsed.append(
             _CidNlPeakRow(
                 sample_stem=sample_stem,
@@ -270,14 +290,6 @@ def _load_cid_nl_peak_rows(path: Path) -> tuple[_CidNlPeakRow, ...]:
             f"{path}: duplicate CID-NL peak_id values: " + ", ".join(sorted(duplicates))
         )
     return tuple(parsed)
-
-
-def _eligible_cid_nl_rows(
-    cid_nl_rows: tuple[_CidNlPeakRow, ...],
-) -> tuple[_CidNlPeakRow, ...]:
-    return tuple(
-        row for row in cid_nl_rows if _ALLOWED_CID_NL_TAG in row.matched_tag_names
-    )
 
 
 def _reject_ambiguous_formula_escaped_identity(
@@ -332,12 +344,19 @@ def _optional_finite_float(
     return parsed
 
 
+def _ppm_error(candidate: DeltaMassCandidate, peak_mz: float) -> float:
+    return abs((peak_mz - candidate.base_mz) / candidate.base_mz * 1e6)
+
+
+def _mz_matches(candidate: DeltaMassCandidate, row: _CidNlPeakRow) -> bool:
+    return (
+        row.peak_mz is not None
+        and _ppm_error(candidate, row.peak_mz) <= _CID_NL_MZ_TOLERANCE_PPM
+    )
+
+
 def _fallback_matches(candidate: DeltaMassCandidate, row: _CidNlPeakRow) -> bool:
-    if row.peak_mz is None or row.ms1_apex_rt is None:
-        return False
-    base_mz = candidate.base_mz
-    ppm_error = abs((row.peak_mz - base_mz) / base_mz * 1e6)
-    if ppm_error > _CID_NL_MZ_TOLERANCE_PPM:
+    if row.ms1_apex_rt is None or not _mz_matches(candidate, row):
         return False
     rt_delta_sec = abs(row.ms1_apex_rt - candidate.base_rt_apex_min) * 60.0
     return rt_delta_sec <= _CID_NL_RT_TOLERANCE_SEC
@@ -354,7 +373,7 @@ def _best_fallback_match(
         assert row.ms1_apex_rt is not None
         assert row.peak_mz is not None
         rt_delta_sec = abs(row.ms1_apex_rt - candidate.base_rt_apex_min) * 60.0
-        ppm_error = abs((row.peak_mz - candidate.base_mz) / candidate.base_mz * 1e6)
+        ppm_error = _ppm_error(candidate, row.peak_mz)
         evidence_score = row.evidence_score if row.evidence_score is not None else 0.0
         return (
             rt_delta_sec,

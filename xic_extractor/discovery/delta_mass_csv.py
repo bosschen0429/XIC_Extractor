@@ -32,6 +32,8 @@ CANDIDATE_COLUMNS = (
     "cid_nl_base_status",
     "cid_nl_base_peak_id",
     "cid_nl_base_join_mode",
+    "cid_nl_base_unmatched_reason",
+    "cid_nl_base_peak_status",
     "base_expected_net_height",
     "base_support_score",
     "base_support_status",
@@ -96,6 +98,10 @@ def write_delta_mass_outputs(
             if p.position_label in settings.discriminating_positions
         ]
         row.update(
+            # Full precision lets the published table reproduce the CID-NL join
+            # at its ppm and RT tolerance boundaries.
+            base_mz=format_machine_float(candidate.base_mz),
+            base_rt_apex_min=format_machine_float(candidate.base_rt_apex_min),
             position_count=len(candidate.positions),
             positions_from_table=sum(
                 p.partner_source in {"anchor", "table"} for p in candidate.positions

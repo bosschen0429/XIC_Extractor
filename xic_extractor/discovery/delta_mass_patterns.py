@@ -62,6 +62,8 @@ class DeltaMassCandidate:
     cid_nl_base_status: str = ""
     cid_nl_base_peak_id: str = ""
     cid_nl_base_join_mode: str = ""
+    cid_nl_base_unmatched_reason: str = ""
+    cid_nl_base_peak_status: str = ""
     base_expected_net_height: float | None = None
     base_support_score: float | None = None
     base_support_status: str = "not_required"
