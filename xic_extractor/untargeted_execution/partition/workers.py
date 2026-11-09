@@ -203,7 +203,7 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
                 processing_owners=job.processing_owners,
                 sample=job.sample,
                 method_subject=job.method_subject,
-                candidates=_request_subject_candidates(job),
+                peaks=_request_subject_candidates(job),
                 support_candidates=job.support_candidates,
                 settings=job.settings,
                 peak_config=job.peak_config,
@@ -231,7 +231,7 @@ def _execute_initial_assessment_batch(
                 )
             raw = _open_job_raw(job)
             selected_candidates = {
-                candidate.candidate_id: candidate
+                candidate.peak_id: candidate
                 for state in states
                 if state.error is None
                 for candidate in _request_subject_candidates(state.job)
@@ -239,7 +239,7 @@ def _execute_initial_assessment_batch(
             candidates = tuple(
                 sorted(
                     selected_candidates.values(),
-                    key=lambda candidate: job._candidate_order[candidate.candidate_id],
+                    key=lambda candidate: job._candidate_order[candidate.peak_id],
                 )
             )
             active_acquire = (
@@ -248,7 +248,7 @@ def _execute_initial_assessment_batch(
             trace_batch = active_acquire(
                 processing_owners=job.processing_owners,
                 sample=job.sample,
-                candidates=candidates,
+                peaks=candidates,
                 settings=job.settings,
                 raw=raw,
                 signal_processing_profile=job.signal_processing_profile,
@@ -260,7 +260,7 @@ def _execute_initial_assessment_batch(
                 processing_owners=state.job.processing_owners,
                 sample=state.job.sample,
                 method_subject=state.job.method_subject,
-                candidates=_request_subject_candidates(state.job),
+                peaks=_request_subject_candidates(state.job),
                 support_candidates=state.job.support_candidates,
                 settings=state.job.settings,
                 peak_config=state.job.peak_config,

@@ -12,9 +12,7 @@ from xic_extractor.alignment.result.scientific_alignment import (
 from xic_extractor.discovery.batch_contract import (
     candidate_sample_stems_from_request,
 )
-from xic_extractor.discovery.models import (
-    DiscoveryCandidateState,
-)
+from xic_extractor.discovery.models import PeakStatus
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
@@ -48,12 +46,12 @@ class ApplicationResultContractError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class UntargetedCandidateExclusion:
-    """One declared Discovery candidate intentionally excluded from owner-build."""
+    """One declared Discovery peak intentionally excluded from owner-build."""
 
     candidate_id: str
     method_subject_id: str
     sample_key: str
-    discovery_candidate_state: DiscoveryCandidateState
+    peak_status: PeakStatus
     reason_code: Literal[
         "discovery_candidate_not_search_eligible",
         "composite_requirement_not_supported",

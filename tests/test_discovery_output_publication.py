@@ -1,75 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from tests.discovery_pipeline_fixtures import _settings
 from xic_extractor.discovery.output_publication import (
-    write_dual_csvs,
+    publish_discovery_batch_sample,
 )
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
 from xic_extractor.execution.timing import TimingRecorder
-
-
-@pytest.mark.parametrize(
-    "basis",
-    ("scan_precursor", "mixed", "product_plus_neutral_loss"),
-)
-@pytest.mark.parametrize(
-    "state",
-    (
-        "ms1_feature_nl_supported",
-        "ms1_feature_nl_rescued",
-        "review_only_orphan_nl",
-        "review_only_ambiguous_coisolation",
-        "rejected_noise_or_outside_rt",
-    ),
-)
-def test_discovery_publication_retains_only_used_candidate_states(
-    tmp_path: Path,
-    basis: str,
-    state: str,
-) -> None:
-    from tests.discovery_csv_fixtures import _candidate
-    from tests.discovery_pipeline_fixtures import _read_csv
-    from xic_extractor.discovery.models import MS1_FEATURE_BACKED_STATES
-
-    feature_backed = state in MS1_FEATURE_BACKED_STATES
-    candidate = replace(
-        _candidate(),
-        precursor_mz_basis=basis,
-        discovery_candidate_state=state,
-        ms1_peak_found=feature_backed,
-    )
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"retained-states")
-    spec = compile_discovery_processing_run_spec(
-        (raw_path,), discovery_settings=_settings()
-    )
-    outputs = write_dual_csvs(
-        tmp_path / "out",
-        (candidate,),
-        sample_stem=candidate.sample_stem,
-        timing_recorder=TimingRecorder.disabled("discovery"),
-        run_spec=spec,
-        acquisition_input=spec.acquisition_inputs[0],
-    )
-    expected_ids = (
-        [candidate.candidate_id]
-        if feature_backed
-        or basis
-        in {
-            "scan_precursor",
-            "mixed",
-        }
-        else []
-    )
-    for path in (outputs.candidates_csv, outputs.review_csv):
-        assert [row["candidate_id"] for row in _read_csv(path)] == expected_ids
 
 
 @pytest.mark.parametrize("replacement_position", [1, 2, 3])
@@ -83,8 +25,8 @@ def test_discovery_output_publication_rolls_back_every_replace_failure(
     output_dir = tmp_path / "out"
     output_dir.mkdir()
     final_paths = [
-        output_dir / "discovery_candidates.csv",
-        output_dir / "discovery_review.csv",
+        output_dir / "discovery_peaks.csv",
+        output_dir / "discovery_events.csv",
         output_dir / "discovery_physical_facts.json",
     ]
     raw_path = tmp_path / "sample.raw"
@@ -120,11 +62,14 @@ def test_discovery_output_publication_rolls_back_every_replace_failure(
     monkeypatch.setattr(Path, "replace", fail_selected_publication)
 
     with pytest.raises(OSError, match=f"publication failure {replacement_position}"):
-        write_dual_csvs(
-            output_dir,
+        publish_discovery_batch_sample(
+            raw_path,
             (),
+            (),
+            output_dir=output_dir,
+            sample_output_dir=output_dir,
+            acquisition_source=acquisition_input.acquisition_source,
             timing_recorder=TimingRecorder.disabled("discovery"),
-            sample_stem="sample",
             run_spec=run_spec,
             acquisition_input=acquisition_input,
         )
@@ -153,8 +98,8 @@ def test_discovery_output_publication_rolls_back_sidecar_staging_failure(
         (raw_path,), discovery_settings=_settings()
     )
     final_paths = (
-        output_dir / "discovery_candidates.csv",
-        output_dir / "discovery_review.csv",
+        output_dir / "discovery_peaks.csv",
+        output_dir / "discovery_events.csv",
         output_dir / "discovery_physical_facts.json",
     )
     prior = {path: f"prior-{index}".encode() for index, path in enumerate(final_paths)}
@@ -169,11 +114,14 @@ def test_discovery_output_publication_rolls_back_sidecar_staging_failure(
     )
 
     with pytest.raises(OSError, match="sidecar staging failed"):
-        write_dual_csvs(
-            output_dir,
+        publish_discovery_batch_sample(
+            raw_path,
             (),
+            (),
+            output_dir=output_dir,
+            sample_output_dir=output_dir,
+            acquisition_source=spec.acquisition_inputs[0].acquisition_source,
             timing_recorder=TimingRecorder.disabled("discovery"),
-            sample_stem="sample",
             run_spec=spec,
             acquisition_input=spec.acquisition_inputs[0],
         )

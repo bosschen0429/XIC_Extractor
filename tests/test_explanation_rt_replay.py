@@ -53,7 +53,7 @@ def test_explanation_freezes_final_rt_owner_and_preserves_reference_provenance(
     path = write_alignment_explanation(
         tmp_path / "final.sqlite",
         completed=completed,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
         known_istd_reference_provenance=provenance,

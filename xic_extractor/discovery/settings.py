@@ -33,7 +33,6 @@ class DiscoverySettings:
     product_search_ppm: float = DEFAULT_CID_NL_MASS_POLICY.product_search_ppm
     ms2_precursor_tol_da: float = DEFAULT_CID_NL_MASS_POLICY.ms2_precursor_tol_da
     nl_min_intensity_ratio: float = DEFAULT_CID_NL_MASS_POLICY.nl_min_intensity_ratio
-    seed_rt_gap_min: float = 0.20
     ms1_search_padding_min: float = 0.35
     rt_min: float | None = None
     rt_max: float | None = None

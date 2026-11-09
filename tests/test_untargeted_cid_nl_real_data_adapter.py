@@ -61,7 +61,7 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
         sorted(
             evidence.observation.scan_number for evidence in assessment.evidence_refs
         )
-    ) == tuple(sorted(candidates[0].seed_scan_ids))
+    ) == tuple(sorted(candidates[0].event_scan_ids))
     assert len(result.assessment_input.assessment.evidence_refs) == 2
     assert result.acquisition is not None
     assert result.acquisition.logical_xic_request_count == 1
@@ -101,7 +101,7 @@ def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
 
     (((support,), set_relations),) = successful_relations
     assert set_relations == ()
-    assert support.content.evidence.scan_number in candidates[0].seed_scan_ids
+    assert support.content.evidence.scan_number in candidates[0].event_scan_ids
 
 
 def test_adapter_preserves_strict_scans_within_mixed_candidate(
@@ -119,7 +119,7 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
     candidates = scenario.discover(source_raw)
     (candidate,) = candidates
     assert candidate.precursor_mz_basis == "mixed"
-    assert set(candidate.seed_scan_ids) == {
+    assert set(candidate.event_scan_ids) == {
         *strict_scan_ids,
         inferred_scan.scan_number,
     }
@@ -165,23 +165,23 @@ def test_adapter_keeps_direct_support_separate_from_same_peak_inferred_evidence(
         ),
         replace(representative, intensities=np.asarray((900.0, 100.0))),
     )
-    scenario.settings = replace(
-        _settings(), neutral_loss_profile=None, seed_rt_gap_min=0.01
-    )
+    scenario.settings = replace(_settings(), neutral_loss_profile=None)
 
     candidates = scenario.discover(source_raw)
     # One physical peak retains every event without promoting inference to strict NL.
     (candidate,) = candidates
     assert candidate.precursor_mz_basis == "mixed"
     assert candidate.best_ms2_scan_id == representative.scan_number
-    assert set(candidate.seed_scan_ids) == {
+    assert set(candidate.event_scan_ids) == {
         first.scan_number,
         inferred.scan_number,
         representative.scan_number,
     }
     inferred_product_mz = float(source_raw.scans[1].masses[0])
     assert (
-        abs(inferred_product_mz - candidate.product_mz) / candidate.product_mz * 1e6
+        abs(inferred_product_mz - candidate.best_event_product_mz)
+        / candidate.best_event_product_mz
+        * 1e6
         > scenario.settings.product_mz_tolerance_ppm
     )
     raw, _vendor_raw = scenario.open_raw(source_raw)
@@ -218,7 +218,10 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
         source_raw.intensity = np.zeros_like(source_raw.intensity)
 
     candidates = scenario.discover(source_raw)
-    assert candidates
+    if not ms1_present:
+        # Without MS1 signal Discovery measures no peak; events record why.
+        assert candidates == ()
+        return
     assert all(c.precursor_mz_basis == "product_plus_neutral_loss" for c in candidates)
     raw, _vendor = scenario.open_raw(source_raw)
     scenario.bind_physical_capture()
@@ -492,7 +495,9 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
         )
 
 
-@pytest.mark.parametrize("moved_field", ["precursor_mz", "product_mz"])
+@pytest.mark.parametrize(
+    "moved_field", ["best_event_precursor_mz", "best_event_product_mz"]
+)
 def test_inferred_precursor_off_its_scan_receipt_is_rejected(
     tmp_path: Path, moved_field: str
 ) -> None:
@@ -521,7 +526,7 @@ def test_inferred_precursor_off_its_scan_receipt_is_rejected(
     def adapt():
         return scenario.adapt(candidates, raw=raw)
 
-    with pytest.raises(CidNlAcquisitionError, match="seed is not unique"):
+    with pytest.raises(CidNlAcquisitionError, match="event is not unique"):
         adapt()
 
 
@@ -542,13 +547,13 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     scenario.settings = replace(_settings(), rt_min=7.0, rt_max=10.0)
 
     first, second = scenario.discover(source_raw)
-    candidates = tuple(sorted((first, second), key=lambda item: item.candidate_id))
+    candidates = tuple(sorted((first, second), key=lambda item: item.peak_id))
     raw, vendor_raw = scenario.open_raw(source_raw)
 
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
         processing_owners=scenario.fixture.owners,
         sample=scenario.fixture.sample("S1"),
-        candidates=candidates,
+        peaks=candidates,
         settings=scenario.settings,
         raw=raw,
         signal_processing_profile=TEST_PROFILE,
@@ -561,12 +566,10 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
         for candidate in candidates
     )
 
-    assert batch.candidate_ids == tuple(
-        candidate.candidate_id for candidate in candidates
-    )
+    assert batch.candidate_ids == tuple(candidate.peak_id for candidate in candidates)
     assert all(result.acquisition is batch.acquisition for result in results)
     assert [result.source_candidate_ids for result in results] == [
-        (candidate.candidate_id,) for candidate in candidates
+        (candidate.peak_id,) for candidate in candidates
     ]
     assert vendor_raw.chromatogram_request_counts == [3]
 
@@ -586,14 +589,12 @@ def test_elution_context_shares_acquisition_without_widening_capture(
         raw_file=fixture.source_paths["S1"],
         settings=_settings(),
     )[0]
-    duplicate = replace(candidate, candidate_id=candidate.candidate_id + ":duplicate")
+    duplicate = replace(candidate, peak_id=candidate.peak_id + ":duplicate")
     raw, vendor = _open_bound_raw(fixture, "S1", source, tmp_path=tmp_path)
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
-        candidates=tuple(
-            sorted((candidate, duplicate), key=lambda item: item.candidate_id)
-        ),
+        peaks=tuple(sorted((candidate, duplicate), key=lambda item: item.peak_id)),
         settings=_settings(),
         raw=raw,
         signal_processing_profile=SignalProcessingProfile(),
@@ -604,14 +605,14 @@ def test_elution_context_shares_acquisition_without_widening_capture(
     assert [
         peak.apex_rt for peak in batch.elution_contexts[0].landmarks
     ] == pytest.approx([7.8, 8.5], abs=0.005)
-    original = batch.acquired_trace(candidate.candidate_id)
+    original = batch.acquired_trace(candidate.peak_id)
     assert original.coordinate.request.rt_min == candidate.ms1_search_rt_min
     assert original.coordinate.request.rt_max == candidate.ms1_search_rt_max
     first_scan, last_scan = source.scan_window_for_request(original.coordinate.request)
     mask = slice(first_scan - 1, last_scan)
     np.testing.assert_array_equal(original.trace.rt, source.rt[mask])
     np.testing.assert_array_equal(original.trace.intensity, source.intensity[mask])
-    assert original is batch.acquired_trace(duplicate.candidate_id)
+    assert original is batch.acquired_trace(duplicate.peak_id)
     assert max(original.trace.rt) < 8.5
 
 
@@ -626,7 +627,7 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
     candidates = scenario.discover(source_raw)
     assert len(candidates) == 1
     candidate = candidates[0]
-    assert candidate.best_seed_rt <= scenario.settings.rt_max
+    assert candidate.best_event_rt <= scenario.settings.rt_max
     assert candidate.ms1_apex_rt is not None
     assert candidate.ms1_apex_rt > scenario.settings.rt_max
     assert candidate.ms1_apex_rt <= candidate.ms1_search_rt_max
@@ -685,7 +686,7 @@ def test_adapter_closes_empty_subject_universe_as_not_evaluated_without_xic(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=(),
+        peaks=(),
         settings=_settings(),
         peak_config=_peak_config(tmp_path),
         raw=raw,
@@ -711,7 +712,7 @@ def test_auto_range_empty_subject_has_no_fabricated_query_and_needs_no_raw(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=(),
+        peaks=(),
         settings=replace(_settings(), rt_min=None, rt_max=None),
         peak_config=_peak_config(tmp_path),
         raw=None,
@@ -758,10 +759,8 @@ def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
     scenario.bind_physical_capture()
     result = scenario.adapt((feature,), support_candidates=(support,), raw=raw)
 
-    assert result.source_candidate_ids == (feature.candidate_id,)
-    assert {capture.candidate_id for capture in result.captures} == {
-        feature.candidate_id
-    }
+    assert result.source_candidate_ids == (feature.peak_id,)
+    assert {capture.candidate_id for capture in result.captures} == {feature.peak_id}
     assert len(result.assessment_input.assessment.candidate_peaks) == 1
     assert result.strict_scan_count == 2
     assert len(result.assessment_input.assessment.evidence_refs) == 2
@@ -788,7 +787,7 @@ def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> No
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=(),
+        peaks=(),
         support_candidates=(support,),
         settings=settings,
         peak_config=_peak_config(tmp_path),
@@ -814,7 +813,7 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
     direct = scenario.discover(_FakeRaw((8.0,)))[0]
     inferred = replace(
         direct,
-        candidate_id=f"{direct.candidate_id}:inferred",
+        peak_id=f"{direct.peak_id}:inferred",
         precursor_mz_basis="product_plus_neutral_loss",
     )
     candidates = (direct, inferred) if include_direct_candidate else (inferred,)
@@ -828,7 +827,7 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
             processing_owners=scenario.fixture.owners,
             sample=scenario.fixture.sample("S1"),
             method_subject=scenario.fixture.method_subject,
-            candidates=candidates,
+            peaks=candidates,
             settings=scenario.settings,
             peak_config=scenario.peak_config,
             raw=None,

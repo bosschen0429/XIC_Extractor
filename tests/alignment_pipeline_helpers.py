@@ -30,10 +30,10 @@ from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
     discovery_receipt_index_fields,
-    mint_discovery_candidate_universe_receipt,
+    mint_discovery_peak_universe_receipt,
 )
-from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
-from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
+from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
+from xic_extractor.discovery.models import DISCOVERY_PEAK_COLUMNS
 from xic_extractor.peak_detection.elution_context import (
     SampleElutionContext,
     project_elution_context,
@@ -95,17 +95,17 @@ def write_batch(
     for sample_stem in sample_order:
         sample_dir = batch_dir / sample_stem
         sample_dir.mkdir(exist_ok=True)
-        candidates_csv = sample_dir / "discovery_candidates.csv"
+        candidates_csv = sample_dir / "discovery_peaks.csv"
         write_csv(
             candidates_csv,
-            DISCOVERY_CANDIDATE_COLUMNS,
+            DISCOVERY_PEAK_COLUMNS,
             [candidate_row(sample_stem)],
         )
         row = {
             "sample_stem": sample_stem,
             "raw_file": raw_files.get(sample_stem, f"C:/stale/{sample_stem}.raw"),
-            "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
-            "review_csv": "",
+            "peak_csv": str(candidates_csv.relative_to(batch_dir)),
+            "event_csv": "",
         }
         row.update(_owner_closed_receipt_fields(sample_stem, candidates_csv))
         rows.append(row)
@@ -116,9 +116,9 @@ def write_batch(
             "schema_version",
             "sample_stem",
             "raw_file",
-            "candidate_csv",
-            "review_csv",
-            "candidate_count",
+            "peak_csv",
+            "event_csv",
+            "peak_count",
             *DISCOVERY_BATCH_RECEIPT_COLUMNS,
         ),
         rows,
@@ -139,17 +139,17 @@ def _owner_closed_receipt_fields(
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
-    candidates = read_discovery_candidates_csv(candidates_csv)
-    receipt = mint_discovery_candidate_universe_receipt(
+    candidates = read_discovery_peaks_csv(candidates_csv)
+    receipt = mint_discovery_peak_universe_receipt(
         sample_stem=sample_stem,
         acquisition_source=acquisition_source,
-        candidate_csv=candidates_csv,
+        peak_csv=candidates_csv,
         physical_facts=physical_facts_fingerprint_beside(candidates_csv),
-        candidates=candidates,
+        peaks=candidates,
     )
     return {
         "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
-        "candidate_count": str(len(candidates)),
+        "peak_count": str(len(candidates)),
         **discovery_receipt_index_fields(receipt),
     }
 
@@ -166,7 +166,7 @@ def write_csv(
 
 
 def candidate_id(sample_stem: str) -> str:
-    return f"{sample_stem}#1@mz500_p384"
+    return f"{sample_stem}@mz500_rt8.5000"
 
 
 def candidate_row(sample_stem: str) -> dict[str, str]:
@@ -177,17 +177,15 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
         "ms2_support": "strong",
         "ms1_support": "clean",
         "rt_alignment": "aligned",
-        "discovery_candidate_state": "ms1_feature_nl_supported",
-        "ms1_feature_row_id": f"{sample_stem}|DNA_dR|500|8.5",
-        "candidate_id": candidate_id(sample_stem),
-        "feature_id": f"{sample_stem}@F0001",
-        "feature_family_size": "1",
-        "precursor_mz": "500.0",
-        "product_mz": "384.0",
-        "observed_neutral_loss_da": "116.0",
-        "best_seed_rt": "8.5",
-        "seed_event_count": "2",
-        "ms1_peak_found": "TRUE",
+        "status": "admitted",
+        "peak_id": candidate_id(sample_stem),
+        "peak_mz": "500.0",
+        "xic_mz": "500.0",
+        "best_event_precursor_mz": "500.0",
+        "best_event_product_mz": "384.0",
+        "best_event_neutral_loss_da": "116.0",
+        "best_event_rt": "8.5",
+        "attached_event_count": "2",
         "ms1_apex_rt": "8.5",
         "ms1_area": "1000.0",
         "ms2_product_max_intensity": "500.0",
@@ -195,7 +193,7 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
         "raw_file": f"C:/stale/{sample_stem}.raw",
         "sample_stem": sample_stem,
         "best_ms2_scan_id": "1",
-        "seed_scan_ids": "1;2",
+        "event_scan_ids": "1;2",
         "neutral_loss_tag": "DNA_dR",
         "configured_neutral_loss_da": "116.0",
         "neutral_loss_mass_error_ppm": "1.0",
@@ -204,11 +202,11 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
         "scan_precursor_mz": "500.0",
         "scan_precursor_delta_da": "0.0",
         "max_scan_precursor_abs_delta_da": "0.0",
-        "rt_seed_min": "8.4",
-        "rt_seed_max": "8.6",
+        "event_rt_min": "8.4",
+        "event_rt_max": "8.6",
         "ms1_search_rt_min": "8.2",
         "ms1_search_rt_max": "8.8",
-        "ms1_seed_delta_min": "",
+        "ms1_event_delta_min": "0.0",
         "ms1_peak_rt_start": "8.4",
         "ms1_peak_rt_end": "8.6",
         "ms1_height": "100.0",

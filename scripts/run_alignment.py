@@ -615,17 +615,17 @@ def _validate_launch_artifacts(
     raw_dir: Path,
     require_all_raw: bool,
 ) -> dict[str, Path]:
-    missing_candidate_csvs = tuple(
-        (sample_stem, candidate_csv)
-        for sample_stem, candidate_csv in discovery_batch.candidate_csvs.items()
-        if not candidate_csv.is_file()
+    missing_peak_csvs = tuple(
+        (sample_stem, peak_csv)
+        for sample_stem, peak_csv in discovery_batch.peak_csvs.items()
+        if not peak_csv.is_file()
     )
-    if missing_candidate_csvs:
-        sample_stem, candidate_csv = missing_candidate_csvs[0]
-        suffix = _truncated_count_suffix(len(missing_candidate_csvs))
+    if missing_peak_csvs:
+        sample_stem, peak_csv = missing_peak_csvs[0]
+        suffix = _truncated_count_suffix(len(missing_peak_csvs))
         raise ValueError(
-            "candidate CSV does not exist for discovery sample "
-            f"{sample_stem}: {candidate_csv}{suffix}"
+            "peak CSV does not exist for discovery sample "
+            f"{sample_stem}: {peak_csv}{suffix}"
         )
 
     resolved_raw_paths = existing_raw_paths(
@@ -772,7 +772,7 @@ def _print_preflight_summary(
     )
     print(f"Discovery batch index: {discovery_batch_index}")
     print(f"Discovery batch samples: {sample_count}")
-    print(f"Candidate CSVs found: {len(discovery_batch.candidate_csvs)}")
+    print(f"Candidate CSVs found: {len(discovery_batch.peak_csvs)}")
     print(f"RAW paths found: {len(resolved_raw_paths)}")
     if args.expected_sample_count is not None:
         print(f"Expected sample count: {args.expected_sample_count}")

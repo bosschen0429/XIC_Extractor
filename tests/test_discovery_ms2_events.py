@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+from xic_extractor.discovery.ion_grouping import build_discovery_ions
+from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 
@@ -29,7 +29,7 @@ def test_observed_loss_within_tolerance_produces_discovery_seed() -> None:
         ]
     )
 
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw,
         raw_file=RAW_FILE,
         settings=_settings(nl_tolerance_ppm=10.0),
@@ -61,7 +61,7 @@ def test_out_of_neutral_loss_tolerance_product_is_rejected() -> None:
         ]
     )
 
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw,
         raw_file=RAW_FILE,
         settings=_settings(nl_tolerance_ppm=10.0, product_search_ppm=50.0),
@@ -84,7 +84,7 @@ def test_quadrature_window_accepts_forty_ppm_loss_and_rejects_outside_product() 
         ]
     )
 
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw,
         raw_file=RAW_FILE,
         settings=_settings(nl_tolerance_ppm=20.0, product_search_ppm=1.0),
@@ -103,7 +103,7 @@ def test_quadrature_window_accepts_forty_ppm_loss_and_rejects_outside_product() 
 def test_parse_error_event_is_ignored() -> None:
     raw = _FakeRaw([Ms2ScanEvent(scan=None, parse_error="bad filter", scan_number=7)])
 
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw,
         raw_file=RAW_FILE,
         settings=_settings(),
@@ -126,7 +126,7 @@ def test_low_intensity_below_base_peak_ratio_is_rejected() -> None:
         ]
     )
 
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw,
         raw_file=RAW_FILE,
         settings=_settings(nl_min_intensity_ratio=0.01),
@@ -156,7 +156,7 @@ def test_malformed_non_1d_scan_arrays_are_ignored_without_raising() -> None:
         ]
     )
 
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw,
         raw_file=RAW_FILE,
         settings=_settings(),
@@ -178,7 +178,7 @@ def test_product_search_ppm_cannot_reject_observed_loss_within_tolerance() -> No
         ]
     )
 
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw,
         raw_file=RAW_FILE,
         settings=_settings(nl_tolerance_ppm=20.0, product_search_ppm=1.0),
@@ -204,7 +204,7 @@ def test_isolation_offset_product_infers_monoisotopic_precursor_seed() -> None:
         ]
     )
 
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw,
         raw_file=RAW_FILE,
         settings=_settings(),
@@ -239,7 +239,7 @@ def test_same_ms2_scan_can_emit_direct_and_inferred_precursor_seeds() -> None:
         ]
     )
 
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw,
         raw_file=RAW_FILE,
         settings=_settings(ms2_precursor_tol_da=1.1),
@@ -272,7 +272,7 @@ def test_inferred_precursor_seed_respects_ms2_precursor_window() -> None:
         ]
     )
 
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw,
         raw_file=RAW_FILE,
         settings=_settings(ms2_precursor_tol_da=1.6),
@@ -309,7 +309,7 @@ def test_default_inferred_precursor_radius_uses_nominal_isolation_half_width(
         ]
     )
 
-    seeds = collect_strict_nl_seeds(raw, raw_file=RAW_FILE, settings=_settings())
+    seeds = collect_strict_nl_events(raw, raw_file=RAW_FILE, settings=_settings())
 
     assert len(seeds) == expected_seed_count
 
@@ -327,7 +327,7 @@ def test_observed_loss_error_equal_to_tolerance_is_accepted() -> None:
         ]
     )
 
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw,
         raw_file=RAW_FILE,
         settings=_settings(nl_tolerance_ppm=10.0),
@@ -355,7 +355,7 @@ def test_matching_products_rank_by_loss_error_then_intensity() -> None:
         ]
     )
 
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         raw,
         raw_file=RAW_FILE,
         settings=_settings(nl_tolerance_ppm=10.0),
@@ -370,7 +370,7 @@ def test_matching_products_rank_by_loss_error_then_intensity() -> None:
 def test_iter_ms2_scans_uses_settings_rt_window() -> None:
     raw = _FakeRaw([])
 
-    collect_strict_nl_seeds(
+    collect_strict_nl_events(
         raw,
         raw_file=RAW_FILE,
         settings=_settings(rt_min=1.25, rt_max=9.75),
@@ -379,7 +379,7 @@ def test_iter_ms2_scans_uses_settings_rt_window() -> None:
     assert raw.requested_window == (1.25, 9.75)
 
 
-def test_multi_profile_seed_collection_keeps_seed_groups_per_tag() -> None:
+def test_multi_profile_seeds_of_one_ion_share_one_channel() -> None:
     settings = DiscoverySettings(
         selected_tag_names=("dR", "R", "MeR"),
         tag_combine_mode="union",
@@ -389,7 +389,7 @@ def test_multi_profile_seed_collection_keeps_seed_groups_per_tag() -> None:
             NeutralLossProfile(tag="MeR", neutral_loss_da=146.0579),
         ),
     )
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         _FakeRaw(
             [
                 scan_for_loss(116.047344),
@@ -401,15 +401,11 @@ def test_multi_profile_seed_collection_keeps_seed_groups_per_tag() -> None:
         settings=settings,
     )
 
-    groups = group_discovery_seeds(seeds, settings=settings)
+    (channel,) = build_discovery_ions(seeds, settings=settings)
 
+    # Each tag keeps its own event; one ion is one channel for every tag.
     assert [seed.neutral_loss_tag for seed in seeds] == ["dR", "R", "MeR"]
-    assert len(groups) == 3
-    assert [group.matched_tag_names for group in groups] == [
-        ("dR",),
-        ("R",),
-        ("MeR",),
-    ]
+    assert {seed.neutral_loss_tag for seed in channel.events} == {"dR", "R", "MeR"}
 
 
 def _settings(**overrides: float) -> DiscoverySettings:
@@ -509,7 +505,7 @@ def test_inference_uses_scan_isolation_geometry_and_configured_cap(
             ),
         ),
     )
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         _FakeRaw([event]),
         raw_file=RAW_FILE,
         settings=_settings(ms2_precursor_tol_da=radius),
@@ -535,7 +531,7 @@ def test_recorded_mono_and_selected_ions_keep_distinct_direct_evidence(charge):
         master_scan_number=1,
     )
     event = replace(event, scan=replace(event.scan, precursor_metadata=metadata))
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         _FakeRaw([event]),
         raw_file=RAW_FILE,
         settings=_settings(ms2_precursor_tol_da=0.8),
@@ -547,18 +543,9 @@ def test_recorded_mono_and_selected_ions_keep_distinct_direct_evidence(charge):
         (300.1615, "scan_monoisotopic"),
         (301.165, "scan_precursor"),
     ]
-    groups = group_discovery_seeds(seeds, settings=_settings())
-    assert len(groups) == 2
-    assert groups[0].precursor_mz_basis == "scan_monoisotopic"
-    assert (
-        groups[0].neutral_loss_error_basis == "recorded_monoisotopic_precursor_product"
-    )
-    assert (
-        json.loads(groups[0].tag_evidence_json)["DNA_dR"]["precursor_metadata"][
-            "master_scan_number"
-        ]
-        == 1
-    )
+    channels = build_discovery_ions(seeds, settings=_settings())
+    # The recorded monoisotopic and selected ions are two measured ions.
+    assert [channel.mz for channel in channels] == [300.1615, 301.165]
 
 
 def test_reference_product_failing_neutral_loss_still_infers_precursor_seed():
@@ -578,7 +565,7 @@ def test_reference_product_failing_neutral_loss_still_infers_precursor_seed():
     )
     event = replace(event, scan=replace(event.scan, precursor_metadata=metadata))
 
-    seeds = collect_strict_nl_seeds(
+    seeds = collect_strict_nl_events(
         _FakeRaw([event]),
         raw_file=RAW_FILE,
         settings=_settings(nl_tolerance_ppm=20.0, ms2_precursor_tol_da=0.8),

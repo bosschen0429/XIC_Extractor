@@ -17,27 +17,28 @@ from xic_extractor.configuration.mass_recalibration import (
 from xic_extractor.discovery import output_publication
 from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundLibrary,
-    apply_blank_qualification_to_candidates,
+    apply_blank_qualification_to_peaks,
     deserialize_background_library,
 )
 from xic_extractor.discovery.cid_nl_search import (
     CidNlSearchSource,
     search_cid_nl_sample,
 )
+from xic_extractor.discovery.evidence_score import score_peak_evidence
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
-    DiscoveryCandidate,
+    DiscoveryPeak,
     DiscoveryPhysicalWorkItem,
     DiscoveryRunOutputs,
+    EventAttachment,
 )
 from xic_extractor.discovery.ms1_capture import (
     _DiscoveryMs1Measurements,
 )
-from xic_extractor.discovery.peak_anchor import assign_peak_anchors
 from xic_extractor.discovery.physical_fact_record import (
-    DiscoveryCandidatePhysicalBinding,
+    DiscoveryPeakPhysicalBinding,
     DiscoveryPhysicalFactRecord,
-    bind_physical_facts_to_final_candidates,
+    bind_physical_facts_to_final_peaks,
 )
 from xic_extractor.discovery.processing_run_spec_adapter import (
     validate_processing_run_spec_call,
@@ -80,12 +81,13 @@ RawOpener = Callable[[Path, Path], AbstractContextManager[DiscoveryRawHandle]]
 
 @dataclass(frozen=True)
 class _DiscoverySampleResult:
-    candidates: tuple[DiscoveryCandidate, ...]
+    peaks: tuple[DiscoveryPeak, ...]
+    attachments: tuple[EventAttachment, ...]
     ms1_measurements: _DiscoveryMs1Measurements | None
     raw_open_receipt: RawAcquisitionSessionReceipt | None
     physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...]
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...]
-    physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...]
+    physical_bindings: tuple[DiscoveryPeakPhysicalBinding, ...]
     mass_recalibration_result: MassRecalibrationResult = MassRecalibrationResult("none")
 
 
@@ -95,19 +97,19 @@ def _bound_background_library(content: str) -> BlankBackgroundLibrary:
 
 
 def _apply_blank_qualification_if_enabled(
-    candidates: tuple[DiscoveryCandidate, ...],
+    peaks: tuple[DiscoveryPeak, ...],
     *,
     settings: DiscoverySettings,
     timing_recorder: TimingRecorder,
     sample_stem: str,
     acquisition_input: ProcessingAcquisitionInput,
-) -> tuple[DiscoveryCandidate, ...]:
+) -> tuple[DiscoveryPeak, ...]:
     if not settings.enable_blank_qualification:
-        return candidates
+        return peaks
     with timing_recorder.stage(
         "discover.blank_qualification",
         sample_stem=sample_stem,
-        metrics={"candidate_count": len(candidates)},
+        metrics={"peak_count": len(peaks)},
     ) as stage:
         if acquisition_input.blank_library_sha256 is None:
             library = None
@@ -115,19 +117,15 @@ def _apply_blank_qualification_if_enabled(
             raise ValueError("bound blank library snapshot is unavailable")
         else:
             library = _bound_background_library(acquisition_input.blank_library_content)
-        qualified = apply_blank_qualification_to_candidates(
-            candidates,
+        qualified = apply_blank_qualification_to_peaks(
+            peaks,
             library,
             ppm_tol=settings.blank_ppm_tol,
             fold_change_threshold=settings.blank_fold_change_threshold,
         )
-        excluded_count = sum(
-            1
-            for c in qualified
-            if c.discovery_candidate_state == "review_only_orphan_nl"
-            and c.reason.startswith("system background:")
+        stage.metrics["excluded_background_count"] = sum(
+            peak.status == "blank" for peak in qualified
         )
-        stage.metrics["excluded_background_count"] = excluded_count
         return qualified
 
 
@@ -161,14 +159,14 @@ def run_discovery(
     raise_if_discovery_cancelled(should_cancel)
     publication = output_publication.publish_discovery_batch_sample(
         raw_path,
-        discovery_result.candidates,
+        discovery_result.peaks,
+        discovery_result.attachments,
         output_dir=output_dir,
         sample_output_dir=output_dir,
         acquisition_source=acquisition_input.acquisition_source,
         timing_recorder=recorder,
         run_spec=run_spec,
         acquisition_input=acquisition_input,
-        physical_work_manifest=discovery_result.physical_work_manifest,
         physical_evaluations=discovery_result.physical_evaluations,
         physical_bindings=discovery_result.physical_bindings,
         mass_recalibration_result=discovery_result.mass_recalibration_result,
@@ -243,13 +241,13 @@ def run_discovery_batch(
         )
         publication = output_publication.publish_discovery_batch_sample(
             raw_path,
-            discovery_result.candidates,
+            discovery_result.peaks,
+            discovery_result.attachments,
             output_dir=output_dir,
             acquisition_source=acquisition_source,
             timing_recorder=recorder,
             run_spec=run_spec,
             acquisition_input=acquisition_input,
-            physical_work_manifest=discovery_result.physical_work_manifest,
             physical_evaluations=discovery_result.physical_evaluations,
             physical_bindings=discovery_result.physical_bindings,
             mass_recalibration_result=discovery_result.mass_recalibration_result,
@@ -309,7 +307,7 @@ def _discover_completed_sample_with_runtime_projection(
     run_spec: ProcessingRunSpec,
     acquisition_input: ProcessingAcquisitionInput,
 ) -> _DiscoverySampleResult:
-    """Return candidates ready for publication after projecting owner metrics."""
+    """Return peaks ready for publication after projecting owner metrics."""
     observed_receipt: RawAcquisitionSessionReceipt | None = None
     receipt_observed = False
     acquisition_projected = False
@@ -375,7 +373,7 @@ def _discover_completed_sample(
     run_spec: ProcessingRunSpec,
     acquisition_input: ProcessingAcquisitionInput,
 ) -> _DiscoverySampleResult:
-    """Acquire one RAW, close it, then complete its candidate facts."""
+    """Acquire one RAW, close it, then complete its peak facts."""
 
     acquired = _acquire_discovery_sample(
         raw_path,
@@ -391,25 +389,25 @@ def _discover_completed_sample(
         acquisition_observer(acquired)
     sample_stem = raw_path.stem
     with timing_recorder.stage(
-        "discover.peak_anchor",
+        "discover.evidence_score",
         sample_stem=sample_stem,
-        metrics={"input_count": len(acquired.candidates)},
-    ) as stage:
-        candidates = assign_peak_anchors(acquired.candidates, settings=settings)
-        stage.metrics["candidate_count"] = len(candidates)
-    candidates = _apply_blank_qualification_if_enabled(
-        candidates,
+        metrics={"peak_count": len(acquired.peaks)},
+    ):
+        peaks = score_peak_evidence(acquired.peaks, settings=settings)
+    peaks = _apply_blank_qualification_if_enabled(
+        peaks,
         settings=settings,
         timing_recorder=timing_recorder,
         sample_stem=sample_stem,
         acquisition_input=acquisition_input,
     )
-    physical_bindings = bind_physical_facts_to_final_candidates(
+    physical_bindings = bind_physical_facts_to_final_peaks(
         acquired.physical_bindings,
-        candidates,
+        peaks,
     )
     return _DiscoverySampleResult(
-        candidates=candidates,
+        peaks=peaks,
+        attachments=acquired.attachments,
         ms1_measurements=acquired.ms1_measurements,
         raw_open_receipt=acquired.raw_open_receipt,
         physical_work_manifest=acquired.physical_work_manifest,
@@ -476,7 +474,8 @@ def _acquire_discovery_sample(
             )
             completed = True
             return _DiscoverySampleResult(
-                candidates=acquisition_result.candidates,
+                peaks=acquisition_result.peaks,
+                attachments=acquisition_result.attachments,
                 ms1_measurements=acquisition_result.measurements,
                 raw_open_receipt=raw_open_receipt,
                 physical_work_manifest=acquisition_result.physical_work_manifest,

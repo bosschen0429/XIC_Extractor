@@ -19,7 +19,7 @@ from tests.untargeted_cid_nl_batch_runtime_fixtures import (
 )
 from tests.untargeted_partition_fixtures import fixture_assessment
 from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     mint_untargeted_cid_nl_method_subject,
@@ -49,7 +49,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raws: dict[Path, _FakeRaw] = {}
-    candidates_by_sample: dict[str, tuple[DiscoveryCandidate, ...]] = {}
+    peaks_by_sample: dict[str, tuple[DiscoveryPeak, ...]] = {}
     for raw_path in raw_paths[:2]:
         source_raw, candidates = _nearby_subject_candidates(
             raw_path,
@@ -58,9 +58,9 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             physical_records=physical_records,
         )
         source_raws[raw_path] = source_raw
-        candidates_by_sample[raw_path.stem] = candidates
+        peaks_by_sample[raw_path.stem] = candidates
     source_raws[raw_paths[2]] = _FakeRaw((7.98,))
-    candidates_by_sample["Missing"] = ()
+    peaks_by_sample["Missing"] = ()
     if initial_trace_without_peak:
         source_raw, candidates = _nearby_subject_candidates(
             raw_paths[2],
@@ -69,7 +69,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             physical_records=physical_records,
         )
         source_raws[raw_paths[2]] = source_raw
-        candidates_by_sample["Missing"] = candidates
+        peaks_by_sample["Missing"] = candidates
         from xic_extractor.untargeted_execution.partition import (
             cid_nl_sample_acquisition,
         )
@@ -90,7 +90,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             capture_without_peak,
         )
     subjects = _subjects(
-        candidates_by_sample["S1"],
+        peaks_by_sample["S1"],
         settings.precursor_mz_tolerance_ppm,
     )
     subject_by_precursor = {subject.precursor_mz: subject for subject in subjects}
@@ -99,10 +99,12 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         candidate_memberships=tuple(
             sorted(
                 (
-                    candidate.candidate_id,
-                    subject_by_precursor[candidate.precursor_mz].method_subject_id,
+                    candidate.peak_id,
+                    subject_by_precursor[
+                        candidate.best_event_precursor_mz
+                    ].method_subject_id,
                 )
-                for candidates in candidates_by_sample.values()
+                for candidates in peaks_by_sample.values()
                 for candidate in candidates
             )
         ),
@@ -121,17 +123,17 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         method_subject=subject_batch,
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
-            candidates_by_sample,
+            peaks_by_sample,
         ),
         sample_identity_namespace="study:real-data-runtime-batch-recovery-test",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
-            for values in (candidates_by_sample).values()
+        physical_records_by_peak={
+            c.peak_id: physical_records[c.peak_id]
+            for values in (peaks_by_sample).values()
             for c in values
         },
     )
@@ -145,7 +147,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             processing_owners=context.processing_owners,
             sample=sample,
             method_subject=subject,
-            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            candidates=context.peaks_by_sample[sample.metadata.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[
                 sample.metadata.raw_stem
             ],
@@ -159,8 +161,8 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             ),
             signal_processing_profile=context.signal_processing_profile,
             physical_records=tuple(
-                context.physical_records_by_candidate[c.candidate_id]
-                for c in (context.candidates_by_sample[sample.metadata.raw_stem])
+                context.physical_records_by_peak[c.peak_id]
+                for c in (context.peaks_by_sample[sample.metadata.raw_stem])
             ),
         )
         for subject in subjects
@@ -226,14 +228,14 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
 
 
 def _subjects(
-    candidates: tuple[DiscoveryCandidate, ...],
+    candidates: tuple[DiscoveryPeak, ...],
     precursor_tolerance_ppm: float,
 ) -> tuple[CidNlMethodSubject, ...]:
     return tuple(
         sorted(
             (
                 mint_untargeted_cid_nl_method_subject(
-                    precursor_mz=candidate.precursor_mz,
+                    precursor_mz=candidate.best_event_precursor_mz,
                     precursor_tolerance_ppm=precursor_tolerance_ppm,
                     neutral_loss_da=candidate.configured_neutral_loss_da,
                 )

@@ -19,7 +19,7 @@ from xic_extractor.diagnostics.delta_mass_review_data import (
     write_delta_mass_nl_summary,
 )
 from xic_extractor.discovery.detected_features import DetectedFeature
-from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+from xic_extractor.discovery.ms2_events import discovery_events_from_scan
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan, Ms2ScanEvent
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
@@ -57,7 +57,7 @@ def test_peak_nl_support_uses_shared_matching_and_retains_competing_peak_ambigui
     seeds = tuple(
         seed
         for scan in scans
-        for seed in discovery_seeds_from_scan(
+        for seed in discovery_events_from_scan(
             scan, raw_file=Path("sample-a.raw"), settings=settings
         )
     )
@@ -97,7 +97,7 @@ def test_inferred_loss_without_parent_ms1_is_not_self_confirming_support():
         positions=(position,),
         spectra=(ReviewSpectrum(11, 2, 100.3, meta, (80.0,), (100.0,)),),
     )
-    seeds = discovery_seeds_from_scan(
+    seeds = discovery_events_from_scan(
         scan, raw_file=Path("sample-a.raw"), settings=settings
     )
     result = assess_review_neutral_losses(

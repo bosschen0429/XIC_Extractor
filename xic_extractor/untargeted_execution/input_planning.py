@@ -19,11 +19,11 @@ from xic_extractor.configuration.signal_processing_profile import (
     canonical_signal_processing_profile_bytes,
 )
 from xic_extractor.discovery.batch_contract import (
-    CANDIDATE_UNIVERSE_SCHEMA_VERSION,
-    DiscoveryCandidateUniverseReceipt,
+    PEAK_UNIVERSE_SCHEMA_VERSION,
+    DiscoveryPeakUniverseReceipt,
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_persistence import (
     IndexedDiscoveryPhysicalFacts,
 )
@@ -72,9 +72,9 @@ class UntargetedInputPlan:
         Callable[
             [tuple[str, ...]],
             tuple[
-                dict[str, tuple[DiscoveryCandidate, ...]],
+                dict[str, tuple[DiscoveryPeak, ...]],
                 dict[str, DiscoveryPhysicalFactRecord],
-                dict[str, tuple[DiscoveryCandidate, ...]],
+                dict[str, tuple[DiscoveryPeak, ...]],
             ],
         ]
         | None
@@ -230,7 +230,7 @@ def is_supported_alignment_discovery(settings: DiscoverySettings) -> bool:
 
 
 def _physical_subject_candidate_fact(
-    candidate: DiscoveryCandidate,
+    candidate: DiscoveryPeak,
     record: DiscoveryPhysicalFactRecord,
 ) -> CidNlPhysicalCandidateFact:
     facts = record.evaluation.facts
@@ -248,8 +248,8 @@ def _physical_subject_candidate_fact(
             raw=trace.intensity,
         )
     return CidNlPhysicalCandidateFact(
-        candidate_id=candidate.candidate_id,
-        physical_mz=candidate.physical_mz,
+        candidate_id=candidate.peak_id,
+        physical_mz=candidate.peak_mz,
         configured_neutral_loss_da=candidate.configured_neutral_loss_da,
         proof=proof,
     )
@@ -257,26 +257,26 @@ def _physical_subject_candidate_fact(
 
 def prepare_untargeted_subject_membership(
     *,
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
+    peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
     settings: DiscoverySettings,
-    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
+    physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord],
 ) -> UntargetedCidNlMethodSubjectBatch:
     """Resolve exact subject membership for a closed precursor working set."""
     candidates = tuple(
         candidate
-        for sample_candidates in candidates_by_sample.values()
+        for sample_candidates in peaks_by_sample.values()
         for candidate in sample_candidates
         if admits_cid_nl_alignment(
-            candidate, physical_records_by_candidate.get(candidate.candidate_id)
+            candidate, physical_records_by_peak.get(candidate.peak_id)
         )
     )
-    candidate_ids = tuple(candidate.candidate_id for candidate in candidates)
+    candidate_ids = tuple(candidate.peak_id for candidate in candidates)
     if len(candidate_ids) != len(set(candidate_ids)):
         raise ValueError("Discovery candidate identity must be globally unique")
 
     composition = cid_nl_composition(settings)
     for candidate in candidates:
-        precursor_mz = float(candidate.physical_mz)
+        precursor_mz = float(candidate.peak_mz)
         neutral_loss_da = float(candidate.configured_neutral_loss_da)
         if (
             not math.isfinite(precursor_mz)
@@ -285,11 +285,11 @@ def prepare_untargeted_subject_membership(
             or neutral_loss_da <= 0.0
         ):
             raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
-    physical_records = physical_records_by_candidate
+    physical_records = physical_records_by_peak
     subject_units = group_cid_nl_physical_subject_units(
         tuple(
             _physical_subject_candidate_fact(
-                candidate, physical_records[candidate.candidate_id]
+                candidate, physical_records[candidate.peak_id]
             )
             for candidate in candidates
         ),
@@ -299,7 +299,7 @@ def prepare_untargeted_subject_membership(
     return mint_cid_nl_subject_membership_from_physical_units(
         subject_units=subject_units,
         precursor_by_id={
-            candidate.candidate_id: candidate.physical_mz for candidate in candidates
+            candidate.peak_id: candidate.peak_mz for candidate in candidates
         },
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         composition=composition,
@@ -330,15 +330,15 @@ def prepare_eager_untargeted_plan(
     sample_metadata: tuple[SampleMetadata, ...],
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
+    peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
     discovery_receipts_by_sample: Mapping[
         str,
-        DiscoveryCandidateUniverseReceipt,
+        DiscoveryPeakUniverseReceipt,
     ],
     dll_dir: Path,
     sample_identity_namespace: str,
     signal_processing_profile: SignalProcessingProfile,
-    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
+    physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord],
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
     | None = None,
 ) -> UntargetedInputPlan:
@@ -351,9 +351,9 @@ def prepare_eager_untargeted_plan(
     if not isinstance(dll_dir, Path):
         raise TypeError("dll_dir must be a Path")
     subject_batch = prepare_untargeted_subject_membership(
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         settings=settings,
-        physical_records_by_candidate=physical_records_by_candidate,
+        physical_records_by_peak=physical_records_by_peak,
     )
     context = build_partition_context(
         raw_paths=raw_paths,
@@ -361,11 +361,11 @@ def prepare_eager_untargeted_plan(
         method_subject=subject_batch,
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=discovery_receipts_by_sample,
         sample_identity_namespace=sample_identity_namespace,
         signal_processing_profile=signal_processing_profile,
-        physical_records_by_candidate=physical_records_by_candidate,
+        physical_records_by_peak=physical_records_by_peak,
         acquisition_source_expectations=acquisition_source_expectations,
         feature_candidate_ids=tuple(
             cid for cid, _ in subject_batch.candidate_memberships
@@ -373,9 +373,7 @@ def prepare_eager_untargeted_plan(
     )
     ordered_physical_records = tuple(
         record
-        for _candidate_id, record in sorted(
-            context.physical_records_by_candidate.items()
-        )
+        for _candidate_id, record in sorted(context.physical_records_by_peak.items())
     )
     physical_records_by_sample: dict[str, list[DiscoveryPhysicalFactRecord]] = {}
     for record in ordered_physical_records:
@@ -396,7 +394,7 @@ def prepare_eager_untargeted_plan(
                 )
                 for subject in subject_batch.subjects[:1]
             ),
-            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            candidates=context.peaks_by_sample[sample.metadata.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[
                 sample.metadata.raw_stem
             ],
@@ -435,7 +433,7 @@ def prepare_indexed_untargeted_plan(
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...],
     sample_identity_namespace: str,
     restore_candidate: Callable[
-        [DiscoveryCandidate, DiscoveryPhysicalFactRecord], DiscoveryCandidate
+        [DiscoveryPeak, DiscoveryPhysicalFactRecord], DiscoveryPeak
     ],
 ) -> UntargetedInputPlan:
     """Keep whole-batch IDs, not whole-batch candidates or physical graphs."""
@@ -446,27 +444,22 @@ def prepare_indexed_untargeted_plan(
         if cid
         in physical_sources[source.locations[cid].sample_stem].resolved_candidate_ids
     )
-    precursor_by_id = {
-        cid: source.ms1_apex_mz_by_candidate.get(
-            cid, source.locations[cid].precursor_mz
-        )
-        for cid in feature_ids
-    }
+    precursor_by_id = {cid: source.locations[cid].peak_mz for cid in feature_ids}
 
     def load_inputs(candidate_ids: tuple[str, ...]):
         candidates = source.load_candidates(candidate_ids)
         records: dict[str, DiscoveryPhysicalFactRecord] = {}
-        restored: dict[str, tuple[DiscoveryCandidate, ...]] = {}
+        restored: dict[str, tuple[DiscoveryPeak, ...]] = {}
         for stem, values in candidates.items():
             if not values:
                 restored[stem] = ()
                 continue
             local_records = physical_sources[stem].load_candidates(
-                tuple(candidate.candidate_id for candidate in values)
+                tuple(candidate.peak_id for candidate in values)
             )
             records.update(local_records)
             restored[stem] = tuple(
-                restore_candidate(candidate, local_records[candidate.candidate_id])
+                restore_candidate(candidate, local_records[candidate.peak_id])
                 for candidate in values
             )
         return restored, records
@@ -502,7 +495,7 @@ def prepare_indexed_untargeted_plan(
         local_units = group_cid_nl_physical_subject_units(
             tuple(
                 _physical_subject_candidate_fact(
-                    candidate, records.get(candidate.candidate_id)
+                    candidate, records.get(candidate.peak_id)
                 )
                 for values in candidates.values()
                 for candidate in values
@@ -541,20 +534,18 @@ def prepare_indexed_untargeted_plan(
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         composition=composition,
     )
-    receipts = source.batch.candidate_receipts
+    receipts = source.batch.peak_receipts
     entries = []
     for stem in sorted(source):
         receipt = receipts[stem]
         entries.append(
             {
                 "sample_stem": stem,
-                "candidate_count": receipt.candidate_count,
+                "peak_count": receipt.peak_count,
                 "candidate_ids": list(source.candidate_ids(stem)),
-                "candidate_artifact_schema_version": (
-                    receipt.candidate_artifact_schema_version
-                ),
-                "candidate_artifact_sha256": receipt.candidate_artifact_sha256,
-                "candidate_artifact_byte_size": receipt.candidate_artifact_byte_size,
+                "peak_csv_schema_version": (receipt.peak_csv_schema_version),
+                "peak_csv_sha256": receipt.peak_csv_sha256,
+                "peak_csv_byte_size": receipt.peak_csv_byte_size,
                 "acquisition_source_id": (
                     receipt.acquisition_source.acquisition_source_id
                 ),
@@ -574,7 +565,7 @@ def prepare_indexed_untargeted_plan(
         metadata_by_stem={sample.raw_stem: sample for sample in sample_metadata},
         sources_by_stem={stem: item.source for stem, item in expectations.items()},
         source_expectations=expectations,
-        candidate_map={stem: () for stem in source},
+        peak_map={stem: () for stem in source},
         receipt_map={
             stem: receipt for stem, receipt in receipts.items() if receipt is not None
         },
@@ -582,7 +573,7 @@ def prepare_indexed_untargeted_plan(
         sample_identity_namespace=sample_identity_namespace,
         signal_processing_profile=profile,
         candidate_universe={
-            "schema_version": CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+            "schema_version": PEAK_UNIVERSE_SCHEMA_VERSION,
             "samples": entries,
         },
         physical_capture={

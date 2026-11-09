@@ -29,10 +29,10 @@ from xic_extractor.peak_detection.background_shape import is_provisional_peak_sh
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     answer_physical_peak_question,
     discovery_raw_peak_components,
+    earliest_physical_segment_at_rt,
     enumerate_physical_segment_universe,
     mint_physical_peak_question,
     prepare_physical_signal,
-    unique_physical_segment_at_rt,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
@@ -248,7 +248,7 @@ class PhysicalPeakCapture:
 
     def _lookup(self, search: PhysicalPeakSearch) -> CapturedPhysicalPeak:
         acquired, universe, measurements = self._populations[search.request]
-        segment = unique_physical_segment_at_rt(
+        segment = earliest_physical_segment_at_rt(
             universe,
             search.query_rt_min,
             selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,

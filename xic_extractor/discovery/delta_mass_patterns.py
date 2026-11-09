@@ -60,7 +60,7 @@ class DeltaMassCandidate:
     rejected_at_layer: int | None = None
     reject_reason: str = ""
     cid_nl_base_status: str = ""
-    cid_nl_base_candidate_id: str = ""
+    cid_nl_base_peak_id: str = ""
     cid_nl_base_join_mode: str = ""
     base_expected_net_height: float | None = None
     base_support_score: float | None = None

@@ -609,7 +609,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         processing_contract_version=request.processing_contract_version,
         scientific_inputs={
             REQUEST_INPUT_KEY: batch.request_payload(),
-            "current_discovery_candidate_universe": {"samples": universe_samples},
+            "current_discovery_peak_universe": {"samples": universe_samples},
             "alignment_feature_candidate_ids": [item[0] for item in memberships],
         },
     )

@@ -123,8 +123,8 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
         observed.append((paths, kwargs))
         return SimpleNamespace(
             batch_index_csv=tmp_path / "batch.csv",
-            candidates_csv=tmp_path / "candidates.csv",
-            review_csv=tmp_path / "review.csv",
+            peaks_csv=tmp_path / "candidates.csv",
+            events_csv=tmp_path / "review.csv",
         )
 
     monkeypatch.setattr(
@@ -206,8 +206,8 @@ def test_discovery_cli_runs_saved_method_with_only_explicit_tuning_overrides(
         observed.append(kwargs["settings"])
         assert kwargs["run_spec"].discovery_method.settings == kwargs["settings"]
         return SimpleNamespace(
-            candidates_csv=tmp_path / "candidates.csv",
-            review_csv=tmp_path / "review.csv",
+            peaks_csv=tmp_path / "candidates.csv",
+            events_csv=tmp_path / "review.csv",
         )
 
     monkeypatch.setattr(run_discovery, "run_discovery", capture_pipeline)

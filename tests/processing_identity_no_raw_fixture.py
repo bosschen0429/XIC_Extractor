@@ -11,7 +11,7 @@ from xic_extractor.configuration.target_identity import (
     resolve_target_definition,
     target_list_snapshot_payload,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.extraction.targeted_inputs import (
     ResolvedTargetedInputs,
@@ -205,7 +205,7 @@ def build_targeted_processing_identity_raw_fixture(
     peak_config: ExtractionConfig,
     current_discovery_settings: DiscoverySettings | None = None,
     current_discovery_candidates_by_sample: (
-        Mapping[str, tuple[DiscoveryCandidate, ...]] | None
+        Mapping[str, tuple[DiscoveryPeak, ...]] | None
     ) = None,
 ) -> ProcessingIdentityNoRawFixture:
     """Rebind the processing-identity fixture to the real Targeted RAW request owner."""

@@ -640,7 +640,7 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         method_subject=subject,
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample={"S1": candidates, "S2": ()},
+        peaks_by_sample={"S1": candidates, "S2": ()},
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
@@ -648,8 +648,8 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         ),
         sample_identity_namespace="study:real-data-runtime-test",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+        physical_records_by_peak={
+            c.peak_id: physical_records[c.peak_id]
             for values in ({"S1": candidates, "S2": ()}).values()
             for c in values
         },
@@ -665,7 +665,7 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
             processing_owners=context.processing_owners,
             sample=sample,
             method_subject=context.method_subject,
-            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            candidates=context.peaks_by_sample[sample.metadata.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[
                 sample.metadata.raw_stem
             ],
@@ -680,8 +680,8 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
             acquisition_cache_dir=tmp_path / "runtime-cache",
             signal_processing_profile=context.signal_processing_profile,
             physical_records=tuple(
-                context.physical_records_by_candidate[c.candidate_id]
-                for c in (context.candidates_by_sample[sample.metadata.raw_stem])
+                context.physical_records_by_peak[c.peak_id]
+                for c in (context.peaks_by_sample[sample.metadata.raw_stem])
             ),
         )
         for sample in context.samples
@@ -760,111 +760,6 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     assert warm_open_calls == []
 
 
-def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    physical_records = {}
-    raw_path = tmp_path / "S1.synthetic"
-    raw_path.write_bytes(b"real-data-runtime-unsupported:S1")
-    settings = _settings()
-    peak_config = _peak_config(tmp_path)
-    source_raw = _FakeRaw((8.0,))
-    source_raw.scans = tuple(
-        replace(scan, precursor_mz=scan.precursor_mz + 0.5) for scan in source_raw.scans
-    )
-    source_raw.intensity.fill(0.0)
-    inferred = _current_candidates(
-        source_raw,
-        raw_file=raw_path,
-        settings=settings,
-        physical_records=physical_records,
-    )[0]
-    assert inferred.precursor_mz_basis == "product_plus_neutral_loss"
-    assert not inferred.ms1_peak_found
-    subject = mint_untargeted_cid_nl_method_subject(
-        precursor_mz=500.0,
-        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-        neutral_loss_da=116.0474,
-    )
-    context = build_partition_context(
-        raw_paths=(raw_path,),
-        sample_metadata=(
-            SampleMetadata(
-                sample_name="S1",
-                raw_stem="S1",
-                injection_order=1,
-                sample_role="study_sample",
-            ),
-        ),
-        method_subject=subject,
-        settings=settings,
-        peak_config=peak_config,
-        candidates_by_sample={"S1": (inferred,)},
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path,
-            (raw_path,),
-            {"S1": (inferred,)},
-        ),
-        sample_identity_namespace="study:real-data-runtime-unsupported-test",
-        signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
-            for values in ({"S1": (inferred,)}).values()
-            for c in values
-        },
-    )
-    job = UntargetedPartitionJob(
-        processing_owners=context.processing_owners,
-        sample=context.samples[0],
-        method_subject=context.method_subject,
-        candidates=context.candidates_by_sample["S1"],
-        discovery_receipt=context.discovery_receipts_by_sample["S1"],
-        settings=context.settings,
-        peak_config=context.peak_config,
-        raw_path=raw_path,
-        dll_dir=tmp_path,
-        work_unit_key="untargeted-cid-nl:S1",
-        signal_processing_profile=context.signal_processing_profile,
-        physical_records=tuple(
-            context.physical_records_by_candidate[c.candidate_id]
-            for c in (context.candidates_by_sample["S1"])
-        ),
-    )
-
-    vendor_raw = install_runtime_raw(
-        monkeypatch,
-        source_raw=source_raw,
-        raw_path=raw_path,
-        tmp_path=tmp_path,
-    )
-    result = execute_partition(
-        (job,),
-        partition_key="runtime-fixture",
-        alignment_config=CID_NL_ALIGNMENT_CONFIG,
-    )
-
-    assert result.succeeded is True, result.failure
-    assert len(result.sample_results) == 1
-    adapter = result.sample_results[0].adapter_result
-    assert (
-        adapter.assessment_input.assessment.content.technical_state == "not_evaluated"
-    )
-    assert adapter.assessment_input.assessment.content.method_result is None
-    assert adapter.assessment_input.assessment.content.reason_codes == (
-        "no_search_eligible_discovery_input",
-    )
-    assert not (
-        adapter.assessment_input.assessment.content.evaluation_receipt.search_completed
-    )
-    assert adapter.source_candidate_ids == (inferred.candidate_id,)
-    assert adapter.assessment_input.assessment.candidate_peaks == ()
-    assert adapter.strict_scan_count == 0
-    assert adapter.acquisition is None
-    assert vendor_raw.disposed is True
-    assert result.sample_results[0].backfill_attempt is None
-
-
 @pytest.mark.parametrize(
     "backfill_stop,cancel_accepted",
     [
@@ -910,7 +805,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         raw_paths[3]: _FakeRaw(()),
         raw_paths[4]: _FakeRaw((8.0,)),
     }
-    candidates_by_sample = {
+    peaks_by_sample = {
         "S1": _current_candidates(
             source_raws[raw_paths[0]],
             raw_file=raw_paths[0],
@@ -969,17 +864,17 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         method_subject=subject,
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
-            candidates_by_sample,
+            peaks_by_sample,
         ),
         sample_identity_namespace="study:real-data-runtime-recovery-test",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
-            for values in (candidates_by_sample).values()
+        physical_records_by_peak={
+            c.peak_id: physical_records[c.peak_id]
+            for values in (peaks_by_sample).values()
             for c in values
         },
     )
@@ -993,7 +888,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
             processing_owners=context.processing_owners,
             sample=sample,
             method_subject=context.method_subject,
-            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            candidates=context.peaks_by_sample[sample.metadata.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[
                 sample.metadata.raw_stem
             ],
@@ -1004,8 +899,8 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
             work_unit_key=f"untargeted-cid-nl:{sample.metadata.raw_stem}",
             signal_processing_profile=context.signal_processing_profile,
             physical_records=tuple(
-                context.physical_records_by_candidate[c.candidate_id]
-                for c in (context.candidates_by_sample[sample.metadata.raw_stem])
+                context.physical_records_by_peak[c.peak_id]
+                for c in (context.peaks_by_sample[sample.metadata.raw_stem])
             ),
         )
         for sample in context.samples
@@ -1082,7 +977,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
     raw_paths = (tmp_path / "S1.synthetic", tmp_path / "S2.synthetic")
     settings = _settings()
     peak_config = _peak_config(tmp_path)
-    candidates_by_sample = {}
+    peaks_by_sample = {}
     sources_by_path = {}
     for path in raw_paths:
         path.write_bytes(path.stem.encode())
@@ -1092,8 +987,15 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
             source = _FakeRaw((8.0,))
             scan = source.scans[0]
             number = scan.scan_number + offset
+            # Distinct ions: one measured peak per channel, not one peak thrice.
             source.scans = (
-                replace(scan, scan_number=number, rt=float(source.rt[number - 1])),
+                replace(
+                    scan,
+                    scan_number=number,
+                    rt=float(source.rt[number - 1]),
+                    precursor_mz=scan.precursor_mz + 0.05 * offset,
+                    masses=scan.masses + 0.05 * offset,
+                ),
             )
             scans.extend(source.scans)
             candidates.extend(
@@ -1106,8 +1008,8 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
             )
         source.scans = tuple(scans)
         sources_by_path[path] = source
-        candidates_by_sample[path.stem] = tuple(candidates)
-    receipts = build_discovery_receipts(tmp_path, raw_paths, candidates_by_sample)
+        peaks_by_sample[path.stem] = tuple(candidates)
+    receipts = build_discovery_receipts(tmp_path, raw_paths, peaks_by_sample)
     subjects = tuple(
         sorted(
             (
@@ -1126,12 +1028,12 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
         memberships = tuple(
             sorted(
                 (
-                    candidate.candidate_id,
+                    candidate.peak_id,
                     subjects[
                         int((stem == "S2" or index == 1) != swap)
                     ].method_subject_id,
                 )
-                for stem, candidates in candidates_by_sample.items()
+                for stem, candidates in peaks_by_sample.items()
                 for index, candidate in enumerate(candidates)
             )
         )
@@ -1152,13 +1054,13 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
             method_subject=subject_batch,
             settings=settings,
             peak_config=peak_config,
-            candidates_by_sample=candidates_by_sample,
+            peaks_by_sample=peaks_by_sample,
             discovery_receipts_by_sample=receipts,
             sample_identity_namespace="study:runtime-selection",
             signal_processing_profile=TEST_PROFILE,
-            physical_records_by_candidate={
-                c.candidate_id: physical_records[c.candidate_id]
-                for values in (candidates_by_sample).values()
+            physical_records_by_peak={
+                c.peak_id: physical_records[c.peak_id]
+                for values in (peaks_by_sample).values()
                 for c in values
             },
         )
@@ -1173,7 +1075,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
                     for subject in subjects
                 ),
                 candidates=tuple(
-                    reversed(context.candidates_by_sample[sample.metadata.raw_stem])
+                    reversed(context.peaks_by_sample[sample.metadata.raw_stem])
                 ),
                 discovery_receipt=receipts[sample.metadata.raw_stem],
                 settings=settings,
@@ -1185,12 +1087,10 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
                 ],
                 signal_processing_profile=context.signal_processing_profile,
                 physical_records=tuple(
-                    context.physical_records_by_candidate[c.candidate_id]
+                    context.physical_records_by_peak[c.peak_id]
                     for c in (
                         tuple(
-                            reversed(
-                                context.candidates_by_sample[sample.metadata.raw_stem]
-                            )
+                            reversed(context.peaks_by_sample[sample.metadata.raw_stem])
                         )
                     )
                 ),
@@ -1220,7 +1120,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
                 for candidate_id, subject_id in memberships
                 if subject_id == job.method_subject.method_subject_id
             }
-            expected = tuple(c for c in job.candidates if c.candidate_id in member_ids)
+            expected = tuple(c for c in job.candidates if c.peak_id in member_ids)
             selected = partition_models._request_subject_candidates(job)
             assert selected == expected
             assert all(
@@ -1260,7 +1160,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
     )
 
     def record_acquire(**kwargs):
-        acquired_candidates.append((kwargs["sample"], kwargs["candidates"]))
+        acquired_candidates.append((kwargs["sample"], kwargs["peaks"]))
         return real_acquire(**kwargs)
 
     monkeypatch.setattr(
@@ -1319,7 +1219,7 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
     memberships = tuple(
         sorted(
             (
-                candidate.candidate_id,
+                candidate.peak_id,
                 subjects[index].method_subject_id,
             )
             for index, candidate in enumerate(candidates)
@@ -1347,12 +1247,12 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
         method_subject=subject_batch,
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample={"S1": candidates},
+        peaks_by_sample={"S1": candidates},
         discovery_receipts_by_sample=receipts,
         sample_identity_namespace="study:partition-runtime-job",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+        physical_records_by_peak={
+            c.peak_id: physical_records[c.peak_id]
             for values in ({"S1": candidates}).values()
             for c in values
         },
@@ -1367,7 +1267,7 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
         scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
         | {
             ALIGNMENT_FEATURE_INPUT_KEY: sorted(
-                candidate.candidate_id for candidate in candidates
+                candidate.peak_id for candidate in candidates
             )
         },
     )
@@ -1390,14 +1290,14 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
     local_candidate = next(
         candidate
         for candidate in candidates
-        if candidate.candidate_id == partition_membership[0]
+        if candidate.peak_id == partition_membership[0]
     )
 
     models_owner._request_input_index.cache_clear()
     build_args = dict(
         processing_owners=owners,
         signal_processing_profile=TEST_PROFILE,
-        physical_records=(physical_records[local_candidate.candidate_id],),
+        physical_records=(physical_records[local_candidate.peak_id],),
         sample=context.sample("S1"),
         subject_work_units=((partition_subject, "partition:S1"),),
         subject_partition=partition,
@@ -1486,12 +1386,12 @@ def test_context_rejects_same_stem_receipt_from_different_acquisition(
             method_subject=subject,
             settings=settings,
             peak_config=peak_config,
-            candidates_by_sample={"S1": candidates},
+            peaks_by_sample={"S1": candidates},
             discovery_receipts_by_sample={"S1": receipt},
             sample_identity_namespace="study:real-data-runtime-crossed-acquisition-test",
             signal_processing_profile=TEST_PROFILE,
-            physical_records_by_candidate={
-                c.candidate_id: physical_records[c.candidate_id]
+            physical_records_by_peak={
+                c.peak_id: physical_records[c.peak_id]
                 for values in ({"S1": candidates}).values()
                 for c in values
             },
@@ -1527,7 +1427,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
             physical_records=physical_records,
         )
     )
-    candidates_by_sample = {
+    peaks_by_sample = {
         "Support": support,
         "Reject": reject,
         "Empty": (),
@@ -1555,17 +1455,17 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         method_subject=subject,
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path,
             raw_paths,
-            candidates_by_sample,
+            peaks_by_sample,
         ),
         sample_identity_namespace="study:real-data-runtime-conditional-resource-test",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
-            for values in (candidates_by_sample).values()
+        physical_records_by_peak={
+            c.peak_id: physical_records[c.peak_id]
+            for values in (peaks_by_sample).values()
             for c in values
         },
     )
@@ -1587,7 +1487,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
             processing_owners=context.processing_owners,
             sample=sample,
             method_subject=context.method_subject,
-            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            candidates=context.peaks_by_sample[sample.metadata.raw_stem],
             discovery_receipt=context.discovery_receipts_by_sample[
                 sample.metadata.raw_stem
             ],
@@ -1598,8 +1498,8 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
             work_unit_key=f"untargeted-cid-nl:{sample.metadata.raw_stem}",
             signal_processing_profile=context.signal_processing_profile,
             physical_records=tuple(
-                context.physical_records_by_candidate[c.candidate_id]
-                for c in (context.candidates_by_sample[sample.metadata.raw_stem])
+                context.physical_records_by_peak[c.peak_id]
+                for c in (context.peaks_by_sample[sample.metadata.raw_stem])
             ),
         )
         for sample in context.samples

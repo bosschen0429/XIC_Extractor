@@ -48,7 +48,7 @@ _FIELD_LABELS = {
     "neutral_loss_da": "中性丟失 (Da)",
     "precursor_mz": "前驅離子 m/z",
     "rt_apex_min": "峰頂 RT (min)",
-    "discovery_candidate_state": "候選狀態",
+    "peak_status": "峰狀態",
     "reason_code": "排除理由",
     "kind": "擷取階段",
 }
@@ -294,11 +294,11 @@ def _record_summary(
         detail = "；".join(parts) if parts else "來源未記錄初始配對判定"
         return f"{detail}。此相關初始配對不代表正式定量採用。"
     if kind == "exclusions":
-        state = facts.get("discovery_candidate_state")
+        state = facts.get("peak_status")
         reason = facts.get("reason_code")
         parts = []
         if state not in (None, ""):
-            parts.append(f"候選狀態為「{state}」")
+            parts.append(f"峰狀態為「{state}」")
         if reason not in (None, ""):
             readable_reason = (
                 _REASON_LABELS.get(reason, reason)
@@ -356,7 +356,7 @@ def _record_fields(facts: dict[str, Any]) -> list[dict[str, Any]]:
         "neutral_loss_da",
         "precursor_mz",
         "rt_apex_min",
-        "discovery_candidate_state",
+        "peak_status",
         "reason_code",
         "kind",
     ):

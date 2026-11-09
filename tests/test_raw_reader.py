@@ -46,7 +46,7 @@ def test_injection_header_translates_missing_ms_device_with_file_context():
 
 def test_default_ms2_acquisition_uses_each_raw_span_without_fixed_ceiling() -> None:
     from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-    from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.discovery.ms2_events import collect_strict_nl_events
     from xic_extractor.discovery.settings import DiscoverySettings
     from xic_extractor.raw_reader import RawFileHandle
 
@@ -66,7 +66,7 @@ def test_default_ms2_acquisition_uses_each_raw_span_without_fixed_ceiling() -> N
             start if number == 1 else end
         )
         handle = RawFileHandle(raw, _fake_thermo(raw))
-        seeds = collect_strict_nl_seeds(
+        seeds = collect_strict_nl_events(
             handle, raw_file=Path("span.raw"), settings=settings
         )
         assert tuple(seed.rt for seed in seeds) == (start, end)
@@ -963,7 +963,7 @@ def test_raw_monoisotopic_precursor_recovers_direct_nl_without_widening_isolatio
     product: float,
 ) -> None:
     from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-    from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+    from xic_extractor.discovery.ms2_events import discovery_events_from_scan
     from xic_extractor.discovery.settings import DiscoverySettings
     from xic_extractor.raw_reader import RawFileHandle
 
@@ -993,7 +993,7 @@ def test_raw_monoisotopic_precursor_recovers_direct_nl_without_widening_isolatio
     assert metadata.master_scan_number == parent
     assert metadata.isolation_width_da == 1.6
     assert metadata.isolation_offset_da == 0.0
-    seeds = discovery_seeds_from_scan(
+    seeds = discovery_events_from_scan(
         event.scan,
         raw_file=Path("TumorBC2312_DNA.raw"),
         settings=DiscoverySettings(

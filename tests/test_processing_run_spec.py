@@ -682,9 +682,7 @@ def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(
         run_spec=spec,
     )
     states = {
-        output.candidates_csv.parent.name: _read_csv(output.candidates_csv)[0][
-            "discovery_candidate_state"
-        ]
+        output.peaks_csv.parent.name: _read_csv(output.peaks_csv)[0]["status"]
         for output in result.per_sample
     }
-    assert states == {"A": "review_only_orphan_nl", "B": "ms1_feature_nl_supported"}
+    assert states == {"A": "blank", "B": "admitted"}

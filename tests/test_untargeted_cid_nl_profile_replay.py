@@ -80,10 +80,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         if candidate.ms1_apex_mz is not None
     }
     assert {
-        sample: tuple(candidate.candidate_id for candidate in sample_candidates)
-        for sample, sample_candidates in publication.candidates_by_sample.items()
+        sample: tuple(candidate.peak_id for candidate in sample_candidates)
+        for sample, sample_candidates in publication.peaks_by_sample.items()
     } == {
-        sample: tuple(candidate.candidate_id for candidate in sample_candidates)
+        sample: tuple(candidate.peak_id for candidate in sample_candidates)
         for sample, sample_candidates in inputs.candidates.items()
     }
     assert completed.processing_attempt_id == (
@@ -126,16 +126,15 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     expected_retained = (
         inputs.source_records if case.indexed_input else inputs.source_evidence
     )
-    assert {item.candidate_id for item in retained_discovery} == set(expected_retained)
+    assert {item.peak_id for item in retained_discovery} == set(expected_retained)
     for retained in retained_discovery:
-        source = inputs.source_evidence[retained.candidate_id]
+        source = inputs.source_evidence[retained.peak_id]
         assert (
             retained.evaluation.retained_prepared_signal
             == source.evaluation.retained_prepared_signal
         )
         assert retained.rt == source.rt
         assert retained.raw == source.raw
-        assert retained.candidate_links == source.candidate_links
     persisted_capture_evidence = tuple(completed.capture_evidence)
     runtime_captures = tuple(
         evidence
@@ -191,17 +190,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         )
         expected = _expected_retained_curve(
             kind="discovery_physical",
-            candidate_id=record.candidate_id,
+            candidate_id=record.peak_id,
             sample_id=samples_by_stem[work.sample_stem].identity.sample_key,
             trace=source_trace,
             evaluation=record.evaluation,
             attempt_id=application.processing_attempt.processing_attempt_id,
         )
         expected_curves.append(expected)
-        for cid in {link.candidate_id for link in record.candidate_links} or {
-            record.candidate_id
-        }:
-            expected_curve_links.setdefault(cid, []).append(expected)
+        expected_curve_links.setdefault(record.peak_id, []).append(expected)
     for evidence in persisted_capture_evidence:
         expected = _expected_capture_curve(evidence)
         expected_curves.append(expected)
@@ -240,7 +236,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         tmp_path / "producer-evidence.sqlite",
         full_audit=True,
         completed=completed,
-        candidates_by_sample=inputs.candidates,
+        peaks_by_sample=inputs.candidates,
         matrix_path=matrix_path,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     )
@@ -384,10 +380,13 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert len(batch.subject_batch.subjects) == 1
         for result in trace.runtime_results[0].sample_results:
             stem = result.job.sample.metadata.raw_stem
-            (candidate,) = batch.context.candidates_by_sample[stem]
-            record = batch.context.physical_records_by_candidate[candidate.candidate_id]
-            assert record.work_item.precursor_mz == candidate.precursor_mz
-            assert record.acquired_trace.coordinate.request.mz == candidate.precursor_mz
+            (candidate,) = batch.context.peaks_by_sample[stem]
+            record = batch.context.physical_records_by_peak[candidate.peak_id]
+            assert record.work_item.precursor_mz == candidate.best_event_precursor_mz
+            assert (
+                record.acquired_trace.coordinate.request.mz
+                == candidate.best_event_precursor_mz
+            )
             assert record.evaluation.facts == inputs.physical_facts[stem]
             assert fixture_assessment(result).content.method_result == (
                 "HOLD" if case.method_mode == "intersection" else "SUPPORT"
@@ -766,10 +765,10 @@ def test_profile_replay_rejects_changed_partition_inputs(
                 **(sample_inputs | changed), subject_work_units=subject_work_units
             )
     if not case.indexed_input:
-        wrong_records = dict(batch.context.physical_records_by_candidate)
+        wrong_records = dict(batch.context.physical_records_by_peak)
         keys = tuple(wrong_records)
         wrong_records[keys[0]] = wrong_records[keys[1]]
-        with pytest.raises(IdentityContractError, match="crossed candidate"):
+        with pytest.raises(IdentityContractError, match="crossed peak"):
             alignment_adapter.prepare_eager_untargeted_plan(
                 raw_paths=inputs.paths,
                 sample_metadata=tuple(
@@ -777,10 +776,10 @@ def test_profile_replay_rejects_changed_partition_inputs(
                 ),
                 settings=inputs.settings,
                 peak_config=inputs.peak_config,
-                candidates_by_sample=batch.context.candidates_by_sample,
+                peaks_by_sample=batch.context.peaks_by_sample,
                 discovery_receipts_by_sample=inputs.receipts,
                 dll_dir=tmp_path,
                 sample_identity_namespace="test:physical-replay",
                 signal_processing_profile=inputs.profile,
-                physical_records_by_candidate=wrong_records,
+                physical_records_by_peak=wrong_records,
             )

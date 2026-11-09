@@ -21,10 +21,10 @@ from xic_extractor.alignment.result.application_result import (
 )
 from xic_extractor.discovery.batch_contract import (
     ALIGNMENT_FEATURE_INPUT_KEY,
-    CANDIDATE_UNIVERSE_INPUT_KEY,
-    CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+    PEAK_UNIVERSE_INPUT_KEY,
+    PEAK_UNIVERSE_SCHEMA_VERSION,
     candidate_sample_stems_from_request,
-    validate_candidate_universe_payload,
+    validate_peak_universe_payload,
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -82,19 +82,19 @@ def _candidate_universe_payload(
     candidate_ids_by_stem: dict[str, tuple[str, ...]],
 ) -> dict[str, object]:
     return {
-        "schema_version": CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+        "schema_version": PEAK_UNIVERSE_SCHEMA_VERSION,
         "samples": [
             {
                 "sample_stem": sample.metadata.raw_stem,
-                "candidate_count": len(
+                "peak_count": len(
                     candidate_ids_by_stem.get(sample.metadata.raw_stem, ())
                 ),
                 "candidate_ids": list(
                     candidate_ids_by_stem.get(sample.metadata.raw_stem, ())
                 ),
-                "candidate_artifact_schema_version": "discovery_candidates_csv",
-                "candidate_artifact_sha256": "0" * 64,
-                "candidate_artifact_byte_size": 0,
+                "peak_csv_schema_version": "discovery_peaks_csv",
+                "peak_csv_sha256": "0" * 64,
+                "peak_csv_byte_size": 0,
                 "acquisition_source_id": resolve_request_acquisition_source(
                     processing_owners=processing_owners,
                     sample=sample,
@@ -184,7 +184,7 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
         processing_contract_version=base_request.processing_contract_version,
         scientific_inputs={
             REQUEST_INPUT_KEY: subject_batch.request_payload(),
-            CANDIDATE_UNIVERSE_INPUT_KEY: _candidate_universe_payload(
+            PEAK_UNIVERSE_INPUT_KEY: _candidate_universe_payload(
                 processing_owners=fixture.owners,
                 samples=fixture.samples,
                 candidate_ids_by_stem={
@@ -310,11 +310,11 @@ def test_subject_composition_closes_without_runtime_and_preserves_failure_stage(
 def _universe_entry(**overrides: object) -> dict[str, object]:
     entry: dict[str, object] = {
         "sample_stem": "S1",
-        "candidate_count": 1,
+        "peak_count": 1,
         "candidate_ids": ["c1"],
-        "candidate_artifact_schema_version": "discovery_candidates_csv",
-        "candidate_artifact_sha256": "b" * 64,
-        "candidate_artifact_byte_size": 0,
+        "peak_csv_schema_version": "discovery_peaks_csv",
+        "peak_csv_sha256": "b" * 64,
+        "peak_csv_byte_size": 0,
         "acquisition_source_id": "sha256:" + "c" * 64,
     }
     entry.update(overrides)
@@ -323,18 +323,18 @@ def _universe_entry(**overrides: object) -> dict[str, object]:
 
 def test_candidate_universe_payload_accepts_lowercase_digests() -> None:
     entry = _universe_entry()
-    payload = {"schema_version": CANDIDATE_UNIVERSE_SCHEMA_VERSION, "samples": [entry]}
+    payload = {"schema_version": PEAK_UNIVERSE_SCHEMA_VERSION, "samples": [entry]}
 
-    assert validate_candidate_universe_payload(
-        payload, expected_sample_stems=["S1"]
-    ) == (entry,)
+    assert validate_peak_universe_payload(payload, expected_sample_stems=["S1"]) == (
+        entry,
+    )
 
 
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
-        ("candidate_artifact_sha256", "B" * 64, "owner receipt facts are invalid"),
-        ("candidate_artifact_sha256", 7, "owner receipt facts are invalid"),
+        ("peak_csv_sha256", "B" * 64, "owner receipt facts are invalid"),
+        ("peak_csv_sha256", 7, "owner receipt facts are invalid"),
     ],
 )
 def test_candidate_universe_payload_rejects_non_lowercase_sha256(
@@ -343,12 +343,12 @@ def test_candidate_universe_payload_rejects_non_lowercase_sha256(
     message: str,
 ) -> None:
     payload = {
-        "schema_version": CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+        "schema_version": PEAK_UNIVERSE_SCHEMA_VERSION,
         "samples": [_universe_entry(**{field: value})],
     }
 
     with pytest.raises(IdentityContractError, match=message):
-        validate_candidate_universe_payload(payload, expected_sample_stems=["S1"])
+        validate_peak_universe_payload(payload, expected_sample_stems=["S1"])
 
 
 @pytest.mark.parametrize(
@@ -407,8 +407,8 @@ def _candidate_selection_request(
         processing_algorithm_version=base.processing_algorithm_version,
         processing_contract_version=base.processing_contract_version,
         scientific_inputs={
-            CANDIDATE_UNIVERSE_INPUT_KEY: {
-                "schema_version": CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+            PEAK_UNIVERSE_INPUT_KEY: {
+                "schema_version": PEAK_UNIVERSE_SCHEMA_VERSION,
                 "samples": [
                     _universe_entry(sample_stem="S1", candidate_ids=["c1"]),
                     _universe_entry(

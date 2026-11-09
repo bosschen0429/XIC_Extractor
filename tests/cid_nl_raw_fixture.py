@@ -13,12 +13,13 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.grouping import group_discovery_seeds
+from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import (
-    capture_ms1_candidates,
+    capture_ms1_peaks,
 )
-from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.discovery.strict_event_receipts import read_parent_ms1_observations
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -47,9 +48,12 @@ def _current_candidates(
     settings: DiscoverySettings,
     physical_records=None,
 ):
-    """Produce canonical Discovery candidates and optionally retain their facts."""
-    seeds = collect_strict_nl_seeds(raw, raw_file=raw_file, settings=settings)
-    groups = group_discovery_seeds(seeds, settings=settings)
+    """Produce canonical Discovery peaks and optionally retain their facts."""
+    seeds = collect_strict_nl_events(raw, raw_file=raw_file, settings=settings)
+    seeds = read_parent_ms1_observations(
+        raw, seeds, tolerance_ppm=settings.precursor_mz_tolerance_ppm
+    )
+    channels = build_discovery_ions(seeds, settings=settings)
     source = raw.acquisition_source
     if source is None:
         source = (
@@ -61,9 +65,9 @@ def _current_candidates(
             if raw_file.exists()
             else fake_acquisition_source()
         )
-    discovery = capture_ms1_candidates(
+    discovery = capture_ms1_peaks(
         raw,
-        groups,
+        channels,
         acquisition_source=source,
         settings=settings,
         signal_processing_profile=TEST_PROFILE,
@@ -71,9 +75,9 @@ def _current_candidates(
     )
     if physical_records is not None:
         physical_records.update(
-            (record.candidate_id, record) for record in discovery.physical_evaluations
+            (record.peak_id, record) for record in discovery.physical_evaluations
         )
-    return discovery.candidates
+    return discovery.peaks
 
 
 def bind_physical_capture(owners, records, *, profile=TEST_PROFILE):
@@ -126,7 +130,6 @@ def _settings() -> DiscoverySettings:
         neutral_loss_profile=NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),
         rt_min=7.5,
         rt_max=8.6,
-        seed_rt_gap_min=0.20,
         ms1_search_padding_min=0.20,
         resolver_mode="local_minimum",
     )
@@ -142,7 +145,6 @@ def _multi_tag_settings() -> DiscoverySettings:
         tag_combine_mode="union",
         rt_min=7.5,
         rt_max=8.6,
-        seed_rt_gap_min=0.20,
         ms1_search_padding_min=0.20,
         resolver_mode="local_minimum",
     )

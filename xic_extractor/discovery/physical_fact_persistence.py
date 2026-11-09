@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -19,11 +19,11 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem
 from xic_extractor.discovery.physical_fact_record import (
-    DiscoveryPhysicalCandidateLink,
     DiscoveryPhysicalFactRecord,
     validate_discovery_physical_fact_record,
 )
 from xic_extractor.discovery.physical_fact_source import (
+    DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION,
     DetachedPhysicalFactSource,
     PhysicalFactSource,
 )
@@ -56,8 +56,6 @@ from xic_extractor.validation_primitives import (
     require_text,
 )
 
-DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION = "discovery_physical_fact_sidecar"
-
 _ROOT_KEYS = (
     "schema_version",
     "run_spec",
@@ -83,11 +81,11 @@ _WORK_KEYS = (
     "xic_rt_min",
     "xic_rt_max",
     "xic_ppm_tol",
-    "candidate_id",
+    "peak_id",
     "selection_subject_id",
 )
 _RECORD_KEYS = (
-    "candidate_id",
+    "peak_id",
     "selection_subject_id",
     "acquired_trace",
     "physical_evaluation",
@@ -146,54 +144,6 @@ def _restore_retained_signal(
             projection=evaluation.prepared, profile=profile, **arrays
         ),
     )
-
-
-def _restore_candidate_links(
-    record: Mapping[str, Any], work_ordinal: int
-) -> tuple[DiscoveryPhysicalCandidateLink, ...]:
-    links = []
-    for value in _list(record.get("candidate_links", []), label="candidate_links"):
-        link = _mapping(value, label="candidate_link")
-        _require_keys(
-            link,
-            (
-                "candidate_id",
-                "final_ordinal",
-                "representative_source_ordinal",
-                "member_source_ordinals",
-                "representative_work_ordinal",
-                "member_work_ordinals",
-            ),
-            label="candidate_link",
-        )
-        member_work = tuple(
-            _integer(x, field="member_work_ordinal")
-            for x in _list(link["member_work_ordinals"], label="member_work_ordinals")
-        )
-        if work_ordinal not in member_work:
-            raise ValueError("Discovery candidate link crosses its work record")
-        links.append(
-            DiscoveryPhysicalCandidateLink(
-                candidate_id=_text(link["candidate_id"], field="candidate_id"),
-                final_ordinal=_integer(link["final_ordinal"], field="final_ordinal"),
-                representative_source_ordinal=_integer(
-                    link["representative_source_ordinal"],
-                    field="representative_source_ordinal",
-                ),
-                member_source_ordinals=tuple(
-                    _integer(x, field="member_source_ordinal")
-                    for x in _list(
-                        link["member_source_ordinals"], label="member_source_ordinals"
-                    )
-                ),
-                representative_work_ordinal=_integer(
-                    link["representative_work_ordinal"],
-                    field="representative_work_ordinal",
-                ),
-                member_work_ordinals=member_work,
-            )
-        )
-    return tuple(links)
 
 
 _SIDECAR_VERIFY_BLOCK_BYTES = 1 << 20
@@ -278,14 +228,11 @@ def serialize_discovery_physical_fact_sidecar(
             "work_manifest": [_work_content(item) for item in manifest_tuple],
             "records": [
                 {
-                    "candidate_id": record.candidate_id,
+                    "peak_id": record.peak_id,
                     "selection_subject_id": record.selection_subject_id,
                     "acquired_trace": json.loads(
                         serialize_acquired_trace(record.acquired_trace).decode("utf-8")
                     ),
-                    "candidate_links": [
-                        asdict(link) for link in record.candidate_links
-                    ],
                     "retained_prepared_signal": _retained_signal_content(
                         record.evaluation
                     ),
@@ -353,17 +300,15 @@ class IndexedDiscoveryPhysicalFacts:
             if question in questions:
                 raise ValueError("Discovery physical questions must be unique")
             questions.add(question)
-            manifest_ids.append(item.candidate_id)
-            if item.candidate_id in candidate_ids:
-                if item.candidate_id in self.candidate_ordinals:
-                    raise ValueError(
-                        "Discovery physical candidate identity is duplicated"
-                    )
-                self.candidate_ordinals[item.candidate_id] = index
-                self.precursor_mz[item.candidate_id] = item.precursor_mz
+            manifest_ids.append(item.peak_id)
+            if item.peak_id in candidate_ids:
+                if item.peak_id in self.candidate_ordinals:
+                    raise ValueError("Discovery physical peak identity is duplicated")
+                self.candidate_ordinals[item.peak_id] = index
+                self.precursor_mz[item.peak_id] = item.precursor_mz
 
         def record_visitor(index: int, value: dict) -> None:
-            cid = _text(value.get("candidate_id"), field="candidate_id")
+            cid = _text(value.get("peak_id"), field="peak_id")
             record_ids.append(cid)
             if cid in candidate_ids:
                 physical = _mapping(
@@ -399,9 +344,7 @@ class IndexedDiscoveryPhysicalFacts:
             path,
             manifest_visitor=manifest_visitor,
             record_visitor=record_visitor,
-            retain_record=lambda _index, value: (
-                value.get("candidate_id") in candidate_ids
-            ),
+            retain_record=lambda _index, value: value.get("peak_id") in candidate_ids,
             spool_dir=spool_dir,
         )
         self.resolved_candidate_ids = frozenset(resolved_candidate_ids)
@@ -577,13 +520,11 @@ def restore_discovery_physical_fact_record(
     record = _mapping(raw_record, label="record")
     _require_keys(
         record,
-        _RECORD_KEYS[:3]
-        + ("candidate_links", "retained_prepared_signal")
-        + _RECORD_KEYS[3:],
+        _RECORD_KEYS[:3] + ("retained_prepared_signal",) + _RECORD_KEYS[3:],
         label="record",
     )
-    if _text(record["candidate_id"], field="candidate_id") != item.candidate_id:
-        raise ValueError("Discovery physical sidecar candidate ID changed")
+    if _text(record["peak_id"], field="peak_id") != item.peak_id:
+        raise ValueError("Discovery physical sidecar peak ID changed")
     if (
         _text(record["selection_subject_id"], field="selection_subject_id")
         != item.selection_subject_id
@@ -628,7 +569,6 @@ def restore_discovery_physical_fact_record(
     restored = DiscoveryPhysicalFactRecord(
         work_item=item,
         acquired_trace=acquired,
-        candidate_links=_restore_candidate_links(record, item.work_ordinal),
         evaluation=_restore_retained_signal(
             record,
             evaluation,
@@ -714,13 +654,11 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
         record = _mapping(raw_record, label="record")
         _require_keys(
             record,
-            _RECORD_KEYS[:3]
-            + ("candidate_links", "retained_prepared_signal")
-            + _RECORD_KEYS[3:],
+            _RECORD_KEYS[:3] + ("retained_prepared_signal",) + _RECORD_KEYS[3:],
             label="record",
         )
-        if _text(record["candidate_id"], field="candidate_id") != item.candidate_id:
-            raise ValueError("Discovery physical sidecar candidate ID changed")
+        if _text(record["peak_id"], field="peak_id") != item.peak_id:
+            raise ValueError("Discovery physical sidecar peak ID changed")
         if (
             _text(record["selection_subject_id"], field="selection_subject_id")
             != item.selection_subject_id
@@ -743,7 +681,6 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
         restored = DiscoveryPhysicalFactRecord(
             work_item=item,
             acquired_trace=acquired,
-            candidate_links=_restore_candidate_links(record, item.work_ordinal),
             evaluation=_restore_retained_signal(
                 record,
                 evaluation,
@@ -841,7 +778,7 @@ def _work_content(item: DiscoveryPhysicalWorkItem) -> dict[str, object]:
         "xic_rt_min": _float_text(item.xic_rt_min),
         "xic_rt_max": _float_text(item.xic_rt_max),
         "xic_ppm_tol": _float_text(item.xic_ppm_tol),
-        "candidate_id": item.candidate_id,
+        "peak_id": item.peak_id,
         "selection_subject_id": item.selection_subject_id,
     }
 
@@ -876,7 +813,7 @@ def _work_from_content(
         xic_rt_max=_float_from_text(content["xic_rt_max"], field="xic_rt_max"),
         xic_ppm_tol=_float_from_text(content["xic_ppm_tol"], field="xic_ppm_tol"),
     )
-    if _text(content["candidate_id"], field="candidate_id") != item.candidate_id:
+    if _text(content["peak_id"], field="peak_id") != item.peak_id:
         raise ValueError("physical work candidate ID does not match owner content")
     if (
         _text(content["selection_subject_id"], field="selection_subject_id")

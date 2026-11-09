@@ -648,7 +648,7 @@ def prepare_targeted_method_seeds(
     from pathlib import Path
 
     from xic_extractor.configuration.targeted_identification import target_cid_nl_tags
-    from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+    from xic_extractor.discovery.ms2_events import discovery_events_from_scan
 
     prepared = {}
     for tag in dict.fromkeys(
@@ -659,7 +659,7 @@ def prepare_targeted_method_seeds(
             seed
             for event in window.events
             if event.parse_error is None and event.scan is not None
-            for seed in discovery_seeds_from_scan(
+            for seed in discovery_events_from_scan(
                 event.scan, raw_file=Path(window.sample_key), settings=settings
             )
         )
@@ -670,7 +670,7 @@ def _discovery_method_products(
     window: Ms2Window, target: Target, seeds: tuple | None
 ) -> tuple[MS2ProductEvidence, ...]:
     """Adapt shared Discovery events, preserving their recorded/inferred basis."""
-    from xic_extractor.discovery.strict_seed_receipts import (
+    from xic_extractor.discovery.strict_event_receipts import (
         resolve_discovery_scan_events,
     )
 

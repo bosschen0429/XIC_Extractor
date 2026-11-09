@@ -122,8 +122,8 @@ def materialize_untargeted_partition(
         )
         context = replace(
             plan.context,
-            candidates_by_sample=candidates,
-            physical_records_by_candidate=records,
+            peaks_by_sample=candidates,
+            physical_records_by_peak=records,
         )
         assert plan.dll_dir is not None
         templates: list[UntargetedPartitionJob] = []
@@ -148,7 +148,7 @@ def materialize_untargeted_partition(
                     dll_dir=plan.dll_dir,
                     signal_processing_profile=context.signal_processing_profile,
                     physical_records=tuple(
-                        records[item.candidate_id] for item in candidates[stem]
+                        records[item.peak_id] for item in candidates[stem]
                     ),
                     acquisition_source_expectation=context.acquisition_sources_by_sample[
                         stem

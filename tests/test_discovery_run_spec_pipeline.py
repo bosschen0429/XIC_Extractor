@@ -23,7 +23,7 @@ from xic_extractor.acquisition_contract import (
 )
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
-    read_owner_bound_discovery_candidates_csv,
+    read_owner_bound_discovery_peaks_csv,
 )
 from xic_extractor.discovery.pipeline import (
     discover_sample_for_process_job,
@@ -54,8 +54,7 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
     surface: str,
 ) -> None:
     from xic_extractor.discovery import output_publication, pipeline
-    from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
-    from xic_extractor.discovery.models import MS1_FEATURE_BACKED_STATES
+    from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
     from xic_extractor.discovery.physical_fact_persistence import (
         read_discovery_physical_fact_records,
     )
@@ -100,9 +99,9 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
     captured = {}
     publish_sample = output_publication.publish_discovery_batch_sample
 
-    def capture_publication(raw_path, candidates, **kwargs):
+    def capture_publication(raw_path, candidates, events, **kwargs):
         captured[raw_path.stem] = (candidates, kwargs)
-        return publish_sample(raw_path, candidates, **kwargs)
+        return publish_sample(raw_path, candidates, events, **kwargs)
 
     monkeypatch.setattr(
         output_publication, "publish_discovery_batch_sample", capture_publication
@@ -144,49 +143,35 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         strict=True,
     ):
         candidates, physical = captured[acquisition.sample_stem]
-        features = tuple(
-            item
-            for item in candidates
-            if item.ms1_peak_found
-            and item.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
-        )
-        assert {item.precursor_mz_basis for item in features} == {
+        # Only the m/z 700 and 701 ions have MS1 signal: two measured peaks.
+        assert {item.precursor_mz_basis for item in candidates} == {
             "scan_precursor",
             "product_plus_neutral_loss",
         }
-        support = tuple(
-            item
-            for item in candidates
-            if not item.ms1_peak_found and item.precursor_mz_basis == "scan_precursor"
-        )
-        dropped = tuple(
-            item
-            for item in candidates
-            if not item.ms1_peak_found
-            and item.precursor_mz_basis == "product_plus_neutral_loss"
-        )
-        assert len(features) == 2 and len(support) == len(dropped) == 1
-        expected = (*features, *support)
+        assert len(candidates) == 2
         expected_path = tmp_path / f"{acquisition.sample_stem}.csv"
-        write_discovery_candidates_csv(expected_path, expected)
+        write_discovery_peaks_csv(expected_path, candidates)
         assert output.physical_facts_json is not None
         payload = json.loads(output.physical_facts_json.read_text(encoding="utf-8"))
         if surface == "facts":
             assert len(payload["records"]) == len(payload["work_manifest"]) == 2
-        assert output.candidates_csv.read_bytes() == expected_path.read_bytes()
-        assert {row["candidate_id"] for row in _read_csv(output.review_csv)} == {
-            item.candidate_id for item in expected
+        assert output.peaks_csv.read_bytes() == expected_path.read_bytes()
+        # The m/z 500 and 501 events are recorded without a peak.
+        events = _read_csv(output.events_csv)
+        assert {row["peak_id"] for row in events if row["peak_id"]} <= {
+            item.peak_id for item in candidates
         }
-        receipt = batch.candidate_receipts[acquisition.sample_stem]
-        assert receipt.candidate_count == 3
+        assert any(not row["peak_id"] and float(row["xic_mz"]) < 600 for row in events)
+        receipt = batch.peak_receipts[acquisition.sample_stem]
+        assert receipt.peak_count == 2
         assert (
             len(
-                read_owner_bound_discovery_candidates_csv(
-                    output.candidates_csv,
+                read_owner_bound_discovery_peaks_csv(
+                    output.peaks_csv,
                     receipt=receipt,
                 )
             )
-            == 3
+            == 2
         )
         assert len(payload["records"]) == len(payload["work_manifest"]) == 2
         records = read_discovery_physical_fact_records(
@@ -194,14 +179,14 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
             expected_run_spec=spec,
             expected_acquisition_input=acquisition,
         )
-        assert {record.candidate_id for record in records} == {
-            item.candidate_id for item in features
+        assert {record.peak_id for record in records} == {
+            item.peak_id for item in candidates
         }
         original_records = {
-            record.candidate_id: record for record in physical["physical_evaluations"]
+            record.peak_id: record for record in physical["physical_evaluations"]
         }
         for record in records:
-            original = original_records[record.candidate_id]
+            original = original_records[record.peak_id]
             assert record.evaluation == original.evaluation
             assert serialize_acquired_trace(record.acquired_trace) == (
                 serialize_acquired_trace(original.acquired_trace)
@@ -234,8 +219,9 @@ def test_physical_bindings_match_published_candidates_by_id(
                 precursor_mz=300.1085,
             ),
         ],
-        rt=np.asarray([7.9, 8.0, 8.1], dtype=float),
-        intensity=np.asarray([1.0, 100.0, 1.0], dtype=float),
+        rt=np.linspace(7.4, 8.6, 241),
+        intensity=1000.0
+        * np.exp(-0.5 * ((np.linspace(7.4, 8.6, 241) - 8.0) / 0.04) ** 2),
     )
     outputs = run_discovery_batch(
         (raw_path,),
@@ -248,15 +234,15 @@ def test_physical_bindings_match_published_candidates_by_id(
     batch = read_discovery_batch_index(
         outputs.batch_index_csv,
     )
-    receipt = batch.candidate_receipts[raw_path.stem]
-    canonical_candidates = read_owner_bound_discovery_candidates_csv(
-        batch.candidate_csvs[raw_path.stem],
+    receipt = batch.peak_receipts[raw_path.stem]
+    canonical_candidates = read_owner_bound_discovery_peaks_csv(
+        batch.peak_csvs[raw_path.stem],
         receipt=receipt,
     )
     bindings = outputs.per_sample[0].physical_bindings
     reordered_candidates = tuple(reversed(canonical_candidates))
-    assert tuple(binding.candidate.candidate_id for binding in bindings) != tuple(
-        candidate.candidate_id for candidate in reordered_candidates
+    assert tuple(binding.peak.peak_id for binding in bindings) != tuple(
+        candidate.peak_id for candidate in reordered_candidates
     )
 
 
@@ -274,8 +260,9 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         path: _OwnerBoundFakeRawHandle(
             spec.acquisition_inputs[index].acquisition_source,
             [_scan_event(scan_number=index + 1, rt=8.0 + index)],
-            rt=np.asarray([7.9 + index, 8.0 + index, 8.1 + index], dtype=float),
-            intensity=np.asarray([1.0, 100.0, 1.0], dtype=float),
+            rt=np.linspace(7.4 + index, 8.6 + index, 241),
+            intensity=1000.0
+            * np.exp(-0.5 * ((np.linspace(7.4, 8.6, 241) - 8.0) / 0.04) ** 2),
         )
         for index, path in enumerate(raw_paths)
     }
@@ -292,8 +279,9 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         path: _OwnerBoundFakeRawHandle(
             spec.acquisition_inputs[index].acquisition_source,
             [_scan_event(scan_number=index + 1, rt=8.0 + index)],
-            rt=np.asarray([7.9 + index, 8.0 + index, 8.1 + index], dtype=float),
-            intensity=np.asarray([1.0, 100.0, 1.0], dtype=float),
+            rt=np.linspace(7.4 + index, 8.6 + index, 241),
+            intensity=1000.0
+            * np.exp(-0.5 * ((np.linspace(7.4, 8.6, 241) - 8.0) / 0.04) ** 2),
         )
         for index, path in enumerate(raw_paths)
     }
@@ -391,7 +379,7 @@ def test_real_spawn_rejects_full_mismatched_process_job_with_exact_identity(
         sample_index=0,
         raw_path=raw_path,
         output_dir=tmp_path / "out",
-        settings=replace(settings, seed_rt_gap_min=0.33),
+        settings=replace(settings, ms1_search_padding_min=0.33),
         dll_dir=tmp_path / "dll",
         acquisition_source=source,
         run_spec=spec,
@@ -459,7 +447,7 @@ def test_process_job_validates_binding_and_preserves_failure_identity(
 
     crossed_job = replace(
         valid_job,
-        settings=replace(settings, seed_rt_gap_min=0.33),
+        settings=replace(settings, ms1_search_padding_min=0.33),
     )
     crossed = _run_discovery_sample_process_job(crossed_job)
     assert isinstance(crossed, DiscoverySampleProcessError)

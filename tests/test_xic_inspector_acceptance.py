@@ -47,7 +47,7 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
         tmp_path / "alignment_explanation.sqlite",
         full_audit=True,
         completed=completed,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
@@ -142,7 +142,7 @@ def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) 
         tmp_path / "alignment_explanation.sqlite",
         full_audit=True,
         completed=completed,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
@@ -173,7 +173,7 @@ def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
         tmp_path / "alignment_explanation.sqlite",
         full_audit=True,
         completed=completed,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
@@ -228,7 +228,7 @@ def test_acceptance_a7_cancel_and_atomic_replace(tmp_path, monkeypatch) -> None:
         tmp_path / "alignment_explanation.sqlite",
         full_audit=True,
         completed=completed,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )
@@ -278,7 +278,7 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
         application,
         "complete_untargeted_alignment",
         lambda **kwargs: completed.bind_publication_inputs(
-            candidates_by_sample=kwargs["candidates_by_sample"],
+            peaks_by_sample=kwargs["peaks_by_sample"],
             alignment_config=kwargs["alignment_config"],
             known_istd_reference=kwargs["known_istd_reference"],
         ),

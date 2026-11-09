@@ -57,25 +57,19 @@ def query_discovery(
     selected = tuple(
         cid
         for cid, location in source.locations.items()
-        if any(
-            lower
-            <= source.ms1_apex_mz_by_candidate.get(cid, location.precursor_mz)
-            <= upper
-            for lower, upper in mz_ranges
-        )
+        if any(lower <= location.peak_mz <= upper for lower, upper in mz_ranges)
     )
     candidates = source.load_candidates(selected)
     return source.batch.sample_order, [
         {
             "sample_stem": sample,
-            "candidate_id": candidate.candidate_id,
-            "mz": candidate.physical_mz,
-            "seed_mz": candidate.precursor_mz,
+            "candidate_id": candidate.peak_id,
+            "mz": candidate.peak_mz,
+            "seed_mz": candidate.best_event_precursor_mz,
             "apex_rt": candidate.ms1_apex_rt,
-            "seed_rt": candidate.best_seed_rt,
-            "state": candidate.discovery_candidate_state,
-            "ms1_peak_found": candidate.ms1_peak_found,
-            "seed_event_count": candidate.seed_event_count,
+            "seed_rt": candidate.best_event_rt,
+            "peak_status": candidate.status,
+            "attached_event_count": candidate.attached_event_count,
             "area": candidate.ms1_area,
             "reason": candidate.reason,
         }

@@ -19,9 +19,9 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.batch_contract import (
-    DiscoveryCandidateUniverseReceipt,
+    DiscoveryPeakUniverseReceipt,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -62,12 +62,12 @@ def build_dense_partition(
     sample_metadata: tuple[SampleMetadata, ...],
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
-    discovery_receipts_by_sample: Mapping[str, DiscoveryCandidateUniverseReceipt],
+    peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
+    discovery_receipts_by_sample: Mapping[str, DiscoveryPeakUniverseReceipt],
     dll_dir: Path,
     sample_identity_namespace: str,
     signal_processing_profile: SignalProcessingProfile,
-    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
+    physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord],
 ) -> UntargetedPartitionInputs:
     """Prepare one dense partition through the formal eager plan owner."""
 
@@ -76,12 +76,12 @@ def build_dense_partition(
         sample_metadata=sample_metadata,
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=discovery_receipts_by_sample,
         dll_dir=dll_dir,
         sample_identity_namespace=sample_identity_namespace,
         signal_processing_profile=signal_processing_profile,
-        physical_records_by_candidate=physical_records_by_candidate,
+        physical_records_by_peak=physical_records_by_peak,
     )
     return materialize_untargeted_partition(plan, plan.subject_batch)
 

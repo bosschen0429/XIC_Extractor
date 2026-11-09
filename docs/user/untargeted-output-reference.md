@@ -8,63 +8,55 @@ gates.
 
 ## Discovery Outputs
 
-### `discovery_candidates.csv`
+### `discovery_peaks.csv`
 
-One row per candidate feature per sample. Full provenance for audit.
+One row per physical MS1 peak per sample: one ion's XIC, one raw
+valley-separated peak, one measurement. Full provenance for audit.
 
 #### Review Columns
 
 | Column | Type | Description |
 | --- | --- | --- |
 | review_priority | string | `HIGH`, `MEDIUM`, or `LOW` |
+| status | string | See status values below |
 | evidence_tier | string | Confidence tier (A–E) |
 | evidence_score | int | Numeric evidence score |
 | ms2_support | string | MS2 evidence level |
-| ms1_support | string | MS1 feature finding status |
+| ms1_support | string | MS1 peak support level |
 | rt_alignment | string | RT alignment quality |
+
+Status values, highest precedence first: `blank` (demoted by blank
+qualification), `doubly_charged` (the MS1 ion reads as a doubly charged
+isotope), `overlap` (shoulder or overlapping envelope), `no_nl_event` (no
+attached NL event), `admitted`. Only `admitted` peaks enter Alignment.
 
 #### Identity Columns
 
 | Column | Type | Description |
 | --- | --- | --- |
-| candidate_id | string | Unique candidate identifier |
-| feature_family_id | string | Per-sample peak anchor label for candidates sharing the same discovered MS1 peak |
-| feature_family_size | int | Number of members in the family |
-
-Legacy `family_context` and `feature_superfamily_*` columns are not part of the
-current Discovery output schema. Consumers should use the listed columns rather
-than requiring those removed fields.
+| peak_id | string | `{sample}@mz{xic_mz}_rt{raw apex RT}`; unique within the sample |
+| peak_mz | float | The peak's ion mass, read by Alignment and Delta Mass: `ms1_apex_mz` when present, else `xic_mz` |
+| xic_mz | float | XIC center: the ion's MS1 reading before acquisition |
 
 #### Measurement Columns
 
 | Column | Type | Description |
 | --- | --- | --- |
-| precursor_mz | float | Precursor m/z |
-| product_mz | float | Product ion m/z |
-| observed_neutral_loss_da | float | Observed neutral loss (Da) |
-| best_seed_rt | float | Best MS2 scan retention time (min) |
-| seed_event_count | int | Number of seed events |
-| ms1_peak_found | bool | Whether MS1 peak was located |
-| ms1_apex_rt | float | MS1 peak apex RT (min; null if not found) |
-| ms1_area | float | MS1 peak area (null if not found) |
-| ms2_product_max_intensity | float | Maximum product ion intensity |
+| best_event_precursor_mz | float | Representative event's precursor m/z; not the peak's measured mass |
+| best_event_product_mz | float | Representative event's product ion m/z |
+| best_event_neutral_loss_da | float | Representative event's observed neutral loss (Da) |
+| ms1_apex_rt | float | MS1 peak apex RT (min) |
+| ms1_area | float | MS1 peak area |
+| attached_event_count | int | Number of events attached to the peak |
+| best_event_rt | float | Representative event's MS2 RT (min) |
+| ms2_product_max_intensity | float | Maximum product ion intensity over located events |
 | reason | string | Inclusion/flag reason |
 
-#### State Columns
+#### Shape Column
 
 | Column | Type | Description |
 | --- | --- | --- |
-| discovery_candidate_state | string | See state values below |
-| ms1_feature_row_id | string | Cross-reference to MS1 feature matrix |
-
-State values: `ms1_feature_nl_supported`, `ms1_feature_nl_rescued`,
-`review_only_orphan_nl`, `review_only_ambiguous_coisolation`,
-`rejected_noise_or_outside_rt`.
-
-`review_only_ambiguous_coisolation` includes otherwise feature-backed pure
-inferred precursor hypotheses that share one sample/tag/best-MS2-scan context
-with a stronger inferred hypothesis. They remain reviewable but do not
-independently enter Alignment RAW owner build.
+| is_provisional | bool | Peak shape is provisional or overlapping |
 
 #### Provenance Columns
 
@@ -72,8 +64,8 @@ independently enter Alignment RAW owner build.
 | --- | --- | --- |
 | raw_file | string | RAW data file path |
 | sample_stem | string | Sample name (from filename) |
-| best_ms2_scan_id | int | Best MS2 scan number |
-| seed_scan_ids | string | Semicolon-separated scan IDs |
+| best_ms2_scan_id | int | Representative event's MS2 scan number |
+| event_scan_ids | string | Semicolon-separated MS2 scans of every event located on the peak |
 | neutral_loss_tag | string | NL identifier/tag |
 | configured_neutral_loss_da | float | Configured NL mass |
 | neutral_loss_mass_error_ppm | float | Descriptive NL mass error (ppm of configured loss); acceptance uses the quadrature per-ion m/z window |
@@ -82,11 +74,11 @@ independently enter Alignment RAW owner build.
 | scan_precursor_mz | float | Scan-observed precursor m/z |
 | scan_precursor_delta_da | float | Precursor m/z deviation |
 | max_scan_precursor_abs_delta_da | float | Maximum precursor deviation |
-| rt_seed_min | float | Seed RT minimum |
-| rt_seed_max | float | Seed RT maximum |
+| event_rt_min | float | Earliest located event RT |
+| event_rt_max | float | Latest located event RT |
 | ms1_search_rt_min | float | MS1 search window min |
 | ms1_search_rt_max | float | MS1 search window max |
-| ms1_seed_delta_min | float | Seed-to-MS1 RT delta |
+| ms1_event_delta_min | float | MS1 apex RT minus `best_event_rt` |
 | ms1_peak_rt_start | float | MS1 peak start RT |
 | ms1_peak_rt_end | float | MS1 peak end RT |
 | ms1_height | float | MS1 peak height |
@@ -103,29 +95,30 @@ independently enter Alignment RAW owner build.
 
 ---
 
-### `discovery_review.csv`
+### `discovery_events.csv`
 
-Compact triage index — one row per candidate, subset of columns from
-`discovery_candidates.csv` plus a constructed `review_note`.
+One row per strict NL event (MS2 scan, tag and product) per sample. Each event
+names the peak it attaches to, or why it attaches to none.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| review_priority | string | `HIGH`, `MEDIUM`, or `LOW` |
-| evidence_tier | string | Confidence tier |
-| evidence_score | int | Numeric score |
-| ms2_support | string | MS2 evidence |
-| ms1_support | string | MS1 finding status |
-| rt_alignment | string | RT alignment quality |
-| candidate_id | string | Unique ID |
-| precursor_mz | float | Precursor m/z |
-| best_seed_rt | float | Best seed RT (min) |
-| ms1_area | float | MS1 area (if found) |
-| seed_event_count | int | Seed event count |
+| sample_stem | string | Sample name |
+| ms2_scan_number | int | MS2 scan number |
+| ms2_rt | float | MS2 scan RT (min) |
 | neutral_loss_tag | string | NL tag |
-| matched_tag_names | string | Tag names |
-| matched_tag_count | int | Tag count |
-| tag_intersection_status | string | Intersection status |
-| review_note | string | Human-readable summary |
+| product_mz | float | Product ion m/z |
+| product_intensity | float | Product ion intensity |
+| precursor_mz | float | Precursor m/z |
+| precursor_mz_basis | string | Precursor source basis |
+| scan_precursor_mz | float | Scan-observed precursor m/z |
+| parent_ms1_rt | float | Parent MS1 scan RT (min; blank when not read) |
+| parent_ms1_mz | float | Parent MS1 centroid m/z (blank when not read) |
+| observed_neutral_loss_da | float | Observed neutral loss (Da) |
+| neutral_loss_mass_error_ppm | float | Descriptive NL mass error |
+| precursor_verified | bool | The precursor verifies the configured loss |
+| xic_mz | float | XIC center of the event's ion |
+| peak_id | string | Attached peak; blank when unattached |
+| unattached_reason | string | Why the event attaches to no peak; blank when attached |
 
 ---
 
@@ -135,18 +128,20 @@ One row per sample. Links each sample to its output files.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| schema_version | string | `discovery_batch_index_local_source` |
+| schema_version | string | `discovery_batch_index_peaks` |
 | sample_stem | string | Sample name |
 | raw_file | string | RAW file path |
-| candidate_csv | string | Path to `discovery_candidates.csv` |
-| review_csv | string | Path to `discovery_review.csv` |
-| candidate_count | int | Total candidates |
+| peak_csv | string | Path to `discovery_peaks.csv` |
+| event_csv | string | Path to `discovery_events.csv` |
+| peak_count | int | Total peaks |
+| admitted_peak_count | int | Admitted peaks |
+| event_count | int | Total events |
 | high_count | int | HIGH priority count |
 | medium_count | int | MEDIUM priority count |
 | low_count | int | LOW priority count |
-| candidate_artifact_schema_version | string | Candidate CSV format |
-| candidate_artifact_sha256 | string | SHA-256 of the candidate CSV bytes |
-| candidate_artifact_byte_size | int | Candidate CSV byte size |
+| peak_csv_schema_version | string | Peak CSV format |
+| peak_csv_sha256 | string | SHA-256 of the peak CSV bytes |
+| peak_csv_byte_size | int | Peak CSV byte size |
 | physical_facts_sha256 | string | SHA-256 of the sample's `discovery_physical_facts.json` bytes |
 | physical_facts_byte_size | int | `discovery_physical_facts.json` byte size |
 | acquisition_local_file_revision | string | JSON array of device, file identity, size, modification and creation/change timestamps |
@@ -155,7 +150,7 @@ One row per sample. Links each sample to its output files.
 | observation_namespace | string | Adapter-readable observation namespace |
 | mass_recalibration | string | Recalibration result; omitted when vendor masses were used unchanged |
 
-Alignment rejects a candidate CSV or physical-facts file whose bytes no longer
+Alignment rejects a peak CSV or physical-facts file whose bytes no longer
 match these fingerprints.
 RAW sources use local file revisions without scanning the file contents.
 Moving or copying RAW files requires regenerating Discovery and its acquisition

@@ -27,7 +27,7 @@ from xic_extractor.acquisition_contract import (
 from xic_extractor.discovery import pipeline as _pipeline
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
-    read_owner_bound_discovery_candidates_csv,
+    read_owner_bound_discovery_peaks_csv,
 )
 from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
@@ -75,7 +75,7 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, selection: str
 ) -> None:
     from scripts.run_discovery import main
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     available_tags = (("custom_dR", 116.0473), ("custom_R", 132.0423))
     tags = (
@@ -144,9 +144,7 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
             )
             == 0
         )
-        (candidate,) = read_discovery_candidates_csv(
-            output_dir / "discovery_candidates.csv"
-        )
+        (candidate,) = read_discovery_peaks_csv(output_dir / "discovery_peaks.csv")
         assert candidate.sample_stem == sample
         assert candidate.matched_tag_names == tuple(name for name, _ in tags)
         assert candidate.tag_combine_mode == combine_mode
@@ -154,8 +152,8 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
             "complete" if selection == "intersection" else "not_required"
         )
         assert candidate.configured_neutral_loss_da == tags[0][1]
-        assert candidate.product_mz == pytest.approx(500.0 - tags[0][1])
-        assert candidate.seed_scan_ids == (100, 101)
+        assert candidate.best_event_product_mz == pytest.approx(500.0 - tags[0][1])
+        assert candidate.event_scan_ids == (100, 101)
         assert candidate.ms1_apex_rt == pytest.approx(apex)
         assert candidate.ms1_search_rt_min == pytest.approx(apex - 0.7)
         assert candidate.ms1_search_rt_max == pytest.approx(apex + 0.71)
@@ -167,10 +165,9 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
             * math.erf(math.sqrt(math.log(10))),
             rel=0.01,
         )
-        assert candidate.discovery_candidate_state == "ms1_feature_nl_supported"
-        (review,) = _read_csv(output_dir / "discovery_review.csv")
-        assert review["candidate_id"] == candidate.candidate_id
-        assert float(review["ms1_area"]) == pytest.approx(candidate.ms1_area)
+        assert candidate.status == "admitted"
+        events = _read_csv(output_dir / "discovery_events.csv")
+        assert {row["peak_id"] for row in events} == {candidate.peak_id}
         assert raw.entered and raw.closed
 
 
@@ -224,7 +221,7 @@ def test_cancelled_batch_retains_completed_samples_without_publishing_index(
     assert progress == [path.stem for path in raw_paths[:completed]]
     for path in raw_paths[:completed]:
         assert handles[path].closed
-        assert (output_dir / path.stem / "discovery_candidates.csv").is_file()
+        assert (output_dir / path.stem / "discovery_peaks.csv").is_file()
     assert all(not handles[path].entered for path in raw_paths[completed:])
     assert not (output_dir / "discovery_batch_index.csv").exists()
 
@@ -278,29 +275,25 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
     outputs = _run_discovery(
         raw_path,
         output_dir=output_dir,
-        settings=_settings(seed_rt_gap_min=0.20, enable_blank_qualification=True),
+        settings=_settings(enable_blank_qualification=True),
         dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
     )
 
-    assert outputs.candidates_csv == output_dir / "discovery_candidates.csv"
-    assert outputs.review_csv == output_dir / "discovery_review.csv"
+    assert outputs.peaks_csv == output_dir / "discovery_peaks.csv"
+    assert outputs.events_csv == output_dir / "discovery_events.csv"
     assert outputs.physical_facts_json == output_dir / "discovery_physical_facts.json"
-    rows = _read_csv(outputs.candidates_csv)
+    rows = _read_csv(outputs.peaks_csv)
     assert len(rows) == 1
-    assert rows[0]["candidate_id"] == "TumorBC2312_DNA#202@mz258.1085_p142.0611"
     assert rows[0]["best_ms2_scan_id"] == "202"
-    assert rows[0]["seed_scan_ids"] == "101;202"
-    assert rows[0]["seed_event_count"] == "2"
-    assert rows[0]["ms1_peak_found"] == "FALSE"
-    assert rows[0]["discovery_candidate_state"] == "review_only_orphan_nl"
+    assert rows[0]["event_scan_ids"] == "101;202"
+    assert rows[0]["attached_event_count"] == "2"
+    assert rows[0]["status"] == "blank"
+    assert rows[0]["status"] == "blank"
     assert "FC 2.04x < 3.0x" in rows[0]["reason"]
-    review_rows = _read_csv(outputs.review_csv)
-    assert len(review_rows) == 1
-    assert review_rows[0]["candidate_id"] == (
-        "TumorBC2312_DNA#202@mz258.1085_p142.0611"
-    )
-    assert "review_note" in review_rows[0]
+    event_rows = _read_csv(outputs.events_csv)
+    assert [row["ms2_scan_number"] for row in event_rows] == ["101", "202"]
+    assert {row["peak_id"] for row in event_rows} == {rows[0]["peak_id"]}
 
 
 def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
@@ -325,18 +318,16 @@ def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
     outputs = _run_discovery(
         raw_path,
         output_dir=output_dir,
-        settings=_settings(seed_rt_gap_min=0.20, ms2_precursor_tol_da=1.6),
+        settings=_settings(ms2_precursor_tol_da=1.6),
         dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
     )
 
-    rows = _read_csv(outputs.candidates_csv)
-    candidate_ids = {row["candidate_id"] for row in rows}
+    rows = _read_csv(outputs.peaks_csv)
     assert len(rows) == 2
-    assert len(candidate_ids) == 2
-    assert "TumorBC2312_DNA#19561@mz300.160635_p184.113235" in candidate_ids
-    assert "TumorBC2312_DNA#19561@mz301.164978_p185.115845" in candidate_ids
-    rows_by_product = {row["product_mz"]: row for row in rows}
+    assert len({row["peak_id"] for row in rows}) == 2
+    assert {row["best_ms2_scan_id"] for row in rows} == {"19561"}
+    rows_by_product = {row["best_event_product_mz"]: row for row in rows}
     inferred = rows_by_product["184.113235"]
     direct = rows_by_product["185.115845"]
     assert inferred["precursor_mz_basis"] == "product_plus_neutral_loss"
@@ -387,23 +378,22 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
         raw_opener=lambda path, dll_dir: raw,
     )
 
-    rows = _read_csv(outputs.candidates_csv)
+    rows = _read_csv(outputs.peaks_csv)
     assert len(rows) == 2
     areas = {
-        round(float(row["precursor_mz"]), 4): float(row["ms1_area"]) for row in rows
+        round(float(row["best_event_precursor_mz"]), 4): float(row["ms1_area"])
+        for row in rows
     }
     assert set(areas) == set(amplitudes)
     assert areas[258.6085] > areas[258.1085] > 0.0
-    assert len({row["candidate_id"] for row in rows}) == 2
-    assert len({row["ms1_feature_row_id"] for row in rows}) == 2
+    assert len({row["peak_id"] for row in rows}) == 2
     assert {row["best_ms2_scan_id"] for row in rows} == {"19561"}
-    assert {row["seed_event_count"] for row in rows} == {"1"}
-    assert {row["discovery_candidate_state"] for row in rows} == {
-        "ms1_feature_nl_rescued"
-    }
-    assert {row["candidate_id"] for row in _read_csv(outputs.review_csv)} == {
-        row["candidate_id"] for row in rows
-    }
+    # Neither inferred ion has a parent MS1 reading, so no event attaches.
+    assert {row["status"] for row in rows} == {"no_nl_event"}
+    events = _read_csv(outputs.events_csv)
+    # The repeated product of one scan is one event, not two.
+    assert len(events) == 2
+    assert {row["unattached_reason"] for row in events} == {"parent_ms1_unavailable"}
 
 
 def test_pipeline_writes_header_only_csv_when_no_strict_seeds(tmp_path: Path) -> None:
@@ -417,15 +407,15 @@ def test_pipeline_writes_header_only_csv_when_no_strict_seeds(tmp_path: Path) ->
         raw_opener=lambda path, dll_dir: raw,
     )
 
-    with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
+    with outputs.peaks_csv.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.reader(handle))
-    with outputs.review_csv.open(newline="", encoding="utf-8") as handle:
+    with outputs.events_csv.open(newline="", encoding="utf-8") as handle:
         review_rows = list(csv.reader(handle))
 
     assert len(rows) == 1
-    assert "candidate_id" in rows[0]
+    assert "peak_id" in rows[0]
     assert len(review_rows) == 1
-    assert "review_note" in review_rows[0]
+    assert "unattached_reason" in review_rows[0]
 
 
 def test_batch_pipeline_writes_per_sample_csvs_and_index(
@@ -466,57 +456,49 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         "TumorBC2312_DNA",
         "NormalBC2257_DNA",
     ]
-    assert [row["candidate_count"] for row in index_rows] == ["1", "1"]
+    assert [row["peak_count"] for row in index_rows] == ["1", "1"]
+    assert [row["admitted_peak_count"] for row in index_rows] == ["0", "1"]
     assert {row["schema_version"] for row in index_rows} == {
-        "discovery_batch_index_local_source"
+        "discovery_batch_index_peaks"
     }
     assert "discovery_receipt_id" not in index_rows[0]
     assert "acquisition_source_id" not in index_rows[0]
     assert [row["medium_count"] for row in index_rows] == ["0", "1"]
     assert [row["low_count"] for row in index_rows] == ["1", "0"]
-    assert [row["candidate_csv"] for row in index_rows] == [
-        "TumorBC2312_DNA/discovery_candidates.csv",
-        "NormalBC2257_DNA/discovery_candidates.csv",
+    assert [row["peak_csv"] for row in index_rows] == [
+        "TumorBC2312_DNA/discovery_peaks.csv",
+        "NormalBC2257_DNA/discovery_peaks.csv",
     ]
-    assert [row["review_csv"] for row in index_rows] == [
-        "TumorBC2312_DNA/discovery_review.csv",
-        "NormalBC2257_DNA/discovery_review.csv",
+    assert [row["event_csv"] for row in index_rows] == [
+        "TumorBC2312_DNA/discovery_events.csv",
+        "NormalBC2257_DNA/discovery_events.csv",
     ]
 
-    first_rows = _read_csv(
-        tmp_path / "out" / "TumorBC2312_DNA" / "discovery_candidates.csv"
-    )
+    first_rows = _read_csv(tmp_path / "out" / "TumorBC2312_DNA" / "discovery_peaks.csv")
     first_review_rows = _read_csv(
-        tmp_path / "out" / "TumorBC2312_DNA" / "discovery_review.csv"
+        tmp_path / "out" / "TumorBC2312_DNA" / "discovery_events.csv"
     )
     second_rows = _read_csv(
-        tmp_path / "out" / "NormalBC2257_DNA" / "discovery_candidates.csv"
+        tmp_path / "out" / "NormalBC2257_DNA" / "discovery_peaks.csv"
     )
-    assert first_rows[0]["ms1_peak_found"] == "FALSE"
+    assert first_rows[0]["status"] == "blank"
     assert "FC 2.04x < 3.0x" in first_rows[0]["reason"]
-    assert second_rows[0]["ms1_peak_found"] == "TRUE"
+    assert second_rows[0]["status"] == "admitted"
     assert "high abundance tissue signal (3.1x)" in second_rows[0]["reason"]
-    assert [row["candidate_id"] for row in first_rows] == [
-        "TumorBC2312_DNA#101@mz258.1085_p142.0611"
-    ]
-    assert [row["candidate_id"] for row in first_review_rows] == [
-        "TumorBC2312_DNA#101@mz258.1085_p142.0611"
-    ]
-    assert [row["candidate_id"] for row in second_rows] == [
-        "NormalBC2257_DNA#202@mz258.1085_p142.0611"
-    ]
-    assert not (tmp_path / "out" / "discovery_candidates.csv").exists()
+    assert [row["peak_id"] for row in first_review_rows] == [first_rows[0]["peak_id"]]
+    assert [row["sample_stem"] for row in second_rows] == ["NormalBC2257_DNA"]
+    assert not (tmp_path / "out" / "discovery_peaks.csv").exists()
     assert all(raw.entered and raw.closed for raw in raw_by_path.values())
     batch = read_discovery_batch_index(
         outputs.batch_index_csv,
     )
-    receipt = batch.candidate_receipts["TumorBC2312_DNA"]
-    rebound = read_owner_bound_discovery_candidates_csv(
-        batch.candidate_csvs["TumorBC2312_DNA"],
+    receipt = batch.peak_receipts["TumorBC2312_DNA"]
+    rebound = read_owner_bound_discovery_peaks_csv(
+        batch.peak_csvs["TumorBC2312_DNA"],
         receipt=receipt,
     )
-    assert tuple(candidate.candidate_id for candidate in rebound) == (
-        "TumorBC2312_DNA#101@mz258.1085_p142.0611",
+    assert tuple(candidate.peak_id for candidate in rebound) == (
+        first_rows[0]["peak_id"],
     )
 
     published = tmp_path / "published"
@@ -524,13 +506,13 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     relocated = read_discovery_batch_index(
         published / "discovery_batch_index.csv",
     )
-    relocated_receipt = relocated.candidate_receipts["TumorBC2312_DNA"]
-    relocated_candidates = read_owner_bound_discovery_candidates_csv(
-        relocated.candidate_csvs["TumorBC2312_DNA"],
+    relocated_receipt = relocated.peak_receipts["TumorBC2312_DNA"]
+    relocated_candidates = read_owner_bound_discovery_peaks_csv(
+        relocated.peak_csvs["TumorBC2312_DNA"],
         receipt=relocated_receipt,
     )
-    assert tuple(candidate.candidate_id for candidate in relocated_candidates) == (
-        "TumorBC2312_DNA#101@mz258.1085_p142.0611",
+    assert tuple(candidate.peak_id for candidate in relocated_candidates) == (
+        first_rows[0]["peak_id"],
     )
 
 
@@ -596,7 +578,7 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
         ),
     )
 
-    assert [output.candidates_csv.parent.name for output in parallel.per_sample] == [
+    assert [output.peaks_csv.parent.name for output in parallel.per_sample] == [
         "sample-b",
         "sample-a",
     ]
@@ -604,11 +586,11 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
     for serial_output, parallel_output in zip(
         serial.per_sample, parallel.per_sample, strict=True
     ):
-        assert serial_output.candidates_csv.read_bytes() == (
-            parallel_output.candidates_csv.read_bytes()
+        assert serial_output.peaks_csv.read_bytes() == (
+            parallel_output.peaks_csv.read_bytes()
         )
-        assert serial_output.review_csv.read_bytes() == (
-            parallel_output.review_csv.read_bytes()
+        assert serial_output.events_csv.read_bytes() == (
+            parallel_output.events_csv.read_bytes()
         )
     assert all(raw.entered and raw.closed for raw in parallel_handles.values())
     assert progress == [(1, 2, "sample-b"), (2, 2, "sample-a")]
@@ -816,8 +798,8 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"raw")
     measurements = _DiscoveryMs1Measurements(
-        input_group_count=0,
-        empty_group_count=0,
+        input_ion_count=0,
+        input_event_count=0,
         exact_scan_window_count=0,
         predicted_chunked_call_count=0,
         batch_max_requests=256,
@@ -969,8 +951,8 @@ def test_discovery_worker_failure_carries_own_partial_diagnostics(
     raw_path.write_bytes(b"raw")
 
     measurements = _DiscoveryMs1Measurements(
-        input_group_count=0,
-        empty_group_count=0,
+        input_ion_count=0,
+        input_event_count=0,
         exact_scan_window_count=0,
         predicted_chunked_call_count=0,
         batch_max_requests=256,
@@ -1006,8 +988,8 @@ def test_discovery_process_error_payload_survives_spawn_pickle_roundtrip(
     tmp_path: Path,
 ) -> None:
     measurements = _DiscoveryMs1Measurements(
-        input_group_count=0,
-        empty_group_count=0,
+        input_ion_count=0,
+        input_event_count=0,
         exact_scan_window_count=0,
         predicted_chunked_call_count=0,
         batch_max_requests=256,
@@ -1059,7 +1041,7 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
     recorder = TimingRecorder("discovery")
     observed_receipts = []
     monkeypatch.setattr(
-        "xic_extractor.discovery.cid_nl_search.collect_strict_nl_seeds",
+        "xic_extractor.discovery.cid_nl_search.collect_strict_nl_events",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("scan failed")),
     )
 
@@ -1103,7 +1085,7 @@ def test_discovery_capture_failure_preserves_owner_acquisition_measurements(
     recorder = TimingRecorder("discovery")
     spec = _compiled_run_spec((raw_path,), _settings())
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture._verify_precursor_evidence",
+        "xic_extractor.discovery.ms1_capture._measured_peak",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("peak failed")),
     )
 
@@ -1144,7 +1126,7 @@ def test_adapter_counter_failure_does_not_mask_discovery_failure(
     raw.acquisition_source = spec.acquisition_inputs[0].acquisition_source
     recorder = TimingRecorder("discovery")
     monkeypatch.setattr(
-        "xic_extractor.discovery.cid_nl_search.collect_strict_nl_seeds",
+        "xic_extractor.discovery.cid_nl_search.collect_strict_nl_events",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("scan failed")),
     )
 
@@ -1262,8 +1244,8 @@ def test_batch_pipeline_escapes_excel_formula_strings_in_index(
     row = _read_csv(outputs.batch_index_csv)[0]
     assert row["sample_stem"] == "'=cmd"
     assert Path(row["raw_file"]).name == "=cmd.raw"
-    assert row["candidate_csv"].endswith("discovery_candidates.csv")
-    assert row["review_csv"].endswith("discovery_review.csv")
+    assert row["peak_csv"].endswith("discovery_peaks.csv")
+    assert row["event_csv"].endswith("discovery_events.csv")
 
 
 def test_batch_index_writer_preserves_csv_and_timing_contract(tmp_path: Path) -> None:
@@ -1274,9 +1256,9 @@ def test_batch_index_writer_preserves_csv_and_timing_contract(tmp_path: Path) ->
         {
             "sample_stem": "Sample_A",
             "raw_file": "Sample_A.raw",
-            "candidate_csv": "Sample_A/discovery_candidates.csv",
-            "review_csv": "Sample_A/discovery_review.csv",
-            "candidate_count": "2",
+            "peak_csv": "Sample_A/discovery_peaks.csv",
+            "event_csv": "Sample_A/discovery_events.csv",
+            "peak_count": "2",
             "high_count": "1",
             "medium_count": "1",
             "low_count": "0",
@@ -1313,14 +1295,14 @@ def test_batch_index_writer_rejects_unexpected_columns(tmp_path: Path) -> None:
         )
 
 
-def test_run_discovery_keeps_stale_pair_when_review_write_fails(
+def test_run_discovery_keeps_stale_pair_when_event_write_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     output_dir = tmp_path / "out"
     output_dir.mkdir()
-    stale_full = output_dir / "discovery_candidates.csv"
-    stale_review = output_dir / "discovery_review.csv"
+    stale_full = output_dir / "discovery_peaks.csv"
+    stale_review = output_dir / "discovery_events.csv"
     stale_full.write_text("stale full\n", encoding="utf-8")
     stale_review.write_text("stale review\n", encoding="utf-8")
     raw = _FakeRawHandle(events=[])
@@ -1329,7 +1311,7 @@ def test_run_discovery_keeps_stale_pair_when_review_write_fails(
         raise OSError("simulated review writer failure")
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.output_publication.write_discovery_review_csv",
+        "xic_extractor.discovery.output_publication.write_discovery_events_csv",
         _fail_review,
     )
 
@@ -1344,8 +1326,8 @@ def test_run_discovery_keeps_stale_pair_when_review_write_fails(
 
     assert stale_full.read_text(encoding="utf-8") == "stale full\n"
     assert stale_review.read_text(encoding="utf-8") == "stale review\n"
-    assert not (output_dir / "discovery_candidates.csv.tmp").exists()
-    assert not (output_dir / "discovery_review.csv.tmp").exists()
+    assert not (output_dir / "discovery_peaks.csv.tmp").exists()
+    assert not (output_dir / "discovery_events.csv.tmp").exists()
 
 
 def test_pipeline_threads_evidence_profile_into_scoring(
@@ -1378,7 +1360,7 @@ def test_pipeline_threads_evidence_profile_into_scoring(
         raw_opener=lambda path, dll_dir: raw,
     )
 
-    rows = _read_csv(outputs.candidates_csv)
+    rows = _read_csv(outputs.peaks_csv)
     assert rows[0]["evidence_score"] == "58"
 
 
@@ -1409,7 +1391,7 @@ def test_pipeline_populates_ms1_scan_support_score_from_profile_target(
         raw_opener=lambda path, dll_dir: raw,
     )
 
-    rows = _read_csv(outputs.candidates_csv)
+    rows = _read_csv(outputs.peaks_csv)
     start, end = (
         float(rows[0][name]) for name in ("ms1_peak_rt_start", "ms1_peak_rt_end")
     )
@@ -1418,7 +1400,7 @@ def test_pipeline_populates_ms1_scan_support_score_from_profile_target(
     assert float(rows[0]["ms1_scan_support_score"]) == pytest.approx(count / 150)
 
 
-def test_pipeline_leaves_ms1_scan_support_blank_for_missing_ms1_peak(
+def test_pipeline_records_an_event_without_ms1_signal_without_a_peak(
     tmp_path: Path,
 ) -> None:
     raw = _FakeRawHandle(
@@ -1435,9 +1417,10 @@ def test_pipeline_leaves_ms1_scan_support_blank_for_missing_ms1_peak(
         raw_opener=lambda path, dll_dir: raw,
     )
 
-    rows = _read_csv(outputs.candidates_csv)
-    assert rows[0]["ms1_peak_found"] == "FALSE"
-    assert rows[0]["ms1_scan_support_score"] == ""
+    assert _read_csv(outputs.peaks_csv) == []
+    (event,) = _read_csv(outputs.events_csv)
+    assert event["peak_id"] == ""
+    assert event["unattached_reason"]
 
 
 def test_single_raw_pipeline_records_discovery_timing_stages(
@@ -1462,30 +1445,31 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
 
     records_by_stage = {record.stage: record for record in recorder.records}
     assert set(records_by_stage) == {
-        "discover.ms2_seeds",
-        "discover.group_seeds",
+        "discover.ms2_events",
+        "discover.ion_grouping",
         "discover.ms1_capture",
-        "discover.peak_anchor",
+        "discover.evidence_score",
         "discover.blank_qualification",
-        "discover.write_candidates_csv",
-        "discover.write_review_csv",
+        "discover.write_peaks_csv",
+        "discover.write_events_csv",
         "discover.write_physical_facts_sidecar",
         "discover.publish_outputs",
         "discover.write_batch_index",
     }
-    assert records_by_stage["discover.ms2_seeds"].sample_stem == "Sample"
-    assert records_by_stage["discover.ms2_seeds"].metrics["seed_count"] == 1
-    assert records_by_stage["discover.group_seeds"].metrics["group_count"] == 1
-    assert records_by_stage["discover.ms1_capture"].metrics["candidate_count"] == 1
-    assert records_by_stage["discover.peak_anchor"].metrics["candidate_count"] == 1
+    assert records_by_stage["discover.ms2_events"].sample_stem == "Sample"
+    assert records_by_stage["discover.ms2_events"].metrics["event_count"] == 1
+    assert records_by_stage["discover.ion_grouping"].metrics["ion_count"] == 1
+    assert records_by_stage["discover.ms1_capture"].metrics["peak_count"] == 1
+    assert records_by_stage["discover.ms1_capture"].metrics["event_count"] == 1
+    assert records_by_stage["discover.evidence_score"].metrics["peak_count"] == 1
     assert (
         records_by_stage["discover.blank_qualification"].metrics[
             "excluded_background_count"
         ]
         == 1
     )
-    assert records_by_stage["discover.write_candidates_csv"].metrics["row_count"] == 1
-    assert records_by_stage["discover.write_review_csv"].metrics["row_count"] == 1
+    assert records_by_stage["discover.write_peaks_csv"].metrics["row_count"] == 1
+    assert records_by_stage["discover.write_events_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.publish_outputs"].metrics == {
         "artifact_count": 3,
         "replaced_existing_count": 0,
@@ -1633,8 +1617,8 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
     assert rows["raw_open_count"]["value"] is None
     assert rows["raw_open_count"]["availability"] == "unavailable"
     assert rows["raw_open_count"]["reason"]
-    assert rows["discovery_ms1_input_group_count"]["value"] == 1
-    assert rows["discovery_ms1_empty_group_count"]["value"] == 0
+    assert rows["discovery_ms1_input_channel_count"]["value"] == 1
+    assert rows["discovery_ms1_input_event_count"]["value"] == 1
     assert rows["logical_xic_request_count"]["value"] == 1
     assert rows["xic_batch_count"]["value"] == 1
     assert rows["adapter_chromatogram_call_count"]["value"] == 1
@@ -1654,7 +1638,7 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
         "raw_open_count",
         "logical_xic_request_count",
         "trace_point_count",
-        "discovery_ms1_input_group_count",
+        "discovery_ms1_input_channel_count",
     ),
 )
 def test_worker_measurement_projection_rejects_caller_authored_owner_counts(
@@ -1671,7 +1655,7 @@ def test_discovery_ms1_measurement_validator_rejects_duplicate_fields() -> None:
     for metric in DISCOVERY_MS1_MEASUREMENT_NAMES:
         recorder.observe(metric, value=1, scope="Sample")
     recorder.observe(
-        "discovery_ms1_input_group_count",
+        "discovery_ms1_input_channel_count",
         value=1,
         scope="Sample",
     )

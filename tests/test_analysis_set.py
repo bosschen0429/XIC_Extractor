@@ -169,15 +169,15 @@ def test_retained_alignment_keeps_full_root_injection_order(
     receipts = build_discovery_receipts(tmp_path, selected_paths, candidates)
     batch = DiscoveryBatchInput(
         sample_order=("A", "B"),
-        candidate_csvs={},
+        peak_csvs={},
         raw_files={p.stem: p for p in selected_paths},
-        review_csvs={},
-        candidate_receipts=receipts,
+        event_csvs={},
+        peak_receipts=receipts,
     )
     monkeypatch.setattr(
         "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",
         lambda **options: (
-            options["candidates_by_sample"],
+            options["peaks_by_sample"],
             physical_records,
             tuple(
                 AcquisitionSourceExpectation(
@@ -190,7 +190,7 @@ def test_retained_alignment_keeps_full_root_injection_order(
     prepared = prepare_untargeted_alignment_inputs(
         signal_processing_profile=TEST_PROFILE,
         discovery_batch=batch,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "out",
@@ -249,15 +249,15 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
     receipts = build_discovery_receipts(tmp_path, paths, candidates)
     batch = DiscoveryBatchInput(
         sample_order=("A", "B"),
-        candidate_csvs={},
+        peak_csvs={},
         raw_files={p.stem: p for p in paths},
-        review_csvs={},
-        candidate_receipts=receipts,
+        event_csvs={},
+        peak_receipts=receipts,
     )
     monkeypatch.setattr(
         "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",
         lambda **options: (
-            options["candidates_by_sample"],
+            options["peaks_by_sample"],
             physical_records,
             tuple(
                 AcquisitionSourceExpectation(
@@ -282,7 +282,7 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
     prepared = prepare_untargeted_alignment_inputs(
         signal_processing_profile=TEST_PROFILE,
         discovery_batch=batch,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "out",

@@ -27,9 +27,9 @@ from xic_extractor.diagnostics.delta_mass_review_data import (
     ReviewSpectrum,
 )
 from xic_extractor.discovery.detected_features import load_detected_features_csv
-from xic_extractor.discovery.models import DiscoverySeed
-from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
-from xic_extractor.discovery.strict_seed_receipts import read_parent_ms1_observations
+from xic_extractor.discovery.models import DiscoveryEvent
+from xic_extractor.discovery.ms2_events import discovery_events_from_scan
+from xic_extractor.discovery.strict_event_receipts import read_parent_ms1_observations
 from xic_extractor.evidence.pt_envelope import EnvelopeTrace, compare_pt_envelope
 from xic_extractor.precursor_evidence import PrecursorMassScope
 from xic_extractor.presets.apply import apply_to_discovery
@@ -179,7 +179,7 @@ def acquire_delta_mass_review(
             traces = dict(zip(requests, reader.extract_xic_many(requests), strict=True))
             spectra: dict[int, ReviewSpectrum] = {}
             errors: list[ReviewReadError] = []
-            seeds: list[DiscoverySeed] = []
+            seeds: list[DiscoveryEvent] = []
             for lo, hi in (
                 _merged_windows([c.rt_window for c in candidates])
                 if nl_settings
@@ -214,7 +214,7 @@ def acquire_delta_mass_review(
                     ):
                         seeds.extend(
                             seed
-                            for seed in discovery_seeds_from_scan(
+                            for seed in discovery_events_from_scan(
                                 scan, raw_file=raw_path, settings=nl_settings
                             )
                             if any(

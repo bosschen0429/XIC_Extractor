@@ -1837,9 +1837,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
                             "candidate_id": candidate_id,
                             "sample_key": "S2",
                             "precursor_mz": 510.0,
-                            "discovery_candidate_state": (
-                                "review_only_ambiguous_coisolation"
-                            ),
+                            "peak_status": "doubly_charged",
                         }
                     ),
                 ),
@@ -1853,9 +1851,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
                         {
                             "candidate_id": candidate_id,
                             "sample_key": "S2",
-                            "discovery_candidate_state": (
-                                "review_only_ambiguous_coisolation"
-                            ),
+                            "peak_status": "doubly_charged",
                             "reason_code": ("discovery_candidate_not_search_eligible"),
                             "assessment_artifact_ids": [],
                         }
@@ -1898,7 +1894,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
         assert "Discovery 候選未取得後續搜尋資格" in exclusion["summary"]
         assert "不是正式定量採用決策" in exclusion["summary"]
         fields = {field["label"]: field["value"] for field in exclusion["fields"]}
-        assert fields["候選狀態"] == "review_only_ambiguous_coisolation"
+        assert fields["峰狀態"] == "doubly_charged"
         assert "discovery_candidate_not_search_eligible" in fields["排除理由"]
 
     quantitative_item = next(item for item in items if item["kind"] == "row")

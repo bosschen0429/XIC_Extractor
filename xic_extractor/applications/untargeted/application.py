@@ -88,10 +88,10 @@ def run_untargeted_application(
     with recorder.stage("alignment.read_batch_index"):
         batch = read_discovery_batch_index(request.discovery_batch_index)
     with recorder.stage("alignment.read_candidates") as stage:
-        candidates_by_sample = DiscoveryInputSource(batch)
-        stage.metrics["candidate_count"] = len(candidates_by_sample.locations)
+        peaks_by_sample = DiscoveryInputSource(batch)
+        stage.metrics["candidate_count"] = len(peaks_by_sample.locations)
         stage.metrics["feature_candidate_count"] = len(
-            candidates_by_sample.feature_candidate_ids()
+            peaks_by_sample.feature_candidate_ids()
         )
     outputs = replace(
         request.publication.output_paths(request.output_dir),
@@ -132,7 +132,7 @@ def run_untargeted_application(
             sample: json.loads(
                 serialize_mass_recalibration_result(receipt.mass_recalibration_result)
             )
-            for sample, receipt in batch.candidate_receipts.items()
+            for sample, receipt in batch.peak_receipts.items()
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -159,7 +159,7 @@ def run_untargeted_application(
     try:
         completed = complete_untargeted_alignment(
             discovery_batch=batch,
-            candidates_by_sample=candidates_by_sample,
+            peaks_by_sample=peaks_by_sample,
             raw_dir=request.raw_dir,
             dll_dir=request.dll_dir,
             output_dir=request.output_dir,
@@ -225,7 +225,7 @@ def _prepare_mass_recalibration(
     with recorder.stage("alignment.mass_recalibration") as stage:
         results = prepare_batch_mass_recalibration(
             tuple(
-                (path, batch.candidate_receipts[stem].acquisition_source)
+                (path, batch.peak_receipts[stem].acquisition_source)
                 for stem, path in paths.items()
             ),
             request.dll_dir,
@@ -298,7 +298,7 @@ def snapshot_untargeted_grouping(
     recorder = context.timing_recorder or TimingRecorder.disabled("alignment")
     with recorder.stage("alignment.read_batch_index"):
         batch = read_discovery_batch_index(request.discovery_batch_index)
-    candidates_by_sample = DiscoveryInputSource(batch)
+    peaks_by_sample = DiscoveryInputSource(batch)
     mass_recalibration_by_sample = _prepare_mass_recalibration(
         request, batch, recorder, context
     )
@@ -310,7 +310,7 @@ def snapshot_untargeted_grouping(
         raise ValueError(f"grouping snapshot already exists: {snapshot}")
     prepared = prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
-        candidates_by_sample=candidates_by_sample,
+        peaks_by_sample=peaks_by_sample,
         raw_dir=request.raw_dir,
         dll_dir=request.dll_dir,
         output_dir=request.output_dir,

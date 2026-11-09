@@ -111,15 +111,15 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:partition-invariant-warp",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+        physical_records_by_peak={
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },
@@ -242,7 +242,7 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
         assert len(candidates[path.stem]) == 2
         if index >= 20:
             candidates[path.stem] = tuple(
-                c for c in candidates[path.stem] if c.precursor_mz < 500.5
+                c for c in candidates[path.stem] if c.best_event_precursor_mz < 500.5
             )
         if index == 21:
             # The target MS1 signal remains without independent MS2 support.
@@ -261,15 +261,15 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
         ),
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:partition-invariant-warp",
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+        physical_records_by_peak={
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },
@@ -816,7 +816,6 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
 def test_bounded_runtime_skips_subjects_without_ms1_features(
     tmp_path, monkeypatch, scenario, raw_workers
 ):
-    from xic_extractor.discovery.models import MS1_FEATURE_BACKED_STATES
     from xic_extractor.untargeted_execution.execution import (
         UntargetedPartitionPipelineAdapter,
         execute_untargeted_plan,
@@ -825,16 +824,14 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
     request_payload = plan.subject_batch.request_payload()
     candidate_by_id = {
-        candidate.candidate_id: candidate
-        for candidates in plan.context.candidates_by_sample.values()
+        candidate.peak_id: candidate
+        for candidates in plan.context.peaks_by_sample.values()
         for candidate in candidates
     }
     eligible_subject_ids = {
         subject_id
         for candidate_id, subject_id in plan.subject_batch.candidate_memberships
-        if candidate_by_id[candidate_id].ms1_peak_found
-        and candidate_by_id[candidate_id].discovery_candidate_state
-        in MS1_FEATURE_BACKED_STATES
+        if candidate_by_id[candidate_id].is_clean_peak
     }
     assert len(eligible_subject_ids) == (2 if scenario == "mixed_eligibility" else 0)
     config = AlignmentConfig(anchor_min_seed_events=1)
@@ -909,7 +906,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     report = write_alignment_explanation(
         tmp_path / "eligibility.sqlite",
         completed=result,
-        candidates_by_sample=plan.context.candidates_by_sample,
+        peaks_by_sample=plan.context.peaks_by_sample,
         matrix_path=matrix_path,
         alignment_config=config,
     )
@@ -1118,7 +1115,7 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
         report = write_alignment_explanation(
             tmp_path / f"{name}.sqlite",
             completed=completed,
-            candidates_by_sample=plan.context.candidates_by_sample,
+            peaks_by_sample=plan.context.peaks_by_sample,
             matrix_path=matrix,
             alignment_config=config,
         )
@@ -1625,7 +1622,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         expected_initial_sample_ids = {
             sample.identity.sample_key
             for sample in plan.context.samples
-            if plan.context.candidates_by_sample[sample.metadata.raw_stem]
+            if plan.context.peaks_by_sample[sample.metadata.raw_stem]
         }
         assert {
             job.sample.identity.sample_key for job in batch.jobs
@@ -1699,7 +1696,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     )
     assert type(result) is CompletedUntargetBatchWorkflowResult
     initial_sample_count = sum(
-        bool(plan.context.candidates_by_sample[sample.metadata.raw_stem])
+        bool(plan.context.peaks_by_sample[sample.metadata.raw_stem])
         for sample in plan.context.samples
     )
     assert job_counts == [initial_sample_count * 2, initial_sample_count]

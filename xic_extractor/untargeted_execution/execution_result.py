@@ -20,7 +20,7 @@ from xic_extractor.alignment.result.application_result import (
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
@@ -63,7 +63,7 @@ class _CompletedResultResources:
 class UntargetedPublicationInputs:
     """The completed run's bound Matrix and explanation inputs, still lazy."""
 
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]]
+    peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]]
     ms1_apex_mz_by_candidate: Mapping[str, float]
     alignment_config: AlignmentConfig
     known_istd_reference_provenance: Mapping[str, object] | None
@@ -141,7 +141,7 @@ class CompletedUntargetBatchWorkflowResult:
     def bind_publication_inputs(
         self,
         *,
-        candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
+        peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
         alignment_config: AlignmentConfig,
         known_istd_reference: KnownIstdReference | None = None,
     ) -> CompletedUntargetBatchWorkflowResult:
@@ -150,21 +150,21 @@ class CompletedUntargetBatchWorkflowResult:
         The formal completion entry supplies the same inputs used by execution.
         Lower-level runtime results remain usable by explicit-input diagnostics.
         """
-        if isinstance(candidates_by_sample, DiscoveryInputSource):
-            candidates = candidates_by_sample.feature_view()
-            apex_mz = candidates_by_sample.ms1_apex_mz_by_candidate
+        if isinstance(peaks_by_sample, DiscoveryInputSource):
+            candidates = peaks_by_sample.feature_view()
+            apex_mz = peaks_by_sample.ms1_apex_mz_by_candidate
         else:
-            candidates = candidates_by_sample
+            candidates = peaks_by_sample
             apex_mz = {
-                candidate.candidate_id: candidate.ms1_apex_mz
-                for sample_candidates in candidates_by_sample.values()
+                candidate.peak_id: candidate.ms1_apex_mz
+                for sample_candidates in peaks_by_sample.values()
                 for candidate in sample_candidates
                 if candidate.ms1_apex_mz is not None
             }
         return replace(
             self,
             _publication_inputs=UntargetedPublicationInputs(
-                candidates_by_sample=candidates,
+                peaks_by_sample=candidates,
                 ms1_apex_mz_by_candidate=MappingProxyType(apex_mz),
                 alignment_config=alignment_config,
                 known_istd_reference_provenance=(

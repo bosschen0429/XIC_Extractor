@@ -255,8 +255,8 @@ class UntargetedRun:
             found.append(("Discovery batch index", index_path))
         for item in outputs.per_sample:
             for label, path in (
-                ("Discovery 候選", item.candidates_csv),
-                ("Discovery review", item.review_csv),
+                ("Discovery 峰表", item.peaks_csv),
+                ("Discovery 事件表", item.events_csv),
                 ("Discovery physical facts", item.physical_facts_json),
             ):
                 if Path(path).is_file():
@@ -330,9 +330,7 @@ class UntargetedRun:
         return {
             "output_dir": str(self.request.output_dir),
             "sample_count": sample_count,
-            "candidate_counts": counts,
-            "discovery_candidates_csv": None,
-            "discovery_review_csv": None,
+            "peak_counts": counts,
             "discovery_batch_index": str(index_path),
             "alignment_outputs": {},
             "matrix_tsv": None,
@@ -413,7 +411,7 @@ def _ordered_existing_paths(
 def _read_batch_counts(index_path: Path) -> tuple[dict[str, int] | None, int]:
     if not index_path.exists():
         return None, 0
-    totals = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "total": 0}
+    totals = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "total": 0, "admitted": 0}
     sample_count = 0
     with index_path.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
@@ -421,7 +419,8 @@ def _read_batch_counts(index_path: Path) -> tuple[dict[str, int] | None, int]:
             totals["HIGH"] += _int_csv_value(row, "high_count")
             totals["MEDIUM"] += _int_csv_value(row, "medium_count")
             totals["LOW"] += _int_csv_value(row, "low_count")
-            totals["total"] += _int_csv_value(row, "candidate_count")
+            totals["total"] += _int_csv_value(row, "peak_count")
+            totals["admitted"] += _int_csv_value(row, "admitted_peak_count")
     return totals, sample_count
 
 

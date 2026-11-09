@@ -144,7 +144,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
         tmp_path / "metadata.sqlite",
         full_audit=True,
         completed=completed,
-        candidates_by_sample=candidates,
+        peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
     )

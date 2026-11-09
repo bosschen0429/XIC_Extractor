@@ -81,29 +81,29 @@ def test_physical_subject_units_require_complete_common_proof(
     candidates = tuple(
         replace(
             base_candidates[0],
-            candidate_id=f"subject-proof-{index}",
+            peak_id=f"subject-proof-{index}",
             best_ms2_scan_id=100 + index,
-            precursor_mz=mz,
-            product_mz=mz - 116.0474,
+            best_event_precursor_mz=mz,
+            peak_mz=mz,
+            xic_mz=mz,
+            best_event_product_mz=mz - 116.0474,
             configured_neutral_loss_da=116.0474,
         )
         for index, mz in enumerate(masses)
     )
     records = {
-        candidate.candidate_id: _subject_proof_record(
+        candidate.peak_id: _subject_proof_record(
             candidate,
             xic_mz=500.015 if scenario == "bridge" else None,
         )
         for candidate in candidates
     }
     if scenario == "different-signal":
-        records[candidates[1].candidate_id] = _subject_proof_record(
+        records[candidates[1].peak_id] = _subject_proof_record(
             candidates[1], raw=(1.0, 11.0, 1.0)
         )
     elif scenario == "different-apex":
-        records[candidates[1].candidate_id] = _subject_proof_record(
-            candidates[1], apex=7.51
-        )
+        records[candidates[1].peak_id] = _subject_proof_record(candidates[1], apex=7.51)
     input_facts = _physical_subject_facts(candidates, records)
     if scenario == "far":
 
@@ -131,7 +131,7 @@ def test_physical_subject_units_require_complete_common_proof(
     )
 
     candidate_index = {
-        candidate.candidate_id: index for index, candidate in enumerate(candidates)
+        candidate.peak_id: index for index, candidate in enumerate(candidates)
     }
     assert (
         tuple(
@@ -161,26 +161,33 @@ def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
     )
     inferred = replace(
         candidates[0],
-        precursor_mz=445.2140,
-        product_mz=445.2140 - 116.0474,
+        best_event_precursor_mz=445.2140,
+        xic_mz=445.2140,
+        best_event_product_mz=445.2140 - 116.0474,
         ms1_apex_mz=445.2071,
+        peak_mz=445.2071,
         precursor_mz_basis="product_plus_neutral_loss",
     )
     subjects = prepare_untargeted_subject_membership(
-        candidates_by_sample={"S1": (inferred,)},
+        peaks_by_sample={"S1": (inferred,)},
         settings=settings,
-        physical_records_by_candidate=physical_records,
+        physical_records_by_peak=physical_records,
     )
     assert len(subjects.subjects) == 1
     assert subjects.subjects[0].precursor_mz == 445.2071
-    assert inferred.precursor_mz == 445.2140
-    assert inferred.product_mz == 445.2140 - 116.0474
+    assert inferred.best_event_precursor_mz == 445.2140
+    assert inferred.best_event_product_mz == 445.2140 - 116.0474
 
-    selected = replace(inferred, ms1_apex_mz=None, precursor_mz_basis="scan_precursor")
+    selected = replace(
+        inferred,
+        ms1_apex_mz=None,
+        peak_mz=445.2140,
+        precursor_mz_basis="scan_precursor",
+    )
     fallback = prepare_untargeted_subject_membership(
-        candidates_by_sample={"S1": (selected,)},
+        peaks_by_sample={"S1": (selected,)},
         settings=settings,
-        physical_records_by_candidate=physical_records,
+        physical_records_by_peak=physical_records,
     )
     assert fallback.subjects[0].precursor_mz == 445.2140
 
@@ -199,7 +206,7 @@ def test_physical_subject_units_keep_unproven_candidates_singleton(
     candidates = tuple(
         replace(
             base_candidates[0],
-            candidate_id=f"unproven-{index}",
+            peak_id=f"unproven-{index}",
             best_ms2_scan_id=100 + index,
         )
         for index in range(2)
@@ -208,7 +215,7 @@ def test_physical_subject_units_keep_unproven_candidates_singleton(
     units = group_cid_nl_physical_subject_units(
         _physical_subject_facts(
             candidates,
-            {candidates[0].candidate_id: _subject_proof_record(candidates[0])},
+            {candidates[0].peak_id: _subject_proof_record(candidates[0])},
         ),
         composition=None,
         precursor_tolerance_ppm=20.0,
@@ -238,20 +245,22 @@ def test_proven_subject_unit_is_not_split_by_lower_fixed_anchor(
     candidates = tuple(
         replace(
             base_candidates[0],
-            candidate_id=f"lower-anchor-{index}",
+            peak_id=f"lower-anchor-{index}",
             best_ms2_scan_id=100 + index,
-            precursor_mz=mz,
-            product_mz=mz - 116.0474,
+            best_event_precursor_mz=mz,
+            peak_mz=mz,
+            xic_mz=mz,
+            best_event_product_mz=mz - 116.0474,
             configured_neutral_loss_da=116.0474,
         )
         for index, mz in enumerate(masses)
     )
     records = {
-        candidates[0].candidate_id: _subject_proof_record(
+        candidates[0].peak_id: _subject_proof_record(
             candidates[0], apex=7.25, raw=(1.0, 5.0, 1.0), xic_mz=500.0
         ),
         **{
-            candidate.candidate_id: _subject_proof_record(candidate, xic_mz=500.0)
+            candidate.peak_id: _subject_proof_record(candidate, xic_mz=500.0)
             for candidate in candidates[1:]
         },
     }
@@ -275,24 +284,18 @@ def test_proven_subject_unit_is_not_split_by_lower_fixed_anchor(
             sample_metadata=(),
             settings=settings,
             peak_config=_peak_config(tmp_path),
-            candidates_by_sample={"S1": candidates},
+            peaks_by_sample={"S1": candidates},
             discovery_receipts_by_sample={},
             dll_dir=tmp_path,
             sample_identity_namespace="test:lower-anchor",
-            physical_records_by_candidate=records,
+            physical_records_by_peak=records,
             signal_processing_profile=TEST_PROFILE,
         )
 
     subject_batch = captured["subject_batch"]
     memberships = dict(subject_batch.candidate_memberships)
-    assert (
-        memberships[candidates[0].candidate_id]
-        != memberships[candidates[1].candidate_id]
-    )
-    assert (
-        memberships[candidates[1].candidate_id]
-        == memberships[candidates[2].candidate_id]
-    )
+    assert memberships[candidates[0].peak_id] != memberships[candidates[1].peak_id]
+    assert memberships[candidates[1].peak_id] == memberships[candidates[2].peak_id]
     assert len(subject_batch.subjects) == 2
 
 
@@ -406,7 +409,7 @@ def test_production_batch_preserves_bounded_subject_membership(
     )
     arguments = dict(
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_candidate=physical_records,
+        physical_records_by_peak=physical_records,
         raw_paths=(raw_path,),
         sample_metadata=(
             SampleMetadata(
@@ -427,7 +430,7 @@ def test_production_batch_preserves_bounded_subject_membership(
         sample_identity_namespace="study:production-batch",
     )
 
-    batch = build_dense_partition(**arguments, candidates_by_sample={"S1": candidates})
+    batch = build_dense_partition(**arguments, peaks_by_sample={"S1": candidates})
     from xic_extractor.peak_detection.cid_nl_method_subject import (
         mint_untargeted_cid_nl_method_subject,
     )
@@ -435,7 +438,7 @@ def test_production_batch_preserves_bounded_subject_membership(
     expected_memberships = tuple(
         sorted(
             (
-                candidate.candidate_id,
+                candidate.peak_id,
                 mint_untargeted_cid_nl_method_subject(
                     precursor_mz=center,
                     precursor_tolerance_ppm=ppm,
@@ -450,17 +453,19 @@ def test_production_batch_preserves_bounded_subject_membership(
         set(zip(centers, losses, strict=True))
     )
     permuted = build_dense_partition(
-        **arguments, candidates_by_sample={"S1": tuple(reversed(candidates))}
+        **arguments, peaks_by_sample={"S1": tuple(reversed(candidates))}
     )
     assert (
         permuted.subject_batch.request_payload()
         == batch.subject_batch.request_payload()
     )
-    assert tuple(candidate.precursor_mz for candidate in candidates) == masses
+    assert (
+        tuple(candidate.best_event_precursor_mz for candidate in candidates) == masses
+    )
     assert tuple(job.method_subject for job in batch.jobs) == (
         batch.subject_batch.subjects
     )
     assert all(
-        job.candidates is batch.context.candidates_by_sample["S1"] for job in batch.jobs
+        job.candidates is batch.context.peaks_by_sample["S1"] for job in batch.jobs
     )
     _assert_jobs_match_direct_construction(batch)

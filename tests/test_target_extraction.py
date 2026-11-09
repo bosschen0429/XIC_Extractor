@@ -491,7 +491,7 @@ def test_expected_rt_does_not_crop_ms1_candidates_without_ms2(tmp_path, expected
 def test_targeted_products_use_discovery_seeds_once_per_tag(
     monkeypatch, precursor_offset
 ):
-    from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+    from xic_extractor.discovery.ms2_events import discovery_events_from_scan
     from xic_extractor.extraction.targeted_peak_selection import (
         _discovery_method_products,
         discovery_settings_for_tag,
@@ -513,15 +513,15 @@ def test_targeted_products_use_discovery_seeds_once_per_tag(
 
     def counted(*args, **kwargs):
         calls.append(1)
-        return discovery_seeds_from_scan(*args, **kwargs)
+        return discovery_events_from_scan(*args, **kwargs)
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms2_seeds.discovery_seeds_from_scan", counted
+        "xic_extractor.discovery.ms2_events.discovery_events_from_scan", counted
     )
     prepared = prepare_targeted_method_seeds(window, [target, target])
     assert len(calls) == 1
     products = _discovery_method_products(window, target, prepared["dR"])
-    seeds = discovery_seeds_from_scan(
+    seeds = discovery_events_from_scan(
         scan, raw_file=Path("sample"), settings=discovery_settings_for_tag("dR")
     )
     assert [
@@ -618,8 +618,8 @@ def test_target_identity_does_not_promote_coisolated_mass_compatibility(
 
 
 def test_targeted_scan_resolution_keeps_recorded_support_over_precise_inference():
-    from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
-    from xic_extractor.discovery.strict_seed_receipts import (
+    from xic_extractor.discovery.ms2_events import discovery_events_from_scan
+    from xic_extractor.discovery.strict_event_receipts import (
         resolve_discovery_scan_events,
     )
     from xic_extractor.extraction.targeted_peak_selection import (
@@ -652,7 +652,7 @@ def test_targeted_scan_resolution_keeps_recorded_support_over_precise_inference(
         )
         if seed.precursor_mz_basis == "product_plus_neutral_loss"
         else seed
-        for seed in discovery_seeds_from_scan(
+        for seed in discovery_events_from_scan(
             scan, raw_file=Path("sample"), settings=settings
         )
     )

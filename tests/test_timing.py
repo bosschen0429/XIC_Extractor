@@ -16,7 +16,7 @@ def test_timing_recorder_records_stage_metrics_and_writes_json(tmp_path: Path) -
     recorder = TimingRecorder("discovery", run_id="run-1", timer=_Timer([10.0, 12.5]))
 
     with recorder.stage(
-        "discover.ms2_seeds",
+        "discover.ms2_events",
         sample_stem="Sample_A",
         metrics={"seed_count": 0},
     ) as stage:
@@ -25,7 +25,7 @@ def test_timing_recorder_records_stage_metrics_and_writes_json(tmp_path: Path) -
 
     assert len(recorder.records) == 1
     record = recorder.records[0]
-    assert record.stage == "discover.ms2_seeds"
+    assert record.stage == "discover.ms2_events"
     assert record.sample_stem == "Sample_A"
     assert record.elapsed_sec == pytest.approx(2.5)
     assert record.metrics == {
@@ -42,7 +42,7 @@ def test_timing_recorder_records_stage_metrics_and_writes_json(tmp_path: Path) -
     assert payload["records"] == [
         {
             "sample_stem": "Sample_A",
-            "stage": "discover.ms2_seeds",
+            "stage": "discover.ms2_events",
             "elapsed_sec": pytest.approx(2.5),
             "metrics": {
                 "seed_count": 3,
@@ -52,7 +52,7 @@ def test_timing_recorder_records_stage_metrics_and_writes_json(tmp_path: Path) -
     ]
     assert payload["summaries"]["stage_summary"] == [
         {
-            "stage": "discover.ms2_seeds",
+            "stage": "discover.ms2_events",
             "record_count": 1,
             "sample_count": 1,
             "total_elapsed_sec": pytest.approx(2.5),

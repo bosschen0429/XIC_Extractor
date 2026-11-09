@@ -15,10 +15,10 @@ import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE, fake_acquisition_source
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySeed
+from xic_extractor.discovery.ion_grouping import build_discovery_ions
+from xic_extractor.discovery.models import DiscoveryEvent, DiscoveryPeak
 from xic_extractor.discovery.ms1_capture import (
-    capture_ms1_candidates,
+    capture_ms1_peaks,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
@@ -135,41 +135,40 @@ def test_ms2_evidence_changes_without_changing_ms1_integration_or_id() -> None:
 
 def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> None:
     settings = _discovery_settings(ms1_search_padding_min=0.20)
-    first_group = group_discovery_seeds(
+    first_group = build_discovery_ions(
         (_seed(scan_number=10, rt=7.90),),
         settings=settings,
     )[0]
-    second_group = group_discovery_seeds(
+    second_group = build_discovery_ions(
         (_seed(scan_number=20, rt=8.10),),
         settings=settings,
     )[0]
     raw = _FakeXicSource()
 
-    first = capture_ms1_candidates(
+    first = capture_ms1_peaks(
         raw,
         (first_group,),
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
         ms1_centroid_mz=lambda *_: None,
-    ).candidates[0]
-    second = capture_ms1_candidates(
+    ).peaks[0]
+    second = capture_ms1_peaks(
         raw,
         (second_group,),
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
         ms1_centroid_mz=lambda *_: None,
-    ).candidates[0]
+    ).peaks[0]
 
     assert raw.requests == [
         (500.0, pytest.approx(7.30), pytest.approx(8.50), 20.0),
         (500.0, pytest.approx(7.50), pytest.approx(8.70), 20.0),
     ]
-    assert first.ms1_peak_found and second.ms1_peak_found
+    # Different seed windows locate and measure the same peak identity.
     assert _discovery_ms1_peak_probe(first) == _discovery_ms1_peak_probe(second)
-    assert first.candidate_id != second.candidate_id
-    assert first.ms1_feature_row_id == second.ms1_feature_row_id
+    assert first.peak_id == second.peak_id
 
 
 def _trace() -> Trace:
@@ -256,8 +255,8 @@ def _discovery_settings(*, ms1_search_padding_min: float) -> DiscoverySettings:
     )
 
 
-def _seed(*, scan_number: int, rt: float) -> DiscoverySeed:
-    return DiscoverySeed(
+def _seed(*, scan_number: int, rt: float) -> DiscoveryEvent:
+    return DiscoveryEvent(
         raw_file=_RAW_FILE,
         sample_stem="SampleA",
         scan_number=scan_number,
@@ -302,10 +301,10 @@ class _FakeXicSource:
 
 
 def _discovery_ms1_peak_probe(
-    candidate: DiscoveryCandidate,
+    candidate: DiscoveryPeak,
 ) -> tuple[object, ...]:
     return (
-        candidate.precursor_mz,
+        candidate.best_event_precursor_mz,
         candidate.ms1_apex_rt,
         candidate.ms1_peak_rt_start,
         candidate.ms1_peak_rt_end,

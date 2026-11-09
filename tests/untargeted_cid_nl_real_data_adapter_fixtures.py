@@ -18,7 +18,7 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.configuration.models import ExtractionConfig
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
     adapt_current_discovery_sample_subject,
@@ -75,13 +75,13 @@ class SampleAdapterScenario:
             processing_owners=self.fixture.owners,
             sample=self.fixture.sample("S1"),
             method_subject=self.fixture.method_subject,
-            candidates=candidates,
+            peaks=candidates,
             settings=self.settings,
             peak_config=self.peak_config,
             raw=raw,
             signal_processing_profile=TEST_PROFILE,
             physical_records=tuple(
-                self.physical_records[c.candidate_id] for c in candidates
+                self.physical_records[c.peak_id] for c in candidates
             ),
         )
         return adapt_current_discovery_sample_subject(**(inputs | overrides))
@@ -96,16 +96,6 @@ def build_sample_adapter_scenario(tmp_path: Path) -> SampleAdapterScenario:
     )
 
 
-def _without_ms1_peak(candidate: DiscoveryCandidate) -> DiscoveryCandidate:
-    return replace(
-        candidate,
-        ms1_peak_found=False,
-        ms1_apex_rt=None,
-        ms1_area=None,
-        ms1_peak_rt_start=None,
-        ms1_peak_rt_end=None,
-        ms1_height=None,
-        ms1_seed_delta_min=None,
-        discovery_candidate_state="review_only_orphan_nl",
-        ms1_feature_row_id="",
-    )
+def _without_ms1_peak(candidate: DiscoveryPeak) -> DiscoveryPeak:
+    """A peak held at peak level: its MS2 events remain, its MS1 peak is not used."""
+    return replace(candidate, status="overlap")

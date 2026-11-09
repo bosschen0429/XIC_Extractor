@@ -4,7 +4,13 @@ from dataclasses import replace
 
 import pytest
 
-from tests.cid_nl_raw_fixture import TEST_PROFILE, _FakeRaw, _peak_config, _settings
+from tests.cid_nl_raw_fixture import (
+    TEST_PROFILE,
+    _current_candidates,
+    _FakeRaw,
+    _peak_config,
+    _settings,
+)
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
 from tests.physical_peak_evaluation_persistence_fixtures import (
     _overlapping_triplet_trace,
@@ -12,12 +18,13 @@ from tests.physical_peak_evaluation_persistence_fixtures import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
-    read_owner_bound_discovery_candidates_csv,
+    read_owner_bound_discovery_peaks_csv,
 )
-from xic_extractor.discovery.grouping import group_discovery_seeds
+from xic_extractor.discovery.delta_mass_pipeline import _load_cid_nl_peak_rows
 from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.discovery.ms1_capture import capture_ms1_candidates
-from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+from xic_extractor.discovery.ion_grouping import build_discovery_ions
+from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
+from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 from xic_extractor.discovery.physical_fact_persistence import (
     write_discovery_physical_fact_sidecar,
 )
@@ -36,13 +43,44 @@ from xic_extractor.untargeted_execution.execution import (
 )
 
 
+@pytest.mark.parametrize("apex_mz", [None, 500.012])
+def test_alignment_and_delta_mass_read_one_peak_mass(tmp_path, apex_mz):
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"physical-mass-index")
+    (peak,) = _current_candidates(
+        _FakeRaw((8.0,)), raw_file=raw_path, settings=_settings()
+    )
+    # An inferred precursor whose event estimate, XIC center and apex reading
+    # all differ: the producer writes one peak mass and every consumer reads it.
+    peak_mz = 500.0 if apex_mz is None else apex_mz
+    peak = replace(
+        peak,
+        best_event_precursor_mz=500.004,
+        xic_mz=500.0,
+        ms1_apex_mz=apex_mz,
+        peak_mz=peak_mz,
+        status="admitted",
+        matched_tag_names=("DNA_dR",),
+    )
+    receipts = build_discovery_receipts(tmp_path, (raw_path,), {"sample": (peak,)})
+    batch = DiscoveryBatchInput(
+        sample_order=("sample",),
+        peak_csvs={"sample": tmp_path / "sample.owner-candidates.csv"},
+        raw_files={"sample": raw_path},
+        event_csvs={"sample": None},
+        peak_receipts=receipts,
+    )
+    source = DiscoveryInputSource(batch)
+    (delta_mass_row,) = _load_cid_nl_peak_rows(batch.peak_csvs["sample"])
+    assert source.locations[peak.peak_id].peak_mz == peak_mz
+    assert source["sample"][0].peak_mz == peak_mz
+    assert delta_mass_row.peak_mz == peak_mz
+
+
 @pytest.mark.parametrize("indexed", [False, True], ids=["eager", "indexed"])
 @pytest.mark.parametrize("with_supported", [False, True], ids=["all_review", "mixed"])
-@pytest.mark.parametrize(
-    "legacy_overlap_label", [False, True], ids=["current_csv", "legacy_csv"]
-)
 def test_review_rows_never_become_alignment_roots(
-    tmp_path, monkeypatch, indexed, with_supported, legacy_overlap_label
+    tmp_path, monkeypatch, indexed, with_supported
 ):
     stems = ("Rescued", "Overlap", "Orphan") + (
         ("Clean1", "Clean2") if with_supported else ()
@@ -72,64 +110,62 @@ def test_review_rows_never_become_alignment_roots(
         if path.stem == "Clean2":
             raw.intensity *= 2
         raws[path] = raw
-        seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
-        capture = capture_ms1_candidates(
+        seeds = collect_strict_nl_events(raw, raw_file=path, settings=settings)
+        capture = capture_ms1_peaks(
             raw,
-            group_discovery_seeds(seeds, settings=settings),
+            build_discovery_ions(seeds, settings=settings),
             acquisition_source=source.acquisition_source,
             settings=settings,
             signal_processing_profile=TEST_PROFILE,
             ms1_centroid_mz=lambda *_: None,
         )
-        (candidate,) = capture.candidates
-        assert (
-            candidate.discovery_candidate_state
-            == {
-                "Orphan": "review_only_orphan_nl",
-                "Rescued": "ms1_feature_nl_rescued",
-                "Overlap": "review_only_unresolved_peak_attribution",
-                "Clean1": "ms1_feature_nl_supported",
-                "Clean2": "ms1_feature_nl_supported",
-            }[path.stem]
-        )
-        (expected_ids if path.stem.startswith("Clean") else rejected_ids).add(
-            candidate.candidate_id
-        )
-        if legacy_overlap_label and path.stem == "Overlap":
-            # Previously published CSVs called unresolved envelopes supported.
-            # The authoritative sidecar must still veto them in both routes.
-            candidate = replace(
-                candidate, discovery_candidate_state="ms1_feature_nl_supported"
+        assert len(capture.attachments) == len(seeds)
+        if path.stem == "Orphan":
+            assert not capture.peaks
+            assert all(event.unattached_reason for event in capture.attachments)
+        else:
+            (peak,) = capture.peaks
+            assert (
+                peak.status
+                == {
+                    "Rescued": "no_nl_event",
+                    "Overlap": "overlap",
+                    "Clean1": "admitted",
+                    "Clean2": "admitted",
+                }[path.stem]
             )
+            (expected_ids if peak.admitted else rejected_ids).add(peak.peak_id)
         folder = tmp_path / path.stem
         folder.mkdir()
         write_discovery_physical_fact_sidecar(
             folder / "discovery_physical_facts.json",
             run_spec=spec,
             acquisition_input=source,
-            work_manifest=capture.physical_work_manifest
-            if candidate.ms1_peak_found
-            else (),
-            records=capture.physical_evaluations if candidate.ms1_peak_found else (),
+            work_manifest=capture.physical_work_manifest,
+            records=capture.physical_evaluations,
         )
         receipts.update(
-            build_discovery_receipts(folder, (path,), {path.stem: (candidate,)})
+            build_discovery_receipts(folder, (path,), {path.stem: capture.peaks})
         )
         csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
-        candidates[path.stem] = read_owner_bound_discovery_candidates_csv(
+        candidates[path.stem] = read_owner_bound_discovery_peaks_csv(
             csvs[path.stem], receipt=receipts[path.stem]
         )
     batch = DiscoveryBatchInput(
         sample_order=stems,
-        candidate_csvs=csvs,
+        peak_csvs=csvs,
         raw_files={p.stem: p for p in paths},
-        review_csvs={stem: None for stem in stems},
-        candidate_receipts=receipts,
+        event_csvs={stem: None for stem in stems},
+        peak_receipts=receipts,
     )
     opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    source = DiscoveryInputSource(batch)
+    for peaks in candidates.values():
+        for peak in peaks:
+            assert source.locations[peak.peak_id].peak_mz == peak.xic_mz
     prepared = prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
-        candidates_by_sample=DiscoveryInputSource(batch) if indexed else candidates,
+        peaks_by_sample=source if indexed else candidates,
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "inputs",
@@ -155,7 +191,7 @@ def test_review_rows_never_become_alignment_roots(
         if with_supported:
             partition = materialize_untargeted_partition(plan, plan.subject_batch)
             assert {
-                c.candidate_id for job in partition.jobs for c in job.candidates
+                c.peak_id for job in partition.jobs for c in job.candidates
             } == expected_ids
             assert all(not job.support_candidates for job in partition.jobs)
             # An accepted root does not authorize an unresolved MS1-only refill.

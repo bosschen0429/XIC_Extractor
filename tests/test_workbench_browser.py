@@ -1465,7 +1465,7 @@ def test_untargeted_result_shows_one_matrix_and_groups_technical_files(
     paths = [matrix, f"{folder}/sample_metadata.tsv"] + [
         f"{folder}/{sample}/{name}"
         for sample in ("A", "B")
-        for name in ("discovery_candidates.csv", "discovery_review.csv")
+        for name in ("discovery_peaks.csv", "discovery_events.csv")
     ]
     state["job"].update(kind="untargeted", job_id="untargeted-result")
     state["results"] = {
@@ -1506,7 +1506,7 @@ def test_untargeted_result_shows_one_matrix_and_groups_technical_files(
     for sample in ("A", "B"):
         expect(files.get_by_role("heading", name=sample, exact=True)).to_be_visible()
     expect(
-        files.get_by_role("link", name="discovery_candidates.csv", exact=True)
+        files.get_by_role("link", name="discovery_peaks.csv", exact=True)
     ).to_have_count(2)
     expect(
         card.get_by_role("button", name="自訂 Inspector 匯出", exact=True)
