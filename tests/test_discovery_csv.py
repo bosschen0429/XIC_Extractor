@@ -53,20 +53,20 @@ def test_peak_csv_round_trips_through_the_reader(tmp_path: Path) -> None:
     peak = _peak(
         event_scan_ids=(6095, 6100, 6112),
         matched_tag_names=("DNA_dR", "R"),
-        status="doubly_charged",
+        status="overlap",
         ms1_apex_mz=258.1083,
     )
     path = write_discovery_peaks_csv(tmp_path / "nested" / "peaks.csv", [peak])
 
     (row,) = _read_csv(path)
-    assert row["status"] == "doubly_charged"
+    assert row["status"] == "overlap"
     assert row["event_scan_ids"] == "6095;6100;6112"
     assert row["raw_file"] == "C:\\data\\Sample_1.raw"
     (restored,) = read_discovery_peaks_csv(path)
     assert restored.peak_id == peak.peak_id
     assert restored.event_scan_ids == peak.event_scan_ids
     assert restored.matched_tag_names == peak.matched_tag_names
-    assert restored.status == "doubly_charged"
+    assert restored.status == "overlap"
     assert restored.ms1_apex_mz == pytest.approx(258.1083)
 
 

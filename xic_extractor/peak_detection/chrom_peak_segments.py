@@ -34,6 +34,7 @@ ChromPeakSegmentStatus = Literal[
 ChromPeakSegmentClass = Literal[
     "isolated_peak",
     "separate_peak",
+    "shoulder_candidate",
     "low_scan_segment",
 ]
 
@@ -103,7 +104,7 @@ class _ApexSeed:
 @dataclass(frozen=True)
 class _AdjacentPeakRelation:
     valley_index: int
-    relation_class: Literal["clear_split", "unresolved"]
+    relation_class: Literal["clear_split", "shoulder_overlap"]
 
 
 def measure_chrom_peak_component(
@@ -591,10 +592,13 @@ def _split_at_separable_valleys(
         zip(bounds, bounds[1:], strict=False)
     ):
         # A coarse seed can sit on the cut itself; the lobe's own maximum
-        # anchors its boundary walk.
+        # anchors its boundary walk. Coarse seeds stay only when several
+        # remain unresolved inside this part.
         apex = part_start + int(np.argmax(residual[part_start:part_end]))
         height = float(residual[apex])
         part_seeds = {s.index: s for s in seeds if part_start <= s.index < part_end}
+        if len(part_seeds) < 2:
+            part_seeds = {}
         part_seeds.setdefault(
             apex, _ApexSeed(apex, height, policy.baseline_return_threshold(height))
         )
@@ -730,10 +734,10 @@ def _adjacent_relations(
                 float(morphology_trace[right_seed.index]),
             ),
         )
-        relation_class: Literal["clear_split", "unresolved"] = (
+        relation_class: Literal["clear_split", "shoulder_overlap"] = (
             "clear_split"
             if valley_fraction <= policy.clear_valley_max_fraction
-            else "unresolved"
+            else "shoulder_overlap"
         )
         relations.append(
             _AdjacentPeakRelation(
@@ -814,6 +818,19 @@ def _segment_from_seed(
             left = max(basin_left, left - 1)
             right = min(basin_right, right + 1)
     relation_labels = _relation_labels(left_relation, right_relation)
+    if policy.morphology_trace_method == "rt_envelope":
+        # Qualification may discard a lobe as an independent candidate, but
+        # that is not evidence that its parent envelope is a clean component.
+        # Keep canonical contour complexity as review evidence, separately
+        # from the coarser envelope's quantitative boundaries.
+        contour = boundary_signal[left:right]
+        peaks = find_peaks(contour)[0]
+        prominences = peak_prominences(contour, peaks)[0]
+        review_lobes = sum(
+            prominences >= policy.min_prominence_fraction_of_envelope * np.max(contour)
+        )
+        if len(envelope_seeds) > 1 or review_lobes > 1:
+            relation_labels = (*relation_labels, "shoulder_overlap")
     interval = _trace_interval(rt, left, right)
     segment_class = _segment_class(interval, relation_labels, policy)
     stop_reason = _boundary_stop_reason(segment_class, relation_labels)
@@ -941,6 +958,8 @@ def _segment_class(
 ) -> ChromPeakSegmentClass:
     if interval.scan_count < policy.min_scan_count:
         return "low_scan_segment"
+    if "shoulder_overlap" in relation_labels:
+        return "shoulder_candidate"
     if "clear_split" in relation_labels:
         return "separate_peak"
     return "isolated_peak"
@@ -952,6 +971,8 @@ def _boundary_stop_reason(
 ) -> str:
     if segment_class == "low_scan_segment":
         return "segment_too_few_scans"
+    if "shoulder_overlap" in relation_labels:
+        return "shoulder_overlap_review"
     if "clear_split" in relation_labels:
         return "baseline_valley_split"
     return "baseline_return"
@@ -969,6 +990,8 @@ def _evidence_sources(
     ]
     if "clear_split" in relation_labels:
         sources.append("local_minimum_valley")
+    if "shoulder_overlap" in relation_labels:
+        sources.append("shoulder_overlap")
     if segment_class == "low_scan_segment":
         sources.append("scan_support")
     return tuple(sources)

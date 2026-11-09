@@ -679,10 +679,10 @@ def _projection_with_reported_peak_quality(
     conflict_reasons = projection.conflict_reasons
     if backfill_supported or not _same_physical_peak(captured, reported):
         # These reasons are issued by selected-candidate morphology/quality
-        # facts, not by the sample. A new physical
+        # facts (or its selected shoulder), not by the sample. A new physical
         # answer cannot inherit them from the replaced capture. Unknown and
         # sample-level reasons remain intact; Backfill acceptance is not clean.
-        peak_local_review = {"trace_morphology_review"}
+        peak_local_review = {"trace_morphology_review", "physical_shoulder_overlap"}
         peak_local_conflicts = {
             "trace_morphology_conflict",
             "hard_local_quality_conflict",
@@ -691,6 +691,10 @@ def _projection_with_reported_peak_quality(
         review_reasons = tuple(r for r in review_reasons if r not in peak_local_review)
         conflict_reasons = tuple(
             r for r in conflict_reasons if r not in peak_local_conflicts
+        )
+    if reported is not None and reported.requires_overlap_review:
+        review_reasons = tuple(
+            dict.fromkeys((*review_reasons, "physical_shoulder_overlap"))
         )
     return replace(
         projection, review_reasons=review_reasons, conflict_reasons=conflict_reasons

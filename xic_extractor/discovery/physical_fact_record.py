@@ -24,7 +24,10 @@ def admits_cid_nl_alignment(
 ) -> bool:
     """Bind method admission to a resolved physical peak before input grouping."""
     return (
-        peak.admitted and record is not None and record.evaluation.state == "available"
+        peak.admitted
+        and record is not None
+        and record.evaluation.state == "available"
+        and not record.evaluation.requires_overlap_review
     )
 
 

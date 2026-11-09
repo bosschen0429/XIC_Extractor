@@ -392,7 +392,7 @@ def capture_physical_backfill_observation(
     )
     if evaluation_sink is not None:
         evaluation_sink(evaluation)
-    if evaluation.state != "available":
+    if evaluation.state != "available" or evaluation.requires_overlap_review:
         return None
     assert prepared.prepared is not None
     return mint_physical_peak_observations(

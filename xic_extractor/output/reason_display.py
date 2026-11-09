@@ -27,7 +27,7 @@ MISSING_DIRECT_NL_REVIEW = frozenset(
         "missing_nl_support_review",
     }
 )
-_SHAPE_REVIEW = frozenset({"trace_morphology_review"})
+_SHAPE_REVIEW = frozenset({"physical_shoulder_overlap", "trace_morphology_review"})
 # The saved support reasons that let a paired ISTD lend its identity to a peak.
 _COHERENT_MS1_PEAK = frozenset({"ms1_peak_present", "ms1_coherent", "trace_coherent"})
 _BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
@@ -69,6 +69,7 @@ _REASON_TEXT = {
     "trace_morphology_conflict": "XIC 峰形或連續性需檢查",
     "hard_quality_flag_conflict": "XIC 有重大品質旗標",
     "trace_morphology_review": "XIC 峰形或連續性需檢查",
+    "physical_shoulder_overlap": "有肩峰或重疊",
     "chrom_peak_segment_shoulder_review": "所選峰旁有肩峰",
     "selected_envelope_split_supported": "有多個峰段，邊界需檢查",
     "selected_envelope_boundary_externalize": "峰或積分邊界未定",
@@ -167,7 +168,10 @@ def decision_basis(row: Mapping[str, object]) -> DecisionBasis:
     if row.get("Projection Reason") == "analyte_peak_off_paired_istd_position":
         return DecisionBasis("off_paired_istd_position", "峰不在配對 ISTD 位置")
     if _unqualified_ms1_shape(row):
-        return DecisionBasis("ms1_shape_failed", "MS1 峰形未通過：形狀不連續或不完整")
+        review = reasons(row, "Projection Review Reasons")
+        shoulder = "physical_shoulder_overlap" in review
+        failed = "肩峰／重疊" if shoulder else "形狀不連續或不完整"
+        return DecisionBasis("ms1_shape_failed", f"MS1 峰形未通過：{failed}")
     if not_counted and not_counted <= MISSING_DIRECT_NL_NOT_COUNTED:
         if str(row.get("Role", "")).upper() == "ISTD":
             return DecisionBasis("istd_without_identity", "ISTD 峰沒有可確認身分的依據")

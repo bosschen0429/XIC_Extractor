@@ -1017,7 +1017,7 @@ def test_acquired_peak_top_not_low_alternating_neighbors_supplies_support(
 
 @pytest.mark.parametrize("point_count", [1001, 2001])
 @pytest.mark.parametrize("width", [0.65, 0.75])
-def test_overlapping_components_keep_one_envelope(
+def test_overlapping_components_keep_one_envelope_and_review(
     point_count: int,
     width: float,
 ) -> None:
@@ -1043,6 +1043,7 @@ def test_overlapping_components_keep_one_envelope(
     assert discovery.facts.left_rt_min < 3.0
     assert discovery.facts.right_rt_min > 7.0
     assert discovery.integration == targeted.integration
+    assert discovery.requires_overlap_review
     payload = serialize_physical_peak_evaluation(
         rt,
         raw,
@@ -1051,6 +1052,7 @@ def test_overlapping_components_keep_one_envelope(
     )
     *_, restored = deserialize_physical_peak_evaluation(payload)
     assert restored == discovery
+    assert restored.requires_overlap_review
 
 
 @pytest.mark.parametrize("scale,background", [(1.0, 0.0), (1000.0, 100000.0)])
@@ -1896,6 +1898,7 @@ def test_middle_query_selects_the_unresolved_envelope_not_a_component(
         # envelope and cannot claim separate component-specific areas.
         assert 9.4 < answer.facts.left_rt_min < 10.3
         assert answer.facts.right_rt_min > 13.0
+        assert answer.requires_overlap_review
     assert answers[0].integration == answers[1].integration
     # Measurement is unchanged; the Discovery interval is raw-valley-owned,
     # whereas ordinary point segmentation reports its canonical valley label.

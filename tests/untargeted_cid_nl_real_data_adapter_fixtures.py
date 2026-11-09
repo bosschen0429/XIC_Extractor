@@ -117,4 +117,4 @@ def build_sample_adapter_scenario(tmp_path: Path) -> SampleAdapterScenario:
 
 def _without_ms1_peak(candidate: DiscoveryPeak) -> DiscoveryPeak:
     """A peak held at peak level: its MS2 events remain, its MS1 peak is not used."""
-    return replace(candidate, status="doubly_charged")
+    return replace(candidate, status="overlap")

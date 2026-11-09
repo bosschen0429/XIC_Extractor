@@ -309,7 +309,7 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
     ("qualification", "istd_pair", "why", "action"),
     [
         # The MS1 shape failed, so the paired ISTD could not lend identity.
-        ("", "", "MS1 峰形未通過：形狀不連續或不完整", "在 XIC 看峰形為什麼未通過"),
+        ("", "", "MS1 峰形未通過：肩峰／重疊", "在 XIC 看峰形為什麼未通過"),
         # A qualified MS1 peak lacks only an identity source.
         (
             "ms1_coherent",
@@ -351,7 +351,8 @@ def test_review_names_the_decisive_ms1_evidence_not_missing_ms2(
             )
             + (f";{qualification}" if qualification else ""),
             "Projection Review Reasons": (
-                "missing_ms2_not_observed;trace_morphology_review"
+                "missing_ms2_not_observed;physical_shoulder_overlap;"
+                "trace_morphology_review"
             ),
             "Projection Not Counted Reasons": "missing_ms2_policy_not_counted",
         }
@@ -426,6 +427,7 @@ def test_a_counted_result_noted_only_for_missing_neutral_loss_stays_quiet():
 @pytest.mark.parametrize(
     ("review_reason", "action"),
     [
+        ("physical_shoulder_overlap", "在 XIC 看肩峰是否影響積分範圍"),
         ("trace_morphology_review", "在 XIC 看峰形是否完整"),
         ("targeted_rt_review", "在 XIC 比對 RT 與配對 ISTD"),
     ],

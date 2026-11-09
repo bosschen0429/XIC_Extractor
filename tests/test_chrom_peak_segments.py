@@ -53,6 +53,25 @@ def test_segment_enumeration_splits_baseline_separated_neighbor_peaks() -> None:
     assert "local_minimum_valley" in result.segments[1].evidence_sources
 
 
+def test_segment_enumeration_marks_high_valley_shoulder_for_review() -> None:
+    rt, intensity, baseline = _trace([0, 0, 10, 50, 40, 45, 30, 0, 0])
+
+    result = enumerate_chrom_peak_segments(rt, intensity, baseline)
+
+    assert result.status == "OK"
+    assert len(result.segments) == 2
+    assert {segment.segment_class for segment in result.segments} == {
+        "shoulder_candidate"
+    }
+    assert all(
+        segment.boundary_stop_reason == "shoulder_overlap_review"
+        for segment in result.segments
+    )
+    assert all(
+        "shoulder_overlap" in segment.evidence_sources for segment in result.segments
+    )
+
+
 def test_segment_area_uses_raw_trace_not_morphology_area() -> None:
     residual = [0] * 12 + [0, 4, 100, 4, 0] + [0] * 12
     rt, intensity, baseline = _trace(residual)
@@ -156,6 +175,7 @@ def test_shoulder_envelope_preserves_mass_and_weak_isolated_peak() -> None:
 
     assert len(result.segments) == 2
     envelope, isolated = result.segments
+    assert "shoulder_overlap" in envelope.evidence_sources
     assert envelope.apex_rt_min == pytest.approx(3.0, abs=0.08)
     assert envelope.interval.rt_start_min < 3.0 - 1.2
     assert envelope.interval.rt_end_min > 4.8 + 1.2
@@ -166,6 +186,7 @@ def test_shoulder_envelope_preserves_mass_and_weak_isolated_peak() -> None:
         pytest.approx(known_overlap_area, rel=0.01)
     )
     assert isolated.apex_rt_min == pytest.approx(9.0, abs=0.04)
+    assert "shoulder_overlap" not in isolated.evidence_sources
 
 
 @pytest.mark.parametrize("reverse", (False, True))
@@ -202,9 +223,10 @@ def test_remote_small_pulses_do_not_split_an_unresolved_shoulder(
     )
 
     # A persistent but shallow valley does not establish independent peaks.
-    # Remote pulses cannot change that relation.
+    # Remote pulses cannot change that relation or erase overlap review.
     principal = [s for s in result.segments if 6.0 < s.apex_rt_min < 11.0]
     assert len(principal) == 1
+    assert all("shoulder_overlap" in s.evidence_sources for s in principal)
     centers = (6.9, 8.5) if reverse else (7.5, 9.1)
     assert principal[0].apex_rt_min == pytest.approx(6.9 if reverse else 9.1, abs=0.12)
     assert principal[0].interval.rt_start_min < min(centers) - 1.2
@@ -338,9 +360,10 @@ def test_clear_valley_classification_uses_one_signal_scale() -> None:
     for center in (0.885, 1.115):
         answer = evaluate_physical_peak(prepared, query_rt_min=center)
         assert answer.state == "available"
-        # The analytical valley is ~22% of either apex: the acquired scans
-        # separate the lobes even though envelope smoothing fills the valley.
         assert len(answer.segment_universe.segments) == 2
+        # The analytical valley is ~22% of either apex, below the 30%
+        # clear-valley limit, even though envelope smoothing lowers the apex.
+        assert not answer.requires_overlap_review
 
 
 @pytest.mark.parametrize("reverse", (False, True))
@@ -369,6 +392,7 @@ def test_clear_split_survives_asymmetric_envelope_apex_shift(reverse: bool) -> N
     assert answer.facts is not None
     assert answer.facts.apex_rt_min == pytest.approx(query, abs=0.002)
     assert len(answer.segment_universe.segments) == 2
+    assert not answer.requires_overlap_review
 
 
 @pytest.mark.parametrize("reverse", (False, True))
@@ -423,475 +447,74 @@ def test_local_doublet_and_weak_peak_survive_remote_connected_ripple(
     assert weak.area_baseline_corrected == pytest.approx(analytic_weak_area, rel=0.04)
 
 
+def _values(text: str) -> list[float]:
+    return [float(value) for value in text.split()]
+
+
 # Acquired excerpts (kilocounts) of regions reviewed in #1049 (case IDs in
 # output/1049_phase_b/b_classification.csv); the oracle is the reviewed class.
-_DOUBLET_553_RT = [
-    14.992,
-    15.013,
-    15.038,
-    15.076,
-    15.118,
-    15.159,
-    15.201,
-    15.242,
-    15.284,
-    15.325,
-    15.363,
-    15.404,
-    15.446,
-    15.487,
-    15.528,
-    15.57,
-    15.611,
-    15.653,
-    15.694,
-]  # O29 (B): 553.141 in NormalBC2312, raw valley ~0.36 of the smaller lobe
-_DOUBLET_553 = [
-    0.0,
-    0.0,
-    22.7,
-    195.0,
-    505.8,
-    503.1,
-    395.2,
-    235.6,
-    181.3,
-    209.1,
-    236.7,
-    240.6,
-    376.5,
-    708.7,
-    339.9,
-    141.0,
-    0.0,
-    21.0,
-    11.3,
-]
-_DROPOUT_328_RT = [
-    14.001,
-    14.03,
-    14.065,
-    14.107,
-    14.148,
-    14.19,
-    14.231,
-    14.273,
-    14.314,
-    14.356,
-    14.397,
-    14.438,
-    14.48,
-    14.521,
-    14.563,
-    14.604,
-    14.646,
-]  # O07 (A): one component whose raw alternates with zero dropouts
-_DROPOUT_328 = [
-    0.0,
-    0.0,
-    15.6,
-    30.3,
-    72.4,
-    43.8,
-    73.3,
-    0.0,
-    63.5,
-    0.0,
-    60.2,
-    55.1,
-    52.3,
-    25.7,
-    16.8,
-    0.0,
-    0.0,
-]
+_DOUBLET_553_RT = _values(
+    """
+    14.992 15.013 15.038 15.076 15.118 15.159 15.201 15.242 15.284 15.325 15.363
+    15.404 15.446 15.487 15.528 15.57 15.611 15.653 15.694
+    """
+)  # O29 (B): 553.141 in NormalBC2312, raw valley ~0.36 of the smaller lobe
+_DOUBLET_553 = _values(
+    """
+    0 0 22.7 195 505.8 503.1 395.2 235.6 181.3 209.1 236.7 240.6 376.5 708.7
+    339.9 141 0 21 11.3
+    """
+)
+_DROPOUT_328_RT = _values(
+    """
+    14.001 14.03 14.065 14.107 14.148 14.19 14.231 14.273 14.314 14.356 14.397
+    14.438 14.48 14.521 14.563 14.604 14.646
+    """
+)  # O07 (A): one component whose raw alternates with zero dropouts
+_DROPOUT_328 = _values(
+    """
+    0 0 15.6 30.3 72.4 43.8 73.3 0 63.5 0 60.2 55.1 52.3 25.7 16.8 0 0
+    """
+)
 # O28 (W): 359.045 in NormalBC2312, a main peak at 6.13 after a 3 min plateau.
 # A real dip separates the last plateau hump, but that hump is no peak of its
 # own: the plateau never returns below the valley level.
-_PLATEAU_359_RT = [
-    3.266,
-    3.307,
-    3.349,
-    3.39,
-    3.432,
-    3.473,
-    3.506,
-    3.54,
-    3.57,
-    3.609,
-    3.631,
-    3.657,
-    3.681,
-    3.699,
-    3.709,
-    3.726,
-    3.735,
-    3.754,
-    3.77,
-    3.788,
-    3.804,
-    3.82,
-    3.829,
-    3.844,
-    3.854,
-    3.875,
-    3.886,
-    3.904,
-    3.918,
-    3.925,
-    3.946,
-    3.963,
-    3.976,
-    3.993,
-    4.006,
-    4.021,
-    4.037,
-    4.044,
-    4.059,
-    4.066,
-    4.083,
-    4.088,
-    4.103,
-    4.113,
-    4.132,
-    4.136,
-    4.154,
-    4.161,
-    4.191,
-    4.197,
-    4.223,
-    4.234,
-    4.251,
-    4.26,
-    4.274,
-    4.286,
-    4.291,
-    4.303,
-    4.316,
-    4.325,
-    4.34,
-    4.351,
-    4.368,
-    4.376,
-    4.387,
-    4.399,
-    4.41,
-    4.418,
-    4.435,
-    4.441,
-    4.453,
-    4.46,
-    4.48,
-    4.492,
-    4.497,
-    4.516,
-    4.522,
-    4.536,
-    4.541,
-    4.557,
-    4.561,
-    4.581,
-    4.587,
-    4.602,
-    4.608,
-    4.624,
-    4.634,
-    4.651,
-    4.657,
-    4.669,
-    4.674,
-    4.694,
-    4.705,
-    4.733,
-    4.742,
-    4.772,
-    4.787,
-    4.809,
-    4.836,
-    4.851,
-    4.876,
-    4.896,
-    4.918,
-    4.944,
-    4.964,
-    4.989,
-    5.017,
-    5.051,
-    5.069,
-    5.101,
-    5.121,
-    5.162,
-    5.175,
-    5.216,
-    5.235,
-    5.276,
-    5.299,
-    5.34,
-    5.362,
-    5.403,
-    5.437,
-    5.469,
-    5.51,
-    5.546,
-    5.582,
-    5.62,
-    5.651,
-    5.677,
-    5.709,
-    5.734,
-    5.759,
-    5.788,
-    5.814,
-    5.85,
-    5.882,
-    5.909,
-    5.946,
-    5.969,
-    5.995,
-    6.023,
-    6.041,
-    6.069,
-    6.087,
-    6.103,
-    6.111,
-    6.125,
-    6.132,
-    6.141,
-    6.15,
-    6.159,
-    6.164,
-    6.169,
-    6.176,
-    6.181,
-    6.186,
-    6.193,
-    6.198,
-    6.209,
-    6.221,
-    6.231,
-    6.239,
-    6.25,
-    6.261,
-    6.273,
-    6.285,
-    6.301,
-    6.313,
-    6.328,
-    6.341,
-    6.358,
-    6.362,
-    6.376,
-    6.385,
-    6.4,
-    6.41,
-    6.424,
-    6.434,
-    6.443,
-    6.461,
-    6.477,
-    6.49,
-    6.504,
-    6.526,
-    6.543,
-    6.574,
-    6.594,
-    6.629,
-    6.646,
-    6.687,
-    6.717,
-]
-_PLATEAU_359 = [
-    26.2,
-    0,
-    0,
-    32.6,
-    40.4,
-    41.2,
-    36.4,
-    28.5,
-    28.7,
-    25.4,
-    37.9,
-    41.8,
-    33.9,
-    33.5,
-    46.3,
-    32.3,
-    50.9,
-    36.1,
-    27.2,
-    32.4,
-    38.7,
-    29.3,
-    36.7,
-    42.2,
-    31.6,
-    47.1,
-    49.8,
-    41.4,
-    47,
-    47,
-    43.2,
-    43.4,
-    35.6,
-    33.5,
-    41.5,
-    54.8,
-    38.3,
-    39.2,
-    42.4,
-    53.5,
-    61.4,
-    46.8,
-    33,
-    38.3,
-    46.3,
-    53.8,
-    62.4,
-    38.5,
-    50.5,
-    68.2,
-    56,
-    46.3,
-    51.2,
-    52.4,
-    55.2,
-    71,
-    48.4,
-    47.1,
-    46.9,
-    46.9,
-    66.9,
-    53.1,
-    47,
-    42.3,
-    47.5,
-    49.7,
-    52.2,
-    58.5,
-    53.9,
-    44.3,
-    66.1,
-    79.9,
-    53.4,
-    57.7,
-    66.1,
-    59.5,
-    70.8,
-    64.4,
-    52.5,
-    74.8,
-    64.1,
-    69.7,
-    67.6,
-    53.4,
-    59.1,
-    49.5,
-    58.2,
-    69.8,
-    72.5,
-    79.5,
-    68.1,
-    80.4,
-    51.1,
-    72.8,
-    79.1,
-    59.9,
-    97.8,
-    69.7,
-    67.3,
-    64.6,
-    58.5,
-    41.9,
-    56.3,
-    34.4,
-    54.1,
-    50.1,
-    34.6,
-    48.4,
-    49.3,
-    39.4,
-    45.9,
-    59.4,
-    48.7,
-    72.1,
-    66.3,
-    70.4,
-    47.2,
-    73.8,
-    58.9,
-    66.5,
-    62.7,
-    60.6,
-    61.4,
-    113.4,
-    86.3,
-    75.1,
-    85.2,
-    94.9,
-    82.2,
-    74.9,
-    71.4,
-    52.6,
-    52.7,
-    46.2,
-    39.6,
-    45,
-    52,
-    61.5,
-    68.5,
-    117.4,
-    83,
-    91.7,
-    111.5,
-    136.1,
-    131.9,
-    148.5,
-    143.5,
-    100.4,
-    111.2,
-    112,
-    122.3,
-    113.1,
-    102.9,
-    103.4,
-    112.1,
-    94.4,
-    105.7,
-    89.3,
-    72.6,
-    101.3,
-    95.8,
-    81.3,
-    77.7,
-    69.4,
-    66.7,
-    48.5,
-    53.8,
-    51.9,
-    39,
-    56.8,
-    64.8,
-    61.9,
-    57.6,
-    45.8,
-    51,
-    47.9,
-    51.3,
-    40.8,
-    45.7,
-    53.4,
-    49.9,
-    51.8,
-    71.8,
-    76.3,
-    60.9,
-    49.9,
-    26.2,
-    31.6,
-    0,
-    0,
-]
+_PLATEAU_359_RT = _values(
+    """
+    3.266 3.307 3.349 3.39 3.432 3.473 3.506 3.54 3.57 3.609 3.631 3.657 3.681
+    3.699 3.709 3.726 3.735 3.754 3.77 3.788 3.804 3.82 3.829 3.844 3.854 3.875
+    3.886 3.904 3.918 3.925 3.946 3.963 3.976 3.993 4.006 4.021 4.037 4.044
+    4.059 4.066 4.083 4.088 4.103 4.113 4.132 4.136 4.154 4.161 4.191 4.197
+    4.223 4.234 4.251 4.26 4.274 4.286 4.291 4.303 4.316 4.325 4.34 4.351 4.368
+    4.376 4.387 4.399 4.41 4.418 4.435 4.441 4.453 4.46 4.48 4.492 4.497 4.516
+    4.522 4.536 4.541 4.557 4.561 4.581 4.587 4.602 4.608 4.624 4.634 4.651
+    4.657 4.669 4.674 4.694 4.705 4.733 4.742 4.772 4.787 4.809 4.836 4.851
+    4.876 4.896 4.918 4.944 4.964 4.989 5.017 5.051 5.069 5.101 5.121 5.162
+    5.175 5.216 5.235 5.276 5.299 5.34 5.362 5.403 5.437 5.469 5.51 5.546 5.582
+    5.62 5.651 5.677 5.709 5.734 5.759 5.788 5.814 5.85 5.882 5.909 5.946 5.969
+    5.995 6.023 6.041 6.069 6.087 6.103 6.111 6.125 6.132 6.141 6.15 6.159 6.164
+    6.169 6.176 6.181 6.186 6.193 6.198 6.209 6.221 6.231 6.239 6.25 6.261 6.273
+    6.285 6.301 6.313 6.328 6.341 6.358 6.362 6.376 6.385 6.4 6.41 6.424 6.434
+    6.443 6.461 6.477 6.49 6.504 6.526 6.543 6.574 6.594 6.629 6.646 6.687 6.717
+    """
+)
+_PLATEAU_359 = _values(
+    """
+    26.2 0 0 32.6 40.4 41.2 36.4 28.5 28.7 25.4 37.9 41.8 33.9 33.5 46.3 32.3
+    50.9 36.1 27.2 32.4 38.7 29.3 36.7 42.2 31.6 47.1 49.8 41.4 47 47 43.2 43.4
+    35.6 33.5 41.5 54.8 38.3 39.2 42.4 53.5 61.4 46.8 33 38.3 46.3 53.8 62.4
+    38.5 50.5 68.2 56 46.3 51.2 52.4 55.2 71 48.4 47.1 46.9 46.9 66.9 53.1 47
+    42.3 47.5 49.7 52.2 58.5 53.9 44.3 66.1 79.9 53.4 57.7 66.1 59.5 70.8 64.4
+    52.5 74.8 64.1 69.7 67.6 53.4 59.1 49.5 58.2 69.8 72.5 79.5 68.1 80.4 51.1
+    72.8 79.1 59.9 97.8 69.7 67.3 64.6 58.5 41.9 56.3 34.4 54.1 50.1 34.6 48.4
+    49.3 39.4 45.9 59.4 48.7 72.1 66.3 70.4 47.2 73.8 58.9 66.5 62.7 60.6 61.4
+    113.4 86.3 75.1 85.2 94.9 82.2 74.9 71.4 52.6 52.7 46.2 39.6 45 52 61.5 68.5
+    117.4 83 91.7 111.5 136.1 131.9 148.5 143.5 100.4 111.2 112 122.3 113.1
+    102.9 103.4 112.1 94.4 105.7 89.3 72.6 101.3 95.8 81.3 77.7 69.4 66.7 48.5
+    53.8 51.9 39 56.8 64.8 61.9 57.6 45.8 51 47.9 51.3 40.8 45.7 53.4 49.9 51.8
+    71.8 76.3 60.9 49.9 26.2 31.6 0 0
+    """
+)
 
 
 def _physical_policy() -> ChromPeakSegmentPolicy:

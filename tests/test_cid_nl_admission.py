@@ -12,6 +12,9 @@ from tests.cid_nl_raw_fixture import (
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
+from tests.physical_peak_evaluation_persistence_fixtures import (
+    _overlapping_triplet_trace,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
@@ -29,6 +32,8 @@ from xic_extractor.discovery.physical_fact_persistence import (
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.peak_detection.capture import capture_physical_backfill_observation
+from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.alignment import (
     prepare_untargeted_alignment_inputs,
@@ -78,7 +83,9 @@ def test_alignment_and_delta_mass_read_one_peak_mass(tmp_path, apex_mz):
 def test_review_rows_never_become_alignment_roots(
     tmp_path, monkeypatch, indexed, with_supported
 ):
-    stems = ("Rescued", "Orphan") + (("Clean1", "Clean2") if with_supported else ())
+    stems = ("Rescued", "Overlap", "Orphan") + (
+        ("Clean1", "Clean2") if with_supported else ()
+    )
     paths = tuple(tmp_path / f"{stem}.raw" for stem in stems)
     for path in paths:
         path.write_bytes(path.stem.encode())
@@ -94,6 +101,11 @@ def test_review_rows_never_become_alignment_roots(
             scan_precursor_mz=500.5 if path.stem == "Rescued" else 500.0,
             acquisition_source=source.acquisition_source,
         )
+        if path.stem == "Overlap":
+            rt, intensity = _overlapping_triplet_trace()
+            raw.rt = 7.5 + rt * 0.1
+            raw.intensity = intensity
+            raw.scans = tuple(replace(scan, scan_number=501) for scan in raw.scans)
         if path.stem == "Orphan":
             raw.intensity[:] = 0
         if path.stem == "Clean2":
@@ -118,6 +130,7 @@ def test_review_rows_never_become_alignment_roots(
                 peak.status
                 == {
                     "Rescued": "no_nl_event",
+                    "Overlap": "overlap",
                     "Clean1": "admitted",
                     "Clean2": "admitted",
                 }[path.stem]
@@ -185,6 +198,39 @@ def test_review_rows_never_become_alignment_roots(
                 c.peak_id for job in partition.jobs for c in job.candidates
             } == expected_ids
             assert all(not job.support_candidates for job in partition.jobs)
+            # An accepted root does not authorize an unresolved MS1-only refill.
+            sample = next(
+                s for s in plan.context.samples if s.metadata.raw_stem == "Overlap"
+            )
+            raw = raws[paths[1]]
+            evaluations = []
+            observation = capture_physical_backfill_observation(
+                processing_owners=plan.context.processing_owners,
+                sample=sample,
+                method_subject=plan.subject_batch.subjects[0],
+                trace=Trace(
+                    sample_name="Overlap",
+                    mz=500.0,
+                    rt=raw.rt,
+                    intensity=raw.intensity,
+                    rt_min=float(raw.rt[0]),
+                    rt_max=float(raw.rt[-1]),
+                    ppm_tol=settings.precursor_mz_tolerance_ppm,
+                    acquisition_source_id=spec.acquisition_inputs[
+                        1
+                    ].acquisition_source.acquisition_source_id,
+                ),
+                query_rt_min=8.0,
+                physical_mz=500.0,
+                profile=TEST_PROFILE,
+                resolver_mode="local_minimum",
+                evaluation_sink=evaluations.append,
+            )
+            assert (
+                evaluations[0].state == "available"
+                and evaluations[0].requires_overlap_review
+            )
+            assert observation is None
         result = execute_untargeted_plan(
             plan,
             output_dir=tmp_path / "alignment",

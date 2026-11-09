@@ -1318,9 +1318,11 @@ def test_discovery_publishes_physical_qualification(
     assert rt[0] < evaluation.facts.left_rt_min < query_rt
     assert query_rt < evaluation.facts.right_rt_min < rt[-1]
     if trace_case == "overlapping_components":
-        # The unresolved envelope is one merged measurement; its shape name
-        # no longer holds it out of Alignment.
-        assert candidate.status == "admitted"
+        assert candidate.ms1_trace_quality == "physical_shoulder_overlap"
+        assert candidate.status == "overlap"
+        assert candidate.is_provisional
+        assert candidate.review_priority == "MEDIUM"
+        assert "physical_shoulder_overlap" in candidate.reason
 
     from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
     from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv

@@ -120,11 +120,14 @@ context-completeness rule. The interior-maxima rule removes measurement-noise
 ripple, not every periodic fluctuation or unresolved chemical shoulder.
 
 Shoulder-connected lobes form one quantitative envelope unless a clear envelope
-valley or a separable acquired valley separates their area. An unresolved
-envelope is measured as a whole: its area is the observed sum, not
-deconvolved compound-specific areas, and it does not establish one chemical
-component. Whether that merged measurement is usable is decided by the ordinary
-measurement and method-evidence gates, not by its shape name.
+valley or a separable acquired valley separates their area. Canonical contour
+maxima reaching the same 4% prominence floor remain review evidence even when
+they do not qualify as independent seeds. The complete envelope does not
+establish one chemical component or individual component areas.
+
+An unresolved shoulder remains a review condition (`physical_shoulder_overlap`).
+Targeted carries it into the product review reasons; Untargeted retains it as
+provisional evidence and excludes it from independent owner quantification.
 NL evidence does not change this physical definition. Targeted uses the same
 owner for NL and no-NL inputs; its acquisition context includes one configured
 window width on each side, while only apexes inside the original selection
@@ -154,7 +157,7 @@ dropouts (A) 0/13, broad single components including peak plus plateau (W)
 0/15 and unflagged controls 0/27 split. The "lobe is a peak at its own scale"
 condition removes splits of plateau ripples and dense-sampling noise; the
 missed doublets are mostly weak isotope or adduct channels whose valley is not
-deeper than the noise, which stay one merged measurement.
+deeper than the noise, which stay one unresolved envelope.
 
 ### Local relief
 
@@ -304,7 +307,7 @@ selected physical component supplies the integration bounds.
   replacement region.
 - Lobes stay distinct at a [separable valley](#separable-valleys). Brief
   dropouts, unsupported ripple and plateau texture do not separate peaks.
-- An unresolved envelope is one merged measurement; its area is measured, not
+- An unresolved envelope keeps overlap review. Its area is measured, not
   deconvolved compound-specific area.
 - If a focused query clips the peak, Targeted NL acquisition can restore the
   configured target window once; the same physical owner evaluates the new

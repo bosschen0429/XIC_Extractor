@@ -439,6 +439,10 @@ def _measured_peak(
         ms1_event_delta_min=event_delta_min,
         settings=settings,
     )
+    physical_overlap = trace_quality == "physical_shoulder_overlap"
+    if physical_overlap:
+        priority = "MEDIUM"
+        reason += "; physical_shoulder_overlap"
     if doubly_charged:
         reason = (
             "inferred precursor reads a doubly charged isotope at the peak apex; "
@@ -479,6 +483,7 @@ def _measured_peak(
         reason=reason,
         status=_peak_status(
             doubly_charged=doubly_charged,
+            overlap=evaluation.requires_overlap_review,
             attached_event_count=len(attached),
         ),
         ms1_scan_support_score=min(
@@ -503,7 +508,10 @@ def _measured_peak(
         tag_evidence_json=merge_event_evidence(evidence, settings=settings),
         located_events=located_event_order(evidence),
         # Provisional trace shape is judged with every event that locates it.
-        is_provisional=len(located_events) < 2 and trace_quality == "provisional",
+        is_provisional=(
+            physical_overlap
+            or (len(located_events) < 2 and trace_quality == "provisional")
+        ),
     )
     peak_attachments = tuple(
         EventAttachment(
@@ -518,10 +526,14 @@ def _measured_peak(
     return peak, record, peak_attachments
 
 
-def _peak_status(*, doubly_charged: bool, attached_event_count: int) -> PeakStatus:
+def _peak_status(
+    *, doubly_charged: bool, overlap: bool, attached_event_count: int
+) -> PeakStatus:
     """The first problem that holds the peak, then NL attachment."""
     if doubly_charged:
         return "doubly_charged"
+    if overlap:
+        return "overlap"
     if attached_event_count < 1:
         return "no_nl_event"
     return "admitted"

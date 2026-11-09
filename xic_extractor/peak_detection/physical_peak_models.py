@@ -196,3 +196,12 @@ class PhysicalPeakEvaluation:
         # The complete answer graph is frozen dataclasses, tuples and scalars.
         # Copies of mutable run containers can share it without walking signals.
         return self
+
+    @property
+    def requires_overlap_review(self) -> bool:
+        segment = self.answer.selected_segment
+        return segment is not None and (
+            segment.segment_class == "shoulder_candidate"
+            or segment.boundary_stop_reason == "shoulder_overlap_review"
+            or "shoulder_overlap" in segment.evidence_sources
+        )

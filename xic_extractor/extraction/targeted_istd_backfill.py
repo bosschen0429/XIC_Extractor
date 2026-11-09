@@ -132,6 +132,7 @@ def resolve_istd_reference_peaks(
                 )
                 if evaluation.state == "available"
                 and evaluation.integration is not None
+                and not evaluation.requires_overlap_review
                 and abs(evaluation.integration.rt_apex_min - location.location.query_rt)
                 * 60
                 <= location.apex_tolerance_sec
