@@ -31,7 +31,7 @@ from xic_extractor.raw_reader import open_raw
 from xic_extractor.tabular_io import read_delimited_rows
 
 _ALLOWED_CID_NL_TAG = "DNA_dR"
-_JOINABLE_ADMISSION_REASONS = frozenset({"admitted", "no_attached_event"})
+_JOINABLE_ADMISSION_REASONS = frozenset({"admitted"})
 _CID_NL_REQUIRED_COLUMNS = (
     "peak_id",
     "sample_stem",
@@ -215,9 +215,8 @@ def _load_cid_nl_peak_rows(path: Path) -> tuple[_CidNlPeakRow, ...]:
     """Load the measured CID-NL peaks a delta-mass base may join.
 
     Every row must carry ``peak_id``, ``sample_stem`` and ``admission_reason``.
-    A peak joins when it is admitted, or when its MS1 peak was measured on the
-    channel but no NL event attaches; peak-level gates (system background,
-    doubly charged isotope, overlap review) exclude it.
+    Only admitted peaks join; a measured peak without an attached NL event
+    does not supply dR support.
     """
 
     rows = read_delimited_rows(

@@ -88,10 +88,10 @@ smoothing_window_sec = 1
             writer = csv.DictWriter(
                 handle,
                 fieldnames=[
-                    "candidate_id",
-                    "ms1_feature_row_id",
-                    "neutral_loss_tag",
-                    "discovery_candidate_state",
+                    "peak_id",
+                    "sample_stem",
+                    "matched_tag_names",
+                    "admission_reason",
                     "precursor_mz",
                     "ms1_apex_rt",
                 ],
@@ -99,15 +99,27 @@ smoothing_window_sec = 1
             writer.writeheader()
             writer.writerow(
                 dict(
-                    candidate_id="cid-first",
-                    ms1_feature_row_id="first|DNA_dR|300|1.0667",
-                    neutral_loss_tag="DNA_dR",
-                    discovery_candidate_state="ms1_feature_nl_supported",
+                    peak_id="cid-first",
+                    sample_stem="first",
+                    matched_tag_names="DNA_dR",
+                    admission_reason="admitted",
                     precursor_mz=300,
                     ms1_apex_rt=1 + 4 / 60,
                 )
             )
-        extra_args = ["--cid-nl-candidates-csv", str(cid)]
+            # A measured second-sample peak without an attached event cannot
+            # supply dR support, even when its mass and RT match exactly.
+            writer.writerow(
+                dict(
+                    peak_id="cid-second",
+                    sample_stem="second",
+                    matched_tag_names="DNA_dR",
+                    admission_reason="no_attached_event",
+                    precursor_mz=600,
+                    ms1_apex_rt=1 + 4 / 60,
+                )
+            )
+        extra_args = ["--cid-nl-peaks-csv", str(cid)]
     batches = []
 
     class Raw:
@@ -215,7 +227,7 @@ smoothing_window_sec = 1
     assert [r["cid_nl_base_status"] for r in rows] == (
         ["matched", "unmatched"] if composite else ["", ""]
     )
-    assert [r["cid_nl_base_candidate_id"] for r in rows] == (
+    assert [r["cid_nl_base_peak_id"] for r in rows] == (
         ["cid-first", ""] if composite else ["", ""]
     )
     with (output / "delta_mass_positions.csv").open(
