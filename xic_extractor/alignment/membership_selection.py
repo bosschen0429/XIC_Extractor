@@ -385,12 +385,15 @@ class MembershipComparison:
 
         This is not a pair veto: adding intervening observations can make a
         group feasible. Raw coordinates never fill gaps in calibration support.
+        Populations that split the batch into earlier and later injections stay
+        a cost: residual drift explains them as well as two compounds do.
         """
         if len(group) < _RT_POPULATION_MIN_MEMBERS or any(
             key not in self.common_rts for key in group
         ):
             return False
-        rts = sorted(self.common_rts[key] for key in group)
+        ordered = sorted(group, key=lambda key: self.common_rts[key])
+        rts = [self.common_rts[key] for key in ordered]
         split = max(range(1, len(rts)), key=lambda i: rts[i] - rts[i - 1])
         gap_sec = (rts[split] - rts[split - 1]) * 60
         side_range_sec = max(rts[split - 1] - rts[0], rts[-1] - rts[split]) * 60
@@ -398,9 +401,16 @@ class MembershipComparison:
         threshold_sec = max(
             _RT_POPULATION_MIN_GAP_SEC, _RT_POPULATION_RANGE_RATIO * side_range_sec
         )
-        return gap_sec >= threshold_sec or math.isclose(
+        if gap_sec < threshold_sec and not math.isclose(
             gap_sec, threshold_sec, rel_tol=0, abs_tol=1e-10
-        )
+        ):
+            return False
+        samples = [self.owners[key].sample_stem for key in ordered]
+        if any(sample not in self.orders for sample in samples):
+            return True
+        orders = [self.orders[sample] for sample in samples]
+        earlier, later = orders[:split], orders[split:]
+        return not (max(earlier) < min(later) or max(later) < min(earlier))
 
     def cost(self, partition: Partition) -> float:
         return math.fsum(self.group_cost(group) for group in partition)
