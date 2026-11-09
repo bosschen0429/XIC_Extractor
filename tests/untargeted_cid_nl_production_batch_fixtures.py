@@ -577,7 +577,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                 acquisition_source=source.acquisition_source,
                 settings=settings,
                 signal_processing_profile=profile,
-                ms1_centroid_mz=lambda *_: None,
+                ms1_centroid=lambda *_: None,
             )
         folder = tmp_path / path.stem
         folder.mkdir()

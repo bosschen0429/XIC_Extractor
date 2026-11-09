@@ -52,7 +52,7 @@ def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl(
         acquisition_source=raw.acquisition_source,
         settings=settings,
         signal_processing_profile=TEST_PROFILE,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
     assert len(result.peaks) == 1
     candidate = result.peaks[0]

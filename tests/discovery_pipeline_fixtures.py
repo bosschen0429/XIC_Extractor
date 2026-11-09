@@ -113,7 +113,9 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
 
 
 class _OwnerBoundFakeRawHandle:
-    def ms1_centroid_mz(self, rt: float, mz_min: float, mz_max: float) -> float | None:
+    def ms1_centroid(
+        self, rt: float, mz_min: float, mz_max: float
+    ) -> tuple[float, float] | None:
         return None
 
     raw_open_receipt = None
@@ -172,7 +174,9 @@ class _OwnerBoundFakeRawHandle:
 
 
 class _FakeRawHandle:
-    def ms1_centroid_mz(self, rt: float, mz_min: float, mz_max: float) -> float | None:
+    def ms1_centroid(
+        self, rt: float, mz_min: float, mz_max: float
+    ) -> tuple[float, float] | None:
         return None
 
     raw_open_receipt = None

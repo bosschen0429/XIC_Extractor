@@ -27,9 +27,9 @@ from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 
 
 class CidNlSearchSource(DiscoveryMs1Source, AcquisitionSpanMS2Source, Protocol):
-    def ms1_centroid_mz(
+    def ms1_centroid(
         self, rt: float, mz_min: float, mz_max: float
-    ) -> float | None: ...
+    ) -> tuple[float, float] | None: ...
 
 
 def search_cid_nl_sample(
@@ -68,7 +68,7 @@ def search_cid_nl_sample(
             settings=settings,
             measurement_observer=measurement_observer,
             signal_processing_profile=signal_processing_profile,
-            ms1_centroid_mz=raw.ms1_centroid_mz,
+            ms1_centroid=raw.ms1_centroid,
         )
         stage.metrics["peak_count"] = len(result.peaks)
         stage.metrics["event_count"] = len(result.attachments)

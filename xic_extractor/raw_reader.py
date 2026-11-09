@@ -368,8 +368,13 @@ class RawFileHandle:
         """Overlapping scan windows share one native chromatogram read."""
         return RawSuperWindowSource(self)
 
-    def ms1_centroid_mz(self, rt: float, mz_min: float, mz_max: float) -> float | None:
-        """Most intense MS1 centroid within [mz_min, mz_max] at the scan at ``rt``."""
+    def ms1_centroid(
+        self, rt: float, mz_min: float, mz_max: float
+    ) -> tuple[float, float] | None:
+        """(m/z, intensity) of the most intense MS1 centroid in [mz_min, mz_max].
+
+        The centroid is read at the scan at ``rt``.
+        """
         raw = self._raw_file
         scan_number = int(raw.ScanNumberFromRetentionTime(rt))
         if (
@@ -391,7 +396,11 @@ class RawFileHandle:
         inside = (masses >= mz_min) & (masses <= mz_max)
         if not inside.any():
             return None
-        return float(masses[inside][np.argmax(intensities[inside])])
+        strongest = int(np.argmax(intensities[inside]))
+        return (
+            float(masses[inside][strongest]),
+            float(intensities[inside][strongest]),
+        )
 
     def read_ms1_mass_windows(
         self, requests: Sequence[tuple[int, float, float]]

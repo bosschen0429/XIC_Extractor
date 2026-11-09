@@ -151,7 +151,7 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> N
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     ).peaks[0]
     second = capture_ms1_peaks(
         raw,
@@ -159,7 +159,7 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> N
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     ).peaks[0]
 
     assert raw.requests == [

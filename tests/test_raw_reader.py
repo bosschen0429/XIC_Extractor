@@ -801,7 +801,7 @@ def test_extract_xic_returns_positions_and_intensities() -> None:
     assert intensity.tolist() == [10.0, 20.0]
 
 
-def test_ms1_centroid_mz_reads_the_most_intense_centroid_in_range() -> None:
+def test_ms1_centroid_reads_the_most_intense_centroid_in_range() -> None:
     from xic_extractor.raw_reader import RawFileHandle
 
     raw = _FakeRaw(
@@ -816,9 +816,9 @@ def test_ms1_centroid_mz_reads_the_most_intense_centroid_in_range() -> None:
     )
     handle = RawFileHandle(raw, _fake_thermo(raw))
 
-    assert handle.ms1_centroid_mz(7.9, 714.35, 714.38) == 714.3696
-    assert handle.ms1_centroid_mz(7.9, 714.40, 714.45) is None
-    assert handle.ms1_centroid_mz(8.1, 714.35, 714.38) is None  # an MS2 scan
+    assert handle.ms1_centroid(7.9, 714.35, 714.38) == (714.3696, 9.0)
+    assert handle.ms1_centroid(7.9, 714.40, 714.45) is None
+    assert handle.ms1_centroid(8.1, 714.35, 714.38) is None  # an MS2 scan
 
 
 def test_extract_xic_many_batches_shared_scan_window() -> None:

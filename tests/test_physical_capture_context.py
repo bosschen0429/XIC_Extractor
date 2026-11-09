@@ -235,7 +235,7 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
             acquisition_source=raw.acquisition_source,
             settings=settings,
             signal_processing_profile=TEST_PROFILE,
-            ms1_centroid_mz=lambda *_: None,
+            ms1_centroid=lambda *_: None,
         )
         measured = list(result.peaks)
         assert len(result.physical_evaluations) == 2

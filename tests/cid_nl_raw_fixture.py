@@ -72,7 +72,7 @@ def _current_candidates(
         acquisition_source=source,
         settings=settings,
         signal_processing_profile=TEST_PROFILE,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
     if physical_records is not None:
         physical_records.update(
