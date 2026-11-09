@@ -83,7 +83,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
                 acquisition_source=raw.acquisition_source,
                 settings=settings,
                 signal_processing_profile=profile,
-                ms1_centroid_mz=lambda *_: None,
+                ms1_centroid=lambda *_: None,
             )
         assert len(discovery.peaks) == 1
         candidates[sample] = discovery.peaks
@@ -305,7 +305,7 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
                 acquisition_source=raw.acquisition_source,
                 settings=settings,
                 signal_processing_profile=profile,
-                ms1_centroid_mz=lambda *_: None,
+                ms1_centroid=lambda *_: None,
             )
         assert len(discovery.peaks) == 1
         candidates[sample] = discovery.peaks

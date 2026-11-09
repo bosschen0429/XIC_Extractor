@@ -274,7 +274,7 @@ def test_capture_clamps_ms1_search_rt_min_to_zero() -> None:
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(ms1_search_padding_min=0.20),
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     assert raw.requests == [(group.mz, 0.0, pytest.approx(0.65), 20.0)]
@@ -306,7 +306,7 @@ def test_ms1_peak_fields_are_filled_from_physical_facts(scans_target: int) -> No
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
     (candidate,) = result.peaks
     (record,) = result.physical_evaluations
@@ -352,7 +352,7 @@ def test_an_event_without_ms1_signal_is_recorded_without_a_peak(
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     assert result.peaks == ()
@@ -393,7 +393,7 @@ def test_single_raw_basin_keeps_events_outside_quantitative_return(
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(ms1_search_padding_min=0.20),
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     # Each analytic input is one positive Gaussian with no intervening raw
@@ -635,7 +635,7 @@ def test_owner_acquisition_shares_identical_contexts_and_preserves_separate_wind
         acquisition_source=source,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     measurements = result.measurements
@@ -680,7 +680,7 @@ def test_owner_acquisition_batches_distinct_contexts_at_256(
         acquisition_source=source,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     metrics = _acquisition_totals(result.measurements.acquisition_batches)
@@ -725,7 +725,7 @@ def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
         acquisition_source=source,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     batches = result.measurements.acquisition_batches
@@ -766,7 +766,7 @@ def test_owner_acquisition_fails_closed_on_wrong_trace_cardinality(
             acquisition_source=source,
             signal_processing_profile=TEST_PROFILE,
             settings=_settings(),
-            ms1_centroid_mz=lambda *_: None,
+            ms1_centroid=lambda *_: None,
         )
 
 
@@ -828,7 +828,7 @@ def _candidates_from_raw(
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     ).peaks
 
 

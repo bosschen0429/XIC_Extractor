@@ -100,7 +100,7 @@ def test_recalibrated_xic_finds_the_ion_in_every_scan_and_keeps_neighbours_out()
 def test_recalibrated_ms1_centroid_reads_return_true_masses():
     handle = _handle(_Vendor())
 
-    assert handle.ms1_centroid_mz(10.05, 499.99, 500.001) == pytest.approx(TRUE_MZ)
+    assert handle.ms1_centroid(10.05, 499.99, 500.001)[0] == pytest.approx(TRUE_MZ)
     observations = handle.read_ms1_mass_windows(
         ((3, 499.999, 500.001), (2, 499.0, 501.0))
     )
@@ -359,7 +359,7 @@ def test_unavailable_preserves_vendor_mass_paths(case, reason):
         probe.extract_xic_many((request,))[0].intensity,
         vendor_handle.extract_xic_many((request,))[0].intensity,
     )
-    assert probe.ms1_centroid_mz(10.05, 499, 501) == vendor_handle.ms1_centroid_mz(
+    assert probe.ms1_centroid(10.05, 499, 501) == vendor_handle.ms1_centroid(
         10.05, 499, 501
     )
     assert probe.read_ms1_mass_windows(

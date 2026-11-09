@@ -29,7 +29,7 @@ def _capture(raw, seeds, settings: DiscoverySettings):
         acquisition_source=raw.acquisition_source,
         settings=settings,
         signal_processing_profile=TEST_PROFILE,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
 

@@ -324,7 +324,7 @@ def test_discovery_retained_physical_peak_cardinality(
         acquisition_source=source,
         settings=settings,
         signal_processing_profile=profile,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
     path = write_discovery_peaks_csv(tmp_path / "peaks.csv", result.peaks)
     valid = list(read_discovery_peaks_csv(path))
@@ -452,7 +452,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
         acquisition_source=source,
         settings=settings,
         signal_processing_profile=profile,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
     # The physical peak is measured and represented once; each attached event
     # keeps its own parent-ion proof in tag_evidence_json.
@@ -828,7 +828,7 @@ def test_short_discovery_request_reacquires_points_without_assuming_peak_support
         acquisition_source=source,
         settings=_capture_settings(),
         signal_processing_profile=profile,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     assert len(result.measurements.acquisition_batches) == 2
@@ -879,7 +879,7 @@ def test_single_seed_discovery_acquires_complete_physical_context(
         acquisition_source=source,
         settings=_capture_settings(),
         signal_processing_profile=profile,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     assert result.measurements.reacquisition_request_count == 0
@@ -941,7 +941,7 @@ def test_product_inferred_single_seed_uses_widened_initial_context(
         acquisition_source=source,
         settings=_capture_settings(),
         signal_processing_profile=profile,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     assert result.measurements.reacquisition_request_count == 0
@@ -986,7 +986,7 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
         acquisition_source=source,
         settings=_capture_settings(),
         signal_processing_profile=profile,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     assert len(result.measurements.acquisition_batches) == 1
@@ -1046,7 +1046,7 @@ def test_qualification_survives_physical_fact_reuse(
         acquisition_source=source,
         settings=_capture_settings(),
         signal_processing_profile=SignalProcessingProfile(),
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     if rising_background:
@@ -1103,7 +1103,7 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
         acquisition_source=source,
         settings=_capture_settings(),
         signal_processing_profile=SignalProcessingProfile(window_points=3),
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     metrics = _acquisition_totals(result.measurements.acquisition_batches)
@@ -1148,7 +1148,7 @@ def test_physical_binding_rejects_cross_acquisition_reassembly(
         acquisition_source=current_source,
         settings=_capture_settings(),
         signal_processing_profile=profile,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
     foreign_raw = _OwnerBoundBatchRaw(foreign_source)
     foreign_raw.intensity *= 5.0
@@ -1158,7 +1158,7 @@ def test_physical_binding_rejects_cross_acquisition_reassembly(
         acquisition_source=foreign_source,
         settings=_capture_settings(),
         signal_processing_profile=profile,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
     foreign_record = foreign.physical_evaluations[0]
 
@@ -1235,7 +1235,7 @@ def test_terminal_physical_truth_is_the_events_unattached_reason(
         acquisition_source=source,
         settings=_capture_settings(),
         signal_processing_profile=SignalProcessingProfile(window_points=window_points),
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     # No measured peak: the event records the physical answer, and no peak
@@ -1298,7 +1298,7 @@ def test_discovery_publishes_physical_qualification(
         acquisition_source=source,
         settings=_capture_settings(),
         signal_processing_profile=profile,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
     if trace_case == "alternating_amplitude":
         # Alternating impulses leave no measured raw owner at this query.
@@ -1389,7 +1389,7 @@ def test_physical_fact_sharing_uses_one_raw_peak(
         acquisition_source=source,
         settings=settings,
         signal_processing_profile=profile,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     # Sub-ppm mass changes and repeated NL events share one ion channel, so
@@ -1439,6 +1439,7 @@ def _inferred_apex_case(
     basis: str = "product_plus_neutral_loss",
     companion_basis: str | None = None,
     isotope_offsets: tuple[float, ...] = (),
+    isotope_ratio: float = 0.5,
 ):
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
     raw_path.write_bytes(b"owner-bound-discovery")
@@ -1472,10 +1473,20 @@ def _inferred_apex_case(
             ),
         )
 
-    def read_ion(rt: float, low: float, high: float) -> float | None:
+    def read_ion(rt: float, low: float, high: float) -> tuple[float, float] | None:
         mz = centroid(group.mz, rt)
-        ions = () if mz is None else (mz, *(mz + offset for offset in isotope_offsets))
-        return next((ion for ion in ions if low <= ion <= high), None)
+        ions = (
+            ()
+            if mz is None
+            else (
+                (mz, 1_000_000.0),
+                *(
+                    (mz + offset, isotope_ratio * 1_000_000.0)
+                    for offset in isotope_offsets
+                ),
+            )
+        )
+        return next((ion for ion in ions if low <= ion[0] <= high), None)
 
     result = capture_ms1_peaks(
         raw,
@@ -1483,7 +1494,7 @@ def _inferred_apex_case(
         acquisition_source=source,
         settings=_capture_settings(),
         signal_processing_profile=SignalProcessingProfile(window_points=15),
-        ms1_centroid_mz=read_ion,
+        ms1_centroid=read_ion,
     )
     return group, raw, result
 
@@ -1526,10 +1537,10 @@ def test_pipeline_publishes_inferred_precursor_ms1_ion_from_raw_handle(
     apex_ion_mz = 500.0005
 
     class CentroidRaw(_OwnerBoundFakeRawHandle):
-        def ms1_centroid_mz(
+        def ms1_centroid(
             self, rt: float, mz_min: float, mz_max: float
-        ) -> float | None:
-            return apex_ion_mz if mz_min <= apex_ion_mz <= mz_max else None
+        ) -> tuple[float, float] | None:
+            return (apex_ion_mz, 1.0) if mz_min <= apex_ion_mz <= mz_max else None
 
     rt = np.arange(9.3, 10.7, 0.01)
     raw = CentroidRaw(
@@ -1608,6 +1619,30 @@ def test_inferred_precursor_with_a_doubly_charged_isotope_is_held_for_review(
     assert binding.peak.status == ("doubly_charged")
 
 
+@pytest.mark.parametrize(
+    ("isotope_ratio", "expected_status"),
+    [
+        # Tissue apex MS1 read by eye: TumorBC2263 622.295 @34.28 is the
+        # weakest clear doubly charged isotope; BenignfatBC1151 894.452 @24.46
+        # is singly charged (+1.0 isotope at 26%) with a noise centroid at +0.5.
+        (0.383, "doubly_charged"),
+        (0.023, "no_nl_event"),
+    ],
+)
+def test_doubly_charged_isotope_counts_only_at_isotope_intensity(
+    tmp_path: Path, isotope_ratio: float, expected_status: str
+) -> None:
+    _group, _raw, result = _inferred_apex_case(
+        tmp_path,
+        lambda inferred, _rt: inferred * (1 + 1e-6),
+        isotope_offsets=(1.0033548 / 2,),
+        isotope_ratio=isotope_ratio,
+    )
+
+    (candidate,) = result.peaks
+    assert candidate.status == expected_status
+
+
 def test_held_inferred_peak_remains_in_review_and_physical_sidecar(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1643,10 +1678,10 @@ def test_held_inferred_peak_remains_in_review_and_physical_sidecar(
     apex_ion_mz = 500.0005
     monkeypatch.setattr(
         raw,
-        "ms1_centroid_mz",
+        "ms1_centroid",
         lambda _rt, low, high: next(
             (
-                mz
+                (mz, 1.0)
                 for mz in (apex_ion_mz, apex_ion_mz + 1.0033548 / 2)
                 if low <= mz <= high
             ),
@@ -1778,10 +1813,10 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
 
     readings = []
 
-    def read_ion(rt: float, low: float, high: float) -> float | None:
+    def read_ion(rt: float, low: float, high: float) -> tuple[float, float] | None:
         readings.append((rt, low, high))
         ions = (apex_ion_mz, isotope_mz) if has_isotope else (apex_ion_mz,)
-        return next((mz for mz in ions if low <= mz <= high), None)
+        return next(((mz, 1.0) for mz in ions if low <= mz <= high), None)
 
     result = capture_ms1_peaks(
         raw,
@@ -1789,7 +1824,7 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
         acquisition_source=source,
         settings=_capture_settings(),
         signal_processing_profile=profile,
-        ms1_centroid_mz=read_ion,
+        ms1_centroid=read_ion,
     )
     first, reacquired, remeasured = result.measurements.acquisition_batches
     assert result.measurements.reacquisition_request_count == 1

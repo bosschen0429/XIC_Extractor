@@ -176,7 +176,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         acquisition_source=source,
         settings=settings,
         signal_processing_profile=profile,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
     # Both requests observe one channel/peak; retain both NL events on one result.
     assert len(discovery.peaks) == 1
@@ -463,7 +463,7 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
     peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
 
-    def discover(ms1_centroid_mz):
+    def discover(ms1_centroid):
         return capture_ms1_peaks(
             raw,
             build_discovery_ions(
@@ -475,12 +475,14 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
             acquisition_source=fixture.owners.request.acquisition_sources[0],
             settings=settings,
             signal_processing_profile=profile,
-            ms1_centroid_mz=ms1_centroid_mz,
+            ms1_centroid=ms1_centroid,
         )
 
     (unread,) = discover(lambda *_: None).peaks
     discovery = discover(
-        lambda _rt, low, high: physical_mz if low <= physical_mz <= high else None
+        lambda _rt, low, high: (
+            (physical_mz, 1.0) if low <= physical_mz <= high else None
+        )
     )
     (candidate,) = discovery.peaks
     (record,) = discovery.physical_evaluations
@@ -600,7 +602,7 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         acquisition_source=fixture.owners.request.acquisition_sources[0],
         settings=settings,
         signal_processing_profile=profile,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
     assert len(discovery.peaks) == 2
     owners = bind_physical_capture(fixture.owners, {}, profile=profile)

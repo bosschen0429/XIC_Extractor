@@ -76,7 +76,7 @@ def test_post_measurement_centroids_do_not_decide_peak_identity(
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
     # The three windows read the same signal except one scan of window-edge
     # tail, so they are one peak, decided from the acquired traces alone.
@@ -162,7 +162,7 @@ def test_one_ion_in_two_windows_is_one_peak_whatever_the_input_order(
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     (peak,) = result.peaks
@@ -194,7 +194,7 @@ def test_distinct_ions_in_overlapping_windows_stay_apart() -> None:
         acquisition_source=raw.acquisition_source,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
-        ms1_centroid_mz=lambda *_: None,
+        ms1_centroid=lambda *_: None,
     )
 
     assert sorted(peak.event_scan_ids for peak in result.peaks) == [(10,), (11,)]

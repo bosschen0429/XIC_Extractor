@@ -118,7 +118,7 @@ def test_review_rows_never_become_alignment_roots(
             acquisition_source=source.acquisition_source,
             settings=settings,
             signal_processing_profile=TEST_PROFILE,
-            ms1_centroid_mz=lambda *_: None,
+            ms1_centroid=lambda *_: None,
         )
         assert len(capture.attachments) == len(seeds)
         if path.stem == "Orphan":
