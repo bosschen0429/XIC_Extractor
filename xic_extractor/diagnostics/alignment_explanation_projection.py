@@ -315,9 +315,14 @@ def prepare_alignment_explanation(
         located_peaks: dict[str, Any] = {}
 
         def locate(content: Any) -> str:
-            """Written locator of one physical peak; never shared by two peaks."""
+            """Written locator of one physical peak; never shared by two peaks.
+
+            A peak is its selected acquired scans. A contested Backfill can
+            measure an owner's peak again from another trace context; only its
+            baseline-dependent values differ, and it stays the same peak.
+            """
             key: str = content.physical_peak_key
-            identity = content.physical_identity
+            identity = (content.sample_key, content.mz, content.rt, content.intensity)
             if located_peaks.setdefault(key, identity) != identity:
                 raise ValueError(f"distinct physical peaks share one locator: {key}")
             return key
