@@ -44,7 +44,7 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
-    DiscoveryCandidate,
+    DiscoveryPeak,
 )
 from xic_extractor.execution.process_memory import (
     ProcessMemorySample,
@@ -465,15 +465,16 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         else ((2,), "single", False, False, 0.0)
     )
     indexed_input = replay_indexed_input
+    from xic_extractor.discovery.grouping import group_discovery_seeds
+
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
     from xic_extractor.discovery.csv_reader import (
-        read_owner_bound_discovery_candidates_csv,
+        read_owner_bound_discovery_peaks_csv,
     )
-    from xic_extractor.discovery.grouping import group_discovery_seeds
     from xic_extractor.discovery.ms1_capture import (
-        capture_ms1_candidates,
+        capture_ms1_peaks,
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
     from xic_extractor.discovery.physical_fact_persistence import (
@@ -607,7 +608,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
             seeds = collect_strict_nl_seeds(
                 discovery_raw, raw_file=path, settings=settings
             )
-            discovery = capture_ms1_candidates(
+            discovery = capture_ms1_peaks(
                 discovery_raw,
                 group_discovery_seeds(seeds, settings=settings),
                 acquisition_source=source.acquisition_source,
@@ -651,7 +652,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
         candidates[path.stem] = tuple(
             candidate
-            for candidate in read_owner_bound_discovery_candidates_csv(
+            for candidate in read_owner_bound_discovery_peaks_csv(
                 csvs[path.stem], receipt=receipts[path.stem]
             )
             if candidate.ms1_peak_found
@@ -1176,7 +1177,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
 
 
 def _subject_proof_record(
-    candidate: DiscoveryCandidate,
+    candidate: DiscoveryPeak,
     *,
     source: str = "source-1",
     apex: float = 7.5,

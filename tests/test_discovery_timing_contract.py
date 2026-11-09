@@ -16,7 +16,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.ms1_capture import (
-    capture_ms1_candidates,
+    capture_ms1_peaks,
 )
 from xic_extractor.discovery.output_publication import (
     write_dual_csvs,
@@ -59,7 +59,7 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
             (20, 7.82, "R", 132.0423),
         )
     )
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         _OwnerBoundBatchRaw(source),
         groups,
         acquisition_source=source,

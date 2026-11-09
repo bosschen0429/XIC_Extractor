@@ -27,7 +27,7 @@ from xic_extractor.acquisition_contract import (
 from xic_extractor.discovery import pipeline as _pipeline
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
-    read_owner_bound_discovery_candidates_csv,
+    read_owner_bound_discovery_peaks_csv,
 )
 from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
@@ -75,7 +75,7 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, selection: str
 ) -> None:
     from scripts.run_discovery import main
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     available_tags = (("custom_dR", 116.0473), ("custom_R", 132.0423))
     tags = (
@@ -144,9 +144,7 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
             )
             == 0
         )
-        (candidate,) = read_discovery_candidates_csv(
-            output_dir / "discovery_candidates.csv"
-        )
+        (candidate,) = read_discovery_peaks_csv(output_dir / "discovery_candidates.csv")
         assert candidate.sample_stem == sample
         assert candidate.matched_tag_names == tuple(name for name, _ in tags)
         assert candidate.tag_combine_mode == combine_mode
@@ -510,9 +508,9 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     batch = read_discovery_batch_index(
         outputs.batch_index_csv,
     )
-    receipt = batch.candidate_receipts["TumorBC2312_DNA"]
-    rebound = read_owner_bound_discovery_candidates_csv(
-        batch.candidate_csvs["TumorBC2312_DNA"],
+    receipt = batch.peak_receipts["TumorBC2312_DNA"]
+    rebound = read_owner_bound_discovery_peaks_csv(
+        batch.peak_csvs["TumorBC2312_DNA"],
         receipt=receipt,
     )
     assert tuple(candidate.candidate_id for candidate in rebound) == (
@@ -524,9 +522,9 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     relocated = read_discovery_batch_index(
         published / "discovery_batch_index.csv",
     )
-    relocated_receipt = relocated.candidate_receipts["TumorBC2312_DNA"]
-    relocated_candidates = read_owner_bound_discovery_candidates_csv(
-        relocated.candidate_csvs["TumorBC2312_DNA"],
+    relocated_receipt = relocated.peak_receipts["TumorBC2312_DNA"]
+    relocated_candidates = read_owner_bound_discovery_peaks_csv(
+        relocated.peak_csvs["TumorBC2312_DNA"],
         receipt=relocated_receipt,
     )
     assert tuple(candidate.candidate_id for candidate in relocated_candidates) == (

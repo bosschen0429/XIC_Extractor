@@ -22,9 +22,9 @@ from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
     discovery_receipt_index_fields,
-    mint_discovery_candidate_universe_receipt,
+    mint_discovery_peak_universe_receipt,
 )
-from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
+from xic_extractor.discovery.models import DISCOVERY_PEAK_COLUMNS
 from xic_extractor.execution.process_memory import ProcessMemoryPeak
 from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
@@ -49,7 +49,7 @@ def _write_owner_closed_batch_index(
     for sample_stem, raw_file, candidate_csv in rows:
         candidate_path = path.parent / (candidate_csv or "empty.csv")
         candidate_path.parent.mkdir(parents=True, exist_ok=True)
-        write_csv(candidate_path, DISCOVERY_CANDIDATE_COLUMNS, [])
+        write_csv(candidate_path, DISCOVERY_PEAK_COLUMNS, [])
         batch_rows.append(
             {
                 "sample_stem": sample_stem,
@@ -1153,7 +1153,7 @@ def _write_owner_closed_preflight_batch(
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         )
-        receipt = mint_discovery_candidate_universe_receipt(
+        receipt = mint_discovery_peak_universe_receipt(
             sample_stem=sample_stem,
             acquisition_source=acquisition_source,
             candidate_csv=candidate_csv,

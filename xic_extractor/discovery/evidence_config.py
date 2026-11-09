@@ -8,7 +8,6 @@ DiscoveryEvidenceProfileName = Literal["default"]
 @dataclass(frozen=True)
 class DiscoveryEvidenceWeights:
     ms1_peak_present: int = 25
-    ms1_peak_absent: int = 5
     seed_event_per: int = 8
     seed_event_max: int = 25
     rt_aligned: int = 15
@@ -20,8 +19,6 @@ class DiscoveryEvidenceWeights:
     area_med: int = 5
     scan_support_high: int = 5
     scan_support_low: int = -10
-    legacy_trace_quality_high: int = 5
-    legacy_trace_quality_low: int = -10
 
 
 @dataclass(frozen=True)

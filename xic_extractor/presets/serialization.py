@@ -34,7 +34,6 @@ _NL_DISCOVERY_FIELDS = (
     "product_search_ppm",
     "ms2_precursor_tol_da",
     "nl_min_intensity_ratio",
-    "seed_rt_gap_min",
     "ms1_search_padding_min",
     "rt_min",
     "rt_max",

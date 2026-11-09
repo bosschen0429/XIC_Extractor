@@ -15,11 +15,11 @@ from tests.cid_nl_raw_fixture import (
 )
 from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.discovery.batch_contract import (
-    DiscoveryCandidateUniverseReceipt,
-    mint_discovery_candidate_universe_receipt,
+    DiscoveryPeakUniverseReceipt,
+    mint_discovery_peak_universe_receipt,
 )
 from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.processing_identity import (
     build_local_acquisition_source_identity,
 )
@@ -35,9 +35,9 @@ from xic_extractor.untargeted_execution.partition import workers as partition_wo
 def build_discovery_receipts(
     root: Path,
     raw_paths: tuple[Path, ...],
-    candidates_by_sample: dict[str, tuple[DiscoveryCandidate, ...]],
-) -> dict[str, DiscoveryCandidateUniverseReceipt]:
-    receipts: dict[str, DiscoveryCandidateUniverseReceipt] = {}
+    candidates_by_sample: dict[str, tuple[DiscoveryPeak, ...]],
+) -> dict[str, DiscoveryPeakUniverseReceipt]:
+    receipts: dict[str, DiscoveryPeakUniverseReceipt] = {}
     for raw_path in raw_paths:
         candidates = candidates_by_sample[raw_path.stem]
         candidate_csv = root / f"{raw_path.stem}.owner-candidates.csv"
@@ -47,7 +47,7 @@ def build_discovery_receipts(
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         )
-        receipts[raw_path.stem] = mint_discovery_candidate_universe_receipt(
+        receipts[raw_path.stem] = mint_discovery_peak_universe_receipt(
             sample_stem=raw_path.stem,
             acquisition_source=source,
             candidate_csv=candidate_csv,

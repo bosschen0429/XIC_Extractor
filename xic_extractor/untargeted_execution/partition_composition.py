@@ -43,9 +43,6 @@ from xic_extractor.alignment.result.application_result import (
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
-from xic_extractor.discovery.models import (
-    MS1_FEATURE_BACKED_STATES,
-)
 from xic_extractor.execution.result_store import (
     SealedPartition,
     StreamedResultStore,
@@ -436,7 +433,7 @@ def prepare_untargeted_partition_grouping(
         results.sort(key=lambda result: result.job.sample.identity.sample_key)
     capture_by_candidate = _runtime_captures_by_candidate(batch, sample_results)
     candidate_by_id = {
-        candidate.candidate_id: candidate
+        candidate.peak_id: candidate
         for candidates in batch.context.candidates_by_sample.values()
         for candidate in candidates
     }
@@ -465,8 +462,7 @@ def prepare_untargeted_partition_grouping(
             candidate_id,
         )
         for candidate_id, method_subject_id in batch.subject_batch.candidate_memberships
-        if candidate_by_id[candidate_id].discovery_candidate_state
-        in MS1_FEATURE_BACKED_STATES
+        if candidate_by_id[candidate_id].admitted
         and method_subject_id not in unsupported_subjects
     )
     exclusions = tuple(
@@ -476,9 +472,7 @@ def prepare_untargeted_partition_grouping(
             sample_key=batch.context.sample(
                 candidate_by_id[candidate_id].sample_stem
             ).identity.sample_key,
-            discovery_candidate_state=(
-                candidate_by_id[candidate_id].discovery_candidate_state
-            ),
+            admission_reason=candidate_by_id[candidate_id].admission_reason,
             reason_code=(
                 "composite_requirement_not_supported"
                 if method_subject_id in unsupported_subjects
@@ -504,8 +498,7 @@ def prepare_untargeted_partition_grouping(
         for candidate_id, method_subject_id in (
             batch.subject_batch.candidate_memberships
         )
-        if candidate_by_id[candidate_id].discovery_candidate_state
-        not in MS1_FEATURE_BACKED_STATES
+        if not candidate_by_id[candidate_id].admitted
         or method_subject_id in unsupported_subjects
     )
     # Partitioning changes execution ownership. Scientific composition keeps
@@ -994,11 +987,10 @@ def _runtime_captures_by_candidate(
             captures[capture.candidate_id] = capture
     partition_ids = {key for key, _ in batch.subject_batch.candidate_memberships}
     expected = {
-        candidate.candidate_id
+        candidate.peak_id
         for candidates in batch.context.candidates_by_sample.values()
         for candidate in candidates
-        if candidate.candidate_id in partition_ids
-        and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+        if candidate.peak_id in partition_ids and candidate.admitted
     }
     if set(captures) != expected:
         raise RuntimeError("runtime capture does not close capture-eligible candidates")

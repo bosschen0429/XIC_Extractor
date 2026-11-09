@@ -19,7 +19,7 @@ from tests.untargeted_cid_nl_batch_runtime_fixtures import (
 )
 from tests.untargeted_partition_fixtures import fixture_assessment
 from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     mint_untargeted_cid_nl_method_subject,
@@ -49,7 +49,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raws: dict[Path, _FakeRaw] = {}
-    candidates_by_sample: dict[str, tuple[DiscoveryCandidate, ...]] = {}
+    candidates_by_sample: dict[str, tuple[DiscoveryPeak, ...]] = {}
     for raw_path in raw_paths[:2]:
         source_raw, candidates = _nearby_subject_candidates(
             raw_path,
@@ -226,7 +226,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
 
 
 def _subjects(
-    candidates: tuple[DiscoveryCandidate, ...],
+    candidates: tuple[DiscoveryPeak, ...],
     precursor_tolerance_ppm: float,
 ) -> tuple[CidNlMethodSubject, ...]:
     return tuple(

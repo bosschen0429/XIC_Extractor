@@ -20,7 +20,7 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.models import MS1_FEATURE_BACKED_STATES, DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_seed_receipts import (
@@ -174,12 +174,12 @@ class UntargetedCidNlSampleTraceBatch:
 def _sample_capture_requests(
     *,
     processing_owners: ProcessingOwnerReferences,
-    candidates: tuple[DiscoveryCandidate, ...],
+    candidates: tuple[DiscoveryPeak, ...],
     settings: DiscoverySettings,
     method_subject: CidNlMethodSubject | None = None,
 ) -> tuple[tuple[XICRequest, ...], tuple[int, ...]]:
     requests = {
-        item.candidate_id: XICRequest(
+        item.peak_id: XICRequest(
             mz=item.physical_mz,
             rt_min=item.ms1_search_rt_min,
             rt_max=item.ms1_search_rt_max,
@@ -193,9 +193,9 @@ def _sample_capture_requests(
     if isinstance(subjects, UntargetedCidNlMethodSubjectBatch):
         memberships = dict(subjects.candidate_memberships)
         subject_values = {item.method_subject_id: item for item in subjects.subjects}
-        grouped: dict[str, list[DiscoveryCandidate]] = {}
+        grouped: dict[str, list[DiscoveryPeak]] = {}
         for item in candidates:
-            subject_id = memberships.get(item.candidate_id)
+            subject_id = memberships.get(item.peak_id)
             if subject_id not in subject_values:
                 raise CidNlAcquisitionError("capture candidate lacks method subject")
             grouped.setdefault(subject_id, []).append(item)
@@ -203,9 +203,9 @@ def _sample_capture_requests(
         grouped = {subjects.method_subject_id: list(candidates)}
     for members in grouped.values():
         ordered = sorted(
-            members, key=lambda item: (item.ms1_search_rt_min, item.candidate_id)
+            members, key=lambda item: (item.ms1_search_rt_min, item.peak_id)
         )
-        components: list[tuple[float, list[DiscoveryCandidate]]] = []
+        components: list[tuple[float, list[DiscoveryPeak]]] = []
         for item in ordered:
             if not components or item.ms1_search_rt_min > components[-1][0]:
                 components.append((item.ms1_search_rt_max, [item]))
@@ -218,15 +218,15 @@ def _sample_capture_requests(
         for right, members in components:
             if len(members) > 1:
                 for item in members:
-                    requests[item.candidate_id] = replace(
-                        requests[item.candidate_id],
+                    requests[item.peak_id] = replace(
+                        requests[item.peak_id],
                         rt_min=members[0].ms1_search_rt_min,
                         rt_max=right,
                     )
     unique: dict[XICRequest, int] = {}
     indices = []
     for item in candidates:
-        request = requests[item.candidate_id]
+        request = requests[item.peak_id]
         indices.append(unique.setdefault(request, len(unique)))
     return tuple(unique), tuple(indices)
 
@@ -235,7 +235,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
-    candidates: tuple[DiscoveryCandidate, ...],
+    candidates: tuple[DiscoveryPeak, ...],
     settings: DiscoverySettings,
     raw: CidNlRawSource,
     signal_processing_profile: SignalProcessingProfile,
@@ -249,12 +249,10 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     if not isinstance(settings, DiscoverySettings):
         raise CidNlAcquisitionError("settings has the wrong owner type")
     if type(candidates) is not tuple or any(
-        not isinstance(candidate, DiscoveryCandidate) for candidate in candidates
+        not isinstance(candidate, DiscoveryPeak) for candidate in candidates
     ):
-        raise CidNlAcquisitionError(
-            "candidates must be current DiscoveryCandidate receipts"
-        )
-    candidate_ids = tuple(candidate.candidate_id for candidate in candidates)
+        raise CidNlAcquisitionError("candidates must be current DiscoveryPeak receipts")
+    candidate_ids = tuple(candidate.peak_id for candidate in candidates)
     if candidate_ids != tuple(sorted(set(candidate_ids))):
         raise CidNlAcquisitionError(
             "sample trace batch candidates must be canonical and unique"
@@ -268,10 +266,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
             "sample trace batch candidates crossed the resolved sample"
         )
     capture_candidates = tuple(
-        candidate
-        for candidate in candidates
-        if candidate.ms1_peak_found
-        and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+        candidate for candidate in candidates if candidate.admitted
     )
     if not capture_candidates:
         return None
@@ -315,7 +310,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     return UntargetedCidNlSampleTraceBatch(
         sample_key=sample.identity.sample_key,
         acquisition_source_id=source.acquisition_source_id,
-        candidate_ids=tuple(candidate.candidate_id for candidate in capture_candidates),
+        candidate_ids=tuple(candidate.peak_id for candidate in capture_candidates),
         acquisition=acquisition,
         candidate_trace_indices=indices,
         context_trace_indices=context_indices,
@@ -354,8 +349,8 @@ def adapt_current_discovery_sample_subject(
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     method_subject: CidNlMethodSubject,
-    candidates: tuple[DiscoveryCandidate, ...],
-    support_candidates: tuple[DiscoveryCandidate, ...] = (),
+    candidates: tuple[DiscoveryPeak, ...],
+    support_candidates: tuple[DiscoveryPeak, ...] = (),
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     raw: CidNlRawSource | None,
@@ -386,8 +381,8 @@ def adapt_current_discovery_sample_subject(
         method_subject=method_subject,
         settings=settings,
     )
-    if {candidate.candidate_id for candidate in bounded} & {
-        candidate.candidate_id for candidate in support_bounded
+    if {candidate.peak_id for candidate in bounded} & {
+        candidate.peak_id for candidate in support_bounded
     }:
         raise CidNlAcquisitionError(
             "support candidates must be distinct from feature candidates"
@@ -406,17 +401,9 @@ def adapt_current_discovery_sample_subject(
         for candidate in bounded
         if candidate.precursor_mz_basis
         in {"scan_precursor", "scan_monoisotopic", "mixed"}
-        or (
-            candidate.ms1_peak_found
-            and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
-        )
+        or candidate.admitted
     )
-    peak_candidates = tuple(
-        candidate
-        for candidate in bounded
-        if candidate.ms1_peak_found
-        and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
-    )
+    peak_candidates = tuple(candidate for candidate in bounded if candidate.admitted)
     support_seed_candidates = tuple(
         candidate
         for candidate in support_bounded
@@ -446,7 +433,7 @@ def adapt_current_discovery_sample_subject(
                 if _preacquired_traces is not None
                 else ()
             ),
-            source_candidate_ids=tuple(item.candidate_id for item in bounded),
+            source_candidate_ids=tuple(item.peak_id for item in bounded),
             strict_scan_count=0,
         )
     if raw is None:
@@ -569,7 +556,7 @@ def adapt_current_discovery_sample_subject(
             if _preacquired_traces is not None
             else ()
         ),
-        source_candidate_ids=tuple(item.candidate_id for item in bounded),
+        source_candidate_ids=tuple(item.peak_id for item in bounded),
         strict_scan_count=len(
             {
                 ref.observation.scan_number
@@ -587,7 +574,7 @@ def _reacquire_peak_observations(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
-    candidates: tuple[DiscoveryCandidate, ...],
+    candidates: tuple[DiscoveryPeak, ...],
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     raw: CidNlRawSource,
@@ -628,7 +615,7 @@ def _reacquire_peak_observations(
                 "preacquired traces crossed their sample or acquisition source"
             )
         acquired_traces = tuple(
-            _preacquired_traces.acquired_trace(candidate.candidate_id)
+            _preacquired_traces.acquired_trace(candidate.peak_id)
             for candidate in candidates
         )
         acquisition = _preacquired_traces.acquisition
@@ -653,7 +640,7 @@ def _reacquire_peak_observations(
         binding = next(
             item
             for item in search_scope.capture_bindings
-            if item.candidate_id == candidate.candidate_id
+            if item.candidate_id == candidate.peak_id
         )
         if binding.physical_evaluation is not None and (
             trace.mz != binding.query_mz
@@ -668,18 +655,18 @@ def _reacquire_peak_observations(
             _validate_physical_candidate_receipt(candidate, binding.physical_evaluation)
             capture = capture_owner.capture_reacquired_physical_peak(
                 scope=search_scope,
-                candidate_id=candidate.candidate_id,
+                candidate_id=candidate.peak_id,
                 trace=trace,
             )
             binding = next(
                 item
                 for item in capture.scope.capture_bindings
-                if item.candidate_id == candidate.candidate_id
+                if item.candidate_id == candidate.peak_id
             )
         else:
             capture = capture_owner.capture_peak_hypotheses(
                 scope=search_scope,
-                candidate_id=candidate.candidate_id,
+                candidate_id=candidate.peak_id,
                 trace=trace,
             )
         captures.append(capture)
@@ -687,7 +674,7 @@ def _reacquire_peak_observations(
             sample_key=sample.identity.sample_key,
             processing_attempt_id=processing_owners.attempt.processing_attempt_id,
             method_subject_id=binding.method_subject_id,
-            candidate_id=candidate.candidate_id,
+            candidate_id=candidate.peak_id,
             capture_stage=(
                 "reacquired_capture"
                 if binding.source_physical_evaluation is not None
@@ -710,7 +697,7 @@ def _reacquire_peak_observations(
             or capture.selected_hypothesis is None
         ):
             raise CidNlAcquisitionError(
-                f"{candidate.candidate_id}: current MS1 receipt was not reacquired"
+                f"{candidate.peak_id}: current MS1 receipt was not reacquired"
             )
         if (
             capture.physical_evaluation is not None
@@ -739,7 +726,7 @@ def _reacquire_peak_observations(
         if first_trace is not None and binding.physical_evaluation is not None:
             shared = capture_owner.capture_reacquired_physical_peak(
                 scope=search_scope,
-                candidate_id=candidate.candidate_id,
+                candidate_id=candidate.peak_id,
                 trace=first_trace,
             )
             if shared.selected_hypothesis is not None:
@@ -765,7 +752,7 @@ def _reacquire_peak_observations(
     return acquisition, tuple(observations), tuple(captures)
 
 
-def method_label(candidate: DiscoveryCandidate) -> str:
+def method_label(candidate: DiscoveryPeak) -> str:
     """Return a diagnostic-only label; it is never configured Target identity."""
 
     return (
@@ -843,23 +830,23 @@ def _mint_assessment(
 
 
 def _bounded_subject_candidates(
-    candidates: tuple[DiscoveryCandidate, ...],
+    candidates: tuple[DiscoveryPeak, ...],
     *,
     sample: ResolvedCanonicalSampleIdentity,
     method_subject: CidNlMethodSubject,
     settings: DiscoverySettings,
-) -> tuple[DiscoveryCandidate, ...]:
-    ids = tuple(candidate.candidate_id for candidate in candidates)
+) -> tuple[DiscoveryPeak, ...]:
+    ids = tuple(candidate.peak_id for candidate in candidates)
     if len(ids) != len(set(ids)):
         raise CidNlAcquisitionError("Discovery candidate IDs must be unique")
     for candidate in candidates:
         if candidate.sample_stem != sample.metadata.raw_stem:
             raise CidNlAcquisitionError(
-                f"{candidate.candidate_id}: candidate references a different sample"
+                f"{candidate.peak_id}: candidate references a different sample"
             )
         if candidate.raw_file.stem != sample.metadata.raw_stem:
             raise CidNlAcquisitionError(
-                f"{candidate.candidate_id}: raw receipt mismatches its sample"
+                f"{candidate.peak_id}: raw receipt mismatches its sample"
             )
     return tuple(
         sorted(
@@ -882,7 +869,7 @@ def _bounded_subject_candidates(
                 )
                 and candidate.neutral_loss_tag in settings.selected_tag_names
             ),
-            key=lambda item: item.candidate_id,
+            key=lambda item: item.peak_id,
         )
     )
 
@@ -893,13 +880,13 @@ def _untargeted_search_scope(
     sample: ResolvedCanonicalSampleIdentity,
     acquisition_source_id: str,
     method_subject: CidNlMethodSubject,
-    candidates: tuple[DiscoveryCandidate, ...],
-    capture_candidates: tuple[DiscoveryCandidate, ...],
+    candidates: tuple[DiscoveryPeak, ...],
+    capture_candidates: tuple[DiscoveryPeak, ...],
     peak_config: ExtractionConfig,
     signal_processing_profile: SignalProcessingProfile,
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
 ) -> UntargetedSearchScope:
-    records = {record.candidate_id: record for record in physical_records}
+    records = {record.peak_id: record for record in physical_records}
     try:
         return UntargetedSearchScope(
             schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
@@ -916,10 +903,10 @@ def _untargeted_search_scope(
                     method_subject_id=method_subject.method_subject_id,
                 ),
             ),
-            declared_candidate_ids=tuple(item.candidate_id for item in candidates),
+            declared_candidate_ids=tuple(item.peak_id for item in candidates),
             capture_bindings=tuple(
                 CaptureCandidateBinding(
-                    candidate_id=item.candidate_id,
+                    candidate_id=item.peak_id,
                     method_subject_id=method_subject.method_subject_id,
                     sample_key=sample.identity.sample_key,
                     acquisition_source_id=acquisition_source_id,
@@ -928,12 +915,10 @@ def _untargeted_search_scope(
                     query_rt_max=item.ms1_search_rt_max,
                     query_ppm_tol=method_subject.precursor_tolerance_ppm,
                     preferred_rt=item.best_seed_rt,
-                    physical_evaluation=(records[item.candidate_id].evaluation),
+                    physical_evaluation=(records[item.peak_id].evaluation),
                     # The active query belongs to the physical subject; the
                     # retained evaluation still belongs to its original XIC.
-                    physical_evaluation_mz=(
-                        records[item.candidate_id].work_item.xic_mz
-                    ),
+                    physical_evaluation_mz=(records[item.peak_id].work_item.xic_mz),
                 )
                 for item in capture_candidates
             ),
@@ -957,15 +942,15 @@ def _validate_inputs(**values: object) -> None:
             raise CidNlAcquisitionError(f"{name} has the wrong owner type")
     candidates = values["candidates"]
     assert isinstance(candidates, tuple)
-    if any(not isinstance(item, DiscoveryCandidate) for item in candidates):
+    if any(not isinstance(item, DiscoveryPeak) for item in candidates):
         raise CidNlAcquisitionError(
-            "candidates must contain current DiscoveryCandidate values"
+            "candidates must contain current DiscoveryPeak values"
         )
     support_candidates = values["support_candidates"]
     assert isinstance(support_candidates, tuple)
-    if any(not isinstance(item, DiscoveryCandidate) for item in support_candidates):
+    if any(not isinstance(item, DiscoveryPeak) for item in support_candidates):
         raise CidNlAcquisitionError(
-            "support_candidates must contain current DiscoveryCandidate values"
+            "support_candidates must contain current DiscoveryPeak values"
         )
     method_subject = values["method_subject"]
     settings = values["settings"]
@@ -1028,7 +1013,7 @@ def _validate_inputs(**values: object) -> None:
 
 
 def _validate_physical_candidate_receipt(
-    candidate: DiscoveryCandidate,
+    candidate: DiscoveryPeak,
     evaluation: PhysicalPeakEvaluation,
 ) -> None:
     facts = evaluation.facts
@@ -1048,7 +1033,7 @@ def _validate_physical_candidate_receipt(
             abs_tol=_WRITER_ROUNDING_ABS_TOL,
         ):
             raise CidNlAcquisitionError(
-                f"{candidate.candidate_id}: physical {field} mismatches current receipt"
+                f"{candidate.peak_id}: physical {field} mismatches current receipt"
             )
 
 

@@ -13,7 +13,7 @@ import numpy as np
 from xic_extractor.raw_reader import open_raw
 
 if TYPE_CHECKING:
-    from xic_extractor.discovery.models import DiscoveryCandidate
+    from xic_extractor.discovery.models import DiscoveryPeak
 
 BLANK_BACKGROUND_LIBRARY_SCHEMA = "blank_background_library"
 
@@ -309,8 +309,8 @@ def resolve_background_library(
 
     There is no fallback to the packaged default. That default was measured on a
     15-minute gradient, and applying it to a run acquired on a different method
-    demotes candidates to ``review_only_orphan_nl`` with ``ms1_peak_found=False``
-    on the strength of a background population the run never saw. A blank
+    marks peaks as system background on the strength of a background
+    population the run never saw. A blank
     library measured for the method is an input the caller supplies, not
     something a run inherits. ``get_default_background_library`` stays available
     for a caller that explicitly wants it.
@@ -328,34 +328,25 @@ def resolve_background_library(
     return None
 
 
-def apply_blank_qualification_to_candidates(
-    candidates: Sequence[DiscoveryCandidate],
+def apply_blank_qualification_to_peaks(
+    peaks: Sequence[DiscoveryPeak],
     library: BlankBackgroundLibrary | None,
     *,
     ppm_tol: float = 10.0,
     fold_change_threshold: float = 3.0,
-) -> tuple[DiscoveryCandidate, ...]:
-    """Apply blank qualification to discovery candidates, demoting pure background ions.
+) -> tuple[DiscoveryPeak, ...]:
+    """Mark peaks of pure background ions; a blank match alone does not.
 
-    Rules:
-    - If library is None or empty: return candidates unchanged.
-    - If candidate has no ms1 peak found: leave as is (already orphan/unassigned).
-    - If candidate matches a blank ion within ppm_tol:
-      - If ms1_height / blank_max_int < fold_change_threshold:
-        Demote from feature-backed states to 'review_only_orphan_nl',
-        clear ms1_feature_row_id, set review_priority to 'LOW', and explain in reason.
-      - If ms1_height / blank_max_int >= fold_change_threshold:
-        Preserve candidate, append note in reason.
+    A peak matching a blank ion within ppm_tol whose height is below
+    fold_change_threshold times the blank intensity is system background: it
+    is not admitted, its review priority is LOW and its reason explains the
+    match. A higher peak keeps its admission and notes the match.
     """
     if library is None or not library.ions:
-        return tuple(candidates)
+        return tuple(peaks)
 
-    updated: list[DiscoveryCandidate] = []
-    for candidate in candidates:
-        if not candidate.ms1_peak_found:
-            updated.append(candidate)
-            continue
-
+    updated: list[DiscoveryPeak] = []
+    for candidate in peaks:
         matches = library.match(candidate.precursor_mz, ppm_tol=ppm_tol)
         if not matches:
             updated.append(candidate)
@@ -363,11 +354,10 @@ def apply_blank_qualification_to_candidates(
 
         best_ion, delta_ppm = matches[0]
         blank_int = best_ion.max_intensity
-        tissue_height = float(candidate.ms1_height or 0.0)
+        tissue_height = float(candidate.ms1_height)
         fc = (tissue_height / blank_int) if blank_int > 0 else 0.0
 
         if fc < fold_change_threshold:
-            # System background: demote to review-only orphan, exclude from owner-build
             reason_msg = (
                 f"system background: blank m/z {best_ion.mz:.4f}, "
                 f"delta {delta_ppm:+.1f} ppm, "
@@ -376,15 +366,12 @@ def apply_blank_qualification_to_candidates(
             updated.append(
                 replace(
                     candidate,
-                    discovery_candidate_state="review_only_orphan_nl",
-                    ms1_peak_found=False,
-                    ms1_feature_row_id="",
+                    blank_background=True,
                     review_priority="LOW",
                     reason=reason_msg,
                 )
             )
         else:
-            # High abundance override: preserve feature-backed state, annotate reason
             override_msg = (
                 f"{candidate.reason}; blank match m/z {best_ion.mz:.4f} "
                 f"({delta_ppm:+.1f} ppm) "

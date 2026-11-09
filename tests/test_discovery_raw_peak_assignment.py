@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+from xic_extractor.discovery.grouping import group_discovery_seeds
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
 from tests.discovery_ms1_capture_fixtures import (
@@ -10,8 +11,7 @@ from tests.discovery_ms1_capture_fixtures import (
     _seed,
     _settings,
 )
-from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.ms1_capture import capture_ms1_candidates
+from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.peak_detection.chrom_peak_segments import local_apex_prominence
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     discovery_raw_peak_context_edges,
@@ -46,7 +46,7 @@ def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl(
     raw = _BoundedRaw(rt=rt, intensity=raw_values)
     settings = _settings()
     groups = group_discovery_seeds((_seed(scan_number=10, rt=6.3),), settings=settings)
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         groups,
         acquisition_source=raw.acquisition_source,

@@ -40,7 +40,6 @@ _NUMERIC_CONTROLS = (
     ("product_mz_tolerance_ppm", "Product 容差 (ppm)", 0.01, 1000.0, "any"),
     ("product_search_ppm", "Product 搜尋 (ppm)", 0.01, 1000.0, "any"),
     ("nl_min_intensity_ratio", "NL 最低強度比", 0.0001, 1.0, "any"),
-    ("seed_rt_gap_min", "Seed RT 間隔 (min)", 0.001, 60.0, "any"),
     ("ms1_search_padding_min", "MS1 RT padding (min)", 0.001, 60.0, "any"),
     ("rt_min", "RT 下界 (min)", 0.0, None, "any"),
     ("rt_max", "RT 上界 (min)", 0.0, None, "any"),

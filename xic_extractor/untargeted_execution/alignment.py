@@ -28,13 +28,13 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.batch_contract import (
-    DiscoveryCandidateUniverseReceipt,
+    DiscoveryPeakUniverseReceipt,
     validate_discovery_physical_facts_artifact,
 )
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.discovery.csv_writer import format_discovery_csv_value
 from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_persistence import (
     DetachedIndexedDiscoveryPhysicalFacts,
     IndexedDiscoveryPhysicalFacts,
@@ -82,7 +82,7 @@ class _DiscoveryEvidencePartition:
 @dataclass(frozen=True, slots=True)
 class _PhysicalIndexJob:
     path: Path
-    receipt: DiscoveryCandidateUniverseReceipt
+    receipt: DiscoveryPeakUniverseReceipt
     expected_run_spec: ProcessingRunSpec
     expected_acquisition_input: ProcessingAcquisitionInput
     candidate_ids: frozenset[str]
@@ -243,7 +243,7 @@ class PreparedUntargetedAlignmentInputs:
 def prepare_untargeted_alignment_inputs(
     *,
     discovery_batch: DiscoveryBatchInput,
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
+    candidates_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
     raw_dir: Path,
     dll_dir: Path,
     output_dir: Path,
@@ -270,10 +270,10 @@ def prepare_untargeted_alignment_inputs(
             "CID-NL production requires RAW for every sample: " + ", ".join(missing)
         )
 
-    receipts: dict[str, DiscoveryCandidateUniverseReceipt] = {}
+    receipts: dict[str, DiscoveryPeakUniverseReceipt] = {}
     for sample_stem in discovery_batch.sample_order:
-        receipt = discovery_batch.candidate_receipts[sample_stem]
-        if not isinstance(receipt, DiscoveryCandidateUniverseReceipt):
+        receipt = discovery_batch.peak_receipts[sample_stem]
+        if not isinstance(receipt, DiscoveryPeakUniverseReceipt):
             raise ValueError(
                 "CID-NL production requires owner-closed Discovery receipts"
             )
@@ -361,12 +361,10 @@ def prepare_untargeted_alignment_inputs(
             jobs = tuple(
                 _PhysicalIndexJob(
                     path=(
-                        discovery_batch.candidate_csvs[
-                            acquisition_input.sample_stem
-                        ].parent
+                        discovery_batch.peak_csvs[acquisition_input.sample_stem].parent
                         / "discovery_physical_facts.json"
                     ),
-                    receipt=discovery_batch.candidate_receipts[
+                    receipt=discovery_batch.peak_receipts[
                         acquisition_input.sample_stem
                     ],
                     expected_run_spec=spec,
@@ -459,7 +457,7 @@ def prepare_untargeted_alignment_inputs(
 def complete_untargeted_alignment(
     *,
     discovery_batch: DiscoveryBatchInput,
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
+    candidates_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
     raw_dir: Path,
     dll_dir: Path,
     output_dir: Path,
@@ -615,7 +613,7 @@ def execute_prepared_alignment(
 def _load_physical_replay_inputs(
     *,
     discovery_batch: DiscoveryBatchInput,
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
+    candidates_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
     raw_paths: tuple[Path, ...],
     settings: DiscoverySettings,
     profile: SignalProcessingProfile,
@@ -627,7 +625,7 @@ def _load_physical_replay_inputs(
     ]
     | None = None,
 ) -> tuple[
-    dict[str, tuple[DiscoveryCandidate, ...]],
+    dict[str, tuple[DiscoveryPeak, ...]],
     dict[str, DiscoveryPhysicalFactRecord],
     tuple[AcquisitionSourceExpectation, ...],
 ]:
@@ -644,47 +642,38 @@ def _load_physical_replay_inputs(
         acquisition_input: ProcessingAcquisitionInput,
     ) -> tuple[
         str,
-        tuple[DiscoveryCandidate, ...],
+        tuple[DiscoveryPeak, ...],
         dict[str, DiscoveryPhysicalFactRecord],
         tuple[DiscoveryPhysicalFactRecord, ...],
     ]:
         stem = acquisition_input.sample_stem
         physical_facts_json = (
-            discovery_batch.candidate_csvs[stem].parent
-            / "discovery_physical_facts.json"
+            discovery_batch.peak_csvs[stem].parent / "discovery_physical_facts.json"
         )
         validate_discovery_physical_facts_artifact(
-            discovery_batch.candidate_receipts[stem], physical_facts_json
+            discovery_batch.peak_receipts[stem], physical_facts_json
         )
         records = read_discovery_physical_fact_records(
             physical_facts_json,
             expected_run_spec=spec,
             expected_acquisition_input=acquisition_input,
         )
-        by_id = {record.candidate_id: record for record in records}
+        by_id = {record.peak_id: record for record in records}
         if len(by_id) != len(records):
-            raise ValueError(
-                "Discovery physical sidecar has ambiguous candidate identity"
-            )
-        sample_candidates: list[DiscoveryCandidate] = []
+            raise ValueError("Discovery physical sidecar has ambiguous peak identity")
+        sample_candidates: list[DiscoveryPeak] = []
         sample_records: dict[str, DiscoveryPhysicalFactRecord] = {}
         for candidate in candidates_by_sample[stem]:
-            record = by_id.get(candidate.candidate_id)
+            record = by_id.get(candidate.peak_id)
             if record is None:
-                if candidate.ms1_peak_found:
-                    raise ValueError(
-                        "Discovery candidate lacks its exact physical record"
-                    )
-                # Diagnostic orphan rows have no persisted physical observation.
-                sample_candidates.append(candidate)
-                continue
+                raise ValueError("Discovery peak lacks its exact physical record")
             sample_candidates.append(_restore_physical_candidate(candidate, record))
-            if candidate.candidate_id in sample_records:
+            if candidate.peak_id in sample_records:
                 raise ValueError("Discovery physical candidate identity is duplicated")
-            sample_records[candidate.candidate_id] = record
+            sample_records[candidate.peak_id] = record
         return stem, tuple(sample_candidates), sample_records, records
 
-    restored: dict[str, tuple[DiscoveryCandidate, ...]] = {}
+    restored: dict[str, tuple[DiscoveryPeak, ...]] = {}
     selected_records: dict[str, DiscoveryPhysicalFactRecord] = {}
 
     workers = min(raw_workers, len(spec.acquisition_inputs))
@@ -721,12 +710,12 @@ def _load_physical_replay_inputs(
 
 
 def _restore_physical_candidate(
-    candidate: DiscoveryCandidate,
+    candidate: DiscoveryPeak,
     record: DiscoveryPhysicalFactRecord,
-) -> DiscoveryCandidate:
+) -> DiscoveryPeak:
     work = record.work_item
     if (
-        record.candidate_id != candidate.candidate_id
+        record.peak_id != candidate.peak_id
         or work.sample_stem != candidate.sample_stem
         or work.best_ms2_scan_id != candidate.best_ms2_scan_id
     ):
@@ -756,7 +745,7 @@ def _restore_physical_candidate(
             != format_discovery_csv_value(name, value)
         ):
             raise ValueError(
-                f"{candidate.candidate_id}: physical {name} crossed its CSV receipt"
+                f"{candidate.peak_id}: physical {name} crossed its CSV receipt"
             )
     return replace(candidate, **values)
 

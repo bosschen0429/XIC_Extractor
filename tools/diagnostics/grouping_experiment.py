@@ -119,9 +119,8 @@ def main(argv: list[str] | None = None) -> int:
                 "seed_mz",
                 "apex_rt",
                 "seed_rt",
-                "state",
-                "ms1_peak_found",
-                "seed_event_count",
+                "admission_reason",
+                "attached_event_count",
                 "area",
                 "reason",
             )

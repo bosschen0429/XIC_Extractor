@@ -174,8 +174,6 @@ def selection_sample_facts(
     )
     flags = {sid: initial for _, sid in keys}
     for cid, sid in keys:
-        if candidates[cid, sid].get("discovery_candidate_state") == "excluded":
-            flags[sid] |= EXCLUDED
         for record_kind, rid in links.get((cid, sid), ()):
             if record_kind not in ("method_assessments", "initial_edges", "exclusions"):
                 continue

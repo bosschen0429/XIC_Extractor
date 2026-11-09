@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
 )
 from xic_extractor.discovery.models import (
-    CID_NL_ALIGNMENT_STATES,
-    DiscoveryCandidate,
+    DiscoveryPeak,
     DiscoveryPhysicalWorkItem,
-    build_discovery_physical_selection_subject_id,
-    discovery_candidate_output_sort_key,
+    discovery_peak_output_sort_key,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     validate_bounded_physical_peak_evaluation,
@@ -22,12 +20,11 @@ from xic_extractor.processing_identity import AcquisitionSourceIdentity
 
 
 def admits_cid_nl_alignment(
-    candidate: DiscoveryCandidate, record: DiscoveryPhysicalFactRecord | None
+    peak: DiscoveryPeak, record: DiscoveryPhysicalFactRecord | None
 ) -> bool:
-    """Bind method support to a resolved physical peak before input grouping."""
+    """Bind method admission to a resolved physical peak before input grouping."""
     return (
-        candidate.ms1_peak_found
-        and candidate.discovery_candidate_state in CID_NL_ALIGNMENT_STATES
+        peak.admitted
         and record is not None
         and record.evaluation.state == "available"
         and not record.evaluation.requires_overlap_review
@@ -35,34 +32,10 @@ def admits_cid_nl_alignment(
 
 
 @dataclass(frozen=True, slots=True)
-class DiscoveryPhysicalCandidateLink:
-    """Exact Discovery merge membership, retained only for evidence browsing."""
-
-    candidate_id: str
-    final_ordinal: int
-    representative_source_ordinal: int
-    member_source_ordinals: tuple[int, ...]
-    representative_work_ordinal: int
-    member_work_ordinals: tuple[int, ...]
-
-
-@dataclass(frozen=True, slots=True, eq=False)
 class DiscoveryPhysicalFactRecord:
     work_item: DiscoveryPhysicalWorkItem
     acquired_trace: AcquiredTrace
     evaluation: PhysicalPeakEvaluation
-    candidate_links: tuple[DiscoveryPhysicalCandidateLink, ...] = field(
-        default=(), compare=False
-    )
-
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, DiscoveryPhysicalFactRecord):
-            return NotImplemented
-        return (
-            self.work_item == other.work_item
-            and self.acquired_trace == other.acquired_trace
-            and self.evaluation == other.evaluation
-        )
 
     @property
     def rt(self) -> tuple[float, ...]:
@@ -73,8 +46,8 @@ class DiscoveryPhysicalFactRecord:
         return tuple(float(value) for value in self.acquired_trace.trace.intensity)
 
     @property
-    def candidate_id(self) -> str:
-        return self.work_item.candidate_id
+    def peak_id(self) -> str:
+        return self.work_item.peak_id
 
     @property
     def selection_subject_id(self) -> str:
@@ -82,21 +55,16 @@ class DiscoveryPhysicalFactRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class DiscoveryCandidatePhysicalBinding:
-    """Discovery-owned in-memory binding from a final candidate to peak facts."""
+class DiscoveryPeakPhysicalBinding:
+    """Discovery-owned in-memory binding from one peak to its physical facts."""
 
     acquisition_source: AcquisitionSourceIdentity
     final_ordinal: int
-    candidate: DiscoveryCandidate
-    representative_source_ordinal: int
-    member_source_ordinals: tuple[int, ...]
-    representative_work_ordinal: int
-    selection_subject_id: str
+    peak: DiscoveryPeak
     physical_fact_record: DiscoveryPhysicalFactRecord
-    member_work_ordinals: tuple[int, ...] = field(default=(), compare=False)
 
     def __post_init__(self) -> None:
-        validate_discovery_candidate_physical_binding(self)
+        validate_discovery_peak_physical_binding(self)
 
     @property
     def physical_evaluation(self) -> PhysicalPeakEvaluation:
@@ -126,119 +94,48 @@ def validate_discovery_physical_fact_record(
         raise ValueError("physical evaluation crosses acquired trace content")
 
 
-def validate_discovery_candidate_physical_binding(
-    binding: DiscoveryCandidatePhysicalBinding,
+def validate_discovery_peak_physical_binding(
+    binding: DiscoveryPeakPhysicalBinding,
 ) -> None:
-    """Bind a final candidate to its settled physical record and acquisition."""
+    """Bind a final peak to its settled physical record and acquisition."""
 
-    if not isinstance(binding, DiscoveryCandidatePhysicalBinding):
-        raise TypeError("binding must be a DiscoveryCandidatePhysicalBinding")
-    if not isinstance(binding.acquisition_source, AcquisitionSourceIdentity):
-        raise TypeError("acquisition_source must be an AcquisitionSourceIdentity")
     if binding.final_ordinal < 0:
         raise ValueError("final_ordinal must be non-negative")
-    if not isinstance(binding.candidate, DiscoveryCandidate):
-        raise TypeError("candidate must be a DiscoveryCandidate")
-    if (
-        not binding.member_source_ordinals
-        or tuple(sorted(set(binding.member_source_ordinals)))
-        != binding.member_source_ordinals
-        or binding.member_source_ordinals[0] < 0
-    ):
-        raise ValueError(
-            "member_source_ordinals must be unique, ordered, and non-negative"
-        )
-    if binding.representative_source_ordinal not in binding.member_source_ordinals:
-        raise ValueError("representative source must belong to the merged members")
-    if binding.representative_work_ordinal < 0:
-        raise ValueError("representative_work_ordinal must be non-negative")
     work_item = binding.physical_fact_record.work_item
     if (
         work_item.acquisition_source_id
         != binding.acquisition_source.acquisition_source_id
     ):
         raise ValueError("Discovery physical binding crosses acquisition record")
-    if work_item.work_ordinal != binding.representative_work_ordinal:
-        raise ValueError(
-            "Discovery physical binding crosses representative work record"
-        )
-    if work_item.sample_stem != binding.candidate.sample_stem:
-        raise ValueError("Discovery physical binding crosses record sample")
+    if work_item.peak_id != binding.peak.peak_id:
+        raise ValueError("Discovery physical binding crosses peak identity")
     if (
-        binding.candidate.ms1_search_rt_min != work_item.xic_rt_min
-        or binding.candidate.ms1_search_rt_max != work_item.xic_rt_max
+        binding.peak.ms1_search_rt_min != work_item.xic_rt_min
+        or binding.peak.ms1_search_rt_max != work_item.xic_rt_max
     ):
-        raise ValueError(
-            "Discovery physical binding crosses representative search window"
-        )
-    # A retained measurement owns a physical peak, not a particular NL query.
-    # The existing work ordinal binds that measurement; the candidate subject
-    # below independently binds its combined method evidence.
-    expected_subject_id = build_discovery_physical_selection_subject_id(
-        sample_stem=binding.candidate.sample_stem,
-        best_ms2_scan_id=binding.candidate.best_ms2_scan_id,
-        precursor_mz=binding.candidate.precursor_mz,
-        product_mz=binding.candidate.product_mz,
-    )
-    if expected_subject_id != binding.selection_subject_id:
-        raise ValueError("Discovery physical binding crosses candidate identity")
+        raise ValueError("Discovery physical binding crosses peak search window")
 
 
-def bind_discovery_physical_record_evidence(
-    records: tuple[DiscoveryPhysicalFactRecord, ...],
-    bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
-) -> tuple[DiscoveryPhysicalFactRecord, ...]:
-    """Copy actual merge refs before source/member provenance disappears."""
-    links_by_work: dict[int, list[DiscoveryPhysicalCandidateLink]] = {}
-    for binding in bindings:
-        link = DiscoveryPhysicalCandidateLink(
-            candidate_id=binding.candidate.candidate_id,
-            final_ordinal=binding.final_ordinal,
-            representative_source_ordinal=binding.representative_source_ordinal,
-            member_source_ordinals=binding.member_source_ordinals,
-            representative_work_ordinal=binding.representative_work_ordinal,
-            member_work_ordinals=binding.member_work_ordinals,
-        )
-        for ordinal in set(binding.member_work_ordinals):
-            links_by_work.setdefault(ordinal, []).append(link)
+def bind_physical_facts_to_final_peaks(
+    bindings: tuple[DiscoveryPeakPhysicalBinding, ...],
+    peaks: tuple[DiscoveryPeak, ...],
+) -> tuple[DiscoveryPeakPhysicalBinding, ...]:
+    """Attach scored and qualified peaks without changing physical authority."""
+
+    if len(bindings) != len(peaks):
+        raise ValueError("Discovery final peak/binding cardinality mismatch")
     return tuple(
-        replace(
-            record,
-            candidate_links=tuple(links_by_work.get(record.work_item.work_ordinal, ())),
-        )
-        for record in records
+        replace(binding, peak=peak)
+        for binding, peak in zip(bindings, peaks, strict=True)
     )
 
 
-def bind_physical_facts_to_final_candidates(
-    bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
-    candidates: tuple[DiscoveryCandidate, ...],
-) -> tuple[DiscoveryCandidatePhysicalBinding, ...]:
-    """Attach post-anchor/scoring candidates without changing physical authority."""
-
-    if len(bindings) != len(candidates):
-        raise ValueError("Discovery final candidate/binding cardinality mismatch")
-    rebound: list[DiscoveryCandidatePhysicalBinding] = []
-    for final_ordinal, (binding, candidate) in enumerate(
-        zip(bindings, candidates, strict=True)
-    ):
-        if binding.final_ordinal != final_ordinal:
-            raise ValueError("Discovery physical binding final order is not contiguous")
-        if (
-            binding.candidate.candidate_id != candidate.candidate_id
-            or binding.candidate.sample_stem != candidate.sample_stem
-        ):
-            raise ValueError("Discovery final candidate crosses physical binding")
-        rebound.append(replace(binding, candidate=candidate))
-    return tuple(rebound)
-
-
-def order_physical_bindings_for_candidate_csv(
-    bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
-) -> tuple[DiscoveryCandidatePhysicalBinding, ...]:
+def order_physical_bindings_for_peak_csv(
+    bindings: tuple[DiscoveryPeakPhysicalBinding, ...],
+) -> tuple[DiscoveryPeakPhysicalBinding, ...]:
     ordered = sorted(
         bindings,
-        key=lambda binding: discovery_candidate_output_sort_key(binding.candidate),
+        key=lambda binding: discovery_peak_output_sort_key(binding.peak),
     )
     return tuple(
         replace(binding, final_ordinal=final_ordinal)
@@ -281,10 +178,10 @@ def _validate_acquired_trace_work_identity(
 
 
 __all__ = [
-    "DiscoveryCandidatePhysicalBinding",
+    "DiscoveryPeakPhysicalBinding",
     "DiscoveryPhysicalFactRecord",
-    "bind_physical_facts_to_final_candidates",
-    "order_physical_bindings_for_candidate_csv",
-    "validate_discovery_candidate_physical_binding",
+    "bind_physical_facts_to_final_peaks",
+    "order_physical_bindings_for_peak_csv",
+    "validate_discovery_peak_physical_binding",
     "validate_discovery_physical_fact_record",
 ]

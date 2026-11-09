@@ -92,7 +92,6 @@ These values apply unless overridden in the `[discovery]` section.
 | `product_search_ppm` | 50.0 | Product ion search window (PPM) |
 | `ms2_precursor_tol_da` | 0.8 | Maximum precursor inference radius (Da), capped by the recorded isolation half-width; explicit saved values are preserved |
 | `nl_min_intensity_ratio` | 0.01 | Minimum NL intensity ratio (1%) |
-| `seed_rt_gap_min` | 0.20 | Minimum RT gap between seeds (min) |
 | `ms1_search_padding_min` | 0.35 | MS1 search window padding (min) |
 | `rt_min` | automatic | Optional lower RT crop bound; otherwise RAW acquisition start |
 | `rt_max` | automatic | Optional upper RT crop bound; otherwise RAW acquisition end |

@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
     )
-    from xic_extractor.discovery.models import DiscoveryCandidate
+    from xic_extractor.discovery.models import DiscoveryPeak
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         CidNlMethodAssessmentContent,
         CidNlMethodAssessmentRef,
@@ -236,7 +236,7 @@ def write_alignment_explanation(
     path: Path,
     *,
     completed: CompletedUntargetBatchWorkflowResult,
-    candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
+    candidates_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
     matrix_path: Path,
     alignment_config: AlignmentConfig,
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
@@ -267,7 +267,7 @@ def prepare_alignment_explanation(
     path: Path,
     *,
     completed: CompletedUntargetBatchWorkflowResult,
-    candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
+    candidates_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
     alignment_config: AlignmentConfig,
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     known_istd_reference_provenance: Mapping[str, object] | None = None,
@@ -373,8 +373,8 @@ def prepare_alignment_explanation(
         for stem, declared in candidates_by_sample.items():
             sid = samples[stem].identity.sample_key
             for candidate in phase_items("candidates", declared):
-                key = candidate.candidate_id, sid
-                subject_id = memberships[candidate.candidate_id]
+                key = candidate.peak_id, sid
+                subject_id = memberships[candidate.peak_id]
                 method_candidates[subject_id, sid].add(key)
                 subject_candidates[subject_id].add(key)
                 sink.add_candidate(
@@ -382,15 +382,15 @@ def prepare_alignment_explanation(
                     {
                         **_fields(
                             candidate,
-                            "candidate_id",
-                            "discovery_candidate_state",
+                            "admission_reason",
                             "precursor_mz",
                             "configured_neutral_loss_da",
                             "neutral_loss_tag",
                         ),
+                        "candidate_id": candidate.peak_id,
                         "sample_stem": stem,
                         "sample_key": sid,
-                        "ms1_apex_mz": measured_mz.get(candidate.candidate_id),
+                        "ms1_apex_mz": measured_mz.get(candidate.peak_id),
                         "method_subject_id": subject_id,
                     },
                 )
@@ -405,18 +405,17 @@ def prepare_alignment_explanation(
         ):
             work = record.work_item
             sid = samples[work.sample_stem].identity.sample_key
-            related = {(link.candidate_id, sid) for link in record.candidate_links}
-            if not related:
-                related = {(record.candidate_id, sid)}
+            related = {(record.peak_id, sid)}
+            if record.peak_id not in memberships:
                 sink.add_candidate(
-                    record.candidate_id,
+                    record.peak_id,
                     sid,
                     {
-                        "candidate_id": record.candidate_id,
+                        "candidate_id": record.peak_id,
                         "sample_key": sid,
                         "sample_stem": work.sample_stem,
                         "precursor_mz": work.precursor_mz,
-                        "ms1_apex_mz": measured_mz.get(record.candidate_id),
+                        "ms1_apex_mz": measured_mz.get(record.peak_id),
                         "physical_state": record.evaluation.state,
                         "reason": record.evaluation.reason,
                         "rt_apex_min": (
@@ -430,7 +429,7 @@ def prepare_alignment_explanation(
                 sink,
                 None,
                 sid,
-                candidate_id=record.candidate_id,
+                candidate_id=record.peak_id,
                 kind="discovery_physical",
                 trace=Trace(
                     sample_name=work.sample_stem,
@@ -581,7 +580,7 @@ def prepare_alignment_explanation(
                         "candidate_id",
                         "sample_key",
                         "method_subject_id",
-                        "discovery_candidate_state",
+                        "admission_reason",
                         "reason_code",
                     ),
                 },

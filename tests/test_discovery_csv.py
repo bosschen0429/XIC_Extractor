@@ -12,11 +12,11 @@ from xic_extractor.discovery.csv_writer import (
 )
 from xic_extractor.discovery.evidence_config import DEFAULT_EVIDENCE_PROFILE
 from xic_extractor.discovery.models import (
-    DISCOVERY_CANDIDATE_COLUMNS,
     DISCOVERY_CANDIDATE_REVIEW_COLUMNS,
+    DISCOVERY_PEAK_COLUMNS,
     DISCOVERY_PROVENANCE_COLUMNS,
     DISCOVERY_REVIEW_COLUMNS,
-    DiscoveryCandidate,
+    DiscoveryPeak,
     DiscoverySeed,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
@@ -98,26 +98,26 @@ def test_discovery_provenance_columns_are_stable_csv_contract() -> None:
 def test_discovery_candidate_columns_start_with_review_columns() -> None:
     review_column_count = len(DISCOVERY_REVIEW_COLUMNS)
     successor_column_count = len(EXPECTED_SUCCESSOR_COLUMNS)
-    assert DISCOVERY_CANDIDATE_COLUMNS[:review_column_count] == DISCOVERY_REVIEW_COLUMNS
+    assert DISCOVERY_PEAK_COLUMNS[:review_column_count] == DISCOVERY_REVIEW_COLUMNS
     assert (
-        DISCOVERY_CANDIDATE_COLUMNS[
+        DISCOVERY_PEAK_COLUMNS[
             review_column_count : review_column_count + successor_column_count
         ]
         == EXPECTED_SUCCESSOR_COLUMNS
     )
     assert (
-        DISCOVERY_CANDIDATE_COLUMNS[review_column_count + successor_column_count : -1]
+        DISCOVERY_PEAK_COLUMNS[review_column_count + successor_column_count : -1]
         == DISCOVERY_PROVENANCE_COLUMNS
     )
-    assert DISCOVERY_CANDIDATE_COLUMNS[-1] == "is_provisional"
+    assert DISCOVERY_PEAK_COLUMNS[-1] == "is_provisional"
 
 
 def test_tag_evidence_json_is_last_provenance_column() -> None:
     review_column_count = len(DISCOVERY_REVIEW_COLUMNS)
     successor_column_count = len(EXPECTED_SUCCESSOR_COLUMNS)
-    assert DISCOVERY_CANDIDATE_COLUMNS[:review_column_count] == DISCOVERY_REVIEW_COLUMNS
+    assert DISCOVERY_PEAK_COLUMNS[:review_column_count] == DISCOVERY_REVIEW_COLUMNS
     assert (
-        DISCOVERY_CANDIDATE_COLUMNS[
+        DISCOVERY_PEAK_COLUMNS[
             review_column_count : review_column_count + successor_column_count
         ]
         == EXPECTED_SUCCESSOR_COLUMNS
@@ -145,7 +145,7 @@ def test_write_discovery_candidates_csv_creates_parent_and_writes_header(
     assert result_path == output_path
     with output_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.reader(handle)
-        assert next(reader) == list(DISCOVERY_CANDIDATE_COLUMNS)
+        assert next(reader) == list(DISCOVERY_PEAK_COLUMNS)
 
 
 def test_write_discovery_candidates_csv_writes_header_for_empty_candidates(
@@ -156,7 +156,7 @@ def test_write_discovery_candidates_csv_writes_header_for_empty_candidates(
     write_discovery_candidates_csv(output_path, [])
 
     with output_path.open(newline="", encoding="utf-8") as handle:
-        assert list(csv.reader(handle)) == [list(DISCOVERY_CANDIDATE_COLUMNS)]
+        assert list(csv.reader(handle)) == [list(DISCOVERY_PEAK_COLUMNS)]
 
 
 def test_write_discovery_candidates_csv_sorts_review_queue_rows(
@@ -469,7 +469,7 @@ def test_discovery_candidate_from_values_builds_row_identity_candidate_id() -> N
         observed_loss_error_ppm=2.58,
     )
 
-    candidate = DiscoveryCandidate.from_values(
+    candidate = DiscoveryPeak.from_values(
         raw_file=raw_file,
         sample_stem="TumorBC2312_DNA",
         precursor_mz=258.1085,
@@ -557,7 +557,7 @@ def test_discovery_candidate_from_values_assigns_supported_state() -> None:
         observed_loss_error_ppm=2.58,
     )
 
-    candidate = DiscoveryCandidate.from_values(
+    candidate = DiscoveryPeak.from_values(
         raw_file=raw_file,
         sample_stem="TumorBC2312_DNA",
         precursor_mz=258.1085,
@@ -607,7 +607,7 @@ def test_from_values_makes_orphan_review_only_without_ms1_peak() -> None:
         observed_loss_error_ppm=2.58,
     )
 
-    candidate = DiscoveryCandidate.from_values(
+    candidate = DiscoveryPeak.from_values(
         raw_file=raw_file,
         sample_stem="TumorBC2312_DNA",
         precursor_mz=258.1085,
@@ -650,7 +650,7 @@ def test_candidate_id_distinguishes_same_scan_precursor_product_hypotheses() -> 
         *,
         scan_number: int = 19561,
         apex_rt: float = 23.3417,
-    ) -> DiscoveryCandidate:
+    ) -> DiscoveryPeak:
         seed = DiscoverySeed(
             raw_file=raw_file,
             sample_stem="TumorBC2312_DNA",
@@ -664,7 +664,7 @@ def test_candidate_id_distinguishes_same_scan_precursor_product_hypotheses() -> 
             observed_neutral_loss_da=116.0474,
             observed_loss_error_ppm=0.0,
         )
-        return DiscoveryCandidate.from_values(
+        return DiscoveryPeak.from_values(
             raw_file=raw_file,
             sample_stem="TumorBC2312_DNA",
             precursor_mz=precursor_mz,

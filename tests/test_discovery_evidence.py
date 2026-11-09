@@ -9,7 +9,7 @@ from xic_extractor.discovery.evidence_config import (
     DiscoveryEvidenceWeights,
 )
 from xic_extractor.discovery.evidence_score import score_discovery_evidence
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import DiscoverySettings
 
 
@@ -193,8 +193,8 @@ def _settings(
     )
 
 
-def _candidate() -> DiscoveryCandidate:
-    return DiscoveryCandidate(
+def _candidate() -> DiscoveryPeak:
+    return DiscoveryPeak(
         review_priority="MEDIUM",
         evidence_score=0,
         evidence_tier="E",

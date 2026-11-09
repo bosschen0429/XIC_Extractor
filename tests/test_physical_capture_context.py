@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+from xic_extractor.discovery.grouping import group_discovery_seeds
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
 from tests.discovery_ms1_capture_fixtures import (
@@ -18,8 +19,7 @@ from xic_extractor.acquisition.physical_capture import (
     PhysicalPeakCapture,
     PhysicalPeakSearch,
 )
-from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.ms1_capture import capture_ms1_candidates
+from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest
 
@@ -229,7 +229,7 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
     previous = None
     for groups in variants:
         raw = _BoundedRaw(rt=rt, intensity=intensity)
-        result = capture_ms1_candidates(
+        result = capture_ms1_peaks(
             raw,
             groups,
             acquisition_source=raw.acquisition_source,

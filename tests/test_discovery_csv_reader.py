@@ -9,7 +9,7 @@ from tests.alignment_pipeline_helpers import (
     physical_facts_fingerprint_beside,
 )
 from xic_extractor.discovery.batch_contract import DISCOVERY_BATCH_RECEIPT_COLUMNS
-from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
+from xic_extractor.discovery.models import DISCOVERY_PEAK_COLUMNS
 
 
 def test_read_discovery_batch_index_requires_owner_closure(tmp_path: Path) -> None:
@@ -42,11 +42,11 @@ def test_owner_bound_csv_preserves_final_provisional_decision(
     seed_count: int,
 ) -> None:
     from xic_extractor.discovery.batch_contract import (
-        mint_discovery_candidate_universe_receipt,
+        mint_discovery_peak_universe_receipt,
     )
     from xic_extractor.discovery.csv_reader import (
-        read_discovery_candidates_csv,
-        read_owner_bound_discovery_candidates_csv,
+        read_discovery_peaks_csv,
+        read_owner_bound_discovery_peaks_csv,
     )
     from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
     from xic_extractor.processing_identity import (
@@ -54,8 +54,8 @@ def test_owner_bound_csv_preserves_final_provisional_decision(
     )
 
     path = tmp_path / "candidates.csv"
-    _write_csv(path, DISCOVERY_CANDIDATE_COLUMNS, [_candidate_row()])
-    (original,) = read_discovery_candidates_csv(path)
+    _write_csv(path, DISCOVERY_PEAK_COLUMNS, [_candidate_row()])
+    (original,) = read_discovery_peaks_csv(path)
     candidate = replace(
         original,
         ms1_trace_quality="provisional",
@@ -70,14 +70,14 @@ def test_owner_bound_csv_preserves_final_provisional_decision(
         acquisition_format="thermo_raw",
         observation_namespace="test",
     )
-    receipt = mint_discovery_candidate_universe_receipt(
+    receipt = mint_discovery_peak_universe_receipt(
         sample_stem="Sample_1",
         acquisition_source=source,
         candidate_csv=path,
         physical_facts=physical_facts_fingerprint_beside(path),
         candidates=(candidate,),
     )
-    (restored,) = read_owner_bound_discovery_candidates_csv(path, receipt=receipt)
+    (restored,) = read_owner_bound_discovery_peaks_csv(path, receipt=receipt)
     assert restored.is_provisional is provisional
     assert restored.seed_event_count == seed_count
     assert restored.ms1_trace_quality == "provisional"
@@ -87,29 +87,29 @@ def test_owner_bound_csv_preserves_final_provisional_decision(
 def test_candidate_csv_rejects_invalid_provisional_flag(
     tmp_path: Path, value: str
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     path = tmp_path / "candidates.csv"
-    columns = tuple(c for c in DISCOVERY_CANDIDATE_COLUMNS if c != "is_provisional")
+    columns = tuple(c for c in DISCOVERY_PEAK_COLUMNS if c != "is_provisional")
     _write_csv(
         path, (*columns, "is_provisional"), [_candidate_row(is_provisional=value)]
     )
     with pytest.raises(ValueError, match="is_provisional must be TRUE or FALSE"):
-        read_discovery_candidates_csv(path)
+        read_discovery_peaks_csv(path)
 
 
 def test_candidate_csv_requires_current_provisional_column(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     path = tmp_path / "candidates.csv"
-    columns = tuple(c for c in DISCOVERY_CANDIDATE_COLUMNS if c != "is_provisional")
+    columns = tuple(c for c in DISCOVERY_PEAK_COLUMNS if c != "is_provisional")
     row = _candidate_row(ms1_trace_quality="provisional")
     row.pop("is_provisional", None)
     _write_csv(path, columns, [row])
     with pytest.raises(ValueError, match="missing required columns: is_provisional"):
-        read_discovery_candidates_csv(path)
+        read_discovery_peaks_csv(path)
 
 
 def test_read_discovery_batch_index_preserves_order_and_resolves_candidate_paths(
@@ -125,7 +125,7 @@ def test_read_discovery_batch_index_preserves_order_and_resolves_candidate_paths
     )
     for candidate_path in candidate_paths:
         candidate_path.parent.mkdir(parents=True, exist_ok=True)
-        _write_csv(candidate_path, DISCOVERY_CANDIDATE_COLUMNS, [])
+        _write_csv(candidate_path, DISCOVERY_PEAK_COLUMNS, [])
     _write_csv(
         index_path,
         (
@@ -158,10 +158,10 @@ def test_read_discovery_batch_index_preserves_order_and_resolves_candidate_paths
     batch = read_discovery_batch_index(index_path)
 
     assert batch.sample_order == ("Sample_B", "Sample_A")
-    assert batch.candidate_csvs["Sample_B"] == (
+    assert batch.peak_csvs["Sample_B"] == (
         index_path.parent / "Sample_B" / "discovery_candidates.csv"
     )
-    assert batch.candidate_csvs["Sample_A"] == tmp_path / "abs" / "candidates.csv"
+    assert batch.peak_csvs["Sample_A"] == tmp_path / "abs" / "candidates.csv"
     assert batch.raw_files["Sample_B"] == Path("C:/stale/Sample_B.raw")
     assert batch.raw_files["Sample_A"] == Path("C:/stale/Sample_A.raw")
     assert batch.review_csvs["Sample_B"] == (
@@ -176,7 +176,7 @@ def test_read_discovery_batch_index_accepts_utf8_bom(tmp_path: Path) -> None:
     index_path = tmp_path / "discovery_batch_index.csv"
     candidate_path = tmp_path / "Sample_A" / "candidates.csv"
     candidate_path.parent.mkdir()
-    _write_csv(candidate_path, DISCOVERY_CANDIDATE_COLUMNS, [])
+    _write_csv(candidate_path, DISCOVERY_PEAK_COLUMNS, [])
     _write_csv(
         index_path,
         (
@@ -206,9 +206,7 @@ def test_read_discovery_batch_index_accepts_utf8_bom(tmp_path: Path) -> None:
 
     assert batch.sample_order == ("Sample_A",)
     assert batch.raw_files["Sample_A"] == Path("Sample_A.raw")
-    assert batch.candidate_csvs["Sample_A"] == (
-        tmp_path / "Sample_A" / "candidates.csv"
-    )
+    assert batch.peak_csvs["Sample_A"] == (tmp_path / "Sample_A" / "candidates.csv")
 
 
 def test_read_discovery_batch_index_unescapes_known_formula_fields(
@@ -219,7 +217,7 @@ def test_read_discovery_batch_index_unescapes_known_formula_fields(
     index_path = tmp_path / "discovery_batch_index.csv"
     candidate_paths = (tmp_path / "-candidates.csv", tmp_path / "'plain.csv")
     for candidate_path in candidate_paths:
-        _write_csv(candidate_path, DISCOVERY_CANDIDATE_COLUMNS, [])
+        _write_csv(candidate_path, DISCOVERY_PEAK_COLUMNS, [])
     _write_csv(
         index_path,
         (
@@ -253,7 +251,7 @@ def test_read_discovery_batch_index_unescapes_known_formula_fields(
 
     assert batch.sample_order == ("=Sample", "'Ordinary")
     assert batch.raw_files["=Sample"] == Path("+Sample.raw")
-    assert batch.candidate_csvs["=Sample"] == tmp_path / "-candidates.csv"
+    assert batch.peak_csvs["=Sample"] == tmp_path / "-candidates.csv"
     assert batch.review_csvs["=Sample"] == tmp_path / "@review.csv"
     assert batch.raw_files["'Ordinary"] == Path("'plain.raw")
 
@@ -261,12 +259,12 @@ def test_read_discovery_batch_index_unescapes_known_formula_fields(
 def test_read_discovery_candidates_csv_parses_full_candidate_row(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
-    _write_csv(csv_path, DISCOVERY_CANDIDATE_COLUMNS, [_candidate_row()])
+    _write_csv(csv_path, DISCOVERY_PEAK_COLUMNS, [_candidate_row()])
 
-    (candidate,) = read_discovery_candidates_csv(csv_path)
+    (candidate,) = read_discovery_peaks_csv(csv_path)
 
     assert candidate.review_priority == "HIGH"
     assert candidate.evidence_score == 82
@@ -302,12 +300,10 @@ def test_read_discovery_candidates_csv_parses_full_candidate_row(
 def test_read_discovery_candidates_csv_rejects_partial_successor_schema(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     fieldnames = tuple(
-        column
-        for column in DISCOVERY_CANDIDATE_COLUMNS
-        if column != "ms1_feature_row_id"
+        column for column in DISCOVERY_PEAK_COLUMNS if column != "ms1_feature_row_id"
     )
     row = {
         column: value
@@ -321,13 +317,13 @@ def test_read_discovery_candidates_csv_rejects_partial_successor_schema(
         ValueError,
         match="missing required columns: ms1_feature_row_id",
     ):
-        read_discovery_candidates_csv(csv_path)
+        read_discovery_peaks_csv(csv_path)
 
 
 def test_read_discovery_candidates_preserves_multi_tag_evidence(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     row = _candidate_row(
         selected_tag_count="3",
@@ -339,9 +335,9 @@ def test_read_discovery_candidates_preserves_multi_tag_evidence(
         tag_evidence_json='{"dR":{"scan_count":1},"R":{"scan_count":1}}',
     )
     csv_path = tmp_path / "discovery_candidates.csv"
-    _write_csv(csv_path, DISCOVERY_CANDIDATE_COLUMNS, [row])
+    _write_csv(csv_path, DISCOVERY_PEAK_COLUMNS, [row])
 
-    candidates = read_discovery_candidates_csv(csv_path)
+    candidates = read_discovery_peaks_csv(csv_path)
 
     assert candidates[0].matched_tag_names == ("dR", "R")
     assert candidates[0].matched_tag_count == 2
@@ -352,7 +348,7 @@ def test_read_discovery_candidates_preserves_multi_tag_evidence(
 def test_read_discovery_candidates_accepts_writer_rounded_row_identity_mz(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     row = _candidate_row(
         candidate_id="Sample_1#6095@mz1000.377783_p884.330383",
@@ -363,9 +359,9 @@ def test_read_discovery_candidates_accepts_writer_rounded_row_identity_mz(
         ms1_feature_row_id="Sample_1|DNA_dR|1000.377783|8.48",
     )
     csv_path = tmp_path / "discovery_candidates.csv"
-    _write_csv(csv_path, DISCOVERY_CANDIDATE_COLUMNS, [row])
+    _write_csv(csv_path, DISCOVERY_PEAK_COLUMNS, [row])
 
-    (candidate,) = read_discovery_candidates_csv(csv_path)
+    (candidate,) = read_discovery_peaks_csv(csv_path)
 
     assert candidate.candidate_id == "Sample_1#6095@mz1000.377783_p884.330383"
     assert candidate.precursor_mz == pytest.approx(1000.38)
@@ -375,9 +371,9 @@ def test_read_discovery_candidates_accepts_writer_rounded_row_identity_mz(
 def test_discovery_writer_to_alignment_reader_roundtrips_row_identity(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
     from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
-    from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySeed
+    from xic_extractor.discovery.models import DiscoveryPeak, DiscoverySeed
 
     raw_file = Path("C:/raw/Sample_1.raw")
     seed = DiscoverySeed(
@@ -393,7 +389,7 @@ def test_discovery_writer_to_alignment_reader_roundtrips_row_identity(
         observed_neutral_loss_da=116.0474,
         observed_loss_error_ppm=0.0,
     )
-    candidate = DiscoveryCandidate.from_values(
+    candidate = DiscoveryPeak.from_values(
         raw_file=raw_file,
         sample_stem="Sample_1",
         precursor_mz=1000.377783,
@@ -430,7 +426,7 @@ def test_discovery_writer_to_alignment_reader_roundtrips_row_identity(
 
     write_discovery_candidates_csv(csv_path, [candidate])
     written_row = _read_csv(csv_path)[0]
-    (parsed,) = read_discovery_candidates_csv(csv_path)
+    (parsed,) = read_discovery_peaks_csv(csv_path)
 
     assert written_row["candidate_id"] == "Sample_1#6095@mz1000.377783_p884.330383"
     assert written_row["discovery_candidate_state"] == "ms1_feature_nl_rescued"
@@ -449,7 +445,7 @@ def test_discovery_writer_to_alignment_reader_roundtrips_row_identity(
 def test_read_discovery_candidates_rejects_mz_just_outside_display_tolerance(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     row = _candidate_row(
         candidate_id="Sample_1#6095@mz1000.386_p884.330383",
@@ -459,19 +455,19 @@ def test_read_discovery_candidates_rejects_mz_just_outside_display_tolerance(
         scan_precursor_mz="1000.38",
     )
     csv_path = tmp_path / "discovery_candidates.csv"
-    _write_csv(csv_path, DISCOVERY_CANDIDATE_COLUMNS, [row])
+    _write_csv(csv_path, DISCOVERY_PEAK_COLUMNS, [row])
 
     with pytest.raises(
         ValueError,
         match=r"precursor_mz does not match.*tolerance_da=0.005",
     ):
-        read_discovery_candidates_csv(csv_path)
+        read_discovery_peaks_csv(csv_path)
 
 
 def test_read_discovery_candidates_csv_unescapes_known_formula_fields(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     row = _candidate_row(
         candidate_id="'=Sample#6095@mz500.123456_p384.076056",
@@ -481,9 +477,9 @@ def test_read_discovery_candidates_csv_unescapes_known_formula_fields(
         ms1_feature_row_id="'=Sample|DNA_dR|500.123456|8.48",
     )
     csv_path = tmp_path / "discovery_candidates.csv"
-    _write_csv(csv_path, DISCOVERY_CANDIDATE_COLUMNS, [row])
+    _write_csv(csv_path, DISCOVERY_PEAK_COLUMNS, [row])
 
-    (candidate,) = read_discovery_candidates_csv(csv_path)
+    (candidate,) = read_discovery_peaks_csv(csv_path)
 
     assert candidate.candidate_id == "=Sample#6095@mz500.123456_p384.076056"
     assert candidate.sample_stem == "=Sample"
@@ -494,7 +490,7 @@ def test_read_discovery_candidates_csv_unescapes_known_formula_fields(
 def test_readers_reject_missing_required_columns(tmp_path: Path) -> None:
     from xic_extractor.discovery.csv_reader import (
         read_discovery_batch_index,
-        read_discovery_candidates_csv,
+        read_discovery_peaks_csv,
     )
 
     batch_path = tmp_path / "discovery_batch_index.csv"
@@ -503,9 +499,7 @@ def test_readers_reject_missing_required_columns(tmp_path: Path) -> None:
     _write_csv(
         candidates_path,
         tuple(
-            column
-            for column in DISCOVERY_CANDIDATE_COLUMNS
-            if column != "tag_evidence_json"
+            column for column in DISCOVERY_PEAK_COLUMNS if column != "tag_evidence_json"
         ),
         [],
     )
@@ -513,23 +507,23 @@ def test_readers_reject_missing_required_columns(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="missing required columns.*candidate_csv"):
         read_discovery_batch_index(batch_path)
     with pytest.raises(ValueError, match="missing required columns"):
-        read_discovery_candidates_csv(candidates_path)
+        read_discovery_peaks_csv(candidates_path)
 
 
 def test_read_discovery_candidates_csv_rejects_stale_scan_only_candidate_id(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
         csv_path,
-        DISCOVERY_CANDIDATE_COLUMNS,
+        DISCOVERY_PEAK_COLUMNS,
         [_candidate_row(candidate_id="Sample_1#6095")],
     )
 
     with pytest.raises(ValueError, match="candidate_id must include row identity"):
-        read_discovery_candidates_csv(csv_path)
+        read_discovery_peaks_csv(csv_path)
 
 
 @pytest.mark.parametrize(
@@ -546,24 +540,24 @@ def test_read_discovery_candidates_csv_rejects_candidate_id_row_mismatch(
     overrides: dict[str, str],
     message: str,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
-    _write_csv(csv_path, DISCOVERY_CANDIDATE_COLUMNS, [_candidate_row(**overrides)])
+    _write_csv(csv_path, DISCOVERY_PEAK_COLUMNS, [_candidate_row(**overrides)])
 
     with pytest.raises(ValueError, match=message):
-        read_discovery_candidates_csv(csv_path)
+        read_discovery_peaks_csv(csv_path)
 
 
 def test_read_discovery_candidates_csv_rejects_duplicate_candidate_id(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
         csv_path,
-        DISCOVERY_CANDIDATE_COLUMNS,
+        DISCOVERY_PEAK_COLUMNS,
         [
             _candidate_row(),
             _candidate_row(feature_id="Sample_1@F0002"),
@@ -571,23 +565,23 @@ def test_read_discovery_candidates_csv_rejects_duplicate_candidate_id(
     )
 
     with pytest.raises(ValueError, match="duplicate candidate_id"):
-        read_discovery_candidates_csv(csv_path)
+        read_discovery_peaks_csv(csv_path)
 
 
 def test_read_discovery_candidates_csv_rejects_invalid_candidate_state(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
         csv_path,
-        DISCOVERY_CANDIDATE_COLUMNS,
+        DISCOVERY_PEAK_COLUMNS,
         [_candidate_row(discovery_candidate_state="accepted")],
     )
 
     with pytest.raises(ValueError, match="row 2.*discovery_candidate_state"):
-        read_discovery_candidates_csv(csv_path)
+        read_discovery_peaks_csv(csv_path)
 
 
 @pytest.mark.parametrize(
@@ -601,12 +595,12 @@ def test_read_discovery_candidates_csv_rejects_blank_feature_row_id_for_ms1_rows
     tmp_path: Path,
     state: str,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
         csv_path,
-        DISCOVERY_CANDIDATE_COLUMNS,
+        DISCOVERY_PEAK_COLUMNS,
         [
             _candidate_row(
                 discovery_candidate_state=state,
@@ -616,18 +610,18 @@ def test_read_discovery_candidates_csv_rejects_blank_feature_row_id_for_ms1_rows
     )
 
     with pytest.raises(ValueError, match="row 2.*ms1_feature_row_id"):
-        read_discovery_candidates_csv(csv_path)
+        read_discovery_peaks_csv(csv_path)
 
 
 def test_read_discovery_candidates_csv_rejects_ms1_state_without_ms1_peak(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
         csv_path,
-        DISCOVERY_CANDIDATE_COLUMNS,
+        DISCOVERY_PEAK_COLUMNS,
         [
             _candidate_row(
                 discovery_candidate_state="ms1_feature_nl_supported",
@@ -637,7 +631,7 @@ def test_read_discovery_candidates_csv_rejects_ms1_state_without_ms1_peak(
     )
 
     with pytest.raises(ValueError, match="row 2.*ms1_peak_found"):
-        read_discovery_candidates_csv(csv_path)
+        read_discovery_peaks_csv(csv_path)
 
 
 @pytest.mark.parametrize(
@@ -654,28 +648,28 @@ def test_read_discovery_candidates_csv_rejects_mismatched_ms1_feature_row_id(
     tmp_path: Path,
     ms1_feature_row_id: str,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
         csv_path,
-        DISCOVERY_CANDIDATE_COLUMNS,
+        DISCOVERY_PEAK_COLUMNS,
         [_candidate_row(ms1_feature_row_id=ms1_feature_row_id)],
     )
 
     with pytest.raises(ValueError, match="row 2.*ms1_feature_row_id"):
-        read_discovery_candidates_csv(csv_path)
+        read_discovery_peaks_csv(csv_path)
 
 
 def test_read_discovery_candidates_csv_rejects_orphan_state_with_ms1_peak(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
         csv_path,
-        DISCOVERY_CANDIDATE_COLUMNS,
+        DISCOVERY_PEAK_COLUMNS,
         [
             _candidate_row(
                 discovery_candidate_state="review_only_orphan_nl",
@@ -685,18 +679,18 @@ def test_read_discovery_candidates_csv_rejects_orphan_state_with_ms1_peak(
     )
 
     with pytest.raises(ValueError, match="row 2.*review_only_orphan_nl"):
-        read_discovery_candidates_csv(csv_path)
+        read_discovery_peaks_csv(csv_path)
 
 
 def test_read_discovery_candidates_csv_accepts_orphan_without_feature_row_id(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
         csv_path,
-        DISCOVERY_CANDIDATE_COLUMNS,
+        DISCOVERY_PEAK_COLUMNS,
         [
             _candidate_row(
                 discovery_candidate_state="review_only_orphan_nl",
@@ -713,7 +707,7 @@ def test_read_discovery_candidates_csv_accepts_orphan_without_feature_row_id(
         ],
     )
 
-    (candidate,) = read_discovery_candidates_csv(csv_path)
+    (candidate,) = read_discovery_peaks_csv(csv_path)
 
     assert candidate.discovery_candidate_state == "review_only_orphan_nl"
     assert candidate.ms1_feature_row_id == ""
@@ -727,12 +721,12 @@ def test_only_admitted_rows_require_unique_ms1_feature_row_id(
     tmp_path: Path,
     state: str,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
         csv_path,
-        DISCOVERY_CANDIDATE_COLUMNS,
+        DISCOVERY_PEAK_COLUMNS,
         [
             _candidate_row(),
             _candidate_row(
@@ -747,9 +741,9 @@ def test_only_admitted_rows_require_unique_ms1_feature_row_id(
 
     if state == "ms1_feature_nl_supported":
         with pytest.raises(ValueError, match="duplicate ms1_feature_row_id"):
-            read_discovery_candidates_csv(csv_path)
+            read_discovery_peaks_csv(csv_path)
     else:
-        rows = read_discovery_candidates_csv(csv_path)
+        rows = read_discovery_peaks_csv(csv_path)
         assert len(rows) == 2
         assert rows[0].ms1_feature_row_id == rows[1].ms1_feature_row_id
         assert {row.discovery_candidate_state for row in rows} == {
@@ -770,17 +764,17 @@ def test_read_discovery_candidates_csv_rejects_invalid_basis_enum(
     column: str,
     value: str,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     csv_path = tmp_path / "discovery_candidates.csv"
     _write_csv(
         csv_path,
-        DISCOVERY_CANDIDATE_COLUMNS,
+        DISCOVERY_PEAK_COLUMNS,
         [_candidate_row(**{column: value})],
     )
 
     with pytest.raises(ValueError, match=rf"row 2.*{column}"):
-        read_discovery_candidates_csv(csv_path)
+        read_discovery_peaks_csv(csv_path)
 
 
 @pytest.mark.parametrize(
@@ -797,14 +791,14 @@ def test_read_discovery_candidates_csv_rejects_malformed_typed_fields_with_row_n
     column: str,
     value: str,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
     row = _candidate_row(**{column: value})
     csv_path = tmp_path / "discovery_candidates.csv"
-    _write_csv(csv_path, DISCOVERY_CANDIDATE_COLUMNS, [row])
+    _write_csv(csv_path, DISCOVERY_PEAK_COLUMNS, [row])
 
     with pytest.raises(ValueError, match=rf"row 2.*{column}"):
-        read_discovery_candidates_csv(csv_path)
+        read_discovery_peaks_csv(csv_path)
 
 
 def test_discovery_input_source_defers_typed_rows_and_loads_selected_features(
@@ -830,13 +824,13 @@ def test_discovery_input_source_defers_typed_rows_and_loads_selected_features(
     ]
     batch = _discovery_input_batch(tmp_path, {"Sample_1": rows})
     parsed_rows: list[str] = []
-    real_parse = source_owner._parse_candidate_row
+    real_parse = source_owner._parse_peak_row
 
     def observe_parse(path: Path, row_number: int, row: dict[str, str]):
         parsed_rows.append(row["candidate_id"])
         return real_parse(path, row_number, row)
 
-    monkeypatch.setattr(source_owner, "_parse_candidate_row", observe_parse)
+    monkeypatch.setattr(source_owner, "_parse_peak_row", observe_parse)
 
     source = source_owner.DiscoveryInputSource(batch)
 
@@ -922,7 +916,7 @@ def test_discovery_input_source_rejects_changed_csv(tmp_path: Path) -> None:
     batch = _discovery_input_batch(tmp_path, {"Sample_1": [row]})
     source = DiscoveryInputSource(batch)
 
-    with batch.candidate_csvs["Sample_1"].open("a", encoding="utf-8") as handle:
+    with batch.peak_csvs["Sample_1"].open("a", encoding="utf-8") as handle:
         handle.write(" ")
 
     with pytest.raises(ValueError, match="changed after indexing"):
@@ -939,11 +933,11 @@ def _discovery_input_batch(
     rows_by_sample: dict[str, list[dict[str, str]]],
 ):
     from xic_extractor.discovery.batch_contract import (
-        mint_discovery_candidate_universe_receipt,
+        mint_discovery_peak_universe_receipt,
     )
     from xic_extractor.discovery.csv_reader import (
         DiscoveryBatchInput,
-        read_discovery_candidates_csv,
+        read_discovery_peaks_csv,
     )
     from xic_extractor.processing_identity import (
         build_local_acquisition_source_identity,
@@ -954,10 +948,10 @@ def _discovery_input_batch(
     receipts = {}
     for stem, rows in rows_by_sample.items():
         path = root / stem / "discovery_candidates.csv"
-        _write_csv(path, DISCOVERY_CANDIDATE_COLUMNS, rows)
+        _write_csv(path, DISCOVERY_PEAK_COLUMNS, rows)
         raw_path = root / f"{stem}.raw"
         raw_path.write_bytes(stem.encode())
-        candidates = read_discovery_candidates_csv(path)
+        candidates = read_discovery_peaks_csv(path)
         source = build_local_acquisition_source_identity(
             raw_path,
             acquisition_format="thermo_raw",
@@ -965,7 +959,7 @@ def _discovery_input_batch(
         )
         candidate_csvs[stem] = path
         raw_files[stem] = raw_path
-        receipts[stem] = mint_discovery_candidate_universe_receipt(
+        receipts[stem] = mint_discovery_peak_universe_receipt(
             sample_stem=stem,
             acquisition_source=source,
             candidate_csv=path,

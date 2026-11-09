@@ -18,7 +18,7 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.configuration.models import ExtractionConfig
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
     adapt_current_discovery_sample_subject,
@@ -96,7 +96,7 @@ def build_sample_adapter_scenario(tmp_path: Path) -> SampleAdapterScenario:
     )
 
 
-def _without_ms1_peak(candidate: DiscoveryCandidate) -> DiscoveryCandidate:
+def _without_ms1_peak(candidate: DiscoveryPeak) -> DiscoveryPeak:
     return replace(
         candidate,
         ms1_peak_found=False,

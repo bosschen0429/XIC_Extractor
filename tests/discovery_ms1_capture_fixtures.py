@@ -7,7 +7,7 @@ import numpy as np
 
 from tests.cid_nl_raw_fixture import fake_acquisition_source
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.discovery.grouping import group_discovery_seeds
+from xic_extractor.discovery.ion_channels import build_discovery_channels
 from xic_extractor.discovery.models import DiscoverySeed
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.processing_identity import (
@@ -51,11 +51,11 @@ def _gaussian(
     return height * np.exp(-0.5 * ((rt - center) / sigma) ** 2)
 
 
-def _group(
+def _channel(
     seeds: tuple[DiscoverySeed, ...],
     **settings_overrides: float,
 ):
-    return group_discovery_seeds(seeds, settings=_settings(**settings_overrides))[0]
+    return build_discovery_channels(seeds, settings=_settings(**settings_overrides))[0]
 
 
 def _seed(

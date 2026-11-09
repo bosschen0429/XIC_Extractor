@@ -17,7 +17,7 @@ from xic_extractor.configuration.target_identity import (
     target_list_snapshot_payload,
 )
 from xic_extractor.configuration.targeted_strategy import strategy_receipt
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import (
     DiscoverySettings,
     discovery_settings_identity_fields,
@@ -103,7 +103,7 @@ def build_targeted_processing_request_identity(
     resolved_inputs: ResolvedTargetedInputs,
     current_discovery_settings: DiscoverySettings | None = None,
     current_discovery_candidates_by_sample: (
-        Mapping[str, Sequence[DiscoveryCandidate]] | None
+        Mapping[str, Sequence[DiscoveryPeak]] | None
     ) = None,
     should_cancel: Callable[[], bool] | None = None,
 ) -> ProcessingRequestIdentity:
@@ -194,7 +194,7 @@ def bind_targeted_physical_capture_request(
 
 
 def targeted_real_data_candidate_universe_payload(
-    candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]] | None,
+    candidates_by_sample: Mapping[str, Sequence[DiscoveryPeak]] | None,
     *,
     expected_sample_stems: Sequence[str],
 ) -> dict[str, object]:
@@ -341,7 +341,7 @@ def _canonical_candidate_universe_sample_stems(
 
 def targeted_real_data_candidate_universe_entry_payload(
     sample_stem: str,
-    candidates: Sequence[DiscoveryCandidate],
+    candidates: Sequence[DiscoveryPeak],
 ) -> dict[str, object]:
     """Return the request-owned digest for one exact sample candidate set."""
 
@@ -353,27 +353,27 @@ def targeted_real_data_candidate_universe_entry_payload(
         )
     if isinstance(candidates, (str, bytes)):
         raise IdentityContractError(
-            "candidate universe must contain DiscoveryCandidate values"
+            "candidate universe must contain DiscoveryPeak values"
         )
     try:
         candidate_tuple = tuple(candidates)
     except TypeError as exc:
         raise IdentityContractError(
-            "candidate universe must contain DiscoveryCandidate values"
+            "candidate universe must contain DiscoveryPeak values"
         ) from exc
-    if any(not isinstance(item, DiscoveryCandidate) for item in candidate_tuple):
+    if any(not isinstance(item, DiscoveryPeak) for item in candidate_tuple):
         raise IdentityContractError(
-            "candidate universe must contain DiscoveryCandidate values"
+            "candidate universe must contain DiscoveryPeak values"
         )
     if any(
-        not isinstance(item.candidate_id, str) or not item.candidate_id.strip()
+        not isinstance(item.peak_id, str) or not item.peak_id.strip()
         for item in candidate_tuple
     ):
         raise IdentityContractError(
             "candidate universe candidate IDs must be non-empty text"
         )
-    ordered = tuple(sorted(candidate_tuple, key=lambda item: item.candidate_id))
-    candidate_ids = tuple(item.candidate_id for item in ordered)
+    ordered = tuple(sorted(candidate_tuple, key=lambda item: item.peak_id))
+    candidate_ids = tuple(item.peak_id for item in ordered)
     if len(candidate_ids) != len(set(candidate_ids)):
         raise IdentityContractError(
             "candidate universe candidate IDs must be unique within a sample"
@@ -381,13 +381,13 @@ def targeted_real_data_candidate_universe_entry_payload(
     for candidate in ordered:
         if candidate.sample_stem != sample_stem:
             raise IdentityContractError(
-                f"{candidate.candidate_id}: candidate belongs to a different sample"
+                f"{candidate.peak_id}: candidate belongs to a different sample"
             )
         if not isinstance(candidate.raw_file, Path) or (
             candidate.raw_file.stem != sample_stem
         ):
             raise IdentityContractError(
-                f"{candidate.candidate_id}: candidate RAW stem mismatches its sample"
+                f"{candidate.peak_id}: candidate RAW stem mismatches its sample"
             )
     canonical_candidates = [_candidate_identity_payload(item) for item in ordered]
     try:
@@ -410,7 +410,7 @@ def targeted_real_data_candidate_universe_entry_payload(
     }
 
 
-def _candidate_identity_payload(candidate: DiscoveryCandidate) -> dict[str, object]:
+def _candidate_identity_payload(candidate: DiscoveryPeak) -> dict[str, object]:
     payload = asdict(candidate)
     payload.pop("raw_file")
     return payload

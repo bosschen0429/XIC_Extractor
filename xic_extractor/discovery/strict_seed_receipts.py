@@ -12,7 +12,7 @@ from typing import Protocol
 import numpy as np
 
 from xic_extractor.configuration.cid_nl_profile import PrecursorReferenceRequirement
-from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySeed
+from xic_extractor.discovery.models import DiscoveryPeak, DiscoverySeed
 from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import within_ppm
@@ -74,7 +74,7 @@ def read_parent_ms1_observations(
 def read_complete_discovery_scan_seeds(
     raw: StrictSeedReceiptRaw,
     *,
-    candidates: tuple[DiscoveryCandidate, ...],
+    candidates: tuple[DiscoveryPeak, ...],
     settings: DiscoverySettings,
     preserve_configured_losses: bool = False,
     include_inferred: bool = False,
@@ -157,12 +157,12 @@ def resolve_discovery_scan_events(
 
 def _read_exact_scans(
     raw: StrictSeedReceiptRaw,
-    candidate: DiscoveryCandidate,
+    candidate: DiscoveryPeak,
 ) -> tuple[Ms2Scan, ...]:
     declared = tuple(sorted(set(candidate.seed_scan_ids)))
     if not declared:
         raise StrictSeedReceiptError(
-            f"{candidate.candidate_id}: candidate declares no strict MS2 scans"
+            f"{candidate.peak_id}: candidate declares no strict MS2 scans"
         )
     matches_by_scan: dict[int, list[Ms2Scan]] = {
         scan_number: [] for scan_number in declared
@@ -178,7 +178,7 @@ def _read_exact_scans(
             matches_by_scan[event.scan.scan_number].append(event.scan)
     if any(len(matches_by_scan[scan_number]) != 1 for scan_number in declared):
         raise StrictSeedReceiptError(
-            f"{candidate.candidate_id}: declared strict MS2 scans are not exact"
+            f"{candidate.peak_id}: declared strict MS2 scans are not exact"
         )
     return tuple(matches_by_scan[scan_number][0] for scan_number in declared)
 
@@ -229,7 +229,7 @@ def _read_exact_seed(
     scan: Ms2Scan,
     *,
     raw_file: Path,
-    candidate: DiscoveryCandidate,
+    candidate: DiscoveryPeak,
     settings: DiscoverySettings,
     preserve_configured_losses: bool = False,
     include_inferred: bool = False,
@@ -330,11 +330,10 @@ def _read_exact_seed(
             return ()
         if representative:
             raise StrictSeedReceiptError(
-                f"{candidate.candidate_id}: exact canonical Discovery seed "
-                "is not unique"
+                f"{candidate.peak_id}: exact canonical Discovery seed is not unique"
             )
         raise StrictSeedReceiptError(
-            f"{candidate.candidate_id}: strict scan {scan.scan_number} does not "
+            f"{candidate.peak_id}: strict scan {scan.scan_number} does not "
             "reconstruct one canonical Discovery seed"
         )
     if representative:
@@ -356,8 +355,7 @@ def _read_exact_seed(
         )
         if len(exact_matches or canonical_matches) != 1:
             raise StrictSeedReceiptError(
-                f"{candidate.candidate_id}: exact canonical Discovery seed "
-                "is not unique"
+                f"{candidate.peak_id}: exact canonical Discovery seed is not unique"
             )
     tag_precedence = {
         tag_name: index for index, tag_name in enumerate(settings.selected_tag_names)
@@ -398,7 +396,7 @@ def _read_exact_seed(
 
 
 def _scan_receipts(
-    candidate: DiscoveryCandidate,
+    candidate: DiscoveryPeak,
     *,
     scan_number: int,
 ) -> tuple[dict[str, float], float | None]:
@@ -411,11 +409,11 @@ def _scan_receipts(
         payload = json.loads(candidate.tag_evidence_json)
     except (json.JSONDecodeError, TypeError) as exc:
         raise StrictSeedReceiptError(
-            f"{candidate.candidate_id}: tag evidence is not valid JSON"
+            f"{candidate.peak_id}: tag evidence is not valid JSON"
         ) from exc
     if not isinstance(payload, dict):
         raise StrictSeedReceiptError(
-            f"{candidate.candidate_id}: tag evidence must be an object"
+            f"{candidate.peak_id}: tag evidence must be an object"
         )
 
     receipts: dict[str, float] = {}
@@ -444,7 +442,7 @@ def _scan_receipts(
                 or float(raw_precursor_mz) <= 0.0
             ):
                 raise StrictSeedReceiptError(
-                    f"{candidate.candidate_id}: tag {tag_name!r} lacks a valid "
+                    f"{candidate.peak_id}: tag {tag_name!r} lacks a valid "
                     f"precursor receipt for strict scan {scan_number}"
                 )
             precursor_receipt = float(raw_precursor_mz)
@@ -455,13 +453,13 @@ def _scan_receipts(
             or float(raw_product_mz) <= 0.0
         ):
             raise StrictSeedReceiptError(
-                f"{candidate.candidate_id}: tag {tag_name!r} lacks a valid "
+                f"{candidate.peak_id}: tag {tag_name!r} lacks a valid "
                 f"product receipt for strict scan {scan_number}"
             )
         receipts[tag_name] = float(raw_product_mz)
     if not receipts:
         raise StrictSeedReceiptError(
-            f"{candidate.candidate_id}: strict scan {scan_number} lacks owning "
+            f"{candidate.peak_id}: strict scan {scan_number} lacks owning "
             "per-tag provenance"
         )
     return receipts, precursor_receipt

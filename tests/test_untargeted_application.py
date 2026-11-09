@@ -1176,9 +1176,9 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
     assert areas["sample-b"] / areas["sample-a"] == pytest.approx(2.0, rel=0.01)
 
     assert {
-        stem: batch.candidate_receipts[stem].candidate_count
+        stem: batch.peak_receipts[stem].candidate_count
         for stem in batch.sample_order
-        if batch.candidate_receipts[stem] is not None
+        if batch.peak_receipts[stem] is not None
     } == {"sample-a": 3, "sample-b": 3}
     assert {
         output.candidates_csv.parent.name: len(

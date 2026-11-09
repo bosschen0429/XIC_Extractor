@@ -47,7 +47,7 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 )
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.discovery.models import (
-    DiscoveryCandidate,
+    DiscoveryPeak,
 )
 from xic_extractor.output.alignment.pipeline_outputs import (
     alignment_metadata,
@@ -725,7 +725,7 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         physical_records=physical_records,
     )
     direct_hold = direct_hold_candidates[0]
-    candidates_by_sample: dict[str, tuple[DiscoveryCandidate, ...]] = {
+    candidates_by_sample: dict[str, tuple[DiscoveryPeak, ...]] = {
         "Support": (support,),
         "Hold": (direct_hold,),
     }

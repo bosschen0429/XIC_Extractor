@@ -4,7 +4,7 @@ import csv
 from pathlib import Path
 
 from xic_extractor.discovery.models import (
-    DiscoveryCandidate,
+    DiscoveryPeak,
 )
 
 
@@ -31,8 +31,8 @@ def _candidate(
     ms1_scan_support_score: float | None = None,
     discovery_candidate_state: str = "ms1_feature_nl_supported",
     ms1_feature_row_id: str = "Sample_1|DNA_dR|258.108512|7.841234",
-) -> DiscoveryCandidate:
-    return DiscoveryCandidate(
+) -> DiscoveryPeak:
+    return DiscoveryPeak(
         review_priority=review_priority,  # type: ignore[arg-type]
         evidence_score=evidence_score,
         evidence_tier=evidence_tier,

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -32,14 +31,12 @@ from xic_extractor.raw_reader import open_raw
 from xic_extractor.tabular_io import read_delimited_rows
 
 _ALLOWED_CID_NL_TAG = "DNA_dR"
-_ALLOWED_CID_NL_STATES = frozenset(
-    {"ms1_feature_nl_supported", "ms1_feature_nl_rescued"}
-)
+_JOINABLE_ADMISSION_REASONS = frozenset({"admitted", "no_attached_event"})
 _CID_NL_REQUIRED_COLUMNS = (
-    "candidate_id",
-    "ms1_feature_row_id",
-    "neutral_loss_tag",
-    "discovery_candidate_state",
+    "peak_id",
+    "sample_stem",
+    "matched_tag_names",
+    "admission_reason",
 )
 _CID_NL_MZ_TOLERANCE_PPM = 20.0
 _CID_NL_RT_TOLERANCE_SEC = 30.0
@@ -66,7 +63,7 @@ def run_delta_mass_discovery(
     dll_dir: Path,
     output_dir: Path,
     strategy: DeltaMassDiscoveryStrategy,
-    cid_nl_candidates_csv: Path | None = None,
+    cid_nl_peaks_csv: Path | None = None,
 ) -> DeltaMassDiscoveryOutputs:
     """Detect features per RAW, acquire one batch, then write diagnostic results."""
     raw_paths = sorted(
@@ -74,11 +71,11 @@ def run_delta_mass_discovery(
     )
     if not raw_paths:
         raise ValueError(f"no RAW files in {raw_dir}")
-    if strategy.cid_nl_composite and cid_nl_candidates_csv is None:
-        raise ValueError("composite preset requires --cid-nl-candidates-csv")
+    if strategy.cid_nl_composite and cid_nl_peaks_csv is None:
+        raise ValueError("composite preset requires --cid-nl-peaks-csv")
     cid_rows = (
-        _load_cid_nl_candidate_rows(cid_nl_candidates_csv)
-        if cid_nl_candidates_csv is not None and strategy.cid_nl_composite
+        _load_cid_nl_peak_rows(cid_nl_peaks_csv)
+        if cid_nl_peaks_csv is not None and strategy.cid_nl_composite
         else ()
     )
     candidates: list[DeltaMassCandidate] = []
@@ -162,9 +159,7 @@ def run_delta_mass_discovery(
         "inputs": {
             "raw_dir": str(raw_dir),
             "raw_files": [p.name for p in raw_paths],
-            "cid_nl_candidates_csv": str(cid_nl_candidates_csv)
-            if cid_nl_candidates_csv
-            else None,
+            "cid_nl_peaks_csv": str(cid_nl_peaks_csv) if cid_nl_peaks_csv else None,
         },
         "samples": samples,
         "status": "diagnostic_only",
@@ -175,7 +170,7 @@ def run_delta_mass_discovery(
 
 
 def _join_cid_nl(
-    candidates: tuple[DeltaMassCandidate, ...], rows: tuple[_CidNlCandidateRow, ...]
+    candidates: tuple[DeltaMassCandidate, ...], rows: tuple[_CidNlPeakRow, ...]
 ) -> tuple[DeltaMassCandidate, ...]:
     """Join detector-local bases by the existing bounded m/z/RT predicate."""
     eligible = _eligible_cid_nl_rows(rows)
@@ -193,60 +188,36 @@ def _join_cid_nl(
             continue
         match = _best_fallback_match(candidate, matches)
         candidate.cid_nl_base_status = "matched"
-        candidate.cid_nl_base_candidate_id = match.candidate_id
+        candidate.cid_nl_base_peak_id = match.peak_id
         candidate.cid_nl_base_join_mode = "mz_rt_fallback"
         joined.append(candidate)
     return tuple(joined)
 
 
 @dataclass(frozen=True)
-class _CidNlCandidateRow:
-    """A typed, validated row parsed from an existing ``discovery_candidates.csv``.
+class _CidNlPeakRow:
+    """The fields of one ``discovery_peaks.csv`` row the dR base join reads.
 
-    Only the fields needed for the CID-NL base join predicate are kept.
-    ``precursor_mz``, ``ms1_apex_rt``, and ``evidence_score`` are optional
-    because they are only required by the m/z/RT fallback join path, not by
-    the same-feature-identity join path (plan lines 809-813).
-
-    ``candidate_id`` is required because composite output exposes the matched
-    CID-NL candidate identity. A source-row locator is provenance, not a
-    candidate ID, and must never be substituted into that public field.
-
-    ``sample_stem`` may be supplied explicitly. ``ms1_feature_row_id`` is built
-    as ``sample_stem|neutral_loss_tag|precursor_mz|rt_identity``
-    (``build_ms1_feature_row_id``), so the sample is also derived from its
-    leading ``|``-delimited segment. When both representations are present they
-    must agree; the parser never guesses across conflicting sample identities.
+    ``peak_id`` is required because composite output exposes the matched
+    CID-NL peak identity.
     """
 
     sample_stem: str
-    candidate_id: str
-    ms1_feature_row_id: str
-    neutral_loss_tag: str
-    discovery_candidate_state: str
+    peak_id: str
+    matched_tag_names: tuple[str, ...]
+    admission_reason: str
     precursor_mz: float | None
     ms1_apex_rt: float | None
     evidence_score: float | None
 
 
-def _load_cid_nl_candidate_rows(path: Path) -> tuple[_CidNlCandidateRow, ...]:
-    """Load and validate CID-NL(dR) candidate rows for the composite join.
+def _load_cid_nl_peak_rows(path: Path) -> tuple[_CidNlPeakRow, ...]:
+    """Load the measured CID-NL peaks a delta-mass base may join.
 
-    Every row must carry non-blank ``neutral_loss_tag`` and
-    ``discovery_candidate_state`` values (missing/malformed values raise
-    ``ValueError`` rather than being silently skipped) -- these fields are
-    what make a row identifiable and filterable in the first place, so they
-    are validated regardless of state.
-
-    Only rows whose ``discovery_candidate_state`` is in
-    ``_ALLOWED_CID_NL_STATES`` are eligible for the CID-NL base join (see the
-    plan's join predicate); such rows must additionally carry a non-blank
-    ``ms1_feature_row_id``, and finite ``precursor_mz``/``ms1_apex_rt``/
-    ``evidence_score`` when present. Rows in any other state -- e.g. the
-    legitimate ``review_only_orphan_nl`` state, which by design has no
-    ``ms1_feature_row_id`` because it is not backed by an MS1 feature -- are
-    excluded from the returned set without raising, since they were never
-    join candidates to begin with.
+    Every row must carry ``peak_id``, ``sample_stem`` and ``admission_reason``.
+    A peak joins when it is admitted, or when its MS1 peak was measured on the
+    channel but no NL event attaches; peak-level gates (system background,
+    doubly charged isotope, overlap review) exclude it.
     """
 
     rows = read_delimited_rows(
@@ -255,144 +226,60 @@ def _load_cid_nl_candidate_rows(path: Path) -> tuple[_CidNlCandidateRow, ...]:
         delimiter=",",
         encoding="utf-8",
     )
-
-    parsed: list[_CidNlCandidateRow] = []
+    parsed: list[_CidNlPeakRow] = []
     for row_index, row in enumerate(rows):
-        state = _parse_cid_nl_row_state(row, path=path, row_index=row_index)
-        if state not in _ALLOWED_CID_NL_STATES:
+        label = f"{path} row {row_index}"
+        peak_id = _required_text(row.get("peak_id"), "peak_id", label)
+        sample_stem = _required_text(row.get("sample_stem"), "sample_stem", label)
+        for field, identity in (("peak_id", peak_id), ("sample_stem", sample_stem)):
+            _reject_ambiguous_formula_escaped_identity(
+                identity, field=field, row_label=label
+            )
+        admission_reason = _required_text(
+            row.get("admission_reason"), "admission_reason", label
+        )
+        if admission_reason not in _JOINABLE_ADMISSION_REASONS:
             continue
-        parsed.append(_parse_cid_nl_row(row, path=path, row_index=row_index))
-    seen_candidate_ids: set[str] = set()
-    duplicate_candidate_ids: set[str] = set()
+        parsed.append(
+            _CidNlPeakRow(
+                sample_stem=sample_stem,
+                peak_id=peak_id,
+                matched_tag_names=tuple(
+                    tag
+                    for tag in (row.get("matched_tag_names") or "").split(";")
+                    if tag
+                ),
+                admission_reason=admission_reason,
+                precursor_mz=_optional_finite_float(
+                    row.get("precursor_mz"), "precursor_mz", label
+                ),
+                ms1_apex_rt=_optional_finite_float(
+                    row.get("ms1_apex_rt"), "ms1_apex_rt", label
+                ),
+                evidence_score=_optional_finite_float(
+                    row.get("evidence_score"), "evidence_score", label
+                ),
+            )
+        )
+    seen: set[str] = set()
+    duplicates: set[str] = set()
     for parsed_row in parsed:
-        if parsed_row.candidate_id in seen_candidate_ids:
-            duplicate_candidate_ids.add(parsed_row.candidate_id)
-        seen_candidate_ids.add(parsed_row.candidate_id)
-    if duplicate_candidate_ids:
+        if parsed_row.peak_id in seen:
+            duplicates.add(parsed_row.peak_id)
+        seen.add(parsed_row.peak_id)
+    if duplicates:
         raise ValueError(
-            f"{path}: duplicate eligible CID-NL candidate_id values: "
-            + ", ".join(sorted(duplicate_candidate_ids))
+            f"{path}: duplicate CID-NL peak_id values: " + ", ".join(sorted(duplicates))
         )
     return tuple(parsed)
 
 
 def _eligible_cid_nl_rows(
-    cid_nl_rows: tuple[_CidNlCandidateRow, ...],
-) -> tuple[_CidNlCandidateRow, ...]:
+    cid_nl_rows: tuple[_CidNlPeakRow, ...],
+) -> tuple[_CidNlPeakRow, ...]:
     return tuple(
-        row
-        for row in cid_nl_rows
-        if row.neutral_loss_tag == _ALLOWED_CID_NL_TAG
-        and row.discovery_candidate_state in _ALLOWED_CID_NL_STATES
+        row for row in cid_nl_rows if _ALLOWED_CID_NL_TAG in row.matched_tag_names
     )
-
-
-def _parse_cid_nl_row_state(
-    row: Mapping[str, str | None], *, path: Path, row_index: int
-) -> str:
-    """Parse the fields required on EVERY row regardless of join eligibility.
-
-    ``candidate_id``, ``neutral_loss_tag``, and ``discovery_candidate_state``
-    make a row structurally identifiable/filterable; a row genuinely missing
-    any of them is malformed regardless of its state, so this always validates
-    them.
-    Returns the row's ``discovery_candidate_state`` so the caller can decide
-    whether the row is eligible for the stricter join-field parse.
-    """
-
-    def _row_label() -> str:
-        return f"{path} row {row_index}"
-
-    candidate_id = _required_text(row.get("candidate_id"), "candidate_id", _row_label())
-    _reject_ambiguous_formula_escaped_identity(
-        candidate_id,
-        field="candidate_id",
-        row_label=_row_label(),
-    )
-    _required_text(row.get("neutral_loss_tag"), "neutral_loss_tag", _row_label())
-    return _required_text(
-        row.get("discovery_candidate_state"),
-        "discovery_candidate_state",
-        _row_label(),
-    )
-
-
-def _parse_cid_nl_row(
-    row: Mapping[str, str | None], *, path: Path, row_index: int
-) -> _CidNlCandidateRow:
-    """Parse a row already known to be eligible for the CID-NL base join.
-
-    Only called for rows whose ``discovery_candidate_state`` is in
-    ``_ALLOWED_CID_NL_STATES``; validates the join-only fields
-    (``ms1_feature_row_id``, coherent sample identity, and the
-    optional-but-finite-when-present ``precursor_mz``/``ms1_apex_rt``/
-    ``evidence_score``) that ineligible-state rows are not required to carry.
-    """
-
-    def _row_label() -> str:
-        return f"{path} row {row_index}"
-
-    ms1_feature_row_id = _required_text(
-        row.get("ms1_feature_row_id"), "ms1_feature_row_id", _row_label()
-    )
-    neutral_loss_tag = _required_text(
-        row.get("neutral_loss_tag"), "neutral_loss_tag", _row_label()
-    )
-    discovery_candidate_state = _required_text(
-        row.get("discovery_candidate_state"),
-        "discovery_candidate_state",
-        _row_label(),
-    )
-    candidate_id = _required_text(row.get("candidate_id"), "candidate_id", _row_label())
-    explicit_sample_stem = _optional_text(row.get("sample_stem"))
-    derived_sample_stem = _sample_stem_from_row_id(ms1_feature_row_id)
-    for field, identity in (
-        ("candidate_id", candidate_id),
-        ("ms1_feature_row_id", ms1_feature_row_id),
-        ("sample_stem", explicit_sample_stem),
-        ("derived sample_stem", derived_sample_stem),
-    ):
-        if identity is not None:
-            _reject_ambiguous_formula_escaped_identity(
-                identity,
-                field=field,
-                row_label=_row_label(),
-            )
-    if explicit_sample_stem is not None and explicit_sample_stem != derived_sample_stem:
-        raise ValueError(
-            f"{_row_label()} has sample_stem {explicit_sample_stem!r} that does not "
-            "match the sample identity derived from ms1_feature_row_id "
-            f"({derived_sample_stem!r})"
-        )
-    sample_stem = explicit_sample_stem or derived_sample_stem
-
-    return _CidNlCandidateRow(
-        sample_stem=sample_stem,
-        candidate_id=candidate_id,
-        ms1_feature_row_id=ms1_feature_row_id,
-        neutral_loss_tag=neutral_loss_tag,
-        discovery_candidate_state=discovery_candidate_state,
-        precursor_mz=_optional_finite_float(
-            row.get("precursor_mz"), "precursor_mz", _row_label()
-        ),
-        ms1_apex_rt=_optional_finite_float(
-            row.get("ms1_apex_rt"), "ms1_apex_rt", _row_label()
-        ),
-        evidence_score=_optional_finite_float(
-            row.get("evidence_score"), "evidence_score", _row_label()
-        ),
-    )
-
-
-def _sample_stem_from_row_id(ms1_feature_row_id: str) -> str:
-    """Derive ``sample_stem`` from ``ms1_feature_row_id``'s leading segment.
-
-    ``build_ms1_feature_row_id`` (``xic_extractor.discovery.models``) joins
-    ``sample_stem|neutral_loss_tag|precursor_mz|rt_identity`` with ``|``, so
-    the first segment is the sample stem.
-    """
-
-    return ms1_feature_row_id.split("|", 1)[0]
 
 
 def _reject_ambiguous_formula_escaped_identity(
@@ -447,7 +334,7 @@ def _optional_finite_float(
     return parsed
 
 
-def _fallback_matches(candidate: DeltaMassCandidate, row: _CidNlCandidateRow) -> bool:
+def _fallback_matches(candidate: DeltaMassCandidate, row: _CidNlPeakRow) -> bool:
     if row.precursor_mz is None or row.ms1_apex_rt is None:
         return False
     base_mz = candidate.base_mz
@@ -459,13 +346,13 @@ def _fallback_matches(candidate: DeltaMassCandidate, row: _CidNlCandidateRow) ->
 
 
 def _best_fallback_match(
-    candidate: DeltaMassCandidate, matches: list[_CidNlCandidateRow]
-) -> _CidNlCandidateRow:
+    candidate: DeltaMassCandidate, matches: list[_CidNlPeakRow]
+) -> _CidNlPeakRow:
     """Tie-break for multiple m/z/RT fallback matches (plan lines 836-838):
     smallest absolute RT delta, then smallest absolute m/z ppm, then highest
     ``evidence_score``."""
 
-    def _key(row: _CidNlCandidateRow) -> tuple[float, float, float, str]:
+    def _key(row: _CidNlPeakRow) -> tuple[float, float, float, str]:
         assert row.ms1_apex_rt is not None
         assert row.precursor_mz is not None
         rt_delta_sec = abs(row.ms1_apex_rt - candidate.base_rt_apex_min) * 60.0
@@ -477,7 +364,7 @@ def _best_fallback_match(
             rt_delta_sec,
             ppm_error,
             -evidence_score,
-            row.candidate_id,
+            row.peak_id,
         )
 
     return min(matches, key=_key)

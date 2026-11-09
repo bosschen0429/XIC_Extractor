@@ -92,7 +92,6 @@ _SETTINGS_KEYS = (
     "product_search_ppm",
     "ms2_precursor_tol_da",
     "nl_min_intensity_ratio",
-    "seed_rt_gap_min",
     "ms1_search_padding_min",
     "rt_min",
     "rt_max",
@@ -106,7 +105,6 @@ _SETTINGS_KEYS = (
 _EVIDENCE_PROFILE_KEYS = ("name", "weights", "thresholds")
 _WEIGHT_KEYS = (
     "ms1_peak_present",
-    "ms1_peak_absent",
     "seed_event_per",
     "seed_event_max",
     "rt_aligned",
@@ -118,8 +116,6 @@ _WEIGHT_KEYS = (
     "area_med",
     "scan_support_high",
     "scan_support_low",
-    "legacy_trace_quality_high",
-    "legacy_trace_quality_low",
 )
 _THRESHOLD_FLOAT_KEYS = (
     "rt_aligned_max_min",
@@ -513,7 +509,6 @@ def _method_content(
                 "product_search_ppm": _float_text(settings.product_search_ppm),
                 "ms2_precursor_tol_da": _float_text(settings.ms2_precursor_tol_da),
                 "nl_min_intensity_ratio": _float_text(settings.nl_min_intensity_ratio),
-                "seed_rt_gap_min": _float_text(settings.seed_rt_gap_min),
                 "ms1_search_padding_min": _float_text(settings.ms1_search_padding_min),
                 "rt_min": None
                 if settings.rt_min is None
@@ -804,9 +799,6 @@ def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
             settings_value["nl_min_intensity_ratio"],
             field="nl_min_intensity_ratio",
         ),
-        seed_rt_gap_min=_float_from_text(
-            settings_value["seed_rt_gap_min"], field="seed_rt_gap_min"
-        ),
         ms1_search_padding_min=_float_from_text(
             settings_value["ms1_search_padding_min"],
             field="ms1_search_padding_min",
@@ -897,7 +889,6 @@ def _validate_discovery_settings(settings: DiscoverySettings) -> None:
         "product_search_ppm",
         "ms2_precursor_tol_da",
         "nl_min_intensity_ratio",
-        "seed_rt_gap_min",
         "ms1_search_padding_min",
         "blank_ppm_tol",
         "blank_fold_change_threshold",

@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 import pytest
+from xic_extractor.discovery.grouping import group_discovery_seeds
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE, _FakeRaw, _peak_config, _settings
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
@@ -12,11 +13,10 @@ from tests.physical_peak_evaluation_persistence_fixtures import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
-    read_owner_bound_discovery_candidates_csv,
+    read_owner_bound_discovery_peaks_csv,
 )
-from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.discovery.ms1_capture import capture_ms1_candidates
+from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
 from xic_extractor.discovery.physical_fact_persistence import (
     write_discovery_physical_fact_sidecar,
@@ -73,7 +73,7 @@ def test_review_rows_never_become_alignment_roots(
             raw.intensity *= 2
         raws[path] = raw
         seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
-        capture = capture_ms1_candidates(
+        capture = capture_ms1_peaks(
             raw,
             group_discovery_seeds(seeds, settings=settings),
             acquisition_source=source.acquisition_source,
@@ -116,7 +116,7 @@ def test_review_rows_never_become_alignment_roots(
             build_discovery_receipts(folder, (path,), {path.stem: (candidate,)})
         )
         csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
-        candidates[path.stem] = read_owner_bound_discovery_candidates_csv(
+        candidates[path.stem] = read_owner_bound_discovery_peaks_csv(
             csvs[path.stem], receipt=receipts[path.stem]
         )
     batch = DiscoveryBatchInput(

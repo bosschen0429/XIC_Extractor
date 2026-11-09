@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+from xic_extractor.discovery.grouping import group_discovery_seeds
 
 from tests.cid_nl_raw_fixture import _FakeRaw, _open_bound_raw, _peak_config, _settings
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
@@ -17,9 +18,8 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.ms1_capture import (
-    capture_ms1_candidates,
+    capture_ms1_peaks,
 )
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
 from xic_extractor.execution.result_store import StreamedResultStore
@@ -77,7 +77,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         raw, _ = _open_bound_raw(fixture, sample, source, tmp_path=tmp_path)
         with raw:
             seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
-            discovery = capture_ms1_candidates(
+            discovery = capture_ms1_peaks(
                 raw,
                 group_discovery_seeds(seeds, settings=settings),
                 acquisition_source=raw.acquisition_source,
@@ -299,7 +299,7 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
         raw, _ = _open_bound_raw(fixture, sample, source, tmp_path=tmp_path)
         with raw:
             seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
-            discovery = capture_ms1_candidates(
+            discovery = capture_ms1_peaks(
                 raw,
                 group_discovery_seeds(seeds, settings=settings),
                 acquisition_source=raw.acquisition_source,

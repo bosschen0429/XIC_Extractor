@@ -742,6 +742,28 @@ def unique_physical_segment_at_rt(
     return admissible[0] if len(admissible) == 1 else None
 
 
+def earliest_physical_segment_at_rt(
+    universe: PhysicalSegmentUniverse,
+    query_rt_min: float,
+    *,
+    selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
+) -> PhysicalSegment | None:
+    """The segment owning a point; a valley shared by two peaks is the earlier's.
+
+    Adjacent peaks share only their valley point, so a point admitted by more
+    than one segment lies on that valley. The earlier peak owns it, which keeps
+    the answer independent of the order events are asked in.
+    """
+    admissible = _admissible_physical_segments(
+        universe, query_rt_min, selection_policy_version, None
+    )
+    return min(
+        admissible,
+        key=lambda segment: (segment.left_rt_min, segment.apex_rt_min),
+        default=None,
+    )
+
+
 def physical_segment_has_incomplete_context(
     prepared: PreparedSignalProjection,
     segment: PhysicalSegment,

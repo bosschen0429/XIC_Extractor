@@ -1,6 +1,6 @@
-"""Owner-backed Discovery candidate-universe receipts.
+"""Owner-backed Discovery peak-universe receipts.
 
-The receipt binds a sample's candidate CSV and physical-facts files to the
+The receipt binds a sample's peak CSV and physical-facts files to the
 local acquisition revision that Discovery inspected.
 """
 
@@ -19,7 +19,7 @@ from xic_extractor.configuration.mass_recalibration import (
     serialize_mass_recalibration_result,
 )
 from xic_extractor.discovery.models import (
-    DiscoveryCandidate,
+    DiscoveryPeak,
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -35,16 +35,16 @@ from xic_extractor.validation_primitives import (
     require_owner_normalized_text,
 )
 
-DISCOVERY_BATCH_INDEX_SCHEMA_VERSION = "discovery_batch_index_local_source"
-DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION = "discovery_candidates_csv"
+DISCOVERY_BATCH_INDEX_SCHEMA_VERSION = "discovery_batch_index_peaks"
+DISCOVERY_PEAK_ARTIFACT_SCHEMA_VERSION = "discovery_peaks_csv"
 CANDIDATE_UNIVERSE_INPUT_KEY = "current_discovery_candidate_universe"
 CANDIDATE_UNIVERSE_SCHEMA_VERSION = "discovery_candidate_file_universe"
 ALIGNMENT_FEATURE_INPUT_KEY = "alignment_feature_candidate_ids"
 
 DISCOVERY_BATCH_RECEIPT_COLUMNS = (
-    "candidate_artifact_schema_version",
-    "candidate_artifact_sha256",
-    "candidate_artifact_byte_size",
+    "peak_artifact_schema_version",
+    "peak_artifact_sha256",
+    "peak_artifact_byte_size",
     "physical_facts_sha256",
     "physical_facts_byte_size",
     "acquisition_local_file_revision",
@@ -55,15 +55,15 @@ DISCOVERY_BATCH_RECEIPT_COLUMNS = (
 
 
 @dataclass(frozen=True, slots=True)
-class DiscoveryCandidateUniverseReceipt:
-    """One Discovery-owned, content-bound candidate-universe receipt."""
+class DiscoveryPeakUniverseReceipt:
+    """One Discovery-owned, content-bound peak-universe receipt."""
 
     sample_stem: str
     acquisition_source: AcquisitionSourceIdentity
-    candidate_count: int
-    candidate_artifact_schema_version: str
-    candidate_artifact_sha256: str
-    candidate_artifact_byte_size: int
+    peak_count: int
+    peak_artifact_schema_version: str
+    peak_artifact_sha256: str
+    peak_artifact_byte_size: int
     physical_facts_sha256: str
     physical_facts_byte_size: int
     mass_recalibration_result: MassRecalibrationResult = MassRecalibrationResult("none")
@@ -75,31 +75,24 @@ class DiscoveryCandidateUniverseReceipt:
                 "acquisition_source must be an AcquisitionSourceIdentity"
             )
         if (
-            isinstance(self.candidate_count, bool)
-            or not isinstance(self.candidate_count, int)
-            or self.candidate_count < 0
+            isinstance(self.peak_count, bool)
+            or not isinstance(self.peak_count, int)
+            or self.peak_count < 0
         ):
-            raise IdentityContractError(
-                "candidate_count must be a non-negative integer"
-            )
-        if (
-            self.candidate_artifact_schema_version
-            != DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
-        ):
-            raise IdentityContractError(
-                "candidate artifact schema version is unsupported"
-            )
+            raise IdentityContractError("peak_count must be a non-negative integer")
+        if self.peak_artifact_schema_version != DISCOVERY_PEAK_ARTIFACT_SCHEMA_VERSION:
+            raise IdentityContractError("peak artifact schema version is unsupported")
         _validate_digest(
-            self.candidate_artifact_sha256,
-            field="candidate_artifact_sha256",
+            self.peak_artifact_sha256,
+            field="peak_artifact_sha256",
         )
         if (
-            isinstance(self.candidate_artifact_byte_size, bool)
-            or not isinstance(self.candidate_artifact_byte_size, int)
-            or self.candidate_artifact_byte_size < 0
+            isinstance(self.peak_artifact_byte_size, bool)
+            or not isinstance(self.peak_artifact_byte_size, int)
+            or self.peak_artifact_byte_size < 0
         ):
             raise IdentityContractError(
-                "candidate_artifact_byte_size must be a non-negative integer"
+                "peak_artifact_byte_size must be a non-negative integer"
             )
         _validate_digest(
             self.physical_facts_sha256,
@@ -115,17 +108,17 @@ class DiscoveryCandidateUniverseReceipt:
             )
 
 
-def mint_discovery_candidate_universe_receipt(
+def mint_discovery_peak_universe_receipt(
     *,
     sample_stem: str,
     acquisition_source: AcquisitionSourceIdentity,
-    candidate_csv: Path,
-    candidates: Sequence[DiscoveryCandidate],
+    peak_csv: Path,
+    peaks: Sequence[DiscoveryPeak],
     physical_facts: FileContentFingerprint | None,
     mass_recalibration_result: MassRecalibrationResult = (
         VENDOR_MASS_RECALIBRATION_RESULT
     ),
-) -> DiscoveryCandidateUniverseReceipt:
+) -> DiscoveryPeakUniverseReceipt:
     """Mint a receipt after the Discovery writers have committed bytes."""
 
     if not isinstance(physical_facts, FileContentFingerprint):
@@ -138,40 +131,38 @@ def mint_discovery_candidate_universe_receipt(
         raise IdentityContractError(
             "acquisition_source must be an AcquisitionSourceIdentity"
         )
-    ordered = _canonical_candidates(candidates, sample_stem=stem)
-    artifact = fingerprint_file_content(candidate_csv)
-    return DiscoveryCandidateUniverseReceipt(
+    ordered = _canonical_peaks(peaks, sample_stem=stem)
+    artifact = fingerprint_file_content(peak_csv)
+    return DiscoveryPeakUniverseReceipt(
         sample_stem=stem,
         acquisition_source=acquisition_source,
-        candidate_count=len(ordered),
-        candidate_artifact_schema_version=(DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION),
-        candidate_artifact_sha256=artifact.content_sha256,
-        candidate_artifact_byte_size=artifact.byte_size,
+        peak_count=len(ordered),
+        peak_artifact_schema_version=(DISCOVERY_PEAK_ARTIFACT_SCHEMA_VERSION),
+        peak_artifact_sha256=artifact.content_sha256,
+        peak_artifact_byte_size=artifact.byte_size,
         physical_facts_sha256=physical_facts.content_sha256,
         physical_facts_byte_size=physical_facts.byte_size,
         mass_recalibration_result=mass_recalibration_result,
     )
 
 
-def validate_discovery_candidate_artifact(
-    receipt: DiscoveryCandidateUniverseReceipt,
-    candidate_csv: Path,
+def validate_discovery_peak_artifact(
+    receipt: DiscoveryPeakUniverseReceipt,
+    peak_csv: Path,
 ) -> None:
-    """Reject candidate bytes that do not match the Discovery-owned artifact."""
+    """Reject peak bytes that do not match the Discovery-owned artifact."""
 
     _require_receipt(receipt)
-    fingerprint = fingerprint_file_content(candidate_csv)
+    fingerprint = fingerprint_file_content(peak_csv)
     if (
-        fingerprint.content_sha256 != receipt.candidate_artifact_sha256
-        or fingerprint.byte_size != receipt.candidate_artifact_byte_size
+        fingerprint.content_sha256 != receipt.peak_artifact_sha256
+        or fingerprint.byte_size != receipt.peak_artifact_byte_size
     ):
-        raise IdentityContractError(
-            "candidate CSV bytes do not match the Discovery receipt"
-        )
+        raise IdentityContractError("peak CSV bytes do not match the Discovery receipt")
 
 
 def validate_discovery_physical_facts_artifact(
-    receipt: DiscoveryCandidateUniverseReceipt,
+    receipt: DiscoveryPeakUniverseReceipt,
     physical_facts_json: Path,
 ) -> None:
     """Reject physical-facts bytes that do not match the Discovery receipt."""
@@ -187,12 +178,12 @@ def validate_discovery_physical_facts_artifact(
         )
 
 
-def validate_discovery_candidate_universe(
-    receipt: DiscoveryCandidateUniverseReceipt,
+def validate_discovery_peak_universe(
+    receipt: DiscoveryPeakUniverseReceipt,
     *,
     acquisition_source: AcquisitionSourceIdentity,
-    candidates: Sequence[DiscoveryCandidate],
-) -> tuple[DiscoveryCandidate, ...]:
+    peaks: Sequence[DiscoveryPeak],
+) -> tuple[DiscoveryPeak, ...]:
     """Check the parsed population and acquisition against its file receipt."""
 
     _require_receipt(receipt)
@@ -200,16 +191,14 @@ def validate_discovery_candidate_universe(
         raise IdentityContractError(
             "current acquisition source does not match the Discovery receipt"
         )
-    ordered = _canonical_candidates(candidates, sample_stem=receipt.sample_stem)
-    if len(ordered) != receipt.candidate_count:
-        raise IdentityContractError(
-            "candidate count does not match the Discovery receipt"
-        )
+    ordered = _canonical_peaks(peaks, sample_stem=receipt.sample_stem)
+    if len(ordered) != receipt.peak_count:
+        raise IdentityContractError("peak count does not match the Discovery receipt")
     return ordered
 
 
 def discovery_receipt_index_fields(
-    receipt: DiscoveryCandidateUniverseReceipt,
+    receipt: DiscoveryPeakUniverseReceipt,
 ) -> dict[str, str]:
     """Project one typed receipt into the batch-index CSV vocabulary."""
 
@@ -221,11 +210,9 @@ def discovery_receipt_index_fields(
             "regenerate Discovery"
         )
     return {
-        "candidate_artifact_schema_version": (
-            receipt.candidate_artifact_schema_version
-        ),
-        "candidate_artifact_sha256": receipt.candidate_artifact_sha256,
-        "candidate_artifact_byte_size": str(receipt.candidate_artifact_byte_size),
+        "peak_artifact_schema_version": (receipt.peak_artifact_schema_version),
+        "peak_artifact_sha256": receipt.peak_artifact_sha256,
+        "peak_artifact_byte_size": str(receipt.peak_artifact_byte_size),
         "physical_facts_sha256": receipt.physical_facts_sha256,
         "physical_facts_byte_size": str(receipt.physical_facts_byte_size),
         "acquisition_local_file_revision": json.dumps(
@@ -250,8 +237,8 @@ def discovery_receipt_from_index_fields(
     row: Mapping[str, str],
     *,
     sample_stem: str,
-    candidate_count: int,
-) -> DiscoveryCandidateUniverseReceipt:
+    peak_count: int,
+) -> DiscoveryPeakUniverseReceipt:
     """Reconstruct and self-validate one batch-index receipt."""
 
     try:
@@ -270,17 +257,15 @@ def discovery_receipt_from_index_fields(
             acquisition_format=row["acquisition_format"],
             observation_namespace=row["observation_namespace"],
         )
-        return DiscoveryCandidateUniverseReceipt(
+        return DiscoveryPeakUniverseReceipt(
             sample_stem=sample_stem,
             acquisition_source=source,
-            candidate_count=candidate_count,
-            candidate_artifact_schema_version=(
-                row["candidate_artifact_schema_version"]
-            ),
-            candidate_artifact_sha256=row["candidate_artifact_sha256"],
-            candidate_artifact_byte_size=_nonnegative_int(
-                row["candidate_artifact_byte_size"],
-                field="candidate_artifact_byte_size",
+            peak_count=peak_count,
+            peak_artifact_schema_version=(row["peak_artifact_schema_version"]),
+            peak_artifact_sha256=row["peak_artifact_sha256"],
+            peak_artifact_byte_size=_nonnegative_int(
+                row["peak_artifact_byte_size"],
+                field="peak_artifact_byte_size",
             ),
             physical_facts_sha256=row["physical_facts_sha256"],
             physical_facts_byte_size=_nonnegative_int(
@@ -297,37 +282,31 @@ def discovery_receipt_from_index_fields(
         ) from exc
 
 
-def _canonical_candidates(
-    candidates: Sequence[DiscoveryCandidate],
+def _canonical_peaks(
+    peaks: Sequence[DiscoveryPeak],
     *,
     sample_stem: str,
-) -> tuple[DiscoveryCandidate, ...]:
-    if isinstance(candidates, (str, bytes)):
-        raise IdentityContractError(
-            "candidate universe must contain DiscoveryCandidate values"
-        )
-    supplied = tuple(candidates)
-    if any(not isinstance(item, DiscoveryCandidate) for item in supplied):
-        raise IdentityContractError(
-            "candidate universe must contain DiscoveryCandidate values"
-        )
-    ordered = tuple(sorted(supplied, key=lambda item: item.candidate_id))
-    candidate_ids = tuple(item.candidate_id for item in ordered)
-    if len(candidate_ids) != len(set(candidate_ids)):
-        raise IdentityContractError("candidate universe IDs must be unique")
+) -> tuple[DiscoveryPeak, ...]:
+    if isinstance(peaks, (str, bytes)):
+        raise IdentityContractError("peak universe must contain DiscoveryPeak values")
+    supplied = tuple(peaks)
+    if any(not isinstance(item, DiscoveryPeak) for item in supplied):
+        raise IdentityContractError("peak universe must contain DiscoveryPeak values")
+    ordered = tuple(sorted(supplied, key=lambda item: item.peak_id))
+    peak_ids = tuple(item.peak_id for item in ordered)
+    if len(peak_ids) != len(set(peak_ids)):
+        raise IdentityContractError("peak universe IDs must be unique")
     if any(
         item.sample_stem != sample_stem or item.raw_file.stem != sample_stem
         for item in ordered
     ):
-        raise IdentityContractError("candidate universe contains a different sample")
+        raise IdentityContractError("peak universe contains a different sample")
     return ordered
 
 
-def _require_receipt(value: object) -> DiscoveryCandidateUniverseReceipt:
-    if not isinstance(value, DiscoveryCandidateUniverseReceipt):
-        raise IdentityContractError(
-            "receipt must be a DiscoveryCandidateUniverseReceipt"
-        )
+def _require_receipt(value: object) -> DiscoveryPeakUniverseReceipt:
+    if not isinstance(value, DiscoveryPeakUniverseReceipt):
+        raise IdentityContractError("receipt must be a DiscoveryPeakUniverseReceipt")
     return value
 
 
@@ -388,18 +367,18 @@ def validate_candidate_universe_payload(
     for entry in samples:
         if not isinstance(entry, dict) or set(entry) != {
             "sample_stem",
-            "candidate_count",
+            "peak_count",
             "candidate_ids",
-            "candidate_artifact_schema_version",
-            "candidate_artifact_sha256",
-            "candidate_artifact_byte_size",
+            "peak_artifact_schema_version",
+            "peak_artifact_sha256",
+            "peak_artifact_byte_size",
             "acquisition_source_id",
         }:
             raise IdentityContractError(
                 "candidate universe entry must use the exact current shape"
             )
         stem = entry.get("sample_stem")
-        count = entry.get("candidate_count")
+        count = entry.get("peak_count")
         ids = entry.get("candidate_ids")
         if not isinstance(stem, str) or not stem.strip() or stem != stem.strip():
             raise IdentityContractError("candidate universe sample stem is invalid")
@@ -414,13 +393,13 @@ def validate_candidate_universe_payload(
         ):
             raise IdentityContractError("candidate universe IDs are invalid")
         if (
-            not isinstance(entry.get("candidate_artifact_schema_version"), str)
-            or entry["candidate_artifact_schema_version"]
-            != DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
-            or not is_lower_sha256(entry.get("candidate_artifact_sha256"))
-            or isinstance(entry.get("candidate_artifact_byte_size"), bool)
-            or not isinstance(entry.get("candidate_artifact_byte_size"), int)
-            or entry["candidate_artifact_byte_size"] < 0
+            not isinstance(entry.get("peak_artifact_schema_version"), str)
+            or entry["peak_artifact_schema_version"]
+            != DISCOVERY_PEAK_ARTIFACT_SCHEMA_VERSION
+            or not is_lower_sha256(entry.get("peak_artifact_sha256"))
+            or isinstance(entry.get("peak_artifact_byte_size"), bool)
+            or not isinstance(entry.get("peak_artifact_byte_size"), int)
+            or entry["peak_artifact_byte_size"] < 0
             or not isinstance(entry.get("acquisition_source_id"), str)
             or not entry["acquisition_source_id"]
         ):
@@ -508,16 +487,16 @@ __all__ = (
     "CANDIDATE_UNIVERSE_SCHEMA_VERSION",
     "DISCOVERY_BATCH_INDEX_SCHEMA_VERSION",
     "DISCOVERY_BATCH_RECEIPT_COLUMNS",
-    "DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION",
-    "DiscoveryCandidateUniverseReceipt",
+    "DISCOVERY_PEAK_ARTIFACT_SCHEMA_VERSION",
+    "DiscoveryPeakUniverseReceipt",
     "discovery_receipt_from_index_fields",
     "discovery_receipt_index_fields",
-    "mint_discovery_candidate_universe_receipt",
-    "validate_discovery_candidate_artifact",
+    "mint_discovery_peak_universe_receipt",
+    "validate_discovery_peak_artifact",
     "validate_discovery_physical_facts_artifact",
     "canonical_sample_stems",
     "candidate_sample_stems_from_request",
     "validate_alignment_feature_selection",
     "validate_candidate_universe_payload",
-    "validate_discovery_candidate_universe",
+    "validate_discovery_peak_universe",
 )

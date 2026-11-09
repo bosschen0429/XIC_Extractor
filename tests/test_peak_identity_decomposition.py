@@ -12,13 +12,13 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from xic_extractor.discovery.grouping import group_discovery_seeds
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE, fake_acquisition_source
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySeed
+from xic_extractor.discovery.models import DiscoveryPeak, DiscoverySeed
 from xic_extractor.discovery.ms1_capture import (
-    capture_ms1_candidates,
+    capture_ms1_peaks,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
@@ -145,7 +145,7 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> N
     )[0]
     raw = _FakeXicSource()
 
-    first = capture_ms1_candidates(
+    first = capture_ms1_peaks(
         raw,
         (first_group,),
         acquisition_source=raw.acquisition_source,
@@ -153,7 +153,7 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> N
         settings=settings,
         ms1_centroid_mz=lambda *_: None,
     ).candidates[0]
-    second = capture_ms1_candidates(
+    second = capture_ms1_peaks(
         raw,
         (second_group,),
         acquisition_source=raw.acquisition_source,
@@ -302,7 +302,7 @@ class _FakeXicSource:
 
 
 def _discovery_ms1_peak_probe(
-    candidate: DiscoveryCandidate,
+    candidate: DiscoveryPeak,
 ) -> tuple[object, ...]:
     return (
         candidate.precursor_mz,

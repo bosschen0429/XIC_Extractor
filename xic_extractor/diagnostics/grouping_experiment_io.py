@@ -68,14 +68,13 @@ def query_discovery(
     return source.batch.sample_order, [
         {
             "sample_stem": sample,
-            "candidate_id": candidate.candidate_id,
+            "candidate_id": candidate.peak_id,
             "mz": candidate.physical_mz,
             "seed_mz": candidate.precursor_mz,
             "apex_rt": candidate.ms1_apex_rt,
             "seed_rt": candidate.best_seed_rt,
-            "state": candidate.discovery_candidate_state,
-            "ms1_peak_found": candidate.ms1_peak_found,
-            "seed_event_count": candidate.seed_event_count,
+            "admission_reason": candidate.admission_reason,
+            "attached_event_count": candidate.attached_event_count,
             "area": candidate.ms1_area,
             "reason": candidate.reason,
         }

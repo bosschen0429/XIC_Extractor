@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 from contextlib import suppress
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 
 from xic_extractor.configuration.mass_recalibration import (
@@ -12,28 +12,27 @@ from xic_extractor.configuration.mass_recalibration import (
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
-    DiscoveryCandidateUniverseReceipt,
+    DiscoveryPeakUniverseReceipt,
     discovery_receipt_index_fields,
-    mint_discovery_candidate_universe_receipt,
+    mint_discovery_peak_universe_receipt,
 )
 from xic_extractor.discovery.csv_writer import (
     format_discovery_csv_value,
-    write_discovery_candidates_csv,
-    write_discovery_review_csv,
+    write_discovery_events_csv,
+    write_discovery_peaks_csv,
 )
 from xic_extractor.discovery.models import (
-    DISCOVERY_BRIEF_COLUMNS,
-    DISCOVERY_CANDIDATE_COLUMNS,
-    DiscoveryCandidate,
-    DiscoveryPhysicalWorkItem,
+    DISCOVERY_EVENT_COLUMNS,
+    DISCOVERY_PEAK_COLUMNS,
+    DiscoveryEvent,
+    DiscoveryPeak,
     DiscoveryRunOutputs,
     ReviewPriority,
 )
 from xic_extractor.discovery.physical_fact_record import (
-    DiscoveryCandidatePhysicalBinding,
+    DiscoveryPeakPhysicalBinding,
     DiscoveryPhysicalFactRecord,
-    bind_discovery_physical_record_evidence,
-    order_physical_bindings_for_candidate_csv,
+    order_physical_bindings_for_peak_csv,
 )
 from xic_extractor.discovery.physical_fact_sidecar import (
     stage_discovery_physical_fact_sidecar as write_discovery_physical_fact_sidecar,
@@ -50,9 +49,11 @@ _BATCH_INDEX_COLUMNS = (
     "schema_version",
     "sample_stem",
     "raw_file",
-    "candidate_csv",
-    "review_csv",
-    "candidate_count",
+    "peak_csv",
+    "event_csv",
+    "peak_count",
+    "admitted_peak_count",
+    "event_count",
     "high_count",
     "medium_count",
     "low_count",
@@ -66,22 +67,22 @@ class PublishedDiscoverySample:
     """Committed sample artifacts and their bound receipt and batch-index facts."""
 
     outputs: DiscoveryRunOutputs
-    receipt: DiscoveryCandidateUniverseReceipt
+    receipt: DiscoveryPeakUniverseReceipt
     index_row: dict[str, str]
 
 
 def publish_discovery_batch_sample(
     raw_path: Path,
-    candidates: tuple[DiscoveryCandidate, ...],
+    peaks: tuple[DiscoveryPeak, ...],
+    events: tuple[DiscoveryEvent, ...],
     *,
     output_dir: Path,
     acquisition_source: AcquisitionSourceIdentity,
     timing_recorder: TimingRecorder,
     run_spec: ProcessingRunSpec,
     acquisition_input: ProcessingAcquisitionInput,
-    physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = (),
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = (),
-    physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = (),
+    physical_bindings: tuple[DiscoveryPeakPhysicalBinding, ...] = (),
     mass_recalibration_result: MassRecalibrationResult = (
         VENDOR_MASS_RECALIBRATION_RESULT
     ),
@@ -94,25 +95,24 @@ def publish_discovery_batch_sample(
     index row is returned when publication or receipt construction fails.
     """
 
-    candidates = _persisted_discovery_candidates(candidates)
-    outputs = _write_persisted_candidate_outputs(
+    outputs = _write_sample_outputs(
         sample_output_dir
         if sample_output_dir is not None
         else output_dir / raw_path.stem,
-        candidates,
+        peaks,
+        events,
         timing_recorder=timing_recorder,
         sample_stem=raw_path.stem,
         run_spec=run_spec,
         acquisition_input=acquisition_input,
-        physical_work_manifest=physical_work_manifest,
         physical_evaluations=physical_evaluations,
         physical_bindings=physical_bindings,
     )
-    receipt = mint_discovery_candidate_universe_receipt(
+    receipt = mint_discovery_peak_universe_receipt(
         sample_stem=raw_path.stem,
         acquisition_source=acquisition_source,
-        candidate_csv=outputs.candidates_csv,
-        candidates=candidates,
+        peak_csv=outputs.peaks_csv,
+        peaks=peaks,
         physical_facts=outputs.physical_facts_fingerprint,
         mass_recalibration_result=mass_recalibration_result,
     )
@@ -122,122 +122,38 @@ def publish_discovery_batch_sample(
         index_row=_batch_index_row(
             raw_path=raw_path,
             outputs=outputs,
-            candidates=candidates,
+            peaks=peaks,
+            events=events,
             receipt=receipt,
             index_parent=output_dir,
         ),
     )
 
 
-def _persisted_discovery_candidates(
-    candidates: tuple[DiscoveryCandidate, ...],
-) -> tuple[DiscoveryCandidate, ...]:
-    """Keep measured peaks for review independently of NL search eligibility."""
-    return tuple(
-        candidate
-        for candidate in candidates
-        if candidate.ms1_peak_found
-        or candidate.precursor_mz_basis
-        in {"scan_precursor", "scan_monoisotopic", "mixed"}
-    )
-
-
-def _persisted_physical_records(
-    records: tuple[DiscoveryPhysicalFactRecord, ...],
-    bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
-) -> tuple[DiscoveryPhysicalFactRecord, ...]:
-    """Retain measured peak evidence and compact persistence-local work indices."""
-    peak_bindings = tuple(
-        binding for binding in bindings if binding.candidate.ms1_peak_found
-    )
-    used_work = {
-        ordinal for binding in peak_bindings for ordinal in binding.member_work_ordinals
-    }
-    retained = tuple(
-        record for record in records if record.work_item.work_ordinal in used_work
-    )
-    work_indices = {
-        record.work_item.work_ordinal: index for index, record in enumerate(retained)
-    }
-    linked = bind_discovery_physical_record_evidence(retained, peak_bindings)
-    return tuple(
-        replace(
-            record,
-            work_item=replace(record.work_item, work_ordinal=index),
-            candidate_links=tuple(
-                replace(
-                    link,
-                    representative_work_ordinal=work_indices[
-                        link.representative_work_ordinal
-                    ],
-                    member_work_ordinals=tuple(
-                        work_indices[item] for item in link.member_work_ordinals
-                    ),
-                )
-                for link in record.candidate_links
-            ),
-        )
-        for index, record in enumerate(linked)
-    )
-
-
-def write_dual_csvs(
+def _write_sample_outputs(
     output_dir: Path,
-    candidates: tuple[DiscoveryCandidate, ...],
+    peaks: tuple[DiscoveryPeak, ...],
+    events: tuple[DiscoveryEvent, ...],
     *,
     timing_recorder: TimingRecorder,
     sample_stem: str,
     run_spec: ProcessingRunSpec,
     acquisition_input: ProcessingAcquisitionInput,
-    physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = (),
-    physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = (),
-    physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = (),
-) -> DiscoveryRunOutputs:
-    """Publish standalone Discovery outputs without a batch receipt or index."""
-    return _write_persisted_candidate_outputs(
-        output_dir,
-        _persisted_discovery_candidates(candidates),
-        timing_recorder=timing_recorder,
-        sample_stem=sample_stem,
-        run_spec=run_spec,
-        acquisition_input=acquisition_input,
-        physical_work_manifest=physical_work_manifest,
-        physical_evaluations=physical_evaluations,
-        physical_bindings=physical_bindings,
-    )
-
-
-def _write_persisted_candidate_outputs(
-    output_dir: Path,
-    candidates: tuple[DiscoveryCandidate, ...],
-    *,
-    timing_recorder: TimingRecorder,
-    sample_stem: str,
-    run_spec: ProcessingRunSpec,
-    acquisition_input: ProcessingAcquisitionInput,
-    physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...],
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...],
-    physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
+    physical_bindings: tuple[DiscoveryPeakPhysicalBinding, ...],
 ) -> DiscoveryRunOutputs:
-    persisted_ids = {candidate.candidate_id for candidate in candidates}
-    physical_bindings = order_physical_bindings_for_candidate_csv(
-        tuple(
-            binding
-            for binding in physical_bindings
-            if binding.candidate.candidate_id in persisted_ids
-        )
-    )
+    physical_bindings = order_physical_bindings_for_peak_csv(physical_bindings)
+    if {binding.peak.peak_id for binding in physical_bindings} != {
+        peak.peak_id for peak in peaks
+    }:
+        raise ValueError("Discovery peaks and physical bindings diverged")
     output_dir.mkdir(parents=True, exist_ok=True)
-    candidates_path = output_dir / "discovery_candidates.csv"
-    review_path = output_dir / "discovery_review.csv"
+    peaks_path = output_dir / "discovery_peaks.csv"
+    events_path = output_dir / "discovery_events.csv"
     physical_facts_path = output_dir / "discovery_physical_facts.json"
-    physical_evaluations = _persisted_physical_records(
-        physical_evaluations,
-        physical_bindings,
-    )
     physical_work_manifest = tuple(record.work_item for record in physical_evaluations)
 
-    final_paths = [candidates_path, review_path, physical_facts_path]
+    final_paths = [peaks_path, events_path, physical_facts_path]
     temp_paths = [_discovery_output_temp_path(path) for path in final_paths]
     backup_paths = [_discovery_output_backup_path(path) for path in final_paths]
     existed_before = {path: path.exists() for path in final_paths}
@@ -246,26 +162,26 @@ def _write_persisted_candidate_outputs(
         for path in (*temp_paths, *backup_paths):
             path.unlink(missing_ok=True)
         with timing_recorder.stage(
-            "discover.write_candidates_csv",
+            "discover.write_peaks_csv",
             sample_stem=sample_stem,
-            metrics={"row_count": len(candidates)},
+            metrics={"row_count": len(peaks)},
         ):
-            write_discovery_candidates_csv(temp_paths[0], candidates)
+            write_discovery_peaks_csv(temp_paths[0], peaks)
             _verify_staged_discovery_csv(
                 temp_paths[0],
-                columns=DISCOVERY_CANDIDATE_COLUMNS,
-                row_count=len(candidates),
+                columns=DISCOVERY_PEAK_COLUMNS,
+                row_count=len(peaks),
             )
         with timing_recorder.stage(
-            "discover.write_review_csv",
+            "discover.write_events_csv",
             sample_stem=sample_stem,
-            metrics={"row_count": len(candidates)},
+            metrics={"row_count": len(events)},
         ):
-            write_discovery_review_csv(temp_paths[1], candidates)
+            write_discovery_events_csv(temp_paths[1], events)
             _verify_staged_discovery_csv(
                 temp_paths[1],
-                columns=DISCOVERY_BRIEF_COLUMNS,
-                row_count=len(candidates),
+                columns=DISCOVERY_EVENT_COLUMNS,
+                row_count=len(events),
             )
         physical_tmp = temp_paths[2]
         with timing_recorder.stage(
@@ -333,8 +249,8 @@ def _write_persisted_candidate_outputs(
             raise
 
     return DiscoveryRunOutputs(
-        candidates_csv=candidates_path,
-        review_csv=review_path,
+        peaks_csv=peaks_path,
+        events_csv=events_path,
         physical_facts_json=physical_facts_path,
         physical_bindings=physical_bindings,
         physical_facts_fingerprint=physical_facts_fingerprint,
@@ -367,24 +283,27 @@ def _batch_index_row(
     *,
     raw_path: Path,
     outputs: DiscoveryRunOutputs,
-    candidates: tuple[DiscoveryCandidate, ...],
-    receipt: DiscoveryCandidateUniverseReceipt,
+    peaks: tuple[DiscoveryPeak, ...],
+    events: tuple[DiscoveryEvent, ...],
+    receipt: DiscoveryPeakUniverseReceipt,
     index_parent: Path,
 ) -> dict[str, str]:
-    counts = _priority_counts(candidates)
+    counts = _priority_counts(peaks)
     return {
         "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
         "sample_stem": format_discovery_csv_value("sample_stem", raw_path.stem),
         "raw_file": format_discovery_csv_value("raw_file", raw_path),
-        "candidate_csv": format_discovery_csv_value(
-            "candidate_csv",
-            _relative_batch_artifact(outputs.candidates_csv, parent=index_parent),
+        "peak_csv": format_discovery_csv_value(
+            "peak_csv",
+            _relative_batch_artifact(outputs.peaks_csv, parent=index_parent),
         ),
-        "review_csv": format_discovery_csv_value(
-            "review_csv",
-            _relative_batch_artifact(outputs.review_csv, parent=index_parent),
+        "event_csv": format_discovery_csv_value(
+            "event_csv",
+            _relative_batch_artifact(outputs.events_csv, parent=index_parent),
         ),
-        "candidate_count": str(len(candidates)),
+        "peak_count": str(len(peaks)),
+        "admitted_peak_count": str(sum(peak.admitted for peak in peaks)),
+        "event_count": str(len(events)),
         "high_count": str(counts["HIGH"]),
         "medium_count": str(counts["MEDIUM"]),
         "low_count": str(counts["LOW"]),
@@ -401,11 +320,11 @@ def _relative_batch_artifact(path: Path, *, parent: Path) -> str:
 
 
 def _priority_counts(
-    candidates: tuple[DiscoveryCandidate, ...],
+    peaks: tuple[DiscoveryPeak, ...],
 ) -> dict[ReviewPriority, int]:
     counts: dict[ReviewPriority, int] = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
-    for candidate in candidates:
-        counts[candidate.review_priority] += 1
+    for peak in peaks:
+        counts[peak.review_priority] += 1
     return counts
 
 

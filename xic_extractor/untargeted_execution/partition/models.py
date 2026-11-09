@@ -44,11 +44,11 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.discovery.batch_contract import (
     ALIGNMENT_FEATURE_INPUT_KEY,
     CANDIDATE_UNIVERSE_INPUT_KEY,
-    DiscoveryCandidateUniverseReceipt,
+    DiscoveryPeakUniverseReceipt,
     validate_alignment_feature_selection,
     validate_candidate_universe_payload,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -131,8 +131,8 @@ class UntargetedPartitionJob:
     processing_owners: ProcessingOwnerReferences
     sample: ResolvedCanonicalSampleIdentity
     method_subject: CidNlMethodSubject
-    candidates: tuple[DiscoveryCandidate, ...]
-    discovery_receipt: DiscoveryCandidateUniverseReceipt
+    candidates: tuple[DiscoveryPeak, ...]
+    discovery_receipt: DiscoveryPeakUniverseReceipt
     settings: DiscoverySettings
     peak_config: ExtractionConfig
     raw_path: Path
@@ -140,7 +140,7 @@ class UntargetedPartitionJob:
     work_unit_key: str
     signal_processing_profile: SignalProcessingProfile
     subject_partition: UntargetedCidNlMethodSubjectBatch | None = None
-    support_candidates: tuple[DiscoveryCandidate, ...] = ()
+    support_candidates: tuple[DiscoveryPeak, ...] = ()
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = ()
     acquisition_source_expectation: AcquisitionSourceExpectation | None = field(
         default=None, compare=False
@@ -152,8 +152,8 @@ class UntargetedPartitionJob:
     _request_subjects: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch = field(
         init=False, repr=False, compare=False
     )
-    _request_candidates_by_subject: Mapping[str, tuple[DiscoveryCandidate, ...]] = (
-        field(init=False, repr=False, compare=False)
+    _request_candidates_by_subject: Mapping[str, tuple[DiscoveryPeak, ...]] = field(
+        init=False, repr=False, compare=False
     )
     _request_physical_records_by_subject: Mapping[
         str, tuple[DiscoveryPhysicalFactRecord, ...]
@@ -165,7 +165,7 @@ class UntargetedPartitionJob:
             ("processing_owners", ProcessingOwnerReferences),
             ("sample", ResolvedCanonicalSampleIdentity),
             ("method_subject", CidNlMethodSubject),
-            ("discovery_receipt", DiscoveryCandidateUniverseReceipt),
+            ("discovery_receipt", DiscoveryPeakUniverseReceipt),
             ("settings", DiscoverySettings),
             ("peak_config", ExtractionConfig),
             ("raw_path", Path),
@@ -175,10 +175,10 @@ class UntargetedPartitionJob:
             if not isinstance(getattr(self, field_name), kind):
                 raise UntargetedPartitionError(f"{field_name} has the wrong owner type")
         if not isinstance(self.candidates, tuple) or any(
-            not isinstance(item, DiscoveryCandidate) for item in self.candidates
+            not isinstance(item, DiscoveryPeak) for item in self.candidates
         ):
             raise UntargetedPartitionError(
-                "candidates must contain current DiscoveryCandidate values"
+                "candidates must contain current DiscoveryPeak values"
             )
         if self.subject_partition is not None and not isinstance(
             self.subject_partition, UntargetedCidNlMethodSubjectBatch
@@ -187,10 +187,10 @@ class UntargetedPartitionJob:
                 "subject_partition must be an owner-normalized subject batch or None"
             )
         if not isinstance(self.support_candidates, tuple) or any(
-            not isinstance(item, DiscoveryCandidate) for item in self.support_candidates
+            not isinstance(item, DiscoveryPeak) for item in self.support_candidates
         ):
             raise UntargetedPartitionError(
-                "support_candidates must contain current DiscoveryCandidate values"
+                "support_candidates must contain current DiscoveryPeak values"
             )
         _required_text(self.work_unit_key, field="work_unit_key")
         object.__setattr__(
@@ -201,7 +201,7 @@ class UntargetedPartitionJob:
             "_candidate_order",
             MappingProxyType(
                 {
-                    candidate.candidate_id: index
+                    candidate.peak_id: index
                     for index, candidate in enumerate(self.candidates)
                 }
             ),
@@ -242,8 +242,8 @@ def build_sample_jobs(
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     subject_work_units: tuple[tuple[CidNlMethodSubject, str], ...],
-    candidates: tuple[DiscoveryCandidate, ...],
-    discovery_receipt: DiscoveryCandidateUniverseReceipt,
+    candidates: tuple[DiscoveryPeak, ...],
+    discovery_receipt: DiscoveryPeakUniverseReceipt,
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     raw_path: Path,
@@ -252,7 +252,7 @@ def build_sample_jobs(
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
     acquisition_source_expectation: AcquisitionSourceExpectation | None = None,
     subject_partition: UntargetedCidNlMethodSubjectBatch | None = None,
-    support_candidates: tuple[DiscoveryCandidate, ...] = (),
+    support_candidates: tuple[DiscoveryPeak, ...] = (),
     acquisition_cache_dir: Path | None = None,
     prepared_mass_recalibration: PreparedRawMassRecalibration | None = None,
 ) -> tuple[UntargetedPartitionJob, ...]:
@@ -541,11 +541,11 @@ def _validate_request_bound_inputs(
             "processing request scientific inputs are malformed"
         ) from exc
     physical_payload = request_inputs.get(PHYSICAL_CAPTURE_INPUT_KEY)
-    records = {record.candidate_id: record for record in job.physical_records}
+    records = {record.peak_id: record for record in job.physical_records}
     if (
         type(job.physical_records) is not tuple
         or len(records) != len(job.physical_records)
-        or set(records) != {candidate.candidate_id for candidate in job.candidates}
+        or set(records) != {candidate.peak_id for candidate in job.candidates}
     ):
         raise UntargetedPartitionError("physical replay candidate coverage changed")
     expected_physical = physical_capture_input_payload(
@@ -717,13 +717,13 @@ def _validate_partition_candidates(
             candidate_id
             for candidate_id, _subject_id in active_subjects.candidate_memberships
         }
-    actual_ids = tuple(candidate.candidate_id for candidate in job.candidates)
+    actual_ids = tuple(candidate.peak_id for candidate in job.candidates)
     if len(actual_ids) != len(set(actual_ids)) or set(actual_ids) != selected_ids:
         raise UntargetedPartitionError(
             "partition candidates do not exactly cover its selected feature IDs"
         )
     _validate_sample_candidates(job.candidates, job=job, label="partition")
-    support_ids = tuple(candidate.candidate_id for candidate in job.support_candidates)
+    support_ids = tuple(candidate.peak_id for candidate in job.support_candidates)
     membership_ids = (
         {candidate_id for candidate_id, _subject_id in pinned.candidate_memberships}
         if isinstance(pinned, UntargetedCidNlMethodSubjectBatch)
@@ -743,10 +743,10 @@ def _validate_partition_candidates(
     expected_receipt_values = (
         (
             "candidate_artifact_schema_version",
-            receipt.candidate_artifact_schema_version,
+            receipt.peak_artifact_schema_version,
         ),
-        ("candidate_artifact_sha256", receipt.candidate_artifact_sha256),
-        ("candidate_artifact_byte_size", receipt.candidate_artifact_byte_size),
+        ("candidate_artifact_sha256", receipt.peak_artifact_sha256),
+        ("candidate_artifact_byte_size", receipt.peak_artifact_byte_size),
         (
             "acquisition_source_id",
             receipt.acquisition_source.acquisition_source_id,
@@ -761,7 +761,7 @@ def _validate_partition_candidates(
 
 
 def _validate_sample_candidates(
-    candidates: tuple[DiscoveryCandidate, ...],
+    candidates: tuple[DiscoveryPeak, ...],
     *,
     job: UntargetedPartitionJob,
     label: str,
@@ -778,13 +778,13 @@ def _validate_sample_candidates(
 
 def _index_request_subject_candidates(
     pinned: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
-    candidates: tuple[DiscoveryCandidate, ...],
-) -> Mapping[str, tuple[DiscoveryCandidate, ...]]:
-    grouped: dict[str, list[DiscoveryCandidate]] = {}
+    candidates: tuple[DiscoveryPeak, ...],
+) -> Mapping[str, tuple[DiscoveryPeak, ...]]:
+    grouped: dict[str, list[DiscoveryPeak]] = {}
     if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
         subject_by_candidate = dict(pinned.candidate_memberships)
         for candidate in candidates:
-            subject_id = subject_by_candidate.get(candidate.candidate_id)
+            subject_id = subject_by_candidate.get(candidate.peak_id)
             if subject_id is not None:
                 grouped.setdefault(subject_id, []).append(candidate)
     return MappingProxyType(
@@ -794,7 +794,7 @@ def _index_request_subject_candidates(
 
 def _request_subject_candidates(
     job: UntargetedPartitionJob,
-) -> tuple[DiscoveryCandidate, ...]:
+) -> tuple[DiscoveryPeak, ...]:
     if not isinstance(job._request_subjects, UntargetedCidNlMethodSubjectBatch):
         return _bounded_subject_candidates(
             job.candidates,
@@ -815,7 +815,7 @@ def _index_request_subject_physical_records(
     if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
         subject_by_candidate = dict(pinned.candidate_memberships)
         for record in records:
-            subject_id = subject_by_candidate.get(record.candidate_id)
+            subject_id = subject_by_candidate.get(record.peak_id)
             if subject_id is not None:
                 grouped.setdefault(subject_id, []).append(record)
     return MappingProxyType(

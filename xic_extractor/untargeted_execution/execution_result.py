@@ -20,7 +20,7 @@ from xic_extractor.alignment.result.application_result import (
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
@@ -63,7 +63,7 @@ class _CompletedResultResources:
 class UntargetedPublicationInputs:
     """The completed run's bound Matrix and explanation inputs, still lazy."""
 
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]]
+    candidates_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]]
     ms1_apex_mz_by_candidate: Mapping[str, float]
     alignment_config: AlignmentConfig
     known_istd_reference_provenance: Mapping[str, object] | None
@@ -141,7 +141,7 @@ class CompletedUntargetBatchWorkflowResult:
     def bind_publication_inputs(
         self,
         *,
-        candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
+        candidates_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
         alignment_config: AlignmentConfig,
         known_istd_reference: KnownIstdReference | None = None,
     ) -> CompletedUntargetBatchWorkflowResult:
@@ -156,7 +156,7 @@ class CompletedUntargetBatchWorkflowResult:
         else:
             candidates = candidates_by_sample
             apex_mz = {
-                candidate.candidate_id: candidate.ms1_apex_mz
+                candidate.peak_id: candidate.ms1_apex_mz
                 for sample_candidates in candidates_by_sample.values()
                 for candidate in sample_candidates
                 if candidate.ms1_apex_mz is not None

@@ -12,8 +12,8 @@ from xic_extractor.processing_identity import AcquisitionSourceIdentity
 
 DISCOVERY_MS1_MEASUREMENT_NAMES = frozenset(
     {
-        "discovery_ms1_input_group_count",
-        "discovery_ms1_empty_group_count",
+        "discovery_ms1_input_channel_count",
+        "discovery_ms1_input_event_count",
         "discovery_ms1_exact_scan_window_count",
         "discovery_ms1_predicted_chunked_call_count",
         "discovery_ms1_batch_max_requests",
@@ -44,10 +44,7 @@ def record_discovery_ms1_measurements(
     logical_xic_request_count = sum(
         batch.logical_xic_request_count for batch in batches
     )
-    nonempty_group_count = (
-        measurements.input_group_count - measurements.empty_group_count
-    )
-    if measurements.initial_request_count > nonempty_group_count or (
+    if measurements.initial_request_count > measurements.input_event_count or (
         logical_xic_request_count
         != measurements.initial_request_count + measurements.reacquisition_request_count
     ):
@@ -82,15 +79,15 @@ def record_discovery_ms1_measurements(
             acquisition_source,
         ),
         (
-            "discovery_ms1_input_group_count",
-            measurements.input_group_count,
-            "groups",
+            "discovery_ms1_input_channel_count",
+            measurements.input_channel_count,
+            "channels",
             discovery_source,
         ),
         (
-            "discovery_ms1_empty_group_count",
-            measurements.empty_group_count,
-            "groups",
+            "discovery_ms1_input_event_count",
+            measurements.input_event_count,
+            "events",
             discovery_source,
         ),
         (
@@ -156,8 +153,8 @@ def _record_unavailable_discovery_ms1_measurements(
         ("xic_batch_count", "batches"),
         ("adapter_chromatogram_call_count", "calls"),
         ("trace_point_count", "points"),
-        ("discovery_ms1_input_group_count", "groups"),
-        ("discovery_ms1_empty_group_count", "groups"),
+        ("discovery_ms1_input_channel_count", "channels"),
+        ("discovery_ms1_input_event_count", "events"),
         ("discovery_ms1_exact_scan_window_count", "windows"),
         ("discovery_ms1_predicted_chunked_call_count", "calls"),
         ("discovery_ms1_batch_max_requests", "requests/batch"),

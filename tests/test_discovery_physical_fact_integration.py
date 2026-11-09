@@ -32,7 +32,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.discovery.csv_writer import build_discovery_review_note
 from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem
 from xic_extractor.discovery.ms1_capture import (
-    capture_ms1_candidates,
+    capture_ms1_peaks,
 )
 from xic_extractor.discovery.physical_fact_persistence import (
     read_discovery_physical_fact_sidecar,
@@ -73,7 +73,7 @@ def _acquisition_totals(batches):
 def test_recorded_mono_nl_match_keeps_distinct_inferred_physical_search(
     tmp_path: Path, parent_support: bool
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
     from xic_extractor.precursor_evidence import Ms1PrecursorObservation
     from xic_extractor.xic_models import XICTrace
@@ -142,7 +142,7 @@ def test_recorded_mono_nl_match_keeps_distinct_inferred_physical_search(
         raw_opener=lambda *_args: raw,
         run_spec=spec,
     )
-    candidates = read_discovery_candidates_csv(outputs.candidates_csv)
+    candidates = read_discovery_peaks_csv(outputs.candidates_csv)
     supported = [
         candidate
         for candidate in candidates
@@ -165,7 +165,7 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
     strongest_first: bool,
     second_seed_rt: float,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
     from xic_extractor.discovery.physical_fact_persistence import (
         IndexedDiscoveryPhysicalFacts,
     )
@@ -212,7 +212,7 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
         run_spec=spec,
     )
     candidates = sorted(
-        read_discovery_candidates_csv(outputs.candidates_csv),
+        read_discovery_peaks_csv(outputs.candidates_csv),
         key=lambda candidate: candidate.ms1_apex_rt,
     )
     expected_apices = [10.00] if second_seed_rt == 10.02 else [10.00, 10.15]
@@ -272,7 +272,7 @@ def test_discovery_retained_physical_peak_cardinality(
     expected_apices: tuple[float, ...],
     representative_scan: int | None,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
     from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
 
     fixture = json.loads(
@@ -340,7 +340,7 @@ def test_discovery_retained_physical_peak_cardinality(
             strict=True,
         )
     )
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         RetainedTraceRaw(source),
         groups,
         acquisition_source=source,
@@ -351,7 +351,7 @@ def test_discovery_retained_physical_peak_cardinality(
     path = write_discovery_candidates_csv(
         tmp_path / "candidates.csv", result.candidates
     )
-    valid = [c for c in read_discovery_candidates_csv(path) if c.ms1_peak_found]
+    valid = [c for c in read_discovery_peaks_csv(path) if c.ms1_peak_found]
     if representative_scan is not None:
         # The complete main envelope has one representative. Earlier seeds
         # have clipped whole contours, rather than independently closed peaks.
@@ -401,7 +401,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
     tmp_path: Path, combine_mode: str, fallback: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from xic_extractor.acquisition_contract import serialize_acquired_trace
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
     from xic_extractor.discovery.output_publication import (
         write_dual_csvs,
     )
@@ -495,7 +495,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
             _OwnerBoundBatchRaw, "read_ms1_mass_windows", read_windows, raising=False
         )
     raw = _OwnerBoundBatchRaw(source)
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         groups,
         acquisition_source=source,
@@ -556,7 +556,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
     restored_record = next(
         record for record in records if record.candidate_id == candidate.candidate_id
     )
-    (csv_candidate,) = read_discovery_candidates_csv(csv_path)
+    (csv_candidate,) = read_discovery_peaks_csv(csv_path)
     restored = _restore_physical_candidate(csv_candidate, restored_record)
     assert (
         restored.ms1_search_rt_min
@@ -873,7 +873,7 @@ def test_short_discovery_request_reacquires_points_without_assuming_peak_support
     )
     assert group.precursor_mz_basis == "mixed"
 
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         (group,),
         acquisition_source=source,
@@ -925,7 +925,7 @@ def test_single_seed_discovery_acquires_complete_physical_context(
     profile = SignalProcessingProfile(window_points=15)
     group = _group((_seed(scan_number=10, rt=12.063),))
 
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         (group,),
         acquisition_source=source,
@@ -989,7 +989,7 @@ def test_product_inferred_single_seed_uses_widened_initial_context(
     )
     assert group.precursor_mz_basis == "product_plus_neutral_loss"
 
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         (group,),
         acquisition_source=source,
@@ -1036,7 +1036,7 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
     )
     assert group.precursor_mz_basis == "product_plus_neutral_loss"
 
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         (group,),
         acquisition_source=source,
@@ -1097,7 +1097,7 @@ def test_qualification_survives_physical_fact_reuse(
     )
     group = _group((_seed(scan_number=10, rt=7.8),))
 
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         (group,) * shared_request_count,
         acquisition_source=source,
@@ -1156,7 +1156,7 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
         _count_prepare,
     )
 
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         (first, duplicate_trace),
         acquisition_source=source,
@@ -1201,7 +1201,7 @@ def test_physical_binding_rejects_cross_acquisition_reassembly(
     )
     group = _group((_seed(scan_number=10, rt=7.80),))
     profile = SignalProcessingProfile(window_points=3)
-    current = capture_ms1_candidates(
+    current = capture_ms1_peaks(
         _OwnerBoundBatchRaw(current_source),
         (group,),
         acquisition_source=current_source,
@@ -1211,7 +1211,7 @@ def test_physical_binding_rejects_cross_acquisition_reassembly(
     )
     foreign_raw = _OwnerBoundBatchRaw(foreign_source)
     foreign_raw.intensity *= 5.0
-    foreign = capture_ms1_candidates(
+    foreign = capture_ms1_peaks(
         foreign_raw,
         (group,),
         acquisition_source=foreign_source,
@@ -1288,7 +1288,7 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     raw.rt = rt
     raw.intensity = intensity
 
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         (_group((_seed(scan_number=10, rt=7.80),)),),
         acquisition_source=source,
@@ -1373,7 +1373,7 @@ def test_discovery_publishes_physical_qualification(
     )
     raw = _OwnerBoundBatchRaw(source)
     raw.rt, raw.intensity = rt, intensity
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         (_group((_seed(scan_number=10, rt=query_rt),)),),
         acquisition_source=source,
@@ -1414,14 +1414,14 @@ def test_discovery_publishes_physical_qualification(
         assert candidate.review_priority == "MEDIUM"
         assert "physical_shoulder_overlap" in candidate.reason
 
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
     from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
 
     path = write_discovery_candidates_csv(
         tmp_path / "candidates.csv",
         result.candidates,
     )
-    (published,) = read_discovery_candidates_csv(path)
+    (published,) = read_discovery_peaks_csv(path)
     assert published.ms1_peak_found == candidate.ms1_peak_found
     if candidate.ms1_peak_found:
         assert published.ms1_area == pytest.approx(candidate.ms1_area)
@@ -1482,7 +1482,7 @@ def test_physical_fact_sharing_uses_one_raw_peak(
         evaluate,
     )
 
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         (first, second),
         acquisition_source=source,
@@ -1577,7 +1577,7 @@ def _inferred_apex_case(
         ions = () if mz is None else (mz, *(mz + offset for offset in isotope_offsets))
         return next((ion for ion in ions if low <= ion <= high), None)
 
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         groups,
         acquisition_source=source,
@@ -1705,7 +1705,7 @@ def test_held_inferred_peak_remains_in_review_and_physical_sidecar(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
     from xic_extractor.discovery.physical_fact_persistence import (
         IndexedDiscoveryPhysicalFacts,
     )
@@ -1751,7 +1751,7 @@ def test_held_inferred_peak_remains_in_review_and_physical_sidecar(
         run_spec=spec,
     )
 
-    (candidate,) = read_discovery_candidates_csv(outputs.candidates_csv)
+    (candidate,) = read_discovery_peaks_csv(outputs.candidates_csv)
     assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
     assert candidate.discovery_candidate_state == "review_only_ambiguous_coisolation"
     assert "doubly charged" in candidate.reason
@@ -1879,7 +1879,7 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
         ions = (ion_mz, isotope_mz) if has_isotope else (ion_mz,)
         return next((mz for mz in ions if low <= mz <= high), None)
 
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         (group,) * shared_request_count,
         acquisition_source=source,

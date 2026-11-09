@@ -193,7 +193,7 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         BlankBackgroundIon,
         BlankBackgroundLibrary,
     )
-    from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySeed
+    from xic_extractor.discovery.models import DiscoveryPeak, DiscoverySeed
     from xic_extractor.discovery.pipeline import _apply_blank_qualification_if_enabled
     from xic_extractor.discovery.processing_run_spec_adapter import (
         compile_discovery_processing_run_spec,
@@ -233,7 +233,7 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         observed_loss_error_ppm=1.0,
     )
 
-    c_background = DiscoveryCandidate.from_values(
+    c_background = DiscoveryPeak.from_values(
         raw_file=Path("test.raw"),
         sample_stem="test",
         precursor_mz=300.1002,  # ~0.67 ppm match
@@ -262,7 +262,7 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         reason="initial candidate",
     )
 
-    c_override = DiscoveryCandidate.from_values(
+    c_override = DiscoveryPeak.from_values(
         raw_file=Path("test.raw"),
         sample_stem="test",
         precursor_mz=400.2001,  # ~0.25 ppm match
@@ -291,7 +291,7 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         reason="initial candidate",
     )
 
-    c_clean = DiscoveryCandidate.from_values(
+    c_clean = DiscoveryPeak.from_values(
         raw_file=Path("test.raw"),
         sample_stem="test",
         precursor_mz=550.3000,  # Not in blank -> CLEAN

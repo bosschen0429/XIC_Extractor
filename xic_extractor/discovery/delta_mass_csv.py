@@ -30,7 +30,7 @@ CANDIDATE_COLUMNS = (
     "discriminating_position",
     "discriminating_shape_r",
     "cid_nl_base_status",
-    "cid_nl_base_candidate_id",
+    "cid_nl_base_peak_id",
     "cid_nl_base_join_mode",
     "base_expected_net_height",
     "base_support_score",

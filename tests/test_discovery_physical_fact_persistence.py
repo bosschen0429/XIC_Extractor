@@ -36,8 +36,8 @@ from xic_extractor.processing_identity import (
 
 def _physical_index_jobs(tmp_path: Path, *, count: int):
     from xic_extractor.discovery.batch_contract import (
-        DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION,
-        DiscoveryCandidateUniverseReceipt,
+        DISCOVERY_PEAK_ARTIFACT_SCHEMA_VERSION,
+        DiscoveryPeakUniverseReceipt,
     )
     from xic_extractor.untargeted_execution.alignment import _PhysicalIndexJob
 
@@ -67,13 +67,11 @@ def _physical_index_jobs(tmp_path: Path, *, count: int):
         )
         candidate_ids = tuple(record.candidate_id for record in records)
         expected[acquisition_input.sample_stem] = candidate_ids
-        receipt = DiscoveryCandidateUniverseReceipt(
+        receipt = DiscoveryPeakUniverseReceipt(
             sample_stem=acquisition_input.sample_stem,
             acquisition_source=acquisition_input.acquisition_source,
             candidate_count=0,
-            candidate_artifact_schema_version=(
-                DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
-            ),
+            candidate_artifact_schema_version=(DISCOVERY_PEAK_ARTIFACT_SCHEMA_VERSION),
             candidate_artifact_sha256="0" * 64,
             candidate_artifact_byte_size=0,
             physical_facts_sha256=fingerprint.content_sha256,

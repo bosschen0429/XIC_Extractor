@@ -24,12 +24,13 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.discovery import output_publication
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
-    DiscoveryCandidate,
+    DiscoveryEvent,
+    DiscoveryPeak,
     DiscoveryPhysicalWorkItem,
 )
 from xic_extractor.discovery.ms1_capture import _DiscoveryMs1Measurements
 from xic_extractor.discovery.physical_fact_record import (
-    DiscoveryCandidatePhysicalBinding,
+    DiscoveryPeakPhysicalBinding,
     DiscoveryPhysicalFactRecord,
 )
 from xic_extractor.discovery.processing_run_spec_adapter import (
@@ -120,7 +121,10 @@ class DiscoveredSample(Protocol):
     """Completed per-sample Discovery facts the process worker publishes."""
 
     @property
-    def candidates(self) -> tuple[DiscoveryCandidate, ...]: ...
+    def peaks(self) -> tuple[DiscoveryPeak, ...]: ...
+
+    @property
+    def events(self) -> tuple[DiscoveryEvent, ...]: ...
 
     @property
     def ms1_measurements(self) -> _DiscoveryMs1Measurements | None: ...
@@ -135,7 +139,7 @@ class DiscoveredSample(Protocol):
     def physical_evaluations(self) -> tuple[DiscoveryPhysicalFactRecord, ...]: ...
 
     @property
-    def physical_bindings(self) -> tuple[DiscoveryCandidatePhysicalBinding, ...]: ...
+    def physical_bindings(self) -> tuple[DiscoveryPeakPhysicalBinding, ...]: ...
 
     @property
     def mass_recalibration_result(self) -> MassRecalibrationResult: ...
@@ -414,13 +418,13 @@ def run_discovery_sample_process_job(
         sample_stem = job.raw_path.stem
         publication = output_publication.publish_discovery_batch_sample(
             job.raw_path,
-            discovery_result.candidates,
+            discovery_result.peaks,
+            discovery_result.events,
             output_dir=job.output_dir,
             acquisition_source=job.acquisition_source,
             timing_recorder=recorder,
             run_spec=job.run_spec,
             acquisition_input=job.acquisition_input,
-            physical_work_manifest=discovery_result.physical_work_manifest,
             physical_evaluations=discovery_result.physical_evaluations,
             physical_bindings=discovery_result.physical_bindings,
             mass_recalibration_result=discovery_result.mass_recalibration_result,

@@ -23,7 +23,7 @@ from xic_extractor.acquisition_contract import (
 )
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
-    read_owner_bound_discovery_candidates_csv,
+    read_owner_bound_discovery_peaks_csv,
 )
 from xic_extractor.discovery.pipeline import (
     discover_sample_for_process_job,
@@ -177,11 +177,11 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         assert {row["candidate_id"] for row in _read_csv(output.review_csv)} == {
             item.candidate_id for item in expected
         }
-        receipt = batch.candidate_receipts[acquisition.sample_stem]
+        receipt = batch.peak_receipts[acquisition.sample_stem]
         assert receipt.candidate_count == 3
         assert (
             len(
-                read_owner_bound_discovery_candidates_csv(
+                read_owner_bound_discovery_peaks_csv(
                     output.candidates_csv,
                     receipt=receipt,
                 )
@@ -248,9 +248,9 @@ def test_physical_bindings_match_published_candidates_by_id(
     batch = read_discovery_batch_index(
         outputs.batch_index_csv,
     )
-    receipt = batch.candidate_receipts[raw_path.stem]
-    canonical_candidates = read_owner_bound_discovery_candidates_csv(
-        batch.candidate_csvs[raw_path.stem],
+    receipt = batch.peak_receipts[raw_path.stem]
+    canonical_candidates = read_owner_bound_discovery_peaks_csv(
+        batch.peak_csvs[raw_path.stem],
         receipt=receipt,
     )
     bindings = outputs.per_sample[0].physical_bindings

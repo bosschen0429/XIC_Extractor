@@ -50,7 +50,7 @@ class DetectedFeature:
     """A single sample-local detected MS1 feature.
 
     ``source_feature_row_id`` is an optional pointer back to the originating
-    row (e.g. an existing CID-NL candidate's ``ms1_feature_row_id``) used by
+    row (e.g. an existing CID-NL ``peak_id``) used by
     later composite/intersection strategies; it is not required for delta-mass
     matching.
     """

@@ -19,12 +19,12 @@ from xic_extractor.discovery.batch_contract import (
     ALIGNMENT_FEATURE_INPUT_KEY,
     CANDIDATE_UNIVERSE_INPUT_KEY,
     CANDIDATE_UNIVERSE_SCHEMA_VERSION,
-    DiscoveryCandidateUniverseReceipt,
+    DiscoveryPeakUniverseReceipt,
     canonical_sample_stems,
     validate_candidate_universe_payload,
-    validate_discovery_candidate_universe,
+    validate_discovery_peak_universe,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalFactRecord,
     validate_discovery_physical_fact_record,
@@ -83,10 +83,10 @@ class UntargetedPartitionContext:
     settings: DiscoverySettings
     peak_config: ExtractionConfig
     raw_paths_by_sample: Mapping[str, Path]
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]]
+    candidates_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]]
     discovery_receipts_by_sample: Mapping[
         str,
-        DiscoveryCandidateUniverseReceipt,
+        DiscoveryPeakUniverseReceipt,
     ]
     signal_processing_profile: SignalProcessingProfile
     physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord] = field(
@@ -123,10 +123,10 @@ def build_partition_context(
     method_subject: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
-    candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
+    candidates_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
     discovery_receipts_by_sample: Mapping[
         str,
-        DiscoveryCandidateUniverseReceipt,
+        DiscoveryPeakUniverseReceipt,
     ],
     sample_identity_namespace: str,
     signal_processing_profile: SignalProcessingProfile,
@@ -172,10 +172,10 @@ def build_partition_context(
     if isinstance(method_subject, UntargetedCidNlMethodSubjectBatch):
         candidate_ids = tuple(
             sorted(
-                candidate.candidate_id
+                candidate.peak_id
                 for candidates in candidate_map.values()
                 for candidate in candidates
-                if admitted is None or candidate.candidate_id in admitted
+                if admitted is None or candidate.peak_id in admitted
             )
         )
         membership_ids = tuple(
@@ -247,16 +247,13 @@ def build_partition_context(
     )
     physical_records = dict(physical_records_by_candidate or {})
     candidate_by_id = {
-        candidate.candidate_id: candidate
+        candidate.peak_id: candidate
         for candidates in candidate_map.values()
         for candidate in candidates
     }
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
         raise IdentityContractError("physical replay profile must be owner-resolved")
-    measured_ids = {
-        cid for cid, candidate in candidate_by_id.items() if candidate.ms1_peak_found
-    }
-    if not measured_ids <= physical_records.keys() <= candidate_by_id.keys():
+    if physical_records.keys() != candidate_by_id.keys():
         raise IdentityContractError(
             "physical replay must cover every measured Discovery candidate"
         )
@@ -265,7 +262,7 @@ def build_partition_context(
         candidate = candidate_by_id[candidate_id]
         work = record.work_item
         if (
-            record.candidate_id != candidate_id
+            record.peak_id != candidate_id
             or work.sample_stem != candidate.sample_stem
             or work.acquisition_source_id
             != sources_by_stem[candidate.sample_stem].acquisition_source_id
@@ -286,7 +283,7 @@ def build_partition_context(
     )
     if admitted is not None:
         candidate_map = {
-            stem: tuple(c for c in values if c.candidate_id in admitted)
+            stem: tuple(c for c in values if c.peak_id in admitted)
             for stem, values in candidate_map.items()
         }
         physical_records = {
@@ -324,8 +321,8 @@ def compose_partition_context(
     metadata_by_stem: Mapping[str, SampleMetadata],
     sources_by_stem: Mapping[str, AcquisitionSourceIdentity],
     source_expectations: dict[str, AcquisitionSourceExpectation],
-    candidate_map: Mapping[str, tuple[DiscoveryCandidate, ...]],
-    receipt_map: Mapping[str, DiscoveryCandidateUniverseReceipt],
+    candidate_map: Mapping[str, tuple[DiscoveryPeak, ...]],
+    receipt_map: Mapping[str, DiscoveryPeakUniverseReceipt],
     physical_records: dict[str, DiscoveryPhysicalFactRecord],
     sample_identity_namespace: str,
     signal_processing_profile: SignalProcessingProfile,
@@ -411,11 +408,11 @@ def discovery_settings_payload(settings: DiscoverySettings) -> dict[str, object]
 
 
 def candidate_universe_payload(
-    candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
+    candidates_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
     *,
     discovery_receipts_by_sample: Mapping[
         str,
-        DiscoveryCandidateUniverseReceipt,
+        DiscoveryPeakUniverseReceipt,
     ],
     expected_sample_stems: Sequence[str],
 ) -> dict[str, object]:
@@ -453,49 +450,47 @@ def _required_injection_order(row: SampleMetadata) -> int:
 
 def _candidate_universe_entry(
     sample_stem: str,
-    candidates: tuple[DiscoveryCandidate, ...],
-    receipt: DiscoveryCandidateUniverseReceipt,
+    candidates: tuple[DiscoveryPeak, ...],
+    receipt: DiscoveryPeakUniverseReceipt,
 ) -> dict[str, object]:
-    ordered = tuple(sorted(candidates, key=lambda item: item.candidate_id))
-    candidate_ids = tuple(item.candidate_id for item in ordered)
+    ordered = tuple(sorted(candidates, key=lambda item: item.peak_id))
+    candidate_ids = tuple(item.peak_id for item in ordered)
     if receipt.sample_stem != sample_stem:
         raise IdentityContractError(
             "Discovery receipt sample does not match the candidate universe"
         )
-    validate_discovery_candidate_universe(
+    validate_discovery_peak_universe(
         receipt,
         acquisition_source=receipt.acquisition_source,
-        candidates=ordered,
+        peaks=ordered,
     )
     return {
         "sample_stem": sample_stem,
         "candidate_count": len(ordered),
         "candidate_ids": list(candidate_ids),
-        "candidate_artifact_schema_version": (
-            receipt.candidate_artifact_schema_version
-        ),
-        "candidate_artifact_sha256": receipt.candidate_artifact_sha256,
-        "candidate_artifact_byte_size": receipt.candidate_artifact_byte_size,
+        "candidate_artifact_schema_version": (receipt.peak_artifact_schema_version),
+        "candidate_artifact_sha256": receipt.peak_artifact_sha256,
+        "candidate_artifact_byte_size": receipt.peak_artifact_byte_size,
         "acquisition_source_id": receipt.acquisition_source.acquisition_source_id,
     }
 
 
 def _discovery_receipt_map(
-    receipts: Mapping[str, DiscoveryCandidateUniverseReceipt],
+    receipts: Mapping[str, DiscoveryPeakUniverseReceipt],
     *,
     expected_sample_stems: Sequence[str],
     sources_by_stem: Mapping[str, object],
-    candidates_by_stem: Mapping[str, tuple[DiscoveryCandidate, ...]],
-) -> dict[str, DiscoveryCandidateUniverseReceipt]:
+    candidates_by_stem: Mapping[str, tuple[DiscoveryPeak, ...]],
+) -> dict[str, DiscoveryPeakUniverseReceipt]:
     expected = set(canonical_sample_stems(expected_sample_stems))
     if not isinstance(receipts, Mapping) or set(receipts) != expected:
         raise IdentityContractError(
             "Discovery receipts must bind every acquisition sample exactly once"
         )
-    result: dict[str, DiscoveryCandidateUniverseReceipt] = {}
+    result: dict[str, DiscoveryPeakUniverseReceipt] = {}
     for stem in sorted(expected):
         receipt = receipts[stem]
-        if not isinstance(receipt, DiscoveryCandidateUniverseReceipt):
+        if not isinstance(receipt, DiscoveryPeakUniverseReceipt):
             raise IdentityContractError(
                 "Discovery receipts must contain owner receipt values"
             )
@@ -504,10 +499,10 @@ def _discovery_receipt_map(
             raise IdentityContractError(
                 "acquisition source owner returned invalid data"
             )
-        validate_discovery_candidate_universe(
+        validate_discovery_peak_universe(
             receipt,
             acquisition_source=source,
-            candidates=candidates_by_stem[stem],
+            peaks=candidates_by_stem[stem],
         )
         result[stem] = receipt
     return result
@@ -557,10 +552,10 @@ def _metadata_by_stem(
 
 
 def _candidate_map(
-    candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
+    candidates_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
     *,
     expected_sample_stems: Sequence[str],
-) -> dict[str, tuple[DiscoveryCandidate, ...]]:
+) -> dict[str, tuple[DiscoveryPeak, ...]]:
     if not isinstance(candidates_by_sample, Mapping):
         raise IdentityContractError("candidate universe must be sample-keyed")
     expected = set(canonical_sample_stems(expected_sample_stems))
@@ -568,15 +563,15 @@ def _candidate_map(
         raise IdentityContractError(
             "candidate universe must bind every acquisition sample exactly once"
         )
-    result: dict[str, tuple[DiscoveryCandidate, ...]] = {}
+    result: dict[str, tuple[DiscoveryPeak, ...]] = {}
     for stem in sorted(expected):
         candidates = tuple(candidates_by_sample[stem])
-        if any(not isinstance(item, DiscoveryCandidate) for item in candidates):
+        if any(not isinstance(item, DiscoveryPeak) for item in candidates):
             raise IdentityContractError(
-                "candidate universe must contain DiscoveryCandidate values"
+                "candidate universe must contain DiscoveryPeak values"
             )
-        ordered = tuple(sorted(candidates, key=lambda item: item.candidate_id))
-        ids = tuple(item.candidate_id for item in ordered)
+        ordered = tuple(sorted(candidates, key=lambda item: item.peak_id))
+        ids = tuple(item.peak_id for item in ordered)
         if len(ids) != len(set(ids)):
             raise IdentityContractError("candidate universe IDs must be unique")
         if any(

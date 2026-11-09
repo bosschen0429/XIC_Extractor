@@ -231,7 +231,7 @@ def _execute_initial_assessment_batch(
                 )
             raw = _open_job_raw(job)
             selected_candidates = {
-                candidate.candidate_id: candidate
+                candidate.peak_id: candidate
                 for state in states
                 if state.error is None
                 for candidate in _request_subject_candidates(state.job)
@@ -239,7 +239,7 @@ def _execute_initial_assessment_batch(
             candidates = tuple(
                 sorted(
                     selected_candidates.values(),
-                    key=lambda candidate: job._candidate_order[candidate.candidate_id],
+                    key=lambda candidate: job._candidate_order[candidate.peak_id],
                 )
             )
             active_acquire = (

@@ -132,7 +132,7 @@ def run_untargeted_application(
             sample: json.loads(
                 serialize_mass_recalibration_result(receipt.mass_recalibration_result)
             )
-            for sample, receipt in batch.candidate_receipts.items()
+            for sample, receipt in batch.peak_receipts.items()
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -225,7 +225,7 @@ def _prepare_mass_recalibration(
     with recorder.stage("alignment.mass_recalibration") as stage:
         results = prepare_batch_mass_recalibration(
             tuple(
-                (path, batch.candidate_receipts[stem].acquisition_source)
+                (path, batch.peak_receipts[stem].acquisition_source)
                 for stem, path in paths.items()
             ),
             request.dll_dir,

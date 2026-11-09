@@ -9,7 +9,7 @@ from tests.cid_nl_raw_fixture import (
     _current_candidates,
     _FakeRaw,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import DiscoveryPeak
 
 
 def _nearby_subject_candidates(
@@ -18,7 +18,7 @@ def _nearby_subject_candidates(
     settings,
     peak_config,
     physical_records=None,
-) -> tuple[_FakeRaw, tuple[DiscoveryCandidate, ...]]:
+) -> tuple[_FakeRaw, tuple[DiscoveryPeak, ...]]:
     first_raw = _FakeRaw((7.98,))
     second_raw = _FakeRaw(
         (7.98,),

@@ -320,10 +320,7 @@ class CidNlSource:
                 {"scope": "group", "ref": gid, "reason": group["disposition"]}
             )
         cells = []
-        excluded = any(
-            self.candidates[key].get("discovery_candidate_state") == "excluded"
-            for key in scoped
-        )
+        excluded = False
         for (record_kind, rid), fact in sorted(facts.items()):
             reason = _attention_reason(record_kind, fact)
             if record_kind == "cell_decisions":
@@ -360,10 +357,6 @@ class CidNlSource:
                 sid in trigger.get("sample_ids", ()) for trigger in triggers
             )
             local_excluded = any(
-                self.candidates[key].get("discovery_candidate_state") == "excluded"
-                for key in scoped
-                if key[1] == sid
-            ) or any(
                 kind == "exclusions" and sid in fact_samples[kind, rid]
                 for kind, rid in facts
             )

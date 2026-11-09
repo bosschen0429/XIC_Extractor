@@ -30,10 +30,10 @@ from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
     discovery_receipt_index_fields,
-    mint_discovery_candidate_universe_receipt,
+    mint_discovery_peak_universe_receipt,
 )
-from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
-from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
+from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
+from xic_extractor.discovery.models import DISCOVERY_PEAK_COLUMNS
 from xic_extractor.peak_detection.elution_context import (
     SampleElutionContext,
     project_elution_context,
@@ -98,7 +98,7 @@ def write_batch(
         candidates_csv = sample_dir / "discovery_candidates.csv"
         write_csv(
             candidates_csv,
-            DISCOVERY_CANDIDATE_COLUMNS,
+            DISCOVERY_PEAK_COLUMNS,
             [candidate_row(sample_stem)],
         )
         row = {
@@ -139,8 +139,8 @@ def _owner_closed_receipt_fields(
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
-    candidates = read_discovery_candidates_csv(candidates_csv)
-    receipt = mint_discovery_candidate_universe_receipt(
+    candidates = read_discovery_peaks_csv(candidates_csv)
+    receipt = mint_discovery_peak_universe_receipt(
         sample_stem=sample_stem,
         acquisition_source=acquisition_source,
         candidate_csv=candidates_csv,

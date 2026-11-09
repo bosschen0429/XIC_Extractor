@@ -12,9 +12,9 @@ from tests.discovery_ms1_capture_fixtures import (
     _seed,
     _settings,
 )
-from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
-from xic_extractor.discovery.ms1_capture import capture_ms1_candidates
+from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlPhysicalCandidateFact,
     CidNlPhysicalProof,
@@ -82,7 +82,7 @@ def test_distinct_mass_window_signals_are_not_closed_by_post_measurement_centroi
         )
         for index, mz in enumerate((500.0, 500.024, 500.012))
     )
-    result = capture_ms1_candidates(
+    result = capture_ms1_peaks(
         raw,
         groups,
         acquisition_source=raw.acquisition_source,
@@ -94,7 +94,7 @@ def test_distinct_mass_window_signals_are_not_closed_by_post_measurement_centroi
     # Mass-compatible centroids do not make distinct acquired signals equal.
     # Candidate construction no longer runs a post-area reconciliation read.
     assert batches == []
-    published = read_discovery_candidates_csv(
+    published = read_discovery_peaks_csv(
         write_discovery_candidates_csv(tmp_path / "candidates.csv", result.candidates)
     )
     assert len(published) == expected

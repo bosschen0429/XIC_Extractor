@@ -138,8 +138,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 run_spec=run_spec,
                 timing_recorder=timing_recorder,
             )
-            print(f"Discovery candidates CSV: {single_outputs.candidates_csv}")
-            print(f"Discovery review CSV: {single_outputs.review_csv}")
+            print(f"Discovery peaks CSV: {single_outputs.peaks_csv}")
+            print(f"Discovery events CSV: {single_outputs.events_csv}")
         else:
             max_workers = min(len(raw_paths), execution_profile.parallel_workers)
             batch_outputs = run_discovery_batch(
@@ -208,8 +208,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         default=Path("output") / "discovery",
         help=(
-            "Output directory. Single RAW writes discovery_candidates.csv and "
-            "discovery_review.csv; RAW directory writes discovery_batch_index.csv "
+            "Output directory. Single RAW writes discovery_peaks.csv and "
+            "discovery_events.csv; RAW directory writes discovery_batch_index.csv "
             "and per-sample CSVs."
         ),
     )
@@ -265,7 +265,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--nl-min-intensity-ratio", type=_positive_float)
-    parser.add_argument("--seed-rt-gap-min", type=_positive_float)
     parser.add_argument("--ms1-search-padding-min", type=_positive_float)
     parser.add_argument(
         "--rt-min",
@@ -357,7 +356,6 @@ def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
         "product_search_ppm": args.product_search_ppm,
         "ms2_precursor_tol_da": args.ms2_precursor_tol_da,
         "nl_min_intensity_ratio": args.nl_min_intensity_ratio,
-        "seed_rt_gap_min": args.seed_rt_gap_min,
         "ms1_search_padding_min": args.ms1_search_padding_min,
         "rt_min": args.rt_min,
         "rt_max": args.rt_max,
