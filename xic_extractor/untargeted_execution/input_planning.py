@@ -446,12 +446,7 @@ def prepare_indexed_untargeted_plan(
         if cid
         in physical_sources[source.locations[cid].sample_stem].resolved_candidate_ids
     )
-    precursor_by_id = {
-        cid: source.ms1_apex_mz_by_candidate.get(
-            cid, source.locations[cid].precursor_mz
-        )
-        for cid in feature_ids
-    }
+    precursor_by_id = {cid: source.locations[cid].physical_mz for cid in feature_ids}
 
     def load_inputs(candidate_ids: tuple[str, ...]):
         candidates = source.load_candidates(candidate_ids)

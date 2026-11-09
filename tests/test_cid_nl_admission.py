@@ -4,7 +4,13 @@ from dataclasses import replace
 
 import pytest
 
-from tests.cid_nl_raw_fixture import TEST_PROFILE, _FakeRaw, _peak_config, _settings
+from tests.cid_nl_raw_fixture import (
+    TEST_PROFILE,
+    _current_candidates,
+    _FakeRaw,
+    _peak_config,
+    _settings,
+)
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
 from tests.physical_peak_evaluation_persistence_fixtures import (
     _overlapping_triplet_trace,
@@ -34,6 +40,28 @@ from xic_extractor.untargeted_execution.execution import (
     execute_untargeted_plan,
     materialize_untargeted_partition,
 )
+
+
+@pytest.mark.parametrize("apex_mz, expected_mz", [(None, 500.0), (500.002, 500.002)])
+def test_peak_index_uses_ms1_mass_not_event_precursor(tmp_path, apex_mz, expected_mz):
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"physical-mass-index")
+    (peak,) = _current_candidates(
+        _FakeRaw((8.0,)), raw_file=raw_path, settings=_settings()
+    )
+    # CSV carries distinct channel, event estimate and optional apex reading.
+    peak = replace(peak, precursor_mz=500.004, channel_mz=500.0, ms1_apex_mz=apex_mz)
+    receipts = build_discovery_receipts(tmp_path, (raw_path,), {"sample": (peak,)})
+    batch = DiscoveryBatchInput(
+        sample_order=("sample",),
+        peak_csvs={"sample": tmp_path / "sample.owner-candidates.csv"},
+        raw_files={"sample": raw_path},
+        event_csvs={"sample": None},
+        peak_receipts=receipts,
+    )
+    source = DiscoveryInputSource(batch)
+    assert source.locations[peak.peak_id].physical_mz == expected_mz
+    assert source["sample"][0].physical_mz == expected_mz
 
 
 @pytest.mark.parametrize("indexed", [False, True], ids=["eager", "indexed"])
@@ -118,9 +146,13 @@ def test_review_rows_never_become_alignment_roots(
         peak_receipts=receipts,
     )
     opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    source = DiscoveryInputSource(batch)
+    for peaks in candidates.values():
+        for peak in peaks:
+            assert source.locations[peak.peak_id].physical_mz == peak.channel_mz
     prepared = prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
-        candidates_by_sample=DiscoveryInputSource(batch) if indexed else candidates,
+        candidates_by_sample=source if indexed else candidates,
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "inputs",

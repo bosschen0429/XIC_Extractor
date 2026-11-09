@@ -619,13 +619,15 @@ def _reacquire_peak_observations(
             for candidate in candidates
         )
         acquisition = _preacquired_traces.acquisition
-    if any(
-        acquired.coordinate.request != requests[index]
-        for acquired, index in zip(acquired_traces, indices, strict=True)
+    for candidate, acquired, index in zip(
+        candidates, acquired_traces, indices, strict=True
     ):
-        raise CidNlAcquisitionError(
-            "preacquired trace does not match the candidate capture plan"
-        )
+        if acquired.coordinate.request != requests[index]:
+            raise CidNlAcquisitionError(
+                "preacquired trace does not match the candidate capture plan: "
+                f"{candidate.peak_id}: acquired={acquired.coordinate.request!r}, "
+                f"planned={requests[index]!r}"
+            )
     observations: list[PeakObservationRef] = []
     captures: list[capture_owner.SampleLocalCapture] = []
     selected_traces: list[tuple[PeakObservationRef, Trace]] = []

@@ -28,7 +28,7 @@ from xic_extractor.discovery.models import (
 class CandidateLocation:
     candidate_id: str
     sample_stem: str
-    precursor_mz: float
+    physical_mz: float
     configured_neutral_loss_da: float
     admitted: bool
     precursor_mz_basis: str
@@ -87,7 +87,7 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
                     if row is None:
                         break
                     cid = _machine_field(row, "peak_id")
-                    mz = float(row["precursor_mz"])
+                    mz = float(row["ms1_apex_mz"] or row["channel_mz"])
                     if not cid or cid in self.locations:
                         raise ValueError(
                             "Discovery peak identity must be globally unique"

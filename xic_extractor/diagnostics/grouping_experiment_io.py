@@ -57,12 +57,7 @@ def query_discovery(
     selected = tuple(
         cid
         for cid, location in source.locations.items()
-        if any(
-            lower
-            <= source.ms1_apex_mz_by_candidate.get(cid, location.precursor_mz)
-            <= upper
-            for lower, upper in mz_ranges
-        )
+        if any(lower <= location.physical_mz <= upper for lower, upper in mz_ranges)
     )
     candidates = source.load_candidates(selected)
     return source.batch.sample_order, [
