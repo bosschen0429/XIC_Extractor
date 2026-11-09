@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.discovery_csv_fixtures import _peak
 from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundIon,
     BlankBackgroundLibrary,
@@ -165,8 +166,8 @@ def test_default_background_library_packaged_and_loadable():
 
     # The packaged library stays loadable on request, but a run never inherits
     # it. It was measured on a 15-minute gradient; applying it to a run acquired
-    # on another method would demote candidates to review_only_orphan_nl with
-    # ms1_peak_found=False against a background population that run never saw.
+    # on another method would mark peaks as system background
+    # against a background population that run never saw.
     assert resolve_background_library() is None
     assert resolve_background_library(raw_dir=None, library_path=path) is not None
 
@@ -193,7 +194,7 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         BlankBackgroundIon,
         BlankBackgroundLibrary,
     )
-    from xic_extractor.discovery.models import DiscoveryPeak, DiscoverySeed
+    from xic_extractor.discovery.models import DiscoveryPeak
     from xic_extractor.discovery.pipeline import _apply_blank_qualification_if_enabled
     from xic_extractor.discovery.processing_run_spec_adapter import (
         compile_discovery_processing_run_spec,
@@ -219,106 +220,24 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         source_blanks=("B1",),
     )
 
-    seed = DiscoverySeed(
-        raw_file=Path("test.raw"),
-        sample_stem="test",
-        scan_number=1,
-        rt=5.0,
-        precursor_mz=300.1000,
-        product_mz=184.0,
-        product_intensity=5000.0,
-        neutral_loss_tag="tag",
-        configured_neutral_loss_da=116.0,
-        observed_neutral_loss_da=116.0,
-        observed_loss_error_ppm=1.0,
-    )
+    def peak(precursor_mz: float, height: float) -> DiscoveryPeak:
+        return _peak(
+            raw_file=Path("test.raw"),
+            sample_stem="test",
+            precursor_mz=precursor_mz,
+            channel_mz=precursor_mz,
+            ms1_height=height,
+            ms1_area=height,
+            attached_event_count=2,
+            review_priority="HIGH",
+            reason="initial candidate",
+        )
 
-    c_background = DiscoveryPeak.from_values(
-        raw_file=Path("test.raw"),
-        sample_stem="test",
-        precursor_mz=300.1002,  # ~0.67 ppm match
-        product_mz=184.0,
-        observed_neutral_loss_da=116.0,
-        best_seed=seed,
-        seed_scan_ids=(1,),
-        neutral_loss_tag="tag",
-        configured_neutral_loss_da=116.0,
-        neutral_loss_mass_error_ppm=1.0,
-        rt_seed_min=4.9,
-        rt_seed_max=5.1,
-        ms1_search_rt_min=4.8,
-        ms1_search_rt_max=5.2,
-        ms1_seed_delta_min=0.01,
-        ms1_peak_rt_start=4.9,
-        ms1_peak_rt_end=5.1,
-        ms1_height=80000.0,  # FC = 80000 / 100000 = 0.8 < 3.0 -> SYSTEM_BACKGROUND
-        ms1_trace_quality="clean",
-        seed_event_count=2,
-        ms1_peak_found=True,
-        ms1_apex_rt=5.01,
-        ms1_area=80000.0,
-        ms2_product_max_intensity=5000.0,
-        review_priority="HIGH",
-        reason="initial candidate",
-    )
-
-    c_override = DiscoveryPeak.from_values(
-        raw_file=Path("test.raw"),
-        sample_stem="test",
-        precursor_mz=400.2001,  # ~0.25 ppm match
-        product_mz=184.0,
-        observed_neutral_loss_da=116.0,
-        best_seed=seed,
-        seed_scan_ids=(1,),
-        neutral_loss_tag="tag",
-        configured_neutral_loss_da=116.0,
-        neutral_loss_mass_error_ppm=1.0,
-        rt_seed_min=4.9,
-        rt_seed_max=5.1,
-        ms1_search_rt_min=4.8,
-        ms1_search_rt_max=5.2,
-        ms1_seed_delta_min=0.01,
-        ms1_peak_rt_start=4.9,
-        ms1_peak_rt_end=5.1,
-        ms1_height=400000.0,  # FC = 400000 / 50000 = 8.0 >= 3.0 -> OVERRIDE
-        ms1_trace_quality="clean",
-        seed_event_count=2,
-        ms1_peak_found=True,
-        ms1_apex_rt=5.01,
-        ms1_area=400000.0,
-        ms2_product_max_intensity=5000.0,
-        review_priority="HIGH",
-        reason="initial candidate",
-    )
-
-    c_clean = DiscoveryPeak.from_values(
-        raw_file=Path("test.raw"),
-        sample_stem="test",
-        precursor_mz=550.3000,  # Not in blank -> CLEAN
-        product_mz=184.0,
-        observed_neutral_loss_da=116.0,
-        best_seed=seed,
-        seed_scan_ids=(1,),
-        neutral_loss_tag="tag",
-        configured_neutral_loss_da=116.0,
-        neutral_loss_mass_error_ppm=1.0,
-        rt_seed_min=4.9,
-        rt_seed_max=5.1,
-        ms1_search_rt_min=4.8,
-        ms1_search_rt_max=5.2,
-        ms1_seed_delta_min=0.01,
-        ms1_peak_rt_start=4.9,
-        ms1_peak_rt_end=5.1,
-        ms1_height=150000.0,
-        ms1_trace_quality="clean",
-        seed_event_count=2,
-        ms1_peak_found=True,
-        ms1_apex_rt=5.01,
-        ms1_area=150000.0,
-        ms2_product_max_intensity=5000.0,
-        review_priority="HIGH",
-        reason="initial candidate",
-    )
+    # FC = 80000 / 100000 = 0.8 < 3.0: system background.
+    c_background = peak(300.1002, 80000.0)
+    # FC = 400000 / 50000 = 8.0 >= 3.0: high-abundance override.
+    c_override = peak(400.2001, 400000.0)
+    c_clean = peak(550.3000, 150000.0)
 
     raw = tmp_path / "test.raw"
     raw.write_bytes(b"sample")
@@ -346,20 +265,19 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         assert qualified == (c_background, c_override, c_clean)
         return
 
-    # c_background demoted
-    assert qualified[0].discovery_candidate_state == "review_only_orphan_nl"
-    assert qualified[0].ms1_peak_found is False
-    assert qualified[0].ms1_feature_row_id == ""
+    # c_background is not admitted
+    assert qualified[0].blank_background
+    assert qualified[0].admission_reason == "system_background"
     assert qualified[0].review_priority == "LOW"
     assert "system background: blank m/z 300.1000" in qualified[0].reason
 
     # c_override preserved
-    assert qualified[1].discovery_candidate_state == "ms1_feature_nl_supported"
+    assert qualified[1].admitted
     assert qualified[1].review_priority == "HIGH"
     assert "high abundance tissue signal (8.0x)" in qualified[1].reason
 
     # c_clean preserved unchanged
-    assert qualified[2].discovery_candidate_state == "ms1_feature_nl_supported"
+    assert qualified[2].admitted
     assert qualified[2].review_priority == "HIGH"
     assert qualified[2].reason == "initial candidate"
 
@@ -528,7 +446,7 @@ def test_run_discovery_blank_dir_uses_current_blank_content(
     from unittest.mock import MagicMock
 
     mock_outputs = MagicMock()
-    mock_outputs.candidates_csv = Path("dummy.csv")
+    mock_outputs.peaks_csv = Path("dummy.csv")
     monkeypatch.setattr(
         "scripts.run_discovery.run_discovery",
         lambda *args, **kwargs: mock_outputs,
@@ -598,7 +516,7 @@ def test_run_discovery_explicit_disable_skips_blank_directory(
 
     def discover(raw_path, *, settings, **kwargs):
         settings_seen.append(settings)
-        return SimpleNamespace(candidates_csv="candidates.csv", review_csv="review.csv")
+        return SimpleNamespace(peaks_csv="candidates.csv", events_csv="review.csv")
 
     monkeypatch.setattr(
         "scripts.run_discovery.extract_blank_background_library",

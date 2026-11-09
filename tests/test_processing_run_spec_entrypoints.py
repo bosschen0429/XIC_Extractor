@@ -272,7 +272,7 @@ def test_run_spec_conflicts_fail_before_raw_opener(tmp_path: Path) -> None:
         run_discovery(
             raw_path,
             output_dir=tmp_path / "settings-out",
-            settings=replace(settings, seed_rt_gap_min=0.33),
+            settings=replace(settings, ms1_search_padding_min=0.33),
             dll_dir=tmp_path / "dll",
             raw_opener=_open,
             run_spec=spec,

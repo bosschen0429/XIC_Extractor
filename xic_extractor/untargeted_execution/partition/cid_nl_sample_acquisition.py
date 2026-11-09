@@ -266,7 +266,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
             "sample trace batch candidates crossed the resolved sample"
         )
     capture_candidates = tuple(
-        candidate for candidate in candidates if candidate.admitted
+        candidate for candidate in candidates if candidate.passes_peak_gates
     )
     if not capture_candidates:
         return None
@@ -401,9 +401,11 @@ def adapt_current_discovery_sample_subject(
         for candidate in bounded
         if candidate.precursor_mz_basis
         in {"scan_precursor", "scan_monoisotopic", "mixed"}
-        or candidate.admitted
+        or candidate.passes_peak_gates
     )
-    peak_candidates = tuple(candidate for candidate in bounded if candidate.admitted)
+    peak_candidates = tuple(
+        candidate for candidate in bounded if candidate.passes_peak_gates
+    )
     support_seed_candidates = tuple(
         candidate
         for candidate in support_bounded

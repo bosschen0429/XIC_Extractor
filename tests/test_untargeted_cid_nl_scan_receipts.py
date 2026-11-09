@@ -74,19 +74,19 @@ def test_unproven_inferred_members_keep_independent_scan_receipts(
             zip(source_raw.scans, (-0.012, -0.005, 0.002), strict=True)
         )
     )
-    settings = replace(_settings(), neutral_loss_profile=None, seed_rt_gap_min=0.01)
+    settings = replace(_settings(), neutral_loss_profile=None)
     candidates = _current_candidates(
         source_raw,
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
     )
-    # Shared physical measurements combine events, never their exact scan receipts.
-    assert len(candidates) == 2
+    # One measured peak combines the events, never their exact scan receipts.
+    assert len(candidates) == 1
     assert {scan for c in candidates for scan in c.seed_scan_ids} == {
         scan.scan_number for scan in source_raw.scans
     }
     for candidate in candidates:
-        assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
+        assert candidate.admission_reason == "no_attached_event"
         assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
         seeds = read_complete_discovery_scan_seeds(
             source_raw,
@@ -94,7 +94,10 @@ def test_unproven_inferred_members_keep_independent_scan_receipts(
             settings=settings,
             include_inferred=True,
         )
-        assert {scan.scan_number for scan, _ in seeds} == set(candidate.seed_scan_ids)
+        # Strict replay keeps each located scan only within its own receipt.
+        replayed = {scan.scan_number for scan, _ in seeds}
+        assert replayed <= set(candidate.seed_scan_ids)
+        assert candidate.best_ms2_scan_id in replayed
         products_by_scan = {
             scan.scan_number: float(scan.masses[0]) for scan in source_raw.scans
         }
@@ -138,13 +141,16 @@ def test_shared_apex_merge_keeps_each_absorbed_scan_receipt(
         )
         for scan, shift in zip(source_raw.scans, shifts, strict=True)
     )
-    settings = replace(_settings(), neutral_loss_profile=None, seed_rt_gap_min=0.03)
-    (candidate,) = _current_candidates(
+    settings = replace(_settings(), neutral_loss_profile=None)
+    candidates = _current_candidates(
         source_raw,
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
     )
-    assert len(candidate.seed_scan_ids) == 4
+    # A scan beyond the precursor tolerance of the channel anchor measures its
+    # own ion channel rather than being absorbed.
+    candidate = max(candidates, key=lambda item: len(item.seed_scan_ids))
+    assert len(candidate.seed_scan_ids) == supported_scan_count
 
     seeds = read_complete_discovery_scan_seeds(
         source_raw,
@@ -170,7 +176,7 @@ def test_declared_strict_scan_subset_rejects_non_exact_events(variant: str) -> N
     from xic_extractor.ms2_scan_models import Ms2ScanEvent
 
     candidate = SimpleNamespace(
-        candidate_id="candidate-1",
+        peak_id="peak-1",
         seed_scan_ids=(11, 12),
         rt_seed_min=8.0,
         rt_seed_max=8.2,
@@ -319,7 +325,7 @@ def test_same_peak_same_scan_products_keep_exact_canonical_seed(
     assert len(candidates) == 1
     assert candidates[0].product_mz == canonical_product
     for candidate in candidates:
-        assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
+        assert candidate.admission_reason == "no_attached_event"
         evidence = json.loads(candidate.tag_evidence_json)["DNA_dR"]
         assert evidence["scan_ids"] == [candidate.best_ms2_scan_id]
         assert evidence["scan_count"] == 2

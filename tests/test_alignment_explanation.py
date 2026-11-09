@@ -54,8 +54,8 @@ def test_candidate_measured_mz_roundtrip_without_center_fallback(
     completed, writer, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
-    first = candidates["S1"][0].candidate_id
-    second = candidates["S2"][0].candidate_id
+    first = candidates["S1"][0].peak_id
+    second = candidates["S2"][0].peak_id
     measured = {first: 500.2010}
     if second_measured_mz is not None:
         measured[second] = second_measured_mz
@@ -120,7 +120,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             1 for _ in csv.DictReader(matrix_handle, delimiter="\t")
         )
     assert summary["candidate_count"] == sum(map(len, candidates.values()))
-    candidate_id = candidates["S1"][0].candidate_id
+    candidate_id = candidates["S1"][0].peak_id
     detail = read_alignment_explanation(report, candidate_id=candidate_id)
     records = detail["records"]
     assessment = next(
@@ -348,10 +348,8 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
     for values in candidates.values():
         for candidate in values:
             assert read_alignment_explanation(
-                report, candidate_id=candidate.candidate_id
-            ) == read_alignment_explanation(
-                original, candidate_id=candidate.candidate_id
-            )
+                report, candidate_id=candidate.peak_id
+            ) == read_alignment_explanation(original, candidate_id=candidate.peak_id)
 
 
 @dataclass(frozen=True)
@@ -414,10 +412,8 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
     for values in candidates.values():
         for candidate in values:
             assert read_alignment_explanation(
-                report, candidate_id=candidate.candidate_id
-            ) == read_alignment_explanation(
-                original, candidate_id=candidate.candidate_id
-            )
+                report, candidate_id=candidate.peak_id
+            ) == read_alignment_explanation(original, candidate_id=candidate.peak_id)
 
 
 def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypatch):

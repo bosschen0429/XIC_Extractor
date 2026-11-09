@@ -75,19 +75,19 @@ def test_receipt_roundtrip_preserves_each_raw_result_and_legacy_none(tmp_path, o
             acquisition_source=build_local_acquisition_source_identity(
                 raw, acquisition_format="thermo_raw", observation_namespace="test"
             ),
-            candidate_csv=csv,
+            peak_csv=csv,
             physical_facts=physical_facts_fingerprint_beside(csv),
-            candidates=(),
+            peaks=(),
             mass_recalibration_result=result,
         )
         fields = discovery_receipt_index_fields(receipt)
         restored = discovery_receipt_from_index_fields(
-            fields, sample_stem=sample, candidate_count=0
+            fields, sample_stem=sample, peak_count=0
         )
         assert restored.mass_recalibration_result == result
         fields.pop("mass_recalibration")
         legacy = discovery_receipt_from_index_fields(
-            fields, sample_stem=sample, candidate_count=0
+            fields, sample_stem=sample, peak_count=0
         )
         assert legacy.mass_recalibration_result.policy is MassRecalibration.NONE
         assert legacy.mass_recalibration_result.outcome == "none"

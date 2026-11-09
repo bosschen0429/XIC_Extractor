@@ -6,14 +6,14 @@ import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
 from tests.discovery_ms1_capture_fixtures import (
+    _channel,
     _FakeRaw,
     _gaussian,
-    _group,
     _seed,
     _settings,
 )
 from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
-from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
+from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlPhysicalCandidateFact,
@@ -27,9 +27,9 @@ from xic_extractor.xic_models import XICTrace
 @pytest.mark.parametrize(
     "centroids, expected",
     [
-        ((500.013,), 3),
-        ((500.013, 500.019), 3),
-        ((), 3),
+        ((500.013,), 2),
+        ((500.013, 500.019), 2),
+        ((), 2),
     ],
 )
 def test_distinct_mass_window_signals_are_not_closed_by_post_measurement_centroids(
@@ -69,7 +69,7 @@ def test_distinct_mass_window_signals_are_not_closed_by_post_measurement_centroi
     raw = Raw(rt=rt, intensity=_gaussian(rt, center=9.0, sigma=0.06, height=1000))
     settings = _settings(precursor_mz_tolerance_ppm=30)
     groups = tuple(
-        _group(
+        _channel(
             (
                 _seed(
                     scan_number=10 + index,
@@ -90,30 +90,24 @@ def test_distinct_mass_window_signals_are_not_closed_by_post_measurement_centroi
         settings=settings,
         ms1_centroid_mz=lambda *_: None,
     )
-    assert len(result.candidates) == expected
+    # 500.000 and 500.012 measure one peak within 30 ppm; 500.024 lies 48 ppm
+    # from that anchor and stays separate, so measurements never chain.
+    assert len(result.peaks) == expected
     # Mass-compatible centroids do not make distinct acquired signals equal.
     # Candidate construction no longer runs a post-area reconciliation read.
     assert batches == []
     published = read_discovery_peaks_csv(
-        write_discovery_candidates_csv(tmp_path / "candidates.csv", result.candidates)
+        write_discovery_peaks_csv(tmp_path / "candidates.csv", result.peaks)
     )
     assert len(published) == expected
-    assert {c.candidate_id: c.ms1_area for c in published} == {
-        c.candidate_id: c.ms1_area for c in result.candidates
+    assert {c.peak_id: c.ms1_area for c in published} == {
+        c.peak_id: c.ms1_area for c in result.peaks
     }
+    assert len(result.physical_evaluations) == expected
     assert sorted(
-        n for b in result.physical_bindings for n in b.member_source_ordinals
-    ) == [0, 1, 2]
-    assert len(result.physical_evaluations) == 3
-    assert all(
-        len(binding.member_work_ordinals) == 1 for binding in result.physical_bindings
-    )
-    assert sorted(
-        scan for candidate in result.candidates for scan in candidate.seed_scan_ids
+        scan for candidate in result.peaks for scan in candidate.seed_scan_ids
     ) == [10, 11, 12]
-    for candidate, binding in zip(
-        result.candidates, result.physical_bindings, strict=True
-    ):
+    for candidate, binding in zip(result.peaks, result.physical_bindings, strict=True):
         assert (
             candidate.ms1_area == binding.physical_evaluation.facts.area_counts_seconds
         )

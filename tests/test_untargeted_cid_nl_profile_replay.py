@@ -80,10 +80,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         if candidate.ms1_apex_mz is not None
     }
     assert {
-        sample: tuple(candidate.candidate_id for candidate in sample_candidates)
+        sample: tuple(candidate.peak_id for candidate in sample_candidates)
         for sample, sample_candidates in publication.candidates_by_sample.items()
     } == {
-        sample: tuple(candidate.candidate_id for candidate in sample_candidates)
+        sample: tuple(candidate.peak_id for candidate in sample_candidates)
         for sample, sample_candidates in inputs.candidates.items()
     }
     assert completed.processing_attempt_id == (
@@ -126,16 +126,15 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     expected_retained = (
         inputs.source_records if case.indexed_input else inputs.source_evidence
     )
-    assert {item.candidate_id for item in retained_discovery} == set(expected_retained)
+    assert {item.peak_id for item in retained_discovery} == set(expected_retained)
     for retained in retained_discovery:
-        source = inputs.source_evidence[retained.candidate_id]
+        source = inputs.source_evidence[retained.peak_id]
         assert (
             retained.evaluation.retained_prepared_signal
             == source.evaluation.retained_prepared_signal
         )
         assert retained.rt == source.rt
         assert retained.raw == source.raw
-        assert retained.candidate_links == source.candidate_links
     persisted_capture_evidence = tuple(completed.capture_evidence)
     runtime_captures = tuple(
         evidence
@@ -191,17 +190,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         )
         expected = _expected_retained_curve(
             kind="discovery_physical",
-            candidate_id=record.candidate_id,
+            candidate_id=record.peak_id,
             sample_id=samples_by_stem[work.sample_stem].identity.sample_key,
             trace=source_trace,
             evaluation=record.evaluation,
             attempt_id=application.processing_attempt.processing_attempt_id,
         )
         expected_curves.append(expected)
-        for cid in {link.candidate_id for link in record.candidate_links} or {
-            record.candidate_id
-        }:
-            expected_curve_links.setdefault(cid, []).append(expected)
+        expected_curve_links.setdefault(record.peak_id, []).append(expected)
     for evidence in persisted_capture_evidence:
         expected = _expected_capture_curve(evidence)
         expected_curves.append(expected)
@@ -385,7 +381,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         for result in trace.runtime_results[0].sample_results:
             stem = result.job.sample.metadata.raw_stem
             (candidate,) = batch.context.candidates_by_sample[stem]
-            record = batch.context.physical_records_by_candidate[candidate.candidate_id]
+            record = batch.context.physical_records_by_candidate[candidate.peak_id]
             assert record.work_item.precursor_mz == candidate.precursor_mz
             assert record.acquired_trace.coordinate.request.mz == candidate.precursor_mz
             assert record.evaluation.facts == inputs.physical_facts[stem]

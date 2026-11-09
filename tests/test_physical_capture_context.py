@@ -4,7 +4,6 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
-from xic_extractor.discovery.grouping import group_discovery_seeds
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
 from tests.discovery_ms1_capture_fixtures import (
@@ -19,6 +18,7 @@ from xic_extractor.acquisition.physical_capture import (
     PhysicalPeakCapture,
     PhysicalPeakSearch,
 )
+from xic_extractor.discovery.ion_channels import build_discovery_channels
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest
@@ -215,16 +215,16 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
         _seed(scan_number=i + 10, rt=t) for i, t in enumerate((5.0, 5.15, 5.3))
     )
     settings = _settings()
-    grouped = group_discovery_seeds(seeds, settings=settings)
+    grouped = build_discovery_channels(seeds, settings=settings)
     separate = tuple(
-        group_discovery_seeds((seed,), settings=settings)[0] for seed in seeds
+        build_discovery_channels((seed,), settings=settings)[0] for seed in seeds
     )
     variants = (
         grouped,
         separate,
         tuple(reversed(separate)),
         separate + separate,
-        group_discovery_seeds(seeds + seeds, settings=settings),
+        build_discovery_channels(seeds + seeds, settings=settings),
     )
     previous = None
     for groups in variants:
@@ -237,17 +237,21 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
             signal_processing_profile=TEST_PROFILE,
             ms1_centroid_mz=lambda *_: None,
         )
-        measured = [c for c in result.candidates if c.ms1_peak_found]
+        measured = list(result.peaks)
         assert len(result.physical_evaluations) == 2
         assert (
-            len({b.representative_work_ordinal for b in result.physical_bindings}) == 2
+            len(
+                {
+                    b.physical_fact_record.work_item.work_ordinal
+                    for b in result.physical_bindings
+                }
+            )
+            == 2
         )
         assert sorted(c.ms1_apex_rt for c in measured) == pytest.approx([5.0, 5.15])
         # The analytic second Gaussian remains one raw basin past its 10%
         # quantitative return; its tail event is not an orphan component.
         assert {c.seed_scan_ids for c in measured} == {(10,), (11, 12)}
-        orphan = [c for c in result.candidates if not c.ms1_peak_found]
-        assert orphan == []
         assert result.measurements.initial_request_count == 1
         snapshot = sorted(
             (
@@ -256,9 +260,9 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
                 c.ms1_area,
                 c.ms1_peak_rt_start,
                 c.ms1_peak_rt_end,
-                c.discovery_candidate_state,
+                c.admission_reason,
             )
-            for c in result.candidates
+            for c in result.peaks
         )
         if previous is not None:
             assert snapshot == previous

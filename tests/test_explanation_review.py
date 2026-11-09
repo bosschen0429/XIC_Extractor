@@ -216,7 +216,7 @@ def test_default_review_keeps_values_and_query_without_curves(
     summary = read_alignment_explanation(report)
     assert summary["retention"] == "review"
     assert summary["plot_evidence_capability"] == "metadata_only"
-    candidate_id = candidates["S1"][0].candidate_id
+    candidate_id = candidates["S1"][0].peak_id
     records = read_alignment_explanation(report, candidate_id=candidate_id)["records"]
     assert "cell_observations" not in records
     assert all("artifact" not in row for row in records["method_assessments"])
@@ -342,8 +342,8 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
     assert full.read_bytes() == before
     assert result["review_bytes"] < result["source_bytes"]
     for candidate in (candidates["S1"][0], candidates["S2"][0]):
-        old = read_alignment_explanation(full, candidate_id=candidate.candidate_id)
-        new = read_alignment_explanation(review, candidate_id=candidate.candidate_id)
+        old = read_alignment_explanation(full, candidate_id=candidate.peak_id)
+        new = read_alignment_explanation(review, candidate_id=candidate.peak_id)
 
         def values(detail):
             return sorted(
@@ -409,7 +409,7 @@ def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
         output,
         raw_dir=tmp_path,
         dll_dir=tmp_path,
-        candidate_id=candidates["S1"][0].candidate_id,
+        candidate_id=candidates["S1"][0].peak_id,
     )
     assert opened == ["S1.raw"]
     assert review.read_bytes() == source_before
@@ -435,7 +435,7 @@ def _two_sample_curve_review(tmp_path, monkeypatch):
         sample["sample_stem"]: sample["sample_key"] for sample in summary["samples"]
     }
     detail = read_alignment_explanation(
-        review, candidate_id=candidates["S1"][0].candidate_id
+        review, candidate_id=candidates["S1"][0].peak_id
     )
     group_id = detail["records"]["final_groups"][0]["feature_id"]
     return review, group_id, sample_ids, candidates
@@ -722,7 +722,7 @@ def test_curve_export_rejects_identity_mismatch_before_raw_open(tmp_path, monkey
             output,
             raw_dir=tmp_path,
             dll_dir=tmp_path,
-            candidate_id=candidates["S1"][0].candidate_id,
+            candidate_id=candidates["S1"][0].peak_id,
             sample_ids=(sample_ids["S1"],),
         )
     assert not output.exists()
@@ -736,7 +736,7 @@ def test_curve_export_rejects_unknown_and_unobserved_explicit_samples_before_raw
         "xic_workbench.acquisition.open_raw",
         lambda *_args, **_kwargs: pytest.fail("invalid sample scope must not open RAW"),
     )
-    candidate_id = candidates["S1"][0].candidate_id
+    candidate_id = candidates["S1"][0].peak_id
 
     with pytest.raises(ExplanationError, match="not present in the report"):
         export_explanation_curves(

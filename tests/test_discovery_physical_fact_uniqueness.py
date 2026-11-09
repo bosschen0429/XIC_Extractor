@@ -181,7 +181,7 @@ def test_discovery_sidecar_accepts_candidate_id_collision_between_questions(
         for work in manifest
     )
 
-    assert first_work.candidate_id == second_work.candidate_id
+    assert first_work.peak_id == second_work.peak_id
     assert first_work.selection_subject_id != second_work.selection_subject_id
 
     payload = serialize_discovery_physical_fact_sidecar(
@@ -327,7 +327,7 @@ def test_discovery_sidecar_rejects_exact_duplicate_physical_questions(
         "best_ms2_scan_id",
         "precursor_mz",
         "product_mz",
-        "candidate_id",
+        "peak_id",
         "selection_subject_id",
     ):
         value["work_manifest"][1][field] = value["work_manifest"][0][field]

@@ -119,7 +119,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
         sample_identity_namespace="study:partition-invariant-warp",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },
@@ -269,7 +269,7 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
         sample_identity_namespace="study:partition-invariant-warp",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },
@@ -816,7 +816,6 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
 def test_bounded_runtime_skips_subjects_without_ms1_features(
     tmp_path, monkeypatch, scenario, raw_workers
 ):
-    from xic_extractor.discovery.models import MS1_FEATURE_BACKED_STATES
     from xic_extractor.untargeted_execution.execution import (
         UntargetedPartitionPipelineAdapter,
         execute_untargeted_plan,
@@ -825,16 +824,14 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
     request_payload = plan.subject_batch.request_payload()
     candidate_by_id = {
-        candidate.candidate_id: candidate
+        candidate.peak_id: candidate
         for candidates in plan.context.candidates_by_sample.values()
         for candidate in candidates
     }
     eligible_subject_ids = {
         subject_id
         for candidate_id, subject_id in plan.subject_batch.candidate_memberships
-        if candidate_by_id[candidate_id].ms1_peak_found
-        and candidate_by_id[candidate_id].discovery_candidate_state
-        in MS1_FEATURE_BACKED_STATES
+        if candidate_by_id[candidate_id].passes_peak_gates
     }
     assert len(eligible_subject_ids) == (2 if scenario == "mixed_eligibility" else 0)
     config = AlignmentConfig(anchor_min_seed_events=1)

@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from tests.discovery_ms1_capture_fixtures import (
-    _group,
     _multi_tag_settings,
     _seed,
 )
@@ -15,11 +14,12 @@ from tests.discovery_pipeline_fixtures import _settings
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.discovery.ion_channels import build_discovery_channels
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_peaks,
 )
 from xic_extractor.discovery.output_publication import (
-    write_dual_csvs,
+    publish_discovery_batch_sample,
 )
 from xic_extractor.discovery.physical_fact_persistence import (
     read_discovery_physical_fact_records,
@@ -47,12 +47,12 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
         (raw_path,), discovery_settings=settings, signal_processing_profile=profile
     )
     source = spec.acquisition_inputs[0].acquisition_source
-    groups = tuple(
+    seeds = tuple(
         replace(
-            _group((_seed(scan_number=scan, rt=rt, product_mz=500.0 - loss),)),
+            _seed(scan_number=scan, rt=rt, product_mz=500.0 - loss),
             neutral_loss_tag=tag,
             configured_neutral_loss_da=loss,
-            matched_tag_names=(tag,),
+            observed_neutral_loss_da=loss,
         )
         for scan, rt, tag, loss in (
             (10, 7.78, "dR", 116.047344),
@@ -61,7 +61,7 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
     )
     result = capture_ms1_peaks(
         _OwnerBoundBatchRaw(source),
-        groups,
+        build_discovery_channels(seeds, settings=settings),
         acquisition_source=source,
         settings=settings,
         signal_processing_profile=profile,
@@ -83,17 +83,19 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
     monkeypatch.setattr(owner, "evaluate_physical_peak", unexpected_evaluate)
     recorder = TimingRecorder("discovery", run_id="timed-publication")
 
-    outputs = write_dual_csvs(
-        tmp_path / "out",
-        result.candidates,
+    outputs = publish_discovery_batch_sample(
+        raw_path,
+        result.peaks,
+        result.events,
+        output_dir=tmp_path,
+        sample_output_dir=tmp_path / "out",
+        acquisition_source=source,
         timing_recorder=recorder,
-        sample_stem=raw_path.stem,
         run_spec=spec,
         acquisition_input=spec.acquisition_inputs[0],
-        physical_work_manifest=result.physical_work_manifest,
         physical_evaluations=result.physical_evaluations,
         physical_bindings=result.physical_bindings,
-    )
+    ).outputs
 
     assert outputs.physical_facts_json is not None
     persisted = read_discovery_physical_fact_records(
@@ -143,8 +145,8 @@ def test_discovery_output_timing_records_failure_boundary(
 
         def fail_publish(source: Path, target: Path) -> Path:
             target = Path(target)
-            if source.name == "discovery_candidates.csv.tmp" and target.name == (
-                "discovery_candidates.csv"
+            if source.name == "discovery_peaks.csv.tmp" and target.name == (
+                "discovery_peaks.csv"
             ):
                 raise OSError("timed publish failure")
             return real_replace(source, target)
@@ -152,11 +154,14 @@ def test_discovery_output_timing_records_failure_boundary(
         monkeypatch.setattr(Path, "replace", fail_publish)
 
     with pytest.raises(OSError, match=f"timed {failure} failure"):
-        write_dual_csvs(
-            output_dir,
+        publish_discovery_batch_sample(
+            raw_path,
             (),
+            (),
+            output_dir=tmp_path,
+            sample_output_dir=output_dir,
+            acquisition_source=spec.acquisition_inputs[0].acquisition_source,
             timing_recorder=recorder,
-            sample_stem="sample",
             run_spec=spec,
             acquisition_input=spec.acquisition_inputs[0],
         )

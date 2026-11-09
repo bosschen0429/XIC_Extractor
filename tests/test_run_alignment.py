@@ -54,7 +54,7 @@ def _write_owner_closed_batch_index(
             {
                 "sample_stem": sample_stem,
                 "raw_file": raw_file,
-                "candidate_csv": candidate_csv,
+                "peak_csv": candidate_csv,
                 **_owner_closed_receipt_fields(sample_stem, candidate_path),
             }
         )
@@ -64,8 +64,8 @@ def _write_owner_closed_batch_index(
             "schema_version",
             "sample_stem",
             "raw_file",
-            "candidate_csv",
-            "candidate_count",
+            "peak_csv",
+            "peak_count",
             *DISCOVERY_BATCH_RECEIPT_COLUMNS,
         ),
         batch_rows,
@@ -1138,8 +1138,8 @@ def _write_owner_closed_preflight_batch(
         "schema_version",
         "sample_stem",
         "raw_file",
-        "candidate_csv",
-        "candidate_count",
+        "peak_csv",
+        "peak_count",
         *DISCOVERY_BATCH_RECEIPT_COLUMNS,
     )
     rows: list[dict[str, str]] = []
@@ -1156,17 +1156,17 @@ def _write_owner_closed_preflight_batch(
         receipt = mint_discovery_peak_universe_receipt(
             sample_stem=sample_stem,
             acquisition_source=acquisition_source,
-            candidate_csv=candidate_csv,
+            peak_csv=candidate_csv,
             physical_facts=physical_facts_fingerprint_beside(candidate_csv),
-            candidates=(),
+            peaks=(),
         )
         rows.append(
             {
                 "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
                 "sample_stem": sample_stem,
                 "raw_file": raw_path.name,
-                "candidate_csv": candidate_csv.name,
-                "candidate_count": "0",
+                "peak_csv": candidate_csv.name,
+                "peak_count": "0",
                 **discovery_receipt_index_fields(receipt),
             }
         )
@@ -1315,7 +1315,7 @@ def test_run_alignment_cli_preflight_only_uses_shared_batch_parser(
     )
 
     assert code == 2
-    assert "candidate_csv is required" in capsys.readouterr().err
+    assert "peak_csv is required" in capsys.readouterr().err
 
 
 def test_run_alignment_cli_preflight_only_requires_discovery_owner_closure(
@@ -1324,7 +1324,7 @@ def test_run_alignment_cli_preflight_only_requires_discovery_owner_closure(
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\n",
+        "sample_stem,raw_file,peak_csv\nS1,S1.raw,s1.csv\n",
         encoding="utf-8",
     )
     raw_dir = tmp_path / "raws"
@@ -1349,7 +1349,7 @@ def test_run_alignment_cli_preflight_only_requires_discovery_owner_closure(
     )
 
     assert code == 2
-    assert "owner closure is required" in capsys.readouterr().err
+    assert "regenerate Discovery" in capsys.readouterr().err
 
 
 def test_run_alignment_cli_preflight_only_rejects_missing_candidate_csv(
@@ -1381,7 +1381,7 @@ def test_run_alignment_cli_preflight_only_rejects_missing_candidate_csv(
 
     assert code == 2
     stderr = capsys.readouterr().err
-    assert "candidate CSV does not exist" in stderr
+    assert "peak CSV does not exist" in stderr
     assert "missing.csv" in stderr
 
 
@@ -1552,9 +1552,9 @@ def test_run_alignment_cli_returns_2_for_missing_candidate_csv(
     batch_index = tmp_path / "discovery_batch_index.csv"
     _write_owner_closed_batch_index(
         batch_index,
-        [("Sample_A", "C:/stale/Sample_A.raw", "missing/discovery_candidates.csv")],
+        [("Sample_A", "C:/stale/Sample_A.raw", "missing/discovery_peaks.csv")],
     )
-    (batch_index.parent / "missing/discovery_candidates.csv").unlink()
+    (batch_index.parent / "missing/discovery_peaks.csv").unlink()
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1576,7 +1576,7 @@ def test_run_alignment_cli_returns_2_for_missing_candidate_csv(
     assert code == 2
     stderr = capsys.readouterr().err
     assert "missing" in stderr
-    assert "discovery_candidates.csv" in stderr
+    assert "discovery_peaks.csv" in stderr
 
 
 def test_pyproject_registers_alignment_cli_script() -> None:

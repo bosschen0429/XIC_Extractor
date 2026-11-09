@@ -70,7 +70,7 @@ def _plan(
         sample_candidates = tuple(
             sorted(
                 (*sample_candidates, *third_candidates),
-                key=lambda item: item.candidate_id,
+                key=lambda item: item.peak_id,
             )
         )
         raw.scans = (*raw.scans, *third_raw.scans)
@@ -125,7 +125,7 @@ def _plan(
         sample_identity_namespace="study:bounded-runtime",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },

@@ -211,15 +211,20 @@ def capture_ms1_peaks(
         located.setdefault(captured.work_ordinal, []).append((channel, seed))
         capture_by_work.setdefault(captured.work_ordinal, captured)
 
+    measured = _one_measurement_per_peak(
+        capture_by_work,
+        located,
+        tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+    )
     retained_ordinals = {
-        ordinal: index for index, ordinal in enumerate(sorted(capture_by_work))
+        ordinal: index for index, ordinal in enumerate(sorted(measured))
     }
     peaks: list[DiscoveryPeak] = []
     records: list[DiscoveryPhysicalFactRecord] = []
-    for ordinal in sorted(capture_by_work):
+    for ordinal in sorted(measured):
         peak, record, peak_events = _measured_peak(
             capture_by_work[ordinal],
-            located[ordinal],
+            measured[ordinal],
             work_ordinal=retained_ordinals[ordinal],
             settings=settings,
             ms1_centroid_mz=ms1_centroid_mz,
@@ -247,6 +252,68 @@ def capture_ms1_peaks(
         physical_evaluations=tuple(records),
         physical_bindings=bindings,
     )
+
+
+def _one_measurement_per_peak(
+    capture_by_work: dict[int, CapturedPhysicalPeak],
+    located: dict[int, list[tuple[DiscoveryChannel, DiscoverySeed]]],
+    *,
+    tolerance_ppm: float,
+) -> dict[int, list[tuple[DiscoveryChannel, DiscoverySeed]]]:
+    """Keep one measurement of a peak that adjacent channels both acquired.
+
+    Neighbouring channel XICs overlap, so one ion can be measured in both.
+    Measurements are grouped as channels are: from the lowest XIC mass, a group
+    takes each later measurement within the precursor tolerance of that anchor
+    whose peak shares the anchor's raw apex scan, so no measurement bridges two
+    groups. The kept measurement is the one locating more events, then the
+    larger area, then the lower mass; every event of the group is attached
+    against it.
+    """
+    ordered = sorted(
+        capture_by_work,
+        key=lambda ordinal: (
+            capture_by_work[ordinal].search.request.mz,
+            capture_by_work[ordinal].evaluation.question.query_rt_min,
+            ordinal,
+        ),
+    )
+    members: dict[int, list[int]] = {}
+    assigned: set[int] = set()
+    for index, anchor in enumerate(ordered):
+        if anchor in assigned:
+            continue
+        anchor_capture = capture_by_work[anchor]
+        anchor_mz = anchor_capture.search.request.mz
+        anchor_rt = anchor_capture.evaluation.question.query_rt_min
+        group = [anchor]
+        for other in ordered[index + 1 :]:
+            other_capture = capture_by_work[other]
+            if not within_ppm(
+                other_capture.search.request.mz, anchor_mz, tolerance_ppm
+            ):
+                break
+            if (
+                other not in assigned
+                and other_capture.evaluation.question.query_rt_min == anchor_rt
+            ):
+                group.append(other)
+        assigned.update(group)
+        members[anchor] = group
+
+    def rank(ordinal: int) -> tuple[int, float, float]:
+        facts = capture_by_work[ordinal].evaluation.facts
+        area = 0.0 if facts is None else facts.area_counts_seconds
+        return (
+            -len(located[ordinal]),
+            -area,
+            capture_by_work[ordinal].search.request.mz,
+        )
+
+    return {
+        min(group, key=rank): [item for ordinal in group for item in located[ordinal]]
+        for group in members.values()
+    }
 
 
 def _measured_peak(
@@ -293,8 +360,12 @@ def _measured_peak(
         for seed in located_seeds
     }
     attached = [seed for seed in located_seeds if not reasons[seed]]
-    evidence = attached or located_seeds
-    representative = select_representative_event(evidence, settings=settings)
+    # Every event locating this peak is its MS2 evidence, which Alignment
+    # rereads and judges; only attached events admit it.
+    evidence = located_seeds
+    representative = select_representative_event(
+        attached or located_seeds, settings=settings
+    )
     record = _cid_nl_physical_record(
         representative, captured, work_ordinal=work_ordinal
     )

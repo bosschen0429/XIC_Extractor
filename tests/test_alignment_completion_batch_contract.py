@@ -86,15 +86,15 @@ def _candidate_universe_payload(
         "samples": [
             {
                 "sample_stem": sample.metadata.raw_stem,
-                "candidate_count": len(
+                "peak_count": len(
                     candidate_ids_by_stem.get(sample.metadata.raw_stem, ())
                 ),
                 "candidate_ids": list(
                     candidate_ids_by_stem.get(sample.metadata.raw_stem, ())
                 ),
-                "candidate_artifact_schema_version": "discovery_candidates_csv",
-                "candidate_artifact_sha256": "0" * 64,
-                "candidate_artifact_byte_size": 0,
+                "peak_artifact_schema_version": "discovery_peaks_csv",
+                "peak_artifact_sha256": "0" * 64,
+                "peak_artifact_byte_size": 0,
                 "acquisition_source_id": resolve_request_acquisition_source(
                     processing_owners=processing_owners,
                     sample=sample,
@@ -310,11 +310,11 @@ def test_subject_composition_closes_without_runtime_and_preserves_failure_stage(
 def _universe_entry(**overrides: object) -> dict[str, object]:
     entry: dict[str, object] = {
         "sample_stem": "S1",
-        "candidate_count": 1,
+        "peak_count": 1,
         "candidate_ids": ["c1"],
-        "candidate_artifact_schema_version": "discovery_candidates_csv",
-        "candidate_artifact_sha256": "b" * 64,
-        "candidate_artifact_byte_size": 0,
+        "peak_artifact_schema_version": "discovery_peaks_csv",
+        "peak_artifact_sha256": "b" * 64,
+        "peak_artifact_byte_size": 0,
         "acquisition_source_id": "sha256:" + "c" * 64,
     }
     entry.update(overrides)
@@ -333,8 +333,8 @@ def test_candidate_universe_payload_accepts_lowercase_digests() -> None:
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
-        ("candidate_artifact_sha256", "B" * 64, "owner receipt facts are invalid"),
-        ("candidate_artifact_sha256", 7, "owner receipt facts are invalid"),
+        ("peak_artifact_sha256", "B" * 64, "owner receipt facts are invalid"),
+        ("peak_artifact_sha256", 7, "owner receipt facts are invalid"),
     ],
 )
 def test_candidate_universe_payload_rejects_non_lowercase_sha256(

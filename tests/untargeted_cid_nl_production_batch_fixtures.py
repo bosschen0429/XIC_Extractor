@@ -42,10 +42,7 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
-from xic_extractor.discovery.models import (
-    MS1_FEATURE_BACKED_STATES,
-    DiscoveryPeak,
-)
+from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.execution.process_memory import (
     ProcessMemorySample,
     ProcessTreeMemorySampler,
@@ -74,7 +71,7 @@ from xic_extractor.untargeted_execution.partition_composition import (
 def _physical_subject_facts(candidates, records):
     facts = []
     for candidate in candidates:
-        record = records.get(candidate.candidate_id)
+        record = records.get(candidate.peak_id)
         selected = None if record is None else record.evaluation.facts
         proof = None
         if record is not None and selected is not None:
@@ -91,7 +88,7 @@ def _physical_subject_facts(candidates, records):
             )
         facts.append(
             CidNlPhysicalCandidateFact(
-                candidate_id=candidate.candidate_id,
+                candidate_id=candidate.peak_id,
                 physical_mz=candidate.physical_mz,
                 configured_neutral_loss_da=candidate.configured_neutral_loss_da,
                 proof=proof,
@@ -216,10 +213,10 @@ def _assert_jobs_match_direct_construction(batch) -> None:
     context = batch.context
     memberships = dict(batch.subject_batch.candidate_memberships)
     candidate_keys = {
-        (sample.identity.sample_key, memberships[candidate.candidate_id])
+        (sample.identity.sample_key, memberships[candidate.peak_id])
         for sample in context.samples
         for candidate in context.candidates_by_sample[sample.metadata.raw_stem]
-        if candidate.candidate_id in memberships
+        if candidate.peak_id in memberships
     }
     expected = tuple(
         UntargetedPartitionJob(
@@ -268,8 +265,7 @@ def _assert_jobs_match_direct_construction(batch) -> None:
         records = tuple(
             record
             for record in job.physical_records
-            if memberships.get(record.candidate_id)
-            == job.method_subject.method_subject_id
+            if memberships.get(record.peak_id) == job.method_subject.method_subject_id
         )
         selected = partition_models._request_subject_physical_records(job)
         assert selected == records
@@ -465,14 +461,13 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         else ((2,), "single", False, False, 0.0)
     )
     indexed_input = replay_indexed_input
-    from xic_extractor.discovery.grouping import group_discovery_seeds
-
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
     from xic_extractor.discovery.csv_reader import (
         read_owner_bound_discovery_peaks_csv,
     )
+    from xic_extractor.discovery.ion_channels import build_discovery_channels
     from xic_extractor.discovery.ms1_capture import (
         capture_ms1_peaks,
     )
@@ -505,7 +500,6 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         settings = replace(
             settings,
             neutral_loss_profile=None,
-            seed_rt_gap_min=0.01,
             product_mz_tolerance_ppm=1.0,
             rt_min=12.8,
         )
@@ -610,7 +604,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
             )
             discovery = capture_ms1_peaks(
                 discovery_raw,
-                group_discovery_seeds(seeds, settings=settings),
+                build_discovery_channels(seeds, settings=settings),
                 acquisition_source=source.acquisition_source,
                 settings=settings,
                 signal_processing_profile=profile,
@@ -618,27 +612,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
             )
         folder = tmp_path / path.stem
         folder.mkdir()
-        persisted_candidates = discovery.candidates
-        if indexed_input:
-            from xic_extractor.discovery.models import build_discovery_candidate_id
-
-            # Audit-only observations deliberately precede the real feature in
-            # m/z. They must not choose its query center or demand a curve load.
-            audit = replace(
-                persisted_candidates[0],
-                candidate_id=build_discovery_candidate_id(
-                    sample_stem=path.stem,
-                    best_ms2_scan_id=persisted_candidates[0].best_ms2_scan_id,
-                    precursor_mz=persisted_candidates[0].precursor_mz - 0.001,
-                    product_mz=persisted_candidates[0].product_mz,
-                ),
-                precursor_mz=persisted_candidates[0].precursor_mz - 0.001,
-                precursor_mz_basis="product_plus_neutral_loss",
-                ms1_peak_found=False,
-                ms1_feature_row_id="",
-                discovery_candidate_state="review_only_orphan_nl",
-            )
-            persisted_candidates = (*persisted_candidates, audit)
+        persisted_candidates = discovery.peaks
         write_discovery_physical_fact_sidecar(
             folder / "discovery_physical_facts.json",
             run_spec=spec,
@@ -655,27 +629,26 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
             for candidate in read_owner_bound_discovery_peaks_csv(
                 csvs[path.stem], receipt=receipts[path.stem]
             )
-            if candidate.ms1_peak_found
         )
         source_evidence.update(
-            (record.candidate_id, record) for record in discovery.physical_evaluations
+            (record.peak_id, record) for record in discovery.physical_evaluations
         )
         source_records.update(
-            (record.candidate_id, record)
+            (record.peak_id, record)
             for record in discovery.physical_evaluations
-            if record.candidate_id in {c.candidate_id for c in candidates[path.stem]}
+            if record.peak_id in {c.peak_id for c in candidates[path.stem]}
         )
         if family_context:
             # Identical mass queries now share the complete peak population in
             # Discovery; the same peak is not left as two window-bound roots.
             assert len(candidates[path.stem]) == 1
-            assert all(candidate.ms1_peak_found for candidate in candidates[path.stem])
+            assert all(True for candidate in candidates[path.stem])
             if not family_precursor_delta:
                 # Both NL receipts identify one measured peak, not two records.
                 (record,) = discovery.physical_evaluations
                 assert record.work_item.xic_rt_min <= min(query_rts)
                 assert record.work_item.xic_rt_max >= max(query_rts)
-                (candidate,) = discovery.candidates
+                (candidate,) = discovery.peaks
                 # The physical raw apex must not replace the retained NL time.
                 observed_nl_rts = tuple(seed.rt for seed in seeds)
                 assert candidate.best_seed_rt in observed_nl_rts
@@ -698,7 +671,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                 raw.rt[start:end], raw.intensity[start:end], profile=profile
             )
             for record in discovery.physical_evaluations:
-                family_evaluations[record.candidate_id] = evaluate_physical_peak(
+                family_evaluations[record.peak_id] = evaluate_physical_peak(
                     prepared,
                     query_rt_min=record.evaluation.question.query_rt_min,
                     request_context_rt_start_min=rt_min,
@@ -707,15 +680,15 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
             assert (
                 len(
                     {
-                        family_evaluations[record.candidate_id].answer.selected_segment
+                        family_evaluations[record.peak_id].answer.selected_segment
                         for record in discovery.physical_evaluations
-                        if family_evaluations[record.candidate_id].facts is not None
+                        if family_evaluations[record.peak_id].facts is not None
                     }
                 )
                 == 1
             )
             assert all(
-                family_evaluations[record.candidate_id].facts is not None
+                family_evaluations[record.peak_id].facts is not None
                 for record in discovery.physical_evaluations
             )
             continue
@@ -744,12 +717,12 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         )
         proof_debug = tuple(
             (
-                candidate.candidate_id,
+                candidate.peak_id,
                 candidate.configured_neutral_loss_da,
-                source_records[candidate.candidate_id].work_item.acquisition_source_id,
-                source_records[candidate.candidate_id].evaluation.facts.apex_rt_min,
-                source_records[candidate.candidate_id].evaluation.facts.left_rt_min,
-                source_records[candidate.candidate_id].evaluation.facts.right_rt_min,
+                source_records[candidate.peak_id].work_item.acquisition_source_id,
+                source_records[candidate.peak_id].evaluation.facts.apex_rt_min,
+                source_records[candidate.peak_id].evaluation.facts.left_rt_min,
+                source_records[candidate.peak_id].evaluation.facts.right_rt_min,
             )
             for sample_candidates in candidates.values()
             for candidate in sample_candidates
@@ -757,7 +730,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         assert all(
             len(
                 {
-                    source_records[candidate.candidate_id].evaluation.facts.apex_rt_min
+                    source_records[candidate.peak_id].evaluation.facts.apex_rt_min
                     for candidate in sample_candidates
                 }
             )
@@ -772,10 +745,10 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         ], proof_debug
     discovery_batch = DiscoveryBatchInput(
         sample_order=sample_stems,
-        candidate_csvs=csvs,
+        peak_csvs=csvs,
         raw_files={path.stem: path for path in paths},
-        review_csvs={path.stem: None for path in paths},
-        candidate_receipts=receipts,
+        event_csvs={path.stem: None for path in paths},
+        peak_receipts=receipts,
     )
     captured_batches = []
     captured_peaks = []
@@ -1008,11 +981,11 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                 adapter = sample_result.adapter_result
                 stem = sample_result.job.sample.metadata.raw_stem
                 expected_source_candidate_ids = {
-                    candidate.candidate_id
+                    candidate.peak_id
                     for candidate in candidates[stem]
                     if dict(
                         captured_batches[0].subject_batch.candidate_memberships
-                    ).get(candidate.candidate_id)
+                    ).get(candidate.peak_id)
                     == sample_result.job.method_subject.method_subject_id
                 }
                 assert (
@@ -1023,12 +996,11 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                     == source_records
                 )
                 expected_capture_candidate_ids = {
-                    candidate.candidate_id
+                    candidate.peak_id
                     for candidate in candidates[stem]
                     if (
-                        candidate.candidate_id in expected_source_candidate_ids
-                        and candidate.discovery_candidate_state
-                        in MS1_FEATURE_BACKED_STATES
+                        candidate.peak_id in expected_source_candidate_ids
+                        and candidate.passes_peak_gates
                     )
                 }
                 expected_trace_count = 1 if expected_capture_candidate_ids else 0

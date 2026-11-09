@@ -81,7 +81,7 @@ class SampleAdapterScenario:
             raw=raw,
             signal_processing_profile=TEST_PROFILE,
             physical_records=tuple(
-                self.physical_records[c.candidate_id] for c in candidates
+                self.physical_records[c.peak_id] for c in candidates
             ),
         )
         return adapt_current_discovery_sample_subject(**(inputs | overrides))
@@ -97,15 +97,5 @@ def build_sample_adapter_scenario(tmp_path: Path) -> SampleAdapterScenario:
 
 
 def _without_ms1_peak(candidate: DiscoveryPeak) -> DiscoveryPeak:
-    return replace(
-        candidate,
-        ms1_peak_found=False,
-        ms1_apex_rt=None,
-        ms1_area=None,
-        ms1_peak_rt_start=None,
-        ms1_peak_rt_end=None,
-        ms1_height=None,
-        ms1_seed_delta_min=None,
-        discovery_candidate_state="review_only_orphan_nl",
-        ms1_feature_row_id="",
-    )
+    """A peak held at peak level: its MS2 events remain, its MS1 peak is not used."""
+    return replace(candidate, requires_overlap_review=True)

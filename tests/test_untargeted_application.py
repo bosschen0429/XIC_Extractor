@@ -687,9 +687,9 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
                     for candidate in values:
                         assert read_alignment_explanation(
                             report_path,
-                            candidate_id=candidate.candidate_id,
+                            candidate_id=candidate.peak_id,
                         ) == read_alignment_explanation(
-                            reference, candidate_id=candidate.candidate_id
+                            reference, candidate_id=candidate.peak_id
                         )
         else:
             with pytest.raises(OSError, match=f"{failure} failed"):
@@ -858,7 +858,7 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
         **plain_summary,
         "known_istd_reference": provenance,
     }
-    candidate_id = candidates["S1"][0].candidate_id
+    candidate_id = candidates["S1"][0].peak_id
     assert read_alignment_explanation(report, candidate_id=candidate_id) == (
         read_alignment_explanation(plain, candidate_id=candidate_id)
     )
@@ -1160,7 +1160,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
     assert [row["Mz"] for row in matrix] == ["701.0000"]
     by_candidate = {row["source_candidate_id"]: row for row in cells}
     assert set(by_candidate) == {
-        f"{stem}#13@mz701_p584.9526" for stem in ("sample-a", "sample-b")
+        f"{stem}@mz701_rt7.8000" for stem in ("sample-a", "sample-b")
     }
     assert {row["status"] for row in cells} == {"detected"}
     # Fixture apex = 100 baseline + (sample index + 1) * 500.
@@ -1176,12 +1176,12 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
     assert areas["sample-b"] / areas["sample-a"] == pytest.approx(2.0, rel=0.01)
 
     assert {
-        stem: batch.peak_receipts[stem].candidate_count
+        stem: batch.peak_receipts[stem].peak_count
         for stem in batch.sample_order
         if batch.peak_receipts[stem] is not None
-    } == {"sample-a": 3, "sample-b": 3}
+    } == {"sample-a": 2, "sample-b": 2}
     assert {
-        output.candidates_csv.parent.name: len(
+        output.peaks_csv.parent.name: len(
             json.loads(output.physical_facts_json.read_text(encoding="utf-8"))[
                 "records"
             ]
@@ -1206,7 +1206,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
             )
             == 2
         )
-        with output.candidates_csv.open(encoding="utf-8-sig", newline="") as handle:
+        with output.peaks_csv.open(encoding="utf-8-sig", newline="") as handle:
             inferred = [
                 row
                 for row in csv.DictReader(handle)
@@ -1215,7 +1215,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
         assert len(inferred) == 1
         assert inferred[0]["precursor_mz_basis"] == "product_plus_neutral_loss"
         assert inferred[0]["neutral_loss_mass_error_ppm"] == ""
-        retained_inferred_areas[output.candidates_csv.parent.name] = float(
+        retained_inferred_areas[output.peaks_csv.parent.name] = float(
             inferred[0]["ms1_area"]
         )
     assert retained_inferred_areas["sample-a"] > 0.0

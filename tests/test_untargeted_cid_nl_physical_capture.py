@@ -42,11 +42,10 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     from types import SimpleNamespace
     from unittest.mock import Mock
 
-    from xic_extractor.discovery.grouping import group_discovery_seeds
-
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
+    from xic_extractor.discovery.ion_channels import build_discovery_channels
     from xic_extractor.discovery.ms1_capture import (
         capture_ms1_peaks,
     )
@@ -106,7 +105,6 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     settings = replace(
         _settings(),
         neutral_loss_profile=None,
-        seed_rt_gap_min=0.01,
         # Retain two chemical hypotheses while their MS1 capture contexts overlap.
         product_mz_tolerance_ppm=1.0,
         rt_min=12.8,
@@ -169,17 +167,15 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     )
     discovery = capture_ms1_peaks(
         raw,
-        group_discovery_seeds(seeds, settings=settings),
+        build_discovery_channels(seeds, settings=settings),
         acquisition_source=source,
         settings=settings,
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
     )
     # Both requests observe one channel/peak; retain both NL events on one result.
-    assert len(discovery.candidates) == 1
-    assert set(discovery.candidates[0].seed_scan_ids) == {
-        seed.scan_number for seed in seeds
-    }
+    assert len(discovery.peaks) == 1
+    assert set(discovery.peaks[0].seed_scan_ids) == {seed.scan_number for seed in seeds}
     legacy_records = tuple(
         DiscoveryPhysicalFactRecord(
             work_item=record.work_item,
@@ -224,7 +220,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
                 processing_owners=owners,
                 sample=fixture.sample("S1"),
                 method_subject=fixture.method_subject,
-                candidates=discovery.candidates,
+                candidates=discovery.peaks,
                 settings=settings,
                 peak_config=peak_config,
                 raw=raw,
@@ -237,7 +233,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         processing_owners=owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=discovery.candidates,
+        candidates=discovery.peaks,
         settings=settings,
         peak_config=peak_config,
         raw=raw,
@@ -264,9 +260,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     assert prepare.call_count == 0
     for record in legacy_records:
         candidate = next(
-            item
-            for item in discovery.candidates
-            if item.candidate_id == record.candidate_id
+            item for item in discovery.peaks if item.peak_id == record.peak_id
         )
         acquired = next(
             item
@@ -289,12 +283,12 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
             request_context_rt_end_min=acquired.coordinate.request.rt_max,
         )
         assert (expected != record.evaluation) == changed
-        capture = captures[record.candidate_id]
+        capture = captures[record.peak_id]
         assert capture.physical_evaluation == expected
         binding = next(
             item
             for item in capture.scope.capture_bindings
-            if item.candidate_id == record.candidate_id
+            if item.candidate_id == record.peak_id
         )
         assert binding.source_physical_evaluation is None
         assert binding.physical_evaluation is capture.physical_evaluation
@@ -318,13 +312,13 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         replay_scope = replace(
             capture.scope,
             capture_bindings=tuple(
-                replay_binding if item.candidate_id == record.candidate_id else item
+                replay_binding if item.candidate_id == record.peak_id else item
                 for item in capture.scope.capture_bindings
             ),
         )
         replay = capture_owner.capture_peak_hypotheses(
             scope=replay_scope,
-            candidate_id=record.candidate_id,
+            candidate_id=record.peak_id,
             trace=trace_from_xic_request(
                 sample_name=binding.sample_key,
                 request=record.acquired_trace.coordinate.request,
@@ -359,7 +353,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
         processing_owners=owners,
         sample=fixture.sample("S1"),
-        candidates=discovery.candidates,
+        candidates=discovery.peaks,
         settings=settings,
         raw=raw,
         signal_processing_profile=profile,
@@ -370,7 +364,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         processing_owners=owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=discovery.candidates,
+        candidates=discovery.peaks,
         settings=settings,
         peak_config=peak_config,
         raw=raw,
@@ -410,11 +404,10 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
     import json
     from types import SimpleNamespace
 
-    from xic_extractor.discovery.grouping import group_discovery_seeds
-
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
+    from xic_extractor.discovery.ion_channels import build_discovery_channels
     from xic_extractor.discovery.ms1_capture import (
         capture_ms1_peaks,
     )
@@ -472,7 +465,7 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
     profile = SignalProcessingProfile(window_points=15)
     discovery = capture_ms1_peaks(
         raw,
-        group_discovery_seeds(
+        build_discovery_channels(
             collect_strict_nl_seeds(
                 raw, raw_file=fixture.source_paths["S1"], settings=settings
             ),
@@ -483,7 +476,7 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
     )
-    (original,) = discovery.candidates
+    (original,) = discovery.peaks
     (record,) = discovery.physical_evaluations
     candidate = replace(original, ms1_apex_mz=physical_mz)
     method_subject = mint_untargeted_cid_nl_method_subject(
@@ -495,7 +488,7 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
         mint_untargeted_cid_nl_method_subject_batch(
             subjects=(method_subject,),
             candidate_memberships=(
-                (candidate.candidate_id, method_subject.method_subject_id),
+                (candidate.peak_id, method_subject.method_subject_id),
             ),
         )
         if batch_subject
@@ -558,11 +551,10 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
 def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.discovery.grouping import group_discovery_seeds
-
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
+    from xic_extractor.discovery.ion_channels import build_discovery_channels
     from xic_extractor.discovery.ms1_capture import (
         capture_ms1_peaks,
     )
@@ -590,19 +582,19 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
     )
     discovery = capture_ms1_peaks(
         raw,
-        group_discovery_seeds(seeds, settings=settings),
+        build_discovery_channels(seeds, settings=settings),
         acquisition_source=fixture.owners.request.acquisition_sources[0],
         settings=settings,
         signal_processing_profile=profile,
         ms1_centroid_mz=lambda *_: None,
     )
-    assert len(discovery.candidates) == 2
+    assert len(discovery.peaks) == 2
     owners = bind_physical_capture(fixture.owners, {}, profile=profile)
     result = adapt_current_discovery_sample_subject(
         processing_owners=owners,
         sample=fixture.sample("S1"),
         method_subject=fixture.method_subject,
-        candidates=discovery.candidates,
+        candidates=discovery.peaks,
         settings=settings,
         peak_config=peak_config,
         raw=raw,

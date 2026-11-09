@@ -48,13 +48,13 @@ def test_run_discovery_cli_passes_single_raw_settings(
         captured["dll_dir"] = dll_dir
         captured["run_spec"] = run_spec
         output_dir.mkdir(parents=True, exist_ok=True)
-        candidates_csv = output_dir / "discovery_candidates.csv"
-        review_csv = output_dir / "discovery_review.csv"
+        candidates_csv = output_dir / "discovery_peaks.csv"
+        review_csv = output_dir / "discovery_events.csv"
         candidates_csv.write_text("review_priority\n", encoding="utf-8")
         review_csv.write_text("review_priority\n", encoding="utf-8")
         return DiscoveryRunOutputs(
-            candidates_csv=candidates_csv,
-            review_csv=review_csv,
+            peaks_csv=candidates_csv,
+            events_csv=review_csv,
             physical_facts_json=tmp_path / "discovery_physical_facts.json",
         )
 
@@ -103,10 +103,10 @@ def test_run_discovery_cli_passes_single_raw_settings(
     assert captured["run_spec"].discovery_method.settings == settings
     assert captured["run_spec"].acquisition_inputs[0].sample_stem == raw_path.stem
     stdout = capsys.readouterr().out
-    assert "Discovery candidates CSV: " in stdout
-    assert "Discovery review CSV: " in stdout
-    assert "discovery_candidates.csv" in stdout
-    assert "discovery_review.csv" in stdout
+    assert "Discovery peaks CSV: " in stdout
+    assert "Discovery events CSV: " in stdout
+    assert "discovery_peaks.csv" in stdout
+    assert "discovery_events.csv" in stdout
 
 
 def test_run_discovery_rejects_retired_arbitrated_resolver_mode(
@@ -170,8 +170,8 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "discovery_batch_index.csv"
         sample_outputs = DiscoveryRunOutputs(
-            candidates_csv=output_dir / "A" / "discovery_candidates.csv",
-            review_csv=output_dir / "A" / "discovery_review.csv",
+            peaks_csv=output_dir / "A" / "discovery_peaks.csv",
+            events_csv=output_dir / "A" / "discovery_events.csv",
             physical_facts_json=tmp_path / "discovery_physical_facts.json",
         )
         output_path.write_text("sample_stem\n", encoding="utf-8")

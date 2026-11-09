@@ -169,10 +169,10 @@ def test_retained_alignment_keeps_full_root_injection_order(
     receipts = build_discovery_receipts(tmp_path, selected_paths, candidates)
     batch = DiscoveryBatchInput(
         sample_order=("A", "B"),
-        candidate_csvs={},
+        peak_csvs={},
         raw_files={p.stem: p for p in selected_paths},
-        review_csvs={},
-        candidate_receipts=receipts,
+        event_csvs={},
+        peak_receipts=receipts,
     )
     monkeypatch.setattr(
         "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",
@@ -249,10 +249,10 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
     receipts = build_discovery_receipts(tmp_path, paths, candidates)
     batch = DiscoveryBatchInput(
         sample_order=("A", "B"),
-        candidate_csvs={},
+        peak_csvs={},
         raw_files={p.stem: p for p in paths},
-        review_csvs={},
-        candidate_receipts=receipts,
+        event_csvs={},
+        peak_receipts=receipts,
     )
     monkeypatch.setattr(
         "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",

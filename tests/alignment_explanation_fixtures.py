@@ -83,7 +83,7 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
         f'combine_mode = "{mode}"\n'
         '[[tag]]\nstrategy = "neutral_loss"\nname = "A"\nvalue = 116.0474\n'
         '[[tag]]\nstrategy = "neutral_loss"\nname = "B"\nvalue = 132.0423\n'
-        "[discovery]\nrt_min = 7.5\nrt_max = 8.6\nseed_rt_gap_min = 0.2\n"
+        "[discovery]\nrt_min = 7.5\nrt_max = 8.6\n"
         'ms1_search_padding_min = 0.2\nresolver_mode = "local_minimum"\n',
         encoding="utf-8",
     )
@@ -123,7 +123,7 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
         sample_identity_namespace="study:explanation",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },

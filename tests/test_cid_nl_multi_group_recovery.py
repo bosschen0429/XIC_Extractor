@@ -272,7 +272,7 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
         sample_identity_namespace="study:grouping-window-invariance",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },
@@ -405,7 +405,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         sample_identity_namespace="study:sample-query-rt",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },
@@ -540,7 +540,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },
@@ -581,7 +581,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
     completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
-    rejected_id = candidates["Rejected"][0].candidate_id
+    rejected_id = candidates["Rejected"][0].peak_id
     assert rejected_id not in completed.application_result.candidate_ids
     assert not completed.application_result.excluded_candidates
     writer = project_completed_untarget_batch_writer_inputs(
@@ -682,7 +682,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             physical_records=physical_records,
         )
         current_candidates = tuple(
-            sorted(current_candidates, key=lambda candidate: candidate.candidate_id)
+            sorted(current_candidates, key=lambda candidate: candidate.peak_id)
         )
         candidates[path.stem] = (
             current_candidates
@@ -713,7 +713,7 @@ def test_runtime_recovers_every_authorized_rt_group(
         sample_identity_namespace="study:multi-group-recovery",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in candidates.values()
             for c in values
         },
@@ -757,7 +757,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                 work_unit_key=sample.metadata.raw_stem,
                 signal_processing_profile=context.signal_processing_profile,
                 physical_records=tuple(
-                    context.physical_records_by_candidate[c.candidate_id]
+                    context.physical_records_by_candidate[c.peak_id]
                     for c in (candidates[sample.metadata.raw_stem])
                 ),
             )
@@ -1196,9 +1196,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     # Keep the two synthetic discovery peaks as separate fixture groups; this
     # changes only this test input, never the production/default threshold.
     settings, peak_config = (
-        replace(
-            _settings(), neutral_loss_profile=None, rt_max=8.6, seed_rt_gap_min=0.1
-        ),
+        replace(_settings(), neutral_loss_profile=None, rt_max=8.6),
         _peak_config(tmp_path),
     )
     raws, candidates = {}, {}
@@ -1263,7 +1261,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },
@@ -1296,7 +1294,8 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         attempt.assessment.candidate_peaks[0].content.physical_peak_key
         for attempt in missing.backfill_attempts
     )
-    assert len(set(physical_ids)) == (1 if mz_separation_ppm == 0.0 else 2)
+    # Ions within the precursor tolerance share one Discovery ion channel.
+    assert len(set(physical_ids)) == 1
 
     (child,) = completed.application_result.children
     transition = child.scientific_core.partition_transition
@@ -1359,9 +1358,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
             return trace
 
     settings, peak_config = (
-        replace(
-            _settings(), neutral_loss_profile=None, rt_max=8.6, seed_rt_gap_min=0.1
-        ),
+        replace(_settings(), neutral_loss_profile=None, rt_max=8.6),
         _peak_config(tmp_path),
     )
     raws, candidates = {}, {}
@@ -1414,7 +1411,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },
@@ -1451,7 +1448,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
             first.content.physical_peak_key,
             second.content.physical_peak_key,
         }
-    ) == (1 if mz_separation_ppm == 0.0 else 2)
+    ) == (1 if mz_separation_ppm <= 20.0 else 2)
 
     completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
@@ -1629,7 +1626,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },
@@ -1796,7 +1793,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },
@@ -1904,12 +1901,12 @@ def _assert_alignment_uses_configured_recovery_groups(
         signal_processing_profile=TEST_PROFILE,
         discovery_batch=DiscoveryBatchInput(
             sample_order=tuple(candidates),
-            candidate_csvs={
+            peak_csvs={
                 stem: tmp_path / f"{stem}.owner-candidates.csv" for stem in candidates
             },
             raw_files={path.stem: path for path in paths},
-            review_csvs={stem: None for stem in candidates},
-            candidate_receipts=kwargs["discovery_receipts_by_sample"],
+            event_csvs={stem: None for stem in candidates},
+            peak_receipts=kwargs["discovery_receipts_by_sample"],
         ),
         candidates_by_sample=candidates,
         sample_metadata=kwargs["sample_metadata"],

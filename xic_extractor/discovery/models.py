@@ -265,11 +265,12 @@ class DiscoveryPhysicalWorkItem:
 
 @dataclass(frozen=True)
 class DiscoveryPeak:
-    """One physical MS1 peak on one ion channel, with its attached NL events.
+    """One physical MS1 peak on one ion channel, with the NL events locating it.
 
-    Peak facts come from the physical measurement. Event fields describe the
-    representative attached event; without attached events they describe the
-    representative event located on this peak.
+    Peak facts come from the physical measurement. Evidence fields (scan IDs,
+    tag evidence, RT range, product intensity) cover every event locating the
+    peak; ``attached_event_count`` counts those that attach and admit it. The
+    representative event is attached when any event attaches.
     """
 
     peak_id: str
@@ -341,6 +342,11 @@ class DiscoveryPeak:
         if self.attached_event_count < 1:
             return "no_attached_event"
         return "admitted"
+
+    @property
+    def passes_peak_gates(self) -> bool:
+        """No peak-level gate holds this peak, whatever its NL attachment."""
+        return self.admission_reason in {"admitted", "no_attached_event"}
 
     @property
     def admitted(self) -> bool:

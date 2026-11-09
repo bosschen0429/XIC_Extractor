@@ -12,10 +12,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from xic_extractor.discovery.grouping import group_discovery_seeds
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE, fake_acquisition_source
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
+from xic_extractor.discovery.ion_channels import build_discovery_channels
 from xic_extractor.discovery.models import DiscoveryPeak, DiscoverySeed
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_peaks,
@@ -135,11 +135,11 @@ def test_ms2_evidence_changes_without_changing_ms1_integration_or_id() -> None:
 
 def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> None:
     settings = _discovery_settings(ms1_search_padding_min=0.20)
-    first_group = group_discovery_seeds(
+    first_group = build_discovery_channels(
         (_seed(scan_number=10, rt=7.90),),
         settings=settings,
     )[0]
-    second_group = group_discovery_seeds(
+    second_group = build_discovery_channels(
         (_seed(scan_number=20, rt=8.10),),
         settings=settings,
     )[0]
@@ -152,7 +152,7 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> N
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
         ms1_centroid_mz=lambda *_: None,
-    ).candidates[0]
+    ).peaks[0]
     second = capture_ms1_peaks(
         raw,
         (second_group,),
@@ -160,16 +160,15 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> N
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
         ms1_centroid_mz=lambda *_: None,
-    ).candidates[0]
+    ).peaks[0]
 
     assert raw.requests == [
         (500.0, pytest.approx(7.30), pytest.approx(8.50), 20.0),
         (500.0, pytest.approx(7.50), pytest.approx(8.70), 20.0),
     ]
-    assert first.ms1_peak_found and second.ms1_peak_found
+    # Different seed windows locate and measure the same peak identity.
     assert _discovery_ms1_peak_probe(first) == _discovery_ms1_peak_probe(second)
-    assert first.candidate_id != second.candidate_id
-    assert first.ms1_feature_row_id == second.ms1_feature_row_id
+    assert first.peak_id == second.peak_id
 
 
 def _trace() -> Trace:

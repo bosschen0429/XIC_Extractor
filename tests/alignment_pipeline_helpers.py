@@ -95,7 +95,7 @@ def write_batch(
     for sample_stem in sample_order:
         sample_dir = batch_dir / sample_stem
         sample_dir.mkdir(exist_ok=True)
-        candidates_csv = sample_dir / "discovery_candidates.csv"
+        candidates_csv = sample_dir / "discovery_peaks.csv"
         write_csv(
             candidates_csv,
             DISCOVERY_PEAK_COLUMNS,
@@ -104,8 +104,8 @@ def write_batch(
         row = {
             "sample_stem": sample_stem,
             "raw_file": raw_files.get(sample_stem, f"C:/stale/{sample_stem}.raw"),
-            "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
-            "review_csv": "",
+            "peak_csv": str(candidates_csv.relative_to(batch_dir)),
+            "event_csv": "",
         }
         row.update(_owner_closed_receipt_fields(sample_stem, candidates_csv))
         rows.append(row)
@@ -116,9 +116,9 @@ def write_batch(
             "schema_version",
             "sample_stem",
             "raw_file",
-            "candidate_csv",
-            "review_csv",
-            "candidate_count",
+            "peak_csv",
+            "event_csv",
+            "peak_count",
             *DISCOVERY_BATCH_RECEIPT_COLUMNS,
         ),
         rows,
@@ -143,13 +143,13 @@ def _owner_closed_receipt_fields(
     receipt = mint_discovery_peak_universe_receipt(
         sample_stem=sample_stem,
         acquisition_source=acquisition_source,
-        candidate_csv=candidates_csv,
+        peak_csv=candidates_csv,
         physical_facts=physical_facts_fingerprint_beside(candidates_csv),
-        candidates=candidates,
+        peaks=candidates,
     )
     return {
         "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
-        "candidate_count": str(len(candidates)),
+        "peak_count": str(len(candidates)),
         **discovery_receipt_index_fields(receipt),
     }
 
@@ -166,7 +166,7 @@ def write_csv(
 
 
 def candidate_id(sample_stem: str) -> str:
-    return f"{sample_stem}#1@mz500_p384"
+    return f"{sample_stem}@mz500_rt8.5000"
 
 
 def candidate_row(sample_stem: str) -> dict[str, str]:
@@ -177,21 +177,22 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
         "ms2_support": "strong",
         "ms1_support": "clean",
         "rt_alignment": "aligned",
-        "discovery_candidate_state": "ms1_feature_nl_supported",
-        "ms1_feature_row_id": f"{sample_stem}|DNA_dR|500|8.5",
-        "candidate_id": candidate_id(sample_stem),
-        "feature_id": f"{sample_stem}@F0001",
-        "feature_family_size": "1",
+        "admitted": "TRUE",
+        "admission_reason": "admitted",
+        "peak_id": candidate_id(sample_stem),
+        "channel_mz": "500.0",
         "precursor_mz": "500.0",
         "product_mz": "384.0",
         "observed_neutral_loss_da": "116.0",
         "best_seed_rt": "8.5",
-        "seed_event_count": "2",
-        "ms1_peak_found": "TRUE",
+        "attached_event_count": "2",
         "ms1_apex_rt": "8.5",
         "ms1_area": "1000.0",
         "ms2_product_max_intensity": "500.0",
         "reason": "seed",
+        "requires_overlap_review": "FALSE",
+        "doubly_charged_isotope": "FALSE",
+        "blank_background": "FALSE",
         "raw_file": f"C:/stale/{sample_stem}.raw",
         "sample_stem": sample_stem,
         "best_ms2_scan_id": "1",
@@ -208,7 +209,7 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
         "rt_seed_max": "8.6",
         "ms1_search_rt_min": "8.2",
         "ms1_search_rt_max": "8.8",
-        "ms1_seed_delta_min": "",
+        "ms1_seed_delta_min": "0.0",
         "ms1_peak_rt_start": "8.4",
         "ms1_peak_rt_end": "8.6",
         "ms1_height": "100.0",

@@ -125,7 +125,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         sample_identity_namespace="study:compatible-source-subject",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates_by_sample).values()
             for c in values
         },
@@ -220,7 +220,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
             alignment_config=alignment_config,
         )
         detail = read_alignment_explanation(
-            report, candidate_id=selected_candidates[stems[0]].candidate_id
+            report, candidate_id=selected_candidates[stems[0]].peak_id
         )
         missing_queries = [
             query
@@ -277,7 +277,7 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
         sample_identity_namespace="study:production-batch",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in ({"S1": candidates}).values()
             for c in values
         },
@@ -345,10 +345,10 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
     )
     discovery_batch = DiscoveryBatchInput(
         sample_order=("S1",),
-        candidate_csvs={"S1": tmp_path / "S1.csv"},
+        peak_csvs={"S1": tmp_path / "S1.csv"},
         raw_files={"S1": raw_path},
-        review_csvs={"S1": None},
-        candidate_receipts=receipts,
+        event_csvs={"S1": None},
+        peak_receipts=receipts,
     )
     built = object()
     application_result = object()
@@ -478,7 +478,7 @@ def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -
             sample_identity_namespace="study:production-batch",
             signal_processing_profile=TEST_PROFILE,
             physical_records_by_candidate={
-                c.candidate_id: physical_records[c.candidate_id]
+                c.peak_id: physical_records[c.peak_id]
                 for values in ({"S1": candidates}).values()
                 for c in values
             },
@@ -529,7 +529,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         sample_identity_namespace="study:production-batch",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in ({"S1": candidates}).values()
             for c in values
         },
@@ -712,31 +712,27 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     for raw_path, raw in source_raws.items():
         if raw_path.stem in rejected_samples:
             raw.intensity[:] = 0
-    support = _current_candidates(
+    # A sample without MS1 signal publishes no Discovery peak.
+    support_candidates = _current_candidates(
         source_raws[raw_paths[0]],
         raw_file=raw_paths[0],
         settings=settings,
         physical_records=physical_records,
-    )[0]
+    )
     direct_hold_candidates = _current_candidates(
         source_raws[raw_paths[1]],
         raw_file=raw_paths[1],
         settings=settings,
         physical_records=physical_records,
     )
-    direct_hold = direct_hold_candidates[0]
     candidates_by_sample: dict[str, tuple[DiscoveryPeak, ...]] = {
-        "Support": (support,),
-        "Hold": (direct_hold,),
+        "Support": support_candidates[:1],
+        "Hold": direct_hold_candidates[:1],
     }
     if scenario in {"hold_no_input", "support_no_input"}:
         candidates_by_sample["Hold"] = ()
     if ambiguous:
         candidates_by_sample["Hold"] = direct_hold_candidates
-    if scenario in {"all_reject", "hold_reject"}:
-        for stem in rejected_samples:
-            candidate = support if stem == "Support" else direct_hold
-            candidates_by_sample[stem] = (candidate,)
     if scenario == "other_support":
         for raw_path in raw_paths:
             first_raw = observation_only_raw((7.98,))
@@ -795,7 +791,7 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         sample_identity_namespace="study:production-hold",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates_by_sample).values()
             for c in values
         },
@@ -807,13 +803,13 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     )
 
     admitted = {
-        c.candidate_id
+        c.peak_id
         for values in candidates_by_sample.values()
         for c in values
-        if c.discovery_candidate_state == "ms1_feature_nl_supported"
+        if c.admission_reason == "admitted"
     }
     rejected = {
-        c.candidate_id for values in candidates_by_sample.values() for c in values
+        c.peak_id for values in candidates_by_sample.values() for c in values
     } - admitted
     assert (
         len(admitted)
@@ -898,7 +894,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         sample_identity_namespace="study:canonical-batch",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },
@@ -1037,7 +1033,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         sample_identity_namespace="study:known-istd",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates).values()
             for c in values
         },
@@ -1217,7 +1213,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         sample_identity_namespace="study:production-recovery",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates_by_sample).values()
             for c in values
         },
@@ -1371,7 +1367,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         candidate for values in candidates_by_sample.values() for candidate in values
     ]
     readings = {
-        candidate.candidate_id: candidate.precursor_mz * (1 - (12 + index) * 1e-6)
+        candidate.peak_id: candidate.precursor_mz * (1 - (12 + index) * 1e-6)
         for index, candidate in enumerate(direct_candidates[:-1])
     }
     reported = project_completed_untarget_batch_writer_inputs(
@@ -1543,7 +1539,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         sample_identity_namespace="study:ms1-only-publication",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates_by_sample).values()
             for c in values
         },
@@ -1639,7 +1635,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     for stem in sample_stems[:3]:
         assert cell_rows[stem]["status"] == "detected"
         assert cell_rows[stem]["source_candidate_id"] == (
-            candidates_by_sample[stem][0].candidate_id
+            candidates_by_sample[stem][0].peak_id
         )
     assert cell_rows["MS1Only"]["status"] == "backfilled"
     assert cell_rows["MS1Only"]["source_candidate_id"] == ""

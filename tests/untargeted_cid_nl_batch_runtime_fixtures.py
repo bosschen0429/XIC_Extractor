@@ -42,7 +42,7 @@ def _nearby_subject_candidates(
                 )[0]
                 for raw in (first_raw, second_raw)
             ),
-            key=lambda item: item.candidate_id,
+            key=lambda item: item.peak_id,
         )
     )
     source_raw = _FakeRaw((7.98,))

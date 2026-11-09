@@ -19,6 +19,7 @@ from xic_extractor.discovery.ion_channels import build_discovery_channels
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import within_ppm
+from xic_extractor.xic_models import XICTrace
 
 
 def _capture(raw, seeds, settings: DiscoverySettings):
@@ -247,3 +248,40 @@ def test_an_event_without_a_measured_peak_is_recorded_without_a_peak() -> None:
     (event,) = result.events
     assert not event.peak_id
     assert event.unattached_reason
+
+
+class _MassDependentRaw(_FakeRaw):
+    """Each XIC window reads the same peak plus its own off-peak signal."""
+
+    def extract_xic_many(self, requests):
+        super().extract_xic_many(requests)
+        traces = []
+        for request in requests:
+            intensity = self.intensity.copy()
+            # A different off-peak reading per window keeps traces unequal.
+            intensity[0] += 1.0 + (request.mz - 499.0) * 1e3
+            traces.append(XICTrace.from_arrays(self.rt, intensity))
+        return tuple(traces)
+
+
+def test_adjacent_channels_measure_their_shared_peak_once() -> None:
+    # The first channel opens at 499.995 and takes 500.0049 within 20 ppm; the
+    # next opens at 500.0051. Both XIC windows read the ion at the same apex.
+    rt = np.linspace(8.6, 9.4, 161)
+    raw = _MassDependentRaw(
+        rt=rt, intensity=_gaussian(rt, center=9.02, sigma=0.04, height=1e4)
+    )
+    seeds = (
+        _seed(scan_number=10, rt=9.00, precursor_mz=499.9950, product_intensity=1e3),
+        _seed(scan_number=11, rt=9.01, precursor_mz=500.0049, product_intensity=9e3),
+        _seed(scan_number=12, rt=9.03, precursor_mz=500.0051, product_intensity=5e3),
+    )
+    settings = _settings()
+    channels = build_discovery_channels(seeds, settings=settings)
+
+    result = _capture(raw, seeds, settings)
+
+    assert len(channels) == 2
+    (peak,) = result.peaks
+    assert {event.peak_id for event in result.events if event.peak_id} == {peak.peak_id}
+    assert all(event.peak_id for event in result.events)

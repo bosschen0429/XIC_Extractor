@@ -462,7 +462,7 @@ def prepare_untargeted_partition_grouping(
             candidate_id,
         )
         for candidate_id, method_subject_id in batch.subject_batch.candidate_memberships
-        if candidate_by_id[candidate_id].admitted
+        if candidate_by_id[candidate_id].passes_peak_gates
         and method_subject_id not in unsupported_subjects
     )
     exclusions = tuple(
@@ -498,7 +498,7 @@ def prepare_untargeted_partition_grouping(
         for candidate_id, method_subject_id in (
             batch.subject_batch.candidate_memberships
         )
-        if not candidate_by_id[candidate_id].admitted
+        if not candidate_by_id[candidate_id].passes_peak_gates
         or method_subject_id in unsupported_subjects
     )
     # Partitioning changes execution ownership. Scientific composition keeps
@@ -990,7 +990,7 @@ def _runtime_captures_by_candidate(
         candidate.peak_id
         for candidates in batch.context.candidates_by_sample.values()
         for candidate in candidates
-        if candidate.peak_id in partition_ids and candidate.admitted
+        if candidate.peak_id in partition_ids and candidate.passes_peak_gates
     }
     if set(captures) != expected:
         raise RuntimeError("runtime capture does not close capture-eligible candidates")

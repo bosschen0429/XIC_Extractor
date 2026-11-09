@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.discovery.grouping import group_discovery_seeds
+from xic_extractor.discovery.ion_channels import build_discovery_channels
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
@@ -379,7 +379,7 @@ def test_iter_ms2_scans_uses_settings_rt_window() -> None:
     assert raw.requested_window == (1.25, 9.75)
 
 
-def test_multi_profile_seed_collection_keeps_seed_groups_per_tag() -> None:
+def test_multi_profile_seeds_of_one_ion_share_one_channel() -> None:
     settings = DiscoverySettings(
         selected_tag_names=("dR", "R", "MeR"),
         tag_combine_mode="union",
@@ -401,15 +401,11 @@ def test_multi_profile_seed_collection_keeps_seed_groups_per_tag() -> None:
         settings=settings,
     )
 
-    groups = group_discovery_seeds(seeds, settings=settings)
+    (channel,) = build_discovery_channels(seeds, settings=settings)
 
+    # Each tag keeps its own event; one ion is one channel for every tag.
     assert [seed.neutral_loss_tag for seed in seeds] == ["dR", "R", "MeR"]
-    assert len(groups) == 3
-    assert [group.matched_tag_names for group in groups] == [
-        ("dR",),
-        ("R",),
-        ("MeR",),
-    ]
+    assert {seed.neutral_loss_tag for seed in channel.seeds} == {"dR", "R", "MeR"}
 
 
 def _settings(**overrides: float) -> DiscoverySettings:
@@ -547,18 +543,9 @@ def test_recorded_mono_and_selected_ions_keep_distinct_direct_evidence(charge):
         (300.1615, "scan_monoisotopic"),
         (301.165, "scan_precursor"),
     ]
-    groups = group_discovery_seeds(seeds, settings=_settings())
-    assert len(groups) == 2
-    assert groups[0].precursor_mz_basis == "scan_monoisotopic"
-    assert (
-        groups[0].neutral_loss_error_basis == "recorded_monoisotopic_precursor_product"
-    )
-    assert (
-        json.loads(groups[0].tag_evidence_json)["DNA_dR"]["precursor_metadata"][
-            "master_scan_number"
-        ]
-        == 1
-    )
+    channels = build_discovery_channels(seeds, settings=_settings())
+    # The recorded monoisotopic and selected ions are two measured ions.
+    assert [channel.mz for channel in channels] == [300.1615, 301.165]
 
 
 def test_reference_product_failing_neutral_loss_still_infers_precursor_seed():

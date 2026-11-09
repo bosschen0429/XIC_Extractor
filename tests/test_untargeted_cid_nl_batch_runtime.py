@@ -99,7 +99,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         candidate_memberships=tuple(
             sorted(
                 (
-                    candidate.candidate_id,
+                    candidate.peak_id,
                     subject_by_precursor[candidate.precursor_mz].method_subject_id,
                 )
                 for candidates in candidates_by_sample.values()
@@ -130,7 +130,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         sample_identity_namespace="study:real-data-runtime-batch-recovery-test",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_candidate={
-            c.candidate_id: physical_records[c.candidate_id]
+            c.peak_id: physical_records[c.peak_id]
             for values in (candidates_by_sample).values()
             for c in values
         },
@@ -159,7 +159,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             ),
             signal_processing_profile=context.signal_processing_profile,
             physical_records=tuple(
-                context.physical_records_by_candidate[c.candidate_id]
+                context.physical_records_by_candidate[c.peak_id]
                 for c in (context.candidates_by_sample[sample.metadata.raw_stem])
             ),
         )

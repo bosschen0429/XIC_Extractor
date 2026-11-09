@@ -4,7 +4,6 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
-from xic_extractor.discovery.grouping import group_discovery_seeds
 
 from tests.cid_nl_raw_fixture import _FakeRaw, _open_bound_raw, _peak_config, _settings
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
@@ -18,6 +17,7 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.discovery.ion_channels import build_discovery_channels
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_peaks,
 )
@@ -79,16 +79,16 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
             seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
             discovery = capture_ms1_peaks(
                 raw,
-                group_discovery_seeds(seeds, settings=settings),
+                build_discovery_channels(seeds, settings=settings),
                 acquisition_source=raw.acquisition_source,
                 settings=settings,
                 signal_processing_profile=profile,
                 ms1_centroid_mz=lambda *_: None,
             )
-        assert len(discovery.candidates) == 1
-        candidates[sample] = discovery.candidates
+        assert len(discovery.peaks) == 1
+        candidates[sample] = discovery.peaks
         records.update(
-            {record.candidate_id: record for record in discovery.physical_evaluations}
+            {record.peak_id: record for record in discovery.physical_evaluations}
         )
         raws[path] = source
     paths = tuple(fixture.source_paths.values())
@@ -301,16 +301,16 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
             seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
             discovery = capture_ms1_peaks(
                 raw,
-                group_discovery_seeds(seeds, settings=settings),
+                build_discovery_channels(seeds, settings=settings),
                 acquisition_source=raw.acquisition_source,
                 settings=settings,
                 signal_processing_profile=profile,
                 ms1_centroid_mz=lambda *_: None,
             )
-        assert len(discovery.candidates) == 1
-        candidates[sample] = discovery.candidates
+        assert len(discovery.peaks) == 1
+        candidates[sample] = discovery.peaks
         records.update(
-            {record.candidate_id: record for record in discovery.physical_evaluations}
+            {record.peak_id: record for record in discovery.physical_evaluations}
         )
         raws[path] = source
     assert candidates["S6"][0].precursor_mz_basis == "product_plus_neutral_loss"
