@@ -575,3 +575,16 @@ def test_discovery_components_split_the_reviewed_doublet():
     )
 
     assert [float(rt[c.apex_index]) for c in components] == [15.118, 15.487]
+
+
+def test_each_side_of_a_cut_keeps_the_valley_as_its_return():
+    from xic_extractor.peak_detection.chrom_peak_segments import separable_valleys
+
+    # Three resolved lobes; the first cut leaves one low scan of its valley at
+    # the start of the right-hand range, which still counts as a return there.
+    raw = np.asarray(
+        [100.0] * 10 + [1.0, 1.0] + [100.0] * 10 + [1.0, 1.0] + [100.0] * 10
+    )
+    rt = np.arange(len(raw), dtype=float) * 0.04
+
+    assert separable_valleys(rt, raw, 0, len(raw), _physical_policy()) == (10, 22)

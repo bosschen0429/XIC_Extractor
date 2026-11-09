@@ -701,12 +701,10 @@ def _deepest_separable_valley(
             lobe_end - last < 2 and right_peak <= left_peak
         ):
             continue
-        left_bounded = lobe_start == 0 or (
-            lobe_start >= 2 and values[lobe_start - 2] <= threshold
-        )
-        right_bounded = lobe_end == count - 1 or (
-            lobe_end <= count - 3 and values[lobe_end + 2] <= threshold
-        )
+        # Beyond the lobe the signal returns for two scans, or it returns and
+        # the range ends there (a range can start at an earlier cut).
+        left_bounded = lobe_start <= 1 or values[lobe_start - 2] <= threshold
+        right_bounded = lobe_end >= count - 2 or values[lobe_end + 2] <= threshold
         if not (left_bounded and right_bounded):
             continue
         key = (minor - float(np.min(values[first : last + 1])), -first)
