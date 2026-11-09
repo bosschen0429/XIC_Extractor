@@ -92,13 +92,13 @@ smoothing_window_sec = 1
                     "sample_stem",
                     "matched_tag_names",
                     "status",
-                    "xic_mz",
+                    "peak_mz",
                     "precursor_mz",
                     "ms1_apex_rt",
                 ],
             )
             writer.writeheader()
-            # The peak's ion is its channel m/z; the representative event's
+            # The join reads peak_mz, the peak's mass; the representative event's
             # precursor can sit outside the join window on a dense peak.
             writer.writerow(
                 dict(
@@ -106,7 +106,7 @@ smoothing_window_sec = 1
                     sample_stem="first",
                     matched_tag_names="DNA_dR",
                     status="admitted",
-                    xic_mz=300,
+                    peak_mz=300,
                     precursor_mz=300 * (1 + 30e-6),
                     ms1_apex_rt=1 + 4 / 60,
                 )
@@ -119,7 +119,7 @@ smoothing_window_sec = 1
                     sample_stem="second",
                     matched_tag_names="DNA_dR",
                     status="no_nl_event",
-                    xic_mz=600,
+                    peak_mz=600,
                     precursor_mz=600,
                     ms1_apex_rt=1 + 4 / 60,
                 )

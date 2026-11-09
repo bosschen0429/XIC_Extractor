@@ -12,6 +12,7 @@ def _peak(**overrides: object) -> DiscoveryPeak:
         peak_id="Sample_1@mz258.108512_rt7.8412",
         raw_file=Path("C:/data/Sample_1.raw"),
         sample_stem="Sample_1",
+        peak_mz=258.108512345,
         xic_mz=258.108512345,
         best_event_precursor_mz=258.108512345,
         best_event_product_mz=142.061112345,

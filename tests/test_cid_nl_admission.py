@@ -20,6 +20,7 @@ from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
     read_owner_bound_discovery_peaks_csv,
 )
+from xic_extractor.discovery.delta_mass_pipeline import _load_cid_nl_peak_rows
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
@@ -42,16 +43,24 @@ from xic_extractor.untargeted_execution.execution import (
 )
 
 
-@pytest.mark.parametrize("apex_mz, expected_mz", [(None, 500.0), (500.002, 500.002)])
-def test_peak_index_uses_ms1_mass_not_event_precursor(tmp_path, apex_mz, expected_mz):
+@pytest.mark.parametrize("apex_mz", [None, 500.012])
+def test_alignment_and_delta_mass_read_one_peak_mass(tmp_path, apex_mz):
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"physical-mass-index")
     (peak,) = _current_candidates(
         _FakeRaw((8.0,)), raw_file=raw_path, settings=_settings()
     )
-    # CSV carries distinct XIC center, event estimate and optional apex reading.
+    # An inferred precursor whose event estimate, XIC center and apex reading
+    # all differ: the producer writes one peak mass and every consumer reads it.
+    peak_mz = 500.0 if apex_mz is None else apex_mz
     peak = replace(
-        peak, best_event_precursor_mz=500.004, xic_mz=500.0, ms1_apex_mz=apex_mz
+        peak,
+        best_event_precursor_mz=500.004,
+        xic_mz=500.0,
+        ms1_apex_mz=apex_mz,
+        peak_mz=peak_mz,
+        status="admitted",
+        matched_tag_names=("DNA_dR",),
     )
     receipts = build_discovery_receipts(tmp_path, (raw_path,), {"sample": (peak,)})
     batch = DiscoveryBatchInput(
@@ -62,8 +71,10 @@ def test_peak_index_uses_ms1_mass_not_event_precursor(tmp_path, apex_mz, expecte
         peak_receipts=receipts,
     )
     source = DiscoveryInputSource(batch)
-    assert source.locations[peak.peak_id].physical_mz == expected_mz
-    assert source["sample"][0].physical_mz == expected_mz
+    (delta_mass_row,) = _load_cid_nl_peak_rows(batch.peak_csvs["sample"])
+    assert source.locations[peak.peak_id].peak_mz == peak_mz
+    assert source["sample"][0].peak_mz == peak_mz
+    assert delta_mass_row.peak_mz == peak_mz
 
 
 @pytest.mark.parametrize("indexed", [False, True], ids=["eager", "indexed"])
@@ -151,7 +162,7 @@ def test_review_rows_never_become_alignment_roots(
     source = DiscoveryInputSource(batch)
     for peaks in candidates.values():
         for peak in peaks:
-            assert source.locations[peak.peak_id].physical_mz == peak.xic_mz
+            assert source.locations[peak.peak_id].peak_mz == peak.xic_mz
     prepared = prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
         peaks_by_sample=source if indexed else candidates,

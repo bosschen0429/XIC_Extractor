@@ -344,7 +344,7 @@ def _measured_peak(
         if inferred
         else (None, False)
     )
-    physical_mz = request.mz if apex_mz is None else apex_mz
+    peak_mz = request.mz if apex_mz is None else apex_mz
     neighbors = tuple(
         segment
         for segment in evaluation.segment_universe.segments
@@ -353,7 +353,7 @@ def _measured_peak(
     reasons = {
         event: _unattached_reason(
             event,
-            physical_mz=physical_mz,
+            peak_mz=peak_mz,
             peak=selected,
             neighbors=neighbors,
             settings=settings,
@@ -399,6 +399,7 @@ def _measured_peak(
         peak_id=peak_id,
         raw_file=representative.raw_file,
         sample_stem=representative.sample_stem,
+        peak_mz=peak_mz,
         xic_mz=request.mz,
         best_event_precursor_mz=representative.precursor_mz,
         best_event_product_mz=representative.product_mz,
@@ -484,7 +485,7 @@ def _peak_status(
 def _unattached_reason(
     event: DiscoveryEvent,
     *,
-    physical_mz: float,
+    peak_mz: float,
     peak: PhysicalSegment,
     neighbors: Sequence[PhysicalSegment],
     settings: DiscoverySettings,
@@ -493,7 +494,7 @@ def _unattached_reason(
     if not assessment.supports_nl:
         return assessment.status
     if assessment.reference_mz is None or not within_ppm(
-        assessment.reference_mz, physical_mz, settings.precursor_mz_tolerance_ppm
+        assessment.reference_mz, peak_mz, settings.precursor_mz_tolerance_ppm
     ):
         return "mass_outside_peak"
     parent = event.ms1_precursor_observation

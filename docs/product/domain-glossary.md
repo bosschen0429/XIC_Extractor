@@ -79,8 +79,8 @@ tests.
   `xic_mz` is the XIC center, read before acquisition.
 - `Discovery peak`: one physical MS1 peak on one ion's XIC, one row of
   `discovery_peaks.csv`, identified by `peak_id`. Its `status` decides whether
-  it enters Alignment; its `physical_mz` is the measured mass (the apex
-  reading of an inferred precursor, else `xic_mz`).
+  it enters Alignment; its `peak_mz` is the peak's ion mass (the apex reading
+  of an inferred precursor, else `xic_mz`), the one mass every consumer reads.
 - `Discovery event`: one strict NL event (MS2 scan, tag and product), one row
   of `discovery_events.csv`. It attaches to one peak or records why it does not.
 - `final Matrix`: the immutable grid produced after cell and row-inclusion

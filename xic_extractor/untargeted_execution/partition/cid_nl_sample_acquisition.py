@@ -180,7 +180,7 @@ def _sample_capture_requests(
 ) -> tuple[tuple[XICRequest, ...], tuple[int, ...]]:
     requests = {
         item.peak_id: XICRequest(
-            mz=item.physical_mz,
+            mz=item.peak_mz,
             rt_min=item.ms1_search_rt_min,
             rt_max=item.ms1_search_rt_max,
             ppm_tol=settings.precursor_mz_tolerance_ppm,
@@ -844,7 +844,7 @@ def _bounded_subject_candidates(
                 peak
                 for peak in peaks
                 if _within_ppm(
-                    peak.physical_mz,
+                    peak.peak_mz,
                     method_subject.precursor_mz,
                     method_subject.precursor_tolerance_ppm,
                 )
@@ -900,7 +900,7 @@ def _untargeted_search_scope(
                     method_subject_id=method_subject.method_subject_id,
                     sample_key=sample.identity.sample_key,
                     acquisition_source_id=acquisition_source_id,
-                    query_mz=item.physical_mz,
+                    query_mz=item.peak_mz,
                     query_rt_min=item.ms1_search_rt_min,
                     query_rt_max=item.ms1_search_rt_max,
                     query_ppm_tol=method_subject.precursor_tolerance_ppm,

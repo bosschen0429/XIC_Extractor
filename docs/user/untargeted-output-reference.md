@@ -35,7 +35,8 @@ attached NL event), `admitted`. Only `admitted` peaks enter Alignment.
 | Column | Type | Description |
 | --- | --- | --- |
 | peak_id | string | `{sample}@mz{xic_mz}_rt{raw apex RT}`; unique within the sample |
-| xic_mz | float | XIC center: the ion's MS1 reading before acquisition. The measured peak mass is `ms1_apex_mz` when present |
+| peak_mz | float | The peak's ion mass, read by Alignment and Delta Mass: `ms1_apex_mz` when present, else `xic_mz` |
+| xic_mz | float | XIC center: the ion's MS1 reading before acquisition |
 
 #### Measurement Columns
 

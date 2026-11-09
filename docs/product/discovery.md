@@ -30,7 +30,7 @@ peak. `pt_pattern + cid_nl(dR)` intersects Delta Mass hypotheses with existing
 `neutral_loss(tag=DNA_dR)` evidence. Delta Mass evaluates its own hypotheses
 first, then annotates whether the base matches CID-NL(dR). That annotation uses
 admitted CID-NL peaks and the sample-local predicate on the peak's
-`xic_mz` and apex RT; it does not alter CID-NL decisions.
+`peak_mz` and apex RT; it does not alter CID-NL decisions.
 
 ## CID-NL peaks and events
 
@@ -72,7 +72,10 @@ to none (`unattached_reason`), never both.
   `ms2_product_max_intensity` cover every event located on the peak, attached or
   not, because Alignment re-reads and re-judges them. `attached_event_count` and
   `status` count attached events only. The `best_event_*` columns are the
-  representative event's values, not the peak's measured mass.
+  representative event's values, not the peak's mass.
+- **Mass.** `peak_mz` is the peak's ion mass: the [accurate-mass
+  reading](#accurate-mass-reading) for an inferred precursor, else `xic_mz`.
+  Discovery writes it once; Alignment and Delta Mass read it.
 
 | `unattached_reason` | Meaning |
 | --- | --- |
@@ -180,7 +183,8 @@ For a pure `product_plus_neutral_loss` group with a resolved peak, Discovery
 reads the ion at the apex scan and one MS1 scan on each side, and reports the
 intensity-weighted reading as `ms1_apex_mz`. MS1 is the method's accurate-mass
 scan, while ddMS2 runs at a quarter of its resolution, so product + loss only
-points at the ion. The reading supplies Alignment's XIC and grouping mass. The
+points at the ion. The reading becomes `peak_mz`, the mass Alignment and Delta
+Mass read. The
 original precursor and product remain the keys for MS2 scan replay.
 
 - A reading spread wider than 5 ppm comes from two ions and reports none.

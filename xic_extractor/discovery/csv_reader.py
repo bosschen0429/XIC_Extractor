@@ -219,6 +219,7 @@ def _parse_peak_row(
         peak_id=_machine_text(peak_id),
         raw_file=_raw_file_path(_machine_field(row, "raw_file")),
         sample_stem=_machine_field(row, "sample_stem"),
+        peak_mz=number("peak_mz"),
         xic_mz=number("xic_mz"),
         best_event_precursor_mz=number("best_event_precursor_mz"),
         best_event_product_mz=number("best_event_product_mz"),

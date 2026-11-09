@@ -249,7 +249,7 @@ def _physical_subject_candidate_fact(
         )
     return CidNlPhysicalCandidateFact(
         candidate_id=candidate.peak_id,
-        physical_mz=candidate.physical_mz,
+        physical_mz=candidate.peak_mz,
         configured_neutral_loss_da=candidate.configured_neutral_loss_da,
         proof=proof,
     )
@@ -276,7 +276,7 @@ def prepare_untargeted_subject_membership(
 
     composition = cid_nl_composition(settings)
     for candidate in candidates:
-        precursor_mz = float(candidate.physical_mz)
+        precursor_mz = float(candidate.peak_mz)
         neutral_loss_da = float(candidate.configured_neutral_loss_da)
         if (
             not math.isfinite(precursor_mz)
@@ -299,7 +299,7 @@ def prepare_untargeted_subject_membership(
     return mint_cid_nl_subject_membership_from_physical_units(
         subject_units=subject_units,
         precursor_by_id={
-            candidate.peak_id: candidate.physical_mz for candidate in candidates
+            candidate.peak_id: candidate.peak_mz for candidate in candidates
         },
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         composition=composition,
@@ -444,7 +444,7 @@ def prepare_indexed_untargeted_plan(
         if cid
         in physical_sources[source.locations[cid].sample_stem].resolved_candidate_ids
     )
-    precursor_by_id = {cid: source.locations[cid].physical_mz for cid in feature_ids}
+    precursor_by_id = {cid: source.locations[cid].peak_mz for cid in feature_ids}
 
     def load_inputs(candidate_ids: tuple[str, ...]):
         candidates = source.load_candidates(candidate_ids)

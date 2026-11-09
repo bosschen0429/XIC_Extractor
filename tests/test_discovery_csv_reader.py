@@ -618,6 +618,7 @@ def _indexed_candidate_row(
     admitted = state == "admitted"
     return _candidate_row(
         peak_id=f"{sample}@mz{mz:.6f}_rt{scan}",
+        peak_mz=f"{mz:.6f}",
         xic_mz=f"{mz:.6f}",
         best_event_precursor_mz=f"{mz:.6f}",
         best_event_product_mz=f"{product_mz:.6f}",
@@ -655,6 +656,7 @@ def _candidate_row(**overrides: str) -> dict[str, str]:
         "ms1_support": "clean",
         "rt_alignment": "aligned",
         "peak_id": "Sample_1@mz500.123456_rt8.4800",
+        "peak_mz": "500.123456",
         "xic_mz": "500.123456",
         "best_event_precursor_mz": "500.123456",
         "best_event_product_mz": "384.076056",

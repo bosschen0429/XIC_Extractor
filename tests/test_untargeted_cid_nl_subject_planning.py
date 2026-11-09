@@ -84,6 +84,7 @@ def test_physical_subject_units_require_complete_common_proof(
             peak_id=f"subject-proof-{index}",
             best_ms2_scan_id=100 + index,
             best_event_precursor_mz=mz,
+            peak_mz=mz,
             xic_mz=mz,
             best_event_product_mz=mz - 116.0474,
             configured_neutral_loss_da=116.0474,
@@ -164,6 +165,7 @@ def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
         xic_mz=445.2140,
         best_event_product_mz=445.2140 - 116.0474,
         ms1_apex_mz=445.2071,
+        peak_mz=445.2071,
         precursor_mz_basis="product_plus_neutral_loss",
     )
     subjects = prepare_untargeted_subject_membership(
@@ -176,7 +178,12 @@ def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
     assert inferred.best_event_precursor_mz == 445.2140
     assert inferred.best_event_product_mz == 445.2140 - 116.0474
 
-    selected = replace(inferred, ms1_apex_mz=None, precursor_mz_basis="scan_precursor")
+    selected = replace(
+        inferred,
+        ms1_apex_mz=None,
+        peak_mz=445.2140,
+        precursor_mz_basis="scan_precursor",
+    )
     fallback = prepare_untargeted_subject_membership(
         peaks_by_sample={"S1": (selected,)},
         settings=settings,
@@ -241,6 +248,7 @@ def test_proven_subject_unit_is_not_split_by_lower_fixed_anchor(
             peak_id=f"lower-anchor-{index}",
             best_ms2_scan_id=100 + index,
             best_event_precursor_mz=mz,
+            peak_mz=mz,
             xic_mz=mz,
             best_event_product_mz=mz - 116.0474,
             configured_neutral_loss_da=116.0474,

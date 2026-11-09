@@ -53,6 +53,7 @@ DISCOVERY_PEAK_COLUMNS = (
     "ms1_support",
     "rt_alignment",
     "peak_id",
+    "peak_mz",
     "xic_mz",
     "best_event_precursor_mz",
     "best_event_product_mz",
@@ -271,8 +272,9 @@ class DiscoveryPhysicalWorkItem:
 class DiscoveryPeak:
     """One physical MS1 peak on one ion's XIC, with the NL events locating it.
 
-    ``xic_mz`` is the XIC center, the ion's MS1 reading before acquisition;
-    ``physical_mz`` is the mass the peak was measured at. ``best_event_*`` fields
+    ``peak_mz`` is the peak's ion mass: the apex reading of an inferred
+    precursor, else ``xic_mz``. Every consumer reads it. ``xic_mz`` is the XIC
+    center, the ion's MS1 reading before acquisition. ``best_event_*`` fields
     are the representative event's values. Peak facts come from the physical
     measurement. Evidence fields (scan IDs, tag evidence, RT range, product
     intensity) cover every event locating the peak; ``attached_event_count``
@@ -283,6 +285,7 @@ class DiscoveryPeak:
     peak_id: str
     raw_file: Path
     sample_stem: str
+    peak_mz: float
     xic_mz: float
     best_event_precursor_mz: float
     best_event_product_mz: float
@@ -344,12 +347,6 @@ class DiscoveryPeak:
     def admitted(self) -> bool:
         """Whether this peak enters CID-NL Alignment."""
         return self.status == "admitted"
-
-    @property
-    def physical_mz(self) -> float:
-        """Measured peak mass: the apex reading of an inferred precursor, else
-        ``xic_mz``. Independent of MS2 receipts."""
-        return self.xic_mz if self.ms1_apex_mz is None else self.ms1_apex_mz
 
 
 UnattachedReason = str

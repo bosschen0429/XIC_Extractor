@@ -179,6 +179,7 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
         "rt_alignment": "aligned",
         "status": "admitted",
         "peak_id": candidate_id(sample_stem),
+        "peak_mz": "500.0",
         "xic_mz": "500.0",
         "best_event_precursor_mz": "500.0",
         "best_event_product_mz": "384.0",

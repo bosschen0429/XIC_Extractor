@@ -480,7 +480,7 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
     )
     (original,) = discovery.peaks
     (record,) = discovery.physical_evaluations
-    candidate = replace(original, ms1_apex_mz=physical_mz)
+    candidate = replace(original, ms1_apex_mz=physical_mz, peak_mz=physical_mz)
     method_subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=subject_mz,
         precursor_tolerance_ppm=20.0,

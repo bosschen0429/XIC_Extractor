@@ -89,7 +89,7 @@ def _physical_subject_facts(candidates, records):
         facts.append(
             CidNlPhysicalCandidateFact(
                 candidate_id=candidate.peak_id,
-                physical_mz=candidate.physical_mz,
+                physical_mz=candidate.peak_mz,
                 configured_neutral_loss_da=candidate.configured_neutral_loss_da,
                 proof=proof,
             )
