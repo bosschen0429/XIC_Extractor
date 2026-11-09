@@ -1,3 +1,4 @@
+import math
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -47,6 +48,7 @@ from xic_extractor.discovery.priority import (
     assign_review_priority,
     build_peak_reason,
 )
+from xic_extractor.discovery.same_ion_peaks import group_same_ion_peaks
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import weighted_ion_mz, within_ppm
 from xic_extractor.peak_detection.physical_peak_models import (
@@ -90,6 +92,7 @@ class _DiscoveryMs1Measurements:
     acquisition_batches: tuple[TraceAcquisitionBatch, ...]
     initial_request_count: int = 0
     reacquisition_request_count: int = 0
+    remeasurement_request_count: int = 0
 
     def __post_init__(self) -> None:
         count_values = (
@@ -99,6 +102,7 @@ class _DiscoveryMs1Measurements:
             self.predicted_chunked_call_count,
             self.initial_request_count,
             self.reacquisition_request_count,
+            self.remeasurement_request_count,
         )
         if any(
             isinstance(value, bool) or not isinstance(value, int)
@@ -122,7 +126,9 @@ class _DiscoveryMs1Measurements:
                 "Discovery MS1 reacquisition exceeds its initial population"
             )
         if logical_request_count != (
-            self.initial_request_count + self.reacquisition_request_count
+            self.initial_request_count
+            + self.reacquisition_request_count
+            + self.remeasurement_request_count
         ):
             raise ValueError("Discovery MS1 acquisition receipts are incomplete")
         if self.exact_scan_window_count > logical_request_count:
@@ -188,13 +194,6 @@ def capture_ms1_peaks(
     # Every event may expose an incomplete edge, so context is resolved for the
     # whole population before any event is attached.
     captures = physical_capture.capture(tuple(search for _, _, search in questions))
-    measurements = _measurements(
-        physical_capture,
-        input_ion_count=len(ion_tuple),
-        input_event_count=len({search for _, _, search in questions}),
-    )
-    if measurement_observer is not None:
-        measurement_observer(measurements)
 
     attachments: list[EventAttachment] = []
     located: dict[int, list[tuple[DiscoveryIon, DiscoveryEvent]]] = {}
@@ -213,23 +212,29 @@ def capture_ms1_peaks(
         located.setdefault(captured.work_ordinal, []).append((ion, event))
         capture_by_work.setdefault(captured.work_ordinal, captured)
 
-    measured = _one_measurement_per_peak(
+    measured = _one_measurement_per_ion_peak(
+        physical_capture,
         capture_by_work,
         located,
-        tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+        ms1_centroid_mz=ms1_centroid_mz,
     )
-    retained_ordinals = {
-        ordinal: index for index, ordinal in enumerate(sorted(measured))
-    }
+    measurements = _measurements(
+        physical_capture,
+        input_ion_count=len(ion_tuple),
+        input_event_count=len({search for _, _, search in questions}),
+    )
+    if measurement_observer is not None:
+        measurement_observer(measurements)
     peaks: list[DiscoveryPeak] = []
     records: list[DiscoveryPhysicalFactRecord] = []
-    for ordinal in sorted(measured):
+    for index, (captured, ion_mz, peak_located, ion_reading) in enumerate(measured):
         peak, record, peak_attachments = _measured_peak(
-            capture_by_work[ordinal],
-            measured[ordinal],
-            work_ordinal=retained_ordinals[ordinal],
+            captured,
+            peak_located,
+            work_ordinal=index,
             settings=settings,
-            ms1_centroid_mz=ms1_centroid_mz,
+            ion_mz=ion_mz,
+            ion_reading=ion_reading,
         )
         peaks.append(peak)
         records.append(record)
@@ -256,66 +261,125 @@ def capture_ms1_peaks(
     )
 
 
-def _one_measurement_per_peak(
+def _one_measurement_per_ion_peak(
+    physical_capture: PhysicalPeakCapture,
     capture_by_work: dict[int, CapturedPhysicalPeak],
     located: dict[int, list[tuple[DiscoveryIon, DiscoveryEvent]]],
     *,
-    tolerance_ppm: float,
-) -> dict[int, list[tuple[DiscoveryIon, DiscoveryEvent]]]:
-    """Keep one measurement of a peak that adjacent ions both acquired.
+    ms1_centroid_mz: MS1CentroidMz,
+) -> list[
+    tuple[
+        CapturedPhysicalPeak,
+        float,
+        list[tuple[DiscoveryIon, DiscoveryEvent]],
+        tuple[float | None, bool],
+    ]
+]:
+    """One measurement, one interpretation and one ion reading per ion peak.
 
-    Neighbouring ion XICs overlap, so one ion can be measured in both.
-    Measurements are grouped as ions are: from the lowest XIC mass, a group
-    takes each later measurement within the precursor tolerance of that anchor
-    whose peak shares the anchor's raw apex scan, so no measurement bridges two
-    groups. The kept measurement is the one locating more attachments, then the
-    larger area, then the lower mass; every event of the group is attached
-    against it.
+    A measurement located only by inferred precursors is first read at its
+    apex and measured once more in the window centred on that ion, with the
+    same RT context; the reading is the ion's m/z only when that window
+    measures the peak. Measurements of one ion peak are then grouped (see
+    ``same_ion_peaks``); a recorded precursor already fixes the ion, so a group
+    holding one keeps a measurement it located. The kept measurement is the
+    peak, every event of the group is attached against it, and a group whose
+    events are all inferred reports its kept window's reading and judges the
+    doubly charged isotope once at that peak's apex. A peak keeps the XIC
+    center of the ion that first measured it, which names the peak.
     """
-    ordered = sorted(
-        capture_by_work,
-        key=lambda ordinal: (
-            capture_by_work[ordinal].search.request.mz,
-            capture_by_work[ordinal].evaluation.question.query_rt_min,
-            ordinal,
-        ),
-    )
-    members: dict[int, list[int]] = {}
-    assigned: set[int] = set()
-    for index, anchor in enumerate(ordered):
-        if anchor in assigned:
-            continue
-        anchor_capture = capture_by_work[anchor]
-        anchor_mz = anchor_capture.search.request.mz
-        anchor_rt = anchor_capture.evaluation.question.query_rt_min
-        group = [anchor]
-        for other in ordered[index + 1 :]:
-            other_capture = capture_by_work[other]
-            if not within_ppm(
-                other_capture.search.request.mz, anchor_mz, tolerance_ppm
-            ):
-                break
-            if (
-                other not in assigned
-                and other_capture.evaluation.question.query_rt_min == anchor_rt
-            ):
-                group.append(other)
-        assigned.update(group)
-        members[anchor] = group
-
-    def rank(ordinal: int) -> tuple[int, float, float]:
-        facts = capture_by_work[ordinal].evaluation.facts
-        area = 0.0 if facts is None else facts.area_counts_seconds
-        return (
-            -len(located[ordinal]),
-            -area,
-            capture_by_work[ordinal].search.request.mz,
-        )
-
-    return {
-        min(group, key=rank): [item for ordinal in group for item in located[ordinal]]
-        for group in members.values()
+    centred = dict(capture_by_work)
+    readings = {
+        ordinal: _apex_ion_mz(
+            captured.search.request,
+            captured.acquired_trace,
+            captured.evaluation,
+            ms1_centroid_mz=ms1_centroid_mz,
+        )[0]
+        for ordinal, captured in capture_by_work.items()
+        if _inferred_only(event for _, event in located[ordinal])
     }
+    moved = {
+        ordinal: mz
+        for ordinal, mz in sorted(readings.items())
+        if mz is not None and mz != capture_by_work[ordinal].search.request.mz
+    }
+    remeasured = physical_capture.remeasure(
+        tuple((capture_by_work[ordinal], mz) for ordinal, mz in moved.items())
+    )
+    ion_mz: dict[int, float] = {}
+    centred_mz = {
+        capture_by_work[ordinal].work_ordinal: mz
+        for ordinal, mz in readings.items()
+        if mz is not None and mz == capture_by_work[ordinal].search.request.mz
+    }
+    for ordinal, captured in zip(moved, remeasured, strict=True):
+        # A window that selects no peak at the apex keeps the first measurement
+        # and does not take the reading.
+        if captured.evaluation.facts is not None:
+            centred[ordinal] = captured
+            centred_mz[captured.work_ordinal] = moved[ordinal]
+            ion_mz[captured.work_ordinal] = min(
+                ion_mz.get(captured.work_ordinal, math.inf),
+                capture_by_work[ordinal].search.request.mz,
+            )
+    by_measurement: dict[int, CapturedPhysicalPeak] = {}
+    located_by_measurement: dict[int, list[tuple[DiscoveryIon, DiscoveryEvent]]] = {}
+    for ordinal, captured in centred.items():
+        by_measurement.setdefault(captured.work_ordinal, captured)
+        located_by_measurement.setdefault(captured.work_ordinal, []).extend(
+            located[ordinal]
+        )
+    recorded = frozenset(
+        work_ordinal
+        for work_ordinal, items in located_by_measurement.items()
+        if not _inferred_only(event for _, event in items)
+    )
+
+    measured = []
+    for group in group_same_ion_peaks(
+        tuple(by_measurement.values()), recorded_ordinals=recorded
+    ):
+        kept = group[0]
+        group_located = sorted(
+            (
+                item
+                for member in group
+                for item in located_by_measurement[member.work_ordinal]
+            ),
+            key=lambda item: _event_order_key(item[1]),
+        )
+        ion_reading: tuple[float | None, bool] = (None, False)
+        if _inferred_only(event for _, event in group_located):
+            _, doubly_charged = _apex_ion_reading(
+                kept.search.request,
+                kept.acquired_trace,
+                kept.evaluation,
+                ms1_centroid_mz=ms1_centroid_mz,
+            )
+            ion_reading = (centred_mz.get(kept.work_ordinal), doubly_charged)
+        measured.append(
+            (
+                kept,
+                ion_mz.get(kept.work_ordinal, kept.search.request.mz),
+                group_located,
+                ion_reading,
+            )
+        )
+    return measured
+
+
+def _inferred_only(events: Iterable[DiscoveryEvent]) -> bool:
+    return events_precursor_mz_basis(list(events)) == "product_plus_neutral_loss"
+
+
+def _event_order_key(event: DiscoveryEvent) -> tuple[int, float, float, str]:
+    return (
+        event.scan_number,
+        event.precursor_mz,
+        event.product_mz,
+        event.neutral_loss_tag,
+    )
 
 
 def _measured_peak(
@@ -324,7 +388,8 @@ def _measured_peak(
     *,
     work_ordinal: int,
     settings: DiscoverySettings,
-    ms1_centroid_mz: MS1CentroidMz,
+    ion_mz: float,
+    ion_reading: tuple[float | None, bool],
 ) -> tuple[DiscoveryPeak, DiscoveryPhysicalFactRecord, tuple[EventAttachment, ...]]:
     """One measured peak, its attached attachments, and why the rest do not attach."""
     evaluation = captured.evaluation
@@ -334,17 +399,7 @@ def _measured_peak(
         raise ValueError("a located Discovery peak requires measured facts")
     request = captured.search.request
     located_events = [event for _, event in located]
-    inferred = events_precursor_mz_basis(located_events) == "product_plus_neutral_loss"
-    apex_mz, doubly_charged = (
-        _apex_ion_reading(
-            request,
-            captured.acquired_trace,
-            evaluation,
-            ms1_centroid_mz=ms1_centroid_mz,
-        )
-        if inferred
-        else (None, False)
-    )
+    apex_mz, doubly_charged = ion_reading
     peak_mz = request.mz if apex_mz is None else apex_mz
     neighbors = tuple(
         segment
@@ -369,7 +424,7 @@ def _measured_peak(
         attached or located_events, settings=settings
     )
     record = _cid_nl_physical_record(
-        representative, captured, work_ordinal=work_ordinal
+        representative, captured, work_ordinal=work_ordinal, ion_mz=ion_mz
     )
     peak_id = record.work_item.peak_id
     trace_quality = captured.trace_quality
@@ -401,7 +456,7 @@ def _measured_peak(
         raw_file=representative.raw_file,
         sample_stem=representative.sample_stem,
         peak_mz=peak_mz,
-        xic_mz=request.mz,
+        xic_mz=ion_mz,
         best_event_precursor_mz=representative.precursor_mz,
         best_event_product_mz=representative.product_mz,
         best_event_neutral_loss_da=representative.observed_neutral_loss_da,
@@ -606,6 +661,7 @@ def _measurements(
         acquisition_batches=tuple(batches),
         initial_request_count=physical_capture.initial_request_count,
         reacquisition_request_count=physical_capture.reacquisition_request_count,
+        remeasurement_request_count=physical_capture.remeasurement_request_count,
     )
 
 
@@ -619,21 +675,40 @@ def _apex_ion_reading(
     """The MS1 ion read at the resolved peak of an inferred precursor.
 
     MS1 is the method's accurate-mass scan, while ddMS2 runs at a quarter of
-    its resolution, so product + loss only points at the ion. The ion is read
-    inside the request at the apex scans; readings spread wider than a few ppm
-    come from two ions and report none. A selected precursor is not read,
-    since a reading near it can belong to a neighbouring ion or isotope. The
-    m/z is reported only: the precursor, its trace and its MS2 evidence keep
-    their own values. The flag is true when the ion's doubly charged isotope is
-    read in most of the scans where the ion is read.
+    its resolution, so product + loss only points at the ion. A selected
+    precursor is not read, since a reading near it can belong to a
+    neighbouring ion or isotope. The precursor and its MS2 evidence keep their
+    own values. The flag is true when the ion's doubly charged isotope is read
+    in most of the scans where the ion is read.
+    """
+    measured, read_rts = _apex_ion_mz(
+        request, acquired, evaluation, ms1_centroid_mz=ms1_centroid_mz
+    )
+    if measured is None:
+        return None, False
+    return measured, _reads_doubly_charged_isotope(
+        measured, read_rts, ms1_centroid_mz=ms1_centroid_mz
+    )
+
+
+def _apex_ion_mz(
+    request: XICRequest,
+    acquired: AcquiredTrace,
+    evaluation: PhysicalPeakEvaluation,
+    *,
+    ms1_centroid_mz: MS1CentroidMz,
+) -> tuple[float | None, list[float]]:
+    """The ion read inside the request at the apex scans, and the scans read.
+
+    Readings spread wider than a few ppm come from two ions and report none.
     """
     facts = evaluation.facts
     if evaluation.state != "available" or facts is None:
-        return None, False
+        return None, []
     rt = acquired.trace.rt
     intensity = acquired.trace.intensity
     if len(rt) == 0:
-        return None, False
+        return None, []
     apex = int(np.argmin(np.abs(rt - facts.apex_rt_min)))
     half_width = request.mz * request.ppm_tol * 1e-6
     readings = []
@@ -648,12 +723,7 @@ def _apex_ion_reading(
         if mz is not None:
             readings.append((mz, float(intensity[index])))
             read_rts.append(float(rt[index]))
-    measured = weighted_ion_mz(readings, max_spread_ppm=_APEX_ION_SPREAD_PPM)
-    if measured is None:
-        return None, False
-    return measured, _reads_doubly_charged_isotope(
-        measured, read_rts, ms1_centroid_mz=ms1_centroid_mz
-    )
+    return weighted_ion_mz(readings, max_spread_ppm=_APEX_ION_SPREAD_PPM), read_rts
 
 
 def _reads_doubly_charged_isotope(
@@ -702,6 +772,7 @@ def _cid_nl_physical_record(
     captured: CapturedPhysicalPeak,
     *,
     work_ordinal: int,
+    ion_mz: float,
 ) -> DiscoveryPhysicalFactRecord:
     """Project completed physical work into the retained CID-NL sidecar schema."""
     acquired = captured.acquired_trace
@@ -719,6 +790,7 @@ def _cid_nl_physical_record(
             query_rt_min=question.query_rt_min,
             context_rt_start_min=question.context_rt_start_min,
             context_rt_end_min=question.context_rt_end_min,
+            ion_mz=ion_mz,
             xic_mz=request.mz,
             xic_rt_min=request.rt_min,
             xic_rt_max=request.rt_max,

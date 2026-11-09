@@ -10,15 +10,13 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from functools import lru_cache
-from itertools import zip_longest
 from types import MappingProxyType
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
-from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import (
     ProcessingRequestIdentity,
 )
@@ -253,249 +251,39 @@ def mint_untargeted_cid_nl_method_subject_batch(
     )
 
 
-@dataclass(frozen=True, slots=True)
-class CidNlPhysicalProof:
-    """Already acquired peak facts; rt/raw are repeatable in-memory iterables."""
-
-    acquisition_source_id: str
-    apex_rt_min: float
-    left_rt_min: float
-    right_rt_min: float
-    xic_mz: float
-    xic_ppm_tol: float
-    rt: Iterable[float]
-    raw: Iterable[float]
-    apex_centroids: tuple[Ms1PrecursorObservation, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class CidNlPhysicalCandidateFact:
-    candidate_id: str
-    physical_mz: float
-    configured_neutral_loss_da: float
-    proof: CidNlPhysicalProof | None
-
-
-def cid_nl_method_center_interval(mz: float, ppm: float) -> tuple[float, float]:
-    fraction = ppm / 1_000_000.0
-    return mz / (1.0 + fraction), mz / (1.0 - fraction)
-
-
-def _same_physical_core(
-    left: CidNlPhysicalProof,
-    right: CidNlPhysicalProof,
+def mint_cid_nl_subject_membership(
     *,
-    rt_min: float,
-    rt_max: float,
-) -> bool:
-    if left.apex_centroids or right.apex_centroids:
-        # A shared, singly occupied ion at the apex and its adjacent MS1 scans
-        # identifies the measured peak even when query-window tails differ.
-        # Distinct or unresolved centroids cannot be overruled by equal XICs.
-        scans = left.apex_centroids
-        return (
-            len(scans) == 3
-            and scans == right.apex_centroids
-            and rt_min <= scans[0].rt_min < left.apex_rt_min
-            and scans[1].rt_min == left.apex_rt_min == right.apex_rt_min
-            and left.apex_rt_min < scans[2].rt_min <= rt_max
-            and len({scan.scan_number for scan in scans}) == 3
-            and all(len(scan.centroid_mzs) == 1 for scan in scans)
-        )
-    sentinel = object()
-    matched = False
-    left_core = (
-        (float(rt), float(raw))
-        for rt, raw in zip(left.rt, left.raw, strict=True)
-        if rt_min <= float(rt) <= rt_max
-    )
-    right_core = (
-        (float(rt), float(raw))
-        for rt, raw in zip(right.rt, right.raw, strict=True)
-        if rt_min <= float(rt) <= rt_max
-    )
-    for left_point, right_point in zip_longest(
-        left_core,
-        right_core,
-        fillvalue=sentinel,
-    ):
-        if (
-            left_point is sentinel
-            or right_point is sentinel
-            or left_point != right_point
-        ):
-            return False
-        matched = True
-    return matched
-
-
-def group_cid_nl_physical_subject_units(
-    candidates: tuple[CidNlPhysicalCandidateFact, ...],
-    *,
-    composition: CidNlComposition | None,
-    precursor_tolerance_ppm: float,
-) -> tuple[tuple[float | None, tuple[str, ...]], ...]:
-    """Keep query wrappers for one proven peak in the same method workset."""
-
-    views: dict[
-        str, tuple[CidNlPhysicalProof, tuple[float, float], tuple[float, float]]
-    ] = {}
-    buckets: dict[
-        tuple[str, float | None, float], list[CidNlPhysicalCandidateFact]
-    ] = {}
-    unproved: list[tuple[float | None, tuple[CidNlPhysicalCandidateFact, ...]]] = []
-    for candidate in candidates:
-        requirement = (
-            None if composition is not None else candidate.configured_neutral_loss_da
-        )
-        proof = candidate.proof
-        if proof is None:
-            unproved.append((requirement, (candidate,)))
-            continue
-        xic_fraction = proof.xic_ppm_tol / 1_000_000.0
-        views[candidate.candidate_id] = (
-            proof,
-            (
-                proof.xic_mz * (1.0 - xic_fraction),
-                proof.xic_mz * (1.0 + xic_fraction),
-            ),
-            cid_nl_method_center_interval(
-                candidate.physical_mz,
-                precursor_tolerance_ppm,
-            ),
-        )
-        buckets.setdefault(
-            (
-                proof.acquisition_source_id,
-                requirement,
-                proof.apex_rt_min,
-            ),
-            [],
-        ).append(candidate)
-
-    proved: list[tuple[float | None, tuple[CidNlPhysicalCandidateFact, ...]]] = []
-    for bucket_key, bucket_candidates in sorted(buckets.items()):
-        requirement = bucket_key[1]
-        ordered = sorted(
-            bucket_candidates,
-            key=lambda item: (item.physical_mz, item.candidate_id),
-        )
-        cohort: list[CidNlPhysicalCandidateFact] = []
-        representative_proof: CidNlPhysicalProof | None = None
-        common_rt = (0.0, 0.0)
-        common_xic = (0.0, 0.0)
-        common_center = (0.0, 0.0)
-        for candidate in ordered:
-            proof, xic_interval, center_interval = views[candidate.candidate_id]
-            if not cohort:
-                cohort = [candidate]
-                representative_proof = proof
-                common_rt = (proof.left_rt_min, proof.right_rt_min)
-                common_xic = xic_interval
-                common_center = center_interval
-                continue
-            next_rt = (
-                max(common_rt[0], proof.left_rt_min),
-                min(common_rt[1], proof.right_rt_min),
-            )
-            next_xic = (
-                max(common_xic[0], xic_interval[0]),
-                min(common_xic[1], xic_interval[1]),
-            )
-            next_center = (
-                max(common_center[0], center_interval[0]),
-                min(common_center[1], center_interval[1]),
-            )
-            apex = bucket_key[2]
-            joins = (
-                next_rt[0] < apex < next_rt[1]
-                and next_xic[0] <= next_xic[1]
-                and next_center[0] <= next_center[1]
-                and representative_proof is not None
-                and _same_physical_core(
-                    representative_proof,
-                    proof,
-                    rt_min=next_rt[0],
-                    rt_max=next_rt[1],
-                )
-            )
-            if not joins:
-                proved.append((requirement, tuple(cohort)))
-                cohort = [candidate]
-                representative_proof = proof
-                common_rt = (proof.left_rt_min, proof.right_rt_min)
-                common_xic = xic_interval
-                common_center = center_interval
-                continue
-            cohort.append(candidate)
-            common_rt = next_rt
-            common_xic = next_xic
-            common_center = next_center
-        if cohort:
-            proved.append((requirement, tuple(cohort)))
-
-    return tuple(
-        (
-            requirement,
-            tuple(candidate.candidate_id for candidate in unit),
-        )
-        for requirement, unit in sorted(
-            (*proved, *unproved),
-            key=lambda unit: (
-                0.0 if unit[0] is None else unit[0],
-                unit[1][0].physical_mz,
-                tuple(candidate.candidate_id for candidate in unit[1]),
-            ),
-        )
-    )
-
-
-def mint_cid_nl_subject_membership_from_physical_units(
-    *,
-    subject_units: tuple[tuple[float | None, tuple[str, ...]], ...],
+    candidates: tuple[tuple[float | None, str], ...],
     precursor_by_id: Mapping[str, float],
     precursor_tolerance_ppm: float,
     composition: CidNlComposition | None,
 ) -> UntargetedCidNlMethodSubjectBatch:
-    """Assign fixed query centers from compact, physically closed units."""
+    """Assign fixed query centers to (requirement, candidate) pairs in order.
+
+    Discovery delivers one peak per ion peak, so each candidate is its own
+    unit. A candidate joins the current center of its requirement while it
+    lies inside that center's method window; otherwise it opens a new center.
+    """
     subject_by_key: dict[tuple[float, float | None], CidNlMethodSubject] = {}
     membership_keys: list[tuple[str, tuple[float, float | None]]] = []
     key_by_requirement: dict[float | None, tuple[float, float | None]] = {}
-    for requirement, unit_candidates in subject_units:
+    for requirement, candidate in candidates:
         key = key_by_requirement.get(requirement)
-        # A proven physical unit is indivisible. Existing fixed centers may host
-        # it only when every physical query remains inside the method window.
-        if key is None or any(
-            abs(precursor_by_id[candidate] - key[0]) / key[0] * 1_000_000.0
+        precursor_mz = precursor_by_id[candidate]
+        if (
+            key is None
+            or abs(precursor_mz - key[0]) / key[0] * 1_000_000.0
             > precursor_tolerance_ppm
-            for candidate in unit_candidates
         ):
-            if len(unit_candidates) == 1:
-                center = precursor_by_id[unit_candidates[0]]
-            else:
-                center_intervals = tuple(
-                    cid_nl_method_center_interval(
-                        precursor_by_id[candidate],
-                        precursor_tolerance_ppm,
-                    )
-                    for candidate in unit_candidates
-                )
-                lower = max(interval[0] for interval in center_intervals)
-                upper = min(interval[1] for interval in center_intervals)
-                if lower > upper:
-                    raise RuntimeError(
-                        "physical subject unit lacks a common method center"
-                    )
-                center = (lower + upper) / 2.0
-            key = (center, requirement)
+            key = (precursor_mz, requirement)
             key_by_requirement[requirement] = key
             subject_by_key[key] = mint_untargeted_cid_nl_method_subject(
-                precursor_mz=center,
+                precursor_mz=precursor_mz,
                 precursor_tolerance_ppm=precursor_tolerance_ppm,
                 neutral_loss_da=requirement,
                 composition=composition,
             )
-        membership_keys.extend((candidate, key) for candidate in unit_candidates)
+        membership_keys.append((candidate, key))
 
     subjects = tuple(
         sorted(subject_by_key.values(), key=lambda subject: subject.method_subject_id)

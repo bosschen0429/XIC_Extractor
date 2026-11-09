@@ -74,7 +74,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             cid_nl_sample_acquisition,
         )
 
-        acquire_peaks = cid_nl_sample_acquisition._reacquire_peak_observations
+        acquire_peaks = cid_nl_sample_acquisition._adopt_peak_observations
 
         def capture_without_peak(**kwargs):
             acquisition, observations, captures = acquire_peaks(**kwargs)
@@ -86,7 +86,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
 
         monkeypatch.setattr(
             cid_nl_sample_acquisition,
-            "_reacquire_peak_observations",
+            "_adopt_peak_observations",
             capture_without_peak,
         )
     subjects = _subjects(

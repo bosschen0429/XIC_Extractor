@@ -52,8 +52,8 @@ def _evaluate_report_functions(report, payload, expression):
 
 
 def build_origin_curve_payload() -> dict:
-    kinds = ["discovery_support", "reacquired_support", "backfill_support"]
-    labels = ["初始探索支持", "重新擷取支持", "Backfill（回填）支持"]
+    kinds = ["discovery_support", "backfill_support", "unavailable"]
+    labels = ["初始探索支持", "Backfill（回填）支持", "來源未提供"]
     samples = [{"id": f"S{i}", "label": f"Sample {i}"} for i in range(3)]
     rows = [
         {

@@ -68,12 +68,25 @@ without reading RAW again.
   representative event's MS1 reading before acquisition: an MS1-measured ion
   first, then the configured tag order, then product intensity.
 - **Peak.** Each raw valley-separated peak on an ion's XIC is one row and one
-  measurement. `peak_id` is `{sample}@mz{xic_mz}_rt{raw apex RT}`. Adjacent
-  XICs overlap, so one ion can be acquired twice: measurements whose
-  XIC masses lie within the precursor tolerance of the lowest one and that share
-  its raw apex scan are one peak. The kept measurement locates the most events,
-  then has the larger area, then the lower mass; the grouping is anchored and
-  does not chain.
+  measurement. `peak_id` is `{sample}@mz{xic_mz}_rt{raw apex RT}`, named by the
+  XIC of the ion whose measurement is kept; measuring the peak again in another
+  window (see [accurate-mass reading](#accurate-mass-reading)) does not rename
+  it.
+- **Same ion.** Adjacent XIC windows overlap, so one ion can be measured in
+  several. A trace point sums the centroids inside its window, so windows
+  holding the same centroids read exactly the same intensity; a centroid near a
+  window edge can fall inside one window only. Two measurements are one peak
+  when their mass windows overlap, each apex lies inside the other peak's
+  bounds, and on the scans where both read non-zero inside the shared part of
+  the two peaks at least 3 read exactly equal and those are the majority.
+  Different ions in overlapping windows, such as ¹³C and ¹⁵N isotopes about
+  25 ppm apart, never read an equal intensity. The relation is closed
+  transitively, so the result does not depend on input order, channel order or
+  peak IDs. The kept measurement is one a recorded precursor located when the
+  group has one, then the window observing the most non-zero scans of the
+  group's peaks, then the wider RT context, then the lower `xic_mz` and earlier
+  context. Its RT context represents the peak, and every event of the group is
+  attached against it.
 - **Valley.** An event on a valley shared by two peaks belongs to the earlier
   peak.
 - **Evidence.** `event_scan_ids`, tag evidence, the event RT range and
@@ -188,13 +201,24 @@ parent-MS1 observation from the event table and assesses it again; the saved
 
 ### Accurate-mass reading
 
-For a pure `product_plus_neutral_loss` group with a resolved peak, Discovery
-reads the ion at the apex scan and one MS1 scan on each side, and reports the
-intensity-weighted reading as `ms1_apex_mz`. MS1 is the method's accurate-mass
-scan, while ddMS2 runs at a quarter of its resolution, so product + loss only
-points at the ion. The reading becomes `peak_mz`, the mass Alignment and Delta
-Mass read. The
-original precursor and product remain the keys for MS2 scan replay.
+For a measurement located only by `product_plus_neutral_loss` events,
+Discovery reads the ion at the apex scan and one MS1 scan on each side. MS1 is
+the method's accurate-mass scan, while ddMS2 runs at a quarter of its
+resolution, so product + loss only points at the ion. When the
+intensity-weighted reading differs from the XIC center, the peak is measured
+once more in the window centred on the reading, with the same RT context and
+tolerance, selecting the peak at its raw apex. That one measurement is the
+peak's area and bounds, and Alignment adopts it unchanged. The physical facts
+record the window actually measured as `xic_mz` and the ion's XIC center as
+`ion_mz`. A window that selects
+nothing there keeps the first measurement, and the reading is not taken.
+
+After [same-ion](#ions-peaks-and-events) grouping, a peak whose events are all
+inferred reports the reading its window is centred on as `ms1_apex_mz`; it is
+`peak_mz`, the mass Alignment and Delta Mass read, and always the center of the
+window that measured the peak. A group with a recorded precursor reads none;
+that precursor fixes the ion. The original precursor and product remain the
+keys for MS2 scan replay.
 
 - A reading spread wider than 5 ppm comes from two ions and reports none.
 - Selected precursors (`scan_precursor`, `scan_monoisotopic`, `mixed`) report
@@ -202,9 +226,10 @@ original precursor and product remain the keys for MS2 scan replay.
   reading would have moved landed on a neighbouring ion present at the selected
   m/z when the scan was triggered.
 
-Product + loss assumes a singly charged precursor. When the MS1 ion is read
-with a centroid one doubly charged ¹³C spacing (0.50168 m/z) above it in most
-scans, the peak's `status` is `doubly_charged`. Its bounds,
+Product + loss assumes a singly charged precursor. When the MS1 ion read at
+the peak's apex has a centroid one doubly charged ¹³C spacing (0.50168 m/z)
+above it in most scans, the peak's `status` is `doubly_charged`; this is judged
+once per peak, after same-ion grouping. Its bounds,
 area and reason remain visible; it cannot reach Alignment or a Matrix value. A
 separate singly charged ion keeps its own admission.
 

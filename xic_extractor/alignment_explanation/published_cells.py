@@ -12,7 +12,7 @@ from .reader import (
 )
 from .storage import EXPLANATION_ARTIFACT_NAME
 
-_DIRECT_ORIGINS = frozenset({"discovery_support", "reacquired_support"})
+_DIRECT_ORIGINS = frozenset({"discovery_support"})
 
 
 @dataclass(frozen=True)

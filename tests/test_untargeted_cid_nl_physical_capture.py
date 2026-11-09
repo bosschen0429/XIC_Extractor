@@ -1,4 +1,4 @@
-"""Changed physical queries, requantification and adjacent peak capture."""
+"""Alignment adoption of Discovery measurements and adjacent peak capture."""
 
 from __future__ import annotations
 
@@ -297,7 +297,6 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
             for item in capture.scope.capture_bindings
             if item.candidate_id == record.peak_id
         )
-        assert binding.source_physical_evaluation is None
         assert binding.physical_evaluation is capture.physical_evaluation
         assert (
             capture.physical_evaluation.question.selection_policy_version
@@ -313,7 +312,6 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
             query_rt_max=record.work_item.xic_rt_max,
             query_ppm_tol=record.work_item.xic_ppm_tol,
             physical_evaluation=record.evaluation,
-            source_physical_evaluation=None,
             physical_evaluation_mz=record.work_item.xic_mz,
         )
         replay_scope = replace(
@@ -385,12 +383,6 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     assert [item.physical_evaluation for item in reused.captures] == [
         item.physical_evaluation for item in result.captures
     ]
-    with pytest.raises(ValueError, match="physical capture data"):
-        capture_owner.capture_reacquired_physical_peak(
-            scope=capture.scope,
-            candidate_id=capture.candidate_id,
-            trace=replace(capture.trace, intensity=capture.trace.intensity + 1.0),
-        )
 
 
 @pytest.mark.parametrize(
@@ -401,7 +393,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         (500.015, False, 0.5),
     ],
 )
-def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
+def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     subject_mz: float,
@@ -470,22 +462,37 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
     settings = replace(_settings(), neutral_loss_profile=None)
     peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
-    discovery = capture_ms1_peaks(
-        raw,
-        build_discovery_ions(
-            collect_strict_nl_events(
-                raw, raw_file=fixture.source_paths["S1"], settings=settings
+
+    def discover(ms1_centroid_mz):
+        return capture_ms1_peaks(
+            raw,
+            build_discovery_ions(
+                collect_strict_nl_events(
+                    raw, raw_file=fixture.source_paths["S1"], settings=settings
+                ),
+                settings=settings,
             ),
+            acquisition_source=fixture.owners.request.acquisition_sources[0],
             settings=settings,
-        ),
-        acquisition_source=fixture.owners.request.acquisition_sources[0],
-        settings=settings,
-        signal_processing_profile=profile,
-        ms1_centroid_mz=lambda *_: None,
+            signal_processing_profile=profile,
+            ms1_centroid_mz=ms1_centroid_mz,
+        )
+
+    (unread,) = discover(lambda *_: None).peaks
+    discovery = discover(
+        lambda _rt, low, high: physical_mz if low <= physical_mz <= high else None
     )
-    (original,) = discovery.peaks
+    (candidate,) = discovery.peaks
     (record,) = discovery.physical_evaluations
-    candidate = replace(original, ms1_apex_mz=physical_mz, peak_mz=physical_mz)
+    # Discovery measures the peak once more in the measured ion's window, which
+    # excludes the coeluting interference the inferred window included.
+    assert unread.xic_mz == candidate.xic_mz == pytest.approx(500.016)
+    assert candidate.peak_id == unread.peak_id
+    assert candidate.peak_mz == record.work_item.xic_mz
+    assert candidate.peak_mz == pytest.approx(physical_mz)
+    assert candidate.ms1_area == pytest.approx(
+        unread.ms1_area / (1 + interference_abundance)
+    )
     method_subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=subject_mz,
         precursor_tolerance_ppm=20.0,
@@ -541,22 +548,18 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
         e.observation.precursor_mz == pytest.approx(500.016)
         for e in assessment.evidence_refs
     )
+    # Alignment adopts that one measurement on the identical trace.
     (capture,) = result.captures
-    assert capture.trace.mz == physical_mz
+    assert capture.trace.mz == record.work_item.xic_mz
     assert capture.trace.rt_min == record.work_item.xic_rt_min
     assert capture.trace.rt_max == record.work_item.xic_rt_max
+    assert capture.physical_evaluation == record.evaluation
     assert capture.selected_hypothesis is not None
-    assert record.evaluation.facts is not None
-    assert capture.selected_hypothesis.integration.area_baseline_corrected == (
-        pytest.approx(
-            record.evaluation.facts.area_counts_seconds / (1 + interference_abundance)
-        )
-    )
     assert (
-        candidate.best_event_precursor_mz
-        == record.work_item.xic_mz
-        == pytest.approx(500.016)
+        capture.selected_hypothesis.integration.area_baseline_corrected
+        == candidate.ms1_area
     )
+    assert candidate.best_event_precursor_mz == pytest.approx(500.016)
 
 
 def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(

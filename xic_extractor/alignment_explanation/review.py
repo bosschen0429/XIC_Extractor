@@ -22,9 +22,9 @@ REVIEW_SCHEMA_VERSION = "alignment_explanation_review"
 OBSERVED, ATTENTION, EXCLUDED, NULL_CELL, ZERO_CELL = 1, 2, 4, 8, 16
 ORIGIN_FLAGS = {
     "backfill_support": 32,
-    "reacquired_support": 64,
     "discovery_support": 128,
 }
+SUPPORT_ORIGINS = frozenset((*ORIGIN_FLAGS, "unavailable"))
 SELECTION_FLAGS = (
     OBSERVED,
     ATTENTION,
@@ -295,8 +295,6 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
     origin = (
         "backfill_support"
         if "backfill_observation" in stages or "method_backfill" in stages
-        else "reacquired_support"
-        if "reacquired_capture" in stages
         else "discovery_support"
         if "initial_capture" in stages
         else "unavailable"

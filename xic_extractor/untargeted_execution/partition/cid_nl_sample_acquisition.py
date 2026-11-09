@@ -45,8 +45,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     CidNlComposition,
     CidNlMethodSubject,
-    UntargetedCidNlMethodSubjectBatch,
-    cid_nl_method_subjects_from_request,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
@@ -59,7 +57,6 @@ from xic_extractor.peak_detection.elution_context import (
 from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
     RetainedCaptureEvidence,
-    same_selected_peak,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
@@ -73,7 +70,7 @@ from xic_extractor.peak_detection.search_scope import (
     SearchScopeContractError,
     UntargetedSearchScope,
 )
-from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
+from xic_extractor.peak_detection.traces import trace_from_xic_request
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     resolve_request_acquisition_source,
@@ -170,60 +167,22 @@ class UntargetedCidNlSampleTraceBatch:
 
 def _sample_capture_requests(
     *,
-    processing_owners: ProcessingOwnerReferences,
     peaks: tuple[DiscoveryPeak, ...],
     settings: DiscoverySettings,
-    method_subject: CidNlMethodSubject | None = None,
 ) -> tuple[tuple[XICRequest, ...], tuple[int, ...]]:
-    requests = {
-        item.peak_id: XICRequest(
+    """Each peak's XIC exactly as Discovery measured it, read once per window.
+
+    Discovery measures every peak in the window centred on its ``peak_mz``.
+    """
+    unique: dict[XICRequest, int] = {}
+    indices = []
+    for item in peaks:
+        request = XICRequest(
             mz=item.peak_mz,
             rt_min=item.ms1_search_rt_min,
             rt_max=item.ms1_search_rt_max,
             ppm_tol=settings.precursor_mz_tolerance_ppm,
         )
-        for item in peaks
-    }
-    subjects = method_subject or cid_nl_method_subjects_from_request(
-        processing_owners.request
-    )
-    if isinstance(subjects, UntargetedCidNlMethodSubjectBatch):
-        memberships = dict(subjects.candidate_memberships)
-        subject_values = {item.method_subject_id: item for item in subjects.subjects}
-        grouped: dict[str, list[DiscoveryPeak]] = {}
-        for item in peaks:
-            subject_id = memberships.get(item.peak_id)
-            if subject_id not in subject_values:
-                raise CidNlAcquisitionError("capture peak lacks method subject")
-            grouped.setdefault(subject_id, []).append(item)
-    else:
-        grouped = {subjects.method_subject_id: list(peaks)}
-    for members in grouped.values():
-        ordered = sorted(
-            members, key=lambda item: (item.ms1_search_rt_min, item.peak_id)
-        )
-        components: list[tuple[float, list[DiscoveryPeak]]] = []
-        for item in ordered:
-            if not components or item.ms1_search_rt_min > components[-1][0]:
-                components.append((item.ms1_search_rt_max, [item]))
-            else:
-                components[-1] = (
-                    max(components[-1][0], item.ms1_search_rt_max),
-                    components[-1][1],
-                )
-                components[-1][1].append(item)
-        for right, members in components:
-            if len(members) > 1:
-                for item in members:
-                    requests[item.peak_id] = replace(
-                        requests[item.peak_id],
-                        rt_min=members[0].ms1_search_rt_min,
-                        rt_max=right,
-                    )
-    unique: dict[XICRequest, int] = {}
-    indices = []
-    for item in peaks:
-        request = requests[item.peak_id]
         indices.append(unique.setdefault(request, len(unique)))
     return tuple(unique), tuple(indices)
 
@@ -274,7 +233,6 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
         coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     requests, indices = _sample_capture_requests(
-        processing_owners=processing_owners,
         peaks=capture_candidates,
         settings=settings,
     )
@@ -446,7 +404,7 @@ def adapt_current_discovery_sample_subject(
         physical_records=physical_records,
     )
     capture_evidence: list[RetainedCaptureEvidence] = []
-    acquisition, observations, captures = _reacquire_peak_observations(
+    acquisition, observations, captures = _adopt_peak_observations(
         processing_owners=processing_owners,
         sample=sample,
         peaks=peak_candidates,
@@ -455,7 +413,6 @@ def adapt_current_discovery_sample_subject(
         raw=raw,
         source=source,
         search_scope=search_scope,
-        method_subject=method_subject,
         evidence_sink=capture_evidence,
         _preacquired_traces=_preacquired_traces,
     )
@@ -578,7 +535,7 @@ def _located_discovery_events(
     return tuple(events[key] for key in sorted(events))
 
 
-def _reacquire_peak_observations(
+def _adopt_peak_observations(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
@@ -588,7 +545,6 @@ def _reacquire_peak_observations(
     raw: CidNlRawSource,
     source,
     search_scope: UntargetedSearchScope,
-    method_subject: CidNlMethodSubject | None = None,
     evidence_sink: list[RetainedCaptureEvidence] | None = None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
 ) -> tuple[
@@ -599,10 +555,8 @@ def _reacquire_peak_observations(
     if not peaks:
         return None, (), ()
     requests, indices = _sample_capture_requests(
-        processing_owners=processing_owners,
         peaks=peaks,
         settings=settings,
-        method_subject=method_subject,
     )
     if _preacquired_traces is None:
         capability = mint_trace_acquisition_capability(
@@ -635,7 +589,6 @@ def _reacquire_peak_observations(
             )
     observations: list[PeakObservationRef] = []
     captures: list[capture_owner.SampleLocalCapture] = []
-    selected_traces: list[tuple[PeakObservationRef, Trace]] = []
     for peak, acquired in zip(peaks, acquired_traces, strict=True):
         trace = trace_from_xic_request(
             sample_name=sample.metadata.sample_name,
@@ -649,56 +602,14 @@ def _reacquire_peak_observations(
             for item in search_scope.capture_bindings
             if item.candidate_id == peak.peak_id
         )
-        if binding.physical_evaluation is not None and (
-            trace.mz != binding.query_mz
-            or (
-                binding.physical_evaluation_mz is not None
-                and trace.mz != binding.physical_evaluation_mz
-            )
-            or trace.rt_min != binding.query_rt_min
-            or trace.rt_max != binding.query_rt_max
-            or trace.ppm_tol != binding.query_ppm_tol
-        ):
-            _validate_physical_candidate_receipt(peak, binding.physical_evaluation)
-            capture = capture_owner.capture_reacquired_physical_peak(
-                scope=search_scope,
-                candidate_id=peak.peak_id,
-                trace=trace,
-            )
-            binding = next(
-                item
-                for item in capture.scope.capture_bindings
-                if item.candidate_id == peak.peak_id
-            )
-        else:
-            capture = capture_owner.capture_peak_hypotheses(
-                scope=search_scope,
-                candidate_id=peak.peak_id,
-                trace=trace,
-            )
-        captures.append(capture)
-        retained = RetainedCaptureEvidence(
-            sample_key=sample.identity.sample_key,
-            processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-            method_subject_id=binding.method_subject_id,
+        # Discovery measured the peak once; its retained evaluation is adopted
+        # on the identical trace and never measured again here.
+        capture = capture_owner.capture_peak_hypotheses(
+            scope=search_scope,
             candidate_id=peak.peak_id,
-            capture_stage=(
-                "reacquired_capture"
-                if binding.source_physical_evaluation is not None
-                else "initial_capture"
-            ),
             trace=trace,
-            physical_evaluation=capture.physical_evaluation,
-            source_physical_evaluation=binding.source_physical_evaluation,
         )
-        if (
-            binding.source_physical_evaluation is not None
-            and capture.physical_evaluation is not None
-            and capture.physical_evaluation.state == "unavailable"
-        ):
-            if evidence_sink is not None:
-                evidence_sink.append(retained)
-            continue
+        captures.append(capture)
         if (
             capture.detection.status != "detected"
             or capture.selected_hypothesis is None
@@ -706,56 +617,31 @@ def _reacquire_peak_observations(
             raise CidNlAcquisitionError(
                 f"{peak.peak_id}: current MS1 receipt was not reacquired"
             )
-        if (
-            capture.physical_evaluation is not None
-            and binding.source_physical_evaluation is None
-        ):
+        if capture.physical_evaluation is not None:
             _validate_physical_candidate_receipt(peak, capture.physical_evaluation)
         observation = capture_owner.mint_captured_peak_observation(
             capture,
             processing_owners=processing_owners,
             sample=sample,
         )
-        # Candidates a few ppm apart read their own traces, so one physical
-        # peak would enter the universe twice and its MS2 events would compete
-        # with a copy. Reading the peak on the trace that first selected it
-        # yields the identical observation, which counts once.
-        first_trace = next(
-            (
-                kept_trace
-                for kept, kept_trace in selected_traces
-                if (kept_trace.mz, kept_trace.rt_min, kept_trace.rt_max)
-                != (trace.mz, trace.rt_min, trace.rt_max)
-                and same_selected_peak(observation, kept)
-            ),
-            None,
-        )
-        if first_trace is not None and binding.physical_evaluation is not None:
-            shared = capture_owner.capture_reacquired_physical_peak(
-                scope=search_scope,
-                candidate_id=peak.peak_id,
-                trace=first_trace,
-            )
-            if shared.selected_hypothesis is not None:
-                shared_observation = capture_owner.mint_captured_peak_observation(
-                    shared,
-                    processing_owners=processing_owners,
-                    sample=sample,
-                )
-                if same_selected_peak(shared_observation, observation):
-                    captures[-1] = capture = shared
-                    observation = shared_observation
-                    trace = first_trace
-                    retained = replace(
-                        retained,
-                        trace=trace,
-                        physical_evaluation=capture.physical_evaluation,
-                    )
-        selected_traces.append((observation, trace))
         observations.append(observation)
         if evidence_sink is not None:
-            evidence_sink.append(replace(retained, observation_ref=observation))
-    observations = list(dict.fromkeys(observations))
+            evidence_sink.append(
+                RetainedCaptureEvidence(
+                    sample_key=sample.identity.sample_key,
+                    processing_attempt_id=(
+                        processing_owners.attempt.processing_attempt_id
+                    ),
+                    method_subject_id=binding.method_subject_id,
+                    candidate_id=peak.peak_id,
+                    capture_stage="initial_capture",
+                    trace=trace,
+                    physical_evaluation=capture.physical_evaluation,
+                    observation_ref=observation,
+                )
+            )
+    if len(set(observations)) != len(observations):
+        raise CidNlAcquisitionError("Discovery delivered one physical peak twice")
     return acquisition, tuple(observations), tuple(captures)
 
 
@@ -923,8 +809,8 @@ def _untargeted_search_scope(
                     query_ppm_tol=method_subject.precursor_tolerance_ppm,
                     preferred_rt=item.best_event_rt,
                     physical_evaluation=(records[item.peak_id].evaluation),
-                    # The active query belongs to the physical subject; the
-                    # retained evaluation still belongs to its original XIC.
+                    # The query names the peak's ion; the retained evaluation
+                    # belongs to the XIC Discovery measured, which is read here.
                     physical_evaluation_mz=(records[item.peak_id].work_item.xic_mz),
                 )
                 for item in capture_candidates

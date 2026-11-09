@@ -23,6 +23,7 @@ from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
     read_explanation_metadata,
+    read_explanation_summary,
 )
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
@@ -64,6 +65,41 @@ def test_old_query_index_is_rejected_without_conversion(tmp_path, monkeypatch):
     with pytest.raises(ExplanationError, match="rerun"):
         read_explanation_metadata(source)
     assert source.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "stale_content",
+    [
+        # A support origin current Alignment no longer writes.
+        "UPDATE cells SET support_origin='reacquired_support' "
+        "WHERE row_record_id=(SELECT MIN(row_record_id) FROM cells)",
+        # Selection facts packed with one more per-sample mask than current flags.
+        "UPDATE query_items SET sample_facts=sample_facts || zeroblob(1) "
+        "WHERE id=(SELECT MIN(id) FROM query_items)",
+    ],
+    ids=["retired-support-origin", "stale-selection-facts"],
+)
+def test_explanation_from_an_older_alignment_is_rejected_on_open(
+    tmp_path, monkeypatch, stale_content
+):
+    completed, writer, candidates, matrix, config = run_alignment_fixture(
+        tmp_path, monkeypatch, "positive"
+    )
+    source = write_alignment_explanation(
+        tmp_path / "old.sqlite",
+        completed=completed,
+        peaks_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
+    )
+    read_explanation_summary(source)
+    with sqlite3.connect(source) as db:
+        db.execute(stale_content)
+    # Rejected where it is opened, not decoded differently by review or curation.
+    with pytest.raises(ExplanationError, match="請重新執行 Alignment"):
+        read_explanation_summary(source)
+    with pytest.raises(ExplanationError, match="請重新執行 Alignment"):
+        read_explanation_metadata(source)
 
 
 @pytest.mark.parametrize(

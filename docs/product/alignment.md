@@ -150,8 +150,11 @@ paths.
 Alignment consumes candidates and owner-backed hypotheses from Discovery or
 Targeted; it does not create the first sample-local Discovery hit. RAW owner-build
 accepts only MS1-feature-backed Discovery candidates; review-only rows do not
-thereby receive a second XIC search. Scheduling partitions pack worksets for
-execution only; they do not restrict scientific comparison or RT calibration.
+thereby receive a second XIC search. A Discovery peak is one ion peak with one
+measurement: Alignment reads its XIC exactly as Discovery measured it and adopts
+that measurement as the sample's cell, so its area and bounds equal the peak
+table. Scheduling partitions pack worksets for execution only; they do not
+restrict scientific comparison or RT calibration.
 
 Non-composite method subjects with the same scalar neutral loss form connected
 worksets through resolver intervals and known-reference comparison envelopes.

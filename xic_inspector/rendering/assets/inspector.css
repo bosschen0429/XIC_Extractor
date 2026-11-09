@@ -167,7 +167,6 @@
 .xic-inspector .sample-provenance { display:flex;flex-wrap:wrap;gap:2px 12px;color:var(--muted);font-size:12px; }
 .xic-inspector .support-origin, .xic-inspector .alignment-status { display:inline;color:var(--muted);font-size:12px; }
 .xic-inspector .support-origin::before { content:"";display:inline-block;width:7px;height:7px;margin-right:5px;border-radius:50%;background:var(--green);vertical-align:1px; }
-.xic-inspector .origin-reacquired_support::before { background:var(--accent); }
 .xic-inspector .origin-backfill_support::before { background:var(--purple); }
 .xic-inspector .origin-unavailable::before { background:#b4bcbf; }
 .xic-inspector .alignment-partial { color:var(--warn); }

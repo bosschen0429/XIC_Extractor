@@ -28,6 +28,7 @@ from xic_extractor.alignment_explanation.storage import (
     decode_candidate,
     decode_object,
     open_readonly,
+    selection_mask_width,
 )
 
 
@@ -82,7 +83,7 @@ def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
     definitions.extend(
         ("candidate", key[0], None, {key}) for key in candidates if key not in grouped
     )
-    mask_width = max(1, (len(samples) + 7) // 8)
+    mask_width = selection_mask_width(len(samples))
     items_by_key = defaultdict(set)
     item_keys = {}
     for item_id, (kind, identifier, gid, keys) in enumerate(definitions):
@@ -389,9 +390,10 @@ class ReviewQuery:
             if sample["sample_key"] in scope
         )
 
+        width = selection_mask_width(len(self._summary["samples"]))
+
         def classify_packed(kind, packed):
-            width, remainder = divmod(len(packed), len(SELECTION_FLAGS) + 1)
-            if remainder or not width:
+            if len(packed) != width * (len(SELECTION_FLAGS) + 1):
                 raise ExplanationError("malformed review selection facts")
             masks = [
                 int.from_bytes(packed[i : i + width], "little") & scope_mask

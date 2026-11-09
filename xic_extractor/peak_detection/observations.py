@@ -146,7 +146,6 @@ class RetainedCaptureEvidence:
     trace: Trace
     physical_evaluation: PhysicalPeakEvaluation | None
     observation_ref: PeakObservationRef | None = None
-    source_physical_evaluation: PhysicalPeakEvaluation | None = None
 
 
 def mint_peak_observation_ref(

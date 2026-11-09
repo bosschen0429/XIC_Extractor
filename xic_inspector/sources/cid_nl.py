@@ -481,7 +481,6 @@ class CidNlSource:
                     value
                     for value in (
                         "backfill_support",
-                        "reacquired_support",
                         "discovery_support",
                     )
                     if value in recorded
@@ -524,8 +523,6 @@ class CidNlSource:
             and "untargeted-cid-nl-backfill" in invocations
         ):
             kind = "backfill_support"
-        elif "reacquired_capture" in capture_kinds and methods:
-            kind = "reacquired_support"
         elif "initial_capture" in capture_kinds and any(
             isinstance(value, str) and value.startswith("untargeted-cid-nl-real-data:")
             for value in invocations

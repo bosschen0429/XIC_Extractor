@@ -1488,20 +1488,30 @@ def _inferred_apex_case(
     return group, raw, result
 
 
-def test_inferred_precursor_reports_the_ms1_ion_read_at_the_apex(
+def test_inferred_precursor_is_measured_once_in_the_window_of_its_apex_ion(
     tmp_path: Path,
 ) -> None:
     group, raw, result = _inferred_apex_case(
         tmp_path, lambda inferred, _rt: inferred * (1 - 18e-6)
     )
 
+    apex_mz = group.mz * (1 - 18e-6)
     assert result.measurements.reacquisition_request_count == 0
-    assert raw.request_batches[-1][0].mz == pytest.approx(group.mz)
+    assert result.measurements.remeasurement_request_count == 1
+    assert raw.request_batches[0][0].mz == pytest.approx(group.mz)
+    assert raw.request_batches[-1][0].mz == pytest.approx(apex_mz)
     (candidate,) = result.peaks
     assert candidate.best_event_precursor_mz == group.mz
-    assert candidate.ms1_apex_mz == pytest.approx(group.mz * (1 - 18e-6))
+    assert candidate.ms1_apex_mz == pytest.approx(apex_mz)
+    # The peak's one measurement is the apex ion's window, which Alignment
+    # reads; the peak keeps the name of the ion XIC that located it.
     (record,) = result.physical_evaluations
-    assert record.work_item.xic_mz == pytest.approx(group.mz)
+    assert candidate.peak_mz == record.work_item.xic_mz
+    assert record.work_item.xic_mz == pytest.approx(apex_mz)
+    assert record.acquired_trace.coordinate.request.mz == pytest.approx(apex_mz)
+    assert candidate.xic_mz == record.work_item.ion_mz == group.mz
+    assert candidate.peak_id == record.work_item.peak_id
+    assert candidate.peak_id == "TumorBC2312_DNA@mz500_rt12.1400"
 
 
 def test_pipeline_publishes_inferred_precursor_ms1_ion_from_raw_handle(
@@ -1781,10 +1791,21 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
         signal_processing_profile=profile,
         ms1_centroid_mz=read_ion,
     )
-    first, reacquired = result.measurements.acquisition_batches
+    first, reacquired, remeasured = result.measurements.acquisition_batches
     assert result.measurements.reacquisition_request_count == 1
+    assert result.measurements.remeasurement_request_count == 1
     assert first.traces[0].coordinate.trace_point_count < profile.window_points
     assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
+    # The apex ion's window keeps the reacquired RT context.
+    (remeasured_trace,) = remeasured.traces
+    assert remeasured_trace.coordinate.request.mz == pytest.approx(apex_ion_mz)
+    assert (
+        remeasured_trace.coordinate.request.rt_min,
+        remeasured_trace.coordinate.request.rt_max,
+    ) == (
+        reacquired.traces[0].coordinate.request.rt_min,
+        reacquired.traces[0].coordinate.request.rt_max,
+    )
     (record,) = result.physical_evaluations
     assert record.evaluation.state == "available"
     (candidate,) = result.peaks
@@ -1794,6 +1815,7 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
     assert candidate.ms1_apex_mz == pytest.approx(apex_ion_mz)
     (binding,) = result.physical_bindings
     assert binding.peak.status == expected_state
-    # Three final apex scans, each read for ion and isotope, once per physical
-    # request even when two seed groups reuse the resulting fact.
-    assert len(readings) == 6
+    # Three apex scans read the ion to centre its window; the peak then reads
+    # its three apex scans for ion and isotope once, even when two seed groups
+    # reuse the resulting fact.
+    assert len(readings) == 9

@@ -80,6 +80,7 @@ def _work(
         query_rt_min=query,
         context_rt_start_min=context[0],
         context_rt_end_min=context[1],
+        ion_mz=acquired_trace.coordinate.request.mz,
         xic_mz=acquired_trace.coordinate.request.mz,
         xic_rt_min=acquired_trace.coordinate.request.rt_min,
         xic_rt_max=acquired_trace.coordinate.request.rt_max,
