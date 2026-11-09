@@ -52,8 +52,12 @@ configured loss mass; it is not the acceptance gate.
 CID-NL Discovery publishes two tables per sample. `discovery_peaks.csv` has one
 row per physical MS1 peak. `discovery_events.csv` has one row per strict NL
 event, keyed by MS2 scan, tag and product; a scan matching two tags is two
-events. Each event names the peak it attaches to (`peak_id`) or why it attaches
-to none (`unattached_reason`), never both.
+events. Locating a peak and attaching to it are two facts: `peak_id` names the
+peak an event locates, and `unattached_reason` says why it does not attach
+there. `peak_id` is blank only when the ion has no measured peak at the event
+RT, and then the reason is physical. The table also carries each event's
+precursor metadata and parent-MS1 observation, so Alignment assesses the events
+without reading RAW again.
 
 - **Ion.** Events are grouped only by their MS1-measured ion: the recorded
   scan precursor, or the single parent-MS1 centroid of an inferred precursor.
@@ -74,7 +78,7 @@ to none (`unattached_reason`), never both.
   peak.
 - **Evidence.** `event_scan_ids`, tag evidence, the event RT range and
   `ms2_product_max_intensity` cover every event located on the peak, attached or
-  not, because Alignment re-reads and re-judges them. `attached_event_count` and
+  not, because Alignment re-judges them from the event table. `attached_event_count` and
   `status` count attached events only. The `best_event_*` columns are the
   representative event's values, not the peak's mass.
 - **Mass.** `peak_mz` is the peak's ion mass: the [accurate-mass
@@ -178,8 +182,9 @@ scan within the precursor ppm window:
   (see [peak attachment](#cid-nl-support-relations)).
 
 This is method support, not proof of a unique precursor–product pairing. The
-original inferred m/z and null loss error stay unchanged. Alignment reacquires
-these facts from RAW; a saved CSV verification grants no authority.
+original inferred m/z and null loss error stay unchanged. Alignment reads the
+parent-MS1 observation from the event table and assesses it again; the saved
+`precursor_verified` grants no authority.
 
 ### Accurate-mass reading
 

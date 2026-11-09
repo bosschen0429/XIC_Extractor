@@ -68,6 +68,14 @@ class DiscoverySettings:
                 tuple(profile.tag for profile in profiles),
             )
 
+    @property
+    def neutral_loss_by_tag(self) -> dict[str, float]:
+        """Each configured tag's loss; event tables store only the tag."""
+        return {
+            profile.tag: profile.neutral_loss_da
+            for profile in self.neutral_loss_profiles
+        }
+
 
 def discovery_settings_identity_fields(
     settings: DiscoverySettings,

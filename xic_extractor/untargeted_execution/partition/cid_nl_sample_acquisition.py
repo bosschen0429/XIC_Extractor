@@ -20,13 +20,10 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.models import DiscoveryPeak
+from xic_extractor.discovery.models import DiscoveryEvent, DiscoveryPeak
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import (
-    StrictEventReceiptError,
-    read_complete_discovery_scan_events,
-    read_parent_ms1_observations,
     resolve_discovery_scan_events,
 )
 from xic_extractor.peak_detection import capture as capture_owner
@@ -435,16 +432,7 @@ def adapt_current_discovery_sample_subject(
         processing_owners=processing_owners,
         sample=sample,
     )
-    try:
-        scan_seeds = read_complete_discovery_scan_events(
-            raw,
-            peaks=seed_candidates + support_seed_candidates,
-            settings=settings,
-            preserve_configured_losses=method_subject.composition is not None,
-            include_inferred=True,
-        )
-    except StrictEventReceiptError as exc:
-        raise CidNlAcquisitionError(str(exc)) from exc
+    scan_seeds = _located_discovery_events(seed_candidates + support_seed_candidates)
 
     search_scope = _untargeted_search_scope(
         processing_owners=processing_owners,
@@ -480,13 +468,8 @@ def adapt_current_discovery_sample_subject(
             key=lambda item: item.content.measured_order_key,
         )
     )
-    verified_seeds = read_parent_ms1_observations(
-        raw,
-        tuple(seed for _scan, seed in scan_seeds),
-        tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-    )
     for raw_seed in resolve_discovery_scan_events(
-        verified_seeds,
+        scan_seeds,
         settings=settings,
         preserve_configured_losses=method_subject.composition is not None,
     ):
@@ -559,6 +542,40 @@ def adapt_current_discovery_sample_subject(
         ),
         capture_evidence=tuple(capture_evidence),
     )
+
+
+def _located_discovery_events(
+    peaks: tuple[DiscoveryPeak, ...],
+) -> tuple[DiscoveryEvent, ...]:
+    """Every event the Discovery event table locates on these peaks.
+
+    The table, not RAW, carries each event's precursor and parent-MS1 facts.
+    A peak whose located scans differ from its declared scans belongs to
+    another Discovery run, so its evidence cannot be assessed.
+    """
+    events: dict[tuple[object, ...], DiscoveryEvent] = {}
+    for peak in peaks:
+        if {event.scan_number for event in peak.located_events} != set(
+            peak.event_scan_ids
+        ) or any(
+            event.sample_stem != peak.sample_stem for event in peak.located_events
+        ):
+            raise CidNlAcquisitionError(
+                f"{peak.peak_id}: Discovery event table does not close the peak's "
+                "declared MS2 scans; regenerate Discovery with the current version"
+            )
+        for event in peak.located_events:
+            events.setdefault(
+                (
+                    event.scan_number,
+                    event.neutral_loss_tag,
+                    event.precursor_mz,
+                    event.product_mz,
+                    event.precursor_mz_basis,
+                ),
+                event,
+            )
+    return tuple(events[key] for key in sorted(events))
 
 
 def _reacquire_peak_observations(

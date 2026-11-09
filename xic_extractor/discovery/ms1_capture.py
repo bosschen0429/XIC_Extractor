@@ -37,6 +37,7 @@ from xic_extractor.discovery.models import (
     EventAttachment,
     PeakStatus,
     build_discovery_physical_selection_subject_id,
+    located_event_order,
 )
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPeakPhysicalBinding,
@@ -361,8 +362,8 @@ def _measured_peak(
         for event in located_events
     }
     attached = [event for event in located_events if not reasons[event]]
-    # Every event locating this peak is its MS2 evidence, which Alignment
-    # rereads and judges; only attached attachments admit it.
+    # Every event locating this peak is its MS2 evidence, handed to Alignment
+    # through the event table; only attached events admit it.
     evidence = located_events
     representative = select_representative_event(
         attached or located_events, settings=settings
@@ -450,6 +451,7 @@ def _measured_peak(
             matched_tags, settings=settings
         ),
         tag_evidence_json=merge_event_evidence(evidence, settings=settings),
+        located_events=located_event_order(evidence),
         # Provisional trace shape is judged with every event that locates it.
         is_provisional=(
             physical_overlap
@@ -461,7 +463,7 @@ def _measured_peak(
             event=event,
             xic_mz=ion.mz,
             precursor_verified=_precursor_verified(event, settings),
-            peak_id="" if reasons[event] else peak_id,
+            peak_id=peak_id,
             unattached_reason=reasons[event],
         )
         for ion, event in located

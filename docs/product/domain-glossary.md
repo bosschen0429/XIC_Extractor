@@ -82,7 +82,8 @@ tests.
   it enters Alignment; its `peak_mz` is the peak's ion mass (the apex reading
   of an inferred precursor, else `xic_mz`), the one mass every consumer reads.
 - `Discovery event`: one strict NL event (MS2 scan, tag and product), one row
-  of `discovery_events.csv`. It attaches to one peak or records why it does not.
+  of `discovery_events.csv`. It names the peak it locates and records why it
+  does not attach there, or the physical reason it locates none.
 - `final Matrix`: the immutable grid produced after cell and row-inclusion
   decisions close. Pre-final collections use other names and cannot cross the
   Matrix interface.

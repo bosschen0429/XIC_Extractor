@@ -141,48 +141,15 @@ class CachedUntargetedRaw:
         return self._raw.read_ms1_mass_windows(requests)
 
     def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
-        yield from self._iter_ms2_scans(rt_min, rt_max, scan_numbers=None)
-
-    def iter_ms2_scan_subset(
-        self, rt_min: float, rt_max: float, scan_numbers: frozenset[int]
-    ) -> Iterator[Ms2ScanEvent]:
-        """Reuse a complete cached window without hydrating unrelated spectra."""
-        yield from self._iter_ms2_scans(rt_min, rt_max, scan_numbers=scan_numbers)
-
-    def _iter_ms2_scans(
-        self, rt_min: float, rt_max: float, *, scan_numbers: frozenset[int] | None
-    ) -> Iterator[Ms2ScanEvent]:
         key = _key_bytes("ms2_window", _float_text(rt_min), _float_text(rt_max))
         cached = self._cache.read("ms2", key)
         if cached is not None:
             try:
-                yield from _decode_ms2_events(
-                    cached, rt_min=rt_min, rt_max=rt_max, scan_numbers=scan_numbers
-                )
+                yield from _decode_ms2_events(cached, rt_min=rt_min, rt_max=rt_max)
                 return
             except UntargetedAcquisitionCacheError as exc:
                 self._cache.reject("ms2", key, exc)
-        if scan_numbers is not None:
-            key = _key_bytes(
-                "ms2_scan_subset",
-                _float_text(rt_min),
-                _float_text(rt_max),
-                ",".join(str(number) for number in sorted(scan_numbers)),
-            )
-            cached = self._cache.read("ms2", key)
-            if cached is not None:
-                try:
-                    yield from _decode_ms2_events(
-                        cached, rt_min=rt_min, rt_max=rt_max, scan_numbers=scan_numbers
-                    )
-                    return
-                except UntargetedAcquisitionCacheError as exc:
-                    self._cache.reject("ms2", key, exc)
-        events = tuple(
-            self._raw.iter_ms2_scans(rt_min, rt_max)
-            if scan_numbers is None
-            else self._raw.iter_ms2_scan_subset(rt_min, rt_max, scan_numbers)
-        )
+        events = tuple(self._raw.iter_ms2_scans(rt_min, rt_max))
         if all(
             event.scan is not None and event.parse_error is None for event in events
         ):
@@ -457,7 +424,6 @@ def _decode_ms2_events(
     *,
     rt_min: float,
     rt_max: float,
-    scan_numbers: frozenset[int] | None = None,
 ) -> tuple[Ms2ScanEvent, ...]:
     try:
         value = json.loads(payload, object_pairs_hook=_unique_mapping)
@@ -479,18 +445,6 @@ def _decode_ms2_events(
         or not isinstance(value["events"], list)
     ):
         raise UntargetedAcquisitionCacheError("cached MS2 event key changed")
-    if scan_numbers is not None:
-        # The cache envelope already binds the complete payload to its source
-        # and key. Validate and hydrate requested spectra without re-encoding
-        # every unrelated spectrum just to reproduce transport formatting.
-        selected = []
-        for item in value["events"]:
-            if not isinstance(item, dict):
-                raise UntargetedAcquisitionCacheError("cached MS2 event is malformed")
-            number = _integer(item.get("scan_number"), field="scan_number")
-            if number in scan_numbers:
-                selected.append(_ms2_event_from_payload(item))
-        return tuple(selected)
     return tuple(_ms2_event_from_payload(item) for item in value["events"])
 
 

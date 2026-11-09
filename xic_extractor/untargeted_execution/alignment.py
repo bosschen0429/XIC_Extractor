@@ -31,7 +31,10 @@ from xic_extractor.discovery.batch_contract import (
     DiscoveryPeakUniverseReceipt,
     validate_discovery_physical_facts_artifact,
 )
-from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
+from xic_extractor.discovery.csv_reader import (
+    DiscoveryBatchInput,
+    located_events_by_peak,
+)
 from xic_extractor.discovery.csv_writer import format_discovery_csv_value
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryPeak
@@ -659,13 +662,31 @@ def _load_physical_replay_inputs(
         by_id = {record.peak_id: record for record in records}
         if len(by_id) != len(records):
             raise ValueError("Discovery physical sidecar has ambiguous peak identity")
+        # The event table hands over each peak's located events; peaks built
+        # in memory by Discovery already carry them.
+        event_csv = discovery_batch.event_csvs.get(stem)
+        sample_input = peaks_by_sample[stem]
+        located = (
+            None
+            if event_csv is None or not sample_input
+            else located_events_by_peak(
+                event_csv,
+                raw_file=sample_input[0].raw_file,
+                neutral_loss_by_tag=settings.neutral_loss_by_tag,
+            )
+        )
         sample_peaks: list[DiscoveryPeak] = []
         sample_records: dict[str, DiscoveryPhysicalFactRecord] = {}
         for peak in peaks_by_sample[stem]:
             record = by_id.get(peak.peak_id)
             if record is None:
                 raise ValueError("Discovery peak lacks its exact physical record")
-            sample_peaks.append(_restore_physical_peak(peak, record))
+            restored = _restore_physical_peak(peak, record)
+            if located is not None:
+                restored = replace(
+                    restored, located_events=located.get(peak.peak_id, ())
+                )
+            sample_peaks.append(restored)
             if peak.peak_id in sample_records:
                 raise ValueError("Discovery physical peak identity is duplicated")
             sample_records[peak.peak_id] = record

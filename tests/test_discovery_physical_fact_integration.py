@@ -1659,9 +1659,10 @@ def test_held_inferred_peak_remains_in_review_and_physical_sidecar(
     assert candidate.ms1_apex_rt == pytest.approx(10.0)
     assert candidate.ms1_apex_mz == pytest.approx(apex_ion_mz)
     assert candidate.ms1_area > 0
-    # The held peak stays published; its inferred event reads no parent MS1.
+    # The held peak stays published; its inferred event reads no parent MS1
+    # yet still names the peak it locates.
     (event,) = _read_csv(outputs.events_csv)
-    assert event["peak_id"] == ""
+    assert event["peak_id"] == candidate.peak_id
     assert event["unattached_reason"] == "parent_ms1_unavailable"
 
     assert outputs.physical_facts_json is not None

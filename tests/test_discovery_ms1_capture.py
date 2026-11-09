@@ -167,12 +167,14 @@ def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
     assert candidate.ms1_apex_rt == baseline.ms1_apex_rt
     assert candidate.ms1_peak_rt_start == baseline.ms1_peak_rt_start
     assert candidate.ms1_peak_rt_end == baseline.ms1_peak_rt_end
-    receipts = json.loads(candidate.tag_evidence_json)["DNA_dR"]["scan_receipts"]
-    assert set(receipts) == {"10", "11"}
-    for receipt in receipts.values():
-        assert receipt["precursor_verification"]["status"] == status
-        assert receipt["neutral_loss_error_ppm"] is None
-        assert receipt["precursor_mz"] == 500.0
+    assert [event.scan_number for event in candidate.located_events] == [10, 11]
+    for event in candidate.located_events:
+        assert event.assess_precursor_loss(settings.nl_tolerance_ppm).status == status
+        assert event.ms1_precursor_observation == Ms1PrecursorObservation(
+            9, parent_rt, masses
+        )
+        assert event.observed_loss_error_ppm is None
+        assert event.precursor_mz == 500.0
 
 
 @pytest.mark.parametrize(
@@ -502,14 +504,14 @@ def test_verified_multitag_peak_persists_each_tags_best_scan(
             summary["precursor_metadata"]["master_scan_number"] == best.scan_number - 1
         )
         assert summary["scan_count"] == 2
-        assert set(summary["scan_receipts"]) == {
-            str(seed.scan_number) for seed in seeds if seed.neutral_loss_tag == tag
-        }
-        for seed in seeds:
-            if seed.neutral_loss_tag == tag:
-                receipt = summary["scan_receipts"][str(seed.scan_number)]
-                assert receipt["product_mz"] == seed.product_mz
-                assert receipt["neutral_loss_error_ppm"] == seed.observed_loss_error_ppm
+        assert summary["scan_ids"] == sorted(
+            seed.scan_number for seed in seeds if seed.neutral_loss_tag == tag
+        )
+    # Each tag's per-scan facts reach Alignment as the peak's located events.
+    assert {
+        (event.neutral_loss_tag, event.scan_number, event.product_mz)
+        for event in candidate.located_events
+    } == {(seed.neutral_loss_tag, seed.scan_number, seed.product_mz) for seed in seeds}
 
 
 def test_capture_does_not_merge_distinct_ms1_peak_boundaries() -> None:

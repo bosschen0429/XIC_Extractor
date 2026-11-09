@@ -31,7 +31,7 @@ def write_discovery_peaks_csv(path: Path, peaks: Iterable[DiscoveryPeak]) -> Pat
 
 
 def write_discovery_events_csv(path: Path, events: Iterable[EventAttachment]) -> Path:
-    """One row per strict NL event with its peak or its unattached reason."""
+    """One row per strict NL event: its located peak and why it does not attach."""
     return _write_csv(
         path,
         [
@@ -70,6 +70,8 @@ def format_discovery_csv_value(column: str, value: object) -> str:
         if isinstance(value, tuple):
             return ";".join(str(item) for item in value)
         return str(value)
+    if column == "parent_ms1_centroid_mzs" and isinstance(value, tuple):
+        return ";".join(format_machine_float(float(item)) for item in value)
     if isinstance(value, Path):
         return escape_excel_formula(_stable_path_text(value))
     if isinstance(value, float):

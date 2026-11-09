@@ -6,7 +6,7 @@ import json
 import math
 from collections import defaultdict
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
@@ -466,7 +466,19 @@ def prepare_indexed_untargeted_plan(
 
     def load_partition(candidate_ids: tuple[str, ...]):
         candidates, records = load_inputs(candidate_ids)
-        return candidates, records, {stem: () for stem in source}
+        located = {
+            stem: tuple(
+                replace(
+                    candidate,
+                    located_events=source.located_events(
+                        candidate, neutral_loss_by_tag=settings.neutral_loss_by_tag
+                    ),
+                )
+                for candidate in values
+            )
+            for stem, values in candidates.items()
+        }
+        return located, records, {stem: () for stem in source}
 
     units: list[tuple[float | None, tuple[str, ...]]] = []
     buckets: dict[tuple[str, float | None, float], list[str]] = defaultdict(list)

@@ -13,7 +13,6 @@ from xic_extractor.acquisition_contract import (
     BatchXICAdapter,
     TraceAcquisitionBatch,
 )
-from xic_extractor.discovery.strict_event_receipts import StrictEventReceiptRaw
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.precursor_evidence import MS1MassWindowSource
 
@@ -27,7 +26,6 @@ class CidNlAcquisitionError(ValueError):
 class CidNlRawSource(
     BatchXICAdapter,
     MS2ScanSource,
-    StrictEventReceiptRaw,
     MS1MassWindowSource,
     Protocol,
 ):
