@@ -13,7 +13,7 @@ from typing import Any, BinaryIO, Protocol
 
 import ijson
 
-_SCHEMA_VERSION = "discovery_physical_fact_sidecar"
+DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION = "discovery_physical_peak_sidecar"
 _ROOT_KEYS = frozenset(
     {"schema_version", "run_spec", "sample", "work_manifest", "records"}
 )
@@ -255,7 +255,7 @@ class PhysicalFactSource:
                 "Discovery physical fact source root keys differ: "
                 f"missing={missing}, unexpected={unexpected}"
             )
-        if header["schema_version"] != _SCHEMA_VERSION:
+        if header["schema_version"] != DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION:
             spool_path.unlink(missing_ok=True)
             raise ValueError(
                 "unsupported Discovery physical fact sidecar schema_version"

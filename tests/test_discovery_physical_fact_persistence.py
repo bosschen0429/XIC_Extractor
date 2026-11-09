@@ -65,15 +65,15 @@ def _physical_index_jobs(tmp_path: Path, *, count: int):
             work_manifest=manifest,
             records=records,
         )
-        candidate_ids = tuple(record.candidate_id for record in records)
+        candidate_ids = tuple(record.peak_id for record in records)
         expected[acquisition_input.sample_stem] = candidate_ids
         receipt = DiscoveryPeakUniverseReceipt(
             sample_stem=acquisition_input.sample_stem,
             acquisition_source=acquisition_input.acquisition_source,
-            candidate_count=0,
-            candidate_artifact_schema_version=(DISCOVERY_PEAK_ARTIFACT_SCHEMA_VERSION),
-            candidate_artifact_sha256="0" * 64,
-            candidate_artifact_byte_size=0,
+            peak_count=0,
+            peak_artifact_schema_version=(DISCOVERY_PEAK_ARTIFACT_SCHEMA_VERSION),
+            peak_artifact_sha256="0" * 64,
+            peak_artifact_byte_size=0,
             physical_facts_sha256=fingerprint.content_sha256,
             physical_facts_byte_size=fingerprint.byte_size,
         )
@@ -140,8 +140,8 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         )
         == rehydrated
     )
-    assert tuple(record.candidate_id for record in rehydrated) == tuple(
-        item.candidate_id for item in manifest
+    assert tuple(record.peak_id for record in rehydrated) == tuple(
+        item.peak_id for item in manifest
     )
     assert tuple(record.evaluation.state for record in rehydrated) == (
         "available",
@@ -158,7 +158,7 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         lambda value: value["sample"].__setitem__("input_ordinal", 0.0),
         lambda value: value["sample"].__setitem__("input_ordinal", False),
         lambda value: value["work_manifest"][0].pop("product_mz"),
-        lambda value: value["work_manifest"][0].__setitem__("candidate_id", "swapped"),
+        lambda value: value["work_manifest"][0].__setitem__("peak_id", "swapped"),
         lambda value: value["work_manifest"][0].__setitem__(
             "selection_subject_id", "swapped"
         ),
@@ -169,7 +169,7 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
             "xic_mz", float(999.0).hex()
         ),
         lambda value: value["records"][0].__setitem__(
-            "candidate_id", value["records"][1]["candidate_id"]
+            "peak_id", value["records"][1]["peak_id"]
         ),
         lambda value: value["records"][0].__setitem__(
             "selection_subject_id", value["records"][1]["selection_subject_id"]
@@ -278,9 +278,9 @@ def test_discovery_sidecar_rejects_duplicate_json_field(tmp_path: Path) -> None:
         records=records,
     ).decode("utf-8")
     duplicate = payload.replace(
-        '{"schema_version":"discovery_physical_fact_sidecar",',
-        '{"schema_version":"discovery_physical_fact_sidecar",'
-        '"schema_version":"discovery_physical_fact_sidecar",',
+        '{"schema_version":"discovery_physical_peak_sidecar",',
+        '{"schema_version":"discovery_physical_peak_sidecar",'
+        '"schema_version":"discovery_physical_peak_sidecar",',
         1,
     )
 
@@ -434,7 +434,7 @@ def _physical_source_payload(
 ) -> bytes:
     return json.dumps(
         {
-            "schema_version": "discovery_physical_fact_sidecar",
+            "schema_version": "discovery_physical_peak_sidecar",
             "run_spec": {"name": "規格", "nested": [1, {"escaped": 'a\\"b'}]},
             "sample": {"sample_stem": "樣本-α"},
             "work_manifest": manifest
@@ -502,7 +502,7 @@ def test_physical_fact_source_recovers_unicode_nested_items_and_random_subset(
 
     with PhysicalFactSource(path) as source:
         assert source.header == {
-            "schema_version": "discovery_physical_fact_sidecar",
+            "schema_version": "discovery_physical_peak_sidecar",
             "run_spec": {"name": "規格", "nested": [1, {"escaped": 'a\\"b'}]},
             "sample": {"sample_stem": "樣本-α"},
         }
@@ -560,22 +560,22 @@ def test_physical_fact_source_retains_selected_records_without_hiding_visits(
 @pytest.mark.parametrize(
     "payload",
     (
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"discovery_physical_peak_sidecar",'
         b'"run_spec":{},"sample":{},"work_manifest":[],"records":[]',
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
-        b'"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"discovery_physical_peak_sidecar",'
+        b'"schema_version":"discovery_physical_peak_sidecar",'
         b'"run_spec":{},"sample":{},"work_manifest":[],"records":[]}',
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"discovery_physical_peak_sidecar",'
         b'"run_spec":{"x":1,"x":2},"sample":{},'
         b'"work_manifest":[],"records":[]}',
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"discovery_physical_peak_sidecar",'
         b'"run_spec":{},"sample":{},"work_manifest":[{"x":1,"x":2}],'
         b'"records":[{}]}',
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"discovery_physical_peak_sidecar",'
         b'"run_spec":{},"sample":{},"work_manifest":[],"records":[],"extra":1}',
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"discovery_physical_peak_sidecar",'
         b'"run_spec":{},"work_manifest":[],"records":[]}',
-        b'{"schema_version":"discovery_physical_fact_sidecar",'
+        b'{"schema_version":"discovery_physical_peak_sidecar",'
         b'"run_spec":{},"sample":{},"work_manifest":[{}],"records":[]}',
     ),
     ids=(
@@ -689,7 +689,7 @@ def test_parallel_physical_indexing_is_deterministic_and_transfers_spool_ownersh
         assert tuple(result.sources) == tuple(expected)
         observed = {
             stem: tuple(
-                record.candidate_id
+                record.peak_id
                 for record in source.load_candidates(expected[stem]).values()
             )
             for stem, source in result.sources.items()

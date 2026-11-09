@@ -23,6 +23,7 @@ from xic_extractor.discovery.physical_fact_record import (
     validate_discovery_physical_fact_record,
 )
 from xic_extractor.discovery.physical_fact_source import (
+    DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION,
     DetachedPhysicalFactSource,
     PhysicalFactSource,
 )
@@ -54,8 +55,6 @@ from xic_extractor.validation_primitives import (
     require_mapping,
     require_text,
 )
-
-DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION = "discovery_physical_peak_sidecar"
 
 _ROOT_KEYS = (
     "schema_version",
