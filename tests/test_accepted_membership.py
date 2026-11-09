@@ -71,6 +71,22 @@ def test_local_density_preserves_closed_radius_and_duplicate_coordinates(
         }
 
 
+def _infer_common_rt(owners, injection_order):
+    return infer_feature_memberships(
+        owners,
+        rules=CID_NL_GROUPING_RULES,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(
+            injection_order=injection_order
+        ).with_coordinate_override(lambda owner: owner.owner_apex_rt),
+    )
+
+
+# Each four-owner split below puts injections from both ends of the batch on
+# both sides, so drift between earlier and later injections cannot explain it.
+_INTERLEAVED_FOUR = (1, 3, 0, 2)
+
+
 @pytest.mark.parametrize(
     ("seconds", "expected_sizes"),
     [
@@ -93,18 +109,83 @@ def test_final_membership_rejects_separated_rt_populations(seconds, expected_siz
         cid_nl_owner(str(i), str(i), apex_rt=10 + second / 60)
         for i, second in enumerate(seconds)
     )
-    result = infer_feature_memberships(
-        owners,
-        rules=CID_NL_GROUPING_RULES,
-        config=AlignmentConfig(),
-        rt_frame=SampleRtFrame(
-            injection_order={str(i): i for i in range(len(owners))}
-        ).with_coordinate_override(lambda owner: owner.owner_apex_rt),
-    )
+    orders = _INTERLEAVED_FOUR if len(owners) == 4 else range(len(owners))
+    result = _infer_common_rt(owners, {str(i): order for i, order in enumerate(orders)})
     assert sorted(len(group.owner_ids) for group in result.groups) == expected_sizes
     assert sorted(key for group in result.groups for key in group.owner_ids) == sorted(
         owner.owner_id for owner in owners
     )
+
+
+@pytest.mark.parametrize(
+    "seconds", [(0, 2, 30, 32), (0, 2, 4, 30), (0, 10, 30, 40), (0, 2, 22, 24)]
+)
+def test_rt_populations_split_by_injection_order_remain_a_cost(seconds):
+    # Earlier injections elute together before later ones: residual drift
+    # explains the gap as well as two compounds do, so the gap is not a veto.
+    owners = tuple(
+        cid_nl_owner(str(i), str(i), apex_rt=10 + second / 60)
+        for i, second in enumerate(seconds)
+    )
+    for orders in (range(len(owners)), reversed(range(len(owners)))):
+        result = _infer_common_rt(
+            owners, {str(i): order for i, order in enumerate(orders)}
+        )
+        assert [len(group.owner_ids) for group in result.groups] == [len(owners)]
+
+
+def test_population_gap_without_injection_order_keeps_the_veto():
+    owners = tuple(
+        cid_nl_owner(str(i), str(i), apex_rt=10 + second / 60)
+        for i, second in enumerate((0, 2, 30, 32))
+    )
+    result = _infer_common_rt(owners, {"0": 0, "1": 1, "2": 2})
+    assert sorted(len(group.owner_ids) for group in result.groups) == [2, 2]
+
+
+# One compound in seven samples whose four earlier injections elute together
+# before the three later ones; the gap (50.01 s) sits 0.87 s below twice the
+# earlier side's range (25.44 s). Moving the earliest coordinate by 1 s moves
+# that threshold by 2 s, the size of a LOESS anchor change.
+_DRIFT_SECONDS = (0.0, 14.0, 17.5, 25.44, 75.45, 78.0, 82.0)
+
+
+def _drift_owners(shift_sec, names=None):
+    names = names or [f"peak{i}" for i in range(len(_DRIFT_SECONDS))]
+    return tuple(
+        cid_nl_owner(
+            f"s{i}",
+            name,
+            apex_rt=29.0 + (second + (shift_sec if i == 0 else 0.0)) / 60,
+        )
+        for i, (second, name) in enumerate(zip(_DRIFT_SECONDS, names, strict=True))
+    )
+
+
+def _membership(owners):
+    result = _infer_common_rt(owners, {f"s{i}": i for i in range(len(_DRIFT_SECONDS))})
+    measured = {o.owner_id: o.sample_stem for o in owners}
+    return {frozenset(measured[key] for key in g.owner_ids) for g in result.groups}
+
+
+@pytest.mark.parametrize("shift_sec", (-1.0, 0.0, 1.0))
+def test_small_calibration_change_near_population_threshold_keeps_membership(
+    shift_sec,
+):
+    assert _membership(_drift_owners(shift_sec)) == {
+        frozenset(f"s{i}" for i in range(len(_DRIFT_SECONDS)))
+    }
+
+
+def test_population_membership_ignores_ids_input_order_and_small_rt_changes():
+    variants = []
+    for shift_sec in (-1.0, 0.0, 1.0):
+        owners = _drift_owners(shift_sec)
+        renamed = _drift_owners(
+            shift_sec, names=[f"z{9 - i}" for i in range(len(_DRIFT_SECONDS))]
+        )
+        variants += [owners, owners[::-1], renamed, renamed[3:] + renamed[:3]]
+    assert len({frozenset(_membership(owners)) for owners in variants}) == 1
 
 
 def test_population_gap_does_not_use_raw_rt_when_a_member_lacks_coordinates():

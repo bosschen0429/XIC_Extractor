@@ -281,8 +281,14 @@ same membership cost to fixed groups within its own search eligibility; see
   and inspect the largest
   adjacent gap: reject the group when the gap is at least 20 seconds and at
   least twice the larger of the two sides' RT ranges. A singleton side has
-  zero range. Two- and three-member groups retain the cost-based choice rather
-  than a hard population veto, limiting false splits with sparse observations.
+  zero range. The gap is a veto only when the two sides interleave in
+  injection order. When every injection on one side precedes every injection
+  on the other, residual drift between earlier and later injections explains
+  the gap as well as two compounds do, so the gap remains RT cost; a calibrated
+  coordinate's small change then cannot flip the group across the threshold.
+  A member without an injection order keeps the veto. Two- and three-member
+  groups retain the cost-based choice rather than a hard population veto,
+  limiting false splits with sparse observations.
   Missing member coordinates disable this constraint; raw RT never
   substitutes for them. The thresholds are internal, not configuration fields.
   The constraint evaluates whole groups, not arbitrary pairs. Whole-band seed
