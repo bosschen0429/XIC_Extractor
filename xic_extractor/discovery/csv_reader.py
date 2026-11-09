@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import cast
@@ -14,13 +15,19 @@ from xic_extractor.discovery.batch_contract import (
     validate_discovery_peak_universe,
 )
 from xic_extractor.discovery.models import (
+    DISCOVERY_EVENT_COLUMNS,
     DISCOVERY_PEAK_COLUMNS,
     PEAK_STATUSES,
+    DiscoveryEvent,
     DiscoveryPeak,
+    EventAttachment,
     GroupPrecursorMzBasis,
     NeutralLossErrorBasis,
     PeakStatus,
+    located_event_order,
 )
+from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import IdentityContractError
 
 _BATCH_REQUIRED_COLUMNS = ("sample_stem", "raw_file", "peak_csv")
@@ -32,6 +39,11 @@ _BATCH_OWNER_REQUIRED_COLUMNS = (
 )
 _BATCH_UNESCAPE_FIELDS = {"sample_stem", "raw_file", "peak_csv", "event_csv"}
 _PEAK_UNESCAPE_FIELDS = {"sample_stem", "raw_file", "peak_id"}
+_EVENT_PRECURSOR_BASES = {
+    "scan_precursor",
+    "scan_monoisotopic",
+    "product_plus_neutral_loss",
+}
 
 _ALLOWED_PRECURSOR_MZ_BASIS = {
     "scan_precursor",
@@ -165,6 +177,140 @@ def read_owner_bound_discovery_peaks_csv(
         )
     except IdentityContractError as exc:
         raise ValueError(f"{path}: invalid owner-bound peak artifact: {exc}") from exc
+
+
+def located_events_by_peak(
+    path: Path,
+    *,
+    raw_file: Path,
+    neutral_loss_by_tag: Mapping[str, float],
+) -> dict[str, tuple[DiscoveryEvent, ...]]:
+    """Every event locating each peak of one sample's event table."""
+    grouped: dict[str, list[DiscoveryEvent]] = {}
+    for item in read_discovery_events_csv(
+        path, raw_file=raw_file, neutral_loss_by_tag=neutral_loss_by_tag
+    ):
+        if item.peak_id:
+            grouped.setdefault(item.peak_id, []).append(item.event)
+    return {peak_id: located_event_order(events) for peak_id, events in grouped.items()}
+
+
+def read_discovery_events_csv(
+    path: Path,
+    *,
+    raw_file: Path,
+    neutral_loss_by_tag: Mapping[str, float],
+) -> tuple[EventAttachment, ...]:
+    """Read one sample's event table back into its events and located peaks."""
+    rows, fieldnames = _read_csv_rows(path)
+    require_discovery_event_columns(path, fieldnames)
+    return tuple(
+        parse_discovery_event_row(
+            path,
+            row_number,
+            row,
+            raw_file=raw_file,
+            neutral_loss_by_tag=neutral_loss_by_tag,
+        )
+        for row_number, row in rows
+    )
+
+
+def require_discovery_event_columns(path: Path, fieldnames: tuple[str, ...]) -> None:
+    missing = [column for column in DISCOVERY_EVENT_COLUMNS if column not in fieldnames]
+    if missing:
+        raise ValueError(
+            f"{path}: unsupported Discovery event table (missing "
+            f"{', '.join(missing)}); regenerate Discovery with the current version"
+        )
+
+
+def parse_discovery_event_row(
+    path: Path,
+    row_number: int,
+    row: Mapping[str, str],
+    *,
+    raw_file: Path,
+    neutral_loss_by_tag: Mapping[str, float],
+) -> EventAttachment:
+    values = dict(row)
+
+    def number(column: str) -> float:
+        return _parse_float(path, row_number, values, column)
+
+    def optional(column: str) -> float | None:
+        return _parse_optional_float(path, row_number, values, column)
+
+    def optional_int(column: str) -> int | None:
+        if values.get(column, "") == "":
+            return None
+        return _parse_int(path, row_number, values, column)
+
+    tag = _required_text(path, row_number, values, "neutral_loss_tag")
+    if tag not in neutral_loss_by_tag:
+        raise ValueError(
+            f"{path}: row {row_number}: neutral_loss_tag {tag!r} is not a "
+            "configured tag of this run"
+        )
+    basis = _required_text(path, row_number, values, "precursor_mz_basis")
+    if basis not in _EVENT_PRECURSOR_BASES:
+        raise ValueError(
+            f"{path}: row {row_number}: precursor_mz_basis must be one of "
+            f"{', '.join(sorted(_EVENT_PRECURSOR_BASES))}: {basis!r}"
+        )
+    parent_scan = optional_int("parent_ms1_scan_number")
+    try:
+        recorded = Ms2PrecursorMetadata(
+            monoisotopic_mz=optional("precursor_monoisotopic_mz"),
+            charge=optional_int("precursor_charge"),
+            isolation_width_da=optional("isolation_width_da"),
+            isolation_offset_da=optional("isolation_offset_da"),
+            master_scan_number=optional_int("master_scan_number"),
+        )
+        # An event without vendor precursor metadata writes five blanks.
+        metadata = None if recorded == Ms2PrecursorMetadata() else recorded
+        observation = (
+            None
+            if parent_scan is None
+            else Ms1PrecursorObservation(
+                scan_number=parent_scan,
+                rt_min=number("parent_ms1_rt"),
+                centroid_mzs=_parse_float_tuple(
+                    path, row_number, values, "parent_ms1_centroid_mzs"
+                ),
+            )
+        )
+        event = DiscoveryEvent(
+            raw_file=raw_file,
+            sample_stem=_machine_field(values, "sample_stem"),
+            scan_number=_parse_int(path, row_number, values, "ms2_scan_number"),
+            rt=number("ms2_rt"),
+            precursor_mz=number("precursor_mz"),
+            product_mz=number("product_mz"),
+            product_intensity=number("product_intensity"),
+            neutral_loss_tag=tag,
+            configured_neutral_loss_da=float(neutral_loss_by_tag[tag]),
+            observed_neutral_loss_da=number("observed_neutral_loss_da"),
+            observed_loss_error_ppm=optional("neutral_loss_mass_error_ppm"),
+            matched_tag_names=(tag,),
+            scan_precursor_mz=optional("scan_precursor_mz"),
+            precursor_mz_basis=basis,  # type: ignore[arg-type]
+            precursor_metadata=metadata,
+            ms1_precursor_observation=observation,
+        )
+        return EventAttachment(
+            event=event,
+            xic_mz=number("xic_mz"),
+            precursor_verified=_parse_bool(
+                path, row_number, values, "precursor_verified"
+            ),
+            peak_id=_machine_field(values, "peak_id"),
+            unattached_reason=values.get("unattached_reason", ""),
+        )
+    except (TypeError, ValueError) as exc:
+        if str(exc).startswith(f"{path}:"):
+            raise
+        raise ValueError(f"{path}: row {row_number}: {exc}") from exc
 
 
 def _read_csv_rows(
@@ -431,6 +577,23 @@ def _parse_int_tuple(
     except ValueError as exc:
         raise ValueError(
             f"{path}: row {row_number}: {column} must be semicolon-separated integers"
+        ) from exc
+
+
+def _parse_float_tuple(
+    path: Path,
+    row_number: int,
+    row: dict[str, str],
+    column: str,
+) -> tuple[float, ...]:
+    value = row.get(column, "")
+    if value == "":
+        return ()
+    try:
+        return tuple(float(item) for item in value.split(";") if item)
+    except ValueError as exc:
+        raise ValueError(
+            f"{path}: row {row_number}: {column} must be semicolon-separated floats"
         ) from exc
 
 

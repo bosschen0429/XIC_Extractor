@@ -51,6 +51,9 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     )
     from xic_extractor.discovery.ms2_events import collect_strict_nl_events
     from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
+    from xic_extractor.discovery.strict_event_receipts import (
+        read_parent_ms1_observations,
+    )
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
     from xic_extractor.peak_detection import capture as capture_owner
     from xic_extractor.peak_detection.observations import (
@@ -116,14 +119,11 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     if precursor_case == "inferred":
         from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 
+        # Discovery reads the fixture scans with their precursor metadata.
         monkeypatch.setattr(
             type(raw),
-            "iter_ms2_scan_subset",
-            lambda self, lo, hi, ids: (
-                event
-                for event in source_raw.iter_ms2_scans(lo, hi)
-                if event.scan_number in ids
-            ),
+            "iter_ms2_scans",
+            lambda self, lo, hi: source_raw.iter_ms2_scans(lo, hi),
         )
 
         def read_parent_windows(self, requests):
@@ -162,8 +162,13 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
 
         monkeypatch.setattr(vendor, "GetChromatogramData", mass_filtered_chromatogram)
     source = fixture.owners.request.acquisition_sources[0]
-    seeds = collect_strict_nl_events(
-        raw, raw_file=fixture.source_paths["S1"], settings=settings
+    # Discovery reads each inferred event's parent MS1 before grouping ions.
+    seeds = read_parent_ms1_observations(
+        raw,
+        collect_strict_nl_events(
+            raw, raw_file=fixture.source_paths["S1"], settings=settings
+        ),
+        tolerance_ppm=settings.precursor_mz_tolerance_ppm,
     )
     discovery = capture_ms1_peaks(
         raw,
@@ -267,7 +272,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         acquired = next(
             item
             for item in result.acquisition.traces
-            if item.coordinate.request.mz == candidate.best_event_precursor_mz
+            if item.coordinate.request.mz == candidate.peak_mz
         )
         assert (
             acquired.coordinate.request.ppm_tol == settings.precursor_mz_tolerance_ppm

@@ -18,6 +18,8 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.discovery.csv_reader import located_events_by_peak
+from xic_extractor.discovery.csv_writer import write_discovery_events_csv
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
@@ -52,6 +54,7 @@ class SampleAdapterScenario:
     settings: DiscoverySettings
     peak_config: ExtractionConfig
     physical_records: dict = field(default_factory=dict)
+    attachments: list = field(default_factory=list)
 
     def discover(self, source_raw):
         return _current_candidates(
@@ -59,6 +62,22 @@ class SampleAdapterScenario:
             raw_file=self.fixture.source_paths["S1"],
             settings=self.settings,
             physical_records=self.physical_records,
+            attachments=self.attachments,
+        )
+
+    def through_event_table(self, candidates):
+        """Hand Discovery peaks to Alignment through the persisted event table."""
+        path = write_discovery_events_csv(
+            self.tmp_path / "S1" / "discovery_events.csv", self.attachments
+        )
+        located = located_events_by_peak(
+            path,
+            raw_file=self.fixture.source_paths["S1"],
+            neutral_loss_by_tag=self.settings.neutral_loss_by_tag,
+        )
+        return tuple(
+            replace(candidate, located_events=located.get(candidate.peak_id, ()))
+            for candidate in candidates
         )
 
     def open_raw(self, source_raw):

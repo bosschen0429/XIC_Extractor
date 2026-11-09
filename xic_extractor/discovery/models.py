@@ -1,5 +1,7 @@
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -107,8 +109,14 @@ DISCOVERY_EVENT_COLUMNS = (
     "precursor_mz",
     "precursor_mz_basis",
     "scan_precursor_mz",
+    "precursor_monoisotopic_mz",
+    "precursor_charge",
+    "isolation_width_da",
+    "isolation_offset_da",
+    "master_scan_number",
+    "parent_ms1_scan_number",
     "parent_ms1_rt",
-    "parent_ms1_mz",
+    "parent_ms1_centroid_mzs",
     "observed_neutral_loss_da",
     "neutral_loss_mass_error_ppm",
     "precursor_verified",
@@ -337,6 +345,11 @@ class DiscoveryPeak:
     ] = "not_required"
     tag_evidence_json: str = "{}"
     is_provisional: bool = False
+    # Every strict NL event locating this peak, attached or not. The event
+    # table persists them; readers restore them by ``peak_id``.
+    located_events: tuple[DiscoveryEvent, ...] = dataclass_field(
+        default=(), compare=False
+    )
 
     @property
     def is_clean_peak(self) -> bool:
@@ -350,7 +363,7 @@ class DiscoveryPeak:
 
 
 UnattachedReason = str
-"""Why an event attaches to no peak.
+"""Why an event does not attach to the peak it locates, or locates none.
 
 ``no_peak_at_rt`` or another physical evaluation reason when the ion has no
 measured peak at the event RT; a precursor assessment status (for example
@@ -363,7 +376,12 @@ its parent MS1 scan falls outside the peak bounds plus the attachment margin.
 
 @dataclass(frozen=True, slots=True)
 class EventAttachment:
-    """One strict NL event and the peak it attaches to, or why it attaches to none."""
+    """One strict NL event, the peak it locates, and whether it attaches there.
+
+    ``peak_id`` is the located peak; it is empty only when the ion has no
+    measured peak at the event RT. ``unattached_reason`` is empty exactly when
+    the event attaches to that peak.
+    """
 
     event: DiscoveryEvent
     xic_mz: float
@@ -372,10 +390,12 @@ class EventAttachment:
     unattached_reason: UnattachedReason = ""
 
     def __post_init__(self) -> None:
-        if bool(self.peak_id) == bool(self.unattached_reason):
-            raise ValueError(
-                "a Discovery event attaches to one peak or records one reason"
-            )
+        if not self.peak_id and not self.unattached_reason:
+            raise ValueError("a Discovery event without a located peak needs a reason")
+
+    @property
+    def attached(self) -> bool:
+        return not self.unattached_reason
 
     @property
     def sample_stem(self) -> str:
@@ -414,16 +434,44 @@ class EventAttachment:
         return self.event.scan_precursor_mz
 
     @property
+    def precursor_monoisotopic_mz(self) -> float | None:
+        metadata = self.event.precursor_metadata
+        return None if metadata is None else metadata.monoisotopic_mz
+
+    @property
+    def precursor_charge(self) -> int | None:
+        metadata = self.event.precursor_metadata
+        return None if metadata is None else metadata.charge
+
+    @property
+    def isolation_width_da(self) -> float | None:
+        metadata = self.event.precursor_metadata
+        return None if metadata is None else metadata.isolation_width_da
+
+    @property
+    def isolation_offset_da(self) -> float | None:
+        metadata = self.event.precursor_metadata
+        return None if metadata is None else metadata.isolation_offset_da
+
+    @property
+    def master_scan_number(self) -> int | None:
+        metadata = self.event.precursor_metadata
+        return None if metadata is None else metadata.master_scan_number
+
+    @property
+    def parent_ms1_scan_number(self) -> int | None:
+        observation = self.event.ms1_precursor_observation
+        return None if observation is None else observation.scan_number
+
+    @property
     def parent_ms1_rt(self) -> float | None:
         observation = self.event.ms1_precursor_observation
         return None if observation is None else observation.rt_min
 
     @property
-    def parent_ms1_mz(self) -> float | None:
+    def parent_ms1_centroid_mzs(self) -> tuple[float, ...] | None:
         observation = self.event.ms1_precursor_observation
-        if observation is None or len(observation.centroid_mzs) != 1:
-            return None
-        return observation.centroid_mzs[0]
+        return None if observation is None else observation.centroid_mzs
 
     @property
     def observed_neutral_loss_da(self) -> float:
@@ -460,6 +508,25 @@ def discovery_event_output_sort_key(event: EventAttachment) -> tuple[object, ...
         event.ms2_scan_number,
         event.neutral_loss_tag,
         event.product_mz,
+    )
+
+
+def located_event_order(
+    events: Iterable[DiscoveryEvent],
+) -> tuple[DiscoveryEvent, ...]:
+    """Canonical order of the events locating one peak."""
+
+    return tuple(
+        sorted(
+            events,
+            key=lambda event: (
+                event.scan_number,
+                event.neutral_loss_tag,
+                event.precursor_mz,
+                event.product_mz,
+                event.precursor_mz_basis,
+            ),
+        )
     )
 
 

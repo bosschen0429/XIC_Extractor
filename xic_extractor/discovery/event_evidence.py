@@ -13,7 +13,6 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import neutral_loss_match
-from xic_extractor.precursor_evidence import precursor_isolation_membership
 
 TagIntersectionStatus = Literal["not_required", "complete", "incomplete"]
 
@@ -88,18 +87,16 @@ def _strongest_event(events: Iterable[DiscoveryEvent]) -> DiscoveryEvent:
 def merge_event_evidence(
     events: list[DiscoveryEvent], *, settings: DiscoverySettings
 ) -> str:
-    """Per-tag scan receipts that strict replay checks each scan against."""
+    """Per-tag summary of the events locating one peak."""
     by_tag: dict[str, dict[str, object]] = {}
     events_by_tag: dict[str, list[DiscoveryEvent]] = {}
     for event in events:
         events_by_tag.setdefault(event.neutral_loss_tag, []).append(event)
     for tag, tag_events in events_by_tag.items():
         best_event = _strongest_event(tag_events)
-        receipts: dict[str, object] = {}
         entry: dict[str, object] = {
             "scan_count": len(tag_events),
             "scan_ids": sorted({event.scan_number for event in tag_events}),
-            "scan_receipts": receipts,
             "rt_min": min(event.rt for event in tag_events),
             "rt_max": max(event.rt for event in tag_events),
             "precursor_mz_basis": events_precursor_mz_basis(tag_events),
@@ -116,30 +113,6 @@ def merge_event_evidence(
             "neutral_loss_error_ppm": best_event.observed_loss_error_ppm,
         }
         for index, event in enumerate(tag_events):
-            receipt: dict[str, object] = {
-                "precursor_mz": event.precursor_mz,
-                "product_mz": event.product_mz,
-                "scan_rt": event.rt,
-                "precursor_mz_basis": event.precursor_mz_basis,
-                "scan_precursor_mz": event.scan_precursor_mz,
-                "neutral_loss_error_ppm": event.observed_loss_error_ppm,
-                "precursor_isolation_membership": precursor_isolation_membership(
-                    event.precursor_mz,
-                    event.scan_precursor_mz,
-                    event.precursor_metadata,
-                ),
-                "supports_direct_nl": event.supports_direct_nl,
-            }
-            if event.precursor_mz_basis == "product_plus_neutral_loss":
-                receipt["ms1_precursor_observation"] = (
-                    asdict(event.ms1_precursor_observation)
-                    if event.ms1_precursor_observation is not None
-                    else None
-                )
-                receipt["precursor_verification"] = asdict(
-                    event.assess_precursor_loss(settings.nl_tolerance_ppm)
-                )
-            receipts[str(event.scan_number)] = receipt
             if (
                 (index == 0 or event is best_event)
                 and math.isfinite(event.precursor_mz)

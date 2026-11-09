@@ -1,4 +1,5 @@
 import csv
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -6,7 +7,10 @@ import pytest
 from tests.discovery_csv_fixtures import _peak, _read_csv
 from tests.discovery_ms1_capture_fixtures import _seed
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
+from xic_extractor.discovery.csv_reader import (
+    read_discovery_events_csv,
+    read_discovery_peaks_csv,
+)
 from xic_extractor.discovery.csv_writer import (
     format_discovery_csv_value,
     write_discovery_events_csv,
@@ -19,6 +23,8 @@ from xic_extractor.discovery.models import (
     EventAttachment,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 
 
 def test_peak_table_leads_with_review_and_status_fields() -> None:
@@ -35,7 +41,7 @@ def test_peak_table_leads_with_review_and_status_fields() -> None:
     assert DISCOVERY_PEAK_COLUMNS[-1] == "is_provisional"
 
 
-def test_event_table_records_attachment_or_reason() -> None:
+def test_event_table_ends_with_the_located_peak_and_attachment() -> None:
     assert DISCOVERY_EVENT_COLUMNS[-3:] == (
         "xic_mz",
         "peak_id",
@@ -110,38 +116,143 @@ def test_seed_scan_ids_formatter_does_not_join_string_characters() -> None:
     assert format_discovery_csv_value("event_scan_ids", "6095;6100") == "6095;6100"
 
 
-def test_event_csv_writes_one_row_per_event_in_rt_order(tmp_path: Path) -> None:
+def test_event_table_keeps_the_located_peak_of_an_unattached_event(
+    tmp_path: Path,
+) -> None:
+    located = "Sample@mz500_rt7.6000"
     events = [
         EventAttachment(
             event=_seed(scan_number=20, rt=8.2),
             xic_mz=500.0,
             precursor_verified=True,
+            peak_id=located,
             unattached_reason="rt_outside_peak",
         ),
         EventAttachment(
             event=_seed(scan_number=10, rt=7.6),
             xic_mz=500.0,
             precursor_verified=True,
-            peak_id="Sample@mz500_rt7.6000",
+            peak_id=located,
+        ),
+        EventAttachment(
+            event=_seed(scan_number=30, rt=9.4),
+            xic_mz=500.0,
+            precursor_verified=True,
+            unattached_reason="no_peak_at_rt",
         ),
     ]
 
     rows = _read_csv(write_discovery_events_csv(tmp_path / "events.csv", events))
 
-    assert [row["ms2_scan_number"] for row in rows] == ["10", "20"]
-    assert rows[0]["peak_id"] == "Sample@mz500_rt7.6000"
-    assert rows[1]["unattached_reason"] == "rt_outside_peak"
-    assert rows[1]["peak_id"] == ""
+    assert [
+        (row["ms2_scan_number"], row["peak_id"], row["unattached_reason"])
+        for row in rows
+    ] == [
+        ("10", located, ""),
+        ("20", located, "rt_outside_peak"),
+        ("30", "", "no_peak_at_rt"),
+    ]
 
 
-def test_an_event_cannot_both_attach_and_record_a_reason() -> None:
-    with pytest.raises(ValueError, match="one peak or records one reason"):
+def test_an_event_without_a_located_peak_records_why() -> None:
+    with pytest.raises(ValueError, match="without a located peak needs a reason"):
         EventAttachment(
             event=_seed(scan_number=10, rt=7.6),
             xic_mz=500.0,
             precursor_verified=True,
-            peak_id="peak",
-            unattached_reason="rt_outside_peak",
+        )
+
+
+def test_event_table_round_trips_the_evidence_alignment_assesses(
+    tmp_path: Path,
+) -> None:
+    inferred = replace(
+        _seed(scan_number=33623, rt=38.75, precursor_mz=961.4289),
+        observed_loss_error_ppm=None,
+        precursor_mz_basis="product_plus_neutral_loss",
+        scan_precursor_mz=961.4482,
+        precursor_metadata=Ms2PrecursorMetadata(
+            monoisotopic_mz=961.4478,
+            charge=1,
+            isolation_width_da=1.0,
+            isolation_offset_da=-0.25,
+            master_scan_number=33620,
+        ),
+        # Two centroids is the ambiguous parent ion the old table left blank.
+        ms1_precursor_observation=Ms1PrecursorObservation(
+            33620, 38.7412, (961.4281, 961.4302)
+        ),
+    )
+    empty_parent = replace(
+        inferred,
+        scan_number=33700,
+        ms1_precursor_observation=Ms1PrecursorObservation(33698, 38.8, ()),
+    )
+    recorded = _seed(scan_number=33706, rt=38.9)
+    written = [
+        EventAttachment(
+            event=inferred,
+            xic_mz=961.4478,
+            precursor_verified=False,
+            peak_id="S@mz961.4478_rt38.7477",
+            unattached_reason="parent_ms1_ion_ambiguous",
+        ),
+        EventAttachment(
+            event=empty_parent,
+            xic_mz=961.4478,
+            precursor_verified=False,
+            peak_id="S@mz961.4478_rt38.7477",
+            unattached_reason="parent_ms1_ion_missing",
+        ),
+        EventAttachment(
+            event=recorded,
+            xic_mz=500.0,
+            precursor_verified=True,
+            peak_id="S@mz500_rt38.9",
+        ),
+    ]
+    path = write_discovery_events_csv(tmp_path / "events.csv", written)
+
+    restored = read_discovery_events_csv(
+        path,
+        raw_file=inferred.raw_file,
+        neutral_loss_by_tag={"DNA_dR": inferred.configured_neutral_loss_da},
+    )
+
+    by_scan = {item.event.scan_number: item for item in restored}
+    for item in written:
+        back = by_scan[item.event.scan_number]
+        assert back.peak_id == item.peak_id
+        assert back.unattached_reason == item.unattached_reason
+        assert back.precursor_verified == item.precursor_verified
+        # Event-level tag JSON is not part of the table; every assessed fact is.
+        assert replace(back.event, tag_evidence_json="{}", matched_tag_names=()) == (
+            replace(item.event, tag_evidence_json="{}", matched_tag_names=())
+        )
+    assert by_scan[33623].event.ms1_precursor_observation.centroid_mzs == (
+        961.4281,
+        961.4302,
+    )
+    assert by_scan[33700].event.ms1_precursor_observation.centroid_mzs == ()
+    assert by_scan[33706].event.ms1_precursor_observation is None
+    assert by_scan[33706].event.precursor_metadata is None
+
+
+def test_event_table_from_an_older_discovery_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "events.csv"
+    path.write_text(
+        ",".join(
+            column
+            for column in DISCOVERY_EVENT_COLUMNS
+            if column != "parent_ms1_centroid_mzs"
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="regenerate Discovery"):
+        read_discovery_events_csv(
+            path, raw_file=Path("S.raw"), neutral_loss_by_tag={"DNA_dR": 116.0474}
         )
 
 

@@ -467,6 +467,9 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
     from xic_extractor.discovery.csv_reader import (
         read_owner_bound_discovery_peaks_csv,
     )
+    from xic_extractor.discovery.csv_writer import (
+        write_discovery_events_csv,
+    )
     from xic_extractor.discovery.ion_grouping import build_discovery_ions
     from xic_extractor.discovery.ms1_capture import (
         capture_ms1_peaks,
@@ -514,6 +517,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
     receipts = {}
     csvs = {}
     candidates = {}
+    event_csvs = {}
     physical_facts = {}
     source_records = {}
     source_evidence = {}
@@ -624,6 +628,9 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
             build_discovery_receipts(folder, (path,), {path.stem: persisted_candidates})
         )
         csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
+        event_csvs[path.stem] = write_discovery_events_csv(
+            folder / "discovery_events.csv", discovery.attachments
+        )
         candidates[path.stem] = tuple(
             candidate
             for candidate in read_owner_bound_discovery_peaks_csv(
@@ -747,7 +754,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         sample_order=sample_stems,
         peak_csvs=csvs,
         raw_files={path.stem: path for path in paths},
-        event_csvs={path.stem: None for path in paths},
+        event_csvs=event_csvs,
         peak_receipts=receipts,
     )
     captured_batches = []
@@ -965,7 +972,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
             tuple(
                 (
                     sample_stem,
-                    candidate.candidate_id,
+                    candidate.peak_id,
                     candidate.event_scan_ids,
                     candidate.event_rt_min,
                     candidate.event_rt_max,

@@ -98,7 +98,8 @@ attached NL event), `admitted`. Only `admitted` peaks enter Alignment.
 ### `discovery_events.csv`
 
 One row per strict NL event (MS2 scan, tag and product) per sample. Each event
-names the peak it attaches to, or why it attaches to none.
+names the peak it locates and, when it does not attach there, why. Alignment
+reads its evidence from this table.
 
 | Column | Type | Description |
 | --- | --- | --- |
@@ -111,14 +112,20 @@ names the peak it attaches to, or why it attaches to none.
 | precursor_mz | float | Precursor m/z |
 | precursor_mz_basis | string | Precursor source basis |
 | scan_precursor_mz | float | Scan-observed precursor m/z |
+| precursor_monoisotopic_mz | float | Vendor-recorded monoisotopic m/z (blank when not recorded) |
+| precursor_charge | int | Vendor-recorded charge (blank when not recorded) |
+| isolation_width_da | float | Isolation window width (Da; blank when not recorded) |
+| isolation_offset_da | float | Isolation window offset (Da; blank when not recorded) |
+| master_scan_number | int | Parent MS1 scan the MS2 was selected from (blank when not recorded) |
+| parent_ms1_scan_number | int | Parent MS1 scan read for an inferred precursor (blank when not read) |
 | parent_ms1_rt | float | Parent MS1 scan RT (min; blank when not read) |
-| parent_ms1_mz | float | Parent MS1 centroid m/z (blank when not read) |
+| parent_ms1_centroid_mzs | string | Semicolon-separated centroids in the parent MS1 precursor window; one value is the ion, several are ambiguous, blank with a scan number is none |
 | observed_neutral_loss_da | float | Observed neutral loss (Da) |
 | neutral_loss_mass_error_ppm | float | Descriptive NL mass error |
 | precursor_verified | bool | The precursor verifies the configured loss |
 | xic_mz | float | XIC center of the event's ion |
-| peak_id | string | Attached peak; blank when unattached |
-| unattached_reason | string | Why the event attaches to no peak; blank when attached |
+| peak_id | string | Peak the event locates, attached or not; blank only when the ion has no measured peak at the event RT |
+| unattached_reason | string | Why the event does not attach to its located peak, or the physical reason it locates none; blank when attached |
 
 ---
 

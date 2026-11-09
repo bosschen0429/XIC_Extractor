@@ -16,10 +16,14 @@ from xic_extractor.discovery.csv_reader import (
     _machine_field,
     _parse_peak_row,
     _require_columns,
+    parse_discovery_event_row,
+    require_discovery_event_columns,
 )
 from xic_extractor.discovery.models import (
     DISCOVERY_PEAK_COLUMNS,
+    DiscoveryEvent,
     DiscoveryPeak,
+    located_event_order,
 )
 
 
@@ -51,12 +55,20 @@ class _CsvLines:
         return line.decode("utf-8-sig" if offset == 0 else "utf-8")
 
 
+@dataclass(frozen=True, slots=True)
+class _EventRowLocation:
+    offset: int
+    byte_size: int
+    row_number: int
+
+
 class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
     """An artifact-verified peak index; domain values live only in a requested load.
 
     Alignment candidates are the admitted peaks. The Mapping view is for
     sample-at-a-time diagnostic consumers. Scientific execution uses
-    load_candidates with a closed working set of peak IDs.
+    load_candidates with a closed working set of peak IDs, and
+    located_events for the event-table rows that locate one peak.
     """
 
     def __init__(self, batch: DiscoveryBatchInput):
@@ -122,6 +134,77 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
             self._feature_ids[stem] = tuple(
                 cid for cid in self._sample_ids[stem] if self.locations[cid].admitted
             )
+        self._event_rows: dict[str, list[_EventRowLocation]] = {}
+        self._event_headers: dict[str, tuple[str, ...]] = {}
+        self._event_stats: dict[str, tuple[int, int]] = {}
+        for stem in batch.sample_order:
+            event_path = batch.event_csvs.get(stem)
+            if event_path is not None:
+                self._index_event_rows(stem, event_path)
+
+    def _index_event_rows(self, stem: str, path: Path) -> None:
+        before = self._stat(path)
+        with path.open("rb") as stream:
+            reader = csv.DictReader(_CsvLines(stream))
+            header = tuple(reader.fieldnames or ())
+            require_discovery_event_columns(path, header)
+            row_number = 2
+            while True:
+                offset = stream.tell()
+                row = next(reader, None)
+                if row is None:
+                    break
+                if _machine_field(row, "sample_stem") != stem:
+                    raise ValueError("Discovery event row crossed its sample")
+                peak_id = _machine_field(row, "peak_id")
+                if peak_id:
+                    location = self.locations.get(peak_id)
+                    if location is None or location.sample_stem != stem:
+                        raise ValueError(
+                            f"{path}: row {row_number}: event locates an unknown "
+                            f"peak {peak_id!r}"
+                        )
+                    self._event_rows.setdefault(peak_id, []).append(
+                        _EventRowLocation(offset, stream.tell() - offset, row_number)
+                    )
+                row_number += 1
+        if self._stat(path) != before:
+            raise ValueError("Discovery event table changed while indexing")
+        self._event_headers[stem] = header
+        self._event_stats[stem] = before
+
+    def located_events(
+        self,
+        candidate: DiscoveryPeak,
+        *,
+        neutral_loss_by_tag: Mapping[str, float],
+    ) -> tuple[DiscoveryEvent, ...]:
+        """The event-table rows locating one peak, attached or not."""
+        stem = self.locations[candidate.peak_id].sample_stem
+        rows = self._event_rows.get(candidate.peak_id, [])
+        if not rows:
+            return ()
+        path = self.batch.event_csvs[stem]
+        assert path is not None
+        if self._stat(path) != self._event_stats[stem]:
+            raise ValueError("Discovery event table changed after indexing")
+        events = []
+        with path.open("rb") as stream:
+            for location in rows:
+                stream.seek(location.offset)
+                text = stream.read(location.byte_size).decode("utf-8")
+                fields = next(csv.reader(io.StringIO(text, newline="")))
+                row = dict(zip(self._event_headers[stem], fields, strict=True))
+                events.append(
+                    parse_discovery_event_row(
+                        path,
+                        location.row_number,
+                        row,
+                        raw_file=candidate.raw_file,
+                        neutral_loss_by_tag=neutral_loss_by_tag,
+                    ).event
+                )
+        return located_event_order(events)
 
     @staticmethod
     def _stat(path: Path) -> tuple[int, int]:

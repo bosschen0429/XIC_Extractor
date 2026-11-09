@@ -20,6 +20,7 @@ from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
     read_owner_bound_discovery_peaks_csv,
 )
+from xic_extractor.discovery.csv_writer import write_discovery_events_csv
 from xic_extractor.discovery.delta_mass_pipeline import _load_cid_nl_peak_rows
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
@@ -92,7 +93,7 @@ def test_review_rows_never_become_alignment_roots(
     spec = compile_discovery_processing_run_spec(
         paths, discovery_settings=settings, signal_processing_profile=TEST_PROFILE
     )
-    raws, candidates, csvs, receipts = {}, {}, {}, {}
+    raws, candidates, csvs, receipts, event_csvs = {}, {}, {}, {}, {}
     expected_ids, rejected_ids = set(), set()
     for path, source in zip(paths, spec.acquisition_inputs, strict=True):
         raw = _FakeRaw(
@@ -148,6 +149,9 @@ def test_review_rows_never_become_alignment_roots(
             build_discovery_receipts(folder, (path,), {path.stem: capture.peaks})
         )
         csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
+        event_csvs[path.stem] = write_discovery_events_csv(
+            folder / "discovery_events.csv", capture.attachments
+        )
         candidates[path.stem] = read_owner_bound_discovery_peaks_csv(
             csvs[path.stem], receipt=receipts[path.stem]
         )
@@ -155,7 +159,7 @@ def test_review_rows_never_become_alignment_roots(
         sample_order=stems,
         peak_csvs=csvs,
         raw_files={p.stem: p for p in paths},
-        event_csvs={stem: None for stem in stems},
+        event_csvs=event_csvs,
         peak_receipts=receipts,
     )
     opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)

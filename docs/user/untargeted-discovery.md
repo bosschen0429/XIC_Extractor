@@ -88,7 +88,7 @@ Start with the file that matches your review question:
 | Output | Content | Use it for |
 | --- | --- | --- |
 | `discovery_peaks.csv` | Per-sample MS1 peaks: one row per ion and peak, with m/z, RT, area, status and evidence | Check which peaks enter Alignment and why |
-| `discovery_events.csv` | Per-sample NL events: each MS2 event with its peak or the reason it attaches to none | Trace where an MS2 event went |
+| `discovery_events.csv` | Per-sample NL events: each MS2 event with the peak it locates and why it does not attach | Trace where an MS2 event went |
 | `discovery_batch_index.csv` | Links each sample's peak and event CSVs | Input for alignment (generated automatically) |
 | `alignment_matrix.tsv` | Samples as columns, aligned features as rows, area values in cells | Default cross-sample quantitative output |
 | `alignment_review.tsv` | Group identity, detection/quantification summaries, warnings, and bound Matrix row references | Investigate a group or trace a Matrix row |

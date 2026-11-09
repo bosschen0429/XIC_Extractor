@@ -255,14 +255,16 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
 
 @pytest.mark.parametrize("reverse_products", [False, True])
 @pytest.mark.parametrize("parent_supported", [False, True])
-@pytest.mark.parametrize("composite", [False, True])
+@pytest.mark.parametrize("combine_mode", ["single", "union", "intersection"])
 def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     reverse_products: bool,
     parent_supported: bool,
-    composite: bool,
+    combine_mode: str,
 ) -> None:
+    """One scan, two tags and two products per tag reach Alignment by table."""
+    composite = combine_mode != "single"
     import json
     from types import SimpleNamespace
 
@@ -307,7 +309,7 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
         ),
     )
     scenario.settings = (
-        replace(_multi_tag_settings(), tag_combine_mode="intersection")
+        replace(_multi_tag_settings(), tag_combine_mode=combine_mode)
         if composite
         else _settings()
     )
@@ -344,42 +346,63 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
             ),
         )
 
-    candidates = scenario.discover(source_raw)
+    centroids = (500.0, 500.0105) if parent_supported else ()
+
+    def discovery_parent_windows(requests):
+        from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+        return tuple(
+            Ms1PrecursorObservation(
+                number,
+                float(source_raw.rt[number - 1]),
+                tuple(mz for mz in centroids if low <= mz <= high),
+            )
+            for number, low, high in requests
+        )
+
+    # Discovery reads each inferred event's parent window once; the event
+    # table carries that observation to Alignment.
+    source_raw.read_ms1_mass_windows = discovery_parent_windows
+    discovered = scenario.discover(source_raw)
+    candidates = scenario.through_event_table(discovered)
+    # The table hands over every located event: each tag and product, with
+    # its parent-MS1 observation.
+    for before, after in zip(discovered, candidates, strict=True):
+        assert [
+            (e.neutral_loss_tag, e.product_mz, e.ms1_precursor_observation)
+            for e in after.located_events
+        ] == [
+            (e.neutral_loss_tag, e.product_mz, e.ms1_precursor_observation)
+            for e in before.located_events
+        ]
+    assert {
+        (event.neutral_loss_tag, event.product_mz)
+        for candidate in candidates
+        for event in candidate.located_events
+    } == {
+        (tag, product)
+        for tag, loss in (("DNA_dR", 116.0474), ("RNA_R", 132.0423))[
+            : 2 if composite else 1
+        ]
+        for product in products
+        if abs(product + loss - 500.0) < 0.01
+    }
     raw, vendor = scenario.open_raw(source_raw)
-    # Supply only the vendor boundary; RAW metadata parsing and the batched
-    # parent mass-window owner remain active.
-    original_filter = vendor.GetFilterForScanNumber
-
-    def scan_filter(number):
-        result = original_filter(number)
-        if number == scan.scan_number:
-            reaction = result.Filter.Reactions[0]
-            reaction.IsolationWidth = 1.6
-            reaction.IsolationWidthOffset = 0.0
-        return result
-
-    monkeypatch.setattr(vendor, "GetFilterForScanNumber", scan_filter)
-    vendor.trailer_labels = ["Charge State:", "Master Scan Number:"]
-    monkeypatch.setattr(
-        vendor,
-        "GetTrailerExtraInformation",
-        lambda number: SimpleNamespace(
-            Labels=("Charge State:", "Master Scan Number:"),
-            Values=(1, number - 1),
-        ),
-        raising=False,
-    )
-    monkeypatch.setattr(raw._thermo, "ms1_order", "Ms1", raising=False)
     parent_reads = []
+    ms2_reads = []
 
     def parent_centroids(number, _profile):
         parent_reads.append(number)
-        return SimpleNamespace(
-            Masses=[500.0, 500.0105] if parent_supported else [],
-            Intensities=[1000.0, 500.0] if parent_supported else [],
-        )
+        return SimpleNamespace(Masses=list(centroids), Intensities=[1.0] * 2)
 
     monkeypatch.setattr(vendor, "GetCentroidStream", parent_centroids, raising=False)
+    original_scan_reader = vendor.GetSimplifiedScan
+
+    def count_ms2_read(number):
+        ms2_reads.append(number)
+        return original_scan_reader(number)
+
+    monkeypatch.setattr(vendor, "GetSimplifiedScan", count_ms2_read)
     scenario.bind_physical_capture()
     try:
         result = scenario.adapt(
@@ -412,7 +435,8 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
     assert len(assessment.individual_support_refs) == (
         event_count if parent_supported else 0
     )
-    assert parent_reads == [scan.scan_number - 1]
+    assert parent_reads == []
+    assert ms2_reads == []
     if parent_supported:
         for ref in assessment.individual_support_refs:
             relation = ref.content
@@ -442,19 +466,7 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
         for scan in source_raw.scans
     )
 
-    candidates = scenario.discover(source_raw)
-    raw, _vendor = scenario.open_raw(source_raw)
-    monkeypatch.setattr(
-        type(raw),
-        "iter_ms2_scan_subset",
-        lambda self, lo, hi, ids: (
-            event
-            for event in source_raw.iter_ms2_scans(lo, hi)
-            if event.scan_number in ids
-        ),
-    )
-
-    def read_parent_windows(self, requests):
+    def read_parent_windows(requests):
         from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 
         return tuple(
@@ -466,9 +478,15 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
             for number, _low, _high in requests
         )
 
-    monkeypatch.setattr(
-        type(raw), "read_ms1_mass_windows", read_parent_windows, raising=False
-    )
+    source_raw.read_ms1_mass_windows = read_parent_windows
+    candidates = scenario.discover(source_raw)
+    raw, _vendor = scenario.open_raw(source_raw)
+
+    def forbid_reread(*_args, **_kwargs):
+        raise AssertionError("Alignment reread a Discovery event from RAW")
+
+    for name in ("read_ms1_mass_windows", "iter_ms2_scans", "iter_ms2_scan_subset"):
+        monkeypatch.setattr(type(raw), name, forbid_reread, raising=False)
     if cached:
         from xic_extractor.untargeted_execution.acquisition_cache import (
             CachedUntargetedRaw,
@@ -495,39 +513,24 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
         )
 
 
-@pytest.mark.parametrize(
-    "moved_field", ["best_event_precursor_mz", "best_event_product_mz"]
-)
-def test_inferred_precursor_off_its_scan_receipt_is_rejected(
-    tmp_path: Path, moved_field: str
+def test_peaks_without_their_event_table_cannot_be_assessed(
+    tmp_path: Path,
 ) -> None:
-    # An inferred precursor stays product + loss; its apex MS1 reading is only
-    # reported. A persisted precursor or product off the scan's receipt breaks
-    # the strict seed reconstruction.
+    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
+    from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
 
     scenario = build_sample_adapter_scenario(tmp_path)
     source_raw = _FakeRaw((7.98, 8.0, 8.02))
-    source_raw.scans = tuple(
-        replace(scan, precursor_mz=scan.precursor_mz + 0.5) for scan in source_raw.scans
+    discovered = scenario.discover(source_raw)
+    # The peak table alone does not carry the events Alignment assesses.
+    candidates = read_discovery_peaks_csv(
+        write_discovery_peaks_csv(tmp_path / "peaks.csv", discovered)
     )
-
-    candidates = tuple(
-        replace(
-            candidate,
-            **{moved_field: getattr(candidate, moved_field) * (1 + 7e-6)},
-        )
-        for candidate in scenario.discover(source_raw)
-    )
-    assert all(c.precursor_mz_basis == "product_plus_neutral_loss" for c in candidates)
     raw, _vendor = scenario.open_raw(source_raw)
-
     scenario.bind_physical_capture()
 
-    def adapt():
-        return scenario.adapt(candidates, raw=raw)
-
-    with pytest.raises(CidNlAcquisitionError, match="event is not unique"):
-        adapt()
+    with pytest.raises(CidNlAcquisitionError, match="regenerate Discovery"):
+        scenario.adapt(candidates, raw=raw)
 
 
 def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
