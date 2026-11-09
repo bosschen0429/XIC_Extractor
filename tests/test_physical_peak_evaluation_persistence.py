@@ -799,12 +799,11 @@ def test_continuous_peak_with_isolated_dropouts_keeps_morphology_area(
     assert restored == result
 
 
-def test_tail_dropout_can_merge_an_otherwise_resolved_doublet() -> None:
+def test_tail_dropout_neither_splits_nor_merges_a_resolved_doublet() -> None:
     rt = np.arange(1201, dtype=float) / 200.0
     raw = 10000.0 * np.exp(-0.5 * ((rt - 2.0) / 0.7) ** 2) + 6000.0 * np.exp(
-        -0.5 * ((rt - 4.0) / 0.45) ** 2
+        -0.5 * ((rt - 4.3) / 0.45) ** 2
     )
-    results = []
     for with_dropout in (False, True):
         acquired = raw.copy()
         if with_dropout:
@@ -814,17 +813,11 @@ def test_tail_dropout_can_merge_an_otherwise_resolved_doublet() -> None:
             query_rt_min=2.0,
         )
         assert result.state == "available" and result.facts is not None
-        # The notch creates no extra quantitative component. Its contribution
-        # to the noise estimate can suppress the weaker lobe's seed, merging
-        # the otherwise resolved pair into one measured envelope.
-        assert len(result.segment_universe.segments) == (1 if with_dropout else 2)
-        if with_dropout:
-            assert result.facts.right_rt_min > 4.5
-        else:
-            assert 3.0 < result.facts.right_rt_min < 3.5
+        # Zero scans are censored: the notch is no valley and cannot hide the
+        # acquired valley that separates the pair.
+        assert len(result.segment_universe.segments) == 2
         assert result.facts.apex_rt_min < 2.2
-        results.append(result.facts)
-    assert results[1].area_counts_seconds > results[0].area_counts_seconds
+        assert result.facts.right_rt_min < 3.5
 
 
 def _physical_candidates(rt: np.ndarray, raw: np.ndarray) -> PeakCandidatesResult:
@@ -1024,7 +1017,7 @@ def test_acquired_peak_top_not_low_alternating_neighbors_supplies_support(
 
 @pytest.mark.parametrize("point_count", [1001, 2001])
 @pytest.mark.parametrize("width", [0.65, 0.75])
-def test_overlapping_components_keep_one_envelope_and_review(
+def test_overlapping_components_keep_one_envelope(
     point_count: int,
     width: float,
 ) -> None:
@@ -1050,7 +1043,6 @@ def test_overlapping_components_keep_one_envelope_and_review(
     assert discovery.facts.left_rt_min < 3.0
     assert discovery.facts.right_rt_min > 7.0
     assert discovery.integration == targeted.integration
-    assert discovery.requires_overlap_review
     payload = serialize_physical_peak_evaluation(
         rt,
         raw,
@@ -1059,7 +1051,6 @@ def test_overlapping_components_keep_one_envelope_and_review(
     )
     *_, restored = deserialize_physical_peak_evaluation(payload)
     assert restored == discovery
-    assert restored.requires_overlap_review
 
 
 @pytest.mark.parametrize("scale,background", [(1.0, 0.0), (1000.0, 100000.0)])
@@ -1905,7 +1896,6 @@ def test_middle_query_selects_the_unresolved_envelope_not_a_component(
         # envelope and cannot claim separate component-specific areas.
         assert 9.4 < answer.facts.left_rt_min < 10.3
         assert answer.facts.right_rt_min > 13.0
-        assert answer.requires_overlap_review
     assert answers[0].integration == answers[1].integration
     # Measurement is unchanged; the Discovery interval is raw-valley-owned,
     # whereas ordinary point segmentation reports its canonical valley label.

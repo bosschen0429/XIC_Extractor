@@ -426,7 +426,6 @@ def _run_output(*, with_diagnostics: bool) -> RunOutput:
     "review_reason, expected",
     [
         ("trace_morphology_review", "峰形需檢查"),
-        ("physical_shoulder_overlap", "肩峰重疊需檢查"),
         ("sample_review", "證據需檢查"),
     ],
 )

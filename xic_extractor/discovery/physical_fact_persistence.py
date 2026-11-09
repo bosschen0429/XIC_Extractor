@@ -330,10 +330,7 @@ class IndexedDiscoveryPhysicalFacts:
                         )
                     ),
                 )
-                if (
-                    owner_evaluation.state == "available"
-                    and not owner_evaluation.requires_overlap_review
-                ):
+                if owner_evaluation.state == "available":
                     resolved_candidate_ids.add(cid)
 
         self.source = PhysicalFactSource(

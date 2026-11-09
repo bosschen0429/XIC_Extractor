@@ -488,8 +488,6 @@ def _trace_quality(
         return f"physical_{evaluation.state}"
     if evaluation.facts is None:
         return "missing"
-    if evaluation.requires_overlap_review:
-        return "physical_shoulder_overlap"
     if evaluation.state == "available":
         for segment in evaluation.segment_universe.segments:
             if segment == evaluation.answer.selected_segment:

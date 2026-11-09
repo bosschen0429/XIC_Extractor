@@ -57,11 +57,6 @@ def project_targeted_result(
     )
     if hard_quality_flags(result.quality_flags):
         review = _merge_reasons(review, ("trace_morphology_review",))
-    if (
-        result.physical_evaluation is not None
-        and result.physical_evaluation.requires_overlap_review
-    ):
-        review = _merge_reasons(review, ("physical_shoulder_overlap",))
     not_counted = _merge_reasons(
         () if semantics is None else semantics.not_counted_reasons,
         () if selection_decision is None else selection_decision.not_counted_reasons,

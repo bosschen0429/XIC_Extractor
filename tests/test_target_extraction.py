@@ -1038,7 +1038,8 @@ def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
     selected = next(
         evaluation
         for evaluation in result.candidate_physical_evaluations
-        if evaluation.integration.rt_apex_min == result.reported_rt
+        if evaluation.integration is not None
+        and evaluation.integration.rt_apex_min == result.reported_rt
     )
     restored = deserialize_physical_peak_evaluation(
         serialize_physical_peak_evaluation(

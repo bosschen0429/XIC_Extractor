@@ -114,7 +114,6 @@ this table wins.
 | --- | --- | --- |
 | `blank` | Demoted by [blank qualification](#blank-qualification) | No |
 | `doubly_charged` | The MS1 ion reads as a doubly charged isotope ([accurate-mass reading](#accurate-mass-reading)) | No |
-| `overlap` | A shoulder or overlapping envelope whose MS2 cannot be attributed to one peak | No |
 | `no_nl_event` | A measurable MS1 peak without an [attached](#cid-nl-support-relations), precursor-verified NL event | No; review only |
 | `admitted` | At least one attached event and none of the above | Yes |
 
@@ -146,9 +145,10 @@ event's RT.
 
 Discovery uses the shared physical peak owner. An ordinary candidate needs two
 adjacent acquired points supporting its half-prominence top, and relief above
-the accepted component boundaries of at least four times the local raw-noise MAD. A valley at
-or below half the smaller apex separates peaks; a shallow shoulder stays one
-envelope; uncut top ripples do not create contrast boundaries. This gate can reject
+the accepted component boundaries of at least four times the local raw-noise MAD. A
+[separable valley](signal-processing.md#separable-valleys) splits peaks; anything
+else stays one envelope measured as a whole, and uncut top ripples do not create
+contrast boundaries. This gate can reject
 short real signals. It is not
 chemical identity and does not replace cross-sample support. The
 [signal processing rationale](signal-processing.md) owns the

@@ -308,8 +308,6 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         if context:
             return "；".join(context)
         review = reasons(row, "Projection Review Reasons")
-        if "physical_shoulder_overlap" in review:
-            return "肩峰重疊需檢查"
         if "trace_morphology_review" in review:
             return "峰形需檢查"
         if "targeted_rt_review" in review:
@@ -337,8 +335,6 @@ def _projection_action(issue: str, row: dict[str, str]) -> str:
             "比較完整 XIC、原始訊號點、同批樣本與 target 順序，確認暫定對應及積分範圍"
         )
     if row.get("Counted Detection", "").upper() == "TRUE":
-        if "physical_shoulder_overlap" in review:
-            return "在 XIC 看肩峰是否影響積分範圍"
         if "trace_morphology_review" in review:
             return "在 XIC 看峰形是否完整"
         if "targeted_rt_review" in review:

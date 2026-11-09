@@ -1132,10 +1132,8 @@ def test_acquired_target_inputs_complete_without_runtime(tmp_path, monkeypatch):
     )
 
 
-@pytest.mark.parametrize("overlap", [False, True])
 @pytest.mark.parametrize("backfill_supported", [False, True])
 def test_reported_peak_quality_replaces_only_peak_local_reasons(
-    overlap: bool,
     backfill_supported: bool,
 ) -> None:
     from xic_extractor.output.targeted_product_model import TargetedProductProjection
@@ -1145,30 +1143,18 @@ def test_reported_peak_quality_replaces_only_peak_local_reasons(
         prepare_physical_signal(rt, 100 + 1000 * np.exp(-(((rt - 3.0) / 0.2) ** 2))),
         query_rt_min=3.0,
     )
-    raw = 100 + (
-        sum(
-            height * np.exp(-0.5 * ((rt - center) / 0.65) ** 2)
-            for height, center in ((1000.0, 3.0), (1500.0, 5.0), (2000.0, 7.0))
-        )
-        if overlap
-        else 1500 * np.exp(-(((rt - 5.0) / 0.2) ** 2))
-    )
+    raw = 100 + 1500 * np.exp(-(((rt - 5.0) / 0.2) ** 2))
     reported = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
         query_rt_min=5.0,
     )
     assert reported.state == "available"
-    assert reported.requires_overlap_review is overlap
     original = TargetedProductProjection(
         "detected_flagged",
         True,
         "flagged",
         "old peak concern",
-        review_reasons=(
-            "trace_morphology_review",
-            "physical_shoulder_overlap",
-            "sample_review",
-        ),
+        review_reasons=("trace_morphology_review", "sample_review"),
         conflict_reasons=("hard_local_quality_conflict", "sample_conflict"),
     )
     updated = production_workflow._projection_with_reported_peak_quality(
@@ -1177,11 +1163,7 @@ def test_reported_peak_quality_replaces_only_peak_local_reasons(
         reported=reported,
         backfill_supported=backfill_supported,
     )
-    assert updated.review_reasons == (
-        ("sample_review", "physical_shoulder_overlap")
-        if overlap
-        else ("sample_review",)
-    )
+    assert updated.review_reasons == ("sample_review",)
     assert updated.conflict_reasons == ("sample_conflict",)
     assert original.review_reasons[0] == "trace_morphology_review"
     assert updated.counted_detection == original.counted_detection

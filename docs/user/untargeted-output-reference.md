@@ -27,8 +27,7 @@ valley-separated peak, one measurement. Full provenance for audit.
 
 Status values, highest precedence first: `blank` (demoted by blank
 qualification), `doubly_charged` (the MS1 ion reads as a doubly charged
-isotope), `overlap` (shoulder or overlapping envelope), `no_nl_event` (no
-attached NL event), `admitted`. Only `admitted` peaks enter Alignment.
+isotope), `no_nl_event` (no attached NL event), `admitted`. Only `admitted` peaks enter Alignment.
 
 #### Identity Columns
 
@@ -56,7 +55,7 @@ attached NL event), `admitted`. Only `admitted` peaks enter Alignment.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| is_provisional | bool | Peak shape is provisional or overlapping |
+| is_provisional | bool | Peak shape is provisional |
 
 #### Provenance Columns
 

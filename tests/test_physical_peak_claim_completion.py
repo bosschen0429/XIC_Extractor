@@ -477,8 +477,8 @@ def test_unrelated_acquired_tail_does_not_erase_shared_selected_lobe_evidence():
     assert compare_physical_peak_views(right, left) == "same"
 
 
-@pytest.mark.parametrize("window_points, expected", [(3, "distinct"), (21, "same")])
-def test_lobe_comparison_uses_the_producing_profile(window_points, expected):
+@pytest.mark.parametrize("window_points", [3, 21])
+def test_acquired_valley_keeps_lobes_distinct_at_any_smoothing_width(window_points):
     rt = np.linspace(4.0, 6.0, 201)
     raw = sum(
         1000.0 * np.exp(-0.5 * ((rt - center) / 0.01) ** 2) for center in (4.94, 5.06)
@@ -490,7 +490,9 @@ def test_lobe_comparison_uses_the_producing_profile(window_points, expected):
         )
         for apex in (4.94, 5.06)
     ]
-    assert compare_physical_peak_views(*views) == expected
+    # The split is read from the acquired scans, so canonical smoothing width
+    # cannot merge two lobes that the scans separate.
+    assert compare_physical_peak_views(*views) == "distinct"
 
 
 @pytest.mark.parametrize("difference", ["peak_height", "flanks"])

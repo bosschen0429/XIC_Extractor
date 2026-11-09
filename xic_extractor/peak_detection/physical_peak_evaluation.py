@@ -247,7 +247,6 @@ def enumerate_physical_segment_universe(
                 min_prominence_fraction_of_apex=LOCALIZED_VALLEY_MIN_DROP_FRACTION,
                 valley_min_duration_min=prepared.profile.boundary_min_sigma_rt,
                 min_prominence_noise_sigma=0.0,
-                localize_split_representatives=True,
             )
 
         def enumerate_signal(policy: ChromPeakSegmentPolicy):
