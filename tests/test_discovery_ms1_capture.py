@@ -120,9 +120,11 @@ def test_capture_runs_physical_peak_detection() -> None:
             "parent_ms1_ion_ambiguous",
             "ms1_feature_nl_rescued",
         ),
-        # Parent and NL are in the same single raw Gaussian basin even though
-        # the earlier parent misses the canonical quantitative return.
-        ((500.001,), 8.6, "compatible", "ms1_feature_nl_supported"),
+        # The 10%-height return of this Gaussian is 9.02 - 0.086 min. A parent
+        # scan within the attachment tolerance of that bound still supports it;
+        # one further out on the same raw basin does not.
+        ((500.001,), 8.88, "compatible", "ms1_feature_nl_supported"),
+        ((500.001,), 8.6, "compatible", "ms1_feature_nl_rescued"),
     ],
 )
 def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
@@ -173,6 +175,70 @@ def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
         assert receipt["precursor_verification"]["status"] == status
         assert receipt["neutral_loss_error_ppm"] is None
         assert receipt["precursor_mz"] == 500.0
+
+
+@pytest.mark.parametrize(
+    ("scan_rt", "state"),
+    [
+        # The Gaussian's 10%-height return ends at 9.02 + 0.086 min.
+        (9.05, "ms1_feature_nl_supported"),
+        (9.17, "ms1_feature_nl_supported"),
+        (9.25, "ms1_feature_nl_rescued"),
+    ],
+)
+def test_measured_precursor_event_must_fall_on_its_peak(scan_rt, state) -> None:
+    group = _group((_seed(scan_number=10, rt=scan_rt),))
+    rt = np.linspace(8.6, 9.6, 201)
+    raw = _FakeRaw(rt=rt, intensity=_gaussian(rt, center=9.02, sigma=0.04, height=1000))
+
+    candidate = _candidates_from_raw(
+        raw, (group,), settings=_settings(ms1_search_padding_min=0.3)
+    )[0]
+
+    assert candidate.ms1_peak_found
+    assert candidate.ms1_apex_rt == pytest.approx(9.02, abs=0.01)
+    assert candidate.discovery_candidate_state == state
+
+
+@pytest.mark.parametrize(
+    ("neighbor_height", "state"),
+    [(0.0, "ms1_feature_nl_supported"), (1000.0, "ms1_feature_nl_rescued")],
+)
+def test_parent_scan_on_a_neighbor_peak_does_not_support_this_peak(
+    monkeypatch: pytest.MonkeyPatch, neighbor_height, state
+) -> None:
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+    seed = replace(
+        _seed(scan_number=10, rt=8.97),
+        precursor_mz_basis="product_plus_neutral_loss",
+        observed_loss_error_ppm=None,
+        scan_precursor_mz=500.5,
+        precursor_metadata=Ms2PrecursorMetadata(
+            master_scan_number=9,
+            charge=1,
+            isolation_width_da=1.6,
+            isolation_offset_da=0.0,
+        ),
+    )
+    rt = np.linspace(8.4, 9.6, 241)
+    intensity = _gaussian(rt, center=9.02, sigma=0.04, height=1000)
+    intensity += _gaussian(rt, center=8.80, sigma=0.04, height=neighbor_height)
+    raw = _FakeRaw(rt=rt, intensity=intensity)
+
+    def read_windows(self, requests):
+        # The parent MS1 scan is within the attachment tolerance of this peak's
+        # left bound; with the neighbor present it lies on the neighbor's apex.
+        return (Ms1PrecursorObservation(9, 8.85, (500.001,)),)
+
+    monkeypatch.setattr(_FakeRaw, "read_ms1_mass_windows", read_windows, raising=False)
+    candidate = _candidates_from_raw(
+        raw, (_group((seed,)),), settings=_settings(ms1_search_padding_min=0.3)
+    )[0]
+
+    assert candidate.ms1_apex_rt == pytest.approx(9.02, abs=0.01)
+    assert candidate.discovery_candidate_state == state
 
 
 @pytest.mark.parametrize("padding", [0.15, 0.8])

@@ -40,7 +40,7 @@ def test_discovery_tail_event_selects_its_raw_peak_beyond_quantitative_return():
     assert result.facts.area_counts_seconds == pytest.approx(analytic_area, rel=0.15)
 
 
-def test_bounded_capture_recovers_a_tail_window_and_keeps_its_nl_admission():
+def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl():
     rt = np.linspace(1.0, 10.0, 901)
     raw_values = _gaussian(rt, center=5.0, sigma=0.5, height=1000.0)
     raw = _BoundedRaw(rt=rt, intensity=raw_values)
@@ -58,8 +58,10 @@ def test_bounded_capture_recovers_a_tail_window_and_keeps_its_nl_admission():
     candidate = result.candidates[0]
     assert candidate.ms1_peak_found
     assert candidate.ms1_apex_rt == pytest.approx(5.0, abs=0.03)
-    assert candidate.ms1_peak_rt_end < candidate.best_seed_rt
-    assert candidate.discovery_candidate_state == "ms1_feature_nl_supported"
+    # The NL event sits beyond the peak's right bound plus the attachment
+    # tolerance, so the measured peak is kept without NL support.
+    assert candidate.ms1_peak_rt_end + 0.1 < candidate.best_seed_rt
+    assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
     assert result.measurements.reacquisition_request_count == 1
 
 
