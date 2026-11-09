@@ -104,6 +104,7 @@ class PhysicalPeakCapture:
         self._next_work_ordinal = 0
         self.initial_request_count = 0
         self.reacquisition_request_count = 0
+        self.remeasurement_request_count = 0
 
     @property
     def acquisition_batches(self) -> tuple[TraceAcquisitionBatch, ...]:
@@ -189,46 +190,83 @@ class PhysicalPeakCapture:
         # A population, not a question, owns the canonical preparation and all
         # segment measurements. NL count cannot change this work.
         for request in owner_members:
-            acquired = traces[request]
-            prepared = prepare_physical_signal(
-                acquired.trace.rt, acquired.trace.intensity, profile=self._profile
+            self._measure_population(
+                request, traces[request], probed_components.get(request)
             )
-            components = probed_components.get(request, ())
-            if request not in probed_components:
-                components = discovery_raw_peak_components(
-                    acquired.trace.rt, acquired.trace.intensity, self._profile
-                )
-            universe = enumerate_physical_segment_universe(
-                prepared,
-                request_context_rt_start_min=request.rt_min,
-                request_context_rt_end_min=request.rt_max,
-                selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-                discovery_components=components,
-            )
-            measurements = {}
-            for segment in universe.segments:
-                component = segment.raw_component
-                query_rt = (
-                    prepared.projection.rt[component.apex_index]
-                    if component is not None
-                    else segment.apex_rt_min
-                )
-                query_rt = min(max(query_rt, request.rt_min), request.rt_max)
-                question = PhysicalPeakQuestion(
-                    "physical_peak_question",
-                    universe,
-                    query_rt,
-                    (segment,),
-                    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-                )
-                evaluation = answer_physical_peak_question(prepared, universe, question)
-                measurements[segment] = self._next_work_ordinal, evaluation
-                self._next_work_ordinal += 1
-            self._populations[request] = acquired, universe, measurements
         return tuple(
             self._lookup(replace(search, request=final_requests[extended[search]]))
             for search in searches
         )
+
+    def remeasure(
+        self, changes: Sequence[tuple[CapturedPhysicalPeak, float]]
+    ) -> tuple[CapturedPhysicalPeak, ...]:
+        """Measure captured peaks again in mass windows centred on new m/z values.
+
+        Each new window keeps its peak's RT context and tolerance, so only the
+        mass window changes. The peak is selected at its raw apex; a window
+        that selects nothing there returns an answer without facts.
+        """
+        searches = tuple(
+            replace(
+                captured.search,
+                query_rt_min=captured.evaluation.question.query_rt_min,
+                request=replace(captured.search.request, mz=mz),
+            )
+            for captured, mz in changes
+        )
+        missing = tuple(
+            dict.fromkeys(
+                search.request
+                for search in searches
+                if search.request not in self._populations
+            )
+        )
+        self.remeasurement_request_count += len(missing)
+        for request, acquired in zip(missing, self._acquire(missing), strict=True):
+            self._measure_population(request, acquired, None)
+        return tuple(self._lookup(search) for search in searches)
+
+    def _measure_population(
+        self,
+        request: XICRequest,
+        acquired: AcquiredTrace,
+        components: tuple[RawPeakComponent, ...] | None,
+    ) -> None:
+        prepared = prepare_physical_signal(
+            acquired.trace.rt, acquired.trace.intensity, profile=self._profile
+        )
+        if components is None:
+            components = discovery_raw_peak_components(
+                acquired.trace.rt, acquired.trace.intensity, self._profile
+            )
+        universe = enumerate_physical_segment_universe(
+            prepared,
+            request_context_rt_start_min=request.rt_min,
+            request_context_rt_end_min=request.rt_max,
+            selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+            discovery_components=components,
+        )
+        measurements = {}
+        for segment in universe.segments:
+            component = segment.raw_component
+            query_rt = (
+                prepared.projection.rt[component.apex_index]
+                if component is not None
+                else segment.apex_rt_min
+            )
+            query_rt = min(max(query_rt, request.rt_min), request.rt_max)
+            question = PhysicalPeakQuestion(
+                "physical_peak_question",
+                universe,
+                query_rt,
+                (segment,),
+                DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+            )
+            evaluation = answer_physical_peak_question(prepared, universe, question)
+            measurements[segment] = self._next_work_ordinal, evaluation
+            self._next_work_ordinal += 1
+        self._populations[request] = acquired, universe, measurements
 
     def reselect(
         self,

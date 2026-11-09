@@ -258,7 +258,6 @@ class DetachedIndexedDiscoveryPhysicalFacts:
     source: DetachedPhysicalFactSource
     candidate_ordinals: dict[str, int]
     precursor_mz: dict[str, float]
-    physical_apices: dict[str, float]
     resolved_candidate_ids: frozenset[str]
 
 
@@ -279,7 +278,6 @@ class IndexedDiscoveryPhysicalFacts:
         self.acquisition_input = expected_acquisition_input
         self.candidate_ordinals: dict[str, int] = {}
         self.precursor_mz: dict[str, float] = {}
-        self.physical_apices: dict[str, float] = {}
         resolved_candidate_ids: set[str] = set()
         manifest_ids: list[str] = []
         record_ids: list[str] = []
@@ -336,9 +334,6 @@ class IndexedDiscoveryPhysicalFacts:
                     and not owner_evaluation.requires_overlap_review
                 ):
                     resolved_candidate_ids.add(cid)
-                facts = owner_evaluation.facts
-                if facts is not None:
-                    self.physical_apices[cid] = facts.apex_rt_min
 
         self.source = PhysicalFactSource(
             path,
@@ -390,7 +385,6 @@ class IndexedDiscoveryPhysicalFacts:
             source=self.source.detach(),
             candidate_ordinals=self.candidate_ordinals,
             precursor_mz=self.precursor_mz,
-            physical_apices=self.physical_apices,
             resolved_candidate_ids=self.resolved_candidate_ids,
         )
 
@@ -411,7 +405,6 @@ class IndexedDiscoveryPhysicalFacts:
         value.acquisition_input = expected_acquisition_input
         value.candidate_ordinals = transfer.candidate_ordinals
         value.precursor_mz = transfer.precursor_mz
-        value.physical_apices = transfer.physical_apices
         value.resolved_candidate_ids = transfer.resolved_candidate_ids
         value.source = PhysicalFactSource.from_detached(transfer.source)
         return value

@@ -55,8 +55,8 @@ def test_support_origin_styles_fixture_curves_in_both_views(
     assert len(plotted) == 3
     for i, (origin, dash) in enumerate(
         zip(
-            ("discovery_support", "reacquired_support", "backfill_support"),
-            ("", "8 4", "2 4"),
+            ("discovery_support", "backfill_support", "unavailable"),
+            ("", "2 4", "1 5"),
             strict=True,
         )
     ):

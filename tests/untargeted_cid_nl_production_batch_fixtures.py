@@ -42,17 +42,11 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
-from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.execution.process_memory import (
     ProcessMemorySample,
     ProcessTreeMemorySampler,
 )
 from xic_extractor.execution.timing import TimingRecorder
-from xic_extractor.peak_detection.cid_nl_method_subject import (
-    CidNlPhysicalCandidateFact,
-    CidNlPhysicalProof,
-    group_cid_nl_physical_subject_units,
-)
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
@@ -66,35 +60,6 @@ from xic_extractor.untargeted_execution.partition.models import (
 from xic_extractor.untargeted_execution.partition_composition import (
     compose_untargeted_partition,
 )
-
-
-def _physical_subject_facts(candidates, records):
-    facts = []
-    for candidate in candidates:
-        record = records.get(candidate.peak_id)
-        selected = None if record is None else record.evaluation.facts
-        proof = None
-        if record is not None and selected is not None:
-            trace = record.acquired_trace.trace
-            proof = CidNlPhysicalProof(
-                acquisition_source_id=record.work_item.acquisition_source_id,
-                apex_rt_min=selected.apex_rt_min,
-                left_rt_min=selected.left_rt_min,
-                right_rt_min=selected.right_rt_min,
-                xic_mz=record.work_item.xic_mz,
-                xic_ppm_tol=record.work_item.xic_ppm_tol,
-                rt=trace.rt,
-                raw=trace.intensity,
-            )
-        facts.append(
-            CidNlPhysicalCandidateFact(
-                candidate_id=candidate.peak_id,
-                physical_mz=candidate.peak_mz,
-                configured_neutral_loss_da=candidate.configured_neutral_loss_da,
-                proof=proof,
-            )
-        )
-    return tuple(facts)
 
 
 def _assert_partition_composition_parity(
@@ -709,47 +674,6 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
             record.evaluation.question.context_rt_end_min != record.work_item.xic_rt_max
         )
         physical_facts[path.stem] = record.evaluation.facts
-    if family_precursor_delta:
-        proof_units = group_cid_nl_physical_subject_units(
-            _physical_subject_facts(
-                tuple(
-                    candidate
-                    for sample_candidates in candidates.values()
-                    for candidate in sample_candidates
-                ),
-                source_records,
-            ),
-            composition=None,
-            precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-        )
-        proof_debug = tuple(
-            (
-                candidate.peak_id,
-                candidate.configured_neutral_loss_da,
-                source_records[candidate.peak_id].work_item.acquisition_source_id,
-                source_records[candidate.peak_id].evaluation.facts.apex_rt_min,
-                source_records[candidate.peak_id].evaluation.facts.left_rt_min,
-                source_records[candidate.peak_id].evaluation.facts.right_rt_min,
-            )
-            for sample_candidates in candidates.values()
-            for candidate in sample_candidates
-        )
-        assert all(
-            len(
-                {
-                    source_records[candidate.peak_id].evaluation.facts.apex_rt_min
-                    for candidate in sample_candidates
-                }
-            )
-            == 1
-            for sample_candidates in candidates.values()
-        )
-        assert sorted(len(unit_candidates) for _, unit_candidates in proof_units) == [
-            1,
-            1,
-            1,
-            1,
-        ], proof_debug
     discovery_batch = DiscoveryBatchInput(
         sample_order=sample_stems,
         peak_csvs=csvs,
@@ -762,7 +686,6 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
     from xic_extractor.peak_detection import capture as capture_owner
 
     capture_peak = capture_owner.capture_peak_hypotheses
-    capture_reacquired = capture_owner.capture_reacquired_physical_peak
 
     def retain_capture(**kwargs):
         capture = capture_peak(**kwargs)
@@ -770,15 +693,6 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         return capture
 
     monkeypatch.setattr(capture_owner, "capture_peak_hypotheses", retain_capture)
-
-    def retain_reacquired_capture(**kwargs):
-        capture = capture_reacquired(**kwargs)
-        captured_peaks.append(capture)
-        return capture
-
-    monkeypatch.setattr(
-        capture_owner, "capture_reacquired_physical_peak", retain_reacquired_capture
-    )
     from xic_extractor.untargeted_execution import execution as bounded_owner
 
     materialize_batch = bounded_owner.materialize_untargeted_partition
@@ -1153,36 +1067,6 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         )
     finally:
         completed.close()
-
-
-def _subject_proof_record(
-    candidate: DiscoveryPeak,
-    *,
-    source: str = "source-1",
-    apex: float = 7.5,
-    bounds: tuple[float, float] = (7.0, 8.0),
-    rt: tuple[float, ...] = (7.0, 7.5, 8.0),
-    raw: tuple[float, ...] = (1.0, 10.0, 1.0),
-    xic_mz: float | None = None,
-    xic_ppm: float = 100.0,
-):
-    return SimpleNamespace(
-        work_item=SimpleNamespace(
-            acquisition_source_id=source,
-            xic_mz=candidate.best_event_precursor_mz if xic_mz is None else xic_mz,
-            xic_ppm_tol=xic_ppm,
-        ),
-        evaluation=SimpleNamespace(
-            state="available",
-            requires_overlap_review=False,
-            facts=SimpleNamespace(
-                apex_rt_min=apex,
-                left_rt_min=bounds[0],
-                right_rt_min=bounds[1],
-            ),
-        ),
-        acquired_trace=SimpleNamespace(trace=SimpleNamespace(rt=rt, intensity=raw)),
-    )
 
 
 def _source_verification_inputs(tmp_path: Path):

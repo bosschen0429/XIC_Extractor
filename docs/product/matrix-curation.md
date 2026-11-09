@@ -53,8 +53,8 @@ and recorded in the summary. It needs the run's `alignment_explanation.sqlite` i
 the current table layout (compact review or full audit) and is unavailable
 without its published cell values.
 
-Evidence counts only directly detected cells (`discovery_support` or
-`reacquired_support`) and their observation apex:
+Evidence counts only directly detected cells (`discovery_support`) and their
+observation apex:
 
 - **Co-elution:** a supporting sample has both rows detected directly with
   apices at most 3 s apart. A pair needs at least 3 supporting samples and at

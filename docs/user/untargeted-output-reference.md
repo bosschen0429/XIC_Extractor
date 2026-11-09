@@ -36,7 +36,7 @@ attached NL event), `admitted`. Only `admitted` peaks enter Alignment.
 | --- | --- | --- |
 | peak_id | string | `{sample}@mz{xic_mz}_rt{raw apex RT}`; unique within the sample |
 | peak_mz | float | The peak's ion mass, read by Alignment and Delta Mass: `ms1_apex_mz` when present, else `xic_mz` |
-| xic_mz | float | XIC center: the ion's MS1 reading before acquisition |
+| xic_mz | float | Center of the XIC window that measured the peak: the ion's MS1 reading before acquisition, or the apex reading when the peak was measured again centred on it |
 
 #### Measurement Columns
 
@@ -82,7 +82,7 @@ attached NL event), `admitted`. Only `admitted` peaks enter Alignment.
 | ms1_peak_rt_start | float | MS1 peak start RT |
 | ms1_peak_rt_end | float | MS1 peak end RT |
 | ms1_height | float | MS1 peak height |
-| ms1_apex_mz | float | MS1 ion m/z read at the peak apex for an inferred precursor (blank for selected precursors, two ions, or no reading); reported only |
+| ms1_apex_mz | float | MS1 ion m/z read at the peak apex when all of the peak's events are inferred (blank for a recorded precursor, two ions, or no reading) |
 | ms1_trace_quality | string | `good`, `fair`, or `poor` |
 | ms1_scan_support_score | float | Scan matching score |
 | selected_tag_count | int | Selected NL tag count |

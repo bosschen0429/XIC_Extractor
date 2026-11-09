@@ -759,8 +759,8 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
         original = json.loads(zlib.decompress(blob))
         captures = [
             (2, "initial_capture", "obs-earlier", "obs-earlier"),
-            (3, "reacquired_capture", "obs-01", "obs-01"),
-            (4, "reacquired_capture", None, "C1"),
+            (3, "discovery_physical", "obs-01", "obs-01"),
+            (4, "discovery_physical", None, "C1"),
         ]
         for pid, kind, observation_id, record_id in captures:
             payload = {
@@ -803,7 +803,7 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
     before = output.read_bytes()
     with sqlite3.connect(report) as connection:
         # The terminal obs still has its initial payload; losing a distinct
-        # reacquisition of that same observation must still fail completion.
+        # stage of that same observation must still fail completion.
         connection.execute("DELETE FROM curve_payloads WHERE payload_id=3")
     with pytest.raises(InspectorError) as caught:
         generate_report(report, SelectionRequest(), output)
@@ -819,12 +819,6 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
             "untargeted-cid-nl-backfill",
             "backfill_support",
             "Backfill（回填）支持",
-        ),
-        (
-            "reacquired_capture",
-            "untargeted-cid-nl-reacquire",
-            "reacquired_support",
-            "重新擷取支持",
         ),
         (
             "initial_capture",

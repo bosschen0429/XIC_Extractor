@@ -48,7 +48,7 @@ def test_default_sample_keeps_cross_sample_cases_among_many_singletons() -> None
         ("broad_direct", 8, "discovery_support", 60),
         ("broad_recovery", 7, "backfill_support", 2),
         ("partial_direct", 4, "discovery_support", 60),
-        ("partial_reacquired", 3, "reacquired_support", 15),
+        ("partial_unavailable", 3, "unavailable", 15),
         ("limited", 1, "discovery_support", 200),
     ):
         for index in range(count):
@@ -80,7 +80,7 @@ def test_default_sample_keeps_cross_sample_cases_among_many_singletons() -> None
     )
     assert any(item.identifier.startswith("broad_recovery") for item in selected)
     assert any(item.identifier.startswith("broad_direct") for item in selected)
-    assert any(item.identifier.startswith("partial_reacquired") for item in selected)
+    assert any(item.identifier.startswith("partial_unavailable") for item in selected)
     assert any(item.identifier.startswith("limited") for item in selected)
     assert selected == sample_cross_sample_sha256(
         list(reversed(candidates + groups)), limit=30, seed=0

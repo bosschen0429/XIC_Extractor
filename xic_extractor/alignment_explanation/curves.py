@@ -18,7 +18,6 @@ VALID_CURVE_KINDS = frozenset(
     {
         "discovery_physical",
         "initial_capture",
-        "reacquired_capture",
         "backfill_observation",
     }
 )

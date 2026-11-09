@@ -258,78 +258,6 @@ def _capture_physical_peak(
     )
 
 
-def capture_reacquired_physical_peak(
-    *, scope: SearchScope, candidate_id: str, trace: Trace
-) -> SampleLocalCapture:
-    """Evaluate a changed acquisition question at the capture owner once."""
-    binding = require_capture_binding(scope, candidate_id)
-    profile = scope.method_constraints.signal_processing_profile
-    source_evaluation = binding.physical_evaluation
-    if profile is None or source_evaluation is None:
-        raise SampleLocalCaptureError(
-            "physical capture requires its closed owner question"
-        )
-    if not isinstance(trace, Trace):
-        raise SampleLocalCaptureError("capture trace must be an owner trace")
-    if (
-        trace.mz == binding.query_mz
-        and (
-            binding.physical_evaluation_mz is None
-            or trace.mz == binding.physical_evaluation_mz
-        )
-        and trace.rt_min == binding.query_rt_min
-        and trace.rt_max == binding.query_rt_max
-        and trace.ppm_tol == binding.query_ppm_tol
-    ):
-        return capture_peak_hypotheses(
-            scope=scope, candidate_id=candidate_id, trace=trace
-        )
-    binding = replace(
-        binding,
-        query_mz=trace.mz,
-        query_rt_min=trace.rt_min,
-        query_rt_max=trace.rt_max,
-        query_ppm_tol=trace.ppm_tol,
-        acquired_trace_provenance=None,
-    )
-    scope = replace(
-        scope,
-        capture_bindings=tuple(
-            binding if item.candidate_id == candidate_id else item
-            for item in scope.capture_bindings
-        ),
-    )
-    trace_group = _capture_trace_group(scope=scope, binding=binding, trace=trace)
-    prepared = prepare_physical_signal(trace.rt, trace.intensity, profile=profile)
-    evaluation = evaluate_physical_peak(
-        prepared,
-        query_rt_min=binding.preferred_rt,
-        request_context_rt_start_min=binding.query_rt_min,
-        request_context_rt_end_min=binding.query_rt_max,
-    )
-    binding = replace(
-        binding,
-        source_physical_evaluation=source_evaluation,
-        physical_evaluation=evaluation,
-        physical_evaluation_mz=trace.mz,
-    )
-    scope = replace(
-        scope,
-        capture_bindings=tuple(
-            binding if item.candidate_id == candidate_id else item
-            for item in scope.capture_bindings
-        ),
-    )
-    return _project_physical_capture(
-        scope=scope,
-        binding=binding,
-        trace=trace,
-        trace_group=trace_group,
-        prepared=prepared,
-        evaluation=evaluation,
-    )
-
-
 def _project_physical_capture(
     *,
     scope: SearchScope,
@@ -541,14 +469,7 @@ def mint_captured_peak_observation(
             signal_processing_profile=(
                 capture.scope.method_constraints.signal_processing_profile
             ),
-            capture_stage=(
-                "reacquired_capture"
-                if require_capture_binding(
-                    capture.scope, capture.candidate_id
-                ).source_physical_evaluation
-                is not None
-                else "initial_capture"
-            ),
+            capture_stage="initial_capture",
         )
     return mint_peak_observation_ref(
         processing_owners=processing_owners,

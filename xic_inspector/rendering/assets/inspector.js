@@ -552,11 +552,11 @@
     return notices;
   }
   function originLabel(origin){
-    return origin?.label||({discovery_support:'初始探索支持',reacquired_support:'重新擷取支持',backfill_support:'Backfill（回填）支持',unavailable:'來源未提供'}[origin?.kind]||'來源未提供');
+    return origin?.label||({discovery_support:'初始探索支持',backfill_support:'Backfill（回填）支持',unavailable:'來源未提供'}[origin?.kind]||'來源未提供');
   }
-  function originClass(origin){return ['discovery_support','reacquired_support','backfill_support'].includes(origin?.kind)?origin.kind:'unavailable';}
+  function originClass(origin){return ['discovery_support','backfill_support'].includes(origin?.kind)?origin.kind:'unavailable';}
   function curveOrigin(item,sampleId){return itemRows(item).find(row=>row.sample_id===sampleId)?.support_origin||{kind:'unavailable'};}
-  function originDash(origin){return {discovery_support:'',reacquired_support:'8 4',backfill_support:'2 4',unavailable:'1 5'}[originClass(origin)];}
+  function originDash(origin){return {discovery_support:'',backfill_support:'2 4',unavailable:'1 5'}[originClass(origin)];}
   // Line style distinguishes support origins; when no sample records an origin there is nothing to distinguish.
   const originsRecorded=item=>itemRows(item).some(r=>originClass(r.support_origin)!=='unavailable');
   function curveDash(item,origin){return originsRecorded(item)?originDash(origin):'';}

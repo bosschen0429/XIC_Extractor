@@ -88,9 +88,9 @@ sample selection and acquisition-range controls.
   evidence remain distinct in every table, legend and export.
 - An explicit `not_searched` cell remains NULL with its recorded explanation.
   It does not create a candidate or query witness.
-- Line style marks support origin: solid for initial Discovery, long-dashed for
-  reacquired support, dotted for Backfill. A physical direct-observation cell is
-  not by itself evidence of initial Discovery support.
+- Line style marks support origin: solid for Discovery, dotted for Backfill. A
+  physical direct-observation cell is not by itself evidence of Discovery
+  support.
 - Recorded review conditions, such as a related method HOLD, are explanations.
   They are not the final cell decision, and the absence of a review condition is
   not scientific acceptance.

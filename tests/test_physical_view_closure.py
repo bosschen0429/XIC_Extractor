@@ -1,4 +1,3 @@
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -15,26 +14,15 @@ from tests.discovery_ms1_capture_fixtures import (
 from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
-from xic_extractor.peak_detection.cid_nl_method_subject import (
-    CidNlPhysicalCandidateFact,
-    CidNlPhysicalProof,
-    group_cid_nl_physical_subject_units,
-)
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.xic_models import XICTrace
 
 
-@pytest.mark.parametrize(
-    "centroids, expected",
-    [
-        ((500.013,), 2),
-        ((500.013, 500.019), 2),
-        ((), 2),
-    ],
-)
-def test_distinct_mass_window_signals_are_not_closed_by_post_measurement_centroids(
-    tmp_path: Path, centroids: tuple[float, ...], expected: int
+@pytest.mark.parametrize("centroids", [(500.013,), (500.013, 500.019), ()])
+def test_post_measurement_centroids_do_not_decide_peak_identity(
+    tmp_path: Path, centroids: tuple[float, ...]
 ) -> None:
+    expected = 1
     batches = []
 
     class Raw(_FakeRaw):
@@ -90,11 +78,10 @@ def test_distinct_mass_window_signals_are_not_closed_by_post_measurement_centroi
         settings=settings,
         ms1_centroid_mz=lambda *_: None,
     )
-    # 500.000 and 500.012 measure one peak within 30 ppm; 500.024 lies 48 ppm
-    # from that anchor and stays separate, so measurements never chain.
+    # The three windows read the same signal except one scan of window-edge
+    # tail, so they are one peak, decided from the acquired traces alone.
     assert len(result.peaks) == expected
-    # Mass-compatible centroids do not make distinct acquired signals equal.
-    # Candidate construction no longer runs a post-area reconciliation read.
+    # Candidate construction runs no post-area centroid reconciliation read.
     assert batches == []
     published = read_discovery_peaks_csv(
         write_discovery_peaks_csv(tmp_path / "candidates.csv", result.peaks)
@@ -116,58 +103,100 @@ def test_distinct_mass_window_signals_are_not_closed_by_post_measurement_centroi
         )
 
 
-@pytest.mark.parametrize(
-    "case, expected",
-    [
-        ("same", 1),
-        ("different_centroid", 2),
-        ("two_centroids", 2),
-        ("different_peak", 2),
-        ("different_sample", 2),
-        ("unavailable", 2),
-    ],
-)
-def test_physical_unit_uses_acquired_centroids_not_raw_equality_or_correlation(
-    case: str, expected: int
+class _CentroidRaw(_FakeRaw):
+    """Each window sums the centroids inside it; ions are (centroid m/z, scale)."""
+
+    def __init__(self, ions, *, edge_scans=(), edge_mz=None):
+        rt = np.linspace(8.4, 9.6, 241)
+        super().__init__(
+            rt=rt, intensity=_gaussian(rt, center=9.0, sigma=0.06, height=1000)
+        )
+        self.ions = ions
+        self.edge_scans = frozenset(edge_scans)
+        self.edge_mz = edge_mz
+
+    def extract_xic_many(self, requests):
+        super().extract_xic_many(requests)
+        traces = []
+        for request in requests:
+            half_width = request.mz * request.ppm_tol * 1e-6
+            low, high = request.mz - half_width, request.mz + half_width
+            intensity = np.zeros_like(self.rt)
+            for index, ion in enumerate(self.ions):
+                mz, scale = ion
+                centroids = np.full(len(self.rt), mz)
+                if index == 0 and self.edge_mz is not None:
+                    # The first ion's centroid jitters to one window edge.
+                    centroids[list(self.edge_scans)] = self.edge_mz
+                inside = (centroids >= low) & (centroids <= high)
+                intensity = intensity + np.where(inside, self.intensity * scale, 0.0)
+            traces.append(XICTrace.from_arrays(self.rt, intensity))
+        return tuple(traces)
+
+
+def _window_seed(scan: int, mz: float):
+    return _seed(
+        scan_number=scan,
+        rt=9.0,
+        precursor_mz=mz,
+        product_mz=mz - 116.0474,
+        product_intensity=10000.0,
+    )
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_one_ion_in_two_windows_is_one_peak_whatever_the_input_order(
+    reverse: bool,
 ) -> None:
-    centroid = (500.013, 500.019) if case == "two_centroids" else (500.013,)
-    observed = tuple(
-        Ms1PrecursorObservation(i + 1, rt, centroid)
-        for i, rt in enumerate((8.99, 9.0, 9.01))
+    # One ion at 500.000; its centroid jitters to 500.011 on six scans near the
+    # apex, past the upper edge of the 499.995 window only. The second window
+    # sits 25 ppm away, beyond the precursor tolerance of the first.
+    raw = _CentroidRaw(((500.0, 1.0),), edge_scans=range(96, 102), edge_mz=500.011)
+    groups = tuple(
+        _channel((_window_seed(scan, mz),))
+        for scan, mz in ((10, 499.995), (11, 500.0075))
     )
-    left = CidNlPhysicalProof(
-        acquisition_source_id="sample-a",
-        apex_rt_min=9.0,
-        left_rt_min=8.9,
-        right_rt_min=9.1,
-        xic_mz=500.012,
-        xic_ppm_tol=30,
-        rt=(8.9, 8.99, 9.0, 9.01, 9.1),
-        raw=(1, 50, 100, 50, 1),
-        apex_centroids=() if case == "unavailable" else observed,
+    result = capture_ms1_peaks(
+        raw,
+        groups[::-1] if reverse else groups,
+        acquisition_source=raw.acquisition_source,
+        signal_processing_profile=TEST_PROFILE,
+        settings=_settings(),
+        ms1_centroid_mz=lambda *_: None,
     )
-    right = replace(left, xic_mz=500.024, raw=(2, 50, 100, 50, 3))
-    if case == "different_centroid":
-        right = replace(
-            right,
-            raw=left.raw,
-            apex_centroids=tuple(replace(o, centroid_mzs=(500.019,)) for o in observed),
-        )
-    elif case == "different_peak":
-        right = replace(
-            right,
-            xic_mz=left.xic_mz,
-            apex_rt_min=9.3,
-            left_rt_min=9.2,
-            right_rt_min=9.4,
-        )
-    elif case == "different_sample":
-        right = replace(right, acquisition_source_id="sample-b")
-    facts = tuple(
-        CidNlPhysicalCandidateFact(str(i), p.xic_mz, 116.0474, p)
-        for i, p in enumerate((left, right))
+
+    (peak,) = result.peaks
+    assert peak.event_scan_ids == (10, 11)
+    # The kept measurement is the window that loses no centroid.
+    assert peak.xic_mz == pytest.approx(500.0075)
+    assert peak.peak_id == "TumorBC2312_DNA@mz500.0075_rt9.0000"
+    (record,) = result.physical_evaluations
+    assert peak.ms1_area == record.evaluation.facts.area_counts_seconds
+    # Every event is judged against that one peak; the 499.995 precursor lies
+    # 25 ppm from it and is located but not attached.
+    reasons = {
+        item.event.scan_number: item.unattached_reason for item in result.attachments
+    }
+    assert reasons == {10: "mass_outside_peak", 11: ""}
+
+
+def test_distinct_ions_in_overlapping_windows_stay_apart() -> None:
+    # 13C/15N-like neighbours 25 ppm apart: each window holds one ion, so the
+    # two traces never read an equal intensity.
+    raw = _CentroidRaw(((500.0, 1.0), (500.0125, 0.13)))
+    groups = tuple(
+        _channel((_window_seed(scan, mz),))
+        for scan, mz in ((10, 499.995), (11, 500.0135))
     )
-    units = group_cid_nl_physical_subject_units(
-        facts, composition=None, precursor_tolerance_ppm=30
+    result = capture_ms1_peaks(
+        raw,
+        groups,
+        acquisition_source=raw.acquisition_source,
+        signal_processing_profile=TEST_PROFILE,
+        settings=_settings(),
+        ms1_centroid_mz=lambda *_: None,
     )
-    assert len(units) == expected
+
+    assert sorted(peak.event_scan_ids for peak in result.peaks) == [(10,), (11,)]
+    areas = sorted(peak.ms1_area for peak in result.peaks)
+    assert areas[0] == pytest.approx(0.13 * areas[1])

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-from collections import defaultdict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -35,13 +34,9 @@ from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlComposition,
     CidNlMethodSubject,
-    CidNlPhysicalCandidateFact,
-    CidNlPhysicalProof,
     UntargetedCidNlMethodSubjectBatch,
     cid_nl_alignment_subject_worksets,
-    cid_nl_method_center_interval,
-    group_cid_nl_physical_subject_units,
-    mint_cid_nl_subject_membership_from_physical_units,
+    mint_cid_nl_subject_membership,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
@@ -229,29 +224,20 @@ def is_supported_alignment_discovery(settings: DiscoverySettings) -> bool:
     return True
 
 
-def _physical_subject_candidate_fact(
-    candidate: DiscoveryPeak,
-    record: DiscoveryPhysicalFactRecord,
-) -> CidNlPhysicalCandidateFact:
-    facts = record.evaluation.facts
-    proof = None
-    if facts is not None:
-        trace = record.acquired_trace.trace
-        proof = CidNlPhysicalProof(
-            acquisition_source_id=record.work_item.acquisition_source_id,
-            apex_rt_min=facts.apex_rt_min,
-            left_rt_min=facts.left_rt_min,
-            right_rt_min=facts.right_rt_min,
-            xic_mz=record.work_item.xic_mz,
-            xic_ppm_tol=record.work_item.xic_ppm_tol,
-            rt=trace.rt,
-            raw=trace.intensity,
+def _subject_candidates(
+    candidates: list[tuple[float | None, str]],
+    precursor_by_id: Mapping[str, float],
+) -> tuple[tuple[float | None, str], ...]:
+    """Discovery peaks in subject order; each is one physical peak."""
+    return tuple(
+        sorted(
+            candidates,
+            key=lambda item: (
+                0.0 if item[0] is None else item[0],
+                precursor_by_id[item[1]],
+                item[1],
+            ),
         )
-    return CidNlPhysicalCandidateFact(
-        candidate_id=candidate.peak_id,
-        physical_mz=candidate.peak_mz,
-        configured_neutral_loss_da=candidate.configured_neutral_loss_da,
-        proof=proof,
     )
 
 
@@ -285,22 +271,21 @@ def prepare_untargeted_subject_membership(
             or neutral_loss_da <= 0.0
         ):
             raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
-    physical_records = physical_records_by_peak
-    subject_units = group_cid_nl_physical_subject_units(
-        tuple(
-            _physical_subject_candidate_fact(
-                candidate, physical_records[candidate.peak_id]
-            )
-            for candidate in candidates
+    precursor_by_id = {candidate.peak_id: candidate.peak_mz for candidate in candidates}
+    return mint_cid_nl_subject_membership(
+        candidates=_subject_candidates(
+            [
+                (
+                    None
+                    if composition is not None
+                    else candidate.configured_neutral_loss_da,
+                    candidate.peak_id,
+                )
+                for candidate in candidates
+            ],
+            precursor_by_id,
         ),
-        composition=composition,
-        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-    )
-    return mint_cid_nl_subject_membership_from_physical_units(
-        subject_units=subject_units,
-        precursor_by_id={
-            candidate.peak_id: candidate.peak_mz for candidate in candidates
-        },
+        precursor_by_id=precursor_by_id,
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         composition=composition,
     )
@@ -480,68 +465,19 @@ def prepare_indexed_untargeted_plan(
         }
         return located, records, {stem: () for stem in source}
 
-    units: list[tuple[float | None, tuple[str, ...]]] = []
-    buckets: dict[tuple[str, float | None, float], list[str]] = defaultdict(list)
-    source_ids = {
-        path.stem: expectation.source.acquisition_source_id
-        for path, expectation in zip(
-            raw_paths, acquisition_source_expectations, strict=True
-        )
-    }
-    for cid in feature_ids:
-        location = source.locations[cid]
-        requirement = (
-            None if composition is not None else location.configured_neutral_loss_da
-        )
-        apex = physical_sources[location.sample_stem].physical_apices.get(cid)
-        if apex is None:
-            units.append((requirement, (cid,)))
-        else:
-            buckets[source_ids[location.sample_stem], requirement, apex].append(cid)
-
-    def close_physical_cohort(requirement: float | None, ids: list[str]) -> None:
-        if len(ids) == 1:
-            units.append((requirement, (ids[0],)))
-            return
-        candidates, records = load_inputs(tuple(ids))
-        local_units = group_cid_nl_physical_subject_units(
-            tuple(
-                _physical_subject_candidate_fact(
-                    candidate, records.get(candidate.peak_id)
+    subject_batch = mint_cid_nl_subject_membership(
+        candidates=_subject_candidates(
+            [
+                (
+                    None
+                    if composition is not None
+                    else source.locations[cid].configured_neutral_loss_da,
+                    cid,
                 )
-                for values in candidates.values()
-                for candidate in values
-            ),
-            composition=composition,
-            precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-        )
-        units.extend(local_units)
-
-    # Only same-source, same-apex, overlapping m/z cohorts can share a physical
-    # core. Isolated entries require no curve hydration during planning.
-    for (_, requirement, _), ids in buckets.items():
-        cohort: list[str] = []
-        upper = float("-inf")
-        for cid in sorted(ids, key=lambda key: (precursor_by_id[key], key)):
-            lower, next_upper = cid_nl_method_center_interval(
-                precursor_by_id[cid], settings.precursor_mz_tolerance_ppm
-            )
-            if cohort and lower > upper:
-                close_physical_cohort(requirement, cohort)
-                cohort = []
-            cohort.append(cid)
-            upper = max(upper, next_upper)
-        if cohort:
-            close_physical_cohort(requirement, cohort)
-    units.sort(
-        key=lambda unit: (
-            0.0 if unit[0] is None else unit[0],
-            precursor_by_id[unit[1][0]],
-            unit[1],
-        )
-    )
-    subject_batch = mint_cid_nl_subject_membership_from_physical_units(
-        subject_units=tuple(units),
+                for cid in feature_ids
+            ],
+            precursor_by_id,
+        ),
         precursor_by_id=precursor_by_id,
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         composition=composition,
