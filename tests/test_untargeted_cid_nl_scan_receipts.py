@@ -94,10 +94,11 @@ def test_unproven_inferred_members_keep_independent_scan_receipts(
             settings=settings,
             include_inferred=True,
         )
-        # Strict replay keeps each located scan only within its own receipt.
+        # Inferred estimates on one peak differ by more than the precursor
+        # tolerance; each located scan replays against its own receipt, not
+        # against the representative's estimate.
         replayed = {scan.scan_number for scan, _ in seeds}
-        assert replayed <= set(candidate.event_scan_ids)
-        assert candidate.best_ms2_scan_id in replayed
+        assert replayed == set(candidate.event_scan_ids)
         products_by_scan = {
             scan.scan_number: float(scan.masses[0]) for scan in source_raw.scans
         }

@@ -238,7 +238,7 @@ def _read_exact_event(
     scan_event_memo: _ScanEventMemo | None = None,
 ) -> tuple[DiscoveryEvent, ...]:
     representative = scan.scan_number == peak.best_ms2_scan_id
-    tag_product_receipts, precursor_receipt = _scan_receipts(
+    tag_product_receipts, precursor_receipt, tag_precursor_receipts = _scan_receipts(
         peak,
         scan_number=scan.scan_number,
     )
@@ -281,10 +281,24 @@ def _read_exact_event(
             )
             for tag_name, product_mz in tag_product_receipts.items()
         )
-        and _within_ppm(
-            event.precursor_mz,
-            peak.best_event_precursor_mz,
-            settings.precursor_mz_tolerance_ppm,
+        and (
+            _within_ppm(
+                event.precursor_mz,
+                peak.best_event_precursor_mz,
+                settings.precursor_mz_tolerance_ppm,
+            )
+            # Events group by their parent-MS1 ion, so inferred estimates on one
+            # peak can differ by more than the tolerance. An inferred event
+            # replays against its own scan receipt; Alignment then verifies its
+            # measured precursor against the peak.
+            or (
+                event.precursor_mz_basis == "product_plus_neutral_loss"
+                and event.neutral_loss_tag in tag_precursor_receipts
+                and _receipt_close(
+                    event.precursor_mz,
+                    tag_precursor_receipts[event.neutral_loss_tag],
+                )
+            )
         )
         and (
             preserve_configured_losses
@@ -305,9 +319,8 @@ def _read_exact_event(
                 for event in scan_seeds
             )
         ):
-            # MS1 merging compares group representatives, so an older inferred
-            # member can fall outside the final precursor window. Its declared
-            # scan still reconstructs, but it cannot support this mass question.
+            # The scan reconstructs inferred events, but none reproduces its
+            # receipt for this peak, so it cannot support this mass question.
             return ()
         if (
             not representative
@@ -405,8 +418,8 @@ def _scan_receipts(
     peak: DiscoveryPeak,
     *,
     scan_number: int,
-) -> tuple[dict[str, float], float | None]:
-    """Return one scan's per-tag product receipts and absorbed precursor receipt.
+) -> tuple[dict[str, float], float | None, dict[str, float]]:
+    """Return one scan's per-tag product, absorbed and per-tag precursor receipts.
 
     A scan absorbed by a shared-apex merge keeps the receipt of the peak
     that first claimed it; any other scan uses the peak's own product.
@@ -422,6 +435,7 @@ def _scan_receipts(
 
     receipts: dict[str, float] = {}
     precursor_receipt: float | None = None
+    precursor_receipts: dict[str, float] = {}
     matched_tags = set(peak.matched_tag_names)
     for raw_tag_name, raw_evidence in payload.items():
         tag_name = str(raw_tag_name)
@@ -450,6 +464,7 @@ def _scan_receipts(
                     f"precursor receipt for strict scan {scan_number}"
                 )
             precursor_receipt = float(raw_precursor_mz)
+            precursor_receipts[tag_name] = precursor_receipt
         if (
             not isinstance(raw_product_mz, (int, float))
             or isinstance(raw_product_mz, bool)
@@ -465,7 +480,7 @@ def _scan_receipts(
         raise StrictEventReceiptError(
             f"{peak.peak_id}: strict scan {scan_number} lacks owning per-tag provenance"
         )
-    return receipts, precursor_receipt
+    return receipts, precursor_receipt, precursor_receipts
 
 
 _within_ppm = within_ppm
