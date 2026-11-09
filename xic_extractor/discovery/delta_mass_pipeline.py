@@ -37,6 +37,7 @@ _CID_NL_REQUIRED_COLUMNS = (
     "sample_stem",
     "matched_tag_names",
     "admission_reason",
+    "channel_mz",
 )
 _CID_NL_MZ_TOLERANCE_PPM = 20.0
 _CID_NL_RT_TOLERANCE_SEC = 30.0
@@ -199,14 +200,16 @@ class _CidNlPeakRow:
     """The fields of one ``discovery_peaks.csv`` row the dR base join reads.
 
     ``peak_id`` is required because composite output exposes the matched
-    CID-NL peak identity.
+    CID-NL peak identity. ``channel_mz`` is the peak's measured MS1 ion; the
+    representative event's precursor is one MS2 isolation and can sit tens of
+    ppm away on a dense peak.
     """
 
     sample_stem: str
     peak_id: str
     matched_tag_names: tuple[str, ...]
     admission_reason: str
-    precursor_mz: float | None
+    channel_mz: float | None
     ms1_apex_rt: float | None
     evidence_score: float | None
 
@@ -249,8 +252,8 @@ def _load_cid_nl_peak_rows(path: Path) -> tuple[_CidNlPeakRow, ...]:
                     if tag
                 ),
                 admission_reason=admission_reason,
-                precursor_mz=_optional_finite_float(
-                    row.get("precursor_mz"), "precursor_mz", label
+                channel_mz=_optional_finite_float(
+                    row.get("channel_mz"), "channel_mz", label
                 ),
                 ms1_apex_rt=_optional_finite_float(
                     row.get("ms1_apex_rt"), "ms1_apex_rt", label
@@ -334,10 +337,10 @@ def _optional_finite_float(
 
 
 def _fallback_matches(candidate: DeltaMassCandidate, row: _CidNlPeakRow) -> bool:
-    if row.precursor_mz is None or row.ms1_apex_rt is None:
+    if row.channel_mz is None or row.ms1_apex_rt is None:
         return False
     base_mz = candidate.base_mz
-    ppm_error = abs((row.precursor_mz - base_mz) / base_mz * 1e6)
+    ppm_error = abs((row.channel_mz - base_mz) / base_mz * 1e6)
     if ppm_error > _CID_NL_MZ_TOLERANCE_PPM:
         return False
     rt_delta_sec = abs(row.ms1_apex_rt - candidate.base_rt_apex_min) * 60.0
@@ -353,11 +356,9 @@ def _best_fallback_match(
 
     def _key(row: _CidNlPeakRow) -> tuple[float, float, float, str]:
         assert row.ms1_apex_rt is not None
-        assert row.precursor_mz is not None
+        assert row.channel_mz is not None
         rt_delta_sec = abs(row.ms1_apex_rt - candidate.base_rt_apex_min) * 60.0
-        ppm_error = abs(
-            (row.precursor_mz - candidate.base_mz) / candidate.base_mz * 1e6
-        )
+        ppm_error = abs((row.channel_mz - candidate.base_mz) / candidate.base_mz * 1e6)
         evidence_score = row.evidence_score if row.evidence_score is not None else 0.0
         return (
             rt_delta_sec,

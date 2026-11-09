@@ -29,8 +29,8 @@ Composite methods combine providers by explicit set operations on the same base
 peak. `pt_pattern + cid_nl(dR)` intersects Delta Mass hypotheses with existing
 `neutral_loss(tag=DNA_dR)` evidence. Delta Mass evaluates its own hypotheses
 first, then annotates whether the base matches CID-NL(dR). That annotation uses
-admitted CID-NL peaks and the sample-local m/z/RT predicate; it does not alter
-CID-NL decisions.
+admitted CID-NL peaks and the sample-local predicate on the peak's
+`channel_mz` and apex RT; it does not alter CID-NL decisions.
 
 ## CID-NL peaks and events
 
