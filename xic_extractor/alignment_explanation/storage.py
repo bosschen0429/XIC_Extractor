@@ -11,7 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from .errors import ExplanationError, ExplanationUnavailableError
-from .review import REVIEW_SCHEMA_VERSION, validate_membership_risks
+from .review import (
+    REVIEW_SCHEMA_VERSION,
+    SELECTION_FLAGS,
+    SUPPORT_ORIGINS,
+    validate_membership_risks,
+)
 
 EXPLANATION_ARTIFACT_NAME = "alignment_explanation.sqlite"
 SCHEMA_VERSION = "alignment_explanation"
@@ -142,6 +147,16 @@ def read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
         not in ("retained_curves", "metadata_only")
     ):
         raise ExplanationError("malformed explanation: invalid completion summary")
+    origins = sorted(SUPPORT_ORIGINS)
+    unknown_origin = connection.execute(
+        "SELECT 1 FROM cells WHERE support_origin NOT IN "
+        f"({','.join('?' for _ in origins)}) LIMIT 1",
+        origins,
+    ).fetchone()
+    if unknown_origin is not None:
+        raise ExplanationError(
+            "檢閱資料含有目前版本不再產生的支持來源；請重新執行 Alignment。"
+        )
     if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
         query_tables = {
             "query_items": (
@@ -164,7 +179,23 @@ def read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
                 raise ExplanationError(
                     f"malformed explanation schema: {table}; rerun Alignment"
                 )
+        facts_length = selection_mask_width(len(summary["samples"])) * (
+            len(SELECTION_FLAGS) + 1
+        )
+        stale_facts = connection.execute(
+            "SELECT 1 FROM query_items WHERE length(sample_facts) != ? LIMIT 1",
+            (facts_length,),
+        ).fetchone()
+        if stale_facts is not None:
+            raise ExplanationError(
+                "檢閱資料的樣本選取格式與目前版本不同；請重新執行 Alignment。"
+            )
     return summary
+
+
+def selection_mask_width(sample_count: int) -> int:
+    """Bytes of one per-sample bit mask in review selection facts."""
+    return max(1, (sample_count + 7) // 8)
 
 
 @contextmanager

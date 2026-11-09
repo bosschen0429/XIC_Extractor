@@ -24,6 +24,7 @@ ORIGIN_FLAGS = {
     "backfill_support": 32,
     "discovery_support": 128,
 }
+SUPPORT_ORIGINS = frozenset((*ORIGIN_FLAGS, "unavailable"))
 SELECTION_FLAGS = (
     OBSERVED,
     ATTENTION,
