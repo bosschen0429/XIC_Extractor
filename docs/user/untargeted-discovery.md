@@ -87,9 +87,9 @@ Start with the file that matches your review question:
 
 | Output | Content | Use it for |
 | --- | --- | --- |
-| `discovery_candidates.csv` | Per-sample candidate features with m/z, RT, area, seed evidence | Detailed candidate inspection per sample |
-| `discovery_review.csv` | Compact subset of candidate fields with confidence | Quick review triage |
-| `discovery_batch_index.csv` | Links each sample's candidate/review CSVs | Input for alignment (generated automatically) |
+| `discovery_peaks.csv` | Per-sample MS1 peaks: one row per ion and peak, with m/z, RT, area, admission and evidence | Check which peaks enter Alignment and why |
+| `discovery_events.csv` | Per-sample NL events: each MS2 event with its peak or the reason it attaches to none | Trace where an MS2 event went |
+| `discovery_batch_index.csv` | Links each sample's peak and event CSVs | Input for alignment (generated automatically) |
 | `alignment_matrix.tsv` | Samples as columns, aligned features as rows, area values in cells | Default cross-sample quantitative output |
 | `alignment_review.tsv` | Group identity, detection/quantification summaries, warnings, and bound Matrix row references | Investigate a group or trace a Matrix row |
 | `alignment_explanation.sqlite` | Completed CID-NL decisions and retained curve evidence | Source for XIC Inspector export |
@@ -102,7 +102,7 @@ Start with the file that matches your review question:
    does not establish a chemical identity.
 2. Investigate an unexpected value or blank in workbench result review. Select
    the feature and sample, then inspect the saved decision and available XIC
-   evidence. A candidate table alone is not the final Matrix.
+   evidence. A Discovery peak table alone is not the final Matrix.
 3. Distinguish numeric availability from detection. Zero is a numeric value;
    a blank is not automatically zero or proof that a compound is absent.
    Backfill revisits local evidence, not an interpolation of other samples'

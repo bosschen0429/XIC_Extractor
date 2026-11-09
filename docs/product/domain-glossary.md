@@ -72,22 +72,28 @@ tests.
   values themselves.
 - `workflow projection`: the owner of output row/cell identity, inclusion,
   counts, reasons and review routing. It never selects the cell value.
-- `feature_id`: in Discovery output, a per-sample label for candidates sharing
-  one MS1 peak; in Alignment output, the report-scoped `F000001` label of one
-  published group. Neither carries identity across reports.
+- `feature_id`: in Alignment output, the report-scoped `F000001` label of one
+  published group. It carries no identity across reports.
+- `ion channel`: one sample's CID-NL events grouped by their MS1-measured ion
+  within the precursor tolerance; tag, product and RT never split it.
+- `Discovery peak`: one physical MS1 peak on one ion channel, one row of
+  `discovery_peaks.csv`, identified by `peak_id`. Its `admission_reason`
+  decides whether it enters Alignment.
+- `Discovery event`: one strict NL event (MS2 scan, tag and product), one row
+  of `discovery_events.csv`. It attaches to one peak or records why it does not.
 - `final Matrix`: the immutable grid produced after cell and row-inclusion
   decisions close. Pre-final collections use other names and cannot cross the
   Matrix interface.
 - `ProductWriter`: the exclusive approved code path for product-matrix
   mutations; see [Writer Authority](decision-policy.md#writer-authority).
 - `Discovery record`: a retained sample-local observation and its
-  qualification. A row in the Discovery candidate CSV is not by itself a feature
-  for cross-sample grouping.
-- `Alignment feature candidate`: a Discovery observation with eligible MS1
-  feature support. An NL match alone does not grant that standing.
-- `review-only NL observation`: NL evidence without eligible MS1 feature
-  standing. `review_only_orphan_nl` is not proof of random noise.
-- `seed evidence`: initial MS1/MS2 evidence that triggers candidate generation.
+  qualification. A Discovery peak row is not by itself a feature for
+  cross-sample grouping.
+- `Alignment feature candidate`: an admitted Discovery peak. An NL match alone
+  does not grant that standing.
+- `unattached event`: NL evidence attached to no peak, with its
+  `unattached_reason`. It is not proof of random noise.
+- `seed evidence`: initial MS1/MS2 evidence that triggers peak acquisition.
   A seed is not same-peak proof or counted detection.
 - `family`: legacy review/search container for related evidence. Family
   membership is not same-peak proof or product authority.
@@ -269,7 +275,6 @@ Persisted and public exceptions retain their exact spelling:
 | `owner_backfill_peak_fact_provenance_row_count`, `owner_backfill_peak_fact_provenance_tsv`, `owner_backfill_evaluation_coverage` | Metadata and public run/output fields |
 | `owner_finalized_cell_decision`, `owner_finalized`, `owner_rehydrated` and their longer diagnostic forms | Existing metadata, decision, and diagnostic values |
 | `alignment_owner_backfill_*`, `owner_backfill_revisit`, `alignment.owner_backfill` | Existing artifact names, source labels, and timing stage |
-| `ms1_feature_nl_rescued` | Discovery NL evidence state, not a Backfill cell status |
 
 The MS2 boundary search's `boundary_rescue` names a distinct peak-detection
 fallback and stays outside Backfill vocabulary.

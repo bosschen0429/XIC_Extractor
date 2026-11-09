@@ -1310,18 +1310,15 @@ def test_discovery_publishes_physical_qualification(
         return
     evaluation = result.physical_evaluations[0].evaluation
     candidate = result.peaks[0]
-    if True:
-        assert evaluation.state == "available"
-        assert evaluation.facts is not None
-        assert candidate.ms1_apex_rt == evaluation.facts.apex_rt_min
-        # Shallow valleys stay in one envelope, whose apex is the highest lobe.
-        expected_apex = query_rt + (
-            2.0 if trace_case == "overlapping_components" else 0
-        )
-        assert candidate.ms1_apex_rt == pytest.approx(expected_apex, abs=0.02)
-        assert candidate.ms1_area == evaluation.facts.area_counts_seconds
-        assert rt[0] < evaluation.facts.left_rt_min < query_rt
-        assert query_rt < evaluation.facts.right_rt_min < rt[-1]
+    assert evaluation.state == "available"
+    assert evaluation.facts is not None
+    assert candidate.ms1_apex_rt == evaluation.facts.apex_rt_min
+    # Shallow valleys stay in one envelope, whose apex is the highest lobe.
+    expected_apex = query_rt + (2.0 if trace_case == "overlapping_components" else 0)
+    assert candidate.ms1_apex_rt == pytest.approx(expected_apex, abs=0.02)
+    assert candidate.ms1_area == evaluation.facts.area_counts_seconds
+    assert rt[0] < evaluation.facts.left_rt_min < query_rt
+    assert query_rt < evaluation.facts.right_rt_min < rt[-1]
     if trace_case == "overlapping_components":
         assert candidate.ms1_trace_quality == "physical_shoulder_overlap"
         assert candidate.admission_reason == "requires_overlap_review"

@@ -187,11 +187,6 @@ def _reject_unknown_keys(
     label: str,
 ) -> None:
     unknown = sorted(set(table) - allowed)
-    if "seed_rt_gap_min" in unknown:
-        raise PresetError(
-            "seed_rt_gap_min is not a setting: CID-NL ion channels are separated "
-            "in RT by physical peak boundaries; delete this key"
-        )
     if unknown:
         raise PresetError(f"unknown {label} key: {unknown[0]}")
 
