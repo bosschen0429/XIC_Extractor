@@ -50,8 +50,8 @@ labelled.
 
 | State | Meaning | Enters Alignment |
 | --- | --- | --- |
-| `ms1_feature_nl_supported` | A resolved MS1 peak with an independent precursor and product inside it | Yes |
-| `ms1_feature_nl_rescued` | A measurable MS1 peak without independent same-peak NL support | No; review only |
+| `ms1_feature_nl_supported` | A resolved MS1 peak with an NL event of verified precursor [attached](#cid-nl-support-relations) to it | Yes |
+| `ms1_feature_nl_rescued` | A measurable MS1 peak without an attached, precursor-verified NL event | No; review only |
 | `review_only_unresolved_peak_attribution` | A shoulder or overlapping envelope whose MS2 cannot be attributed to one peak | No |
 | `review_only_ambiguous_coisolation` | An inferred precursor whose ion is a doubly charged isotope (below) | No |
 | `review_only_orphan_nl` | NL evidence without an accepted MS1 peak, or demoted by blank qualification | No |
@@ -129,7 +129,8 @@ scan within the precursor ppm window:
   unresolved;
 - the measured mass must lie inside the nominal isolation window and satisfy
   the per-ion NL tolerance;
-- both the parent MS1 scan and the MS2 scan must lie inside the physical peak.
+- both the parent MS1 scan and the MS2 scan must attach to the physical peak
+  (see [peak attachment](#cid-nl-support-relations)).
 
 This is method support, not proof of a unique precursor–product pairing. The
 original inferred m/z and null loss error stay unchanged. Alignment reacquires
@@ -194,6 +195,16 @@ hypotheses.
 The CID-NL method assessment binds MS2 evidence to physical MS1 peaks. The
 current lab acquisition is DDA/ddMS2; DIA is outside this contract because the
 lab has no mature DIA method.
+
+- **Peak attachment (Discovery admission).** One rule applies to every
+  precursor basis. An NL event supports a Discovery peak only when its precursor
+  is verified (recorded, or measured in the parent MS1 for an inferred
+  precursor), that mass lies within the precursor ppm window of the peak, and
+  the MS2 scan RT, plus the parent MS1 scan RT for an inferred precursor, lie
+  within the peak bounds ± 0.1 min. The margin covers DDA sampling a peak's foot
+  or tail just past its 10%-height return. An RT outside the bounds that lies
+  inside another measured peak of the same trace never attaches through the
+  margin. A peak with no attached event is `ms1_feature_nl_rescued`.
 
 - **Strict support.** A scan strictly inside exactly one candidate peak, with no
   positive-width overlap with another m/z-compatible peak, supports that peak

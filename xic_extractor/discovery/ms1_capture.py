@@ -45,12 +45,9 @@ from xic_extractor.discovery.priority import (
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_seed_receipts import read_parent_ms1_observations
 from xic_extractor.mass_accuracy import weighted_ion_mz, within_ppm
-from xic_extractor.peak_detection.physical_peak_evaluation import (
-    unique_physical_segment_at_rt,
-)
 from xic_extractor.peak_detection.physical_peak_models import (
-    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PhysicalPeakEvaluation,
+    PhysicalSegment,
 )
 from xic_extractor.precursor_evidence import MS1MassWindowSource
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
@@ -64,6 +61,9 @@ _APEX_ION_SPREAD_PPM = 5.0
 # 13C spacing of a doubly charged ion. Product + loss assumes a singly charged
 # precursor, so an inferred ion read beside this isotope is not one.
 _DOUBLY_CHARGED_ISOTOPE_SPACING_MZ = 1.0033548 / 2
+# An NL event supports an MS1 peak only when its MS2 scan, and the parent MS1
+# scan of an inferred precursor, fall within the peak bounds plus this margin.
+_NL_PEAK_ATTACHMENT_TOLERANCE_MIN = 0.1
 
 
 class DiscoveryMs1Source(BatchXICAdapter, MS1MassWindowSource, Protocol):
@@ -548,21 +548,34 @@ def _candidate_has_precursor_support(
     selected = evaluation.answer.selected_segment
     if selected is None:
         return False
-    universe = evaluation.segment_universe
+    neighbors = tuple(
+        segment
+        for segment in evaluation.segment_universe.segments
+        if segment != selected
+    )
     return any(
         within_ppm(
             reference_mz, candidate.physical_mz, settings.precursor_mz_tolerance_ppm
         )
         and all(
-            unique_physical_segment_at_rt(
-                universe,
-                rt,
-                selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-            )
-            == selected
+            _event_rt_attaches_to_peak(rt, selected, neighbors)
             for rt in (support_rt, scan_rt)
         )
         for reference_mz, support_rt, scan_rt in support_events
+    )
+
+
+def _event_rt_attaches_to_peak(
+    rt: float, peak: PhysicalSegment, neighbors: Sequence[PhysicalSegment]
+) -> bool:
+    if peak.left_rt_min <= rt <= peak.right_rt_min:
+        return True
+    # DDA often samples a peak's foot or tail just past its 10%-height return.
+    # That allowance never lends another measured peak's event to this one.
+    return peak.left_rt_min - _NL_PEAK_ATTACHMENT_TOLERANCE_MIN <= rt <= (
+        peak.right_rt_min + _NL_PEAK_ATTACHMENT_TOLERANCE_MIN
+    ) and not any(
+        segment.left_rt_min <= rt <= segment.right_rt_min for segment in neighbors
     )
 
 
