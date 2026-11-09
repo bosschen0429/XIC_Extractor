@@ -94,11 +94,10 @@ their morphology boundaries and canonical baseline-corrected area.
 
 Low-contrast maxima inside a supported envelope must not first become artificial
 integration boundaries. The physical owner uses an RT envelope with a minimum
-Gaussian sigma of 0.08 minutes to identify supported lobes and valleys, while
-preserving supported clear valleys already visible on the canonical signal.
-To split a coarse envelope, the canonical valley must remain below 50% of the
-smaller lobe for at least one configured Gaussian support footprint. A short
-dropout notch cannot create separate quantitative peaks. Only the
+Gaussian sigma of 0.08 minutes to identify supported lobes and valleys. The
+envelope can bury a valley that the acquired scans still resolve, so each
+coarse component is then cut at its [separable acquired valleys](#separable-valleys).
+Only the
 additional smoothing needed beyond the configured scan-point Gaussian is
 applied. This envelope is boundary evidence: it does not replace the canonical
 signal for apex intensity or integration. Boundary walks use the canonical
@@ -120,13 +119,11 @@ make a window question unique. Edge maxima also remain subject to the existing
 context-completeness rule. The interior-maxima rule removes measurement-noise
 ripple, not every periodic fluctuation or unresolved chemical shoulder.
 
-Shoulder-connected lobes form one quantitative envelope unless a supported
-clear valley separates their area. Persistence alone does not turn a shallow
-valley into an independent split. Sustained canonical clear splits retain their
-canonical valley. Canonical contour maxima reaching
-the same 4% prominence floor remain review evidence even when they do not
-qualify as independent seeds. The complete envelope does not establish one
-chemical component or individual component areas.
+Shoulder-connected lobes form one quantitative envelope unless a clear envelope
+valley or a separable acquired valley separates their area. Canonical contour
+maxima reaching the same 4% prominence floor remain review evidence even when
+they do not qualify as independent seeds. The complete envelope does not
+establish one chemical component or individual component areas.
 
 An unresolved shoulder remains a review condition (`physical_shoulder_overlap`).
 Targeted carries it into the product review reasons; Untargeted retains it as
@@ -136,6 +133,31 @@ owner for NL and no-NL inputs; its acquisition context includes one configured
 window width on each side, while only apexes inside the original selection
 window may compete. Wider acquisition must not silently widen the target's
 selection question.
+
+### Separable valleys
+
+A separable valley answers one question: do the acquired scans support two
+regions that can be measured separately? It does not claim two compounds.
+Within one coarse component, zero scans are censored (they neither form nor
+fill a valley). A valley is at least two consecutive scans at or below
+`min(minor - 3 sigma, f x minor)`, where `minor` is the smaller of the two side
+maxima, `sigma` the short-scale noise of the component's scans and `f` the
+policy's clear-valley fraction (0.5 for the physical owner). Each adjacent lobe
+holds two scans above that level and is itself a peak: beyond it the signal
+returns to the level for two scans, or the component ends. A single scan can
+stand apart only on the higher side; it never sets the valley depth, but an
+isolated spike then stays out of its neighbor's measurement. A policy can also
+require a minimum valley duration in minutes. The deepest valley cuts first and
+each side is examined again; the result depends only on the acquired values,
+not on peak IDs or input order.
+
+Calibration (#1056) used the 102 reviewed regions of #1049 on 8RAW and the
+enzyme control: separable doublets (B) 13/24 split; noise ripple or zero
+dropouts (A) 0/13, broad single components including peak plus plateau (W)
+0/15 and unflagged controls 0/27 split. The "lobe is a peak at its own scale"
+condition removes splits of plateau ripples and dense-sampling noise; the
+missed doublets are mostly weak isotope or adduct channels whose valley is not
+deeper than the noise, which stay one unresolved envelope.
 
 ### Local relief
 
@@ -283,11 +305,10 @@ selected physical component supplies the integration bounds.
   complete peak bounds. Missing or clipped support keeps its explicit
   unavailable reason; no downstream adapter invents flanks or integrates a
   replacement region.
-- Supported lobes stay distinct when the valley persists for one canonical
-  smoothing footprint at half its dip depth. Brief dropouts and unsupported
-  ripple do not separate peaks.
-- A persistent shallow valley supplies a component boundary and keeps overlap
-  review. Its area is measured, not deconvolved compound-specific area.
+- Lobes stay distinct at a [separable valley](#separable-valleys). Brief
+  dropouts, unsupported ripple and plateau texture do not separate peaks.
+- An unresolved envelope keeps overlap review. Its area is measured, not
+  deconvolved compound-specific area.
 - If a focused query clips the peak, Targeted NL acquisition can restore the
   configured target window once; the same physical owner evaluates the new
   trace. The writer never extends bounds.

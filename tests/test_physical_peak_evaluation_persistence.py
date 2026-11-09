@@ -799,12 +799,11 @@ def test_continuous_peak_with_isolated_dropouts_keeps_morphology_area(
     assert restored == result
 
 
-def test_tail_dropout_can_merge_an_otherwise_resolved_doublet() -> None:
+def test_tail_dropout_neither_splits_nor_merges_a_resolved_doublet() -> None:
     rt = np.arange(1201, dtype=float) / 200.0
     raw = 10000.0 * np.exp(-0.5 * ((rt - 2.0) / 0.7) ** 2) + 6000.0 * np.exp(
-        -0.5 * ((rt - 4.0) / 0.45) ** 2
+        -0.5 * ((rt - 4.3) / 0.45) ** 2
     )
-    results = []
     for with_dropout in (False, True):
         acquired = raw.copy()
         if with_dropout:
@@ -814,17 +813,11 @@ def test_tail_dropout_can_merge_an_otherwise_resolved_doublet() -> None:
             query_rt_min=2.0,
         )
         assert result.state == "available" and result.facts is not None
-        # The notch creates no extra quantitative component. Its contribution
-        # to the noise estimate can suppress the weaker lobe's seed, merging
-        # the otherwise resolved pair into one measured envelope.
-        assert len(result.segment_universe.segments) == (1 if with_dropout else 2)
-        if with_dropout:
-            assert result.facts.right_rt_min > 4.5
-        else:
-            assert 3.0 < result.facts.right_rt_min < 3.5
+        # Zero scans are censored: the notch is no valley and cannot hide the
+        # acquired valley that separates the pair.
+        assert len(result.segment_universe.segments) == 2
         assert result.facts.apex_rt_min < 2.2
-        results.append(result.facts)
-    assert results[1].area_counts_seconds > results[0].area_counts_seconds
+        assert result.facts.right_rt_min < 3.5
 
 
 def _physical_candidates(rt: np.ndarray, raw: np.ndarray) -> PeakCandidatesResult:
