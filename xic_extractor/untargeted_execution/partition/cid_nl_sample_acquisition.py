@@ -170,12 +170,15 @@ def _sample_capture_requests(
     peaks: tuple[DiscoveryPeak, ...],
     settings: DiscoverySettings,
 ) -> tuple[tuple[XICRequest, ...], tuple[int, ...]]:
-    """Each peak's XIC exactly as Discovery measured it, read once per window."""
+    """Each peak's XIC exactly as Discovery measured it, read once per window.
+
+    Discovery measures every peak in the window centred on its ``peak_mz``.
+    """
     unique: dict[XICRequest, int] = {}
     indices = []
     for item in peaks:
         request = XICRequest(
-            mz=item.xic_mz,
+            mz=item.peak_mz,
             rt_min=item.ms1_search_rt_min,
             rt_max=item.ms1_search_rt_max,
             ppm_tol=settings.precursor_mz_tolerance_ppm,

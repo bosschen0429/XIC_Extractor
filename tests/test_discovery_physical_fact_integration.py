@@ -1503,11 +1503,15 @@ def test_inferred_precursor_is_measured_once_in_the_window_of_its_apex_ion(
     (candidate,) = result.peaks
     assert candidate.best_event_precursor_mz == group.mz
     assert candidate.ms1_apex_mz == pytest.approx(apex_mz)
-    # The peak's one measurement is the apex ion's window, which Alignment reads.
+    # The peak's one measurement is the apex ion's window, which Alignment
+    # reads; the peak keeps the name of the ion XIC that located it.
     (record,) = result.physical_evaluations
-    assert candidate.peak_mz == candidate.xic_mz == record.work_item.xic_mz
+    assert candidate.peak_mz == record.work_item.xic_mz
     assert record.work_item.xic_mz == pytest.approx(apex_mz)
     assert record.acquired_trace.coordinate.request.mz == pytest.approx(apex_mz)
+    assert candidate.xic_mz == record.work_item.ion_mz == group.mz
+    assert candidate.peak_id == record.work_item.peak_id
+    assert candidate.peak_id == "TumorBC2312_DNA@mz500_rt12.1400"
 
 
 def test_pipeline_publishes_inferred_precursor_ms1_ion_from_raw_handle(

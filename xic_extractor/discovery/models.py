@@ -191,6 +191,9 @@ class DiscoveryPhysicalWorkItem:
 
     This persisted schema serves Discovery replay and Alignment. Shared physical
     capture takes method-independent search coordinates, not this projection.
+    ``ion_mz`` is the ion's XIC center read before acquisition and names the
+    peak; the ``xic_*`` fields are the window actually measured, which is
+    centred on the apex reading when the peak was measured again there.
     """
 
     work_ordinal: int
@@ -202,6 +205,7 @@ class DiscoveryPhysicalWorkItem:
     query_rt_min: float
     context_rt_start_min: float
     context_rt_end_min: float
+    ion_mz: float
     xic_mz: float
     xic_rt_min: float
     xic_rt_max: float
@@ -232,6 +236,7 @@ class DiscoveryPhysicalWorkItem:
             "query_rt_min",
             "context_rt_start_min",
             "context_rt_end_min",
+            "ion_mz",
             "xic_mz",
             "xic_rt_min",
             "xic_rt_max",
@@ -245,6 +250,7 @@ class DiscoveryPhysicalWorkItem:
         if (
             self.precursor_mz <= 0.0
             or self.product_mz <= 0.0
+            or self.ion_mz <= 0.0
             or self.xic_mz <= 0.0
             or self.xic_ppm_tol <= 0.0
         ):
@@ -262,7 +268,7 @@ class DiscoveryPhysicalWorkItem:
     def peak_id(self) -> str:
         return build_discovery_peak_id(
             sample_stem=self.sample_stem,
-            xic_mz=self.xic_mz,
+            xic_mz=self.ion_mz,
             peak_rt_min=self.query_rt_min,
         )
 

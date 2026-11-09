@@ -64,13 +64,14 @@ without reading RAW again.
   Product + loss is the fallback only when the parent scan reads no single ion.
   A group opens at the lowest unassigned ion and takes every ion within the
   precursor ppm tolerance of that anchor, so no ion bridges two groups. Tag,
-  product and RT never split an ion. Its XIC center is the representative
-  event's MS1 reading before acquisition: an MS1-measured ion first, then the
-  configured tag order, then product intensity.
+  product and RT never split an ion. Its XIC center, `xic_mz`, is the
+  representative event's MS1 reading before acquisition: an MS1-measured ion
+  first, then the configured tag order, then product intensity.
 - **Peak.** Each raw valley-separated peak on an ion's XIC is one row and one
-  measurement. `xic_mz` is the center of the window that measured it (see
-  [accurate-mass reading](#accurate-mass-reading)), and `peak_id` is
-  `{sample}@mz{xic_mz}_rt{raw apex RT}`.
+  measurement. `peak_id` is `{sample}@mz{xic_mz}_rt{raw apex RT}`, named by the
+  XIC of the ion whose measurement is kept; measuring the peak again in another
+  window (see [accurate-mass reading](#accurate-mass-reading)) does not rename
+  it.
 - **Same ion.** Adjacent XIC windows overlap, so one ion can be measured in
   several. A trace point sums the centroids inside its window, so windows
   holding the same centroids read exactly the same intensity; a centroid near a
@@ -207,7 +208,9 @@ resolution, so product + loss only points at the ion. When the
 intensity-weighted reading differs from the XIC center, the peak is measured
 once more in the window centred on the reading, with the same RT context and
 tolerance, selecting the peak at its raw apex. That one measurement is the
-peak's area and bounds, and Alignment adopts it unchanged. A window that selects
+peak's area and bounds, and Alignment adopts it unchanged. The physical facts
+record the window actually measured as `xic_mz` and the ion's XIC center as
+`ion_mz`. A window that selects
 nothing there keeps the first measurement, and the reading is not taken.
 
 After [same-ion](#ions-peaks-and-events) grouping, a peak whose events are all

@@ -77,6 +77,7 @@ _WORK_KEYS = (
     "query_rt_min",
     "context_rt_start_min",
     "context_rt_end_min",
+    "ion_mz",
     "xic_mz",
     "xic_rt_min",
     "xic_rt_max",
@@ -767,6 +768,7 @@ def _work_content(item: DiscoveryPhysicalWorkItem) -> dict[str, object]:
         "query_rt_min": _float_text(item.query_rt_min),
         "context_rt_start_min": _float_text(item.context_rt_start_min),
         "context_rt_end_min": _float_text(item.context_rt_end_min),
+        "ion_mz": _float_text(item.ion_mz),
         "xic_mz": _float_text(item.xic_mz),
         "xic_rt_min": _float_text(item.xic_rt_min),
         "xic_rt_max": _float_text(item.xic_rt_max),
@@ -801,6 +803,7 @@ def _work_from_content(
         context_rt_end_min=_float_from_text(
             content["context_rt_end_min"], field="context_rt_end_min"
         ),
+        ion_mz=_float_from_text(content["ion_mz"], field="ion_mz"),
         xic_mz=_float_from_text(content["xic_mz"], field="xic_mz"),
         xic_rt_min=_float_from_text(content["xic_rt_min"], field="xic_rt_min"),
         xic_rt_max=_float_from_text(content["xic_rt_max"], field="xic_rt_max"),

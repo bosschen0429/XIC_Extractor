@@ -1,3 +1,4 @@
+import math
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -226,12 +227,13 @@ def capture_ms1_peaks(
         measurement_observer(measurements)
     peaks: list[DiscoveryPeak] = []
     records: list[DiscoveryPhysicalFactRecord] = []
-    for index, (captured, peak_located, ion_reading) in enumerate(measured):
+    for index, (captured, ion_mz, peak_located, ion_reading) in enumerate(measured):
         peak, record, peak_attachments = _measured_peak(
             captured,
             peak_located,
             work_ordinal=index,
             settings=settings,
+            ion_mz=ion_mz,
             ion_reading=ion_reading,
         )
         peaks.append(peak)
@@ -268,6 +270,7 @@ def _one_measurement_per_ion_peak(
 ) -> list[
     tuple[
         CapturedPhysicalPeak,
+        float,
         list[tuple[DiscoveryIon, DiscoveryEvent]],
         tuple[float | None, bool],
     ]
@@ -282,7 +285,8 @@ def _one_measurement_per_ion_peak(
     holding one keeps a measurement it located. The kept measurement is the
     peak, every event of the group is attached against it, and a group whose
     events are all inferred reports its kept window's reading and judges the
-    doubly charged isotope once at that peak's apex.
+    doubly charged isotope once at that peak's apex. A peak keeps the XIC
+    center of the ion that first measured it, which names the peak.
     """
     centred = dict(capture_by_work)
     readings = {
@@ -303,6 +307,7 @@ def _one_measurement_per_ion_peak(
     remeasured = physical_capture.remeasure(
         tuple((capture_by_work[ordinal], mz) for ordinal, mz in moved.items())
     )
+    ion_mz: dict[int, float] = {}
     centred_mz = {
         capture_by_work[ordinal].work_ordinal: mz
         for ordinal, mz in readings.items()
@@ -314,6 +319,10 @@ def _one_measurement_per_ion_peak(
         if captured.evaluation.facts is not None:
             centred[ordinal] = captured
             centred_mz[captured.work_ordinal] = moved[ordinal]
+            ion_mz[captured.work_ordinal] = min(
+                ion_mz.get(captured.work_ordinal, math.inf),
+                capture_by_work[ordinal].search.request.mz,
+            )
     by_measurement: dict[int, CapturedPhysicalPeak] = {}
     located_by_measurement: dict[int, list[tuple[DiscoveryIon, DiscoveryEvent]]] = {}
     for ordinal, captured in centred.items():
@@ -349,7 +358,14 @@ def _one_measurement_per_ion_peak(
                 ms1_centroid_mz=ms1_centroid_mz,
             )
             ion_reading = (centred_mz.get(kept.work_ordinal), doubly_charged)
-        measured.append((kept, group_located, ion_reading))
+        measured.append(
+            (
+                kept,
+                ion_mz.get(kept.work_ordinal, kept.search.request.mz),
+                group_located,
+                ion_reading,
+            )
+        )
     return measured
 
 
@@ -372,6 +388,7 @@ def _measured_peak(
     *,
     work_ordinal: int,
     settings: DiscoverySettings,
+    ion_mz: float,
     ion_reading: tuple[float | None, bool],
 ) -> tuple[DiscoveryPeak, DiscoveryPhysicalFactRecord, tuple[EventAttachment, ...]]:
     """One measured peak, its attached attachments, and why the rest do not attach."""
@@ -407,7 +424,7 @@ def _measured_peak(
         attached or located_events, settings=settings
     )
     record = _cid_nl_physical_record(
-        representative, captured, work_ordinal=work_ordinal
+        representative, captured, work_ordinal=work_ordinal, ion_mz=ion_mz
     )
     peak_id = record.work_item.peak_id
     trace_quality = captured.trace_quality
@@ -439,7 +456,7 @@ def _measured_peak(
         raw_file=representative.raw_file,
         sample_stem=representative.sample_stem,
         peak_mz=peak_mz,
-        xic_mz=request.mz,
+        xic_mz=ion_mz,
         best_event_precursor_mz=representative.precursor_mz,
         best_event_product_mz=representative.product_mz,
         best_event_neutral_loss_da=representative.observed_neutral_loss_da,
@@ -755,6 +772,7 @@ def _cid_nl_physical_record(
     captured: CapturedPhysicalPeak,
     *,
     work_ordinal: int,
+    ion_mz: float,
 ) -> DiscoveryPhysicalFactRecord:
     """Project completed physical work into the retained CID-NL sidecar schema."""
     acquired = captured.acquired_trace
@@ -772,6 +790,7 @@ def _cid_nl_physical_record(
             query_rt_min=question.query_rt_min,
             context_rt_start_min=question.context_rt_start_min,
             context_rt_end_min=question.context_rt_end_min,
+            ion_mz=ion_mz,
             xic_mz=request.mz,
             xic_rt_min=request.rt_min,
             xic_rt_max=request.rt_max,

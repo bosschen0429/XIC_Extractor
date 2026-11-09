@@ -486,8 +486,9 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
     (record,) = discovery.physical_evaluations
     # Discovery measures the peak once more in the measured ion's window, which
     # excludes the coeluting interference the inferred window included.
-    assert unread.xic_mz == pytest.approx(500.016)
-    assert candidate.peak_mz == candidate.xic_mz == record.work_item.xic_mz
+    assert unread.xic_mz == candidate.xic_mz == pytest.approx(500.016)
+    assert candidate.peak_id == unread.peak_id
+    assert candidate.peak_mz == record.work_item.xic_mz
     assert candidate.peak_mz == pytest.approx(physical_mz)
     assert candidate.ms1_area == pytest.approx(
         unread.ms1_area / (1 + interference_abundance)
