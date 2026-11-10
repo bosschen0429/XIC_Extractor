@@ -13,9 +13,13 @@ import pytest
 
 from tests.alignment_explanation_fixtures import explanation_summary
 from tests.inspector_fixtures import (
+    NEUTRAL_LOSS_BY_TAG,
+    add_witness,
     create_inspector_report,
+    discovery,
     inspector_curve_payload,
     read_report_payload,
+    witness_member,
 )
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
@@ -122,7 +126,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
 
     def other_group_and_hold(writer):
         writer.add_final_group(
-            "G2", feature_id="G2", disposition="completed", members=[], candidates=()
+            "G2", feature_id="G2", disposition="completed", members=[]
         )
         writer.add_cells("G2", [{**stored_cell, "variant": "not_searched"}])
         writer.add_assessment(
@@ -404,8 +408,8 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
                 rid,
                 feature_id=rid,
                 disposition="completed",
-                members=[],
-                candidates=[("C1", "S1")],
+                # Every row's member holds C1's terminal peak.
+                members=[witness_member("S1", f"{rid}-member", "obs-01")],
             )
 
     report, _, _ = create_inspector_report(tmp_path, extend=shared_witness_rows)
@@ -456,7 +460,7 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
 def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
     def second_witness(writer):
         writer.add_peak("S2", "obs-02", (None, 8.0, None))
-        writer.add_candidate("C2", "S2", precursor_mz=600.0)
+        writer.add_candidate("C2", "S2", precursor_mz=600.0, **discovery("C2"))
         writer.add_terminal(
             "C2",
             "S2",
@@ -469,7 +473,13 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
     report, _, _ = create_inspector_report(
         tmp_path,
         prepare=second_witness,
-        group={"feature_id": None, "candidates": [("C1", "S1"), ("C2", "S2")]},
+        group={
+            "feature_id": None,
+            "members": [
+                witness_member("S1", "hypothesis-01", "obs-01"),
+                witness_member("S2", "h2", "obs-02"),
+            ],
+        },
         cells=[],
     )
     result = generate_report(
@@ -510,8 +520,6 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
 def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
     report, _, _ = create_inspector_report(
         tmp_path,
-        prepare=lambda writer: writer.add_candidate("C2", "S2", precursor_mz=600.0),
-        group={"candidates": [("C1", "S1"), ("C2", "S2")]},
         cells=[
             {"sample_key": "S1", "variant": "numeric", "value": 1000.0},
             {"sample_key": "S2", "variant": "unavailable", "value": None},
@@ -572,7 +580,7 @@ def test_legitimate_candidate_without_observation_remains_available_as_metadata(
     report, _, _ = create_inspector_report(
         tmp_path,
         extend=lambda writer: writer.add_candidate(
-            "not-acquired", "S2", precursor_mz=None, physical_state="excluded"
+            "not-acquired", "S2", precursor_mz=None, **discovery("not-acquired")
         ),
     )
     output = tmp_path / "unavailable.html"
@@ -591,7 +599,9 @@ def test_legitimate_candidate_without_observation_remains_available_as_metadata(
 def test_candidate_presentation_ids_preserve_sample_identity(tmp_path):
     def shared_candidate_id(writer):
         for sid in ("S1", "S2"):
-            writer.add_candidate("shared-id", sid, precursor_mz=None)
+            writer.add_candidate(
+                "shared-id", sid, precursor_mz=None, **discovery("shared-id")
+            )
 
     report, _, _ = create_inspector_report(tmp_path, extend=shared_candidate_id)
     output = tmp_path / "identities.html"
@@ -625,7 +635,6 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
                     kind,
                     record_id,
                     inspector_curve_payload("S1", "C1", observation_id, kind=kind),
-                    candidates=[("C1", "S1")],
                 )
             )
 
@@ -676,7 +685,6 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
             capture_kind,
             "obs-01",
             inspector_curve_payload("S1", "C1", "obs-01", kind=capture_kind),
-            candidates=[("C1", "S1")],
         )
         writer.add_assessment(
             {
@@ -722,7 +730,6 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
             "backfill_observation",
             "obs-01",
             inspector_curve_payload("S1", "C1", "obs-01", kind="backfill_observation"),
-            candidates=[("C1", "S1")],
         )
         writer.add_assessment(
             {
@@ -794,7 +801,9 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
             ("C3", "G3", "obs-03"),
         ):
             writer.add_peak("S1", observation_id, (None, 1.0, None))
-            writer.add_candidate(candidate_id, "S1", precursor_mz=501.0)
+            writer.add_candidate(
+                candidate_id, "S1", precursor_mz=501.0, **discovery(candidate_id)
+            )
             writer.add_terminal(
                 candidate_id,
                 "S1",
@@ -806,15 +815,13 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                 group_id,
                 feature_id=group_id,
                 disposition="provisional",
-                members=[],
-                candidates=[(candidate_id, "S1")],
+                members=[witness_member("S1", f"hyp-{candidate_id}", observation_id)],
             )
             writer.add_curve_payload(
                 "S1",
                 "initial_capture",
                 observation_id,
                 inspector_curve_payload("S1", candidate_id, observation_id),
-                candidates=[(candidate_id, "S1")],
             )
         writer.add_initial_edge(
             {
@@ -822,12 +829,12 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
                 "right_subject_id": "hyp-C2",
                 "disposition": "excluded",
                 "initial_evidence": {"decision": "blocked_edge"},
-            },
-            [("C1", "S1"), ("C2", "S1")],
+            }
         )
 
     report, _, _ = create_inspector_report(
         tmp_path,
+        hypothesis_id="hyp-C1",
         extend=provisional_peers,
         summary={"initial_edge_coverage": coverage},
     )
@@ -875,21 +882,39 @@ def test_report_preserves_relationship_availability_without_edges(
 
 
 def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path):
+    # Each member is its candidate's terminal hypothesis; member-1 also holds
+    # C1's terminal peak.
     def candidates(writer):
-        for candidate_id, sample_id in (
-            ("C1-duplicate", "S1"),
-            ("C2", "S2"),
-            ("C3", "S3"),
+        for candidate_id, sample_id, member in (
+            ("C1-duplicate", "S1", "member-1"),
+            ("C2", "S2", "member-2"),
+            ("C3", "S3", "member-3"),
         ):
-            writer.add_candidate(candidate_id, sample_id, precursor_mz=500.0)
+            peak = f"obs-{candidate_id}"
+            writer.add_peak(sample_id, peak, (None, 1.0, None))
+            writer.add_candidate(
+                candidate_id, sample_id, precursor_mz=500.0, **discovery(candidate_id)
+            )
+            writer.add_terminal(
+                candidate_id,
+                sample_id,
+                variant="observed",
+                hypothesis_id=member,
+                physical_peak_key=peak,
+            )
+            writer.add_curve_payload(
+                sample_id,
+                "initial_capture",
+                peak,
+                inspector_curve_payload(sample_id, candidate_id, peak),
+            )
 
     def external_group_and_edges(writer):
         writer.add_final_group(
             "G2",
             feature_id="G2",
             disposition="completed",
-            members=[{"subject_id": "member-3", "sample_key": "S3"}],
-            candidates=[("C3", "S3")],
+            members=[witness_member("S3", "member-3", "obs-C3")],
         )
         # One edge per ordered subject pair; the review edge is the reverse pair.
         edges = (
@@ -904,7 +929,6 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                     "rt_raw_delta_sec": 1.25,
                     "rt_drift_corrected_delta_sec": 0.75,
                 },
-                (("C1", "S1"), ("C1-duplicate", "S1"), ("C2", "S2")),
             ),
             (
                 "member-2",
@@ -914,7 +938,6 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                     "decision": "weak_edge",
                     "reason": "weak_edge: score unavailable",
                 },
-                (("C1", "S1"), ("C2", "S2")),
             ),
             (
                 "member-1",
@@ -925,18 +948,16 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                     "reason": "blocked: identity_conflict",
                     "score": 0,
                 },
-                (("C1", "S1"), ("C3", "S3")),
             ),
         )
-        for left_id, right_id, disposition, evidence, links in edges:
+        for left_id, right_id, disposition, evidence in edges:
             writer.add_initial_edge(
                 {
                     "left_subject_id": left_id,
                     "right_subject_id": right_id,
                     "disposition": disposition,
                     "initial_evidence": evidence,
-                },
-                links,
+                }
             )
 
     report, _, _ = create_inspector_report(
@@ -949,10 +970,9 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
         prepare=candidates,
         group={
             "members": [
-                {"subject_id": "member-1", "sample_key": "S1"},
-                {"subject_id": "member-2", "sample_key": "S2"},
+                witness_member("S1", "member-1", "obs-01", "obs-C1-duplicate"),
+                witness_member("S2", "member-2", "obs-C2"),
             ],
-            "candidates": [("C1", "S1"), ("C1-duplicate", "S1"), ("C2", "S2")],
         },
         extend=external_group_and_edges,
     )
@@ -1004,27 +1024,45 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
 
 def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp_path):
     def shared_candidate_rows_and_edge(writer):
-        writer.add_candidate("C2", "S1", precursor_mz=501.0)
-        for candidate_id, group_id in (("C2", "G2"), ("C1", "G4")):
-            writer.add_final_group(
-                group_id,
-                feature_id=group_id,
-                disposition="completed",
-                members=[],
-                candidates=[(candidate_id, "S1")],
-            )
+        writer.add_peak("S1", "obs-02", (None, 1.0, None))
+        writer.add_candidate("C2", "S1", precursor_mz=501.0, **discovery("C2"))
+        writer.add_terminal(
+            "C2",
+            "S1",
+            variant="observed",
+            hypothesis_id="hyp-C2",
+            physical_peak_key="obs-02",
+        )
+        writer.add_curve_payload(
+            "S1",
+            "initial_capture",
+            "obs-02",
+            inspector_curve_payload("S1", "C2", "obs-02"),
+        )
+        writer.add_final_group(
+            "G2",
+            feature_id="G2",
+            disposition="completed",
+            members=[witness_member("S1", "hyp-C2", "obs-02")],
+        )
+        # G4 shares C1 through a member holding C1's terminal peak.
+        writer.add_final_group(
+            "G4",
+            feature_id="G4",
+            disposition="completed",
+            members=[witness_member("S1", "G4-member", "obs-01")],
+        )
         writer.add_initial_edge(
             {
                 "left_subject_id": "hyp-C1",
                 "right_subject_id": "hyp-C2",
                 "disposition": "excluded",
                 "initial_evidence": {"decision": "split_edge"},
-            },
-            [("C1", "S1"), ("C2", "S1")],
+            }
         )
 
     report, _, _ = create_inspector_report(
-        tmp_path, extend=shared_candidate_rows_and_edge
+        tmp_path, hypothesis_id="hyp-C1", extend=shared_candidate_rows_and_edge
     )
 
     output = tmp_path / "shared-multirow-peer.html"
@@ -1180,8 +1218,6 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
 ):
     report, _, _ = create_inspector_report(
         tmp_path,
-        prepare=lambda writer: writer.add_candidate("C2", "S2", precursor_mz=500.0),
-        group={"candidates": [("C1", "S1"), ("C2", "S2")]},
         cells=[
             {"sample_key": "S1", "variant": "unavailable", "value": None},
             {"sample_key": "S2", "variant": "numeric", "value": 0},
@@ -1238,10 +1274,7 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
                 },
                 candidate_physical_peak_keys=(),
             )
-        for left, right, links in (
-            ("hyp-C1", "hyp-C2", (("C1", "S1"), ("C2", "S2"))),
-            ("hyp-C2", "hyp-C2b", (("C2", "S2"),)),
-        ):
+        for left, right in (("hyp-C1", "hyp-C2"), ("hyp-C2", "hyp-C2b")):
             writer.add_initial_edge(
                 {
                     "left_subject_id": left,
@@ -1253,18 +1286,39 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
                         "reason": "blocked: product_mz_out_of_tolerance",
                         "score": 0,
                     },
-                },
-                links,
+                }
             )
+        # C2's observation keeps its curve; numbered after the assessments.
+        writer.add_curve_payload(
+            "S2",
+            "initial_capture",
+            "obs-02",
+            inspector_curve_payload("S2", "C2", "obs-02"),
+        )
+
+    def second_sample(writer):
+        writer.add_peak("S2", "obs-02", (None, 1.0, None))
+        writer.add_candidate("C2", "S2", precursor_mz=500.0, **method)
+        writer.add_terminal(
+            "C2",
+            "S2",
+            variant="observed",
+            hypothesis_id="hyp-C2",
+            physical_peak_key="obs-02",
+        )
 
     method = {"method_subject_id": "M1", "neutral_loss_tag": "dR"}
     report, _, _ = create_inspector_report(
         tmp_path,
         candidate=method,
-        prepare=lambda writer: writer.add_candidate(
-            "C2", "S2", precursor_mz=500.0, **method
-        ),
-        group={"candidates": [("C1", "S1"), ("C2", "S2")]},
+        hypothesis_id="hyp-C1",
+        prepare=second_sample,
+        group={
+            "members": [
+                witness_member("S1", "hyp-C1", "obs-01"),
+                witness_member("S2", "hyp-C2", "obs-02"),
+            ]
+        },
         cells=[
             {"sample_key": "S1", "variant": "numeric", "value": 1000.0},
             {"sample_key": "S2", "variant": "numeric", "value": 700.0},
@@ -1357,9 +1411,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
     def precise_curve(writer):
         payload = inspector_curve_payload("S1", "C1", "obs-01", apex_rt=apex_rt)
         payload["integration"]["area_raw_counts_seconds"] = area
-        writer.add_curve_payload(
-            "S1", "initial_capture", "obs-01", payload, candidates=[("C1", "S1")]
-        )
+        writer.add_curve_payload("S1", "initial_capture", "obs-01", payload)
 
     report, _, _ = create_inspector_report(
         tmp_path,
@@ -1405,7 +1457,6 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
 ):
     source_code = "trapezoid_counts_seconds_on_canonical_signal"
     row = {"route": {"destination": destination, "reason": state}}
-    keys = [("C1", "S1"), ("C2", "S2")][:sample_count]
     cells = [
         {
             "sample_key": "S1",
@@ -1425,10 +1476,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
         tmp_path,
         candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
         method_subject={"neutral_loss_da": 116.0474},
-        prepare=lambda writer: [
-            writer.add_candidate(cid, sid, precursor_mz=500.0) for cid, sid in keys[1:]
-        ],
-        group={"disposition": state, "candidates": keys},
+        group={"disposition": state},
         cells=cells,
         extend=lambda writer: writer.set_row_destination("G1", destination),
     )
@@ -1473,17 +1521,12 @@ def _create_nearest_mz_db(directory, rows):
         writer.declare_samples(samples)
         for row in rows:
             rid = row["id"]
-            keys = []
-            for sid, mz, rt in row["witnesses"]:
-                cid = f"{rid}-{sid}"
-                keys.append((cid, sid))
-                writer.add_candidate(cid, sid, precursor_mz=mz, rt_apex_min=rt)
+            members = [
+                add_witness(writer, f"{rid}-{sid}", sid, rt=rt, precursor_mz=mz)
+                for sid, mz, rt in row["witnesses"]
+            ]
             writer.add_final_group(
-                rid,
-                feature_id=rid,
-                disposition="recorded",
-                members=[],
-                candidates=keys,
+                rid, feature_id=rid, disposition="recorded", members=members
             )
             writer.set_row_destination(rid, row.get("route", "matrix"))
             writer.add_cells(
@@ -1502,6 +1545,7 @@ def _create_nearest_mz_db(directory, rows):
         writer.finalize(
             explanation_summary(
                 {
+                    "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                     "samples": samples,

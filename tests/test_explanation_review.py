@@ -103,14 +103,14 @@ def test_explanation_from_an_older_alignment_is_rejected_on_open(
 @pytest.mark.parametrize(
     "criteria,expected",
     [
-        ({"mz_min": 500, "mz_max": 500, "rt_min": 2, "rt_max": 2}, (5, 5, 0, 1)),
+        ({"mz_min": 500, "mz_max": 500, "rt_min": 2, "rt_max": 2}, (5, 5, 0, 2)),
         ({"mz_min": 500, "mz_max": 500}, (5, 5, 4, 0)),
         ({"sample_ids": ("S1",), "mz_min": 500, "mz_max": 500}, (5, 3, 3, 0)),
         ({"sample_ids": ("absent",), "mz_min": 500}, (5, 0, 0, 0)),
         ({"candidate_ids": ("C1",)}, (5, 5, 1, 0)),
         ({"group_ids": ("row-α",), "sample_ids": ("S2",)}, (5, 3, 1, 0)),
         ({"mz_min": 500, "offset": 1, "limit": 2}, (5, 5, 4, 0)),
-        ({"rt_min": 99}, (5, 5, 0, 1)),
+        ({"rt_min": 99}, (5, 5, 0, 2)),
         ({"strategy": "sample", "seed": 0, "limit": 2}, (5, 5, 5, 0)),
         ({"strategy": "sample", "seed": 19, "limit": 4}, (5, 5, 5, 0)),
         ({"strategy": "sample", "seed": 19, "sample_ids": ("S1",)}, (5, 3, 3, 0)),
@@ -124,7 +124,12 @@ def test_explanation_from_an_older_alignment_is_rejected_on_open(
 def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
     tmp_path, monkeypatch, criteria, expected
 ):
-    from tests.inspector_fixtures import read_report_payload
+    from tests.inspector_fixtures import (
+        NEUTRAL_LOSS_BY_TAG,
+        discovery,
+        read_report_payload,
+        witness_member,
+    )
 
     matrix = tmp_path / "matrix.tsv"
     matrix.write_text("matrix fixture", encoding="utf-8")
@@ -140,14 +145,15 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
             ("C4", "S2", 500, 3),
             ("C5", "S1", 500, 4),
         ):
-            writer.add_candidate(cid, sid, precursor_mz=mz, rt_apex_min=rt)
-            # C5's terminal observation lies outside its group's members; the
-            # witness keeps the candidate's own apex instead.
+            writer.add_candidate(cid, sid, precursor_mz=mz, **discovery(cid))
+            # C5's terminal observation lies outside its group's members, so its
+            # witness has no observation and no RT.
             peak, peak_rt = ("unrelated", 99) if cid == "C5" else (cid + "-obs", rt)
             writer.add_peak(sid, peak, (None, peak_rt, None))
             writer.add_terminal(
                 cid, sid, variant="observed", hypothesis_id=cid, physical_peak_key=peak
             )
+        # Each member is its candidate's terminal hypothesis.
         for gid, rid, keys in (
             ("G1", "row-α", [("C1", "S1"), ("C2", "S2")]),
             ("G2", None, [("C3", "S1")]),
@@ -159,15 +165,9 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
                 feature_id=rid,
                 disposition="completed",
                 members=[
-                    {
-                        "sample_key": "S1",
-                        "subject_id": "C5",
-                        "physical_peak_keys": ["C5-obs"],
-                    }
-                ]
-                if gid == "G3"
-                else [],
-                candidates=keys,
+                    witness_member(sid, cid, "C5-obs" if cid == "C5" else cid + "-obs")
+                    for cid, sid in keys
+                ],
             )
             if rid is not None:
                 writer.add_cells(
@@ -181,17 +181,25 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
                         for sid in sorted({s for _, s in keys} or {"S2"})
                     ],
                 )
+        # The edge joins two initial members: C1 and the ungrouped C4.
+        writer.add_initial_group(
+            disposition="completed",
+            members=[
+                witness_member("S1", "C1", "C1-obs"),
+                witness_member("S2", "C4", "C4-obs"),
+            ],
+        )
         writer.add_initial_edge(
             {
                 "left_subject_id": "C1",
                 "right_subject_id": "C4",
                 "initial_evidence": {"decision": "blocked_edge"},
-            },
-            [("C1", "S1"), ("C4", "S2")],
+            }
         )
         writer.finalize(
             explanation_summary(
                 {
+                    "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                     "selection_evidence_capability": "recorded_decisions",
@@ -309,7 +317,7 @@ def test_default_review_keeps_values_and_query_without_curves(
     with monkeypatch.context() as query_patch:
         query_patch.setattr(CidNlSource, "_presentation_item", forbidden)
         query_patch.setattr(
-            "xic_extractor.alignment_explanation.reader.validate_details", forbidden
+            "xic_extractor.alignment_explanation.reader._Evidence.cells", forbidden
         )
         query_source = CidNlSource(report, query_only=True)
         query_items = query_source.load_items(scope)
@@ -1115,7 +1123,6 @@ def test_named_cells_preserve_values_and_details_across_input_order(
                 feature_id="F1",
                 disposition="completed",
                 members=(),
-                candidates=(),
             )
             writer.add_cells("F1", ordered)
             writer.finalize(explanation_summary({}, review_only=review_only))
@@ -1141,7 +1148,6 @@ def test_named_cells_reject_duplicate_group_sample(tmp_path):
                 feature_id="F1",
                 disposition="completed",
                 members=(),
-                candidates=(),
             )
             writer.add_cells(
                 "F1",

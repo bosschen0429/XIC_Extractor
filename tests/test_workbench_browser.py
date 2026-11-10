@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from tests.inspector_fixtures import create_inspector_report
+from tests.inspector_fixtures import create_inspector_report, witness_member
 from tests.raw_header_fakes import install_fake_raw_headers
 from tests.workbench_browser_fixtures import DEADLINE_SCALE as DEADLINE_SCALE
 from tests.workbench_browser_fixtures import browser as browser
@@ -1724,8 +1724,8 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
                 group,
                 feature_id=group,
                 disposition="completed",
-                members=[],
-                candidates=[("C1", "S1")],
+                # Every row's member holds C1's terminal peak.
+                members=[witness_member("S1", f"{group}-member", "obs-01")],
             )
 
     create_inspector_report(tmp_path, extend=more_rows)

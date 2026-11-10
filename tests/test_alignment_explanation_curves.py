@@ -72,7 +72,6 @@ def test_curve_payload_write_and_read() -> None:
                 kind="initial_capture",
                 record_id="C1",
                 payload=curve_envelope,
-                candidates=[("C1", "S1")],
             )
             final_path = writer.finalize(
                 explanation_summary(

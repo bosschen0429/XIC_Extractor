@@ -8,6 +8,7 @@ import numpy as np
 from tests.alignment_explanation_fixtures import (
     explanation_summary,
 )
+from tests.inspector_fixtures import NEUTRAL_LOSS_BY_TAG, discovery
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
 )
@@ -68,7 +69,7 @@ def _group_with_missing_apex_review(tmp_path, *, extraction_by_sample=None):
         writer.declare_samples(samples)
         for (cid, sid), mz, rt in zip(keys, (499.0, 501.0), (7.9, 8.1), strict=True):
             writer.add_peak(sid, cid, (extraction[sid][0], rt, extraction[sid][1]))
-            writer.add_candidate(cid, sid, precursor_mz=mz, rt_apex_min=rt)
+            writer.add_candidate(cid, sid, precursor_mz=mz, **discovery(cid))
             writer.add_terminal(
                 cid, sid, variant="observed", hypothesis_id=cid, physical_peak_key=cid
             )
@@ -85,7 +86,6 @@ def _group_with_missing_apex_review(tmp_path, *, extraction_by_sample=None):
                 }
                 for cid, sid in keys
             ],
-            candidates=keys,
             center_mz=extraction["S3"][0],
             ppm=extraction["S3"][1],
         )
@@ -122,6 +122,7 @@ def _group_with_missing_apex_review(tmp_path, *, extraction_by_sample=None):
             explanation_summary(
                 {
                     "samples": samples,
+                    "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                     "acquisition_sources": sources,
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
@@ -201,26 +202,33 @@ def _quality_review_report(
     with ExplanationReportWriter(report, review_only=True) as writer:
         writer.declare_samples(samples)
         keys = [("C1", "S1"), ("C2", "S2")]
+        # Each candidate's terminal is its member's hypothesis and peak.
         for cid, sid in keys:
+            writer.add_peak(sid, f"obs-{sid}", (None, 1.0, None))
             writer.add_candidate(
                 cid,
                 sid,
                 precursor_mz=500.0,
                 ms1_apex_mz=(measured_mz_by_sample or {}).get(sid),
-                rt_apex_min=1.0,
+                **discovery(cid),
+            )
+            writer.add_terminal(
+                cid,
+                sid,
+                variant="observed",
+                hypothesis_id=f"member-{sid}",
+                physical_peak_key=f"obs-{sid}",
             )
         writer.add_final_group(
             "G1",
             feature_id="G1",
             disposition="completed",
             members=members,
-            candidates=keys,
         )
         if member_risks:
             writer.add_initial_group(
                 disposition="completed",
                 members=members,
-                candidates=keys,
                 inference_basis={},
                 inference_decisions=[
                     {"owner_id": f"member-{sid}", "accepted_risk": risk}
@@ -232,6 +240,7 @@ def _quality_review_report(
             explanation_summary(
                 {
                     "processing_attempt_id": "quality-attempt",
+                    "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                     "samples": samples,

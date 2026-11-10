@@ -31,18 +31,13 @@ def create_review_batch(tmp_path, sample_count=2):
             ("z-priority", "matrix", (400,) + ("unresolved",) * (sample_count - 1)),
             ("archive", "archive", (500,) + ("unresolved",) * (sample_count - 1)),
         ):
-            keys = []
-            for sid, value in zip(sample_ids, values, strict=True):
-                if isinstance(value, int):
-                    cid = f"{rid}-{sid}"
-                    keys.append((cid, sid))
-                    writer.add_candidate(cid, sid, precursor_mz=value, rt_apex_min=1)
+            members = [
+                add_witness(writer, f"{rid}-{sid}", sid, rt=1, precursor_mz=value)
+                for sid, value in zip(sample_ids, values, strict=True)
+                if isinstance(value, int)
+            ]
             writer.add_final_group(
-                rid,
-                feature_id=rid,
-                disposition="recorded",
-                members=[],
-                candidates=keys,
+                rid, feature_id=rid, disposition="recorded", members=members
             )
             writer.set_row_destination(rid, route)
             writer.add_cells(
@@ -56,7 +51,7 @@ def create_review_batch(tmp_path, sample_count=2):
                     for sid, value in zip(sample_ids, values, strict=True)
                 ],
             )
-        writer.add_candidate("orphan", "S1", precursor_mz=600, rt_apex_min=1)
+        add_witness(writer, "orphan", "S1", rt=1, precursor_mz=600)
         writer.finalize(
             explanation_summary(
                 {
@@ -64,6 +59,7 @@ def create_review_batch(tmp_path, sample_count=2):
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                     "samples": samples,
                     "selection_evidence_capability": "recorded_decisions",
+                    "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                 },
                 review_only=writer.review_only,
             )
@@ -91,17 +87,12 @@ def create_nearest_review_batch(tmp_path):
     with ExplanationReportWriter(report, review_only=True) as writer:
         writer.declare_samples(samples)
         for rid, witnesses, unresolved in rows:
-            keys = []
-            for index, (mz, rt) in enumerate(witnesses):
-                cid = f"{rid}-{index}"
-                keys.append((cid, "S1"))
-                writer.add_candidate(cid, "S1", precursor_mz=mz, rt_apex_min=rt)
+            members = [
+                add_witness(writer, f"{rid}-{index}", "S1", rt=rt, precursor_mz=mz)
+                for index, (mz, rt) in enumerate(witnesses)
+            ]
             writer.add_final_group(
-                rid,
-                feature_id=rid,
-                disposition="recorded",
-                members=[],
-                candidates=keys,
+                rid, feature_id=rid, disposition="recorded", members=members
             )
             writer.set_row_destination(rid, "matrix")
             writer.add_cells(
@@ -121,11 +112,61 @@ def create_nearest_review_batch(tmp_path):
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
                     "samples": samples,
                     "selection_evidence_capability": "recorded_decisions",
+                    "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                 },
                 review_only=writer.review_only,
             )
         )
     return report, matrix
+
+
+def discovery(candidate_id: str) -> dict[str, str]:
+    """What Discovery records for every candidate: its loss and method subject."""
+    return {"neutral_loss_tag": "dR", "method_subject_id": f"subject-{candidate_id}"}
+
+
+NEUTRAL_LOSS_BY_TAG = {"dR": 116.0474}
+
+
+def witness_member(sample_key: str, hypothesis_id: str, *peaks: str) -> dict:
+    """A final-group member whose hypothesis is a candidate's terminal subject."""
+    return {
+        "sample_key": sample_key,
+        "subject_id": hypothesis_id,
+        "subject_kind": "peak_hypothesis",
+        "physical_peak_keys": list(peaks),
+    }
+
+
+def add_witness(
+    writer,
+    candidate_id: str,
+    sample_key: str,
+    *,
+    rt: float | None,
+    peak_mz: float | None = None,
+    **candidate: Any,
+) -> dict:
+    """A candidate observed at its terminal peak; returns the group member.
+
+    The witness RT is the terminal peak's apex; ``rt=None`` keeps it unrecorded.
+    """
+    peak = f"peak-{candidate_id}-{sample_key}"
+    hypothesis = f"hypothesis-{candidate_id}-{sample_key}"
+    writer.add_peak(sample_key, peak, (peak_mz, rt, None))
+    writer.add_candidate(
+        candidate_id,
+        sample_key,
+        **{**discovery(candidate_id), **candidate},
+    )
+    writer.add_terminal(
+        candidate_id,
+        sample_key,
+        variant="observed",
+        hypothesis_id=hypothesis,
+        physical_peak_key=peak,
+    )
+    return witness_member(sample_key, hypothesis, peak)
 
 
 def read_report_payload(path: Path) -> dict:
@@ -197,6 +238,7 @@ def create_inspector_report(
     candidate: dict[str, Any] | None = None,
     method_subject: dict[str, Any] | None = None,
     observed: bool = True,
+    hypothesis_id: str = "hypothesis-01",
     group: dict[str, Any] | None = None,
     cells: list[dict[str, Any]] | None = None,
     base_cell: dict[str, Any] | None = None,
@@ -207,6 +249,8 @@ def create_inspector_report(
     review_only: bool = False,
 ) -> tuple[Path, Path, str]:
     """One saved row ``G1`` whose candidate ``C1`` was observed as ``obs-01``.
+
+    ``G1``'s default member is ``C1``'s terminal hypothesis ``hypothesis_id``.
 
     ``prepare`` adds candidates before ``G1`` is written (so ``group`` can name
     them); ``extend`` adds further evidence before finalization. Both receive
@@ -243,13 +287,15 @@ def create_inspector_report(
                     **(method_subject or {}),
                 }
             )
-        writer.add_candidate("C1", sid, precursor_mz=500.0, **(candidate or {}))
+        writer.add_candidate(
+            "C1", sid, precursor_mz=500.0, **{**discovery("C1"), **(candidate or {})}
+        )
         if observed:
             writer.add_terminal(
                 "C1",
                 sid,
                 variant="observed",
-                hypothesis_id="hypothesis-01",
+                hypothesis_id=hypothesis_id,
                 physical_peak_key="obs-01",
             )
         if prepare is not None:
@@ -259,8 +305,7 @@ def create_inspector_report(
             **{
                 "feature_id": "G1",
                 "disposition": "completed",
-                "members": [],
-                "candidates": [("C1", sid)],
+                "members": [witness_member(sid, hypothesis_id, "obs-01")],
                 **(group or {}),
             },
         )
@@ -285,7 +330,6 @@ def create_inspector_report(
                 payload=inspector_curve_payload(
                     sid, "C1", "obs-01", attempt_id=attempt_id
                 ),
-                candidates=[("C1", sid)],
             )
         if extend is not None:
             extend(writer)

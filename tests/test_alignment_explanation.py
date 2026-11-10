@@ -509,31 +509,45 @@ def test_related_set_links_preserve_union_of_repeated_records(tmp_path):
     report = tmp_path / "normalized.sqlite"
     with ExplanationReportWriter(report) as writer:
         writer.declare_samples([{"sample_key": "S1", "sample_stem": "S1"}])
-        for candidate_id in ("C1", "C2", "C3"):
-            writer.add_candidate(candidate_id, "S1", precursor_mz=500.0)
-        binding = dict(sample_id="S1", kind="initial_capture", record_id="obs-1")
-        # Same record, reordered members and an overlapping extension must
-        # produce one exact logical union.
-        for related in (
-            (("C1", "S1"), ("C2", "S1")),
-            (("C2", "S1"), ("C1", "S1")),
-            (("C2", "S1"), ("C3", "S1")),
-        ):
-            writer.add_curve_payload(
-                **binding, payload=_curve_payload(), candidates=related
+        # C1 and C2 end on the curve's peak; C3 shares its provenance subject.
+        for candidate_id, subject in (("C1", "M1"), ("C2", "M2"), ("C3", "M3")):
+            writer.add_candidate(
+                candidate_id,
+                "S1",
+                precursor_mz=500.0,
+                neutral_loss_tag="dR",
+                method_subject_id=subject,
             )
-        writer.finalize(explanation_summary({}))
+        for candidate_id in ("C1", "C2"):
+            writer.add_terminal(
+                candidate_id,
+                "S1",
+                variant="observed",
+                hypothesis_id=f"h-{candidate_id}",
+                physical_peak_key="obs-1",
+            )
+        payload = _curve_payload()
+        payload["provenance"] = {**payload["provenance"], "method_subject_id": "M3"}
+        binding = dict(sample_id="S1", kind="initial_capture", record_id="obs-1")
+        # The same record written repeatedly is stored once and relates the
+        # union of its peak's and its subject's candidates.
+        ids = {writer.add_curve_payload(**binding, payload=payload) for _ in range(3)}
+        assert len(ids) == 1
+        writer.finalize(explanation_summary({"neutral_loss_by_tag": {"dR": 116.0}}))
 
     expected = {
         (candidate_id, "S1", "capture_evidence", "1")
         for candidate_id in ("C1", "C2", "C3")
     }
-    assert set(read_explanation_metadata(report).links) == expected
+    links = read_explanation_metadata(report).links
+    assert {link for link in links if link[2] == "capture_evidence"} == expected
     details = [
-        read_alignment_explanation(report, candidate_id=candidate_id)["records"]
+        read_alignment_explanation(report, candidate_id=candidate_id)["records"][
+            "capture_evidence"
+        ]
         for candidate_id in ("C1", "C2", "C3")
     ]
-    assert len(details[0]["capture_evidence"]) == 1
+    assert len(details[0]) == 1
     assert details == [details[0]] * 3
 
 
@@ -541,13 +555,8 @@ def test_report_rejects_candidate_links_without_a_candidate(tmp_path):
     report = tmp_path / "missing-candidate.sqlite"
     with pytest.raises(KeyError, match="missing"):
         with ExplanationReportWriter(report) as writer:
-            writer.add_final_group(
-                "G1",
-                feature_id=None,
-                disposition="completed",
-                members=(),
-                candidates=(("missing", "S1"),),
-            )
+            writer.declare_samples([{"sample_key": "S1", "sample_stem": "S1"}])
+            writer.add_terminal("missing", "S1", variant="observed")
             writer.finalize(explanation_summary({}))
     assert not report.exists()
     assert not report.with_name(report.name + ".tmp").exists()
@@ -559,17 +568,46 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
         writer.declare_samples(
             [{"sample_key": s, "sample_stem": s} for s in ("s1", "s2")]
         )
-        writer.add_candidate("a", "s1", precursor_mz=500.0)
-        writer.add_candidate("b", "s2", precursor_mz=500.0)
-        for name, related in (
-            ("shared", [("a", "s1"), ("b", "s2")]),
-            ("second", [("a", "s1")]),
-            ("unrelated", [("b", "s2")]),
+        # A hypothesis sits in one initial group, so a and b reach a second
+        # group through a same-method hypothesis (a2, b2) whose member also
+        # holds their peak.
+        for cid, sid, subject in (
+            ("a", "s1", "Ma"),
+            ("a2", "s1", "Ma"),
+            ("b", "s2", "Mb"),
+            ("b2", "s2", "Mb"),
+        ):
+            writer.add_candidate(
+                cid,
+                sid,
+                precursor_mz=500.0,
+                neutral_loss_tag="dR",
+                method_subject_id=subject,
+            )
+            writer.add_terminal(
+                cid,
+                sid,
+                variant="observed",
+                hypothesis_id=f"h-{cid}",
+                physical_peak_key=f"p-{cid}",
+            )
+
+        def member(sid, cid, *peaks):
+            return {
+                "sample_key": sid,
+                "subject_id": f"h-{cid}",
+                "subject_kind": "peak_hypothesis",
+                "physical_peak_keys": [f"p-{cid}", *peaks],
+            }
+
+        for name, members in (
+            ("shared", [member("s1", "a"), member("s2", "b")]),
+            ("second", [member("s1", "a2", "p-a")]),
+            ("unrelated", [member("s2", "b2", "p-b")]),
         ):
             writer.add_initial_group(
                 disposition="completed",
-                members=(),
-                candidates=related,
+                members=members,
                 inference_basis={"basis": name},
                 inference_decisions=[],
             )
@@ -577,21 +615,19 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
             "shared",
             feature_id=None,
             disposition="completed",
-            members=(),
-            candidates=[("a", "s1")],
+            members=[member("s1", "a")],
         )
-        writer.finalize(explanation_summary({}))
+        writer.finalize(explanation_summary({"neutral_loss_by_tag": {"dR": 116.0}}))
     with sqlite3.connect(report) as connection:
         assert (
             connection.execute("SELECT count(*) FROM initial_groups").fetchone()[0] == 3
         )
-        # Only the group linked to b alone is unreadable.
+        # Only the last group, which relates b but not a, is unreadable.
         connection.execute(
             "UPDATE initial_groups SET inference_basis=x'00' "
-            "WHERE candidates=(SELECT json_array(id) FROM candidates "
-            "WHERE candidate_id='b')"
+            "WHERE id=(SELECT max(id) FROM initial_groups)"
         )
-    assert read_alignment_explanation(report)["candidate_count"] == 2
+    assert read_alignment_explanation(report)["candidate_count"] == 4
     detail = read_alignment_explanation(report, candidate_id="a")
     assert sorted(
         group["inference_basis"]["basis"]
