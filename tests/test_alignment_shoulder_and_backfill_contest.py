@@ -119,7 +119,7 @@ def _groups(owners: tuple[SampleLocalMS1Owner, ...]):
         rt_frame=SampleRtFrame(),
         rules=CID_NL_GROUPING_RULES,
     )
-    by_rt = {round(group.family_center_rt, 1): group for group in groups}
+    by_rt = {round(group.group_center_rt, 1): group for group in groups}
     assert set(by_rt) == {8.6, 9.0}
     return groups, by_rt[8.6], by_rt[9.0]
 
@@ -268,7 +268,7 @@ def test_backfill_different_apices_require_measured_same_lobe(
         del backfills[first_key]
         groups = (
             SimpleNamespace(
-                disposition="established",
+                destination="matrix",
                 member_subjects=(
                     SimpleNamespace(
                         sample_key="sample",
@@ -361,7 +361,7 @@ def test_backfill_peak_held_only_by_an_archived_group_is_not_contested() -> None
             groups=(
                 replace(
                     group,
-                    membership=replace(group.membership, disposition="unresolved"),
+                    disposition="unresolved",
                 ),
             ),
             backfills=backfills,

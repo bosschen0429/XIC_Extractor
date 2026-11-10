@@ -101,12 +101,11 @@ class UntargetedCidNlBackfillTarget:
     ) -> UntargetedCidNlBackfillTarget:
         """Adapt the complete scientific question to the acquisition contract."""
         group = question.group
-        assert group.group_center_rt is not None
         localized = question.localization
         return cls(
             group_hypothesis_id=group.group_hypothesis_id,
             method_subject=question.method_subject,
-            physical_mz=group.family_center_mz,
+            physical_mz=group.group_center_mz,
             center_rt=group.group_center_rt,
             query_rt=None if localized is None else localized.location.query_rt,
             query_rt_basis=(

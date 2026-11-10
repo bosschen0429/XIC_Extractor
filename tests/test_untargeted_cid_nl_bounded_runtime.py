@@ -12,7 +12,12 @@ from time import perf_counter, sleep
 
 import pytest
 
-from tests.alignment_pipeline_helpers import writer_cells, writer_view
+from tests.alignment_pipeline_helpers import (
+    render,
+    written_cells,
+    written_groups,
+    written_rows,
+)
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
@@ -30,9 +35,6 @@ from tests.untargeted_partition_fixtures import (
     execute_dense_partition,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.untargeted_finalized_matrix import (
-    project_completed_untarget_batch_writer_inputs,
-)
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution import (
@@ -878,10 +880,10 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     } == eligible_subject_ids
     assert not result.application_result.excluded_candidates
     assert bool(result.application_result.children) is bool(eligible_subject_ids)
-    writer = project_completed_untarget_batch_writer_inputs(result.application_result)
+    writer = result.application_result
     if eager is not None:
-        assert writer == project_completed_untarget_batch_writer_inputs(
-            eager.application_result
+        assert written_rows(tmp_path / "bounded-written", writer) == written_rows(
+            tmp_path / "eager-written", eager.application_result
         )
         assert {
             assessment.content: assessment for assessment in result.method_assessments
@@ -894,13 +896,9 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_alignment_explanation,
     )
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix_path = tmp_path / "eligibility.tsv"
-    write_alignment_matrix_tsv(
-        matrix_path,
-        writer,
-    )
+    render("matrix", matrix_path, writer)
     report = write_alignment_explanation(
         tmp_path / "eligibility.sqlite",
         completed=result,
@@ -999,22 +997,20 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     assert bool(warm_threads) is (raw_workers > 1)
     assert all(thread == coordinator_thread for thread in warm_threads)
     assert type(bounded.application_result.children) is ImmutableSequence
-    bounded_writer = project_completed_untarget_batch_writer_inputs(
-        bounded.application_result
+    bounded_writer = bounded.application_result
+    eager_writer = eager.application_result
+    assert written_rows(tmp_path / "bounded-written", bounded_writer) == (
+        written_rows(tmp_path / "eager-written", eager_writer)
     )
-    eager_writer = project_completed_untarget_batch_writer_inputs(
-        eager.application_result
-    )
-    assert writer_view(bounded_writer) == writer_view(eager_writer)
     if scenario == "istd":
         expected_areas = {
-            (row.feature_id, sample_stem): cell.value
-            for row, sample_stem, cell in writer_cells(eager_writer)
+            (group.group_hypothesis_id, sample_stem): cell.value
+            for group, sample_stem, cell in written_cells(eager_writer)
             if cell.value is not None
         }
         actual_areas = {
-            (row.feature_id, sample_stem): cell.value
-            for row, sample_stem, cell in writer_cells(bounded_writer)
+            (group.group_hypothesis_id, sample_stem): cell.value
+            for group, sample_stem, cell in written_cells(bounded_writer)
             if cell.value is not None
         }
         assert expected_areas
@@ -1089,19 +1085,12 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
     from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_alignment_explanation,
     )
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     candidate_id = plan.subject_batch.candidate_memberships[0][0]
     records = []
     for name, completed in (("eager", eager), ("bounded", bounded)):
-        writer = project_completed_untarget_batch_writer_inputs(
-            completed.application_result
-        )
         matrix = tmp_path / f"{name}.tsv"
-        write_alignment_matrix_tsv(
-            matrix,
-            writer,
-        )
+        render("matrix", matrix, completed.application_result)
         report = write_alignment_explanation(
             tmp_path / f"{name}.sqlite",
             completed=completed,
@@ -1182,9 +1171,7 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         max_partition_jobs=len(baseline_plan.context.samples),
         pipeline_overlap=False,
     )
-    baseline_writer = project_completed_untarget_batch_writer_inputs(
-        baseline.application_result
-    )
+    baseline_writer = baseline.application_result
     opened_runs = []
     plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
     output_dir = tmp_path / "retry-output"
@@ -1223,11 +1210,11 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         retry_plan.context.processing_attempt_id
     )
     assert retry_plan.context.processing_attempt_id != failed_attempt_id
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
+    writer = completed.application_result
+    assert written_groups(writer)
+    assert written_rows(tmp_path / "retry-written", writer) == written_rows(
+        tmp_path / "baseline-written", baseline_writer
     )
-    assert any(row.cells for row in writer.clusters)
-    assert writer_view(writer) == writer_view(baseline_writer)
     assert completed.application_result.candidate_ids == (
         baseline.application_result.candidate_ids
     )
@@ -1243,7 +1230,7 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
     assert completed_samples == baseline_samples
     assert all(
         cell.value is None or cell.value > 0
-        for _row, _stem, cell in writer_cells(writer)
+        for _row, _stem, cell in written_cells(writer)
     )
     assert {
         sample.raw_stem for sample in completed.application_result.canonical_samples
@@ -1358,9 +1345,9 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
     assert set(observed_budgets.values()) == {2}
     assert peak_budget == 4
     assert composition_active == 0 and not active_budgets
-    assert project_completed_untarget_batch_writer_inputs(
-        overlapped.application_result
-    ) == (project_completed_untarget_batch_writer_inputs(serial.application_result))
+    assert written_rows(
+        tmp_path / "overlapped-written", overlapped.application_result
+    ) == written_rows(tmp_path / "serial-written", serial.application_result)
     assert overlapped.application_result.candidate_ids == (
         serial.application_result.candidate_ids
     )
@@ -2255,7 +2242,7 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
     child_scope = child_before.scientific_core.scope
     assert child_scope.capture_bindings
     child_observations = child_before.scientific_core.cell_observations
-    child_decision = child_before.completed_projection.decisions[0]
+    child_decision = child_before.group_cells[0][1][0]
     expected_excluded_ids = tuple(
         exclusion.candidate_id for exclusion in stored.excluded_candidates
     )
@@ -2276,10 +2263,10 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
         == child_scope.capture_bindings
     )
     assert child_after.scientific_core.cell_observations == child_observations
-    restored_decision = child_after.completed_projection.decisions[0]
+    restored_decision = child_after.group_cells[0][1][0]
     assert restored_decision.payload == child_decision.payload
     assert restored_decision.selected_integration == child_decision.selected_integration
-    assert child_after.completed_projection.decisions[0].value == child_decision.value
+    assert child_after.group_cells[0][1][0].value == child_decision.value
 
 
 def test_process_backend_reuses_one_shared_pool_and_closes_once(

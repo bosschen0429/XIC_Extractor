@@ -1,18 +1,14 @@
 """Cross-sample peak group construction.
 
 This module groups SampleLocalMS1Owner instances using shared physical rules
-and explicitly supplied method evidence. The output
-``CrossSamplePeakGroupHypothesis`` is the primary cross-sample identity unit.
-
-``feature_id`` is the shared output label.
-It is NOT an identity anchor; use ``group_hypothesis_id`` for identity
-decisions within the pipeline.
+and explicitly supplied method evidence. ``CrossSamplePeakGroupHypothesis`` is
+the one representation of a group from grouping to the written outputs.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field
 from typing import Literal, TypeAlias, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -20,12 +16,11 @@ from xic_extractor.alignment.cross_sample.identity_models import (
     CrossSampleContractError,
     CrossSampleEdgeDisposition,
     CrossSampleGroupDisposition,
-    CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSampleInitialEdgeContext,
     CrossSampleNeighborhoodStatus,
+    canonical_group_members,
     group_member_subject_from_peak_hypothesis,
-    mint_cross_sample_group_identity,
 )
 from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     CrossSampleLineageEdge,
@@ -50,79 +45,49 @@ from xic_extractor.alignment.ownership_models import (
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 from xic_extractor.alignment.rt_frame import RtFrame
 
-CrossSamplePeakGroupConstructionRole: TypeAlias = Literal[
-    "owner_aligned_feature_shadow",
-    "successor_constructor",
-]
+GroupDestination: TypeAlias = Literal["matrix", "archive"]
 
 
 @dataclass(frozen=True)
 class CrossSamplePeakGroupHypothesis:
-    """Cross-sample chemical-entity group hypothesis.
+    """Peaks across samples treated as one feature.
 
-    Identity semantics:
-    - ``group_hypothesis_id``: primary identity key for pipeline decisions.
-    - ``feature_id``: shared output label.
-      It is intentionally independent of ``group_hypothesis_id``.
+    Equality and hash are the membership: the sample-ordered member subjects and
+    the disposition. Every other field is a fact about that membership.
+    ``group_center_mz``/``group_center_rt`` are decided when the group is
+    constructed; a group extended by Backfill keeps the centre its searches used.
     """
 
-    membership: CrossSampleGroupIdentity
-    feature_id: str
-    owner_ids: tuple[str, ...]
-    event_member_count: int
-    source: str = "owner_aligned_feature_shadow"
-    neutral_loss_tag: str = ""
-    group_center_mz: float | None = None
-    group_center_rt: float | None = None
-    group_product_mz: float | None = None
-    group_observed_neutral_loss_da: float | None = None
-    has_anchor: bool = False
-    owners: tuple[SampleLocalMS1Owner, ...] = ()
-    evidence: str = ""
-    review_only: bool = False
-    confirm_local_owners_with_backfill: bool = False
-    backfill_seed_centers: tuple[tuple[float, float], ...] = ()
-    construction_role: CrossSamplePeakGroupConstructionRole = (
-        "owner_aligned_feature_shadow"
+    member_subjects: tuple[CrossSampleGroupMemberSubject, ...]
+    disposition: CrossSampleGroupDisposition
+    owners: tuple[SampleLocalMS1Owner, ...] = field(compare=False)
+    group_center_mz: float = field(compare=False)
+    group_center_rt: float = field(compare=False)
+    neutral_loss_tag: str = field(default="", compare=False)
+    group_product_mz: float | None = field(default=None, compare=False)
+    group_observed_neutral_loss_da: float | None = field(default=None, compare=False)
+    has_anchor: bool = field(default=False, compare=False)
+    evidence: str = field(default="", compare=False)
+    inference_basis: FeatureMembershipGroup | None = field(default=None, compare=False)
+    inference_decisions: tuple[SparseFeatureDecision, ...] = field(
+        default=(), compare=False
     )
-    inference_basis: FeatureMembershipGroup | None = None
-    inference_decisions: tuple[SparseFeatureDecision, ...] = ()
 
     @property
     def group_hypothesis_id(self) -> str:
-        return self.membership.group_hypothesis_id
+        """In-process key: the sample-ordered member hypothesis keys."""
+
+        return " + ".join(member.subject_id for member in self.member_subjects)
 
     @property
-    def member_subjects(self) -> tuple[CrossSampleGroupMemberSubject, ...]:
-        return self.membership.member_subjects
+    def owner_ids(self) -> tuple[str, ...]:
+        return tuple(owner.owner_id for owner in self.owners)
 
     @property
-    def disposition(self) -> CrossSampleGroupDisposition:
-        return self.membership.disposition
+    def destination(self) -> GroupDestination:
+        """Only an established group is delivered to the Matrix."""
 
-    @property
-    def cluster_id(self) -> str:
-        return self.feature_id
-
-    @property
-    def family_center_mz(self) -> float:
-        if self.group_center_mz is None:
-            raise ValueError("cross-sample peak group is missing center m/z")
-        return self.group_center_mz
-
-    @property
-    def family_center_rt(self) -> float:
-        if self.group_center_rt is None:
-            raise ValueError("cross-sample peak group is missing center RT")
-        return self.group_center_rt
-
-    @property
-    def members(self) -> tuple[SampleLocalMS1Owner, ...]:
-        return self.owners
-
-    @property
-    def event_cluster_ids(self) -> tuple[str, ...]:
-        return self.owner_ids
+        return "matrix" if self.disposition == "established" else "archive"
 
 
 def construct_cross_sample_peak_group_hypotheses(
@@ -139,7 +104,7 @@ def construct_cross_sample_peak_group_hypotheses(
     accept_competition: bool = False,
     peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
-    """Infer feature membership and mint its canonical CrossSample identity.
+    """Infer feature membership and build one group per inferred membership.
 
     Known identity is an input constraint, not a pairwise RT exception. The
     legacy edge sink remains empty because no pair evaluations are implied by
@@ -173,7 +138,7 @@ def construct_cross_sample_peak_group_hypotheses(
     for decision in inference.sparse_decisions:
         decisions_by_owner.setdefault(decision.owner_id, []).append(decision)
     hypotheses = []
-    for index, basis in enumerate(inference.groups, start=1):
+    for basis in inference.groups:
         group = tuple(by_id[owner_id] for owner_id in basis.owner_ids)
         if basis.disposition == "unresolved_conflict":
             # The input contradicts a unique selected observation per sample.
@@ -182,21 +147,13 @@ def construct_cross_sample_peak_group_hypotheses(
                 "known identity has conflicting sample observations; "
                 "selection is unresolved and identity cannot be split"
             )
-        unresolved = basis.disposition == "undecided"
-        group_identity = _identity_from_owners(
-            group,
-            disposition="unresolved" if unresolved else None,
-        )
-        hypothesis = _hypothesis_from_owner_group(
-            group,
-            group_identity=group_identity,
-            feature_id=f"F{index:06d}",
-            evidence=f"owner_feature_inference;{basis.disposition};{basis.reason}",
-            review_only=unresolved,
-        )
         hypotheses.append(
-            replace(
-                hypothesis,
+            _hypothesis_from_owner_group(
+                group,
+                disposition=(
+                    "unresolved" if basis.disposition == "undecided" else None
+                ),
+                evidence=f"owner_feature_inference;{basis.disposition};{basis.reason}",
                 inference_basis=basis,
                 inference_decisions=tuple(
                     decision
@@ -211,13 +168,25 @@ def construct_cross_sample_peak_group_hypotheses(
 def _hypothesis_from_owner_group(
     group: tuple[SampleLocalMS1Owner, ...],
     *,
-    group_identity: CrossSampleGroupIdentity,
-    feature_id: str,
+    disposition: CrossSampleGroupDisposition | None,
     evidence: str,
-    review_only: bool = False,
+    center: tuple[float, float] | None = None,
+    inference_basis: FeatureMembershipGroup | None = None,
+    inference_decisions: tuple[SparseFeatureDecision, ...] = (),
 ) -> CrossSamplePeakGroupHypothesis:
-    center_mz = sum(owner.precursor_mz for owner in group) / len(group)
-    center_rt = sum(owner.owner_apex_rt for owner in group) / len(group)
+    """Build one group from its owners; ``center`` keeps an earlier decision."""
+
+    subjects = tuple(owner.cross_sample_member_subject for owner in group)
+    if any(subject is None for subject in subjects):
+        raise CrossSampleContractError("owner is missing a CrossSample member subject")
+    members = canonical_group_members(
+        cast(tuple[CrossSampleGroupMemberSubject, ...], subjects)
+    )
+    if center is None:
+        center = (
+            sum(owner.precursor_mz for owner in group) / len(group),
+            sum(owner.owner_apex_rt for owner in group) / len(group),
+        )
     events = tuple(
         owner.primary_identity_event
         for owner in group
@@ -233,44 +202,25 @@ def _hypothesis_from_owner_group(
     )
     is_singleton = len(group) == 1
     has_definitive = any(not owner.is_provisional for owner in group)
-    has_anchor = has_definitive or not is_singleton
     unsupported_singleton = is_singleton and not has_definitive
-    effective_review_only = review_only or unsupported_singleton
-    effective_evidence = (
-        f"{evidence};provisional_singleton_review_only"
-        if unsupported_singleton and "provisional_singleton" not in evidence
-        else evidence
-    )
     return CrossSamplePeakGroupHypothesis(
-        membership=group_identity,
-        feature_id=feature_id,
-        owner_ids=tuple(owner.owner_id for owner in group),
-        event_member_count=sum(len(owner.all_events) for owner in group),
-        source="cross_sample_peak_group_successor_constructor",
+        member_subjects=members,
+        disposition=disposition
+        or ("established" if len(members) >= 2 else "provisional"),
+        owners=group,
+        group_center_mz=center[0],
+        group_center_rt=center[1],
         neutral_loss_tag=group[0].neutral_loss_tag,
-        group_center_mz=center_mz,
-        group_center_rt=center_rt,
         group_product_mz=center_product_mz,
         group_observed_neutral_loss_da=center_loss,
-        has_anchor=has_anchor,
-        owners=group,
-        evidence=effective_evidence,
-        review_only=effective_review_only,
-        construction_role="successor_constructor",
-    )
-
-
-def _identity_from_owners(
-    owners: Sequence[SampleLocalMS1Owner],
-    *,
-    disposition: CrossSampleGroupDisposition | None = None,
-) -> CrossSampleGroupIdentity:
-    subjects = tuple(owner.cross_sample_member_subject for owner in owners)
-    if any(subject is None for subject in subjects):
-        raise CrossSampleContractError("owner is missing a CrossSample member subject")
-    return mint_cross_sample_group_identity(
-        member_subjects=cast(tuple[CrossSampleGroupMemberSubject, ...], subjects),
-        disposition=disposition,
+        has_anchor=has_definitive or not is_singleton,
+        evidence=(
+            f"{evidence};provisional_singleton_review_only"
+            if unsupported_singleton and "provisional_singleton" not in evidence
+            else evidence
+        ),
+        inference_basis=inference_basis,
+        inference_decisions=inference_decisions,
     )
 
 
@@ -278,18 +228,16 @@ __all__ = (
     "CrossSampleContractError",
     "CrossSampleEdgeDisposition",
     "CrossSampleGroupDisposition",
-    "CrossSampleGroupIdentity",
     "CrossSampleGroupMemberSubject",
     "CrossSampleInitialEdgeContext",
     "CrossSampleLineageEdge",
     "CrossSampleNeighborhoodEdge",
     "CrossSampleNeighborhoodStatus",
     "_expected_cross_sample_lineage",
-    "CrossSamplePeakGroupConstructionRole",
+    "GroupDestination",
     "CrossSamplePeakGroupHypothesis",
     "CrossSamplePartitionTransition",
     "classify_cross_sample_initial_edge",
     "construct_cross_sample_peak_group_hypotheses",
     "group_member_subject_from_peak_hypothesis",
-    "mint_cross_sample_group_identity",
 )

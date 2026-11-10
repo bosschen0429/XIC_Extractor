@@ -21,6 +21,7 @@ from tests.cid_nl_peak_support_no_raw_fixture import (
 from tests.cross_sample_association_lineage_fixtures import (
     _final_receipt as _lineage_final_receipt,
 )
+from tests.group_fixtures import group_from_members
 from tests.search_scope_capture_fixtures import _capture_binding, _peak_config
 from tests.untargeted_cid_nl_no_raw_fixture import (
     UntargetedCidNlNoRawFixture,
@@ -35,9 +36,6 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
 from xic_extractor.alignment.cid_nl_inputs import UntargetedCidNlAssessmentInput
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
-)
-from xic_extractor.alignment.cross_sample.peak_groups import (
-    mint_cross_sample_group_identity,
 )
 from xic_extractor.alignment.projection.untarget import (
     project_untarget_matrix,
@@ -89,7 +87,7 @@ def _untarget_projection_inputs(
             ),
         ),
     )
-    predecessor = spine.group.membership
+    predecessor = spine.group
     predecessor_groups = (predecessor,)
     predecessor_cells = spine.cells
     successors = predecessor_groups
@@ -108,7 +106,7 @@ def _untarget_projection_inputs(
                 ),
             ),
         )
-        right = right_spine.group.membership
+        right = right_spine.group
         predecessor_groups = tuple(
             sorted(
                 (predecessor, right),
@@ -120,7 +118,7 @@ def _untarget_projection_inputs(
             successors = predecessor_groups
         else:
             successors = (
-                mint_cross_sample_group_identity(
+                group_from_members(
                     member_subjects=tuple(
                         sorted(
                             (
@@ -135,7 +133,7 @@ def _untarget_projection_inputs(
             )
     if disposition is not None:
         successors = tuple(
-            mint_cross_sample_group_identity(
+            group_from_members(
                 member_subjects=group.member_subjects,
                 disposition=disposition,  # type: ignore[arg-type]
             )

@@ -1,15 +1,12 @@
-"""Pure Matrix projection of completed Feature x Sample answers."""
+"""Lay completed Feature x Sample answers out by group and sample."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupDisposition,
-    CrossSampleGroupIdentity,
-    CrossSampleLineageEdge,
+    CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.projection.untarget.identity import (
     GroupCellSubject,
@@ -26,63 +23,19 @@ if TYPE_CHECKING:
         ProductionCellDecision,
     )
 
-
-UntargetRowDestination: TypeAlias = Literal["matrix", "archive"]
-
-
-def _route_for_disposition(
-    disposition: CrossSampleGroupDisposition,
-) -> UntargetRowDestination:
-    if disposition == "established":
-        return "matrix"
-    if disposition in {"provisional", "unresolved", "rejected"}:
-        return "archive"
-    raise UntargetProjectionContractError(
-        "Untarget Matrix projection received an unsupported group disposition"
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class UntargetRowRoute:
-    """One explicit Matrix/archive route justified by group disposition."""
-
-    destination: UntargetRowDestination
-    reason: CrossSampleGroupDisposition
-
-
-@dataclass(frozen=True, slots=True)
-class UntargetMatrixRow:
-    """One exact Untarget row closed over every canonical-sample decision."""
-
-    group: CrossSampleGroupIdentity
-    decisions: tuple[ProductionCellDecision, ...]
-    route: UntargetRowRoute
-
-
-@dataclass(frozen=True, slots=True)
-class UntargetMatrixProjection:
-    """Immutable Untarget completion handoff for result finalization."""
-
-    finalized_alignment: FinalizedScientificAlignment
-    rows: tuple[UntargetMatrixRow, ...]
-
-    @property
-    def lineage(self) -> tuple[CrossSampleLineageEdge, ...]:
-        return self.finalized_alignment.lineage
-
-    @property
-    def decisions(self) -> tuple[ProductionCellDecision, ...]:
-        return tuple(decision for row in self.rows for decision in row.decisions)
+GroupCells: TypeAlias = tuple[
+    CrossSamplePeakGroupHypothesis, tuple["ProductionCellDecision", ...]
+]
 
 
 def project_untarget_matrix(
     finalized_alignment: FinalizedScientificAlignment,
     decisions: Mapping[
-        tuple[CrossSampleGroupIdentity, str],
+        tuple[CrossSamplePeakGroupHypothesis, str],
         tuple[CellDecisionPayload, IntegrationResult | None],
     ],
-) -> UntargetMatrixProjection:
-    """Project sample order, routes and counts from the finalized groups."""
+) -> tuple[GroupCells, ...]:
+    """Each final group, ordered by key, with one cell per canonical sample."""
 
     from xic_extractor.alignment.cell_decision.owner import ProductionCellDecision
 
@@ -118,23 +71,5 @@ def project_untarget_matrix(
                     selected_integration=integration,
                 )
             )
-        rows.append(_mint_matrix_row(group, decisions=tuple(projected)))
-    return UntargetMatrixProjection(
-        finalized_alignment=finalized_alignment,
-        rows=tuple(rows),
-    )
-
-
-def _mint_matrix_row(
-    group: CrossSampleGroupIdentity,
-    *,
-    decisions: tuple[ProductionCellDecision, ...],
-) -> UntargetMatrixRow:
-    return UntargetMatrixRow(
-        group=group,
-        decisions=decisions,
-        route=UntargetRowRoute(
-            destination=_route_for_disposition(group.disposition),
-            reason=group.disposition,
-        ),
-    )
+        rows.append((group, tuple(projected)))
+    return tuple(rows)

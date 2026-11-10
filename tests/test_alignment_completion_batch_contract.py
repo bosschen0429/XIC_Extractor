@@ -76,12 +76,10 @@ def _fake_application(*, scope, samples, row_id, physical_id):
             partition_transition=SimpleNamespace(lineage=()),
         ),
     )
-    row = SimpleNamespace(group=group)
-    projection = SimpleNamespace(rows=(row,))
     return _uninitialized(
         FinalizedUntargetApplicationResult,
         scientific_core=core,
-        completed_projection=projection,
+        group_cells=((group, ()),),
     )
 
 
@@ -172,9 +170,6 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
     if case == "valid":
         result = FinalizedUntargetBatchApplicationResult(**kwargs)
         assert result.children is supplied_children
-        assert result.rows == tuple(
-            child.completed_projection.rows[0] for child in children
-        )
     else:
         with pytest.raises(
             ApplicationResultContractError, match="share a physical observation"

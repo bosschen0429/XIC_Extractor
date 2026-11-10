@@ -22,6 +22,7 @@ from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_unique_support,
 )
 from tests.cross_sample_association_lineage_fixtures import _final_receipt
+from tests.group_fixtures import group_from_members
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
@@ -48,7 +49,6 @@ from xic_extractor.alignment.cross_sample.association import (
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
-    mint_cross_sample_group_identity,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
@@ -206,7 +206,7 @@ def _outside_population_handoff(tmp_path: Path):
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
         rt_frame=SampleRtFrame(),
     )
-    identities = tuple(group.membership for group in groups)
+    identities = tuple(groups)
     binding = fixture
     coverage = _coverage_for_groups(
         binding, identities, fixture.samples, predecessor_cells=cells
@@ -227,7 +227,7 @@ def test_cell_handoff_never_reconstructs_completed_groups(
 ) -> None:
     sources, handoff = _outside_population_handoff(tmp_path)
     constructions = []
-    identity_type = group_owner.CrossSampleGroupIdentity
+    identity_type = group_owner.CrossSamplePeakGroupHypothesis
 
     def counted(*args, **kwargs):
         constructions.append(kwargs["group_hypothesis_id"])
@@ -235,7 +235,7 @@ def test_cell_handoff_never_reconstructs_completed_groups(
 
     monkeypatch.setattr(
         group_owner,
-        "CrossSampleGroupIdentity",
+        "CrossSamplePeakGroupHypothesis",
         counted,
     )
     first = compose_final_group_cell_observation_population(
@@ -263,7 +263,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
         if group.member_subjects[0].sample_key == initial_sample.sample_name
     )
     assert len(groups) == 2
-    recovered_group = min(groups, key=lambda group: group.family_center_rt)
+    recovered_group = min(groups, key=lambda group: group.group_center_rt)
     recovered_peak = cid_nl_peak(fixture, "Third", apex_rt=8.0)
     backfill_assessment = mint_cid_nl_method_assessment_ref(
         sample=recovered_sample,
@@ -371,7 +371,7 @@ def test_composer_distinguishes_completed_negative_search(
     )
     handoff = _owner_handoff_for_cells(
         fixture,
-        handoff.coverage.group_identities[0],
+        handoff.coverage.groups[0],
         predecessor_cells,
         backfill_enabled=backfill_enabled,
     )
@@ -419,8 +419,8 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
         target=fixture.target,
         sample_assessments=((sample, second_assessment),),
     )
-    first_group = first_spine.group.membership
-    second_group = second_spine.group.membership
+    first_group = first_spine.group
+    second_group = second_spine.group
     assert first_group != second_group
     samples = (sample,)
     first_cell = first_spine.cells[0]
@@ -479,9 +479,9 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         target=fixture.target,
         sample_assessments=((samples[1], second_assessment),),
     )
-    left = left_spine.group.membership
-    right = right_spine.group.membership
-    merged = mint_cross_sample_group_identity(
+    left = left_spine.group
+    right = right_spine.group
+    merged = group_from_members(
         member_subjects=left.member_subjects + right.member_subjects,
     )
     if outside_support:
@@ -581,14 +581,14 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
             (samples[1], second_assessment),
         ),
     )
-    predecessor = predecessor_spine.group.membership
+    predecessor = predecessor_spine.group
     members_by_sample = {
         member.sample_key: member for member in predecessor.member_subjects
     }
-    left = mint_cross_sample_group_identity(
+    left = group_from_members(
         member_subjects=(members_by_sample[samples[0].sample_name],),
     )
-    right = mint_cross_sample_group_identity(
+    right = group_from_members(
         member_subjects=(members_by_sample[samples[1].sample_name],),
     )
     coverage = _coverage_for_groups(

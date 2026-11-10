@@ -15,6 +15,7 @@ from tests.cross_sample_association_lineage_fixtures import (
     _final_receipt,
     _Fixture,
 )
+from tests.group_fixtures import group_from_members
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
     BackfillPlanningPosition,
@@ -25,10 +26,9 @@ from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSamplePartitionTransition,
-    mint_cross_sample_group_identity,
+    CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.sample_metadata import SampleMetadata
@@ -138,7 +138,7 @@ def test_merge_retains_each_predecessor_and_position(
 
     assert (
         tuple(item.predecessor for item in handoff.predecessor_associations)
-        == coverage.group_identities
+        == coverage.groups
     )
     assert all(
         item.successors == (merged,) for item in handoff.predecessor_associations
@@ -213,7 +213,7 @@ def test_rejected_disposition_is_retained(
 ) -> None:
     fixture = _fixture(tmp_path, sample_stems=("sample-a",))
     predecessor = _group(fixture, ("sample-a",))
-    rejected = mint_cross_sample_group_identity(
+    rejected = group_from_members(
         member_subjects=predecessor.member_subjects,
         disposition="rejected",
     )
@@ -341,20 +341,20 @@ def _fixture(tmp_path: Path, *, sample_stems: tuple[str, ...]) -> _Fixture:
 def _group(
     fixture: _Fixture,
     sample_stems: tuple[str, ...],
-) -> CrossSampleGroupIdentity:
-    return mint_cross_sample_group_identity(
+) -> CrossSamplePeakGroupHypothesis:
+    return group_from_members(
         member_subjects=tuple(fixture.members[sample] for sample in sample_stems),
     )
 
 
 def _coverage(
     fixture: _Fixture,
-    groups: tuple[CrossSampleGroupIdentity, ...],
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
 ) -> BackfillEvaluationCoverageBatch:
     context = fixture.context
     positions = tuple(
         BackfillPlanningPosition(
-            group_identity=group,
+            group=group,
             sample=sample,
             planning_reason="no_discovery_input",
         )
@@ -362,7 +362,7 @@ def _coverage(
         for sample in context.samples
     )
     return BackfillEvaluationCoverageBatch(
-        group_identities=groups,
+        groups=groups,
         samples=context.samples,
         positions=positions,
     )

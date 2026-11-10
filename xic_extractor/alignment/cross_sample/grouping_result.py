@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupIdentity,
     CrossSamplePartitionTransition,
+    CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
 from xic_extractor.alignment.rt_frame import SampleRtFrame
@@ -34,9 +34,9 @@ class CrossSampleGroupingResult:
     backfill_membership_risks: tuple[tuple[str, str, AcceptedMembershipRisk], ...] = ()
 
     @property
-    def initial_population(self) -> tuple[CrossSampleGroupIdentity, ...]:
+    def initial_population(self) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
         return self.partition_transition.predecessors
 
     @property
-    def final_population(self) -> tuple[CrossSampleGroupIdentity, ...]:
+    def final_population(self) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
         return self.partition_transition.successors

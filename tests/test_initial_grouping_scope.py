@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import get_args
 
 import pytest
 
+from tests.group_fixtures import group_from_members
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSamplePeakGroupHypothesis,
 )
@@ -31,14 +32,13 @@ _SUPPLIES_RT_CALIBRATION: dict[FeatureMembershipBasis, bool] = {
 def _group(
     group_id: str,
     *,
-    owner_ids: tuple[str, ...] | None = None,
     center_mz: float = 500.0,
     center_rt: float = 8.0,
     inference_basis: FeatureMembershipGroup | None = None,
 ) -> CrossSamplePeakGroupHypothesis:
-    return CrossSamplePeakGroupHypothesis(
-        membership=CrossSampleGroupIdentity(
-            (
+    return replace(
+        group_from_members(
+            member_subjects=(
                 CrossSampleGroupMemberSubject(
                     sample_key="sample",
                     subject_kind="peak_hypothesis",
@@ -46,13 +46,9 @@ def _group(
                     physical_peaks=(),
                 ),
             ),
-            "established",
+            disposition="established",
+            center=(center_mz, center_rt),
         ),
-        feature_id="display-family",
-        owner_ids=owner_ids or (f"owner:{group_id}",),
-        event_member_count=1,
-        group_center_mz=center_mz,
-        group_center_rt=center_rt,
         inference_basis=inference_basis,
     )
 

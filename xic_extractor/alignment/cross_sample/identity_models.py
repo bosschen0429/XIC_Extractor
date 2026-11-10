@@ -1,4 +1,4 @@
-"""Identity, membership, and repaired observation models for CrossSample."""
+"""Group members, dispositions and edge vocabulary for CrossSample."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from typing import Literal, TypeAlias
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import PeakObservationContent
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.validation_primitives import require_owner_normalized_text
 
 CrossSampleGroupDisposition: TypeAlias = Literal[
     "established",
@@ -33,14 +32,6 @@ CrossSampleInitialEdgeContext: TypeAlias = Literal[
 
 class CrossSampleContractError(ValueError):
     """Raised when canonical CrossSample state cannot close exactly."""
-
-
-def _required_text(value: object, *, field: str) -> str:
-    return require_owner_normalized_text(
-        value,
-        field=field,
-        error_factory=CrossSampleContractError,
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +78,7 @@ def group_member_subject_from_peak_hypothesis(
     )
 
 
-def _canonical_members(
+def canonical_group_members(
     member_subjects: Sequence[CrossSampleGroupMemberSubject],
 ) -> tuple[CrossSampleGroupMemberSubject, ...]:
     if not member_subjects:
@@ -110,43 +101,13 @@ def _canonical_members(
     return tuple(sorted(members, key=lambda item: item.sample_key))
 
 
-@dataclass(frozen=True, slots=True)
-class CrossSampleGroupIdentity:
-    member_subjects: tuple[CrossSampleGroupMemberSubject, ...]
-    disposition: CrossSampleGroupDisposition
-
-    @property
-    def group_hypothesis_id(self) -> str:
-        """In-process key: the sample-ordered member hypothesis keys."""
-
-        return " + ".join(member.subject_id for member in self.member_subjects)
-
-
-def mint_cross_sample_group_identity(
-    *,
-    member_subjects: Sequence[CrossSampleGroupMemberSubject],
-    disposition: CrossSampleGroupDisposition | None = None,
-) -> CrossSampleGroupIdentity:
-    members = _canonical_members(member_subjects)
-    resolved_disposition = disposition or (
-        "established" if len(members) >= 2 else "provisional"
-    )
-    return CrossSampleGroupIdentity(
-        member_subjects=members,
-        disposition=resolved_disposition,
-    )
-
-
 __all__ = (
     "CrossSampleContractError",
     "CrossSampleEdgeDisposition",
     "CrossSampleGroupDisposition",
-    "CrossSampleGroupIdentity",
     "CrossSampleGroupMemberSubject",
     "CrossSampleInitialEdgeContext",
     "CrossSampleNeighborhoodStatus",
-    "_canonical_members",
-    "_required_text",
+    "canonical_group_members",
     "group_member_subject_from_peak_hypothesis",
-    "mint_cross_sample_group_identity",
 )

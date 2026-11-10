@@ -667,7 +667,7 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         )
         population = tuple(
             sorted(
-                (group.membership for group in initial),
+                tuple(initial),
                 key=lambda group: group.group_hypothesis_id,
             )
         )

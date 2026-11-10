@@ -14,7 +14,7 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleContractError,
-    CrossSampleGroupIdentity,
+    CrossSamplePeakGroupHypothesis,
 )
 
 CrossSamplePositionResolution: TypeAlias = Literal[
@@ -32,8 +32,8 @@ class CrossSampleAssociationContractError(CrossSampleContractError):
 class CrossSamplePredecessorAssociation:
     """Exact `1..N` final successors for one coverage predecessor group."""
 
-    predecessor: CrossSampleGroupIdentity
-    successors: tuple[CrossSampleGroupIdentity, ...]
+    predecessor: CrossSamplePeakGroupHypothesis
+    successors: tuple[CrossSamplePeakGroupHypothesis, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,7 +41,7 @@ class CrossSampleCoveragePositionAssociation:
     """One exact final successor for one sealed Backfill coverage position."""
 
     position: BackfillPlanningPosition
-    final_successor: CrossSampleGroupIdentity
+    final_successor: CrossSamplePeakGroupHypothesis
     resolution: CrossSamplePositionResolution
 
 
@@ -52,7 +52,7 @@ class CrossSampleAssociationLineageHandoff:
     coverage: BackfillEvaluationCoverageBatch
     predecessor_associations: tuple[CrossSamplePredecessorAssociation, ...]
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...]
-    final_population: tuple[CrossSampleGroupIdentity, ...]
+    final_population: tuple[CrossSamplePeakGroupHypothesis, ...]
 
 
 def build_cross_sample_association_lineage_handoff(
@@ -86,7 +86,7 @@ def _compile_associations(
     final_population = final_receipt.final_population
     predecessor_associations = tuple(
         _associate_predecessor(predecessor=group, final_population=final_population)
-        for group in coverage.group_identities
+        for group in coverage.groups
     )
     predecessor_associations_by_group = {
         item.predecessor: item for item in predecessor_associations
@@ -99,7 +99,7 @@ def _compile_associations(
         _associate_position(
             position=position,
             predecessor_association=predecessor_associations_by_group.get(
-                position.group_identity
+                position.group
             ),
         )
         for position in coverage.positions
@@ -115,8 +115,8 @@ def _compile_associations(
 
 def _associate_predecessor(
     *,
-    predecessor: CrossSampleGroupIdentity,
-    final_population: tuple[CrossSampleGroupIdentity, ...],
+    predecessor: CrossSamplePeakGroupHypothesis,
+    final_population: tuple[CrossSamplePeakGroupHypothesis, ...],
 ) -> CrossSamplePredecessorAssociation:
     predecessor_members = set(predecessor.member_subjects)
     successors = tuple(
@@ -143,7 +143,7 @@ def _associate_position(
     predecessor_association: CrossSamplePredecessorAssociation | None,
 ) -> CrossSampleCoveragePositionAssociation:
     if predecessor_association is None or (
-        predecessor_association.predecessor != position.group_identity
+        predecessor_association.predecessor != position.group
     ):
         raise CrossSampleAssociationContractError(
             "coverage position crosses or lacks its predecessor association"
@@ -153,8 +153,7 @@ def _associate_position(
         successor = successors[0]
         resolution: CrossSamplePositionResolution = (
             "unchanged_identity"
-            if successor.group_hypothesis_id
-            == position.group_identity.group_hypothesis_id
+            if successor.group_hypothesis_id == position.group.group_hypothesis_id
             else "unique_successor"
         )
         return CrossSampleCoveragePositionAssociation(
@@ -165,7 +164,7 @@ def _associate_position(
     sample_id = position.sample.sample_name
     matching_members = tuple(
         member
-        for member in position.group_identity.member_subjects
+        for member in position.group.member_subjects
         if member.sample_key == sample_id
     )
     if len(matching_members) != 1:

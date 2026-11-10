@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
-
 import pytest
 
 import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
@@ -47,31 +45,29 @@ def test_completed_values_project_to_exact_group_sample_positions(
         tmp_path, monkeypatch, group_mode=group_mode
     )
     answers = decide_group_cell_population(alignment)
-    projection = project_untarget_matrix(alignment, answers)
-    assert projection.finalized_alignment is alignment
-    assert projection.lineage is alignment.lineage
-    assert [row.group for row in projection.rows] == sorted(
+    group_cells = project_untarget_matrix(alignment, answers)
+    assert [group for group, _cells in group_cells] == sorted(
         alignment.final_population, key=lambda group: group.group_hypothesis_id
     )
     observations = {
         (item.group_hypothesis_id, item.sample_key): item
         for item in alignment.cell_observations
     }
-    assert len(projection.decisions) == len(observations)
+    assert sum(len(cells) for _group, cells in group_cells) == len(observations)
     numeric_by_sample = {}
-    for row in projection.rows:
+    for group, cells in group_cells:
         assert (
-            tuple(d.subject.canonical_sample for d in row.decisions)
+            tuple(d.subject.canonical_sample for d in cells)
             == alignment.canonical_samples
         )
-        for decision in row.decisions:
+        for decision in cells:
             subject = decision.subject
             evidence = observations[
                 subject.group_hypothesis_id,
                 subject.canonical_sample.sample_name,
             ]
             assert decision.evidence is evidence
-            assert subject.group is row.group
+            assert subject.group is group
             payload, integration = answers[evidence.key]
             assert decision.payload is payload
             assert decision.selected_integration is integration
@@ -86,31 +82,29 @@ def test_completed_values_project_to_exact_group_sample_positions(
         assert numeric_by_sample["sample-c"] == pytest.approx(
             2 * numeric_by_sample["sample-b"]
         )
-    with pytest.raises(FrozenInstanceError):
-        projection.rows = ()
 
 
 @pytest.mark.parametrize(
     "disposition", ["established", "provisional", "unresolved", "rejected"]
 )
-def test_disposition_projects_row_route_and_complete_counts(
+def test_disposition_decides_destination_and_complete_counts(
     tmp_path, monkeypatch, disposition
 ):
-    alignment, answers, projection = _completed_projection(
+    alignment, answers, group_cells = _completed_projection(
         tmp_path, monkeypatch, disposition=disposition, numeric=True
     )
-    (row,) = projection.rows
-    assert row.route.reason == disposition
-    assert row.route.destination == (
+    ((group, cells),) = group_cells
+    assert group.disposition == disposition
+    assert group.destination == (
         "matrix" if disposition == "established" else "archive"
     )
-    assert sum(d.value is not None for d in row.decisions) == (
+    assert sum(d.value is not None for d in cells) == (
         2 if disposition == "established" else 1
     )
     reordered = project_untarget_matrix(
         alignment, dict(reversed(tuple(answers.items())))
     )
-    assert projection == reordered
+    assert group_cells == reordered
 
 
 def test_projection_is_deterministic_for_reversed_capture_order(tmp_path, monkeypatch):

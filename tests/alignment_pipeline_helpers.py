@@ -3,7 +3,8 @@ import hashlib
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal
+from types import SimpleNamespace
+from typing import Any, Literal
 
 import numpy as np
 
@@ -21,11 +22,8 @@ from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
 )
-from xic_extractor.alignment.untargeted_finalized_matrix import (
-    AlignmentMatrix,
-    FinalizedUntargetMatrixRow,
-    backfill_query_bounds,
-    cell_status,
+from xic_extractor.alignment.result.scientific_alignment import (
+    ObservedSearchSubject,
 )
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
@@ -36,6 +34,10 @@ from xic_extractor.discovery.batch_contract import (
 )
 from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 from xic_extractor.discovery.models import DISCOVERY_PEAK_COLUMNS
+from xic_extractor.output.alignment.tsv_writer import (
+    completed_untarget_batch_sample_order,
+    write_alignment_tsvs,
+)
 from xic_extractor.peak_detection.elution_context import (
     SampleElutionContext,
     project_elution_context,
@@ -226,12 +228,41 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
 
 
 @dataclass(frozen=True)
+class WriterPeak:
+    """A member peak as the writers read it: key, measured m/z and apex RT."""
+
+    physical_peak_key: str
+    mz: float
+    rt: float
+
+    @property
+    def content(self) -> "WriterPeak":
+        return self
+
+    @property
+    def physical_identity(self) -> "WriterPeak":
+        return self
+
+    @property
+    def measured_order_key(self) -> str:
+        return self.physical_peak_key
+
+    @property
+    def integration(self) -> SimpleNamespace:
+        return SimpleNamespace(rt_apex_min=self.rt)
+
+
+@dataclass(frozen=True)
 class WriterEvidence:
     """The ``FinalGroupCellObservation`` facts the Alignment writers read."""
 
     direct_observations: tuple[object, ...] = ()
     ms1_only_backfill_observations: tuple[object, ...] = ()
     method_assessments: tuple[object, ...] = ()
+    direct_hypotheses: tuple[object, ...] = ()
+    group: object = None
+    sample_key: str = ""
+    effective_cells: tuple[object, ...] = ()
 
 
 def owner_cell(
@@ -246,10 +277,11 @@ def owner_cell(
 
     A cell with an origin and an area is numeric. A detected cell without an
     area keeps its direct observation and is ``not_quantifiable``. A cell without
-    an origin is the ``no_write`` state and has no peak.
+    an origin is the ``no_write`` state and has no peak. ``writer_batch`` binds
+    the cell to its sample, group and peak.
     """
 
-    peak = () if origin is None else (object(),)
+    peak = () if origin is None else (None,)
     payload: NumericCellDecision | NoWriteCellDecision
     if origin is not None and area is not None:
         payload = NumericCellDecision(value=area, source=source)
@@ -272,81 +304,200 @@ def owner_cell(
     )
 
 
-def writer_row(
-    feature_id: str = "ALN000001",
-    *,
-    cells: tuple[ProductionCellDecision, ...] = (),
-    source_candidate_ids: tuple[tuple[str, str], ...] = (),
-    destination: Literal["matrix", "archive"] = "matrix",
-    family_center_mz: float = 500.0,
-    family_center_rt: float = 8.5,
-    neutral_loss_tag: str = "DNA_dR",
-    has_anchor: bool = True,
-) -> FinalizedUntargetMatrixRow:
-    return FinalizedUntargetMatrixRow(
-        feature_id=feature_id,
-        group_hypothesis_id=feature_id,
-        destination=destination,
-        family_center_mz=family_center_mz,
-        family_center_rt=family_center_rt,
-        physical_peak_keys=(),
-        family_product_mz=384.0,
-        family_observed_neutral_loss_da=116.0,
-        neutral_loss_tag=neutral_loss_tag,
-        has_anchor=has_anchor,
-        route_reason="test_route",
-        cells=cells,
-        source_candidate_ids=source_candidate_ids,
+@dataclass(frozen=True)
+class WriterGroup:
+    """One synthetic finalized group and its cells, before sample binding."""
+
+    cells: tuple[ProductionCellDecision, ...]
+    candidates: tuple[tuple[str, str], ...] = ()
+    center_mz: float = 500.0
+    center_rt: float = 8.5
+    neutral_loss_tag: str = "DNA_dR"
+    product_mz: float | None = 384.0
+    loss_da: float | None = 116.0
+    has_anchor: bool = True
+    member_count: int = 1
+    destination: Literal["matrix", "archive"] = "matrix"
+    disposition: str = "test_route"
+
+
+def writer_group(*cells: ProductionCellDecision, **facts: Any) -> WriterGroup:
+    return WriterGroup(cells, **facts)
+
+
+def writer_batch(sample_order: tuple[str, ...], *groups: WriterGroup) -> Any:
+    """A completed batch with one child holding ``groups`` in this order.
+
+    Every cell with an origin carries one direct peak. The first
+    ``member_count`` of them are the group's member peaks, all measured at the
+    group's centre, so the reported m/z and RT equal ``center_mz``/``center_rt``.
+    """
+
+    samples = tuple(
+        SimpleNamespace(raw_stem=stem, sample_name=stem, injection_order=index)
+        for index, stem in enumerate(sample_order, start=1)
     )
-
-
-def writer_cells(
-    matrix: AlignmentMatrix,
-) -> Iterator[tuple[FinalizedUntargetMatrixRow, str, ProductionCellDecision]]:
-    """Every written cell with its row and sample, in writer order."""
-
-    for row in matrix.clusters:
-        for sample_stem, cell in zip(matrix.sample_order, row.cells, strict=True):
-            yield row, sample_stem, cell
-
-
-def writer_view(matrix: AlignmentMatrix) -> tuple[object, ...]:
-    """Everything the writers read, comparable across independent runs."""
-
-    return (
-        matrix.sample_order,
-        tuple(
-            (
-                replace(row, cells=()),
-                tuple(
-                    (
-                        cell.payload,
-                        cell.selected_integration,
-                        cell_status(cell),
-                        backfill_query_bounds(cell),
-                    )
-                    for cell in row.cells
-                ),
+    terminal_subjects = []
+    group_cells = []
+    for ordinal, spec in enumerate(groups, start=1):
+        context = SimpleNamespace(
+            group=SimpleNamespace(
+                neutral_loss_tag=spec.neutral_loss_tag,
+                group_product_mz=spec.product_mz,
+                group_observed_neutral_loss_da=spec.loss_da,
+                has_anchor=spec.has_anchor,
             )
-            for row in matrix.clusters
-        ),
-    )
-
-
-def matrix(sample_order: tuple[str, ...]) -> AlignmentMatrix:
-    """One detected row whose every sample reads its own Discovery candidate."""
-
-    return AlignmentMatrix(
-        clusters=(
-            writer_row(
-                cells=tuple(owner_cell() for _ in sample_order),
-                source_candidate_ids=tuple(
-                    (sample_stem, candidate_id(sample_stem))
-                    for sample_stem in sample_order
+        )
+        members = []
+        peaks: dict[str, WriterPeak] = {}
+        for index, (stem, cell) in enumerate(
+            zip(sample_order, spec.cells, strict=True)
+        ):
+            if not cell.evidence.direct_observations:
+                continue
+            peak = WriterPeak(f"F{ordinal:06d}#peak-{index}", 0.0, 0.0)
+            if len(members) < spec.member_count:
+                peak = replace(peak, mz=spec.center_mz, rt=spec.center_rt)
+                members.append(
+                    SimpleNamespace(
+                        sample_key=stem,
+                        subject_id=f"{ordinal}:{stem}",
+                        physical_peaks=(peak,),
+                    )
+                )
+            peaks[stem] = peak
+        group = SimpleNamespace(
+            group_hypothesis_id=f"group-{ordinal}",
+            member_subjects=tuple(members),
+            destination=spec.destination,
+            disposition=spec.disposition,
+        )
+        candidates = dict(spec.candidates)
+        cells = []
+        for stem, cell, sample in zip(sample_order, spec.cells, samples, strict=True):
+            hypotheses: tuple[object, ...] = ()
+            if stem in peaks:
+                hypotheses = (SimpleNamespace(hypothesis_id=f"{ordinal}:{stem}"),)
+            if stem in candidates:
+                (hypothesis,) = hypotheses
+                terminal_subjects.append(
+                    ObservedSearchSubject(
+                        candidate_id=candidates[stem],
+                        sample_key=stem,
+                        trace_group_id=f"trace:{ordinal}:{stem}",
+                        hypothesis=hypothesis,  # type: ignore[arg-type]
+                    )
+                )
+            evidence = cell.evidence
+            observed = (peaks[stem],) if stem in peaks else ()
+            cells.append(
+                replace(
+                    cell,
+                    subject=SimpleNamespace(canonical_sample=sample),
+                    evidence=replace(
+                        evidence,
+                        direct_observations=observed,
+                        ms1_only_backfill_observations=(
+                            observed if evidence.ms1_only_backfill_observations else ()
+                        ),
+                        direct_hypotheses=hypotheses,
+                        group=group,
+                        sample_key=stem,
+                        effective_cells=(SimpleNamespace(group_context=context),),
+                    ),
+                )
+            )
+        group_cells.append((group, tuple(cells)))
+    return SimpleNamespace(
+        canonical_samples=samples,
+        children=(
+            SimpleNamespace(
+                scientific_core=SimpleNamespace(
+                    terminal_subjects=tuple(terminal_subjects),
+                    grouping_result=SimpleNamespace(backfill_membership_risks=()),
                 ),
+                group_cells=tuple(group_cells),
             ),
         ),
-        sample_order=sample_order,
+    )
+
+
+def render(kind: str, path: Path, batch: Any, **inputs: Any) -> Path:
+    """Write one Alignment TSV of ``batch`` and return its path.
+
+    ``kind`` is ``matrix``, ``review``, ``backfill``, ``cells`` or ``status``.
+    """
+
+    write_alignment_tsvs({kind: path}, batch, **inputs)
+    return path
+
+
+def read_tsv(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle, delimiter="\t"))
+
+
+def written_cells(
+    completed: Any,
+) -> Iterator[tuple[Any, str, ProductionCellDecision]]:
+    """Every written cell with its group and sample, in writer order."""
+
+    sample_order = completed_untarget_batch_sample_order(completed)
+    for child in completed.children:
+        for group, cells in child.group_cells:
+            by_stem = {cell.subject.canonical_sample.raw_stem: cell for cell in cells}
+            for sample_stem in sample_order:
+                yield group, sample_stem, by_stem[sample_stem]
+
+
+def written_groups(completed: Any) -> tuple[Any, ...]:
+    """Every finalized group in written order."""
+
+    return tuple(
+        group for child in completed.children for group, _cells in child.group_cells
+    )
+
+
+def written_source_candidates(
+    directory: Path, completed: Any
+) -> dict[tuple[str, str], str]:
+    """Each written cell's source candidate ("" for none), by group and sample."""
+
+    feature_ids = {
+        f"F{ordinal:06d}": group.group_hypothesis_id
+        for ordinal, group in enumerate(written_groups(completed), start=1)
+    }
+    return {
+        (feature_ids[row["feature_id"]], row["sample_stem"]): row["source_candidate_id"]
+        for row in written_rows(directory, completed)["cells"]
+    }
+
+
+def written_rows(
+    directory: Path, completed: Any, **inputs: Any
+) -> dict[str, list[dict[str, str]]]:
+    """Every Alignment TSV of ``completed``, read back as rows by file kind."""
+
+    directory.mkdir(parents=True, exist_ok=True)
+    paths = {
+        kind: directory / f"{kind}.tsv"
+        for kind in ("matrix", "review", "backfill", "cells", "status")
+    }
+    write_alignment_tsvs(paths, completed, **inputs)
+    return {kind: read_tsv(path) for kind, path in paths.items()}
+
+
+def matrix(sample_order: tuple[str, ...]) -> Any:
+    """One detected group whose every sample reads its own Discovery candidate."""
+
+    return writer_batch(
+        sample_order,
+        writer_group(
+            *(owner_cell() for _ in sample_order),
+            candidates=tuple(
+                (sample_stem, candidate_id(sample_stem)) for sample_stem in sample_order
+            ),
+        ),
     )
 
 

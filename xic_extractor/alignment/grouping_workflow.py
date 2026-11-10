@@ -20,13 +20,11 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSamplePartitionTransition,
     CrossSamplePeakGroupHypothesis,
     _expected_cross_sample_lineage,
     _hypothesis_from_owner_group,
-    _identity_from_owners,
     construct_cross_sample_peak_group_hypotheses,
 )
 from xic_extractor.alignment.feature_membership_inference import (
@@ -143,13 +141,7 @@ def build_targeted_cross_sample_groups(
         rt_frame=rt_frame,
         rules=CID_NL_GROUPING_RULES,
     )
-    identities = tuple(group.membership for group in groups)
-    population = tuple(
-        sorted(
-            identities,
-            key=lambda group: group.group_hypothesis_id,
-        )
-    )
+    population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
     if tuple(sorted(owner.owner_id for owner in owners)) != tuple(
         sorted(owner_id for group in groups for owner_id in group.owner_ids)
     ):
@@ -196,13 +188,7 @@ def build_initial_cid_nl_cross_sample_groups(
         retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
     )
     groups = grouping_scope.groups
-    identities = tuple(group.membership for group in groups)
-    population = tuple(
-        sorted(
-            identities,
-            key=lambda group: group.group_hypothesis_id,
-        )
-    )
+    population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
     result = CrossSampleGroupingResult(
         samples=samples,
         partition_transition=_partition_transition(
@@ -241,13 +227,7 @@ def regroup_cid_nl_cross_sample_groups(
         operation_counts_sink=operation_counts_sink,
         peak_trajectories=trajectories,
     )
-    identities = tuple(group.membership for group in groups)
-    population = tuple(
-        sorted(
-            identities,
-            key=lambda group: group.group_hypothesis_id,
-        )
-    )
+    population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
     scope = replace(grouping_scope, groups=groups, peak_trajectories=trajectories)
     result = CrossSampleGroupingResult(
         samples=samples,
@@ -465,27 +445,18 @@ def admit_cid_nl_group_backfills(
             combined = tuple(
                 sorted((*group.owners, *owners), key=lambda item: item.owner_id)
             )
-            identity = _identity_from_owners(
+            successor = _hypothesis_from_owner_group(
                 combined,
                 disposition=group.disposition,
-            )
-            successor = replace(
-                _hypothesis_from_owner_group(
-                    combined,
-                    group_identity=identity,
-                    feature_id=group.feature_id,
-                    evidence=group.evidence,
-                    review_only=group.review_only,
-                ),
+                evidence=group.evidence,
+                # Keep the reference coordinates used to choose the canonical
+                # backfill subject. New members cannot redirect another sample's
+                # already completed group-bound query to a different subject.
+                center=(group.group_center_mz, group.group_center_rt),
                 # The original inference/ISTD binding remains about its original
                 # owners; backfill does not label new owners as known standards.
                 inference_basis=group.inference_basis,
                 inference_decisions=group.inference_decisions,
-                # Keep the reference coordinates used to choose the canonical
-                # backfill subject. New members cannot redirect another sample's
-                # already completed group-bound query to a different subject.
-                group_center_mz=group.group_center_mz,
-                group_center_rt=group.group_center_rt,
             )
             admitted.extend(
                 cast(CrossSampleGroupMemberSubject, owner.cross_sample_member_subject)
@@ -508,31 +479,20 @@ def admit_cid_nl_group_backfills(
             retained,
             rejected_cells,
         )
-    identities = tuple(
-        sorted(
-            (
-                cast(
-                    CrossSampleGroupIdentity,
-                    group.membership,
-                )
-                for group in completed
-            ),
-            key=lambda group: group.group_hypothesis_id,
-        )
-    )
+    successors = tuple(sorted(completed, key=lambda group: group.group_hypothesis_id))
     partition = CrossSamplePartitionTransition(
         status="assessable",
         predecessors=result.initial_population,
-        successors=identities,
+        successors=successors,
         lineage=_expected_cross_sample_lineage(
-            predecessors=result.initial_population, successors=identities
+            predecessors=result.initial_population, successors=successors
         ),
         reason="membership_changed",
         admitted_members=tuple(admitted),
     )
     return (
         replace(result, partition_transition=partition),
-        tuple(sorted(completed, key=lambda group: group.group_hypothesis_id)),
+        successors,
         successor_ids,
         retained,
         rejected_cells,
@@ -577,7 +537,7 @@ def reject_shoulder_groups(
     return tuple(
         replace(
             group,
-            membership=replace(group.membership, disposition="rejected"),
+            disposition="rejected",
             evidence=(
                 f"{group.evidence};shoulder_of:{rejected[group.group_hypothesis_id]}"
             ),
@@ -637,7 +597,7 @@ def contested_backfill_peaks(
     ] = defaultdict(list)
     occupied = set()
     for group in groups:
-        if group.disposition != "established":
+        if group.destination != "matrix":
             continue
         for member in group.member_subjects:
             sample_id = member.sample_key
@@ -681,8 +641,8 @@ def contested_backfill_peaks(
 
 def _partition_transition(
     *,
-    predecessors: tuple[CrossSampleGroupIdentity, ...],
-    successors: tuple[CrossSampleGroupIdentity, ...],
+    predecessors: tuple[CrossSamplePeakGroupHypothesis, ...],
+    successors: tuple[CrossSamplePeakGroupHypothesis, ...],
 ) -> CrossSamplePartitionTransition:
     return CrossSamplePartitionTransition(
         status="assessable",

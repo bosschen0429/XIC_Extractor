@@ -21,9 +21,6 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
 from xic_extractor.alignment.projection.target.post_cell import (
     TargetPostCellProjection,
 )
-from xic_extractor.alignment.projection.untarget.matrix import (
-    UntargetMatrixProjection,
-)
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
 )
@@ -77,8 +74,8 @@ def test_workflow_forwards_exact_owner_objects_once(
     scientific = _exact_uninitialized(FinalizedScientificAlignment)
     pre_cell = object()
     decisions = object()
-    projection = _exact_uninitialized(
-        TargetPostCellProjection if variant == "target" else UntargetMatrixProjection
+    projection = (
+        _exact_uninitialized(TargetPostCellProjection) if variant == "target" else ()
     )
     monkeypatch.setattr(
         workflow_owner,
@@ -128,7 +125,11 @@ def test_workflow_forwards_exact_owner_objects_once(
     )
     application_result = complete_analysis(request, adapter)
     assert application_result.scientific_core is scientific
-    assert application_result.completed_projection is projection
+    assert (
+        application_result.completed_projection
+        if variant == "target"
+        else application_result.group_cells
+    ) is projection
     expected_calls = ["capture"]
     expected_calls.append("target_grouping" if variant == "target" else "association")
     expected_calls.append("scientific")

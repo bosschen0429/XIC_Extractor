@@ -19,8 +19,8 @@ from xic_extractor.alignment.cross_sample.neighborhood_graph import (
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
+from xic_extractor.alignment.owner_group_delivery import feature_id_label
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
-from xic_extractor.alignment.untargeted_finalized_matrix import feature_id_label
 from xic_extractor.alignment_explanation.review import review_cell, review_record
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
@@ -696,10 +696,10 @@ def prepare_alignment_explanation(
             }
             # Same child and row order as the TSV writer that labels rows.
             feature_ids = {}
-            for row in child.completed_projection.rows:
+            for group, _cells in child.group_cells:
                 row_count += 1
-                matrix_row_count += row.route.destination == "matrix"
-                feature_ids[row.group.group_hypothesis_id] = feature_id_label(row_count)
+                matrix_row_count += group.destination == "matrix"
+                feature_ids[group.group_hypothesis_id] = feature_id_label(row_count)
             xic_by_group: dict[str, list[dict[str, Any]]] = defaultdict(list)
             context_by_group = {
                 cell.group_hypothesis_id: cell.effective_cells[0].group_context
@@ -782,7 +782,7 @@ def prepare_alignment_explanation(
                         "rt_apex_min": estimate.rt_min
                         if estimate is not None
                         else raw_position,
-                        "mz": context.group.family_center_mz,
+                        "mz": context.group.group_center_mz,
                         "ppm": context.method_subject.precursor_tolerance_ppm,
                         "group_position": True,
                     }
@@ -813,8 +813,8 @@ def prepare_alignment_explanation(
             ) in core.grouping_result.backfill_membership_risks:
                 risks_by_group_sample[group_id, sample_id].append(asdict(backfill_risk))
 
-            for row in child.completed_projection.rows:
-                group_id = row.group.group_hypothesis_id
+            for group, group_cells in child.group_cells:
+                group_id = group.group_hypothesis_id
                 feature_id = feature_ids[group_id]
                 related = group_candidates[group_id]
                 cells = [
@@ -828,7 +828,7 @@ def prepare_alignment_explanation(
                             [],
                         ),
                     }
-                    for decision in row.decisions
+                    for decision in group_cells
                 ]
                 add(
                     "rows",
@@ -836,8 +836,8 @@ def prepare_alignment_explanation(
                     {
                         "feature_id": feature_id,
                         "route": {
-                            "destination": row.route.destination,
-                            "reason": row.route.reason,
+                            "destination": group.destination,
+                            "reason": group.disposition,
                         },
                         "membership_risk_flags": sorted(
                             {
@@ -851,7 +851,7 @@ def prepare_alignment_explanation(
                     related,
                 )
                 if full_audit:
-                    for decision, cell in zip(row.decisions, cells, strict=True):
+                    for decision, cell in zip(group_cells, cells, strict=True):
                         cell["observation"] = _final_cell_observation_payload(
                             decision.evidence
                         )

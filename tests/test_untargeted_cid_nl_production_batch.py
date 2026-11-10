@@ -13,7 +13,13 @@ import pytest
 
 import xic_extractor.alignment.cid_nl_completion as cid_nl_completion_owner
 import xic_extractor.untargeted_execution.alignment as alignment_adapter
-from tests.alignment_pipeline_helpers import writer_cells
+from tests.alignment_pipeline_helpers import (
+    render,
+    written_cells,
+    written_groups,
+    written_rows,
+    written_source_candidates,
+)
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
@@ -46,17 +52,18 @@ from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.alignment.untargeted_finalized_matrix import (
-    project_completed_untarget_batch_writer_inputs,
-)
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.discovery.models import (
     DiscoveryPeak,
 )
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.pipeline_outputs import (
     alignment_metadata,
     output_paths,
-    write_outputs_atomic,
+    write_completed_untargeted_outputs_atomic,
+)
+from xic_extractor.output.alignment.tsv_writer import (
+    completed_untarget_batch_sample_order,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution_result import (
@@ -176,7 +183,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
             child.scientific_core.cell_observation_handoff.coverage.positions
         )
         if position.sample.raw_stem == "Missing"
-        and position.group_identity.group_hypothesis_id == group.group_hypothesis_id
+        and position.group.group_hypothesis_id == group.group_hypothesis_id
     )
     if backfill_enabled:
         assert position.no_request_decision is not None
@@ -195,13 +202,9 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         assert all(
             ref.content.method_result != "SUPPORT" for ref in missing.method_assessments
         )
-        from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-        writer = project_completed_untarget_batch_writer_inputs(
-            completed.application_result
-        )
+        writer = completed.application_result
         destination = tmp_path / "no-backfill-matrix.tsv"
-        write_alignment_matrix_tsv(destination, writer)
+        render("matrix", destination, writer)
         with destination.open(encoding="utf-8-sig", newline="") as handle:
             rows = list(csv.DictReader(handle, delimiter="\t"))
         assert rows and all(row["Missing"] == "" for row in rows)
@@ -532,18 +535,13 @@ def test_production_batch_executes_one_atomic_sample_phase(
         )
         if method_subject_id == subject.method_subject_id
     )
-    writer_inputs = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
-    assert writer_inputs.sample_order == ("S1",)
-    assert len(writer_inputs.clusters) == 2
-    assert len(tuple(writer_cells(writer_inputs))) == 2
-    assert tuple(row.feature_id for row in writer_inputs.clusters) == (
-        "F000001",
-        "F000002",
-    )
+    writer_inputs = completed.application_result
+    assert completed_untarget_batch_sample_order(writer_inputs) == ("S1",)
+    assert len(written_groups(writer_inputs)) == 2
+    assert len(tuple(written_cells(writer_inputs))) == 2
     feature_by_group = {
-        row.group_hypothesis_id: row.feature_id for row in writer_inputs.clusters
+        group.group_hypothesis_id: f"F{ordinal:06d}"
+        for ordinal, group in enumerate(written_groups(writer_inputs), start=1)
     }
     expected_source_ids: dict[tuple[str, str], str] = {}
     for child in completed.application_result.children:
@@ -555,12 +553,12 @@ def test_production_batch_executes_one_atomic_sample_phase(
             for subject in child.scientific_core.terminal_subjects
             if type(subject) is ObservedSearchSubject
         }
-        for projected in child.completed_projection.rows:
-            for decision in projected.decisions:
+        for projected_group, cells in child.group_cells:
+            for decision in cells:
                 hypothesis = decision.evidence.direct_hypotheses[0]
                 expected_source_ids[
                     (
-                        feature_by_group[projected.group.group_hypothesis_id],
+                        feature_by_group[projected_group.group_hypothesis_id],
                         decision.subject.canonical_sample.raw_stem,
                     )
                 ] = candidate_by_hypothesis[
@@ -570,11 +568,10 @@ def test_production_batch_executes_one_atomic_sample_phase(
                     )
                 ]
     assert {
-        (row.feature_id, sample_stem): candidate_id
-        for row in writer_inputs.clusters
-        for sample_stem, candidate_id in row.source_candidate_ids
+        (row["feature_id"], row["sample_stem"]): row["source_candidate_id"]
+        for row in written_rows(tmp_path / "written", writer_inputs)["cells"]
     } == expected_source_ids
-    assert all(cell.value is not None for _, _, cell in writer_cells(writer_inputs))
+    assert all(cell.value is not None for _, _, cell in written_cells(writer_inputs))
     writer_dir = tmp_path / "writer"
     outputs = output_paths(
         writer_dir,
@@ -582,9 +579,10 @@ def test_production_batch_executes_one_atomic_sample_phase(
         emit_alignment_cells=False,
         emit_alignment_status_matrix=False,
     )
-    write_outputs_atomic(
+    write_completed_untargeted_outputs_atomic(
         outputs,
         writer_inputs,
+        timing_recorder=TimingRecorder.disabled("writer"),
         metadata=alignment_metadata(
             discovery_batch_index=tmp_path / "discovery_batch_index.csv",
             raw_dir=tmp_path,
@@ -793,18 +791,14 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     )
     assert set(completed.application_result.candidate_ids) == admitted
     assert not completed.application_result.excluded_candidates
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
-    assert writer.sample_order == stems
+    writer = completed.application_result
+    assert completed_untarget_batch_sample_order(writer) == stems
     assert not rejected.intersection(
-        candidate_id
-        for row in writer.clusters
-        for _sample_stem, candidate_id in row.source_candidate_ids
+        written_source_candidates(tmp_path / "written", writer).values()
     )
     if not admitted:
         assert not completed.application_result.children
-        assert not writer.clusters
+        assert not written_groups(writer)
         assert sum(map(len, opened.values())) == opens_before
 
 
@@ -1056,15 +1050,11 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         known_istd_reference=reference,
         subject_worksets=(batch.subject_batch.subjects,),
     )
-    plain_matrix = project_completed_untarget_batch_writer_inputs(
-        plain.application_result
-    )
-    corrected_matrix = project_completed_untarget_batch_writer_inputs(
-        corrected.application_result
-    )
-    assert len(plain_matrix.clusters) == 2
-    assert len(corrected_matrix.clusters) == 1
-    corrected_cells = tuple(writer_cells(corrected_matrix))
+    plain_matrix = plain.application_result
+    corrected_matrix = corrected.application_result
+    assert len(written_groups(plain_matrix)) == 2
+    assert len(written_groups(corrected_matrix)) == 1
+    corrected_cells = tuple(written_cells(corrected_matrix))
     assert all(
         cell.value is not None and cell.value > 0 for *_, cell in corrected_cells
     )
@@ -1073,7 +1063,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         for _row, sample_stem, cell in corrected_cells
     } == {
         (sample_stem, cell.selected_integration.rt_apex_min, cell.value)
-        for _row, sample_stem, cell in writer_cells(plain_matrix)
+        for _row, sample_stem, cell in written_cells(plain_matrix)
         if cell.value is not None
     }
     assert len({cell.value for *_, cell in corrected_cells}) == len(paths)
@@ -1211,9 +1201,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     )
 
     assert completed.application_result.children
-    writer_inputs = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
+    writer_inputs = completed.application_result
     if recovery_case != "positive":
         assert (
             sum(map(len, opened.values()))
@@ -1244,28 +1232,44 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         project_completed_backfill(
             recovered[0], group_context=recovered_source.group_context
         )
-    assert writer_inputs.sample_order == sample_stems
-    assert len(writer_inputs.clusters) == 1
-    row = writer_inputs.clusters[0]
-    cells_by_sample = dict(zip(sample_stems, row.cells, strict=True))
-    assert tuple(dict(row.source_candidate_ids)) == sample_stems[:-1]
-    assert row.feature_id == "F000001"
+    assert completed_untarget_batch_sample_order(writer_inputs) == sample_stems
+    ((written_group, row_cells),) = (
+        (group, cells)
+        for child in writer_inputs.children
+        for group, cells in child.group_cells
+    )
+    cells_by_sample = {
+        cell.subject.canonical_sample.raw_stem: cell for cell in row_cells
+    }
+    written = written_rows(tmp_path / "written", writer_inputs)
+    (row,) = written["review"]
+    assert (
+        tuple(
+            cell["sample_stem"]
+            for cell in written["cells"]
+            if cell["source_candidate_id"]
+        )
+        == sample_stems[:-1]
+    )
+    assert row["feature_id"] == "F000001"
+    physical_peak_keys = row["physical_peak_keys"].split(";")
+    center_rt = float(row["family_center_rt"])
     expected_presentation_facts: dict[str, tuple[float, float]] = {}
     expected_cell_apexes: dict[str, float] = {}
     diagnostic_observation_ids: set[str] = set()
     for child in completed.application_result.children:
-        for projected in child.completed_projection.rows:
+        for projected_group, cells in child.group_cells:
             group = next(
                 group
                 for group in child.scientific_core.final_population
-                if group.group_hypothesis_id == projected.group.group_hypothesis_id
+                if group.group_hypothesis_id == projected_group.group_hypothesis_id
             )
             member_ids = {
                 peak.physical_peak_key
                 for member in group.member_subjects
                 for peak in member.physical_peaks
             }
-            for decision in projected.decisions:
+            for decision in cells:
                 direct_observations = decision.evidence.direct_observations
                 if direct_observations and decision.value is not None:
                     assert len(direct_observations) == 1
@@ -1290,16 +1294,17 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         direct.content.integration.rt_apex_min,
                     )
     assert len(diagnostic_observation_ids) == 1
-    assert not diagnostic_observation_ids & set(row.physical_peak_keys)
+    assert not diagnostic_observation_ids & set(physical_peak_keys)
     assert len(expected_presentation_facts) == len(sample_stems) - 1
-    assert set(row.physical_peak_keys) == set(expected_presentation_facts)
-    assert row.family_center_mz == pytest.approx(
+    assert set(physical_peak_keys) == set(expected_presentation_facts)
+    assert float(row["family_center_mz"]) == pytest.approx(
         sum(value[0] for value in expected_presentation_facts.values())
         / len(expected_presentation_facts)
     )
-    assert row.family_center_rt == pytest.approx(
+    assert center_rt == pytest.approx(
         sum(value[1] for value in expected_presentation_facts.values())
-        / len(expected_presentation_facts)
+        / len(expected_presentation_facts),
+        rel=1e-5,
     )
     assert len(set(expected_cell_apexes.values())) > 1
     for sample_stem in sample_stems:
@@ -1308,8 +1313,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             assert integration.rt_apex_min == pytest.approx(
                 expected_cell_apexes[sample_stem]
             )
-    assert row.center_mz_basis == "cross_sample_owner_arithmetic_mean"
-    assert row.center_rt_basis == "cross_sample_owner_arithmetic_mean"
+    assert row["center_mz_basis"] == "cross_sample_owner_arithmetic_mean"
 
     # Discovery's apex MS1 readings replace the reported center only; members
     # without a reading and the repaired cell do not dilute it.
@@ -1320,16 +1324,22 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         candidate.peak_id: candidate.best_event_precursor_mz * (1 - (12 + index) * 1e-6)
         for index, candidate in enumerate(direct_candidates[:-1])
     }
-    reported = project_completed_untarget_batch_writer_inputs(
-        completed.application_result, ms1_apex_mz_by_candidate=readings
+    reported = written_rows(
+        tmp_path / "reported", writer_inputs, ms1_apex_mz_by_candidate=readings
     )
-    (reported_row,) = reported.clusters
-    assert reported_row.family_center_mz == pytest.approx(
+    (reported_row,) = reported["review"]
+    assert float(reported_row["family_center_mz"]) == pytest.approx(
         sum(readings.values()) / len(readings)
     )
-    assert reported_row.center_mz_basis == "discovery_ms1_apex_mean"
-    assert reported_row.family_center_rt == row.family_center_rt
-    assert reported_row.cells == row.cells
+    assert reported_row["center_mz_basis"] == "discovery_ms1_apex_mean"
+    assert reported_row["family_center_rt"] == row["family_center_rt"]
+    assert [
+        {key: value for key, value in cell.items() if not key.startswith("family_")}
+        for cell in reported["cells"]
+    ] == [
+        {key: value for key, value in cell.items() if not key.startswith("family_")}
+        for cell in written["cells"]
+    ]
 
     weighted_values = dict(zip(sample_stems, (1.0, 9.0, 2.0, 9.0), strict=True))
     for variant, no_write_sample in (("unequal", None), ("no-write", "Hold")):
@@ -1338,20 +1348,25 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 cell,
                 payload=(
                     NoWriteCellDecision("searched_no_observation")
-                    if sample_stem == no_write_sample
+                    if cell.subject.canonical_sample.raw_stem == no_write_sample
                     else NumericCellDecision(
-                        value=weighted_values[sample_stem], source=cell.source
+                        value=weighted_values[cell.subject.canonical_sample.raw_stem],
+                        source=cell.source,
                     )
                 ),
             )
-            for sample_stem, cell in cells_by_sample.items()
+            for cell in row_cells
         )
-        weighted_matrix = replace(writer_inputs, clusters=(replace(row, cells=cells),))
+        (weighted_child,) = writer_inputs.children
+        weighted_matrix = replace(
+            writer_inputs,
+            children=(replace(weighted_child, group_cells=((written_group, cells),)),),
+        )
         accepted = tuple(cell for cell in cells if cell.value is not None)
         legacy_rt = sum(
             cell.selected_integration.rt_apex_min * cell.value for cell in accepted
         ) / sum(cell.value for cell in accepted)
-        assert legacy_rt != pytest.approx(row.family_center_rt)
+        assert legacy_rt != pytest.approx(center_rt, rel=1e-5)
 
         writer_dir = tmp_path / f"writer-{variant}"
         outputs = output_paths(
@@ -1360,9 +1375,10 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             emit_alignment_cells=False,
             emit_alignment_status_matrix=False,
         )
-        write_outputs_atomic(
+        write_completed_untargeted_outputs_atomic(
             outputs,
             weighted_matrix,
+            timing_recorder=TimingRecorder.disabled("writer"),
             metadata=alignment_metadata(
                 discovery_batch_index=tmp_path / "discovery_batch_index.csv",
                 raw_dir=tmp_path,
@@ -1376,16 +1392,21 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         assert outputs.matrix_tsv is not None
         with outputs.matrix_tsv.open(encoding="utf-8", newline="") as handle:
             matrix_row = next(csv.DictReader(handle, delimiter="\t"))
-        assert float(matrix_row["RT"]) == pytest.approx(row.family_center_rt)
+        assert float(matrix_row["RT"]) == pytest.approx(center_rt)
 
         assert outputs.review_tsv is not None
         with outputs.review_tsv.open(encoding="utf-8", newline="") as handle:
             review_row = next(csv.DictReader(handle, delimiter="\t"))
-        assert float(review_row["matrix_rt"]) == pytest.approx(row.family_center_rt)
+        assert float(review_row["matrix_rt"]) == pytest.approx(center_rt)
         assert outputs.run_metadata_json is not None
         metadata = json.loads(outputs.run_metadata_json.read_text(encoding="utf-8"))
-        assert metadata["matrix_center_rt_basis"] == row.center_rt_basis
-        assert metadata["matrix_center_weight_basis"] == row.center_weight_basis
+        assert (
+            metadata["matrix_center_rt_basis"] == "cross_sample_owner_arithmetic_mean"
+        )
+        assert (
+            metadata["matrix_center_weight_basis"]
+            == "unique_owner_observations_equal_weight"
+        )
 
 
 @pytest.mark.parametrize(
@@ -1479,13 +1500,12 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         batch, runtime, alignment_config=alignment_config
     )
     (child,) = completed.application_result.children
-    (owner_row,) = child.completed_projection.rows
+    ((_owner_group, owner_cells),) = child.group_cells
     owner_decisions = {
-        decision.subject.canonical_sample.raw_stem: decision
-        for decision in owner_row.decisions
+        decision.subject.canonical_sample.raw_stem: decision for decision in owner_cells
     }
     assert set(owner_decisions) == set(sample_stems)
-    assert sum(d.value is not None for d in owner_row.decisions) == 4
+    assert sum(d.value is not None for d in owner_cells) == 4
     ms1_only = owner_decisions["MS1Only"]
     assert ms1_only.variant == "numeric" and ms1_only.value > 0
     assert ms1_only.evidence.evidence_states == ("ms1_only_backfill_observation",)
@@ -1498,10 +1518,8 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     assert all(owner_decisions[stem].variant == "numeric" for stem in sample_stems[:3])
     assert len({owner_decisions[stem].value for stem in sample_stems[:4]}) == 4
 
-    writer_inputs = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
-    for _row, sample_stem, cell in writer_cells(writer_inputs):
+    writer_inputs = completed.application_result
+    for _row, sample_stem, cell in written_cells(writer_inputs):
         assert cell is owner_decisions[sample_stem]
     outputs = output_paths(
         tmp_path / "writer",
@@ -1509,9 +1527,10 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         emit_alignment_cells=True,
         emit_alignment_status_matrix=False,
     )
-    write_outputs_atomic(
+    write_completed_untargeted_outputs_atomic(
         outputs,
         writer_inputs,
+        timing_recorder=TimingRecorder.disabled("writer"),
         metadata=alignment_metadata(
             discovery_batch_index=tmp_path / "discovery_batch_index.csv",
             raw_dir=tmp_path,
@@ -1569,9 +1588,10 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         emit_alignment_cells=False,
         emit_alignment_status_matrix=False,
     )
-    write_outputs_atomic(
+    write_completed_untargeted_outputs_atomic(
         published_outputs,
         writer_inputs,
+        timing_recorder=TimingRecorder.disabled("writer"),
         metadata={},
     )
     write_alignment_explanation(

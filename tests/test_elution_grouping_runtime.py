@@ -5,17 +5,16 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from tests.alignment_pipeline_helpers import writer_cells
+from tests.alignment_pipeline_helpers import (
+    written_cells,
+    written_source_candidates,
+)
 from tests.cid_nl_raw_fixture import _FakeRaw, _open_bound_raw, _peak_config, _settings
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.untargeted_finalized_matrix import (
-    cell_status,
-    project_completed_untarget_batch_writer_inputs,
-)
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -25,6 +24,7 @@ from xic_extractor.discovery.ms1_capture import (
 )
 from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 from xic_extractor.execution.result_store import StreamedResultStore
+from xic_extractor.output.alignment.tsv_writer import cell_status
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution import (
     UntargetedPartitionPipelineAdapter,
@@ -238,8 +238,8 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     } == group_ids
     store.seal()
     completed = adapter.finalize_application(store, (initial_composed, composed))
-    writer = project_completed_untarget_batch_writer_inputs(completed)
-    cells = tuple(writer_cells(writer))
+    writer = completed
+    cells = tuple(written_cells(writer))
     assert len(cells) == 8
     direct_samples = {
         group.group_hypothesis_id: {owner.sample_stem for owner in group.owners}
@@ -388,13 +388,14 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
     )
     store.seal()
     completed = adapter.finalize_application(store, (initial_composed, composed))
-    writer = project_completed_untarget_batch_writer_inputs(completed)
-    cells = tuple(writer_cells(writer))
+    writer = completed
+    cells = tuple(written_cells(writer))
+    sources = written_source_candidates(tmp_path / "written", writer)
     assert len(cells) == 21
     for row, sample_stem, cell in cells:
         apex = group_apex[row.group_hypothesis_id]
         if sample_stem == "S6":
-            assert sample_stem not in dict(row.source_candidate_ids)
+            assert not sources[row.group_hypothesis_id, sample_stem]
         direct = sample_stem in samples[2 * group_apices.index(apex) :][:2]
         assert cell_status(cell) == ("detected" if direct else "backfilled")
         assert cell.selected_integration.rt_apex_min == pytest.approx(apex, abs=0.005)

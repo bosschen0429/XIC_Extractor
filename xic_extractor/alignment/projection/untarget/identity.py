@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
+    CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 
@@ -22,7 +22,7 @@ class GroupCellSubject:
     A missing member is the explicit absence at this group/sample position.
     """
 
-    group: CrossSampleGroupIdentity
+    group: CrossSamplePeakGroupHypothesis
     canonical_sample: SampleMetadata
     member_subject: CrossSampleGroupMemberSubject | None
 

@@ -5,19 +5,13 @@ from xic_extractor.alignment.projection.untarget.identity import (
     UntargetProjectionContractError,
 )
 from xic_extractor.alignment.projection.untarget.matrix import (
-    UntargetMatrixProjection,
-    UntargetMatrixRow,
-    UntargetRowDestination,
-    UntargetRowRoute,
+    GroupCells,
     project_untarget_matrix,
 )
 
 __all__ = (
     "GroupCellSubject",
-    "UntargetMatrixProjection",
-    "UntargetMatrixRow",
+    "GroupCells",
     "UntargetProjectionContractError",
-    "UntargetRowDestination",
-    "UntargetRowRoute",
     "project_untarget_matrix",
 )

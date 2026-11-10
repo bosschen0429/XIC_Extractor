@@ -10,7 +10,9 @@ from typing import Literal, TypeAlias, cast
 from xic_extractor.alignment.cell_observation.observations import (
     FinalGroupCellObservation,
 )
-from xic_extractor.alignment.cross_sample.peak_groups import CrossSampleGroupIdentity
+from xic_extractor.alignment.cross_sample.peak_groups import (
+    CrossSamplePeakGroupHypothesis,
+)
 from xic_extractor.alignment.primary_matrix_area import (
     primary_matrix_area_from_integration,
 )
@@ -142,7 +144,7 @@ def decide_target_cell_population(
 def decide_group_cell_population(
     finalized_alignment: FinalizedScientificAlignment,
 ) -> dict[
-    tuple[CrossSampleGroupIdentity, str],
+    tuple[CrossSamplePeakGroupHypothesis, str],
     tuple[CellDecisionPayload, IntegrationResult | None],
 ]:
     """Complete values/blank reasons keyed by the authoritative cell observation.

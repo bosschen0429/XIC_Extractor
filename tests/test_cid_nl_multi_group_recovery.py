@@ -3,7 +3,12 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from tests.alignment_pipeline_helpers import writer_cells
+from tests.alignment_pipeline_helpers import (
+    render,
+    written_cells,
+    written_groups,
+    written_rows,
+)
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
     cid_nl_support_policy,
@@ -43,10 +48,10 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_support,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.alignment.untargeted_finalized_matrix import (
+from xic_extractor.execution.timing import TimingRecorder
+from xic_extractor.output.alignment.tsv_writer import (
     backfill_query_bounds,
     cell_status,
-    project_completed_untarget_batch_writer_inputs,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -173,7 +178,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
         rt_frame=frame,
     )
     assert group.disposition == "established"
-    identity = group.membership
+    identity = group
     initial = CrossSampleGroupingResult(
         samples=fixture.samples,
         rt_frame=frame,
@@ -344,9 +349,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
     import csv
 
     from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
-    from xic_extractor.output.alignment.tsv_writer import (
-        write_alignment_backfill_cell_evidence_tsv,
-    )
     from xic_extractor.untargeted_execution.partition_composition import (
         finalize_untargeted_partition_grouping,
         prepare_untargeted_partition_grouping,
@@ -448,10 +450,8 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
                 0
             ].content.integration.rt_apex_min == pytest.approx(expected)
     completed = complete_dense_partition(batch, result, alignment_config=config)
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
-    for _row, sample_stem, cell in writer_cells(writer):
+    writer = completed.application_result
+    for _row, sample_stem, cell in written_cells(writer):
         if sample_stem in {"Early", "Late"}:
             assert backfill_query_bounds(cell) == pytest.approx(
                 (
@@ -459,7 +459,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
                     8.0 + shifts[sample_stem] + half_window,
                 )
             )
-    path = write_alignment_backfill_cell_evidence_tsv(tmp_path / "queries.tsv", writer)
+    path = render("backfill", tmp_path / "queries.tsv", writer)
     with path.open(encoding="utf-8") as stream:
         rows = list(csv.DictReader(stream, delimiter="\t"))
     if not empty:
@@ -477,9 +477,6 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
     tmp_path, monkeypatch, outcome
 ):
     physical_records = {}
-    from xic_extractor.alignment.untargeted_finalized_matrix import (
-        project_completed_untarget_batch_writer_inputs,
-    )
 
     stems = ("S1", "S2", "Rejected")
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
@@ -570,11 +567,9 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
     rejected_id = candidates["Rejected"][0].peak_id
     assert rejected_id not in completed.application_result.candidate_ids
     assert not completed.application_result.excluded_candidates
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
+    writer = completed.application_result
     ((row, _stem, decision),) = tuple(
-        item for item in writer_cells(writer) if item[1] == "Rejected"
+        item for item in written_cells(writer) if item[1] == "Rejected"
     )
     if outcome == "support":
         assert decision.value is not None and decision.value > 0
@@ -582,7 +577,11 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         assert recovery.assessment.content.method_result == "HOLD"
         assert not recovery.assessment.evidence_refs
         assert not recovery.assessment.individual_support_refs
-        assert "Rejected" not in dict(row.source_candidate_ids)
+        assert all(
+            cell["source_candidate_id"] == ""
+            for cell in written_rows(tmp_path / "written", writer)["cells"]
+            if cell["sample_stem"] == "Rejected"
+        )
     elif outcome == "empty":
         (recovery,) = rejected.backfill_attempts
         assert recovery.assessment.content.method_result == "HOLD"
@@ -974,7 +973,7 @@ def test_runtime_recovers_every_authorized_rt_group(
         allocated = []
         for cell in missing_cells:
             predecessor_group_ids = {
-                association.position.group_identity.group_hypothesis_id
+                association.position.group.group_hypothesis_id
                 for association in cell.position_associations
             }
             assert len(predecessor_group_ids) <= 1
@@ -1074,15 +1073,9 @@ def test_runtime_recovers_every_authorized_rt_group(
         )
         assert set(completed.method_assessments) == expected_assessments
 
-        from xic_extractor.alignment.untargeted_finalized_matrix import (
-            project_completed_untarget_batch_writer_inputs,
-        )
-
-        writer = project_completed_untarget_batch_writer_inputs(
-            completed.application_result
-        )
+        writer = completed.application_result
         decisions = tuple(
-            cell for _row, stem, cell in writer_cells(writer) if stem == "Missing"
+            cell for _row, stem, cell in written_cells(writer) if stem == "Missing"
         )
         if recovery_is_support:
             assert all(decision.value is not None for decision in decisions)
@@ -1271,11 +1264,9 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     )
     assert len(missing_cells) == 2
     assert sum(cell.evidence_states == ("unresolved",) for cell in missing_cells) == 1
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
+    writer = completed.application_result
     missing_decisions = tuple(
-        cell for _row, stem, cell in writer_cells(writer) if stem == "Missing"
+        cell for _row, stem, cell in written_cells(writer) if stem == "Missing"
     )
     assert sum(decision.value is not None for decision in missing_decisions) == 1
 
@@ -1419,17 +1410,16 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         if cell.canonical_sample.raw_stem == "Missing"
     )
     assert len(missing_cells) == 2
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
+    writer = completed.application_result
     missing_decisions = tuple(
-        cell for _row, stem, cell in writer_cells(writer) if stem == "Missing"
+        cell for _row, stem, cell in written_cells(writer) if stem == "Missing"
     )
     assert len(missing_decisions) == 2
     assert sum(decision.value is not None for decision in missing_decisions) == 1
     assert all(
-        sum(cell_status(cell) == "detected" for cell in row.cells) == 2
-        for row in writer.clusters
+        sum(cell_status(cell) == "detected" for cell in cells) == 2
+        for child in writer.children
+        for _group, cells in child.group_cells
     )
     assert sum(cell.evidence_states == ("unresolved",) for cell in missing_cells) == 1
     assert len(child.scientific_core.grouping_result.backfill_membership_risks) == 1
@@ -1444,14 +1434,11 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
     from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_alignment_explanation,
     )
-    from xic_extractor.output.alignment.tsv_writer import (
-        write_alignment_matrix_tsv,
-    )
     from xic_inspector.api import SelectionRequest, prepare_report
 
     config = AlignmentConfig(anchor_min_seed_events=1)
     matrix = tmp_path / "matrix.tsv"
-    write_alignment_matrix_tsv(matrix, writer)
+    render("matrix", matrix, writer)
     original = matrix.read_bytes()
     report = write_alignment_explanation(
         tmp_path / "backfill.sqlite",
@@ -1597,11 +1584,9 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         if cell.canonical_sample.raw_stem == "Missing"
     )
     assert missing_cell.evidence_states == (expected_state,)
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
+    writer = completed.application_result
     (decision,) = tuple(
-        cell for _row, stem, cell in writer_cells(writer) if stem == "Missing"
+        cell for _row, stem, cell in written_cells(writer) if stem == "Missing"
     )
     if expected_state == "unavailable":
         assert decision.value is None
@@ -1612,12 +1597,12 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         from tools.diagnostics.output_population_census import main as population_main
         from xic_extractor.output.alignment.pipeline_outputs import (
             output_paths,
-            write_outputs_atomic,
+            write_completed_untargeted_outputs_atomic,
         )
 
         writer_dir = tmp_path / "writer"
         writer_dir.mkdir()
-        write_outputs_atomic(
+        write_completed_untargeted_outputs_atomic(
             output_paths(
                 writer_dir,
                 output_level="validation-minimal",
@@ -1626,6 +1611,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
             ),
             writer,
             metadata={},
+            timing_recorder=TimingRecorder.disabled("writer"),
         )
         required = (
             "alignment_backfill_cell_evidence.tsv",
@@ -1641,11 +1627,11 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         assert population_main([str(writer_dir), *requirements]) == 1
         backfill_tsv.write_text(populated, encoding="utf-8")
         assert population_main([str(writer_dir), *requirements]) == 0
-    # The finalized row carries the group's own tag, fragment and anchor.
-    (cluster,) = writer.clusters
-    assert sum(cell_status(cell) == "detected" for cell in cluster.cells) == 2
-    assert cluster.has_anchor
-    assert cluster.neutral_loss_tag == (
+    # The written row carries the group's own tag, fragment and anchor.
+    (review,) = written_rows(tmp_path / "written", writer)["review"]
+    assert review["detected_count"] == "2"
+    assert review["reason"].startswith("anchor family")
+    assert review["neutral_loss_tag"] == (
         batch.subject_batch.subjects[0].method_subject_id
         if composition
         else "cid_nl:116.0474"
@@ -1653,8 +1639,10 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     expected_loss = (
         (116.0474 + 132.0423) / 2 if composition == "intersection" else 116.0474
     )
-    assert cluster.family_product_mz == pytest.approx(500.0 - expected_loss, abs=1e-3)
-    assert cluster.family_observed_neutral_loss_da == pytest.approx(
+    assert float(review["family_product_mz"]) == pytest.approx(
+        500.0 - expected_loss, abs=1e-3
+    )
+    assert float(review["family_observed_neutral_loss_da"]) == pytest.approx(
         expected_loss, abs=1e-3
     )
 
@@ -1737,16 +1725,21 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
     completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
+    writer = completed.application_result
+    group_rows = dict(
+        zip(
+            (
+                round(float(review["family_center_rt"]), 1)
+                for review in written_rows(tmp_path / "written", writer)["review"]
+            ),
+            written_groups(writer),
+            strict=True,
+        )
     )
-    group_rows = {
-        round(cluster.family_center_rt, 1): cluster for cluster in writer.clusters
-    }
     group_8 = group_rows[8.0]
     (missing_decision,) = tuple(
         cell
-        for row, stem, cell in writer_cells(writer)
+        for row, stem, cell in written_cells(writer)
         if row is group_8 and stem == "Missing"
     )
     assert missing_decision.value is not None
@@ -1762,9 +1755,6 @@ def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):
 def _assert_alignment_uses_configured_recovery_groups(
     tmp_path, monkeypatch, paths, raws, candidates, kwargs, settings, peak_config
 ):
-    from xic_extractor.alignment.untargeted_finalized_matrix import (
-        project_completed_untarget_batch_writer_inputs,
-    )
     from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
     from xic_extractor.processing_identity import AcquisitionSourceExpectation
     from xic_extractor.raw_source_binding import stat_identity
@@ -1858,7 +1848,7 @@ def _assert_alignment_uses_configured_recovery_groups(
 
     def predecessor_center(cell):
         predecessor_group_ids = {
-            association.position.group_identity.group_hypothesis_id
+            association.position.group.group_hypothesis_id
             for association in cell.position_associations
         }
         assert len(predecessor_group_ids) == 1
@@ -1884,12 +1874,10 @@ def _assert_alignment_uses_configured_recovery_groups(
     assert no_input.backfill_cell is None
     assert no_input.evidence_states == ("not_searched",)
     assert no_input.integrations == ()
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
+    writer = completed.application_result
     assert all(
         cell.value is None
-        for _row, stem, cell in writer_cells(writer)
+        for _row, stem, cell in written_cells(writer)
         if stem == "Missing"
     )
     assert sum(sum(raw.chromatogram_request_counts) for raw in opened[paths[-1]]) == 2

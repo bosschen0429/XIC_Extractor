@@ -134,9 +134,7 @@ def test_rejected_group_plans_no_backfill(tmp_path: Path) -> None:
         (spine.group, frozenset({fixture.sample("s3").sample_name})),
     )
 
-    rejected = replace(
-        spine.group, membership=replace(spine.group.membership, disposition="rejected")
-    )
+    rejected = replace(spine.group, disposition="rejected")
 
     assert (
         plan_conservative_backfill_targets(

@@ -40,7 +40,7 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
     tmp_path, monkeypatch
 ) -> None:
     """A1: Run real pipeline fixtures, verify DB re-read and curve fidelity."""
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     report_path = write_alignment_explanation(
@@ -135,7 +135,7 @@ def test_missing_bound_matrix_rejects_generation(
 
 def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) -> None:
     """A4: Metadata queries read 0 curves; generation reads only needed curves."""
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     report_path = write_alignment_explanation(
@@ -166,7 +166,7 @@ def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) 
 
 def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
     """The CLI callable embeds its resources; browser execution is separate."""
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     report_path = write_alignment_explanation(
@@ -221,7 +221,7 @@ def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
 
 def test_acceptance_a7_cancel_and_atomic_replace(tmp_path, monkeypatch) -> None:
     """A7: Cancel, error, or failure does not leave partial/broken HTML."""
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     report_path = write_alignment_explanation(
@@ -257,7 +257,7 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
 
     from xic_extractor.configuration.mass_recalibration import MassRecalibration
 
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     import xic_extractor.applications.untargeted.application as application

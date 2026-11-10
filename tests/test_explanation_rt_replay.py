@@ -20,7 +20,7 @@ from xic_extractor.rt_calibration_codec import rt_calibration_from_payload
 def test_explanation_freezes_final_rt_owner_and_preserves_reference_provenance(
     tmp_path, monkeypatch
 ):
-    completed, _, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     calibration = BatchRtCalibration(

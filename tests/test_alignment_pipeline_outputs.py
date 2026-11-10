@@ -6,9 +6,8 @@ import pytest
 
 import xic_extractor.output.alignment.pipeline_outputs as pipeline_outputs_module
 from tests.alignment_pipeline_helpers import matrix as _matrix
-from tests.alignment_pipeline_helpers import owner_cell, writer_row
+from tests.alignment_pipeline_helpers import owner_cell, writer_batch, writer_group
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
-from xic_extractor.alignment.untargeted_finalized_matrix import AlignmentMatrix
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.pipeline_outputs import (
     alignment_metadata,
@@ -134,7 +133,7 @@ def test_writer_timing_observations_are_truthful_with_live_output(
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
 
-    pipeline_outputs_module.write_outputs_atomic(
+    _write(
         outputs,
         matrix,
         metadata={},
@@ -145,8 +144,9 @@ def test_writer_timing_observations_are_truthful_with_live_output(
     by_metric = {}
     for row in observations:
         by_metric.setdefault(row["metric"], []).append(row)
+    # One shared render writes every file, so per-file render time is unknown.
     assert all(
-        row["value"] is not None and row["availability"] == "partial"
+        row["value"] is None and row["availability"] == "unavailable"
         for row in by_metric["writer_render_time_sec"]
     )
     assert all(
@@ -178,7 +178,7 @@ def test_writer_instrumentation_preserves_output_bytes(
     matrix = _matrix(("Sample_A", "Sample_B"))
     writer_args = (matrix,)
     writer_kwargs = {"metadata": {}}
-    pipeline_outputs_module.write_outputs_atomic(
+    _write(
         baseline_outputs,
         *writer_args,
         **writer_kwargs,
@@ -191,7 +191,7 @@ def test_writer_instrumentation_preserves_output_bytes(
 
     monkeypatch.setattr(identity, "fingerprint_file_content", reject_diagnostic_hash)
 
-    pipeline_outputs_module.write_outputs_atomic(
+    _write(
         candidate_outputs,
         *writer_args,
         **writer_kwargs,
@@ -230,18 +230,18 @@ def test_production_and_machine_plans_write_identical_matrix_bytes(
         emit_alignment_cells=False,
         emit_alignment_status_matrix=False,
     )
-    matrix = AlignmentMatrix(
-        clusters=(writer_row(cells=(owner_cell(), owner_cell(), owner_cell(None))),),
-        sample_order=("Sample_A", "Sample_B", "Sample_C"),
+    matrix = writer_batch(
+        ("Sample_A", "Sample_B", "Sample_C"),
+        writer_group(owner_cell(), owner_cell(), owner_cell(None)),
     )
     writer_kwargs = {"metadata": {}}
 
-    pipeline_outputs_module.write_outputs_atomic(
+    _write(
         production_outputs,
         matrix,
         **writer_kwargs,
     )
-    pipeline_outputs_module.write_outputs_atomic(
+    _write(
         machine_outputs,
         matrix,
         **writer_kwargs,
@@ -269,18 +269,21 @@ def test_outer_transaction_restores_prior_outputs_without_leaking_temp_files(
     matrix_path.write_bytes(b"prior matrix")
     status_path.write_bytes(b"prior status")
 
-    def fail_later_writer(*_args, **_kwargs):
+    write_tsvs = pipeline_outputs_module.write_alignment_tsvs
+
+    def fail_after_rendering(*args, **kwargs):
+        write_tsvs(*args, **kwargs)
         raise RuntimeError("injected status writer failure")
 
     monkeypatch.setattr(
         pipeline_outputs_module,
-        "write_alignment_status_matrix_tsv",
-        fail_later_writer,
+        "write_alignment_tsvs",
+        fail_after_rendering,
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
 
     with pytest.raises(RuntimeError, match="injected status writer failure"):
-        pipeline_outputs_module.write_outputs_atomic(
+        _write(
             outputs,
             matrix,
             metadata={},
@@ -304,85 +307,78 @@ def test_matrix_only_output_plan_writes_only_the_matrix(tmp_path: Path) -> None:
         emit_alignment_status_matrix=False,
     )
 
-    pipeline_outputs_module.write_outputs_atomic(
-        outputs, _matrix(("Sample_A", "Sample_B")), metadata={}
-    )
+    _write(outputs, _matrix(("Sample_A", "Sample_B")), metadata={})
 
     assert sorted(path.name for path in (tmp_path / "out").iterdir()) == [
         "alignment_matrix.tsv"
     ]
 
 
-def test_streamed_and_materialized_writers_render_identical_files(
-    tmp_path: Path,
-) -> None:
+def test_one_pass_writes_every_requested_file(tmp_path: Path) -> None:
     samples = ("Sample_A", "Sample_B", "Sample_C")
-    matrix = AlignmentMatrix(
-        clusters=(
-            writer_row(
-                "F000001",
-                cells=(
-                    owner_cell(area=120.0),
-                    owner_cell("backfilled", area=80.0),
-                    owner_cell(None, no_write="not_searched"),
-                ),
-                source_candidate_ids=(("Sample_A", "Sample_A#1"),),
-            ),
-            writer_row(
-                "F000002",
-                cells=(
-                    owner_cell(None, no_write="unresolved"),
-                    owner_cell(area=None),
-                    owner_cell(area=40.0),
-                ),
-                destination="archive",
-                has_anchor=False,
-            ),
-            writer_row(
-                "F000003",
-                cells=(
-                    owner_cell(area=10.0),
-                    owner_cell(area=20.0),
-                    owner_cell(None, no_write="searched_no_observation"),
-                ),
-                family_center_mz=612.25,
-            ),
+    batch = writer_batch(
+        samples,
+        writer_group(
+            owner_cell(area=120.0),
+            owner_cell("backfilled", area=80.0),
+            owner_cell(None, no_write="not_searched"),
+            candidates=(("Sample_A", "Sample_A#1"),),
         ),
-        sample_order=samples,
+        writer_group(
+            owner_cell(area=None),
+            owner_cell(None, no_write="unresolved"),
+            owner_cell(area=40.0),
+            destination="archive",
+            has_anchor=False,
+        ),
+        writer_group(
+            owner_cell(area=10.0),
+            owner_cell(area=20.0),
+            owner_cell(None, no_write="searched_no_observation"),
+            center_mz=612.25,
+        ),
+    )
+    directory = tmp_path / "out"
+    outputs = pipeline_outputs_module.AlignmentRunOutputs(
+        review_tsv=directory / "alignment_review.tsv",
+        matrix_tsv=directory / "alignment_matrix.tsv",
+        backfill_cell_evidence_tsv=directory / "alignment_backfill_cell_evidence.tsv",
+        cells_tsv=directory / "alignment_cells.tsv",
+        status_matrix_tsv=directory / "alignment_matrix_status.tsv",
+        run_metadata_json=directory / "alignment_run_metadata.json",
     )
 
-    def outputs(name: str) -> pipeline_outputs_module.AlignmentRunOutputs:
-        directory = tmp_path / name
-        return pipeline_outputs_module.AlignmentRunOutputs(
-            review_tsv=directory / "alignment_review.tsv",
-            matrix_tsv=directory / "alignment_matrix.tsv",
-            backfill_cell_evidence_tsv=directory
-            / "alignment_backfill_cell_evidence.tsv",
-            cells_tsv=directory / "alignment_cells.tsv",
-            run_metadata_json=directory / "alignment_run_metadata.json",
-        )
-
-    materialized = outputs("materialized")
-    streamed = outputs("streamed")
-    pipeline_outputs_module.write_outputs_atomic(
-        materialized, matrix, metadata={"schema_version": "test"}
-    )
-    row_count = pipeline_outputs_module.write_streamed_untargeted_outputs_atomic(
-        streamed,
-        iter(matrix.clusters),
-        sample_order=samples,
-        metadata={"schema_version": "test"},
-        timing_recorder=TimingRecorder.disabled("alignment"),
-    )
+    row_count = _write(outputs, batch, metadata={"schema_version": "test"})
 
     assert row_count == 3
-    names = sorted(path.name for path in (tmp_path / "materialized").iterdir())
-    assert names == sorted(path.name for path in (tmp_path / "streamed").iterdir())
-    assert len(names) == 5
-    for name in names:
-        assert (tmp_path / "materialized" / name).read_bytes() == (
-            tmp_path / "streamed" / name
-        ).read_bytes(), name
+    assert sorted(path.name for path in directory.iterdir()) == [
+        "alignment_backfill_cell_evidence.tsv",
+        "alignment_cells.tsv",
+        "alignment_matrix.tsv",
+        "alignment_matrix_status.tsv",
+        "alignment_review.tsv",
+        "alignment_run_metadata.json",
+    ]
+    line_counts = {
+        path.name: len(path.read_text(encoding="utf-8").splitlines())
+        for path in directory.glob("*.tsv")
+    }
+    assert line_counts == {
+        "alignment_backfill_cell_evidence.tsv": 3,
+        "alignment_cells.tsv": 10,
+        "alignment_matrix.tsv": 3,
+        "alignment_matrix_status.tsv": 4,
+        "alignment_review.tsv": 4,
+    }
+
+
+def _write(outputs, batch, *, metadata, timing_recorder=None) -> int:
+    return pipeline_outputs_module.write_completed_untargeted_outputs_atomic(
+        outputs,
+        batch,
+        metadata=metadata,
+        timing_recorder=timing_recorder or TimingRecorder.disabled("alignment"),
+    )
 
 
 class _Timer:

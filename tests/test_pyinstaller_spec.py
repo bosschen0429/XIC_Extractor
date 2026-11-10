@@ -129,9 +129,7 @@ metadata_output = Path(sys.argv[2])
 sys.path.insert(0, str(target))
 
 from xic_extractor.applications.untargeted.application import run_untargeted_application
-from xic_extractor.alignment.untargeted_finalized_matrix import (
-    project_completed_untarget_batch_writer_inputs,
-)
+from xic_extractor.output.alignment.tsv_writer import write_alignment_tsvs
 from xic_extractor.alignment.completion import complete_analysis
 from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
@@ -184,9 +182,7 @@ public_objects = {
     "complete_untargeted_alignment": complete_untargeted_alignment,
     "is_pure_single_provider_cid_nl": is_pure_single_provider_cid_nl,
     "load_preset": load_preset,
-    "project_completed_untarget_batch_writer_inputs": (
-        project_completed_untarget_batch_writer_inputs
-    ),
+    "write_alignment_tsvs": write_alignment_tsvs,
 }
 module_files = {}
 installed_objects = {
@@ -679,8 +675,8 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
         "complete_untargeted_alignment",
         "is_pure_single_provider_cid_nl",
         "load_preset",
-        "project_completed_untarget_batch_writer_inputs",
         "run_untargeted_application",
+        "write_alignment_tsvs",
     ]
     assert metadata["preset"] == "DNA dR"
     assert metadata["route"] == "align_only"

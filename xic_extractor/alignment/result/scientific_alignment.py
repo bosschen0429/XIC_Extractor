@@ -23,9 +23,9 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupIdentity,
     CrossSampleLineageEdge,
     CrossSamplePartitionTransition,
+    CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
@@ -91,7 +91,7 @@ class FinalizedScientificAlignment:
     targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = ()
 
     @property
-    def final_population(self) -> tuple[CrossSampleGroupIdentity, ...]:
+    def final_population(self) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
         return self.grouping_result.final_population
 
     @property

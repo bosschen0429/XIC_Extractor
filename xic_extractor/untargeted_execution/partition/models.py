@@ -376,10 +376,9 @@ def _project_completed_backfill(
 ) -> BackfillCompletionProjection:
     """Project the completed group query from its actual assessment and trace."""
     job = result.job
-    group = group_context.group.membership
-    assert group is not None
-    center = group_context.group.group_center_rt
-    if group_context.method_subject != job.method_subject or center is None:
+    group = group_context.group
+    center = group.group_center_rt
+    if group_context.method_subject != job.method_subject:
         raise UntargetedPartitionError("backfill crossed its owner group")
     backfill = result.backfill_for_group(
         center, group_hypothesis_id=group_context.group.group_hypothesis_id
@@ -400,7 +399,7 @@ def _project_completed_backfill(
         raise UntargetedPartitionError("backfill is not a completed empty epoch")
     query_rt = center if backfill.query_rt is None else backfill.query_rt
     expected_request = XICRequest(
-        mz=group_context.group.family_center_mz,
+        mz=group.group_center_mz,
         rt_min=max(0.0, query_rt - job.peak_config.nl_rt_anchor_half_window_min),
         rt_max=query_rt + job.peak_config.nl_rt_anchor_half_window_min,
         ppm_tol=job.method_subject.precursor_tolerance_ppm,
@@ -416,8 +415,8 @@ def _project_completed_backfill(
     (acquired,) = exact
     return BackfillCompletionProjection(
         sample=job.sample,
-        group_identity=group,
-        group_center_mz=group_context.group.family_center_mz,
+        group=group,
+        group_center_mz=group.group_center_mz,
         group_center_rt=center,
         query_rt=query_rt,
         query_rt_basis=backfill.query_rt_basis,
