@@ -68,6 +68,8 @@ def query_discovery(
             "apex_rt": candidate.ms1_apex_rt,
             "peak_status": candidate.status,
             "attached_event_count": candidate.attached_event_count,
+            # The representative event's values are its event-table row.
+            "best_ms2_scan_id": candidate.best_ms2_scan_id,
             "area": candidate.ms1_area,
         }
         for sample in source.batch.sample_order
