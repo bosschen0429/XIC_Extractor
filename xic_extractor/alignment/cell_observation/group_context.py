@@ -18,10 +18,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
-from xic_extractor.processing_identity import (
-    ProcessingAttemptIdentity,
-)
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 TerminalObservationVariant: TypeAlias = Literal[
     "observed",
@@ -56,7 +53,7 @@ def select_cid_nl_group_backfill_subject(
 class CidNlCellGroupSupport:
     """One exact SUPPORT closure that owns membership in a provisional group."""
 
-    sample: ResolvedCanonicalSampleIdentity
+    sample: SampleMetadata
     assessment: CidNlMethodAssessmentRef
     hypothesis: PeakHypothesis
 
@@ -68,7 +65,6 @@ class CidNlCellGroupContext:
     group: CrossSamplePeakGroupHypothesis
     supports: tuple[CidNlCellGroupSupport, ...]
     config: AlignmentConfig
-    processing_attempt: ProcessingAttemptIdentity
     rt_frame: RtFrame
     sample_universe: frozenset[str] | None = None
     _method_subjects: tuple[CidNlMethodSubject, ...] = field(

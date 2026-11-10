@@ -20,10 +20,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import (
-    ProcessingOwnerReferences,
-)
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 class PeakObservationContractError(ValueError):
@@ -150,8 +147,7 @@ class RetainedCaptureEvidence:
 
 def mint_peak_observation_ref(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     trace: Trace,
     integration: IntegrationResult,
     resolver_mode: str,
@@ -162,7 +158,7 @@ def mint_peak_observation_ref(
 ) -> PeakObservationRef:
     """Project an already selected integration into sample-local peak content."""
     content, generation_provenance = _project_peak_observation_values(
-        sample_key=sample.identity.sample_key,
+        sample_key=sample.sample_name,
         trace=trace,
         integration=integration,
         selected_indices=integration.raw_scan_indices,
@@ -181,8 +177,7 @@ def mint_peak_observation_ref(
 
 def mint_physical_peak_observations(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     trace: Trace,
     evaluations: tuple[PhysicalPeakEvaluation, ...],
     signal_processing_profile: SignalProcessingProfile,
@@ -209,7 +204,7 @@ def mint_physical_peak_observations(
     for evaluation in evaluations:
         integration = physical_peak_observation_integration(evaluation)
         content, provenance = _project_peak_observation_values(
-            sample_key=sample.identity.sample_key,
+            sample_key=sample.sample_name,
             trace=trace,
             integration=integration,
             selected_indices=integration.raw_scan_indices,

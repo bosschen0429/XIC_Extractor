@@ -82,13 +82,6 @@ def execute_partition(
         raise UntargetedPartitionError(
             "jobs must contain Untargeted CID-NL runtime jobs"
         )
-    if any(
-        job.processing_owners.attempt != jobs[0].processing_owners.attempt
-        for job in jobs
-    ):
-        raise UntargetedPartitionError(
-            "all runtime jobs must share one processing attempt"
-        )
     if len({job.work_unit_key for job in jobs}) != len(jobs):
         raise UntargetedPartitionError("partition work unit keys must be unique")
     work = _prepare_runtime_work(
@@ -185,17 +178,15 @@ def _prepare_runtime_work(
 
     sample_groups = _runtime_sample_groups(states)
     initial_groups_by_sample = {
-        group[0].job.sample.identity.sample_key: group for group in sample_groups
+        group[0].job.sample.sample_name: group for group in sample_groups
     }
     phase_templates = backfill_templates or tuple(
         group[0].job for group in sample_groups
     )
     batch_phases: list[_BatchSamplePhaseState] = []
     for first in phase_templates:
-        sample_states = initial_groups_by_sample.get(
-            first.sample.identity.sample_key, ()
-        )
-        sample_id = first.sample.identity.sample_key
+        sample_states = initial_groups_by_sample.get(first.sample.sample_name, ())
+        sample_id = first.sample.sample_name
         initial_resource_key: str | None = (
             f"acquisition-session:{partition_key}:{sample_id}:initial"
         )
@@ -256,22 +247,20 @@ def _prepare_runtime_work(
                         state.error = worker_pool.first_error
 
         phases_by_sample = {
-            phase.job.sample.identity.sample_key: phase for phase in batch_phases
+            phase.job.sample.sample_name: phase for phase in batch_phases
         }
 
         def initial(
             sample_states: tuple[_RuntimeJobState, ...],
         ) -> _SampleInitialWorkerResponse:
             return _execute_initial_sample_phase(
-                phases_by_sample[sample_states[0].job.sample.identity.sample_key],
+                phases_by_sample[sample_states[0].job.sample.sample_name],
             )
 
         def backfill(
             sample_states: tuple[_RuntimeJobState, ...],
         ) -> _SampleBackfillWorkerResponse | None:
-            phase = phases_by_sample.get(
-                sample_states[0].job.sample.identity.sample_key
-            )
+            phase = phases_by_sample.get(sample_states[0].job.sample.sample_name)
             if phase is not None:
                 return _execute_backfill_sample_phase(phase)
             return None
@@ -301,7 +290,7 @@ def _prepare_runtime_work(
         def make_process_initial_req(
             sample_states: tuple[_RuntimeJobState, ...],
         ) -> _SampleInitialWorkerRequest:
-            sample_id = sample_states[0].job.sample.identity.sample_key
+            sample_id = sample_states[0].job.sample.sample_name
             phase = phases_by_sample[sample_id]
             return _SampleInitialWorkerRequest(
                 jobs=tuple(s.job for s in sample_states),
@@ -315,7 +304,7 @@ def _prepare_runtime_work(
             resp: _SampleInitialWorkerResponse | None,
         ) -> None:
             if resp is not None:
-                sample_id = sample_states[0].job.sample.identity.sample_key
+                sample_id = sample_states[0].job.sample.sample_name
                 resp.apply_to(phases_by_sample[sample_id])
             on_sample_completed("partition_initial", comp, tot, sample_states)
 
@@ -328,7 +317,7 @@ def _prepare_runtime_work(
         def make_process_backfill_req(
             sample_states: tuple[_RuntimeJobState, ...],
         ) -> _SampleBackfillWorkerRequest:
-            sample_id = sample_states[0].job.sample.identity.sample_key
+            sample_id = sample_states[0].job.sample.sample_name
             phase = phases_by_sample[sample_id]
             pending = tuple(
                 state
@@ -357,7 +346,7 @@ def _prepare_runtime_work(
             resp: _SampleBackfillWorkerResponse | None,
         ) -> None:
             if resp is not None:
-                sample_id = sample_states[0].job.sample.identity.sample_key
+                sample_id = sample_states[0].job.sample.sample_name
                 resp.apply_to(phases_by_sample[sample_id])
             on_sample_completed("partition_backfill", comp, tot, sample_states)
 
@@ -413,7 +402,7 @@ def _prepare_runtime_work(
                     backfill_groups = _runtime_sample_groups(states)
                     for sample_states in backfill_groups:
                         phase = phases_by_sample.get(
-                            sample_states[0].job.sample.identity.sample_key
+                            sample_states[0].job.sample.sample_name
                         )
                         if phase is not None:
                             phase.states = sample_states
@@ -502,14 +491,13 @@ def _runtime_sample_groups(
 ) -> tuple[tuple[_RuntimeJobState, ...], ...]:
     grouped: dict[str, list[_RuntimeJobState]] = {}
     for state in states:
-        sample_id = state.job.sample.identity.sample_key
+        sample_id = state.job.sample.sample_name
         grouped.setdefault(sample_id, []).append(state)
     groups = tuple(tuple(group) for group in grouped.values())
     for group in groups:
         first = group[0].job
         if any(
-            state.job.processing_owners != first.processing_owners
-            or state.job.sample != first.sample
+            state.job.sample != first.sample
             or state.job.candidates != first.candidates
             or state.job.discovery_receipt != first.discovery_receipt
             or state.job.settings != first.settings

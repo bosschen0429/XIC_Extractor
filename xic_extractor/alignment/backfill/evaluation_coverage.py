@@ -9,8 +9,7 @@ from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
 )
 from xic_extractor.alignment.cross_sample.peak_groups import CrossSampleGroupIdentity
-from xic_extractor.processing_identity import ProcessingOwnerReferences
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.backfill.conservative import (
@@ -55,7 +54,7 @@ class BackfillNoRequestDecision:
 @dataclass(frozen=True, slots=True)
 class BackfillPlanningPosition:
     group_identity: CrossSampleGroupIdentity
-    sample: ResolvedCanonicalSampleIdentity
+    sample: SampleMetadata
     planning_reason: BackfillPlanningReason
     no_request_decision: BackfillNoRequestDecision | None = None
 
@@ -63,15 +62,14 @@ class BackfillPlanningPosition:
     def key(self) -> tuple[str, str]:
         return (
             self.group_identity.group_hypothesis_id,
-            self.sample.identity.sample_key,
+            self.sample.sample_name,
         )
 
 
 @dataclass(frozen=True, slots=True)
 class BackfillEvaluationCoverageBatch:
-    processing_owners: ProcessingOwnerReferences
     group_identities: tuple[CrossSampleGroupIdentity, ...]
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    samples: tuple[SampleMetadata, ...]
     positions: tuple[BackfillPlanningPosition, ...]
 
 

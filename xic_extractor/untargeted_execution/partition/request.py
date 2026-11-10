@@ -1,28 +1,21 @@
-"""Bind an Untargeted partition cohort to its processing request and sources."""
+"""Bind an Untargeted run's cohort to its RAW sources and Discovery inputs."""
 
 from __future__ import annotations
 
-import json
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.models import ExtractionConfig
-from xic_extractor.configuration.scientific_settings import (
-    scientific_settings_payload,
-)
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.batch_contract import (
-    ALIGNMENT_FEATURE_INPUT_KEY,
-    PEAK_UNIVERSE_INPUT_KEY,
-    PEAK_UNIVERSE_SCHEMA_VERSION,
     DiscoveryPeakUniverseReceipt,
     canonical_sample_stems,
     validate_discovery_peak_universe,
-    validate_peak_universe_payload,
 )
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_record import (
@@ -31,27 +24,16 @@ from xic_extractor.discovery.physical_fact_record import (
 )
 from xic_extractor.discovery.settings import (
     DiscoverySettings,
-    discovery_settings_identity_fields,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
-    REQUEST_INPUT_KEY,
     CidNlMethodSubject,
     UntargetedCidNlMethodSubjectBatch,
 )
-from xic_extractor.peak_detection.search_scope import (
-    PHYSICAL_CAPTURE_INPUT_KEY,
-    physical_capture_input_payload,
-)
 from xic_extractor.processing_identity import (
-    AcquisitionInputBinding,
     AcquisitionSourceExpectation,
     AcquisitionSourceIdentity,
     IdentityContractError,
-    ProcessingOwnerReferences,
     build_local_acquisition_source_identity,
-    build_processing_request_identity,
-    compose_processing_owner_references,
-    issue_processing_attempt,
 )
 from xic_extractor.raw_source_binding import (
     THERMO_RAW_ACQUISITION_FORMAT,
@@ -59,26 +41,16 @@ from xic_extractor.raw_source_binding import (
     stat_identity,
 )
 from xic_extractor.sample_metadata import (
-    ResolvedCanonicalSampleIdentity,
     SampleMetadata,
-    mint_sample_metadata_snapshot,
-    resolve_canonical_sample_identity,
 )
-
-UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION = "untargeted_cid_nl_real_data_inputs"
-UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION = "untargeted_cid_nl_real_data_algorithm"
-UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION = "untargeted_cid_nl_real_data_contract"
-DISCOVERY_SETTINGS_INPUT_KEY = "current_discovery_settings"
-DISCOVERY_SETTINGS_SCHEMA_VERSION = "current_discovery_settings"
-PEAK_SETTINGS_INPUT_KEY = "peak_detection_settings"
 
 
 @dataclass(frozen=True, slots=True)
 class UntargetedPartitionContext:
-    """One attempt's exact cohort, subject, peak receipts, and RAW paths."""
+    """One run's cohort, subjects, peak receipts, and RAW paths."""
 
-    processing_owners: ProcessingOwnerReferences
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    processing_attempt_id: str
+    samples: tuple[SampleMetadata, ...]
     method_subject: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch
     settings: DiscoverySettings
     peak_config: ExtractionConfig
@@ -102,12 +74,12 @@ class UntargetedPartitionContext:
         object.__setattr__(
             self,
             "rt_frame",
-            SampleRtFrame.from_samples(self.processing_owners.sample_resolutions),
+            SampleRtFrame.from_samples(self.samples),
         )
 
-    def sample(self, raw_stem: str) -> ResolvedCanonicalSampleIdentity:
+    def sample(self, raw_stem: str) -> SampleMetadata:
         matches = tuple(
-            sample for sample in self.samples if sample.metadata.raw_stem == raw_stem
+            sample for sample in self.samples if sample.raw_stem == raw_stem
         )
         if len(matches) != 1:
             raise IdentityContractError(
@@ -128,14 +100,13 @@ def build_partition_context(
         str,
         DiscoveryPeakUniverseReceipt,
     ],
-    sample_identity_namespace: str,
     signal_processing_profile: SignalProcessingProfile,
     physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord] | None = None,
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
     | None = None,
     feature_candidate_ids: tuple[str, ...] | None = None,
 ) -> UntargetedPartitionContext:
-    """Mint one replayable request before any real-data runtime RAW handle is opened."""
+    """Bind one run's inputs before any real-data runtime RAW handle is opened."""
 
     if not isinstance(
         method_subject,
@@ -271,11 +242,6 @@ def build_partition_context(
             raise IdentityContractError(
                 "physical replay crossed peak, acquisition, or profile"
             )
-    candidate_universe = candidate_universe_payload(
-        peak_map,
-        discovery_receipts_by_sample=receipt_map,
-        expected_sample_stems=tuple(paths_by_stem),
-    )
     if admitted is not None:
         peak_map = {
             stem: tuple(c for c in values if c.peak_id in admitted)
@@ -290,20 +256,11 @@ def build_partition_context(
         peak_config=peak_config,
         paths_by_stem=paths_by_stem,
         metadata_by_stem=metadata_by_stem,
-        sources_by_stem=sources_by_stem,
         source_expectations=source_expectations,
         peak_map=peak_map,
         receipt_map=receipt_map,
         physical_records=physical_records,
-        sample_identity_namespace=sample_identity_namespace,
         signal_processing_profile=signal_processing_profile,
-        candidate_universe=candidate_universe,
-        feature_candidate_ids=feature_candidate_ids,
-        physical_capture=(
-            physical_capture_input_payload(
-                signal_processing_profile,
-            )
-        ),
     )
 
 
@@ -314,69 +271,27 @@ def compose_partition_context(
     peak_config: ExtractionConfig,
     paths_by_stem: Mapping[str, Path],
     metadata_by_stem: Mapping[str, SampleMetadata],
-    sources_by_stem: Mapping[str, AcquisitionSourceIdentity],
     source_expectations: dict[str, AcquisitionSourceExpectation],
     peak_map: Mapping[str, tuple[DiscoveryPeak, ...]],
     receipt_map: Mapping[str, DiscoveryPeakUniverseReceipt],
     physical_records: dict[str, DiscoveryPhysicalFactRecord],
-    sample_identity_namespace: str,
     signal_processing_profile: SignalProcessingProfile,
-    candidate_universe: dict[str, object],
-    physical_capture: dict[str, object],
-    feature_candidate_ids: tuple[str, ...] | None = None,
 ) -> UntargetedPartitionContext:
-    """Compose request identity from input-owner verified compact facts."""
-    ordered_stems = tuple(
-        stem
-        for stem, _metadata in sorted(
+    """Compose one run from input-owner verified facts, samples in injection order."""
+    samples = tuple(
+        metadata
+        for _stem, metadata in sorted(
             metadata_by_stem.items(),
             key=lambda item: (item[1].injection_order, item[0]),
         )
     )
-    bindings = tuple(
-        AcquisitionInputBinding(
-            acquisition_source_id=sources_by_stem[stem].acquisition_source_id,
-            adapter_input_key=stem,
-            injection_order=_required_injection_order(metadata_by_stem[stem]),
-        )
-        for stem in ordered_stems
-    )
-    request = build_processing_request_identity(
-        acquisition_sources=tuple(sources_by_stem[stem] for stem in ordered_stems),
-        acquisition_bindings=bindings,
-        scientific_input_schema_version=(
-            UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION
-        ),
-        processing_algorithm_version=(UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION),
-        processing_contract_version=(UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION),
-        scientific_inputs={
-            REQUEST_INPUT_KEY: method_subject.request_payload(),
-            DISCOVERY_SETTINGS_INPUT_KEY: discovery_settings_payload(settings),
-            PEAK_UNIVERSE_INPUT_KEY: candidate_universe,
-            PEAK_SETTINGS_INPUT_KEY: scientific_settings_payload(peak_config),
-            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture,
-            **(
-                {ALIGNMENT_FEATURE_INPUT_KEY: list(feature_candidate_ids)}
-                if feature_candidate_ids is not None
-                else {}
-            ),
-        },
-    )
-    snapshot = mint_sample_metadata_snapshot(
-        tuple(metadata_by_stem[stem] for stem in ordered_stems),
-        identity_namespace=sample_identity_namespace,
-    )
-    samples = tuple(
-        resolve_canonical_sample_identity(snapshot, stem) for stem in ordered_stems
-    )
-    owners = compose_processing_owner_references(
-        request=request,
-        attempt=issue_processing_attempt(),
-        sample_snapshot=snapshot,
-        sample_resolutions=samples,
-    )
+    orders = [sample.injection_order for sample in samples]
+    if None in orders:
+        raise IdentityContractError("sample metadata requires injection_order")
+    if len(set(orders)) != len(orders):
+        raise IdentityContractError("injection_order values must be unique")
     return UntargetedPartitionContext(
-        processing_owners=owners,
+        processing_attempt_id=str(uuid.uuid4()),
         samples=samples,
         method_subject=method_subject,
         settings=settings,
@@ -388,86 +303,6 @@ def compose_partition_context(
         physical_records_by_peak=physical_records,
         acquisition_sources_by_sample=source_expectations,
     )
-
-
-def discovery_settings_payload(settings: DiscoverySettings) -> dict[str, object]:
-    if not isinstance(settings, DiscoverySettings):
-        raise IdentityContractError("settings must be DiscoverySettings")
-    return _canonical_json_mapping(
-        {
-            "schema_version": DISCOVERY_SETTINGS_SCHEMA_VERSION,
-            "settings": discovery_settings_identity_fields(settings),
-        },
-        subject="Discovery settings",
-    )
-
-
-def candidate_universe_payload(
-    peaks_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
-    *,
-    discovery_receipts_by_sample: Mapping[
-        str,
-        DiscoveryPeakUniverseReceipt,
-    ],
-    expected_sample_stems: Sequence[str],
-) -> dict[str, object]:
-    declared = _peak_map(
-        peaks_by_sample,
-        expected_sample_stems=expected_sample_stems,
-    )
-    if set(discovery_receipts_by_sample) != set(declared):
-        raise IdentityContractError(
-            "Discovery receipts must bind every peak sample exactly once"
-        )
-    payload: dict[str, object] = {
-        "schema_version": PEAK_UNIVERSE_SCHEMA_VERSION,
-        "samples": [
-            _peak_universe_entry(
-                stem,
-                declared[stem],
-                discovery_receipts_by_sample[stem],
-            )
-            for stem in sorted(declared)
-        ],
-    }
-    validate_peak_universe_payload(
-        payload,
-        expected_sample_stems=expected_sample_stems,
-    )
-    return payload
-
-
-def _required_injection_order(row: SampleMetadata) -> int:
-    if row.injection_order is None:
-        raise IdentityContractError("sample metadata requires injection_order")
-    return row.injection_order
-
-
-def _peak_universe_entry(
-    sample_stem: str,
-    peaks: tuple[DiscoveryPeak, ...],
-    receipt: DiscoveryPeakUniverseReceipt,
-) -> dict[str, object]:
-    ordered = tuple(sorted(peaks, key=lambda item: item.peak_id))
-    candidate_ids = tuple(item.peak_id for item in ordered)
-    if receipt.sample_stem != sample_stem:
-        raise IdentityContractError(
-            "Discovery receipt sample does not match the peak universe"
-        )
-    validate_discovery_peak_universe(
-        receipt,
-        acquisition_source=receipt.acquisition_source,
-        peaks=ordered,
-    )
-    return {
-        "sample_stem": sample_stem,
-        "peak_count": len(ordered),
-        "candidate_ids": list(candidate_ids),
-        "peak_csv_schema_version": (receipt.peak_csv_schema_version),
-        "peak_csv_sha256": receipt.peak_csv_sha256,
-        "peak_csv_byte_size": receipt.peak_csv_byte_size,
-        "acquisition_source_id": receipt.acquisition_source.acquisition_source_id,
-    }
 
 
 def _discovery_receipt_map(
@@ -579,38 +414,8 @@ def _peak_map(
     return result
 
 
-def _canonical_json_mapping(
-    value: Mapping[str, object],
-    *,
-    subject: str,
-) -> dict[str, object]:
-    try:
-        normalized = json.loads(
-            json.dumps(
-                value,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-                allow_nan=False,
-            )
-        )
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise IdentityContractError(
-            f"{subject} must have canonical JSON content"
-        ) from exc
-    if not isinstance(normalized, dict):
-        raise IdentityContractError(f"{subject} must be a mapping")
-    return normalized
-
-
 __all__ = (
-    "DISCOVERY_SETTINGS_INPUT_KEY",
-    "PEAK_SETTINGS_INPUT_KEY",
-    "UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION",
-    "UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION",
-    "UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION",
     "UntargetedPartitionContext",
     "build_partition_context",
-    "candidate_universe_payload",
-    "discovery_settings_payload",
+    "compose_partition_context",
 )

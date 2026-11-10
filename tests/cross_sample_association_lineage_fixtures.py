@@ -15,18 +15,14 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePartitionTransition,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.processing_identity import (
-    ProcessingOwnerReferences,
-)
 from xic_extractor.sample_metadata import (
-    ResolvedCanonicalSampleIdentity,
+    SampleMetadata,
 )
 
 
 @dataclass(frozen=True, slots=True)
 class _CoverageContext:
-    processing_owners: ProcessingOwnerReferences
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    samples: tuple[SampleMetadata, ...]
     sample_order: tuple[str, ...]
     raw_sample_stems: frozenset[str]
     alignment_config: AlignmentConfig
@@ -35,7 +31,7 @@ class _CoverageContext:
 class _Fixture:
     def __init__(self, context: _CoverageContext) -> None:
         self.context = context
-        self.samples = {sample.lookup_token: sample for sample in self.context.samples}
+        self.samples = {sample.raw_stem: sample for sample in self.context.samples}
         self.members: dict[str, CrossSampleGroupMemberSubject] = {}
 
 
@@ -71,7 +67,7 @@ def _final_receipt(
         ),
     )
     return CrossSampleGroupingResult(
-        processing_owners=fixture.context.processing_owners,
+        samples=fixture.context.samples,
         partition_transition=application,
         rt_frame=SampleRtFrame(),
     )

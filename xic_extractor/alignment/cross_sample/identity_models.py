@@ -8,7 +8,7 @@ from typing import Literal, TypeAlias
 
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import PeakObservationContent
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.validation_primitives import require_owner_normalized_text
 
 CrossSampleGroupDisposition: TypeAlias = Literal[
@@ -53,14 +53,14 @@ class CrossSampleGroupMemberSubject:
 
 def group_member_subject_from_peak_hypothesis(
     *,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     hypothesis: PeakHypothesis,
 ) -> CrossSampleGroupMemberSubject:
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
+    if not isinstance(sample, SampleMetadata):
         raise CrossSampleContractError("sample must be canonically resolved")
     if not isinstance(hypothesis, PeakHypothesis) or not hypothesis.is_owner_backed:
         raise CrossSampleContractError("hypothesis must be owner-backed")
-    sample_id = sample.identity.sample_key
+    sample_id = sample.sample_name
     physical_ids = tuple(
         sorted(
             (

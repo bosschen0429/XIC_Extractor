@@ -24,7 +24,6 @@ from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_local_acquisition_source_identity,
-    resolve_request_acquisition_source,
 )
 from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS, RawFileHandle, open_raw
 from xic_extractor.raw_source_binding import (
@@ -83,40 +82,6 @@ def _current_candidates(
     return discovery.peaks
 
 
-def bind_physical_capture(owners, records, *, profile=TEST_PROFILE):
-    """Bind retained Discovery facts into the synthetic request before capture."""
-    import json
-
-    from xic_extractor.peak_detection.search_scope import (
-        PHYSICAL_CAPTURE_INPUT_KEY,
-        physical_capture_input_payload,
-    )
-    from xic_extractor.processing_identity import (
-        build_processing_request_identity,
-        compose_processing_owner_references,
-        issue_processing_attempt,
-    )
-
-    original = owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=original.acquisition_sources,
-        acquisition_bindings=original.acquisition_bindings,
-        scientific_input_schema_version=original.scientific_input_schema_version,
-        processing_algorithm_version=original.processing_algorithm_version,
-        processing_contract_version=original.processing_contract_version,
-        scientific_inputs={
-            **json.loads(original.normalized_scientific_inputs_json),
-            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile),
-        },
-    )
-    return compose_processing_owner_references(
-        request=request,
-        attempt=issue_processing_attempt(),
-        sample_snapshot=owners.sample_snapshot,
-        sample_resolutions=owners.sample_resolutions,
-    )
-
-
 def fake_acquisition_source() -> AcquisitionSourceIdentity:
     with tempfile.TemporaryDirectory() as directory:
         raw_path = Path(directory) / "sample.raw"
@@ -170,10 +135,7 @@ def _peak_config(tmp_path: Path) -> ExtractionConfig:
 
 
 def _source_for(fixture, sample_stem: str) -> AcquisitionSourceIdentity:
-    return resolve_request_acquisition_source(
-        processing_owners=fixture.owners,
-        sample=fixture.sample(sample_stem),
-    )
+    return fixture.source(sample_stem)
 
 
 def _open_bound_raw(

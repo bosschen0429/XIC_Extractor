@@ -70,7 +70,6 @@ def test_target_result_binds_exact_owner_graph_and_completion_receipts(
 
     assert type(result) is FinalizedTargetApplicationResult
     assert result.variant == "targeted"
-    assert result.processing_request is scientific_core.processing_request
     assert len(result.canonical_samples) == 2
     assert all(
         actual is expected
@@ -110,7 +109,6 @@ def test_untarget_result_binds_complete_rows_without_matrix_reconstruction(
 
     assert type(result) is FinalizedUntargetApplicationResult
     assert result.variant == "untargeted"
-    assert result.processing_request is scientific_core.processing_request
     assert result.canonical_samples == scientific_core.canonical_samples
     assert result.scientific_core is scientific_core
     assert result.completed_projection is projection
@@ -177,7 +175,6 @@ def test_untarget_owner_pickle_rebinds_completion(
     )
     assert result.scientific_core is restored_core
     assert result.completed_projection is restored_projection
-    assert restored_core.processing_request == core.processing_request
     assert [d.variant for d in restored_projection.rows[0].decisions] == [
         d.variant for d in projection.rows[0].decisions
     ]

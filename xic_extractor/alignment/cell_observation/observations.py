@@ -38,7 +38,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservationRef
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 TerminalObservationVariant: TypeAlias = Literal[
     "observed",
@@ -70,7 +70,7 @@ class FinalGroupCellObservation:
     """
 
     group: CrossSampleGroupIdentity
-    canonical_sample: ResolvedCanonicalSampleIdentity
+    canonical_sample: SampleMetadata
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...]
     predecessor_cells: tuple[CellObservationRef, ...]
     evidence_states: tuple[FinalCellEvidenceState, ...]
@@ -87,7 +87,7 @@ class FinalGroupCellObservation:
 
     @property
     def sample_key(self) -> str:
-        return self.canonical_sample.identity.sample_key
+        return self.canonical_sample.sample_name
 
     @property
     def evidence_state(self) -> FinalCellEvidenceAggregate:
@@ -225,7 +225,7 @@ def _compose_final_group_cell_observation_population(
             )
             states: tuple[FinalCellEvidenceState, ...]
             recovered = backfilled_by_key.pop(
-                (group.group_hypothesis_id, sample.identity.sample_key), None
+                (group.group_hypothesis_id, sample.sample_name), None
             )
             if recovered is not None:
                 if (
@@ -240,10 +240,7 @@ def _compose_final_group_cell_observation_population(
                     raise CellObservationContractError(
                         "backfill changed original group membership"
                     )
-                if (
-                    _member_for_sample(predecessor, sample.identity.sample_key)
-                    is not None
-                ):
+                if _member_for_sample(predecessor, sample.sample_name) is not None:
                     raise CellObservationContractError(
                         "backfill cannot replace an existing sample member"
                     )
@@ -253,11 +250,7 @@ def _compose_final_group_cell_observation_population(
                 ):
                     states = ("unresolved",)
                 else:
-                    states = (
-                        recovered.method_evidence.recovered_state(
-                            recovered.peak_hypothesis
-                        ),
-                    )
+                    states = (recovered.recovered_evidence_state(),)
             elif not associations:
                 states = ("not_searched",)
             else:
@@ -305,7 +298,7 @@ def _index_predecessor_cells(
     positions_by_key: dict[tuple[str, str], list[BackfillPlanningPosition]] = {}
     for position in positions:
         key = (
-            position.sample.identity.sample_key,
+            position.sample.sample_name,
             position.group_identity.group_hypothesis_id,
         )
         positions_by_key.setdefault(key, []).append(position)
@@ -351,7 +344,7 @@ def _derive_lane_evidence_state(
     association: CrossSampleCoveragePositionAssociation,
     source_cell: CellObservationRef | None,
     final_group: CrossSampleGroupIdentity,
-    canonical_sample: ResolvedCanonicalSampleIdentity,
+    canonical_sample: SampleMetadata,
 ) -> FinalCellEvidenceState:
     if source_cell is None:
         if (
@@ -369,8 +362,7 @@ def _derive_lane_evidence_state(
             "source CellObservationRef crossed the exact predecessor group identity"
         )
     if (
-        source_cell.content.sample_key
-        != association.position.sample.identity.sample_key
+        source_cell.content.sample_key != association.position.sample.sample_name
         or association.position.sample is not canonical_sample
         or association.final_successor is not final_group
     ):
@@ -379,11 +371,11 @@ def _derive_lane_evidence_state(
         )
     source_member = _member_for_sample(
         source_identity,
-        association.position.sample.identity.sample_key,
+        association.position.sample.sample_name,
     )
     final_member = _member_for_sample(
         final_group,
-        canonical_sample.identity.sample_key,
+        canonical_sample.sample_name,
     )
     if source_member is not None and source_member not in final_group.member_subjects:
         raise CellObservationContractError(
@@ -426,9 +418,7 @@ def _derive_lane_evidence_state(
                 "final CrossSample member cannot carry a HOLD or REJECT method lane"
             )
         return "unresolved"
-    state = source_cell.method_evidence.local_state(
-        source_cell.peak_observation, source_cell.peak_hypothesis
-    )
+    state = source_cell.evidence_state()
     if state == "direct_observation":
         if final_member is None:
             raise CellObservationContractError(
@@ -439,7 +429,7 @@ def _derive_lane_evidence_state(
             canonical_sample=canonical_sample,
             terminal_variant="observed",
             terminal_hypothesis=source_cell.peak_hypothesis,
-            method_evidence=source_cell.method_evidence,
+            method_assessment=source_cell.method_assessment,
             peak_observation=source_cell.peak_observation,
             peak_hypothesis=source_cell.peak_hypothesis,
         )

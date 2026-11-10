@@ -34,8 +34,7 @@ from xic_extractor.peak_detection.search_scope import (
     SearchScopeContractError,
     require_capture_binding,
 )
-from xic_extractor.processing_identity import ProcessingRequestIdentity
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 class FinalizedScientificAlignmentContractError(ValueError):
@@ -84,8 +83,7 @@ class FinalizedScientificAlignment:
     """
 
     scope: SearchScope
-    processing_request: ProcessingRequestIdentity
-    canonical_samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    canonical_samples: tuple[SampleMetadata, ...]
     terminal_subjects: tuple[TerminalSearchObservation, ...]
     cell_observation_handoff: CrossSampleAssociationLineageHandoff | None
     cell_observations: tuple[FinalGroupCellObservation, ...]
@@ -133,10 +131,10 @@ def finalize_scientific_alignment(
         )
     )
     _require_terminal_population(scope, terminal_subjects)
-    canonical_samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    canonical_samples: tuple[SampleMetadata, ...]
     samples = scope.samples
     if type(samples) is tuple and all(
-        samples[i].identity.sample_key <= samples[i + 1].identity.sample_key
+        samples[i].sample_name <= samples[i + 1].sample_name
         for i in range(len(samples) - 1)
     ):
         canonical_samples = samples
@@ -144,7 +142,7 @@ def finalize_scientific_alignment(
         canonical_samples = tuple(
             sorted(
                 samples,
-                key=lambda sample: sample.identity.sample_key,
+                key=lambda sample: sample.sample_name,
             )
         )
     canonical_cells: tuple[FinalGroupCellObservation, ...]
@@ -165,7 +163,6 @@ def finalize_scientific_alignment(
             raise FinalizedScientificAlignmentContractError(str(exc)) from exc
     result = FinalizedScientificAlignment(
         scope=scope,
-        processing_request=scope.request,
         canonical_samples=canonical_samples,
         terminal_subjects=terminal_subjects,
         cell_observation_handoff=cell_observation_handoff,

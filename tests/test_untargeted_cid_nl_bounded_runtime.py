@@ -117,7 +117,6 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:partition-invariant-warp",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -267,7 +266,6 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:partition-invariant-warp",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -294,11 +292,11 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
                 assert acquired.succeeded
                 for result in acquired.result[1].sample_results:
                     for attempt in result.backfill_attempts:
-                        stem = result.job.sample.metadata.raw_stem
+                        stem = result.job.sample.raw_stem
                         if stem == "S21":
                             assert attempt.assessment.content.method_result != "SUPPORT"
                         receipt = attempt.assessment.content.evaluation_receipt
-                        queries[result.job.sample.metadata.raw_stem] = (
+                        queries[result.job.sample.raw_stem] = (
                             attempt.query_rt,
                             attempt.query_rt_basis,
                             receipt.query_rt_min,
@@ -823,7 +821,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     )
 
     plan, reference = _plan(tmp_path, monkeypatch, scenario=scenario)
-    request_payload = plan.subject_batch.request_payload()
+    subject_batch = plan.subject_batch
     candidate_by_id = {
         candidate.peak_id: candidate
         for candidates in plan.context.peaks_by_sample.values()
@@ -872,7 +870,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         raw_workers=raw_workers,
         pipeline_overlap=True,
     )
-    assert plan.subject_batch.request_payload() == request_payload
+    assert plan.subject_batch == subject_batch
     assert set(result.application_result.candidate_ids) == set(candidate_by_id)
     assert {
         assessment.content.method_subject.method_subject_id
@@ -1027,9 +1025,7 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     assert actual.candidate_ids == expected.candidate_ids
     assert actual.physical_peak_keys == expected.physical_peak_keys
     assert tuple(actual.excluded_candidates) == expected.excluded_candidates
-    owners = plan.context.processing_owners
-    assert actual.processing_request is owners.request
-    assert actual.processing_attempt is owners.attempt
+    assert actual.processing_attempt_id == plan.context.processing_attempt_id
     assert all(
         left is right
         for left, right in zip(
@@ -1037,11 +1033,6 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
         )
     )
     for child in actual.children:
-        assert child.processing_request is owners.request
-        assert (
-            child.scientific_core.cell_observation_handoff.coverage.processing_owners
-            is owners
-        )
         assert all(
             left is right
             for left, right in zip(
@@ -1216,7 +1207,7 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
             max_partition_jobs=len(plan.context.samples),
             pipeline_overlap=False,
         )
-    failed_attempt_id = plan.context.processing_owners.attempt.processing_attempt_id
+    failed_attempt_id = plan.context.processing_attempt_id
 
     monkeypatch.setattr(owner.StreamedResultStore, "append_children", original_append)
     retry_plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
@@ -1228,13 +1219,10 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         pipeline_overlap=False,
     )
 
-    assert completed.application_result.processing_attempt is (
-        retry_plan.context.processing_owners.attempt
+    assert completed.application_result.processing_attempt_id == (
+        retry_plan.context.processing_attempt_id
     )
-    assert (
-        retry_plan.context.processing_owners.attempt.processing_attempt_id
-        != failed_attempt_id
-    )
+    assert retry_plan.context.processing_attempt_id != failed_attempt_id
     writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
@@ -1247,10 +1235,10 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         baseline.application_result.physical_peak_keys
     )
     completed_samples = tuple(
-        sample.metadata for sample in completed.application_result.canonical_samples
+        sample for sample in completed.application_result.canonical_samples
     )
     baseline_samples = tuple(
-        sample.metadata for sample in baseline.application_result.canonical_samples
+        sample for sample in baseline.application_result.canonical_samples
     )
     assert completed_samples == baseline_samples
     assert all(
@@ -1258,8 +1246,7 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         for _row, _stem, cell in writer_cells(writer)
     )
     assert {
-        sample.metadata.raw_stem
-        for sample in completed.application_result.canonical_samples
+        sample.raw_stem for sample in completed.application_result.canonical_samples
     } == {path.stem for path in retry_plan.context.raw_paths_by_sample.values()}
 
     retry_vendors = tuple(
@@ -1622,16 +1609,16 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         )
 
         expected_initial_sample_ids = {
-            sample.identity.sample_key
+            sample.sample_name
             for sample in plan.context.samples
-            if plan.context.peaks_by_sample[sample.metadata.raw_stem]
+            if plan.context.peaks_by_sample[sample.raw_stem]
         }
         assert {
-            job.sample.identity.sample_key for job in batch.jobs
+            job.sample.sample_name for job in batch.jobs
         } == expected_initial_sample_ids
         assert all(_request_subject_candidates(job) for job in batch.jobs)
         assert all(
-            job.processing_owners is plan.context.processing_owners
+            job.processing_attempt_id == plan.context.processing_attempt_id
             for job in batch.jobs
         )
         live_jobs = len(batch.jobs)
@@ -1698,7 +1685,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     )
     assert type(result) is CompletedUntargetBatchWorkflowResult
     initial_sample_count = sum(
-        bool(plan.context.peaks_by_sample[sample.metadata.raw_stem])
+        bool(plan.context.peaks_by_sample[sample.raw_stem])
         for sample in plan.context.samples
     )
     assert job_counts == [initial_sample_count * 2, initial_sample_count]
@@ -1830,18 +1817,15 @@ def test_sample_worker_transport_references_global_request_owners(
     plan, _reference = _plan(tmp_path, monkeypatch, sample_count=2)
     batch = materialize_untargeted_partition(plan, plan.subject_batch)
     shared = _sample_worker_shared_objects(
-        plan.context.processing_owners,
+        plan.context.samples,
         (batch.jobs[0]._request_subjects, batch.subject_batch),
     )
     source = batch.jobs[0]
 
     restored = owner_pickle_loads(owner_pickle_dumps(source, shared), shared)
 
-    assert restored.processing_owners is source.processing_owners
-    assert restored.processing_owners.request is source.processing_owners.request
-    assert restored.processing_owners.attempt is source.processing_owners.attempt
+    assert restored.sample is source.sample
     assert restored._request_subjects is source._request_subjects
-    assert restored.sample == source.sample
     assert restored.candidates == source.candidates
 
     transported = []
@@ -1854,14 +1838,13 @@ def test_sample_worker_transport_references_global_request_owners(
             on_completed=lambda _done, _total, _job, result: transported.append(result),
         )
     assert all(pid != os.getpid() for pid, _job in transported)
-    expected = {job.sample.identity.sample_key: job for job in batch.jobs}
+    expected = {job.sample.sample_name: job for job in batch.jobs}
     assert len(expected) == 2
     assert len(transported) == len(batch.jobs)
     for _pid, job in transported:
-        original = expected[job.sample.identity.sample_key]
-        assert job.processing_owners is original.processing_owners
+        original = expected[job.sample.sample_name]
+        assert job.sample is original.sample
         assert job._request_subjects is original._request_subjects
-        assert job.sample == original.sample
         assert job.candidates == original.candidates
 
 
@@ -1964,7 +1947,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
     assert serial.succeeded and process.succeeded
     serial_results = tuple(
         (
-            result.job.sample.identity.sample_key,
+            result.job.sample.sample_name,
             result.job.method_subject.method_subject_id,
             tuple(ref.content for ref in result.effective_assessments),
         )
@@ -1972,7 +1955,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
     )
     process_results = tuple(
         (
-            result.job.sample.identity.sample_key,
+            result.job.sample.sample_name,
             result.job.method_subject.method_subject_id,
             tuple(ref.content for ref in result.effective_assessments),
         )
@@ -2042,9 +2025,9 @@ def test_sparse_partition_materializes_only_samples_with_request_candidates(
     assert len(batch.sample_job_templates) == len(plan.context.samples)
     assert batch.jobs
     assert all(_request_subject_candidates(job) for job in batch.jobs)
-    initial_sample_ids = {job.sample.identity.sample_key for job in batch.jobs}
+    initial_sample_ids = {job.sample.sample_name for job in batch.jobs}
     assert len(initial_sample_ids) >= 2
-    missing_sample_id = plan.context.samples[-1].identity.sample_key
+    missing_sample_id = plan.context.samples[-1].sample_name
     assert missing_sample_id not in initial_sample_ids
 
 
@@ -2102,32 +2085,31 @@ def test_sparse_recovery_partition_matches_dense_composition(
 
     dense_by_key = {
         (
-            result.job.sample.metadata.raw_stem,
+            result.job.sample.raw_stem,
             result.job.method_subject.method_subject_id,
         ): result
         for result in dense_runtime.sample_results
     }
     sparse_by_key = {
         (
-            result.job.sample.metadata.raw_stem,
+            result.job.sample.raw_stem,
             result.job.method_subject.method_subject_id,
         ): result
         for result in sparse_runtime.sample_results
     }
-    missing_stem = plan.context.samples[-1].metadata.raw_stem
+    missing_stem = plan.context.samples[-1].raw_stem
     if scenario == "recovery":
         missing_results = [
             result
             for result in sparse_runtime.sample_results
-            if result.job.sample.metadata.raw_stem == missing_stem
+            if result.job.sample.raw_stem == missing_stem
         ]
         assert missing_results
         assert all(result.backfill_attempts for result in missing_results)
         assert set(sparse_by_key) == set(dense_by_key)
     else:
         assert missing_stem not in {
-            result.job.sample.metadata.raw_stem
-            for result in sparse_runtime.sample_results
+            result.job.sample.raw_stem for result in sparse_runtime.sample_results
         }
     assert dense_composition.children == sparse_composition.children
     assert dense_composition.initial_groups == sparse_composition.initial_groups
@@ -2196,7 +2178,7 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
     assert backfill_group_ids
     assert backfill_group_ids == prepared_group_ids
     assert {
-        result.job.sample.metadata.raw_stem
+        result.job.sample.raw_stem
         for result in leaf.sample_results
         if result.backfill_attempts
     } == {"S2", "S3"}

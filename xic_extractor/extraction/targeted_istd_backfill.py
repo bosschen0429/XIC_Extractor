@@ -173,9 +173,9 @@ def resolve_targeted_istd_backfill(
     if not (target.is_istd or target.istd_pair) or not assessments:
         return IstdAnchoredBackfill.none()
     assessment_by_sample = {
-        sample.identity.sample_key: assessment for sample, assessment in assessments
+        sample.sample_name: assessment for sample, assessment in assessments
     }
-    sample_by_id = {sample.identity.sample_key: sample for sample in population.samples}
+    sample_by_id = {sample.sample_name: sample for sample in population.samples}
     direct_supports = tuple(
         CidNlCellGroupSupport(
             sample=sample_by_id[item.owner_observation.content.sample_key],
@@ -188,7 +188,6 @@ def resolve_targeted_istd_backfill(
         and item.owner_hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
     )
     return resolve_istd_anchored_backfill(
-        processing_owners=population.processing_owners,
         sample_population=population.samples,
         target=population.target,
         direct_supports=direct_supports,
@@ -216,10 +215,11 @@ def _paired_istd_observations(
             continue
         observations.append(
             mint_candidate_peak_observation(
-                population.processing_owners,
                 entry.sample,
                 bound_acquisition_trace(
-                    population.processing_owners, entry.sample, pair
+                    population.acquisition_sources[entry.sample.raw_stem],
+                    entry.sample,
+                    pair,
                 ),
                 evaluation,
                 config=config,

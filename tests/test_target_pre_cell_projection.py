@@ -77,18 +77,14 @@ def test_projects_closed_row_binding_and_complete_cell_population(
     )
     assert len(projection.subjects) == len(scope.samples)
     assert tuple(subject.sample for subject in projection.subjects) == tuple(
-        sorted(scope.samples, key=lambda sample: sample.identity.sample_key)
+        sorted(scope.samples, key=lambda sample: sample.sample_name)
     )
     assert all(subject.target is scope.target for subject in projection.subjects)
-    assert all(
-        subject.processing_request is result.processing_request
-        for subject in projection.subjects
-    )
     assert all(
         subject.row_binding is projection.binding for subject in projection.subjects
     )
     assert all(
-        subject.terminal_subject.sample_key == subject.sample.identity.sample_key
+        subject.terminal_subject.sample_key == subject.sample.sample_name
         for subject in projection.subjects
     )
 
@@ -160,10 +156,10 @@ def test_reversed_sample_order_and_no_observation_are_preserved(tmp_path: Path) 
 
     assert projection.binding.variant == "bound"
     assert tuple(
-        subject.sample.identity.sample_key for subject in projection.subjects
-    ) == tuple(sample.identity.sample_key for sample in result.canonical_samples)
+        subject.sample.sample_name for subject in projection.subjects
+    ) == tuple(sample.sample_name for sample in result.canonical_samples)
     subjects_by_sample = {
-        subject.sample.lookup_token: subject for subject in projection.subjects
+        subject.sample.raw_stem: subject for subject in projection.subjects
     }
     assert isinstance(
         subjects_by_sample["sample-a"].terminal_subject,
@@ -173,7 +169,7 @@ def test_reversed_sample_order_and_no_observation_are_preserved(tmp_path: Path) 
         subjects_by_sample["sample-b"].terminal_subject,
         SearchedNoObservationSubject,
     )
-    assert scope.samples[0].lookup_token == "sample-b"
+    assert scope.samples[0].raw_stem == "sample-b"
 
 
 def _final_receipt(
@@ -182,7 +178,7 @@ def _final_receipt(
 ) -> CrossSampleGroupingResult:
     population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
     return CrossSampleGroupingResult(
-        processing_owners=fixture.owners,
+        samples=fixture.samples,
         partition_transition=CrossSamplePartitionTransition(
             status="assessable",
             predecessors=population,

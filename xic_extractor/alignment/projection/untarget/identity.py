@@ -8,7 +8,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
 )
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 class UntargetProjectionContractError(ValueError):
@@ -23,7 +23,7 @@ class GroupCellSubject:
     """
 
     group: CrossSampleGroupIdentity
-    canonical_sample: ResolvedCanonicalSampleIdentity
+    canonical_sample: SampleMetadata
     member_subject: CrossSampleGroupMemberSubject | None
 
     @property

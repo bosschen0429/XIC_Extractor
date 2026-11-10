@@ -23,7 +23,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.cid_nl_peak_support_models import (
     DdaCidNlPeakSupportPolicy,
 )
-from xic_extractor.processing_identity import resolve_request_acquisition_source
 from xic_extractor.raw_reader import RawFileHandle, ensure_assemblies_loaded, open_raw
 from xic_extractor.raw_source_binding import bind_expected_path_identity
 from xic_extractor.untargeted_execution.acquisition_cache import (
@@ -148,35 +147,21 @@ def _open_job_raw(
 ) -> RawFileHandle | CachedUntargetedRaw:
     active_open = open_raw
     expectation = job.acquisition_source_expectation
-    source = (
-        expectation.source
-        if expectation is not None
-        else resolve_request_acquisition_source(
-            processing_owners=job.processing_owners, sample=job.sample
-        )
-    )
+    source = expectation.source
 
     mass_recalibration = job.settings.mass_recalibration
 
     def open_native():
-        if expectation is not None:
-            return active_open(
-                job.raw_path,
-                job.dll_dir,
-                mass_recalibration=mass_recalibration,
-                expected_acquisition_source=source,
-                _expected_path_identity=expectation.path_identity,
-                prepared_mass_recalibration=job.prepared_mass_recalibration,
-            )
         return active_open(
             job.raw_path,
             job.dll_dir,
             mass_recalibration=mass_recalibration,
             expected_acquisition_source=source,
+            _expected_path_identity=expectation.path_identity,
             prepared_mass_recalibration=job.prepared_mass_recalibration,
         )
 
-    if expectation is not None and job.acquisition_cache_dir is not None:
+    if job.acquisition_cache_dir is not None:
         # The input owner already verified the content. Cache replay still checks
         # that this path has that exact identity before returning any facts.
         bind_expected_path_identity(job.raw_path, source, expectation.path_identity)
@@ -200,8 +185,9 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
     try:
         if state.error is None:
             state.adapter_result = adapt_current_discovery_sample_subject(
-                processing_owners=job.processing_owners,
+                processing_attempt_id=job.processing_attempt_id,
                 sample=job.sample,
+                acquisition_source=job.acquisition_source_expectation.source,
                 method_subject=job.method_subject,
                 peaks=_request_subject_candidates(job),
                 support_candidates=job.support_candidates,
@@ -246,8 +232,8 @@ def _execute_initial_assessment_batch(
                 cid_nl_sample_acquisition.acquire_untargeted_cid_nl_sample_trace_batch
             )
             trace_batch = active_acquire(
-                processing_owners=job.processing_owners,
                 sample=job.sample,
+                acquisition_source=job.acquisition_source_expectation.source,
                 peaks=candidates,
                 settings=job.settings,
                 raw=raw,
@@ -257,8 +243,9 @@ def _execute_initial_assessment_batch(
             if state.error is not None:
                 continue
             state.adapter_result = adapt_current_discovery_sample_subject(
-                processing_owners=state.job.processing_owners,
+                processing_attempt_id=state.job.processing_attempt_id,
                 sample=state.job.sample,
+                acquisition_source=state.job.acquisition_source_expectation.source,
                 method_subject=state.job.method_subject,
                 peaks=_request_subject_candidates(state.job),
                 support_candidates=state.job.support_candidates,
@@ -290,7 +277,7 @@ def _apply_backfill_questions(
 ) -> None:
     by_key = {
         (
-            state.job.sample.identity.sample_key,
+            state.job.sample.sample_name,
             state.job.method_subject.method_subject_id,
         ): state
         for state in states
@@ -303,7 +290,7 @@ def _apply_backfill_questions(
             object.__setattr__(
                 job,
                 "work_unit_key",
-                f"untargeted-cid-nl:{job.sample.metadata.raw_stem}:"
+                f"untargeted-cid-nl:{job.sample.raw_stem}:"
                 f"{question.method_subject.method_subject_id}",
             )
             state = _RuntimeJobState(
@@ -328,7 +315,7 @@ def _prepare_group_authorized_backfills(
     sample_templates: tuple[UntargetedPartitionJob, ...] = (),
 ) -> None:
     templates = {
-        job.sample.identity.sample_key: job
+        job.sample.sample_name: job
         for job in sample_templates or tuple(state.job for state in states)
     }
     questions = plan_grouped_cid_nl_backfills(
@@ -377,7 +364,7 @@ def _prepare_subject_authorized_backfills(
     ):
         return ()
     templates = {
-        job.sample.identity.sample_key: job
+        job.sample.sample_name: job
         for job in sample_templates or tuple(state.job for state in states)
     }
     questions = plan_subject_cid_nl_backfills(
@@ -387,7 +374,6 @@ def _prepare_subject_authorized_backfills(
             if state.adapter_result is not None
         ),
         method_subject=states[0].job.method_subject,
-        processing_owners=states[0].job.processing_owners,
         sample_population=tuple(job.sample for job in templates.values()),
         alignment_config=alignment_config,
     )
@@ -425,8 +411,8 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
             cid_nl_backfill_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
         )
         trace_batch = active_acquire(
-            processing_owners=first.processing_owners,
             sample=first.sample,
+            acquisition_source=first.acquisition_source_expectation.source,
             backfill_requests=tuple(
                 target for state in pending for target in state.backfill_targets
             ),
@@ -440,8 +426,9 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
             assert ctx is not None
             for target in state.backfill_targets:
                 backfill = backfill_untargeted_cid_nl_sample_subject(
-                    processing_owners=state.job.processing_owners,
+                    processing_attempt_id=state.job.processing_attempt_id,
                     sample=state.job.sample,
+                    acquisition_source=state.job.acquisition_source_expectation.source,
                     method_subject=state.job.method_subject,
                     group_center_rt=target.center_rt,
                     query_rt=target.sample_query_rt,

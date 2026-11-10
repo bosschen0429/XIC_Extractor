@@ -185,7 +185,7 @@ class CompletedUntargetBatchWorkflowResult:
 
     @property
     def processing_attempt_id(self) -> str:
-        return self.application_result.processing_attempt.processing_attempt_id
+        return self.application_result.processing_attempt_id
 
     def close(self) -> None:
         """Release owned stores once, also when called through a replaced view."""

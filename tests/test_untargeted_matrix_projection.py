@@ -68,7 +68,7 @@ def test_completed_values_project_to_exact_group_sample_positions(
             subject = decision.subject
             evidence = observations[
                 subject.group_hypothesis_id,
-                subject.canonical_sample.identity.sample_key,
+                subject.canonical_sample.sample_name,
             ]
             assert decision.evidence is evidence
             assert subject.group is row.group
@@ -81,9 +81,7 @@ def test_completed_values_project_to_exact_group_sample_positions(
             else:
                 assert decision.variant == "numeric"
                 assert integration is evidence.integrations[0]
-                numeric_by_sample[subject.canonical_sample.metadata.raw_stem] = (
-                    decision.value
-                )
+                numeric_by_sample[subject.canonical_sample.raw_stem] = decision.value
     if group_mode != "single":
         assert numeric_by_sample["sample-c"] == pytest.approx(
             2 * numeric_by_sample["sample-b"]

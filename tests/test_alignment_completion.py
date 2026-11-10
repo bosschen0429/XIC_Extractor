@@ -44,12 +44,11 @@ def test_workflow_forwards_exact_owner_objects_once(
     import xic_extractor.alignment.cell_decision.owner as decision_owner
 
     calls = []
-    owners = object()
     request = _exact_uninitialized(
         TargetWorkflowRequest
         if variant == "target"
         else UntargetWorkflowCompositionRequest,
-        scope=object(),
+        scope=SimpleNamespace(samples=()),
     )
     adapter_fields = {
         "capture_inputs": (
@@ -67,7 +66,7 @@ def test_workflow_forwards_exact_owner_objects_once(
         TargetWorkflowAdapter if variant == "target" else UntargetWorkflowAdapter,
         **adapter_fields,
     )
-    closed_coverage = SimpleNamespace(processing_owners=owners)
+    closed_coverage = SimpleNamespace()
     if variant != "target":
         object.__setattr__(adapter, "closed_cell_coverage", closed_coverage)
     capture = object()
@@ -80,13 +79,6 @@ def test_workflow_forwards_exact_owner_objects_once(
     decisions = object()
     projection = _exact_uninitialized(
         TargetPostCellProjection if variant == "target" else UntargetMatrixProjection
-    )
-    monkeypatch.setattr(
-        workflow_owner,
-        "resolve_workflow_processing_owners",
-        lambda supplied_request, supplied_adapter: (
-            calls.append(("validate", supplied_request, supplied_adapter)) or owners
-        ),
     )
     monkeypatch.setattr(
         workflow_owner,
@@ -137,10 +129,7 @@ def test_workflow_forwards_exact_owner_objects_once(
     application_result = complete_analysis(request, adapter)
     assert application_result.scientific_core is scientific
     assert application_result.completed_projection is projection
-    expected_calls = [
-        "validate",
-        "capture",
-    ]
+    expected_calls = ["capture"]
     expected_calls.append("target_grouping" if variant == "target" else "association")
     expected_calls.append("scientific")
     assert [item[0] for item in calls] == expected_calls

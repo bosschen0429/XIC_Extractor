@@ -166,7 +166,6 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:source-verification",
     )
     baseline = prepare_eager_untargeted_plan(**arguments)
     spec, expectations = compile_discovery_processing_run_spec_with_expectations(
@@ -196,9 +195,7 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
         assert reused.context.acquisition_sources_by_sample[path.stem] is expectation
         assert reused.context.raw_paths_by_sample[path.stem] == path
     assert reused.subject_batch == baseline.subject_batch
-    assert reused.context.processing_owners.request == (
-        baseline.context.processing_owners.request
-    )
+    assert reused.context.samples == baseline.context.samples
     assert reused.context.peaks_by_sample == baseline.context.peaks_by_sample
     assert reused.excluded_candidates == baseline.excluded_candidates
 

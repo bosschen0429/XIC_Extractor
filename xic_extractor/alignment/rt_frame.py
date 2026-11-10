@@ -19,7 +19,7 @@ from xic_extractor.alignment.drift_evidence import (
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.sample_rt_calibration import RtEstimate
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
@@ -119,19 +119,17 @@ class SampleRtFrame:
     @classmethod
     def from_samples(
         cls,
-        samples: Sequence[ResolvedCanonicalSampleIdentity],
+        samples: Sequence[SampleMetadata],
     ) -> SampleRtFrame:
         """Derive metadata once at the boundary that owns the sample universe."""
         return cls(
             injection_order={
-                sample.metadata.raw_stem: sample.metadata.injection_order
+                sample.raw_stem: sample.injection_order
                 for sample in samples
-                if sample.metadata.injection_order is not None
+                if sample.injection_order is not None
             },
-            sample_cohorts={
-                sample.metadata.raw_stem: sample.metadata.batch_id for sample in samples
-            },
-            sample_universe=frozenset(sample.metadata.raw_stem for sample in samples),
+            sample_cohorts={sample.raw_stem: sample.batch_id for sample in samples},
+            sample_universe=frozenset(sample.raw_stem for sample in samples),
         )
 
     def with_sources(

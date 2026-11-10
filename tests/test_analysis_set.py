@@ -86,11 +86,6 @@ def test_flat_and_nested_layouts_give_the_same_analysis_set() -> None:
 
 @pytest.mark.parametrize("header_names", [("B", "B"), ("B", "different"), ("B", "A")])
 def test_header_names_cannot_collide_with_another_raw_alias(header_names):
-    from xic_extractor.sample_metadata import (
-        mint_sample_metadata_snapshot,
-        resolve_canonical_sample_identity,
-    )
-
     headers = [header("/b/A.raw", 0), header("/b/B.raw", 11)]
     rows = {
         h.raw_path: SampleMetadata(
@@ -101,11 +96,13 @@ def test_header_names_cannot_collide_with_another_raw_alias(header_names):
     result = select_analysis_set(
         build_injection_timeline(headers, PerturbationPolicy()), rows
     )
-    snapshot = mint_sample_metadata_snapshot(
-        result.sample_metadata, identity_namespace="test"
-    )
-    assert resolve_canonical_sample_identity(snapshot, "A").metadata.raw_stem == "A"
-    assert resolve_canonical_sample_identity(snapshot, "B").metadata.raw_stem == "B"
+    for token in ("A", "B"):
+        matches = [
+            row
+            for row in result.sample_metadata
+            if token in {row.sample_name, row.raw_stem}
+        ]
+        assert [row.raw_stem for row in matches] == [token]
 
 
 @pytest.mark.parametrize("same_stem_context", [False, True])
@@ -198,13 +195,10 @@ def test_retained_alignment_keeps_full_root_injection_order(
         peak_config=config,
     )
     try:
-        orders = {
-            s.metadata.raw_stem: s.metadata.injection_order
-            for s in prepared.plan.context.samples
-        }
+        orders = {s.raw_stem: s.injection_order for s in prepared.plan.context.samples}
         assert orders == {"A": 1 if same_stem_context else 2, "B": 3}
         assert [
-            (s.metadata.raw_stem, s.metadata.sample_name, s.metadata.sample_role)
+            (s.raw_stem, s.sample_name, s.sample_role)
             for s in prepared.plan.context.samples
         ] == [("A", "A", "study_sample"), ("B", "B", "study_sample")]
         assert orders == {
@@ -292,7 +286,7 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
     )
     try:
         assert [
-            (s.metadata.raw_stem, s.metadata.injection_order, s.metadata.sample_role)
+            (s.raw_stem, s.injection_order, s.sample_role)
             for s in prepared.plan.context.samples
         ] == [("A", 1, "study_sample"), ("B", 3, "pooled_qc")]
     finally:

@@ -547,7 +547,7 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
     ).execute_application(request)
     finalized = execution.finalized_results[0]
     decisions = {
-        decision.subject.sample.metadata.raw_stem: decision
+        decision.subject.sample.raw_stem: decision
         for decision in finalized.completed_projection.decisions
     }
     assert set(decisions) == {"SampleA", "SampleB"}
@@ -1487,7 +1487,7 @@ def test_service_accepts_raw_order_that_differs_from_canonical_order(
     assert execution.published_paths
     assert (
         tuple(
-            sample.metadata.sample_name
+            sample.sample_name
             for sample in execution.finalized_results[0].canonical_samples
         )
         != sample_names
@@ -1729,14 +1729,14 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
             results_by_sample=tuple(
                 sorted(
                     context.results_by_sample,
-                    key=lambda item: item[0].identity.sample_key,
+                    key=lambda item: item[0].sample_name,
                     reverse=True,
                 )
             ),
         )
         if sample_review:
             for sample, file in context.results_by_sample:
-                if sample.metadata.raw_stem == "SampleC":
+                if sample.raw_stem == "SampleC":
                     extraction = file.results["Analyte"]
                     projection = extraction.targeted_product_projection
                     file.results["Analyte"] = replace(
@@ -1754,7 +1754,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
             initial_counts.extend(
                 file.results["Analyte"].targeted_product_projection.counted_detection
                 for sample, file in context.results_by_sample
-                if sample.metadata.raw_stem == "SampleC"
+                if sample.raw_stem == "SampleC"
             )
         if not args[1].definition.target.is_istd:
             from xic_extractor.alignment.peak_trajectories import PeakTrajectory
@@ -1815,7 +1815,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
             "trajectory" if istd_backfill else "paired_istd"
         )
         assert all(
-            s.sample.metadata.raw_stem != "SampleC"
+            s.sample.raw_stem != "SampleC"
             for s in decision.group_facts.group_context.supports
         )
         assert (

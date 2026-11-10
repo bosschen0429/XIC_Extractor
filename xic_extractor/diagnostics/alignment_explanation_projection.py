@@ -25,9 +25,6 @@ from xic_extractor.alignment_explanation.review import review_cell, review_recor
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
 )
-from xic_extractor.peak_detection.cid_nl_method_subject import (
-    cid_nl_method_subject_batch_from_request,
-)
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.rt_calibration_codec import rt_calibration_payload
 
@@ -44,6 +41,14 @@ if TYPE_CHECKING:
     from xic_extractor.untargeted_execution.execution_result import (
         CompletedUntargetBatchWorkflowResult,
     )
+
+
+# Persisted summary labels of the Untargeted CID-NL run contract.
+_RUN_CONTRACT_SUMMARY = {
+    "scientific_input_schema_version": "untargeted_cid_nl_real_data_inputs",
+    "processing_algorithm_version": "untargeted_cid_nl_real_data_algorithm",
+    "processing_contract_version": "untargeted_cid_nl_real_data_contract",
+}
 
 
 def _fields(value: Any, *names: str) -> dict[str, Any]:
@@ -80,7 +85,7 @@ def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
 def _final_cell_observation_payload(observation: Any) -> dict[str, Any]:
     return {
         "evidence_states": observation.evidence_states,
-        "sample_key": (observation.canonical_sample.identity.sample_key),
+        "sample_key": (observation.canonical_sample.sample_name),
         "predecessor_cells": [
             {"content": _cell_observation_content_payload(ref.content)}
             for ref in observation.predecessor_cells
@@ -283,8 +288,7 @@ def prepare_alignment_explanation(
         curve_mz_ranges=curve_mz_ranges,
     ) as sink:
         application = completed.application_result
-        request = application.processing_request
-        subjects = cid_nl_method_subject_batch_from_request(request)
+        subjects = application.method_subjects
         memberships = dict(subjects.candidate_memberships)
         membership_risks = {
             decision.owner_id: asdict(decision.accepted_risk)
@@ -292,12 +296,9 @@ def prepare_alignment_explanation(
             for decision in group.inference_decisions
             if decision.accepted_risk is not None
         }
-        samples = {
-            sample.metadata.raw_stem: sample for sample in application.canonical_samples
-        }
+        samples = {sample.raw_stem: sample for sample in application.canonical_samples}
         sample_ordinals = {
-            sample.identity.sample_key: index
-            for index, sample in enumerate(samples.values())
+            sample.sample_name: index for index, sample in enumerate(samples.values())
         }
         reasons: Counter[str] = Counter()
         subject_candidates: dict[str, set[tuple[str, str]]] = defaultdict(set)
@@ -371,7 +372,7 @@ def prepare_alignment_explanation(
                     reasons.update((payload["route"]["reason"],))
 
         for stem, declared in peaks_by_sample.items():
-            sid = samples[stem].identity.sample_key
+            sid = samples[stem].sample_name
             for candidate in phase_items("candidates", declared):
                 key = candidate.peak_id, sid
                 subject_id = memberships[candidate.peak_id]
@@ -404,7 +405,7 @@ def prepare_alignment_explanation(
             ),
         ):
             work = record.work_item
-            sid = samples[work.sample_stem].identity.sample_key
+            sid = samples[work.sample_stem].sample_name
             related = {(record.peak_id, sid)}
             if record.peak_id not in memberships:
                 sink.add_candidate(
@@ -443,9 +444,7 @@ def prepare_alignment_explanation(
                 ),
                 evaluation=record.evaluation,
                 provenance={
-                    "processing_attempt_id": (
-                        application.processing_attempt.processing_attempt_id
-                    ),
+                    "processing_attempt_id": application.processing_attempt_id,
                 },
                 related=related,
             )
@@ -709,8 +708,7 @@ def prepare_alignment_explanation(
             }
             frame = completed.sample_rt_frame
             sample_stems = {
-                sample.identity.sample_key: sample.metadata.raw_stem
-                for sample in samples.values()
+                sample.sample_name: sample.raw_stem for sample in samples.values()
             }
             group_positions = {}
             for group in core.final_population:
@@ -772,7 +770,7 @@ def prepare_alignment_explanation(
                 raw_position, common_position = position
                 estimate = (
                     frame.estimate_observed_rt(
-                        final_cell.canonical_sample.metadata.raw_stem, common_position
+                        final_cell.canonical_sample.raw_stem, common_position
                     )
                     if frame is not None and common_position is not None
                     else None
@@ -825,7 +823,7 @@ def prepare_alignment_explanation(
                         "membership_risks": risks_by_group_sample.get(
                             (
                                 group_id,
-                                decision.subject.canonical_sample.identity.sample_key,
+                                decision.subject.canonical_sample.sample_name,
                             ),
                             [],
                         ),
@@ -895,25 +893,22 @@ def prepare_alignment_explanation(
             initial_group_member_count = sum(
                 len(group.member_subjects) for group in completed.initial_groups
             )
-            summary = {
-                **_fields(
-                    request,
-                    "scientific_input_schema_version",
-                    "processing_algorithm_version",
-                    "processing_contract_version",
-                ),
-                "processing_attempt_id": (
-                    application.processing_attempt.processing_attempt_id
-                ),
+            summary: dict[str, Any] = {
+                **_RUN_CONTRACT_SUMMARY,
+                "processing_attempt_id": application.processing_attempt_id,
                 "samples": [
                     {
                         "sample_stem": stem,
-                        "sample_key": (sample.identity.sample_key),
+                        "sample_key": (sample.sample_name),
                     }
                     for stem, sample in samples.items()
                 ],
                 "acquisition_sources": [
-                    asdict(source) for source in request.acquisition_sources
+                    asdict(source)
+                    for source in sorted(
+                        application.acquisition_sources,
+                        key=lambda source: source.acquisition_source_id,
+                    )
                 ],
                 "candidate_count": sink.candidate_count,
                 "matrix_row_count": matrix_row_count,
@@ -965,9 +960,9 @@ def prepare_alignment_explanation(
                 rt_calibration_payload(calibration) if calibration is not None else None
             )
             summary["injection_order"] = {
-                stem: sample.metadata.injection_order
+                stem: sample.injection_order
                 for stem, sample in samples.items()
-                if sample.metadata.injection_order is not None
+                if sample.injection_order is not None
             }
             summary["known_istd_reference"] = (
                 {

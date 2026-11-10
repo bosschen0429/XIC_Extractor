@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
@@ -15,10 +14,8 @@ from xic_extractor.alignment.result.application_result import (
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
-    canonical_signal_processing_profile_bytes,
 )
 from xic_extractor.discovery.batch_contract import (
-    PEAK_UNIVERSE_SCHEMA_VERSION,
     DiscoveryPeakUniverseReceipt,
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
@@ -321,7 +318,6 @@ def prepare_eager_untargeted_plan(
         DiscoveryPeakUniverseReceipt,
     ],
     dll_dir: Path,
-    sample_identity_namespace: str,
     signal_processing_profile: SignalProcessingProfile,
     physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord],
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
@@ -348,7 +344,6 @@ def prepare_eager_untargeted_plan(
         peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=discovery_receipts_by_sample,
-        sample_identity_namespace=sample_identity_namespace,
         signal_processing_profile=signal_processing_profile,
         physical_records_by_peak=physical_records_by_peak,
         acquisition_source_expectations=acquisition_source_expectations,
@@ -369,31 +364,27 @@ def prepare_eager_untargeted_plan(
         job
         for sample in context.samples
         for job in build_sample_jobs(
-            processing_owners=context.processing_owners,
+            processing_attempt_id=context.processing_attempt_id,
+            method_subjects=context.method_subject,
             sample=sample,
             subject_work_units=tuple(
                 (
                     subject,
-                    "untargeted-cid-nl:"
-                    f"{sample.metadata.raw_stem}:{subject.method_subject_id}",
+                    f"untargeted-cid-nl:{sample.raw_stem}:{subject.method_subject_id}",
                 )
                 for subject in subject_batch.subjects[:1]
             ),
-            candidates=context.peaks_by_sample[sample.metadata.raw_stem],
-            discovery_receipt=context.discovery_receipts_by_sample[
-                sample.metadata.raw_stem
-            ],
+            candidates=context.peaks_by_sample[sample.raw_stem],
+            discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
             settings=context.settings,
             peak_config=context.peak_config,
-            raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
+            raw_path=context.raw_paths_by_sample[sample.raw_stem],
             acquisition_source_expectation=context.acquisition_sources_by_sample[
-                sample.metadata.raw_stem
+                sample.raw_stem
             ],
             dll_dir=dll_dir,
             signal_processing_profile=context.signal_processing_profile,
-            physical_records=tuple(
-                physical_records_by_sample.get(sample.metadata.raw_stem, ())
-            ),
+            physical_records=tuple(physical_records_by_sample.get(sample.raw_stem, ())),
         )
     )
     return UntargetedInputPlan(
@@ -416,7 +407,6 @@ def prepare_indexed_untargeted_plan(
     dll_dir: Path,
     profile: SignalProcessingProfile,
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...],
-    sample_identity_namespace: str,
     restore_candidate: Callable[
         [DiscoveryPeak, DiscoveryPhysicalFactRecord], DiscoveryPeak
     ],
@@ -483,22 +473,6 @@ def prepare_indexed_untargeted_plan(
         composition=composition,
     )
     receipts = source.batch.peak_receipts
-    entries = []
-    for stem in sorted(source):
-        receipt = receipts[stem]
-        entries.append(
-            {
-                "sample_stem": stem,
-                "peak_count": receipt.peak_count,
-                "candidate_ids": list(source.candidate_ids(stem)),
-                "peak_csv_schema_version": (receipt.peak_csv_schema_version),
-                "peak_csv_sha256": receipt.peak_csv_sha256,
-                "peak_csv_byte_size": receipt.peak_csv_byte_size,
-                "acquisition_source_id": (
-                    receipt.acquisition_source.acquisition_source_id
-                ),
-            }
-        )
     expectations = {
         path.stem: expectation
         for path, expectation in zip(
@@ -511,24 +485,13 @@ def prepare_indexed_untargeted_plan(
         peak_config=peak_config,
         paths_by_stem={path.stem: path for path in raw_paths},
         metadata_by_stem={sample.raw_stem: sample for sample in sample_metadata},
-        sources_by_stem={stem: item.source for stem, item in expectations.items()},
         source_expectations=expectations,
         peak_map={stem: () for stem in source},
         receipt_map={
             stem: receipt for stem, receipt in receipts.items() if receipt is not None
         },
         physical_records={},
-        sample_identity_namespace=sample_identity_namespace,
         signal_processing_profile=profile,
-        candidate_universe={
-            "schema_version": PEAK_UNIVERSE_SCHEMA_VERSION,
-            "samples": entries,
-        },
-        physical_capture={
-            "schema_version": "physical_capture_inputs",
-            "profile": json.loads(canonical_signal_processing_profile_bytes(profile)),
-        },
-        feature_candidate_ids=feature_ids,
     )
     return UntargetedInputPlan(
         subject_batch=subject_batch,

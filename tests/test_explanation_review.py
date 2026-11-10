@@ -258,7 +258,7 @@ def test_default_review_keeps_values_and_query_without_curves(
     assert all("artifact" not in row for row in records["method_assessments"])
     expected = sorted(
         (
-            decision.subject.canonical_sample.identity.sample_key,
+            decision.subject.canonical_sample.sample_name,
             decision.variant,
             getattr(decision, "value", None),
         )

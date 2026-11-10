@@ -162,7 +162,7 @@ def _associate_position(
             successor,
             resolution,
         )
-    sample_id = position.sample.identity.sample_key
+    sample_id = position.sample.sample_name
     matching_members = tuple(
         member
         for member in position.group_identity.member_subjects

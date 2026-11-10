@@ -1186,8 +1186,8 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
         evidence = cid_nl_evidence(fixture, name, scan_number=1, scan_rt_min=rt)
         support = cid_nl_unique_support(fixture, name, peak=peak, evidence=evidence)
         assessment = mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners,
             sample=sample,
+            acquisition_source=fixture.source(sample),
             target=fixture.target,
             detector_invocation_id=f"direct:{name}",
             evaluation_receipt=CidNlEvaluationReceipt(
@@ -1203,7 +1203,6 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
             individual_support_refs=(support,),
         )
         (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
-            processing_owners=fixture.owners,
             sample=sample,
             assessment=assessment,
         )
@@ -1242,14 +1241,14 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
         sample_population=fixture.samples,
         alignment_config=config,
         rt_frame=frame,
-        half_windows_by_sample={s.identity.sample_key: 1.0 for s in fixture.samples},
+        half_windows_by_sample={s.sample_name: 1.0 for s in fixture.samples},
     )
     by_id = {q.sample_key: q for q in questions}
     assert set(by_id) == {
-        fixture.sample(name).identity.sample_key for name in ("BC1116", "independent")
+        fixture.sample(name).sample_name for name in ("BC1116", "independent")
     }
-    bad = by_id[fixture.sample("BC1116").identity.sample_key].localization
-    good = by_id[fixture.sample("independent").identity.sample_key].localization
+    bad = by_id[fixture.sample("BC1116").sample_name].localization
+    good = by_id[fixture.sample("independent").sample_name].localization
     assert not bad.location.observed and not bad.reliable
     assert bad.location.basis == "trajectory_reference"
     assert bad.location.query_rt == pytest.approx(32.988294154916666)

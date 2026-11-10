@@ -114,7 +114,7 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
     ) == (
         (
             spine.group,
-            frozenset({fixture.sample("pooled").identity.sample_key}),
+            frozenset({fixture.sample("pooled").sample_name}),
         ),
     )
 
@@ -131,7 +131,7 @@ def test_rejected_group_plans_no_backfill(tmp_path: Path) -> None:
         (spine.group,), sample_population=fixture.samples
     )
     assert established == (
-        (spine.group, frozenset({fixture.sample("s3").identity.sample_key})),
+        (spine.group, frozenset({fixture.sample("s3").sample_name})),
     )
 
     rejected = replace(
@@ -171,7 +171,7 @@ def test_large_run_backfill_preserves_population_threshold(
             (
                 spine.group,
                 frozenset(
-                    fixture.sample(f"s{i}").identity.sample_key
+                    fixture.sample(f"s{i}").sample_name
                     for i in range(support_count, 85)
                 ),
             ),
@@ -233,7 +233,7 @@ def test_incomplete_group_snapshot_is_held_even_when_support_threshold_passes(
     retained_cells = tuple(
         cell
         for cell in spine.cells
-        if cell.content.sample_key != fixture.sample("s4").identity.sample_key
+        if cell.content.sample_key != fixture.sample("s4").sample_name
     )
     facts = assess_conservative_backfill_group(
         retained_cells,
@@ -312,8 +312,7 @@ def test_terminal_method_results_precede_group_recovery_eligibility(
     retained_cells = tuple(
         cell
         for cell in incomplete_spine.cells
-        if cell.content.sample_key
-        != incomplete_fixture.sample("omitted").identity.sample_key
+        if cell.content.sample_key != incomplete_fixture.sample("omitted").sample_name
     )
     incomplete = assess_conservative_backfill_group(
         retained_cells,
@@ -631,61 +630,10 @@ def test_recovery_receipt_prevents_independent_near_isobaric_target_pairing(
         match="exact sample and target",
     ):
         mint_conservative_backfill_candidate_universe(
-            processing_owners=fixture.owners,
             sample=fixture.sample("missing"),
             group_facts=(other_facts,),
             candidate_assessment=universe.candidate_assessment,
         )
-
-
-def test_recovery_receipt_rejects_truncated_processing_request_population(
-    tmp_path: Path,
-) -> None:
-    sample_stems = tuple(f"s{index:02d}" for index in range(1, 61))
-    fixture = _study_fixture(tmp_path, sample_stems)
-    spine = _spine(
-        fixture,
-        support_apex_by_sample={"s01": 8.0, "s02": 8.0},
-        invocation="truncated-request-population",
-    )
-    truncated_population = fixture.samples[:3]
-    truncated_sample_ids = {
-        sample.identity.sample_key for sample in truncated_population
-    }
-    truncated_cells = tuple(
-        cell for cell in spine.cells if cell.content.sample_key in truncated_sample_ids
-    )
-    facts = assess_conservative_backfill_group(
-        truncated_cells,
-        sample_population=truncated_population,
-    )
-
-    assert facts.group_frozen is True
-    assert facts.sample_count_n == 3
-    assert facts.minimum_support_k == 2
-    assert facts.may_attempt_backfill is True
-    with pytest.raises(
-        ConservativeBackfillContractError,
-        match="full processing request",
-    ):
-        _recovery_universe(
-            fixture,
-            (facts,),
-            "s03",
-            (_peak(fixture, "s03", apex_rt=8.0),),
-        )
-
-    full_facts = assess_conservative_backfill_group(
-        spine.cells,
-        sample_population=fixture.samples,
-    )
-    valid_universe = _recovery_universe(
-        fixture,
-        (full_facts,),
-        "s03",
-        (_peak(fixture, "s03", apex_rt=8.0),),
-    )
-    assert valid_universe.group_facts == (full_facts,)
 
 
 def test_rt_mismatch_remains_nonnumeric_without_drift_or_split_logic(
@@ -740,20 +688,20 @@ def _spine(
     effective_target = fixture.target if target is None else target
     assessments = tuple(
         (
-            fixture.sample(sample.metadata.raw_stem),
+            fixture.sample(sample.raw_stem),
             (
                 _reject_assessment(
                     fixture,
-                    sample.metadata.raw_stem,
+                    sample.raw_stem,
                     scan_number=100 + index,
                     invocation=f"{invocation}:{index}",
                     target=effective_target,
                 )
-                if sample.metadata.raw_stem in reject_sample_stems
+                if sample.raw_stem in reject_sample_stems
                 else _assessment(
                     fixture,
-                    sample.metadata.raw_stem,
-                    support_apex=support_apex_by_sample.get(sample.metadata.raw_stem),
+                    sample.raw_stem,
+                    support_apex=support_apex_by_sample.get(sample.raw_stem),
                     scan_number=100 + index,
                     invocation=f"{invocation}:{index}",
                     target=effective_target,
@@ -763,7 +711,6 @@ def _spine(
         for index, sample in enumerate(fixture.samples, start=1)
     )
     spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
         target=effective_target,
         sample_assessments=assessments,
     )
@@ -787,8 +734,8 @@ def _reject_assessment(
         scan_rt_min=8.0,
     )
     return mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
+        acquisition_source=fixture.source(fixture.sample(sample_stem)),
         target=effective_target,
         detector_invocation_id=invocation,
         evaluation_receipt=CidNlEvaluationReceipt(
@@ -816,8 +763,8 @@ def _assessment(
     effective_target = fixture.target if target is None else target
     if support_apex is None:
         return mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners,
             sample=sample,
+            acquisition_source=fixture.source(sample),
             target=effective_target,
             detector_invocation_id=invocation,
             evaluation_receipt=CidNlEvaluationReceipt(
@@ -850,8 +797,8 @@ def _assessment(
         for evidence in evidence_refs
     )
     return mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=sample,
+        acquisition_source=fixture.source(sample),
         target=effective_target,
         detector_invocation_id=invocation,
         evaluation_receipt=CidNlEvaluationReceipt(
@@ -890,8 +837,8 @@ def _recovery_universe(
     peaks,
 ):
     assessment = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
+        acquisition_source=fixture.source(fixture.sample(sample_stem)),
         target=fixture.target,
         detector_invocation_id=f"backfill-recovery:{sample_stem}",
         evaluation_receipt=CidNlEvaluationReceipt(
@@ -905,7 +852,6 @@ def _recovery_universe(
         candidate_peaks=tuple(peaks),
     )
     return mint_conservative_backfill_candidate_universe(
-        processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
         group_facts=tuple(group_facts),
         candidate_assessment=assessment,

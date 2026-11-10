@@ -24,7 +24,6 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
-    TargetListSnapshot,
 )
 from xic_extractor.extraction.result_assembly import TARGETED_ACQUISITION_TRACE_SOURCE
 from xic_extractor.extraction.result_models import ExtractionResult, FileResult
@@ -60,14 +59,11 @@ from xic_extractor.peak_detection.search_scope import (
     target_ms1_subject_id,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import (
-    ProcessingOwnerReferences,
-    resolve_request_acquisition_source,
-)
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 ResultsBySample = tuple[
-    tuple[ResolvedCanonicalSampleIdentity, FileResult],
+    tuple[SampleMetadata, FileResult],
     ...,
 ]
 
@@ -76,7 +72,7 @@ ResultsBySample = tuple[
 class TargetedSampleCapture:
     """One sample's retained result and, when it has a candidate, its capture."""
 
-    sample: ResolvedCanonicalSampleIdentity
+    sample: SampleMetadata
     file_result: FileResult
     result: ExtractionResult
     candidate_id: str | None
@@ -108,8 +104,8 @@ class TargetedCapturePopulation:
     """Every sample of one Target, with its scope and owner-bound captures."""
 
     target: ResolvedTargetDefinition
-    processing_owners: ProcessingOwnerReferences
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
+    samples: tuple[SampleMetadata, ...]
     scope: TargetSearchScope
     method_subject_id: str
     entries: tuple[TargetedSampleCapture, ...]
@@ -134,14 +130,12 @@ class TargetedCapturePopulation:
 
     def bind_assessments(
         self,
-        assessments: Sequence[
-            tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef]
-        ],
+        assessments: Sequence[tuple[SampleMetadata, CidNlMethodAssessmentRef]],
     ) -> TargetedCapturePopulation:
         """Bind each selected observation to its assessment-universe hypothesis."""
 
         assessment_by_sample = {
-            sample.identity.sample_key: assessment for sample, assessment in assessments
+            sample.sample_name: assessment for sample, assessment in assessments
         }
         bound_entries = []
         for entry in self.entries:
@@ -154,9 +148,8 @@ class TargetedCapturePopulation:
                 bound_entries.append(entry)
                 continue
             hypotheses = compose_peak_hypotheses_from_assessment_universe(
-                processing_owners=self.processing_owners,
                 sample=entry.sample,
-                assessment=assessment_by_sample[entry.sample.identity.sample_key],
+                assessment=assessment_by_sample[entry.sample.sample_name],
             )
             matches = tuple(
                 hypothesis
@@ -186,7 +179,7 @@ class TargetedCapturePopulation:
 
         replacements: dict[str, CaptureCandidateBinding] = {}
         for entry in self.entries:
-            recovery = recovery_observations.get(entry.sample.identity.sample_key)
+            recovery = recovery_observations.get(entry.sample.sample_name)
             if (
                 entry.candidate_id is None
                 or recovery is None
@@ -201,7 +194,7 @@ class TargetedCapturePopulation:
                 if evaluation is recovery.physical_evaluation
             )
             replacements[entry.candidate_id] = _capture_binding(
-                self.processing_owners,
+                self.acquisition_sources[entry.sample.raw_stem],
                 self.target,
                 entry.sample,
                 replace(entry.result, physical_evaluation=recovery.physical_evaluation),
@@ -219,7 +212,6 @@ class TargetedCapturePopulation:
             capture_bindings=bindings,
             declared_candidate_ids=tuple(binding.candidate_id for binding in bindings),
         )
-        sample_by_id = {sample.identity.sample_key: sample for sample in self.samples}
         rebound_entries = []
         for entry in self.entries:
             if entry.captured is None:
@@ -242,8 +234,6 @@ class TargetedCapturePopulation:
                 )
                 observation = recovery
                 hypothesis = compose_ms1_observation_peak_hypothesis(
-                    processing_owners=self.processing_owners,
-                    sample=sample_by_id[binding.sample_key],
                     peak_observation=observation,
                 )
             if observation is not None and hypothesis is not None:
@@ -268,8 +258,8 @@ class TargetedCapturePopulation:
 def build_targeted_capture_population(
     *,
     target: ResolvedTargetDefinition,
-    processing_owners: ProcessingOwnerReferences,
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
+    acquisition_sources: Mapping[str, AcquisitionSourceIdentity],
+    samples: tuple[SampleMetadata, ...],
     results_by_sample: ResultsBySample,
     config: ExtractionConfig,
 ) -> TargetedCapturePopulation:
@@ -311,7 +301,7 @@ def build_targeted_capture_population(
             )
     bindings = tuple(
         _capture_binding(
-            processing_owners,
+            acquisition_sources[sample.raw_stem],
             target,
             sample,
             result,
@@ -322,7 +312,6 @@ def build_targeted_capture_population(
     )
     scope = TargetSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=processing_owners.request,
         samples=samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -341,17 +330,17 @@ def build_targeted_capture_population(
         ),
         declared_candidate_ids=tuple(binding.candidate_id for binding in bindings),
         capture_bindings=bindings,
-        target_snapshot=_target_snapshot(processing_owners),
+        target_snapshot=target.snapshot,
         target=target,
     )
     candidate_by_sample = {
-        sample.identity.sample_key: (result, candidate_id)
+        sample.sample_name: (result, candidate_id)
         for sample, result, candidate_id in candidates
     }
     entries = []
     for sample, file_result in results_by_sample:
         result = file_result.results[label]
-        candidate = candidate_by_sample.get(sample.identity.sample_key)
+        candidate = candidate_by_sample.get(sample.sample_name)
         if candidate is None:
             if ms1_only:
                 raise RuntimeError(
@@ -371,7 +360,10 @@ def build_targeted_capture_population(
             continue
         result, candidate_id = candidate
         trace = _target_capture_trace(
-            processing_owners, sample, result, target.definition.target
+            acquisition_sources[sample.raw_stem],
+            sample,
+            result,
+            target.definition.target,
         )
         captured = capture_peak_hypotheses(
             scope=scope, candidate_id=candidate_id, trace=trace
@@ -379,7 +371,6 @@ def build_targeted_capture_population(
         selected_observation = (
             mint_captured_peak_observation(
                 captured,
-                processing_owners=processing_owners,
                 sample=sample,
             )
             if captured.selected_hypothesis is not None
@@ -390,8 +381,6 @@ def build_targeted_capture_population(
                 None
                 if selected_observation is None
                 else compose_ms1_observation_peak_hypothesis(
-                    processing_owners=processing_owners,
-                    sample=sample,
                     peak_observation=selected_observation,
                 )
             )
@@ -435,7 +424,6 @@ def build_targeted_capture_population(
         )
         alternate_observations = iter(
             mint_physical_peak_observations(
-                processing_owners=processing_owners,
                 sample=sample,
                 trace=trace,
                 evaluations=alternate_evaluations,
@@ -465,7 +453,7 @@ def build_targeted_capture_population(
         )
     return TargetedCapturePopulation(
         target=target,
-        processing_owners=processing_owners,
+        acquisition_sources=acquisition_sources,
         samples=samples,
         scope=scope,
         method_subject_id=method_subject_id,
@@ -474,8 +462,8 @@ def build_targeted_capture_population(
 
 
 def bound_acquisition_trace(
-    owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    source: AcquisitionSourceIdentity,
+    sample: SampleMetadata,
     result: ExtractionResult,
 ) -> Trace:
     """Return the retained trace re-bound to the canonical sample and source."""
@@ -483,11 +471,7 @@ def bound_acquisition_trace(
     trace = result.acquisition_trace
     if trace is None:
         raise RuntimeError("Targeted result has no retained acquisition trace")
-    source = resolve_request_acquisition_source(
-        processing_owners=owners,
-        sample=sample,
-    )
-    if trace.sample_name != sample.metadata.sample_name:
+    if trace.sample_name != sample.sample_name:
         raise RuntimeError(
             "Targeted acquisition trace crossed the canonical sample identity"
         )
@@ -497,7 +481,7 @@ def bound_acquisition_trace(
         )
     return replace(
         trace,
-        sample_name=sample.metadata.sample_name,
+        sample_name=sample.sample_name,
         source=TARGETED_ACQUISITION_TRACE_SOURCE,
         acquisition_source_id=source.acquisition_source_id,
     )
@@ -505,13 +489,13 @@ def bound_acquisition_trace(
 
 def targeted_capture_candidate_id(
     target: ResolvedTargetDefinition,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
 ) -> str:
     return ":".join(
         (
             "targeted-capture",
             target.lookup_label,
-            sample.identity.sample_key,
+            sample.sample_name,
         )
     )
 
@@ -526,8 +510,7 @@ def targeted_signal_processing_profile(
 
 
 def mint_candidate_peak_observation(
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     trace: Trace,
     evaluation: PhysicalPeakEvaluation,
     *,
@@ -535,7 +518,6 @@ def mint_candidate_peak_observation(
     acquired_trace_provenance: PeakObservationGenerationProvenance | None,
 ) -> PeakObservationRef:
     return mint_physical_peak_observations(
-        processing_owners=processing_owners,
         sample=sample,
         trace=trace,
         evaluations=(evaluation,),
@@ -546,16 +528,16 @@ def mint_candidate_peak_observation(
 
 
 def _capture_binding(
-    owners: ProcessingOwnerReferences,
+    source: AcquisitionSourceIdentity,
     target: ResolvedTargetDefinition,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     result: ExtractionResult,
     candidate_id: str,
     *,
     method_subject_id: str,
 ) -> CaptureCandidateBinding:
     trace = _target_capture_trace(
-        owners,
+        source,
         sample,
         result,
         target.definition.target,
@@ -564,14 +546,10 @@ def _capture_binding(
     if physical_evaluation is None:
         raise RuntimeError("Targeted capture lost its acquisition physical evaluation")
     preferred_rt = physical_evaluation.question.query_rt_min
-    source = resolve_request_acquisition_source(
-        processing_owners=owners,
-        sample=sample,
-    )
     return CaptureCandidateBinding(
         candidate_id=candidate_id,
         method_subject_id=method_subject_id,
-        sample_key=sample.identity.sample_key,
+        sample_key=sample.sample_name,
         acquisition_source_id=source.acquisition_source_id,
         query_mz=trace.mz,
         query_rt_min=trace.rt_min,
@@ -586,20 +564,13 @@ def _capture_binding(
 
 
 def _target_capture_trace(
-    owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    source: AcquisitionSourceIdentity,
+    sample: SampleMetadata,
     result: ExtractionResult,
     target: Target,
 ) -> Trace:
     # Expected RT identifies the target; retained acquisition coverage is authoritative.
-    return bound_acquisition_trace(owners, sample, result)
-
-
-def _target_snapshot(owners: ProcessingOwnerReferences) -> TargetListSnapshot:
-    snapshot = owners.target_snapshot
-    if snapshot is None:
-        raise RuntimeError("Targeted production lost its target snapshot")
-    return snapshot
+    return bound_acquisition_trace(source, sample, result)
 
 
 __all__ = [

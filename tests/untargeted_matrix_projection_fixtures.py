@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -56,9 +55,6 @@ from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import (
-    resolve_request_acquisition_source,
-)
 
 
 def _untarget_projection_inputs(
@@ -77,18 +73,16 @@ def _untarget_projection_inputs(
         scope_path,
         sample_roles={"sample-b": "qc", "sample-c": "study_sample"},
     )
-    request = fixture.owners.request
     # CID-NL composition leaves unsearched samples out of the spine; their
     # coverage positions carry no discovery input.
     spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
         method_subject=fixture.method_subject,
         sample_assessments=(
             (
                 fixture.samples[0],
                 _support_input(
                     fixture,
-                    fixture.samples[0].lookup_token,
+                    fixture.samples[0].raw_stem,
                     scan_number=90,
                     height=100.0,
                 ).assessment,
@@ -101,14 +95,13 @@ def _untarget_projection_inputs(
     successors = predecessor_groups
     if group_mode in {"two", "merged"}:
         right_spine = build_cid_nl_reference_spine(
-            processing_owners=fixture.owners,
             method_subject=fixture.method_subject,
             sample_assessments=(
                 (
                     fixture.samples[1],
                     _support_input(
                         fixture,
-                        fixture.samples[1].lookup_token,
+                        fixture.samples[1].raw_stem,
                         scan_number=92,
                         height=200.0,
                     ).assessment,
@@ -148,11 +141,7 @@ def _untarget_projection_inputs(
             )
             for group in successors
         )
-    cell_fixture = SimpleNamespace(
-        owners=fixture.owners,
-        samples=fixture.samples,
-        request=fixture.owners.request,
-    )
+    cell_fixture = fixture
     receipt = _lineage_final_receipt(
         _receipt_fixture(cell_fixture, fixture.samples),
         predecessors=predecessor_groups,
@@ -179,10 +168,7 @@ def _untarget_projection_inputs(
     for candidate_id, sample, intensity in zip(
         candidate_ids, fixture.samples, intensities, strict=True
     ):
-        source = resolve_request_acquisition_source(
-            processing_owners=fixture.owners,
-            sample=sample,
-        )
+        source = fixture.source(sample)
         bindings.append(
             _capture_binding(
                 candidate_id=candidate_id,
@@ -197,7 +183,7 @@ def _untarget_projection_inputs(
         )
         traces.append(
             Trace.from_arrays(
-                sample_name=sample.metadata.sample_name,
+                sample_name=sample.sample_name,
                 mz=fixture.method_subject.precursor_mz,
                 rt=rt,
                 intensity=intensity,
@@ -210,7 +196,7 @@ def _untarget_projection_inputs(
         )
     scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=request,
+        method_subjects=fixture.method_subject,
         samples=fixture.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -277,8 +263,8 @@ def _support_input(
         evidence=evidence,
     )
     assessment = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
+        acquisition_source=fixture.source(fixture.sample(sample_stem)),
         method_subject=fixture.method_subject,
         detector_invocation_id=f"gaussian15:{sample_stem}",
         evaluation_receipt=_completed_receipt(),

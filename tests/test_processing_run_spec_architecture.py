@@ -14,6 +14,7 @@ def test_fresh_run_spec_import_adds_only_the_owner_module() -> None:
         import xic_extractor.processing_identity
         import xic_extractor.configuration.signal_processing_profile
         import xic_extractor.validation_primitives
+        import xic_extractor.configuration.mass_recalibration
         baseline = {
             name for name in sys.modules if name.startswith("xic_extractor")
         }

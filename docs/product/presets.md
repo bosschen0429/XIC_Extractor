@@ -59,7 +59,7 @@ scale. Inclusion-list setpoints are unchanged.
 
 Set `mass_recalibration = "none"` in `[discovery]` to keep vendor masses.
 Export preserves an explicit `none` and omits the default. In persisted
-method/request identities, an absent policy means `none`, and restoration runs
+method identities, an absent policy means `none`, and restoration runs
 have a different scientific identity from `none` and `easy_ic_probe` runs.
 
 Each RAW's mass result is saved where its review can replay it:

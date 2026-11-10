@@ -14,8 +14,10 @@ import math
 from dataclasses import dataclass
 from typing import Literal, cast, final
 
-from xic_extractor.alignment.cell_observation.cid_nl_evidence import CidNlCellEvidence
-from xic_extractor.alignment.cell_observation.method_evidence import CellMethodEvidence
+from xic_extractor.alignment.backfill.cid_nl_evidence import (
+    cid_nl_allows_physical_localization,
+    cid_nl_backfill_block_reason,
+)
 from xic_extractor.alignment.cell_observation.observations import (
     CellObservationRef,
     CidNlCellGroupContext,
@@ -36,11 +38,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_BACKFILL_POLICY,
     PreparedSignalResult,
 )
-from xic_extractor.processing_identity import (
-    ProcessingAttemptIdentity,
-    ProcessingOwnerReferences,
-)
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 POLICY_VERSION = "conservative-backfill"
 PRODUCT_AUTHORITY = "none"
@@ -63,7 +61,7 @@ class ConservativeBackfillGroupFacts:
 
     group_context: CidNlCellGroupContext
     source_cells: tuple[CellObservationRef, ...]
-    sample_population: tuple[ResolvedCanonicalSampleIdentity, ...]
+    sample_population: tuple[SampleMetadata, ...]
     activation_eligible_sample_ids: tuple[str, ...]
     direct_support_sample_ids: tuple[str, ...]
     activation_eligible_support_sample_ids: tuple[str, ...]
@@ -82,12 +80,9 @@ class ConservativeBackfillGroupFacts:
 class ConservativeBackfillCandidateUniverse:
     """Owner receipt binding one sample×method-subject revisit to its peak set."""
 
-    processing_owners: ProcessingOwnerReferences
-    processing_attempt: ProcessingAttemptIdentity
-    sample: ResolvedCanonicalSampleIdentity
+    sample: SampleMetadata
     group_facts: tuple[ConservativeBackfillGroupFacts, ...]
     candidate_assessment: CidNlMethodAssessmentRef
-    method_evidence: CellMethodEvidence
     localization: BackfillPeakLocation | None = None
     localization_sources: tuple[PeakObservationRef, ...] = ()
 
@@ -147,8 +142,7 @@ def minimum_direct_support_count(sample_count_n: int) -> int:
 
 def mint_conservative_backfill_candidate_universe(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     group_facts: tuple[ConservativeBackfillGroupFacts, ...],
     candidate_assessment: CidNlMethodAssessmentRef,
     localization: BackfillPeakLocation | None = None,
@@ -156,30 +150,9 @@ def mint_conservative_backfill_candidate_universe(
 ) -> ConservativeBackfillCandidateUniverse:
     """Mint the sole target↔peak pairing authority for one Backfill revisit."""
 
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise ConservativeBackfillContractError(
-            "backfill universe requires validated processing owners"
-        )
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity) or not any(
-        sample is owned for owned in processing_owners.sample_resolutions
-    ):
-        raise ConservativeBackfillContractError(
-            "backfill universe sample is outside the processing owner closure"
-        )
     facts = _canonical_backfill_group_facts(group_facts)
-    population = _processing_owner_sample_population(processing_owners)
-    # The cohort sets S/K; do not silently admit a truncated study at this join.
-    population_ids = tuple(item.identity.sample_key for item in population)
-    if any(
-        tuple(item.identity.sample_key for item in fact.sample_population)
-        != population_ids
-        for fact in facts
-    ):
-        raise ConservativeBackfillContractError(
-            "backfill group population must close the full processing request"
-        )
     if (
-        candidate_assessment.content.sample_key != sample.identity.sample_key
+        candidate_assessment.content.sample_key != sample.sample_name
         or candidate_assessment.content.method_subject.method_subject_id
         != _group_method_subject_id(facts[0])
     ):
@@ -188,12 +161,9 @@ def mint_conservative_backfill_candidate_universe(
             "method subject"
         )
     return ConservativeBackfillCandidateUniverse(
-        processing_owners=processing_owners,
-        processing_attempt=processing_owners.attempt,
         sample=sample,
         group_facts=facts,
         candidate_assessment=candidate_assessment,
-        method_evidence=CidNlCellEvidence(candidate_assessment),
         localization=localization,
         localization_sources=localization_sources,
     )
@@ -202,7 +172,7 @@ def mint_conservative_backfill_candidate_universe(
 def plan_conservative_backfill_targets(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
     *,
-    sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
+    sample_population: tuple[SampleMetadata, ...],
 ) -> tuple[tuple[CrossSamplePeakGroupHypothesis, frozenset[str]], ...]:
     """Plan missing-sample work from frozen direct-SUPPORT membership.
 
@@ -213,7 +183,7 @@ def plan_conservative_backfill_targets(
     rejected group is no row, so it searches no missing sample.
     """
     eligible_ids = frozenset(
-        sample.identity.sample_key
+        sample.sample_name
         for sample in sample_population
         if _sample_is_activation_eligible(sample)
     )
@@ -234,7 +204,7 @@ def plan_conservative_backfill_targets(
 def assess_conservative_backfill_group(
     source_cells: tuple[CellObservationRef, ...],
     *,
-    sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
+    sample_population: tuple[SampleMetadata, ...],
     unsearched_sample_ids: tuple[str, ...] = (),
 ) -> ConservativeBackfillGroupFacts:
     """Derive no-write S/K facts without creating a group or cell."""
@@ -249,19 +219,19 @@ def assess_conservative_backfill_group(
     ordered_samples = tuple(
         sorted(
             sample_population,
-            key=lambda sample: sample.identity.sample_key,
+            key=lambda sample: sample.sample_name,
         )
     )
     group_context = ordered_cells[0].group_context
     cells = _canonical_cells(ordered_cells, group_context=group_context)
     samples = _canonical_samples(ordered_samples)
     eligible_ids = tuple(
-        sample.identity.sample_key
+        sample.sample_name
         for sample in samples
         if _sample_is_activation_eligible(sample)
     )
     direct_support_ids = tuple(
-        support.sample.identity.sample_key for support in group_context.supports
+        support.sample.sample_name for support in group_context.supports
     )
     eligible_support_ids = tuple(
         sample_id for sample_id in direct_support_ids if sample_id in eligible_ids
@@ -271,7 +241,7 @@ def assess_conservative_backfill_group(
         for support in group_context.supports
     )
     cell_sample_ids = tuple(cell.content.sample_key for cell in cells)
-    sample_ids = tuple(sample.identity.sample_key for sample in samples)
+    sample_ids = tuple(sample.sample_name for sample in samples)
     sample_count = len(eligible_ids)
     minimum_support = minimum_direct_support_count(sample_count)
     support_count = len(eligible_support_ids)
@@ -301,7 +271,7 @@ def assess_conservative_backfill_group(
 def map_conservative_backfill_candidates(
     group_facts: tuple[ConservativeBackfillGroupFacts, ...],
     *,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     candidate_universes: tuple[
         ConservativeBackfillCandidateUniverse,
         ...,
@@ -319,7 +289,7 @@ def map_conservative_backfill_candidates(
         raise ConservativeBackfillContractError(
             "mapping requires one or more conservative group facts"
         )
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
+    if not isinstance(sample, SampleMetadata):
         raise ConservativeBackfillContractError(
             "mapping requires an owner-resolved target sample"
         )
@@ -341,7 +311,7 @@ def map_conservative_backfill_candidates(
         raise ConservativeBackfillContractError(
             "mapping requires typed immutable backfill universe receipts"
         )
-    sample_id = sample.identity.sample_key
+    sample_id = sample.sample_name
     method_subject_ids = tuple(
         universe.method_subject_id for universe in candidate_universes
     )
@@ -392,7 +362,7 @@ def map_conservative_backfill_candidates(
     for index, (facts, cell) in enumerate(zip(group_facts, target_cells, strict=True)):
         candidate_universe = universes_by_subject.get(_group_method_subject_id(facts))
         target_candidates = _backfill_evidence_from_universe(candidate_universe)
-        if reason := cell.method_evidence.backfill_block_reason:
+        if reason := cid_nl_backfill_block_reason(cell.method_assessment):
             decisions[index] = _decision(
                 facts,
                 cell,
@@ -554,7 +524,7 @@ def _localized_backfill_candidates(
     location = universe.localization
     if not location.reliable or not candidates:
         return ()
-    if not universe.method_evidence.allows_physical_localization:
+    if not cid_nl_allows_physical_localization(universe.candidate_assessment):
         return ()
     evaluation = candidates[0].peak_observation.physical_evaluation
     if evaluation is None or evaluation.retained_prepared_signal is None:
@@ -640,23 +610,6 @@ def _canonical_backfill_group_facts(
     return ordered
 
 
-def _processing_owner_sample_population(
-    processing_owners: ProcessingOwnerReferences,
-) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise ConservativeBackfillContractError(
-            "backfill universe requires validated processing owners"
-        )
-    return _canonical_samples(
-        tuple(
-            sorted(
-                processing_owners.sample_resolutions,
-                key=lambda member: member.identity.sample_key,
-            )
-        )
-    )
-
-
 def _backfill_evidence_from_universe(
     universe: ConservativeBackfillCandidateUniverse | None,
 ) -> tuple[ConservativeBackfillEvidence, ...]:
@@ -673,33 +626,22 @@ def _backfill_evidence_from_universe(
 
 def _canonical_samples(
     samples: object,
-) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
-    if (
-        not isinstance(samples, tuple)
-        or not samples
-        or any(
-            not isinstance(item, ResolvedCanonicalSampleIdentity) for item in samples
-        )
-    ):
+) -> tuple[SampleMetadata, ...]:
+    if not isinstance(samples, tuple) or not samples:
         raise ConservativeBackfillContractError(
             "sample_population must contain owner-resolved run samples"
         )
-    sample_ids = tuple(sample.identity.sample_key for sample in samples)
+    sample_ids = tuple(sample.sample_name for sample in samples)
     if sample_ids != tuple(sorted(set(sample_ids))):
         raise ConservativeBackfillContractError(
             "sample_population must be unique and canonical-sorted"
         )
-    if any(sample.snapshot != samples[0].snapshot for sample in samples[1:]):
-        raise ConservativeBackfillContractError(
-            "sample_population must come from one owner snapshot"
-        )
     return samples
 
 
-def _sample_is_activation_eligible(sample: ResolvedCanonicalSampleIdentity) -> bool:
+def _sample_is_activation_eligible(sample: SampleMetadata) -> bool:
     return (
-        not sample.metadata.excluded
-        and sample.metadata.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
+        not sample.excluded and sample.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
     )
 
 

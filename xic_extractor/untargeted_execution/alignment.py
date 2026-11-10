@@ -409,7 +409,6 @@ def prepare_untargeted_alignment_inputs(
                     dll_dir=dll_dir,
                     profile=signal_processing_profile,
                     acquisition_source_expectations=expectations,
-                    sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
                     restore_candidate=_restore_physical_peak,
                 )
         else:
@@ -437,7 +436,6 @@ def prepare_untargeted_alignment_inputs(
                 peaks_by_sample=peaks_by_sample,
                 discovery_receipts_by_sample=receipts,
                 dll_dir=dll_dir,
-                sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
                 signal_processing_profile=signal_processing_profile,
                 physical_records_by_peak=physical_records,
                 acquisition_source_expectations=acquisition_source_expectations,

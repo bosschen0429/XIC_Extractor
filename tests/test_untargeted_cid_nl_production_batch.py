@@ -126,7 +126,6 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
             peaks_by_sample,
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:compatible-source-subject",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -176,7 +175,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         for position in (
             child.scientific_core.cell_observation_handoff.coverage.positions
         )
-        if position.sample.metadata.raw_stem == "Missing"
+        if position.sample.raw_stem == "Missing"
         and position.group_identity.group_hypothesis_id == group.group_hypothesis_id
     )
     if backfill_enabled:
@@ -189,7 +188,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         missing = next(
             cell
             for cell in child.scientific_core.cell_observations
-            if cell.canonical_sample.metadata.raw_stem == "Missing"
+            if cell.canonical_sample.raw_stem == "Missing"
         )
         assert missing.evidence_state == "not_searched"
         assert not missing.direct_hypotheses and not missing.integrations
@@ -236,17 +235,10 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         assert missing_queries[0]["ppm"] == settings.precursor_mz_tolerance_ppm
 
 
-def test_sample_job_builder_rejects_changed_request_bound_inputs(
+def test_sample_job_builder_binds_shared_inputs_to_each_subject(
     tmp_path: Path,
 ) -> None:
     physical_records = {}
-    from tests.processing_identity_no_raw_fixture import (
-        build_processing_identity_no_raw_fixture,
-    )
-    from xic_extractor.peak_detection.cid_nl_method_subject import (
-        mint_untargeted_cid_nl_method_subject,
-    )
-
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
     settings = replace(
@@ -276,7 +268,6 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
             tmp_path, (raw_path,), {"S1": candidates}
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:production-batch",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -293,16 +284,7 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
     work_units = tuple((job.method_subject, job.work_unit_key) for job in batch.jobs)
     assert len(work_units) == 2
     assert build_sample_jobs(**shared, subject_work_units=work_units) == batch.jobs
-    other_dir = tmp_path / "other-request"
-    other_dir.mkdir()
-    other = build_processing_identity_no_raw_fixture(other_dir, sample_stems=("Other",))
-    changed_subject = mint_untargeted_cid_nl_method_subject(
-        precursor_mz=600.0,
-        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-        neutral_loss_da=116.0474,
-    )
     for subject, key, message in (
-        (changed_subject, "changed-subject", "not an exact member"),
         (None, "changed-subject", "wrong owner type"),
         (work_units[1][0], "", "work_unit_key"),
     ):
@@ -310,21 +292,6 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
             build_sample_jobs(
                 **shared, subject_work_units=(work_units[0], (subject, key))
             )
-    for changed, message in (
-        ({"processing_owners": other.owners}, "supported real-data runtime contract"),
-        ({"sample": other.sample("Other")}, "candidate universe"),
-        ({"settings": replace(settings, rt_min=7.0)}, "Discovery settings"),
-        (
-            {
-                "peak_config": replace(
-                    peak_config, ms1_morphology_smoothing_window_points=17
-                )
-            },
-            "peak settings",
-        ),
-    ):
-        with pytest.raises(UntargetedPartitionError, match=message):
-            build_sample_jobs(**(shared | changed), subject_work_units=work_units)
 
 
 def test_alignment_adapter_prepares_and_executes_bounded_once(
@@ -477,7 +444,6 @@ def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -
                 {"S1": candidates},
             ),
             dll_dir=tmp_path,
-            sample_identity_namespace="study:production-batch",
             signal_processing_profile=TEST_PROFILE,
             physical_records_by_peak={
                 c.peak_id: physical_records[c.peak_id]
@@ -528,7 +494,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
             {"S1": candidates},
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:production-batch",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -596,11 +561,11 @@ def test_production_batch_executes_one_atomic_sample_phase(
                 expected_source_ids[
                     (
                         feature_by_group[projected.group.group_hypothesis_id],
-                        decision.subject.canonical_sample.metadata.raw_stem,
+                        decision.subject.canonical_sample.raw_stem,
                     )
                 ] = candidate_by_hypothesis[
                     (
-                        decision.subject.canonical_sample.identity.sample_key,
+                        decision.subject.canonical_sample.sample_name,
                         hypothesis.hypothesis_id,
                     )
                 ]
@@ -782,7 +747,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
             peaks_by_sample,
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:production-hold",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -887,7 +851,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:canonical-batch",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -1026,7 +989,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:known-istd",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -1118,7 +1080,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     (child,) = corrected.application_result.children
     expected_loss_by_sample = {path.stem: configured_loss for path in paths}
     support_losses_by_sample = {
-        cell.canonical_sample.metadata.raw_stem: {
+        cell.canonical_sample.raw_stem: {
             source.method_assessment.content.method_subject.neutral_loss_da
             for source in cell.predecessor_cells
             if source.content.method_result == "SUPPORT"
@@ -1208,7 +1170,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             peaks_by_sample,
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:production-recovery",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -1228,7 +1189,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     recovered = tuple(
         result
         for result in runtime_result.sample_results
-        if result.job.sample.metadata.raw_stem == "Hold"
+        if result.job.sample.raw_stem == "Hold"
     )
     assert len(recovered) == 1
     assert (recovered[0].backfill_attempt is not None) == (recovery_case != "threshold")
@@ -1308,15 +1269,13 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 direct_observations = decision.evidence.direct_observations
                 if direct_observations and decision.value is not None:
                     assert len(direct_observations) == 1
-                    expected_cell_apexes[
-                        decision.subject.canonical_sample.metadata.raw_stem
-                    ] = direct_observations[0].content.integration.rt_apex_min
+                    expected_cell_apexes[decision.subject.canonical_sample.raw_stem] = (
+                        direct_observations[0].content.integration.rt_apex_min
+                    )
                 for direct in decision.evidence.direct_observations:
                     physical_id = direct.content.physical_peak_key
                     if physical_id not in member_ids:
-                        assert decision.subject.canonical_sample.metadata.raw_stem == (
-                            "Hold"
-                        )
+                        assert decision.subject.canonical_sample.raw_stem == ("Hold")
                         # The group-bounded MS1 peak fills the Matrix without
                         # joining the group or its presentation facts.
                         assert decision.evidence.evidence_states == (
@@ -1495,7 +1454,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
             tmp_path, raw_paths, peaks_by_sample
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:ms1-only-publication",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -1510,7 +1468,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     )
     assert runtime.succeeded
     recovered = {
-        result.job.sample.metadata.raw_stem: result for result in runtime.sample_results
+        result.job.sample.raw_stem: result for result in runtime.sample_results
     }
     assert recovered["MS1Only"].backfill_attempt is not None
     assert recovered["NoPeak"].backfill_attempt is not None
@@ -1523,7 +1481,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     (child,) = completed.application_result.children
     (owner_row,) = child.completed_projection.rows
     owner_decisions = {
-        decision.subject.canonical_sample.metadata.raw_stem: decision
+        decision.subject.canonical_sample.raw_stem: decision
         for decision in owner_row.decisions
     }
     assert set(owner_decisions) == set(sample_stems)

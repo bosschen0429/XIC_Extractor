@@ -65,7 +65,6 @@ def build_dense_partition(
     peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
     discovery_receipts_by_sample: Mapping[str, DiscoveryPeakUniverseReceipt],
     dll_dir: Path,
-    sample_identity_namespace: str,
     signal_processing_profile: SignalProcessingProfile,
     physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord],
 ) -> UntargetedPartitionInputs:
@@ -79,7 +78,6 @@ def build_dense_partition(
         peaks_by_sample=peaks_by_sample,
         discovery_receipts_by_sample=discovery_receipts_by_sample,
         dll_dir=dll_dir,
-        sample_identity_namespace=sample_identity_namespace,
         signal_processing_profile=signal_processing_profile,
         physical_records_by_peak=physical_records_by_peak,
     )
@@ -123,10 +121,10 @@ def complete_dense_partition(
         alignment_config=alignment_config,
         known_istd_reference=known_istd_reference,
     )
-    owners = batch.context.processing_owners
+    context = batch.context
     scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=owners.request,
+        method_subjects=context.method_subject,
         samples=batch.context.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -144,8 +142,11 @@ def complete_dense_partition(
     )
     application_result = FinalizedUntargetBatchApplicationResult(
         scope=scope,
-        processing_request=owners.request,
-        processing_attempt=owners.attempt,
+        processing_attempt_id=context.processing_attempt_id,
+        acquisition_sources=tuple(
+            context.acquisition_sources_by_sample[sample.raw_stem].source
+            for sample in context.samples
+        ),
         children=partition.children,
         excluded_candidates=partition.excluded_candidates,
     )

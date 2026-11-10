@@ -11,7 +11,6 @@ from tests.cid_nl_raw_fixture import (
     _open_bound_raw,
     _peak_config,
     _settings,
-    bind_physical_capture,
 )
 from tests.untargeted_cid_nl_no_raw_fixture import (
     UntargetedCidNlNoRawFixture,
@@ -83,16 +82,11 @@ class SampleAdapterScenario:
     def open_raw(self, source_raw):
         return _open_bound_raw(self.fixture, "S1", source_raw, tmp_path=self.tmp_path)
 
-    def bind_physical_capture(self):
-        self.fixture = replace(
-            self.fixture,
-            owners=bind_physical_capture(self.fixture.owners, self.physical_records),
-        )
-
     def adapt(self, candidates, *, raw, **overrides):
         inputs = dict(
-            processing_owners=self.fixture.owners,
+            processing_attempt_id=self.fixture.processing_attempt_id,
             sample=self.fixture.sample("S1"),
+            acquisition_source=self.fixture.source("S1"),
             method_subject=self.fixture.method_subject,
             peaks=candidates,
             settings=self.settings,

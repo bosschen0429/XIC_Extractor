@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
-    CidNlEvidenceRef,
+    CidNlEvidenceObservation,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportContent,
@@ -116,7 +116,7 @@ class CidNlChromatographicSupportRef:
     """One chromatographic support event with its exact scan evidence."""
 
     content: CidNlChromatographicSupportContent
-    evidence_refs: tuple[CidNlEvidenceRef, ...] = ()
+    evidence_refs: tuple[CidNlEvidenceObservation, ...] = ()
 
 
 def _member_sort_key(

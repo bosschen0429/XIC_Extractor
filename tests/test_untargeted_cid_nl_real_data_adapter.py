@@ -16,7 +16,6 @@ from tests.cid_nl_raw_fixture import (
     _open_bound_raw,
     _peak_config,
     _settings,
-    bind_physical_capture,
 )
 from tests.untargeted_cid_nl_real_data_adapter_fixtures import (
     _without_ms1_peak,
@@ -50,7 +49,6 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     candidates = scenario.discover(source_raw)
     raw, vendor_raw = scenario.open_raw(source_raw)
 
-    scenario.bind_physical_capture()
     result = scenario.adapt(candidates, raw=raw)
 
     assessment = result.assessment_input.assessment
@@ -58,9 +56,7 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     assert assessment.content.method_subject.target is None
     assert assessment.content.method_result == "SUPPORT"
     assert tuple(
-        sorted(
-            evidence.observation.scan_number for evidence in assessment.evidence_refs
-        )
+        sorted(evidence.scan_number for evidence in assessment.evidence_refs)
     ) == tuple(sorted(candidates[0].event_scan_ids))
     assert len(result.assessment_input.assessment.evidence_refs) == 2
     assert result.acquisition is not None
@@ -80,7 +76,6 @@ def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
 
     candidates = scenario.discover(source_raw)
     raw, _vendor_raw = scenario.open_raw(source_raw)
-    scenario.bind_physical_capture()
     resolve_relations = cid_nl_sample_acquisition.resolve_cid_nl_method_relations
     successful_relations = []
 
@@ -125,7 +120,6 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
     }
     raw, _vendor_raw = scenario.open_raw(source_raw)
 
-    scenario.bind_physical_capture()
     result = scenario.adapt(candidates, raw=raw)
 
     assessment = result.assessment_input.assessment
@@ -133,15 +127,15 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
     assert result.strict_scan_count == len(strict_scan_ids)
     assert tuple(
         sorted(
-            evidence.observation.scan_number
+            evidence.scan_number
             for evidence in assessment.evidence_refs
-            if evidence.observation.precursor_mz_basis == "scan_precursor"
+            if evidence.precursor_mz_basis == "scan_precursor"
         )
     ) == tuple(sorted(strict_scan_ids))
     assert {
-        evidence.observation.scan_number
+        evidence.scan_number
         for evidence in assessment.evidence_refs
-        if evidence.observation.precursor_mz_basis == "product_plus_neutral_loss"
+        if evidence.precursor_mz_basis == "product_plus_neutral_loss"
     } == {inferred_scan.scan_number}
 
 
@@ -186,21 +180,20 @@ def test_adapter_keeps_direct_support_separate_from_same_peak_inferred_evidence(
     )
     raw, _vendor_raw = scenario.open_raw(source_raw)
 
-    scenario.bind_physical_capture()
     result = scenario.adapt(candidates, raw=raw)
 
     assessment = result.assessment_input.assessment
     assert assessment.content.method_result == "SUPPORT"
     assert result.strict_scan_count == 2
     assert {
-        evidence.observation.scan_number
+        evidence.scan_number
         for evidence in assessment.evidence_refs
-        if evidence.observation.precursor_mz_basis == "scan_precursor"
+        if evidence.precursor_mz_basis == "scan_precursor"
     } == {first.scan_number, representative.scan_number}
     assert {
-        evidence.observation.scan_number
+        evidence.scan_number
         for evidence in assessment.evidence_refs
-        if evidence.observation.precursor_mz_basis == "product_plus_neutral_loss"
+        if evidence.precursor_mz_basis == "product_plus_neutral_loss"
     } == {inferred.scan_number}
 
 
@@ -224,7 +217,6 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
         return
     assert all(c.precursor_mz_basis == "product_plus_neutral_loss" for c in candidates)
     raw, _vendor = scenario.open_raw(source_raw)
-    scenario.bind_physical_capture()
     result = scenario.adapt(candidates, raw=raw)
     assessment = result.assessment_input.assessment
     assert result.strict_scan_count == 0
@@ -232,13 +224,13 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
         assert assessment.content.method_result == "HOLD"
         assert not assessment.individual_support_refs
         assert len(assessment.candidate_peaks) == 1
-        assert {ref.observation.scan_number for ref in assessment.evidence_refs} == {
+        assert {ref.scan_number for ref in assessment.evidence_refs} == {
             scan.scan_number for scan in source_raw.scans
         }
         assert all(
-            ref.observation.precursor_mz_basis == "product_plus_neutral_loss"
-            and ref.observation.scan_precursor_mz == 500.5
-            and ref.observation.precursor_mz == 500.0
+            ref.precursor_mz_basis == "product_plus_neutral_loss"
+            and ref.scan_precursor_mz == 500.5
+            and ref.precursor_mz == 500.0
             for ref in assessment.evidence_refs
         )
     else:
@@ -265,19 +257,12 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
 ) -> None:
     """One scan, two tags and two products per tag reach Alignment by table."""
     composite = combine_mode != "single"
-    import json
     from types import SimpleNamespace
 
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
     from xic_extractor.peak_detection.cid_nl_method_subject import (
-        REQUEST_INPUT_KEY,
         CidNlComposition,
         mint_untargeted_cid_nl_method_subject,
-    )
-    from xic_extractor.processing_identity import (
-        build_processing_request_identity,
-        compose_processing_owner_references,
-        issue_processing_attempt,
     )
 
     scenario = build_sample_adapter_scenario(tmp_path)
@@ -325,26 +310,7 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
                 combine_mode=scenario.settings.tag_combine_mode,
             ),
         )
-        old_request = scenario.fixture.owners.request
-        request = build_processing_request_identity(
-            acquisition_sources=old_request.acquisition_sources,
-            acquisition_bindings=old_request.acquisition_bindings,
-            scientific_input_schema_version=old_request.scientific_input_schema_version,
-            processing_algorithm_version=old_request.processing_algorithm_version,
-            processing_contract_version=old_request.processing_contract_version,
-            scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
-            | {REQUEST_INPUT_KEY: subject.request_payload()},
-        )
-        scenario.fixture = replace(
-            scenario.fixture,
-            method_subject=subject,
-            owners=compose_processing_owner_references(
-                request=request,
-                attempt=issue_processing_attempt(),
-                sample_snapshot=scenario.fixture.owners.sample_snapshot,
-                sample_resolutions=scenario.fixture.samples,
-            ),
-        )
+        scenario.fixture = replace(scenario.fixture, method_subject=subject)
 
     centroids = (500.0, 500.0105) if parent_supported else ()
 
@@ -403,7 +369,6 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
         return original_scan_reader(number)
 
     monkeypatch.setattr(vendor, "GetSimplifiedScan", count_ms2_read)
-    scenario.bind_physical_capture()
     try:
         result = scenario.adapt(
             candidates[::-1] if reverse_products else candidates, raw=raw
@@ -419,14 +384,14 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
     event_count = 2 if composite else 1
     assert len(assessment.evidence_refs) == event_count
     products_by_loss = {
-        ref.observation.configured_neutral_loss_da: ref.observation.product_mz
+        ref.configured_neutral_loss_da: ref.product_mz
         for ref in assessment.evidence_refs
     }
     assert products_by_loss == (
         {116.0474: 383.9526, 132.0423: 367.9577} if composite else {116.0474: 383.9526}
     )
     for ref in assessment.evidence_refs:
-        evidence = ref.observation
+        evidence = ref
         assert evidence.scan_number == scan.scan_number
         assert evidence.precursor_mz_basis == "product_plus_neutral_loss"
         assert evidence.scan_precursor_mz == 500.5
@@ -495,7 +460,6 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
         raw = CachedUntargetedRaw(
             raw, source=raw.acquisition_source, cache_dir=tmp_path / "raw-facts"
         )
-    scenario.bind_physical_capture()
     result = scenario.adapt(candidates, raw=raw)
     assessment = result.assessment_input.assessment
     assert assessment.content.method_result == "SUPPORT"
@@ -503,9 +467,9 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
     assert len(assessment.candidate_peaks) == 1
     assert len(assessment.individual_support_refs) == 3
     for evidence in assessment.evidence_refs:
-        assert evidence.observation.precursor_mz_basis == "product_plus_neutral_loss"
-        assert evidence.observation.precursor_mz == 500.0
-        assert evidence.observation.observed_loss_error_ppm is None
+        assert evidence.precursor_mz_basis == "product_plus_neutral_loss"
+        assert evidence.precursor_mz == 500.0
+        assert evidence.observed_loss_error_ppm is None
     for relation in assessment.individual_support_refs:
         assert relation.content.precursor_mz == 500.001
         assert relation.content.observed_loss_error_ppm == pytest.approx(
@@ -527,7 +491,6 @@ def test_peaks_without_their_event_table_cannot_be_assessed(
         write_discovery_peaks_csv(tmp_path / "peaks.csv", discovered)
     )
     raw, _vendor = scenario.open_raw(source_raw)
-    scenario.bind_physical_capture()
 
     with pytest.raises(CidNlAcquisitionError, match="regenerate Discovery"):
         scenario.adapt(candidates, raw=raw)
@@ -554,8 +517,8 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     raw, vendor_raw = scenario.open_raw(source_raw)
 
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
-        processing_owners=scenario.fixture.owners,
         sample=scenario.fixture.sample("S1"),
+        acquisition_source=scenario.fixture.source(scenario.fixture.sample("S1")),
         peaks=candidates,
         settings=scenario.settings,
         raw=raw,
@@ -563,7 +526,6 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     )
 
     assert batch is not None
-    scenario.bind_physical_capture()
     results = tuple(
         scenario.adapt((candidate,), raw=raw, _preacquired_traces=batch)
         for candidate in candidates
@@ -595,8 +557,8 @@ def test_elution_context_shares_acquisition_without_widening_capture(
     duplicate = replace(candidate, peak_id=candidate.peak_id + ":duplicate")
     raw, vendor = _open_bound_raw(fixture, "S1", source, tmp_path=tmp_path)
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
-        processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source(fixture.sample("S1")),
         peaks=tuple(sorted((candidate, duplicate), key=lambda item: item.peak_id)),
         settings=_settings(),
         raw=raw,
@@ -636,7 +598,6 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
     assert candidate.ms1_apex_rt <= candidate.ms1_search_rt_max
     raw, _vendor_raw = scenario.open_raw(source_raw)
 
-    scenario.bind_physical_capture()
     result = scenario.adapt(candidates, raw=raw)
 
     receipt = result.assessment_input.assessment.content.evaluation_receipt
@@ -660,7 +621,6 @@ def test_adapter_closes_qualifying_ms2_without_ms1_peak_as_reject(
     orphan = _without_ms1_peak(candidate)
     raw, vendor_raw = scenario.open_raw(source_raw)
 
-    scenario.bind_physical_capture()
     result = scenario.adapt((orphan,), raw=raw)
 
     assessment = result.assessment_input.assessment
@@ -684,10 +644,10 @@ def test_adapter_closes_empty_subject_universe_as_not_evaluated_without_xic(
         tmp_path=tmp_path,
     )
 
-    fixture = replace(fixture, owners=bind_physical_capture(fixture.owners, {}))
     result = adapt_current_discovery_sample_subject(
-        processing_owners=fixture.owners,
+        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source(fixture.sample("S1")),
         method_subject=fixture.method_subject,
         peaks=(),
         settings=_settings(),
@@ -710,10 +670,10 @@ def test_auto_range_empty_subject_has_no_fabricated_query_and_needs_no_raw(
     tmp_path: Path,
 ) -> None:
     fixture = build_sample_adapter_fixture(tmp_path)
-    fixture = replace(fixture, owners=bind_physical_capture(fixture.owners, {}))
     result = adapt_current_discovery_sample_subject(
-        processing_owners=fixture.owners,
+        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source(fixture.sample("S1")),
         method_subject=fixture.method_subject,
         peaks=(),
         settings=replace(_settings(), rt_min=None, rt_max=None),
@@ -738,7 +698,6 @@ def test_auto_range_evaluated_receipt_uses_current_raw_bounds(tmp_path: Path) ->
     candidates = scenario.discover(source_raw)
     raw, vendor = scenario.open_raw(source_raw)
     vendor.RunHeaderEx = SimpleNamespace(StartTime=7.4, EndTime=75.0)
-    scenario.bind_physical_capture()
     result = scenario.adapt(
         candidates,
         settings=replace(scenario.settings, rt_min=None, rt_max=None),
@@ -759,7 +718,6 @@ def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
     support = _without_ms1_peak(support_source)
     raw, _vendor_raw = scenario.open_raw(source_raw)
 
-    scenario.bind_physical_capture()
     result = scenario.adapt((feature,), support_candidates=(support,), raw=raw)
 
     assert result.source_candidate_ids == (feature.peak_id,)
@@ -783,12 +741,10 @@ def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> No
         )[0]
     )
 
-    fixture = replace(
-        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
-    )
     result = adapt_current_discovery_sample_subject(
-        processing_owners=fixture.owners,
+        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source(fixture.sample("S1")),
         method_subject=fixture.method_subject,
         peaks=(),
         support_candidates=(support,),
@@ -821,14 +777,14 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
     )
     candidates = (direct, inferred) if include_direct_candidate else (inferred,)
 
-    scenario.bind_physical_capture()
     with pytest.raises(
         CidNlAcquisitionError,
         match="requires an owner-opened RAW adapter",
     ):
         adapt_current_discovery_sample_subject(
-            processing_owners=scenario.fixture.owners,
+            processing_attempt_id=scenario.fixture.processing_attempt_id,
             sample=scenario.fixture.sample("S1"),
+            acquisition_source=scenario.fixture.source(scenario.fixture.sample("S1")),
             method_subject=scenario.fixture.method_subject,
             peaks=candidates,
             settings=scenario.settings,
@@ -853,7 +809,6 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
     assert len(candidates) == 2
     raw, _vendor_raw = scenario.open_raw(source_raw)
 
-    scenario.bind_physical_capture()
     result = scenario.adapt(candidates, raw=raw)
 
     assessment = result.assessment_input.assessment
@@ -863,7 +818,6 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
     # Only the recorded precursor supplies NL support.
     assert result.strict_scan_count == 1
     hypotheses = compose_peak_hypotheses_from_assessment_universe(
-        processing_owners=scenario.fixture.owners,
         sample=scenario.fixture.sample("S1"),
         assessment=assessment,
     )
@@ -872,7 +826,6 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         "ms1_physical_observation",
     }
     rebound = bind_retained_peak_hypotheses_to_assessment_universe(
-        processing_owners=scenario.fixture.owners,
         sample=scenario.fixture.sample("S1"),
         assessment=assessment,
         retained_hypotheses=hypotheses,
@@ -882,7 +835,6 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         for rebound_by_id, source_by_id in zip(rebound, hypotheses, strict=True)
     )
     grouping_scope, candidates, _drift = bootstrap_cid_nl_initial_population(
-        processing_owners=scenario.fixture.owners,
         sample_assessments=((scenario.fixture.sample("S1"), assessment),),
         alignment_config=AlignmentConfig(),
         rt_frame=SampleRtFrame(),
@@ -911,7 +863,6 @@ def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> No
     drifted = replace(candidate, ms1_apex_rt=candidate.ms1_apex_rt + 0.1)
     raw, _vendor_raw = scenario.open_raw(source_raw)
 
-    scenario.bind_physical_capture()
     with pytest.raises(
         CidNlAcquisitionError,
         match="apex_rt_min mismatches current receipt",

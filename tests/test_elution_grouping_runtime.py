@@ -112,7 +112,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:elution-pattern",
         signal_processing_profile=profile,
         physical_records_by_peak=records,
     )
@@ -186,7 +185,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         if not missing_pattern_location:
             assert target.query_rt_basis == "trajectory_observed"
         assert target.query_rt == pytest.approx(
-            expected_query[state.job.sample.metadata.raw_stem], abs=0.005
+            expected_query[state.job.sample.raw_stem], abs=0.005
         )
     initial_composed = adapter.execute_composition(initial_partition, initial, store)
     assert grouping_phase.prepare_before is not None
@@ -213,7 +212,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     group_ids = {group.group_hypothesis_id for group in groups}
     observed_queries = {}
     for result in leaf.sample_results:
-        sample = result.job.sample.metadata.raw_stem
+        sample = result.job.sample.raw_stem
         assert result.adapter_result.elution_contexts
         assert len(result.backfill_attempts) == 1
         attempt = result.backfill_attempts[0]
@@ -336,7 +335,6 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:hold-reuse-beside-searches",
         signal_processing_profile=profile,
         physical_records_by_peak=records,
     )
@@ -355,7 +353,7 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
     initial = adapter.execute_acquisition(initial_partition)
     assert initial.succeeded
     assert not any(
-        result.job.sample.metadata.raw_stem == "S6"
+        result.job.sample.raw_stem == "S6"
         for result in initial.result[1].sample_results
     )
     initial_composed = adapter.execute_composition(initial_partition, initial, store)
@@ -380,9 +378,7 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
     }
     assert sorted(group_apex.values()) == list(group_apices)
     (s6,) = (
-        result
-        for result in leaf.sample_results
-        if result.job.sample.metadata.raw_stem == "S6"
+        result for result in leaf.sample_results if result.job.sample.raw_stem == "S6"
     )
     assert sorted(
         group_apex[attempt.group_hypothesis_id] for attempt in s6.backfill_attempts

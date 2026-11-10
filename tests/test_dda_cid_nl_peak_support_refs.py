@@ -13,8 +13,8 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     compose_cid_nl_chromatographic_support_ref,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
-    CidNlEvidenceRef,
-    mint_cid_nl_evidence_ref,
+    CidNlEvidenceObservation,
+    cid_nl_evidence_observation,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportContractError,
@@ -39,22 +39,10 @@ from xic_extractor.peak_detection.selection_decision import (
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
-    AcquisitionInputBinding,
-    ProcessingAttemptIdentity,
-    ProcessingOwnerReferences,
-    ProcessingRequestIdentity,
+    AcquisitionSourceIdentity,
     build_acquisition_source_identity,
-    build_processing_request_identity,
-    compose_processing_owner_references,
-    issue_processing_attempt,
-    resolve_request_acquisition_source,
 )
-from xic_extractor.sample_metadata import (
-    ResolvedCanonicalSampleIdentity,
-    SampleMetadata,
-    mint_sample_metadata_snapshot,
-    resolve_canonical_sample_identity,
-)
+from xic_extractor.sample_metadata import SampleMetadata
 
 _PRECURSOR_MZ = 500.0
 _NEUTRAL_LOSS_DA = 116.0474
@@ -63,54 +51,49 @@ _PRODUCT_MZ = _PRECURSOR_MZ - _NEUTRAL_LOSS_DA
 
 @dataclass(frozen=True)
 class _IdentityFixture:
-    request: ProcessingRequestIdentity
-    attempt: ProcessingAttemptIdentity
-    sample: ResolvedCanonicalSampleIdentity
-    owners: ProcessingOwnerReferences
+    sample: SampleMetadata
+    source: AcquisitionSourceIdentity
 
 
 def test_unique_dda_event_resolves_to_one_physical_peak(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
-    evidence = _evidence(fixture.owners, fixture.sample)
-    peak = _peak(fixture.owners, fixture.sample)
+    evidence = _evidence(fixture.source, fixture.sample)
+    peak = _peak(fixture.source, fixture.sample)
 
     support = resolve_dda_cid_nl_peak_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(peak,),
         policy=_policy(),
     )
 
-    assert support.content.sample_key == (fixture.sample.identity.sample_key)
+    assert support.content.sample_key == (fixture.sample.sample_name)
     assert support.content.dda_scan_number == 42
-    assert support.content.evidence == evidence.observation
+    assert support.content.evidence == evidence
     assert support.content.peak_observation == peak.content
     assert support.content.relationship == "strict_nl_inside_ms1_peak_scope"
 
 
 def test_candidate_reorder_is_neutral(tmp_path: Path) -> None:
     fixture = _identity_fixture(tmp_path)
-    evidence = _evidence(fixture.owners, fixture.sample)
-    matching = _peak(fixture.owners, fixture.sample)
+    evidence = _evidence(fixture.source, fixture.sample)
+    matching = _peak(fixture.source, fixture.sample)
     nonmatching = _peak(
-        fixture.owners,
+        fixture.source,
         fixture.sample,
         mz=600.0,
         apex_intensity=300.0,
     )
 
     forward = resolve_dda_cid_nl_peak_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(matching, nonmatching),
         policy=_policy(),
     )
     reverse = resolve_dda_cid_nl_peak_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(nonmatching, matching),
@@ -122,12 +105,11 @@ def test_candidate_reorder_is_neutral(tmp_path: Path) -> None:
 
 def test_missing_peak_match_fails_closed(tmp_path: Path) -> None:
     fixture = _identity_fixture(tmp_path)
-    evidence = _evidence(fixture.owners, fixture.sample, scan_rt_min=8.25)
-    peak = _peak(fixture.owners, fixture.sample)
+    evidence = _evidence(fixture.source, fixture.sample, scan_rt_min=8.25)
+    peak = _peak(fixture.source, fixture.sample)
 
     with pytest.raises(DdaCidNlPeakSupportContractError, match="missing"):
         resolve_dda_cid_nl_peak_support_ref(
-            processing_owners=fixture.owners,
             sample=fixture.sample,
             canonical_evidence=evidence,
             candidate_peaks=(peak,),
@@ -140,13 +122,13 @@ def test_dda_matching_uses_integration_bounds_not_padded_trace_points(
 ) -> None:
     fixture = _identity_fixture(tmp_path)
     peak = _peak(
-        fixture.owners,
+        fixture.source,
         fixture.sample,
         rt_left_min=7.94,
         rt_right_min=8.06,
     )
     outside_evidence = _evidence(
-        fixture.owners,
+        fixture.source,
         fixture.sample,
         scan_number=43,
         scan_rt_min=8.08,
@@ -154,16 +136,14 @@ def test_dda_matching_uses_integration_bounds_not_padded_trace_points(
 
     with pytest.raises(DdaCidNlPeakSupportContractError, match="missing"):
         resolve_dda_cid_nl_peak_support_ref(
-            processing_owners=fixture.owners,
             sample=fixture.sample,
             canonical_evidence=outside_evidence,
             candidate_peaks=(peak,),
             policy=_policy(),
         )
 
-    inside_evidence = _evidence(fixture.owners, fixture.sample, scan_rt_min=8.0)
+    inside_evidence = _evidence(fixture.source, fixture.sample, scan_rt_min=8.0)
     support = resolve_dda_cid_nl_peak_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         canonical_evidence=inside_evidence,
         candidate_peaks=(peak,),
@@ -175,13 +155,12 @@ def test_dda_matching_uses_integration_bounds_not_padded_trace_points(
 
 def test_multiple_matching_peaks_are_ambiguous(tmp_path: Path) -> None:
     fixture = _identity_fixture(tmp_path)
-    evidence = _evidence(fixture.owners, fixture.sample)
-    first = _peak(fixture.owners, fixture.sample, apex_intensity=500.0)
-    second = _peak(fixture.owners, fixture.sample, apex_intensity=501.0)
+    evidence = _evidence(fixture.source, fixture.sample)
+    first = _peak(fixture.source, fixture.sample, apex_intensity=500.0)
+    second = _peak(fixture.source, fixture.sample, apex_intensity=501.0)
 
     with pytest.raises(DdaCidNlPeakSupportContractError, match="ambiguous"):
         resolve_dda_cid_nl_peak_support_ref(
-            processing_owners=fixture.owners,
             sample=fixture.sample,
             canonical_evidence=evidence,
             candidate_peaks=(first, second),
@@ -191,12 +170,11 @@ def test_multiple_matching_peaks_are_ambiguous(tmp_path: Path) -> None:
 
 def test_duplicate_candidate_reference_is_ambiguous(tmp_path: Path) -> None:
     fixture = _identity_fixture(tmp_path)
-    evidence = _evidence(fixture.owners, fixture.sample)
-    peak = _peak(fixture.owners, fixture.sample)
+    evidence = _evidence(fixture.source, fixture.sample)
+    peak = _peak(fixture.source, fixture.sample)
 
     with pytest.raises(DdaCidNlPeakSupportContractError, match="ambiguous"):
         resolve_dda_cid_nl_peak_support_ref(
-            processing_owners=fixture.owners,
             sample=fixture.sample,
             canonical_evidence=evidence,
             candidate_peaks=(peak, peak),
@@ -206,10 +184,10 @@ def test_duplicate_candidate_reference_is_ambiguous(tmp_path: Path) -> None:
 
 def test_scan_and_peak_mutation_invalidate_support_content(tmp_path: Path) -> None:
     fixture = _identity_fixture(tmp_path)
-    original_evidence = _evidence(fixture.owners, fixture.sample, scan_number=42)
-    changed_scan = _evidence(fixture.owners, fixture.sample, scan_number=43)
-    original_peak = _peak(fixture.owners, fixture.sample, apex_intensity=500.0)
-    changed_peak = _peak(fixture.owners, fixture.sample, apex_intensity=501.0)
+    original_evidence = _evidence(fixture.source, fixture.sample, scan_number=42)
+    changed_scan = _evidence(fixture.source, fixture.sample, scan_number=43)
+    original_peak = _peak(fixture.source, fixture.sample, apex_intensity=500.0)
+    changed_peak = _peak(fixture.source, fixture.sample, apex_intensity=501.0)
 
     original = _resolve(fixture, original_evidence, original_peak)
     scan_mutated = _resolve(fixture, changed_scan, original_peak)
@@ -223,30 +201,28 @@ def test_nonselected_candidate_mutation_invalidates_bound_universe(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
-    evidence = _evidence(fixture.owners, fixture.sample)
-    selected = _peak(fixture.owners, fixture.sample)
+    evidence = _evidence(fixture.source, fixture.sample)
+    selected = _peak(fixture.source, fixture.sample)
     first_nonmatch = _peak(
-        fixture.owners,
+        fixture.source,
         fixture.sample,
         mz=600.0,
         apex_intensity=300.0,
     )
     changed_nonmatch = _peak(
-        fixture.owners,
+        fixture.source,
         fixture.sample,
         mz=600.0,
         apex_intensity=301.0,
     )
 
     first = resolve_dda_cid_nl_peak_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(selected, first_nonmatch),
         policy=_policy(),
     )
     changed = resolve_dda_cid_nl_peak_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(selected, changed_nonmatch),
@@ -265,7 +241,7 @@ def test_non_strict_neutral_loss_cannot_mint_support(tmp_path: Path) -> None:
         abs(observed_loss - _NEUTRAL_LOSS_DA) / _NEUTRAL_LOSS_DA * 1_000_000.0
     )
     evidence = _evidence(
-        fixture.owners,
+        fixture.source,
         fixture.sample,
         product_mz=_PRECURSOR_MZ - observed_loss,
         observed_neutral_loss_da=observed_loss,
@@ -273,21 +249,21 @@ def test_non_strict_neutral_loss_cannot_mint_support(tmp_path: Path) -> None:
     )
 
     with pytest.raises(DdaCidNlPeakSupportContractError, match="strict"):
-        _resolve(fixture, evidence, _peak(fixture.owners, fixture.sample))
+        _resolve(fixture, evidence, _peak(fixture.source, fixture.sample))
 
 
 def test_cid_nl_support_accepts_loss_inside_ion_window(tmp_path: Path) -> None:
     fixture = _identity_fixture(tmp_path)
     observed_loss = _NEUTRAL_LOSS_DA * (1.0 + 40.0e-6)
     evidence = _evidence(
-        fixture.owners,
+        fixture.source,
         fixture.sample,
         product_mz=_PRECURSOR_MZ - observed_loss,
         observed_neutral_loss_da=observed_loss,
         observed_loss_error_ppm=40.0,
     )
 
-    support = _resolve(fixture, evidence, _peak(fixture.owners, fixture.sample))
+    support = _resolve(fixture, evidence, _peak(fixture.source, fixture.sample))
 
     assert support.content.observed_loss_error_ppm == pytest.approx(40.0)
     assert (
@@ -295,52 +271,27 @@ def test_cid_nl_support_accepts_loss_inside_ion_window(tmp_path: Path) -> None:
     )
 
 
-def test_new_attempt_preserves_support_content(
-    tmp_path: Path,
-) -> None:
-    fixture = _identity_fixture(tmp_path)
-    retry = issue_processing_attempt()
-    retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
-
-    first_evidence = _evidence(fixture.owners, fixture.sample)
-    first_peak = _peak(fixture.owners, fixture.sample)
-    retried_evidence = _evidence(retry_owners, fixture.sample)
-    retried_peak = _peak(retry_owners, fixture.sample)
-    first = _resolve(fixture, first_evidence, first_peak)
-    retried = resolve_dda_cid_nl_peak_support_ref(
-        processing_owners=retry_owners,
-        sample=fixture.sample,
-        canonical_evidence=retried_evidence,
-        candidate_peaks=(retried_peak,),
-        policy=_policy(),
-    )
-
-    assert first.content == retried.content
-
-
 def test_repeated_dda_scans_compose_one_order_neutral_chromatographic_event(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
-    peak = _peak(fixture.owners, fixture.sample)
+    peak = _peak(fixture.source, fixture.sample)
     first = _resolve(
         fixture,
-        _evidence(fixture.owners, fixture.sample, scan_number=42, scan_rt_min=7.98),
+        _evidence(fixture.source, fixture.sample, scan_number=42, scan_rt_min=7.98),
         peak,
     )
     second = _resolve(
         fixture,
-        _evidence(fixture.owners, fixture.sample, scan_number=43, scan_rt_min=8.02),
+        _evidence(fixture.source, fixture.sample, scan_number=43, scan_rt_min=8.02),
         peak,
     )
 
     forward = compose_cid_nl_chromatographic_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         scan_support_refs=(first, second),
     )
     reverse = compose_cid_nl_chromatographic_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         scan_support_refs=(second, first),
     )
@@ -360,8 +311,8 @@ def test_equivalent_numeric_policy_inputs_have_equal_support(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
-    peak = _peak(fixture.owners, fixture.sample)
-    evidence = _evidence(fixture.owners, fixture.sample)
+    peak = _peak(fixture.source, fixture.sample)
+    evidence = _evidence(fixture.source, fixture.sample)
     integer_policy = DdaCidNlPeakSupportPolicy(
         precursor_tolerance_da=1,
         neutral_loss_tolerance_ppm=20,
@@ -372,14 +323,12 @@ def test_equivalent_numeric_policy_inputs_have_equal_support(
     )
 
     integer_ref = resolve_dda_cid_nl_peak_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(peak,),
         policy=integer_policy,
     )
     float_ref = resolve_dda_cid_nl_peak_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(peak,),
@@ -397,8 +346,8 @@ def test_signed_zero_support_content_is_equal(
     fixture = _identity_fixture(tmp_path)
     reference = _resolve(
         fixture,
-        _evidence(fixture.owners, fixture.sample),
-        _peak(fixture.owners, fixture.sample),
+        _evidence(fixture.source, fixture.sample),
+        _peak(fixture.source, fixture.sample),
     )
     signed_zero_content = replace(
         reference.content,
@@ -417,25 +366,23 @@ def test_scan_mutation_invalidates_chromatographic_event_content(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
-    peak = _peak(fixture.owners, fixture.sample)
+    peak = _peak(fixture.source, fixture.sample)
     first = compose_cid_nl_chromatographic_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         scan_support_refs=(
             _resolve(
                 fixture,
-                _evidence(fixture.owners, fixture.sample, scan_number=42),
+                _evidence(fixture.source, fixture.sample, scan_number=42),
                 peak,
             ),
         ),
     )
     changed = compose_cid_nl_chromatographic_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         scan_support_refs=(
             _resolve(
                 fixture,
-                _evidence(fixture.owners, fixture.sample, scan_number=43),
+                _evidence(fixture.source, fixture.sample, scan_number=43),
                 peak,
             ),
         ),
@@ -444,58 +391,14 @@ def test_scan_mutation_invalidates_chromatographic_event_content(
     assert first.content != changed.content
 
 
-def test_new_attempt_preserves_chromatographic_event_content(
-    tmp_path: Path,
-) -> None:
-    fixture = _identity_fixture(tmp_path)
-    retry = issue_processing_attempt()
-    retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
-    first_peak = _peak(fixture.owners, fixture.sample)
-    retry_peak = _peak(retry_owners, fixture.sample)
-
-    first_event = compose_cid_nl_chromatographic_support_ref(
-        processing_owners=fixture.owners,
-        sample=fixture.sample,
-        scan_support_refs=tuple(
-            _resolve(
-                fixture,
-                _evidence(fixture.owners, fixture.sample, scan_number=scan_number),
-                first_peak,
-            )
-            for scan_number in (42, 43)
-        ),
-    )
-    retry_event = compose_cid_nl_chromatographic_support_ref(
-        processing_owners=retry_owners,
-        sample=fixture.sample,
-        scan_support_refs=tuple(
-            resolve_dda_cid_nl_peak_support_ref(
-                processing_owners=retry_owners,
-                sample=fixture.sample,
-                canonical_evidence=_evidence(
-                    retry_owners,
-                    fixture.sample,
-                    scan_number=scan_number,
-                ),
-                candidate_peaks=(retry_peak,),
-                policy=_policy(),
-            )
-            for scan_number in (42, 43)
-        ),
-    )
-
-    assert first_event.content == retry_event.content
-
-
 def test_cid_nl_event_composes_the_existing_peak_hypothesis_owner(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
-    peak = _peak(fixture.owners, fixture.sample)
-    event = _event(fixture.owners, fixture.sample, peak, scan_numbers=(42, 43))
+    peak = _peak(fixture.source, fixture.sample)
+    event = _event(fixture.source, fixture.sample, peak, scan_numbers=(42, 43))
 
     hypothesis = compose_cid_nl_peak_hypothesis(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         peak_observation=peak,
         chromatographic_support=event,
@@ -521,19 +424,17 @@ def test_cid_nl_hypothesis_peak_or_event_mutation_invalidates_identity(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
-    first_peak = _peak(fixture.owners, fixture.sample, apex_intensity=500.0)
-    first_event = _event(fixture.owners, fixture.sample, first_peak)
-    changed_peak = _peak(fixture.owners, fixture.sample, apex_intensity=501.0)
-    changed_event = _event(fixture.owners, fixture.sample, changed_peak)
+    first_peak = _peak(fixture.source, fixture.sample, apex_intensity=500.0)
+    first_event = _event(fixture.source, fixture.sample, first_peak)
+    changed_peak = _peak(fixture.source, fixture.sample, apex_intensity=501.0)
+    changed_event = _event(fixture.source, fixture.sample, changed_peak)
 
     first = compose_cid_nl_peak_hypothesis(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         peak_observation=first_peak,
         chromatographic_support=first_event,
     )
     changed = compose_cid_nl_peak_hypothesis(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         peak_observation=changed_peak,
         chromatographic_support=changed_event,
@@ -546,10 +447,9 @@ def test_owner_backed_hypothesis_cannot_enter_selection_or_targeted_product(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
-    peak = _peak(fixture.owners, fixture.sample)
-    event = _event(fixture.owners, fixture.sample, peak)
+    peak = _peak(fixture.source, fixture.sample)
+    event = _event(fixture.source, fixture.sample, peak)
     hypothesis = compose_cid_nl_peak_hypothesis(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         peak_observation=peak,
         chromatographic_support=event,
@@ -600,11 +500,10 @@ def test_owner_backed_hypothesis_cannot_enter_selection_or_targeted_product(
 
 def _resolve(
     fixture: _IdentityFixture,
-    evidence: CidNlEvidenceRef,
+    evidence: CidNlEvidenceObservation,
     peak: PeakObservationRef,
 ):
     return resolve_dda_cid_nl_peak_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(peak,),
@@ -613,21 +512,19 @@ def _resolve(
 
 
 def _event(
-    owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    source: AcquisitionSourceIdentity,
+    sample: SampleMetadata,
     peak: PeakObservationRef,
     *,
     scan_numbers: tuple[int, ...] = (42,),
 ):
     return compose_cid_nl_chromatographic_support_ref(
-        processing_owners=owners,
         sample=sample,
         scan_support_refs=tuple(
             resolve_dda_cid_nl_peak_support_ref(
-                processing_owners=owners,
                 sample=sample,
                 canonical_evidence=_evidence(
-                    owners,
+                    source,
                     sample,
                     scan_number=scan_number,
                 ),
@@ -647,8 +544,8 @@ def _policy() -> DdaCidNlPeakSupportPolicy:
 
 
 def _evidence(
-    owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    source: AcquisitionSourceIdentity,
+    sample: SampleMetadata,
     *,
     scan_number: int = 42,
     scan_rt_min: float = 8.0,
@@ -656,10 +553,10 @@ def _evidence(
     product_mz: float = _PRODUCT_MZ,
     observed_neutral_loss_da: float = _NEUTRAL_LOSS_DA,
     observed_loss_error_ppm: float = 0.0,
-) -> CidNlEvidenceRef:
-    return mint_cid_nl_evidence_ref(
-        processing_owners=owners,
+) -> CidNlEvidenceObservation:
+    return cid_nl_evidence_observation(
         sample=sample,
+        acquisition_source=source,
         scan_number=scan_number,
         precursor_mz=precursor_mz,
         product_mz=product_mz,
@@ -672,20 +569,17 @@ def _evidence(
 
 
 def _peak(
-    owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    source: AcquisitionSourceIdentity,
+    sample: SampleMetadata,
     *,
     mz: float = _PRECURSOR_MZ,
     apex_intensity: float = 500.0,
     rt_left_min: float = 7.9,
     rt_right_min: float = 8.1,
 ) -> PeakObservationRef:
-    acquisition_source = resolve_request_acquisition_source(
-        processing_owners=owners,
-        sample=sample,
-    )
+    acquisition_source = source
     trace = Trace.from_arrays(
-        sample_name=sample.metadata.raw_stem,
+        sample_name=sample.raw_stem,
         mz=mz,
         rt=(7.7, 7.9, 8.0, 8.1, 8.3),
         intensity=(0.0, 50.0, apex_intensity, 50.0, 0.0),
@@ -709,7 +603,6 @@ def _peak(
         raw_scan_indices=(1, 2, 3),
     )
     return mint_peak_observation_ref(
-        processing_owners=owners,
         sample=sample,
         trace=trace,
         integration=integration,
@@ -730,48 +623,9 @@ def _identity_fixture(
         acquisition_format="synthetic_no_raw",
         observation_namespace=f"synthetic:{sample_key}",
     )
-    request = build_processing_request_identity(
-        acquisition_sources=(source,),
-        acquisition_bindings=(
-            AcquisitionInputBinding(
-                acquisition_source_id=source.acquisition_source_id,
-                adapter_input_key=sample_key,
-                injection_order=1,
-            ),
-        ),
-        scientific_input_schema_version="dda-cid-nl-peak-support-input",
-        processing_algorithm_version="dda-cid-nl-peak-support-algorithm",
-        processing_contract_version="dda-cid-nl-peak-support-contract",
-        scientific_inputs={
-            "fixture": "synthetic-no-raw-dda-cid-nl-peak-support",
-            "precursor_tolerance_da": 0.01,
-            "neutral_loss_tolerance_ppm": 20.0,
-        },
-    )
-    snapshot = mint_sample_metadata_snapshot(
-        (SampleMetadata(sample_name=sample_key, raw_stem=sample_key),),
-        identity_namespace="study:dda-cid-nl-peak-support",
-    )
-    attempt = issue_processing_attempt()
-    sample = resolve_canonical_sample_identity(snapshot, sample_key)
     return _IdentityFixture(
-        request=request,
-        attempt=attempt,
-        sample=sample,
-        owners=_processing_owners(request, attempt, sample),
-    )
-
-
-def _processing_owners(
-    request: ProcessingRequestIdentity,
-    attempt: ProcessingAttemptIdentity,
-    sample: ResolvedCanonicalSampleIdentity,
-) -> ProcessingOwnerReferences:
-    return compose_processing_owner_references(
-        request=request,
-        attempt=attempt,
-        sample_snapshot=sample.snapshot,
-        sample_resolutions=(sample,),
+        sample=SampleMetadata(sample_name=sample_key, raw_stem=sample_key),
+        source=source,
     )
 
 
@@ -779,12 +633,11 @@ def test_cid_nl_hypothesis_producer_keeps_event_and_sample_binding(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
-    peak = _peak(fixture.owners, fixture.sample)
-    first_event = _event(fixture.owners, fixture.sample, peak, scan_numbers=(42, 43))
-    second_event = _event(fixture.owners, fixture.sample, peak, scan_numbers=(42, 44))
+    peak = _peak(fixture.source, fixture.sample)
+    first_event = _event(fixture.source, fixture.sample, peak, scan_numbers=(42, 43))
+    second_event = _event(fixture.source, fixture.sample, peak, scan_numbers=(42, 44))
     hypotheses = tuple(
         compose_cid_nl_peak_hypothesis(
-            processing_owners=fixture.owners,
             sample=fixture.sample,
             peak_observation=peak,
             chromatographic_support=event,

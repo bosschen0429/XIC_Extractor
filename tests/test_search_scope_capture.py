@@ -21,10 +21,9 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
-    REQUEST_INPUT_KEY,
     CidNlMethodSubjectContractError,
     cid_nl_alignment_subject_worksets,
-    cid_nl_method_subject_from_request,
+    cid_nl_method_subject_by_id,
     cid_nl_method_subject_from_target,
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
@@ -43,10 +42,6 @@ from xic_extractor.peak_detection.search_scope import (
     require_capture_binding,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import (
-    build_processing_request_identity,
-    resolve_request_acquisition_source,
-)
 
 
 def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
@@ -65,15 +60,9 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
     )
     targeted_subject = cid_nl_method_subject_from_target(targeted_fixture.target)
     targeted_sample = targeted_fixture.sample("S1")
-    targeted_source = resolve_request_acquisition_source(
-        processing_owners=targeted_fixture.owners,
-        sample=targeted_sample,
-    )
+    targeted_source = targeted_fixture.source(targeted_sample)
     untargeted_sample = untargeted_fixture.sample("S1")
-    untargeted_source = resolve_request_acquisition_source(
-        processing_owners=untargeted_fixture.owners,
-        sample=untargeted_sample,
-    )
+    untargeted_source = untargeted_fixture.source(untargeted_sample)
     peak_config = _peak_config(tmp_path)
     rt = np.linspace(7.7, 8.3, 61)
     intensity = 100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2)
@@ -99,7 +88,6 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
     )
     targeted = TargetSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=targeted_fixture.request,
         samples=targeted_fixture.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -118,7 +106,7 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
     )
     untargeted = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=untargeted_fixture.owners.request,
+        method_subjects=untargeted_fixture.method_subject,
         samples=untargeted_fixture.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -137,7 +125,7 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
         ),
     )
     targeted_trace = Trace.from_arrays(
-        sample_name=targeted_sample.metadata.sample_name,
+        sample_name=targeted_sample.sample_name,
         mz=targeted_fixture.target.definition.target.mz,
         rt=rt,
         intensity=intensity,
@@ -148,7 +136,7 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
         acquisition_source_id=targeted_source.acquisition_source_id,
     )
     untargeted_trace = Trace.from_arrays(
-        sample_name=untargeted_sample.metadata.sample_name,
+        sample_name=untargeted_sample.sample_name,
         mz=untargeted_fixture.method_subject.precursor_mz,
         rt=rt,
         intensity=intensity,
@@ -186,12 +174,10 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
 
     targeted_observation = capture_owner.mint_captured_peak_observation(
         targeted_capture,
-        processing_owners=targeted_fixture.owners,
         sample=targeted_sample,
     )
     untargeted_observation = capture_owner.mint_captured_peak_observation(
         untargeted_capture,
-        processing_owners=untargeted_fixture.owners,
         sample=untargeted_sample,
     )
     assert targeted_observation.content.mz == untargeted_observation.content.mz
@@ -236,7 +222,6 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
     assert (
         capture_owner.mint_captured_peak_observation(
             rebound,
-            processing_owners=untargeted_fixture.owners,
             sample=untargeted_sample,
         )
         == untargeted_observation
@@ -281,15 +266,9 @@ def test_capture_preserves_trace_coordinates_within_subject_tolerance(
     )
     targeted_subject = cid_nl_method_subject_from_target(targeted_fixture.target)
     targeted_sample = targeted_fixture.sample("S1")
-    targeted_source = resolve_request_acquisition_source(
-        processing_owners=targeted_fixture.owners,
-        sample=targeted_sample,
-    )
+    targeted_source = targeted_fixture.source(targeted_sample)
     untargeted_sample = untargeted_fixture.sample("S1")
-    untargeted_source = resolve_request_acquisition_source(
-        processing_owners=untargeted_fixture.owners,
-        sample=untargeted_sample,
-    )
+    untargeted_source = untargeted_fixture.source(untargeted_sample)
     peak_config = _peak_config(tmp_path)
     rt = np.linspace(7.7, 8.3, 61)
     intensity = 100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2)
@@ -318,7 +297,6 @@ def test_capture_preserves_trace_coordinates_within_subject_tolerance(
     )
     targeted_scope = TargetSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=targeted_fixture.request,
         samples=targeted_fixture.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -338,7 +316,7 @@ def test_capture_preserves_trace_coordinates_within_subject_tolerance(
     untargeted_subject = untargeted_fixture.method_subject
     untargeted_scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=untargeted_fixture.owners.request,
+        method_subjects=untargeted_fixture.method_subject,
         samples=untargeted_fixture.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -355,7 +333,6 @@ def test_capture_preserves_trace_coordinates_within_subject_tolerance(
     )
     outside_hint_scope = TargetSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=targeted_fixture.request,
         samples=targeted_fixture.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -376,7 +353,7 @@ def test_capture_preserves_trace_coordinates_within_subject_tolerance(
     )
     assert outside_hint_scope.capture_bindings[0].preferred_rt == 9.0
     targeted_trace = Trace.from_arrays(
-        sample_name=targeted_sample.metadata.sample_name,
+        sample_name=targeted_sample.sample_name,
         mz=targeted_subject.precursor_mz,
         rt=rt,
         intensity=intensity,
@@ -387,7 +364,7 @@ def test_capture_preserves_trace_coordinates_within_subject_tolerance(
         acquisition_source_id=targeted_source.acquisition_source_id,
     )
     untargeted_trace = Trace.from_arrays(
-        sample_name=untargeted_sample.metadata.sample_name,
+        sample_name=untargeted_sample.sample_name,
         mz=half_tolerance_mz,
         rt=rt,
         intensity=intensity,
@@ -425,10 +402,7 @@ def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> N
     targeted_subject = cid_nl_method_subject_from_target(targeted_fixture.target)
     peak_config = _peak_config(tmp_path)
     untargeted_sample = untargeted_fixture.sample("S1")
-    untargeted_source = resolve_request_acquisition_source(
-        processing_owners=untargeted_fixture.owners,
-        sample=untargeted_sample,
-    )
+    untargeted_source = untargeted_fixture.source(untargeted_sample)
     untargeted_binding = _capture_binding(
         candidate_id="candidate-b",
         method_subject_id=untargeted_fixture.method_subject.method_subject_id,
@@ -441,7 +415,6 @@ def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> N
     )
     targeted = TargetSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=targeted_fixture.request,
         samples=targeted_fixture.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="targeted_gaussian15",
@@ -460,7 +433,7 @@ def test_crossed_scope_candidate_authorization_fails_closed(tmp_path: Path) -> N
     )
     untargeted = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=untargeted_fixture.owners.request,
+        method_subjects=untargeted_fixture.method_subject,
         samples=untargeted_fixture.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -520,20 +493,8 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         subjects=subjects,
         candidate_memberships=memberships,
     )
-    base_request = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=base_request.acquisition_sources,
-        acquisition_bindings=base_request.acquisition_bindings,
-        scientific_input_schema_version="untargeted-cid-nl-batch-test",
-        processing_algorithm_version=base_request.processing_algorithm_version,
-        processing_contract_version=base_request.processing_contract_version,
-        scientific_inputs={REQUEST_INPUT_KEY: batch.request_payload()},
-    )
     sample = fixture.sample("S1")
-    source = resolve_request_acquisition_source(
-        processing_owners=fixture.owners,
-        sample=sample,
-    )
+    source = fixture.source(sample)
     subjects_by_id = {subject.method_subject_id: subject for subject in subjects}
     bindings = tuple(
         _capture_binding(
@@ -550,7 +511,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
     )
     scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=request,
+        method_subjects=batch,
         samples=(sample,),
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -569,7 +530,7 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
     assert scope.capture_bindings == bindings
     subject_view = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=request,
+        method_subjects=batch,
         samples=(sample,),
         method_constraints=scope.method_constraints,
         evidence_providers=(scope.evidence_providers[0],),
@@ -594,53 +555,25 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         for binding in bindings
         if binding.candidate_id != view_binding.candidate_id
     )
-    universe_samples = [
-        {
-            "sample_stem": sample.metadata.raw_stem,
-            "candidate_ids": [view_binding.candidate_id],
-        },
-        {"sample_stem": "S2", "candidate_ids": [other_binding.candidate_id]},
-    ]
-    sample_request = build_processing_request_identity(
-        acquisition_sources=request.acquisition_sources,
-        acquisition_bindings=request.acquisition_bindings,
-        scientific_input_schema_version=request.scientific_input_schema_version,
-        processing_algorithm_version=request.processing_algorithm_version,
-        processing_contract_version=request.processing_contract_version,
-        scientific_inputs={
-            REQUEST_INPUT_KEY: batch.request_payload(),
-            "current_discovery_peak_universe": {"samples": universe_samples},
-            "alignment_feature_candidate_ids": [item[0] for item in memberships],
-        },
-    )
-    assert replace(subject_view, request=sample_request).capture_bindings == (
-        view_binding,
-    )
     other_sample = fixture.sample("S2")
-    other_source = resolve_request_acquisition_source(
-        processing_owners=fixture.owners, sample=other_sample
-    )
+    other_source = fixture.source(other_sample)
     other_binding = replace(
         other_binding,
-        sample_key=other_sample.identity.sample_key,
+        sample_key=other_sample.sample_name,
         acquisition_source_id=other_source.acquisition_source_id,
     )
     for _ in range(2):
         assert replace(
             scope,
-            request=sample_request,
             samples=(other_sample,),
             declared_candidate_ids=(other_binding.candidate_id,),
             capture_bindings=(other_binding,),
         ).capture_bindings == (other_binding,)
-        assert replace(subject_view, request=sample_request).capture_bindings == (
-            view_binding,
-        )
-    # Returning to the full request must restore its complete candidate authority.
+        assert subject_view.capture_bindings == (view_binding,)
     assert replace(scope).capture_bindings == bindings
     rt = np.linspace(7.7, 8.3, 61)
     trace = Trace.from_arrays(
-        sample_name=sample.metadata.sample_name,
+        sample_name=sample.sample_name,
         mz=view_binding.query_mz,
         rt=rt,
         intensity=100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2),
@@ -702,20 +635,8 @@ def test_untargeted_batch_scope_accepts_known_comparison_bridged_workset(
         subjects=subjects,
         candidate_memberships=memberships,
     )
-    base_request = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=base_request.acquisition_sources,
-        acquisition_bindings=base_request.acquisition_bindings,
-        scientific_input_schema_version="untargeted-cid-nl-workset-test",
-        processing_algorithm_version=base_request.processing_algorithm_version,
-        processing_contract_version=base_request.processing_contract_version,
-        scientific_inputs={REQUEST_INPUT_KEY: batch.request_payload()},
-    )
     sample = fixture.sample("S1")
-    source = resolve_request_acquisition_source(
-        processing_owners=fixture.owners,
-        sample=sample,
-    )
+    source = fixture.source(sample)
     subjects_by_id = {subject.method_subject_id: subject for subject in subjects}
     bindings = tuple(
         _capture_binding(
@@ -732,7 +653,7 @@ def test_untargeted_batch_scope_accepts_known_comparison_bridged_workset(
     )
     parent_scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=request,
+        method_subjects=batch,
         samples=(sample,),
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -783,9 +704,7 @@ def test_untargeted_batch_scope_accepts_known_comparison_bridged_workset(
         capture_bindings=workset_bindings,
     )
     for binding in workset_bindings:
-        subject = cid_nl_method_subject_from_request(
-            request, method_subject_id=binding.method_subject_id
-        )
+        subject = cid_nl_method_subject_by_id(batch, binding.method_subject_id)
         label, role, pair = capture_owner._hypothesis_context(
             workset_scope,
             query_mz=binding.query_mz,
@@ -793,8 +712,8 @@ def test_untargeted_batch_scope_accepts_known_comparison_bridged_workset(
         )
         assert label == f"untargeted:{binding.query_mz:.8g}:{subject.label}"
         assert (role, pair) == ("Analyte", "")
-    with pytest.raises(CidNlMethodSubjectContractError, match="not pinned"):
-        cid_nl_method_subject_from_request(request, method_subject_id="missing")
+    with pytest.raises(CidNlMethodSubjectContractError, match="not configured"):
+        cid_nl_method_subject_by_id(batch, "missing")
 
     assert len(workset_scope.evidence_providers) == 2
     assert len(workset_scope.evidence_providers) < len(parent_scope.evidence_providers)
@@ -807,19 +726,9 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
     monkeypatch: pytest.MonkeyPatch,
     ripple: bool,
 ) -> None:
-    import json
 
     from xic_extractor.peak_detection.peak_hypothesis_identity import (
         compose_ms1_observation_peak_hypothesis,
-    )
-    from xic_extractor.peak_detection.search_scope import (
-        PHYSICAL_CAPTURE_INPUT_KEY,
-        physical_capture_input_payload,
-    )
-    from xic_extractor.processing_identity import (
-        build_processing_request_identity,
-        compose_processing_owner_references,
-        issue_processing_attempt,
     )
 
     fixture = build_untargeted_cid_nl_no_raw_fixture(
@@ -828,10 +737,7 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
     )
     sample = fixture.sample("S1")
     method_subject = fixture.method_subject
-    source = resolve_request_acquisition_source(
-        processing_owners=fixture.owners,
-        sample=sample,
-    )
+    source = fixture.source(sample)
     if ripple:
         rt = np.linspace(5.0, 11.0, 601)
         intensity = (
@@ -863,29 +769,9 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
         ),
         physical_evaluation=evaluation,
     )
-    old_request = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=old_request.acquisition_sources,
-        acquisition_bindings=old_request.acquisition_bindings,
-        scientific_input_schema_version=old_request.scientific_input_schema_version,
-        processing_algorithm_version=old_request.processing_algorithm_version,
-        processing_contract_version=old_request.processing_contract_version,
-        scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
-        | {
-            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
-                profile,
-            )
-        },
-    )
-    owners = compose_processing_owner_references(
-        request=request,
-        attempt=issue_processing_attempt(),
-        sample_snapshot=fixture.owners.sample_snapshot,
-        sample_resolutions=fixture.samples,
-    )
     scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=request,
+        method_subjects=method_subject,
         samples=fixture.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -926,7 +812,7 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
         scope=scope,
         candidate_id=binding.candidate_id,
         trace=Trace.from_arrays(
-            sample_name=sample.metadata.sample_name,
+            sample_name=sample.sample_name,
             mz=binding.query_mz,
             rt=rt,
             intensity=intensity,
@@ -959,13 +845,10 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
     )
     observation = capture_owner.mint_captured_peak_observation(
         capture,
-        processing_owners=owners,
         sample=sample,
     )
     assert capture.selected_hypothesis is not None
     owner_hypothesis = compose_ms1_observation_peak_hypothesis(
-        processing_owners=owners,
-        sample=sample,
         peak_observation=observation,
     )
     bound = capture_owner.bind_owner_backed_capture_hypothesis(
@@ -997,8 +880,4 @@ def test_observation_seam_does_not_accept_caller_hypothesis_override() -> None:
     ).parameters
 
     assert set(capture_parameters) == {"scope", "candidate_id", "trace"}
-    assert set(observation_parameters) == {
-        "capture",
-        "processing_owners",
-        "sample",
-    }
+    assert set(observation_parameters) == {"capture", "sample"}

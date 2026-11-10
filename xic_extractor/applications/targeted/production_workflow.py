@@ -14,7 +14,6 @@ from xic_extractor.alignment.completion import (
     TargetWorkflowRequest,
     WorkflowStageFailure,
     complete_analysis,
-    resolve_workflow_processing_owners,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.result.application_result import (
@@ -50,8 +49,7 @@ from xic_extractor.extraction.targeted_cid_nl_assessment import (
 )
 from xic_extractor.extraction.targeted_inputs import (
     ResolvedTargetedInputs,
-    bind_targeted_physical_capture_request,
-    build_targeted_processing_request_identity,
+    build_targeted_acquisition_sources,
     resolve_targeted_inputs,
     resolve_targeted_raw_paths,
 )
@@ -77,16 +75,9 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
-    ProcessingOwnerReferences,
-    ProcessingRequestIdentity,
-    compose_processing_owner_references,
-    issue_processing_attempt,
+    AcquisitionSourceIdentity,
 )
-from xic_extractor.sample_metadata import (
-    ResolvedCanonicalSampleIdentity,
-    mint_sample_metadata_snapshot,
-    resolve_canonical_sample_identity,
-)
+from xic_extractor.sample_metadata import SampleMetadata
 
 _IDENTITY_NAMESPACE = "targeted-production"
 
@@ -100,16 +91,11 @@ class TargetedProductionInputSnapshot:
     raw_file_states: tuple[tuple[int, int, int, int, int], ...]
     resolved_inputs: ResolvedTargetedInputs
     target_snapshot: TargetListSnapshot
-    processing_request: ProcessingRequestIdentity
+    acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
 
     def acquisition_sources_by_sample(self) -> dict[str, AcquisitionSourceExpectation]:
         """Project the admitted RAW identities for the acquisition runner."""
 
-        request = self.processing_request
-        sources_by_id = {
-            source.acquisition_source_id: source
-            for source in request.acquisition_sources
-        }
         states_by_stem = {
             path.stem: state
             for path, state in zip(
@@ -119,11 +105,11 @@ class TargetedProductionInputSnapshot:
             )
         }
         return {
-            binding.adapter_input_key: AcquisitionSourceExpectation(
-                source=sources_by_id[binding.acquisition_source_id],
-                path_identity=states_by_stem[binding.adapter_input_key],
+            stem: AcquisitionSourceExpectation(
+                source=source,
+                path_identity=states_by_stem[stem],
             )
-            for binding in request.acquisition_bindings
+            for stem, source in self.acquisition_sources.items()
         }
 
 
@@ -131,11 +117,11 @@ class TargetedProductionInputSnapshot:
 class _PreparedTargetedProductionWorkflow:
     """Owner-local acquisition population for per-Target scientific completion."""
 
-    owners: ProcessingOwnerReferences
+    acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
     rt_frame: SampleRtFrame
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    samples: tuple[SampleMetadata, ...]
     targets: tuple[ResolvedTargetDefinition, ...]
-    results_by_sample: tuple[tuple[ResolvedCanonicalSampleIdentity, FileResult], ...]
+    results_by_sample: tuple[tuple[SampleMetadata, FileResult], ...]
     raw_stems: frozenset[str]
     acquisition_file_ids: tuple[int, ...]
     acquisition_evidence: RunOutput
@@ -187,24 +173,10 @@ def execute_targeted_production_workflow(
     prepared = _prepare_targeted_production_workflow(
         request, acquisition_evidence, expected_inputs=expected_inputs
     )
-    target_contexts = tuple(
-        _context_for_target(prepared, index)
-        for index, _target in enumerate(prepared.targets)
-    )
     finalized_results = tuple(
-        _execute_target(context, request, target)
-        for context, target in zip(
-            target_contexts,
-            prepared.targets,
-            strict=True,
-        )
+        _execute_target(prepared, request, target) for target in prepared.targets
     )
-    _validate_finalized_result_population(
-        request,
-        finalized_results,
-        expected_processing_request=prepared.owners.request,
-        expected_samples=prepared.samples,
-    )
+    _validate_finalized_result_population(request, finalized_results)
     publication_output = _build_publication_output(
         finalized_results, prepared.acquisition_evidence, config=request.config
     )
@@ -218,9 +190,6 @@ def execute_targeted_production_workflow(
 def _validate_finalized_result_population(
     request: TargetedApplicationRequest,
     results: tuple[FinalizedTargetProductionResult, ...],
-    *,
-    expected_processing_request: ProcessingRequestIdentity,
-    expected_samples: tuple[ResolvedCanonicalSampleIdentity, ...],
 ) -> None:
     if type(results) is not tuple or any(
         type(result) is not FinalizedTargetApplicationResult for result in results
@@ -229,29 +198,6 @@ def _validate_finalized_result_population(
             "finalized workflow must return an exact immutable Target result tuple"
         )
     _validate_target_population(request, results)
-    request_ids = {result.processing_request for result in results}
-    sample_populations = {
-        tuple(sample.identity.sample_key for sample in result.canonical_samples)
-        for result in results
-    }
-    if len(request_ids) != 1 or len(sample_populations) != 1:
-        raise TargetedApplicationError(
-            "finalized Target results crossed request or sample populations"
-        )
-    expected_sample_population = tuple(
-        sorted(sample.identity.sample_key for sample in expected_samples)
-    )
-    if any(
-        result.processing_request != expected_processing_request
-        or tuple(
-            sorted(sample.identity.sample_key for sample in result.canonical_samples)
-        )
-        != expected_sample_population
-        for result in results
-    ):
-        raise TargetedApplicationError(
-            "finalized Target results do not belong to the current acquisition"
-        )
 
 
 def _validate_target_population(
@@ -279,12 +225,8 @@ def _build_publication_output(
     config: ExtractionConfig,
 ) -> RunOutput:
     expected_samples = finalized_results[0].canonical_samples
-    expected_sample_ids = tuple(
-        sample.identity.sample_key for sample in expected_samples
-    )
-    samples_by_raw_stem = {
-        sample.metadata.raw_stem: sample for sample in expected_samples
-    }
+    expected_sample_ids = tuple(sample.sample_name for sample in expected_samples)
+    samples_by_raw_stem = {sample.raw_stem: sample for sample in expected_samples}
     if len(samples_by_raw_stem) != len(expected_samples):
         raise TargetedOutputBoundaryError(
             "finalized Targeted sample population contains duplicate RAW identities"
@@ -310,7 +252,7 @@ def _build_publication_output(
             backfills[(sample_id, target_id)] = backfill
         for projection_decision in result.completed_projection.decisions:
             subject = cast(Any, projection_decision.subject)
-            sample_id = subject.sample.identity.sample_key
+            sample_id = subject.sample.sample_name
             if sample_id not in expected_sample_ids:
                 raise TargetedOutputBoundaryError(
                     "finalized Targeted decision crossed the canonical "
@@ -333,7 +275,7 @@ def _build_publication_output(
             raise TargetedOutputBoundaryError(
                 "acquisition evidence does not resolve to a canonical sample identity"
             )
-        sample_id = sample.identity.sample_key
+        sample_id = sample.sample_name
         if sample_id in consumed_sample_ids:
             raise TargetedOutputBoundaryError(
                 "acquisition evidence contains duplicate canonical samples"
@@ -398,8 +340,8 @@ def _build_publication_output(
             rendered[target_label] = cell.render()
         files.append(
             (
-                sample.metadata.injection_order,
-                replace(file_result, sample_metadata=sample.metadata),
+                sample.injection_order,
+                replace(file_result, sample_metadata=sample),
                 rendered,
             )
         )
@@ -782,7 +724,7 @@ def _prepare_targeted_production_workflow(
     resolved_inputs = current_inputs.resolved_inputs
     target_snapshot = current_inputs.target_snapshot
     metadata_by_stem = {row.raw_stem: row for row in resolved_inputs.sample_metadata}
-    rows = tuple(
+    samples = tuple(
         replace(
             metadata_by_stem[raw_path.stem],
             sample_name=file_result.sample_name,
@@ -790,13 +732,6 @@ def _prepare_targeted_production_workflow(
             injection_order=resolved_inputs.injection_order[raw_path.stem],
         )
         for raw_path, file_result in results_by_raw_path
-    )
-    sample_snapshot = mint_sample_metadata_snapshot(
-        rows,
-        identity_namespace=_IDENTITY_NAMESPACE,
-    )
-    samples = tuple(
-        resolve_canonical_sample_identity(sample_snapshot, row.raw_stem) for row in rows
     )
     resolved_targets = tuple(
         resolve_target_definition(target_snapshot, target.label)
@@ -825,20 +760,8 @@ def _prepare_targeted_production_workflow(
         for evaluation in physical_evaluations.values()
     ):
         raise RuntimeError("Targeted acquisition crossed its configured signal profile")
-    processing_request = bind_targeted_physical_capture_request(
-        current_inputs.processing_request,
-        profile=profile,
-    )
-    attempt = issue_processing_attempt()
-    owners = compose_processing_owner_references(
-        request=processing_request,
-        attempt=attempt,
-        sample_snapshot=sample_snapshot,
-        sample_resolutions=samples,
-        target_snapshot=target_snapshot,
-    )
     return _PreparedTargetedProductionWorkflow(
-        owners=owners,
+        acquisition_sources=current_inputs.acquisition_sources,
         rt_frame=SampleRtFrame.from_samples(samples),
         samples=samples,
         targets=resolved_targets,
@@ -874,11 +797,9 @@ def snapshot_targeted_production_inputs(
         identity_namespace=_IDENTITY_NAMESPACE,
     )
     raw_file_states = _raw_file_states(raw_paths)
-    processing_request = build_targeted_processing_request_identity(
-        request.config,
-        target_snapshot=target_snapshot,
+    acquisition_sources = build_targeted_acquisition_sources(
         raw_paths=raw_paths,
-        resolved_inputs=resolved_inputs,
+        injection_order=resolved_inputs.injection_order,
         should_cancel=request.should_stop,
     )
     if _raw_file_states(raw_paths) != raw_file_states:
@@ -889,7 +810,7 @@ def snapshot_targeted_production_inputs(
         raw_file_states=raw_file_states,
         resolved_inputs=resolved_inputs,
         target_snapshot=target_snapshot,
-        processing_request=processing_request,
+        acquisition_sources=acquisition_sources,
     )
 
 
@@ -958,28 +879,6 @@ def _bind_results_to_raw_paths(
     return tuple((path, results_by_sample[path.stem]) for path in raw_paths)
 
 
-def _context_for_target(
-    context: _PreparedTargetedProductionWorkflow,
-    target_index: int,
-) -> _PreparedTargetedProductionWorkflow:
-    """Reuse the initial attempt, then issue one attempt per later Target."""
-
-    if target_index == 0:
-        return context
-    owners = context.owners
-    attempt = issue_processing_attempt()
-    return replace(
-        context,
-        owners=compose_processing_owner_references(
-            request=owners.request,
-            attempt=attempt,
-            sample_snapshot=owners.sample_snapshot,
-            sample_resolutions=owners.sample_resolutions,
-            target_snapshot=owners.target_snapshot,
-        ),
-    )
-
-
 def _execute_target(
     context: _PreparedTargetedProductionWorkflow,
     request: TargetedApplicationRequest,
@@ -987,7 +886,7 @@ def _execute_target(
 ) -> FinalizedTargetProductionResult:
     population = build_targeted_capture_population(
         target=target,
-        processing_owners=context.owners,
+        acquisition_sources=context.acquisition_sources,
         samples=context.samples,
         results_by_sample=context.results_by_sample,
         config=request.config,
@@ -1006,16 +905,12 @@ def _execute_target(
     assessment_tuple = tuple(
         sorted(
             assessments,
-            key=lambda item: item[0].identity.sample_key,
+            key=lambda item: item[0].sample_name,
         )
     )
     capture_inputs = population.capture_inputs
     return _complete_retained_target(
-        TargetWorkflowRequest(
-            scope=population.scope,
-            processing_request=context.owners.request,
-            processing_attempt=context.owners.attempt,
-        ),
+        TargetWorkflowRequest(scope=population.scope),
         TargetWorkflowAdapter(
             capture_inputs=capture_inputs,
             rt_frame=context.rt_frame,
@@ -1033,9 +928,8 @@ def _complete_retained_target(
     adapter: TargetWorkflowAdapter,
 ) -> FinalizedTargetProductionResult:
     """Complete retained acquisition directly into its scientific result."""
-    owners = resolve_workflow_processing_owners(request, adapter)
     try:
-        result = complete_analysis(request, adapter, processing_owners=owners)
+        result = complete_analysis(request, adapter)
     except WorkflowStageFailure as failure:
         raise RuntimeError(
             "Targeted workflow failed before publication: "

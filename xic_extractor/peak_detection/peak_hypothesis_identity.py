@@ -19,8 +19,7 @@ from xic_extractor.peak_detection.hypotheses import (
 from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
 )
-from xic_extractor.processing_identity import ProcessingOwnerReferences
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 HYPOTHESIS_METHOD_DDA_CID_NL = "dda_cid_nl"
 HYPOTHESIS_METHOD_MS1_OBSERVATION = "ms1_physical_observation"
@@ -33,15 +32,13 @@ class PeakHypothesisContractError(ValueError):
 
 def compose_cid_nl_peak_hypothesis(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     peak_observation: PeakObservationRef,
     chromatographic_support: CidNlChromatographicSupportRef,
 ) -> PeakHypothesis:
     """Compose one DDA CID-NL event into the existing hypothesis model."""
 
     _validate_reference_pair(
-        processing_owners=processing_owners,
         sample=sample,
         peak_observation=peak_observation,
         chromatographic_support=chromatographic_support,
@@ -78,17 +75,11 @@ def compose_cid_nl_peak_hypothesis(
 
 def compose_ms1_observation_peak_hypothesis(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
     peak_observation: PeakObservationRef,
 ) -> PeakHypothesis:
     """Compose one physical MS1 observation without training evidence."""
 
-    _validate_observation_reference(
-        processing_owners=processing_owners,
-        sample=sample,
-        peak_observation=peak_observation,
-    )
+    _validate_observation_reference(peak_observation=peak_observation)
     hypothesis_id = measured_hypothesis_key(
         HYPOTHESIS_METHOD_MS1_OBSERVATION, peak_observation
     )
@@ -112,18 +103,8 @@ def compose_ms1_observation_peak_hypothesis(
 
 def _validate_observation_reference(
     *,
-    processing_owners: object,
-    sample: object,
     peak_observation: object,
 ) -> None:
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise PeakHypothesisContractError(
-            "processing_owners must be a validated ProcessingOwnerReferences"
-        )
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise PeakHypothesisContractError(
-            "sample must be an owner-resolved canonical sample"
-        )
     if not isinstance(peak_observation, PeakObservationRef):
         raise PeakHypothesisContractError(
             "peak observation must be an owner-minted PeakObservationRef"
@@ -154,8 +135,7 @@ def measured_hypothesis_key(method: str, peak_observation: PeakObservationRef) -
 
 def _validate_reference_pair(
     *,
-    processing_owners: object,
-    sample: object,
+    sample: SampleMetadata,
     peak_observation: object,
     chromatographic_support: object,
 ) -> None:
@@ -170,16 +150,8 @@ def _validate_reference_pair(
         raise PeakHypothesisContractError(
             "chromatographic support must be an owner-minted reference"
         )
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise PeakHypothesisContractError(
-            "processing_owners must be a validated ProcessingOwnerReferences"
-        )
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise PeakHypothesisContractError(
-            "sample must be an owner-resolved canonical sample"
-        )
     _validate_reference_content_pair(peak_observation, chromatographic_support)
-    if chromatographic_support.content.sample_key != sample.identity.sample_key:
+    if chromatographic_support.content.sample_key != sample.sample_name:
         raise PeakHypothesisContractError(
             "chromatographic support references a different sample"
         )

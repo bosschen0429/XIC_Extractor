@@ -17,7 +17,6 @@ from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
-    CidNlEvidenceRef,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_METHOD_ID,
@@ -38,10 +37,9 @@ from xic_extractor.peak_detection.observations import (
 )
 from xic_extractor.precursor_evidence import PrecursorLossAssessment
 from xic_extractor.processing_identity import (
-    ProcessingOwnerReferences,
-    resolve_request_acquisition_source,
+    AcquisitionSourceIdentity,
 )
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 CidNlTechnicalState: TypeAlias = Literal[
     "evaluated",
@@ -209,16 +207,15 @@ class CidNlMethodAssessmentRef:
 
     content: CidNlMethodAssessmentContent
     candidate_peaks: tuple[PeakObservationRef, ...]
-    evidence_refs: tuple[CidNlEvidenceRef, ...]
+    evidence_refs: tuple[CidNlEvidenceObservation, ...]
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...]
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...]
 
 
 def resolve_cid_nl_method_relations(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-    evidence_refs: tuple[CidNlEvidenceRef, ...],
+    sample: SampleMetadata,
+    evidence_refs: tuple[CidNlEvidenceObservation, ...],
     candidate_peaks: tuple[PeakObservationRef, ...],
     policy: DdaCidNlPeakSupportPolicy,
     relations: CidNlMethodRelations | None = None,
@@ -237,11 +234,9 @@ def resolve_cid_nl_method_relations(
     )
     queries = tuple(
         CidNlEventQuery(
-            evidence.observation.assess_precursor_loss(
-                policy.neutral_loss_tolerance_ppm
-            ),
-            evidence.observation.scan_rt_min,
-            evidence.observation.support_rt_min,
+            evidence.assess_precursor_loss(policy.neutral_loss_tolerance_ppm),
+            evidence.scan_rt_min,
+            evidence.support_rt_min,
         )
         for evidence in evidence_refs
     )
@@ -251,7 +246,6 @@ def resolve_cid_nl_method_relations(
         )
     individual_refs = tuple(
         resolve_dda_cid_nl_peak_support_ref(
-            processing_owners=processing_owners,
             sample=sample,
             canonical_evidence=evidence_refs[event_index],
             candidate_peaks=candidate_peaks,
@@ -261,7 +255,6 @@ def resolve_cid_nl_method_relations(
     )
     set_refs = tuple(
         resolve_dda_cid_nl_candidate_set_relation_ref(
-            processing_owners=processing_owners,
             sample=sample,
             canonical_evidence=evidence_refs[event_index],
             candidate_peaks=candidate_peaks,
@@ -274,14 +267,14 @@ def resolve_cid_nl_method_relations(
 
 def mint_cid_nl_method_assessment_ref(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
+    acquisition_source: AcquisitionSourceIdentity,
     target: ResolvedTargetDefinition | None = None,
     method_subject: CidNlMethodSubject | None = None,
     detector_invocation_id: str,
     evaluation_receipt: CidNlEvaluationReceipt,
     candidate_peaks: tuple[PeakObservationRef, ...] = (),
-    evidence_refs: tuple[CidNlEvidenceRef, ...] = (),
+    evidence_refs: tuple[CidNlEvidenceObservation, ...] = (),
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...] = (),
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...] = (),
     technical_state: CidNlTechnicalState = "evaluated",
@@ -310,12 +303,8 @@ def mint_cid_nl_method_assessment_ref(
         individual_support_refs=individual,
         set_relation_refs=set_relations,
     )
-    acquisition_source = resolve_request_acquisition_source(
-        processing_owners=processing_owners,
-        sample=sample,
-    )
     content = CidNlMethodAssessmentContent(
-        sample_key=sample.identity.sample_key,
+        sample_key=sample.sample_name,
         acquisition_source_id=acquisition_source.acquisition_source_id,
         provider_id=CID_NL_PROVIDER_ID,
         method_id=CID_NL_METHOD_ID,
@@ -324,7 +313,7 @@ def mint_cid_nl_method_assessment_ref(
         detector_invocation_id=detector_invocation_id,
         candidate_peaks=tuple(peak.content for peak in candidates),
         evaluation_receipt=evaluation_receipt,
-        evidence_observations=tuple(ref.observation for ref in evidence),
+        evidence_observations=evidence,
         technical_state=technical_state,
         method_result=method_result,
         reason_codes=reason_codes,
@@ -358,11 +347,11 @@ def _resolve_method_subject(
 
 def _evidence_matches_candidate_universe(
     *,
-    evidence: CidNlEvidenceRef,
+    evidence: CidNlEvidenceObservation,
     candidate_peaks: tuple[PeakObservationRef, ...],
     support_policy: DdaCidNlPeakSupportPolicy,
 ) -> bool:
-    observation = evidence.observation
+    observation = evidence
     precursor = observation.assess_precursor_loss(
         support_policy.neutral_loss_tolerance_ppm
     )
@@ -415,7 +404,7 @@ def _method_result(
     technical_state: CidNlTechnicalState,
     evaluation_receipt: CidNlEvaluationReceipt,
     candidate_peaks: tuple[PeakObservationRef, ...],
-    evidence_refs: tuple[CidNlEvidenceRef, ...],
+    evidence_refs: tuple[CidNlEvidenceObservation, ...],
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...],
 ) -> tuple[CidNlMethodResult | None, tuple[str, ...]]:
@@ -430,7 +419,7 @@ def _method_result(
         return "HOLD", ("set_level_relation",)
     if not candidate_peaks and any(
         evaluation_receipt.support_policy.accepts_precursor(
-            evidence.observation.assess_precursor_loss(
+            evidence.assess_precursor_loss(
                 evaluation_receipt.support_policy.neutral_loss_tolerance_ppm
             )
         )
@@ -532,10 +521,10 @@ def _canonical_candidates(
     return refs
 
 
-def _canonical_evidence_refs(value: object) -> tuple[CidNlEvidenceRef, ...]:
+def _canonical_evidence_refs(value: object) -> tuple[CidNlEvidenceObservation, ...]:
     return _canonical_refs(
         value,
-        expected_type=CidNlEvidenceRef,
+        expected_type=CidNlEvidenceObservation,
         field="evidence_refs",
     )
 
@@ -567,13 +556,13 @@ def _canonical_refs(value: object, *, expected_type: type, field: str) -> tuple:
         )
 
     def event_key(
-        item: CidNlEvidenceRef
+        item: CidNlEvidenceObservation
         | DdaCidNlPeakSupportRef
         | DdaCidNlCandidateSetRelationRef,
     ) -> tuple:
         observation = (
-            item.observation
-            if isinstance(item, CidNlEvidenceRef)
+            item
+            if isinstance(item, CidNlEvidenceObservation)
             else item.content.evidence
         )
         return (

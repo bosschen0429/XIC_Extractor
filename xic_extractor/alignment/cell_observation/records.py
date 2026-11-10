@@ -6,14 +6,18 @@ from dataclasses import dataclass
 from typing import Literal
 
 from xic_extractor.alignment.cell_observation.cid_nl_evidence import (
-    CidNlCellEvidence,
+    cid_nl_supported_peaks,
+    resolve_cid_nl_cell_evidence,
+    resolve_cid_nl_recovered_evidence,
 )
 from xic_extractor.alignment.cell_observation.group_context import (
     CellObservationContractError,
     CidNlCellGroupContext,
     TerminalObservationVariant,
 )
-from xic_extractor.alignment.cell_observation.method_evidence import CellMethodEvidence
+from xic_extractor.alignment.cell_observation.method_evidence import (
+    FinalCellEvidenceState,
+)
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupMemberSubject,
 )
@@ -26,10 +30,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservationRef
-from xic_extractor.processing_identity import (
-    ProcessingOwnerReferences,
-)
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,25 +67,36 @@ class CellObservationRef:
     content: CellObservationContent
     group_context: CidNlCellGroupContext
     method_assessment: CidNlMethodAssessmentRef
-    method_evidence: CellMethodEvidence
     peak_observation: PeakObservationRef | None
     peak_hypothesis: PeakHypothesis | None
     outside_group_context: CidNlCellGroupContext | None = None
+
+    def evidence_state(self) -> FinalCellEvidenceState:
+        """The cell's own method meaning; lineage is closed by its caller."""
+        return resolve_cid_nl_cell_evidence(
+            self.method_assessment, self.peak_observation, self.peak_hypothesis
+        )
+
+    def recovered_evidence_state(self) -> FinalCellEvidenceState:
+        """A group-admitted revisit keeps its own completed assessment meaning."""
+        return resolve_cid_nl_recovered_evidence(
+            self.method_assessment, self.peak_hypothesis
+        )
 
 
 def _direct_member_integration(
     *,
     member: CrossSampleGroupMemberSubject | None,
-    canonical_sample: ResolvedCanonicalSampleIdentity,
+    canonical_sample: SampleMetadata,
     terminal_variant: TerminalObservationVariant,
     terminal_hypothesis: PeakHypothesis | None,
-    method_evidence: CellMethodEvidence | None,
+    method_assessment: CidNlMethodAssessmentRef | None,
     peak_observation: PeakObservationRef | None,
     peak_hypothesis: PeakHypothesis | None,
 ) -> IntegrationResult | None:
     if member is None:
         return None
-    sample_key = canonical_sample.identity.sample_key
+    sample_key = canonical_sample.sample_name
     direct_hypothesis = peak_hypothesis
     if direct_hypothesis is None and (
         terminal_variant == "observed"
@@ -111,8 +123,10 @@ def _direct_member_integration(
             raise CellObservationContractError(
                 "direct hypothesis does not mint the exact final member"
             )
-        if method_evidence is not None:
-            if not set(member.physical_peaks).issubset(method_evidence.supported_peaks):
+        if method_assessment is not None:
+            if not set(member.physical_peaks).issubset(
+                cid_nl_supported_peaks(method_assessment)
+            ):
                 raise CellObservationContractError(
                     "direct member hypothesis is outside the exact SUPPORT subset"
                 )
@@ -140,7 +154,6 @@ def _outside_group_relation(
         )
     if (
         method_assessment.content.method_result != "SUPPORT"
-        or outside_group_context.processing_attempt != group_context.processing_attempt
         or outside_group_context.config != group_context.config
         or outside_group_context.group.group_hypothesis_id
         == group_context.group.group_hypothesis_id
@@ -152,7 +165,7 @@ def _outside_group_relation(
         support
         for support in outside_group_context.supports
         if support.assessment is method_assessment
-        and support.sample.identity.sample_key == method_assessment.content.sample_key
+        and support.sample.sample_name == method_assessment.content.sample_key
     )
     if len(supports) != 1:
         raise CellObservationContractError(
@@ -171,8 +184,7 @@ def _outside_group_relation(
 
 def mint_cell_observation_ref(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     target: ResolvedTargetDefinition | None = None,
     group_context: CidNlCellGroupContext,
     method_assessment: CidNlMethodAssessmentRef,
@@ -183,20 +195,13 @@ def mint_cell_observation_ref(
 ) -> CellObservationRef:
     """Attach a completed assessment to an existing group without creating it."""
 
-    if (
-        group_context.processing_attempt.processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-    ):
-        raise CellObservationContractError(
-            "group SUPPORT closure is outside the current attempt"
-        )
     group = group_context.group
     method_result = method_assessment.content.method_result
-    if method_assessment.content.sample_key != (sample.identity.sample_key):
+    if method_assessment.content.sample_key != (sample.sample_name):
         raise CellObservationContractError("assessment references a different sample")
     support_binding = any(
         support.assessment.content == method_assessment.content
-        and support.sample.identity.sample_key == sample.identity.sample_key
+        and support.sample.sample_name == sample.sample_name
         for support in group_context.supports
     )
     if method_assessment.content.method_subject != group_context.method_subject and (
@@ -219,7 +224,7 @@ def mint_cell_observation_ref(
         outside_group_context=outside_group_context,
     )
     content = CellObservationContent(
-        sample_key=sample.identity.sample_key,
+        sample_key=sample.sample_name,
         group_hypothesis_id=group.group_hypothesis_id,
         group_owner_ids=group_context.sorted_owner_ids,
         group_method_subject_id=group_context.method_subject_id,
@@ -242,7 +247,6 @@ def mint_cell_observation_ref(
         content=content,
         group_context=group_context,
         method_assessment=method_assessment,
-        method_evidence=CidNlCellEvidence(method_assessment),
         peak_observation=peak_observation,
         peak_hypothesis=peak_hypothesis,
         outside_group_context=outside_group_context,

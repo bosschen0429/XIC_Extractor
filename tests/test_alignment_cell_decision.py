@@ -69,7 +69,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
 def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
@@ -295,19 +294,16 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
     )
 
     negative_assessment = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=sample,
+        acquisition_source=fixture.source(sample),
         target=fixture.target,
         detector_invocation_id="gaussian15:s4:cell-decision-negative",
         evaluation_receipt=_completed_receipt(),
     )
     source = next(
-        item
-        for item in spine.cells
-        if item.content.sample_key == sample.identity.sample_key
+        item for item in spine.cells if item.content.sample_key == sample.sample_name
     )
     negative_cell = mint_cell_observation_ref(
-        processing_owners=fixture.owners,
         sample=sample,
         target=fixture.target,
         group_context=source.group_context,
@@ -365,7 +361,7 @@ def test_group_merge_selects_one_direct_integration_among_lanes(
     assessments = tuple(
         _support_assessment(
             fixture,
-            sample.lookup_token,
+            sample.raw_stem,
             suffix="cell-decision-mixed-merge",
             apex_rt=8.0 + index * 0.3,
             scan_number=111 + index,
@@ -373,12 +369,10 @@ def test_group_merge_selects_one_direct_integration_among_lanes(
         for index, sample in enumerate(samples)
     )
     left_spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
         target=fixture.target,
         sample_assessments=((samples[0], assessments[0]),),
     )
     right_spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
         target=fixture.target,
         sample_assessments=((samples[1], assessments[1]),),
     )
@@ -436,7 +430,7 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
     assessments = tuple(
         _support_assessment(
             fixture,
-            sample.lookup_token,
+            sample.raw_stem,
             suffix="cell-decision-split",
             apex_rt=8.0,
             scan_number=91 + index,
@@ -445,7 +439,6 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
         for index, sample in enumerate(samples)
     )
     spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
         target=fixture.target,
         sample_assessments=tuple(zip(samples, assessments, strict=True)),
     )
@@ -491,10 +484,7 @@ def _censored_peak(
     **_kwargs: Any,
 ) -> Any:
     sample = fixture.sample(sample_stem)
-    source = resolve_request_acquisition_source(
-        processing_owners=fixture.owners,
-        sample=sample,
-    )
+    source = fixture.source(sample)
     rt = np.arange(401, dtype=float) / 100.0 + apex_rt - 2.0
     intensity = np.zeros(401)
     positions = np.arange(160, 241)
@@ -519,7 +509,6 @@ def _censored_peak(
         acquisition_source_id=source.acquisition_source_id,
     )
     return mint_peak_observation_ref(
-        processing_owners=fixture.owners,
         sample=sample,
         trace=trace,
         integration=physical_peak_observation_integration(evaluation),

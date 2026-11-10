@@ -59,7 +59,7 @@ from xic_extractor.peak_detection.observations import (
 )
 from xic_extractor.peak_detection.physical_peak_equivalence import PhysicalPeakView
 from xic_extractor.peak_detection.search_scope import UntargetedSearchScope
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,15 +79,11 @@ class CidNlWorksetGrouping:
 class CidNlWorksetEvidence:
     """Acquired assessments and runtime-issued completion facts for one workset."""
 
-    sample_assessments: tuple[
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
-    ]
-    initial_assessments: tuple[
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
-    ]
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...]
+    initial_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...]
     group_backfills: Mapping[
         tuple[str, str, str],
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
+        tuple[SampleMetadata, CidNlMethodAssessmentRef],
     ]
     physical_peak_views: Mapping[PeakObservationContent, PhysicalPeakView] = field(
         default_factory=dict
@@ -98,7 +94,7 @@ class CidNlWorksetEvidence:
 class _CellCoveragePlan:
     cells: Mapping[tuple[str, str], CellObservationRef]
     conservative_positions: tuple[
-        tuple[ResolvedCanonicalSampleIdentity, ConservativeBackfillGroupFacts], ...
+        tuple[SampleMetadata, ConservativeBackfillGroupFacts], ...
     ]
     backfill_enabled: bool
 
@@ -110,19 +106,17 @@ class CidNlWorksetCompletion:
     _scope: UntargetedSearchScope
     _capture_inputs: tuple[CaptureWorkflowArguments, ...]
     _captures: tuple[SampleLocalCapture, ...]
-    _sample_assessments: tuple[
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
-    ]
+    _sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...]
     _grouping_result: CrossSampleGroupingResult
     _predecessor_cells: tuple[CellObservationRef, ...]
     _backfill_cells: tuple[CellObservationRef, ...]
     _coverage_plan: _CellCoveragePlan
-    _samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    _samples: tuple[SampleMetadata, ...]
 
     @property
     def completion_requests(
         self,
-    ) -> tuple[tuple[ResolvedCanonicalSampleIdentity, CidNlCellGroupContext], ...]:
+    ) -> tuple[tuple[SampleMetadata, CidNlCellGroupContext], ...]:
         """Exact group contexts that need an already-completed runtime query."""
         return tuple(
             (sample, facts.group_context)
@@ -139,13 +133,8 @@ class CidNlWorksetCompletion:
             completed_empty_backfills,
             samples=self._samples,
         )
-        owners = self._grouping_result.processing_owners
         return compose_untarget_subject(
-            UntargetWorkflowCompositionRequest(
-                scope=self._scope,
-                processing_request=owners.request,
-                processing_attempt=owners.attempt,
-            ),
+            UntargetWorkflowCompositionRequest(scope=self._scope),
             UntargetWorkflowAdapter(
                 capture_inputs=self._capture_inputs,
                 rt_frame=self._grouping_result.rt_frame,
@@ -163,7 +152,7 @@ def prepare_cid_nl_workset(
     grouping: CidNlWorksetGrouping,
     evidence: CidNlWorksetEvidence,
     *,
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
+    samples: tuple[SampleMetadata, ...],
     alignment_config: AlignmentConfig,
 ) -> CidNlWorksetCompletion:
     """Complete grouping and cells, then request exact runtime completion facts."""
@@ -194,7 +183,7 @@ def prepare_cid_nl_workset(
 def _complete_cell_observations(
     grouping: CidNlWorksetGrouping,
     evidence: CidNlWorksetEvidence,
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
+    samples: tuple[SampleMetadata, ...],
     alignment_config: AlignmentConfig,
 ) -> tuple[
     CrossSampleGroupingResult,
@@ -202,11 +191,10 @@ def _complete_cell_observations(
     tuple[CellObservationRef, ...],
     frozenset[tuple[str, str]],
 ]:
-    owners = grouping.grouping_result.processing_owners
     grouping_scope = grouping.grouping_scope
     grouping_result = grouping.grouping_result
     initial_assessments = evidence.initial_assessments
-    sample_universe = frozenset(sample.metadata.raw_stem for sample in samples)
+    sample_universe = frozenset(sample.raw_stem for sample in samples)
     grouping_result = replace(
         grouping_result,
         rt_frame=grouping_result.rt_frame.for_sample_stems(sample_universe),
@@ -262,7 +250,6 @@ def _complete_cell_observations(
         if assessment.content.method_result == "SUPPORT"
     )
     predecessor_cells = compose_cid_nl_predecessor_cells(
-        processing_owners=owners,
         groups=grouping_scope.groups,
         sample_assessments=initial_assessments,
         alignment_config=alignment_config,
@@ -278,7 +265,6 @@ def _complete_cell_observations(
     )
     backfill_cells = (
         compose_cid_nl_predecessor_cells(
-            processing_owners=owners,
             groups=backfilled_groups,
             sample_assessments=initial_assessments,
             alignment_config=alignment_config,
@@ -314,10 +300,10 @@ def _prepare_cell_coverage(
     backfilled_positions: frozenset[tuple[str, str]],
     group_backfills: Mapping[
         tuple[str, str, str],
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
+        tuple[SampleMetadata, CidNlMethodAssessmentRef],
     ],
     *,
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
+    samples: tuple[SampleMetadata, ...],
     backfill_enabled: bool,
 ) -> _CellCoveragePlan:
     cell_by_key = {}
@@ -327,9 +313,7 @@ def _prepare_cell_coverage(
         sample_id = predecessor_cell.content.sample_key
         cell_by_key[(group_id, sample_id)] = predecessor_cell
         cells_by_group.setdefault(group_id, []).append(predecessor_cell)
-    ordered_samples = tuple(
-        sorted(samples, key=lambda sample: sample.identity.sample_key)
-    )
+    ordered_samples = tuple(sorted(samples, key=lambda sample: sample.sample_name))
     if not backfill_enabled:
         return _CellCoveragePlan(cell_by_key, (), False)
     conservative_positions = []
@@ -340,13 +324,13 @@ def _prepare_cell_coverage(
             group_cells,
             sample_population=samples,
             unsearched_sample_ids=tuple(
-                sample.identity.sample_key
+                sample.sample_name
                 for sample in ordered_samples
-                if sample.identity.sample_key not in searched_sample_ids
+                if sample.sample_name not in searched_sample_ids
             ),
         )
         for sample in samples:
-            key = (group.group_hypothesis_id, sample.identity.sample_key)
+            key = (group.group_hypothesis_id, sample.sample_name)
             cell = cell_by_key.get(key)
             if cell is None or key in backfilled_positions:
                 continue
@@ -404,15 +388,14 @@ def _close_cell_coverage(
     plan: _CellCoveragePlan,
     completed_empty_backfills: tuple[BackfillCompletionProjection, ...],
     *,
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
+    samples: tuple[SampleMetadata, ...],
 ) -> BackfillEvaluationCoverageBatch:
-    owners = grouping_result.processing_owners
     repair_groups = grouping_result.initial_population
     cell_by_key = plan.cells
     completions = {
         (
             item.group_identity.group_hypothesis_id,
-            item.sample.identity.sample_key,
+            item.sample.sample_name,
             item.backfill_assessment.content.method_subject.method_subject_id,
         ): item
         for item in completed_empty_backfills
@@ -420,14 +403,13 @@ def _close_cell_coverage(
     no_request_decisions = {}
     for sample, facts in plan.conservative_positions:
         group = facts.group_context.group_identity
-        key = (group.group_hypothesis_id, sample.identity.sample_key)
+        key = (group.group_hypothesis_id, sample.sample_name)
         completion = None
         universes: tuple[ConservativeBackfillCandidateUniverse, ...] = ()
         if facts.may_attempt_backfill:
             completion = completions[(*key, facts.group_context.method_subject_id)]
             universes = (
                 mint_conservative_backfill_candidate_universe(
-                    processing_owners=owners,
                     sample=sample,
                     group_facts=(facts,),
                     candidate_assessment=completion.backfill_assessment,
@@ -451,17 +433,12 @@ def _close_cell_coverage(
         )
         for group in repair_groups
         for sample in samples
-        for cell in (
-            cell_by_key.get((group.group_hypothesis_id, sample.identity.sample_key)),
-        )
+        for cell in (cell_by_key.get((group.group_hypothesis_id, sample.sample_name)),)
         for no_request in (
-            no_request_decisions.get(
-                (group.group_hypothesis_id, sample.identity.sample_key)
-            ),
+            no_request_decisions.get((group.group_hypothesis_id, sample.sample_name)),
         )
     )
     return BackfillEvaluationCoverageBatch(
-        processing_owners=owners,
         group_identities=repair_groups,
         samples=samples,
         positions=positions,

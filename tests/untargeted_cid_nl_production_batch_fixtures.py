@@ -134,8 +134,8 @@ def _assert_partition_composition_parity(
     )
     result = FinalizedUntargetBatchApplicationResult(
         scope=original.scope,
-        processing_request=original.processing_request,
-        processing_attempt=original.processing_attempt,
+        processing_attempt_id=original.processing_attempt_id,
+        acquisition_sources=original.acquisition_sources,
         children=tuple(child for part in parts for child in part.children),
         excluded_candidates=exclusions,
     )
@@ -145,10 +145,6 @@ def _assert_partition_composition_parity(
     ) == project_completed_untarget_batch_writer_inputs(completed.application_result)
     assert result.excluded_candidates == original.excluded_candidates
     assert result.physical_peak_keys == original.physical_peak_keys
-    assert all(
-        child.processing_request is original.processing_request
-        for child in result.children
-    )
     assert all(
         left is right
         for child in result.children
@@ -175,48 +171,44 @@ def _assert_jobs_match_direct_construction(batch) -> None:
     context = batch.context
     memberships = dict(batch.subject_batch.candidate_memberships)
     candidate_keys = {
-        (sample.identity.sample_key, memberships[candidate.peak_id])
+        (sample.sample_name, memberships[candidate.peak_id])
         for sample in context.samples
-        for candidate in context.peaks_by_sample[sample.metadata.raw_stem]
+        for candidate in context.peaks_by_sample[sample.raw_stem]
         if candidate.peak_id in memberships
     }
     expected = tuple(
         UntargetedPartitionJob(
-            processing_owners=context.processing_owners,
+            processing_attempt_id=context.processing_attempt_id,
+            method_subjects=context.method_subject,
             sample=sample,
             method_subject=subject,
-            candidates=context.peaks_by_sample[sample.metadata.raw_stem],
-            discovery_receipt=context.discovery_receipts_by_sample[
-                sample.metadata.raw_stem
-            ],
+            candidates=context.peaks_by_sample[sample.raw_stem],
+            discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
             settings=context.settings,
             peak_config=context.peak_config,
-            raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
+            raw_path=context.raw_paths_by_sample[sample.raw_stem],
             dll_dir=batch.jobs[0].dll_dir,
             work_unit_key=(
-                "untargeted-cid-nl:"
-                f"{sample.metadata.raw_stem}:{subject.method_subject_id}"
+                f"untargeted-cid-nl:{sample.raw_stem}:{subject.method_subject_id}"
             ),
             signal_processing_profile=context.signal_processing_profile,
             subject_partition=batch.jobs[0].subject_partition,
-            acquisition_source_expectation=(
-                context.acquisition_sources_by_sample.get(sample.metadata.raw_stem)
-                if batch.jobs[0].subject_partition is not None
-                else None
-            ),
+            acquisition_source_expectation=context.acquisition_sources_by_sample[
+                sample.raw_stem
+            ],
             physical_records=tuple(
                 record
                 for _candidate_id, record in sorted(
                     context.physical_records_by_peak.items()
                 )
-                if record.work_item.sample_stem == sample.metadata.raw_stem
+                if record.work_item.sample_stem == sample.raw_stem
             ),
             acquisition_cache_dir=batch.jobs[0].acquisition_cache_dir,
         )
         for sample in context.samples
         for subject in batch.subject_batch.subjects
         if not batch.sample_job_templates
-        or (sample.identity.sample_key, subject.method_subject_id) in candidate_keys
+        or (sample.sample_name, subject.method_subject_id) in candidate_keys
     )
     assert batch.jobs == expected
     assert tuple(job._request_subjects for job in batch.jobs) == tuple(
@@ -788,7 +780,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
             hypothesis_universe_compositions.append(
                 (
                     owner_name,
-                    kwargs["sample"].identity.sample_key,
+                    kwargs["sample"].sample_name,
                     assessment.content,
                 )
             )
@@ -897,7 +889,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         if family_context:
             for sample_result in result.sample_results:
                 adapter = sample_result.adapter_result
-                stem = sample_result.job.sample.metadata.raw_stem
+                stem = sample_result.job.sample.raw_stem
                 expected_source_candidate_ids = {
                     candidate.peak_id
                     for candidate in candidates[stem]
@@ -941,7 +933,6 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                 )
 
                 hypotheses = compose_peak_hypotheses_from_assessment_universe(
-                    processing_owners=sample_result.job.processing_owners,
                     sample=sample_result.job.sample,
                     assessment=adapter.assessment_input.assessment,
                 )
@@ -1100,7 +1091,6 @@ def _source_verification_inputs(tmp_path: Path):
                 tmp_path, (path,), {"S1": candidates}
             ),
             dll_dir=tmp_path,
-            sample_identity_namespace="study:source-verification",
             signal_processing_profile=TEST_PROFILE,
             physical_records_by_peak=physical_records,
         ),
@@ -1120,7 +1110,7 @@ def _assert_conservative_coverage_handoff(
     (position,) = tuple(
         position
         for position in coverage.positions
-        if position.sample.metadata.raw_stem == "Hold"
+        if position.sample.raw_stem == "Hold"
     )
     proof = position.no_request_decision
     if threshold:
@@ -1134,7 +1124,7 @@ def _assert_conservative_coverage_handoff(
     (hold_cell,) = tuple(
         cell
         for cell in scientific.cell_observations
-        if cell.canonical_sample.metadata.raw_stem == "Hold"
+        if cell.canonical_sample.raw_stem == "Hold"
     )
     assert hold_cell.evidence_states == (
         ("not_searched",) if threshold else ("unavailable",)

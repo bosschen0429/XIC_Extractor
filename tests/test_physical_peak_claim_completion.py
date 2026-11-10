@@ -51,7 +51,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
 def _view(
@@ -101,7 +100,6 @@ def _view(
     )
     assert evaluation.facts is not None
     peak = mint_peak_observation_ref(
-        processing_owners=fixture.owners,
         sample=sample,
         trace=Trace.from_arrays(
             sample_name=stem,
@@ -111,9 +109,7 @@ def _view(
             rt_min=float(rt[0]),
             rt_max=float(rt[-1]),
             ppm_tol=20.0,
-            acquisition_source_id=resolve_request_acquisition_source(
-                processing_owners=fixture.owners, sample=sample
-            ).acquisition_source_id,
+            acquisition_source_id=fixture.source(sample).acquisition_source_id,
         ),
         integration=physical_peak_observation_integration(evaluation),
         physical_evaluation=evaluation,
@@ -123,8 +119,8 @@ def _view(
     )
     evidence = cid_nl_evidence(fixture, stem, scan_number=101, scan_rt_min=query_rt)
     assessment = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=sample,
+        acquisition_source=fixture.source(sample),
         target=fixture.target,
         detector_invocation_id="untargeted-cid-nl-backfill",
         evaluation_receipt=CidNlEvaluationReceipt(
@@ -199,7 +195,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
     owners = {}
     for stem, (sample, assessment) in pairs.items():
         (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
-            processing_owners=fixture.owners, sample=sample, assessment=assessment
+            sample=sample, assessment=assessment
         )
         owners[stem] = owner_from_cid_nl_assessment_support(
             sample=sample,
@@ -219,7 +215,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
     assert all(group.disposition == "established" for group in groups)
     identities = tuple(group.membership for group in groups)
     initial = CrossSampleGroupingResult(
-        processing_owners=fixture.owners,
+        samples=fixture.samples,
         rt_frame=frame,
         partition_transition=CrossSamplePartitionTransition(
             status="assessable",
@@ -253,7 +249,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         backfills[
             (
                 group.group_hypothesis_id,
-                sample.identity.sample_key,
+                sample.sample_name,
                 assessment.content.method_subject.method_subject_id,
             )
         ] = (sample, assessment)
@@ -292,9 +288,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
             )
             == "unresolved"
         )
-        source = resolve_request_acquisition_source(
-            processing_owners=fixture.owners, sample=fixture.sample("S")
-        )
+        source = fixture.source(fixture.sample("S"))
         full_rt = np.linspace(7.0, 13.0, 301)
         full_raw = 1000 * np.exp(-0.5 * ((full_rt - 9.3) / 0.5) ** 2)
         full_raw += 700 * np.exp(-0.5 * ((full_rt - 10.4) / 0.5) ** 2)
@@ -364,7 +358,6 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         if unreliable:
             assert "backfill_low_localization_confidence" in risk.risk_flags
     cells = compose_cid_nl_predecessor_cells(
-        processing_owners=fixture.owners,
         groups=successors,
         sample_assessments=tuple(pairs.values()),
         alignment_config=config,
@@ -390,7 +383,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
     sample_cells = [
         cell
         for cell in cells
-        if cell.content.sample_key == fixture.sample("S").identity.sample_key
+        if cell.content.sample_key == fixture.sample("S").sample_name
     ]
     assert len(sample_cells) == 2
     numeric_sources = [

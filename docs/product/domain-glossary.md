@@ -262,7 +262,7 @@ spellings below.
 
 The surviving `owner` senses are the sample-local MS1 peak to which candidates
 are attributed (`SampleLocalMS1Owner`, `owner_apex_rt`), processing authority
-(`processing_owners`, `capture_owner`), and module responsibility.
+(`capture_owner`), and module responsibility.
 
 `physical` means the MS1-measured ion or chromatographic peak itself, as opposed
 to CID-NL/MS2 evidence about it. It never implies chemical identity or CID-NL

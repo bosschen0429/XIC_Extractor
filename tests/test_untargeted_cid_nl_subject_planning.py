@@ -205,7 +205,6 @@ def test_production_batch_preserves_bounded_subject_membership(
             {"S1": candidates},
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:production-batch",
     )
 
     batch = build_dense_partition(**arguments, peaks_by_sample={"S1": candidates})
@@ -233,10 +232,7 @@ def test_production_batch_preserves_bounded_subject_membership(
     permuted = build_dense_partition(
         **arguments, peaks_by_sample={"S1": tuple(reversed(candidates))}
     )
-    assert (
-        permuted.subject_batch.request_payload()
-        == batch.subject_batch.request_payload()
-    )
+    assert permuted.subject_batch == batch.subject_batch
     assert (
         tuple(candidate.best_event_precursor_mz for candidate in candidates) == masses
     )

@@ -59,13 +59,7 @@ from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import (
-    ProcessingAttemptIdentity,
-    ProcessingOwnerReferences,
-    ProcessingRequestIdentity,
-    compose_processing_owner_references,
-)
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 class AlignmentWorkflowContractError(ValueError):
@@ -103,8 +97,6 @@ class CaptureWorkflowArguments:
 @dataclass(frozen=True, slots=True)
 class TargetWorkflowRequest:
     scope: TargetSearchScope
-    processing_request: ProcessingRequestIdentity
-    processing_attempt: ProcessingAttemptIdentity
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,8 +104,6 @@ class UntargetWorkflowCompositionRequest:
     """Untarget scientific composition inputs independent of runtime closure."""
 
     scope: UntargetedSearchScope
-    processing_request: ProcessingRequestIdentity
-    processing_attempt: ProcessingAttemptIdentity
     excluded_candidates: tuple[UntargetedCandidateExclusion, ...] = ()
 
 
@@ -130,9 +120,9 @@ class _WorkflowAdapterFields:
 
 @dataclass(frozen=True)
 class TargetWorkflowAdapter(_WorkflowAdapterFields):
-    sample_assessments: tuple[
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
-    ] = field(kw_only=True)
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...] = (
+        field(kw_only=True)
+    )
     alignment_config: AlignmentConfig = field(kw_only=True)
     completed_capture_handoff: InitVar[tuple[SampleLocalCapture, ...] | None] = None
     targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = ()
@@ -149,9 +139,9 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
 
 @dataclass(frozen=True, slots=True)
 class UntargetWorkflowAdapter(_WorkflowAdapterFields):
-    sample_assessments: tuple[
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
-    ] = field(kw_only=True)
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...] = (
+        field(kw_only=True)
+    )
     completed_grouping: CrossSampleGroupingResult | None = None
     closed_cell_coverage: BackfillEvaluationCoverageBatch | None = None
 
@@ -170,7 +160,6 @@ def compose_untarget_subject(
         raise AlignmentWorkflowContractError(
             "Subject composition requires exact inputs"
         )
-    owners = resolve_workflow_processing_owners(request, adapter)
     subjects = set(_untarget_scope_memberships(request.scope).values())
     provider_subjects = {
         provider.method_subject_id for provider in request.scope.evidence_providers
@@ -183,7 +172,6 @@ def compose_untarget_subject(
         result = complete_analysis(
             request,
             adapter,
-            processing_owners=owners,
             completed_captures=completed_captures,
         )
     except WorkflowStageFailure as failure:
@@ -202,7 +190,6 @@ def _compose_application_result(
     request: WorkflowRequest,
     adapter: WorkflowAdapter,
     *,
-    owners: ProcessingOwnerReferences,
     completed_captures: tuple[SampleLocalCapture, ...] | None = None,
 ) -> FinalizedTargetApplicationResult | FinalizedUntargetApplicationResult:
     stage = WorkflowStage.CAPTURE
@@ -248,7 +235,7 @@ def _compose_application_result(
         if type(adapter) is TargetWorkflowAdapter:
             stage = WorkflowStage.CROSS_SAMPLE_GROUPING
             context = build_targeted_cross_sample_groups(
-                processing_owners=owners,
+                samples=request.scope.samples,
                 captures=captures,
                 sample_assessments=adapter.sample_assessments,
                 alignment_config=adapter.alignment_config,
@@ -268,13 +255,6 @@ def _compose_application_result(
         if type(request) is not TargetWorkflowRequest and closed_coverage is None:
             raise AlignmentWorkflowContractError(
                 "Untarget requires closed cell coverage"
-            )
-        if (
-            closed_coverage is not None
-            and closed_coverage.processing_owners is not owners
-        ):
-            raise AlignmentWorkflowContractError(
-                "closed cell coverage crossed exact workflow processing owners"
             )
         final_receipt = context
         handoff = None
@@ -350,22 +330,6 @@ def _untarget_scope_memberships(scope: UntargetedSearchScope) -> dict[str, str]:
     return memberships
 
 
-def resolve_workflow_processing_owners(
-    request: WorkflowRequest, adapter: WorkflowAdapter
-) -> ProcessingOwnerReferences:
-    """Resolve the owners already established by the selected workflow."""
-    if isinstance(adapter, UntargetWorkflowAdapter):
-        assert adapter.closed_cell_coverage is not None
-        return adapter.closed_cell_coverage.processing_owners
-    return compose_processing_owner_references(
-        request=request.processing_request,
-        attempt=request.processing_attempt,
-        sample_snapshot=request.scope.samples[0].snapshot,
-        sample_resolutions=request.scope.samples,
-        target_snapshot=cast(TargetSearchScope, request.scope).target_snapshot,
-    )
-
-
 def _finish_variant(
     *,
     request: WorkflowRequest,
@@ -412,23 +376,12 @@ def complete_analysis(
     request: WorkflowRequest,
     adapter: WorkflowAdapter,
     *,
-    processing_owners: ProcessingOwnerReferences | None = None,
     completed_captures: tuple[SampleLocalCapture, ...] | None = None,
 ) -> FinalizedTargetApplicationResult | FinalizedUntargetApplicationResult:
-    """Complete acquired evidence without invoking runtime or persistence.
-
-    Execution may forward its processing owners after runtime success. Other
-    callers resolve the same owners from the admitted workflow inputs.
-    """
-    owners = (
-        resolve_workflow_processing_owners(request, adapter)
-        if processing_owners is None
-        else processing_owners
-    )
+    """Complete acquired evidence without invoking runtime or persistence."""
     return _compose_application_result(
         request,
         adapter,
-        owners=owners,
         completed_captures=(
             adapter.completed_captures
             if completed_captures is None and type(adapter) is TargetWorkflowAdapter
@@ -450,5 +403,4 @@ __all__ = (
     "WorkflowStageFailure",
     "complete_analysis",
     "compose_untarget_subject",
-    "resolve_workflow_processing_owners",
 )

@@ -78,7 +78,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
 
         def capture_without_peak(**kwargs):
             acquisition, observations, captures = acquire_peaks(**kwargs)
-            if kwargs["sample"].metadata.raw_stem == "Missing":
+            if kwargs["sample"].raw_stem == "Missing":
                 # Physical capture may reject every peak after acquiring the XIC.
                 # Exercise that runtime boundary with the real acquisition retained.
                 return acquisition, (), captures
@@ -129,7 +129,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             raw_paths,
             peaks_by_sample,
         ),
-        sample_identity_namespace="study:real-data-runtime-batch-recovery-test",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -144,25 +143,26 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     )
     jobs = tuple(
         UntargetedPartitionJob(
-            processing_owners=context.processing_owners,
+            processing_attempt_id=context.processing_attempt_id,
+            method_subjects=context.method_subject,
             sample=sample,
-            method_subject=subject,
-            candidates=context.peaks_by_sample[sample.metadata.raw_stem],
-            discovery_receipt=context.discovery_receipts_by_sample[
-                sample.metadata.raw_stem
+            acquisition_source_expectation=context.acquisition_sources_by_sample[
+                sample.raw_stem
             ],
+            method_subject=subject,
+            candidates=context.peaks_by_sample[sample.raw_stem],
+            discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
             settings=context.settings,
             peak_config=context.peak_config,
-            raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
+            raw_path=context.raw_paths_by_sample[sample.raw_stem],
             dll_dir=tmp_path,
             work_unit_key=(
-                f"untargeted-cid-nl:{sample.metadata.raw_stem}:"
-                f"{subject.method_subject_id}"
+                f"untargeted-cid-nl:{sample.raw_stem}:{subject.method_subject_id}"
             ),
             signal_processing_profile=context.signal_processing_profile,
             physical_records=tuple(
                 context.physical_records_by_peak[c.peak_id]
-                for c in (context.peaks_by_sample[sample.metadata.raw_stem])
+                for c in (context.peaks_by_sample[sample.raw_stem])
             ),
         )
         for subject in subjects
@@ -178,7 +178,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         missing = tuple(
             item
             for item in partition.sample_results
-            if item.job.sample.metadata.raw_stem == "Missing"
+            if item.job.sample.raw_stem == "Missing"
         )
         assert len(missing) == 2
         for item in missing:
@@ -206,9 +206,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
 
     assert result.succeeded is True, result.failure
     missing_results = tuple(
-        item
-        for item in result.sample_results
-        if item.job.sample.metadata.raw_stem == "Missing"
+        item for item in result.sample_results if item.job.sample.raw_stem == "Missing"
     )
     assert len(missing_results) == 2
     assert all(item.backfill_attempt is not None for item in missing_results)

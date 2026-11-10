@@ -11,7 +11,6 @@ import math
 import re
 from collections.abc import Callable, Mapping, Sequence
 from numbers import Integral, Real
-from uuid import UUID
 
 _LOWER_SHA256 = re.compile(r"[0-9a-f]{64}")
 
@@ -342,20 +341,3 @@ __all__ = [
     "require_owner_normalized_text",
     "require_text",
 ]
-
-
-def require_attempt_uuid(
-    value: object,
-    *,
-    error_factory: Callable[[str], Exception] = ValueError,
-) -> str:
-    """Read the canonical UUID used by persisted execution attempt markers."""
-    if not isinstance(value, str):
-        raise error_factory("processing_attempt_id must be a UUID")
-    try:
-        parsed = UUID(value)
-    except ValueError as exc:
-        raise error_factory("processing_attempt_id must be a UUID") from exc
-    if str(parsed) != value:
-        raise error_factory("processing_attempt_id must be a canonical UUID")
-    return value

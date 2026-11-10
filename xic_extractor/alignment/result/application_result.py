@@ -4,13 +4,10 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, TypeAlias
+from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
-)
-from xic_extractor.discovery.batch_contract import (
-    candidate_sample_stems_from_request,
 )
 from xic_extractor.discovery.models import PeakStatus
 from xic_extractor.immutable_sequence import ImmutableSequence
@@ -18,18 +15,14 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
-    cid_nl_method_subject_batch_from_request,
+    UntargetedCidNlMethodSubjectBatch,
 )
 from xic_extractor.peak_detection.observations import PeakObservationContent
 from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
-from xic_extractor.processing_identity import (
-    IdentityContractError,
-    ProcessingAttemptIdentity,
-    ProcessingRequestIdentity,
-)
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.projection.target.post_cell import (
@@ -71,13 +64,9 @@ class FinalizedTargetApplicationResult:
         return "targeted"
 
     @property
-    def processing_request(self) -> ProcessingRequestIdentity:
-        return self.scientific_core.processing_request
-
-    @property
     def canonical_samples(
         self,
-    ) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
+    ) -> tuple[SampleMetadata, ...]:
         return self.scientific_core.canonical_samples
 
 
@@ -91,13 +80,9 @@ class FinalizedUntargetApplicationResult:
         return "untargeted"
 
     @property
-    def processing_request(self) -> ProcessingRequestIdentity:
-        return self.scientific_core.processing_request
-
-    @property
     def canonical_samples(
         self,
-    ) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
+    ) -> tuple[SampleMetadata, ...]:
         return self.scientific_core.canonical_samples
 
 
@@ -111,8 +96,8 @@ class FinalizedUntargetBatchApplicationResult:
     """
 
     scope: UntargetedSearchScope
-    processing_request: ProcessingRequestIdentity
-    processing_attempt: ProcessingAttemptIdentity
+    processing_attempt_id: str
+    acquisition_sources: tuple[AcquisitionSourceIdentity, ...]
     children: (
         tuple[FinalizedUntargetApplicationResult, ...]
         | ImmutableSequence[FinalizedUntargetApplicationResult]
@@ -132,16 +117,18 @@ class FinalizedUntargetBatchApplicationResult:
     @property
     def canonical_samples(
         self,
-    ) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
+    ) -> tuple[SampleMetadata, ...]:
         # Batch closure already checked every child's sample-identity population.
         # Sample metadata does not require restoring a stored scientific child.
         return tuple(sorted(self.scope.samples, key=_sample_sort_key))
 
     @property
+    def method_subjects(self) -> UntargetedCidNlMethodSubjectBatch:
+        return cast(UntargetedCidNlMethodSubjectBatch, self.scope.method_subjects)
+
+    @property
     def candidate_ids(self) -> tuple[str, ...]:
-        subject_batch = cid_nl_method_subject_batch_from_request(
-            self.processing_request
-        )
+        subject_batch = self.method_subjects
         return tuple(
             candidate_id
             for provider in self.scope.evidence_providers
@@ -199,19 +186,7 @@ def _require_batch_population(
     """Close cross-child coverage once; children retain their owner's answers."""
     expected = Counter(request.scope.declared_candidate_ids)
     actual = Counter((item.candidate_id for item in request.excluded_candidates))
-    candidate_samples = _candidate_sample_ids_from_request(
-        request.processing_request, samples=request.scope.samples
-    )
-    for item in request.excluded_candidates:
-        if candidate_samples.get(item.candidate_id) != item.sample_key:
-            raise ApplicationResultContractError(
-                "Untarget batch exclusion crossed candidate, subject, or sample"
-            )
-    memberships = dict(
-        cid_nl_method_subject_batch_from_request(
-            request.processing_request
-        ).candidate_memberships
-    )
+    memberships = dict(request.method_subjects.candidate_memberships)
     excluded_ids = set(actual)
     expected_subjects = {
         subject
@@ -221,26 +196,12 @@ def _require_batch_population(
     actual_subjects: Counter[str] = Counter()
     seen_groups: set[str] = set()
     seen_physical: set[PeakObservationContent] = set()
-    sample_ids = set(_sample_ids(request.scope.samples))
     for child in request.children:
         core = child.scientific_core
         actual.update(core.scope.declared_candidate_ids)
         actual_subjects.update(
             provider.method_subject_id for provider in core.scope.evidence_providers
         )
-        handoff = core.cell_observation_handoff
-        assert handoff is not None
-        child_owners = handoff.coverage.processing_owners
-        if child_owners.attempt.processing_attempt_id != (
-            request.processing_attempt.processing_attempt_id
-        ):
-            raise ApplicationResultContractError(
-                "Untarget batch child crossed its processing attempt"
-            )
-        if set(_sample_ids(core.canonical_samples)) != sample_ids:
-            raise ApplicationResultContractError(
-                "Untarget batch children must share one sample universe"
-            )
         for row in child.completed_projection.rows:
             group_id = row.group.group_hypothesis_id
             if group_id in seen_groups:
@@ -266,43 +227,8 @@ def _require_batch_population(
         )
 
 
-def _sample_ids(
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
-) -> tuple[str, ...]:
-    return tuple(
-        sample.identity.sample_key for sample in sorted(samples, key=_sample_sort_key)
-    )
-
-
-def _candidate_sample_ids_from_request(
-    request: ProcessingRequestIdentity,
-    *,
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
-) -> dict[str, str]:
-    try:
-        candidate_stems, feature_ids = candidate_sample_stems_from_request(
-            request,
-            expected_sample_stems=tuple(sample.metadata.raw_stem for sample in samples),
-        )
-    except IdentityContractError as exc:
-        raise ApplicationResultContractError(
-            "Untarget batch requires its owner-validated candidate/sample universe: "
-            f"{exc}"
-        ) from exc
-    sample_id_by_stem = {
-        sample.metadata.raw_stem: sample.identity.sample_key for sample in samples
-    }
-    if feature_ids is not None:
-        subject_batch = cid_nl_method_subject_batch_from_request(request)
-        if feature_ids != tuple(cid for cid, _ in subject_batch.candidate_memberships):
-            raise ApplicationResultContractError(
-                "Alignment feature selection crossed subject membership"
-            )
-    return {cid: sample_id_by_stem[stem] for cid, stem in candidate_stems.items()}
-
-
-def _sample_sort_key(sample: ResolvedCanonicalSampleIdentity) -> str:
-    return sample.identity.sample_key
+def _sample_sort_key(sample: SampleMetadata) -> str:
+    return sample.sample_name
 
 
 __all__ = (
