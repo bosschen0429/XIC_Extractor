@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from tests.alignment_pipeline_helpers import _owner, resolved_elution_context
+from tests.owner_peak_fixtures import with_peak
 from tests.untargeted_cid_nl_bounded_runtime_fixtures import _plan
 from tools.diagnostics.grouping_experiment import main
 from xic_extractor.alignment.config import AlignmentConfig
@@ -156,10 +157,14 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
         item["peak_shape"].pop("half_height_point_count")
         item["peak_shape"].pop("edge_intensity_ratio")
         item["identity_conflict"] = False
+        item["is_provisional"] = False
     with gzip.open(path, "wt", encoding="utf-8") as stream:
         json.dump(payload, stream)
     legacy, _ = read_grouping_inputs(path)
     assert {frozenset(group.owner_ids) for group in replay_grouping(legacy)} == expected
+    assert [owner.peak for owner in legacy.worksets[0].owners] == [
+        owner.peak for owner in restored.worksets[0].owners
+    ]
     for owner in legacy.worksets[0].owners:
         assert owner.peak_shape is not None
         assert owner.peak_shape.half_height_point_count is None
@@ -427,8 +432,12 @@ def test_rt_coordinate_override_changes_membership_without_rewriting_measurement
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     ).inputs
     workset = inputs.worksets[0]
-    shifted = replace(
-        workset.owners[1], owner_apex_rt=workset.owners[1].owner_apex_rt + 2
+    moved = workset.owners[1].peak.integration
+    shifted = with_peak(
+        workset.owners[1],
+        apex_rt=moved.rt_apex_min + 2,
+        start_rt=moved.rt_left_min + 2,
+        end_rt=moved.rt_right_min + 2,
     )
     inputs = replace(
         inputs,
@@ -437,7 +446,7 @@ def test_rt_coordinate_override_changes_membership_without_rewriting_measurement
 
     class Coordinates:
         def corrected_rt_min(self, owner):
-            return owner.owner_apex_rt - (
+            return owner.peak.integration.rt_apex_min - (
                 2 if owner.owner_id == shifted.owner_id else 0
             )
 
@@ -451,8 +460,8 @@ def test_rt_coordinate_override_changes_membership_without_rewriting_measurement
     assert (
         next(
             owner for owner in corrected[0].owners if owner.owner_id == shifted.owner_id
-        ).owner_apex_rt
-        == shifted.owner_apex_rt
+        ).peak.integration.rt_apex_min
+        == shifted.peak.integration.rt_apex_min
     )
 
 
@@ -720,7 +729,9 @@ def test_compare_membership_reports_merges_and_splits_against_previous_replay(
 
     def owner(owner_id, sample, rt):
         return SimpleNamespace(
-            owner_id=owner_id, sample_stem=sample, owner_apex_rt=rt, precursor_mz=300.0
+            owner_id=owner_id,
+            sample_stem=sample,
+            peak=SimpleNamespace(mz=300.0, integration=SimpleNamespace(rt_apex_min=rt)),
         )
 
     a, b, c = owner("a", "s1", 10.0), owner("b", "s2", 10.0), owner("c", "s3", 10.1)

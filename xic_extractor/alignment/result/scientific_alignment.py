@@ -28,7 +28,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.peak_detection.capture import SampleLocalCapture
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 from xic_extractor.peak_detection.search_scope import (
     SearchScope,
     SearchScopeContractError,
@@ -48,7 +48,7 @@ class ObservedSearchSubject:
     candidate_id: str
     sample_key: str
     trace_group_id: str
-    hypothesis: PeakHypothesis
+    hypothesis: MeasuredPeakHypothesis
 
     @property
     def variant(self) -> Literal["observed"]:
@@ -204,15 +204,16 @@ def _terminal_subject(
             trace_group_id=capture.trace_group.trace_group_id,
             detection_status="not_detected",
         )
-    if type(selected) is not PeakHypothesis or capture.detection.status != "detected":
+    measured = capture.measured_hypothesis
+    if measured is None or capture.detection.status != "detected":
         raise FinalizedScientificAlignmentContractError(
-            "observed capture lacks a closed detected PeakHypothesis"
+            "observed capture lacks a closed detected MeasuredPeakHypothesis"
         )
     return ObservedSearchSubject(
         candidate_id=capture.candidate_id,
         sample_key=binding.sample_key,
         trace_group_id=capture.trace_group.trace_group_id,
-        hypothesis=selected,
+        hypothesis=measured,
     )
 
 

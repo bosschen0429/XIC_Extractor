@@ -4,10 +4,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from xic_extractor.peak_detection.evidence_semantics import DecisionClass
-from xic_extractor.peak_detection.hypotheses import (
-    PeakHypothesis,
-    validate_peak_hypothesis_selection_authority,
-)
+from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.models import PeakDetectionResult
 
 SelectionDecisionPolicySource = Literal["selected_hypothesis_decision"]
@@ -35,10 +32,6 @@ def selection_decision_from_hypothesis(
     peak_result: PeakDetectionResult | None = None,
     fallback_reason: str = "",
 ) -> PeakHypothesisSelectionDecision:
-    validate_peak_hypothesis_selection_authority(
-        hypothesis,
-        consumer="selection_decision_from_hypothesis",
-    )
     if peak_result is not None:
         fallback_reason = _fallback_reason(peak_result)
 

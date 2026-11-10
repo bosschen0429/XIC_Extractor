@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from tests.alignment_pipeline_helpers import _owner, resolved_elution_context
+from tests.owner_peak_fixtures import with_peak
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
@@ -87,20 +88,7 @@ def _peak(
     mz: float = _MZ,
 ) -> SampleLocalMS1Owner:
     owner = _owner(sample, suffix, apex_rt=apex, precursor_mz=mz)
-    assert owner.selected_integration is not None
-    return replace(
-        owner,
-        owner_peak_start_rt=start,
-        owner_peak_end_rt=end,
-        owner_area=area,
-        selected_integration=replace(
-            owner.selected_integration,
-            rt_left_min=start,
-            rt_right_min=end,
-            rt_width_min=end - start,
-            area_raw_counts_seconds=area,
-        ),
-    )
+    return with_peak(owner, start_rt=start, end_rt=end, area=area)
 
 
 def _main(sample: str) -> SampleLocalMS1Owner:
@@ -299,7 +287,9 @@ def _sample_id(owner: SampleLocalMS1Owner) -> str:
 def _member_observations(group):
     return {
         observation_id: _candidate(
-            observation_id, apex=owner.owner_apex_rt, mz=owner.precursor_mz
+            observation_id,
+            apex=owner.peak.integration.rt_apex_min,
+            mz=owner.peak.mz,
         )
         for owner in group.owners
         for observation_id in owner.cross_sample_member_subject.physical_peaks
@@ -495,7 +485,8 @@ def test_grouping_uses_corrected_coordinates_for_separated_bands(
     owners = tuple(owner for group in groups for owner in group.owners)
     warp = BatchRtWarp(
         knots_by_sample=tuple(
-            (owner.sample_stem, ((9.0, owner.owner_apex_rt - 9.0),)) for owner in owners
+            (owner.sample_stem, ((9.0, owner.peak.integration.rt_apex_min - 9.0),))
+            for owner in owners
         ),
         anchor_group_count=1,
     )

@@ -1,5 +1,6 @@
 """In-memory CID-NL peak owners for membership tests; no RAW or runtime setup."""
 
+from tests.owner_peak_fixtures import measured_peak
 from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
@@ -37,12 +38,14 @@ def cid_nl_owner(
         owner_id=f"OWN-{sample}-{name}",
         sample_stem=sample,
         raw_file=f"{sample}.raw",
-        precursor_mz=precursor_mz,
-        owner_apex_rt=apex_rt,
-        owner_peak_start_rt=apex_rt - 0.05,
-        owner_peak_end_rt=apex_rt + 0.05,
-        owner_area=1_000.0,
-        owner_height=100.0,
+        peak=measured_peak(
+            mz=precursor_mz,
+            apex_rt=apex_rt,
+            start_rt=apex_rt - 0.05,
+            end_rt=apex_rt + 0.05,
+            area=1_000.0,
+            height=100.0,
+        ),
         primary_identity_event=event,
         supporting_events=supporting_events,
         assignment_reason="same_apex_window",

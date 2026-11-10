@@ -64,7 +64,11 @@ def _window_inference(
     common_rt = {
         owner.owner_id: rt
         for owner in owners
-        if (rt := rt_frame.calibrated_rt_min(owner.sample_stem, owner.owner_apex_rt))
+        if (
+            rt := rt_frame.calibrated_rt_min(
+                owner.sample_stem, owner.peak.integration.rt_apex_min
+            )
+        )
         is not None
     }
     trajectories = trajectories.common_frame_membership(common_rt)
@@ -92,17 +96,15 @@ def _window_inference(
     for chemistry in sorted(by_chemistry):
         sorted_owners = sorted(
             by_chemistry[chemistry],
-            key=lambda owner: (owner.precursor_mz, owner.owner_id),
+            key=lambda owner: (owner.peak.mz, owner.owner_id),
         )
         windows: list[list[SampleLocalMS1Owner]] = []
         for owner in sorted_owners:
             # A fixed window start can cut a coherent band when an unrelated
             # lower-mass owner happens to arrive first. Keep local mass
             # neighbourhoods connected, then enforce tolerance per edge.
-            if not windows or owner.precursor_mz - windows[-1][
-                -1
-            ].precursor_mz > mz_tolerance_da(
-                windows[-1][-1].precursor_mz, config.max_ppm
+            if not windows or owner.peak.mz - windows[-1][-1].peak.mz > mz_tolerance_da(
+                windows[-1][-1].peak.mz, config.max_ppm
             ):
                 windows.append([])
             windows[-1].append(owner)
@@ -300,7 +302,11 @@ def _window_membership_result(
                     else None,
                     rt_basis=rt_basis,
                     rt_raw_delta_sec=(
-                        abs(owner.owner_apex_rt - witness.owner_apex_rt) * 60.0
+                        abs(
+                            owner.peak.integration.rt_apex_min
+                            - witness.peak.integration.rt_apex_min
+                        )
+                        * 60.0
                         if witness is not None
                         else None
                     ),

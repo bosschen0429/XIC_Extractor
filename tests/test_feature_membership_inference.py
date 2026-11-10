@@ -7,6 +7,7 @@ from typing import Any, cast
 import pytest
 
 from tests.membership_fixtures import cid_nl_owner
+from tests.owner_peak_fixtures import with_peak
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
@@ -24,7 +25,6 @@ from xic_extractor.alignment.ownership_models import (
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
-from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 
 def infer_feature_memberships(
@@ -138,7 +138,6 @@ def test_rt_calibration_does_not_pool_incompatible_cohort_support() -> None:
 @pytest.mark.parametrize(
     "untrusted",
     (
-        {"is_provisional": True},
         {"quantification_eligible": False},
         {"primary_identity_event": None},
     ),
@@ -178,19 +177,8 @@ def test_rt_warp_round_trip_uses_the_same_coordinate_system() -> None:
 
 def test_ms1_only_owner_requires_physical_signal_quality() -> None:
     strong = replace(
-        cid_nl_owner("a", "ms1"),
+        with_peak(cid_nl_owner("a", "ms1"), baseline_residual_mad=1.0),
         primary_identity_event=None,
-        selected_integration=IntegrationResult(
-            rt_left_min=9.95,
-            rt_apex_min=10.0,
-            rt_right_min=10.05,
-            raw_apex_rt_min=10.0,
-            rt_width_min=0.1,
-            height_raw=100.0,
-            height_smoothed=100.0,
-            area_raw_counts_seconds=1000.0,
-            baseline_residual_mad=1.0,
-        ),
     )
     missing_quality = replace(cid_nl_owner("b", "ms1"), primary_identity_event=None)
     result = infer_feature_memberships(
@@ -212,19 +200,8 @@ def test_ms1_only_owner_requires_physical_signal_quality() -> None:
 
 def test_ms1_only_and_cid_evidence_do_not_form_a_mixed_group() -> None:
     ms1 = replace(
-        cid_nl_owner("a", "ms1"),
+        with_peak(cid_nl_owner("a", "ms1"), baseline_residual_mad=1.0),
         primary_identity_event=None,
-        selected_integration=IntegrationResult(
-            rt_left_min=9.95,
-            rt_apex_min=10.0,
-            rt_right_min=10.05,
-            raw_apex_rt_min=10.0,
-            rt_width_min=0.1,
-            height_raw=100.0,
-            height_smoothed=100.0,
-            area_raw_counts_seconds=1000.0,
-            baseline_residual_mad=1.0,
-        ),
     )
     cid = cid_nl_owner("b", "cid")
     result = infer_feature_memberships(
@@ -789,9 +766,11 @@ def test_supported_apices_do_not_fall_back_to_raw_shapes_at_calibration_edges(
                 start = 10.03
         owners.append(
             replace(
-                cid_nl_owner(sample, "peak", apex_rt=apex),
-                owner_peak_start_rt=start,
-                owner_peak_end_rt=end,
+                with_peak(
+                    cid_nl_owner(sample, "peak", apex_rt=apex),
+                    start_rt=start,
+                    end_rt=end,
+                ),
                 peak_shape=shape,
             )
         )
@@ -819,8 +798,8 @@ def test_supported_apices_do_not_fall_back_to_raw_shapes_at_calibration_edges(
     assert _memberships(result) == {frozenset(owner.owner_id for owner in owners)}
     for owner in owners:
         boundary = (
-            owner.owner_peak_start_rt
+            owner.peak.integration.rt_left_min
             if unsupported_edge == "start"
-            else owner.owner_peak_end_rt
+            else owner.peak.integration.rt_right_min
         )
         assert frame.calibrated_rt_min(owner.sample_stem, boundary) is None

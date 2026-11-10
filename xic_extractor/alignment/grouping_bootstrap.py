@@ -38,9 +38,9 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     validate_cid_nl_alignment_subject_compatibility,
 )
 from xic_extractor.peak_detection.elution_context import SampleElutionContext
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
+    MeasuredPeakHypothesis,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 
@@ -98,7 +98,7 @@ class RetainedGroupingCandidate:
     """One sample-local peak hypothesis kept for group Backfill and cells."""
 
     sample: SampleMetadata
-    peak_hypothesis: PeakHypothesis
+    peak_hypothesis: MeasuredPeakHypothesis
     direct_support_assessment: CidNlMethodAssessment | None
 
     @property
@@ -139,7 +139,7 @@ def bootstrap_cid_nl_initial_population(
     retain_observation_only_candidates: bool = False,
     elution_contexts: Sequence[SampleElutionContext] = (),
     retained_hypotheses_by_assessment: Mapping[
-        CidNlMethodAssessment, tuple[PeakHypothesis, ...]
+        CidNlMethodAssessment, tuple[MeasuredPeakHypothesis, ...]
     ]
     | None = None,
 ) -> tuple[
@@ -170,7 +170,7 @@ def bootstrap_cid_nl_initial_population(
     except CidNlMethodSubjectContractError as exc:
         raise GroupingBootstrapError(str(exc)) from exc
 
-    hypotheses_by_sample: dict[str, tuple[PeakHypothesis, ...]] = {}
+    hypotheses_by_sample: dict[str, tuple[MeasuredPeakHypothesis, ...]] = {}
     assessment_by_hypothesis: dict[str, CidNlMethodAssessment] = {}
     sample_by_id: dict[str, SampleMetadata] = {}
     owners: list[SampleLocalMS1Owner] = []
@@ -208,7 +208,7 @@ def bootstrap_cid_nl_initial_population(
             "retained hypotheses reference an assessment outside the bootstrap input"
         )
     has_direct_support = any(
-        hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+        hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL
         for hypotheses in hypotheses_by_sample.values()
         for hypothesis in hypotheses
     )
@@ -220,7 +220,7 @@ def bootstrap_cid_nl_initial_population(
         hypotheses = hypotheses_by_sample[sample_id]
         for hypothesis in hypotheses:
             assessment = assessment_by_hypothesis[hypothesis.hypothesis_id]
-            if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL:
+            if hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL:
                 owners.append(
                     owner_from_cid_nl_assessment_support(
                         sample=sample,
@@ -280,7 +280,7 @@ def bootstrap_cid_nl_initial_population(
         for hypothesis in hypotheses
         if (
             include_observation_only
-            or hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+            or hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL
         )
     }
     if set(provisional_group_ids) != expected_owner_ids:
@@ -292,7 +292,7 @@ def bootstrap_cid_nl_initial_population(
         provisional_group_ids[hypothesis.hypothesis_id]
         for hypotheses in hypotheses_by_sample.values()
         for hypothesis in hypotheses
-        if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+        if hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL
     }
     if has_direct_support and not direct_group_ids:
         raise GroupingBootstrapError(
@@ -315,13 +315,13 @@ def bootstrap_cid_nl_initial_population(
             max(interval[1] for interval in method_subject_intervals),
         ),
         rt_interval=(
-            min(hypothesis.integration.rt_left_min for hypothesis in hypotheses)
+            min(hypothesis.peak.integration.rt_left_min for hypothesis in hypotheses)
             if hypotheses
             else min(
                 cast(float, assessment.evaluation_receipt.query_rt_min)
                 for _, assessment in sample_assessments
             ),
-            max(hypothesis.integration.rt_right_min for hypothesis in hypotheses)
+            max(hypothesis.peak.integration.rt_right_min for hypothesis in hypotheses)
             if hypotheses
             else max(
                 cast(float, assessment.evaluation_receipt.query_rt_max)
@@ -336,7 +336,7 @@ def bootstrap_cid_nl_initial_population(
             peak_hypothesis=hypothesis,
             direct_support_assessment=(
                 assessment_by_hypothesis[hypothesis.hypothesis_id]
-                if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+                if hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL
                 else None
             ),
         )

@@ -51,11 +51,11 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
     index_physical_peaks,
 )
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 from xic_extractor.peak_detection.physical_peak_equivalence import PhysicalPeakView
 from xic_extractor.peak_detection.search_scope import UntargetedSearchScope
 from xic_extractor.sample_metadata import SampleMetadata
@@ -209,7 +209,9 @@ def _complete_cell_observations(
         for key, pair in evidence.group_backfills.items()
         if key[1] not in members_by_group[key[0]]
     }
-    retained_cell_hypotheses: dict[CidNlMethodAssessment, list[PeakHypothesis]] = {}
+    retained_cell_hypotheses: dict[
+        CidNlMethodAssessment, list[MeasuredPeakHypothesis]
+    ] = {}
     for candidate in grouping.retained_candidates:
         assessment = candidate.direct_support_assessment
         if assessment is None:
@@ -222,9 +224,7 @@ def _complete_cell_observations(
         key: tuple(values) for key, values in retained_cell_hypotheses.items()
     }
     member_observations = index_physical_peaks(
-        peak
-        for candidate in grouping.retained_candidates
-        for peak in candidate.peak_hypothesis.peak_observation_refs
+        candidate.peak_hypothesis.peak for candidate in grouping.retained_candidates
     )
     (
         grouping_result,

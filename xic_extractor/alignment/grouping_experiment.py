@@ -97,9 +97,8 @@ def calibrate_grouping(
     """Fit the existing RT model from directly observed stable initial groups."""
     observations = {
         group.group_hypothesis_id: {
-            owner.sample_stem: owner.owner_apex_rt
+            owner.sample_stem: owner.peak.integration.rt_apex_min
             for owner in group.owners
-            if not owner.is_provisional
         }
         for group in groups
         if group.disposition == "established"

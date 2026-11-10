@@ -7,6 +7,7 @@ import pytest
 from tests.alignment_edge_scoring_fixtures import (
     _owner,
 )
+from tests.owner_peak_fixtures import with_peak
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.edge_scoring import (
@@ -17,7 +18,6 @@ from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 
 def evaluate_owner_edge(left, right, *, config, **kwargs):
@@ -492,20 +492,7 @@ def _resolved_owner(
         seed_event_count=seed_event_count,
         owner_apex_rt=owner_apex_rt,
     )
-    return replace(
-        owner,
-        selected_integration=IntegrationResult(
-            rt_left_min=owner_apex_rt - 0.05,
-            rt_apex_min=owner_apex_rt,
-            rt_right_min=owner_apex_rt + 0.05,
-            raw_apex_rt_min=owner_apex_rt,
-            rt_width_min=0.1,
-            height_raw=snr * 10.0,
-            height_smoothed=snr * 10.0,
-            area_raw_counts_seconds=1000.0,
-            baseline_residual_mad=10.0,
-        ),
-    )
+    return with_peak(owner, height=snr * 10.0, baseline_residual_mad=10.0)
 
 
 @pytest.mark.parametrize("snr", [0.0, 1.5, 5.0, 50.0])

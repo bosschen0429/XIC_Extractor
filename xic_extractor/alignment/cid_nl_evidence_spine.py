@@ -35,9 +35,9 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     cid_nl_method_subject_from_target,
 )
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    MeasuredPeakHypothesis,
     PeakHypothesisContractError,
     compose_cid_nl_peak_hypothesis,
 )
@@ -71,7 +71,7 @@ class CidNlReferenceSpine:
     """One constructed owner spine and its two exact-reference fan-outs."""
 
     assessments: tuple[CidNlMethodAssessment, ...]
-    support_hypotheses: tuple[PeakHypothesis, ...]
+    support_hypotheses: tuple[MeasuredPeakHypothesis, ...]
     group: CrossSamplePeakGroupHypothesis | None
     cells: tuple[CellObservation, ...]
     targeted_projections: tuple[TargetedCellObservationProjection, ...]
@@ -118,7 +118,7 @@ def build_cid_nl_reference_spine(
             SampleMetadata,
             CidNlMethodAssessment,
             PeakObservation,
-            PeakHypothesis,
+            MeasuredPeakHypothesis,
         ]
     ] = []
     for sample, assessment in ordered:

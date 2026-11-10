@@ -105,10 +105,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
     )
 
     assert len(hypotheses) == 2
-    assert {
-        hypothesis.peak_observation_refs[0].physical_peak_key
-        for hypothesis in hypotheses
-    } == {
+    assert {hypothesis.peak.physical_peak_key for hypothesis in hypotheses} == {
         left.physical_peak_key,
         right.physical_peak_key,
     }
@@ -120,7 +117,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         )
         assert owner.owner_id == hypothesis.hypothesis_id
         assert owner.peak_shape is not None
-        observation = hypothesis.peak_observation_refs[0]
+        observation = hypothesis.peak
         assert owner.peak_shape.source_point_count == sum(
             abs(rt - observation.integration.rt_apex_min) <= 0.35
             for rt in observation.rt
@@ -342,10 +339,10 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
         projected[stem] = owner
         assert owner.sample_stem == stem
         assert owner.owner_id == hypothesis.hypothesis_id
-        assert owner.precursor_mz == physical_mz
-        assert owner.selected_integration == peak.integration
-        assert owner.owner_apex_rt == 8.0
-        assert owner.owner_area == height * 6.6
+        assert owner.peak is peak
+        assert owner.peak.mz == physical_mz
+        assert owner.peak.integration.rt_apex_min == 8.0
+        assert owner.peak.integration.area_raw_counts_seconds == height * 6.6
     mixed = projected["mixed"].primary_identity_event
     direct_event = projected["direct"].primary_identity_event
     assert mixed is not None and direct_event is not None

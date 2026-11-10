@@ -818,7 +818,7 @@ def test_reorder_is_neutral_and_multiple_scans_form_one_support_hypothesis(
         sample_assessments=((fixture.sample("multi"), forward),),
     )
     assert len(spine.support_hypotheses) == 1
-    support = spine.support_hypotheses[0].evidence.cid_nl_chromatographic_support_ref
+    support = spine.support_hypotheses[0].chromatographic_support
     assert support is not None
     assert support.strict_nl_scan_count == 2
 

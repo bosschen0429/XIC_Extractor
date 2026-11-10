@@ -16,10 +16,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     CidNlMethodRelations,
 )
-from xic_extractor.peak_detection.hypotheses import (
-    PeakHypothesis,
-    validate_peak_hypothesis_selection_authority,
-)
+from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
 from xic_extractor.peak_detection.observations import (
     physical_peak_observation_integration,
@@ -100,11 +97,6 @@ def build_extraction_result(
     method_candidate_evidence: tuple[MethodCandidateEvidence, ...] = (),
     selected_method_candidate_index: int | None = None,
 ) -> ExtractionResult:
-    if selected_hypothesis is not None:
-        validate_peak_hypothesis_selection_authority(
-            selected_hypothesis,
-            consumer="build_extraction_result",
-        )
     from xic_extractor.extraction import result_models
 
     resolved_selection_decision = _result_selection_decision(

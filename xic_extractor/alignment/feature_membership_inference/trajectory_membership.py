@@ -58,8 +58,8 @@ def _membership_trajectories(
     for sample_owners in by_sample_chemistry.values():
         for first, second in combinations(sample_owners, 2):
             if not within_ppm(
-                max(first.precursor_mz, second.precursor_mz),
-                min(first.precursor_mz, second.precursor_mz),
+                max(first.peak.mz, second.peak.mz),
+                min(first.peak.mz, second.peak.mz),
                 config.max_ppm,
             ):
                 continue
@@ -116,10 +116,8 @@ def _membership_trajectories(
 
 
 def _selected_peak_bounds(owner: SampleLocalMS1Owner) -> tuple[float, float]:
-    integration = owner.selected_integration
-    if integration is not None:
-        return integration.rt_left_min, integration.rt_right_min
-    return owner.owner_peak_start_rt, owner.owner_peak_end_rt
+    integration = owner.peak.integration
+    return integration.rt_left_min, integration.rt_right_min
 
 
 def _trajectory_seeds(
@@ -144,8 +142,8 @@ def _trajectory_seeds(
             len({rules.chemistry_key(member) for member in members}) != 1
             or len({member.sample_stem for member in members}) != len(members)
             or not within_ppm(
-                max(member.precursor_mz for member in members),
-                min(member.precursor_mz for member in members),
+                max(member.peak.mz for member in members),
+                min(member.peak.mz for member in members),
                 config.max_ppm,
             )
             or any(

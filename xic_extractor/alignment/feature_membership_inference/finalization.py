@@ -37,9 +37,9 @@ def _accepted_final_memberships(
 ) -> tuple[tuple[FeatureMembershipGroup, ...], tuple[SparseFeatureDecision, ...]]:
     """Select whole bands, then reassess samples with the assignment solver."""
     windows: list[list[SampleLocalMS1Owner]] = []
-    for owner in sorted(owners, key=lambda o: (o.precursor_mz, measured_owner_key(o))):
+    for owner in sorted(owners, key=lambda o: (o.peak.mz, measured_owner_key(o))):
         if not windows or not within_ppm(
-            owner.precursor_mz, windows[-1][-1].precursor_mz, config.max_ppm
+            owner.peak.mz, windows[-1][-1].peak.mz, config.max_ppm
         ):
             windows.append([])
         windows[-1].append(owner)

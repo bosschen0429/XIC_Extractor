@@ -40,13 +40,13 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     cid_nl_method_subject_from_target,
 )
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
     PeakObservationGenerationProvenance,
     mint_physical_peak_observations,
 )
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    MeasuredPeakHypothesis,
     compose_ms1_observation_peak_hypothesis,
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
@@ -79,7 +79,7 @@ class TargetedSampleCapture:
     captured: SampleLocalCapture | None
     selected_observation: PeakObservation | None
     observation_universe: tuple[PeakObservation, ...]
-    owner_hypothesis: PeakHypothesis | None = None
+    owner_hypothesis: MeasuredPeakHypothesis | None = None
 
     @property
     def capture_input(self) -> CaptureWorkflowArguments | None:
@@ -152,9 +152,7 @@ class TargetedCapturePopulation:
                 assessment=assessment_by_sample[entry.sample.sample_name],
             )
             matches = tuple(
-                hypothesis
-                for hypothesis in hypotheses
-                if selected in hypothesis.peak_observation_refs
+                hypothesis for hypothesis in hypotheses if hypothesis.peak == selected
             )
             if len(matches) != 1:
                 raise RuntimeError("Targeted assessment lost its captured observation")

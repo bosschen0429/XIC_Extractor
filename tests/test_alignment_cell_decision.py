@@ -102,7 +102,7 @@ def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
     assert numeric.source
     assert (
         numeric.selected_integration
-        is numeric.subject.terminal_subject.hypothesis.integration
+        is numeric.subject.terminal_subject.hypothesis.peak.integration
     )
     assert (
         next(
@@ -136,7 +136,7 @@ def test_target_fragmented_low_signal_keeps_evidence_without_numeric_output(
         for item in decide_target_cell_population(projection)
         if item.variant != "searched_no_observation"
     )
-    integration = decision.subject.terminal_subject.hypothesis.integration
+    integration = decision.subject.terminal_subject.hypothesis.peak.integration
     expected_area = integration.area_raw_counts_seconds
 
     assert expected_area > 0
@@ -149,10 +149,10 @@ def test_target_fragmented_low_signal_keeps_evidence_without_numeric_output(
     restored = pickle.loads(pickle.dumps(decision))
     assert restored.value is None
     assert restored.source == decision.source
-    assert restored.subject.terminal_subject.hypothesis.integration == integration
+    assert restored.subject.terminal_subject.hypothesis.peak.integration == integration
     assert (
         restored.selected_integration
-        is restored.subject.terminal_subject.hypothesis.integration
+        is restored.subject.terminal_subject.hypothesis.peak.integration
     )
 
 

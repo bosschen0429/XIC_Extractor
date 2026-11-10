@@ -1,20 +1,17 @@
-"""Owner-backed identity composition for the existing ``PeakHypothesis``.
+"""A captured physical peak proposed by one method.
 
-This module does not define another hypothesis model.  It composes already
-owner-minted physical observations and evidence refs into the existing model,
-without selecting a peak or granting product authority.
+A measured hypothesis composes one owner-minted physical observation and, for
+DDA CID-NL, its chromatographic support.  It holds the peak itself, so the
+measurement exists only on that observation.  It selects no peak and grants no
+product authority.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
     CidNlChromatographicSupport,
-)
-from xic_extractor.peak_detection.hypotheses import (
-    OWNER_BACKED_ANALYSIS_MODE,
-    AuditTrail,
-    EvidenceVector,
-    PeakHypothesis,
 )
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
@@ -23,11 +20,20 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 HYPOTHESIS_METHOD_DDA_CID_NL = "dda_cid_nl"
 HYPOTHESIS_METHOD_MS1_OBSERVATION = "ms1_physical_observation"
-ANALYSIS_MODE_WORKFLOW_NEUTRAL = OWNER_BACKED_ANALYSIS_MODE
 
 
 class PeakHypothesisContractError(ValueError):
     """Raised when owner-backed hypothesis references do not close."""
+
+
+@dataclass(frozen=True)
+class MeasuredPeakHypothesis:
+    """One captured physical peak and the method that proposes it."""
+
+    hypothesis_id: str
+    method: str
+    peak: PeakObservation
+    chromatographic_support: CidNlChromatographicSupport | None = None
 
 
 def compose_cid_nl_peak_hypothesis(
@@ -35,8 +41,8 @@ def compose_cid_nl_peak_hypothesis(
     sample: SampleMetadata,
     peak_observation: PeakObservation,
     chromatographic_support: CidNlChromatographicSupport,
-) -> PeakHypothesis:
-    """Compose one DDA CID-NL event into the existing hypothesis model."""
+) -> MeasuredPeakHypothesis:
+    """Compose one DDA CID-NL event on its captured physical peak."""
 
     _validate_reference_pair(
         sample=sample,
@@ -53,51 +59,28 @@ def compose_cid_nl_peak_hypothesis(
             ),
         )
     )
-    return PeakHypothesis(
+    return MeasuredPeakHypothesis(
         hypothesis_id=hypothesis_id,
-        trace_group_id="",
-        target_label="",
-        role="",
-        istd_pair="",
-        analysis_mode=ANALYSIS_MODE_WORKFLOW_NEUTRAL,
-        resolver_mode=peak_observation.generation_provenance.resolver_mode,
-        integration=peak_observation.integration,
-        evidence=EvidenceVector(
-            cid_nl_chromatographic_support_ref=chromatographic_support,
-        ),
-        audit=AuditTrail(
-            proposal_sources=peak_observation.generation_provenance.proposal_sources,
-        ),
-        hypothesis_method=HYPOTHESIS_METHOD_DDA_CID_NL,
-        peak_observation_refs=(peak_observation,),
+        method=HYPOTHESIS_METHOD_DDA_CID_NL,
+        peak=peak_observation,
+        chromatographic_support=chromatographic_support,
     )
 
 
 def compose_ms1_observation_peak_hypothesis(
     *,
     peak_observation: PeakObservation,
-) -> PeakHypothesis:
+) -> MeasuredPeakHypothesis:
     """Compose one physical MS1 observation without training evidence."""
 
     _validate_observation_reference(peak_observation=peak_observation)
     hypothesis_id = measured_hypothesis_key(
         HYPOTHESIS_METHOD_MS1_OBSERVATION, peak_observation
     )
-    return PeakHypothesis(
+    return MeasuredPeakHypothesis(
         hypothesis_id=hypothesis_id,
-        trace_group_id="",
-        target_label="",
-        role="",
-        istd_pair="",
-        analysis_mode=ANALYSIS_MODE_WORKFLOW_NEUTRAL,
-        resolver_mode=peak_observation.generation_provenance.resolver_mode,
-        integration=peak_observation.integration,
-        evidence=EvidenceVector(),
-        audit=AuditTrail(
-            proposal_sources=peak_observation.generation_provenance.proposal_sources,
-        ),
-        hypothesis_method=HYPOTHESIS_METHOD_MS1_OBSERVATION,
-        peak_observation_refs=(peak_observation,),
+        method=HYPOTHESIS_METHOD_MS1_OBSERVATION,
+        peak=peak_observation,
     )
 
 
@@ -174,6 +157,7 @@ def _validate_reference_content_pair(
 __all__ = [
     "HYPOTHESIS_METHOD_DDA_CID_NL",
     "HYPOTHESIS_METHOD_MS1_OBSERVATION",
+    "MeasuredPeakHypothesis",
     "PeakHypothesisContractError",
     "compose_cid_nl_peak_hypothesis",
     "compose_ms1_observation_peak_hypothesis",

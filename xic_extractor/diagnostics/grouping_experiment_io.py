@@ -245,31 +245,68 @@ def _read_elution_context(value: dict[str, Any]) -> SampleElutionContext:
 def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
     if owner.cid_nl_composite_assessment is not None:
         raise ValueError("Grouping snapshots require scalar CID-NL observations")
-    integration = owner.selected_integration
-    # Scan indices are only used by integration, never by grouping.
     member_subject = owner.cross_sample_member_subject
     if member_subject is None:
         raise ValueError("Grouping snapshot requires formal member subjects")
-    compact = replace(
-        owner,
-        selected_integration=replace(integration, raw_scan_indices=())
-        if integration
-        else None,
-        cross_sample_member_subject=replace(member_subject, physical_peaks=()),
-    )
-    value = asdict(compact)
+    integration = owner.peak.integration
+    # The snapshot keeps the owner's measured values beside its member peak,
+    # which carries the trace; scan indices are only used by integration.
+    return {
+        "owner_id": owner.owner_id,
+        "sample_stem": owner.sample_stem,
+        "raw_file": owner.raw_file,
+        "precursor_mz": owner.peak.mz,
+        "owner_apex_rt": integration.rt_apex_min,
+        "owner_peak_start_rt": integration.rt_left_min,
+        "owner_peak_end_rt": integration.rt_right_min,
+        "owner_area": integration.area_raw_counts_seconds,
+        "owner_height": integration.height_raw,
+        "primary_identity_event": (
+            asdict(owner.primary_identity_event)
+            if owner.primary_identity_event is not None
+            else None
+        ),
+        "supporting_events": [asdict(item) for item in owner.supporting_events],
+        "assignment_reason": owner.assignment_reason,
+        "selected_integration": asdict(replace(integration, raw_scan_indices=())),
+        "quantification_eligible": owner.quantification_eligible,
+        "quantification_exclusion_reason": owner.quantification_exclusion_reason,
+        "cross_sample_member_subject": {
+            **asdict(replace(member_subject, physical_peaks=())),
+            "physical_peaks": [
+                _peak_payload(peak) for peak in member_subject.physical_peaks
+            ],
+        },
+        "cid_nl_composite_assessment": None,
+        "peak_shape": (
+            asdict(owner.peak_shape) if owner.peak_shape is not None else None
+        ),
+    }
+
+
+def _peak_payload(peak: PeakObservation) -> dict[str, Any]:
     # A snapshot keeps each member peak's measured values, not its acquisition.
-    value["cross_sample_member_subject"]["physical_peaks"] = [
-        {
-            "sample_key": peak.sample_key,
-            "mz": peak.mz,
-            "rt": peak.rt,
-            "intensity": peak.intensity,
-            "integration": asdict(peak.integration),
-        }
-        for peak in member_subject.physical_peaks
-    ]
-    return value
+    return {
+        "sample_key": peak.sample_key,
+        "mz": peak.mz,
+        "rt": peak.rt,
+        "intensity": peak.intensity,
+        "integration": asdict(peak.integration),
+    }
+
+
+def _read_peak(value: dict[str, Any]) -> PeakObservation:
+    # Replay compares member peaks by their measured values only; the snapshot
+    # retains no trace or query context to restore.
+    return PeakObservation(
+        sample_key=value["sample_key"],
+        mz=value["mz"],
+        rt=tuple(value["rt"]),
+        intensity=tuple(value["intensity"]),
+        integration=_read_integration(value["integration"]),
+        generation_provenance=None,  # type: ignore[arg-type]
+        source_trace=None,  # type: ignore[arg-type]
+    )
 
 
 def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
@@ -294,28 +331,16 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
     value["supporting_events"] = tuple(
         IdentityEvent(**item) for item in value["supporting_events"]
     )
-    integration = value["selected_integration"]
-    if integration is not None:
-        value["selected_integration"] = _read_integration(integration)
     # Retained snapshots may include the retired, non-semantic audit envelope
-    # and the retired owner flag that production always wrote as False.
+    # and the retired owner flags that production always wrote as False.
     value.pop("region_audit", None)
     value.pop("identity_conflict", None)
+    value.pop("is_provisional", None)
     member = value["cross_sample_member_subject"]
-    # Replay compares member peaks by their measured values only; the snapshot
-    # retains no trace or query context to restore.
     member["physical_peaks"] = tuple(
-        PeakObservation(
-            sample_key=peak["sample_key"],
-            mz=peak["mz"],
-            rt=tuple(peak["rt"]),
-            intensity=tuple(peak["intensity"]),
-            integration=_read_integration(peak["integration"]),
-            generation_provenance=None,  # type: ignore[arg-type]
-            source_trace=None,  # type: ignore[arg-type]
-        )
-        for peak in member["physical_peaks"]
+        _read_peak(peak) for peak in member["physical_peaks"]
     )
+    value["peak"] = _read_owner_peak(value, member["physical_peaks"])
     value["cross_sample_member_subject"] = CrossSampleGroupMemberSubject(**member)
     if value["cid_nl_composite_assessment"] is not None:
         raise ValueError("Grouping snapshots require scalar CID-NL observations")
@@ -325,19 +350,43 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
         or owner.owner_id != owner.cross_sample_member_subject.subject_id
     ):
         raise ValueError("Grouping observation does not match its member subject")
+    integration = owner.peak.integration
     if not all(
         math.isfinite(number)
         for number in (
-            owner.precursor_mz,
-            owner.owner_apex_rt,
-            owner.owner_peak_start_rt,
-            owner.owner_peak_end_rt,
-            owner.owner_area,
-            owner.owner_height,
+            integration.rt_apex_min,
+            integration.rt_left_min,
+            integration.rt_right_min,
+            integration.area_raw_counts_seconds,
+            integration.height_raw,
         )
     ):
         raise ValueError("Grouping observations require finite measured values")
     return owner
+
+
+def _read_owner_peak(
+    value: dict[str, Any], physical_peaks: tuple[PeakObservation, ...]
+) -> PeakObservation:
+    # The selected integration carries the owner's measured values and the
+    # member peak its trace; the written copies are the same values.
+    for key in (
+        "precursor_mz",
+        "owner_apex_rt",
+        "owner_peak_start_rt",
+        "owner_peak_end_rt",
+        "owner_area",
+        "owner_height",
+    ):
+        value.pop(key)
+    (member_peak,) = physical_peaks
+    integration = _read_integration(value.pop("selected_integration"))
+    return replace(
+        member_peak,
+        integration=replace(
+            integration, raw_scan_indices=tuple(range(len(member_peak.rt)))
+        ),
+    )
 
 
 def _read_integration(value: dict[str, Any]) -> IntegrationResult:
@@ -432,7 +481,9 @@ def _membership_changes(
         if len(split) < 2:
             continue
         medians = {
-            part: statistics.median(owners[o].owner_apex_rt for o in members)
+            part: statistics.median(
+                owners[o].peak.integration.rt_apex_min for o in members
+            )
             for part, members in split.items()
         }
         ordered = sorted(split, key=lambda part: (medians[part], part))
@@ -441,9 +492,7 @@ def _membership_changes(
                 "change": change,
                 "group_id": whole_id,
                 "mz": statistics.median(
-                    owners[o].precursor_mz
-                    for members in split.values()
-                    for o in members
+                    owners[o].peak.mz for members in split.values() for o in members
                 ),
                 "part_count": len(split),
                 "part_sizes": "|".join(str(len(split[part])) for part in ordered),
@@ -501,13 +550,13 @@ def write_grouping_result(
             comparison_rt = (
                 coordinates.corrected_rt_min(owner)
                 if coordinates
-                else owner.owner_apex_rt
+                else owner.peak.integration.rt_apex_min
             )
             if risk is not None:
                 # The selected universe can reject an available calibration,
                 # or use a weak estimate that the strong-only map cannot supply.
                 if risk.rt_basis == "raw":
-                    comparison_rt = owner.owner_apex_rt
+                    comparison_rt = owner.peak.integration.rt_apex_min
                 elif risk.rt_estimate is not None:
                     comparison_rt = risk.rt_estimate.rt_min
             members.append(
@@ -518,13 +567,13 @@ def write_grouping_result(
                         inputs.candidate_ids_by_owner.get(owner.owner_id, ())
                     ),
                     "sample_stem": owner.sample_stem,
-                    "mz": owner.precursor_mz,
-                    "observed_rt": owner.owner_apex_rt,
+                    "mz": owner.peak.mz,
+                    "observed_rt": owner.peak.integration.rt_apex_min,
                     "comparison_rt": comparison_rt,
                     "comparison_rt_basis": risk.rt_basis
                     if risk is not None
                     else "not_recorded",
-                    "area": owner.owner_area,
+                    "area": owner.peak.integration.area_raw_counts_seconds,
                     "disposition": group.disposition,
                     "reason": basis.reason if basis else "",
                 }
@@ -535,8 +584,8 @@ def write_grouping_result(
                     {
                         "owner_id": owner.owner_id,
                         "sample_stem": owner.sample_stem,
-                        "mz": owner.precursor_mz,
-                        "observed_rt": owner.owner_apex_rt,
+                        "mz": owner.peak.mz,
+                        "observed_rt": owner.peak.integration.rt_apex_min,
                         "before_group": old.group_hypothesis_id,
                         "after_group": group.group_hypothesis_id,
                         "before_members": len(old.owner_ids),

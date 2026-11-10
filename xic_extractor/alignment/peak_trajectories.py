@@ -457,7 +457,9 @@ class PeakTrajectories:
                     for sample, rt in self.tracks[index].sample_apices
                 )
             )
-        points.update((owner.sample_stem, owner.owner_apex_rt) for owner in owners)
+        points.update(
+            (owner.sample_stem, owner.peak.integration.rt_apex_min) for owner in owners
+        )
         return PeakTrajectory(tuple(sorted(requested)), tuple(sorted(points.items())))
 
     def owner_track_indices(self) -> dict[str, int]:
@@ -591,17 +593,8 @@ class _LocalizationLinks:
             bound = self.owner_nodes.get(owner.owner_id)
             if bound is None:
                 continue
-            integration = owner.selected_integration
-            left = (
-                integration.rt_left_min
-                if integration is not None
-                else owner.owner_peak_start_rt
-            )
-            right = (
-                integration.rt_right_min
-                if integration is not None
-                else owner.owner_peak_end_rt
-            )
+            left = owner.peak.integration.rt_left_min
+            right = owner.peak.integration.rt_right_min
             # A nearby landmark alone does not establish a physical binding.
             # Both the direct binding and its selected segment must witness
             # that the borrowed point is outside this same-sample peak.
@@ -1082,20 +1075,25 @@ def _local_patterns(
         return key
 
     for owner in sorted(
-        owners, key=lambda item: (item.sample_stem, item.owner_apex_rt, item.owner_id)
+        owners,
+        key=lambda item: (
+            item.sample_stem,
+            item.peak.integration.rt_apex_min,
+            item.owner_id,
+        ),
     ):
         context_index = context_indexes.get(owner.sample_stem)
         if context_index is None:
             continue
         candidate_contexts = (
             by_sample[owner.sample_stem][index]
-            for index in context_index.candidates(owner.precursor_mz)
+            for index in context_index.candidates(owner.peak.mz)
         )
         available = [
             context
             for context in candidate_contexts
-            if within_ppm(owner.precursor_mz, context.mz, config.preferred_ppm)
-            and context.rt_start <= owner.owner_apex_rt <= context.rt_end
+            if within_ppm(owner.peak.mz, context.mz, config.preferred_ppm)
+            and context.rt_start <= owner.peak.integration.rt_apex_min <= context.rt_end
         ]
         if not available:
             continue
@@ -1103,7 +1101,7 @@ def _local_patterns(
             available,
             key=lambda item: (
                 -(item.rt_end - item.rt_start),
-                absolute_ppm_error(owner.precursor_mz, item.mz),
+                absolute_ppm_error(owner.peak.mz, item.mz),
                 item.rt,
                 item.raw,
             ),
@@ -1112,9 +1110,11 @@ def _local_patterns(
         retained.add(context)
         selected = min(
             range(len(peaks)),
-            key=lambda index: abs(peaks[index].apex_rt - owner.owner_apex_rt),
+            key=lambda index: abs(
+                peaks[index].apex_rt - owner.peak.integration.rt_apex_min
+            ),
         )
-        if abs(peaks[selected].apex_rt - owner.owner_apex_rt) > max(
+        if abs(peaks[selected].apex_rt - owner.peak.integration.rt_apex_min) > max(
             config.owner_apex_close_sec / 60.0, peaks[selected].width / 2.0
         ):
             continue

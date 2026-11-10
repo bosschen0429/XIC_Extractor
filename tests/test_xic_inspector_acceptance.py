@@ -58,7 +58,7 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
         for child in completed.application_result.children
         for terminal in child.scientific_core.terminal_subjects
         if getattr(terminal, "hypothesis", None) is not None
-        for ref in terminal.hypothesis.peak_observation_refs
+        for ref in (terminal.hypothesis.peak,)
     }
     # Spool cleanup / close
     completed.close()

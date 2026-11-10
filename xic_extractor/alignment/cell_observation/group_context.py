@@ -16,7 +16,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
 )
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 from xic_extractor.sample_metadata import SampleMetadata
 
 TerminalObservationVariant: TypeAlias = Literal[
@@ -50,7 +50,7 @@ class CidNlCellGroupSupport:
 
     sample: SampleMetadata
     assessment: CidNlMethodAssessment
-    hypothesis: PeakHypothesis
+    hypothesis: MeasuredPeakHypothesis
 
 
 @dataclass(frozen=True, slots=True)

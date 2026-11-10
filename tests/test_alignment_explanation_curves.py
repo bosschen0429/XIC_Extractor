@@ -141,7 +141,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
                         "mz": ref.mz,
                         "ppm": ref.generation_provenance.query_ppm_tol,
                     }
-                    for ref in hypothesis.peak_observation_refs
+                    for ref in (hypothesis.peak,)
                 ]
     assert expected
     report = write_alignment_explanation(

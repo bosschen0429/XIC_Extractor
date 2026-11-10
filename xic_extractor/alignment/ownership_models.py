@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Literal
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
 )
-from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.ms1_shape_identity import LocalPeakShape
+from xic_extractor.peak_detection.observations import PeakObservation
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.cross_sample.peak_groups import (
@@ -36,33 +36,21 @@ class SampleLocalMS1Owner:
     owner_id: str
     sample_stem: str
     raw_file: str
-    precursor_mz: float
-    owner_apex_rt: float
-    owner_peak_start_rt: float
-    owner_peak_end_rt: float
-    owner_area: float
-    owner_height: float
+    peak: PeakObservation
     primary_identity_event: IdentityEvent | None
     supporting_events: tuple[IdentityEvent, ...]
     assignment_reason: str
-    selected_integration: IntegrationResult | None = None
     quantification_eligible: bool = True
     quantification_exclusion_reason: str = ""
     cross_sample_member_subject: CrossSampleGroupMemberSubject | None = None
     cid_nl_composite_assessment: CidNlMethodAssessment | None = None
-    is_provisional: bool = False
     peak_shape: LocalPeakShape | None = None
 
     def __post_init__(self) -> None:
-        integration = self.selected_integration
-        apex = self.owner_apex_rt
-        left = self.owner_peak_start_rt
-        right = self.owner_peak_end_rt
-        if integration is not None:
-            apex = integration.rt_apex_min
-            left = integration.rt_left_min
-            right = integration.rt_right_min
-        if not (left < apex < right):
+        integration = self.peak.integration
+        if not (
+            integration.rt_left_min < integration.rt_apex_min < integration.rt_right_min
+        ):
             object.__setattr__(self, "quantification_eligible", False)
             if not self.quantification_exclusion_reason:
                 object.__setattr__(

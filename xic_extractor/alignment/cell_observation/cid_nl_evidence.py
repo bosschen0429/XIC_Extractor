@@ -12,15 +12,15 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
     is_ms1_only_cid_nl_backfill_assessment,
 )
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
 )
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 
 
 def resolve_cid_nl_recovered_evidence(
     assessment: CidNlMethodAssessment,
-    hypothesis: PeakHypothesis | None,
+    hypothesis: MeasuredPeakHypothesis | None,
 ) -> FinalCellEvidenceState:
     """A group-admitted revisit retains its own completed assessment meaning."""
     if hypothesis is not None:
@@ -47,7 +47,7 @@ def cid_nl_supported_peaks(
 def resolve_cid_nl_cell_evidence(
     assessment: CidNlMethodAssessment,
     observation: PeakObservation | None,
-    hypothesis: PeakHypothesis | None,
+    hypothesis: MeasuredPeakHypothesis | None,
 ) -> FinalCellEvidenceState:
     """Resolve method meaning; callers still close exact group/sample lineage."""
     technical_state = assessment.technical_state

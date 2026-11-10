@@ -221,14 +221,8 @@ def _decide_target(
             "Target terminal uses an unsupported or partial variant"
         )
     hypothesis = terminal.hypothesis
-    if not hypothesis.is_owner_backed:
-        raise CellDecisionContractError(
-            "Target observed terminal requires an owner-backed PeakHypothesis"
-        )
-    integration = hypothesis.integration
-    if _target_has_fragmented_low_signal(
-        integration, hypothesis.peak_observation_refs[0].intensity
-    ):
+    integration = hypothesis.peak.integration
+    if _target_has_fragmented_low_signal(integration, hypothesis.peak.intensity):
         return NoWriteCellDecision("not_quantifiable"), integration
     return _payload_from_integration(integration), integration
 

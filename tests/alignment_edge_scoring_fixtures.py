@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from tests.owner_peak_fixtures import measured_peak
 from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
@@ -54,12 +55,14 @@ def _owner(
         owner_id=f"OWN-{sample_stem}",
         sample_stem=sample_stem,
         raw_file=f"{sample_stem}.raw",
-        precursor_mz=precursor_mz,
-        owner_apex_rt=owner_apex_rt,
-        owner_peak_start_rt=owner_apex_rt - 0.05,
-        owner_peak_end_rt=owner_apex_rt + 0.05,
-        owner_area=owner_area,
-        owner_height=100.0,
+        peak=measured_peak(
+            mz=precursor_mz,
+            apex_rt=owner_apex_rt,
+            start_rt=owner_apex_rt - 0.05,
+            end_rt=owner_apex_rt + 0.05,
+            area=owner_area,
+            height=100.0,
+        ),
         primary_identity_event=primary,
         supporting_events=support,
         assignment_reason=assignment_reason,

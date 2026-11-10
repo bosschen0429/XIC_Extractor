@@ -118,9 +118,7 @@ def plan_grouped_cid_nl_backfills(
             locations = trajectory.backfill_locations(
                 tuple(samples[sample_id].raw_stem for sample_id in sorted(target_ids)),
                 reference_samples=frozenset(
-                    owner.sample_stem
-                    for owner in group.owners
-                    if not owner.is_provisional
+                    owner.sample_stem for owner in group.owners
                 ),
                 rt_frame=rt_frame,
                 backfill_half_window_min=half_windows_by_sample[min(target_ids)],

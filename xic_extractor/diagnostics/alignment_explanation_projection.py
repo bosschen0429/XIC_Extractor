@@ -669,19 +669,17 @@ def prepare_alignment_explanation(
                 )
                 if isinstance(terminal, ObservedSearchSubject):
                     hypothesis = terminal.hypothesis
-                    physical_ids = tuple(
-                        locate(ref) for ref in hypothesis.peak_observation_refs
-                    )
+                    hypothesis_peaks = (hypothesis.peak,)
+                    physical_ids = tuple(locate(ref) for ref in hypothesis_peaks)
                     payload.update(
                         hypothesis_id=hypothesis.hypothesis_id,
                         physical_peak_keys=physical_ids,
                         observations=[
-                            _review_xic_coordinates(ref)
-                            for ref in hypothesis.peak_observation_refs
+                            _review_xic_coordinates(ref) for ref in hypothesis_peaks
                         ],
                     )
                     hypothesis_candidates[key[1], hypothesis.hypothesis_id].add(key)
-                    for ref in hypothesis.peak_observation_refs:
+                    for ref in hypothesis_peaks:
                         physical_candidates[key[1], locate(ref)].add(key)
                         if not capture_evidence:
                             _emit_curve_payload(
@@ -742,9 +740,8 @@ def prepare_alignment_explanation(
                     for ref in (
                         *final_cell.direct_observations,
                         *(
-                            ref
+                            hypothesis.peak
                             for hypothesis in final_cell.direct_hypotheses
-                            for ref in hypothesis.peak_observation_refs
                         ),
                     )
                 }

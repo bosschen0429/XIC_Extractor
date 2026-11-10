@@ -444,16 +444,20 @@ def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) ->
     published = publish_targeted_outputs(request, finalized, output)
 
     rendered = published.output.file_results[0].results[target.label]
-    finalized_integration = (
-        finalized[0].completed_projection.decisions[0].evidence.hypothesis.integration
+    finalized_hypothesis = (
+        finalized[0].completed_projection.decisions[0].evidence.hypothesis
     )
+    finalized_integration = finalized_hypothesis.peak.integration
     assert rendered.reported_peak_area == finalized_value
     assert rendered.targeted_product_projection is not None
     assert rendered.targeted_product_projection.counted_detection is True
     assert rendered.reported_rt == finalized_integration.rt_apex_min
-    assert rendered.peak is not None
-    assert rendered.peak.peak_start == finalized_integration.rt_left_min
-    assert rendered.peak.peak_end == finalized_integration.rt_right_min
+    # The published result reports the finalized peak itself; no PeakResult
+    # is rebuilt from its integration.
+    assert rendered.measured_hypothesis is finalized_hypothesis
+    assert rendered.peak is None
+    assert rendered.reported_peak_start == finalized_integration.rt_left_min
+    assert rendered.reported_peak_end == finalized_integration.rt_right_min
     assert rendered.selected_hypothesis is None
     assert rendered.selection_decision is None
 
@@ -600,7 +604,7 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
         for item in execution.active_output.file_results
     }
     for sample_name, decision in decisions.items():
-        integration = decision.evidence.hypothesis.integration
+        integration = decision.evidence.hypothesis.peak.integration
         expected_values = {
             "RT": (integration.rt_apex_min, 4),
             "Area": (decision.value, 2),

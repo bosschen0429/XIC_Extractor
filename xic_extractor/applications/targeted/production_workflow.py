@@ -68,9 +68,9 @@ from xic_extractor.output.targeted_product_model import (
     TargetedProductContext,
     TargetedProductProjection,
 )
-from xic_extractor.peak_detection.models import PeakResult
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
+    MeasuredPeakHypothesis,
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.processing_identity import (
@@ -512,7 +512,7 @@ def _finalized_extraction_result(
 ) -> ExtractionResult:
     captured_physical_evaluation = extraction.physical_evaluation
     reported_evaluation = (
-        evidence.hypothesis.peak_observation_refs[0].physical_evaluation
+        evidence.hypothesis.peak.physical_evaluation
         if not no_write_reason and type(evidence) is ObservedSearchSubject
         else None
     )
@@ -536,27 +536,18 @@ def _finalized_extraction_result(
             raise TargetedOutputBoundaryError(
                 "finalized Targeted value does not match its public result model"
             )
-        integration = evidence.hypothesis.integration
-        physical_evaluation = evidence.hypothesis.peak_observation_refs[
-            0
-        ].physical_evaluation
+        physical_evaluation = evidence.hypothesis.peak.physical_evaluation
         rendered = replace(
             extraction,
             peak_result=replace(
                 extraction.peak_result,
-                peak=PeakResult(
-                    rt=integration.rt_apex_min,
-                    intensity=integration.height_raw,
-                    intensity_smoothed=integration.height_smoothed,
-                    area=value,
-                    peak_start=integration.rt_left_min,
-                    peak_end=integration.rt_right_min,
-                ),
+                peak=None,
                 candidates=(),
                 candidate_scores=(),
             ),
             selected_hypothesis=None,
             selection_decision=None,
+            measured_hypothesis=evidence.hypothesis,
             physical_evaluation=physical_evaluation,
             quality_flags=(
                 extraction.quality_flags
@@ -564,7 +555,7 @@ def _finalized_extraction_result(
                 and _same_physical_peak(
                     extraction.physical_evaluation, physical_evaluation
                 )
-                else evidence.hypothesis.evidence.quality_flags
+                else ()
             ),
             targeted_product_projection=projection,
         )
@@ -588,8 +579,8 @@ def _finalized_extraction_result(
     )
 
 
-def _hypothesis_area(hypothesis: Any) -> float:
-    integration = hypothesis.integration
+def _hypothesis_area(hypothesis: MeasuredPeakHypothesis) -> float:
+    integration = hypothesis.peak.integration
     if integration.area_ms1_morphology is not None:
         return integration.area_ms1_morphology
     return integration.area_raw_counts_seconds
@@ -668,9 +659,7 @@ def _finalized_product_projection(
         raise TargetedOutputBoundaryError(
             "numeric projection lost its finalized evidence"
         )
-    physical_evaluation = evidence.hypothesis.peak_observation_refs[
-        0
-    ].physical_evaluation
+    physical_evaluation = evidence.hypothesis.peak.physical_evaluation
     projection = _projection_with_reported_peak_quality(
         projection,
         captured=captured_physical_evaluation,
@@ -685,11 +674,9 @@ def _finalized_product_projection(
             istd_pair=target.istd_pair,
             neutral_loss_required=target.neutral_loss_da is not None,
         ),
-        rt=evidence.hypothesis.integration.rt_apex_min,
+        rt=evidence.hypothesis.peak.integration.rt_apex_min,
         area=value,
-        cid_nl_supported=(
-            evidence.hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
-        ),
+        cid_nl_supported=(evidence.hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL),
         backfill_supported=backfill_supported,
         paired_istd_identity=paired_istd_identity,
         support_reasons=projection.support_reasons,

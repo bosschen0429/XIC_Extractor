@@ -645,7 +645,7 @@ def prepare_untargeted_partition_grouping(
             matches = tuple(
                 hypothesis
                 for hypothesis in hypotheses
-                if observation in hypothesis.peak_observation_refs
+                if hypothesis.peak == observation
             )
             if len(matches) != 1:
                 raise RuntimeError(

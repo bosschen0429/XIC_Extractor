@@ -232,7 +232,7 @@ class BatchRtCalibration:
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
         """Use a bounded sample calibration, retaining raw RT outside its span."""
-        return self.common_rt_min(owner.sample_stem, owner.owner_apex_rt)
+        return self.common_rt_min(owner.sample_stem, owner.peak.integration.rt_apex_min)
 
     def has_support(self, sample_stem: str) -> bool:
         sample = self.samples.get(sample_stem)
@@ -600,14 +600,14 @@ class BatchRtCalibrationAccumulator:
                 owner
                 for owner in group
                 if owner.primary_identity_event is not None
-                and not owner.is_provisional
                 and owner.quantification_eligible
             )
             if not anchors:
                 continue
             key = min(owner.owner_id for owner in anchors)
             self._observations[key] = {
-                owner.sample_stem: owner.owner_apex_rt for owner in anchors
+                owner.sample_stem: owner.peak.integration.rt_apex_min
+                for owner in anchors
             }
 
     def freeze(

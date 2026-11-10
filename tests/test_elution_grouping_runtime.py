@@ -205,7 +205,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         frozenset(owner.sample_stem for owner in group.owners) for group in groups
     } == {frozenset(("S0", "S2")), frozenset(("S1", "S3"))}
     assert {
-        owner.sample_stem: owner.owner_apex_rt
+        owner.sample_stem: owner.peak.integration.rt_apex_min
         for group in groups
         for owner in group.owners
     } == pytest.approx(expected_initial, abs=0.005)

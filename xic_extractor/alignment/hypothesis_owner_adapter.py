@@ -20,7 +20,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupport,
 )
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.ms1_shape_identity import prepare_local_peak_shape
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
@@ -28,6 +27,7 @@ from xic_extractor.peak_detection.observations import (
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
     HYPOTHESIS_METHOD_MS1_OBSERVATION,
+    MeasuredPeakHypothesis,
     compose_cid_nl_peak_hypothesis,
     compose_ms1_observation_peak_hypothesis,
 )
@@ -42,7 +42,7 @@ def compose_cid_nl_peak_hypotheses_from_assessment(
     *,
     sample: SampleMetadata,
     assessment: CidNlMethodAssessment,
-) -> tuple[PeakHypothesis, ...]:
+) -> tuple[MeasuredPeakHypothesis, ...]:
     """Preserve every individually supported physical peak as one hypothesis."""
 
     return _compose_cid_nl_peak_hypotheses_from_assessment(
@@ -56,8 +56,8 @@ def _compose_cid_nl_peak_hypotheses_from_assessment(
     *,
     sample: SampleMetadata,
     assessment: CidNlMethodAssessment,
-    retained_by_peak: dict[PeakObservation, PeakHypothesis],
-) -> tuple[PeakHypothesis, ...]:
+    retained_by_peak: dict[PeakObservation, MeasuredPeakHypothesis],
+) -> tuple[MeasuredPeakHypothesis, ...]:
 
     if not isinstance(assessment, CidNlMethodAssessment):
         raise HypothesisOwnerAdapterError(
@@ -75,7 +75,7 @@ def _compose_cid_nl_peak_hypotheses_from_assessment(
             relation.peak_observation,
             [],
         ).append(relation)
-    hypotheses: list[PeakHypothesis] = []
+    hypotheses: list[MeasuredPeakHypothesis] = []
     for supported_peak in supported_cid_nl_peaks(assessment):
         peak = candidate_by_peak.get(supported_peak)
         if peak is None:
@@ -121,8 +121,8 @@ def compose_peak_hypotheses_from_assessment_universe(
     *,
     sample: SampleMetadata,
     assessment: CidNlMethodAssessment,
-    retained_hypotheses: tuple[PeakHypothesis, ...] = (),
-) -> tuple[PeakHypothesis, ...]:
+    retained_hypotheses: tuple[MeasuredPeakHypothesis, ...] = (),
+) -> tuple[MeasuredPeakHypothesis, ...]:
     """Preserve direct and observation-only physical peaks without relabeling."""
 
     retained_by_peak = _bind_retained_assessment_hypotheses(
@@ -135,7 +135,7 @@ def compose_peak_hypotheses_from_assessment_universe(
         assessment=assessment,
         retained_by_peak=retained_by_peak,
     )
-    direct_observations = {item.peak_observation_refs[0] for item in direct}
+    direct_observations = {item.peak for item in direct}
     observation_only = tuple(
         retained_by_peak.get(observation)
         or compose_ms1_observation_peak_hypothesis(peak_observation=observation)
@@ -151,8 +151,8 @@ def bind_retained_peak_hypotheses_to_assessment_universe(
     *,
     sample: SampleMetadata,
     assessment: CidNlMethodAssessment,
-    retained_hypotheses: tuple[PeakHypothesis, ...],
-) -> tuple[PeakHypothesis, ...]:
+    retained_hypotheses: tuple[MeasuredPeakHypothesis, ...],
+) -> tuple[MeasuredPeakHypothesis, ...]:
     """Bind a complete earlier owner result to the same assessment universe."""
 
     retained_by_peak = _bind_retained_assessment_hypotheses(
@@ -171,8 +171,8 @@ def _bind_retained_assessment_hypotheses(
     *,
     sample: SampleMetadata,
     assessment: CidNlMethodAssessment,
-    retained_hypotheses: tuple[PeakHypothesis, ...],
-) -> dict[PeakObservation, PeakHypothesis]:
+    retained_hypotheses: tuple[MeasuredPeakHypothesis, ...],
+) -> dict[PeakObservation, MeasuredPeakHypothesis]:
     if not isinstance(retained_hypotheses, tuple):
         raise HypothesisOwnerAdapterError(
             "retained hypotheses must be an immutable owner result"
@@ -183,17 +183,13 @@ def _bind_retained_assessment_hypotheses(
         candidate: candidate for candidate in assessment.candidate_peaks
     }
     supported_peaks = supported_cid_nl_peaks(assessment)
-    retained_by_peak: dict[PeakObservation, PeakHypothesis] = {}
+    retained_by_peak: dict[PeakObservation, MeasuredPeakHypothesis] = {}
     for hypothesis in retained_hypotheses:
-        if (
-            not isinstance(hypothesis, PeakHypothesis)
-            or not hypothesis.is_owner_backed
-            or len(hypothesis.peak_observation_refs) != 1
-        ):
+        if not isinstance(hypothesis, MeasuredPeakHypothesis):
             raise HypothesisOwnerAdapterError(
                 "retained hypothesis crossed its processing owner"
             )
-        observation = hypothesis.peak_observation_refs[0]
+        observation = hypothesis.peak
         if (
             candidate_by_peak.get(observation) is not observation
             or observation.sample_key != sample.sample_name
@@ -207,7 +203,7 @@ def _bind_retained_assessment_hypotheses(
             if observation in supported_peaks
             else HYPOTHESIS_METHOD_MS1_OBSERVATION
         )
-        if hypothesis.hypothesis_method != expected_method:
+        if hypothesis.method != expected_method:
             raise HypothesisOwnerAdapterError(
                 "retained hypothesis crossed its assessment support class"
             )
@@ -219,7 +215,7 @@ def owner_from_cid_nl_assessment_support(
     *,
     sample: SampleMetadata,
     assessment: CidNlMethodAssessment,
-    hypothesis: PeakHypothesis,
+    hypothesis: MeasuredPeakHypothesis,
 ) -> SampleLocalMS1Owner:
     """Project measured values without granting selection or write authority."""
 
@@ -262,19 +258,13 @@ def owner_from_cid_nl_assessment_support(
         owner_id=hypothesis.hypothesis_id,
         sample_stem=sample.raw_stem,
         raw_file=observation.generation_provenance.acquisition_source_id,
-        precursor_mz=observation.mz,
-        owner_apex_rt=integration.rt_apex_min,
-        owner_peak_start_rt=integration.rt_left_min,
-        owner_peak_end_rt=integration.rt_right_min,
-        owner_area=integration.area_raw_counts_seconds,
-        owner_height=integration.height_raw,
+        peak=observation,
         primary_identity_event=event,
         supporting_events=(),
         assignment_reason="cid_nl_method_assessment_unique_support",
         cid_nl_composite_assessment=assessment
         if assessment.method_subject.composition
         else None,
-        selected_integration=integration,
         peak_shape=prepare_local_peak_shape(
             observation.rt,
             observation.intensity,
@@ -291,15 +281,15 @@ def owner_from_cid_nl_assessment_observation(
     *,
     sample: SampleMetadata,
     assessment: CidNlMethodAssessment,
-    hypothesis: PeakHypothesis,
+    hypothesis: MeasuredPeakHypothesis,
 ) -> SampleLocalMS1Owner:
     """Project one non-training physical observation into provisional grouping."""
 
-    if hypothesis.hypothesis_method != HYPOTHESIS_METHOD_MS1_OBSERVATION:
+    if hypothesis.method != HYPOTHESIS_METHOD_MS1_OBSERVATION:
         raise HypothesisOwnerAdapterError(
-            "observation projection requires an MS1-only PeakHypothesis"
+            "observation projection requires an MS1-only MeasuredPeakHypothesis"
         )
-    observation = hypothesis.peak_observation_refs[0]
+    observation = hypothesis.peak
     if observation not in assessment.candidate_peaks:
         raise HypothesisOwnerAdapterError(
             "observation-only hypothesis is outside the assessment universe"
@@ -331,16 +321,10 @@ def owner_from_cid_nl_assessment_observation(
         owner_id=hypothesis.hypothesis_id,
         sample_stem=sample.raw_stem,
         raw_file=observation.generation_provenance.acquisition_source_id,
-        precursor_mz=observation.mz,
-        owner_apex_rt=integration.rt_apex_min,
-        owner_peak_start_rt=integration.rt_left_min,
-        owner_peak_end_rt=integration.rt_right_min,
-        owner_area=integration.area_raw_counts_seconds,
-        owner_height=integration.height_raw,
+        peak=observation,
         primary_identity_event=event,
         supporting_events=(),
         assignment_reason="cid_nl_method_assessment_observation_only",
-        selected_integration=integration,
         peak_shape=prepare_local_peak_shape(
             observation.rt,
             observation.intensity,
@@ -356,34 +340,24 @@ def owner_from_cid_nl_assessment_observation(
 def owner_from_ms1_observation_hypothesis(
     *,
     sample: SampleMetadata,
-    hypothesis: PeakHypothesis,
+    hypothesis: MeasuredPeakHypothesis,
 ) -> SampleLocalMS1Owner:
     """Project one workflow-neutral physical MS1 observation into Alignment."""
 
-    if hypothesis.hypothesis_method != HYPOTHESIS_METHOD_MS1_OBSERVATION:
+    if hypothesis.method != HYPOTHESIS_METHOD_MS1_OBSERVATION:
         raise HypothesisOwnerAdapterError(
-            "MS1 owner projection requires an MS1 observation PeakHypothesis"
+            "MS1 owner projection requires an MS1 observation MeasuredPeakHypothesis"
         )
-    if len(hypothesis.peak_observation_refs) != 1:
-        raise HypothesisOwnerAdapterError(
-            "MS1 owner projection requires one physical observation"
-        )
-    observation = hypothesis.peak_observation_refs[0]
+    observation = hypothesis.peak
     integration = observation.integration
     return SampleLocalMS1Owner(
         owner_id=hypothesis.hypothesis_id,
         sample_stem=sample.raw_stem,
         raw_file=observation.generation_provenance.acquisition_source_id,
-        precursor_mz=observation.mz,
-        owner_apex_rt=integration.rt_apex_min,
-        owner_peak_start_rt=integration.rt_left_min,
-        owner_peak_end_rt=integration.rt_right_min,
-        owner_area=integration.area_raw_counts_seconds,
-        owner_height=integration.height_raw,
+        peak=observation,
         primary_identity_event=None,
         supporting_events=(),
         assignment_reason="ms1_observation_hypothesis",
-        selected_integration=integration,
         peak_shape=prepare_local_peak_shape(
             observation.rt,
             observation.intensity,
@@ -400,7 +374,7 @@ def _assessment_hypothesis_components(
     *,
     sample: SampleMetadata,
     assessment: CidNlMethodAssessment,
-    hypothesis: PeakHypothesis,
+    hypothesis: MeasuredPeakHypothesis,
 ) -> tuple[
     PeakObservation,
     CidNlChromatographicSupport,
@@ -414,21 +388,17 @@ def _assessment_hypothesis_components(
         raise HypothesisOwnerAdapterError(
             "only a SUPPORT assessment may enter provisional grouping"
         )
-    if not isinstance(hypothesis, PeakHypothesis) or not hypothesis.is_owner_backed:
+    if not isinstance(hypothesis, MeasuredPeakHypothesis):
         raise HypothesisOwnerAdapterError(
-            "hypothesis must be an owner-backed PeakHypothesis"
+            "hypothesis must be an owner-backed MeasuredPeakHypothesis"
         )
-    if len(hypothesis.peak_observation_refs) != 1:
-        raise HypothesisOwnerAdapterError(
-            "CID-NL hypothesis must reference exactly one physical peak"
-        )
-    observation = hypothesis.peak_observation_refs[0]
+    observation = hypothesis.peak
     sample_id = sample.sample_name
     if assessment.sample_key != sample_id or (observation.sample_key != sample_id):
         raise HypothesisOwnerAdapterError(
             "assessment or hypothesis references a different canonical sample"
         )
-    support = hypothesis.evidence.cid_nl_chromatographic_support_ref
+    support = hypothesis.chromatographic_support
     if support is None:
         raise HypothesisOwnerAdapterError(
             "CID-NL hypothesis is missing chromatographic support"

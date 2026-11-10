@@ -13,9 +13,6 @@ from xic_extractor.peak_detection.baseline import (
     bounded_trace_interval,
     integrate_with_baseline,
 )
-from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
-    CidNlChromatographicSupport,
-)
 from xic_extractor.peak_detection.evidence_facts import (
     CandidateEvidenceFacts,
     decision_semantics_from_candidate_facts,
@@ -38,16 +35,10 @@ from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,
     gaussian15_positive_asls_residual_metrics,
 )
-from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.signal_quality import measure_signal_quality
 from xic_extractor.peak_detection.traces import AnalysisMode, TraceGroup
 
-OWNER_BACKED_ANALYSIS_MODE = "workflow_neutral"
 CandidateMS2EvidenceMap = Mapping[PeakCandidate, CandidateMS2Evidence]
-
-
-class PeakHypothesisAuthorityError(ValueError):
-    """Raised when diagnostic identity is passed to selection or product code."""
 
 
 @dataclass(frozen=True)
@@ -95,7 +86,6 @@ class EvidenceVector:
     baseline_score: float | None = None
     common: CommonEvidence | None = None
     decision_semantics: EvidenceDecisionSemantics | None = None
-    cid_nl_chromatographic_support_ref: CidNlChromatographicSupport | None = None
 
 
 @dataclass(frozen=True)
@@ -110,6 +100,8 @@ class AuditTrail:
 
 @dataclass(frozen=True)
 class PeakHypothesis:
+    """One peak-picking candidate on a trace before capture binds a peak."""
+
     hypothesis_id: str
     trace_group_id: str
     target_label: str
@@ -120,30 +112,6 @@ class PeakHypothesis:
     integration: IntegrationResult
     evidence: EvidenceVector
     audit: AuditTrail
-    hypothesis_method: str = ""
-    peak_observation_refs: tuple[PeakObservation, ...] = ()
-
-    @property
-    def is_owner_backed(self) -> bool:
-        return bool(
-            self.hypothesis_method
-            or self.peak_observation_refs
-            or self.evidence.cid_nl_chromatographic_support_ref is not None
-            or self.analysis_mode == OWNER_BACKED_ANALYSIS_MODE
-        )
-
-
-def validate_peak_hypothesis_selection_authority(
-    hypothesis: PeakHypothesis,
-    *,
-    consumer: str,
-) -> None:
-    """Reject diagnostic owner-backed identity at selection/product boundaries."""
-
-    if hypothesis.is_owner_backed:
-        raise PeakHypothesisAuthorityError(
-            f"{consumer} cannot consume diagnostic-only owner-backed PeakHypothesis"
-        )
 
 
 def hypothesis_audit_id(
