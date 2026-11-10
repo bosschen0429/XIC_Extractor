@@ -218,7 +218,7 @@ report tables. It does not assert group identity across different input sets.
 | --- | --- | --- |
 | feature_id | string | Report-scoped group label (`F000001`) shared by the report tables |
 | neutral_loss_tag | string | NL identifier |
-| family_center_mz | float | Center m/z: mean of direct members' Discovery `ms1_apex_mz` when any member has one (`center_mz_basis = discovery_ms1_apex_mean`), otherwise the mean of observed m/z |
+| family_center_mz | float | Center m/z: the group's centre, the mean of its members' `peak_mz` (`center_mz_basis = cross_sample_owner_arithmetic_mean`); Backfill searches the same value |
 | family_center_rt | float | Center RT (min) |
 | family_product_mz | float | Product m/z |
 | family_observed_neutral_loss_da | float | Observed NL (Da) |

@@ -78,14 +78,13 @@ standard Matrix includes established groups only.
 Provisional groups belong in a compact machine archive/review surface;
 unresolved and rejected groups remain AuditTrail facts.
 
-A Matrix row's m/z is the mean of its members' observed m/z
-(`center_mz_basis = cross_sample_owner_arithmetic_mean`). When any direct
-member's Discovery candidate carries an apex MS1 reading (`ms1_apex_mz`), the
-row reports the mean of those readings instead
-(`center_mz_basis = discovery_ms1_apex_mean`). An inferred precursor's
-observed m/z is product + loss and can sit 15–20 ppm from the MS1 ion; the
-physical MS1 reading supplies Alignment's XIC extraction and grouping mass;
-Backfill uses the frozen group's physical mass. Review XICs replay each
+A Matrix row's m/z is its group's centre: the mean of the members' m/z,
+decided once when the group is built
+(`center_mz_basis = cross_sample_owner_arithmetic_mean`). Backfill searches
+that same centre, and Matrix, Review and the explanation report write it. A
+member's m/z is its peak's own mass (`peak_mz`): the apex MS1 reading for an
+inferred precursor, whose product + loss can sit 15–20 ppm from the MS1 ion,
+else the XIC centre. Review XICs replay each
 observation's saved extraction mass and ppm tolerance, not its MS2 evidence key.
 
 `feature_id` is a report-scoped group label, not canonical group identity;

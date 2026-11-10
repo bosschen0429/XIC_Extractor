@@ -328,9 +328,9 @@ def writer_group(*cells: ProductionCellDecision, **facts: Any) -> WriterGroup:
 def writer_batch(sample_order: tuple[str, ...], *groups: WriterGroup) -> Any:
     """A completed batch with one child holding ``groups`` in this order.
 
-    Every cell with an origin carries one direct peak. The first
-    ``member_count`` of them are the group's member peaks, all measured at the
-    group's centre, so the reported m/z and RT equal ``center_mz``/``center_rt``.
+    Every cell with an origin carries one direct peak. The group's centre is
+    ``center_mz``; the first ``member_count`` peaks are its member peaks, all
+    measured at that centre, so the reported RT equals ``center_rt``.
     """
 
     samples = tuple(
@@ -368,6 +368,7 @@ def writer_batch(sample_order: tuple[str, ...], *groups: WriterGroup) -> Any:
             peaks[stem] = peak
         group = SimpleNamespace(
             group_hypothesis_id=f"group-{ordinal}",
+            group_center_mz=spec.center_mz,
             member_subjects=tuple(members),
             destination=spec.destination,
             disposition=spec.disposition,

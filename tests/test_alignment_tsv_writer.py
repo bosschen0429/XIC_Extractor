@@ -436,7 +436,7 @@ def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
 
 
 @pytest.mark.parametrize("center_mz", [math.nan, math.inf, -math.inf])
-def test_written_center_requires_finite_member_mz(
+def test_written_center_requires_finite_group_center(
     tmp_path: Path,
     center_mz: float,
 ) -> None:

@@ -114,7 +114,6 @@ def publish_untargeted_outputs(
             metadata=metadata,
             timing_recorder=timing_recorder,
             consume_child=_explanation_sink(explanation),
-            ms1_apex_mz_by_candidate=inputs.ms1_apex_mz_by_candidate,
             membership_risks_by_owner=membership_risks,
             before_write=lambda: _ensure_output_publication_not_cancelled(
                 should_cancel

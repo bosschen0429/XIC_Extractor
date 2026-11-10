@@ -64,8 +64,8 @@ observation apex:
   counted as unavailable.
 - **Mass relation:** `e_ppm = 1e6 × (observed − predicted) / predicted` with
   `|e_ppm| ≤ 10`, where the predicted heavier m/z comes from the lighter row.
-  Both use the Review's `matrix_mz` (row-center m/z, recorded with
-  `center_mz_basis`); this is not per-sample mass evidence. `precursor_mz` is
+  Both use the Review's `matrix_mz` (the group's centre m/z, the mean of its
+  members' m/z); this is not per-sample mass evidence. `precursor_mz` is
   never used as MS1 m/z.
 - **Ratio screening:** on supporting samples whose published values are finite
   and positive, the median absolute deviation of `log10(light/heavy)` (no scale
