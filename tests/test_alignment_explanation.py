@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass, replace
 import pytest
 
 from tests.alignment_explanation_fixtures import (
+    curve_provenance,
     explanation_discovery_facts,
     explanation_summary,
     run_alignment_fixture,
@@ -28,7 +29,7 @@ from xic_extractor.alignment_explanation.reader import (
     read_explanation_metadata,
 )
 from xic_extractor.alignment_explanation.writer import (
-    write_explanation_report,
+    ExplanationReportWriter,
 )
 from xic_extractor.diagnostics.alignment_explanation_projection import (
     write_alignment_explanation,
@@ -259,18 +260,10 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
 def test_partial_write_never_publishes_complete_report(tmp_path):
     report = tmp_path / "partial.sqlite"
 
-    def interrupted():
-        yield "a", "s", {"candidate_id": "a"}
-        raise OSError("interrupted write")
-
     with pytest.raises(OSError, match="interrupted write"):
-        write_explanation_report(
-            report,
-            summary=explanation_summary({}),
-            candidates=interrupted(),
-            records={},
-            links=(),
-        )
+        with ExplanationReportWriter(report) as writer:
+            writer.add_candidate("a", "s", precursor_mz=None)
+            raise OSError("interrupted write")
     assert not report.exists()
     assert not report.with_name(report.name + ".tmp").exists()
 
@@ -452,190 +445,158 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
     assert not report.with_name(report.name + ".tmp").exists()
 
 
-@pytest.mark.parametrize("flushed", [False, True])
-def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path, flushed):
-    from xic_extractor.alignment_explanation.writer import (
-        ExplanationReportWriter,
-    )
-
+def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
     report = tmp_path / "stream.sqlite"
+    summary = explanation_summary(
+        {"samples": [{"sample_key": "s"}], "neutral_loss_by_tag": {"A": 116.0474}}
+    )
     with ExplanationReportWriter(report) as writer:
-        writer.add_candidate("a", "s", {"candidate_id": "a"})
-        with pytest.raises(ValueError, match="duplicate diagnostic candidate/sample"):
-            writer.add_candidate("a", "s", {"candidate_id": "a"})
-        assert writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
-        if flushed:
-            writer._flush_records()
-        assert not writer.add_record("facts", "one", {"value": 1}, (("a", "s"),))
-        writer.finalize(
-            explanation_summary(
-                {"samples": [{"sample_key": "s"}]}, review_only=writer.review_only
-            )
+        writer.declare_samples(summary["samples"])
+        writer.add_method_subject({"method_subject_id": "M1"})
+        candidate = dict(
+            precursor_mz=500.0,
+            neutral_loss_tag="A",
+            peak_status="detected",
+            method_subject_id="M1",
         )
+        writer.add_candidate("a", "s", **candidate)
+        with pytest.raises(ValueError, match="duplicate diagnostic candidate/sample"):
+            writer.add_candidate("a", "s", **candidate)
+        # The same fact emitted twice is stored once.
+        writer.add_exclusion("a", "s", "held")
+        writer.add_exclusion("a", "s", "held")
+        writer.finalize(summary)
     detail = read_alignment_explanation(report, candidate_id="a")
-    assert detail["records"] == {"facts": [{"value": 1}]}
+    assert detail["records"]["exclusions"] == [
+        {
+            "candidate_id": "a",
+            "method_subject_id": "M1",
+            "peak_status": "detected",
+            "reason_code": "held",
+            "sample_key": "s",
+        }
+    ]
     failed = tmp_path / "conflict.sqlite"
-    with pytest.raises(ValueError, match="conflicting diagnostic owner identity"):
+    with pytest.raises(ValueError, match="conflicting candidate exclusion"):
         with ExplanationReportWriter(failed) as writer:
-            writer.add_record("facts", "one", {"value": 1}, ())
-            if flushed:
-                writer._flush_records()
-            writer.add_record("facts", "one", {"value": 2}, ())
+            writer.add_exclusion("a", "s", "held")
+            writer.add_exclusion("a", "s", "other")
     assert not failed.exists()
     assert not failed.with_name(failed.name + ".tmp").exists()
 
 
-def test_related_set_links_preserve_union_through_record_foreign_keys(tmp_path):
-    from xic_extractor.alignment_explanation.writer import (
-        ExplanationReportWriter,
-    )
+def _curve_payload():
+    return {
+        "schema_version": "curve_payload",
+        "kind": "initial_capture",
+        "sample_id": "S1",
+        "candidate_id": None,
+        "physical_peak_key": "obs-1",
+        "trace_coordinate": {"mz": 500.0, "rt_min": 1.0, "rt_max": 2.0, "ppm_tol": 7.0},
+        "curves": {
+            "rt": [1.0, 1.5, 2.0],
+            "raw": [0.0, 9.0, 0.0],
+            "baseline": None,
+            "smoothed": None,
+            "positive": None,
+        },
+        "integration": None,
+        "provenance": curve_provenance(),
+    }
 
+
+def test_related_set_links_preserve_union_of_repeated_records(tmp_path):
     report = tmp_path / "normalized.sqlite"
     with ExplanationReportWriter(report) as writer:
+        writer.declare_samples([{"sample_key": "S1", "sample_stem": "S1"}])
         for candidate_id in ("C1", "C2", "C3"):
-            writer.add_candidate(
-                candidate_id,
-                "S1",
-                {"candidate_id": candidate_id, "sample_id": "S1"},
-            )
-        writer.add_record(
-            "facts",
-            "one",
-            {"value": 1},
-            (("C1", "S1"), ("C2", "S1")),
-        )
+            writer.add_candidate(candidate_id, "S1", precursor_mz=500.0)
+        binding = dict(sample_id="S1", kind="initial_capture", record_id="obs-1")
         # Same record, reordered members and an overlapping extension must
-        # produce one exact logical union after view expansion.
-        writer.add_record(
-            "facts",
-            "one",
-            {"value": 1},
+        # produce one exact logical union.
+        for related in (
+            (("C1", "S1"), ("C2", "S1")),
             (("C2", "S1"), ("C1", "S1")),
-        )
-        writer.add_record(
-            "facts",
-            "one",
-            {"value": 1},
             (("C2", "S1"), ("C3", "S1")),
-        )
-        writer.finalize(
-            explanation_summary(
-                {"samples": [{"sample_key": "S1"}]}, review_only=writer.review_only
+        ):
+            writer.add_curve_payload(
+                **binding, payload=_curve_payload(), candidates=related
             )
-        )
+        writer.finalize(explanation_summary({}))
 
     expected = {
-        (candidate_id, "S1", "facts", "one") for candidate_id in ("C1", "C2", "C3")
+        (candidate_id, "S1", "capture_evidence", "1")
+        for candidate_id in ("C1", "C2", "C3")
     }
     assert set(read_explanation_metadata(report).links) == expected
-    for candidate_id in ("C1", "C2", "C3"):
-        detail = read_alignment_explanation(report, candidate_id=candidate_id)
-        assert detail["records"] == {"facts": [{"value": 1}]}
-
-    with sqlite3.connect(report) as connection:
-        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
-        assert connection.execute("SELECT COUNT(*) FROM records").fetchone()[0] == 1
-        assert connection.execute(
-            "SELECT DISTINCT typeof(record_rowid) FROM record_links"
-        ).fetchall() == [("integer",)]
-        connection.execute("PRAGMA foreign_keys=ON")
-        with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
-            connection.execute("DELETE FROM records")
+    details = [
+        read_alignment_explanation(report, candidate_id=candidate_id)["records"]
+        for candidate_id in ("C1", "C2", "C3")
+    ]
+    assert len(details[0]["capture_evidence"]) == 1
+    assert details == [details[0]] * 3
 
 
 def test_report_rejects_candidate_links_without_a_candidate(tmp_path):
-    from xic_extractor.alignment_explanation.writer import (
-        ExplanationReportWriter,
-    )
-
     report = tmp_path / "missing-candidate.sqlite"
     with pytest.raises(KeyError, match="missing"):
         with ExplanationReportWriter(report) as writer:
-            writer.add_record("facts", "one", {"value": 1}, (("missing", "S1"),))
+            writer.add_final_group(
+                "G1",
+                feature_id=None,
+                disposition="completed",
+                members=(),
+                candidates=(("missing", "S1"),),
+            )
             writer.finalize(explanation_summary({}))
     assert not report.exists()
     assert not report.with_name(report.name + ".tmp").exists()
 
 
-def test_report_consumes_candidate_payloads_without_retaining_rows(tmp_path):
-    import weakref
-
-    class Payload(dict):
-        pass
-
-    previous = None
-
-    def rows():
-        nonlocal previous
-        for index in range(200):
-            if previous is not None:
-                assert previous() is None, "writer retained a consumed producer row"
-            payload = Payload(candidate_id=str(index))
-            previous = weakref.ref(payload)
-            yield str(index), "s", payload
-            del payload
-
-    class Records(dict):
-        def items(self):
-            nonlocal previous
-            previous = None
-            for index in range(200):
-                if previous is not None:
-                    assert previous() is None, "writer retained a consumed record"
-                payload = Payload(value=index)
-                previous = weakref.ref(payload)
-                yield ("facts", str(index)), payload
-                del payload
-
-    report = write_explanation_report(
-        tmp_path / "bounded.sqlite",
-        summary=explanation_summary({"samples": [{"sample_key": "s"}]}),
-        candidates=rows(),
-        records=Records(),
-        links=(("199", "s", "facts", "199"),),
-    )
-    candidate = read_alignment_explanation(report, candidate_id="199")["candidates"][0]
-    assert (candidate["candidate_id"], candidate["sample_key"]) == ("199", "s")
-    assert read_alignment_explanation(report, candidate_id="199")["records"] == {
-        "facts": [{"value": 199}]
-    }
-
-
 def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_path):
-    report = write_explanation_report(
-        tmp_path / "indexed.sqlite",
-        summary=explanation_summary(
-            {"candidate_count": 2, "samples": [{"sample_key": s} for s in ("s1", "s2")]}
-        ),
-        candidates=(
-            ("a", "s1", {"candidate_id": "a"}),
-            ("b", "s2", {"candidate_id": "b"}),
-        ),
-        records={
-            ("initial_groups", "shared"): {"feature_id": "shared"},
-            ("initial_groups", "second"): {"feature_id": "second"},
-            ("final_groups", "shared"): {"feature_id": "shared"},
-            ("exclusions", "unrelated"): {"reason_code": "unrelated"},
-        },
-        links=(
-            ("a", "s1", "initial_groups", "shared"),
-            ("a", "s1", "initial_groups", "second"),
-            ("a", "s1", "final_groups", "shared"),
-            ("b", "s2", "initial_groups", "shared"),
-            ("b", "s2", "exclusions", "unrelated"),
-        ),
-    )
-    with sqlite3.connect(report) as connection:
-        assert connection.execute("SELECT count(*) FROM records").fetchone()[0] == 4
-        connection.execute(
-            "UPDATE candidates SET payload='invalid' WHERE candidate_id='b'"
+    report = tmp_path / "indexed.sqlite"
+    with ExplanationReportWriter(report) as writer:
+        writer.declare_samples(
+            [{"sample_key": s, "sample_stem": s} for s in ("s1", "s2")]
         )
+        writer.add_candidate("a", "s1", precursor_mz=500.0)
+        writer.add_candidate("b", "s2", precursor_mz=500.0)
+        for name, related in (
+            ("shared", [("a", "s1"), ("b", "s2")]),
+            ("second", [("a", "s1")]),
+            ("unrelated", [("b", "s2")]),
+        ):
+            writer.add_initial_group(
+                disposition="completed",
+                members=(),
+                candidates=related,
+                inference_basis={"basis": name},
+                inference_decisions=[],
+            )
+        writer.add_final_group(
+            "shared",
+            feature_id=None,
+            disposition="completed",
+            members=(),
+            candidates=[("a", "s1")],
+        )
+        writer.finalize(explanation_summary({}))
+    with sqlite3.connect(report) as connection:
+        assert (
+            connection.execute("SELECT count(*) FROM initial_groups").fetchone()[0] == 3
+        )
+        # Only the group linked to b alone is unreadable.
         connection.execute(
-            "UPDATE records SET payload='invalid' WHERE kind='exclusions'"
+            "UPDATE initial_groups SET inference_basis=x'00' "
+            "WHERE candidates=(SELECT json_array(id) FROM candidates "
+            "WHERE candidate_id='b')"
         )
     assert read_alignment_explanation(report)["candidate_count"] == 2
     detail = read_alignment_explanation(report, candidate_id="a")
-    assert len(detail["records"]["initial_groups"]) == 2
+    assert sorted(
+        group["inference_basis"]["basis"]
+        for group in detail["records"]["initial_groups"]
+    ) == ["second", "shared"]
     assert len(detail["records"]["final_groups"]) == 1
     with pytest.raises(ExplanationError, match="malformed"):
         read_alignment_explanation(report, candidate_id="b")
@@ -651,21 +612,18 @@ def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader
     if corruption == "bytes":
         report.write_bytes(b"not sqlite")
     else:
-        write_explanation_report(
-            report, summary=explanation_summary({}), candidates=(), records={}, links=()
-        )
+        with ExplanationReportWriter(report) as writer:
+            writer.finalize(explanation_summary({}))
         with sqlite3.connect(report) as connection:
             if corruption == "schema_identity":
-                row = connection.execute("SELECT payload FROM metadata").fetchone()
+                row = connection.execute("SELECT payload FROM run").fetchone()
                 summary = json.loads(row[0])
                 summary["schema_version"] = "unsupported_explanation"
-                connection.execute(
-                    "UPDATE metadata SET payload=?", (json.dumps(summary),)
-                )
+                connection.execute("UPDATE run SET payload=?", (json.dumps(summary),))
             elif corruption == "schema":
-                connection.execute("DROP TABLE records")
+                connection.execute("DROP TABLE cells")
             else:
-                connection.execute("UPDATE metadata SET payload='null'")
+                connection.execute("UPDATE run SET payload='{'")
     message = (
         "重新執行 Alignment"
         if corruption == "schema_identity"

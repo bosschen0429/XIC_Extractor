@@ -21,6 +21,7 @@ from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
+    read_explanation_metadata,
 )
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
@@ -32,7 +33,7 @@ def test_curve_payload_write_and_read() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.sqlite"
         with ExplanationReportWriter(db_path) as writer:
-            writer.add_candidate("C1", "S1", {"candidate_id": "C1", "sample_key": "S1"})
+            writer.add_candidate("C1", "S1", precursor_mz=450.1234)
             curve_envelope = {
                 "schema_version": "curve_payload",
                 "kind": "initial_capture",
@@ -71,6 +72,7 @@ def test_curve_payload_write_and_read() -> None:
                 kind="initial_capture",
                 record_id="C1",
                 payload=curve_envelope,
+                candidates=[("C1", "S1")],
             )
             final_path = writer.finalize(
                 explanation_summary(
@@ -83,7 +85,7 @@ def test_curve_payload_write_and_read() -> None:
             )
 
         summary = read_alignment_explanation(final_path)
-        assert summary["schema_version"] == "alignment_explanation"
+        assert summary["schema_version"] == "alignment_evidence"
         assert summary["plot_evidence_capability"] == "retained_curves"
 
         curves = read_alignment_curves(final_path, record_ids=["C1"])
@@ -154,14 +156,13 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
         alignment_config=config,
     )
     completed.close()
-    with sqlite3.connect(report) as connection:
-        actual = {
-            (record["candidate_id"], record["sample_key"]): record["observations"]
-            for (raw,) in connection.execute(
-                "SELECT payload FROM records WHERE kind='terminal_subjects'"
-            )
-            if (record := json.loads(raw)).get("hypothesis_id")
-        }
+    actual = {
+        (record["candidate_id"], record["sample_key"]): record["observations"]
+        for record in read_explanation_metadata(report)
+        .records["terminal_subjects"]
+        .values()
+        if record.get("hypothesis_id")
+    }
     assert actual == expected
 
 
@@ -212,8 +213,7 @@ def test_curve_rowid_preserves_exact_payload_across_reopen(
     assert payload_id == expected_payload_id
     with sqlite3.connect(report) as connection:
         row = connection.execute(
-            "SELECT payload_id, sample_id, kind, record_id, codec, payload "
-            "FROM curve_payloads"
+            "SELECT payload_id, sample_id, kind, record_id, codec, payload FROM curves"
         ).fetchone()
     assert row[:5] == (
         expected_payload_id,
@@ -233,7 +233,6 @@ def test_shared_curve_is_reused_and_distinct_data_gets_its_own_row(tmp_path):
     with ExplanationReportWriter(tmp_path / "dedup.sqlite") as writer:
         binding = dict(sample_id="S1", kind="initial_capture", record_id="obs-1")
         writer.add_curve_payload(**binding, payload=payload)
-        writer._flush_curve_payloads()
         writer.add_curve_payload(**binding, payload=deepcopy(payload))
         changed = deepcopy(payload)
         changed["curves"]["raw"][1] = 8.0
@@ -243,9 +242,7 @@ def test_shared_curve_is_reused_and_distinct_data_gets_its_own_row(tmp_path):
             explanation_summary({"samples": []}, review_only=writer.review_only)
         )
     with sqlite3.connect(report) as connection:
-        assert (
-            connection.execute("SELECT count(*) FROM curve_payloads").fetchone()[0] == 2
-        )
+        assert connection.execute("SELECT count(*) FROM curves").fetchone()[0] == 2
     assert read_alignment_curves(report, record_ids=["obs-1"])[0] == {
         **payload,
         "payload_id": 1,
@@ -294,7 +291,7 @@ def test_selected_reader_rejects_corrupt_payload_binding_and_shape(
         payload["curves"]["raw"][1] = float("nan")
     with sqlite3.connect(report) as connection:
         connection.execute(
-            "UPDATE curve_payloads SET payload=?",
+            "UPDATE curves SET payload=?",
             (zlib.compress(json.dumps(payload).encode()),),
         )
     with pytest.raises(ExplanationError):
@@ -379,7 +376,7 @@ def test_curve_reader_requires_complete_nested_fields(tmp_path, section, change)
         nested["unexpected"] = None
     with sqlite3.connect(report) as connection:
         connection.execute(
-            "UPDATE curve_payloads SET payload=?",
+            "UPDATE curves SET payload=?",
             (zlib.compress(json.dumps(payload).encode()),),
         )
     with pytest.raises(ExplanationError, match="rerun"):

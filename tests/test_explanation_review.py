@@ -43,7 +43,9 @@ from xic_workbench.acquisition import (
 )
 
 
-def test_old_query_index_is_rejected_without_conversion(tmp_path, monkeypatch):
+def test_summary_from_an_older_format_is_rejected_without_conversion(
+    tmp_path, monkeypatch
+):
     completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
@@ -56,13 +58,9 @@ def test_old_query_index_is_rejected_without_conversion(tmp_path, monkeypatch):
         alignment_config=config,
     )
     with sqlite3.connect(source) as db:
-        summary = json.loads(
-            db.execute("SELECT payload FROM metadata WHERE key='summary'").fetchone()[0]
-        )
+        summary = json.loads(db.execute("SELECT payload FROM run").fetchone()[0])
         summary["query_index_version"] = 2
-        db.execute(
-            "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
-        )
+        db.execute("UPDATE run SET payload=?", (json.dumps(summary),))
     before = source.read_bytes()
     with pytest.raises(ExplanationError, match="rerun"):
         read_explanation_metadata(source)
@@ -74,12 +72,9 @@ def test_old_query_index_is_rejected_without_conversion(tmp_path, monkeypatch):
     [
         # A support origin current Alignment no longer writes.
         "UPDATE cells SET support_origin='reacquired_support' "
-        "WHERE row_record_id=(SELECT MIN(row_record_id) FROM cells)",
-        # Selection facts packed with one more per-sample mask than current flags.
-        "UPDATE query_items SET sample_facts=sample_facts || zeroblob(1) "
-        "WHERE id=(SELECT MIN(id) FROM query_items)",
+        "WHERE group_id=(SELECT MIN(group_id) FROM cells)",
     ],
-    ids=["retired-support-origin", "stale-selection-facts"],
+    ids=["retired-support-origin"],
 )
 def test_explanation_from_an_older_alignment_is_rejected_on_open(
     tmp_path, monkeypatch, stale_content
@@ -113,7 +108,7 @@ def test_explanation_from_an_older_alignment_is_rejected_on_open(
         ({"sample_ids": ("S1",), "mz_min": 500, "mz_max": 500}, (5, 3, 3, 0)),
         ({"sample_ids": ("absent",), "mz_min": 500}, (5, 0, 0, 0)),
         ({"candidate_ids": ("C1",)}, (5, 5, 1, 0)),
-        ({"group_ids": ("G1",), "sample_ids": ("S2",)}, (5, 3, 1, 0)),
+        ({"group_ids": ("row-α",), "sample_ids": ("S2",)}, (5, 3, 1, 0)),
         ({"mz_min": 500, "offset": 1, "limit": 2}, (5, 5, 4, 0)),
         ({"rt_min": 99}, (5, 5, 0, 1)),
         ({"strategy": "sample", "seed": 0, "limit": 2}, (5, 5, 5, 0)),
@@ -135,6 +130,9 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
     matrix.write_text("matrix fixture", encoding="utf-8")
     report = tmp_path / "review.sqlite"
     with ExplanationReportWriter(report, review_only=True) as writer:
+        writer.declare_samples(
+            [{"sample_key": s, "sample_stem": s} for s in ("S1", "S2")]
+        )
         for cid, sid, mz, rt in (
             ("C1", "S1", 500, 1),
             ("C2", "S2", 600, 2),
@@ -142,23 +140,13 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
             ("C4", "S2", 500, 3),
             ("C5", "S1", 500, 4),
         ):
-            writer.add_candidate(
-                cid,
-                sid,
-                {
-                    "candidate_id": cid,
-                    "precursor_mz": mz,
-                    "sample_key": sid,
-                    "rt_apex_min": rt,
-                },
-            )
-            observations = [{"physical_peak_key": cid + "-obs", "rt_apex_min": rt}]
-            if cid == "C5":
-                observations.append(
-                    {"physical_peak_key": "unrelated", "rt_apex_min": 99}
-                )
-            writer.add_record(
-                "terminal_subjects", cid, {"observations": observations}, [(cid, sid)]
+            writer.add_candidate(cid, sid, precursor_mz=mz, rt_apex_min=rt)
+            # C5's terminal observation lies outside its group's members; the
+            # witness keeps the candidate's own apex instead.
+            peak, peak_rt = ("unrelated", 99) if cid == "C5" else (cid + "-obs", rt)
+            writer.add_peak(sid, peak, (None, peak_rt, None))
+            writer.add_terminal(
+                cid, sid, variant="observed", hypothesis_id=cid, physical_peak_key=peak
             )
         for gid, rid, keys in (
             ("G1", "row-α", [("C1", "S1"), ("C2", "S2")]),
@@ -166,33 +154,39 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
             ("G3", 'row-"z', [("C5", "S1")]),
             ("G4", "empty", []),
         ):
-            group = {"feature_id": gid}
-            if gid == "G3":
-                group["member_subjects"] = [
+            writer.add_final_group(
+                gid,
+                feature_id=rid,
+                disposition="completed",
+                members=[
                     {
                         "sample_key": "S1",
+                        "subject_id": "C5",
                         "physical_peak_keys": ["C5-obs"],
                     }
                 ]
-            writer.add_record("final_groups", gid, group, keys)
+                if gid == "G3"
+                else [],
+                candidates=keys,
+            )
             if rid is not None:
-                writer.add_record("rows", rid, {"feature_id": gid}, keys)
-                writer.add_row_cells(
-                    rid,
+                writer.add_cells(
+                    gid,
                     [
                         {
                             "sample_key": sid,
                             "variant": "unresolved",
                             "value": None,
                         }
-                        for sid in ({s for _, s in keys} or {"S2"})
+                        for sid in sorted({s for _, s in keys} or {"S2"})
                     ],
-                    {"S1": 0, "S2": 1},
                 )
-        writer.add_record(
-            "initial_edges",
-            "edge-1",
-            {"initial_evidence": {"decision": "blocked_edge"}},
+        writer.add_initial_edge(
+            {
+                "left_subject_id": "C1",
+                "right_subject_id": "C4",
+                "initial_evidence": {"decision": "blocked_edge"},
+            },
             [("C1", "S1"), ("C4", "S2")],
         )
         writer.finalize(
@@ -200,7 +194,6 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
                 {
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                    "samples": [{"sample_key": sid} for sid in ("S1", "S2")],
                     "selection_evidence_capability": "recorded_decisions",
                 },
                 review_only=writer.review_only,
@@ -278,14 +271,13 @@ def test_default_review_keeps_values_and_query_without_curves(
     )
     assert actual == expected
     assert read_alignment_curves(report) == []
-    with sqlite3.connect(report) as db:
-        assert (
-            db.execute(
-                "SELECT COUNT(*) FROM records "
-                "WHERE kind IN ('cell_observations', 'cell_decisions')"
-            ).fetchone()[0]
-            == 0
-        )
+    # Review retention keeps no full-audit cell observation payload.
+    assert all(
+        "observation" not in row
+        for row in read_explanation_metadata(report)
+        .records.get("cell_decisions", {})
+        .values()
+    )
     result = generate_report(
         report,
         selection=SelectionRequest(strategy="query", candidate_ids=(candidate_id,)),
@@ -317,7 +309,7 @@ def test_default_review_keeps_values_and_query_without_curves(
     with monkeypatch.context() as query_patch:
         query_patch.setattr(CidNlSource, "_presentation_item", forbidden)
         query_patch.setattr(
-            "xic_extractor.alignment_explanation.reader.decode_row_evidence", forbidden
+            "xic_extractor.alignment_explanation.reader.validate_details", forbidden
         )
         query_source = CidNlSource(report, query_only=True)
         query_items = query_source.load_items(scope)
@@ -1041,12 +1033,14 @@ def test_persisted_membership_fields_reject_wrong_types(tmp_path, field, value):
 
     report, _ = _competition_review_report(tmp_path)
     with sqlite3.connect(report) as db:
-        payload = db.execute("SELECT payload FROM row_evidence").fetchone()[0]
-        cells = json.loads(zlib.decompress(payload))
-        cells[1]["membership_risks"][0][field] = value
+        payload = db.execute(
+            "SELECT risks FROM cells WHERE risks IS NOT NULL"
+        ).fetchone()[0]
+        risks = json.loads(zlib.decompress(payload))
+        risks[0][field] = value
         db.execute(
-            "UPDATE row_evidence SET payload=?",
-            (zlib.compress(json.dumps(cells).encode()),),
+            "UPDATE cells SET risks=? WHERE risks IS NOT NULL",
+            (zlib.compress(json.dumps(risks).encode()),),
         )
     with pytest.raises((ExplanationError, ValueError), match="membership risk"):
         read_explanation_metadata(report)
@@ -1112,14 +1106,18 @@ def test_named_cells_preserve_values_and_details_across_input_order(
     for index, ordered in enumerate((cells, cells[::-1])):
         path = tmp_path / f"order-{index}.sqlite"
         with ExplanationReportWriter(path, review_only=review_only) as writer:
-            writer.add_record("rows", "F1", {"feature_id": "F1"}, ())
-            writer.add_row_cells("F1", ordered, {"S1": 0, "S2": 1})
-            writer.finalize(
-                explanation_summary(
-                    {"samples": [{"sample_key": "S1"}, {"sample_key": "S2"}]},
-                    review_only=review_only,
-                )
+            writer.declare_samples(
+                [{"sample_key": s, "sample_stem": s} for s in ("S1", "S2")]
             )
+            writer.add_final_group(
+                "F1",
+                feature_id="F1",
+                disposition="completed",
+                members=(),
+                candidates=(),
+            )
+            writer.add_cells("F1", ordered)
+            writer.finalize(explanation_summary({}, review_only=review_only))
         outputs.append(read_explanation_metadata(path).records["cell_decisions"])
         with sqlite3.connect(path) as db:
             assert db.execute(
@@ -1134,15 +1132,21 @@ def test_named_cells_preserve_values_and_details_across_input_order(
 
 def test_named_cells_reject_duplicate_group_sample(tmp_path):
     path = tmp_path / "duplicate.sqlite"
-    with pytest.raises(sqlite3.IntegrityError, match="UNIQUE"):
+    with pytest.raises(ValueError, match="duplicate review cell"):
         with ExplanationReportWriter(path, review_only=True) as writer:
-            writer.add_record("rows", "F1", {"feature_id": "F1"}, ())
-            writer.add_row_cells(
+            writer.declare_samples([{"sample_key": "S1", "sample_stem": "S1"}])
+            writer.add_final_group(
+                "F1",
+                feature_id="F1",
+                disposition="completed",
+                members=(),
+                candidates=(),
+            )
+            writer.add_cells(
                 "F1",
                 [
                     {"sample_key": "S1", "variant": "numeric", "value": 11.0},
                     {"sample_key": "S1", "variant": "numeric", "value": 22.0},
                 ],
-                {"S1": 0},
             )
     assert not path.exists()
