@@ -511,15 +511,15 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
 
     def rows(path):
         with sqlite3.connect(path) as connection:
+            tables = [
+                name
+                for (name,) in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            ]
             return {
                 table: sorted(connection.execute(f"SELECT * FROM {table}").fetchall())
-                for table in (
-                    "metadata",
-                    "candidates",
-                    "records",
-                    "links",
-                    "curve_payloads",
-                )
+                for table in tables
             }
 
     if failure is None:

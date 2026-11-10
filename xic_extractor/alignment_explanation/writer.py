@@ -202,6 +202,8 @@ class ExplanationReportWriter:
         key = candidate_id, sample_key
         if key in self._candidates:
             raise ValueError("duplicate diagnostic candidate/sample")
+        # Register the subject now; finalize writes subjects before candidates.
+        self._subject_id(method_subject_id)
         self._candidates[key] = {
             "id": len(self._candidates) + 1,
             "precursor_mz": precursor_mz,

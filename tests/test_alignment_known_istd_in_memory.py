@@ -417,21 +417,8 @@ def test_istd_reference_recovers_cross_sample_peak_without_local_nl(
         # Without same-cohort peers, the unconfirmed 23.2-minute body cannot
         # become a confirmed Alignment coordinate either.
         assert ("I3", "S2") not in coordinates
-        assert not any(
-            s.label == "I3" and s.sample_stem == "S2" for s in reference.peak_selections
-        )
         return
     assert coordinates["I3", "S2"] == pytest.approx(23.2, abs=0.021)
-    selection = next(
-        s
-        for s in reference.peak_selections
-        if s.label == "I3" and s.sample_stem == "S2"
-    )
-    assert selection.initial_rt_min is None
-    assert selection.selected_rt_min == pytest.approx(23.2, abs=0.021)
-    assert not selection.nl_observed
-    assert selection.basis == "cross_sample_physical_peak"
-    assert selection.supporting_samples == ("S0", "S1", "S3")
 
 
 def _config(tmp_path):

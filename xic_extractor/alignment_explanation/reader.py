@@ -859,7 +859,7 @@ def read_alignment_curves(
             params.extend(record_ids)
         results: list[dict[str, Any]] = []
         for payload_id, sample_id, kind, record_id, codec, blob in connection.execute(
-            query + " ORDER BY payload_id", params
+            query + " ORDER BY sample_id, record_id, payload_id", params
         ):
             if codec != "zlib-json-utf8":
                 raise ExplanationError(f"unsupported curve payload codec: {codec}")

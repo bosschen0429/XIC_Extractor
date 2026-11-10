@@ -389,7 +389,7 @@ def _derived_counts(connection: sqlite3.Connection, tables: set[str]) -> dict[st
     return {
         "candidate_count": count("SELECT COUNT(*) FROM candidates"),
         "reason_counts": dict(sorted(reasons.items())),
-        "record_counts": {key: value for key, value in counts.items() if value},
+        "record_counts": {key: counts[key] for key in sorted(counts) if counts[key]},
     }
 
 

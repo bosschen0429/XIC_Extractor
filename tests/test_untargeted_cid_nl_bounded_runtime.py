@@ -912,9 +912,9 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         assert connection.execute("SELECT COUNT(*) FROM candidates").fetchone()[
             0
         ] == len(candidate_by_id)
-        assert connection.execute(
-            "SELECT COUNT(*) FROM records WHERE kind = 'method_assessments'"
-        ).fetchone()[0] == len(result.method_assessments)
+        assert connection.execute("SELECT COUNT(*) FROM method_assessments").fetchone()[
+            0
+        ] == len(result.method_assessments)
 
 
 @pytest.mark.parametrize("subjects_per_partition", [1, 2])

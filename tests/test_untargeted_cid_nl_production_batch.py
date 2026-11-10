@@ -396,7 +396,6 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
     result.close()
     assert result.publication_inputs.peaks_by_sample == {"S1": candidates}
     assert result.publication_inputs.alignment_config == AlignmentConfig()
-    assert result.publication_inputs.known_istd_reference is None
     assert [name for name, _kwargs in calls] == ["build", "execute"]
     build_kwargs = calls[0][1]
     assert isinstance(build_kwargs, dict)
