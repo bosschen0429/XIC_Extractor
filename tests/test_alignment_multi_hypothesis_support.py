@@ -30,7 +30,7 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
-    mint_cid_nl_method_assessment_ref,
+    mint_cid_nl_method_assessment,
 )
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 
@@ -81,7 +81,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         evidence=right_evidence,
         candidate_peaks=peaks,
     )
-    assessment = mint_cid_nl_method_assessment_ref(
+    assessment = mint_cid_nl_method_assessment(
         sample=sample,
         acquisition_source=fixture.source(sample),
         target=fixture.target,
@@ -106,11 +106,11 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
 
     assert len(hypotheses) == 2
     assert {
-        hypothesis.peak_observation_refs[0].content.physical_peak_key
+        hypothesis.peak_observation_refs[0].physical_peak_key
         for hypothesis in hypotheses
     } == {
-        left.content.physical_peak_key,
-        right.content.physical_peak_key,
+        left.physical_peak_key,
+        right.physical_peak_key,
     }
     for hypothesis in hypotheses:
         owner = owner_from_cid_nl_assessment_support(
@@ -120,7 +120,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         )
         assert owner.owner_id == hypothesis.hypothesis_id
         assert owner.peak_shape is not None
-        observation = hypothesis.peak_observation_refs[0].content
+        observation = hypothesis.peak_observation_refs[0]
         assert owner.peak_shape.source_point_count == sum(
             abs(rt - observation.integration.rt_apex_min) <= 0.35
             for rt in observation.rt
@@ -225,7 +225,7 @@ def _assessment_with_observation_only_peak(
         evidence=evidence,
         candidate_peaks=peaks,
     )
-    return mint_cid_nl_method_assessment_ref(
+    return mint_cid_nl_method_assessment(
         sample=sample,
         acquisition_source=fixture.source(sample),
         target=fixture.target,
@@ -314,7 +314,7 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
             cid_nl_unique_support(fixture, stem, peak=peak, evidence=evidence)
             for evidence in supported
         )
-        assessment = mint_cid_nl_method_assessment_ref(
+        assessment = mint_cid_nl_method_assessment(
             sample=sample,
             acquisition_source=fixture.source(sample),
             target=fixture.target,
@@ -343,7 +343,7 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
         assert owner.sample_stem == stem
         assert owner.owner_id == hypothesis.hypothesis_id
         assert owner.precursor_mz == physical_mz
-        assert owner.selected_integration == peak.content.integration
+        assert owner.selected_integration == peak.integration
         assert owner.owner_apex_rt == 8.0
         assert owner.owner_area == height * 6.6
     mixed = projected["mixed"].primary_identity_event

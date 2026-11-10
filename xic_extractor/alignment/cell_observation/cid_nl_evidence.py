@@ -9,50 +9,49 @@ from xic_extractor.alignment.cell_observation.method_evidence import (
     FinalCellEvidenceState,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
     is_ms1_only_cid_nl_backfill_assessment,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
-    PeakObservationContent,
-    PeakObservationRef,
+    PeakObservation,
 )
 
 
 def resolve_cid_nl_recovered_evidence(
-    assessment: CidNlMethodAssessmentRef,
+    assessment: CidNlMethodAssessment,
     hypothesis: PeakHypothesis | None,
 ) -> FinalCellEvidenceState:
     """A group-admitted revisit retains its own completed assessment meaning."""
     if hypothesis is not None:
         return "direct_observation"
-    if assessment.content.method_result == "HOLD":
+    if assessment.method_result == "HOLD":
         return "unresolved" if assessment.candidate_peaks else "searched_no_observation"
-    if assessment.content.method_result == "REJECT":
+    if assessment.method_result == "REJECT":
         return "rejected_observation"
     return "unavailable"
 
 
 def cid_nl_supported_peaks(
-    assessment: CidNlMethodAssessmentRef,
-) -> frozenset[PeakObservationContent]:
+    assessment: CidNlMethodAssessment,
+) -> frozenset[PeakObservation]:
     """The exact SUPPORT subset, never the whole candidate universe."""
-    if assessment.content.method_result != "SUPPORT":
+    if assessment.method_result != "SUPPORT":
         raise CellObservationContractError("direct member assessment must be SUPPORT")
     return frozenset(
-        relation.content.peak_observation.physical_identity
+        relation.peak_observation.physical_identity
         for relation in assessment.individual_support_refs
     )
 
 
 def resolve_cid_nl_cell_evidence(
-    assessment: CidNlMethodAssessmentRef,
-    observation: PeakObservationRef | None,
+    assessment: CidNlMethodAssessment,
+    observation: PeakObservation | None,
     hypothesis: PeakHypothesis | None,
 ) -> FinalCellEvidenceState:
     """Resolve method meaning; callers still close exact group/sample lineage."""
-    technical_state = assessment.content.technical_state
-    method_result = assessment.content.method_result
+    technical_state = assessment.technical_state
+    method_result = assessment.method_result
     if technical_state in {"unsupported", "failed"}:
         if observation is not None or hypothesis is not None:
             raise CellObservationContractError(

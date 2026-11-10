@@ -132,9 +132,9 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
             if hypothesis is not None:
                 expected[(terminal.candidate_id, terminal.sample_key)] = [
                     {
-                        "physical_peak_key": (ref.content.physical_peak_key),
-                        "rt_apex_min": ref.content.integration.rt_apex_min,
-                        "mz": ref.content.mz,
+                        "physical_peak_key": (ref.physical_peak_key),
+                        "rt_apex_min": ref.integration.rt_apex_min,
+                        "mz": ref.mz,
                         "ppm": ref.generation_provenance.query_ppm_tol,
                     }
                     for ref in hypothesis.peak_observation_refs

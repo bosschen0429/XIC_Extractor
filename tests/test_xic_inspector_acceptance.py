@@ -52,7 +52,7 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
         alignment_config=config,
     )
     expected_observations = {
-        ref.content.physical_peak_key: asdict(ref.content.integration)
+        ref.physical_peak_key: asdict(ref.integration)
         for child in completed.application_result.children
         for terminal in child.scientific_core.terminal_subjects
         if getattr(terminal, "hypothesis", None) is not None

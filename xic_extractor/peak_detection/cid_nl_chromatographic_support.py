@@ -10,9 +10,8 @@ from __future__ import annotations
 
 from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
     RELATIONSHIP,
-    CidNlChromatographicSupportContent,
+    CidNlChromatographicSupport,
     CidNlChromatographicSupportContractError,
-    CidNlChromatographicSupportRef,
     DdaCidNlScanSupportMember,
     _member_sort_key,
 )
@@ -21,17 +20,17 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
-    DdaCidNlPeakSupportRef,
+    DdaCidNlPeakSupport,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 
 
-def compose_cid_nl_chromatographic_support_ref(
+def compose_cid_nl_chromatographic_support(
     *,
     sample: SampleMetadata,
-    scan_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
+    scan_support_refs: tuple[DdaCidNlPeakSupport, ...],
     evidence_refs: tuple[CidNlEvidenceObservation, ...] = (),
-) -> CidNlChromatographicSupportRef:
+) -> CidNlChromatographicSupport:
     """Compose repeated strict scan support into one physical-peak event."""
 
     supports = _validated_scan_supports(
@@ -39,27 +38,26 @@ def compose_cid_nl_chromatographic_support_ref(
         sample=sample,
         evidence_refs=evidence_refs,
     )
-    content = _content_from_supports(
+    return _support_from_scans(
         sample=sample, supports=supports, evidence_refs=evidence_refs
     )
-    return CidNlChromatographicSupportRef(content=content, evidence_refs=evidence_refs)
 
 
-def _content_from_supports(
+def _support_from_scans(
     *,
     sample: SampleMetadata,
-    supports: tuple[DdaCidNlPeakSupportRef, ...],
+    supports: tuple[DdaCidNlPeakSupport, ...],
     evidence_refs: tuple[CidNlEvidenceObservation, ...] = (),
-) -> CidNlChromatographicSupportContent:
-    first = supports[0].content
+) -> CidNlChromatographicSupport:
+    first = supports[0]
     loss_by_observation = {ref: ref.configured_neutral_loss_da for ref in evidence_refs}
     members = tuple(
         sorted(
             (
                 DdaCidNlScanSupportMember(
-                    support=support.content,
+                    support=support,
                     configured_neutral_loss_da=loss_by_observation.get(
-                        support.content.evidence
+                        support.evidence
                     ),
                 )
                 for support in supports
@@ -67,7 +65,7 @@ def _content_from_supports(
             key=_member_sort_key,
         )
     )
-    return CidNlChromatographicSupportContent(
+    return CidNlChromatographicSupport(
         sample_key=sample.sample_name,
         peak_observation=first.peak_observation,
         candidate_peaks=first.candidate_peaks,
@@ -87,13 +85,13 @@ def _validated_scan_supports(
     *,
     sample: SampleMetadata,
     evidence_refs: tuple[CidNlEvidenceObservation, ...] = (),
-) -> tuple[DdaCidNlPeakSupportRef, ...]:
+) -> tuple[DdaCidNlPeakSupport, ...]:
     if not isinstance(scan_support_refs, tuple) or not scan_support_refs:
         raise CidNlChromatographicSupportContractError(
             "missing strict DDA scan support"
         )
     if any(
-        not isinstance(reference, DdaCidNlPeakSupportRef)
+        not isinstance(reference, DdaCidNlPeakSupport)
         for reference in scan_support_refs
     ):
         raise CidNlChromatographicSupportContractError(
@@ -106,19 +104,19 @@ def _validated_scan_supports(
             loss_by_observation[evidence] = evidence.configured_neutral_loss_da
         if len(loss_by_observation) != len(evidence_refs) or set(
             loss_by_observation
-        ) != {support.content.evidence for support in supports}:
+        ) != {support.evidence for support in supports}:
             raise CidNlChromatographicSupportContractError(
                 "measured loss evidence must exactly close scan supports"
             )
     for support in supports:
-        if support.content.sample_key != sample.sample_name:
+        if support.sample_key != sample.sample_name:
             raise CidNlChromatographicSupportContractError(
                 "DDA scan support references a different sample"
             )
     scan_numbers = tuple(
         (
-            support.content.dda_scan_number,
-            loss_by_observation.get(support.content.evidence),
+            support.dda_scan_number,
+            loss_by_observation.get(support.evidence),
         )
         for support in supports
     )
@@ -127,26 +125,24 @@ def _validated_scan_supports(
             "duplicate DDA scan support cannot multiply one event"
         )
     if any(
-        support.content.peak_observation != supports[0].content.peak_observation
+        support.peak_observation != supports[0].peak_observation
         for support in supports[1:]
     ):
         raise CidNlChromatographicSupportContractError(
             "DDA scan support references more than one physical MS1 peak"
         )
     if any(
-        support.content.candidate_peaks != supports[0].content.candidate_peaks
+        support.candidate_peaks != supports[0].candidate_peaks
         for support in supports[1:]
     ):
         raise CidNlChromatographicSupportContractError(
             "DDA scan support references a different candidate universe"
         )
-    if len({support.content.policy for support in supports}) != 1:
+    if len({support.policy for support in supports}) != 1:
         raise CidNlChromatographicSupportContractError(
             "DDA scan support references a different support policy"
         )
-    if any(
-        support.content.acquisition_mode != ACQUISITION_MODE for support in supports
-    ):
+    if any(support.acquisition_mode != ACQUISITION_MODE for support in supports):
         raise CidNlChromatographicSupportContractError(
             f"DDA scan support acquisition mode must be {ACQUISITION_MODE!r}"
         )
@@ -154,18 +150,17 @@ def _validated_scan_supports(
         sorted(
             supports,
             key=lambda support: (
-                support.content.dda_scan_number,
-                loss_by_observation.get(support.content.evidence) or 0.0,
+                support.dda_scan_number,
+                loss_by_observation.get(support.evidence) or 0.0,
             ),
         )
     )
 
 
 __all__ = [
-    "CidNlChromatographicSupportContent",
+    "CidNlChromatographicSupport",
     "CidNlChromatographicSupportContractError",
-    "CidNlChromatographicSupportRef",
     "DdaCidNlScanSupportMember",
     "RELATIONSHIP",
-    "compose_cid_nl_chromatographic_support_ref",
+    "compose_cid_nl_chromatographic_support",
 ]

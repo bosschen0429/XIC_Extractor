@@ -44,7 +44,7 @@ from xic_extractor.output.alignment.output_rows import (
     format_value,
     safe_rate,
 )
-from xic_extractor.peak_detection.observations import PeakObservationContent
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.tabular_io import escape_excel_formula
 
 if TYPE_CHECKING:
@@ -165,7 +165,7 @@ def write_alignment_tsvs(
     }
     risks_by_owner = membership_risks_by_owner or {}
     source_candidate_owners: dict[str, str] = {}
-    seen_physical_peaks: set[PeakObservationContent] = set()
+    seen_physical_peaks: set[PeakObservation] = set()
     group_count = 0
     matrix_row_count = 0
     with ExitStack() as stack:
@@ -394,10 +394,10 @@ def _cells_in_sample_order(
 
 def _member_direct_peaks(
     observations: tuple[FinalGroupCellObservation, ...],
-) -> tuple[PeakObservationContent, ...]:
+) -> tuple[PeakObservation, ...]:
     """The group's member peaks read as direct observations, in measured order."""
 
-    peaks: set[PeakObservationContent] = set()
+    peaks: set[PeakObservation] = set()
     for observation in observations:
         member_peaks = {
             peak
@@ -406,7 +406,7 @@ def _member_direct_peaks(
             for peak in member.physical_peaks
         }
         for direct in observation.direct_observations:
-            peak = direct.content.physical_identity
+            peak = direct.physical_identity
             if peak not in member_peaks:
                 continue
             if peak in peaks:
@@ -419,7 +419,7 @@ def _member_direct_peaks(
     return tuple(sorted(peaks, key=lambda peak: peak.measured_order_key))
 
 
-def _member_mean_rt(peaks: tuple[PeakObservationContent, ...]) -> float:
+def _member_mean_rt(peaks: tuple[PeakObservation, ...]) -> float:
     """The written RT of a group: the mean apex of its member peaks."""
 
     for peak in peaks:
@@ -547,11 +547,11 @@ def backfill_query_bounds(
     evidence = cast(FinalGroupCellObservation, decision.evidence)
     bounds = {
         (
-            assessment.content.evaluation_receipt.query_rt_min,
-            assessment.content.evaluation_receipt.query_rt_max,
+            assessment.evaluation_receipt.query_rt_min,
+            assessment.evaluation_receipt.query_rt_max,
         )
         for assessment in evidence.method_assessments
-        if assessment.content.detector_invocation_id == "untargeted-cid-nl-backfill"
+        if assessment.detector_invocation_id == "untargeted-cid-nl-backfill"
     }
     return bounds.pop() if len(bounds) == 1 else (None, None)
 

@@ -25,7 +25,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 
 if TYPE_CHECKING:
-    from xic_extractor.peak_detection.observations import PeakObservationRef
+    from xic_extractor.peak_detection.observations import PeakObservation
 
 
 _MAX_OFF_APEX_SIGNAL_DIFFERENCE = 0.05
@@ -47,16 +47,16 @@ class PhysicalPeakView:
     profile: SignalProcessingProfile | None = None
 
 
-def physical_peak_view_from_observation(peak: PeakObservationRef) -> PhysicalPeakView:
+def physical_peak_view_from_observation(peak: PeakObservation) -> PhysicalPeakView:
     """Project authoritative integration bounds and the original acquired trace."""
-    content, provenance = peak.content, peak.generation_provenance
-    integration = content.integration
+    provenance = peak.generation_provenance
+    integration = peak.integration
     return PhysicalPeakView(
         acquisition_source_id=provenance.acquisition_source_id,
         apex_rt_min=integration.rt_apex_min,
         left_rt_min=integration.rt_left_min,
         right_rt_min=integration.rt_right_min,
-        xic_mz=content.mz,
+        xic_mz=peak.mz,
         xic_ppm_tol=provenance.query_ppm_tol,
         rt=peak.source_trace.rt,
         raw=peak.source_trace.intensity,

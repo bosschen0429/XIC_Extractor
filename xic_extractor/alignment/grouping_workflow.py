@@ -51,15 +51,13 @@ from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentContent,
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
     is_ms1_only_cid_nl_backfill_assessment,
 )
 from xic_extractor.peak_detection.elution_context import SampleElutionContext
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
-    PeakObservationContent,
-    PeakObservationRef,
+    PeakObservation,
 )
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
@@ -80,7 +78,7 @@ def build_targeted_cross_sample_groups(
     *,
     samples: tuple[SampleMetadata, ...],
     captures: Sequence[SampleLocalCapture],
-    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...],
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...],
     alignment_config: AlignmentConfig,
     rt_frame: SampleRtFrame,
 ) -> CrossSampleGroupingResult:
@@ -97,7 +95,7 @@ def build_targeted_cross_sample_groups(
         if selected is None:
             continue
         observation = selected.peak_observation_refs[0]
-        sample_id = observation.content.sample_key
+        sample_id = observation.sample_key
         sample = sample_by_id.get(sample_id)
         if sample is None or sample_id in selected_by_id:
             raise CrossSampleGroupingContractError(
@@ -162,13 +160,13 @@ def build_initial_cid_nl_cross_sample_groups(
     *,
     samples: tuple[SampleMetadata, ...],
     captures: Sequence[SampleLocalCapture],
-    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...],
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...],
     alignment_config: AlignmentConfig,
     elution_contexts: Sequence[SampleElutionContext] = (),
     rt_frame: SampleRtFrame,
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     retained_hypotheses_by_assessment: Mapping[
-        CidNlMethodAssessmentContent, tuple[PeakHypothesis, ...]
+        CidNlMethodAssessment, tuple[PeakHypothesis, ...]
     ]
     | None = None,
 ) -> tuple[
@@ -270,36 +268,35 @@ def admit_cid_nl_group_backfills(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
     backfills: Mapping[
         tuple[str, str, str],
-        tuple[SampleMetadata, CidNlMethodAssessmentRef],
+        tuple[SampleMetadata, CidNlMethodAssessment],
     ],
     alignment_config: AlignmentConfig,
-    member_observations: Mapping[PeakObservationContent, PeakObservationRef],
-    physical_peak_views: Mapping[PeakObservationContent, PhysicalPeakView]
-    | None = None,
+    member_observations: Mapping[PeakObservation, PeakObservation],
+    physical_peak_views: Mapping[PeakObservation, PhysicalPeakView] | None = None,
     peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[
     CrossSampleGroupingResult,
     tuple[CrossSamplePeakGroupHypothesis, ...],
     dict[str, str],
-    dict[CidNlMethodAssessmentContent, tuple[PeakHypothesis, ...]],
+    dict[CidNlMethodAssessment, tuple[PeakHypothesis, ...]],
     frozenset[tuple[str, str]],
 ]:
     """Choose bounded acquired candidates while preserving all original owners."""
     by_id = {group.group_hypothesis_id: group for group in groups}
     proposals = []
-    retained: dict[CidNlMethodAssessmentContent, tuple[PeakHypothesis, ...]] = {}
+    retained: dict[CidNlMethodAssessment, tuple[PeakHypothesis, ...]] = {}
     for key, (sample, assessment) in sorted(backfills.items()):
         group_id, sample_id, subject_id = key
         group = by_id[group_id]
         if (
             sample_id != sample.sample_name
-            or subject_id != assessment.content.method_subject.method_subject_id
+            or subject_id != assessment.method_subject.method_subject_id
         ):
             raise CrossSampleGroupingContractError(
                 "backfill crossed its sample or subject"
             )
         if (
-            assessment.content.method_result != "SUPPORT"
+            assessment.method_result != "SUPPORT"
             and not is_ms1_only_cid_nl_backfill_assessment(assessment)
         ):
             continue
@@ -316,7 +313,7 @@ def admit_cid_nl_group_backfills(
                 assessment=assessment,
                 hypothesis=hypothesis,
             )
-            if assessment.content.method_result == "SUPPORT"
+            if assessment.method_result == "SUPPORT"
             else owner_from_cid_nl_assessment_observation(
                 sample=sample,
                 assessment=assessment,
@@ -325,7 +322,7 @@ def admit_cid_nl_group_backfills(
         )
         physical_key = (
             sample_id,
-            hypothesis.peak_observation_refs[0].content.physical_identity,
+            hypothesis.peak_observation_refs[0].physical_identity,
         )
         if any(member.sample_key == sample_id for member in group.member_subjects):
             continue
@@ -341,7 +338,7 @@ def admit_cid_nl_group_backfills(
     comparison_views = dict(physical_peak_views or {})
     for _, _, _, hypothesis, _ in proposals:
         observation = hypothesis.peak_observation_refs[0]
-        observation_id = observation.content.physical_identity
+        observation_id = observation.physical_identity
         if observation_id not in comparison_views:
             comparison_views[observation_id] = physical_peak_view_from_observation(
                 observation
@@ -388,8 +385,8 @@ def admit_cid_nl_group_backfills(
             frozenset(
                 owner.owner_id
                 for _, _, owner, _, assessment in eligible
-                if assessment.content.method_result != "SUPPORT"
-                and assessment.content.method_subject.composition is not None
+                if assessment.method_result != "SUPPORT"
+                and assessment.method_subject.composition is not None
             )
         ),
         config=alignment_config,
@@ -430,10 +427,10 @@ def admit_cid_nl_group_backfills(
     additions: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
     for index in sorted(selected):
         group_id, physical_key, owner, hypothesis, assessment = eligible[index]
-        if assessment.content.method_result != "SUPPORT":
+        if assessment.method_result != "SUPPORT":
             continue
         additions[group_id].append(owner)
-        retained[assessment.content] = (hypothesis,)
+        retained[assessment] = (hypothesis,)
     completed = []
     successor_ids = {}
     admitted: list[CrossSampleGroupMemberSubject] = []
@@ -569,13 +566,12 @@ def contested_backfill_peaks(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
     backfills: Mapping[
         tuple[str, str, str],
-        tuple[SampleMetadata, CidNlMethodAssessmentRef],
+        tuple[SampleMetadata, CidNlMethodAssessment],
     ],
-    member_observations: Mapping[PeakObservationContent, PeakObservationRef],
-    physical_peak_views: Mapping[PeakObservationContent, PhysicalPeakView]
-    | None = None,
+    member_observations: Mapping[PeakObservation, PeakObservation],
+    physical_peak_views: Mapping[PeakObservation, PhysicalPeakView] | None = None,
     direct_only: bool = False,
-) -> frozenset[tuple[str, PeakObservationContent]]:
+) -> frozenset[tuple[str, PeakObservation]]:
     """Resolve physical claims once, before SUPPORT admission or cell creation.
 
     Direct members of Matrix rows retain occupancy. ``direct_only`` excludes
@@ -585,16 +581,16 @@ def contested_backfill_peaks(
     not reconstructed peak-shape summaries or rounded coordinates.
     """
 
-    def view_for(peak: PeakObservationRef) -> PhysicalPeakView:
+    def view_for(peak: PeakObservation) -> PhysicalPeakView:
         if physical_peak_views is not None:
-            view = physical_peak_views.get(peak.content.physical_identity)
+            view = physical_peak_views.get(peak.physical_identity)
             if view is not None:
                 return view
         return physical_peak_view_from_observation(peak)
 
-    members_by_sample: dict[
-        str, list[tuple[PeakObservationContent, PhysicalPeakView]]
-    ] = defaultdict(list)
+    members_by_sample: dict[str, list[tuple[PeakObservation, PhysicalPeakView]]] = (
+        defaultdict(list)
+    )
     occupied = set()
     for group in groups:
         if group.destination != "matrix":
@@ -608,14 +604,14 @@ def contested_backfill_peaks(
                     (observation_id, view_for(observation))
                 )
     backfills_by_sample: dict[
-        str, list[tuple[str, PeakObservationContent, PhysicalPeakView]]
+        str, list[tuple[str, PeakObservation, PhysicalPeakView]]
     ] = defaultdict(list)
     for (group_id, sample_id, _), (_, assessment) in backfills.items():
         for peak in assessment.candidate_peaks:
             backfills_by_sample[sample_id].append(
                 (
                     group_id,
-                    peak.content.physical_identity,
+                    peak.physical_identity,
                     view_for(peak),
                 )
             )

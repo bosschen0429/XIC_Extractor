@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.ms1_shape_identity import LocalPeakShape
@@ -49,7 +49,7 @@ class SampleLocalMS1Owner:
     quantification_eligible: bool = True
     quantification_exclusion_reason: str = ""
     cross_sample_member_subject: CrossSampleGroupMemberSubject | None = None
-    cid_nl_composite_assessment: CidNlMethodAssessmentRef | None = None
+    cid_nl_composite_assessment: CidNlMethodAssessment | None = None
     is_provisional: bool = False
     peak_shape: LocalPeakShape | None = None
 

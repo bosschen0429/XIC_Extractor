@@ -28,7 +28,7 @@ from xic_extractor.discovery.strict_event_receipts import (
 )
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
-    DdaCidNlCandidateSetRelationRef,
+    DdaCidNlCandidateSetRelation,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
@@ -38,7 +38,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     CidNlMethodAssessmentContractError,
     CidNlTechnicalState,
-    mint_cid_nl_method_assessment_ref,
+    mint_cid_nl_method_assessment,
     resolve_cid_nl_method_relations,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -47,15 +47,15 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
+    DdaCidNlPeakSupport,
     DdaCidNlPeakSupportPolicy,
-    DdaCidNlPeakSupportRef,
 )
 from xic_extractor.peak_detection.elution_context import (
     SampleElutionContext,
     project_elution_context,
 )
 from xic_extractor.peak_detection.observations import (
-    PeakObservationRef,
+    PeakObservation,
     RetainedCaptureEvidence,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -301,7 +301,7 @@ def adapt_current_discovery_sample_subject(
     signal_processing_profile: SignalProcessingProfile,
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
 ) -> CidNlAcquisitionResult:
-    """Reacquire a subject and mint its complete CellObservationRef input."""
+    """Reacquire a subject and mint its complete CellObservation input."""
 
     _validate_inputs(
         method_subject=method_subject,
@@ -402,12 +402,12 @@ def adapt_current_discovery_sample_subject(
         _preacquired_traces=_preacquired_traces,
     )
     evidence_refs: list[CidNlEvidenceObservation] = []
-    individual_refs: list[DdaCidNlPeakSupportRef] = []
-    set_refs: list[DdaCidNlCandidateSetRelationRef] = []
+    individual_refs: list[DdaCidNlPeakSupport] = []
+    set_refs: list[DdaCidNlCandidateSetRelation] = []
     candidate_universe = tuple(
         sorted(
             observations,
-            key=lambda item: item.content.measured_order_key,
+            key=lambda item: item.measured_order_key,
         )
     )
     for raw_seed in resolve_discovery_scan_events(
@@ -531,7 +531,7 @@ def _adopt_peak_observations(
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
 ) -> tuple[
     TraceAcquisitionBatch | None,
-    tuple[PeakObservationRef, ...],
+    tuple[PeakObservation, ...],
     tuple[capture_owner.SampleLocalCapture, ...],
 ]:
     if not peaks:
@@ -569,7 +569,7 @@ def _adopt_peak_observations(
                 f"{peak.peak_id}: acquired={acquired.coordinate.request!r}, "
                 f"planned={requests[index]!r}"
             )
-    observations: list[PeakObservationRef] = []
+    observations: list[PeakObservation] = []
     captures: list[capture_owner.SampleLocalCapture] = []
     for peak, acquired in zip(peaks, acquired_traces, strict=True):
         trace = trace_from_xic_request(
@@ -641,10 +641,10 @@ def _mint_assessment(
     settings: DiscoverySettings,
     raw: CidNlRawSource | None,
     support_policy: DdaCidNlPeakSupportPolicy,
-    candidate_peaks: tuple[PeakObservationRef, ...] = (),
+    candidate_peaks: tuple[PeakObservation, ...] = (),
     evidence_refs: tuple[CidNlEvidenceObservation, ...] = (),
-    individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...] = (),
-    set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...] = (),
+    individual_support_refs: tuple[DdaCidNlPeakSupport, ...] = (),
+    set_relation_refs: tuple[DdaCidNlCandidateSetRelation, ...] = (),
     technical_state: CidNlTechnicalState = "evaluated",
     technical_reason_code: str | None = None,
 ):
@@ -667,7 +667,7 @@ def _mint_assessment(
     elif not search_completed and (query_rt_min is None or query_rt_max is None):
         query_rt_min = query_rt_max = None
     try:
-        return mint_cid_nl_method_assessment_ref(
+        return mint_cid_nl_method_assessment(
             sample=sample,
             acquisition_source=acquisition_source,
             method_subject=method_subject,

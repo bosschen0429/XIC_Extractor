@@ -31,7 +31,7 @@ from xic_extractor.extraction.targeted_capture_population import (
     bound_acquisition_trace,
     mint_candidate_peak_observation,
 )
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
 )
@@ -178,8 +178,8 @@ def resolve_targeted_istd_backfill(
     sample_by_id = {sample.sample_name: sample for sample in population.samples}
     direct_supports = tuple(
         CidNlCellGroupSupport(
-            sample=sample_by_id[item.owner_observation.content.sample_key],
-            assessment=assessment_by_sample[item.owner_observation.content.sample_key],
+            sample=sample_by_id[item.owner_observation.sample_key],
+            assessment=assessment_by_sample[item.owner_observation.sample_key],
             hypothesis=item.owner_hypothesis,
         )
         for item in population.capture_inputs
@@ -202,7 +202,7 @@ def resolve_targeted_istd_backfill(
 def _paired_istd_observations(
     population: TargetedCapturePopulation,
     config: ExtractionConfig,
-) -> tuple[PeakObservationRef, ...]:
+) -> tuple[PeakObservation, ...]:
     observations = []
     for entry in population.entries:
         pair = entry.file_result.results.get(

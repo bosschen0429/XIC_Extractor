@@ -24,7 +24,7 @@ from xic_extractor.alignment.backfill.conservative import (
 from xic_extractor.alignment.cell_observation.observations import (
     CidNlCellGroupContext,
     CidNlCellGroupSupport,
-    mint_cell_observation_ref,
+    mint_cell_observation,
 )
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
@@ -38,12 +38,12 @@ from xic_extractor.alignment.peak_trajectories import PeakTrajectory
 from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
 )
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.sample_metadata import SampleMetadata
 
-SampleAssessments = tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...]
+SampleAssessments = tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +51,7 @@ class IstdAnchoredBackfill:
     """Backfill decisions and the recovery observation each mapped sample won."""
 
     decisions: tuple[ConservativeBackfillCellDecision, ...]
-    recovery_observations: Mapping[str, PeakObservationRef]
+    recovery_observations: Mapping[str, PeakObservation]
 
     @classmethod
     def none(cls) -> IstdAnchoredBackfill:
@@ -64,7 +64,7 @@ def resolve_istd_anchored_backfill(
     target: ResolvedTargetDefinition,
     direct_supports: tuple[CidNlCellGroupSupport, ...],
     sample_assessments: SampleAssessments,
-    paired_istd_observations: Callable[[], tuple[PeakObservationRef, ...]],
+    paired_istd_observations: Callable[[], tuple[PeakObservation, ...]],
     rt_half_window_min: float,
     alignment_config: AlignmentConfig,
     rt_frame: RtFrame,
@@ -114,9 +114,7 @@ def resolve_istd_anchored_backfill(
     )
     paired_observations = tuple(paired_istd_observations()) if plans else ()
     pair_rts = {
-        sample_by_id[
-            peak.content.sample_key
-        ].raw_stem: peak.content.integration.rt_apex_min
+        sample_by_id[peak.sample_key].raw_stem: peak.integration.rt_apex_min
         for peak in paired_observations
     }
     decisions: list[ConservativeBackfillCellDecision] = []
@@ -136,7 +134,7 @@ def resolve_istd_anchored_backfill(
             support.sample.sample_name: support for support in direct_supports
         }
         cells = tuple(
-            mint_cell_observation_ref(
+            mint_cell_observation(
                 sample=sample,
                 target=target,
                 group_context=group_context,
@@ -154,7 +152,7 @@ def resolve_istd_anchored_backfill(
                     else None
                 ),
                 unassigned_support=(
-                    assessment.content.method_result == "SUPPORT"
+                    assessment.method_result == "SUPPORT"
                     and sample.sample_name not in direct_by_sample
                 ),
             )
@@ -193,7 +191,7 @@ def resolve_istd_anchored_backfill(
         )
         for sample_id in sorted(missing_ids):
             sample = sample_by_id[sample_id]
-            if assessment_by_sample[sample_id].content.method_result != "HOLD":
+            if assessment_by_sample[sample_id].method_result != "HOLD":
                 continue
             location = locations.get(sample.raw_stem)
             if location is None:
@@ -213,9 +211,7 @@ def resolve_istd_anchored_backfill(
                 )
             )
     recovery_observations = {
-        decision.target_cell.content.sample_key: (
-            decision.matched_candidate.peak_observation
-        )
+        decision.target_cell.sample_key: (decision.matched_candidate.peak_observation)
         for decision in decisions
         if decision.matched_candidate is not None
     }

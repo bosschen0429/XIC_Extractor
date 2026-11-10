@@ -12,7 +12,7 @@ from xic_extractor.alignment.backfill.conservative import (
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
 )
-from xic_extractor.alignment.cell_observation.observations import CellObservationRef
+from xic_extractor.alignment.cell_observation.observations import CellObservation
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
@@ -48,11 +48,11 @@ from xic_extractor.peak_detection.capture import (
     capture_peak_hypotheses,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
-    PeakObservationRef,
+    PeakObservation,
 )
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
@@ -90,7 +90,7 @@ class WorkflowStage(str, Enum):
 class CaptureWorkflowArguments:
     candidate_id: str
     trace: Trace
-    owner_observation: PeakObservationRef | None = None
+    owner_observation: PeakObservation | None = None
     owner_hypothesis: PeakHypothesis | None = None
 
 
@@ -113,14 +113,14 @@ WorkflowRequest: TypeAlias = TargetWorkflowRequest | UntargetWorkflowComposition
 @dataclass(frozen=True, slots=True)
 class _WorkflowAdapterFields:
     capture_inputs: tuple[CaptureWorkflowArguments, ...]
-    predecessor_cell_observations: tuple[CellObservationRef, ...]
+    predecessor_cell_observations: tuple[CellObservation, ...]
     rt_frame: SampleRtFrame
-    backfill_cell_observations: tuple[CellObservationRef, ...] = ()
+    backfill_cell_observations: tuple[CellObservation, ...] = ()
 
 
 @dataclass(frozen=True)
 class TargetWorkflowAdapter(_WorkflowAdapterFields):
-    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...] = (
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...] = (
         field(kw_only=True)
     )
     alignment_config: AlignmentConfig = field(kw_only=True)
@@ -139,7 +139,7 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
 
 @dataclass(frozen=True, slots=True)
 class UntargetWorkflowAdapter(_WorkflowAdapterFields):
-    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...] = (
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...] = (
         field(kw_only=True)
     )
     completed_grouping: CrossSampleGroupingResult | None = None

@@ -14,7 +14,7 @@ from xic_extractor.peak_detection.models import (
     PeakResult,
 )
 from xic_extractor.peak_detection.observations import (
-    mint_peak_observation_ref,
+    mint_peak_observation,
 )
 from xic_extractor.peak_detection.traces import Trace
 
@@ -86,7 +86,7 @@ def _numeric_peak(
         intensity=trace.intensity,
         baseline_integration_method="asls",
     )[0].integration
-    return mint_peak_observation_ref(
+    return mint_peak_observation(
         sample=sample,
         trace=trace,
         integration=integration,

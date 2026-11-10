@@ -37,7 +37,7 @@ from xic_extractor.peak_detection.elution_context import (
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_shape_identity import LocalPeakShape
-from xic_extractor.peak_detection.observations import PeakObservationContent
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.physical_peak_codec import signal_quality_from_payload
 from xic_extractor.peak_detection.physical_peak_models import PhysicalSegment
 from xic_extractor.rt_calibration_codec import (
@@ -248,16 +248,28 @@ def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
         raise ValueError("Grouping snapshots require scalar CID-NL observations")
     integration = owner.selected_integration
     # Scan indices are only used by integration, never by grouping.
+    member_subject = owner.cross_sample_member_subject
+    if member_subject is None:
+        raise ValueError("Grouping snapshot requires formal member subjects")
     compact = replace(
         owner,
         selected_integration=replace(integration, raw_scan_indices=())
         if integration
         else None,
+        cross_sample_member_subject=replace(member_subject, physical_peaks=()),
     )
     value = asdict(compact)
-    member = value["cross_sample_member_subject"]
-    if member is None:
-        raise ValueError("Grouping snapshot requires formal member subjects")
+    # A snapshot keeps each member peak's measured values, not its acquisition.
+    value["cross_sample_member_subject"]["physical_peaks"] = [
+        {
+            "sample_key": peak.sample_key,
+            "mz": peak.mz,
+            "rt": peak.rt,
+            "intensity": peak.intensity,
+            "integration": asdict(peak.integration),
+        }
+        for peak in member_subject.physical_peaks
+    ]
     return value
 
 
@@ -291,13 +303,17 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
     value.pop("region_audit", None)
     value.pop("identity_conflict", None)
     member = value["cross_sample_member_subject"]
+    # Replay compares member peaks by their measured values only; the snapshot
+    # retains no trace or query context to restore.
     member["physical_peaks"] = tuple(
-        PeakObservationContent(
+        PeakObservation(
             sample_key=peak["sample_key"],
             mz=peak["mz"],
             rt=tuple(peak["rt"]),
             intensity=tuple(peak["intensity"]),
             integration=_read_integration(peak["integration"]),
+            generation_provenance=None,  # type: ignore[arg-type]
+            source_trace=None,  # type: ignore[arg-type]
         )
         for peak in member["physical_peaks"]
     )

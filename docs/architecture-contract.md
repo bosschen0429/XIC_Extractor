@@ -182,7 +182,7 @@ envelopes for grouping, revisit eligibility and assessment-to-cell evidence.
 Shared grouping keeps physical mass/RT/shape and sample uniqueness; shared cell
 composition keeps exact sample/group lineage. Workflow composition supplies
 `GroupingRules`; shared inference does not select a method or read method reason
-strings. The CID-NL cell record (`CellObservationRef`) answers its own
+strings. The CID-NL cell record (`CellObservation`) answers its own
 evidence state, which shared closure consumes. These are in-memory seams, not a
 registry: another method needs its own evidence adapter. A revisit does not reopen grouping, and a scheduling
 partition is never a feature boundary.

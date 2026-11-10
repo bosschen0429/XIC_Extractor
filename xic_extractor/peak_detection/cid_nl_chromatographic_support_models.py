@@ -7,13 +7,12 @@ from dataclasses import dataclass
 
 from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
-    CidNlEvidenceObservation,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
-    DdaCidNlPeakSupportContent,
+    DdaCidNlPeakSupport,
     DdaCidNlPeakSupportPolicy,
 )
-from xic_extractor.peak_detection.observations import PeakObservationContent
+from xic_extractor.peak_detection.observations import PeakObservation
 
 RELATIONSHIP = "strict_nl_scans_within_one_physical_ms1_peak"
 
@@ -26,7 +25,7 @@ class CidNlChromatographicSupportContractError(ValueError):
 class DdaCidNlScanSupportMember:
     """One exact DDA scan relation retained inside the aggregate event."""
 
-    support: DdaCidNlPeakSupportContent
+    support: DdaCidNlPeakSupport
     configured_neutral_loss_da: float | None = None
 
     def __post_init__(self) -> None:
@@ -42,12 +41,12 @@ class DdaCidNlScanSupportMember:
 
 
 @dataclass(frozen=True, slots=True)
-class CidNlChromatographicSupportContent:
+class CidNlChromatographicSupport:
     """One physical MS1 support event backed by one or more exact DDA scans."""
 
     sample_key: str
-    peak_observation: PeakObservationContent
-    candidate_peaks: tuple[PeakObservationContent, ...]
+    peak_observation: PeakObservation
+    candidate_peaks: tuple[PeakObservation, ...]
     acquisition_mode: str
     policy: DdaCidNlPeakSupportPolicy
     scan_supports: tuple[DdaCidNlScanSupportMember, ...]
@@ -111,14 +110,6 @@ class CidNlChromatographicSupportContent:
             )
 
 
-@dataclass(frozen=True, slots=True)
-class CidNlChromatographicSupportRef:
-    """One chromatographic support event with its exact scan evidence."""
-
-    content: CidNlChromatographicSupportContent
-    evidence_refs: tuple[CidNlEvidenceObservation, ...] = ()
-
-
 def _member_sort_key(
     member: DdaCidNlScanSupportMember,
 ) -> tuple[int, float]:
@@ -129,9 +120,8 @@ def _member_sort_key(
 
 
 __all__ = [
-    "CidNlChromatographicSupportContent",
+    "CidNlChromatographicSupport",
     "CidNlChromatographicSupportContractError",
-    "CidNlChromatographicSupportRef",
     "DdaCidNlScanSupportMember",
     "RELATIONSHIP",
 ]

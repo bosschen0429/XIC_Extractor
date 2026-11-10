@@ -52,13 +52,13 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     result = scenario.adapt(candidates, raw=raw)
 
     assessment = result.assessment_input.assessment
-    assert assessment.content.method_subject.subject_kind == "untargeted_precursor"
-    assert assessment.content.method_subject.target is None
-    assert assessment.content.method_result == "SUPPORT"
+    assert assessment.method_subject.subject_kind == "untargeted_precursor"
+    assert assessment.method_subject.target is None
+    assert assessment.method_result == "SUPPORT"
     assert tuple(
-        sorted(evidence.scan_number for evidence in assessment.evidence_refs)
+        sorted(evidence.scan_number for evidence in assessment.evidence_observations)
     ) == tuple(sorted(candidates[0].event_scan_ids))
-    assert len(result.assessment_input.assessment.evidence_refs) == 2
+    assert len(result.assessment_input.assessment.evidence_observations) == 2
     assert result.acquisition is not None
     assert result.acquisition.logical_xic_request_count == 1
     assert result.acquisition.xic_batch_count == 1
@@ -96,7 +96,7 @@ def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
 
     (((support,), set_relations),) = successful_relations
     assert set_relations == ()
-    assert support.content.evidence.scan_number in candidates[0].event_scan_ids
+    assert support.evidence.scan_number in candidates[0].event_scan_ids
 
 
 def test_adapter_preserves_strict_scans_within_mixed_candidate(
@@ -123,18 +123,18 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
     result = scenario.adapt(candidates, raw=raw)
 
     assessment = result.assessment_input.assessment
-    assert assessment.content.method_result == "SUPPORT"
+    assert assessment.method_result == "SUPPORT"
     assert result.strict_scan_count == len(strict_scan_ids)
     assert tuple(
         sorted(
             evidence.scan_number
-            for evidence in assessment.evidence_refs
+            for evidence in assessment.evidence_observations
             if evidence.precursor_mz_basis == "scan_precursor"
         )
     ) == tuple(sorted(strict_scan_ids))
     assert {
         evidence.scan_number
-        for evidence in assessment.evidence_refs
+        for evidence in assessment.evidence_observations
         if evidence.precursor_mz_basis == "product_plus_neutral_loss"
     } == {inferred_scan.scan_number}
 
@@ -183,16 +183,16 @@ def test_adapter_keeps_direct_support_separate_from_same_peak_inferred_evidence(
     result = scenario.adapt(candidates, raw=raw)
 
     assessment = result.assessment_input.assessment
-    assert assessment.content.method_result == "SUPPORT"
+    assert assessment.method_result == "SUPPORT"
     assert result.strict_scan_count == 2
     assert {
         evidence.scan_number
-        for evidence in assessment.evidence_refs
+        for evidence in assessment.evidence_observations
         if evidence.precursor_mz_basis == "scan_precursor"
     } == {first.scan_number, representative.scan_number}
     assert {
         evidence.scan_number
-        for evidence in assessment.evidence_refs
+        for evidence in assessment.evidence_observations
         if evidence.precursor_mz_basis == "product_plus_neutral_loss"
     } == {inferred.scan_number}
 
@@ -221,25 +221,23 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
     assessment = result.assessment_input.assessment
     assert result.strict_scan_count == 0
     if ms1_present:
-        assert assessment.content.method_result == "HOLD"
+        assert assessment.method_result == "HOLD"
         assert not assessment.individual_support_refs
         assert len(assessment.candidate_peaks) == 1
-        assert {ref.scan_number for ref in assessment.evidence_refs} == {
+        assert {ref.scan_number for ref in assessment.evidence_observations} == {
             scan.scan_number for scan in source_raw.scans
         }
         assert all(
             ref.precursor_mz_basis == "product_plus_neutral_loss"
             and ref.scan_precursor_mz == 500.5
             and ref.precursor_mz == 500.0
-            for ref in assessment.evidence_refs
+            for ref in assessment.evidence_observations
         )
     else:
-        assert assessment.content.technical_state == "not_evaluated"
-        assert assessment.content.method_result is None
-        assert assessment.content.reason_codes == (
-            "no_search_eligible_discovery_input",
-        )
-        assert assessment.content.evaluation_receipt.search_completed is False
+        assert assessment.technical_state == "not_evaluated"
+        assert assessment.method_result is None
+        assert assessment.reason_codes == ("no_search_eligible_discovery_input",)
+        assert assessment.evaluation_receipt.search_completed is False
         assert not assessment.candidate_peaks
         assert not assessment.individual_support_refs
         assert result.acquisition is None
@@ -376,21 +374,19 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
     finally:
         raw.__exit__(None, None, None)
     assessment = result.assessment_input.assessment
-    assert assessment.content.method_result == (
-        "SUPPORT" if parent_supported else "HOLD"
-    )
+    assert assessment.method_result == ("SUPPORT" if parent_supported else "HOLD")
     assert result.strict_scan_count == int(parent_supported)
     assert len(assessment.candidate_peaks) == 1
     event_count = 2 if composite else 1
-    assert len(assessment.evidence_refs) == event_count
+    assert len(assessment.evidence_observations) == event_count
     products_by_loss = {
         ref.configured_neutral_loss_da: ref.product_mz
-        for ref in assessment.evidence_refs
+        for ref in assessment.evidence_observations
     }
     assert products_by_loss == (
         {116.0474: 383.9526, 132.0423: 367.9577} if composite else {116.0474: 383.9526}
     )
-    for ref in assessment.evidence_refs:
+    for ref in assessment.evidence_observations:
         evidence = ref
         assert evidence.scan_number == scan.scan_number
         assert evidence.precursor_mz_basis == "product_plus_neutral_loss"
@@ -404,7 +400,7 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
     assert ms2_reads == []
     if parent_supported:
         for ref in assessment.individual_support_refs:
-            relation = ref.content
+            relation = ref
             assert relation.precursor_mz == 500.0
             assert relation.observed_loss_error_ppm == pytest.approx(0.0, abs=1e-8)
 
@@ -462,19 +458,17 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
         )
     result = scenario.adapt(candidates, raw=raw)
     assessment = result.assessment_input.assessment
-    assert assessment.content.method_result == "SUPPORT"
+    assert assessment.method_result == "SUPPORT"
     assert result.strict_scan_count == 3
     assert len(assessment.candidate_peaks) == 1
     assert len(assessment.individual_support_refs) == 3
-    for evidence in assessment.evidence_refs:
+    for evidence in assessment.evidence_observations:
         assert evidence.precursor_mz_basis == "product_plus_neutral_loss"
         assert evidence.precursor_mz == 500.0
         assert evidence.observed_loss_error_ppm is None
     for relation in assessment.individual_support_refs:
-        assert relation.content.precursor_mz == 500.001
-        assert relation.content.observed_loss_error_ppm == pytest.approx(
-            0.001 / 116.0474 * 1e6
-        )
+        assert relation.precursor_mz == 500.001
+        assert relation.observed_loss_error_ppm == pytest.approx(0.001 / 116.0474 * 1e6)
 
 
 def test_peaks_without_their_event_table_cannot_be_assessed(
@@ -600,7 +594,7 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
 
     result = scenario.adapt(candidates, raw=raw)
 
-    receipt = result.assessment_input.assessment.content.evaluation_receipt
+    receipt = result.assessment_input.assessment.evaluation_receipt
     assert receipt.query_rt_min == min(
         scenario.settings.rt_min,
         candidate.ms1_search_rt_min,
@@ -624,10 +618,10 @@ def test_adapter_closes_qualifying_ms2_without_ms1_peak_as_reject(
     result = scenario.adapt((orphan,), raw=raw)
 
     assessment = result.assessment_input.assessment
-    assert assessment.content.method_result == "REJECT"
+    assert assessment.method_result == "REJECT"
     assert assessment.candidate_peaks == ()
-    assert len(assessment.evidence_refs) == 1
-    assert len(result.assessment_input.assessment.evidence_refs) == 1
+    assert len(assessment.evidence_observations) == 1
+    assert len(result.assessment_input.assessment.evidence_observations) == 1
     assert result.acquisition is None
     assert vendor_raw.chromatogram_request_counts == []
 
@@ -657,11 +651,11 @@ def test_adapter_closes_empty_subject_universe_as_not_evaluated_without_xic(
     )
 
     assessment = result.assessment_input.assessment
-    assert assessment.content.technical_state == "not_evaluated"
-    assert assessment.content.method_result is None
-    assert assessment.content.reason_codes == ("no_search_eligible_discovery_input",)
-    assert assessment.content.evaluation_receipt.search_completed is False
-    assert result.assessment_input.assessment.evidence_refs == ()
+    assert assessment.technical_state == "not_evaluated"
+    assert assessment.method_result is None
+    assert assessment.reason_codes == ("no_search_eligible_discovery_input",)
+    assert assessment.evaluation_receipt.search_completed is False
+    assert result.assessment_input.assessment.evidence_observations == ()
     assert result.acquisition is None
     assert vendor_raw.chromatogram_request_counts == []
 
@@ -682,8 +676,8 @@ def test_auto_range_empty_subject_has_no_fabricated_query_and_needs_no_raw(
         signal_processing_profile=TEST_PROFILE,
     )
     assessment = result.assessment_input.assessment
-    receipt = assessment.content.evaluation_receipt
-    assert assessment.content.technical_state == "not_evaluated"
+    receipt = assessment.evaluation_receipt
+    assert assessment.technical_state == "not_evaluated"
     assert (receipt.query_rt_min, receipt.query_rt_max) == (None, None)
     assert receipt.search_completed is False
     assert result.acquisition is None and not result.captures
@@ -703,7 +697,7 @@ def test_auto_range_evaluated_receipt_uses_current_raw_bounds(tmp_path: Path) ->
         settings=replace(scenario.settings, rt_min=None, rt_max=None),
         raw=raw,
     )
-    receipt = result.assessment_input.assessment.content.evaluation_receipt
+    receipt = result.assessment_input.assessment.evaluation_receipt
     assert receipt.search_completed is True
     assert (receipt.query_rt_min, receipt.query_rt_max) == (7.4, 75.0)
 
@@ -724,7 +718,7 @@ def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
     assert {capture.candidate_id for capture in result.captures} == {feature.peak_id}
     assert len(result.assessment_input.assessment.candidate_peaks) == 1
     assert result.strict_scan_count == 2
-    assert len(result.assessment_input.assessment.evidence_refs) == 2
+    assert len(result.assessment_input.assessment.evidence_observations) == 2
 
 
 def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> None:
@@ -755,10 +749,8 @@ def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> No
         physical_records=tuple(physical_records[c.candidate_id] for c in (())),
     )
 
-    assert result.assessment_input.assessment.content.technical_state == (
-        "not_evaluated"
-    )
-    assert result.assessment_input.assessment.evidence_refs == ()
+    assert result.assessment_input.assessment.technical_state == ("not_evaluated")
+    assert result.assessment_input.assessment.evidence_observations == ()
     assert result.captures == ()
 
 
@@ -812,7 +804,7 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
     result = scenario.adapt(candidates, raw=raw)
 
     assessment = result.assessment_input.assessment
-    assert assessment.content.method_result == "SUPPORT"
+    assert assessment.method_result == "SUPPORT"
     assert len(assessment.candidate_peaks) == 2
     assert len(assessment.individual_support_refs) == 1
     # Only the recorded precursor supplies NL support.

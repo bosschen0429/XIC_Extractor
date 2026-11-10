@@ -32,7 +32,7 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
 from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
     compose_final_group_cell_observation_population,
-    mint_cell_observation_ref,
+    mint_cell_observation,
 )
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
@@ -56,7 +56,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    mint_cid_nl_method_assessment_ref,
+    mint_cid_nl_method_assessment,
 )
 
 
@@ -89,7 +89,7 @@ def _outside_group_fixture(
             )
             for peak, event in zip(peaks, evidence, strict=True)
         )
-        assessment = mint_cid_nl_method_assessment_ref(
+        assessment = mint_cid_nl_method_assessment(
             sample=fixture.sample(stem),
             acquisition_source=fixture.source(fixture.sample(stem)),
             method_subject=fixture.method_subject,
@@ -99,7 +99,7 @@ def _outside_group_fixture(
             evidence_refs=evidence,
             individual_support_refs=supports,
         )
-        assert assessment.content.method_result == "SUPPORT"
+        assert assessment.method_result == "SUPPORT"
         assessments.append((fixture.sample(stem), assessment))
     owners = tuple(
         owner_from_cid_nl_assessment_support(
@@ -137,12 +137,12 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             rt_frame=SampleRtFrame(),
         )
         assert len(cells) == len(groups) * len(assessments)
-        assert any(cell.content.outside_group is None for cell in cells)
+        assert any(cell.outside_group is None for cell in cells)
 
         assert {
             (
-                cell.content.group_hypothesis_id,
-                cell.content.sample_key,
+                cell.group_hypothesis_id,
+                cell.sample_key,
             )
             for cell in cells
         } == {
@@ -152,7 +152,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
         }
         for sample, assessment in assessments:
             sample_cells = tuple(
-                cell for cell in cells if cell.content.sample_key == sample.sample_name
+                cell for cell in cells if cell.sample_key == sample.sample_name
             )
             assert all(cell.method_assessment is assessment for cell in sample_cells)
             direct = tuple(
@@ -163,20 +163,20 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
                 any(cell.peak_observation is peak for cell in direct)
                 for peak in assessment.candidate_peaks
             )
-            witness_id = min(cell.content.group_hypothesis_id for cell in direct)
+            witness_id = min(cell.group_hypothesis_id for cell in direct)
             for cell in sample_cells:
-                relation = cell.content.outside_group
+                relation = cell.outside_group
                 if relation is None:
                     continue
                 assert relation.supporting_group_hypothesis_id == witness_id
                 assert cell.peak_observation is None and cell.peak_hypothesis is None
-                assert cell.content.physical_peak_key is None
-                assert cell.content.peak_hypothesis_id is None
+                assert cell.physical_peak_key is None
+                assert cell.peak_hypothesis_id is None
         contents = {
             (
-                cell.content.group_hypothesis_id,
-                cell.content.sample_key,
-            ): cell.content
+                cell.group_hypothesis_id,
+                cell.sample_key,
+            ): cell
             for cell in cells
         }
         if original_contents is None:
@@ -186,7 +186,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
     third_group = next(
         cell.group_context.group
         for cell in cells
-        if cell.content.sample_key == fixture.sample("Third").sample_name
+        if cell.sample_key == fixture.sample("Third").sample_name
         and cell.peak_observation is not None
     )
     with pytest.raises(ValueError, match="one exact sibling SUPPORT context"):
@@ -265,7 +265,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
     assert len(groups) == 2
     recovered_group = min(groups, key=lambda group: group.group_center_rt)
     recovered_peak = cid_nl_peak(fixture, "Third", apex_rt=8.0)
-    backfill_assessment = mint_cid_nl_method_assessment_ref(
+    backfill_assessment = mint_cid_nl_method_assessment(
         sample=recovered_sample,
         acquisition_source=fixture.source(recovered_sample),
         method_subject=fixture.method_subject,
@@ -273,7 +273,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
         evaluation_receipt=_completed_receipt(),
         candidate_peaks=(recovered_peak,),
     )
-    assert backfill_assessment.content.method_result == "HOLD"
+    assert backfill_assessment.method_result == "HOLD"
     cells = compose_cid_nl_predecessor_cells(
         groups=groups,
         sample_assessments=((initial_sample, initial_assessment),),
@@ -289,15 +289,68 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
     )
     assert len(cells) == 3
     recovered_cells = tuple(
-        cell
-        for cell in cells
-        if cell.content.sample_key == recovered_sample.sample_name
+        cell for cell in cells if cell.sample_key == recovered_sample.sample_name
     )
     assert len(recovered_cells) == 1
-    assert recovered_cells[0].content.group_hypothesis_id == (
+    assert recovered_cells[0].group_hypothesis_id == (
         recovered_group.group_hypothesis_id
     )
     assert recovered_cells[0].peak_observation is recovered_peak
+
+
+def test_backfill_attempt_with_same_values_reuses_the_initial_assessment(
+    tmp_path: Path,
+) -> None:
+    # A Backfill attempt that measured the same values is the same assessment,
+    # even when it reaches the cells through other peak and relation objects.
+    fixture, assessments, groups = _outside_group_fixture(tmp_path, (8.0, 12.0))
+    sample, initial = assessments[0]
+    relinked = replace(
+        initial,
+        candidate_peaks=tuple(
+            replace(
+                peak,
+                generation_provenance=replace(
+                    peak.generation_provenance, resolver_mode="backfill_relinked"
+                ),
+                capture_stage="backfill",
+            )
+            for peak in initial.candidate_peaks
+        ),
+        individual_support_refs=tuple(reversed(initial.individual_support_refs)),
+    )
+    assert relinked is not initial
+    assert relinked == initial and hash(relinked) == hash(initial)
+    group = next(
+        group
+        for group in groups
+        if group.member_subjects[0].sample_key == sample.sample_name
+    )
+    common = {
+        "groups": groups,
+        "sample_assessments": assessments,
+        "alignment_config": CID_NL_ALIGNMENT_CONFIG,
+        "rt_frame": SampleRtFrame(),
+    }
+
+    without_backfill = compose_cid_nl_predecessor_cells(**common)
+    with_backfill = compose_cid_nl_predecessor_cells(
+        **common,
+        backfill_assessments_by_group={
+            (
+                group.group_hypothesis_id,
+                sample.sample_name,
+                fixture.method_subject.method_subject_id,
+            ): (sample, relinked)
+        },
+    )
+
+    assert with_backfill == without_backfill
+    assert all(
+        cell.method_assessment is initial
+        for cell in with_backfill
+        if cell.sample_key == sample.sample_name
+    )
 
 
 def test_composer_mints_exact_cartesian_owner_population_and_states(
@@ -352,21 +405,21 @@ def test_composer_distinguishes_completed_negative_search(
 ) -> None:
     fixture, spine, handoff = _owner_handoff(tmp_path)
     sample = fixture.sample("s4")
-    negative_assessment = mint_cid_nl_method_assessment_ref(
+    negative_assessment = mint_cid_nl_method_assessment(
         sample=sample,
         acquisition_source=fixture.source(sample),
         target=fixture.target,
         detector_invocation_id="gaussian15:s4:completed-negative",
         evaluation_receipt=_completed_receipt(),
     )
-    negative_cell = mint_cell_observation_ref(
+    negative_cell = mint_cell_observation(
         sample=sample,
         target=fixture.target,
         group_context=spine.cells[0].group_context,
         method_assessment=negative_assessment,
     )
     predecessor_cells = tuple(
-        negative_cell if cell.content.sample_key == sample.sample_name else cell
+        negative_cell if cell.sample_key == sample.sample_name else cell
         for cell in spine.cells
     )
     handoff = _owner_handoff_for_cells(
@@ -488,7 +541,7 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         predecessor_cells = tuple(
             group_spine.cells[0]
             if group_spine is supporting_spine
-            else mint_cell_observation_ref(
+            else mint_cell_observation(
                 sample=sample,
                 target=fixture.target,
                 group_context=group_spine.cells[0].group_context,
@@ -623,17 +676,15 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
 def test_final_member_rejects_hold_method_lane(tmp_path: Path) -> None:
     fixture, spine, handoff = _owner_handoff(tmp_path)
     sample = fixture.sample("s1")
-    hold_assessment = mint_cid_nl_method_assessment_ref(
+    hold_assessment = mint_cid_nl_method_assessment(
         sample=sample,
         acquisition_source=fixture.source(sample),
         target=fixture.target,
         detector_invocation_id="gaussian15:s1:hold-invalid-final-member",
         evaluation_receipt=_completed_receipt(),
     )
-    source = next(
-        cell for cell in spine.cells if cell.content.sample_key == sample.sample_name
-    )
-    invalid_source = mint_cell_observation_ref(
+    source = next(cell for cell in spine.cells if cell.sample_key == sample.sample_name)
+    invalid_source = mint_cell_observation(
         sample=sample,
         target=fixture.target,
         group_context=source.group_context,

@@ -35,8 +35,7 @@ if TYPE_CHECKING:
     )
     from xic_extractor.discovery.models import DiscoveryPeak
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
-        CidNlMethodAssessmentContent,
-        CidNlMethodAssessmentRef,
+        CidNlMethodAssessment,
     )
     from xic_extractor.untargeted_execution.execution_result import (
         CompletedUntargetBatchWorkflowResult,
@@ -58,9 +57,9 @@ def _fields(value: Any, *names: str) -> dict[str, Any]:
 def _review_xic_coordinates(ref: Any) -> dict[str, Any]:
     """Retain the actual physical query, not the candidate's MS2 evidence mass."""
     return {
-        "physical_peak_key": ref.content.physical_peak_key,
-        "rt_apex_min": ref.content.integration.rt_apex_min,
-        "mz": ref.content.mz,
+        "physical_peak_key": ref.physical_peak_key,
+        "rt_apex_min": ref.integration.rt_apex_min,
+        "mz": ref.mz,
         "ppm": ref.generation_provenance.query_ppm_tol,
     }
 
@@ -87,16 +86,14 @@ def _final_cell_observation_payload(observation: Any) -> dict[str, Any]:
         "evidence_states": observation.evidence_states,
         "sample_key": (observation.canonical_sample.sample_name),
         "predecessor_cells": [
-            {"content": _cell_observation_content_payload(ref.content)}
+            {"content": _cell_observation_content_payload(ref)}
             for ref in observation.predecessor_cells
         ],
         "backfill_cell": (
             None
             if observation.backfill_cell is None
             else {
-                "content": _cell_observation_content_payload(
-                    observation.backfill_cell.content
-                )
+                "content": _cell_observation_content_payload(observation.backfill_cell)
             }
         ),
     }
@@ -119,7 +116,7 @@ def _emit_curve_payload(
     related: Iterable[tuple[str, str]] = (),
 ) -> None:
     """Serialize retained owner values; missing processing remains unavailable."""
-    content = ref.content if ref is not None else None
+    content = ref
     mz = trace.mz if trace is not None else content.mz if content is not None else None
     if sink.review_only and not any(
         lower <= mz <= upper for lower, upper in sink.curve_mz_ranges if mz is not None
@@ -323,7 +320,7 @@ def prepare_alignment_explanation(
                 raise ValueError(f"distinct physical peaks share one locator: {key}")
             return key
 
-        emitted_assessments: set[CidNlMethodAssessmentContent] = set()
+        emitted_assessments: set[CidNlMethodAssessment] = set()
 
         def report_progress(stage: str, completed: int, total: int | None) -> None:
             if progress_callback is not None:
@@ -502,8 +499,8 @@ def prepare_alignment_explanation(
                 related,
             )
 
-        def emit_assessment(assessment: CidNlMethodAssessmentRef) -> None:
-            content = assessment.content
+        def emit_assessment(assessment: CidNlMethodAssessment) -> None:
+            content = assessment
             # The same settled attempt can reach this projection through more
             # than one completed relation; its content is the record.
             if content in emitted_assessments:
@@ -521,7 +518,7 @@ def prepare_alignment_explanation(
                 for relation in assessment.individual_support_refs:
                     physical_candidates[
                         content.sample_key,
-                        locate(relation.content.peak_observation),
+                        locate(relation.peak_observation),
                     ].update(related)
                 if not capture_evidence:
                     for peak in assessment.candidate_peaks:
@@ -549,7 +546,7 @@ def prepare_alignment_explanation(
                         "reason_codes",
                     ),
                     "candidate_physical_peak_keys": tuple(
-                        locate(peak.content) for peak in assessment.candidate_peaks
+                        locate(peak) for peak in assessment.candidate_peaks
                     ),
                     "method_subject_id": content.method_subject.method_subject_id,
                     **(
@@ -668,7 +665,7 @@ def prepare_alignment_explanation(
                 if isinstance(terminal, ObservedSearchSubject):
                     hypothesis = terminal.hypothesis
                     physical_ids = tuple(
-                        locate(ref.content) for ref in hypothesis.peak_observation_refs
+                        locate(ref) for ref in hypothesis.peak_observation_refs
                     )
                     payload.update(
                         hypothesis_id=hypothesis.hypothesis_id,
@@ -680,7 +677,7 @@ def prepare_alignment_explanation(
                     )
                     hypothesis_candidates[key[1], hypothesis.hypothesis_id].add(key)
                     for ref in hypothesis.peak_observation_refs:
-                        physical_candidates[key[1], locate(ref.content)].add(key)
+                        physical_candidates[key[1], locate(ref)].add(key)
                         if not capture_evidence:
                             _emit_curve_payload(
                                 sink,
@@ -736,7 +733,7 @@ def prepare_alignment_explanation(
                     )
             for final_cell in core.cell_observations:
                 refs = {
-                    ref.content.physical_peak_key: ref
+                    ref.physical_peak_key: ref
                     for ref in (
                         *final_cell.direct_observations,
                         *(

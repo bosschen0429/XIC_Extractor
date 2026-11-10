@@ -9,7 +9,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 
@@ -24,5 +24,5 @@ class BackfillCompletionProjection:
     group_center_rt: float
     query_rt: float
     query_rt_basis: str
-    backfill_assessment: CidNlMethodAssessmentRef
+    backfill_assessment: CidNlMethodAssessment
     trace_coordinate: TraceCoordinate

@@ -22,7 +22,7 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillPlanningReason,
 )
 from xic_extractor.alignment.cell_observation.group_context import CidNlCellGroupContext
-from xic_extractor.alignment.cell_observation.observations import CellObservationRef
+from xic_extractor.alignment.cell_observation.observations import CellObservation
 from xic_extractor.alignment.cid_nl_predecessor_cells import (
     compose_cid_nl_predecessor_cells,
 )
@@ -48,13 +48,12 @@ from xic_extractor.alignment.result.application_result import (
 )
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentContent,
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
-    PeakObservationContent,
+    PeakObservation,
     index_physical_peaks,
 )
 from xic_extractor.peak_detection.physical_peak_equivalence import PhysicalPeakView
@@ -79,20 +78,20 @@ class CidNlWorksetGrouping:
 class CidNlWorksetEvidence:
     """Acquired assessments and runtime-issued completion facts for one workset."""
 
-    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...]
-    initial_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...]
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...]
+    initial_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...]
     group_backfills: Mapping[
         tuple[str, str, str],
-        tuple[SampleMetadata, CidNlMethodAssessmentRef],
+        tuple[SampleMetadata, CidNlMethodAssessment],
     ]
-    physical_peak_views: Mapping[PeakObservationContent, PhysicalPeakView] = field(
+    physical_peak_views: Mapping[PeakObservation, PhysicalPeakView] = field(
         default_factory=dict
     )
 
 
 @dataclass(frozen=True, slots=True)
 class _CellCoveragePlan:
-    cells: Mapping[tuple[str, str], CellObservationRef]
+    cells: Mapping[tuple[str, str], CellObservation]
     conservative_positions: tuple[
         tuple[SampleMetadata, ConservativeBackfillGroupFacts], ...
     ]
@@ -106,10 +105,10 @@ class CidNlWorksetCompletion:
     _scope: UntargetedSearchScope
     _capture_inputs: tuple[CaptureWorkflowArguments, ...]
     _captures: tuple[SampleLocalCapture, ...]
-    _sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...]
+    _sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...]
     _grouping_result: CrossSampleGroupingResult
-    _predecessor_cells: tuple[CellObservationRef, ...]
-    _backfill_cells: tuple[CellObservationRef, ...]
+    _predecessor_cells: tuple[CellObservation, ...]
+    _backfill_cells: tuple[CellObservation, ...]
     _coverage_plan: _CellCoveragePlan
     _samples: tuple[SampleMetadata, ...]
 
@@ -187,8 +186,8 @@ def _complete_cell_observations(
     alignment_config: AlignmentConfig,
 ) -> tuple[
     CrossSampleGroupingResult,
-    tuple[CellObservationRef, ...],
-    tuple[CellObservationRef, ...],
+    tuple[CellObservation, ...],
+    tuple[CellObservation, ...],
     frozenset[tuple[str, str]],
 ]:
     grouping_scope = grouping.grouping_scope
@@ -210,15 +209,13 @@ def _complete_cell_observations(
         for key, pair in evidence.group_backfills.items()
         if key[1] not in members_by_group[key[0]]
     }
-    retained_cell_hypotheses: dict[
-        CidNlMethodAssessmentContent, list[PeakHypothesis]
-    ] = {}
+    retained_cell_hypotheses: dict[CidNlMethodAssessment, list[PeakHypothesis]] = {}
     for candidate in grouping.retained_candidates:
         assessment = candidate.direct_support_assessment
         if assessment is None:
             continue
         retained_cell_hypotheses.setdefault(
-            assessment.content,
+            assessment,
             [],
         ).append(candidate.peak_hypothesis)
     retained_hypotheses = {
@@ -247,7 +244,7 @@ def _complete_cell_observations(
     backfilled_positions = frozenset(
         (group_id, sample_id)
         for (group_id, sample_id, _), (_, assessment) in group_backfills.items()
-        if assessment.content.method_result == "SUPPORT"
+        if assessment.method_result == "SUPPORT"
     )
     predecessor_cells = compose_cid_nl_predecessor_cells(
         groups=grouping_scope.groups,
@@ -258,7 +255,7 @@ def _complete_cell_observations(
         backfill_assessments_by_group={
             key: pair
             for key, pair in group_backfills.items()
-            if pair[1].content.method_result != "SUPPORT"
+            if pair[1].method_result != "SUPPORT"
         },
         retained_hypotheses_by_assessment=retained_hypotheses,
         rejected_backfill_cells=rejected_cells,
@@ -277,7 +274,7 @@ def _complete_cell_observations(
                     sample_id,
                     subject_id,
                 ), pair in group_backfills.items()
-                if pair[1].content.method_result == "SUPPORT"
+                if pair[1].method_result == "SUPPORT"
             },
             retained_hypotheses_by_assessment={
                 **retained_hypotheses,
@@ -296,21 +293,21 @@ def _complete_cell_observations(
 
 def _prepare_cell_coverage(
     grouping_result: CrossSampleGroupingResult,
-    predecessor_cells: tuple[CellObservationRef, ...],
+    predecessor_cells: tuple[CellObservation, ...],
     backfilled_positions: frozenset[tuple[str, str]],
     group_backfills: Mapping[
         tuple[str, str, str],
-        tuple[SampleMetadata, CidNlMethodAssessmentRef],
+        tuple[SampleMetadata, CidNlMethodAssessment],
     ],
     *,
     samples: tuple[SampleMetadata, ...],
     backfill_enabled: bool,
 ) -> _CellCoveragePlan:
     cell_by_key = {}
-    cells_by_group: dict[str, list[CellObservationRef]] = {}
+    cells_by_group: dict[str, list[CellObservation]] = {}
     for predecessor_cell in predecessor_cells:
-        group_id = predecessor_cell.content.group_hypothesis_id
-        sample_id = predecessor_cell.content.sample_key
+        group_id = predecessor_cell.group_hypothesis_id
+        sample_id = predecessor_cell.sample_key
         cell_by_key[(group_id, sample_id)] = predecessor_cell
         cells_by_group.setdefault(group_id, []).append(predecessor_cell)
     ordered_samples = tuple(sorted(samples, key=lambda sample: sample.sample_name))
@@ -319,7 +316,7 @@ def _prepare_cell_coverage(
     conservative_positions = []
     for group in grouping_result.initial_population:
         group_cells = tuple(cells_by_group[group.group_hypothesis_id])
-        searched_sample_ids = {cell.content.sample_key for cell in group_cells}
+        searched_sample_ids = {cell.sample_key for cell in group_cells}
         facts = assess_conservative_backfill_group(
             group_cells,
             sample_population=samples,
@@ -334,16 +331,13 @@ def _prepare_cell_coverage(
             cell = cell_by_key.get(key)
             if cell is None or key in backfilled_positions:
                 continue
-            if (
-                cell.content.method_result != "HOLD"
-                or cell.peak_observation is not None
-            ):
+            if cell.method_result != "HOLD" or cell.peak_observation is not None:
                 continue
             if facts.may_attempt_backfill:
                 if cell.method_assessment.candidate_peaks:
                     continue
                 method_subject_id = (
-                    cell.method_assessment.content.method_subject.method_subject_id
+                    cell.method_assessment.method_subject.method_subject_id
                 )
                 if (*key, method_subject_id) not in group_backfills:
                     continue
@@ -352,7 +346,7 @@ def _prepare_cell_coverage(
 
 
 def _cell_planning_reason(
-    cell: CellObservationRef | None,
+    cell: CellObservation | None,
     no_request: BackfillNoRequestDecision | None = None,
     *,
     backfill_enabled: bool = True,
@@ -361,18 +355,18 @@ def _cell_planning_reason(
         return "no_discovery_input"
     if no_request is not None:
         return no_request.planning_reason
-    if cell.content.outside_group is not None:
+    if cell.outside_group is not None:
         return "local_owner_not_supersedable"
     if (
         not backfill_enabled
-        and cell.content.method_result == "HOLD"
+        and cell.method_result == "HOLD"
         and cell.peak_observation is None
         and not cell.method_assessment.candidate_peaks
     ):
         return "backfill_disabled"
     if (
-        cell.content.technical_state == "evaluated"
-        and cell.content.method_result == "HOLD"
+        cell.technical_state == "evaluated"
+        and cell.method_result == "HOLD"
         and cell.peak_observation is None
         and len(cell.method_assessment.candidate_peaks) >= 2
     ):
@@ -393,7 +387,7 @@ def _close_cell_coverage(
         (
             item.group.group_hypothesis_id,
             item.sample.sample_name,
-            item.backfill_assessment.content.method_subject.method_subject_id,
+            item.backfill_assessment.method_subject.method_subject_id,
         ): item
         for item in completed_empty_backfills
     }

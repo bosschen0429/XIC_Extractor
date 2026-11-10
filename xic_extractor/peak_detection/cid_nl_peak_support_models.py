@@ -11,7 +11,7 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
     CidNlEvidenceObservation,
 )
-from xic_extractor.peak_detection.observations import PeakObservationContent
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.precursor_evidence import (
     PrecursorLossAssessment,
 )
@@ -67,13 +67,13 @@ class DdaCidNlPeakSupportPolicy:
 
 
 @dataclass(frozen=True, slots=True)
-class DdaCidNlPeakSupportContent:
+class DdaCidNlPeakSupport:
     """Immutable method relation between one DDA event and one MS1 peak."""
 
     sample_key: str
     evidence: CidNlEvidenceObservation
-    peak_observation: PeakObservationContent
-    candidate_peaks: tuple[PeakObservationContent, ...]
+    peak_observation: PeakObservation
+    candidate_peaks: tuple[PeakObservation, ...]
     acquisition_mode: str
     dda_scan_number: int
     scan_rt_min: float
@@ -180,13 +180,6 @@ class DdaCidNlPeakSupportContent:
             object.__setattr__(self, field_name, value)
 
 
-@dataclass(frozen=True, slots=True)
-class DdaCidNlPeakSupportRef:
-    """One immutable DDA-to-peak support relation."""
-
-    content: DdaCidNlPeakSupportContent
-
-
 def _finite_float(value: object, *, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise DdaCidNlPeakSupportContractError(f"{field} must be a finite number")
@@ -197,9 +190,8 @@ def _finite_float(value: object, *, field: str) -> float:
 
 
 __all__ = [
-    "DdaCidNlPeakSupportContent",
+    "DdaCidNlPeakSupport",
     "DdaCidNlPeakSupportContractError",
     "DdaCidNlPeakSupportPolicy",
-    "DdaCidNlPeakSupportRef",
     "RELATIONSHIP",
 ]

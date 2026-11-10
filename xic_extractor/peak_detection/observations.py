@@ -1,9 +1,9 @@
-"""Owner-backed physical MS1 peak-observation references.
+"""Owner-backed physical MS1 peak observations.
 
-``peak_detection`` owns the measured trace region and integration facts.  The
-reference keeps physical content equality separate from the exact generation
-context.  It grants no hypothesis, selection, or product
-authority.
+``peak_detection`` owns the measured trace region and integration facts.  An
+observation compares by its measured signal only; the exact generation context
+travels with it without changing that equality.  It grants no hypothesis,
+selection, or product authority.
 """
 
 from __future__ import annotations
@@ -28,14 +28,43 @@ class PeakObservationContractError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
-class PeakObservationContent:
-    """Exact sample-local selected MS1 signal and integration content."""
+class PeakObservationGenerationProvenance:
+    """Exact trace/query and peak-generation context for one observation."""
+
+    acquisition_source_id: str
+    query_rt_min: float
+    query_rt_max: float
+    query_ppm_tol: float
+    trace_source: str
+    selected_trace_indices: tuple[int, ...]
+    resolver_mode: str
+    proposal_sources: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PeakObservation:
+    """One sample-local selected MS1 signal, its integration, and its context.
+
+    Equality uses the measured signal only.  The generation provenance, source
+    trace and evaluation are the context that produced it; the source trace is
+    retained for in-memory physical-view comparison and neither changes the
+    selected integral nor adds another persisted identity.
+    """
 
     sample_key: str
     mz: float
     rt: tuple[float, ...]
     intensity: tuple[float, ...]
     integration: IntegrationResult
+    generation_provenance: PeakObservationGenerationProvenance = field(compare=False)
+    source_trace: Trace = field(compare=False)
+    physical_evaluation: PhysicalPeakEvaluation | None = field(
+        default=None, compare=False
+    )
+    capture_stage: str = field(default="initial_capture", compare=False)
+    signal_processing_profile: SignalProcessingProfile | None = field(
+        default=None, compare=False
+    )
 
     def __post_init__(self) -> None:
         mz = _finite_float(self.mz, field="mz")
@@ -65,7 +94,7 @@ class PeakObservationContent:
         object.__setattr__(self, "intensity", intensity)
 
     @property
-    def physical_identity(self) -> PeakObservationContent:
+    def physical_identity(self) -> PeakObservation:
         """This peak without advisory measurement quality, for in-process joins."""
 
         if self.integration.signal_quality is None:
@@ -98,40 +127,6 @@ class PeakObservationContent:
 
 
 @dataclass(frozen=True, slots=True)
-class PeakObservationGenerationProvenance:
-    """Exact trace/query and peak-generation context for one observation ref."""
-
-    acquisition_source_id: str
-    query_rt_min: float
-    query_rt_max: float
-    query_ppm_tol: float
-    trace_source: str
-    selected_trace_indices: tuple[int, ...]
-    resolver_mode: str
-    proposal_sources: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class PeakObservationRef:
-    """Selected content and the acquired context already bound by provenance.
-
-    The source trace is retained for in-memory physical-view comparison; it
-    neither changes the selected integral nor adds another persisted identity.
-    """
-
-    content: PeakObservationContent
-    generation_provenance: PeakObservationGenerationProvenance
-    source_trace: Trace = field(compare=False)
-    physical_evaluation: PhysicalPeakEvaluation | None = field(
-        default=None, compare=False
-    )
-    capture_stage: str = field(default="initial_capture", compare=False)
-    signal_processing_profile: SignalProcessingProfile | None = field(
-        default=None, compare=False
-    )
-
-
-@dataclass(frozen=True, slots=True)
 class RetainedCaptureEvidence:
     """Actual capture inputs and output, with no scientific decision authority."""
 
@@ -142,10 +137,10 @@ class RetainedCaptureEvidence:
     capture_stage: str
     trace: Trace
     physical_evaluation: PhysicalPeakEvaluation | None
-    observation_ref: PeakObservationRef | None = None
+    observation_ref: PeakObservation | None = None
 
 
-def mint_peak_observation_ref(
+def mint_peak_observation(
     *,
     sample: SampleMetadata,
     trace: Trace,
@@ -155,20 +150,15 @@ def mint_peak_observation_ref(
     physical_evaluation: PhysicalPeakEvaluation | None = None,
     signal_processing_profile: SignalProcessingProfile | None = None,
     capture_stage: str = "initial_capture",
-) -> PeakObservationRef:
-    """Project an already selected integration into sample-local peak content."""
-    content, generation_provenance = _project_peak_observation_values(
+) -> PeakObservation:
+    """Project an already selected integration into one sample-local peak."""
+    return _project_peak_observation(
         sample_key=sample.sample_name,
         trace=trace,
         integration=integration,
         selected_indices=integration.raw_scan_indices,
         resolver_mode=resolver_mode,
         proposal_sources=proposal_sources,
-    )
-    return PeakObservationRef(
-        content=content,
-        generation_provenance=generation_provenance,
-        source_trace=trace,
         physical_evaluation=physical_evaluation,
         signal_processing_profile=signal_processing_profile,
         capture_stage=capture_stage,
@@ -183,9 +173,9 @@ def mint_physical_peak_observations(
     signal_processing_profile: SignalProcessingProfile,
     resolver_mode: str,
     capture_stage: str = "initial_capture",
-    trace_observation: PeakObservationRef | None = None,
+    trace_observation: PeakObservation | None = None,
     acquired_trace_provenance: PeakObservationGenerationProvenance | None = None,
-) -> tuple[PeakObservationRef, ...]:
+) -> tuple[PeakObservation, ...]:
     """Project retained physical-owner answers for one trace without re-solving it.
 
     Acquisition and physical decoding establish evaluation validity. Candidate
@@ -200,10 +190,10 @@ def mint_physical_peak_observations(
             resolver_mode=resolver_mode,
             proposal_sources=("canonical_physical_segment",),
         )
-    observations: list[PeakObservationRef] = []
+    observations: list[PeakObservation] = []
     for evaluation in evaluations:
         integration = physical_peak_observation_integration(evaluation)
-        content, provenance = _project_peak_observation_values(
+        observation = _project_peak_observation(
             sample_key=sample.sample_name,
             trace=trace,
             integration=integration,
@@ -211,21 +201,16 @@ def mint_physical_peak_observations(
             resolver_mode=resolver_mode,
             proposal_sources=("canonical_physical_segment",),
             shared_trace_provenance=provenance,
+            physical_evaluation=evaluation,
+            signal_processing_profile=signal_processing_profile,
+            capture_stage=capture_stage,
         )
-        observations.append(
-            PeakObservationRef(
-                content=content,
-                generation_provenance=provenance,
-                source_trace=trace,
-                physical_evaluation=evaluation,
-                signal_processing_profile=signal_processing_profile,
-                capture_stage=capture_stage,
-            )
-        )
+        provenance = observation.generation_provenance
+        observations.append(observation)
     return tuple(observations)
 
 
-def _project_peak_observation_values(
+def _project_peak_observation(
     *,
     sample_key: str,
     trace: Trace,
@@ -234,7 +219,10 @@ def _project_peak_observation_values(
     resolver_mode: str,
     proposal_sources: tuple[str, ...],
     shared_trace_provenance: PeakObservationGenerationProvenance | None = None,
-) -> tuple[PeakObservationContent, PeakObservationGenerationProvenance]:
+    physical_evaluation: PhysicalPeakEvaluation | None = None,
+    signal_processing_profile: SignalProcessingProfile | None = None,
+    capture_stage: str = "initial_capture",
+) -> PeakObservation:
     """Project signals and integration already validated by their input owner."""
     selected_rt = tuple(
         _finite_float(float(trace.rt[index]), field="selected_rt")
@@ -248,14 +236,7 @@ def _project_peak_observation_values(
         integration,
         raw_scan_indices=tuple(range(len(selected_indices))),
     )
-    return (
-        _owner_minted_peak_observation_content(
-            sample_key=sample_key,
-            mz=float(trace.mz),
-            rt=selected_rt,
-            intensity=selected_intensity,
-            integration=normalized_integration,
-        ),
+    provenance = (
         replace(
             shared_trace_provenance,
             selected_trace_indices=selected_indices,
@@ -268,7 +249,19 @@ def _project_peak_observation_values(
             selected_indices=selected_indices,
             resolver_mode=resolver_mode,
             proposal_sources=proposal_sources,
-        ),
+        )
+    )
+    return _owner_minted_peak_observation(
+        sample_key=sample_key,
+        mz=float(trace.mz),
+        rt=selected_rt,
+        intensity=selected_intensity,
+        integration=normalized_integration,
+        generation_provenance=provenance,
+        source_trace=trace,
+        physical_evaluation=physical_evaluation,
+        signal_processing_profile=signal_processing_profile,
+        capture_stage=capture_stage,
     )
 
 
@@ -299,27 +292,35 @@ def prepare_peak_observation_provenance(
     )
 
 
-def _owner_minted_peak_observation_content(
+def _owner_minted_peak_observation(
     *,
     sample_key: str,
     mz: float,
     rt: tuple[float, ...],
     intensity: tuple[float, ...],
     integration: IntegrationResult,
-) -> PeakObservationContent:
-    """Issue content from values normalized by the observation owner once."""
+    generation_provenance: PeakObservationGenerationProvenance,
+    source_trace: Trace,
+    physical_evaluation: PhysicalPeakEvaluation | None,
+    signal_processing_profile: SignalProcessingProfile | None,
+    capture_stage: str,
+) -> PeakObservation:
+    """Issue an observation from values normalized by the observation owner once."""
 
-    content = object.__new__(PeakObservationContent)
+    observation = object.__new__(PeakObservation)
+    object.__setattr__(observation, "sample_key", sample_key)
+    object.__setattr__(observation, "mz", mz)
+    object.__setattr__(observation, "rt", rt)
+    object.__setattr__(observation, "intensity", intensity)
+    object.__setattr__(observation, "integration", integration)
+    object.__setattr__(observation, "generation_provenance", generation_provenance)
+    object.__setattr__(observation, "source_trace", source_trace)
+    object.__setattr__(observation, "physical_evaluation", physical_evaluation)
     object.__setattr__(
-        content,
-        "sample_key",
-        sample_key,
+        observation, "signal_processing_profile", signal_processing_profile
     )
-    object.__setattr__(content, "mz", mz)
-    object.__setattr__(content, "rt", rt)
-    object.__setattr__(content, "intensity", intensity)
-    object.__setattr__(content, "integration", integration)
-    return content
+    object.__setattr__(observation, "capture_stage", capture_stage)
+    return observation
 
 
 def _validate_integration(
@@ -394,18 +395,18 @@ def _required_text(value: object, *, field: str) -> str:
 
 
 def index_physical_peaks(
-    peaks: Iterable[PeakObservationRef],
-) -> dict[PeakObservationContent, PeakObservationRef]:
-    """Index peaks by physical identity; a later ref of one peak replaces it."""
+    peaks: Iterable[PeakObservation],
+) -> dict[PeakObservation, PeakObservation]:
+    """Index peaks by physical identity; a later observation of one peak wins."""
 
-    return {peak.content.physical_identity: peak for peak in peaks}
+    return {peak.physical_identity: peak for peak in peaks}
 
 
-def same_selected_peak(left: PeakObservationRef, right: PeakObservationRef) -> bool:
+def same_selected_peak(left: PeakObservation, right: PeakObservation) -> bool:
     """Whether two observations selected the same integrated MS1 peak."""
 
-    a = left.content.integration
-    b = right.content.integration
+    a = left.integration
+    b = right.integration
     return (
         a.rt_apex_min == b.rt_apex_min
         and a.rt_left_min == b.rt_left_min
@@ -415,11 +416,10 @@ def same_selected_peak(left: PeakObservationRef, right: PeakObservationRef) -> b
 
 
 __all__ = [
-    "PeakObservationContent",
+    "PeakObservation",
     "PeakObservationContractError",
     "PeakObservationGenerationProvenance",
-    "PeakObservationRef",
     "index_physical_peaks",
-    "mint_peak_observation_ref",
+    "mint_peak_observation",
     "same_selected_peak",
 ]

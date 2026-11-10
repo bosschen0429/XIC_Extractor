@@ -161,24 +161,22 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         )
         assert recovered.backfill_attempt is not None
         assert (
-            fixture_assessment(recovered).content.method_subject
+            fixture_assessment(recovered).method_subject
             == batch.subject_batch.subjects[0]
         )
-        assert fixture_assessment(recovered).content.method_result == (
+        assert fixture_assessment(recovered).method_result == (
             "SUPPORT" if scenario == "recovery_complete" else "HOLD"
         )
-        assert len(fixture_assessment(recovered).evidence_refs) == (
+        assert len(fixture_assessment(recovered).evidence_observations) == (
             2 if scenario == "recovery_complete" else 1
         )
     if scenario in {"missing", "disjoint"}:
-        assert by_sample["S4"].content.method_result == "HOLD"
-        assert (
-            "incomplete_composite_requirement" in by_sample["S4"].content.reason_codes
-        )
+        assert by_sample["S4"].method_result == "HOLD"
+        assert "incomplete_composite_requirement" in by_sample["S4"].reason_codes
     if scenario == "one_scan":
         assert all(
-            len(assessment.evidence_refs) == 2
-            and len({ref.scan_number for ref in assessment.evidence_refs}) == 1
+            len(assessment.evidence_observations) == 2
+            and len({ref.scan_number for ref in assessment.evidence_observations}) == 1
             for assessment in by_sample.values()
         )
     completed = complete_dense_partition(
@@ -186,7 +184,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     )
     writer = completed.application_result
     if scenario == "pooled":
-        assert all(item.content.method_result == "HOLD" for item in by_sample.values())
+        assert all(item.method_result == "HOLD" for item in by_sample.values())
         assert not written_groups(writer)
         _assert_unsupported_exclusion_closes_exact_coverage(completed)
         destination = tmp_path / "empty-matrix.tsv"
@@ -240,7 +238,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             recovered
         )
         assert recovered_cell.integrations == (
-            fixture_assessment(recovered).candidate_peaks[0].content.integration,
+            fixture_assessment(recovered).candidate_peaks[0].integration,
         )
         assert recovered_cell.predecessor_cells == ()
         assert [
@@ -340,12 +338,12 @@ def _assert_duplicate_loss_evidence_rejected(batch, runtime):
     from xic_extractor.peak_detection.cid_nl_evidence import cid_nl_evidence_observation
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         CidNlMethodAssessmentContractError,
-        mint_cid_nl_method_assessment_ref,
+        mint_cid_nl_method_assessment,
     )
 
     result = runtime.sample_results[0]
     assessment = fixture_assessment(result)
-    measured = assessment.evidence_refs[0]
+    measured = assessment.evidence_observations[0]
     duplicate = cid_nl_evidence_observation(
         sample=result.job.sample,
         acquisition_source=result.job.acquisition_source_expectation.source,
@@ -361,14 +359,14 @@ def _assert_duplicate_loss_evidence_rejected(batch, runtime):
     with pytest.raises(
         CidNlMethodAssessmentContractError, match="duplicate acquisition scan"
     ):
-        mint_cid_nl_method_assessment_ref(
+        mint_cid_nl_method_assessment(
             sample=result.job.sample,
             acquisition_source=result.job.acquisition_source_expectation.source,
-            method_subject=assessment.content.method_subject,
-            detector_invocation_id=assessment.content.detector_invocation_id,
-            evaluation_receipt=assessment.content.evaluation_receipt,
+            method_subject=assessment.method_subject,
+            detector_invocation_id=assessment.detector_invocation_id,
+            evaluation_receipt=assessment.evaluation_receipt,
             candidate_peaks=assessment.candidate_peaks,
-            evidence_refs=(*assessment.evidence_refs, duplicate),
+            evidence_refs=(*assessment.evidence_observations, duplicate),
             individual_support_refs=assessment.individual_support_refs,
             set_relation_refs=assessment.set_relation_refs,
         )

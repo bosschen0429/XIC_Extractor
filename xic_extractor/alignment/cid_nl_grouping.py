@@ -26,7 +26,7 @@ from xic_extractor.alignment.grouping_rules import (
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
     supported_cid_nl_peaks,
 )
 
@@ -134,7 +134,7 @@ def cid_nl_composition_index_key(owner: SampleLocalMS1Owner) -> tuple[str, str] 
     return (
         None
         if assessment is None
-        else (assessment.content.method_subject.method_subject_id, "composition")
+        else (assessment.method_subject.method_subject_id, "composition")
     )
 
 
@@ -226,14 +226,14 @@ def compatible_composite_owners(
 ) -> bool:
     """Only exact typed assessment/physical membership closes composition."""
     first, second = left.cid_nl_composite_assessment, right.cid_nl_composite_assessment
-    if not isinstance(first, CidNlMethodAssessmentRef) or not isinstance(
-        second, CidNlMethodAssessmentRef
+    if not isinstance(first, CidNlMethodAssessment) or not isinstance(
+        second, CidNlMethodAssessment
     ):
         return False
     assessments = (first, second)
     if (
-        first.content.method_subject.composition is None
-        or first.content.method_subject != second.content.method_subject
+        first.method_subject.composition is None
+        or first.method_subject != second.method_subject
     ):
         return False
     for owner, assessment in zip((left, right), assessments, strict=True):
@@ -241,7 +241,7 @@ def compatible_composite_owners(
         if (
             member is None
             or member.subject_id != owner.owner_id
-            or member.sample_key != assessment.content.sample_key
+            or member.sample_key != assessment.sample_key
         ):
             return False
         if len(member.physical_peaks) != 1:
@@ -250,16 +250,16 @@ def compatible_composite_owners(
             (
                 item
                 for item in assessment.candidate_peaks
-                if item.content.physical_identity == member.physical_peaks[0]
+                if item.physical_identity == member.physical_peaks[0]
             ),
             None,
         )
-        if peak is None or peak.content not in supported_cid_nl_peaks(assessment):
+        if peak is None or peak not in supported_cid_nl_peaks(assessment):
             return False
         if (
-            owner.raw_file != assessment.content.acquisition_source_id
-            or owner.selected_integration != peak.content.integration
-            or owner.precursor_mz != peak.content.mz
+            owner.raw_file != assessment.acquisition_source_id
+            or owner.selected_integration != peak.integration
+            or owner.precursor_mz != peak.mz
         ):
             return False
     return True
@@ -269,7 +269,7 @@ def owner_composite_subject_id(owner: SampleLocalMS1Owner) -> str | None:
     """Return the composition identity bound to this owner's physical peak."""
     assessment = owner.cid_nl_composite_assessment
     if assessment is not None and compatible_composite_owners(owner, owner):
-        return assessment.content.method_subject.method_subject_id
+        return assessment.method_subject.method_subject_id
     return None
 
 

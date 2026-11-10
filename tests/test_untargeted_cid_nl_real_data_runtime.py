@@ -572,10 +572,10 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     by_stem = {item.job.sample.raw_stem: item for item in result.sample_results}
     s1_assessment = by_stem["S1"].adapter_result.assessment_input.assessment
     s2_assessment = by_stem["S2"].adapter_result.assessment_input.assessment
-    assert s1_assessment.content.method_result == "SUPPORT"
-    assert s2_assessment.content.technical_state == "not_evaluated"
-    assert s2_assessment.content.method_result is None
-    assert not s2_assessment.content.evaluation_receipt.search_completed
+    assert s1_assessment.method_result == "SUPPORT"
+    assert s2_assessment.technical_state == "not_evaluated"
+    assert s2_assessment.method_result is None
+    assert not s2_assessment.evaluation_receipt.search_completed
     assert by_stem["S1"].adapter_result.strict_scan_count == 2
     assert by_stem["S2"].adapter_result.acquisition is None
     # One integration trace plus its separate elution-context trace.
@@ -606,7 +606,7 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         item.job.sample.raw_stem: item for item in warm_result.sample_results
     }
     warm_s1 = warm_by_stem["S1"].adapter_result
-    assert warm_s1.assessment_input.assessment.content == (s1_assessment.content)
+    assert warm_s1.assessment_input.assessment == (s1_assessment)
     assert warm_s1.acquisition is not None
     assert by_stem["S1"].adapter_result.acquisition is not None
     assert tuple(map(serialize_acquired_trace, warm_s1.acquisition.traces)) == tuple(
@@ -646,14 +646,14 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     cancel_accepted,
 ) -> None:
     physical_records = {}
-    from xic_extractor.alignment.cell_observation.records import CellObservationRef
+    from xic_extractor.alignment.cell_observation.records import CellObservation
 
-    construct_cell = CellObservationRef.__init__
+    construct_cell = CellObservation.__init__
 
     def reject_cell_materialization(_self, *args, **kwargs):
         raise AssertionError("recovery planning must not materialize matrix cells")
 
-    monkeypatch.setattr(CellObservationRef, "__init__", reject_cell_materialization)
+    monkeypatch.setattr(CellObservation, "__init__", reject_cell_materialization)
     stems = ("S1", "S2", "Missing", "NoPeak", "Blank")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     for path in raw_paths:
@@ -800,15 +800,15 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         return
 
     assert result.succeeded is True
-    monkeypatch.setattr(CellObservationRef, "__init__", construct_cell)
+    monkeypatch.setattr(CellObservation, "__init__", construct_cell)
     by_stem = {item.job.sample.raw_stem: item for item in result.sample_results}
     assert by_stem["S1"].adapter_result.strict_scan_count == 1
     assert by_stem["S2"].adapter_result.strict_scan_count == 1
     for stem in ("Missing", "NoPeak", "Blank"):
         initial = by_stem[stem].adapter_result.assessment_input.assessment
-        assert initial.content.technical_state == "not_evaluated"
-        assert initial.content.method_result is None
-        assert not initial.content.evaluation_receipt.search_completed
+        assert initial.technical_state == "not_evaluated"
+        assert initial.method_result is None
+        assert not initial.evaluation_receipt.search_completed
     assert by_stem["Missing"].backfill_attempt is not None
     assert by_stem["Missing"].backfill_input is not None
     assert len(by_stem["Missing"].backfill_attempt.assessment.candidate_peaks) == 1
@@ -1157,7 +1157,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
 
     assert result.succeeded is True
     assert [
-        item.adapter_result.assessment_input.assessment.content.method_result
+        item.adapter_result.assessment_input.assessment.method_result
         for item in result.sample_results
     ] == ["SUPPORT", "REJECT", None]
     assert raw_paths[2] not in opened

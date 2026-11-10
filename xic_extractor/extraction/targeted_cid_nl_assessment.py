@@ -16,18 +16,18 @@ from xic_extractor.extraction.targeted_capture_population import (
 )
 from xic_extractor.peak_detection.cid_nl_evidence import cid_nl_evidence_observation
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
-    mint_cid_nl_method_assessment_ref,
+    CidNlMethodAssessment,
+    mint_cid_nl_method_assessment,
     resolve_cid_nl_method_relations,
 )
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.sample_metadata import SampleMetadata
 
 
 def assess_targeted_cid_nl_samples(
     population: TargetedCapturePopulation,
-) -> tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...]:
+) -> tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...]:
     """Assess every sample of a CID-NL Target; an MS1-only Target has none."""
 
     if population.ms1_only:
@@ -55,8 +55,8 @@ def _assess_sample(
     sample: SampleMetadata,
     acquisition_source: AcquisitionSourceIdentity,
     result: ExtractionResult,
-    candidate_peaks: tuple[PeakObservationRef, ...],
-) -> CidNlMethodAssessmentRef:
+    candidate_peaks: tuple[PeakObservation, ...],
+) -> CidNlMethodAssessment:
     """Mint one sample's assessment after checking source and scan identity."""
 
     if result.cid_nl_evaluation_receipt is None or result.cid_nl_relations is None:
@@ -102,7 +102,7 @@ def _assess_sample(
             else None
         ),
     )
-    return mint_cid_nl_method_assessment_ref(
+    return mint_cid_nl_method_assessment(
         sample=sample,
         acquisition_source=acquisition_source,
         target=target,

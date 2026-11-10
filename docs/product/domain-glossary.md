@@ -271,7 +271,7 @@ name should say which view it means:
 
 | Name in code | Plain meaning | Kind |
 | --- | --- | --- |
-| physical peak (`PeakObservationRef` content) | the MS1 peak itself | a thing |
+| physical peak (`PeakObservation`) | the MS1 peak itself | a thing |
 | `peak_detection/physical_peak_*` evaluation | finding and judging that peak on its XIC | a step |
 | `discovery/physical_fact_*`, `discovery_physical_facts.json` | Discovery's saved copy of that judgement (see [Discovery](discovery.md)) | a record |
 | `physical_mz` | the measured MS1 mass used to extract the peak; not the precursor key that replays MS2 evidence | a number |

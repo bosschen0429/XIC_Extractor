@@ -1,6 +1,6 @@
 """Set-level CID-NL scan relations that cannot grant individual SUPPORT.
 
-This owner is deliberately separate from ``DdaCidNlPeakSupportRef``.  It
+This owner is deliberately separate from ``DdaCidNlPeakSupport``.  It
 captures boundary and positive-width overlapping cases without selecting
 one peak or minting one vote per candidate.
 """
@@ -18,8 +18,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
 )
 from xic_extractor.peak_detection.observations import (
-    PeakObservationContent,
-    PeakObservationRef,
+    PeakObservation,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 
@@ -31,13 +30,13 @@ class DdaCidNlCandidateSetRelationContractError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
-class DdaCidNlCandidateSetRelationContent:
+class DdaCidNlCandidateSetRelation:
     """Immutable set-level relation; it carries no individual vote."""
 
     sample_key: str
     evidence: CidNlEvidenceObservation
-    candidate_peaks: tuple[PeakObservationContent, ...]
-    matched_candidates: tuple[PeakObservationContent, ...]
+    candidate_peaks: tuple[PeakObservation, ...]
+    matched_candidates: tuple[PeakObservation, ...]
     acquisition_mode: str
     dda_scan_number: int
     scan_rt_min: float
@@ -79,22 +78,13 @@ class DdaCidNlCandidateSetRelationContent:
         object.__setattr__(self, "scan_rt_min", 0.0 if scan_rt == 0.0 else scan_rt)
 
 
-@dataclass(frozen=True, slots=True)
-class DdaCidNlCandidateSetRelationRef:
-    """Set-level relation plus the exact evidence and candidate references."""
-
-    content: DdaCidNlCandidateSetRelationContent
-    canonical_evidence: CidNlEvidenceObservation
-    candidate_peaks: tuple[PeakObservationRef, ...]
-
-
-def resolve_dda_cid_nl_candidate_set_relation_ref(
+def resolve_dda_cid_nl_candidate_set_relation(
     *,
     sample: SampleMetadata,
     canonical_evidence: CidNlEvidenceObservation,
-    candidate_peaks: tuple[PeakObservationRef, ...],
+    candidate_peaks: tuple[PeakObservation, ...],
     policy: DdaCidNlPeakSupportPolicy,
-) -> DdaCidNlCandidateSetRelationRef:
+) -> DdaCidNlCandidateSetRelation:
     """Resolve a non-unique zero-buffer case without selecting one candidate."""
 
     candidates = _validate_inputs(
@@ -107,20 +97,15 @@ def resolve_dda_cid_nl_candidate_set_relation_ref(
         candidate_peaks=candidates,
         policy=policy,
     )
-    content = DdaCidNlCandidateSetRelationContent(
+    return DdaCidNlCandidateSetRelation(
         sample_key=sample.sample_name,
         evidence=canonical_evidence,
-        candidate_peaks=tuple(peak.content for peak in candidates),
-        matched_candidates=tuple(peak.content for peak in matched),
+        candidate_peaks=candidates,
+        matched_candidates=matched,
         acquisition_mode=canonical_evidence.acquisition_mode,
         dda_scan_number=canonical_evidence.scan_number,
         scan_rt_min=canonical_evidence.scan_rt_min,
         policy=policy,
-    )
-    return DdaCidNlCandidateSetRelationRef(
-        content=content,
-        canonical_evidence=canonical_evidence,
-        candidate_peaks=candidates,
     )
 
 
@@ -129,7 +114,7 @@ def _validate_inputs(
     canonical_evidence: CidNlEvidenceObservation,
     candidate_peaks: object,
     policy: DdaCidNlPeakSupportPolicy,
-) -> tuple[PeakObservationRef, ...]:
+) -> tuple[PeakObservation, ...]:
     if not isinstance(policy, DdaCidNlPeakSupportPolicy):
         raise DdaCidNlCandidateSetRelationContractError(
             "policy must be owner-normalized DDA CID-NL support policy"
@@ -149,9 +134,9 @@ def _validate_inputs(
 def _set_level_members(
     *,
     canonical_evidence: CidNlEvidenceObservation,
-    candidate_peaks: tuple[PeakObservationRef, ...],
+    candidate_peaks: tuple[PeakObservation, ...],
     policy: DdaCidNlPeakSupportPolicy,
-) -> tuple[PeakObservationRef, ...]:
+) -> tuple[PeakObservation, ...]:
     observation = canonical_evidence
     precursor = observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
     if not policy.accepts_precursor(precursor) or precursor.reference_mz is None:
@@ -161,14 +146,13 @@ def _set_level_members(
     mz_compatible = tuple(
         peak
         for peak in candidate_peaks
-        if abs(precursor.reference_mz - peak.content.mz)
-        <= policy.precursor_tolerance_da
+        if abs(precursor.reference_mz - peak.mz) <= policy.precursor_tolerance_da
     )
     containing = tuple(
         peak
         for peak in mz_compatible
-        if peak.content.integration.rt_left_min <= observation.support_rt_min
-        and observation.scan_rt_min <= peak.content.integration.rt_right_min
+        if peak.integration.rt_left_min <= observation.support_rt_min
+        and observation.scan_rt_min <= peak.integration.rt_right_min
     )
     if not containing:
         raise DdaCidNlCandidateSetRelationContractError(
@@ -177,13 +161,13 @@ def _set_level_members(
 
     if len(containing) == 1:
         selected = containing[0]
-        interval = selected.content.integration
+        interval = selected.integration
         if (
             interval.rt_left_min < observation.scan_rt_min < interval.rt_right_min
             and not any(
                 candidate is not selected
-                and interval.rt_left_min < candidate.content.integration.rt_right_min
-                and candidate.content.integration.rt_left_min < interval.rt_right_min
+                and interval.rt_left_min < candidate.integration.rt_right_min
+                and candidate.integration.rt_left_min < interval.rt_right_min
                 for candidate in mz_compatible
             )
         ):
@@ -209,28 +193,28 @@ def _set_level_members(
 
 
 def _intervals_touch_or_overlap(
-    left: PeakObservationRef,
-    right: PeakObservationRef,
+    left: PeakObservation,
+    right: PeakObservation,
 ) -> bool:
-    left_integration = left.content.integration
-    right_integration = right.content.integration
+    left_integration = left.integration
+    right_integration = right.integration
     return (
         left_integration.rt_left_min <= right_integration.rt_right_min
         and right_integration.rt_left_min <= left_integration.rt_right_min
     )
 
 
-def _canonical_candidates(value: object) -> tuple[PeakObservationRef, ...]:
+def _canonical_candidates(value: object) -> tuple[PeakObservation, ...]:
     if not isinstance(value, tuple) or not value:
         raise DdaCidNlCandidateSetRelationContractError(
             "candidate_peaks must be a non-empty immutable tuple"
         )
-    if any(not isinstance(peak, PeakObservationRef) for peak in value):
+    if any(not isinstance(peak, PeakObservation) for peak in value):
         raise DdaCidNlCandidateSetRelationContractError(
             "candidate_peaks must contain owner-backed observations"
         )
     candidates = tuple(sorted(value, key=_candidate_sort_key))
-    keys = tuple(peak.content.physical_peak_key for peak in candidates)
+    keys = tuple(peak.physical_peak_key for peak in candidates)
     if len(set(keys)) != len(keys):
         raise DdaCidNlCandidateSetRelationContractError(
             "candidate_peaks must be unique"
@@ -239,15 +223,14 @@ def _canonical_candidates(value: object) -> tuple[PeakObservationRef, ...]:
 
 
 def _candidate_sort_key(
-    peak: PeakObservationRef,
+    peak: PeakObservation,
 ) -> tuple[float, float, tuple[float, ...], tuple[float, ...]]:
-    return peak.content.measured_order_key
+    return peak.measured_order_key
 
 
 __all__ = [
-    "DdaCidNlCandidateSetRelationContent",
+    "DdaCidNlCandidateSetRelation",
     "DdaCidNlCandidateSetRelationContractError",
-    "DdaCidNlCandidateSetRelationRef",
     "RELATIONSHIP",
-    "resolve_dda_cid_nl_candidate_set_relation_ref",
+    "resolve_dda_cid_nl_candidate_set_relation",
 ]

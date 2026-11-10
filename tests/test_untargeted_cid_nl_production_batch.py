@@ -169,10 +169,10 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     (child,) = completed.application_result.children
     (group,) = child.scientific_core.final_population
     source_subject_ids = {
-        source.method_assessment.content.method_subject.method_subject_id
+        source.method_assessment.method_subject.method_subject_id
         for cell in child.scientific_core.cell_observations
         for source in cell.predecessor_cells
-        if source.content.method_result == "SUPPORT"
+        if source.method_result == "SUPPORT"
     }
     assert source_subject_ids == {
         subject.method_subject_id for subject in batch.subject_batch.subjects
@@ -199,9 +199,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         )
         assert missing.evidence_state == "not_searched"
         assert not missing.direct_hypotheses and not missing.integrations
-        assert all(
-            ref.content.method_result != "SUPPORT" for ref in missing.method_assessments
-        )
+        assert all(ref.method_result != "SUPPORT" for ref in missing.method_assessments)
         writer = completed.application_result
         destination = tmp_path / "no-backfill-matrix.tsv"
         render("matrix", destination, writer)
@@ -1071,9 +1069,9 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     expected_loss_by_sample = {path.stem: configured_loss for path in paths}
     support_losses_by_sample = {
         cell.canonical_sample.raw_stem: {
-            source.method_assessment.content.method_subject.neutral_loss_da
+            source.method_assessment.method_subject.neutral_loss_da
             for source in cell.predecessor_cells
-            if source.content.method_result == "SUPPORT"
+            if source.method_result == "SUPPORT"
         }
         for cell in child.scientific_core.cell_observations
     }
@@ -1274,10 +1272,10 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 if direct_observations and decision.value is not None:
                     assert len(direct_observations) == 1
                     expected_cell_apexes[decision.subject.canonical_sample.raw_stem] = (
-                        direct_observations[0].content.integration.rt_apex_min
+                        direct_observations[0].integration.rt_apex_min
                     )
                 for direct in decision.evidence.direct_observations:
-                    physical_id = direct.content.physical_peak_key
+                    physical_id = direct.physical_peak_key
                     if physical_id not in member_ids:
                         assert decision.subject.canonical_sample.raw_stem == ("Hold")
                         # The group-bounded MS1 peak fills the Matrix without
@@ -1290,8 +1288,8 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         diagnostic_observation_ids.add(physical_id)
                         continue
                     expected_presentation_facts[physical_id] = (
-                        direct.content.mz,
-                        direct.content.integration.rt_apex_min,
+                        direct.mz,
+                        direct.integration.rt_apex_min,
                     )
     assert len(diagnostic_observation_ids) == 1
     assert not diagnostic_observation_ids & set(physical_peak_keys)
@@ -1470,8 +1468,8 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     }
     assert recovered["MS1Only"].backfill_attempt is not None
     assert recovered["NoPeak"].backfill_attempt is not None
-    assert fixture_assessment(recovered["MS1Only"]).content.method_result == "HOLD"
-    assert fixture_assessment(recovered["NoPeak"]).content.method_result == "HOLD"
+    assert fixture_assessment(recovered["MS1Only"]).method_result == "HOLD"
+    assert fixture_assessment(recovered["NoPeak"]).method_result == "HOLD"
     alignment_config = AlignmentConfig(anchor_min_seed_events=1)
     completed = complete_dense_partition(
         batch, runtime, alignment_config=alignment_config

@@ -344,8 +344,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 for support in joint_cell.group_context.supports
             )
             assert all(
-                assessment.content.reason_codes
-                != ("no_search_eligible_discovery_input",)
+                assessment.reason_codes != ("no_search_eligible_discovery_input",)
                 for assessment in completed.method_assessments
             )
             assert len(written_groups(writer)) == 3
@@ -382,14 +381,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 == candidate.best_event_precursor_mz
             )
             assert record.evaluation.facts == inputs.physical_facts[stem]
-            assert fixture_assessment(result).content.method_result == (
+            assert fixture_assessment(result).method_result == (
                 "HOLD" if case.method_mode == "intersection" else "SUPPORT"
             )
         if case.method_mode == "intersection":
             assert written_groups(writer) == ()
             assert all(
                 "incomplete_composite_requirement"
-                in fixture_assessment(result).content.reason_codes
+                in fixture_assessment(result).reason_codes
                 for result in trace.runtime_results[0].sample_results
             )
             _assert_composite_no_input_exclusion_coverage(
@@ -472,13 +471,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             for row in matrix_rows
         )
         assert all(
-            result.adapter_result.assessment_input.assessment.content.method_result
-            == "SUPPORT"
+            result.adapter_result.assessment_input.assessment.method_result == "SUPPORT"
             for result in trace.runtime_results[0].sample_results
         )
         assert (
             any(
-                source.content.outside_group is not None
+                source.outside_group is not None
                 for cell in scientific.cell_observations
                 for source in cell.predecessor_cells
             )
@@ -566,12 +564,12 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
     assert retained_recovery.physical_evaluation is observation.physical_evaluation
     assert tuple(retained_recovery.trace.rt) == tuple(acquired.trace.rt)
     assert tuple(retained_recovery.trace.intensity) == tuple(acquired.trace.intensity)
-    integ = observation.content.integration
+    integ = observation.integration
     physical_facts = observation.physical_evaluation.facts
     assert physical_facts is not None
     assert integ.area_baseline_corrected == physical_facts.area_counts_seconds
     assert integ.height_smoothed == physical_facts.height
-    assert recovered.assessment.content.method_result == "HOLD"
+    assert recovered.assessment.method_result == "HOLD"
     original_intensity = inputs.source_raws[inputs.paths[0]].intensity
     recovery_evaluations = []
     evaluate_recovery = capture_owner.evaluate_physical_peak
@@ -601,7 +599,7 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
                 )
             )
             assert unavailable.assessment.candidate_peaks == ()
-            assert unavailable.assessment.content.method_result == "HOLD"
+            assert unavailable.assessment.method_result == "HOLD"
             assert unavailable.backfill_input is None
             assert recovery_evaluations[-1].reason == reason
             assert recovery_evaluations[-1].facts is None
@@ -617,7 +615,7 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
             )
         )
         assert unavailable.assessment.candidate_peaks == ()
-        assert unavailable.assessment.content.method_result == "HOLD"
+        assert unavailable.assessment.method_result == "HOLD"
         assert unavailable.backfill_input is None
         (retained_unavailable,) = unavailable.capture_evidence
         assert retained_unavailable.observation_ref is None
@@ -648,7 +646,7 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
                 )
             )
         assert empty.assessment.candidate_peaks == ()
-        assert empty.assessment.content.method_result == "HOLD"
+        assert empty.assessment.method_result == "HOLD"
         assert empty.backfill_input is None
         assert empty.acquisition.traces[0].coordinate.trace_point_count == 0
         (retained_empty,) = empty.capture_evidence

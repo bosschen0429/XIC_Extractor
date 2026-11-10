@@ -198,7 +198,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
     monkeypatch.setattr(
         cid_nl_method_assessment, "evaluate_cid_nl_method_relations", record_relations
     )
-    mint_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment_ref
+    mint_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment
 
     def record_assessment(**kwargs):
         result = mint_assessment(**kwargs)
@@ -207,7 +207,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
 
     monkeypatch.setattr(
         targeted_cid_nl_assessment,
-        "mint_cid_nl_method_assessment_ref",
+        "mint_cid_nl_method_assessment",
         record_assessment,
     )
     workbook_path = tmp_path / "xic_results.xlsx"
@@ -227,9 +227,11 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
     assert all(
         len(item.candidate_peaks) == (2 if with_signal else 0) for item in assessments
     )
-    assert all(len(item.evidence_refs) == (6 if with_nl else 0) for item in assessments)
     assert all(
-        item.content.method_result
+        len(item.evidence_observations) == (6 if with_nl else 0) for item in assessments
+    )
+    assert all(
+        item.method_result
         == (
             "SUPPORT"
             if with_signal and with_nl
@@ -1809,7 +1811,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     )
     if accepted:
         decision = accepted[0]
-        assert decision.target_cell.content.method_result == "HOLD"
+        assert decision.target_cell.method_result == "HOLD"
         assert decision.group_facts.direct_support_count_s == 2
         assert decision.candidate_universe.localization.location.basis.startswith(
             "trajectory" if istd_backfill else "paired_istd"
@@ -1819,7 +1821,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
             for s in decision.group_facts.group_context.supports
         )
         assert (
-            decision.matched_candidate.peak_observation.content.integration.rt_apex_min
+            decision.matched_candidate.peak_observation.integration.rt_apex_min
             == pytest.approx(1.49 if istd_backfill else 1.9, abs=0.005)
         )
     workbook = load_workbook(workbook_path, read_only=True, data_only=True)
@@ -1841,7 +1843,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     if not missing_pair:
         assert row["RT"] == pytest.approx(1.49 if istd_backfill else 1.9, abs=0.005)
         assert row["Area"] > 0
-        candidate = accepted[0].matched_candidate.peak_observation.content.integration
+        candidate = accepted[0].matched_candidate.peak_observation.integration
         assert row["PeakStart"] == pytest.approx(candidate.rt_left_min, abs=5e-5)
         assert row["PeakEnd"] == pytest.approx(candidate.rt_right_min, abs=5e-5)
         rendered = next(

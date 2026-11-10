@@ -25,7 +25,7 @@ from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRe
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
 )
 from xic_extractor.peak_detection.observations import RetainedCaptureEvidence
 
@@ -75,8 +75,7 @@ class CompletedUntargetBatchWorkflowResult:
     # Diagnostic handoff only; these retained owner facts grant no completion
     # or Matrix authority and do not change scientific result equality.
     method_assessments: (
-        tuple[CidNlMethodAssessmentRef, ...]
-        | ImmutableSequence[CidNlMethodAssessmentRef]
+        tuple[CidNlMethodAssessment, ...] | ImmutableSequence[CidNlMethodAssessment]
     ) = field(default=(), repr=False, compare=False)
     initial_groups: (
         tuple[CrossSamplePeakGroupHypothesis, ...]
