@@ -2,23 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from xic_extractor.alignment.matrix import (
-    AlignedCell,
-    AlignmentMatrix,
-    cells_by_cluster,
-)
-from xic_extractor.alignment.production_decisions import (
-    ProductionCellDecision,
-    ProductionDecisionSet,
-)
 from xic_extractor.alignment.untargeted_finalized_matrix import (
+    AlignmentMatrix,
     FinalizedUntargetMatrixRow,
 )
-from xic_extractor.output.alignment.output_rows import (
-    production_matrix_area,
-)
-
-ProductCellAssignment = tuple[AlignedCell, ProductionCellDecision]
+from xic_extractor.output.alignment.output_rows import format_float
 
 
 @dataclass(frozen=True)
@@ -33,42 +21,27 @@ class ProductMatrixRow:
 def build_product_matrix_rows(
     matrix: AlignmentMatrix,
     *,
-    production_decisions: ProductionDecisionSet,
     source_candidate_owners: dict[str, str] | None = None,
 ) -> tuple[ProductMatrixRow, ...]:
-    decisions = production_decisions
-    grouped_cells = cells_by_cluster(matrix)
     rows: list[ProductMatrixRow] = []
     seen_source_candidates: dict[str, str] = (
         {} if source_candidate_owners is None else source_candidate_owners
     )
 
     for cluster in matrix.clusters:
-        cluster_id = cluster.feature_id
-        row_decision = decisions.row(cluster_id)
-        cluster_cells = grouped_cells.get(cluster_id, ())
-        cluster_sample_stems = {cell.sample_stem for cell in cluster_cells}
-        if not row_decision.include_in_primary_matrix:
+        if cluster.destination != "matrix":
             continue
-        product_cells = _product_cells(cluster_id, cluster_cells, decisions)
-        _claim_source_candidates(
-            product_cells,
-            seen_source_candidates,
-            row_owner_id=cluster_id,
-        )
+        _claim_source_candidates(cluster, seen_source_candidates)
         projection = _matrix_review_projection(
             cluster,
             matrix_row_index=len(rows) + 1,
-            product_cells=product_cells,
         )
-        sample_values = {}
-        for sample_stem in matrix.sample_order:
-            decision = (
-                decisions.cell(cluster_id, sample_stem)
-                if sample_stem in cluster_sample_stems
-                else None
+        sample_values = {
+            sample_stem: "" if cell.value is None else format_float(cell.value)
+            for sample_stem, cell in zip(
+                matrix.sample_order, cluster.cells, strict=True
             )
-            sample_values[sample_stem] = production_matrix_area(decision)
+        }
         rows.append(
             ProductMatrixRow(
                 matrix_row_index=len(rows) + 1,
@@ -81,17 +54,10 @@ def build_product_matrix_rows(
     return tuple(rows)
 
 
-def product_matrix_tsv_rows(
-    matrix: AlignmentMatrix,
-    *,
-    production_decisions: ProductionDecisionSet,
-) -> list[dict[str, object]]:
+def product_matrix_tsv_rows(matrix: AlignmentMatrix) -> list[dict[str, object]]:
     return [
         {"Mz": row.mz, "RT": row.rt, **row.sample_values}
-        for row in build_product_matrix_rows(
-            matrix,
-            production_decisions=production_decisions,
-        )
+        for row in build_product_matrix_rows(matrix)
     ]
 
 
@@ -99,7 +65,6 @@ def _matrix_review_projection(
     cluster: FinalizedUntargetMatrixRow,
     *,
     matrix_row_index: int,
-    product_cells: tuple[ProductCellAssignment, ...],
 ) -> dict[str, object]:
     mz = float(cluster.family_center_mz)
     rt = float(cluster.family_center_rt)
@@ -109,40 +74,20 @@ def _matrix_review_projection(
         "matrix_mz": mz,
         "matrix_rt": rt,
         "center_mz_basis": cluster.center_mz_basis,
-        "accepted_cell_count": len(product_cells),
+        "accepted_cell_count": sum(cell.value is not None for cell in cluster.cells),
     }
 
 
-def _product_cells(
-    cluster_id: str,
-    cells: tuple[AlignedCell, ...],
-    decisions: ProductionDecisionSet,
-) -> tuple[ProductCellAssignment, ...]:
-    product_cells = []
-    for cell in cells:
-        decision = decisions.cell(cluster_id, cell.sample_stem)
-        if decision.write_matrix_value:
-            product_cells.append((cell, decision))
-    return tuple(product_cells)
-
-
 def _claim_source_candidates(
-    product_cells: tuple[ProductCellAssignment, ...],
+    cluster: FinalizedUntargetMatrixRow,
     seen_source_candidates: dict[str, str],
-    *,
-    row_owner_id: str,
 ) -> None:
-    for cell, _decision in product_cells:
-        if cell.source_candidate_id is None:
-            continue
-        previous = seen_source_candidates.setdefault(
-            cell.source_candidate_id,
-            row_owner_id,
-        )
-        if previous != row_owner_id:
+    for _sample_stem, candidate_id in cluster.source_candidate_ids:
+        previous = seen_source_candidates.setdefault(candidate_id, cluster.feature_id)
+        if previous != cluster.feature_id:
             raise ValueError(
                 "source peak cannot contribute to multiple product "
-                f"hypothesis rows: {cell.source_candidate_id}"
+                f"hypothesis rows: {candidate_id}"
             )
 
 

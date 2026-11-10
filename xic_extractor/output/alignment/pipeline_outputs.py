@@ -25,10 +25,9 @@ from xic_extractor.alignment.backfill.scope import (
 from xic_extractor.alignment.config import (
     BackfillXicBackend,
 )
-from xic_extractor.alignment.matrix import AlignmentMatrix
-from xic_extractor.alignment.production_decisions import ProductionDecisionSet
 from xic_extractor.alignment.untargeted_finalized_matrix import (
-    CompletedUntargetBatchWriterInputs,
+    AlignmentMatrix,
+    FinalizedUntargetMatrixRow,
     completed_untarget_batch_sample_order,
     iter_completed_untarget_batch_writer_inputs,
     project_completed_untarget_batch_writer_inputs,
@@ -185,10 +184,10 @@ def write_completed_untargeted_outputs_atomic(
 ) -> int:
     """Publish completed matrix facts through the selected atomic output path."""
     stream_outputs = supports_streamed_untargeted_outputs(outputs)
-    writer_inputs = None
+    matrix = None
     if not stream_outputs:
         with timing_recorder.stage("alignment.project_outputs"):
-            writer_inputs = project_completed_untarget_batch_writer_inputs(
+            matrix = project_completed_untarget_batch_writer_inputs(
                 completed,
                 consume_child=consume_child,
                 ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
@@ -210,15 +209,14 @@ def write_completed_untargeted_outputs_atomic(
                 metadata=metadata,
                 timing_recorder=timing_recorder,
             )
-        assert writer_inputs is not None
+        assert matrix is not None
         write_outputs_atomic(
             outputs,
-            writer_inputs.matrix,
+            matrix,
             metadata=metadata,
-            production_decisions=writer_inputs.production_decisions,
             timing_recorder=timing_recorder,
         )
-        return len(writer_inputs.matrix.clusters)
+        return len(matrix.clusters)
 
 
 def write_outputs_atomic(
@@ -226,11 +224,8 @@ def write_outputs_atomic(
     matrix: AlignmentMatrix,
     *,
     metadata: dict[str, str],
-    production_decisions: ProductionDecisionSet,
     timing_recorder: TimingRecorder | None = None,
 ) -> None:
-    if not isinstance(production_decisions, ProductionDecisionSet):
-        raise TypeError("production_decisions must be owner-minted")
     output_paths_and_writers: list[tuple[Path, Callable[[Path], Path]]] = []
     recorder = (
         timing_recorder
@@ -241,22 +236,14 @@ def write_outputs_atomic(
         output_paths_and_writers.append(
             (
                 outputs.matrix_tsv,
-                lambda path: write_alignment_matrix_tsv(
-                    path,
-                    matrix,
-                    production_decisions=production_decisions,
-                ),
+                lambda path: write_alignment_matrix_tsv(path, matrix),
             ),
         )
     if outputs.review_tsv is not None:
         output_paths_and_writers.append(
             (
                 outputs.review_tsv,
-                lambda path: write_alignment_review_tsv(
-                    path,
-                    matrix,
-                    production_decisions=production_decisions,
-                ),
+                lambda path: write_alignment_review_tsv(path, matrix),
             ),
         )
     if outputs.cells_tsv is not None:
@@ -267,11 +254,7 @@ def write_outputs_atomic(
         output_paths_and_writers.append(
             (
                 outputs.backfill_cell_evidence_tsv,
-                lambda path: write_alignment_backfill_cell_evidence_tsv(
-                    path,
-                    matrix,
-                    production_decisions=production_decisions,
-                ),
+                lambda path: write_alignment_backfill_cell_evidence_tsv(path, matrix),
             ),
         )
     if outputs.status_matrix_tsv is not None:
@@ -302,7 +285,7 @@ def supports_streamed_untargeted_outputs(outputs: AlignmentRunOutputs) -> bool:
 
 def write_streamed_untargeted_outputs_atomic(
     outputs: AlignmentRunOutputs,
-    batches: Iterable[CompletedUntargetBatchWriterInputs],
+    rows: Iterable[FinalizedUntargetMatrixRow],
     *,
     sample_order: tuple[str, ...],
     metadata: dict[str, str],
@@ -331,7 +314,7 @@ def write_streamed_untargeted_outputs_atomic(
         nonlocal row_count
         row_count = write_alignment_tsv_row_batches(
             {name: temp_paths[path] for name, path in row_paths.items()},
-            batches,
+            rows,
             sample_order=sample_order,
         )
         if outputs.run_metadata_json is not None:

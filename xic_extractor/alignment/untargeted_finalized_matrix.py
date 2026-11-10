@@ -1,4 +1,8 @@
-"""Existing-writer projection from a completed Untargeted CID-NL batch."""
+"""Writer rows from a completed Untargeted CID-NL batch.
+
+Each row keeps its group's presentation facts and the decision owner's cell
+decisions in writer sample order; writers read the cells directly.
+"""
 
 from __future__ import annotations
 
@@ -10,18 +14,7 @@ from typing import TYPE_CHECKING, Literal, cast
 from xic_extractor.alignment.cell_observation.observations import (
     FinalGroupCellObservation,
 )
-from xic_extractor.alignment.matrix import (
-    AlignedCell,
-    AlignmentMatrix,
-    CellStatus,
-)
 from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
-from xic_extractor.alignment.production_decisions import (
-    ProductionCellDecision,
-    ProductionDecisionSet,
-    ProductionRowDecision,
-    ProductionStatus,
-)
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetBatchApplicationResult,
 )
@@ -32,12 +25,7 @@ from xic_extractor.alignment.result.scientific_alignment import (
 from xic_extractor.peak_detection.observations import PeakObservationContent
 
 if TYPE_CHECKING:
-    from xic_extractor.alignment.cell_decision.owner import (
-        ProductionCellDecision as OwnerProductionCellDecision,
-    )
-    from xic_extractor.alignment.projection.untarget.matrix import (
-        UntargetRowDecisionCounts,
-    )
+    from xic_extractor.alignment.cell_decision.owner import ProductionCellDecision
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
     )
@@ -46,10 +34,16 @@ PRESENTATION_FORMULA_VERSION = "cross_sample_owner_arithmetic_mean"
 # Mean of Discovery's apex MS1 readings of the row's direct members.
 APEX_READING_CENTER_MZ_BASIS = "discovery_ms1_apex_mean"
 
+CellOrigin = Literal["detected", "backfilled"]
+
 
 @dataclass(frozen=True, slots=True)
 class FinalizedUntargetMatrixRow:
-    """Reduced writer row that keeps finalized identity and presentation facts."""
+    """One finalized group with its presentation facts and cell decisions.
+
+    ``cells`` follow the writer sample order. ``source_candidate_ids`` names the
+    Discovery candidate of each numeric cell read from a direct observation.
+    """
 
     feature_id: str
     group_hypothesis_id: str
@@ -69,12 +63,15 @@ class FinalizedUntargetMatrixRow:
     center_rt_basis: str = PRESENTATION_FORMULA_VERSION
     center_weight_basis: str = "unique_owner_observations_equal_weight"
     membership_risks: tuple[tuple[str, AcceptedMembershipRisk], ...] = ()
+    route_reason: str = ""
+    cells: tuple[ProductionCellDecision, ...] = ()
+    source_candidate_ids: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
-class CompletedUntargetBatchWriterInputs:
-    matrix: AlignmentMatrix
-    production_decisions: ProductionDecisionSet
+class AlignmentMatrix:
+    clusters: tuple[FinalizedUntargetMatrixRow, ...]
+    sample_order: tuple[str, ...]
 
 
 def feature_id_label(ordinal: int) -> str:
@@ -89,32 +86,19 @@ def project_completed_untarget_batch_writer_inputs(
     consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
-) -> CompletedUntargetBatchWriterInputs:
-    """Materialize writer inputs for consumers that require a complete matrix."""
+) -> AlignmentMatrix:
+    """Materialize writer rows for consumers that require a complete matrix."""
 
-    rows: list[FinalizedUntargetMatrixRow] = []
-    cells: list[AlignedCell] = []
-    cell_decisions = {}
-    row_decisions = {}
-    for projected in iter_completed_untarget_batch_writer_inputs(
-        completed,
-        consume_child=consume_child,
-        ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
-        membership_risks_by_owner=membership_risks_by_owner,
-    ):
-        rows.extend(projected.matrix.clusters)
-        cells.extend(projected.matrix.cells)
-        cell_decisions.update(projected.production_decisions.cells)
-        row_decisions.update(projected.production_decisions.rows)
-    return CompletedUntargetBatchWriterInputs(
-        matrix=AlignmentMatrix(
-            clusters=tuple(rows),
-            cells=tuple(cells),
-            sample_order=completed_untarget_batch_sample_order(completed),
+    return AlignmentMatrix(
+        clusters=tuple(
+            iter_completed_untarget_batch_writer_inputs(
+                completed,
+                consume_child=consume_child,
+                ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
+                membership_risks_by_owner=membership_risks_by_owner,
+            )
         ),
-        production_decisions=ProductionDecisionSet(
-            cells=cell_decisions, rows=row_decisions
-        ),
+        sample_order=completed_untarget_batch_sample_order(completed),
     )
 
 
@@ -155,7 +139,7 @@ def iter_completed_untarget_batch_writer_inputs(
     consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
-) -> Iterator[CompletedUntargetBatchWriterInputs]:
+) -> Iterator[FinalizedUntargetMatrixRow]:
     """Project one finalized row at a time while retaining only identity census.
 
     ``ms1_apex_mz_by_candidate`` holds Discovery's apex MS1 readings. A row
@@ -240,7 +224,7 @@ def iter_completed_untarget_batch_writer_inputs(
                 family_observed_neutral_loss_da,
                 has_anchor,
             ) = _group_facts(typed_observations)
-            row = FinalizedUntargetMatrixRow(
+            yield FinalizedUntargetMatrixRow(
                 feature_id=feature_id_label(len(seen_group_ids)),
                 group_hypothesis_id=group_id,
                 destination=projected.route.destination,
@@ -267,46 +251,21 @@ def iter_completed_untarget_batch_writer_inputs(
                     )
                     if risk_group == group_id
                 ),
-            )
-            projected_cells = tuple(
-                _aligned_cell(
-                    row=row,
-                    owner_decision=owner_decision,
-                    direct_candidate_ids=direct_candidate_ids,
-                )
-                for owner_decision in owner_decisions
-            )
-            writer_cell_decisions = tuple(
-                _writer_cell_decision(
-                    row_id=row.feature_id,
-                    cell=cell,
-                    owner_decision=owner_decision,
-                )
-                for cell, owner_decision in zip(
-                    projected_cells,
-                    owner_decisions,
-                    strict=True,
-                )
-            )
-            row_decision = _writer_row_decision(
-                row=row,
-                cells=projected_cells,
-                decisions=writer_cell_decisions,
-                owner_counts=projected.counts,
                 route_reason=projected.route.reason,
-            )
-            yield CompletedUntargetBatchWriterInputs(
-                matrix=AlignmentMatrix(
-                    clusters=(row,),
-                    cells=projected_cells,
-                    sample_order=sample_stems,
-                ),
-                production_decisions=ProductionDecisionSet(
-                    cells={
-                        (decision.feature_id, decision.sample_stem): decision
-                        for decision in writer_cell_decisions
-                    },
-                    rows={row.feature_id: row_decision},
+                cells=owner_decisions,
+                source_candidate_ids=tuple(
+                    (sample_stem, candidate_id)
+                    for sample_stem, owner_decision, observation in zip(
+                        sample_stems, owner_decisions, typed_observations, strict=True
+                    )
+                    if (
+                        candidate_id := _selected_cell_source(
+                            owner_decision,
+                            observation,
+                            direct_candidate_ids=direct_candidate_ids,
+                        )
+                    )
+                    is not None
                 ),
             )
         if consume_child is not None:
@@ -377,67 +336,8 @@ def _presentation_facts(
     )
 
 
-def _aligned_cell(
-    *,
-    row: FinalizedUntargetMatrixRow,
-    owner_decision: OwnerProductionCellDecision,
-    direct_candidate_ids: Mapping[tuple[str, str], str],
-) -> AlignedCell:
-    evidence = owner_decision.evidence
-    if type(evidence) is not FinalGroupCellObservation:
-        raise TypeError("writer cell requires final group-cell evidence")
-    status = _cell_status(owner_decision, evidence)
-    integration = owner_decision.selected_integration
-    source_id = _selected_cell_source(
-        owner_decision,
-        evidence,
-        direct_candidate_ids=direct_candidate_ids,
-    )
-    query_bounds = {
-        (
-            assessment.content.evaluation_receipt.query_rt_min,
-            assessment.content.evaluation_receipt.query_rt_max,
-        )
-        for assessment in evidence.method_assessments
-        if assessment.content.detector_invocation_id == "untargeted-cid-nl-backfill"
-    }
-    request_rt = query_bounds.pop() if len(query_bounds) == 1 else (None, None)
-    return AlignedCell(
-        sample_stem=owner_decision.subject.canonical_sample.metadata.raw_stem,
-        cluster_id=row.feature_id,
-        status=status,
-        area=owner_decision.value,
-        apex_rt=(
-            integration.rt_apex_min
-            if owner_decision.value is not None and integration is not None
-            else None
-        ),
-        height=(integration.height_raw if integration is not None else None),
-        peak_start_rt=(integration.rt_left_min if integration is not None else None),
-        peak_end_rt=(integration.rt_right_min if integration is not None else None),
-        rt_delta_sec=None,
-        trace_quality="finalized_owner_decision",
-        scan_support_score=None,
-        source_candidate_id=source_id,
-        reason=owner_decision.source or owner_decision.variant,
-        selected_integration=integration,
-        backfill_request_rt_min=request_rt[0],
-        backfill_request_rt_max=request_rt[1],
-        group_hypothesis_id=row.group_hypothesis_id,
-        feature_id=row.feature_id,
-        gap_fill_state=("accepted" if status == "backfilled" else "not_applicable"),
-        gap_fill_reason=(
-            ""
-            if status != "backfilled"
-            else "ms1_only_backfill_observation"
-            if evidence.ms1_only_backfill_observations
-            else owner_decision.source
-        ),
-    )
-
-
 def _selected_cell_source(
-    decision: OwnerProductionCellDecision,
+    decision: ProductionCellDecision,
     evidence: FinalGroupCellObservation,
     *,
     direct_candidate_ids: Mapping[tuple[str, str], str],
@@ -524,86 +424,60 @@ def _apex_readings(
     return tuple(readings)
 
 
-def _cell_status(
-    decision: OwnerProductionCellDecision,
-    evidence: FinalGroupCellObservation,
-) -> CellStatus:
+def cell_origin(decision: ProductionCellDecision) -> CellOrigin | None:
+    """Where the cell's peak came from, or ``None`` when it reports no peak.
+
+    A numeric value read from an MS1-only Backfill peak is ``backfilled``; one
+    read from the group's own direct observation is ``detected``. A no-write
+    cell that still retains a direct observation reports ``detected``.
+    """
+
+    evidence = cast(FinalGroupCellObservation, decision.evidence)
     if decision.value is not None:
-        if evidence.ms1_only_backfill_observations:
-            return "backfilled"
-        return "detected" if evidence.direct_observations else "backfilled"
-    if decision.variant == "not_searched":
-        return "unchecked"
-    if decision.variant == "unresolved":
-        return "ambiguous_ms1_owner"
-    if evidence.direct_observations:
+        if evidence.direct_observations and not (
+            evidence.ms1_only_backfill_observations
+        ):
+            return "detected"
+        return "backfilled"
+    if evidence.direct_observations and decision.variant not in {
+        "not_searched",
+        "unresolved",
+    }:
         return "detected"
-    return "absent"
+    return None
 
 
-def _writer_cell_decision(
-    *,
-    row_id: str,
-    cell: AlignedCell,
-    owner_decision: OwnerProductionCellDecision,
-) -> ProductionCellDecision:
-    write = owner_decision.value is not None
-    if write and cell.status == "detected":
-        production_status: ProductionStatus = "detected"
-    elif write:
-        production_status = "accepted_backfill"
-    else:
-        production_status = "blank"
-    return ProductionCellDecision(
-        feature_id=row_id,
-        sample_stem=cell.sample_stem,
-        raw_status=cell.status,
-        production_status=production_status,
-        write_matrix_value=write,
-        matrix_value=owner_decision.value,
-        blank_reason="" if write else owner_decision.variant,
-    )
+def cell_status(decision: ProductionCellDecision) -> str:
+    """The cell's origin, or its no-write state when it reports no peak."""
+
+    return cell_origin(decision) or decision.variant
 
 
-def _writer_row_decision(
-    *,
-    row: FinalizedUntargetMatrixRow,
-    cells: tuple[AlignedCell, ...],
-    decisions: tuple[ProductionCellDecision, ...],
-    owner_counts: UntargetRowDecisionCounts,
-    route_reason: str,
-) -> ProductionRowDecision:
-    numeric_count = sum(item.write_matrix_value for item in decisions)
-    if owner_counts.numeric_cells != numeric_count:
-        raise ValueError("writer row count crossed finalized owner decisions")
-    detected_count = sum(cell.status == "detected" for cell in cells)
-    accepted_backfill_count = sum(
-        item.production_status == "accepted_backfill" for item in decisions
-    )
-    return ProductionRowDecision(
-        feature_id=row.feature_id,
-        include_in_primary_matrix=row.destination == "matrix",
-        identity_decision=(
-            "finalized_matrix" if row.destination == "matrix" else "finalized_archive"
-        ),
-        identity_reason=route_reason,
-        accepted_cell_count=numeric_count,
-        detected_count=detected_count,
-        accepted_backfill_count=accepted_backfill_count,
-        ambiguous_ms1_owner_count=sum(
-            cell.status == "ambiguous_ms1_owner" for cell in cells
-        ),
-        row_flags=(
-            f"finalized_route:{row.destination}",
-            PRESENTATION_FORMULA_VERSION,
-        ),
-    )
+def backfill_query_bounds(
+    decision: ProductionCellDecision,
+) -> tuple[float | None, float | None]:
+    """The RT window of the cell's single Backfill search, when it has one."""
+
+    evidence = cast(FinalGroupCellObservation, decision.evidence)
+    bounds = {
+        (
+            assessment.content.evaluation_receipt.query_rt_min,
+            assessment.content.evaluation_receipt.query_rt_max,
+        )
+        for assessment in evidence.method_assessments
+        if assessment.content.detector_invocation_id == "untargeted-cid-nl-backfill"
+    }
+    return bounds.pop() if len(bounds) == 1 else (None, None)
 
 
 __all__ = [
-    "CompletedUntargetBatchWriterInputs",
+    "AlignmentMatrix",
+    "CellOrigin",
     "FinalizedUntargetMatrixRow",
     "PRESENTATION_FORMULA_VERSION",
+    "backfill_query_bounds",
+    "cell_origin",
+    "cell_status",
     "completed_untarget_batch_sample_order",
     "iter_completed_untarget_batch_writer_inputs",
     "project_completed_untarget_batch_writer_inputs",

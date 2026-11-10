@@ -13,6 +13,7 @@ import pytest
 
 import xic_extractor.alignment.cid_nl_completion as cid_nl_completion_owner
 import xic_extractor.untargeted_execution.alignment as alignment_adapter
+from tests.alignment_pipeline_helpers import writer_cells
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
@@ -36,8 +37,11 @@ from tests.untargeted_partition_fixtures import (
     execute_dense_partition,
     fixture_assessment,
 )
+from xic_extractor.alignment.cell_decision.owner import (
+    NoWriteCellDecision,
+    NumericCellDecision,
+)
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.production_decisions import ProductionDecisionSet
 from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
 )
@@ -198,9 +202,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
             completed.application_result
         )
         destination = tmp_path / "no-backfill-matrix.tsv"
-        write_alignment_matrix_tsv(
-            destination, writer.matrix, production_decisions=writer.production_decisions
-        )
+        write_alignment_matrix_tsv(destination, writer)
         with destination.open(encoding="utf-8-sig", newline="") as handle:
             rows = list(csv.DictReader(handle, delimiter="\t"))
         assert rows and all(row["Missing"] == "" for row in rows)
@@ -568,15 +570,15 @@ def test_production_batch_executes_one_atomic_sample_phase(
     writer_inputs = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
-    assert writer_inputs.matrix.sample_order == ("S1",)
-    assert len(writer_inputs.matrix.clusters) == 2
-    assert len(writer_inputs.matrix.cells) == 2
-    assert tuple(row.feature_id for row in writer_inputs.matrix.clusters) == (
+    assert writer_inputs.sample_order == ("S1",)
+    assert len(writer_inputs.clusters) == 2
+    assert len(tuple(writer_cells(writer_inputs))) == 2
+    assert tuple(row.feature_id for row in writer_inputs.clusters) == (
         "F000001",
         "F000002",
     )
     feature_by_group = {
-        row.group_hypothesis_id: row.feature_id for row in writer_inputs.matrix.clusters
+        row.group_hypothesis_id: row.feature_id for row in writer_inputs.clusters
     }
     expected_source_ids: dict[tuple[str, str], str] = {}
     for child in completed.application_result.children:
@@ -603,18 +605,11 @@ def test_production_batch_executes_one_atomic_sample_phase(
                     )
                 ]
     assert {
-        (cell.cluster_id, cell.sample_stem): cell.source_candidate_id
-        for cell in writer_inputs.matrix.cells
+        (row.feature_id, sample_stem): candidate_id
+        for row in writer_inputs.clusters
+        for sample_stem, candidate_id in row.source_candidate_ids
     } == expected_source_ids
-    assert all(cell.group_hypothesis_id for cell in writer_inputs.matrix.cells)
-    assert all(
-        writer_inputs.production_decisions.cell(
-            cell.cluster_id,
-            cell.sample_stem,
-        ).matrix_value
-        is not None
-        for cell in writer_inputs.matrix.cells
-    )
+    assert all(cell.value is not None for _, _, cell in writer_cells(writer_inputs))
     writer_dir = tmp_path / "writer"
     outputs = output_paths(
         writer_dir,
@@ -624,7 +619,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
     )
     write_outputs_atomic(
         outputs,
-        writer_inputs.matrix,
+        writer_inputs,
         metadata=alignment_metadata(
             discovery_batch_index=tmp_path / "discovery_batch_index.csv",
             raw_dir=tmp_path,
@@ -633,7 +628,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
             output_level="machine",
             peak_config=peak_config,
         ),
-        production_decisions=writer_inputs.production_decisions,
     )
     assert {path.name for path in writer_dir.iterdir() if path.is_file()} == {
         "alignment_matrix.tsv",
@@ -838,13 +832,15 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
-    assert writer.matrix.sample_order == stems
+    assert writer.sample_order == stems
     assert not rejected.intersection(
-        cell.source_candidate_id for cell in writer.matrix.cells
+        candidate_id
+        for row in writer.clusters
+        for _sample_stem, candidate_id in row.source_candidate_ids
     )
     if not admitted:
         assert not completed.application_result.children
-        assert not writer.matrix.clusters and not writer.matrix.cells
+        assert not writer.clusters
         assert sum(map(len, opened.values())) == opens_before
 
 
@@ -1100,23 +1096,25 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     )
     plain_matrix = project_completed_untarget_batch_writer_inputs(
         plain.application_result
-    ).matrix
+    )
     corrected_matrix = project_completed_untarget_batch_writer_inputs(
         corrected.application_result
-    ).matrix
+    )
     assert len(plain_matrix.clusters) == 2
     assert len(corrected_matrix.clusters) == 1
-    assert {
-        (cell.sample_stem, cell.apex_rt, cell.area) for cell in corrected_matrix.cells
-    } == {
-        (cell.sample_stem, cell.apex_rt, cell.area)
-        for cell in plain_matrix.cells
-        if cell.area is not None
-    }
+    corrected_cells = tuple(writer_cells(corrected_matrix))
     assert all(
-        cell.area is not None and cell.area > 0 for cell in corrected_matrix.cells
+        cell.value is not None and cell.value > 0 for *_, cell in corrected_cells
     )
-    assert len({cell.area for cell in corrected_matrix.cells}) == len(paths)
+    assert {
+        (sample_stem, cell.selected_integration.rt_apex_min, cell.value)
+        for _row, sample_stem, cell in corrected_cells
+    } == {
+        (sample_stem, cell.selected_integration.rt_apex_min, cell.value)
+        for _row, sample_stem, cell in writer_cells(plain_matrix)
+        if cell.value is not None
+    }
+    assert len({cell.value for *_, cell in corrected_cells}) == len(paths)
     (child,) = corrected.application_result.children
     expected_loss_by_sample = {path.stem: configured_loss for path in paths}
     support_losses_by_sample = {
@@ -1285,18 +1283,11 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         project_completed_backfill(
             recovered[0], group_context=recovered_source.group_context
         )
-    assert writer_inputs.matrix.sample_order == sample_stems
-    assert len(writer_inputs.matrix.clusters) == 1
-    assert (
-        tuple(cell.sample_stem for cell in writer_inputs.matrix.cells) == sample_stems
-    )
-    cells_by_sample = {cell.sample_stem: cell for cell in writer_inputs.matrix.cells}
-    assert all(
-        cells_by_sample[sample_stem].source_candidate_id is not None
-        for sample_stem in sample_stems[:-1]
-    )
-    assert cells_by_sample["Hold"].source_candidate_id is None
-    row = writer_inputs.matrix.clusters[0]
+    assert writer_inputs.sample_order == sample_stems
+    assert len(writer_inputs.clusters) == 1
+    row = writer_inputs.clusters[0]
+    cells_by_sample = dict(zip(sample_stems, row.cells, strict=True))
+    assert tuple(dict(row.source_candidate_ids)) == sample_stems[:-1]
     assert row.feature_id == "F000001"
     expected_presentation_facts: dict[str, tuple[float, float]] = {}
     expected_cell_apexes: dict[str, float] = {}
@@ -1353,11 +1344,11 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     )
     assert len(set(expected_cell_apexes.values())) > 1
     for sample_stem in sample_stems:
-        cell_apex = cells_by_sample[sample_stem].apex_rt
+        integration = cells_by_sample[sample_stem].selected_integration
         if sample_stem in expected_cell_apexes:
-            assert cell_apex == pytest.approx(expected_cell_apexes[sample_stem])
-        else:
-            assert cell_apex is None
+            assert integration.rt_apex_min == pytest.approx(
+                expected_cell_apexes[sample_stem]
+            )
     assert row.center_mz_basis == "cross_sample_owner_arithmetic_mean"
     assert row.center_rt_basis == "cross_sample_owner_arithmetic_mean"
 
@@ -1373,59 +1364,34 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     reported = project_completed_untarget_batch_writer_inputs(
         completed.application_result, ms1_apex_mz_by_candidate=readings
     )
-    (reported_row,) = reported.matrix.clusters
+    (reported_row,) = reported.clusters
     assert reported_row.family_center_mz == pytest.approx(
         sum(readings.values()) / len(readings)
     )
     assert reported_row.center_mz_basis == "discovery_ms1_apex_mean"
     assert reported_row.family_center_rt == row.family_center_rt
-    assert reported.matrix.cells == writer_inputs.matrix.cells
+    assert reported_row.cells == row.cells
 
-    base_cells = writer_inputs.production_decisions.cells
     weighted_values = dict(zip(sample_stems, (1.0, 9.0, 2.0, 9.0), strict=True))
     for variant, no_write_sample in (("unequal", None), ("no-write", "Hold")):
-        decisions = ProductionDecisionSet(
-            cells={
-                key: replace(
-                    decision,
-                    production_status=(
-                        "blank"
-                        if decision.sample_stem == no_write_sample
-                        else decision.production_status
-                    ),
-                    write_matrix_value=decision.sample_stem != no_write_sample,
-                    matrix_value=(
-                        None
-                        if decision.sample_stem == no_write_sample
-                        else weighted_values[decision.sample_stem]
-                    ),
-                    blank_reason=(
-                        "regression_no_write"
-                        if decision.sample_stem == no_write_sample
-                        else decision.blank_reason
-                    ),
-                )
-                for key, decision in base_cells.items()
-            },
-            rows=writer_inputs.production_decisions.rows,
-        )
-        accepted = tuple(
-            (
-                cells_by_sample[stem],
-                decisions.cell(cells_by_sample[stem].cluster_id, stem),
+        cells = tuple(
+            replace(
+                cell,
+                payload=(
+                    NoWriteCellDecision("searched_no_observation")
+                    if sample_stem == no_write_sample
+                    else NumericCellDecision(
+                        value=weighted_values[sample_stem], source=cell.source
+                    )
+                ),
             )
-            for stem in sample_stems
-            if stem != no_write_sample
+            for sample_stem, cell in cells_by_sample.items()
         )
+        weighted_matrix = replace(writer_inputs, clusters=(replace(row, cells=cells),))
+        accepted = tuple(cell for cell in cells if cell.value is not None)
         legacy_rt = sum(
-            cell.apex_rt * decision.matrix_value
-            for cell, decision in accepted
-            if cell.apex_rt is not None and decision.matrix_value is not None
-        ) / sum(
-            decision.matrix_value
-            for _cell, decision in accepted
-            if decision.matrix_value is not None
-        )
+            cell.selected_integration.rt_apex_min * cell.value for cell in accepted
+        ) / sum(cell.value for cell in accepted)
         assert legacy_rt != pytest.approx(row.family_center_rt)
 
         writer_dir = tmp_path / f"writer-{variant}"
@@ -1437,7 +1403,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         )
         write_outputs_atomic(
             outputs,
-            writer_inputs.matrix,
+            weighted_matrix,
             metadata=alignment_metadata(
                 discovery_batch_index=tmp_path / "discovery_batch_index.csv",
                 raw_dir=tmp_path,
@@ -1446,7 +1412,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 output_level="machine",
                 peak_config=peak_config,
             ),
-            production_decisions=decisions,
         )
 
         assert outputs.matrix_tsv is not None
@@ -1578,11 +1543,8 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     writer_inputs = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
-    for cell in writer_inputs.matrix.cells:
-        assert (
-            cell.selected_integration
-            is owner_decisions[cell.sample_stem].selected_integration
-        )
+    for _row, sample_stem, cell in writer_cells(writer_inputs):
+        assert cell is owner_decisions[sample_stem]
     outputs = output_paths(
         tmp_path / "writer",
         output_level="machine",
@@ -1591,7 +1553,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     )
     write_outputs_atomic(
         outputs,
-        writer_inputs.matrix,
+        writer_inputs,
         metadata=alignment_metadata(
             discovery_batch_index=tmp_path / "discovery_batch_index.csv",
             raw_dir=tmp_path,
@@ -1600,7 +1562,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
             output_level="machine",
             peak_config=peak_config,
         ),
-        production_decisions=writer_inputs.production_decisions,
     )
     assert outputs.matrix_tsv is not None
     assert outputs.review_tsv is not None
@@ -1629,9 +1590,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         )
     assert cell_rows["MS1Only"]["status"] == "backfilled"
     assert cell_rows["MS1Only"]["source_candidate_id"] == ""
-    assert cell_rows["MS1Only"]["gap_fill_state"] == "accepted"
-    assert cell_rows["MS1Only"]["gap_fill_reason"] == "ms1_only_backfill_observation"
-    assert cell_rows["NoPeak"]["status"] == "absent"
+    assert cell_rows["NoPeak"]["status"] == "unavailable"
     assert cell_rows["NoPeak"]["source_candidate_id"] == ""
 
     from xic_extractor.alignment_explanation.published_cells import read_published_cells
@@ -1654,9 +1613,8 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     )
     write_outputs_atomic(
         published_outputs,
-        writer_inputs.matrix,
+        writer_inputs,
         metadata={},
-        production_decisions=writer_inputs.production_decisions,
     )
     write_alignment_explanation(
         published / "alignment_explanation.sqlite",

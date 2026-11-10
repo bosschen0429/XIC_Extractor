@@ -25,16 +25,16 @@ def test_alignment_health_packet_reports_alignment_sentinels(tmp_path: Path) -> 
     metrics = packet["summary_metrics"]
     assert metrics["review_family_count"] == 2
     assert metrics["matrix_sample_column_count"] == 2
-    assert metrics["ambiguous_ms1_owner_count_total"] == 2
+    assert metrics["unresolved_count_total"] == 2
     sentinel = packet["sentinel_rows"][0]
     assert sentinel["feature_id"] == "FAM_BAD"
     assert sentinel["issue_class"] == (
         "owner_ambiguity;"
-        "accepted_backfill_dependency;unchecked_pressure;consolidation_loser;"
+        "accepted_backfill_dependency;not_searched_pressure;consolidation_loser;"
         "owner_pressure_flag"
     )
     assert sentinel["recommended_action"] == "inspect_owner_assignment"
-    assert sentinel["cell_status_counts"] == "ambiguous_ms1_owner:1;rescued:1"
+    assert sentinel["cell_status_counts"] == "backfilled:1;unresolved:1"
     sentinel_tsv = outputs.sentinels_tsv.read_text(encoding="utf-8")
     assert "FAM_BAD" in sentinel_tsv
     assert "owner_ambiguity" in sentinel_tsv
@@ -81,8 +81,8 @@ def test_alignment_health_packet_requires_review_columns(tmp_path: Path) -> None
 
 def _write_required_alignment_artifacts(alignment_dir: Path) -> None:
     (alignment_dir / "alignment_review.tsv").write_text(
-        "feature_id\tmatrix_row_index\tdetected_count\tambiguous_ms1_owner_count\t"
-        "unchecked_count\taccepted_cell_count\t"
+        "feature_id\tmatrix_row_index\tdetected_count\tunresolved_count\t"
+        "not_searched_count\taccepted_cell_count\t"
         "accepted_backfill_count\trow_flags\treason\n"
         "FAM_BAD\t1\t4\t2\t1\t2\t1\t"
         "family_consolidation_loser;ambiguous_ms1_owner_pressure\tneeds review\n"
@@ -98,8 +98,8 @@ def _write_required_alignment_artifacts(alignment_dir: Path) -> None:
 def _write_cell_evidence(alignment_dir: Path) -> None:
     (alignment_dir / "alignment_backfill_cell_evidence.tsv").write_text(
         "feature_id\tsample_stem\tstatus\n"
-        "FAM_BAD\tSampleA\trescued\n"
-        "FAM_BAD\tSampleB\tambiguous_ms1_owner\n"
+        "FAM_BAD\tSampleA\tbackfilled\n"
+        "FAM_BAD\tSampleB\tunresolved\n"
         "FAM_OK\tSampleA\tdetected\n",
         encoding="utf-8",
     )

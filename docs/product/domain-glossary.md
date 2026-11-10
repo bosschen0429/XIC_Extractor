@@ -69,7 +69,11 @@ tests.
   computational scope, not chemical identity; see [Alignment](alignment.md).
 - `ProductionCellDecision`: the cell decision's value or typed no-write, with
   its selected integration and provenance. Observations do not select delivered
-  values themselves.
+  values themselves. The Alignment writers read it directly.
+- cell `status`: in the Alignment cell tables, the origin of the cell's peak
+  (`detected` from the group's own direct observation, `backfilled` from an
+  MS1-only Backfill value), otherwise the cell's
+  [no-write reason](decision-policy.md#no-write-reasons).
 - `workflow projection`: the owner of output row/cell identity, inclusion,
   counts, reasons and review routing. It never selects the cell value.
 - `feature_id`: in Alignment output, the report-scoped `F000001` label of one

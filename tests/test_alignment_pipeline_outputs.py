@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 
 import xic_extractor.output.alignment.pipeline_outputs as pipeline_outputs_module
-from tests.alignment_pipeline_helpers import finalized_writer_decisions
 from tests.alignment_pipeline_helpers import matrix as _matrix
+from tests.alignment_pipeline_helpers import owner_cell, writer_row
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
-from xic_extractor.alignment import AlignmentConfig
+from xic_extractor.alignment.untargeted_finalized_matrix import AlignmentMatrix
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.pipeline_outputs import (
     alignment_metadata,
@@ -133,13 +133,11 @@ def test_writer_timing_observations_are_truthful_with_live_output(
         timer=_Timer([0.0, 1.0] * 200),
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
-    AlignmentConfig()
 
     pipeline_outputs_module.write_outputs_atomic(
         outputs,
         matrix,
         metadata={},
-        production_decisions=finalized_writer_decisions(matrix),
         timing_recorder=recorder,
     )
 
@@ -178,12 +176,8 @@ def test_writer_instrumentation_preserves_output_bytes(
         emit_alignment_status_matrix=False,
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
-    AlignmentConfig()
     writer_args = (matrix,)
-    writer_kwargs = {
-        "metadata": {},
-        "production_decisions": finalized_writer_decisions(matrix),
-    }
+    writer_kwargs = {"metadata": {}}
     pipeline_outputs_module.write_outputs_atomic(
         baseline_outputs,
         *writer_args,
@@ -236,31 +230,11 @@ def test_production_and_machine_plans_write_identical_matrix_bytes(
         emit_alignment_cells=False,
         emit_alignment_status_matrix=False,
     )
-    detected_matrix = _matrix(("Sample_A", "Sample_B", "Sample_C"))
-    matrix = replace(
-        detected_matrix,
-        cells=(
-            *detected_matrix.cells[:2],
-            replace(
-                detected_matrix.cells[2],
-                status="absent",
-                area=None,
-                reason="no accepted observation",
-            ),
-        ),
+    matrix = AlignmentMatrix(
+        clusters=(writer_row(cells=(owner_cell(), owner_cell(), owner_cell(None))),),
+        sample_order=("Sample_A", "Sample_B", "Sample_C"),
     )
-    AlignmentConfig()
-    decisions = finalized_writer_decisions(matrix)
-    writer_kwargs = {
-        "metadata": {},
-        "production_decisions": replace(
-            decisions,
-            rows={
-                key: replace(decision, include_in_primary_matrix=True)
-                for key, decision in decisions.rows.items()
-            },
-        ),
-    }
+    writer_kwargs = {"metadata": {}}
 
     pipeline_outputs_module.write_outputs_atomic(
         production_outputs,
@@ -304,14 +278,12 @@ def test_outer_transaction_restores_prior_outputs_without_leaking_temp_files(
         fail_later_writer,
     )
     matrix = _matrix(("Sample_A", "Sample_B"))
-    AlignmentConfig()
 
     with pytest.raises(RuntimeError, match="injected status writer failure"):
         pipeline_outputs_module.write_outputs_atomic(
             outputs,
             matrix,
             metadata={},
-            production_decisions=finalized_writer_decisions(matrix),
         )
 
     assert matrix_path.read_bytes() == b"prior matrix"
@@ -322,6 +294,95 @@ def test_outer_transaction_restores_prior_outputs_without_leaking_temp_files(
         if path.name.endswith((".tmp", ".bak", ".tmp.tmp"))
     )
     assert leftovers == ()
+
+
+def test_matrix_only_output_plan_writes_only_the_matrix(tmp_path: Path) -> None:
+    outputs = output_paths(
+        tmp_path / "out",
+        output_level="production",
+        emit_alignment_cells=False,
+        emit_alignment_status_matrix=False,
+    )
+
+    pipeline_outputs_module.write_outputs_atomic(
+        outputs, _matrix(("Sample_A", "Sample_B")), metadata={}
+    )
+
+    assert sorted(path.name for path in (tmp_path / "out").iterdir()) == [
+        "alignment_matrix.tsv"
+    ]
+
+
+def test_streamed_and_materialized_writers_render_identical_files(
+    tmp_path: Path,
+) -> None:
+    samples = ("Sample_A", "Sample_B", "Sample_C")
+    matrix = AlignmentMatrix(
+        clusters=(
+            writer_row(
+                "F000001",
+                cells=(
+                    owner_cell(area=120.0),
+                    owner_cell("backfilled", area=80.0),
+                    owner_cell(None, no_write="not_searched"),
+                ),
+                source_candidate_ids=(("Sample_A", "Sample_A#1"),),
+            ),
+            writer_row(
+                "F000002",
+                cells=(
+                    owner_cell(None, no_write="unresolved"),
+                    owner_cell(area=None),
+                    owner_cell(area=40.0),
+                ),
+                destination="archive",
+                has_anchor=False,
+            ),
+            writer_row(
+                "F000003",
+                cells=(
+                    owner_cell(area=10.0),
+                    owner_cell(area=20.0),
+                    owner_cell(None, no_write="searched_no_observation"),
+                ),
+                family_center_mz=612.25,
+            ),
+        ),
+        sample_order=samples,
+    )
+
+    def outputs(name: str) -> pipeline_outputs_module.AlignmentRunOutputs:
+        directory = tmp_path / name
+        return pipeline_outputs_module.AlignmentRunOutputs(
+            review_tsv=directory / "alignment_review.tsv",
+            matrix_tsv=directory / "alignment_matrix.tsv",
+            backfill_cell_evidence_tsv=directory
+            / "alignment_backfill_cell_evidence.tsv",
+            cells_tsv=directory / "alignment_cells.tsv",
+            run_metadata_json=directory / "alignment_run_metadata.json",
+        )
+
+    materialized = outputs("materialized")
+    streamed = outputs("streamed")
+    pipeline_outputs_module.write_outputs_atomic(
+        materialized, matrix, metadata={"schema_version": "test"}
+    )
+    row_count = pipeline_outputs_module.write_streamed_untargeted_outputs_atomic(
+        streamed,
+        iter(matrix.clusters),
+        sample_order=samples,
+        metadata={"schema_version": "test"},
+        timing_recorder=TimingRecorder.disabled("alignment"),
+    )
+
+    assert row_count == 3
+    names = sorted(path.name for path in (tmp_path / "materialized").iterdir())
+    assert names == sorted(path.name for path in (tmp_path / "streamed").iterdir())
+    assert len(names) == 5
+    for name in names:
+        assert (tmp_path / "materialized" / name).read_bytes() == (
+            tmp_path / "streamed" / name
+        ).read_bytes(), name
 
 
 class _Timer:
