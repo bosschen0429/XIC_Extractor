@@ -544,7 +544,7 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
     )
 
 
-@pytest.mark.parametrize("failure", ["missing", "attempt", "sample"])
+@pytest.mark.parametrize("failure", ["missing", "attempt"])
 def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
     import zlib
 
@@ -560,10 +560,7 @@ def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
                 "SELECT payload_id,payload FROM curves"
             ).fetchone()
             payload = json.loads(zlib.decompress(blob))
-            if failure == "attempt":
-                payload["provenance"]["processing_attempt_id"] = "another-attempt"
-            else:
-                payload["sample_id"] = "S2"
+            payload["provenance"]["processing_attempt_id"] = "another-attempt"
             connection.execute(
                 "UPDATE curves SET payload=? WHERE payload_id=?",
                 (zlib.compress(json.dumps(payload).encode()), pid),

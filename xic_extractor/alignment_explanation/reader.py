@@ -880,6 +880,7 @@ def read_alignment_curves(
             return []
         query = (
             "SELECT payload_id, sample_id, kind, record_id, codec, payload, "
+            "candidate_id, physical_peak_key, "
             "(SELECT method_subject_id FROM method_subjects m "
             "WHERE m.id=curves.method_subject) "
             "FROM curves WHERE 1=1"
@@ -899,6 +900,8 @@ def read_alignment_curves(
             record_id,
             codec,
             blob,
+            candidate_id,
+            peak,
             subject,
         ) in connection.execute(
             query + " ORDER BY sample_id, record_id, payload_id", params
@@ -906,7 +909,13 @@ def read_alignment_curves(
             if codec != "zlib-json-utf8":
                 raise ExplanationError(f"unsupported curve payload codec: {codec}")
             payload_data = decode_json(blob)
-            # The provenance subject is stored once, as the curve's reference.
+            # These fields are stored once, as the curve's columns.
+            payload_data.update(
+                sample_id=sample_id,
+                kind=kind,
+                candidate_id=candidate_id,
+                physical_peak_key=peak,
+            )
             payload_data["provenance"]["method_subject_id"] = subject
             validate_curve_payload(
                 payload_data, sample_id=sample_id, kind=kind, record_id=record_id

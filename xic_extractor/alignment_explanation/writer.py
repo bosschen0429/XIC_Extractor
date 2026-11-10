@@ -28,6 +28,9 @@ CandidateKey = tuple[str, str]
 # m/z, apex RT and the query ppm of one physical peak; None when not recorded.
 PeakCoordinates = tuple[float | None, float | None, float | None]
 
+# Curve envelope fields stored as the curve's columns, not in its payload.
+_CURVE_COLUMNS = ("sample_id", "kind", "candidate_id", "physical_peak_key")
+
 # The fields of one cell as the decision owner reports them.
 _CELL_FIELDS = frozenset(
     {
@@ -85,7 +88,7 @@ class ExplanationReportWriter:
         self._exclusions: dict[CandidateKey, str] = {}
         self._edges: dict[tuple[str, str], tuple[Any, ...]] = {}
         self._last_record_id = 0
-        self._curves: dict[tuple[str, str, str, bytes], list[Any]] = {}
+        self._curves: dict[tuple[Any, ...], list[Any]] = {}
 
     def _record_id(self) -> int:
         """Records without a natural key share one numbering, in emission order,
@@ -452,8 +455,9 @@ class ExplanationReportWriter:
     ) -> int:
         """Store exact curve data once and return its database-local id.
 
-        The provenance method subject is stored as a reference; the payload keeps
-        a null in its place and readers restore it.
+        The curve's sample, kind, candidate, peak and provenance method subject
+        are stored once, as columns; the payload keeps nulls in their place and
+        readers restore them.
         """
         validate_curve_payload(
             payload, sample_id=sample_id, kind=kind, record_id=record_id
@@ -463,7 +467,11 @@ class ExplanationReportWriter:
         provenance = payload["provenance"]
         subject = provenance.get("method_subject_id")
         self._subject_id(subject)
-        stored = {**payload, "provenance": {**provenance, "method_subject_id": None}}
+        stored = {
+            **payload,
+            **dict.fromkeys(_CURVE_COLUMNS),
+            "provenance": {**provenance, "method_subject_id": None},
+        }
         compressed = zlib.compress(
             json.dumps(
                 stored,
@@ -474,7 +482,14 @@ class ExplanationReportWriter:
             ).encode("utf-8"),
             level=1,
         )
-        key = (sample_id, kind, record_id, compressed)
+        key = (
+            sample_id,
+            kind,
+            record_id,
+            payload.get("candidate_id"),
+            payload.get("physical_peak_key"),
+            compressed,
+        )
         row = self._curves.get(key)
         if row is None:
             row = self._curves[key] = [
@@ -589,7 +604,7 @@ class ExplanationReportWriter:
                         compressed,
                         self._subject_id(row[4]),
                     )
-                    for (sample_id, kind, record_id, compressed), row in (
+                    for (sample_id, kind, record_id, _, _, compressed), row in (
                         self._curves.items()
                     )
                 ),
