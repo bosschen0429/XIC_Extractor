@@ -42,7 +42,6 @@ class CommonEvidence:
     nl_match: bool | None = None
     ms2_trace_strength: str = ""
     evidence_score: int | None = None
-    review_priority: str = ""
     reason: str = ""
 
 
