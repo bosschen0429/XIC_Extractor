@@ -175,10 +175,10 @@ def read_alignment_review(path: Path) -> tuple[AlignmentFeature, ...]:
         (
             "feature_id",
             "neutral_loss_tag",
-            "family_center_mz",
-            "family_center_rt",
-            "family_product_mz",
-            "family_observed_neutral_loss_da",
+            "group_center_mz",
+            "group_center_rt",
+            "group_product_mz",
+            "group_observed_neutral_loss_da",
             "matrix_row_index",
         ),
         path,
@@ -187,24 +187,24 @@ def read_alignment_review(path: Path) -> tuple[AlignmentFeature, ...]:
         AlignmentFeature(
             feature_id=row["feature_id"],
             neutral_loss_tag=row["neutral_loss_tag"],
-            family_center_mz=_required_float(
-                row.get("family_center_mz"),
-                "family_center_mz",
+            group_center_mz=_required_float(
+                row.get("group_center_mz"),
+                "group_center_mz",
                 row["feature_id"],
             ),
-            family_center_rt=_required_float(
-                row.get("family_center_rt"),
-                "family_center_rt",
+            group_center_rt=_required_float(
+                row.get("group_center_rt"),
+                "group_center_rt",
                 row["feature_id"],
             ),
-            family_product_mz=_required_float(
-                row.get("family_product_mz"),
-                "family_product_mz",
+            group_product_mz=_required_float(
+                row.get("group_product_mz"),
+                "group_product_mz",
                 row["feature_id"],
             ),
-            family_observed_neutral_loss_da=_required_float(
-                row.get("family_observed_neutral_loss_da"),
-                "family_observed_neutral_loss_da",
+            group_observed_neutral_loss_da=_required_float(
+                row.get("group_observed_neutral_loss_da"),
+                "group_observed_neutral_loss_da",
                 row["feature_id"],
             ),
             include_in_primary_matrix=_is_primary_review_row(row),

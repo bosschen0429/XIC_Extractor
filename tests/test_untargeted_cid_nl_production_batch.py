@@ -1248,7 +1248,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         == sample_stems[:-1]
     )
     assert row["feature_id"] == "F000001"
-    center_rt = float(row["family_center_rt"])
+    center_rt = float(row["group_center_rt"])
     expected_presentation_facts: dict[str, tuple[float, float]] = {}
     expected_cell_apexes: dict[str, float] = {}
     diagnostic_observation_ids: set[str] = set()
@@ -1290,7 +1290,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                     )
     assert len(diagnostic_observation_ids) == 1
     assert len(expected_presentation_facts) == len(sample_stems) - 1
-    assert float(row["family_center_mz"]) == pytest.approx(
+    assert float(row["group_center_mz"]) == pytest.approx(
         sum(value[0] for value in expected_presentation_facts.values())
         / len(expected_presentation_facts)
     )
@@ -1308,7 +1308,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             )
 
     # The written m/z is the group's own centre, the one its Backfill used.
-    assert float(row["family_center_mz"]) == written_group.group_center_mz
+    assert float(row["group_center_mz"]) == written_group.group_center_mz
 
     weighted_values = dict(zip(sample_stems, (1.0, 9.0, 2.0, 9.0), strict=True))
     for variant, no_write_sample in (("unequal", None), ("no-write", "Hold")):
@@ -1365,7 +1365,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         assert outputs.review_tsv is not None
         with outputs.review_tsv.open(encoding="utf-8", newline="") as handle:
             review_row = next(csv.DictReader(handle, delimiter="\t"))
-        assert float(review_row["family_center_rt"]) == pytest.approx(center_rt)
+        assert float(review_row["group_center_rt"]) == pytest.approx(center_rt)
 
 
 @pytest.mark.parametrize(

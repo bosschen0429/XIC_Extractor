@@ -14,6 +14,6 @@ def current_matrix_review_row(
     return {
         "feature_id": feature_id,
         "matrix_row_index": str(index),
-        "family_center_mz": canonical_mz_text(mz),
-        "family_center_rt": rt,
+        "group_center_mz": canonical_mz_text(mz),
+        "group_center_rt": rt,
     }

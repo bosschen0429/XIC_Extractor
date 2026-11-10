@@ -59,10 +59,10 @@ ALIGNMENT_REVIEW_COLUMNS = (
     "feature_id",
     "matrix_row_index",
     "neutral_loss_tag",
-    "family_center_mz",
-    "family_center_rt",
-    "family_product_mz",
-    "family_observed_neutral_loss_da",
+    "group_center_mz",
+    "group_center_rt",
+    "group_product_mz",
+    "group_observed_neutral_loss_da",
     "detected_count",
     "not_searched_count",
     "unresolved_count",
@@ -92,8 +92,8 @@ ALIGNMENT_CELLS_COLUMNS = (
 STATUS_MATRIX_GROUP_COLUMNS = (
     "feature_id",
     "neutral_loss_tag",
-    "family_center_mz",
-    "family_center_rt",
+    "group_center_mz",
+    "group_center_rt",
 )
 
 
@@ -209,8 +209,8 @@ def write_alignment_tsvs(
                 group_columns = {
                     "feature_id": feature_id,
                     "neutral_loss_tag": tag,
-                    "family_center_mz": format_value(center_mz),
-                    "family_center_rt": format_value(center_rt),
+                    "group_center_mz": format_value(center_mz),
+                    "group_center_rt": format_value(center_rt),
                 }
                 matrix_row_index: int | None = None
                 if group.destination == "matrix":
@@ -575,10 +575,10 @@ def _review_row(
         "feature_id": group_columns["feature_id"],
         "matrix_row_index": matrix_row_index,
         "neutral_loss_tag": group_columns["neutral_loss_tag"],
-        "family_center_mz": canonical_mz_text(center_mz),
-        "family_center_rt": center_rt,
-        "family_product_mz": product_mz,
-        "family_observed_neutral_loss_da": loss_da,
+        "group_center_mz": canonical_mz_text(center_mz),
+        "group_center_rt": center_rt,
+        "group_product_mz": product_mz,
+        "group_observed_neutral_loss_da": loss_da,
         "detected_count": detected_count,
         "not_searched_count": not_searched_count,
         "unresolved_count": unresolved_count,

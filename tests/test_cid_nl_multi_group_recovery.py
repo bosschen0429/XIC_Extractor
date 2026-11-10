@@ -1605,7 +1605,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         required = (
             "alignment_backfill_cell_evidence.tsv",
             "alignment_review.tsv:neutral_loss_tag",
-            "alignment_review.tsv:family_product_mz",
+            "alignment_review.tsv:group_product_mz",
         )
         requirements = [
             part for item in required for part in ("--require-populated", item)
@@ -1628,10 +1628,10 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     expected_loss = (
         (116.0474 + 132.0423) / 2 if composition == "intersection" else 116.0474
     )
-    assert float(review["family_product_mz"]) == pytest.approx(
+    assert float(review["group_product_mz"]) == pytest.approx(
         500.0 - expected_loss, abs=1e-3
     )
-    assert float(review["family_observed_neutral_loss_da"]) == pytest.approx(
+    assert float(review["group_observed_neutral_loss_da"]) == pytest.approx(
         expected_loss, abs=1e-3
     )
 
@@ -1718,7 +1718,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
     group_rows = dict(
         zip(
             (
-                round(float(review["family_center_rt"]), 1)
+                round(float(review["group_center_rt"]), 1)
                 for review in written_rows(tmp_path / "written", writer)["review"]
             ),
             written_groups(writer),

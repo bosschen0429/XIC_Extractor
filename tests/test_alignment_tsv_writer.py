@@ -22,10 +22,10 @@ REVIEW_COLUMNS = [
     "feature_id",
     "matrix_row_index",
     "neutral_loss_tag",
-    "family_center_mz",
-    "family_center_rt",
-    "family_product_mz",
-    "family_observed_neutral_loss_da",
+    "group_center_mz",
+    "group_center_rt",
+    "group_product_mz",
+    "group_observed_neutral_loss_da",
     "detected_count",
     "not_searched_count",
     "unresolved_count",
@@ -58,10 +58,10 @@ def test_write_alignment_review_tsv_columns_and_counts(tmp_path: Path):
         "feature_id": "F000001",
         "matrix_row_index": "1",
         "neutral_loss_tag": "DNA_dR",
-        "family_center_mz": "500.123",
-        "family_center_rt": "8.49",
-        "family_product_mz": "384.076",
-        "family_observed_neutral_loss_da": "116.047",
+        "group_center_mz": "500.123",
+        "group_center_rt": "8.49",
+        "group_product_mz": "384.076",
+        "group_observed_neutral_loss_da": "116.047",
         "detected_count": "2",
         "not_searched_count": "0",
         "unresolved_count": "0",
@@ -190,7 +190,7 @@ def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
     ]
 
     assert matrix_row["Mz"] == "500.1235"
-    assert review_row["family_center_mz"] == "500.123456"
+    assert review_row["group_center_mz"] == "500.123456"
     matrix_review_rows(
         matrix_header=tuple(matrix_row),
         matrix_rows=(matrix_row,),
@@ -212,7 +212,7 @@ def test_alignment_matrix_mz_format_is_display_only_for_small_mz(
     )[0]
 
     assert matrix_row["Mz"] == "5.1235"
-    assert identity_row["family_center_mz"] == "5.123456"
+    assert identity_row["group_center_mz"] == "5.123456"
 
 
 def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
@@ -226,7 +226,7 @@ def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
     )
 
     assert [row["Mz"] for row in matrix_rows] == ["500.1234", "500.1234"]
-    assert [row["family_center_mz"] for row in identity_rows] == [
+    assert [row["group_center_mz"] for row in identity_rows] == [
         "500.123441",
         "500.123449",
     ]
@@ -277,7 +277,7 @@ def test_alignment_matrix_identity_rejects_review_census_and_schema_mismatch(
         identity_rows.append(dict(identity_rows[-1]))
     elif mutation == "missing_column":
         identity_columns = tuple(
-            column for column in identity_columns if column != "family_center_rt"
+            column for column in identity_columns if column != "group_center_rt"
         )
     else:
         identity_columns = (*identity_columns, "unknown_identity_field")
@@ -313,7 +313,7 @@ def test_alignment_matrix_identity_requires_current_schema() -> None:
         review_rows=(identity,),
     )
     for columns in (
-        tuple(c for c in MATRIX_REVIEW_COLUMNS if c != "family_center_rt"),
+        tuple(c for c in MATRIX_REVIEW_COLUMNS if c != "group_center_rt"),
         (*MATRIX_REVIEW_COLUMNS, "unknown_identity_field"),
     ):
         with pytest.raises(ValueError, match="Review.*fields|row fields"):
@@ -360,9 +360,9 @@ def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
     if mutation == "identity_overflow":
         identity_row[None] = ["overflow"]
     elif mutation == "identity_missing_key":
-        identity_row.pop("family_center_rt")
+        identity_row.pop("group_center_rt")
     elif mutation == "identity_truncated":
-        identity_row["family_center_rt"] = None
+        identity_row["group_center_rt"] = None
     elif mutation == "matrix_overflow":
         matrix_row[None] = ["overflow"]
     elif mutation == "matrix_missing_key":
@@ -403,7 +403,7 @@ def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
         identity_rows = list(identity_reader)
 
     assert matrix_header == ("Mz", "RT", "'+sample", "safe")
-    assert matrix_rows[0]["RT"] == identity_rows[0]["family_center_rt"] == "8.49123"
+    assert matrix_rows[0]["RT"] == identity_rows[0]["group_center_rt"] == "8.49123"
     matrix_review_rows(
         matrix_header=matrix_header,
         matrix_rows=matrix_rows,
@@ -502,8 +502,8 @@ def test_write_alignment_review_tsv_maps_product_rows(
     assert {key: identity_rows[0][key] for key in MATRIX_REVIEW_COLUMNS} == {
         "feature_id": "F000001",
         "matrix_row_index": "1",
-        "family_center_mz": "500.123",
-        "family_center_rt": matrix_rows[0]["RT"],
+        "group_center_mz": "500.123",
+        "group_center_rt": matrix_rows[0]["RT"],
     }
 
 
@@ -534,7 +534,7 @@ def test_write_alignment_review_tsv_reports_archived_row_route(tmp_path: Path):
     (row,) = _read_tsv(render("review", tmp_path / "review.tsv", matrix))
 
     assert row["matrix_row_index"] == ""
-    assert row["family_center_mz"] == "500.123"
+    assert row["group_center_mz"] == "500.123"
     assert row["identity_reason"] == "test_route"
     assert row["accepted_cell_count"] == "1"
     assert row["accepted_backfill_count"] == "1"
@@ -639,7 +639,7 @@ def test_written_tsv_uses_lf_and_formats_values(tmp_path: Path) -> None:
     text = render("status", tmp_path / "status.tsv", matrix).read_text(encoding="utf-8")
 
     assert text == (
-        "feature_id\tneutral_loss_tag\tfamily_center_mz\tfamily_center_rt"
+        "feature_id\tneutral_loss_tag\tgroup_center_mz\tgroup_center_rt"
         "\tsample-a\nF000001\tDNA_dR\t500.123\t8.49\tdetected\n"
     )
 

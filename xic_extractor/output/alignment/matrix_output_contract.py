@@ -13,8 +13,8 @@ from xic_extractor.tabular_io import escape_excel_formula
 MATRIX_REVIEW_COLUMNS = (
     "feature_id",
     "matrix_row_index",
-    "family_center_mz",
-    "family_center_rt",
+    "group_center_mz",
+    "group_center_rt",
 )
 
 
@@ -141,11 +141,11 @@ def matrix_review_rows(
     for matrix, review in zip(matrix_rows, ordered, strict=True):
         _validate_serialized_row_shape(matrix, matrix_header, label="Matrix")
         if str(matrix["Mz"]).strip() != public_matrix_mz_text(
-            review["family_center_mz"]
+            review["group_center_mz"]
         ):
-            raise ValueError("Review family_center_mz binding mismatch")
-        if not _exact_finite_numeric_equal(matrix["RT"], review["family_center_rt"]):
-            raise ValueError("Review family_center_rt binding mismatch")
+            raise ValueError("Review group_center_mz binding mismatch")
+        if not _exact_finite_numeric_equal(matrix["RT"], review["group_center_rt"]):
+            raise ValueError("Review group_center_rt binding mismatch")
     return ordered
 
 

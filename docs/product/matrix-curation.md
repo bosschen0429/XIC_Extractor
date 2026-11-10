@@ -64,7 +64,7 @@ observation apex:
   counted as unavailable.
 - **Mass relation:** `e_ppm = 1e6 × (observed − predicted) / predicted` with
   `|e_ppm| ≤ 10`, where the predicted heavier m/z comes from the lighter row.
-  Both use the Review's `family_center_mz` (the group's centre m/z, the mean
+  Both use the Review's `group_center_mz` (the group's centre m/z, the mean
   of its members' m/z); this is not per-sample mass evidence. `precursor_mz` is
   never used as MS1 m/z.
 - **Ratio screening:** on supporting samples whose published values are finite
@@ -228,8 +228,8 @@ The review lists these families; removed derivatives are not evaluated again.
 
 ### Internal standards
 
-A row is an internal standard when its `family_center_mz` lies within 10 ppm of
-a listed standard and its `family_center_rt` lies in that standard's RT range
+A row is an internal standard when its `group_center_mz` lies within 10 ppm of
+a listed standard and its `group_center_rt` lies in that standard's RT range
 (`rt_min`–`rt_max`; without a range, `expected_rt_min` ± 0.75 min). Internal
 standards are always kept; their step columns are recorded as judged and the
 final `decision_reason` is `istd_protected`. The list comes from a chosen

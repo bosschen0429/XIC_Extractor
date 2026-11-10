@@ -192,13 +192,13 @@ The TSV uses stable display text for people and spreadsheet consumers:
   a value remain blank.
 
 Machine consumers bind Matrix rows to the nonblank `matrix_row_index` subset
-of `alignment_review.tsv`. Its `family_center_mz` and `family_center_rt` keep
+of `alignment_review.tsv`. Its `group_center_mz` and `group_center_rt` keep
 machine precision for every group, in Matrix or not. Consumers never
 reconstruct machine coordinates from rounded Matrix display.
 
 Review row order is free: the explicit `matrix_row_index` values must cover
-exactly 1..N, and each indexed row's `family_center_mz` (at display precision)
-and `family_center_rt` must match its Matrix row's `Mz` and `RT`. Missing or
+exactly 1..N, and each indexed row's `group_center_mz` (at display precision)
+and `group_center_rt` must match its Matrix row's `Mz` and `RT`. Missing or
 duplicated rows are rejected. Sample values are not cross-checked, so two rows with the
 same displayed coordinates can be swapped undetected. This is an association
 check, not scientific authenticity or activation authority.
@@ -221,10 +221,10 @@ members; a group's member peaks are in the Inspector and the explanation.
 | feature_id | string | Report-scoped group label (`F000001`) shared by the report tables |
 | matrix_row_index | int | The group's Matrix row (1..N); blank when the group is not in Matrix |
 | neutral_loss_tag | string | NL identifier |
-| family_center_mz | float | Center m/z: the group's centre, the mean of its members' `peak_mz`; Backfill searches the same value |
-| family_center_rt | float | Center RT (min): the mean apex RT of its members |
-| family_product_mz | float | Product m/z |
-| family_observed_neutral_loss_da | float | Observed NL (Da) |
+| group_center_mz | float | Center m/z: the group's centre, the mean of its members' `peak_mz`; Backfill searches the same value |
+| group_center_rt | float | Center RT (min): the mean apex RT of its members |
+| group_product_mz | float | Product m/z |
+| group_observed_neutral_loss_da | float | Observed NL (Da) |
 
 #### Detection Counts
 
