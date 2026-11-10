@@ -69,10 +69,10 @@ class TargetedReliabilityPoint:
 class AlignmentFeature:
     feature_id: str
     neutral_loss_tag: str
-    family_center_mz: float
-    family_center_rt: float
-    family_product_mz: float
-    family_observed_neutral_loss_da: float
+    group_center_mz: float
+    group_center_rt: float
+    group_product_mz: float
+    group_observed_neutral_loss_da: float
     include_in_primary_matrix: bool
 
 
@@ -96,10 +96,10 @@ class CandidateMatch:
     target_label: str
     feature_id: str
     include_in_primary_matrix: bool
-    family_center_mz: float
-    family_center_rt: float
-    family_product_mz: float
-    family_observed_neutral_loss_da: float
+    group_center_mz: float
+    group_center_rt: float
+    group_product_mz: float
+    group_observed_neutral_loss_da: float
     mz_delta_ppm: float
     rt_delta_sec: float
     product_delta_ppm: float

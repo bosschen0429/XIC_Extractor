@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import json
 import math
 from dataclasses import fields, replace
 from pathlib import Path
@@ -585,7 +584,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
             discovery_batch_index=tmp_path / "discovery_batch_index.csv",
             raw_dir=tmp_path,
             dll_dir=tmp_path,
-            owner_backfill_xic_backend="raw",
             output_level="machine",
             peak_config=peak_config,
         ),
@@ -1250,8 +1248,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         == sample_stems[:-1]
     )
     assert row["feature_id"] == "F000001"
-    physical_peak_keys = row["physical_peak_keys"].split(";")
-    center_rt = float(row["family_center_rt"])
+    center_rt = float(row["group_center_rt"])
     expected_presentation_facts: dict[str, tuple[float, float]] = {}
     expected_cell_apexes: dict[str, float] = {}
     diagnostic_observation_ids: set[str] = set()
@@ -1292,10 +1289,8 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         direct.integration.rt_apex_min,
                     )
     assert len(diagnostic_observation_ids) == 1
-    assert not diagnostic_observation_ids & set(physical_peak_keys)
     assert len(expected_presentation_facts) == len(sample_stems) - 1
-    assert set(physical_peak_keys) == set(expected_presentation_facts)
-    assert float(row["family_center_mz"]) == pytest.approx(
+    assert float(row["group_center_mz"]) == pytest.approx(
         sum(value[0] for value in expected_presentation_facts.values())
         / len(expected_presentation_facts)
     )
@@ -1311,10 +1306,9 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             assert integration.rt_apex_min == pytest.approx(
                 expected_cell_apexes[sample_stem]
             )
-    assert row["center_mz_basis"] == "cross_sample_owner_arithmetic_mean"
 
     # The written m/z is the group's own centre, the one its Backfill used.
-    assert float(row["family_center_mz"]) == written_group.group_center_mz
+    assert float(row["group_center_mz"]) == written_group.group_center_mz
 
     weighted_values = dict(zip(sample_stems, (1.0, 9.0, 2.0, 9.0), strict=True))
     for variant, no_write_sample in (("unequal", None), ("no-write", "Hold")):
@@ -1358,7 +1352,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 discovery_batch_index=tmp_path / "discovery_batch_index.csv",
                 raw_dir=tmp_path,
                 dll_dir=tmp_path,
-                owner_backfill_xic_backend="raw",
                 output_level="machine",
                 peak_config=peak_config,
             ),
@@ -1372,16 +1365,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         assert outputs.review_tsv is not None
         with outputs.review_tsv.open(encoding="utf-8", newline="") as handle:
             review_row = next(csv.DictReader(handle, delimiter="\t"))
-        assert float(review_row["matrix_rt"]) == pytest.approx(center_rt)
-        assert outputs.run_metadata_json is not None
-        metadata = json.loads(outputs.run_metadata_json.read_text(encoding="utf-8"))
-        assert (
-            metadata["matrix_center_rt_basis"] == "cross_sample_owner_arithmetic_mean"
-        )
-        assert (
-            metadata["matrix_center_weight_basis"]
-            == "unique_owner_observations_equal_weight"
-        )
+        assert float(review_row["group_center_rt"]) == pytest.approx(center_rt)
 
 
 @pytest.mark.parametrize(
@@ -1510,7 +1494,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
             discovery_batch_index=tmp_path / "discovery_batch_index.csv",
             raw_dir=tmp_path,
             dll_dir=tmp_path,
-            owner_backfill_xic_backend="raw",
             output_level="machine",
             peak_config=peak_config,
         ),

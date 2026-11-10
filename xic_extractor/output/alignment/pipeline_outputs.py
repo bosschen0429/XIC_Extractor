@@ -19,12 +19,6 @@ if TYPE_CHECKING:
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
 )
-from xic_extractor.alignment.backfill.scope import (
-    REQUEST_PLAN_VERSION,
-)
-from xic_extractor.alignment.config import (
-    BackfillXicBackend,
-)
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -107,17 +101,8 @@ def alignment_metadata(
     discovery_batch_index: Path,
     raw_dir: Path,
     dll_dir: Path,
-    owner_backfill_xic_backend: BackfillXicBackend,
     output_level: AlignmentOutputLevel,
     peak_config: ExtractionConfig,
-    owner_backfill_window_strategy: str = "exact",
-    owner_backfill_superwindow_span_factor: int = 2,
-    backfill_scope: str = "full-audit",
-    output_scope: str = "full-audit",
-    selected_family_count: int = 0,
-    selected_family_source: str = "",
-    request_plan_version: str = REQUEST_PLAN_VERSION,
-    scope_warning: str = "",
     signal_processing_profile: SignalProcessingProfile = (
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
@@ -125,31 +110,12 @@ def alignment_metadata(
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
         raise TypeError("signal_processing_profile must be a SignalProcessingProfile")
     metadata = {
-        "schema_version": "alignment-results",
         "discovery_batch_index": str(discovery_batch_index),
         "raw_dir": str(raw_dir),
         "dll_dir": str(dll_dir),
-        "owner_backfill_xic_backend": owner_backfill_xic_backend,
-        "owner_backfill_window_strategy": owner_backfill_window_strategy,
-        "owner_backfill_superwindow_span_factor": str(
-            owner_backfill_superwindow_span_factor,
-        ),
         "output_level": output_level,
         "resolver_mode": peak_config.resolver_mode,
         "baseline_integration_method": peak_config.baseline_integration_method,
-        "backfill_scope": backfill_scope,
-        "output_scope": output_scope,
-        "selected_family_count": str(selected_family_count),
-        "selected_family_source": selected_family_source,
-        "require_discovery_owner_closure": "TRUE",
-        "request_plan_version": request_plan_version,
-        "scope_warning": scope_warning,
-        "feature_id_policy": "report_scoped_measured_member_order",
-        "matrix_split_evaluation_status": "complete_no_product_ready_split",
-        "matrix_projection_status": "not_projection",
-        "matrix_center_rt_basis": "cross_sample_owner_arithmetic_mean",
-        "matrix_center_weight_basis": "unique_owner_observations_equal_weight",
-        "matrix_value_policy": "canonical_signal_profile_selected_area",
         "signal_processing_profile_json": serialize_signal_processing_profile(
             signal_processing_profile
         ).decode("utf-8"),

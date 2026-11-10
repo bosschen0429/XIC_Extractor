@@ -9,13 +9,12 @@ from dataclasses import dataclass
 from xic_extractor.output.alignment.output_rows import format_value
 from xic_extractor.tabular_io import escape_excel_formula
 
+# The Review fields that bind a Review row to its Matrix row.
 MATRIX_REVIEW_COLUMNS = (
     "feature_id",
     "matrix_row_index",
-    "matrix_mz",
-    "matrix_rt",
-    "center_mz_basis",
-    "accepted_cell_count",
+    "group_center_mz",
+    "group_center_rt",
 )
 
 
@@ -97,21 +96,6 @@ def serialize_public_matrix_table(
     )
 
 
-def bind_matrix_review_row(
-    *,
-    source_review: Mapping[str, object],
-    index: int,
-) -> dict[str, str]:
-    """Render the Review facts that locate one persisted Matrix row."""
-    review = {
-        column: format_value(source_review.get(column, ""))
-        for column in MATRIX_REVIEW_COLUMNS
-    }
-    review["matrix_row_index"] = str(index)
-    review["matrix_mz"] = canonical_mz_text(source_review.get("matrix_mz", ""))
-    return review
-
-
 def matrix_review_rows(
     *,
     matrix_header: Sequence[str],
@@ -121,7 +105,8 @@ def matrix_review_rows(
 ) -> tuple[Mapping[str, object], ...]:
     """Validate Review and return its Matrix subset in explicit Matrix order.
 
-    Archive rows remain in Review. Its physical row order is not a Matrix key.
+    Archive rows remain in Review with an empty ``matrix_row_index``. Its
+    physical row order is not a Matrix key.
     """
     if len(set(review_columns)) != len(review_columns):
         raise ValueError("alignment Review columns must be unique")
@@ -140,10 +125,6 @@ def matrix_review_rows(
         features.add(feature)
         position = str(row["matrix_row_index"]).strip()
         if not position:
-            if any(str(row[column]).strip() for column in ("matrix_mz", "matrix_rt")):
-                raise ValueError(
-                    "archive Review row cannot contain Matrix projection values"
-                )
             continue
         try:
             index = int(position)
@@ -159,10 +140,12 @@ def matrix_review_rows(
     ordered = tuple(projected[index] for index in range(1, len(matrix_rows) + 1))
     for matrix, review in zip(matrix_rows, ordered, strict=True):
         _validate_serialized_row_shape(matrix, matrix_header, label="Matrix")
-        if str(matrix["Mz"]).strip() != public_matrix_mz_text(review["matrix_mz"]):
-            raise ValueError("Review matrix_mz binding mismatch")
-        if not _exact_finite_numeric_equal(matrix["RT"], review["matrix_rt"]):
-            raise ValueError("Review matrix_rt binding mismatch")
+        if str(matrix["Mz"]).strip() != public_matrix_mz_text(
+            review["group_center_mz"]
+        ):
+            raise ValueError("Review group_center_mz binding mismatch")
+        if not _exact_finite_numeric_equal(matrix["RT"], review["group_center_rt"]):
+            raise ValueError("Review group_center_rt binding mismatch")
     return ordered
 
 

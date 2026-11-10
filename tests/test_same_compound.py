@@ -60,7 +60,7 @@ def row(
             value=1e6 * SAMPLE_SCALE[index] * factor,
             apex_rt_min=base_rt + index * 0.5 + shift / 60.0,
         )
-    return FeatureIdentity(feature_id, mz, base_rt, "fixture_mz"), cells
+    return FeatureIdentity(feature_id, mz, base_rt), cells
 
 
 def decide(*rows, relations=RELATIONS):
@@ -775,7 +775,6 @@ def _scenario():
                     "family_" + feature.feature_id,
                     feature.matrix_mz,
                     feature.matrix_rt,
-                    feature.center_mz_basis,
                 ),
                 cells,
             )
@@ -808,7 +807,6 @@ def test_decisions_follow_bound_rows_not_their_order_or_ids(seed):
                     renamed[feature.feature_id],
                     feature.matrix_mz,
                     feature.matrix_rt,
-                    feature.center_mz_basis,
                 ),
                 cells,
             )

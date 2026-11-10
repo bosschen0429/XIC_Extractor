@@ -795,8 +795,8 @@ def _write_alignment_run(
         identity_rows=projected,
         matrix_rows=[
             {
-                "Mz": row["family_center_mz"],
-                "RT": row["family_center_rt"],
+                "Mz": row["group_center_mz"],
+                "RT": row["group_center_rt"],
                 **{sample: row.get(sample, "") for sample in samples},
             }
             for row in matrix_rows
@@ -829,11 +829,10 @@ def _write_clean_alignment_run(
 REVIEW_COLUMNS = (
     "feature_id",
     "neutral_loss_tag",
-    "family_center_mz",
-    "family_center_rt",
-    "family_product_mz",
-    "family_observed_neutral_loss_da",
-    "include_in_primary_matrix",
+    "group_center_mz",
+    "group_center_rt",
+    "group_product_mz",
+    "group_observed_neutral_loss_da",
 )
 
 CELL_COLUMNS = (
@@ -856,11 +855,10 @@ def _review_row(
     return {
         "feature_id": family_id,
         "neutral_loss_tag": "DNA_dR",
-        "family_center_mz": mz,
-        "family_center_rt": rt,
-        "family_product_mz": product,
-        "family_observed_neutral_loss_da": nl,
-        "include_in_primary_matrix": str(primary).upper(),
+        "group_center_mz": mz,
+        "group_center_rt": rt,
+        "group_product_mz": product,
+        "group_observed_neutral_loss_da": nl,
     }
 
 
@@ -882,8 +880,8 @@ def _matrix_row(
     row: dict[str, object] = {
         "feature_id": family_id,
         "neutral_loss_tag": "DNA_dR",
-        "family_center_mz": "",
-        "family_center_rt": "",
+        "group_center_mz": "",
+        "group_center_rt": "",
     }
     for sample, value in zip(samples, values, strict=True):
         row[sample] = value

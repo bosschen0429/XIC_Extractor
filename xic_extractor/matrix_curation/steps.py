@@ -36,7 +36,6 @@ class FeatureIdentity:
     feature_id: str
     matrix_mz: float
     matrix_rt: float
-    center_mz_basis: str
 
 
 @dataclass(frozen=True)

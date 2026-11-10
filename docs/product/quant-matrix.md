@@ -79,8 +79,7 @@ Provisional groups belong in a compact machine archive/review surface;
 unresolved and rejected groups remain AuditTrail facts.
 
 A Matrix row's m/z is its group's centre: the mean of the members' m/z,
-decided once when the group is built
-(`center_mz_basis = cross_sample_owner_arithmetic_mean`). Backfill searches
+decided once when the group is built. Backfill searches
 that same centre, and Matrix, Review and the explanation report write it. A
 member's m/z is its peak's own mass (`peak_mz`): the apex MS1 reading for an
 inferred precursor, whose product + loss can sit 15–20 ppm from the MS1 ion,

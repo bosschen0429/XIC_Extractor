@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Literal, cast
 
 from xic_extractor.alignment.backfill.evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
-    ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
 )
 from xic_extractor.alignment.cell_observation.observations import (
     FinalGroupCellObservation,
@@ -34,15 +33,12 @@ from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
 )
 from xic_extractor.output.alignment.matrix_output_contract import (
-    MATRIX_REVIEW_COLUMNS,
-    bind_matrix_review_row,
     canonical_mz_text,
     serialize_public_matrix_table,
 )
 from xic_extractor.output.alignment.output_rows import (
     format_float,
     format_value,
-    safe_rate,
 )
 from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.tabular_io import escape_excel_formula
@@ -57,36 +53,24 @@ if TYPE_CHECKING:
         FinalizedUntargetBatchApplicationResult,
     )
 
-# How a group's centre is computed: the plain mean over its members.
-GROUP_CENTER_BASIS = "cross_sample_owner_arithmetic_mean"
-
 CellOrigin = Literal["detected", "backfilled"]
 
 ALIGNMENT_REVIEW_COLUMNS = (
     "feature_id",
-    *(
-        column
-        for column in MATRIX_REVIEW_COLUMNS
-        if column not in {"feature_id", "accepted_cell_count"}
-    ),
+    "matrix_row_index",
     "neutral_loss_tag",
-    "family_center_mz",
-    "family_center_rt",
-    "family_product_mz",
-    "family_observed_neutral_loss_da",
-    "physical_peak_keys",
+    "group_center_mz",
+    "group_center_rt",
+    "group_product_mz",
+    "group_observed_neutral_loss_da",
     "detected_count",
     "not_searched_count",
     "unresolved_count",
-    "present_rate",
     "identity_reason",
     "accepted_cell_count",
     "accepted_backfill_count",
-    "include_in_primary_matrix",
-    "row_flags",
     "membership_risk_flags",
     "warning",
-    "reason",
 )
 
 ALIGNMENT_CELLS_COLUMNS = (
@@ -94,9 +78,7 @@ ALIGNMENT_CELLS_COLUMNS = (
     "sample_stem",
     "status",
     "area",
-    "primary_matrix_area",
     "primary_matrix_area_source",
-    "primary_matrix_area_reason",
     "apex_rt",
     "height",
     "peak_start_rt",
@@ -105,17 +87,13 @@ ALIGNMENT_CELLS_COLUMNS = (
     "signal_to_noise",
     "low_signal_to_noise",
     "source_candidate_id",
-    "neutral_loss_tag",
-    "family_center_mz",
-    "family_center_rt",
-    "reason",
 )
 
 STATUS_MATRIX_GROUP_COLUMNS = (
     "feature_id",
     "neutral_loss_tag",
-    "family_center_mz",
-    "family_center_rt",
+    "group_center_mz",
+    "group_center_rt",
 )
 
 
@@ -231,10 +209,10 @@ def write_alignment_tsvs(
                 group_columns = {
                     "feature_id": feature_id,
                     "neutral_loss_tag": tag,
-                    "family_center_mz": format_value(center_mz),
-                    "family_center_rt": format_value(center_rt),
+                    "group_center_mz": format_value(center_mz),
+                    "group_center_rt": format_value(center_rt),
                 }
-                matrix_review: Mapping[str, object] = {}
+                matrix_row_index: int | None = None
                 if group.destination == "matrix":
                     for candidate_id in candidate_ids.values():
                         previous = source_candidate_owners.setdefault(
@@ -246,6 +224,7 @@ def write_alignment_tsvs(
                                 f"hypothesis rows: {candidate_id}"
                             )
                     matrix_row_count += 1
+                    matrix_row_index = matrix_row_count
                     emit(
                         "matrix",
                         serialize_public_matrix_table(
@@ -266,18 +245,6 @@ def write_alignment_tsvs(
                             sample_columns=sample_order,
                         ).rows,
                     )
-                    matrix_review = bind_matrix_review_row(
-                        source_review={
-                            "feature_id": feature_id,
-                            "matrix_mz": center_mz,
-                            "matrix_rt": center_rt,
-                            "center_mz_basis": GROUP_CENTER_BASIS,
-                            "accepted_cell_count": sum(
-                                cell.value is not None for cell in cells
-                            ),
-                        },
-                        index=matrix_row_count,
-                    )
                 emit(
                     "review",
                     (
@@ -285,15 +252,12 @@ def write_alignment_tsvs(
                             group,
                             cells,
                             group_columns=group_columns,
-                            matrix_review=matrix_review,
+                            matrix_row_index=matrix_row_index,
                             center_mz=center_mz,
                             center_rt=center_rt,
                             product_mz=product_mz,
                             loss_da=loss_da,
                             has_anchor=has_anchor,
-                            physical_peak_keys=tuple(
-                                peak.physical_peak_key for peak in peaks
-                            ),
                             risk_flags=risk_flags,
                             sample_count=len(sample_order),
                         ),
@@ -305,20 +269,8 @@ def write_alignment_tsvs(
                         (
                             {
                                 **_cell_fields(
-                                    group_columns, sample_stem, cell, candidate_ids
+                                    feature_id, sample_stem, cell, candidate_ids
                                 ),
-                                "schema_version": (
-                                    ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION
-                                ),
-                                "include_in_primary_matrix": (
-                                    group.destination == "matrix"
-                                ),
-                                "identity_decision": (
-                                    "finalized_matrix"
-                                    if group.destination == "matrix"
-                                    else "finalized_archive"
-                                ),
-                                "row_flags": _row_flags(group),
                                 **dict(
                                     zip(
                                         (
@@ -339,7 +291,7 @@ def write_alignment_tsvs(
                 emit(
                     "cells",
                     (
-                        _cell_fields(group_columns, sample_stem, cell, candidate_ids)
+                        _cell_fields(feature_id, sample_stem, cell, candidate_ids)
                         for sample_stem, cell in zip(sample_order, cells, strict=True)
                     ),
                 )
@@ -557,7 +509,7 @@ def backfill_query_bounds(
 
 
 def _cell_fields(
-    group_columns: Mapping[str, object],
+    feature_id: str,
     sample_stem: str,
     cell: ProductionCellDecision,
     candidate_ids: Mapping[str, str],
@@ -570,13 +522,11 @@ def _cell_fields(
         else ""
     )
     return {
-        "feature_id": group_columns["feature_id"],
+        "feature_id": feature_id,
         "sample_stem": sample_stem,
         "status": cell_status(cell),
         "area": format_value(cell.value),
-        "primary_matrix_area": format_value(cell.value),
         "primary_matrix_area_source": cell.source or missing_area_reason,
-        "primary_matrix_area_reason": missing_area_reason,
         "apex_rt": format_value(
             integration.rt_apex_min
             if cell.value is not None and integration is not None
@@ -599,10 +549,6 @@ def _cell_fields(
         if quality is not None and quality.low_signal_to_noise is not None
         else "",
         "source_candidate_id": candidate_ids.get(sample_stem, ""),
-        "neutral_loss_tag": group_columns["neutral_loss_tag"],
-        "family_center_mz": group_columns["family_center_mz"],
-        "family_center_rt": group_columns["family_center_rt"],
-        "reason": cell.source or cell.variant,
     }
 
 
@@ -611,13 +557,12 @@ def _review_row(
     cells: tuple[ProductionCellDecision, ...],
     *,
     group_columns: Mapping[str, object],
-    matrix_review: Mapping[str, object],
+    matrix_row_index: int | None,
     center_mz: float,
     center_rt: float,
     product_mz: float | None,
     loss_da: float | None,
     has_anchor: bool,
-    physical_peak_keys: tuple[str, ...],
     risk_flags: list[str],
     sample_count: int,
 ) -> dict[str, object]:
@@ -626,25 +571,20 @@ def _review_row(
     backfilled_count = status_counts["backfilled"]
     not_searched_count = status_counts["not_searched"]
     unresolved_count = status_counts["unresolved"]
-    present_count = detected_count + backfilled_count
     return {
         "feature_id": group_columns["feature_id"],
-        **matrix_review,
+        "matrix_row_index": matrix_row_index,
         "neutral_loss_tag": group_columns["neutral_loss_tag"],
-        "family_center_mz": canonical_mz_text(center_mz),
-        "family_center_rt": center_rt,
-        "family_product_mz": product_mz,
-        "family_observed_neutral_loss_da": loss_da,
-        "physical_peak_keys": ";".join(physical_peak_keys),
+        "group_center_mz": canonical_mz_text(center_mz),
+        "group_center_rt": center_rt,
+        "group_product_mz": product_mz,
+        "group_observed_neutral_loss_da": loss_da,
         "detected_count": detected_count,
         "not_searched_count": not_searched_count,
         "unresolved_count": unresolved_count,
-        "present_rate": safe_rate(present_count, sample_count),
         "identity_reason": group.disposition,
         "accepted_cell_count": sum(cell.value is not None for cell in cells),
         "accepted_backfill_count": backfilled_count,
-        "include_in_primary_matrix": group.destination == "matrix",
-        "row_flags": _row_flags(group),
         "membership_risk_flags": ";".join(risk_flags),
         "warning": _warning(
             has_anchor=has_anchor,
@@ -653,18 +593,7 @@ def _review_row(
             backfilled_count=backfilled_count,
             not_searched_count=not_searched_count,
         ),
-        "reason": _reason(
-            has_anchor=has_anchor,
-            present_count=present_count,
-            sample_count=sample_count,
-            backfilled_count=backfilled_count,
-            unresolved_count=unresolved_count,
-        ),
     }
-
-
-def _row_flags(group: CrossSamplePeakGroupHypothesis) -> str:
-    return f"finalized_route:{group.destination};{GROUP_CENTER_BASIS}"
 
 
 def _warning(
@@ -682,22 +611,3 @@ def _warning(
     if backfilled_count > 0 and detected_count == 0:
         return "high_backfill_dependency"
     return ""
-
-
-def _reason(
-    *,
-    has_anchor: bool,
-    present_count: int,
-    sample_count: int,
-    backfilled_count: int,
-    unresolved_count: int,
-) -> str:
-    prefix = "anchor family" if has_anchor else "no anchor"
-    parts = [
-        prefix,
-        f"{present_count}/{sample_count} present",
-        f"{backfilled_count} MS1 backfilled",
-    ]
-    if unresolved_count:
-        parts.append(f"{unresolved_count} unresolved")
-    return "; ".join(parts)

@@ -824,7 +824,6 @@ def _relation_rows(
                     "heavy_feature_id": b.feature_id,
                     "light_mz": repr(a.matrix_mz),
                     "heavy_mz": repr(b.matrix_mz),
-                    "center_mz_basis": _basis(a, b),
                     "relation": key,
                     "relation_kind": relation.kind,
                     "predicted_heavy_mz": repr(relation.predict(a.matrix_mz)),
@@ -1063,7 +1062,6 @@ RELATION_COLUMNS = (
     "heavy_feature_id",
     "light_mz",
     "heavy_mz",
-    "center_mz_basis",
     "relation",
     "relation_kind",
     "predicted_heavy_mz",
@@ -1178,9 +1176,6 @@ class SameCompoundStep:
             summary={
                 "thresholds": {
                     "mz_ppm": MZ_PPM,
-                    "center_mz_basis": sorted(
-                        {feature.center_mz_basis for feature in matrix.features}
-                    ),
                     "max_apex_sec": MAX_APEX_SEC,
                     "min_support_samples": MIN_SUPPORT_SAMPLES,
                     "min_support_fraction": MIN_SUPPORT_FRACTION,
@@ -1241,14 +1236,6 @@ class SameCompoundStep:
 
 
 SAME_COMPOUND_STEP = SameCompoundStep()
-
-
-def _basis(a: FeatureIdentity, b: FeatureIdentity) -> str:
-    return (
-        a.center_mz_basis
-        if a.center_mz_basis == b.center_mz_basis
-        else f"{a.center_mz_basis}|{b.center_mz_basis}"
-    )
 
 
 def _number(value: float | None) -> str:

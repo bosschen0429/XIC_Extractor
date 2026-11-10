@@ -60,20 +60,20 @@ def _match_target_to_alignment_with_shift(
     match_type = "exact" if mass_shift_da == 0.0 else "isotope_shift"
     matches: list[CandidateMatch] = []
     for feature in features:
-        mz_delta_ppm = _ppm_delta(shifted_mz, feature.family_center_mz)
+        mz_delta_ppm = _ppm_delta(shifted_mz, feature.group_center_mz)
         if abs(mz_delta_ppm) > target.ppm_tol:
             continue
         product_delta_ppm = _ppm_delta(
             shifted_product_mz,
-            feature.family_product_mz,
+            feature.group_product_mz,
         )
         if abs(product_delta_ppm) > target.ppm_tol:
             continue
-        loss_delta_da = feature.family_observed_neutral_loss_da - target.neutral_loss_da
+        loss_delta_da = feature.group_observed_neutral_loss_da - target.neutral_loss_da
         if abs(loss_delta_da) > thresholds.active_neutral_loss_tolerance_da:
             continue
         rt_delta_sec = _target_rt_delta_sec(
-            feature.family_center_rt,
+            feature.group_center_rt,
             target,
             target_mean_rt,
         )
@@ -84,12 +84,10 @@ def _match_target_to_alignment_with_shift(
                 target_label=target.label,
                 feature_id=feature.feature_id,
                 include_in_primary_matrix=feature.include_in_primary_matrix,
-                family_center_mz=feature.family_center_mz,
-                family_center_rt=feature.family_center_rt,
-                family_product_mz=feature.family_product_mz,
-                family_observed_neutral_loss_da=(
-                    feature.family_observed_neutral_loss_da
-                ),
+                group_center_mz=feature.group_center_mz,
+                group_center_rt=feature.group_center_rt,
+                group_product_mz=feature.group_product_mz,
+                group_observed_neutral_loss_da=(feature.group_observed_neutral_loss_da),
                 mz_delta_ppm=mz_delta_ppm,
                 rt_delta_sec=rt_delta_sec,
                 product_delta_ppm=product_delta_ppm,

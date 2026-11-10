@@ -68,7 +68,7 @@ def _summarize_target(
         - max(1, math.ceil(coverage_denominator_count * 0.02)),
     )
     family_mean_rt_delta = (
-        selected.family_center_rt - targeted_mean_rt
+        selected.group_center_rt - targeted_mean_rt
         if selected is not None and targeted_mean_rt is not None
         else None
     )

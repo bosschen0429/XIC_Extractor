@@ -81,9 +81,9 @@ def _write_required_alignment_artifacts(alignment_dir: Path) -> None:
     (alignment_dir / "alignment_review.tsv").write_text(
         "feature_id\tmatrix_row_index\tdetected_count\tunresolved_count\t"
         "not_searched_count\taccepted_cell_count\t"
-        "accepted_backfill_count\trow_flags\treason\n"
-        "FAM_BAD\t1\t4\t2\t1\t2\t1\tfinalized_route:archive\tneeds review\n"
-        "FAM_OK\t2\t5\t0\t0\t5\t0\tfinalized_route:matrix\tok\n",
+        "accepted_backfill_count\n"
+        "FAM_BAD\t1\t4\t2\t1\t2\t1\n"
+        "FAM_OK\t2\t5\t0\t0\t5\t0\n",
         encoding="utf-8",
     )
     (alignment_dir / "alignment_matrix.tsv").write_text(

@@ -18,11 +18,10 @@ from tools.diagnostics.targeted_istd_benchmark_models import (
     TargetedReliabilityPoint,
 )
 from xic_extractor.tabular_io import (
-    bool_value,
-    read_tsv_required,
+    optional_float as _float_value,
 )
 from xic_extractor.tabular_io import (
-    optional_float as _float_value,
+    read_tsv_required,
 )
 from xic_extractor.tabular_io import (
     require_fields as _require_fields,
@@ -176,11 +175,11 @@ def read_alignment_review(path: Path) -> tuple[AlignmentFeature, ...]:
         (
             "feature_id",
             "neutral_loss_tag",
-            "family_center_mz",
-            "family_center_rt",
-            "family_product_mz",
-            "family_observed_neutral_loss_da",
-            "include_in_primary_matrix",
+            "group_center_mz",
+            "group_center_rt",
+            "group_product_mz",
+            "group_observed_neutral_loss_da",
+            "matrix_row_index",
         ),
         path,
     )
@@ -188,24 +187,24 @@ def read_alignment_review(path: Path) -> tuple[AlignmentFeature, ...]:
         AlignmentFeature(
             feature_id=row["feature_id"],
             neutral_loss_tag=row["neutral_loss_tag"],
-            family_center_mz=_required_float(
-                row.get("family_center_mz"),
-                "family_center_mz",
+            group_center_mz=_required_float(
+                row.get("group_center_mz"),
+                "group_center_mz",
                 row["feature_id"],
             ),
-            family_center_rt=_required_float(
-                row.get("family_center_rt"),
-                "family_center_rt",
+            group_center_rt=_required_float(
+                row.get("group_center_rt"),
+                "group_center_rt",
                 row["feature_id"],
             ),
-            family_product_mz=_required_float(
-                row.get("family_product_mz"),
-                "family_product_mz",
+            group_product_mz=_required_float(
+                row.get("group_product_mz"),
+                "group_product_mz",
                 row["feature_id"],
             ),
-            family_observed_neutral_loss_da=_required_float(
-                row.get("family_observed_neutral_loss_da"),
-                "family_observed_neutral_loss_da",
+            group_observed_neutral_loss_da=_required_float(
+                row.get("group_observed_neutral_loss_da"),
+                "group_observed_neutral_loss_da",
                 row["feature_id"],
             ),
             include_in_primary_matrix=_is_primary_review_row(row),
@@ -279,7 +278,7 @@ def _sample_column_pairs(sample_columns: Sequence[str]) -> tuple[tuple[str, str]
 
 
 def _is_primary_review_row(row: Mapping[str, str]) -> bool:
-    return _is_trueish(row.get("include_in_primary_matrix"))
+    return bool(_text(row.get("matrix_row_index")))
 
 
 def read_alignment_cells(path: Path) -> dict[tuple[str, str], AlignmentCell]:
@@ -328,7 +327,3 @@ def _normalize_sample_id(sample_id: str) -> str:
         lambda match: f"{match.group(1)}QC{match.group(2)}",
         value,
     )
-
-
-def _is_trueish(value: str | None) -> bool:
-    return bool_value(value) is True
