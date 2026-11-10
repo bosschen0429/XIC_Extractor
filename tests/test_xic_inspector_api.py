@@ -14,7 +14,7 @@ import pytest
 from tests.alignment_explanation_fixtures import explanation_summary
 from tests.inspector_fixtures import (
     create_inspector_report,
-    link_report_record,
+    inspector_curve_payload,
     read_report_payload,
 )
 from xic_extractor.alignment_explanation.writer import (
@@ -29,61 +29,16 @@ from xic_inspector.api import (
 from xic_inspector.cli import main as cli_main
 
 
-def _insert_candidate(connection, cid, sid, payload):
-    value = json.loads(payload)
-    sample = connection.execute(
-        "SELECT id FROM samples WHERE sample_key=?", (sid,)
-    ).fetchone()
-    if sample is None:
-        sample_id = connection.execute(
-            "SELECT coalesce(max(id),-1)+1 FROM samples"
-        ).fetchone()[0]
-        connection.execute(
-            "INSERT INTO samples VALUES (?,?,?)",
-            (sample_id, sid, value.get("sample_stem", sid)),
-        )
-    else:
-        sample_id = sample[0]
-    extras = {
-        k: v
-        for k, v in value.items()
-        if k
-        not in {
-            "candidate_id",
-            "sample_key",
-            "sample_stem",
-            "precursor_mz",
-            "ms1_apex_mz",
-        }
+def _ref_key(ref):
+    """A record ref as a dict key; a cell's ref is its (row, sample) pair."""
+    return tuple(ref) if isinstance(ref, list) else ref
+
+
+def _readable(item):
+    return {
+        _ref_key(record["ref"]): record
+        for record in item["details"]["readable_records"]
     }
-    connection.execute(
-        "INSERT INTO candidates(candidate_id,sample,precursor_mz,ms1_apex_mz,payload) "
-        "VALUES (?,?,?,?,?)",
-        (
-            cid,
-            sample_id,
-            value.get("precursor_mz"),
-            value.get("ms1_apex_mz"),
-            json.dumps(extras),
-        ),
-    )
-
-
-def _delete_links(
-    connection: sqlite3.Connection, *, kind: str, record_id: str | None = None
-) -> None:
-    if record_id is None:
-        connection.execute(
-            "DELETE FROM record_links WHERE record_rowid IN "
-            "(SELECT id FROM records WHERE kind=?)",
-            (kind,),
-        )
-    else:
-        connection.execute(
-            "DELETE FROM record_links WHERE record_rowid IN "
-            "(SELECT id FROM records WHERE kind=? AND record_id=?)",
-            (kind, record_id),
-        )
 
 
 def test_interactive_and_offline_review_share_sample_scope_and_values(tmp_path):
@@ -163,71 +118,35 @@ def test_generate_report_sample_strategy_success() -> None:
 
 
 def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
-    report, _, _ = create_inspector_report(tmp_path)
-    stored_cell = {
-        "cell_observation_id": "cell-observation-02",
-        "decision_id": "decision-02",
-        "feature_id": "G1",
-        "sample_key": "S2",
-        "source": "",
-        "value": None,
-        "variant": "not_searched",
-    }
-    stored_observation = {
-        "cell_observation_id": "cell-observation-02",
-        "feature_id": "G1",
-        "sample_key": "S2",
-        "evidence_states": [],
-        "predecessor_cells": [],
-    }
-    with sqlite3.connect(report) as connection:
-        for kind, ref, facts in (
-            ("cell_decisions", "cd-02", stored_cell),
-            ("cell_observations", "cell-observation-02", stored_observation),
-            (
-                "cell_decisions",
-                "wrong-row",
-                {**stored_cell, "decision_id": "wrong-row", "feature_id": "row-02"},
-            ),
-            (
-                "cell_decisions",
-                "wrong-group",
-                {
-                    **stored_cell,
-                    "decision_id": "wrong-group",
-                    "feature_id": "G2",
-                },
-            ),
-            (
-                "cell_decisions",
-                "wrong-sample",
-                {
-                    **stored_cell,
-                    "decision_id": "wrong-sample",
-                    "sample_key": "S3",
-                },
-            ),
-            (
-                "method_assessments",
-                "assessment-hold",
-                {
-                    "sample_key": "S1",
-                    "method_result": "HOLD",
-                    "reason_codes": [
-                        "insufficient_method_evidence",
-                        "no_unique_qualifying_relation",
-                    ],
-                },
-            ),
-        ):
-            connection.execute(
-                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                (kind, ref, json.dumps(facts)),
-            )
-        link_report_record(
-            connection,
-            ("C1", "S1", "method_assessments", "assessment-hold"),
+    stored_cell = {"sample_key": "S2", "source": "", "value": None}
+
+    def other_group_and_hold(writer):
+        writer.add_final_group(
+            "G2", feature_id="G2", disposition="completed", members=[], candidates=()
         )
+        writer.add_cells("G2", [{**stored_cell, "variant": "not_searched"}])
+        writer.add_assessment(
+            {
+                "sample_key": "S1",
+                "method_subject_id": "M1",
+                "method_result": "HOLD",
+                "reason_codes": [
+                    "insufficient_method_evidence",
+                    "no_unique_qualifying_relation",
+                ],
+            },
+            candidate_physical_peak_keys=(),
+        )
+
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
+        cells=[
+            {"sample_key": "S1", "variant": "numeric", "value": 1000.0},
+            {**stored_cell, "variant": "not_searched"},
+        ],
+        extend=other_group_and_hold,
+    )
 
     output = tmp_path / "all-samples.html"
     generate_report(
@@ -241,16 +160,15 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     assert set(samples) == {"S1", "S2"}
     assert samples["S2"]["sample_stem"] == "s2"
     assert samples["S2"]["quantitative_value"] is None
-    assert samples["S2"]["decision_refs"] == ["cd-02"]
+    assert samples["S2"]["decision_refs"] == [["G1", "S2"]]
     assert samples["S2"]["status_kind"] == "null"
-    assert samples["S2"]["decision_label"] == "未搜尋"
+    assert samples["S2"]["decision_label"] == "本次未搜尋"
     assert "「本次未搜尋」（not_searched）" in samples["S2"]["decision_reason"]
 
-    readable = {record["ref"]: record for record in item["details"]["readable_records"]}
-    assert "cell-observation-02" in readable
-    assert readable["cell-observation-02"]["sample_ids"] == ["S2"]
-    assert readable["cell-observation-02"]["candidate_ids"] == []
-    assert not {"wrong-row", "wrong-group", "wrong-sample"} & readable.keys()
+    readable = _readable(item)
+    assert readable["G1", "S2"]["sample_ids"] == ["S2"]
+    assert readable["G1", "S2"]["candidate_ids"] == []
+    assert ("G2", "S2") not in readable
     assert {witness["sample_key"] for witness in item["witnesses"]} == {"S1"}
     assert {curve["sample_id"] for curve in item["curves"]} == {"S1"}
 
@@ -261,7 +179,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     trigger = next(
         trigger
         for trigger in item["details"]["attention_triggers"]
-        if trigger["ref"] == "assessment-hold"
+        if trigger["reason"] == "HOLD"
     )
     assert trigger["reason"] == "HOLD"
     assert trigger["reason_codes"] == [
@@ -277,11 +195,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     )
     scoped_item = read_report_payload(scoped_output)["items"][0]
     assert [sample["sample_id"] for sample in scoped_item["samples"]] == ["S1"]
-    scoped_records = {
-        record["ref"] for record in scoped_item["details"]["readable_records"]
-    }
-    assert "cd-02" not in scoped_records
-    assert "cell-observation-02" not in scoped_records
+    assert ("G1", "S2") not in _readable(scoped_item)
 
 
 def test_error_code_2_invalid_request() -> None:
@@ -483,22 +397,18 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
     from xic_inspector.api import read_evidence_summary
     from xic_inspector.sources import cid_nl
 
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
+    def shared_witness_rows(writer):
         for index in range(2, row_count + 1):
             rid = f"row-{index:02d}"
-            connection.execute(
-                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                (
-                    "rows",
-                    rid,
-                    json.dumps({"feature_id": "G1"}),
-                ),
+            writer.add_final_group(
+                rid,
+                feature_id=rid,
+                disposition="completed",
+                members=[],
+                candidates=[("C1", "S1")],
             )
-            link_report_record(
-                connection,
-                ("C1", "S1", "rows", rid),
-            )
+
+    report, _, _ = create_inspector_report(tmp_path, extend=shared_witness_rows)
     reads = []
     real_reader = cid_nl.read_alignment_curves
 
@@ -544,41 +454,24 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
 
 
 def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
-        connection.execute("DELETE FROM records WHERE kind='rows'")
-        _delete_links(connection, kind="rows")
-        connection.execute("DELETE FROM records WHERE kind='terminal_subjects'")
-        _delete_links(connection, kind="terminal_subjects")
-        _insert_candidate(
-            connection,
-            *("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 600.0})),
+    def second_witness(writer):
+        writer.add_peak("S2", "obs-02", (None, 8.0, None))
+        writer.add_candidate("C2", "S2", precursor_mz=600.0)
+        writer.add_terminal(
+            "C2",
+            "S2",
+            variant="observed",
+            hypothesis_id="h2",
+            physical_peak_key="obs-02",
         )
-        link_report_record(connection, ("C2", "S2", "final_groups", "G1"))
-        for cid, sid, rt in (("C1", "S1", 1.0), ("C2", "S2", 8.0)):
-            connection.execute(
-                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                (
-                    "terminal_subjects",
-                    cid,
-                    json.dumps(
-                        {
-                            "observations": [
-                                {
-                                    "physical_peak_key": "obs-01"
-                                    if cid == "C1"
-                                    else "obs-02",
-                                    "rt_apex_min": rt,
-                                }
-                            ]
-                        }
-                    ),
-                ),
-            )
-            link_report_record(
-                connection,
-                (cid, sid, "terminal_subjects", cid),
-            )
+
+    # A final group without a result row, witnessed in two samples.
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        prepare=second_witness,
+        group={"feature_id": None, "candidates": [("C1", "S1"), ("C2", "S2")]},
+        cells=[],
+    )
     result = generate_report(
         report,
         SelectionRequest(
@@ -608,44 +501,22 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
     )
     assert result.selected_count == 1
     item = read_report_payload(output)["items"][0]
-    assert json.loads(item["id"])[-1] == "G1"
+    # A group without a row is named by its record number.
+    assert json.loads(item["id"])[-1] == "1"
     assert [w["candidate_id"] for w in item["matched_refs"]] == ["C1"]
     assert [w["sample_key"] for w in item["witnesses"]] == ["S1"]
 
 
 def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
-        _insert_candidate(
-            connection,
-            *("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 600.0})),
-        )
-        for kind, rid in (
-            ("rows", "G1"),
-            ("final_groups", "G1"),
-            ("cell_decisions", "cd-01"),
-        ):
-            link_report_record(connection, ("C2", "S2", kind, rid))
-        connection.execute(
-            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-            (
-                "cell_decisions",
-                "cd-02",
-                json.dumps(
-                    {
-                        "feature_id": "G1",
-                        "sample_key": "S2",
-                        "value": None,
-                        "variant": "missing",
-                    }
-                ),
-            ),
-        )
-        for cid, sid in (("C1", "S1"), ("C2", "S2")):
-            link_report_record(
-                connection,
-                (cid, sid, "cell_decisions", "cd-02"),
-            )
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        prepare=lambda writer: writer.add_candidate("C2", "S2", precursor_mz=600.0),
+        group={"candidates": [("C1", "S1"), ("C2", "S2")]},
+        cells=[
+            {"sample_key": "S1", "variant": "numeric", "value": 1000.0},
+            {"sample_key": "S2", "variant": "unavailable", "value": None},
+        ],
+    )
     full = tmp_path / "full.html"
     generate_report(report, SelectionRequest(), full)
     assert read_report_payload(full)["items"][0]["stratum"] == "null"
@@ -675,10 +546,10 @@ def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
     before = output.read_bytes()
     with sqlite3.connect(report) as connection:
         if failure == "missing":
-            connection.execute("DELETE FROM curve_payloads")
+            connection.execute("DELETE FROM curves")
         else:
             pid, blob = connection.execute(
-                "SELECT payload_id,payload FROM curve_payloads"
+                "SELECT payload_id,payload FROM curves"
             ).fetchone()
             payload = json.loads(zlib.decompress(blob))
             if failure == "attempt":
@@ -686,7 +557,7 @@ def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
             else:
                 payload["sample_id"] = "S2"
             connection.execute(
-                "UPDATE curve_payloads SET payload=? WHERE payload_id=?",
+                "UPDATE curves SET payload=? WHERE payload_id=?",
                 (zlib.compress(json.dumps(payload).encode()), pid),
             )
     with pytest.raises(InspectorError) as caught:
@@ -698,21 +569,12 @@ def test_invalid_selected_payload_preserves_existing_report(tmp_path, failure):
 def test_legitimate_candidate_without_observation_remains_available_as_metadata(
     tmp_path,
 ):
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
-        _insert_candidate(
-            connection,
-            *(
-                "not-acquired",
-                "S2",
-                json.dumps(
-                    {
-                        "candidate_id": "not-acquired",
-                        "discovery_candidate_state": "excluded",
-                    }
-                ),
-            ),
-        )
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        extend=lambda writer: writer.add_candidate(
+            "not-acquired", "S2", precursor_mz=None, physical_state="excluded"
+        ),
+    )
     output = tmp_path / "unavailable.html"
     result = generate_report(
         report,
@@ -727,13 +589,11 @@ def test_legitimate_candidate_without_observation_remains_available_as_metadata(
 
 
 def test_candidate_presentation_ids_preserve_sample_identity(tmp_path):
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
+    def shared_candidate_id(writer):
         for sid in ("S1", "S2"):
-            _insert_candidate(
-                connection,
-                *("shared-id", sid, json.dumps({"candidate_id": "shared-id"})),
-            )
+            writer.add_candidate("shared-id", sid, precursor_mz=None)
+
+    report, _, _ = create_inspector_report(tmp_path, extend=shared_candidate_id)
     output = tmp_path / "identities.html"
     generate_report(
         report, SelectionRequest(strategy="query", candidate_ids=("shared-id",)), output
@@ -751,60 +611,37 @@ def test_candidate_presentation_ids_preserve_sample_identity(tmp_path):
 def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
     tmp_path,
 ):
-    import zlib
+    payload_ids = []
 
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
-        blob = connection.execute("SELECT payload FROM curve_payloads").fetchone()[0]
-        original = json.loads(zlib.decompress(blob))
-        captures = [
-            (2, "initial_capture", "obs-earlier", "obs-earlier"),
-            (3, "discovery_physical", "obs-01", "obs-01"),
-            (4, "discovery_physical", None, "C1"),
-        ]
-        for pid, kind, observation_id, record_id in captures:
-            payload = {
-                **original,
-                "kind": kind,
-                "physical_peak_key": observation_id,
-            }
-            connection.execute(
-                "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    pid,
+    def more_stages(writer):
+        for kind, observation_id, record_id in (
+            ("initial_capture", "obs-earlier", "obs-earlier"),
+            ("discovery_physical", "obs-01", "obs-01"),
+            ("discovery_physical", None, "C1"),
+        ):
+            payload_ids.append(
+                writer.add_curve_payload(
                     "S1",
                     kind,
                     record_id,
-                    "zlib-json-utf8",
-                    zlib.compress(json.dumps(payload).encode()),
-                ),
+                    inspector_curve_payload("S1", "C1", observation_id, kind=kind),
+                    candidates=[("C1", "S1")],
+                )
             )
-            capture = {
-                "payload_id": pid,
-                "sample_id": "S1",
-                "candidate_id": "C1",
-                "physical_peak_key": observation_id,
-                "record_id": record_id,
-                "kind": kind,
-            }
-            connection.execute(
-                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                ("capture_evidence", pid, json.dumps(capture)),
-            )
-            link_report_record(
-                connection,
-                ("C1", "S1", "capture_evidence", pid),
-            )
+
+    report, _, _ = create_inspector_report(tmp_path, extend=more_stages)
     output = tmp_path / "stages.html"
     generate_report(report, SelectionRequest(), output)
     curves = read_report_payload(output)["items"][0]["curves"]
     assert len(curves) == 4
-    assert {c["evidence_ref"] for c in curves} >= {2, 3, 4}
+    assert {c["evidence_ref"] for c in curves} >= set(payload_ids)
     before = output.read_bytes()
     with sqlite3.connect(report) as connection:
-        # The terminal obs still has its initial payload; losing a distinct
+        # The terminal obs still has its initial payload; an unreadable distinct
         # stage of that same observation must still fail completion.
-        connection.execute("DELETE FROM curve_payloads WHERE payload_id=3")
+        connection.execute(
+            "UPDATE curves SET payload=x'00' WHERE payload_id=?", (payload_ids[1],)
+        )
     with pytest.raises(InspectorError) as caught:
         generate_report(report, SelectionRequest(), output)
     assert caught.value.code == 4
@@ -831,67 +668,37 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
 def test_sample_support_origin_uses_exact_method_capture_and_observation(
     tmp_path, capture_kind, invocation, expected_kind, expected_label
 ):
-    import zlib
+    refs = {}
 
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
-        original = json.loads(
-            zlib.decompress(
-                connection.execute("SELECT payload FROM curve_payloads").fetchone()[0]
-            )
+    def method_capture(writer):
+        refs["capture"] = writer.add_curve_payload(
+            "S1",
+            capture_kind,
+            "obs-01",
+            inspector_curve_payload("S1", "C1", "obs-01", kind=capture_kind),
+            candidates=[("C1", "S1")],
         )
-        backfill = {
-            **original,
-            "kind": capture_kind,
-        }
-        connection.execute(
-            "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                2,
-                "S1",
-                capture_kind,
-                "obs-01",
-                "zlib-json-utf8",
-                zlib.compress(json.dumps(backfill).encode()),
-            ),
+        writer.add_assessment(
+            {
+                "sample_key": "S1",
+                "method_subject_id": "M1",
+                "detector_invocation_id": invocation,
+                "method_result": "SUPPORT",
+            },
+            candidate_physical_peak_keys=("obs-01",),
         )
-        connection.execute(
-            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-            (
-                "capture_evidence",
-                2,
-                json.dumps(
-                    {
-                        "payload_id": 2,
-                        "sample_id": "S1",
-                        "candidate_id": "C1",
-                        "physical_peak_key": "obs-01",
-                        "record_id": "obs-01",
-                        "kind": capture_kind,
-                    }
-                ),
-            ),
-        )
-        connection.execute(
-            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-            (
-                "method_assessments",
-                "recovery-method",
-                json.dumps(
-                    {
-                        "sample_key": "S1",
-                        "candidate_physical_peak_keys": ["obs-01"],
-                        "detector_invocation_id": invocation,
-                        "method_result": "SUPPORT",
-                    }
-                ),
-            ),
-        )
-        for kind, ref in (
-            ("capture_evidence", 2),
-            ("method_assessments", "recovery-method"),
-        ):
-            link_report_record(connection, ("C1", "S1", kind, ref))
+        # Records without a natural key share one numbering.
+        refs["method"] = refs["capture"] + 1
+
+    # Every stored cell records its own origin; without a cell the origin is
+    # read from the exact method, capture and observation.
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
+        cells=[],
+        curve=False,
+        extend=method_capture,
+    )
 
     output = tmp_path / "recovery-origin.html"
     generate_report(report, SelectionRequest(), output)
@@ -902,122 +709,54 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
     assert item["samples"][0]["support_origin"] == {
         "kind": expected_kind,
         "label": expected_label,
-        "method_refs": ["recovery-method"],
-        "capture_refs": ["2"],
+        "method_refs": [str(refs["method"])],
+        "capture_refs": [str(refs["capture"])],
         "observation_refs": ["obs-01"],
     }
 
 
 def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
-    import zlib
-
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
-        _delete_links(connection, kind="terminal_subjects", record_id="terminal-01")
-        final_group = json.loads(
-            connection.execute(
-                "SELECT payload FROM records WHERE kind='final_groups' "
-                "AND record_id='G1'"
-            ).fetchone()[0]
+    def backfill_recovery(writer):
+        writer.add_curve_payload(
+            "S1",
+            "backfill_observation",
+            "obs-01",
+            inspector_curve_payload("S1", "C1", "obs-01", kind="backfill_observation"),
+            candidates=[("C1", "S1")],
         )
-        final_group["member_subjects"] = [
+        writer.add_assessment(
             {
                 "sample_key": "S1",
-                "subject_kind": "peak_hypothesis",
-                "subject_id": "hypothesis-01",
-                "physical_peak_keys": ["obs-01"],
-            }
-        ]
-        connection.execute(
-            "UPDATE records SET payload=? WHERE kind='final_groups' AND record_id='G1'",
-            (json.dumps(final_group),),
+                "method_subject_id": "M1",
+                "detector_invocation_id": "untargeted-cid-nl-backfill",
+                "method_result": "SUPPORT",
+            },
+            candidate_physical_peak_keys=("obs-01",),
         )
-        decision = json.loads(
-            connection.execute(
-                "SELECT payload FROM records WHERE kind='cell_decisions' "
-                "AND record_id='cd-01'"
-            ).fetchone()[0]
-        )
-        decision.update(
-            group_hypothesis_id="G1",
-            cell_observation_id="cell-observation-01",
-        )
-        connection.execute(
-            "UPDATE records SET payload=? WHERE kind='cell_decisions' "
-            "AND record_id='cd-01'",
-            (json.dumps(decision),),
-        )
-        connection.execute(
-            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-            (
-                "cell_observations",
-                "cell-observation-01",
-                json.dumps(
-                    {
-                        "cell_observation_id": "cell-observation-01",
-                        "feature_id": "G1",
-                        "sample_key": "S1",
-                        "predecessor_cells": [
-                            {
-                                "content": {
-                                    "sample_key": "S1",
-                                    "feature_id": "G1",
-                                    "physical_peak_key": "obs-01",
-                                    "method_result": "SUPPORT",
-                                }
-                            }
-                        ],
-                    }
-                ),
-            ),
-        )
-        original = json.loads(
-            zlib.decompress(
-                connection.execute("SELECT payload FROM curve_payloads").fetchone()[0]
-            )
-        )
-        connection.execute(
-            "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                2,
-                "S1",
-                "backfill_observation",
-                "obs-01",
-                "zlib-json-utf8",
-                zlib.compress(
-                    json.dumps({**original, "kind": "backfill_observation"}).encode()
-                ),
-            ),
-        )
-        for kind, ref, facts in (
-            (
-                "capture_evidence",
-                2,
-                {
-                    "payload_id": 2,
-                    "sample_id": "S1",
-                    "candidate_id": "C1",
-                    "physical_peak_key": "obs-01",
-                    "record_id": "obs-01",
-                    "kind": "backfill_observation",
-                },
-            ),
-            (
-                "method_assessments",
-                "recovery-method",
+
+    # C1 has no terminal observation; the final group member and its cell hold
+    # the recovered peak.
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
+        observed=False,
+        group={
+            "members": [
                 {
                     "sample_key": "S1",
-                    "candidate_physical_peak_keys": ["obs-01"],
-                    "detector_invocation_id": "untargeted-cid-nl-backfill",
-                    "method_result": "SUPPORT",
-                },
-            ),
-        ):
-            connection.execute(
-                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                (kind, ref, json.dumps(facts)),
-            )
-            link_report_record(connection, ("C1", "S1", kind, ref))
+                    "subject_kind": "peak_hypothesis",
+                    "subject_id": "hypothesis-01",
+                    "physical_peak_keys": ["obs-01"],
+                }
+            ]
+        },
+        base_cell={
+            "support_origin": "backfill_support",
+            "observation_ids": ["obs-01"],
+        },
+        curve=False,
+        extend=backfill_recovery,
+    )
 
     output = tmp_path / "zero-terminal-recovery.html"
     generate_report(report, SelectionRequest(), output)
@@ -1026,13 +765,12 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
     assert item["witnesses"][0]["observation_id"] is None
     assert item["review_summary"]["observed_sample_count"] == 1
     assert item["review_summary"]["origin_kinds"] == ["backfill_support"]
-    assert item["samples"][0]["support_origin"] == {
-        "kind": "backfill_support",
-        "label": "Backfill（回填）支持",
-        "method_refs": ["recovery-method"],
-        "capture_refs": ["2"],
-        "observation_refs": ["obs-01"],
-    }
+    origin = item["samples"][0]["support_origin"]
+    assert (origin["kind"], origin["label"], origin["observation_refs"]) == (
+        "backfill_support",
+        "Backfill（回填）支持",
+        ["obs-01"],
+    )
 
 
 @pytest.mark.parametrize("sparse_coverage", [False, True])
@@ -1040,118 +778,59 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
     tmp_path,
     sparse_coverage,
 ):
-    import zlib
+    coverage = (
+        {
+            "policy": "hard-gate-candidates-v1",
+            "unlisted_pairs": "excluded",
+            "rt_pruning": False,
+        }
+        if sparse_coverage
+        else {}
+    )
 
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
-        coverage = (
-            {
-                "policy": "hard-gate-candidates-v1",
-                "unlisted_pairs": "excluded",
-                "rt_pruning": False,
-            }
-            if sparse_coverage
-            else {}
-        )
-        if sparse_coverage:
-            summary = json.loads(
-                connection.execute(
-                    "SELECT payload FROM metadata WHERE key='summary'"
-                ).fetchone()[0]
-            )
-            summary["initial_edge_coverage"] = coverage
-            connection.execute(
-                "UPDATE metadata SET payload=? WHERE key='summary'",
-                (json.dumps(summary),),
-            )
-        original = json.loads(
-            zlib.decompress(
-                connection.execute("SELECT payload FROM curve_payloads").fetchone()[0]
-            )
-        )
-        for candidate_id, group_id, row_id, observation_id in (
-            ("C2", "G2", "row-02", "obs-02"),
-            ("C3", "G3", "row-03", "obs-03"),
+    def provisional_peers(writer):
+        for candidate_id, group_id, observation_id in (
+            ("C2", "G2", "obs-02"),
+            ("C3", "G3", "obs-03"),
         ):
-            _insert_candidate(
-                connection,
-                *(
-                    candidate_id,
-                    "S1",
-                    json.dumps(
-                        {
-                            "candidate_id": candidate_id,
-                            "sample_key": "S1",
-                            "precursor_mz": 501.0,
-                        }
-                    ),
-                ),
+            writer.add_peak("S1", observation_id, (None, 1.0, None))
+            writer.add_candidate(candidate_id, "S1", precursor_mz=501.0)
+            writer.add_terminal(
+                candidate_id,
+                "S1",
+                variant="observed",
+                hypothesis_id=f"hyp-{candidate_id}",
+                physical_peak_key=observation_id,
             )
-            for kind, ref, facts in (
-                (
-                    "rows",
-                    row_id,
-                    {"feature_id": group_id},
-                ),
-                (
-                    "final_groups",
-                    group_id,
-                    {"feature_id": group_id, "disposition": "provisional"},
-                ),
-                (
-                    "terminal_subjects",
-                    f"terminal-{candidate_id}",
-                    {
-                        "observations": [
-                            {
-                                "physical_peak_key": observation_id,
-                                "rt_apex_min": 1.0,
-                            }
-                        ]
-                    },
-                ),
-            ):
-                connection.execute(
-                    "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                    (kind, ref, json.dumps(facts)),
-                )
-                link_report_record(
-                    connection,
-                    (candidate_id, "S1", kind, ref),
-                )
-            curve = {
-                **original,
-                "candidate_id": candidate_id,
-                "physical_peak_key": observation_id,
-            }
-            connection.execute(
-                "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    int(candidate_id[1:]),
-                    "S1",
-                    "initial_capture",
-                    observation_id,
-                    "zlib-json-utf8",
-                    zlib.compress(json.dumps(curve).encode()),
-                ),
+            writer.add_final_group(
+                group_id,
+                feature_id=group_id,
+                disposition="provisional",
+                members=[],
+                candidates=[(candidate_id, "S1")],
             )
-        connection.execute(
-            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-            (
-                "initial_edges",
-                "edge-c1-c2",
-                json.dumps(
-                    {
-                        "disposition": "excluded",
-                        "initial_evidence": {"decision": "blocked_edge"},
-                    }
-                ),
-            ),
+            writer.add_curve_payload(
+                "S1",
+                "initial_capture",
+                observation_id,
+                inspector_curve_payload("S1", candidate_id, observation_id),
+                candidates=[(candidate_id, "S1")],
+            )
+        writer.add_initial_edge(
+            {
+                "left_subject_id": "hyp-C1",
+                "right_subject_id": "hyp-C2",
+                "disposition": "excluded",
+                "initial_evidence": {"decision": "blocked_edge"},
+            },
+            [("C1", "S1"), ("C2", "S1")],
         )
-        for candidate_id in ("C1", "C2"):
-            link_report_record(
-                connection, (candidate_id, "S1", "initial_edges", "edge-c1-c2")
-            )
+
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        extend=provisional_peers,
+        summary={"initial_edge_coverage": coverage},
+    )
 
     output = tmp_path / "peer.html"
     result = generate_report(
@@ -1169,7 +848,7 @@ def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
     assert len(item["related_groups"]) == 1
     peer = item["related_groups"][0]
     assert peer["group_id"] == "G2"
-    assert peer["edge_refs"] == ["edge-c1-c2"]
+    assert peer["edge_refs"] == ['["hyp-C1","hyp-C2"]']
     assert len(peer["curves"]) == 1
     assert peer["curves"][0]["candidate_ids"] == ["C2"]
 
@@ -1181,19 +860,12 @@ def test_report_preserves_relationship_availability_without_edges(
     tmp_path,
     availability,
 ):
-    report, _, _ = create_inspector_report(tmp_path)
-    if availability is not None:
-        with sqlite3.connect(report) as connection:
-            summary = json.loads(
-                connection.execute(
-                    "SELECT payload FROM metadata WHERE key='summary'"
-                ).fetchone()[0]
-            )
-            summary["audit_availability"] = {"initial_edges": availability}
-            connection.execute(
-                "UPDATE metadata SET payload=? WHERE key='summary'",
-                (json.dumps(summary),),
-            )
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        summary=None
+        if availability is None
+        else {"audit_availability": {"initial_edges": availability}},
+    )
     output = tmp_path / "relationship-availability.html"
     generate_report(report, SelectionRequest(), output)
     item = read_report_payload(output)["items"][0]
@@ -1203,93 +875,25 @@ def test_report_preserves_relationship_availability_without_edges(
 
 
 def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path):
-    report, _, _ = create_inspector_report(
-        tmp_path,
-        samples=[
-            {"sample_stem": "sample one", "sample_key": "S1"},
-            {"sample_stem": "sample two", "sample_key": "S2"},
-            {"sample_stem": "sample three", "sample_key": "S3"},
-        ],
-    )
-    with sqlite3.connect(report) as connection:
+    def candidates(writer):
         for candidate_id, sample_id in (
             ("C1-duplicate", "S1"),
             ("C2", "S2"),
             ("C3", "S3"),
         ):
-            _insert_candidate(
-                connection,
-                *(
-                    candidate_id,
-                    sample_id,
-                    json.dumps(
-                        {
-                            "candidate_id": candidate_id,
-                            "sample_key": sample_id,
-                            "precursor_mz": 500.0,
-                        }
-                    ),
-                ),
-            )
-        for candidate_id, sample_id in (("C1-duplicate", "S1"), ("C2", "S2")):
-            for kind, ref in (("rows", "G1"), ("final_groups", "G1")):
-                link_report_record(
-                    connection,
-                    (candidate_id, sample_id, kind, ref),
-                )
-        connection.execute(
-            "UPDATE records SET payload=? WHERE kind='final_groups' AND record_id='G1'",
-            (
-                json.dumps(
-                    {
-                        "feature_id": "G1",
-                        "disposition": "completed",
-                        "member_subjects": [
-                            {
-                                "subject_id": "member-1",
-                                "sample_key": "S1",
-                            },
-                            {
-                                "subject_id": "member-2",
-                                "sample_key": "S2",
-                            },
-                        ],
-                    }
-                ),
-            ),
+            writer.add_candidate(candidate_id, sample_id, precursor_mz=500.0)
+
+    def external_group_and_edges(writer):
+        writer.add_final_group(
+            "G2",
+            feature_id="G2",
+            disposition="completed",
+            members=[{"subject_id": "member-3", "sample_key": "S3"}],
+            candidates=[("C3", "S3")],
         )
-        for kind, ref, payload in (
-            (
-                "rows",
-                "row-02",
-                {"feature_id": "G2"},
-            ),
-            (
-                "final_groups",
-                "G2",
-                {
-                    "feature_id": "G2",
-                    "disposition": "completed",
-                    "member_subjects": [
-                        {
-                            "subject_id": "member-3",
-                            "sample_key": "S3",
-                        }
-                    ],
-                },
-            ),
-        ):
-            connection.execute(
-                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                (kind, ref, json.dumps(payload)),
-            )
-            link_report_record(
-                connection,
-                ("C3", "S3", kind, ref),
-            )
+        # One edge per ordered subject pair; the review edge is the reverse pair.
         edges = (
             (
-                "edge-direct-three-links",
                 "member-1",
                 "member-2",
                 "eligible",
@@ -1303,9 +907,8 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                 (("C1", "S1"), ("C1-duplicate", "S1"), ("C2", "S2")),
             ),
             (
-                "edge-review",
-                "member-1",
                 "member-2",
+                "member-1",
                 "review_only",
                 {
                     "decision": "weak_edge",
@@ -1314,7 +917,6 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                 (("C1", "S1"), ("C2", "S2")),
             ),
             (
-                "edge-external-excluded",
                 "member-1",
                 "member-3",
                 "excluded",
@@ -1326,26 +928,34 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
                 (("C1", "S1"), ("C3", "S3")),
             ),
         )
-        for ref, left_id, right_id, disposition, evidence, links in edges:
-            connection.execute(
-                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                (
-                    "initial_edges",
-                    ref,
-                    json.dumps(
-                        {
-                            "left_subject_id": left_id,
-                            "right_subject_id": right_id,
-                            "disposition": disposition,
-                            "initial_evidence": evidence,
-                        }
-                    ),
-                ),
+        for left_id, right_id, disposition, evidence, links in edges:
+            writer.add_initial_edge(
+                {
+                    "left_subject_id": left_id,
+                    "right_subject_id": right_id,
+                    "disposition": disposition,
+                    "initial_evidence": evidence,
+                },
+                links,
             )
-            for candidate_id, sample_id in links:
-                link_report_record(
-                    connection, (candidate_id, sample_id, "initial_edges", ref)
-                )
+
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        samples=[
+            {"sample_stem": "sample one", "sample_key": "S1"},
+            {"sample_stem": "sample two", "sample_key": "S2"},
+            {"sample_stem": "sample three", "sample_key": "S3"},
+        ],
+        prepare=candidates,
+        group={
+            "members": [
+                {"subject_id": "member-1", "sample_key": "S1"},
+                {"subject_id": "member-2", "sample_key": "S2"},
+            ],
+            "candidates": [("C1", "S1"), ("C1-duplicate", "S1"), ("C2", "S2")],
+        },
+        extend=external_group_and_edges,
+    )
 
     output = tmp_path / "internal-pair-support.html"
     generate_report(
@@ -1358,7 +968,7 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
     assert item["relationship_availability"] == "recorded"
     assert item["internal_pair_support"] == [
         {
-            "edge_ref": "edge-direct-three-links",
+            "edge_ref": '["member-1","member-2"]',
             "left_subject_id": "member-1",
             "right_subject_id": "member-2",
             "left_sample_label": "sample one",
@@ -1373,11 +983,11 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
             "rt_basis": None,
         },
         {
-            "edge_ref": "edge-review",
-            "left_subject_id": "member-1",
-            "right_subject_id": "member-2",
-            "left_sample_label": "sample one",
-            "right_sample_label": "sample two",
+            "edge_ref": '["member-2","member-1"]',
+            "left_subject_id": "member-2",
+            "right_subject_id": "member-1",
+            "left_sample_label": "sample two",
+            "right_sample_label": "sample one",
             "support_kind": "review_only",
             "disposition": "review_only",
             "decision": "weak_edge",
@@ -1389,68 +999,33 @@ def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path)
         },
     ]
     assert item["review_summary"]["related_group_count"] == 1
-    assert item["related_groups"][0]["edge_refs"] == ["edge-external-excluded"]
+    assert item["related_groups"][0]["edge_refs"] == ['["member-1","member-3"]']
 
 
 def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp_path):
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
-        _insert_candidate(
-            connection,
-            *(
-                "C2",
-                "S1",
-                json.dumps(
-                    {
-                        "candidate_id": "C2",
-                        "sample_key": "S1",
-                        "precursor_mz": 501.0,
-                    }
-                ),
-            ),
-        )
-        for candidate_id, group_id, row_id in (
-            ("C2", "G2", "row-02"),
-            ("C1", "G4", "row-04"),
-        ):
-            for kind, ref, facts in (
-                (
-                    "rows",
-                    row_id,
-                    {"feature_id": group_id},
-                ),
-                (
-                    "final_groups",
-                    group_id,
-                    {"feature_id": group_id, "disposition": "completed"},
-                ),
-            ):
-                connection.execute(
-                    "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                    (kind, ref, json.dumps(facts)),
-                )
-                link_report_record(
-                    connection,
-                    (candidate_id, "S1", kind, ref),
-                )
-        connection.execute(
-            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-            (
-                "initial_edges",
-                "edge-shared-multirow",
-                json.dumps(
-                    {
-                        "disposition": "excluded",
-                        "initial_evidence": {"decision": "split_edge"},
-                    }
-                ),
-            ),
-        )
-        for candidate_id in ("C1", "C2"):
-            link_report_record(
-                connection,
-                (candidate_id, "S1", "initial_edges", "edge-shared-multirow"),
+    def shared_candidate_rows_and_edge(writer):
+        writer.add_candidate("C2", "S1", precursor_mz=501.0)
+        for candidate_id, group_id in (("C2", "G2"), ("C1", "G4")):
+            writer.add_final_group(
+                group_id,
+                feature_id=group_id,
+                disposition="completed",
+                members=[],
+                candidates=[(candidate_id, "S1")],
             )
+        writer.add_initial_edge(
+            {
+                "left_subject_id": "hyp-C1",
+                "right_subject_id": "hyp-C2",
+                "disposition": "excluded",
+                "initial_evidence": {"decision": "split_edge"},
+            },
+            [("C1", "S1"), ("C2", "S1")],
+        )
+
+    report, _, _ = create_inspector_report(
+        tmp_path, extend=shared_candidate_rows_and_edge
+    )
 
     output = tmp_path / "shared-multirow-peer.html"
     result = generate_report(
@@ -1468,7 +1043,7 @@ def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp
     for item in items:
         assert item["review_summary"]["related_group_count"] == 1
         assert [peer["group_id"] for peer in item["related_groups"]] == ["G2"]
-        assert item["related_groups"][0]["edge_refs"] == ["edge-shared-multirow"]
+        assert item["related_groups"][0]["edge_refs"] == ['["hyp-C1","hyp-C2"]']
 
 
 def test_curve_replays_final_rt_estimate_including_boundary_shift(tmp_path):
@@ -1480,7 +1055,6 @@ def test_curve_replays_final_rt_estimate_including_boundary_shift(tmp_path):
     )
     from xic_extractor.rt_calibration_codec import rt_calibration_payload
 
-    report, _, _ = create_inspector_report(tmp_path)
     sample = SampleRtCalibration(
         "s1",
         "calibrated",
@@ -1493,17 +1067,13 @@ def test_curve_replays_final_rt_estimate_including_boundary_shift(tmp_path):
     calibration = BatchRtCalibration(
         RtCalibrationPolicy(), (), {"s1": sample}, None, None, None
     )
-    with sqlite3.connect(report) as connection:
-        summary = json.loads(
-            connection.execute(
-                "SELECT payload FROM metadata WHERE key='summary'"
-            ).fetchone()[0]
-        )
-        summary["sample_rt_calibration"] = rt_calibration_payload(calibration)
-        summary["injection_order"] = {"s1": 7, "s2": 3}
-        connection.execute(
-            "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
-        )
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        summary={
+            "sample_rt_calibration": rt_calibration_payload(calibration),
+            "injection_order": {"s1": 7, "s2": 3},
+        },
+    )
     output = tmp_path / "aligned.html"
     generate_report(report, SelectionRequest(), output)
     payload = read_report_payload(output)
@@ -1520,18 +1090,15 @@ def test_curve_replays_final_rt_estimate_including_boundary_shift(tmp_path):
 
 def test_obsolete_istd_display_calibration_requires_rerun_alignment(tmp_path):
     report, _, _ = create_inspector_report(tmp_path)
+    # An older run kept its display calibration in the ISTD reference.
     with sqlite3.connect(report) as connection:
         summary = json.loads(
-            connection.execute(
-                "SELECT payload FROM metadata WHERE key='summary'"
-            ).fetchone()[0]
+            connection.execute("SELECT payload FROM run").fetchone()[0]
         )
         summary.pop("sample_rt_calibration")
         summary["known_istd_reference"] = {"calibration": {"samples": []}}
-        connection.execute(
-            "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
-        )
-    with pytest.raises(InspectorError, match="重新執行 Alignment") as caught:
+        connection.execute("UPDATE run SET payload=?", (json.dumps(summary),))
+    with pytest.raises(InspectorError, match="rerun Alignment") as caught:
         generate_report(report, SelectionRequest(), tmp_path / "invalid.html")
     assert caught.value.code == 4
 
@@ -1545,25 +1112,29 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
 
     item = read_report_payload(output)["items"][0]
     records = item["details"]["records"]
-    assert next(r for r in records if r["ref"] == "cd-01")["facts"] == {
-        "feature_id": "G1",
-        "sample_id": "S1",
-        "quantitative_value": 1000.0,
-    }
+    facts = next(r for r in records if r["ref"] == ["G1", "S1"])["facts"]
+    assert (facts["feature_id"], facts["sample_key"], facts["value"]) == (
+        "G1",
+        "S1",
+        1000.0,
+    )
 
-    readable = {record["ref"]: record for record in item["details"]["readable_records"]}
-    decision = readable["cd-01"]
+    readable = _readable(item)
+    decision = readable["G1", "S1"]
     assert decision["sample_ids"] == ["S1"]
-    assert decision["candidate_ids"] == ["C1"]
+    # A cell is read with its row and sample, not linked to candidates.
+    assert decision["candidate_ids"] == []
     assert decision["links"] == [{"ref": "G1", "label": "查看分組紀錄"}]
     assert {field["label"]: field["value"] for field in decision["fields"]}[
         "正式定量值"
     ] == "1,000"
-    decision_refs = {ref["label"]: ref["value"] for ref in decision["technical_refs"]}
+    decision_refs = {
+        ref["label"]: _ref_key(ref["value"]) for ref in decision["technical_refs"]
+    }
     assert (
         decision_refs.items()
         >= {
-            "來源紀錄 ID": "cd-01",
+            "來源紀錄 ID": ("G1", "S1"),
             "樣本 ID": "S1",
             "分組 ID": "G1",
         }.items()
@@ -1571,7 +1142,8 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
 
     curve = item["curves"][0]
     curve_record = readable[curve["evidence_ref"]]
-    assert curve_record["ref"] == 1
+    # G1 is record 1; its curve is the next record.
+    assert curve_record["ref"] == 2
     assert curve_record["sample_ids"] == ["S1"]
     assert curve_record["candidate_ids"] == ["C1"]
     curve_fields = {field["label"]: field["value"] for field in curve_record["fields"]}
@@ -1589,58 +1161,32 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
     assert (
         curve_refs.items()
         >= {
-            "曲線 evidence ref": 1,
+            "曲線 evidence ref": 2,
             "觀察 ID": "obs-01",
             "處理 attempt ID": "att-01",
         }.items()
     )
     assert curve["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
     assert curve["integration"]["area_raw_counts_seconds"] == 2500.0
-    assert item["samples"][0]["decision_refs"] == ["cd-01"]
-    assert item["samples"][0]["decision_reason"] == "來源未記錄定量理由。"
+    assert item["samples"][0]["decision_refs"] == [["G1", "S1"]]
+    assert (
+        item["samples"][0]["decision_reason"]
+        == "來源記錄結果類型為「numeric」；未另記理由。"
+    )
 
 
 def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
     tmp_path,
 ):
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
-        connection.execute(
-            "UPDATE records SET payload=? WHERE kind='cell_decisions'",
-            (
-                json.dumps(
-                    {
-                        "feature_id": "G1",
-                        "sample_id": "S1",
-                        "quantitative_value": None,
-                    }
-                ),
-            ),
-        )
-        _insert_candidate(
-            connection,
-            *("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
-        )
-        connection.execute(
-            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-            (
-                "cell_decisions",
-                "cd-02",
-                json.dumps(
-                    {
-                        "feature_id": "G1",
-                        "sample_id": "S2",
-                        "quantitative_value": 0,
-                    }
-                ),
-            ),
-        )
-        for kind, ref in (
-            ("rows", "G1"),
-            ("final_groups", "G1"),
-            ("cell_decisions", "cd-02"),
-        ):
-            link_report_record(connection, ("C2", "S2", kind, ref))
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        prepare=lambda writer: writer.add_candidate("C2", "S2", precursor_mz=500.0),
+        group={"candidates": [("C1", "S1"), ("C2", "S2")]},
+        cells=[
+            {"sample_key": "S1", "variant": "unavailable", "value": None},
+            {"sample_key": "S2", "variant": "numeric", "value": 0},
+        ],
+    )
 
     output = tmp_path / "null-zero.html"
     generate_report(report, SelectionRequest(), output)
@@ -1648,219 +1194,128 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
     samples = {sample["sample_id"]: sample for sample in item["samples"]}
     assert samples["S1"]["quantitative_value"] is None
     assert samples["S2"]["quantitative_value"] == 0
-    assert samples["S1"]["decision_refs"] == ["cd-01"]
-    assert samples["S2"]["decision_refs"] == ["cd-02"]
-    assert samples["S1"]["decision_reason"] == "來源未記錄定量理由。"
-    assert samples["S2"]["decision_reason"] == "來源未記錄定量理由。"
+    assert samples["S1"]["decision_refs"] == [["G1", "S1"]]
+    assert samples["S2"]["decision_refs"] == [["G1", "S2"]]
+    assert (
+        samples["S1"]["decision_reason"]
+        == "來源記錄結果類型為「沒有可用觀察」（unavailable）；定量值為空。"
+    )
+    assert (
+        samples["S2"]["decision_reason"]
+        == "來源記錄結果類型為「numeric」；未另記理由。"
+    )
     assert "1 個空值" in item["reason_label"]
     assert "1 個零值" in item["reason_label"]
     assert "1 個未保存曲線" in item["reason_label"]
     assert not any(token in item["reason_label"] for token in ("成功", "一致"))
 
-    readable = {record["ref"]: record for record in item["details"]["readable_records"]}
-    assert readable["cd-01"]["candidate_ids"] == ["C1"]
-    assert readable["cd-02"]["candidate_ids"] == ["C2"]
+    readable = _readable(item)
+    assert readable["G1", "S1"]["sample_ids"] == ["S1"]
+    assert readable["G1", "S2"]["sample_ids"] == ["S2"]
     curve_record = readable[item["curves"][0]["evidence_ref"]]
     assert curve_record["candidate_ids"] == ["C1"]
-    assert {field["label"]: field["value"] for field in readable["cd-01"]["fields"]}[
+    assert {field["label"]: field["value"] for field in readable["G1", "S1"]["fields"]}[
         "正式定量值"
     ] == "空值（非零）"
-    assert {field["label"]: field["value"] for field in readable["cd-02"]["fields"]}[
+    assert {field["label"]: field["value"] for field in readable["G1", "S2"]["fields"]}[
         "正式定量值"
     ] == "0"
 
 
-def test_multiple_decisions_keep_all_exact_refs_without_a_single_value(tmp_path):
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
-        connection.execute(
-            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-            (
-                "cell_decisions",
-                "cd-extra",
-                json.dumps(
-                    {
-                        "feature_id": "G1",
-                        "sample_id": "S1",
-                        "quantitative_value": 2000.0,
-                    }
-                ),
-            ),
-        )
-        link_report_record(
-            connection,
-            ("C1", "S1", "cell_decisions", "cd-extra"),
-        )
-
-    output = tmp_path / "multiple.html"
-    generate_report(report, SelectionRequest(), output)
-    item = read_report_payload(output)["items"][0]
-    sample = item["samples"][0]
-    assert "quantitative_value" not in sample
-    assert sample["decision_refs"] == ["cd-01", "cd-extra"]
-    assert sample["decision_reason"] == "來源保留 2 筆定量決策，未記錄單一理由。"
-    assert "有多筆定量決策，未形成單一結果" in item["reason_label"]
-
-
 def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_path):
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
-        _insert_candidate(
-            connection,
-            *("C2", "S2", json.dumps({"candidate_id": "C2", "precursor_mz": 500.0})),
-        )
-        connection.execute(
-            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-            (
-                "cell_decisions",
-                "cd-02",
-                json.dumps(
-                    {
-                        "feature_id": "G1",
-                        "sample_key": "S2",
-                        "value": 700.0,
-                        "variant": "numeric",
-                    }
-                ),
-            ),
-        )
-        for kind, ref in (
-            ("rows", "G1"),
-            ("final_groups", "G1"),
-            ("cell_decisions", "cd-02"),
+    def sample_methods_and_edges(writer):
+        for sample_id, reason_code in (
+            ("S1", "unique_support_within_declared_candidate_universe"),
+            ("S2", "another_recorded_reason"),
         ):
-            link_report_record(connection, ("C2", "S2", kind, ref))
-        for ref, sample_id, reason_code in (
-            (
-                "method-s1",
-                "S1",
-                "unique_support_within_declared_candidate_universe",
-            ),
-            ("method-s2", "S2", "another_recorded_reason"),
+            writer.add_assessment(
+                {
+                    "sample_key": sample_id,
+                    "method_subject_id": "M1",
+                    "method_result": "SUPPORT",
+                    "reason_codes": [reason_code],
+                    "technical_state": "evaluated",
+                },
+                candidate_physical_peak_keys=(),
+            )
+        for left, right, links in (
+            ("hyp-C1", "hyp-C2", (("C1", "S1"), ("C2", "S2"))),
+            ("hyp-C2", "hyp-C2b", (("C2", "S2"),)),
         ):
-            connection.execute(
-                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                (
-                    "method_assessments",
-                    ref,
-                    json.dumps(
-                        {
-                            "sample_key": sample_id,
-                            "method_result": "SUPPORT",
-                            "reason_codes": [reason_code],
-                            "technical_state": "evaluated",
-                        }
-                    ),
-                ),
+            writer.add_initial_edge(
+                {
+                    "left_subject_id": left,
+                    "right_subject_id": right,
+                    "disposition": "excluded",
+                    "initial_evidence": {
+                        "decision": "blocked_edge",
+                        "failure_reason": "product_mz_out_of_tolerance",
+                        "reason": "blocked: product_mz_out_of_tolerance",
+                        "score": 0,
+                    },
+                },
+                links,
             )
-            link_report_record(
-                connection,
-                (
-                    "C1" if sample_id == "S1" else "C2",
-                    sample_id,
-                    "method_assessments",
-                    ref,
-                ),
-            )
-        for ref, links in (
-            ("edge-shared", (("C1", "S1"), ("C2", "S2"))),
-            ("edge-s2-only", (("C2", "S2"),)),
-        ):
-            connection.execute(
-                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                (
-                    "initial_edges",
-                    ref,
-                    json.dumps(
-                        {
-                            "disposition": "excluded",
-                            "initial_evidence": {
-                                "decision": "blocked_edge",
-                                "failure_reason": "product_mz_out_of_tolerance",
-                                "reason": "blocked: product_mz_out_of_tolerance",
-                                "score": 0,
-                            },
-                        }
-                    ),
-                ),
-            )
-            for candidate_id, sample_id in links:
-                link_report_record(
-                    connection, (candidate_id, sample_id, "initial_edges", ref)
-                )
+
+    method = {"method_subject_id": "M1", "neutral_loss_tag": "dR"}
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        candidate=method,
+        prepare=lambda writer: writer.add_candidate(
+            "C2", "S2", precursor_mz=500.0, **method
+        ),
+        group={"candidates": [("C1", "S1"), ("C2", "S2")]},
+        cells=[
+            {"sample_key": "S1", "variant": "numeric", "value": 1000.0},
+            {"sample_key": "S2", "variant": "numeric", "value": 700.0},
+        ],
+        extend=sample_methods_and_edges,
+    )
+    # G1 is record 1 and its curve 2; the two assessments follow.
+    method_s1, method_s2 = "3", "4"
+    edge_shared, edge_s2_only = '["hyp-C1","hyp-C2"]', '["hyp-C2","hyp-C2b"]'
 
     output = tmp_path / "related-records.html"
     generate_report(report, SelectionRequest(), output)
     item = read_report_payload(output)["items"][0]
     samples = {sample["sample_id"]: sample for sample in item["samples"]}
-    readable = {record["ref"]: record for record in item["details"]["readable_records"]}
+    readable = _readable(item)
 
-    s1_decision = readable[samples["S1"]["decision_refs"][0]]
-    s1_link_refs = {link["ref"] for link in s1_decision["links"]}
-    assert {"method-s1", "edge-shared"} <= s1_link_refs
-    assert {"method-s2", "edge-s2-only"}.isdisjoint(s1_link_refs)
-    s2_decision = readable[samples["S2"]["decision_refs"][0]]
-    s2_link_refs = {link["ref"] for link in s2_decision["links"]}
-    assert {"method-s2", "edge-shared", "edge-s2-only"} <= s2_link_refs
-    assert "method-s1" not in s2_link_refs
+    # A stored cell is read with its row and sample and links only to its group.
+    for sample_id in ("S1", "S2"):
+        decision = readable[_ref_key(samples[sample_id]["decision_refs"][0])]
+        assert [link["ref"] for link in decision["links"]] == ["G1"]
 
     curve_ref = item["curves"][0]["evidence_ref"]
     curve_links = {link["ref"] for link in readable[curve_ref]["links"]}
-    assert {"method-s1", "edge-shared"} <= curve_links
-    assert {"method-s2", "edge-s2-only"}.isdisjoint(curve_links)
+    assert {method_s1, edge_shared} <= curve_links
+    assert {method_s2, edge_s2_only}.isdisjoint(curve_links)
 
-    assert "SUPPORT" in readable["method-s1"]["summary"]
-    assert "在已宣告候選範圍內具有唯一支持" in readable["method-s1"]["summary"]
-    assert "不代表正式定量採用" in readable["method-s1"]["summary"]
-    assert "產品離子 m/z 超出容許範圍" in readable["edge-shared"]["summary"]
-    assert "score 0" in readable["edge-shared"]["summary"]
-    assert "不代表正式定量採用" in readable["edge-shared"]["summary"]
+    assert "SUPPORT" in readable[method_s1]["summary"]
+    assert "在已宣告候選範圍內具有唯一支持" in readable[method_s1]["summary"]
+    assert "不代表正式定量採用" in readable[method_s1]["summary"]
+    assert "產品離子 m/z 超出容許範圍" in readable[edge_shared]["summary"]
+    assert "score 0" in readable[edge_shared]["summary"]
+    assert "不代表正式定量採用" in readable[edge_shared]["summary"]
 
 
 def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
-    report, _, _ = create_inspector_report(tmp_path)
-    with sqlite3.connect(report) as connection:
+    def excluded_candidates(writer):
+        writer.add_method_subject({"method_subject_id": "M1"})
         for candidate_id in ("C2", "C3"):
-            _insert_candidate(
-                connection,
-                *(
-                    candidate_id,
-                    "S2",
-                    json.dumps(
-                        {
-                            "candidate_id": candidate_id,
-                            "sample_key": "S2",
-                            "precursor_mz": 510.0,
-                            "peak_status": "doubly_charged",
-                        }
-                    ),
-                ),
+            writer.add_candidate(
+                candidate_id,
+                "S2",
+                precursor_mz=510.0,
+                peak_status="doubly_charged",
+                method_subject_id="M1",
+                neutral_loss_tag="dR",
             )
-            connection.execute(
-                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                (
-                    "exclusions",
-                    f"exclusion-{candidate_id.lower()}",
-                    json.dumps(
-                        {
-                            "candidate_id": candidate_id,
-                            "sample_key": "S2",
-                            "peak_status": "doubly_charged",
-                            "reason_code": ("discovery_candidate_not_search_eligible"),
-                            "assessment_artifact_ids": [],
-                        }
-                    ),
-                ),
+            writer.add_exclusion(
+                candidate_id, "S2", "discovery_candidate_not_search_eligible"
             )
-            link_report_record(
-                connection,
-                (
-                    candidate_id,
-                    "S2",
-                    "exclusions",
-                    f"exclusion-{candidate_id.lower()}",
-                ),
-            )
+
+    report, _, _ = create_inspector_report(tmp_path, extend=excluded_candidates)
 
     output = tmp_path / "excluded-candidate.html"
     generate_report(report, SelectionRequest(), output)
@@ -1874,17 +1329,16 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
     for candidate_id, other_id in (("C2", "C3"), ("C3", "C2")):
         item = candidates[candidate_id]
         sample = item["samples"][0]
-        expected_ref = f"exclusion-{candidate_id.lower()}"
+        # An exclusion is named by its candidate and sample.
+        expected_ref = json.dumps([candidate_id, "S2"], separators=(",", ":"))
         assert item["stratum"] == "excluded"
         assert item["curves"] == []
         assert sample["evidence_status"] == "unavailable"
         assert "quantitative_value" not in sample
         assert sample["decision_refs"] == [expected_ref]
-        assert f"exclusion-{other_id.lower()}" not in sample["decision_refs"]
-        readable = {
-            record["ref"]: record for record in item["details"]["readable_records"]
-        }
-        exclusion = readable[expected_ref]
+        other_ref = json.dumps([other_id, "S2"], separators=(",", ":"))
+        assert other_ref not in sample["decision_refs"]
+        exclusion = _readable(item)[expected_ref]
         assert "Discovery 候選未取得後續搜尋資格" in exclusion["summary"]
         assert "不是正式定量採用決策" in exclusion["summary"]
         fields = {field["label"]: field["value"] for field in exclusion["fields"]}
@@ -1892,67 +1346,38 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
         assert "discovery_candidate_not_search_eligible" in fields["排除理由"]
 
     quantitative_item = next(item for item in items if item["kind"] == "row")
-    assert quantitative_item["samples"][0]["decision_refs"] == ["cd-01"]
+    assert quantitative_item["samples"][0]["decision_refs"] == [["G1", "S1"]]
 
 
 def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path):
-    import zlib
-
-    report, _, _ = create_inspector_report(tmp_path)
     precursor_mz = 307.1023254394531
     apex_rt = 17.2623
     area = 28578.925063705414
-    with sqlite3.connect(report) as connection:
-        connection.execute(
-            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-            (
-                "method_subjects",
-                "format-01",
-                json.dumps(
-                    {
-                        "precursor_mz": precursor_mz,
-                        "rt_apex_min": apex_rt,
-                    }
-                ),
-            ),
-        )
-        link_report_record(
-            connection,
-            ("C1", "S1", "method_subjects", "format-01"),
-        )
-        connection.execute(
-            "UPDATE records SET payload=? WHERE kind='cell_decisions'",
-            (
-                json.dumps(
-                    {
-                        "feature_id": "G1",
-                        "sample_id": "S1",
-                        "quantitative_value": area,
-                    }
-                ),
-            ),
-        )
-        payload_id, blob = connection.execute(
-            "SELECT payload_id,payload FROM curve_payloads"
-        ).fetchone()
-        payload = json.loads(zlib.decompress(blob))
-        payload["integration"]["rt_apex_min"] = apex_rt
-        payload["integration"]["raw_apex_rt_min"] = apex_rt
+
+    def precise_curve(writer):
+        payload = inspector_curve_payload("S1", "C1", "obs-01", apex_rt=apex_rt)
         payload["integration"]["area_raw_counts_seconds"] = area
-        connection.execute(
-            "UPDATE curve_payloads SET payload=? WHERE payload_id=?",
-            (zlib.compress(json.dumps(payload).encode()), payload_id),
+        writer.add_curve_payload(
+            "S1", "initial_capture", "obs-01", payload, candidates=[("C1", "S1")]
         )
+
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
+        method_subject={"precursor_mz": precursor_mz},
+        base_cell={"value": area},
+        curve=False,
+        extend=precise_curve,
+    )
 
     output = tmp_path / "formatted-values.html"
     generate_report(report, SelectionRequest(), output)
     item = read_report_payload(output)["items"][0]
-    readable = {record["ref"]: record for record in item["details"]["readable_records"]}
-    format_values = {f["value"] for f in readable["format-01"]["fields"]}
+    readable = _readable(item)
+    format_values = {f["value"] for f in readable["M1"]["fields"]}
     assert "307.1023" in format_values
-    assert "17.262" in format_values
 
-    decision_values = {f["value"] for f in readable["cd-01"]["fields"]}
+    decision_values = {f["value"] for f in readable["G1", "S1"]["fields"]}
     assert "28,578.9251" in decision_values
 
     curve = item["curves"][0]
@@ -1961,10 +1386,9 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
     assert "28,578.9251" in curve_values
 
     method_record = next(
-        record for record in item["details"]["records"] if record["ref"] == "format-01"
+        record for record in item["details"]["records"] if record["ref"] == "M1"
     )
     assert method_record["facts"]["precursor_mz"] == precursor_mz
-    assert method_record["facts"]["rt_apex_min"] == apex_rt
     assert item["details"]["cells"][0]["quantitative_value"] == area
     assert curve["apex_rt"] == apex_rt
     assert curve["area"] == area
@@ -1979,74 +1403,35 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
 def test_source_labels_explain_recorded_group_and_sample_outcome(
     tmp_path, state, destination, sample_count
 ):
-    report, _, _ = create_inspector_report(tmp_path)
     source_code = "trapezoid_counts_seconds_on_canonical_signal"
-    with sqlite3.connect(report) as connection:
-        row = {
-            "feature_id": "G1",
-            "route": {"destination": destination, "reason": state},
-        }
-        connection.execute(
-            "UPDATE records SET payload=? WHERE kind='rows'", (json.dumps(row),)
-        )
-        connection.execute(
-            "UPDATE records SET payload=? WHERE kind='final_groups'",
-            (json.dumps({"feature_id": "G1", "disposition": state}),),
-        )
-        connection.execute(
-            "UPDATE records SET payload=? WHERE kind='cell_decisions'",
-            (
-                json.dumps(
-                    {
-                        "feature_id": "G1",
-                        "sample_id": "S1",
-                        "quantitative_value": 1000.0,
-                        "variant": "numeric",
-                        "source": source_code,
-                    }
-                ),
-            ),
-        )
-        connection.execute(
-            "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-            ("method_subjects", "method-01", json.dumps({"neutral_loss_da": 116.0474})),
-        )
-        link_report_record(
-            connection,
-            ("C1", "S1", "method_subjects", "method-01"),
-        )
-        if sample_count == 2:
-            _insert_candidate(
-                connection,
-                *(
-                    "C2",
-                    "S2",
-                    json.dumps({"candidate_id": "C2", "precursor_mz": 500.0}),
-                ),
-            )
-            connection.execute(
-                "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                (
-                    "cell_decisions",
-                    "cd-02",
-                    json.dumps(
-                        {
-                            "feature_id": "G1",
-                            "sample_id": "S2",
-                            "quantitative_value": 700.0,
-                            "variant": "numeric",
-                            "source": source_code,
-                            "evidence_states": ["ms1_only_backfill_observation"],
-                        }
-                    ),
-                ),
-            )
-            for kind, rid in (
-                ("rows", "G1"),
-                ("final_groups", "G1"),
-                ("cell_decisions", "cd-02"),
-            ):
-                link_report_record(connection, ("C2", "S2", kind, rid))
+    row = {"route": {"destination": destination, "reason": state}}
+    keys = [("C1", "S1"), ("C2", "S2")][:sample_count]
+    cells = [
+        {
+            "sample_key": "S1",
+            "variant": "numeric",
+            "value": 1000.0,
+            "source": source_code,
+        },
+        {
+            "sample_key": "S2",
+            "variant": "numeric",
+            "value": 700.0,
+            "source": source_code,
+            "evidence_states": ["ms1_only_backfill_observation"],
+        },
+    ][:sample_count]
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
+        method_subject={"neutral_loss_da": 116.0474},
+        prepare=lambda writer: [
+            writer.add_candidate(cid, sid, precursor_mz=500.0) for cid, sid in keys[1:]
+        ],
+        group={"disposition": state, "candidates": keys},
+        cells=cells,
+        extend=lambda writer: writer.set_row_destination("G1", destination),
+    )
     output = tmp_path / "labels.html"
     generate_report(report, SelectionRequest(), output)
     item = read_report_payload(output)["items"][0]
@@ -2072,11 +1457,9 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
         "來源記錄定量方式為當次採用訊號的梯形積分；未另記理由。"
     )
     if sample_count == 2:
-        readable = {
-            record["ref"]: record for record in item["details"]["readable_records"]
-        }
-        assert readable["cd-02"]["summary"] == "MS1 Backfill（非直接 CID-NL 確認）"
-        assert "MS1 Backfill" not in readable["cd-01"]["summary"]
+        readable = _readable(item)
+        assert readable["G1", "S2"]["summary"] == "MS1 Backfill（非直接 CID-NL 確認）"
+        assert "MS1 Backfill" not in readable["G1", "S1"]["summary"]
     assert item["curves"][0]["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
 
 
@@ -2085,37 +1468,25 @@ def _create_nearest_mz_db(directory, rows):
     report = directory / "nearby.sqlite"
     matrix = directory / "matrix.tsv"
     matrix.write_text("saved matrix", encoding="utf-8")
+    samples = [{"sample_key": sid, "sample_stem": sid} for sid in ("S1", "S2")]
     with ExplanationReportWriter(report, review_only=True) as writer:
+        writer.declare_samples(samples)
         for row in rows:
             rid = row["id"]
             keys = []
             for sid, mz, rt in row["witnesses"]:
                 cid = f"{rid}-{sid}"
                 keys.append((cid, sid))
-                writer.add_candidate(
-                    cid,
-                    sid,
-                    {
-                        "candidate_id": cid,
-                        "sample_key": sid,
-                        "precursor_mz": mz,
-                        "rt_apex_min": rt,
-                    },
-                )
-            writer.add_record(
-                "rows",
+                writer.add_candidate(cid, sid, precursor_mz=mz, rt_apex_min=rt)
+            writer.add_final_group(
                 rid,
-                {
-                    "feature_id": rid,
-                    "route": {
-                        "destination": row.get("route", "matrix"),
-                        "reason": "recorded",
-                    },
-                },
-                keys,
+                feature_id=rid,
+                disposition="recorded",
+                members=[],
+                candidates=keys,
             )
-            writer.add_record("final_groups", rid, {"feature_id": rid}, keys)
-            writer.add_row_cells(
+            writer.set_row_destination(rid, row.get("route", "matrix"))
+            writer.add_cells(
                 rid,
                 [
                     {
@@ -2127,16 +1498,13 @@ def _create_nearest_mz_db(directory, rows):
                         "samples", [sid for sid, _, _ in row["witnesses"]]
                     )
                 ],
-                {"S1": 0, "S2": 1},
             )
         writer.finalize(
             explanation_summary(
                 {
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                    "samples": [
-                        {"sample_key": sid, "sample_stem": sid} for sid in ("S1", "S2")
-                    ],
+                    "samples": samples,
                     "selection_evidence_capability": "recorded_decisions",
                 },
                 review_only=writer.review_only,
@@ -2435,21 +1803,23 @@ def test_target_role_rejects_portable_curve_bundles(tmp_path):
 )
 def test_old_explanation_requires_rerun(tmp_path: Path, old_schema: str) -> None:
     path, _matrix, _digest = create_inspector_report(tmp_path)
+    # Older reports kept the summary in a key/value metadata table.
     with sqlite3.connect(path) as connection:
-        payload = connection.execute(
-            "SELECT payload FROM metadata WHERE key='summary'"
-        ).fetchone()[0]
-        summary = json.loads(payload)
+        summary = json.loads(
+            connection.execute("SELECT payload FROM run").fetchone()[0]
+        )
         summary["schema_version"] = old_schema
         summary["query_index_version"] = 2
+        connection.execute("DROP TABLE run")
+        connection.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, payload TEXT)")
+        connection.execute(
+            "INSERT INTO metadata VALUES ('summary', ?)", (json.dumps(summary),)
+        )
         connection.execute(
             "ALTER TABLE samples RENAME COLUMN sample_key "
             "TO canonical_sample_identity_id"
         )
-        connection.execute(
-            "UPDATE metadata SET payload=? WHERE key='summary'", (json.dumps(summary),)
-        )
-    with pytest.raises(InspectorError, match="rerun Alignment") as error:
+    with pytest.raises(InspectorError, match="重新執行 Alignment") as error:
         generate_report(path, SelectionRequest(), tmp_path / "review.html")
     assert error.value.code == 4
     assert not (tmp_path / "review.html").exists()

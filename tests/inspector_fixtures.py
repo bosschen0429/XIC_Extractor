@@ -194,15 +194,24 @@ def create_inspector_report(
     *,
     attempt_id: str = "att-01",
     samples: list[dict[str, str]] | None = None,
+    candidate: dict[str, Any] | None = None,
+    method_subject: dict[str, Any] | None = None,
+    observed: bool = True,
+    group: dict[str, Any] | None = None,
+    cells: list[dict[str, Any]] | None = None,
     base_cell: dict[str, Any] | None = None,
+    curve: bool = True,
+    prepare: Callable[[Any], None] | None = None,
     extend: Callable[[Any], None] | None = None,
     summary: dict[str, Any] | None = None,
     review_only: bool = False,
 ) -> tuple[Path, Path, str]:
     """One saved row ``G1`` whose candidate ``C1`` was observed as ``obs-01``.
 
-    ``extend`` receives the active writer before finalization, so a case adds
-    its own evidence through the same writer.
+    ``prepare`` adds candidates before ``G1`` is written (so ``group`` can name
+    them); ``extend`` adds further evidence before finalization. Both receive
+    the active writer. Records without a natural key are numbered in emission
+    order: ``G1`` is 1 and its curve 2.
     """
     from xic_extractor.alignment_explanation.writer import ExplanationReportWriter
 
@@ -227,24 +236,39 @@ def create_inspector_report(
     with ExplanationReportWriter(db_path, review_only=review_only) as writer:
         writer.declare_samples(samples)
         writer.add_peak(sid, "obs-01", (None, 1.0, None))
-        writer.add_candidate("C1", sid, precursor_mz=500.0)
-        writer.add_terminal(
-            "C1",
-            sid,
-            variant="observed",
-            hypothesis_id="hypothesis-01",
-            physical_peak_key="obs-01",
-        )
+        if (candidate or {}).get("method_subject_id") is not None:
+            writer.add_method_subject(
+                {
+                    "method_subject_id": candidate["method_subject_id"],
+                    **(method_subject or {}),
+                }
+            )
+        writer.add_candidate("C1", sid, precursor_mz=500.0, **(candidate or {}))
+        if observed:
+            writer.add_terminal(
+                "C1",
+                sid,
+                variant="observed",
+                hypothesis_id="hypothesis-01",
+                physical_peak_key="obs-01",
+            )
+        if prepare is not None:
+            prepare(writer)
         writer.add_final_group(
             "G1",
-            feature_id="G1",
-            disposition="completed",
-            members=[],
-            candidates=[("C1", sid)],
+            **{
+                "feature_id": "G1",
+                "disposition": "completed",
+                "members": [],
+                "candidates": [("C1", sid)],
+                **(group or {}),
+            },
         )
         writer.add_cells(
             "G1",
-            [
+            cells
+            if cells is not None
+            else [
                 {
                     "sample_key": sid,
                     "variant": "numeric",
@@ -253,13 +277,16 @@ def create_inspector_report(
                 }
             ],
         )
-        writer.add_curve_payload(
-            sample_id=sid,
-            kind="initial_capture",
-            record_id="obs-01",
-            payload=inspector_curve_payload(sid, "C1", "obs-01", attempt_id=attempt_id),
-            candidates=[("C1", sid)],
-        )
+        if curve:
+            writer.add_curve_payload(
+                sample_id=sid,
+                kind="initial_capture",
+                record_id="obs-01",
+                payload=inspector_curve_payload(
+                    sid, "C1", "obs-01", attempt_id=attempt_id
+                ),
+                candidates=[("C1", sid)],
+            )
         if extend is not None:
             extend(writer)
         writer.finalize(
@@ -269,6 +296,7 @@ def create_inspector_report(
                     "matrix_path": str(matrix_path),
                     "matrix_sha256": matrix_hash,
                     "samples": samples,
+                    "neutral_loss_by_tag": {"dR": 116.0474},
                     **(summary or {}),
                 },
                 review_only=writer.review_only,
