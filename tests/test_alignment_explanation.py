@@ -307,8 +307,8 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
 
     application = FinalizedUntargetBatchApplicationResult(
         scope=application.scope,
-        processing_request=application.processing_request,
-        processing_attempt=application.processing_attempt,
+        processing_attempt_id=application.processing_attempt_id,
+        acquisition_sources=application.acquisition_sources,
         children=application.children,
         excluded_candidates=ImmutableSequence((len(excluded),), load_exclusions),
     )
@@ -377,8 +377,7 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
     store = StreamedResultStore(
         tmp_path / "child-store",
         (
-            application.processing_request,
-            application.processing_attempt,
+            application.processing_attempt_id,
             *application.canonical_samples,
         ),
     )
@@ -395,8 +394,8 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
     monkeypatch.setattr(store, "_read_record", counted_read)
     restored = FinalizedUntargetBatchApplicationResult(
         scope=application.scope,
-        processing_request=application.processing_request,
-        processing_attempt=application.processing_attempt,
+        processing_attempt_id=application.processing_attempt_id,
+        acquisition_sources=application.acquisition_sources,
         children=store.sequence("children"),
         excluded_candidates=application.excluded_candidates,
     )

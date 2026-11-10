@@ -42,8 +42,8 @@ def _truth_table_fixture(tmp_path: Path):
         evidence=s1_evidence,
     )
     s1 = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample("s1"),
+        acquisition_source=fixture.source(fixture.sample("s1")),
         target=fixture.target,
         detector_invocation_id="gaussian15:s1",
         evaluation_receipt=_completed_receipt(),
@@ -54,8 +54,8 @@ def _truth_table_fixture(tmp_path: Path):
 
     s2_peak = cid_nl_peak(fixture, "s2")
     s2 = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample("s2"),
+        acquisition_source=fixture.source(fixture.sample("s2")),
         target=fixture.target,
         detector_invocation_id="gaussian15:s2",
         evaluation_receipt=_completed_receipt(),
@@ -69,8 +69,8 @@ def _truth_table_fixture(tmp_path: Path):
         scan_rt_min=8.0,
     )
     s3 = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample("s3"),
+        acquisition_source=fixture.source(fixture.sample("s3")),
         target=fixture.target,
         detector_invocation_id="gaussian15:s3",
         evaluation_receipt=_completed_receipt(),
@@ -98,15 +98,14 @@ def _truth_table_fixture(tmp_path: Path):
         scan_rt_min=8.0,
     )
     s4_relation = resolve_dda_cid_nl_candidate_set_relation_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample("s4"),
         canonical_evidence=s4_evidence,
         candidate_peaks=(s4_left, s4_right),
         policy=cid_nl_support_policy(),
     )
     s4 = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample("s4"),
+        acquisition_source=fixture.source(fixture.sample("s4")),
         target=fixture.target,
         detector_invocation_id="gaussian15:s4",
         evaluation_receipt=_completed_receipt(),
@@ -116,8 +115,8 @@ def _truth_table_fixture(tmp_path: Path):
     )
 
     s5 = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample("s5"),
+        acquisition_source=fixture.source(fixture.sample("s5")),
         target=fixture.target,
         detector_invocation_id="gaussian15:s5",
         evaluation_receipt=CidNlEvaluationReceipt(

@@ -1,5 +1,4 @@
 import csv
-import json
 from dataclasses import replace
 
 import numpy as np
@@ -135,7 +134,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:composition",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -151,14 +149,14 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         alignment_config=alignment_config,
     )
     by_sample = {
-        result.job.sample.metadata.raw_stem: fixture_assessment(result)
+        result.job.sample.raw_stem: fixture_assessment(result)
         for result in runtime.sample_results
     }
     if recovery:
         recovered = next(
             result
             for result in runtime.sample_results
-            if result.job.sample.metadata.raw_stem == "S4"
+            if result.job.sample.raw_stem == "S4"
         )
         assert recovered.backfill_attempt is not None
         assert (
@@ -179,8 +177,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     if scenario == "one_scan":
         assert all(
             len(assessment.evidence_refs) == 2
-            and len({ref.observation.scan_number for ref in assessment.evidence_refs})
-            == 1
+            and len({ref.scan_number for ref in assessment.evidence_refs}) == 1
             for assessment in by_sample.values()
         )
     completed = complete_dense_partition(
@@ -240,7 +237,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         recovered_cell = next(
             cell
             for cell in core.cell_observations
-            if cell.canonical_sample.metadata.raw_stem == "S4"
+            if cell.canonical_sample.raw_stem == "S4"
         )
         assert recovered_cell.backfill_cell is not None
         assert recovered_cell.backfill_cell.method_assessment is fixture_assessment(
@@ -287,7 +284,6 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
     for result in runtime.sample_results:
         assessment = fixture_assessment(result)
         (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
-            processing_owners=batch.context.processing_owners,
             sample=result.job.sample,
             assessment=assessment,
         )
@@ -341,7 +337,7 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
 
 
 def _assert_duplicate_loss_evidence_rejected(batch, runtime):
-    from xic_extractor.peak_detection.cid_nl_evidence import mint_cid_nl_evidence_ref
+    from xic_extractor.peak_detection.cid_nl_evidence import cid_nl_evidence_observation
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         CidNlMethodAssessmentContractError,
         mint_cid_nl_method_assessment_ref,
@@ -349,10 +345,10 @@ def _assert_duplicate_loss_evidence_rejected(batch, runtime):
 
     result = runtime.sample_results[0]
     assessment = fixture_assessment(result)
-    measured = assessment.evidence_refs[0].observation
-    duplicate = mint_cid_nl_evidence_ref(
-        processing_owners=batch.context.processing_owners,
+    measured = assessment.evidence_refs[0]
+    duplicate = cid_nl_evidence_observation(
         sample=result.job.sample,
+        acquisition_source=result.job.acquisition_source_expectation.source,
         scan_number=measured.scan_number,
         precursor_mz=measured.precursor_mz,
         product_mz=measured.product_mz,
@@ -366,8 +362,8 @@ def _assert_duplicate_loss_evidence_rejected(batch, runtime):
         CidNlMethodAssessmentContractError, match="duplicate acquisition scan"
     ):
         mint_cid_nl_method_assessment_ref(
-            processing_owners=batch.context.processing_owners,
             sample=result.job.sample,
+            acquisition_source=result.job.acquisition_source_expectation.source,
             method_subject=assessment.content.method_subject,
             detector_invocation_id=assessment.content.detector_invocation_id,
             evaluation_receipt=assessment.content.evaluation_receipt,
@@ -378,11 +374,9 @@ def _assert_duplicate_loss_evidence_rejected(batch, runtime):
         )
 
 
-def test_composite_requirement_identity_and_strict_payload_replay():
+def test_composite_requirement_identity_distinguishes_each_composition():
     from xic_extractor.peak_detection.cid_nl_method_subject import (
         CidNlComposition,
-        CidNlMethodSubjectContractError,
-        _subject_from_payload,
         mint_untargeted_cid_nl_method_subject,
     )
 
@@ -404,23 +398,3 @@ def test_composite_requirement_identity_and_strict_payload_replay():
     assert len({subject.method_subject_id for subject in subjects}) == len(subjects)
     for subject in subjects:
         assert subject.neutral_loss_da is None
-        payload = json.loads(json.dumps(subject.request_payload()))
-        assert payload["schema_version"] == "cid_nl_method_subject"
-        assert _subject_from_payload(payload) == subject
-        payload["composition"]["undeclared"] = True
-        with pytest.raises(CidNlMethodSubjectContractError, match="wrong fields"):
-            _subject_from_payload(payload)
-    single = mint_untargeted_cid_nl_method_subject(
-        precursor_mz=500.0, precursor_tolerance_ppm=5.0, neutral_loss_da=116.0474
-    )
-    payload = single.request_payload()
-    assert payload["schema_version"] == "cid_nl_method_subject"
-    assert payload["composition"] is None
-    assert _subject_from_payload(payload) == single
-    payload["schema_version"] = "unsupported_cid_nl_method_subject"
-    with pytest.raises(CidNlMethodSubjectContractError, match="schema must be"):
-        _subject_from_payload(payload)
-    payload["schema_version"] = "cid_nl_method_subject"
-    payload.pop("composition")
-    with pytest.raises(CidNlMethodSubjectContractError, match="wrong fields"):
-        _subject_from_payload(payload)

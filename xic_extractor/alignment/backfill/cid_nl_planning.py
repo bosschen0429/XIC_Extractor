@@ -32,8 +32,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
-from xic_extractor.processing_identity import ProcessingOwnerReferences
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.cid_nl_completion import CidNlWorksetGrouping
@@ -80,15 +79,15 @@ class CidNlBackfillDecision:
 def plan_grouped_cid_nl_backfills(
     worksets: tuple[CidNlWorksetGrouping, ...],
     *,
-    sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
+    sample_population: tuple[SampleMetadata, ...],
     alignment_config: AlignmentConfig,
     rt_frame: SampleRtFrame,
     half_windows_by_sample: Mapping[str, float],
 ) -> tuple[CidNlBackfillQuestion, ...]:
     """Resolve subject, trajectory and window facts from frozen workset membership."""
-    samples = {sample.identity.sample_key: sample for sample in sample_population}
+    samples = {sample.sample_name: sample for sample in sample_population}
     rt_frame = rt_frame.for_sample_stems(
-        frozenset(sample.metadata.raw_stem for sample in sample_population)
+        frozenset(sample.raw_stem for sample in sample_population)
     )
     questions: list[CidNlBackfillQuestion] = []
     for workset in worksets:
@@ -121,10 +120,7 @@ def plan_grouped_cid_nl_backfills(
                 group.owners
             )
             locations = trajectory.backfill_locations(
-                tuple(
-                    samples[sample_id].metadata.raw_stem
-                    for sample_id in sorted(target_ids)
-                ),
+                tuple(samples[sample_id].raw_stem for sample_id in sorted(target_ids)),
                 reference_samples=frozenset(
                     owner.sample_stem
                     for owner in group.owners
@@ -138,7 +134,7 @@ def plan_grouped_cid_nl_backfills(
                     sample_key=sample_id,
                     group=group,
                     method_subject=subject,
-                    localization=locations[samples[sample_id].metadata.raw_stem],
+                    localization=locations[samples[sample_id].raw_stem],
                     observed_apex_tolerance_sec=alignment_config.owner_apex_close_sec,
                 )
                 for sample_id in sorted(target_ids)
@@ -147,13 +143,10 @@ def plan_grouped_cid_nl_backfills(
 
 
 def plan_subject_cid_nl_backfills(
-    sample_assessments: tuple[
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
-    ],
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...],
     *,
     method_subject: CidNlMethodSubject,
-    processing_owners: ProcessingOwnerReferences,
-    sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
+    sample_population: tuple[SampleMetadata, ...],
     alignment_config: AlignmentConfig,
 ) -> tuple[CidNlBackfillQuestion, ...]:
     """Plan the direct subject route without inventing a frozen batch trajectory."""
@@ -162,7 +155,7 @@ def plan_subject_cid_nl_backfills(
         if assessment.content.method_result != "SUPPORT":
             continue
         hypotheses = compose_cid_nl_peak_hypotheses_from_assessment(
-            processing_owners=processing_owners, sample=sample, assessment=assessment
+            sample=sample, assessment=assessment
         )
         support_owners.extend(
             owner_from_cid_nl_assessment_support(

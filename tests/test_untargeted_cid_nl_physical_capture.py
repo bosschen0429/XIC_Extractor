@@ -13,7 +13,6 @@ from tests.cid_nl_raw_fixture import (
     _open_bound_raw,
     _peak_config,
     _settings,
-    bind_physical_capture,
 )
 from tests.untargeted_cid_nl_real_data_adapter_fixtures import (
     build_sample_adapter_fixture,
@@ -161,7 +160,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
             )
 
         monkeypatch.setattr(vendor, "GetChromatogramData", mass_filtered_chromatogram)
-    source = fixture.owners.request.acquisition_sources[0]
+    source = fixture.source("S1")
     # Discovery reads each inferred event's parent MS1 before grouping ions.
     seeds = read_parent_ms1_observations(
         raw,
@@ -207,7 +206,6 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
             binding.physical_fact_record for binding in discovery.physical_bindings
         )
     )
-    owners = bind_physical_capture(fixture.owners, {}, profile=profile)
     if not fresh_available:
         source_raw.intensity = np.zeros_like(source_raw.rt)
     evaluate = Mock(wraps=evaluate_physical_peak)
@@ -224,8 +222,9 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         # same acquisition identity must fail, not silently remeasure it.
         with pytest.raises(ValueError, match="physical capture data"):
             adapt_current_discovery_sample_subject(
-                processing_owners=owners,
+                processing_attempt_id=fixture.processing_attempt_id,
                 sample=fixture.sample("S1"),
+                acquisition_source=fixture.source(fixture.sample("S1")),
                 method_subject=fixture.method_subject,
                 peaks=discovery.peaks,
                 settings=settings,
@@ -237,8 +236,9 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         assert evaluate.call_count == prepare.call_count == 0
         return
     result = adapt_current_discovery_sample_subject(
-        processing_owners=owners,
+        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source(fixture.sample("S1")),
         method_subject=fixture.method_subject,
         peaks=discovery.peaks,
         settings=settings,
@@ -303,7 +303,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
             == "baseline_peak_contains_query"
         )
         assert binding.acquisition_source_id == source.acquisition_source_id
-        assert binding.sample_key == fixture.sample("S1").identity.sample_key
+        assert binding.sample_key == fixture.sample("S1").sample_name
         states.append(expected.state)
         replay_binding = replace(
             binding,
@@ -356,8 +356,8 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     assert states == (["available"] if fresh_available else ["unavailable"])
     assert changed_questions == 0
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
-        processing_owners=owners,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source(fixture.sample("S1")),
         peaks=discovery.peaks,
         settings=settings,
         raw=raw,
@@ -366,8 +366,9 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     assert batch is not None
     acquisition_calls = tuple(vendor.chromatogram_request_counts)
     reused = adapt_current_discovery_sample_subject(
-        processing_owners=owners,
+        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source(fixture.sample("S1")),
         method_subject=fixture.method_subject,
         peaks=discovery.peaks,
         settings=settings,
@@ -400,7 +401,6 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
     batch_subject: bool,
     interference_abundance: float,
 ) -> None:
-    import json
     from types import SimpleNamespace
 
     from xic_extractor.configuration.signal_processing_profile import (
@@ -412,18 +412,7 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
     )
     from xic_extractor.discovery.ms2_events import collect_strict_nl_events
     from xic_extractor.peak_detection.cid_nl_method_subject import (
-        REQUEST_INPUT_KEY,
         mint_untargeted_cid_nl_method_subject,
-        mint_untargeted_cid_nl_method_subject_batch,
-    )
-    from xic_extractor.peak_detection.search_scope import (
-        PHYSICAL_CAPTURE_INPUT_KEY,
-        physical_capture_input_payload,
-    )
-    from xic_extractor.processing_identity import (
-        build_processing_request_identity,
-        compose_processing_owner_references,
-        issue_processing_attempt,
     )
 
     fixture = build_sample_adapter_fixture(tmp_path)
@@ -472,7 +461,7 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
                 ),
                 settings=settings,
             ),
-            acquisition_source=fixture.owners.request.acquisition_sources[0],
+            acquisition_source=fixture.source("S1"),
             settings=settings,
             signal_processing_profile=profile,
             ms1_centroid=ms1_centroid,
@@ -500,38 +489,10 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
         precursor_tolerance_ppm=20.0,
         neutral_loss_da=116.0474,
     )
-    pinned = (
-        mint_untargeted_cid_nl_method_subject_batch(
-            subjects=(method_subject,),
-            candidate_memberships=(
-                (candidate.peak_id, method_subject.method_subject_id),
-            ),
-        )
-        if batch_subject
-        else method_subject
-    )
-    old_request = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=old_request.acquisition_sources,
-        acquisition_bindings=old_request.acquisition_bindings,
-        scientific_input_schema_version=old_request.scientific_input_schema_version,
-        processing_algorithm_version=old_request.processing_algorithm_version,
-        processing_contract_version=old_request.processing_contract_version,
-        scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
-        | {
-            REQUEST_INPUT_KEY: pinned.request_payload(),
-            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile),
-        },
-    )
-    owners = compose_processing_owner_references(
-        request=request,
-        attempt=issue_processing_attempt(),
-        sample_snapshot=fixture.owners.sample_snapshot,
-        sample_resolutions=fixture.samples,
-    )
     result = adapt_current_discovery_sample_subject(
-        processing_owners=owners,
+        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source(fixture.sample("S1")),
         method_subject=method_subject,
         peaks=(candidate,),
         settings=settings,
@@ -543,12 +504,11 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
     assessment = result.assessment_input.assessment
     assert assessment.content.method_result == "HOLD"
     assert not assessment.individual_support_refs
-    assert {e.observation.scan_number for e in assessment.evidence_refs} == {
+    assert {e.scan_number for e in assessment.evidence_refs} == {
         scan.scan_number for scan in source_raw.scans
     }
     assert all(
-        e.observation.precursor_mz == pytest.approx(500.016)
-        for e in assessment.evidence_refs
+        e.precursor_mz == pytest.approx(500.016) for e in assessment.evidence_refs
     )
     # Alignment adopts that one measurement on the identical trace.
     (capture,) = result.captures
@@ -599,16 +559,16 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
     discovery = capture_ms1_peaks(
         raw,
         build_discovery_ions(seeds, settings=settings),
-        acquisition_source=fixture.owners.request.acquisition_sources[0],
+        acquisition_source=fixture.source("S1"),
         settings=settings,
         signal_processing_profile=profile,
         ms1_centroid=lambda *_: None,
     )
     assert len(discovery.peaks) == 2
-    owners = bind_physical_capture(fixture.owners, {}, profile=profile)
     result = adapt_current_discovery_sample_subject(
-        processing_owners=owners,
+        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source(fixture.sample("S1")),
         method_subject=fixture.method_subject,
         peaks=discovery.peaks,
         settings=settings,

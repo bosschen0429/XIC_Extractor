@@ -28,23 +28,19 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import PeakObservationContent
-from xic_extractor.processing_identity import ProcessingOwnerReferences
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 def compose_cid_nl_predecessor_cells(
     *,
-    processing_owners: ProcessingOwnerReferences,
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
-    sample_assessments: tuple[
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
-    ],
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...],
     alignment_config: AlignmentConfig,
     sample_universe: frozenset[str] | None = None,
     rt_frame: RtFrame,
     backfill_assessments_by_group: Mapping[
         tuple[str, str, str],
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
+        tuple[SampleMetadata, CidNlMethodAssessmentRef],
     ]
     | None = None,
     selected_cells: frozenset[tuple[str, str]] | None = None,
@@ -64,7 +60,7 @@ def compose_cid_nl_predecessor_cells(
     backfills = backfill_assessments_by_group or {}
     for (_, sample_id, subject_id), (sample, assessment) in backfills.items():
         if (
-            sample.identity.sample_key != sample_id
+            sample.sample_name != sample_id
             or assessment.content.sample_key != sample_id
             or assessment.content.method_subject.method_subject_id != subject_id
         ):
@@ -74,14 +70,14 @@ def compose_cid_nl_predecessor_cells(
     # Match the sample and measured assessment values, not artifact identities.
     unique_assessments: dict[
         CidNlMethodAssessmentContent,
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
+        tuple[SampleMetadata, CidNlMethodAssessmentRef],
     ] = {}
     for sample, assessment in (*sample_assessments, *backfills.values()):
         unique_assessments.setdefault(assessment.content, (sample, assessment))
     sample_assessments = tuple(
         sorted(
             unique_assessments.values(),
-            key=lambda pair: pair[0].identity.sample_key,
+            key=lambda pair: pair[0].sample_name,
         )
     )
     retained_hypothesis_ids = frozenset(
@@ -124,7 +120,7 @@ def compose_cid_nl_predecessor_cells(
                         set(),
                     ).update(member.physical_peaks)
         for sample, assessment in sample_assessments:
-            sample_id = sample.identity.sample_key
+            sample_id = sample.sample_name
             missing_observation_ids = missing_member_observations_by_sample.get(
                 sample_id,
                 set(),
@@ -141,7 +137,6 @@ def compose_cid_nl_predecessor_cells(
                     hypothesis=hypothesis,
                 )
                 for hypothesis in compose_peak_hypotheses_from_assessment_universe(
-                    processing_owners=processing_owners,
                     sample=sample,
                     assessment=assessment,
                 )
@@ -165,11 +160,10 @@ def compose_cid_nl_predecessor_cells(
                         for owner_id in group.owner_ids
                         if owner_id in supports_by_hypothesis_id
                     ),
-                    key=lambda support: support.sample.identity.sample_key,
+                    key=lambda support: support.sample.sample_name,
                 )
             ),
             config=alignment_config,
-            processing_attempt=processing_owners.attempt,
             sample_universe=sample_universe,
             rt_frame=rt_frame,
         )
@@ -180,7 +174,7 @@ def compose_cid_nl_predecessor_cells(
     ] = {}
     samples = {}
     for sample, assessment in sample_assessments:
-        sample_id = sample.identity.sample_key
+        sample_id = sample.sample_name
         samples[sample_id] = sample
         if id(assessment) in initial_assessment_objects:
             assessments_by_sample_subject.setdefault(
@@ -191,7 +185,7 @@ def compose_cid_nl_predecessor_cells(
         for support in context.supports:
             support_contexts.setdefault(
                 (
-                    support.sample.identity.sample_key,
+                    support.sample.sample_name,
                     id(support.assessment),
                 ),
                 [],
@@ -200,7 +194,7 @@ def compose_cid_nl_predecessor_cells(
     for context in contexts:
         method_subject_id = context.method_subject_id
         context_support_by_sample_id = {
-            support.sample.identity.sample_key: support for support in context.supports
+            support.sample.sample_name: support for support in context.supports
         }
         for sample_id in samples:
             if (
@@ -274,7 +268,6 @@ def compose_cid_nl_predecessor_cells(
                 observation = assessment.candidate_peaks[0]
             cells.append(
                 mint_cell_observation_ref(
-                    processing_owners=processing_owners,
                     sample=sample,
                     group_context=context,
                     method_assessment=assessment,

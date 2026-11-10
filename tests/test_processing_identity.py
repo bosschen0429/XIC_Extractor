@@ -1,39 +1,27 @@
-import json
-from dataclasses import fields, replace
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from uuid import UUID
 
 import pytest
 
 import xic_extractor.processing_identity as processing_identity_module
 from tests.raw_header_fakes import install_fake_raw_headers
-from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.configuration.target_identity import mint_target_list_snapshot
-from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.extraction.targeted_inputs import (
-    TARGETED_PROCESSING_ALGORITHM_VERSION,
-    TARGETED_PROCESSING_CONTRACT_VERSION,
-    TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY,
-    THERMO_RAW_OBSERVATION_NAMESPACE,
     ResolvedTargetedInputs,
-    build_targeted_processing_request_identity,
+    build_targeted_acquisition_sources,
     resolve_targeted_inputs,
     resolve_targeted_raw_paths,
 )
 from xic_extractor.injection_timeline import InjectionHeader
 from xic_extractor.processing_identity import (
-    AcquisitionInputBinding,
-    AcquisitionSourceIdentity,
     FingerprintCancelledError,
     IdentityContractError,
     build_acquisition_source_identity,
-    build_processing_request_identity,
     fingerprint_file_content,
-    issue_processing_attempt,
 )
+from xic_extractor.raw_source_binding import THERMO_RAW_OBSERVATION_NAMESPACE
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
@@ -45,48 +33,6 @@ from xic_extractor.sample_metadata import (
 def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     # RAW files here are placeholders; order them by their file times.
     install_fake_raw_headers(monkeypatch)
-
-
-def test_request_differs_by_algorithm_and_attempt_uses_uuid4(monkeypatch) -> None:
-    source = AcquisitionSourceIdentity(
-        content_sha256=(
-            "551ebcc397ca84390e53746bbf4c3b1a30c31f3ed35065dc724c40a8bbb89fc4"
-        ),
-        byte_size=13,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:1",
-    )
-    request = build_processing_request_identity(
-        acquisition_sources=(source,),
-        acquisition_bindings=(
-            AcquisitionInputBinding(
-                acquisition_source_id=source.acquisition_source_id,
-                adapter_input_key="sample_a",
-                injection_order=1,
-            ),
-        ),
-        scientific_input_schema_version="golden_inputs",
-        processing_algorithm_version="golden_algorithm",
-        processing_contract_version="golden_contract",
-        scientific_inputs={"z": [2, 1], "a": "é"},
-    )
-
-    changed_algorithm = build_processing_request_identity(
-        acquisition_sources=request.acquisition_sources,
-        acquisition_bindings=request.acquisition_bindings,
-        scientific_input_schema_version=request.scientific_input_schema_version,
-        processing_algorithm_version="alternative_algorithm",
-        processing_contract_version=request.processing_contract_version,
-        scientific_inputs={"z": [2, 1], "a": "é"},
-    )
-    assert changed_algorithm != request
-
-    monkeypatch.setattr(
-        "xic_extractor.processing_identity.uuid.uuid4",
-        lambda: UUID("00112233-4455-6677-8899-aabbccddeeff"),
-    )
-    attempt = issue_processing_attempt()
-    assert attempt.processing_attempt_id == "00112233-4455-6677-8899-aabbccddeeff"
 
 
 def test_acquisition_source_identity_is_content_bound_not_path_bound(
@@ -329,110 +275,7 @@ def test_source_identity_allows_path_stat_metadata_lag_for_same_file(
     assert identity.byte_size == len(b"stable-content")
 
 
-def test_source_inventory_enumeration_reorder_does_not_change_request(
-    tmp_path: Path,
-) -> None:
-    first = _raw(tmp_path / "sample_a.raw", b"source-a")
-    second = _raw(tmp_path / "sample_b.raw", b"source-b")
-    config = _config(tmp_path)
-    resolved = _resolved_inputs()
-
-    forward = _request(config, [first, second], resolved=resolved)
-    reverse = _request(config, [second, first], resolved=resolved)
-
-    assert reverse == forward
-
-
-def test_semantic_injection_order_reorder_changes_request(tmp_path: Path) -> None:
-    paths = [
-        _raw(tmp_path / "sample_a.raw", b"source-a"),
-        _raw(tmp_path / "sample_b.raw", b"source-b"),
-    ]
-    config = _config(tmp_path)
-    forward = _request(config, paths, resolved=_resolved_inputs())
-    reversed_order = _request(
-        config,
-        paths,
-        resolved=replace(
-            _resolved_inputs(),
-            injection_order={"sample_a": 2, "sample_b": 1},
-        ),
-    )
-
-    assert reversed_order != forward
-
-
-def test_real_data_discovery_settings_change_processing_request_identity(
-    tmp_path: Path,
-) -> None:
-    path = _raw(tmp_path / "sample_a.raw", b"source-a")
-    resolved = ResolvedTargetedInputs(
-        injection_order={"sample_a": 1},
-    )
-    settings = DiscoverySettings(
-        neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
-        product_search_ppm=50.0,
-    )
-    changed_settings = DiscoverySettings(
-        neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
-        product_search_ppm=55.0,
-    )
-
-    first = _request(
-        _config(tmp_path),
-        [path],
-        resolved=resolved,
-        current_discovery_settings=settings,
-    )
-    changed = _request(
-        _config(tmp_path),
-        [path],
-        resolved=resolved,
-        current_discovery_settings=changed_settings,
-    )
-
-    assert changed != first
-    request_inputs = json.loads(first.normalized_scientific_inputs_json)
-    snapshot = request_inputs[TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY]
-    assert snapshot["settings"]["product_search_ppm"] == 50.0
-    assert set(snapshot["settings"]) == {
-        field.name for field in fields(DiscoverySettings)
-    }
-
-
-def test_adapter_input_key_change_invalidates_request_not_source_content(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    original_path = _raw(tmp_path / "sample_a.raw", b"source-a")
-    source = _source_identity(original_path)
-    # Isolate adapter binding from file revision: a POSIX rename changes ctime.
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs.build_local_acquisition_source_identity",
-        lambda *_args, **_kwargs: source,
-    )
-    config = _config(tmp_path)
-    original = _request(
-        config,
-        [original_path],
-        resolved=ResolvedTargetedInputs(
-            injection_order={"sample_a": 1},
-        ),
-    )
-    renamed_path = original_path.rename(tmp_path / "renamed_sample.raw")
-    renamed = _request(
-        config,
-        [renamed_path],
-        resolved=ResolvedTargetedInputs(
-            injection_order={"renamed_sample": 1},
-        ),
-    )
-
-    assert original.acquisition_sources == renamed.acquisition_sources
-    assert original != renamed
-
-
-def test_targeted_request_uses_local_revision_without_reading_raw_content(
+def test_targeted_sources_use_local_revision_without_reading_raw_content(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -446,12 +289,7 @@ def test_targeted_request_uses_local_revision_without_reading_raw_content(
         return original_open(candidate, *args, **kwargs)
 
     monkeypatch.setattr(Path, "open", reject_content_read)
-    request = _request(
-        _config(tmp_path),
-        [path],
-        resolved=ResolvedTargetedInputs(injection_order={"sample_a": 1}),
-    )
-    source = request.acquisition_sources[0]
+    source = _sources([path], injection_order={"sample_a": 1})["sample_a"]
     state = path.stat()
     assert source.content_sha256 is None
     assert source.local_file_revision == (
@@ -463,236 +301,28 @@ def test_targeted_request_uses_local_revision_without_reading_raw_content(
     )
 
 
-def test_request_invalidates_changed_source_or_target_window(
-    tmp_path: Path,
-) -> None:
-    first = _raw(tmp_path / "sample_a.raw", b"source-a")
-    second = _raw(tmp_path / "sample_b.raw", b"source-b")
-    paths = [first, second]
-    config = _config(tmp_path)
-    inputs = _resolved_inputs()
-    baseline = _request(config, paths, resolved=inputs)
-
-    first.write_bytes(b"source-a-substituted")
-    substituted = _request(config, paths, resolved=inputs)
-    target_changed = _request(
-        config,
-        paths,
-        resolved=inputs,
-        targets=(replace(_target(), mz=251.0),),
-    )
-    rt_changed = _request(
-        config,
-        paths,
-        resolved=inputs,
-        targets=(replace(_target(), rt_max=2.5),),
-    )
-
-    changed_ids = {
-        substituted,
-        target_changed,
-        rt_changed,
-    }
-    assert baseline not in changed_ids
-    assert len(changed_ids) == 3
-
-
-def test_request_pins_owner_target_snapshot_order(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    first_target = _target()
-    second_target = replace(_target(), label="Other", mz=300.0)
-    raw_path = _raw(tmp_path / "sample_a.raw", b"source-a")
-    resolved = ResolvedTargetedInputs(
-        injection_order={"sample_a": 1},
-    )
-
-    forward = _request(
-        config,
-        [raw_path],
-        resolved=resolved,
-        targets=(first_target, second_target),
-    )
-    reordered = _request(
-        config,
-        [raw_path],
-        resolved=resolved,
-        targets=(second_target, first_target),
-    )
-
-    assert reordered != forward
-    assert "target_list_snapshot" in forward.normalized_scientific_inputs_json
-
-
-def test_request_excludes_output_callback_and_execution_policy(
-    tmp_path: Path,
-) -> None:
-    paths = [
-        _raw(tmp_path / "sample_a.raw", b"source-a"),
-        _raw(tmp_path / "sample_b.raw", b"source-b"),
-    ]
-    config = _config(tmp_path)
-    baseline = _request(config, paths)
-    execution_changed = _request(
-        replace(
-            config,
-            output_csv=tmp_path / "elsewhere" / "results.csv",
-            diagnostics_csv=tmp_path / "elsewhere" / "diagnostics.csv",
-            parallel_mode="process",
-            parallel_workers=8,
-        ),
-        paths,
-    )
-
-    assert execution_changed == baseline
-
-
-def test_request_snapshot_is_immutable_after_caller_mapping_mutation(
-    tmp_path: Path,
-) -> None:
-    paths = [
-        _raw(tmp_path / "sample_a.raw", b"source-a"),
-        _raw(tmp_path / "sample_b.raw", b"source-b"),
-    ]
-    config = _config(tmp_path)
-    inputs = _resolved_inputs()
-    request = _request(config, paths, resolved=inputs)
-    original_id = request
-
-    inputs.injection_order["sample_a"] = 9
-
-    assert request == original_id
-    assert _request(config, paths, resolved=inputs) != original_id
-
-
 def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None:
     first = _raw(tmp_path / "sample_a.raw", b"duplicate-content")
     second = _raw(tmp_path / "sample_b.raw", b"duplicate-content")
-    config = _config(tmp_path)
 
     with pytest.raises(IdentityContractError, match="injection order"):
-        _request(
-            config,
-            [first, second],
-            resolved=replace(
-                _resolved_inputs(),
-                injection_order={"sample_a": 1},
-            ),
-        )
+        _sources([first, second], injection_order={"sample_a": 1})
 
     # Byte-identical copies remain different local files without a content audit.
-    request = _request(config, [first, second])
-    assert (
-        len({source.acquisition_source_id for source in request.acquisition_sources})
-        == 2
-    )
+    sources = _sources([first, second], injection_order={"sample_a": 1, "sample_b": 2})
+    assert len({source.acquisition_source_id for source in sources.values()}) == 2
 
     with pytest.raises(IdentityContractError, match="injection_order values"):
-        _request(
-            config,
-            [
-                _raw(first, b"first-content"),
-                _raw(second, b"second-content"),
-            ],
-            resolved=replace(
-                _resolved_inputs(),
-                injection_order={"sample_a": 1, "sample_b": 1},
-            ),
+        _sources(
+            [_raw(first, b"first-content"), _raw(second, b"second-content")],
+            injection_order={"sample_a": 1, "sample_b": 1},
         )
 
     with pytest.raises(IdentityContractError, match="unable to hash"):
         _source_identity(tmp_path / "missing.raw")
 
-    request = _request(
-        config,
-        [first],
-        resolved=ResolvedTargetedInputs(
-            injection_order={"sample_a": 1},
-        ),
-    )
 
-
-def test_request_rejects_duplicate_adapter_input_keys(tmp_path: Path) -> None:
-    first = _source_identity(_raw(tmp_path / "first.raw", b"first"))
-    second = _source_identity(_raw(tmp_path / "second.raw", b"second"))
-
-    with pytest.raises(IdentityContractError, match="adapter_input_key.*unique"):
-        build_processing_request_identity(
-            acquisition_sources=(first, second),
-            acquisition_bindings=(
-                AcquisitionInputBinding(
-                    acquisition_source_id=first.acquisition_source_id,
-                    adapter_input_key="shared",
-                    injection_order=1,
-                ),
-                AcquisitionInputBinding(
-                    acquisition_source_id=second.acquisition_source_id,
-                    adapter_input_key="shared",
-                    injection_order=2,
-                ),
-            ),
-            scientific_input_schema_version="fixture",
-            processing_algorithm_version="fixture",
-            processing_contract_version="fixture",
-            scientific_inputs={"fixture": True},
-        )
-
-
-@pytest.mark.parametrize(
-    "scientific_inputs",
-    [
-        {"nested": {1: "integer-key"}},  # type: ignore[dict-item]
-        {"nested": [{1: "integer-key"}]},  # type: ignore[dict-item]
-        {"nested": ({1: "integer-key"},)},  # type: ignore[dict-item]
-    ],
-)
-def test_request_rejects_nested_non_string_json_keys(
-    tmp_path: Path,
-    scientific_inputs: dict[str, object],
-) -> None:
-    source = _source_identity(_raw(tmp_path / "source.raw", b"source"))
-
-    with pytest.raises(IdentityContractError, match="JSON object keys must be strings"):
-        build_processing_request_identity(
-            acquisition_sources=(source,),
-            acquisition_bindings=(
-                AcquisitionInputBinding(
-                    acquisition_source_id=source.acquisition_source_id,
-                    adapter_input_key="source",
-                    injection_order=1,
-                ),
-            ),
-            scientific_input_schema_version="fixture",
-            processing_algorithm_version="fixture",
-            processing_contract_version="fixture",
-            scientific_inputs=scientific_inputs,
-        )
-
-
-@pytest.mark.parametrize("non_finite", [float("nan"), float("inf"), float("-inf")])
-def test_request_rejects_non_finite_json_numbers(
-    tmp_path: Path,
-    non_finite: float,
-) -> None:
-    source = _source_identity(_raw(tmp_path / "source.raw", b"source"))
-
-    with pytest.raises(IdentityContractError, match="not canonical JSON"):
-        build_processing_request_identity(
-            acquisition_sources=(source,),
-            acquisition_bindings=(
-                AcquisitionInputBinding(
-                    acquisition_source_id=source.acquisition_source_id,
-                    adapter_input_key="source",
-                    injection_order=1,
-                ),
-            ),
-            scientific_input_schema_version="fixture",
-            processing_algorithm_version="fixture",
-            processing_contract_version="fixture",
-            scientific_inputs={"nested": {"value": non_finite}},
-        )
-
-
-def test_sample_metadata_alias_projection_builds_targeted_request(
+def test_sample_metadata_alias_projection_binds_targeted_sources(
     tmp_path: Path,
 ) -> None:
     raw_path = _raw(
@@ -724,10 +354,10 @@ def test_sample_metadata_alias_projection_builds_targeted_request(
         injection_order=None,
     )
 
-    request = _request(config, [raw_path], resolved=resolved)
+    sources = _sources([raw_path], injection_order=resolved.injection_order)
 
     assert resolved.injection_order == {raw_path.stem: 1}
-    assert request.acquisition_bindings[0].adapter_input_key == raw_path.stem
+    assert tuple(sources) == (raw_path.stem,)
 
 
 def test_targeted_and_untargeted_read_one_sequence_owner(
@@ -790,28 +420,6 @@ def test_targeted_and_untargeted_read_one_sequence_owner(
     assert untargeted["Blank_1"]["sample_role"] == "blank"
 
 
-def test_each_issued_attempt_is_distinct_and_leaves_request_unchanged(
-    tmp_path: Path,
-) -> None:
-    path = _raw(tmp_path / "sample_a.raw", b"source-a")
-    request = _request(
-        _config(tmp_path),
-        [path],
-        resolved=ResolvedTargetedInputs(
-            injection_order={"sample_a": 1},
-        ),
-    )
-    first_attempt = issue_processing_attempt()
-    second_attempt = issue_processing_attempt()
-
-    assert second_attempt.processing_attempt_id != first_attempt.processing_attempt_id
-
-    assert request.processing_algorithm_version == (
-        TARGETED_PROCESSING_ALGORITHM_VERSION
-    )
-    assert request.processing_contract_version == TARGETED_PROCESSING_CONTRACT_VERSION
-
-
 def test_targeted_observation_namespace_tracks_raw_adapter_controller() -> None:
     raw_reader_source = Path("xic_extractor/raw_reader.py").read_text(encoding="utf-8")
 
@@ -819,23 +427,9 @@ def test_targeted_observation_namespace_tracks_raw_adapter_controller() -> None:
     assert THERMO_RAW_OBSERVATION_NAMESPACE == ("thermo_raw_file_reader:Device.MS:1")
 
 
-def _request(
-    config: ExtractionConfig,
-    paths: list[Path],
-    *,
-    resolved: ResolvedTargetedInputs | None = None,
-    targets: tuple[Target, ...] | None = None,
-    current_discovery_settings: DiscoverySettings | None = None,
-):
-    return build_targeted_processing_request_identity(
-        config,
-        target_snapshot=mint_target_list_snapshot(
-            targets or (_target(),),
-            identity_namespace="target-list:package-0-test",
-        ),
-        raw_paths=paths,
-        resolved_inputs=resolved or _resolved_inputs(),
-        current_discovery_settings=current_discovery_settings,
+def _sources(paths: list[Path], *, injection_order: dict[str, int]):
+    return build_targeted_acquisition_sources(
+        raw_paths=paths, injection_order=injection_order
     )
 
 
@@ -886,35 +480,3 @@ def _target() -> Target:
         is_istd=False,
         istd_pair="",
     )
-
-
-def test_targeted_formal_request_binds_strategy_and_shared_mass_policy(
-    tmp_path, monkeypatch
-):
-    from xic_extractor.configuration import targeted_strategy
-
-    paths = [
-        _raw(tmp_path / "sample_a.raw", b"a"),
-        _raw(tmp_path / "sample_b.raw", b"b"),
-    ]
-    config = _config(tmp_path)
-    baseline = _request(config, paths)
-    receipt = json.loads(baseline.normalized_scientific_inputs_json)["strategy"]
-    assert receipt["candidate_coverage"] == "complete_acquisition_exact_mass"
-    assert (
-        receipt["uncalibrated_paired_istd_position"]
-        == "qualified_identity_and_coelution_rejection"
-    )
-    assert set(receipt["cid_nl_recipes"]) == {"dR", "R", "MeR"}
-    monkeypatch.setattr(
-        targeted_strategy, "TARGETED_PRECURSOR_REFERENCE", "independent_mass"
-    )
-    assert _request(config, paths) != baseline
-    monkeypatch.undo()
-    original = targeted_strategy.targeted_tag_profile
-    monkeypatch.setattr(
-        targeted_strategy,
-        "targeted_tag_profile",
-        lambda tag: replace(original(tag), product_search_ppm=51.0),
-    )
-    assert _request(config, paths) != baseline

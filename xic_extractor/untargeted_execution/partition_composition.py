@@ -192,7 +192,6 @@ def compose_untargeted_batch(
     """
 
     context = plan.context
-    owners = context.processing_owners
     exclusion_positions: list[tuple[str, int, int]] = []
     child_positions: list[tuple[str, int, int]] = []
     for persisted in partitions:
@@ -206,7 +205,7 @@ def compose_untargeted_batch(
         )
     scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=owners.request,
+        method_subjects=context.method_subject,
         samples=context.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -220,7 +219,6 @@ def compose_untargeted_batch(
         declared_candidate_ids=tuple(
             candidate_id for candidate_id, _ in plan.subject_batch.candidate_memberships
         ),
-        # Batch closure checks request membership and exact child owners.
         # Capture authorization and physical evidence belong to each child.
         capture_bindings=(),
     )
@@ -239,8 +237,11 @@ def compose_untargeted_batch(
         )
     return FinalizedUntargetBatchApplicationResult(
         scope=scope,
-        processing_request=owners.request,
-        processing_attempt=owners.attempt,
+        processing_attempt_id=context.processing_attempt_id,
+        acquisition_sources=tuple(
+            context.acquisition_sources_by_sample[sample.raw_stem].source
+            for sample in context.samples
+        ),
         children=children,
         excluded_candidates=_ordered_exclusions(
             store, exclusion_positions, plan.excluded_candidates
@@ -430,7 +431,7 @@ def prepare_untargeted_partition_grouping(
             result.job.method_subject.method_subject_id, []
         ).append(result)
     for results in results_by_subject.values():
-        results.sort(key=lambda result: result.job.sample.identity.sample_key)
+        results.sort(key=lambda result: result.job.sample.sample_name)
     capture_by_candidate = _runtime_captures_by_candidate(batch, sample_results)
     peak_by_id = {
         peak.peak_id: peak
@@ -471,7 +472,7 @@ def prepare_untargeted_partition_grouping(
             method_subject_id=method_subject_id,
             sample_key=batch.context.sample(
                 peak_by_id[candidate_id].sample_stem
-            ).identity.sample_key,
+            ).sample_name,
             peak_status=peak_by_id[candidate_id].status,
             reason_code=(
                 "composite_requirement_not_supported"
@@ -508,7 +509,7 @@ def prepare_untargeted_partition_grouping(
     )
     scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=batch.context.processing_owners.request,
+        method_subjects=batch.context.method_subject,
         samples=batch.context.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -532,8 +533,6 @@ def prepare_untargeted_partition_grouping(
     )
     parent_request = UntargetWorkflowCompositionRequest(
         scope=scope,
-        processing_request=batch.context.processing_owners.request,
-        processing_attempt=batch.context.processing_owners.attempt,
         excluded_candidates=exclusions,
     )
 
@@ -541,13 +540,8 @@ def prepare_untargeted_partition_grouping(
     bindings_by_subject: dict[str, list[CaptureCandidateBinding]] = {}
     for binding in bindings:
         bindings_by_subject.setdefault(binding.method_subject_id, []).append(binding)
-    sample_by_id = {
-        sample.identity.sample_key: sample for sample in batch.context.samples
-    }
-    sample_universe = frozenset(
-        sample.metadata.raw_stem
-        for sample in batch.context.processing_owners.sample_resolutions
-    )
+    sample_by_id = {sample.sample_name: sample for sample in batch.context.samples}
+    sample_universe = frozenset(sample.raw_stem for sample in batch.context.samples)
     rt_frame = batch.context.rt_frame
     if known_istd_reference is not None:
         known_istd_reference = known_istd_reference.prepare_batch(
@@ -576,7 +570,7 @@ def prepare_untargeted_partition_grouping(
         )
         child_scope = UntargetedSearchScope(
             schema_version=scope.schema_version,
-            request=scope.request,
+            method_subjects=scope.method_subjects,
             samples=scope.samples,
             method_constraints=scope.method_constraints,
             evidence_providers=tuple(
@@ -600,14 +594,12 @@ def prepare_untargeted_partition_grouping(
             for result in results_by_subject.get(subject.method_subject_id, ())
             for assessment in result.effective_assessments
         )
-        assessments = tuple(
-            sorted(assessments, key=lambda pair: pair[0].identity.sample_key)
-        )
+        assessments = tuple(sorted(assessments, key=lambda pair: pair[0].sample_name))
         capture_inputs_list = []
         captures_list = []
         assessment_by_sample_subject = {
             (
-                result.job.sample.identity.sample_key,
+                result.job.sample.sample_name,
                 subject.method_subject_id,
             ): result.adapter_result.assessment_input.assessment
             for subject in subject_workset
@@ -615,7 +607,6 @@ def prepare_untargeted_partition_grouping(
         }
         hypotheses_by_sample_subject = {
             key: compose_peak_hypotheses_from_assessment_universe(
-                processing_owners=batch.context.processing_owners,
                 sample=sample_by_id[key[0]],
                 assessment=assessment_by_sample_subject[key],
             )
@@ -646,7 +637,6 @@ def prepare_untargeted_partition_grouping(
                 continue
             observation = mint_captured_peak_observation(
                 captured,
-                processing_owners=batch.context.processing_owners,
                 sample=sample,
             )
             hypotheses = hypotheses_by_sample_subject[
@@ -683,7 +673,7 @@ def prepare_untargeted_partition_grouping(
             grouping_result,
             retained_candidates,
         ) = build_initial_cid_nl_cross_sample_groups(
-            processing_owners=batch.context.processing_owners,
+            samples=batch.context.samples,
             captures=captures,
             sample_assessments=assessments,
             alignment_config=alignment_config,
@@ -735,7 +725,7 @@ def finalize_untargeted_partition_grouping(
     for workset in prepared.worksets:
         operation_counts: list[FeatureInferenceOperationCounts] = []
         grouping_scope, grouping_result = regroup_cid_nl_cross_sample_groups(
-            processing_owners=batch.context.processing_owners,
+            samples=batch.context.samples,
             grouping_scope=workset.grouping_scope,
             grouping_result=workset.grouping_result,
             alignment_config=alignment_config,
@@ -796,25 +786,23 @@ def _build_production_composition_inputs(
     )
     result_by_key = {
         (
-            result.job.sample.metadata.raw_stem,
+            result.job.sample.raw_stem,
             result.job.method_subject.method_subject_id,
         ): result
         for result in sample_results
     }
     jobs_by_key = {
-        (job.sample.metadata.raw_stem, job.method_subject.method_subject_id): job
+        (job.sample.raw_stem, job.method_subject.method_subject_id): job
         for job in batch.jobs
     }
     subject_ids = {
         subject.method_subject_id for subject in batch.subject_batch.subjects
     }
-    templates_by_stem = {
-        job.sample.metadata.raw_stem: job for job in batch.sample_job_templates
-    }
+    templates_by_stem = {job.sample.raw_stem: job for job in batch.sample_job_templates}
     extra_keys = set(result_by_key) - set(jobs_by_key)
     dense_keys = (
         {
-            (sample.metadata.raw_stem, subject.method_subject_id)
+            (sample.raw_stem, subject.method_subject_id)
             for sample in batch.context.samples
             for subject in batch.subject_batch.subjects
         }
@@ -831,8 +819,6 @@ def _build_production_composition_inputs(
             key[0] not in templates_by_stem
             or key[1] not in subject_ids
             or result_by_key[key].job.sample is not templates_by_stem[key[0]].sample
-            or result_by_key[key].job.processing_owners
-            is not batch.context.processing_owners
             for key in extra_keys
         )
     ):
@@ -846,7 +832,7 @@ def _build_production_composition_inputs(
             result.job.method_subject.method_subject_id, []
         ).append(result)
     for results in results_by_subject.values():
-        results.sort(key=lambda result: result.job.sample.identity.sample_key)
+        results.sort(key=lambda result: result.job.sample.sample_name)
     final_method_assessments = [
         assessment
         for result in sample_results
@@ -886,7 +872,7 @@ def _build_production_composition_inputs(
             sorted(
                 assessments,
                 key=lambda pair: (
-                    pair[0].identity.sample_key,
+                    pair[0].sample_name,
                     subject_order[pair[1].content.method_subject.method_subject_id],
                 ),
             )
@@ -901,7 +887,7 @@ def _build_production_composition_inputs(
         group_backfills = {
             (
                 group.group_hypothesis_id,
-                sample_result.job.sample.identity.sample_key,
+                sample_result.job.sample.sample_name,
                 sample_result.job.method_subject.method_subject_id,
             ): (sample_result.job.sample, backfill.assessment)
             for subject in subject_workset
@@ -944,7 +930,7 @@ def _build_production_composition_inputs(
         )
         receipts = tuple(
             result_context.project_completed_backfill(
-                result_by_key[(sample.metadata.raw_stem, context.method_subject_id)],
+                result_by_key[(sample.raw_stem, context.method_subject_id)],
                 group_context=context,
             )
             for sample, context in completion.completion_requests

@@ -182,9 +182,9 @@ envelopes for grouping, revisit eligibility and assessment-to-cell evidence.
 Shared grouping keeps physical mass/RT/shape and sample uniqueness; shared cell
 composition keeps exact sample/group lineage. Workflow composition supplies
 `GroupingRules`; shared inference does not select a method or read method reason
-strings. CID-NL admission binds `CellMethodEvidence`, which shared closure
-consumes. These are in-memory seams, not a registry: another method needs its
-own evidence adapter. A revisit does not reopen grouping, and a scheduling
+strings. The CID-NL cell record (`CellObservationRef`) answers its own
+evidence state, which shared closure consumes. These are in-memory seams, not a
+registry: another method needs its own evidence adapter. A revisit does not reopen grouping, and a scheduling
 partition is never a feature boundary.
 
 ## RAW Acquisition Owners
@@ -246,10 +246,10 @@ this section states the shape and does not restate the contracts.
 
 | Cross-cutting owner | Responsibility |
 | --- | --- |
-| `sample_metadata.py` | canonical sample identity and immutable metadata snapshots |
+| `sample_metadata.py` | sample metadata parsing, RAW mapping and role inference; a run's samples are `SampleMetadata` rows |
 | `matrix_curation/` | post-Alignment curation over a published Matrix and its export; never Alignment decisions or normalization |
 | `evidence_artifacts.py` | completed-evidence locator: report and Matrix paths, Matrix SHA-256, attempt UUID, schema version |
-| `processing_identity.py` | request, attempt and source identity |
+| `processing_identity.py` | RAW source fingerprints checked at file handoffs |
 | `execution/attempt.py` | sole attempt construction, execution, settlement and finalization authority |
 | `acquisition_contract.py` | capability-bound acquisition batches and call/point facts |
 

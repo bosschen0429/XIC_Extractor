@@ -41,8 +41,7 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
     PeakHypothesisContractError,
     compose_cid_nl_peak_hypothesis,
 )
-from xic_extractor.processing_identity import ProcessingOwnerReferences
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 class CidNlEvidenceSpineError(ValueError):
@@ -84,11 +83,10 @@ class CidNlReferenceSpine:
 
 def build_cid_nl_reference_spine(
     *,
-    processing_owners: ProcessingOwnerReferences,
     target: ResolvedTargetDefinition | None = None,
     method_subject: CidNlMethodSubject | None = None,
     sample_assessments: tuple[
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
+        tuple[SampleMetadata, CidNlMethodAssessmentRef],
         ...,
     ],
     config: AlignmentConfig | None = None,
@@ -98,10 +96,6 @@ def build_cid_nl_reference_spine(
     Expose two no-write views over the same cell closure.
     """
 
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise CidNlEvidenceSpineError(
-            "processing_owners must be validated ProcessingOwnerReferences"
-        )
     if (target is None) == (method_subject is None):
         raise CidNlEvidenceSpineError(
             "reference spine requires exactly one Targeted adapter or method_subject"
@@ -118,12 +112,10 @@ def build_cid_nl_reference_spine(
         )
     if config is not None and not isinstance(config, AlignmentConfig):
         raise CidNlEvidenceSpineError("config must be AlignmentConfig")
-    ordered = tuple(
-        sorted(sample_assessments, key=lambda item: item[0].identity.sample_key)
-    )
+    ordered = tuple(sorted(sample_assessments, key=lambda item: item[0].sample_name))
     support_inputs: list[
         tuple[
-            ResolvedCanonicalSampleIdentity,
+            SampleMetadata,
             CidNlMethodAssessmentRef,
             PeakObservationRef,
             PeakHypothesis,
@@ -145,7 +137,6 @@ def build_cid_nl_reference_spine(
         )
         try:
             chromatographic_support = compose_cid_nl_chromatographic_support_ref(
-                processing_owners=processing_owners,
                 sample=sample,
                 scan_support_refs=tuple(
                     ref
@@ -155,7 +146,7 @@ def build_cid_nl_reference_spine(
                 evidence_refs=tuple(
                     ref
                     for ref in assessment.evidence_refs
-                    if ref.observation
+                    if ref
                     in {
                         support.content.evidence
                         for support in assessment.individual_support_refs
@@ -166,7 +157,6 @@ def build_cid_nl_reference_spine(
                 else (),
             )
             hypothesis = compose_cid_nl_peak_hypothesis(
-                processing_owners=processing_owners,
                 sample=sample,
                 peak_observation=peak,
                 chromatographic_support=chromatographic_support,
@@ -224,17 +214,16 @@ def build_cid_nl_reference_spine(
             ),
             config=effective_config,
             rt_frame=rt_frame,
-            processing_attempt=processing_owners.attempt,
         )
     except CellObservationContractError as exc:
         raise CidNlEvidenceSpineError(str(exc)) from exc
     hypothesis_by_sample_id = {
-        sample.identity.sample_key: (peak, hypothesis)
+        sample.sample_name: (peak, hypothesis)
         for sample, _, peak, hypothesis in support_inputs
     }
     cells: list[CellObservationRef] = []
     for sample, assessment in ordered:
-        support_pair = hypothesis_by_sample_id.get(sample.identity.sample_key)
+        support_pair = hypothesis_by_sample_id.get(sample.sample_name)
         peak_observation = None
         peak_hypothesis = None
         if support_pair is not None:
@@ -246,7 +235,6 @@ def build_cid_nl_reference_spine(
             peak_observation = assessment.candidate_peaks[0]
         try:
             cell = mint_cell_observation_ref(
-                processing_owners=processing_owners,
                 sample=sample,
                 target=target,
                 group_context=group_context,

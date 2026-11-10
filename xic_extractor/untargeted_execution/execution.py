@@ -24,7 +24,6 @@ from xic_extractor.execution.partitions import (
     PartitionCompositionOutput,
     PartitionPipelinePhase,
     PartitionPipelineScheduler,
-    ProcessingOwners,
     WorkPartition,
 )
 from xic_extractor.execution.result_store import SealedPartition, StreamedResultStore
@@ -35,6 +34,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 from xic_extractor.raw_reader import ensure_assemblies_loaded
+from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )
@@ -128,10 +128,11 @@ def materialize_untargeted_partition(
         assert plan.dll_dir is not None
         templates: list[UntargetedPartitionJob] = []
         for sample in context.samples:
-            stem = sample.metadata.raw_stem
+            stem = sample.raw_stem
             templates.extend(
                 build_sample_jobs(
-                    processing_owners=context.processing_owners,
+                    processing_attempt_id=context.processing_attempt_id,
+                    method_subjects=context.method_subject,
                     sample=sample,
                     subject_work_units=tuple(
                         (
@@ -173,7 +174,7 @@ def materialize_untargeted_partition(
             object.__setattr__(
                 template,
                 "prepared_mass_recalibration",
-                mass_recalibration_by_sample[template.sample.metadata.raw_stem],
+                mass_recalibration_by_sample[template.sample.raw_stem],
             )
         bound_templates.append(template)
         subject_ids = (
@@ -193,7 +194,7 @@ def materialize_untargeted_partition(
             object.__setattr__(
                 job,
                 "work_unit_key",
-                f"untargeted-cid-nl:{template.sample.metadata.raw_stem}:{subject_id}",
+                f"untargeted-cid-nl:{template.sample.raw_stem}:{subject_id}",
             )
             object.__setattr__(job, "acquisition_cache_dir", acquisition_cache_dir)
             jobs.append(job)
@@ -232,9 +233,7 @@ class UntargetedPartitionPipelineAdapter:
         self._grouping_only = grouping_only
         self._plan = plan
         self._alignment_config = alignment_config
-        sample_universe = frozenset(
-            sample.metadata.raw_stem for sample in plan.context.samples
-        )
+        sample_universe = frozenset(sample.raw_stem for sample in plan.context.samples)
         reference_frame = plan.context.rt_frame.for_sample_stems(sample_universe)
         self._known_istd_reference = (
             None
@@ -251,7 +250,7 @@ class UntargetedPartitionPipelineAdapter:
         self._mass_recalibration_by_sample = mass_recalibration_by_sample
 
         context = plan.context
-        self._owners = context.processing_owners
+        self._samples = context.samples
         self._prepared_worksets: PreparedUntargetedAlignmentWorksets = (
             prepare_untargeted_alignment_worksets(
                 plan,
@@ -362,7 +361,7 @@ class UntargetedPartitionPipelineAdapter:
         self._process_pools: tuple[WorkerAdmissionPool, ...] = ()
         if raw_worker_backend == "process":
             shared_objects = _sample_worker_shared_objects(
-                self._owners,
+                self._samples,
                 _sample_worker_subject_owners(
                     plan,
                     tuple(
@@ -663,7 +662,7 @@ class UntargetedPartitionPipelineAdapter:
     ) -> FinalizedUntargetBatchApplicationResult | PreparedGroupingExperiment:
         if self._grouping_only:
             sample_stems = tuple(
-                sample.metadata.raw_stem for sample in self._plan.context.samples
+                sample.raw_stem for sample in self._plan.context.samples
             )
             return grouping_experiment_from_prepared(
                 (
@@ -793,10 +792,8 @@ def execute_untargeted_plan(
 
 def _shared_objects(plan: UntargetedInputPlan) -> tuple[object, ...]:
     context = plan.context
-    owners = context.processing_owners
     values = [
         context,
-        owners,
         context.samples,
         *context.samples,
         plan.subject_batch,
@@ -805,23 +802,18 @@ def _shared_objects(plan: UntargetedInputPlan) -> tuple[object, ...]:
         context.peak_config,
         context.signal_processing_profile,
     ]
-    values.extend(getattr(owners, field.name) for field in fields(owners))
     for sample in context.samples:
         values.extend(getattr(sample, field.name) for field in fields(sample))
     return tuple({id(value): value for value in values if value is not None}.values())
 
 
 def _sample_worker_shared_objects(
-    owners: ProcessingOwners,
+    samples: tuple[SampleMetadata, ...],
     subject_batches: tuple[object, ...],
 ) -> tuple[object, ...]:
-    """Select immutable global owners that process sample tasks reference."""
+    """Select immutable global values that process sample tasks reference."""
 
-    values = [
-        owners,
-        *tuple(getattr(owners, field.name) for field in fields(owners)),
-        *subject_batches,
-    ]
+    values = [samples, *samples, *subject_batches]
     return tuple({id(value): value for value in values}.values())
 
 

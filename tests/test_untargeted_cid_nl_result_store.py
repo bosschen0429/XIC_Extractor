@@ -432,14 +432,14 @@ def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path, monkey
     plan, _reference = _plan(tmp_path, monkeypatch, sample_count=2)
     batch = materialize_untargeted_partition(plan, plan.subject_batch)
     shared = _sample_worker_shared_objects(
-        plan.context.processing_owners,
+        plan.context.samples,
         (batch.jobs[0]._request_subjects, batch.subject_batch),
     )
     jobs_by_sample = {
-        job.sample.identity.sample_key: tuple(
+        job.sample.sample_name: tuple(
             candidate
             for candidate in batch.jobs
-            if candidate.sample.identity.sample_key == job.sample.identity.sample_key
+            if candidate.sample.sample_name == job.sample.sample_name
         )
         for job in batch.jobs
     }
@@ -470,7 +470,7 @@ def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path, monkey
         job = store.read_selected(int(sys.argv[2]), "children", (int(sys.argv[3]),))[0]
         assert isinstance(job, UntargetedPartitionJob)
         print(
-            job.sample.identity.sample_key
+            job.sample.sample_name
             + ":"
             + job.method_subject.method_subject_id
         )
@@ -482,9 +482,7 @@ def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path, monkey
     for partition_index, cohort in enumerate(cohorts):
         position = len(cohort) - 1
         job = cohort[position]
-        expected = (
-            job.sample.identity.sample_key + ":" + job.method_subject.method_subject_id
-        )
+        expected = job.sample.sample_name + ":" + job.method_subject.method_subject_id
         completed = subprocess.run(
             [
                 sys.executable,

@@ -46,7 +46,6 @@ from xic_extractor.peak_detection.search_scope import (
     EvidenceProviderBinding,
     TargetSearchScope,
 )
-from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
 def _finalized_case(
@@ -72,13 +71,10 @@ def _finalized_case(
     method_subject = cid_nl_method_subject_from_target(fixture.target)
     bindings = tuple(
         _capture_binding(
-            candidate_id=f"candidate-{sample.lookup_token}",
+            candidate_id=f"candidate-{sample.raw_stem}",
             method_subject_id=method_subject.method_subject_id,
             sample=sample,
-            acquisition_source_id=resolve_request_acquisition_source(
-                processing_owners=fixture.owners,
-                sample=sample,
-            ).acquisition_source_id,
+            acquisition_source_id=fixture.source(sample).acquisition_source_id,
             mz=target_value.mz,
             ppm_tol=target_value.ppm_tol,
             rt_min=target_value.rt_min,
@@ -88,7 +84,6 @@ def _finalized_case(
     )
     scope = TargetSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=fixture.request,
         samples=scope_samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
@@ -108,7 +103,7 @@ def _finalized_case(
     assessments = tuple(
         _support_assessment(
             fixture,
-            sample.lookup_token,
+            sample.raw_stem,
             suffix="target-projection",
             apex_rt=8.0,
             scan_number=80 + index,
@@ -117,16 +112,15 @@ def _finalized_case(
         for index, sample in enumerate(fixture.samples)
     )
     spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
         target=fixture.target,
         sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
     )
     predecessor = spine.group.membership
     member_by_stem = {
-        sample.lookup_token: next(
+        sample.raw_stem: next(
             member
             for member in predecessor.member_subjects
-            if member.sample_key == sample.identity.sample_key
+            if member.sample_key == sample.sample_name
         )
         for sample in fixture.samples
     }
@@ -172,14 +166,14 @@ def _finalized_case(
     hypotheses: dict[str, object] = {}
     terminals = []
     for _, sample in enumerate(fixture.samples):
-        candidate_id = f"candidate-{sample.lookup_token}"
-        if sample.lookup_token in observed_set:
-            hypothesis = hypothesis_by_stem[sample.lookup_token]
-            hypotheses[sample.lookup_token] = hypothesis
+        candidate_id = f"candidate-{sample.raw_stem}"
+        if sample.raw_stem in observed_set:
+            hypothesis = hypothesis_by_stem[sample.raw_stem]
+            hypotheses[sample.raw_stem] = hypothesis
             terminals.append(
                 ObservedSearchSubject(
                     candidate_id=candidate_id,
-                    sample_key=(sample.identity.sample_key),
+                    sample_key=(sample.sample_name),
                     trace_group_id=hypothesis.trace_group_id,
                     hypothesis=hypothesis,
                 )
@@ -188,8 +182,8 @@ def _finalized_case(
             terminals.append(
                 SearchedNoObservationSubject(
                     candidate_id=candidate_id,
-                    sample_key=(sample.identity.sample_key),
-                    trace_group_id=f"trace-{sample.lookup_token}",
+                    sample_key=(sample.sample_name),
+                    trace_group_id=f"trace-{sample.raw_stem}",
                     detection_status="not_detected",
                 )
             )
@@ -199,11 +193,10 @@ def _finalized_case(
     )
     result = FinalizedScientificAlignment(
         scope=scope,
-        processing_request=scope.request,
         canonical_samples=tuple(
             sorted(
                 scope.samples,
-                key=lambda sample: sample.identity.sample_key,
+                key=lambda sample: sample.sample_name,
             )
         ),
         terminal_subjects=tuple(

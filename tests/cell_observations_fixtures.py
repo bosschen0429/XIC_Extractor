@@ -37,7 +37,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 def _owner_handoff(tmp_path: Path):
     fixture, assessments = _truth_table_fixture(tmp_path)
     spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
         target=fixture.target,
         sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
     )
@@ -57,7 +56,7 @@ def _owner_handoff_for_cells(
         backfill_enabled=backfill_enabled,
     )
     receipt = _final_receipt(
-        SimpleNamespace(context=SimpleNamespace(processing_owners=fixture.owners)),
+        SimpleNamespace(context=SimpleNamespace(samples=fixture.samples)),
         predecessors=(group,),
         successors=(group,),
     )
@@ -102,8 +101,8 @@ def _support_assessment(
         for evidence in evidence_refs
     )
     return mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
+        acquisition_source=fixture.source(fixture.sample(sample_stem)),
         target=fixture.target,
         detector_invocation_id=f"gaussian15:{sample_stem}:{suffix}",
         evaluation_receipt=_completed_receipt(),
@@ -114,7 +113,6 @@ def _support_assessment(
 
 
 def _not_planned_coverage(
-    owners: Any,
     groups: tuple[Any, ...],
     samples: tuple[Any, ...],
     *,
@@ -131,7 +129,6 @@ def _not_planned_coverage(
         for sample in samples
     )
     return BackfillEvaluationCoverageBatch(
-        processing_owners=owners,
         group_identities=groups,
         samples=samples,
         positions=positions,
@@ -154,11 +151,10 @@ def _coverage_for_groups(
         for cell in predecessor_cells
     }
     return _not_planned_coverage(
-        fixture.owners,
         groups,
         samples,
         planning_reason=lambda group, sample: _cell_planning_reason(
-            cells.get((group.group_hypothesis_id, sample.identity.sample_key)),
+            cells.get((group.group_hypothesis_id, sample.sample_name)),
             backfill_enabled=backfill_enabled,
         ),
     )
@@ -166,18 +162,13 @@ def _coverage_for_groups(
 
 def _receipt_fixture(fixture: Any, samples: tuple[Any, ...]):
     acquisitions = {
-        sample.lookup_token: source
-        for sample, source in zip(
-            fixture.samples,
-            fixture.request.acquisition_sources,
-            strict=True,
-        )
+        sample.raw_stem: fixture.source(sample)
+        for sample in fixture.samples
         if sample in samples
     }
     return SimpleNamespace(
         context=SimpleNamespace(
             samples=samples,
-            processing_owners=fixture.owners,
         ),
         acquisitions=acquisitions,
     )

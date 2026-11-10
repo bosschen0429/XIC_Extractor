@@ -212,7 +212,7 @@ def _quality_review_report(
             ),
         )
         decision = NS(
-            subject=NS(canonical_sample=NS(identity=NS(sample_key=sid))),
+            subject=NS(canonical_sample=NS(sample_name=sid)),
             evidence=NS(effective_cells=(cell,), evidence_states=()),
             variant="quantified",
             value=value,

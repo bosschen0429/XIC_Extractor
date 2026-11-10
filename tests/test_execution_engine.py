@@ -22,7 +22,6 @@ from xic_extractor.execution.partitions import (
     PartitionCompositionOutput,
     PartitionPipelinePhase,
     PartitionPipelineScheduler,
-    ProcessingOwners,
     WorkPartition,
 )
 from xic_extractor.execution.result_store import (
@@ -240,7 +239,7 @@ def test_streamed_result_store_cleanup_idempotent(tmp_path: Path) -> None:
 class MockAdapter:
     def __init__(
         self,
-        owners: ProcessingOwners,
+        owners: object,
         *,
         num_partitions: int = 2,
         fail_acquisition_index: int | None = None,
@@ -347,7 +346,7 @@ def test_scheduler_execute_success(tmp_path: Path) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
-    adapter = MockAdapter(fixture.owners, num_partitions=2)
+    adapter = MockAdapter(fixture.samples, num_partitions=2)
     output_dir = tmp_path / "output"
 
     progress_events: list[dict[str, Any]] = []
@@ -390,7 +389,7 @@ def test_scheduler_does_not_force_full_gc_after_partition(
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
-    adapter = MockAdapter(fixture.owners, num_partitions=2)
+    adapter = MockAdapter(fixture.samples, num_partitions=2)
     explicit_collects: list[int] = []
     monkeypatch.setattr(
         gc,
@@ -414,7 +413,7 @@ def test_scheduler_closes_acquisition_resources_before_terminal_acknowledgement(
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1",)
     )
-    adapter = MockAdapter(fixture.owners, num_partitions=2)
+    adapter = MockAdapter(fixture.samples, num_partitions=2)
     cleanup_calls: list[bool] = []
 
     def cleanup() -> None:
@@ -443,7 +442,7 @@ def test_scheduler_cleanup_failure_prevents_successful_terminal_acknowledgement(
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1",)
     )
-    adapter = MockAdapter(fixture.owners, num_partitions=1)
+    adapter = MockAdapter(fixture.samples, num_partitions=1)
     cleanup_calls = 0
 
     def cleanup() -> None:
@@ -465,7 +464,7 @@ def test_scheduler_execute_single_partition_retains_memory(tmp_path: Path) -> No
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1",)
     )
-    adapter = MockAdapter(fixture.owners, num_partitions=1)
+    adapter = MockAdapter(fixture.samples, num_partitions=1)
     output_dir = tmp_path / "output"
 
     result = PartitionPipelineScheduler.execute(
@@ -482,7 +481,7 @@ def test_scheduler_execute_cancellation_cleans_up(tmp_path: Path) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
-    adapter = MockAdapter(fixture.owners, num_partitions=2)
+    adapter = MockAdapter(fixture.samples, num_partitions=2)
     output_dir = tmp_path / "output"
 
     call_count = 0
@@ -519,7 +518,7 @@ def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
-    adapter = MockAdapter(fixture.owners, num_partitions=2, fail_acquisition_index=0)
+    adapter = MockAdapter(fixture.samples, num_partitions=2, fail_acquisition_index=0)
     output_dir = tmp_path / "output"
     cleanup_calls = 0
 
@@ -549,7 +548,7 @@ def test_scheduler_composition_failure_retains_completed_results(
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
-    adapter = MockAdapter(fixture.owners, num_partitions=2, fail_composition_index=1)
+    adapter = MockAdapter(fixture.samples, num_partitions=2, fail_composition_index=1)
     output_dir = tmp_path / "output"
 
     with pytest.raises(
@@ -575,7 +574,7 @@ def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) ->
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
-    adapter = MockAdapter(fixture.owners, num_partitions=2, fail_finalize=True)
+    adapter = MockAdapter(fixture.samples, num_partitions=2, fail_finalize=True)
     output_dir = tmp_path / "output"
 
     with pytest.raises(
@@ -614,7 +613,7 @@ def test_pipeline_overlap_temporal_intersection(tmp_path: Path) -> None:
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
     adapter = MockAdapter(
-        fixture.owners,
+        fixture.samples,
         num_partitions=2,
         on_acquisition=on_acquisition,
         on_composition=on_composition,
@@ -657,7 +656,7 @@ def test_pipeline_overlap_single_partition_serial(tmp_path: Path) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1",)
     )
-    adapter = MockAdapter(fixture.owners, num_partitions=1)
+    adapter = MockAdapter(fixture.samples, num_partitions=1)
     output_dir = tmp_path / "output"
     events: list[dict[str, Any]] = []
 
@@ -706,7 +705,7 @@ def test_pipeline_overlap_backpressure(
             acquire_started[idx].set()
 
     adapter = MockAdapter(
-        fixture.owners,
+        fixture.samples,
         num_partitions=4,
         on_acquisition=on_acq,
         on_composition=on_comp,
@@ -774,7 +773,7 @@ def test_pipeline_bilateral_abort_consumer_failure(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
     adapter = MockAdapter(
-        fixture.owners,
+        fixture.samples,
         num_partitions=2,
         fail_composition_index=0,
         acquisition_delay=0.03,
@@ -809,7 +808,7 @@ def test_parallel_partition_acquisition_cancellation_closes_all_producers(
         entered.wait()
         cancelled.set()
 
-    adapter = MockAdapter(fixture.owners, on_acquisition=cancel_acquisitions)
+    adapter = MockAdapter(fixture.samples, on_acquisition=cancel_acquisitions)
     output_dir = tmp_path / "output"
     with pytest.raises(RuntimeError, match="before batch publication"):
         PartitionPipelineScheduler.execute(
@@ -831,7 +830,7 @@ def test_pipeline_bilateral_abort_producer_failure(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
     adapter = MockAdapter(
-        fixture.owners,
+        fixture.samples,
         num_partitions=2,
         fail_acquisition_index=1,
     )
@@ -871,7 +870,7 @@ def test_consumer_composition_failure_marks_partition_failed(
             raise RuntimeError("simulated consumer composition failure")
 
     adapter = MockAdapter(
-        fixture.owners,
+        fixture.samples,
         num_partitions=2,
         on_acquisition=acq,
         on_composition=compose,
@@ -905,7 +904,7 @@ def test_closure_boundary_cancellation_fails_completed_batch(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
     adapter = MockAdapter(
-        fixture.owners,
+        fixture.samples,
         num_partitions=2,
     )
     output_dir = tmp_path / "output"
@@ -1374,7 +1373,7 @@ def test_scheduler_phase_barrier_preserves_global_order(
     )
     events: list[object] = []
     adapter = MockAdapter(
-        fixture.owners,
+        fixture.samples,
         num_partitions=4,
         on_acquisition=lambda i: events.append(("acquire", i)),
     )
@@ -1436,7 +1435,7 @@ def test_scheduler_phase_preparation_abort_prevents_admission(
     )
     acquired: list[int] = []
     adapter = MockAdapter(
-        fixture.owners, num_partitions=4, on_acquisition=acquired.append
+        fixture.samples, num_partitions=4, on_acquisition=acquired.append
     )
     cancelled = threading.Event()
 

@@ -14,7 +14,6 @@ from tests.cid_nl_raw_fixture import (
     _multi_tag_settings,
     _open_bound_raw,
     _peak_config,
-    bind_physical_capture,
 )
 from tests.untargeted_cid_nl_real_data_adapter_fixtures import (
     build_sample_adapter_fixture,
@@ -52,7 +51,6 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
 
     fixture = build_sample_adapter_fixture(tmp_path, sample_stem=sample)
     profile = SignalProcessingProfile()
-    owners = bind_physical_capture(fixture.owners, {}, profile=profile)
     source = _FakeRaw((7.8, 8.5))
     if tolerance is not None:
         source.rt = np.linspace(6.5, 9.5, 1201)
@@ -76,8 +74,8 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
     )
     config = _peak_config(tmp_path)
     batch = acquire_untargeted_cid_nl_backfill_trace_batch(
-        processing_owners=owners,
         sample=fixture.sample(sample),
+        acquisition_source=fixture.source(fixture.sample(sample)),
         backfill_requests=(target,),
         peak_config=config,
         raw=raw,
@@ -88,8 +86,9 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         query_rt - config.nl_rt_anchor_half_window_min
     )
     result = backfill_untargeted_cid_nl_sample_subject(
-        processing_owners=owners,
+        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample(sample),
+        acquisition_source=fixture.source(fixture.sample(sample)),
         method_subject=fixture.method_subject,
         group_center_mz=500.0,
         group_center_rt=8.1,
@@ -159,8 +158,8 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
     )
 
     batch = acquire_untargeted_cid_nl_backfill_trace_batch(
-        processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source(fixture.sample("S1")),
         backfill_requests=(
             UntargetedCidNlBackfillTarget(
                 "group-b", fixture.method_subject, 500.0, 8.2
@@ -185,8 +184,11 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
         UntargetedCidNlBackfillTarget("group-c", fixture.method_subject, 500.0, 8.2),
         UntargetedCidNlBackfillTarget("group-d", fixture.method_subject, 500.012, 8.2),
     )
-    assert batch.acquisition.logical_xic_request_count == 3
-    assert vendor_raw.chromatogram_request_counts == [3]
+    # Three canonical search queries, each with its bounded physical context.
+    assert len(set(batch.requests)) == 3
+    assert len(set(batch.context_requests)) == 3
+    assert batch.acquisition.logical_xic_request_count == 6
+    assert vendor_raw.chromatogram_request_counts == [6]
     first = batch.acquired_trace(
         group_hypothesis_id="group-a",
         request=batch.requests[0],
@@ -231,10 +233,10 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
         tmp_path=tmp_path,
     )
 
-    fixture = replace(fixture, owners=bind_physical_capture(fixture.owners, {}))
     result = backfill_untargeted_cid_nl_sample_subject(
-        processing_owners=fixture.owners,
+        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source(fixture.sample("S1")),
         method_subject=fixture.method_subject,
         group_center_rt=8.0,
         group_center_mz=fixture.method_subject.precursor_mz + physical_mz_offset,
@@ -278,8 +280,6 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
 
     fixture = build_sample_adapter_fixture(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
-    owners = bind_physical_capture(fixture.owners, {}, profile=profile)
-    fixture = replace(fixture, owners=owners)
     source_raw = _FakeRaw(())
     source_raw.rt = np.linspace(6.0, 10.0, 801)
     sigma = np.where(source_raw.rt < 7.4, 0.04, 0.2)
@@ -290,8 +290,9 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
     )
     raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
     result = backfill_untargeted_cid_nl_sample_subject(
-        processing_owners=owners,
+        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source(fixture.sample("S1")),
         method_subject=fixture.method_subject,
         group_center_rt=8.0,
         group_center_mz=500.0,
@@ -334,8 +335,6 @@ def test_physical_backfill_context_is_not_search_permission(
 
     fixture = build_sample_adapter_fixture(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
-    owners = bind_physical_capture(fixture.owners, {}, profile=profile)
-    fixture = replace(fixture, owners=owners)
     source_raw = _FakeRaw(())
     source_raw.rt = np.linspace(6.0, 10.0, 801)
     source_raw.intensity = 5000.0 * np.exp(-0.5 * ((source_raw.rt - 8.85) / 0.04) ** 2)
@@ -349,8 +348,8 @@ def test_physical_backfill_context_is_not_search_permission(
         "bounded-group", fixture.method_subject, 500.0, 8.0
     )
     batch = acquire_untargeted_cid_nl_backfill_trace_batch(
-        processing_owners=owners,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source(fixture.sample("S1")),
         backfill_requests=(target, replace(target, group_hypothesis_id="same-query")),
         peak_config=config,
         raw=raw,
@@ -360,8 +359,9 @@ def test_physical_backfill_context_is_not_search_permission(
     assert batch.context_requests[0].rt_min == 7.0
     assert batch.context_requests[0].rt_max == 9.0
     kwargs = dict(
-        processing_owners=owners,
+        processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
+        acquisition_source=fixture.source("S1"),
         method_subject=fixture.method_subject,
         group_center_rt=8.0,
         group_center_mz=500.0,
@@ -462,18 +462,11 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
     monkeypatch: pytest.MonkeyPatch,
     monoisotopic_recorded: bool,
 ) -> None:
-    import json
     from types import SimpleNamespace
 
     from xic_extractor.peak_detection.cid_nl_method_subject import (
-        REQUEST_INPUT_KEY,
         CidNlComposition,
         mint_untargeted_cid_nl_method_subject,
-    )
-    from xic_extractor.processing_identity import (
-        build_processing_request_identity,
-        compose_processing_owner_references,
-        issue_processing_attempt,
     )
 
     settings = _multi_tag_settings()
@@ -489,22 +482,6 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
         ),
     )
     fixture = build_sample_adapter_fixture(tmp_path)
-    old_request = fixture.owners.request
-    request = build_processing_request_identity(
-        acquisition_sources=old_request.acquisition_sources,
-        acquisition_bindings=old_request.acquisition_bindings,
-        scientific_input_schema_version=old_request.scientific_input_schema_version,
-        processing_algorithm_version=old_request.processing_algorithm_version,
-        processing_contract_version=old_request.processing_contract_version,
-        scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
-        | {REQUEST_INPUT_KEY: subject.request_payload()},
-    )
-    owners = compose_processing_owner_references(
-        request=request,
-        attempt=issue_processing_attempt(),
-        sample_snapshot=fixture.owners.sample_snapshot,
-        sample_resolutions=fixture.samples,
-    )
     # Selected and recorded monoisotopic ions sit 15 ppm either side of the
     # subject; each passes the per-loss NL relation for both configured losses.
     source_raw = _FakeRaw((8.0,))
@@ -542,11 +519,11 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
         lambda _number: SimpleNamespace(Labels=labels, Values=values),
         raising=False,
     )
-    owners = bind_physical_capture(owners, {})
     try:
         result = backfill_untargeted_cid_nl_sample_subject(
-            processing_owners=owners,
+            processing_attempt_id=fixture.processing_attempt_id,
             sample=fixture.sample("S1"),
+            acquisition_source=fixture.source(fixture.sample("S1")),
             method_subject=subject,
             group_center_rt=8.0,
             group_center_mz=500.0,
@@ -566,9 +543,9 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
     assert len(assessment.candidate_peaks) == 1
     assert sorted(
         (
-            ref.observation.scan_number,
-            ref.observation.configured_neutral_loss_da,
-            ref.observation.product_mz,
+            ref.scan_number,
+            ref.configured_neutral_loss_da,
+            ref.product_mz,
         )
         for ref in assessment.evidence_refs
     ) == [
@@ -593,24 +570,18 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
         mint_cid_nl_method_assessment_ref,
     )
     from xic_extractor.peak_detection.traces import Trace
-    from xic_extractor.processing_identity import (
-        resolve_request_acquisition_source,
-    )
 
     fixture = build_sample_adapter_fixture(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
-    owners = bind_physical_capture(fixture.owners, {}, profile=profile)
-    fixture = replace(fixture, owners=owners)
 
     sample = fixture.sample("S1")
-    source = resolve_request_acquisition_source(processing_owners=owners, sample=sample)
+    source = fixture.source(sample)
     rt = np.linspace(7.0, 9.0, 401)
     offset = side * (rt - 8.0)
     intensity = 1000.0 * np.exp(
         -0.5 * ((offset - 0.6) / np.where(offset < 0.6, 0.30, 0.06)) ** 2
     )
     peak = capture_physical_backfill_observation(
-        processing_owners=owners,
         sample=sample,
         method_subject=fixture.method_subject,
         trace=Trace(
@@ -646,8 +617,8 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
         reason_code=None,
     )
     kwargs = dict(
-        processing_owners=owners,
         sample=sample,
+        acquisition_source=fixture.source(sample),
         method_subject=fixture.method_subject,
         detector_invocation_id="untargeted-cid-nl-backfill",
         evaluation_receipt=receipt,

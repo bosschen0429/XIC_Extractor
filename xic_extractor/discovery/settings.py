@@ -1,6 +1,6 @@
 """Discovery method settings, independent of candidates and peak evaluation."""
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Literal
 
 from xic_extractor.configuration.cid_nl_profile import (
@@ -75,15 +75,3 @@ class DiscoverySettings:
             profile.tag: profile.neutral_loss_da
             for profile in self.neutral_loss_profiles
         }
-
-
-def discovery_settings_identity_fields(
-    settings: DiscoverySettings,
-) -> dict[str, object]:
-    """Every Discovery setting; the vendor-mass policy is recorded by omission."""
-    fields = asdict(settings)
-    if settings.mass_recalibration is MassRecalibration.NONE:
-        del fields["mass_recalibration"]
-    else:
-        fields["mass_recalibration"] = settings.mass_recalibration.value
-    return fields

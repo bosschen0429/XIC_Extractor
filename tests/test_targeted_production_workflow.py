@@ -368,7 +368,7 @@ def test_targeted_grouping_keeps_each_sample_selected_value(
     assert groups == result.scientific_core.grouping_result.initial_population
     assert {
         member.sample_key for group in groups for member in group.member_subjects
-    } == {sample.identity.sample_key for sample in result.canonical_samples}
+    } == {sample.sample_name for sample in result.canonical_samples}
 
 
 def test_nl_event_outside_exact_target_precursor_is_not_target_evidence(
@@ -496,7 +496,7 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
         member.sample_key
         for group in result.scientific_core.final_population
         for member in group.member_subjects
-    } == {sample.identity.sample_key for sample in result.canonical_samples}
+    } == {sample.sample_name for sample in result.canonical_samples}
 
 
 def test_retained_peak_outside_target_rt_is_not_a_target_capture(
@@ -884,7 +884,7 @@ def test_reordered_acquisition_results_bind_by_raw_sample_identity(
     )
 
     assert [
-        (sample.metadata.raw_stem, sample.metadata.sample_name)
+        (sample.raw_stem, sample.sample_name)
         for sample in finalized[0].canonical_samples
     ] == [("SampleA", "SampleA"), ("SampleB", "SampleB")]
 
@@ -1051,16 +1051,11 @@ def _retained_completion_boundary(monkeypatch):
         TargetWorkflowRequest,
     )
 
-    attempt = object()
     request = object.__new__(TargetWorkflowRequest)
     object.__setattr__(request, "scope", object())
-    object.__setattr__(request, "processing_attempt", attempt)
     adapter = object.__new__(TargetWorkflowAdapter)
     object.__setattr__(
         adapter, "capture_inputs", (SimpleNamespace(candidate_id="c", trace=object()),)
-    )
-    monkeypatch.setattr(
-        production_workflow, "resolve_workflow_processing_owners", lambda *_: object()
     )
 
     def run():

@@ -111,9 +111,7 @@ def completed_untarget_batch_sample_order(
         raise TypeError("writer projection requires a completed Untarget batch")
     application = completed
     canonical_samples = tuple(application.canonical_samples)
-    injection_orders = tuple(
-        sample.metadata.injection_order for sample in canonical_samples
-    )
+    injection_orders = tuple(sample.injection_order for sample in canonical_samples)
     if any(
         isinstance(order, bool) or not isinstance(order, int) or order < 1
         for order in injection_orders
@@ -124,10 +122,10 @@ def completed_untarget_batch_sample_order(
     ordered_samples = tuple(
         sorted(
             canonical_samples,
-            key=lambda sample: cast(int, sample.metadata.injection_order),
+            key=lambda sample: cast(int, sample.injection_order),
         )
     )
-    sample_stems = tuple(sample.metadata.raw_stem for sample in ordered_samples)
+    sample_stems = tuple(sample.raw_stem for sample in ordered_samples)
     if not sample_stems or len(sample_stems) != len(set(sample_stems)):
         raise ValueError("writer projection requires unique canonical sample stems")
     return sample_stems
@@ -169,9 +167,7 @@ def iter_completed_untarget_batch_writer_inputs(
 
             closed_decisions = tuple(projected.decisions)
             decisions_by_sample = {
-                (
-                    owner_decision.subject.canonical_sample.metadata.raw_stem
-                ): owner_decision
+                (owner_decision.subject.canonical_sample.raw_stem): owner_decision
                 for owner_decision in closed_decisions
             }
             if (
@@ -355,7 +351,7 @@ def _selected_cell_source(
             "direct writer cell requires one source PeakHypothesis identity"
         )
     key = (
-        decision.subject.canonical_sample.identity.sample_key,
+        decision.subject.canonical_sample.sample_name,
         hypothesis_ids[0],
     )
     # Recovery provenance is already closed by the observation/hypothesis owners.

@@ -43,8 +43,7 @@ from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
 )
-from xic_extractor.processing_identity import ProcessingOwnerReferences
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 _CALIBRATION_ANCHOR_BASES: frozenset[FeatureMembershipBasis] = frozenset(
     {
@@ -99,13 +98,13 @@ class InitialGroupingScope:
 class RetainedGroupingCandidate:
     """One sample-local peak hypothesis kept for group Backfill and cells."""
 
-    sample: ResolvedCanonicalSampleIdentity
+    sample: SampleMetadata
     peak_hypothesis: PeakHypothesis
     direct_support_assessment: CidNlMethodAssessmentRef | None
 
     @property
     def sample_key(self) -> str:
-        return self.sample.identity.sample_key
+        return self.sample.sample_name
 
     @property
     def peak_hypothesis_id(self) -> str:
@@ -133,10 +132,7 @@ def measured_calibration_anchor_groups(
 
 def bootstrap_cid_nl_initial_population(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample_assessments: tuple[
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
-    ],
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...],
     alignment_config: AlignmentConfig,
     sample_universe: frozenset[str] | None = None,
     rt_frame: SampleRtFrame,
@@ -156,8 +152,6 @@ def bootstrap_cid_nl_initial_population(
 
     if not sample_assessments:
         raise GroupingBootstrapError("sample_assessments must not be empty")
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise GroupingBootstrapError("processing_owners must be owner-validated")
     if not isinstance(alignment_config, AlignmentConfig):
         raise GroupingBootstrapError("alignment_config must be explicit and typed")
     if not isinstance(retain_observation_only_candidates, bool):
@@ -181,26 +175,24 @@ def bootstrap_cid_nl_initial_population(
 
     hypotheses_by_sample: dict[str, tuple[PeakHypothesis, ...]] = {}
     assessment_by_hypothesis: dict[str, CidNlMethodAssessmentRef] = {}
-    sample_by_id: dict[str, ResolvedCanonicalSampleIdentity] = {}
+    sample_by_id: dict[str, SampleMetadata] = {}
     owners: list[SampleLocalMS1Owner] = []
     retained_by_assessment = dict(retained_hypotheses_by_assessment or {})
     consumed_retained_assessments: set[CidNlMethodAssessmentContent] = set()
     for sample, assessment in sample_assessments:
-        sample_id = sample.identity.sample_key
+        sample_id = sample.sample_name
         retained_key = assessment.content
         retained_hypotheses = retained_by_assessment.get(retained_key, ())
         if retained_key in retained_by_assessment:
             consumed_retained_assessments.add(retained_key)
         hypotheses = (
             bind_retained_peak_hypotheses_to_assessment_universe(
-                processing_owners=processing_owners,
                 sample=sample,
                 assessment=assessment,
                 retained_hypotheses=retained_hypotheses,
             )
             if retained_hypotheses
             else compose_peak_hypotheses_from_assessment_universe(
-                processing_owners=processing_owners,
                 sample=sample,
                 assessment=assessment,
             )

@@ -18,29 +18,24 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
-    CidNlEvidenceRef,
-    validate_cid_nl_evidence_binding,
+    CidNlEvidenceObservation,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportRef,
 )
-from xic_extractor.processing_identity import ProcessingOwnerReferences
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 def compose_cid_nl_chromatographic_support_ref(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     scan_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
-    evidence_refs: tuple[CidNlEvidenceRef, ...] = (),
+    evidence_refs: tuple[CidNlEvidenceObservation, ...] = (),
 ) -> CidNlChromatographicSupportRef:
     """Compose repeated strict scan support into one physical-peak event."""
 
-    _validate_owner_sample(processing_owners, sample)
     supports = _validated_scan_supports(
         scan_support_refs,
-        processing_owners=processing_owners,
         sample=sample,
         evidence_refs=evidence_refs,
     )
@@ -52,15 +47,12 @@ def compose_cid_nl_chromatographic_support_ref(
 
 def _content_from_supports(
     *,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     supports: tuple[DdaCidNlPeakSupportRef, ...],
-    evidence_refs: tuple[CidNlEvidenceRef, ...] = (),
+    evidence_refs: tuple[CidNlEvidenceObservation, ...] = (),
 ) -> CidNlChromatographicSupportContent:
     first = supports[0].content
-    loss_by_observation = {
-        ref.observation: (ref.observation.configured_neutral_loss_da)
-        for ref in evidence_refs
-    }
+    loss_by_observation = {ref: ref.configured_neutral_loss_da for ref in evidence_refs}
     members = tuple(
         sorted(
             (
@@ -76,7 +68,7 @@ def _content_from_supports(
         )
     )
     return CidNlChromatographicSupportContent(
-        sample_key=sample.identity.sample_key,
+        sample_key=sample.sample_name,
         peak_observation=first.peak_observation,
         candidate_peaks=first.candidate_peaks,
         acquisition_mode=first.acquisition_mode,
@@ -93,9 +85,8 @@ def _content_from_supports(
 def _validated_scan_supports(
     scan_support_refs: object,
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-    evidence_refs: tuple[CidNlEvidenceRef, ...] = (),
+    sample: SampleMetadata,
+    evidence_refs: tuple[CidNlEvidenceObservation, ...] = (),
 ) -> tuple[DdaCidNlPeakSupportRef, ...]:
     if not isinstance(scan_support_refs, tuple) or not scan_support_refs:
         raise CidNlChromatographicSupportContractError(
@@ -112,12 +103,7 @@ def _validated_scan_supports(
     loss_by_observation = {}
     if evidence_refs:
         for evidence in evidence_refs:
-            validate_cid_nl_evidence_binding(
-                evidence, processing_owners=processing_owners, sample=sample
-            )
-            loss_by_observation[evidence.observation] = (
-                evidence.observation.configured_neutral_loss_da
-            )
+            loss_by_observation[evidence] = evidence.configured_neutral_loss_da
         if len(loss_by_observation) != len(evidence_refs) or set(
             loss_by_observation
         ) != {support.content.evidence for support in supports}:
@@ -125,7 +111,7 @@ def _validated_scan_supports(
                 "measured loss evidence must exactly close scan supports"
             )
     for support in supports:
-        if support.content.sample_key != sample.identity.sample_key:
+        if support.content.sample_key != sample.sample_name:
             raise CidNlChromatographicSupportContractError(
                 "DDA scan support references a different sample"
             )
@@ -173,24 +159,6 @@ def _validated_scan_supports(
             ),
         )
     )
-
-
-def _validate_owner_sample(
-    processing_owners: object,
-    sample: object,
-) -> None:
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise CidNlChromatographicSupportContractError(
-            "processing_owners must be validated ProcessingOwnerReferences"
-        )
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise CidNlChromatographicSupportContractError(
-            "sample must be an owner-resolved canonical sample"
-        )
-    if sample not in processing_owners.sample_resolutions:
-        raise CidNlChromatographicSupportContractError(
-            "chromatographic support references a different sample"
-        )
 
 
 __all__ = [

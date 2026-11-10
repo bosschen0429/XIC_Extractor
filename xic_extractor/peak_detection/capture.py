@@ -12,7 +12,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.peak_detection.baseline import BaselineMethod
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
-    cid_nl_method_subject_from_request,
+    cid_nl_method_subject_by_id,
 )
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,
@@ -52,12 +52,10 @@ from xic_extractor.peak_detection.search_scope import (
     SearchScopeContractError,
     TargetSearchScope,
     UntargetedSearchScope,
-    request_binds_physical_capture_profile,
     require_capture_binding,
 )
 from xic_extractor.peak_detection.traces import Trace, TraceGroup
-from xic_extractor.processing_identity import ProcessingOwnerReferences
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 class SampleLocalCaptureError(ValueError):
@@ -172,8 +170,7 @@ def rebind_untargeted_capture_scope(
     ):
         raise SampleLocalCaptureError("scope rebinding requires Untargeted capture")
     if (
-        scope.request != capture.scope.request
-        or scope.method_constraints != capture.scope.method_constraints
+        scope.method_constraints != capture.scope.method_constraints
         or require_capture_binding(scope, capture.candidate_id)
         != require_capture_binding(capture.scope, capture.candidate_id)
     ):
@@ -357,8 +354,7 @@ def _bind_retained_selection(
 
 def capture_physical_backfill_observation(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     method_subject: CidNlMethodSubject,
     trace: Trace,
     query_rt_min: float,
@@ -371,8 +367,7 @@ def capture_physical_backfill_observation(
 ) -> PeakObservationRef | None:
     """Capture a backfill question using its request-bound method and profile."""
     if (
-        not request_binds_physical_capture_profile(processing_owners.request, profile)
-        or trace.mz != physical_mz
+        trace.mz != physical_mz
         or trace.ppm_tol != method_subject.precursor_tolerance_ppm
         or not trace.rt_min <= query_rt_min <= trace.rt_max
     ):
@@ -396,7 +391,6 @@ def capture_physical_backfill_observation(
         return None
     assert prepared.prepared is not None
     return mint_physical_peak_observations(
-        processing_owners=processing_owners,
         sample=sample,
         trace=trace,
         evaluations=(evaluation,),
@@ -435,8 +429,7 @@ def _same_physical_peak(
 def mint_captured_peak_observation(
     capture: SampleLocalCapture,
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
 ) -> PeakObservationRef:
     if not isinstance(capture, SampleLocalCapture):
         raise SampleLocalCaptureError("observation requires SampleLocalCapture")
@@ -457,7 +450,7 @@ def mint_captured_peak_observation(
         sample_key, content, provenance = _project_captured_physical_observation(
             capture, selected
         )
-        if sample_key != sample.identity.sample_key:
+        if sample_key != sample.sample_name:
             raise PeakObservationContractError(
                 "capture observation references a different sample"
             )
@@ -472,7 +465,6 @@ def mint_captured_peak_observation(
             capture_stage="initial_capture",
         )
     return mint_peak_observation_ref(
-        processing_owners=processing_owners,
         sample=sample,
         trace=capture.trace,
         integration=selected.integration,
@@ -573,8 +565,8 @@ def _hypothesis_context(
             "ISTD" if target.is_istd else "Analyte",
             target.istd_pair,
         )
-    method_subject = cid_nl_method_subject_from_request(
-        scope.request, method_subject_id=method_subject_id
+    method_subject = cid_nl_method_subject_by_id(
+        scope.method_subjects, method_subject_id
     )
     label = f"untargeted:{query_mz:.8g}:{method_subject.label}"
     return label, "Analyte", ""

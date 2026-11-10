@@ -59,7 +59,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.observations import mint_peak_observation_ref
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import resolve_request_acquisition_source
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.partition import cid_nl_backfill_acquisition
 from xic_extractor.untargeted_execution.partition import models as partition_models
@@ -98,10 +97,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
     for name, width in widths.items():
         sample = fixture.sample(name)
         values = 1000 * np.exp(-0.5 * (offsets / width) ** 2)
-        source = resolve_request_acquisition_source(
-            processing_owners=fixture.owners,
-            sample=sample,
-        )
+        source = fixture.source(sample)
         trace = Trace.from_arrays(
             sample_name=name,
             mz=500.0,
@@ -114,7 +110,6 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
             acquisition_source_id=source.acquisition_source_id,
         )
         peak = mint_peak_observation_ref(
-            processing_owners=fixture.owners,
             sample=sample,
             trace=trace,
             integration=IntegrationResult(
@@ -136,8 +131,8 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
         evidence = cid_nl_evidence(fixture, name, scan_number=101, scan_rt_min=8.0)
         support = cid_nl_unique_support(fixture, name, peak=peak, evidence=evidence)
         assessment = mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners,
             sample=sample,
+            acquisition_source=fixture.source(sample),
             target=fixture.target,
             detector_invocation_id=f"gaussian15:{name}",
             evaluation_receipt=CidNlEvaluationReceipt(
@@ -154,7 +149,6 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
         )
         assert assessment.content.method_result == "SUPPORT"
         (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
-            processing_owners=fixture.owners,
             sample=sample,
             assessment=assessment,
         )
@@ -181,7 +175,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
     assert group.disposition == "established"
     identity = group.membership
     initial = CrossSampleGroupingResult(
-        processing_owners=fixture.owners,
+        samples=fixture.samples,
         rt_frame=frame,
         partition_transition=CrossSamplePartitionTransition(
             status="assessable",
@@ -196,7 +190,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
         backfills[
             (
                 group.group_hypothesis_id,
-                fixture.sample(name).identity.sample_key,
+                fixture.sample(name).sample_name,
                 assessments[name].content.method_subject.method_subject_id,
             )
         ] = (fixture.sample(name), assessments[name])
@@ -272,7 +266,6 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:grouping-window-invariance",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -402,7 +395,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:sample-query-rt",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -438,7 +430,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
     )
     assert result.succeeded
     for sample_result in result.sample_results:
-        stem = sample_result.job.sample.metadata.raw_stem
+        stem = sample_result.job.sample.raw_stem
         if stem.startswith("S"):
             continue
         (attempt,) = sample_result.backfill_attempts
@@ -531,7 +523,6 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
-        sample_identity_namespace="study:rejected-bounded-recovery",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -545,7 +536,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
     acquire = cid_nl_backfill_acquisition.acquire_untargeted_cid_nl_backfill_trace_batch
 
     def acquire_recovery(**kwargs):
-        recovery_calls.append(kwargs["sample"].metadata.raw_stem)
+        recovery_calls.append(kwargs["sample"].raw_stem)
         if outcome == "failed":
             raise OSError("recovery acquisition failed")
         return acquire(**kwargs)
@@ -567,7 +558,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         return
     assert result.succeeded, result.failure
     rejected = next(
-        r for r in result.sample_results if r.job.sample.metadata.raw_stem == "Rejected"
+        r for r in result.sample_results if r.job.sample.raw_stem == "Rejected"
     )
     initial = rejected.adapter_result.assessment_input.assessment
     assert initial.content.method_result is None
@@ -698,7 +689,6 @@ def test_runtime_recovers_every_authorized_rt_group(
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
-        sample_identity_namespace="study:multi-group-recovery",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -731,22 +721,24 @@ def test_runtime_recovers_every_authorized_rt_group(
         context = build_partition_context(**kwargs, method_subject=subject)
         jobs = tuple(
             UntargetedPartitionJob(
-                processing_owners=context.processing_owners,
+                processing_attempt_id=context.processing_attempt_id,
+                method_subjects=context.method_subject,
                 sample=sample,
-                method_subject=subject,
-                candidates=candidates[sample.metadata.raw_stem],
-                discovery_receipt=context.discovery_receipts_by_sample[
-                    sample.metadata.raw_stem
+                acquisition_source_expectation=context.acquisition_sources_by_sample[
+                    sample.raw_stem
                 ],
+                method_subject=subject,
+                candidates=candidates[sample.raw_stem],
+                discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
                 settings=settings,
                 peak_config=peak_config,
-                raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
+                raw_path=context.raw_paths_by_sample[sample.raw_stem],
                 dll_dir=tmp_path,
-                work_unit_key=sample.metadata.raw_stem,
+                work_unit_key=sample.raw_stem,
                 signal_processing_profile=context.signal_processing_profile,
                 physical_records=tuple(
                     context.physical_records_by_peak[c.peak_id]
-                    for c in (candidates[sample.metadata.raw_stem])
+                    for c in (candidates[sample.raw_stem])
                 ),
             )
             for sample in context.samples
@@ -759,9 +751,7 @@ def test_runtime_recovers_every_authorized_rt_group(
     )
     assert result.succeeded, result.failure
     missing = next(
-        item
-        for item in result.sample_results
-        if item.job.sample.metadata.raw_stem == "Missing"
+        item for item in result.sample_results if item.job.sample.raw_stem == "Missing"
     )
     assert sum(
         sum(raw.chromatogram_request_counts) for raw in opened.get(paths[-1], ())
@@ -824,13 +814,13 @@ def test_runtime_recovers_every_authorized_rt_group(
         ):
             assert len(transition.admitted_members) == 2
             assert all(
-                member.sample_key == missing.job.sample.identity.sample_key
+                member.sample_key == missing.job.sample.sample_name
                 for member in transition.admitted_members
             )
         missing_cells = tuple(
             cell
             for cell in scientific.cell_observations
-            if cell.canonical_sample.metadata.raw_stem == "Missing"
+            if cell.canonical_sample.raw_stem == "Missing"
         )
         assert len(missing_cells) == 2
         if recovery_peaks == (8.0, 12.0) and recovery_is_support:
@@ -861,7 +851,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                 reason="unchanged_membership_no_lineage",
             )
             initial_result = CrossSampleGroupingResult(
-                processing_owners=scientific.grouping_result.processing_owners,
+                samples=scientific.grouping_result.samples,
                 partition_transition=initial_transition,
                 rt_frame=replace(
                     scientific.grouping_result.rt_frame,
@@ -872,7 +862,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             bound_recoveries = {
                 (
                     group.group_hypothesis_id,
-                    missing.job.sample.identity.sample_key,
+                    missing.job.sample.sample_name,
                     missing.job.method_subject.method_subject_id,
                 ): (
                     missing.job.sample,
@@ -943,12 +933,12 @@ def test_runtime_recovers_every_authorized_rt_group(
             ambiguous = {
                 (
                     first_group.group_hypothesis_id,
-                    missing.job.sample.identity.sample_key,
+                    missing.job.sample.sample_name,
                     missing.job.method_subject.method_subject_id,
                 ): shared_recovery,
                 (
                     second_group.group_hypothesis_id,
-                    missing.job.sample.identity.sample_key,
+                    missing.job.sample.sample_name,
                     missing.job.method_subject.method_subject_id,
                 ): shared_recovery,
             }
@@ -1146,7 +1136,6 @@ def test_runtime_recovers_every_authorized_rt_group(
                 for assessment in item.effective_assessments
             )
             options = dict(
-                processing_owners=context.processing_owners,
                 rt_frame=SampleRtFrame(),
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
                 retain_observation_only_candidates=True,
@@ -1234,7 +1223,6 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
-        sample_identity_namespace="study:shared-recovery-claim",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -1251,9 +1239,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     )
     assert result.succeeded
     missing = next(
-        item
-        for item in result.sample_results
-        if item.job.sample.metadata.raw_stem == "Missing"
+        item for item in result.sample_results if item.job.sample.raw_stem == "Missing"
     )
     completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
@@ -1281,7 +1267,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     missing_cells = tuple(
         cell
         for cell in child.scientific_core.cell_observations
-        if cell.canonical_sample.metadata.raw_stem == "Missing"
+        if cell.canonical_sample.raw_stem == "Missing"
     )
     assert len(missing_cells) == 2
     assert sum(cell.evidence_states == ("unresolved",) for cell in missing_cells) == 1
@@ -1381,7 +1367,6 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
-        sample_identity_namespace="study:shared-ms1-only-backfill",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -1400,7 +1385,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     missing_attempts = tuple(
         attempt
         for item in result.sample_results
-        if item.job.sample.metadata.raw_stem == "Missing"
+        if item.job.sample.raw_stem == "Missing"
         for attempt in item.backfill_attempts
     )
     assert len(missing_attempts) == 2
@@ -1431,7 +1416,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     missing_cells = tuple(
         cell
         for cell in child.scientific_core.cell_observations
-        if cell.canonical_sample.metadata.raw_stem == "Missing"
+        if cell.canonical_sample.raw_stem == "Missing"
     )
     assert len(missing_cells) == 2
     writer = project_completed_untarget_batch_writer_inputs(
@@ -1572,7 +1557,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
-        sample_identity_namespace="study:ms1-only-backfill",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -1589,9 +1573,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     )
     assert result.succeeded
     missing = next(
-        item
-        for item in result.sample_results
-        if item.job.sample.metadata.raw_stem == "Missing"
+        item for item in result.sample_results if item.job.sample.raw_stem == "Missing"
     )
     (attempt,) = missing.backfill_attempts
     if len(missing_peaks) == 1:
@@ -1612,7 +1594,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     (missing_cell,) = tuple(
         cell
         for cell in child.scientific_core.cell_observations
-        if cell.canonical_sample.metadata.raw_stem == "Missing"
+        if cell.canonical_sample.raw_stem == "Missing"
     )
     assert missing_cell.evidence_states == (expected_state,)
     writer = project_completed_untarget_batch_writer_inputs(
@@ -1731,7 +1713,6 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
-        sample_identity_namespace="study:support-elsewhere",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -1748,9 +1729,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
     )
     assert result.succeeded
     missing = next(
-        item
-        for item in result.sample_results
-        if item.job.sample.metadata.raw_stem == "Missing"
+        item for item in result.sample_results if item.job.sample.raw_stem == "Missing"
     )
     assert missing.adapter_result.assessment_input.assessment.content.method_result == (
         "SUPPORT"
@@ -1806,7 +1785,7 @@ def _assert_alignment_uses_configured_recovery_groups(
         missing = next(
             item
             for item in result.sample_results
-            if item.job.sample.metadata.raw_stem == "Missing"
+            if item.job.sample.raw_stem == "Missing"
         )
         (recovery,) = missing.backfill_attempts
         receipt = recovery.assessment.content.evaluation_receipt
@@ -1863,7 +1842,7 @@ def _assert_alignment_uses_configured_recovery_groups(
     missing = next(
         item
         for item in runtime_results[0].sample_results
-        if item.job.sample.metadata.raw_stem == "Missing"
+        if item.job.sample.raw_stem == "Missing"
     )
     (recovery,) = missing.backfill_attempts
     assert recovery.assessment.candidate_peaks == ()
@@ -1871,7 +1850,7 @@ def _assert_alignment_uses_configured_recovery_groups(
     missing_cells = tuple(
         cell
         for cell in child.scientific_core.cell_observations
-        if cell.canonical_sample.metadata.raw_stem == "Missing"
+        if cell.canonical_sample.raw_stem == "Missing"
     )
     initial_groups_by_id = {
         group.group_hypothesis_id: group for group in completed.initial_groups

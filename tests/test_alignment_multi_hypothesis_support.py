@@ -25,8 +25,8 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.peak_detection.cid_nl_evidence import (
-    CidNlEvidenceRef,
-    mint_cid_nl_evidence_ref,
+    CidNlEvidenceObservation,
+    cid_nl_evidence_observation,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -82,8 +82,8 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         candidate_peaks=peaks,
     )
     assessment = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=sample,
+        acquisition_source=fixture.source(sample),
         target=fixture.target,
         detector_invocation_id="gaussian15:dual",
         evaluation_receipt=CidNlEvaluationReceipt(
@@ -100,7 +100,6 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
     )
 
     hypotheses = compose_cid_nl_peak_hypotheses_from_assessment(
-        processing_owners=fixture.owners,
         sample=sample,
         assessment=assessment,
     )
@@ -128,7 +127,6 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         )
 
     grouping_scope, _candidates, _drift = bootstrap_cid_nl_initial_population(
-        processing_owners=fixture.owners,
         sample_assessments=((sample, assessment),),
         alignment_config=AlignmentConfig(),
         rt_frame=SampleRtFrame(),
@@ -164,7 +162,6 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
     )
 
     grouping_scope, candidates, _drift = bootstrap_cid_nl_initial_population(
-        processing_owners=fixture.owners,
         sample_assessments=sample_assessments,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         rt_frame=SampleRtFrame(),
@@ -229,8 +226,8 @@ def _assessment_with_observation_only_peak(
         candidate_peaks=peaks,
     )
     return mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=sample,
+        acquisition_source=fixture.source(sample),
         target=fixture.target,
         detector_invocation_id=f"gaussian15:{sample_stem}",
         evaluation_receipt=CidNlEvaluationReceipt(
@@ -262,9 +259,9 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
         peak = cid_nl_peak(fixture, stem, mz=physical_mz, height=height)
         direct_precursor = 500.002 if stem == "mixed" else 500.003
         direct_product = 383.9536 if stem == "mixed" else 383.9546
-        direct = mint_cid_nl_evidence_ref(
-            processing_owners=fixture.owners,
+        direct = cid_nl_evidence_observation(
             sample=sample,
+            acquisition_source=fixture.source(sample),
             scan_number=301,
             precursor_mz=direct_precursor,
             product_mz=direct_product,
@@ -274,11 +271,11 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
             scan_rt_min=8.0,
             product_intensity=400.0,
         )
-        supported: tuple[CidNlEvidenceRef, ...] = (direct,)
+        supported: tuple[CidNlEvidenceObservation, ...] = (direct,)
         if stem == "mixed":
-            inferred = mint_cid_nl_evidence_ref(
-                processing_owners=fixture.owners,
+            inferred = cid_nl_evidence_observation(
                 sample=sample,
+                acquisition_source=fixture.source(sample),
                 scan_number=302,
                 precursor_mz=500.0,
                 product_mz=383.9526,
@@ -301,9 +298,9 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
                 ),
             )
             supported += (inferred,)
-        unsupported = mint_cid_nl_evidence_ref(
-            processing_owners=fixture.owners,
+        unsupported = cid_nl_evidence_observation(
             sample=sample,
+            acquisition_source=fixture.source(sample),
             scan_number=303,
             precursor_mz=500.007,
             product_mz=383.9596,
@@ -318,8 +315,8 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
             for evidence in supported
         )
         assessment = mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners,
             sample=sample,
+            acquisition_source=fixture.source(sample),
             target=fixture.target,
             detector_invocation_id=f"gaussian15:{stem}",
             evaluation_receipt=CidNlEvaluationReceipt(
@@ -335,7 +332,7 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
             individual_support_refs=relations,
         )
         (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
-            processing_owners=fixture.owners, sample=sample, assessment=assessment
+            sample=sample, assessment=assessment
         )
         owner = owner_from_cid_nl_assessment_support(
             sample=sample,

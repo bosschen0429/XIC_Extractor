@@ -8,22 +8,15 @@ only when the subject was adapted from an owner-resolved target definition.
 
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass
-from functools import lru_cache
-from types import MappingProxyType
+from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
-from xic_extractor.processing_identity import (
-    ProcessingRequestIdentity,
-)
 
 SCHEMA_VERSION = "cid_nl_method_subject"
 BATCH_SCHEMA_VERSION = "cid_nl_method_subject_batch"
-REQUEST_INPUT_KEY = "cid_nl_method_subject"
 CID_NL_PROVIDER_ID = "dda_ddms2_cid_nl"
 CID_NL_METHOD_ID = "cid_nl"
 CID_NL_METHOD_VERSION = "1"
@@ -141,15 +134,6 @@ class CidNlMethodSubject:
             f"precursor|{self.precursor_mz!r}|{self.precursor_tolerance_ppm!r}|{losses}"
         )
 
-    def request_payload(self) -> dict[str, object]:
-        """Return the exact value an Untargeted processing request must pin."""
-
-        payload = asdict(self)
-        return {
-            "schema_version": SCHEMA_VERSION,
-            **payload,
-        }
-
     @property
     def configured_losses(self) -> tuple[float, ...]:
         if self.composition is not None:
@@ -180,20 +164,24 @@ class UntargetedCidNlMethodSubjectBatch:
     def schema_version(self) -> str:
         return BATCH_SCHEMA_VERSION
 
-    def request_payload(self) -> dict[str, object]:
-        """Return the canonical batch value pinned under ``REQUEST_INPUT_KEY``."""
 
-        return {
-            "schema_version": BATCH_SCHEMA_VERSION,
-            "subjects": [subject.request_payload() for subject in self.subjects],
-            "candidate_memberships": [
-                {
-                    "candidate_id": candidate_id,
-                    "method_subject_id": method_subject_id,
-                }
-                for candidate_id, method_subject_id in self.candidate_memberships
-            ],
-        }
+def cid_nl_method_subject_by_id(
+    subjects: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
+    method_subject_id: str,
+) -> CidNlMethodSubject:
+    """Return the configured subject with this natural key."""
+
+    members = (
+        subjects.subjects
+        if isinstance(subjects, UntargetedCidNlMethodSubjectBatch)
+        else (subjects,)
+    )
+    for subject in members:
+        if subject.method_subject_id == method_subject_id:
+            return subject
+    raise CidNlMethodSubjectContractError(
+        "CID-NL method subject is not configured for this run"
+    )
 
 
 def cid_nl_method_subject_from_target(
@@ -482,246 +470,6 @@ def cid_nl_alignment_subject_worksets(
     return ordered_components
 
 
-def cid_nl_method_subjects_from_request(
-    request: ProcessingRequestIdentity,
-) -> CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch:
-    """Rehydrate the request's singular or batch subject configuration."""
-
-    return _request_subject_context(request)[0]
-
-
-def _request_subject_context(
-    request: ProcessingRequestIdentity,
-) -> tuple[
-    CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
-    Mapping[str, CidNlMethodSubject],
-]:
-    if not isinstance(request, ProcessingRequestIdentity):
-        raise CidNlMethodSubjectContractError(
-            "request must be an owner-minted processing request"
-        )
-    return _subjects_from_normalized_inputs(request.normalized_scientific_inputs_json)
-
-
-@lru_cache(maxsize=1)
-def _subjects_from_normalized_inputs(
-    normalized_inputs_json: str,
-) -> tuple[
-    CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
-    Mapping[str, CidNlMethodSubject],
-]:
-    # Keep the strict parse and subject lookup in one latest-exact-payload cache.
-    payload = _cid_nl_payload_from_normalized_inputs(normalized_inputs_json)
-    pinned = (
-        _batch_from_payload(payload)
-        if payload.get("schema_version") == BATCH_SCHEMA_VERSION
-        else _subject_from_payload(payload)
-    )
-    subjects = (
-        pinned.subjects
-        if isinstance(pinned, UntargetedCidNlMethodSubjectBatch)
-        else (pinned,)
-    )
-    return pinned, MappingProxyType(
-        {subject.method_subject_id: subject for subject in subjects}
-    )
-
-
-def cid_nl_method_subject_from_request(
-    request: ProcessingRequestIdentity,
-    *,
-    method_subject_id: str | None = None,
-) -> CidNlMethodSubject:
-    """Resolve a request's singular subject or one explicitly named batch member."""
-
-    pinned, subjects_by_id = _request_subject_context(request)
-    if method_subject_id is not None:
-        try:
-            return subjects_by_id[method_subject_id]
-        except KeyError as exc:
-            raise CidNlMethodSubjectContractError(
-                "CID-NL method subject is not pinned by the processing request"
-            ) from exc
-    if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request pins a CID-NL method subject batch"
-        )
-    return pinned
-
-
-def cid_nl_method_subject_batch_from_request(
-    request: ProcessingRequestIdentity,
-) -> UntargetedCidNlMethodSubjectBatch:
-    """Rehydrate a request-pinned multi-subject Untargeted CID-NL batch."""
-
-    payload = _request_cid_nl_payload(request)
-    if payload.get("schema_version") != BATCH_SCHEMA_VERSION:
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request pins a singular CID-NL method subject"
-        )
-    return _batch_from_payload(payload)
-
-
-def _batch_from_payload(
-    payload: dict[str, object],
-) -> UntargetedCidNlMethodSubjectBatch:
-    expected_fields = {"schema_version", "subjects", "candidate_memberships"}
-    if set(payload) != expected_fields:
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request CID-NL subject batch has wrong fields"
-        )
-    if payload["schema_version"] != BATCH_SCHEMA_VERSION:
-        raise CidNlMethodSubjectContractError(
-            f"Untargeted request CID-NL batch schema must be {BATCH_SCHEMA_VERSION!r}"
-        )
-    raw_subjects = payload["subjects"]
-    if not isinstance(raw_subjects, list):
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request CID-NL subject batch subjects must be a list"
-        )
-    subjects = tuple(_subject_from_payload(item) for item in raw_subjects)
-    raw_memberships = payload["candidate_memberships"]
-    if not isinstance(raw_memberships, list):
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request CID-NL subject batch memberships must be a list"
-        )
-    memberships: list[tuple[str, str]] = []
-    for item in raw_memberships:
-        if not isinstance(item, dict) or set(item) != {
-            "candidate_id",
-            "method_subject_id",
-        }:
-            raise CidNlMethodSubjectContractError(
-                "Untargeted request CID-NL subject batch has malformed membership"
-            )
-        candidate_id = item["candidate_id"]
-        method_subject_id = item["method_subject_id"]
-        if not isinstance(candidate_id, str) or not isinstance(method_subject_id, str):
-            raise CidNlMethodSubjectContractError(
-                "Untargeted request CID-NL subject membership IDs must be text"
-            )
-        memberships.append((candidate_id, method_subject_id))
-    try:
-        return UntargetedCidNlMethodSubjectBatch(
-            subjects=subjects,
-            candidate_memberships=tuple(memberships),
-        )
-    except CidNlMethodSubjectContractError:
-        raise
-    except (TypeError, ValueError) as exc:
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request CID-NL subject batch is malformed"
-        ) from exc
-
-
-def _request_cid_nl_payload(
-    request: ProcessingRequestIdentity,
-) -> dict[str, object]:
-    if not isinstance(request, ProcessingRequestIdentity):
-        raise CidNlMethodSubjectContractError(
-            "request must be an owner-minted processing request"
-        )
-    return _cid_nl_payload_from_normalized_inputs(
-        request.normalized_scientific_inputs_json
-    )
-
-
-def _cid_nl_payload_from_normalized_inputs(
-    normalized_inputs_json: str,
-) -> dict[str, object]:
-    try:
-        request_inputs = json.loads(normalized_inputs_json)
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request scientific inputs are malformed"
-        ) from exc
-    if not isinstance(request_inputs, dict):
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request scientific inputs must be a mapping"
-        )
-    payload = request_inputs.get(REQUEST_INPUT_KEY)
-    if not isinstance(payload, dict):
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request does not pin a CID-NL method subject"
-        )
-    return payload
-
-
-def _subject_from_payload(payload: object) -> CidNlMethodSubject:
-    if not isinstance(payload, dict):
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request CID-NL method subject must be an object"
-        )
-    expected_fields = {
-        "schema_version",
-        "subject_kind",
-        "precursor_mz",
-        "precursor_tolerance_ppm",
-        "neutral_loss_da",
-        "target",
-        "composition",
-    }
-    if set(payload) != expected_fields:
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request CID-NL method subject has wrong fields"
-        )
-    if payload["schema_version"] != SCHEMA_VERSION:
-        raise CidNlMethodSubjectContractError(
-            f"Untargeted request CID-NL schema must be {SCHEMA_VERSION!r}"
-        )
-    subject_kind = payload["subject_kind"]
-    if subject_kind != "untargeted_precursor":
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request requires an untargeted_precursor method subject"
-        )
-    if payload["target"] is not None:
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request method subject cannot carry a configured Target"
-        )
-    try:
-        composition = None
-        raw = payload["composition"]
-        if raw is not None:
-            if (
-                not isinstance(raw, dict)
-                or set(raw) != {"tags", "combine_mode"}
-                or not isinstance(raw["tags"], (list, tuple))
-            ):
-                raise CidNlMethodSubjectContractError(
-                    "composite requirement has wrong fields"
-                )
-            composition = CidNlComposition(
-                tags=tuple(tuple(item) for item in raw["tags"]),
-                combine_mode=raw["combine_mode"],
-            )
-            if payload["neutral_loss_da"] is not None:
-                raise CidNlMethodSubjectContractError(
-                    "composite subject cannot carry scalar loss"
-                )
-        return CidNlMethodSubject(
-            subject_kind="untargeted_precursor",
-            precursor_mz=_positive_finite_float(
-                payload["precursor_mz"], field="precursor_mz"
-            ),
-            precursor_tolerance_ppm=_positive_finite_float(
-                payload["precursor_tolerance_ppm"],
-                field="precursor_tolerance_ppm",
-            ),
-            neutral_loss_da=None
-            if composition is not None
-            else _positive_finite_float(
-                payload["neutral_loss_da"], field="neutral_loss_da"
-            ),
-            composition=composition,
-        )
-    except (TypeError, ValueError) as exc:
-        if isinstance(exc, CidNlMethodSubjectContractError):
-            raise
-        raise CidNlMethodSubjectContractError(
-            "Untargeted request CID-NL method subject is malformed"
-        ) from exc
-
-
 def _normalized_text(value: object, *, field: str) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
         raise CidNlMethodSubjectContractError(
@@ -776,15 +524,12 @@ __all__ = [
     "CidNlMethodSubject",
     "CidNlMethodSubjectContractError",
     "CidNlMethodSubjectKind",
-    "REQUEST_INPUT_KEY",
     "SCHEMA_VERSION",
     "UntargetedCidNlMethodSubjectBatch",
     "cid_nl_alignment_subject_worksets",
-    "cid_nl_method_subject_batch_from_request",
-    "cid_nl_method_subject_from_request",
+    "cid_nl_method_subject_by_id",
     "cid_nl_method_subject_from_target",
     "cid_nl_method_subject_resolver_interval",
-    "cid_nl_method_subjects_from_request",
     "mint_untargeted_cid_nl_method_subject",
     "mint_untargeted_cid_nl_method_subject_batch",
     "validate_cid_nl_alignment_subject_compatibility",

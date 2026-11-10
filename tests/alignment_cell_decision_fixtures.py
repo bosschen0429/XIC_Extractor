@@ -17,7 +17,6 @@ from xic_extractor.peak_detection.observations import (
     mint_peak_observation_ref,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
 def _numeric_peak(
@@ -31,10 +30,7 @@ def _numeric_peak(
     height: float = 500.0,
 ) -> Any:
     sample = fixture.sample(sample_stem)
-    source = resolve_request_acquisition_source(
-        processing_owners=fixture.owners,
-        sample=sample,
-    )
+    source = fixture.source(sample)
     trace = Trace.from_arrays(
         sample_name=sample_stem,
         mz=mz,
@@ -91,7 +87,6 @@ def _numeric_peak(
         baseline_integration_method="asls",
     )[0].integration
     return mint_peak_observation_ref(
-        processing_owners=fixture.owners,
         sample=sample,
         trace=trace,
         integration=integration,

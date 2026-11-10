@@ -311,7 +311,7 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
             **(asdict(quality) if quality is not None else {"status": "not_recorded"}),
         }
     return {
-        "sample_key": (decision.subject.canonical_sample.identity.sample_key),
+        "sample_key": (decision.subject.canonical_sample.sample_name),
         "variant": decision.variant,
         "value": decision.value,
         "apex_rt_min": (

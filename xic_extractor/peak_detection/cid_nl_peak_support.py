@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from xic_extractor.peak_detection.cid_nl_evidence import (
-    CidNlEvidenceContractError,
-    CidNlEvidenceRef,
-    validate_cid_nl_evidence_binding,
+    CidNlEvidenceObservation,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support_models import (
     RELATIONSHIP,
@@ -17,37 +15,25 @@ from xic_extractor.peak_detection.cid_nl_peak_support_models import (
 from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
 )
-from xic_extractor.processing_identity import ProcessingOwnerReferences
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 def resolve_dda_cid_nl_peak_support_ref(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-    canonical_evidence: CidNlEvidenceRef,
+    sample: SampleMetadata,
+    canonical_evidence: CidNlEvidenceObservation,
     candidate_peaks: tuple[PeakObservationRef, ...],
     policy: DdaCidNlPeakSupportPolicy,
 ) -> DdaCidNlPeakSupportRef:
     """Resolve one DDA event to exactly one supplied physical MS1 observation."""
 
-    _validate_owner_sample(processing_owners, sample)
-    _validate_evidence_binding(
-        canonical_evidence,
-        processing_owners=processing_owners,
-        sample=sample,
-    )
     if not isinstance(policy, DdaCidNlPeakSupportPolicy):
         raise DdaCidNlPeakSupportContractError(
             "policy must be owner-normalized DdaCidNlPeakSupportPolicy"
         )
-    _validate_candidate_peaks(
-        candidate_peaks,
-        processing_owners=processing_owners,
-        sample=sample,
-    )
+    _validate_candidate_peaks(candidate_peaks)
 
-    observation = canonical_evidence.observation
+    observation = canonical_evidence
     precursor = observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
     if precursor.reference_mz is None or precursor.status not in {
         "compatible",
@@ -90,78 +76,22 @@ def resolve_dda_cid_nl_peak_support_ref(
     return DdaCidNlPeakSupportRef(content=content)
 
 
-def validate_dda_cid_nl_peak_support_binding(
-    reference: DdaCidNlPeakSupportRef,
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-    canonical_evidence: CidNlEvidenceRef,
-    candidate_peaks: tuple[PeakObservationRef, ...],
-) -> None:
-    """Reject request, attempt, sample, evidence, or candidate substitution."""
-
-    if not isinstance(reference, DdaCidNlPeakSupportRef):
-        raise DdaCidNlPeakSupportContractError(
-            "reference must be an owner-minted DdaCidNlPeakSupportRef"
-        )
-    _validate_owner_sample(processing_owners, sample)
-    _validate_evidence_binding(
-        canonical_evidence,
-        processing_owners=processing_owners,
-        sample=sample,
-    )
-    _validate_candidate_peaks(
-        candidate_peaks,
-        processing_owners=processing_owners,
-        sample=sample,
-    )
-    matching_peaks = _matching_peaks(
-        canonical_evidence,
-        candidate_peaks,
-        policy=reference.content.policy,
-    )
-    if len(matching_peaks) != 1:
-        raise DdaCidNlPeakSupportContractError(
-            "DDA CID-NL peak support candidate universe no longer has one match"
-        )
-    peak_observation = matching_peaks[0]
-    expected_content = _support_content(
-        sample=sample,
-        canonical_evidence=canonical_evidence,
-        peak_observation=peak_observation,
-        candidate_peaks=candidate_peaks,
-        policy=reference.content.policy,
-    )
-    if reference.content != expected_content:
-        if (
-            reference.content.evidence != expected_content.evidence
-            or reference.content.dda_scan_number != expected_content.dda_scan_number
-        ):
-            raise DdaCidNlPeakSupportContractError(
-                "DDA CID-NL peak support references different evidence"
-            )
-        raise DdaCidNlPeakSupportContractError(
-            "DDA CID-NL peak support references a different peak observation or "
-            "candidate universe"
-        )
-
-
 def _support_content(
     *,
-    sample: ResolvedCanonicalSampleIdentity,
-    canonical_evidence: CidNlEvidenceRef,
+    sample: SampleMetadata,
+    canonical_evidence: CidNlEvidenceObservation,
     peak_observation: PeakObservationRef,
     candidate_peaks: tuple[PeakObservationRef, ...],
     policy: DdaCidNlPeakSupportPolicy,
 ) -> DdaCidNlPeakSupportContent:
-    observation = canonical_evidence.observation
+    observation = canonical_evidence
     peak_content = peak_observation.content
     integration = peak_content.integration
     precursor = observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
     assert precursor.reference_mz is not None
     assert precursor.observed_loss_error_ppm is not None
     return DdaCidNlPeakSupportContent(
-        sample_key=sample.identity.sample_key,
+        sample_key=sample.sample_name,
         evidence=observation,
         peak_observation=peak_content,
         candidate_peaks=tuple(
@@ -187,12 +117,12 @@ def _support_content(
 
 
 def _matches_observation(
-    canonical_evidence: CidNlEvidenceRef,
+    canonical_evidence: CidNlEvidenceObservation,
     peak_observation: PeakObservationRef,
     *,
     policy: DdaCidNlPeakSupportPolicy,
 ) -> bool:
-    observation = canonical_evidence.observation
+    observation = canonical_evidence
     peak_content = peak_observation.content
     integration = peak_content.integration
     precursor = observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
@@ -206,28 +136,8 @@ def _matches_observation(
     )
 
 
-def _matching_peaks(
-    canonical_evidence: CidNlEvidenceRef,
-    candidate_peaks: tuple[PeakObservationRef, ...],
-    *,
-    policy: DdaCidNlPeakSupportPolicy,
-) -> tuple[PeakObservationRef, ...]:
-    return tuple(
-        peak
-        for peak in candidate_peaks
-        if _matches_observation(
-            canonical_evidence,
-            peak,
-            policy=policy,
-        )
-    )
-
-
 def _validate_candidate_peaks(
     candidate_peaks: object,
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
 ) -> tuple[PeakObservationRef, ...]:
     if not isinstance(candidate_peaks, tuple):
         raise DdaCidNlPeakSupportContractError(
@@ -250,40 +160,6 @@ def _validate_candidate_peaks(
     return typed_peaks
 
 
-def _validate_owner_sample(
-    processing_owners: object,
-    sample: object,
-) -> None:
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise DdaCidNlPeakSupportContractError(
-            "processing_owners must be validated ProcessingOwnerReferences"
-        )
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise DdaCidNlPeakSupportContractError(
-            "sample must be an owner-resolved canonical sample"
-        )
-    if sample not in processing_owners.sample_resolutions:
-        raise DdaCidNlPeakSupportContractError(
-            "DDA CID-NL peak support references a different sample"
-        )
-
-
-def _validate_evidence_binding(
-    reference: CidNlEvidenceRef,
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-) -> None:
-    try:
-        validate_cid_nl_evidence_binding(
-            reference,
-            processing_owners=processing_owners,
-            sample=sample,
-        )
-    except CidNlEvidenceContractError as exc:
-        raise DdaCidNlPeakSupportContractError(str(exc)) from exc
-
-
 __all__ = [
     "DdaCidNlPeakSupportContent",
     "DdaCidNlPeakSupportContractError",
@@ -291,5 +167,4 @@ __all__ = [
     "DdaCidNlPeakSupportRef",
     "RELATIONSHIP",
     "resolve_dda_cid_nl_peak_support_ref",
-    "validate_dda_cid_nl_peak_support_binding",
 ]

@@ -75,29 +75,22 @@ from xic_extractor.peak_detection.physical_peak_equivalence import (
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
 )
-from xic_extractor.processing_identity import ProcessingOwnerReferences
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 def build_targeted_cross_sample_groups(
     *,
-    processing_owners: ProcessingOwnerReferences,
+    samples: tuple[SampleMetadata, ...],
     captures: Sequence[SampleLocalCapture],
-    sample_assessments: tuple[
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
-    ],
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...],
     alignment_config: AlignmentConfig,
     rt_frame: SampleRtFrame,
 ) -> CrossSampleGroupingResult:
     """Close Targeted membership from the exact selected capture in each cell."""
 
-    sample_by_id = {
-        sample.identity.sample_key: sample
-        for sample in processing_owners.sample_resolutions
-    }
+    sample_by_id = {sample.sample_name: sample for sample in samples}
     assessment_by_id = {
-        sample.identity.sample_key: assessment
-        for sample, assessment in sample_assessments
+        sample.sample_name: assessment for sample, assessment in sample_assessments
     }
     owners: list[SampleLocalMS1Owner] = []
     selected_by_id: dict[str, PeakHypothesis] = {}
@@ -146,9 +139,7 @@ def build_targeted_cross_sample_groups(
     groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
         config=alignment_config,
-        sample_universe=frozenset(
-            sample.metadata.raw_stem for sample in processing_owners.sample_resolutions
-        ),
+        sample_universe=frozenset(sample.raw_stem for sample in samples),
         rt_frame=rt_frame,
         rules=CID_NL_GROUPING_RULES,
     )
@@ -166,7 +157,7 @@ def build_targeted_cross_sample_groups(
             "Targeted grouping lost or invented selected hypothesis identity"
         )
     return CrossSampleGroupingResult(
-        processing_owners=processing_owners,
+        samples=samples,
         partition_transition=_partition_transition(
             predecessors=population,
             successors=population,
@@ -177,11 +168,9 @@ def build_targeted_cross_sample_groups(
 
 def build_initial_cid_nl_cross_sample_groups(
     *,
-    processing_owners: ProcessingOwnerReferences,
+    samples: tuple[SampleMetadata, ...],
     captures: Sequence[SampleLocalCapture],
-    sample_assessments: tuple[
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
-    ],
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...],
     alignment_config: AlignmentConfig,
     elution_contexts: Sequence[SampleElutionContext] = (),
     rt_frame: SampleRtFrame,
@@ -196,12 +185,10 @@ def build_initial_cid_nl_cross_sample_groups(
     tuple[RetainedGroupingCandidate, ...],
 ]:
     """Infer stable CID-NL groups without producing unused RT trajectories."""
-    batch_samples = processing_owners.sample_resolutions
     grouping_scope, retained_candidates, rt_frame = bootstrap_cid_nl_initial_population(
-        processing_owners=processing_owners,
         sample_assessments=sample_assessments,
         alignment_config=alignment_config,
-        sample_universe=frozenset(sample.metadata.raw_stem for sample in batch_samples),
+        sample_universe=frozenset(sample.raw_stem for sample in samples),
         rt_frame=rt_frame,
         retain_observation_only_candidates=True,
         elution_contexts=elution_contexts,
@@ -217,7 +204,7 @@ def build_initial_cid_nl_cross_sample_groups(
         )
     )
     result = CrossSampleGroupingResult(
-        processing_owners=processing_owners,
+        samples=samples,
         partition_transition=_partition_transition(
             predecessors=population, successors=population
         ),
@@ -228,7 +215,7 @@ def build_initial_cid_nl_cross_sample_groups(
 
 def regroup_cid_nl_cross_sample_groups(
     *,
-    processing_owners: ProcessingOwnerReferences,
+    samples: tuple[SampleMetadata, ...],
     grouping_scope: InitialGroupingScope,
     grouping_result: CrossSampleGroupingResult,
     alignment_config: AlignmentConfig,
@@ -249,9 +236,7 @@ def regroup_cid_nl_cross_sample_groups(
     groups = group_cid_nl_owners(
         owners,
         config=alignment_config,
-        sample_universe=frozenset(
-            sample.metadata.raw_stem for sample in processing_owners.sample_resolutions
-        ),
+        sample_universe=frozenset(sample.raw_stem for sample in samples),
         rt_frame=rt_frame,
         operation_counts_sink=operation_counts_sink,
         peak_trajectories=trajectories,
@@ -265,7 +250,7 @@ def regroup_cid_nl_cross_sample_groups(
     )
     scope = replace(grouping_scope, groups=groups, peak_trajectories=trajectories)
     result = CrossSampleGroupingResult(
-        processing_owners=processing_owners,
+        samples=samples,
         partition_transition=_partition_transition(
             predecessors=population, successors=population
         ),
@@ -305,7 +290,7 @@ def admit_cid_nl_group_backfills(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
     backfills: Mapping[
         tuple[str, str, str],
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
+        tuple[SampleMetadata, CidNlMethodAssessmentRef],
     ],
     alignment_config: AlignmentConfig,
     member_observations: Mapping[PeakObservationContent, PeakObservationRef],
@@ -327,7 +312,7 @@ def admit_cid_nl_group_backfills(
         group_id, sample_id, subject_id = key
         group = by_id[group_id]
         if (
-            sample_id != sample.identity.sample_key
+            sample_id != sample.sample_name
             or subject_id != assessment.content.method_subject.method_subject_id
         ):
             raise CrossSampleGroupingContractError(
@@ -339,7 +324,6 @@ def admit_cid_nl_group_backfills(
         ):
             continue
         hypotheses = compose_peak_hypotheses_from_assessment_universe(
-            processing_owners=result.processing_owners,
             sample=sample,
             assessment=assessment,
         )
@@ -625,7 +609,7 @@ def contested_backfill_peaks(
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
     backfills: Mapping[
         tuple[str, str, str],
-        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
+        tuple[SampleMetadata, CidNlMethodAssessmentRef],
     ],
     member_observations: Mapping[PeakObservationContent, PeakObservationRef],
     physical_peak_views: Mapping[PeakObservationContent, PhysicalPeakView]

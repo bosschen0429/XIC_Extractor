@@ -10,13 +10,11 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.processing_identity import (
-    ProcessingOwnerReferences,
-)
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 class CrossSampleGroupingContractError(ValueError):
-    """Raised when a grouping result crosses its processing request."""
+    """Raised when a grouping result crosses its run's samples."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,12 +22,12 @@ class CrossSampleGroupingResult:
     """One immutable membership result, including explicit recovery admissions.
 
     The partition owner has already closed membership and lineage. This owner
-    binds that answer to the processing request once, without rebuilding its
+    binds that answer to the run's samples once, without rebuilding its
     trajectory. Recovery may extend a missing sample with exact lineage while
     preserving every original group and member.
     """
 
-    processing_owners: ProcessingOwnerReferences
+    samples: tuple[SampleMetadata, ...]
     partition_transition: CrossSamplePartitionTransition
     rt_frame: SampleRtFrame = field(compare=False)
 

@@ -6,14 +6,14 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection.search_scope import (
     CaptureCandidateBinding,
 )
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 def _capture_binding(
     *,
     candidate_id: str,
     method_subject_id: str,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     acquisition_source_id: str,
     mz: float,
     ppm_tol: float,
@@ -23,7 +23,7 @@ def _capture_binding(
     return CaptureCandidateBinding(
         candidate_id=candidate_id,
         method_subject_id=method_subject_id,
-        sample_key=sample.identity.sample_key,
+        sample_key=sample.sample_name,
         acquisition_source_id=acquisition_source_id,
         query_mz=mz,
         query_rt_min=rt_min,

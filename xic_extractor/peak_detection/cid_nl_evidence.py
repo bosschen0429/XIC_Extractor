@@ -19,13 +19,8 @@ from xic_extractor.precursor_evidence import (
     precursor_inference_bounds,
     supports_direct_nl,
 )
-from xic_extractor.processing_identity import (
-    AcquisitionSourceIdentity,
-    IdentityContractError,
-    ProcessingOwnerReferences,
-    resolve_request_acquisition_source,
-)
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 ACQUISITION_MODE = "dda_ddms2"
 
@@ -256,17 +251,10 @@ class CidNlEvidenceObservation:
             )
 
 
-@dataclass(frozen=True, slots=True)
-class CidNlEvidenceRef:
-    """Owner-minted observation bound to its request sample."""
-
-    observation: CidNlEvidenceObservation
-
-
-def mint_cid_nl_evidence_ref(
+def cid_nl_evidence_observation(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
+    acquisition_source: AcquisitionSourceIdentity,
     scan_number: int,
     precursor_mz: float,
     product_mz: float,
@@ -280,34 +268,21 @@ def mint_cid_nl_evidence_ref(
     precursor_inference_tolerance_da: float | None = None,
     precursor_metadata: Ms2PrecursorMetadata | None = None,
     ms1_precursor_observation: Ms1PrecursorObservation | None = None,
-) -> CidNlEvidenceRef:
-    """Mint source-bound evidence without reading an acquisition source.
+) -> CidNlEvidenceObservation:
+    """Build source-bound evidence without reading an acquisition source.
 
     Direct callers may omit the scan precursor; inferred callers must supply
     its actual measured value and the bounded precursor inference tolerance.
     """
 
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise CidNlEvidenceContractError(
-            "processing_owners must be validated ProcessingOwnerReferences"
-        )
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise CidNlEvidenceContractError(
-            "sample must be an owner-resolved canonical sample"
-        )
-    if sample not in processing_owners.sample_resolutions:
-        raise CidNlEvidenceContractError(
-            "sample references a different sample outside the processing owner closure"
-        )
-    acquisition_source = _request_acquisition_source(processing_owners, sample)
     if scan_precursor_mz is None:
         if precursor_mz_basis != "scan_precursor":
             raise CidNlEvidenceContractError(
                 "inferred evidence requires explicit scan_precursor_mz"
             )
         scan_precursor_mz = precursor_mz
-    observation = CidNlEvidenceObservation(
-        sample_key=sample.identity.sample_key,
+    return CidNlEvidenceObservation(
+        sample_key=sample.sample_name,
         acquisition_source_id=acquisition_source.acquisition_source_id,
         acquisition_mode=ACQUISITION_MODE,
         scan_number=scan_number,
@@ -324,54 +299,6 @@ def mint_cid_nl_evidence_ref(
         precursor_metadata=precursor_metadata,
         ms1_precursor_observation=ms1_precursor_observation,
     )
-    return CidNlEvidenceRef(observation=observation)
-
-
-def validate_cid_nl_evidence_binding(
-    reference: CidNlEvidenceRef,
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-) -> None:
-    """Reject evidence minted for a different sample or acquisition source."""
-
-    if not isinstance(reference, CidNlEvidenceRef):
-        raise CidNlEvidenceContractError(
-            "reference must be an owner-minted CidNlEvidenceRef"
-        )
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise CidNlEvidenceContractError(
-            "processing_owners must be validated ProcessingOwnerReferences"
-        )
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise CidNlEvidenceContractError(
-            "sample must be an owner-resolved canonical sample"
-        )
-    acquisition_source = _request_acquisition_source(processing_owners, sample)
-    if reference.observation.sample_key != sample.identity.sample_key:
-        raise CidNlEvidenceContractError(
-            "canonical CID-NL evidence references a different sample"
-        )
-    if (
-        reference.observation.acquisition_source_id
-        != acquisition_source.acquisition_source_id
-    ):
-        raise CidNlEvidenceContractError(
-            "canonical CID-NL evidence references a different acquisition source"
-        )
-
-
-def _request_acquisition_source(
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-) -> AcquisitionSourceIdentity:
-    try:
-        return resolve_request_acquisition_source(
-            processing_owners=processing_owners,
-            sample=sample,
-        )
-    except IdentityContractError as exc:
-        raise CidNlEvidenceContractError(str(exc)) from exc
 
 
 def _finite_float(value: float, *, field: str) -> float:
@@ -390,7 +317,5 @@ __all__ = [
     "ACQUISITION_MODE",
     "CidNlEvidenceContractError",
     "CidNlEvidenceObservation",
-    "CidNlEvidenceRef",
-    "mint_cid_nl_evidence_ref",
-    "validate_cid_nl_evidence_binding",
+    "cid_nl_evidence_observation",
 ]

@@ -21,8 +21,7 @@ from xic_extractor.configuration.target_identity import (
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
 )
-from xic_extractor.processing_identity import ProcessingRequestIdentity
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 class TargetProjectionContractError(ValueError):
@@ -42,7 +41,6 @@ class TargetRowBinding:
 
     variant: TargetRowBindingVariant
     target: ResolvedTargetDefinition
-    processing_request: ProcessingRequestIdentity
     eligible_groups: tuple[CrossSampleGroupIdentity, ...]
 
     @property
@@ -57,13 +55,12 @@ class TargetCellSubject:
     """One Target × canonical-sample subject for the cell-decision owner."""
 
     target: ResolvedTargetDefinition
-    processing_request: ProcessingRequestIdentity
-    canonical_sample: ResolvedCanonicalSampleIdentity
+    canonical_sample: SampleMetadata
     row_binding: TargetRowBinding
     terminal_subject: TerminalSearchObservation
 
     @property
-    def sample(self) -> ResolvedCanonicalSampleIdentity:
+    def sample(self) -> SampleMetadata:
         return self.canonical_sample
 
 
@@ -92,7 +89,7 @@ def project_target_pre_cell(
 
     scope = cast(TargetSearchScope, finalized_alignment.scope)
     samples = _canonical_samples(scope.samples)
-    sample_by_id = {sample.identity.sample_key: sample for sample in samples}
+    sample_by_id = {sample.sample_name: sample for sample in samples}
     terminals = _terminals_by_sample(
         finalized_alignment,
         scope=scope,
@@ -105,16 +102,14 @@ def project_target_pre_cell(
     )
     row_binding = _mint_row_binding(
         target=scope.target,
-        processing_request=scope.request,
         eligible_groups=eligible_groups,
     )
     subjects = tuple(
         TargetCellSubject(
             target=scope.target,
-            processing_request=scope.request,
             canonical_sample=sample,
             row_binding=row_binding,
-            terminal_subject=terminals[sample.identity.sample_key],
+            terminal_subject=terminals[sample.sample_name],
         )
         for sample in samples
     )
@@ -127,16 +122,16 @@ def project_target_pre_cell(
 
 
 def _canonical_samples(
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...],
-) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
-    return tuple(sorted(samples, key=lambda sample: sample.identity.sample_key))
+    samples: tuple[SampleMetadata, ...],
+) -> tuple[SampleMetadata, ...]:
+    return tuple(sorted(samples, key=lambda sample: sample.sample_name))
 
 
 def _terminals_by_sample(
     finalized_alignment: FinalizedScientificAlignment,
     *,
     scope: TargetSearchScope,
-    samples: dict[str, ResolvedCanonicalSampleIdentity],
+    samples: dict[str, SampleMetadata],
 ) -> dict[str, TerminalSearchObservation]:
     terminals = {}
     for terminal in finalized_alignment.terminal_subjects:
@@ -156,7 +151,7 @@ def _terminals_by_sample(
 def _eligible_groups(
     finalized_alignment: FinalizedScientificAlignment,
     *,
-    sample_by_id: dict[str, ResolvedCanonicalSampleIdentity],
+    sample_by_id: dict[str, SampleMetadata],
     terminals: dict[str, TerminalSearchObservation],
 ) -> tuple[CrossSampleGroupIdentity, ...]:
     groups = finalized_alignment.final_population
@@ -187,7 +182,7 @@ def _eligible_groups(
 def _member_from_terminal(
     *,
     terminal: TerminalSearchObservation,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
 ) -> CrossSampleGroupMemberSubject:
     if type(terminal) is not ObservedSearchSubject:
         raise TargetProjectionContractError(
@@ -207,7 +202,6 @@ def _member_from_terminal(
 def _mint_row_binding(
     *,
     target: ResolvedTargetDefinition,
-    processing_request: ProcessingRequestIdentity,
     eligible_groups: tuple[CrossSampleGroupIdentity, ...],
 ) -> TargetRowBinding:
     count = len(eligible_groups)
@@ -226,7 +220,6 @@ def _mint_row_binding(
     return TargetRowBinding(
         variant=variant,
         target=target,
-        processing_request=processing_request,
         eligible_groups=eligible_groups,
     )
 

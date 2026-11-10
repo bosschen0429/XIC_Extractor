@@ -12,10 +12,7 @@ from dataclasses import dataclass
 
 from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
-    CidNlEvidenceContractError,
     CidNlEvidenceObservation,
-    CidNlEvidenceRef,
-    validate_cid_nl_evidence_binding,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
@@ -24,8 +21,7 @@ from xic_extractor.peak_detection.observations import (
     PeakObservationContent,
     PeakObservationRef,
 )
-from xic_extractor.processing_identity import ProcessingOwnerReferences
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 RELATIONSHIP = "supports_one_or_more_of"
 
@@ -88,23 +84,20 @@ class DdaCidNlCandidateSetRelationRef:
     """Set-level relation plus the exact evidence and candidate references."""
 
     content: DdaCidNlCandidateSetRelationContent
-    canonical_evidence: CidNlEvidenceRef
+    canonical_evidence: CidNlEvidenceObservation
     candidate_peaks: tuple[PeakObservationRef, ...]
 
 
 def resolve_dda_cid_nl_candidate_set_relation_ref(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-    canonical_evidence: CidNlEvidenceRef,
+    sample: SampleMetadata,
+    canonical_evidence: CidNlEvidenceObservation,
     candidate_peaks: tuple[PeakObservationRef, ...],
     policy: DdaCidNlPeakSupportPolicy,
 ) -> DdaCidNlCandidateSetRelationRef:
     """Resolve a non-unique zero-buffer case without selecting one candidate."""
 
     candidates = _validate_inputs(
-        processing_owners=processing_owners,
-        sample=sample,
         canonical_evidence=canonical_evidence,
         candidate_peaks=candidate_peaks,
         policy=policy,
@@ -115,13 +108,13 @@ def resolve_dda_cid_nl_candidate_set_relation_ref(
         policy=policy,
     )
     content = DdaCidNlCandidateSetRelationContent(
-        sample_key=sample.identity.sample_key,
-        evidence=canonical_evidence.observation,
+        sample_key=sample.sample_name,
+        evidence=canonical_evidence,
         candidate_peaks=tuple(peak.content for peak in candidates),
         matched_candidates=tuple(peak.content for peak in matched),
-        acquisition_mode=canonical_evidence.observation.acquisition_mode,
-        dda_scan_number=canonical_evidence.observation.scan_number,
-        scan_rt_min=canonical_evidence.observation.scan_rt_min,
+        acquisition_mode=canonical_evidence.acquisition_mode,
+        dda_scan_number=canonical_evidence.scan_number,
+        scan_rt_min=canonical_evidence.scan_rt_min,
         policy=policy,
     )
     return DdaCidNlCandidateSetRelationRef(
@@ -131,65 +124,18 @@ def resolve_dda_cid_nl_candidate_set_relation_ref(
     )
 
 
-def validate_dda_cid_nl_candidate_set_relation_binding(
-    reference: DdaCidNlCandidateSetRelationRef,
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-) -> None:
-    """Reject request, attempt, sample, evidence, or universe substitution."""
-
-    if not isinstance(reference, DdaCidNlCandidateSetRelationRef):
-        raise DdaCidNlCandidateSetRelationContractError(
-            "reference must be an owner-minted candidate-set relation"
-        )
-    expected = resolve_dda_cid_nl_candidate_set_relation_ref(
-        processing_owners=processing_owners,
-        sample=sample,
-        canonical_evidence=reference.canonical_evidence,
-        candidate_peaks=reference.candidate_peaks,
-        policy=reference.content.policy,
-    )
-    if reference != expected:
-        raise DdaCidNlCandidateSetRelationContractError(
-            "candidate-set relation binding was substituted"
-        )
-
-
 def _validate_inputs(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-    canonical_evidence: CidNlEvidenceRef,
+    canonical_evidence: CidNlEvidenceObservation,
     candidate_peaks: object,
     policy: DdaCidNlPeakSupportPolicy,
 ) -> tuple[PeakObservationRef, ...]:
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise DdaCidNlCandidateSetRelationContractError(
-            "processing_owners must be validated ProcessingOwnerReferences"
-        )
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise DdaCidNlCandidateSetRelationContractError(
-            "sample must be an owner-resolved canonical sample"
-        )
-    if sample not in processing_owners.sample_resolutions:
-        raise DdaCidNlCandidateSetRelationContractError(
-            "candidate-set relation references a sample outside the request"
-        )
     if not isinstance(policy, DdaCidNlPeakSupportPolicy):
         raise DdaCidNlCandidateSetRelationContractError(
             "policy must be owner-normalized DDA CID-NL support policy"
         )
-    try:
-        validate_cid_nl_evidence_binding(
-            canonical_evidence,
-            processing_owners=processing_owners,
-            sample=sample,
-        )
-    except CidNlEvidenceContractError as exc:
-        raise DdaCidNlCandidateSetRelationContractError(str(exc)) from exc
     candidates = _canonical_candidates(candidate_peaks)
-    observation = canonical_evidence.observation
+    observation = canonical_evidence
     if not policy.accepts_precursor(
         observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
     ):
@@ -202,11 +148,11 @@ def _validate_inputs(
 
 def _set_level_members(
     *,
-    canonical_evidence: CidNlEvidenceRef,
+    canonical_evidence: CidNlEvidenceObservation,
     candidate_peaks: tuple[PeakObservationRef, ...],
     policy: DdaCidNlPeakSupportPolicy,
 ) -> tuple[PeakObservationRef, ...]:
-    observation = canonical_evidence.observation
+    observation = canonical_evidence
     precursor = observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
     if not policy.accepts_precursor(precursor) or precursor.reference_mz is None:
         raise DdaCidNlCandidateSetRelationContractError(
@@ -304,5 +250,4 @@ __all__ = [
     "DdaCidNlCandidateSetRelationRef",
     "RELATIONSHIP",
     "resolve_dda_cid_nl_candidate_set_relation_ref",
-    "validate_dda_cid_nl_candidate_set_relation_binding",
 ]

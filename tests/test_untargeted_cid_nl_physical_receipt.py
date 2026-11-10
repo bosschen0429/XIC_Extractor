@@ -11,7 +11,6 @@ from tests.cid_nl_raw_fixture import (
     _open_bound_raw,
     _peak_config,
     _settings,
-    bind_physical_capture,
 )
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raw
 from tests.untargeted_cid_nl_no_raw_fixture import (
@@ -44,7 +43,6 @@ def _physical_fixture(tmp_path):
         settings=settings,
         physical_records=records,
     )
-    fixture = replace(fixture, owners=bind_physical_capture(fixture.owners, records))
     return fixture, source, settings, config, candidate, records
 
 
@@ -68,8 +66,9 @@ def test_adapter_rejects_candidate_morphology_different_from_physical_receipt(
         match=f"physical {receipt_field} mismatches current receipt",
     ):
         adapt_current_discovery_sample_subject(
-            processing_owners=fixture.owners,
+            processing_attempt_id=fixture.processing_attempt_id,
             sample=fixture.sample("S1"),
+            acquisition_source=fixture.source(fixture.sample("S1")),
             method_subject=fixture.method_subject,
             peaks=(candidate,),
             settings=settings,
@@ -87,7 +86,7 @@ def test_runtime_retains_physical_receipt_failure(tmp_path, monkeypatch):
     candidates = {"S1": (candidate,)}
     context = build_partition_context(
         raw_paths=paths,
-        sample_metadata=(fixture.sample("S1").metadata,),
+        sample_metadata=(fixture.sample("S1"),),
         method_subject=fixture.method_subject,
         settings=settings,
         peak_config=config,
@@ -95,7 +94,6 @@ def test_runtime_retains_physical_receipt_failure(tmp_path, monkeypatch):
         discovery_receipts_by_sample=build_discovery_receipts(
             tmp_path, paths, candidates
         ),
-        sample_identity_namespace="study:physical-receipt",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak=records,
     )
@@ -103,8 +101,12 @@ def test_runtime_retains_physical_receipt_failure(tmp_path, monkeypatch):
         monkeypatch, source_raw=source, raw_path=paths[0], tmp_path=tmp_path
     )
     job = UntargetedPartitionJob(
-        processing_owners=context.processing_owners,
+        processing_attempt_id=context.processing_attempt_id,
+        method_subjects=context.method_subject,
         sample=context.samples[0],
+        acquisition_source_expectation=context.acquisition_sources_by_sample[
+            context.samples[0].raw_stem
+        ],
         method_subject=context.method_subject,
         candidates=(candidate,),
         discovery_receipt=context.discovery_receipts_by_sample["S1"],

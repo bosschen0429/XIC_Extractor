@@ -7,8 +7,8 @@ from tests.processing_identity_no_raw_fixture import (
     ProcessingIdentityNoRawFixture,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
-    CidNlEvidenceRef,
-    mint_cid_nl_evidence_ref,
+    CidNlEvidenceObservation,
+    cid_nl_evidence_observation,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
@@ -21,7 +21,6 @@ from xic_extractor.peak_detection.observations import (
     mint_peak_observation_ref,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
 def cid_nl_peak(
@@ -35,10 +34,7 @@ def cid_nl_peak(
     height: float = 500.0,
 ) -> PeakObservationRef:
     sample = fixture.sample(sample_stem)
-    source = resolve_request_acquisition_source(
-        processing_owners=fixture.owners,
-        sample=sample,
-    )
+    source = fixture.source(sample)
     trace = Trace.from_arrays(
         sample_name=sample_stem,
         mz=mz,
@@ -70,7 +66,6 @@ def cid_nl_peak(
         raw_scan_indices=(1, 2, 3),
     )
     return mint_peak_observation_ref(
-        processing_owners=fixture.owners,
         sample=sample,
         trace=trace,
         integration=integration,
@@ -85,10 +80,10 @@ def cid_nl_evidence(
     *,
     scan_number: int,
     scan_rt_min: float,
-) -> CidNlEvidenceRef:
-    return mint_cid_nl_evidence_ref(
-        processing_owners=fixture.owners,
+) -> CidNlEvidenceObservation:
+    return cid_nl_evidence_observation(
         sample=fixture.sample(sample_stem),
+        acquisition_source=fixture.source(fixture.sample(sample_stem)),
         scan_number=scan_number,
         precursor_mz=PRECURSOR_MZ,
         product_mz=PRODUCT_MZ,
@@ -105,11 +100,10 @@ def cid_nl_unique_support(
     sample_stem: str,
     *,
     peak: PeakObservationRef,
-    evidence: CidNlEvidenceRef,
+    evidence: CidNlEvidenceObservation,
     candidate_peaks: tuple[PeakObservationRef, ...] | None = None,
 ) -> DdaCidNlPeakSupportRef:
     return resolve_dda_cid_nl_peak_support_ref(
-        processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
         canonical_evidence=evidence,
         candidate_peaks=candidate_peaks or (peak,),

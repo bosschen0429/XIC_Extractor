@@ -14,23 +14,20 @@ from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.extraction.targeted_capture_population import (
     TargetedCapturePopulation,
 )
-from xic_extractor.peak_detection.cid_nl_evidence import mint_cid_nl_evidence_ref
+from xic_extractor.peak_detection.cid_nl_evidence import cid_nl_evidence_observation
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     mint_cid_nl_method_assessment_ref,
     resolve_cid_nl_method_relations,
 )
 from xic_extractor.peak_detection.observations import PeakObservationRef
-from xic_extractor.processing_identity import (
-    ProcessingOwnerReferences,
-    resolve_request_acquisition_source,
-)
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 def assess_targeted_cid_nl_samples(
     population: TargetedCapturePopulation,
-) -> tuple[tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...]:
+) -> tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...]:
     """Assess every sample of a CID-NL Target; an MS1-only Target has none."""
 
     if population.ms1_only:
@@ -39,9 +36,11 @@ def assess_targeted_cid_nl_samples(
         (
             entry.sample,
             _assess_sample(
-                processing_owners=population.processing_owners,
                 target=population.target,
                 sample=entry.sample,
+                acquisition_source=population.acquisition_sources[
+                    entry.sample.raw_stem
+                ],
                 result=entry.result,
                 candidate_peaks=entry.observation_universe,
             ),
@@ -52,9 +51,9 @@ def assess_targeted_cid_nl_samples(
 
 def _assess_sample(
     *,
-    processing_owners: ProcessingOwnerReferences,
     target: ResolvedTargetDefinition,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
+    acquisition_source: AcquisitionSourceIdentity,
     result: ExtractionResult,
     candidate_peaks: tuple[PeakObservationRef, ...],
 ) -> CidNlMethodAssessmentRef:
@@ -62,9 +61,6 @@ def _assess_sample(
 
     if result.cid_nl_evaluation_receipt is None or result.cid_nl_relations is None:
         raise RuntimeError("Targeted acquisition lost its complete CID-NL universe")
-    acquisition_source = resolve_request_acquisition_source(
-        processing_owners=processing_owners, sample=sample
-    )
     evidence = []
     for product in result.cid_nl_products:
         if product.acquisition_source_id != acquisition_source.acquisition_source_id:
@@ -74,9 +70,9 @@ def _assess_sample(
         if product.scan_number is None:
             raise RuntimeError("Targeted MS2 evidence lost its acquired scan identity")
         evidence.append(
-            mint_cid_nl_evidence_ref(
-                processing_owners=processing_owners,
+            cid_nl_evidence_observation(
                 sample=sample,
+                acquisition_source=acquisition_source,
                 scan_number=product.scan_number,
                 precursor_mz=product.precursor_mz,
                 product_mz=product.product_mz,
@@ -94,7 +90,6 @@ def _assess_sample(
         )
     evidence_refs = tuple(evidence)
     support_refs, set_refs = resolve_cid_nl_method_relations(
-        processing_owners=processing_owners,
         sample=sample,
         evidence_refs=evidence_refs,
         candidate_peaks=candidate_peaks,
@@ -108,8 +103,8 @@ def _assess_sample(
         ),
     )
     return mint_cid_nl_method_assessment_ref(
-        processing_owners=processing_owners,
         sample=sample,
+        acquisition_source=acquisition_source,
         target=target,
         detector_invocation_id="targeted-production-retained-trace",
         evaluation_receipt=result.cid_nl_evaluation_receipt,

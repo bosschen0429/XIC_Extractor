@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -30,8 +29,8 @@ from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationRef,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
-    CidNlEvidenceRef,
-    mint_cid_nl_evidence_ref,
+    CidNlEvidenceObservation,
+    cid_nl_evidence_observation,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -54,13 +53,9 @@ from xic_extractor.peak_detection.observations import (
     RetainedCaptureEvidence,
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
-from xic_extractor.peak_detection.search_scope import PHYSICAL_CAPTURE_INPUT_KEY
 from xic_extractor.peak_detection.traces import trace_from_xic_request
-from xic_extractor.processing_identity import (
-    ProcessingOwnerReferences,
-    resolve_request_acquisition_source,
-)
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.acquisition_cache import (
     acquire_untargeted_trace_batch,
 )
@@ -280,18 +275,14 @@ def _backfill_xic_request(
 
 def acquire_untargeted_cid_nl_backfill_trace_batch(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
+    acquisition_source: AcquisitionSourceIdentity,
     backfill_requests: tuple[UntargetedCidNlBackfillTarget, ...],
     peak_config: ExtractionConfig,
     raw: CidNlRawSource,
 ) -> UntargetedCidNlBackfillTraceBatch:
     """Acquire search traces and bounded fallback context in one sample phase."""
 
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise CidNlAcquisitionError("processing_owners has the wrong owner type")
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise CidNlAcquisitionError("sample has the wrong owner type")
     if not isinstance(peak_config, ExtractionConfig):
         raise CidNlAcquisitionError("peak_config has the wrong owner type")
     if (
@@ -315,14 +306,8 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
             ),
         )
     )
-    source = resolve_request_acquisition_source(
-        processing_owners=processing_owners,
-        sample=sample,
-    )
+    source = acquisition_source
     half_window = peak_config.nl_rt_anchor_half_window_min
-    physical_context = PHYSICAL_CAPTURE_INPUT_KEY in json.loads(
-        processing_owners.request.normalized_scientific_inputs_json
-    )
     requests = tuple(
         _backfill_xic_request(
             mz=target.physical_mz,
@@ -337,19 +322,15 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
     trace_indices = tuple(
         unique.setdefault(request, len(unique)) for request in requests
     )
-    context_requests = (
-        tuple(
-            _backfill_xic_request(
-                mz=target.physical_mz,
-                query_rt=target.sample_query_rt,
-                half_window=half_window,
-                ppm_tol=target.method_subject.precursor_tolerance_ppm,
-                physical_context=True,
-            )
-            for target in targets
+    context_requests = tuple(
+        _backfill_xic_request(
+            mz=target.physical_mz,
+            query_rt=target.sample_query_rt,
+            half_window=half_window,
+            ppm_tol=target.method_subject.precursor_tolerance_ppm,
+            physical_context=True,
         )
-        if physical_context
-        else ()
+        for target in targets
     )
     context_trace_indices = tuple(
         unique.setdefault(request, len(unique)) for request in context_requests
@@ -363,7 +344,7 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         acquire_untargeted_trace_batch(capability, tuple(unique), raw)
     )
     return UntargetedCidNlBackfillTraceBatch(
-        sample_key=sample.identity.sample_key,
+        sample_key=sample.sample_name,
         acquisition_source_id=source.acquisition_source_id,
         targets=targets,
         requests=requests,
@@ -376,8 +357,9 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
 
 def backfill_untargeted_cid_nl_sample_subject(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    processing_attempt_id: str,
+    sample: SampleMetadata,
+    acquisition_source: AcquisitionSourceIdentity,
     method_subject: CidNlMethodSubject,
     group_center_rt: float,
     group_center_mz: float,
@@ -400,10 +382,6 @@ def backfill_untargeted_cid_nl_sample_subject(
     immutable measured CID-NL evidence to new owner-resolved relations.
     """
 
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise CidNlAcquisitionError("processing_owners has the wrong owner type")
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise CidNlAcquisitionError("sample has the wrong owner type")
     if not isinstance(method_subject, CidNlMethodSubject):
         raise CidNlAcquisitionError("method_subject has the wrong owner type")
     if not isinstance(peak_config, ExtractionConfig):
@@ -446,10 +424,7 @@ def backfill_untargeted_cid_nl_sample_subject(
         or physical_mz <= 0.0
     ):
         raise CidNlAcquisitionError("group_center_mz must be finite and positive")
-    source = resolve_request_acquisition_source(
-        processing_owners=processing_owners,
-        sample=sample,
-    )
+    source = acquisition_source
     half_window = peak_config.nl_rt_anchor_half_window_min
     query_rt_min = max(0.0, float(query_rt) - half_window)
     query_rt_max = float(query_rt) + half_window
@@ -500,7 +475,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 "preacquired backfill requires exact group identity"
             )
         if (
-            _preacquired_traces.sample_key != sample.identity.sample_key
+            _preacquired_traces.sample_key != sample.sample_name
             or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
         ):
             raise CidNlAcquisitionError(
@@ -524,7 +499,7 @@ def backfill_untargeted_cid_nl_sample_subject(
         (context_request, context_acquired),
     ):
         trace = trace_from_xic_request(
-            sample_name=sample.metadata.sample_name,
+            sample_name=sample.sample_name,
             request=capture_request,
             xic_trace=capture_acquired.trace,
             source=(
@@ -534,7 +509,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         )
         physical_evaluations.clear()
         observation = capture_owner.capture_physical_backfill_observation(
-            processing_owners=processing_owners,
             sample=sample,
             method_subject=method_subject,
             trace=trace,
@@ -554,17 +528,16 @@ def backfill_untargeted_cid_nl_sample_subject(
         if physical_evaluations[0].reason != "incomplete_peak_context":
             break
     observations = (observation,) if observation is not None else ()
-    backfill_evidence: tuple[CidNlEvidenceRef, ...] = ()
+    backfill_evidence: tuple[CidNlEvidenceObservation, ...] = ()
     backfill_support: tuple[DdaCidNlPeakSupportRef, ...] = ()
     backfill_sets: tuple[DdaCidNlCandidateSetRelationRef, ...] = ()
     if initial_assessment is not None and observations:
         backfill_evidence = tuple(
             ref
             for ref in initial_assessment.evidence_refs
-            if query_rt_min <= ref.observation.scan_rt_min <= query_rt_max
+            if query_rt_min <= ref.scan_rt_min <= query_rt_max
         )
         backfill_support, backfill_sets = resolve_cid_nl_method_relations(
-            processing_owners=processing_owners,
             sample=sample,
             evidence_refs=backfill_evidence,
             candidate_peaks=observations,
@@ -592,8 +565,8 @@ def backfill_untargeted_cid_nl_sample_subject(
             )
         backfill_evidence, backfill_support, backfill_sets = (
             _composite_backfill_evidence(
-                processing_owners=processing_owners,
                 sample=sample,
+                acquisition_source=source,
                 method_subject=method_subject,
                 # Composite workers retain RAW even with preacquired traces.
                 raw=cast(CidNlRawSource, raw),
@@ -606,8 +579,8 @@ def backfill_untargeted_cid_nl_sample_subject(
         )
     try:
         assessment = mint_cid_nl_method_assessment_ref(
-            processing_owners=processing_owners,
             sample=sample,
+            acquisition_source=source,
             method_subject=method_subject,
             detector_invocation_id="untargeted-cid-nl-backfill",
             evaluation_receipt=CidNlEvaluationReceipt(
@@ -661,8 +634,8 @@ def backfill_untargeted_cid_nl_sample_subject(
         query_rt_basis=query_rt_basis,
         capture_evidence=tuple(
             RetainedCaptureEvidence(
-                sample_key=sample.identity.sample_key,
-                processing_attempt_id=processing_owners.attempt.processing_attempt_id,
+                sample_key=sample.sample_name,
+                processing_attempt_id=processing_attempt_id,
                 method_subject_id=method_subject.method_subject_id,
                 candidate_id=None,
                 capture_stage="method_backfill",
@@ -677,8 +650,8 @@ def backfill_untargeted_cid_nl_sample_subject(
 
 def _composite_backfill_evidence(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
+    acquisition_source: AcquisitionSourceIdentity,
     method_subject: CidNlMethodSubject,
     raw: CidNlRawSource,
     settings: DiscoverySettings,
@@ -687,12 +660,12 @@ def _composite_backfill_evidence(
     observations: tuple[PeakObservationRef, ...],
     support_policy: DdaCidNlPeakSupportPolicy,
 ) -> tuple[
-    tuple[CidNlEvidenceRef, ...],
+    tuple[CidNlEvidenceObservation, ...],
     tuple[DdaCidNlPeakSupportRef, ...],
     tuple[DdaCidNlCandidateSetRelationRef, ...],
 ]:
     """Evaluate the configured loss set on the backfilled physical universe."""
-    evidence_refs: list[CidNlEvidenceRef] = []
+    evidence_refs: list[CidNlEvidenceObservation] = []
     individual_refs: list[DdaCidNlPeakSupportRef] = []
     set_refs: list[DdaCidNlCandidateSetRelationRef] = []
     scan_numbers: set[int] = set()
@@ -711,7 +684,7 @@ def _composite_backfill_evidence(
         subject_seeds.extend(
             seed
             for seed in discovery_events_from_scan(
-                scan, raw_file=Path(sample.metadata.raw_stem), settings=settings
+                scan, raw_file=Path(sample.raw_stem), settings=settings
             )
             if seed.supports_direct_nl
             and _within_ppm(
@@ -725,9 +698,9 @@ def _composite_backfill_evidence(
         settings=settings,
         preserve_configured_losses=method_subject.composition is not None,
     ):
-        evidence = mint_cid_nl_evidence_ref(
-            processing_owners=processing_owners,
+        evidence = cid_nl_evidence_observation(
             sample=sample,
+            acquisition_source=acquisition_source,
             scan_number=seed.scan_number,
             precursor_mz=seed.precursor_mz,
             product_mz=seed.product_mz,
@@ -742,7 +715,6 @@ def _composite_backfill_evidence(
         )
         evidence_refs.append(evidence)
         resolved_support, resolved_sets = resolve_cid_nl_method_relations(
-            processing_owners=processing_owners,
             sample=sample,
             evidence_refs=(evidence,),
             candidate_peaks=observations,

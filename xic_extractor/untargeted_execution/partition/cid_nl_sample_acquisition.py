@@ -31,8 +31,8 @@ from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationRef,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
-    CidNlEvidenceRef,
-    mint_cid_nl_evidence_ref,
+    CidNlEvidenceObservation,
+    cid_nl_evidence_observation,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -71,11 +71,8 @@ from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
 from xic_extractor.peak_detection.traces import trace_from_xic_request
-from xic_extractor.processing_identity import (
-    ProcessingOwnerReferences,
-    resolve_request_acquisition_source,
-)
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.acquisition_cache import (
     acquire_untargeted_trace_batch,
 )
@@ -189,8 +186,8 @@ def _sample_capture_requests(
 
 def acquire_untargeted_cid_nl_sample_trace_batch(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
+    acquisition_source: AcquisitionSourceIdentity,
     peaks: tuple[DiscoveryPeak, ...],
     settings: DiscoverySettings,
     raw: CidNlRawSource,
@@ -198,10 +195,6 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
 ) -> UntargetedCidNlSampleTraceBatch | None:
     """Acquire all eligible peak XICs for one sample in one adapter call."""
 
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise CidNlAcquisitionError("processing_owners has the wrong owner type")
-    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
-        raise CidNlAcquisitionError("sample has the wrong owner type")
     if not isinstance(settings, DiscoverySettings):
         raise CidNlAcquisitionError("settings has the wrong owner type")
     if type(peaks) is not tuple or any(
@@ -213,7 +206,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
         raise CidNlAcquisitionError(
             "sample trace batch peaks must be canonical and unique"
         )
-    raw_stem = sample.metadata.raw_stem
+    raw_stem = sample.raw_stem
     if any(
         peak.sample_stem != raw_stem or peak.raw_file.stem != raw_stem for peak in peaks
     ):
@@ -223,10 +216,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     capture_candidates = tuple(peak for peak in peaks if peak.is_clean_peak)
     if not capture_candidates:
         return None
-    source = resolve_request_acquisition_source(
-        processing_owners=processing_owners,
-        sample=sample,
-    )
+    source = acquisition_source
     capability = mint_trace_acquisition_capability(
         source,
         adapter_namespace=f"{_ADAPTER_NAMESPACE}.sample_batch",
@@ -254,13 +244,13 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
                 acquired.trace.intensity,
                 profile=signal_processing_profile,
             ),
-            sample_stem=sample.metadata.raw_stem,
+            sample_stem=sample.raw_stem,
             mz=acquired.coordinate.request.mz,
         )
         if context is not None:
             contexts.append(context)
     return UntargetedCidNlSampleTraceBatch(
-        sample_key=sample.identity.sample_key,
+        sample_key=sample.sample_name,
         acquisition_source_id=source.acquisition_source_id,
         candidate_ids=tuple(peak.peak_id for peak in capture_candidates),
         acquisition=acquisition,
@@ -298,8 +288,9 @@ def _elution_context_requests(
 
 def adapt_current_discovery_sample_subject(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    processing_attempt_id: str,
+    sample: SampleMetadata,
+    acquisition_source: AcquisitionSourceIdentity,
     method_subject: CidNlMethodSubject,
     peaks: tuple[DiscoveryPeak, ...],
     support_candidates: tuple[DiscoveryPeak, ...] = (),
@@ -313,8 +304,6 @@ def adapt_current_discovery_sample_subject(
     """Reacquire a subject and mint its complete CellObservationRef input."""
 
     _validate_inputs(
-        processing_owners=processing_owners,
-        sample=sample,
         method_subject=method_subject,
         peaks=peaks,
         support_candidates=support_candidates,
@@ -358,8 +347,8 @@ def adapt_current_discovery_sample_subject(
     )
     if not seed_candidates and not peak_candidates:
         assessment = _mint_assessment(
-            processing_owners=processing_owners,
             sample=sample,
+            acquisition_source=acquisition_source,
             method_subject=method_subject,
             settings=settings,
             raw=None,
@@ -386,14 +375,10 @@ def adapt_current_discovery_sample_subject(
         raise CidNlAcquisitionError(
             "bounded subject universe requires an owner-opened RAW adapter"
         )
-    source = resolve_request_acquisition_source(
-        processing_owners=processing_owners,
-        sample=sample,
-    )
+    source = acquisition_source
     scan_seeds = _located_discovery_events(seed_candidates + support_seed_candidates)
 
     search_scope = _untargeted_search_scope(
-        processing_owners=processing_owners,
         sample=sample,
         acquisition_source_id=source.acquisition_source_id,
         method_subject=method_subject,
@@ -405,7 +390,7 @@ def adapt_current_discovery_sample_subject(
     )
     capture_evidence: list[RetainedCaptureEvidence] = []
     acquisition, observations, captures = _adopt_peak_observations(
-        processing_owners=processing_owners,
+        processing_attempt_id=processing_attempt_id,
         sample=sample,
         peaks=peak_candidates,
         settings=settings,
@@ -416,7 +401,7 @@ def adapt_current_discovery_sample_subject(
         evidence_sink=capture_evidence,
         _preacquired_traces=_preacquired_traces,
     )
-    evidence_refs: list[CidNlEvidenceRef] = []
+    evidence_refs: list[CidNlEvidenceObservation] = []
     individual_refs: list[DdaCidNlPeakSupportRef] = []
     set_refs: list[DdaCidNlCandidateSetRelationRef] = []
     candidate_universe = tuple(
@@ -431,9 +416,9 @@ def adapt_current_discovery_sample_subject(
         preserve_configured_losses=method_subject.composition is not None,
     ):
         seed = replace(raw_seed, acquisition_source_id=source.acquisition_source_id)
-        evidence = mint_cid_nl_evidence_ref(
-            processing_owners=processing_owners,
+        evidence = cid_nl_evidence_observation(
             sample=sample,
+            acquisition_source=source,
             scan_number=seed.scan_number,
             precursor_mz=seed.precursor_mz,
             product_mz=seed.product_mz,
@@ -454,7 +439,6 @@ def adapt_current_discovery_sample_subject(
         )
         evidence_refs.append(evidence)
         resolved_support, resolved_sets = resolve_cid_nl_method_relations(
-            processing_owners=processing_owners,
             sample=sample,
             evidence_refs=(evidence,),
             candidate_peaks=candidate_universe,
@@ -464,8 +448,8 @@ def adapt_current_discovery_sample_subject(
         set_refs.extend(resolved_sets)
 
     assessment = _mint_assessment(
-        processing_owners=processing_owners,
         sample=sample,
+        acquisition_source=source,
         method_subject=method_subject,
         settings=settings,
         raw=raw,
@@ -490,11 +474,9 @@ def adapt_current_discovery_sample_subject(
         source_candidate_ids=tuple(item.peak_id for item in bounded),
         strict_scan_count=len(
             {
-                ref.observation.scan_number
+                ref.scan_number
                 for ref in evidence_refs
-                if ref.observation.assess_precursor_loss(
-                    settings.nl_tolerance_ppm
-                ).supports_nl
+                if ref.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
             }
         ),
         capture_evidence=tuple(capture_evidence),
@@ -537,8 +519,8 @@ def _located_discovery_events(
 
 def _adopt_peak_observations(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    processing_attempt_id: str,
+    sample: SampleMetadata,
     peaks: tuple[DiscoveryPeak, ...],
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
@@ -570,7 +552,7 @@ def _adopt_peak_observations(
         acquired_traces = tuple(acquisition.traces[index] for index in indices)
     else:
         if (
-            _preacquired_traces.sample_key != sample.identity.sample_key
+            _preacquired_traces.sample_key != sample.sample_name
             or _preacquired_traces.acquisition_source_id != source.acquisition_source_id
         ):
             raise CidNlAcquisitionError(
@@ -591,7 +573,7 @@ def _adopt_peak_observations(
     captures: list[capture_owner.SampleLocalCapture] = []
     for peak, acquired in zip(peaks, acquired_traces, strict=True):
         trace = trace_from_xic_request(
-            sample_name=sample.metadata.sample_name,
+            sample_name=sample.sample_name,
             request=acquired.coordinate.request,
             xic_trace=acquired.trace,
             source=UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE,
@@ -621,17 +603,14 @@ def _adopt_peak_observations(
             _validate_physical_candidate_receipt(peak, capture.physical_evaluation)
         observation = capture_owner.mint_captured_peak_observation(
             capture,
-            processing_owners=processing_owners,
             sample=sample,
         )
         observations.append(observation)
         if evidence_sink is not None:
             evidence_sink.append(
                 RetainedCaptureEvidence(
-                    sample_key=sample.identity.sample_key,
-                    processing_attempt_id=(
-                        processing_owners.attempt.processing_attempt_id
-                    ),
+                    sample_key=sample.sample_name,
+                    processing_attempt_id=processing_attempt_id,
                     method_subject_id=binding.method_subject_id,
                     candidate_id=peak.peak_id,
                     capture_stage="initial_capture",
@@ -656,14 +635,14 @@ def method_label(peak: DiscoveryPeak) -> str:
 
 def _mint_assessment(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
+    acquisition_source: AcquisitionSourceIdentity,
     method_subject: CidNlMethodSubject,
     settings: DiscoverySettings,
     raw: CidNlRawSource | None,
     support_policy: DdaCidNlPeakSupportPolicy,
     candidate_peaks: tuple[PeakObservationRef, ...] = (),
-    evidence_refs: tuple[CidNlEvidenceRef, ...] = (),
+    evidence_refs: tuple[CidNlEvidenceObservation, ...] = (),
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...] = (),
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...] = (),
     technical_state: CidNlTechnicalState = "evaluated",
@@ -689,8 +668,8 @@ def _mint_assessment(
         query_rt_min = query_rt_max = None
     try:
         return mint_cid_nl_method_assessment_ref(
-            processing_owners=processing_owners,
             sample=sample,
+            acquisition_source=acquisition_source,
             method_subject=method_subject,
             detector_invocation_id=(
                 f"untargeted-cid-nl-real-data:{settings.resolver_mode}"
@@ -725,7 +704,7 @@ def _mint_assessment(
 def _bounded_subject_candidates(
     peaks: tuple[DiscoveryPeak, ...],
     *,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     method_subject: CidNlMethodSubject,
     settings: DiscoverySettings,
 ) -> tuple[DiscoveryPeak, ...]:
@@ -733,11 +712,11 @@ def _bounded_subject_candidates(
     if len(ids) != len(set(ids)):
         raise CidNlAcquisitionError("Discovery peak IDs must be unique")
     for peak in peaks:
-        if peak.sample_stem != sample.metadata.raw_stem:
+        if peak.sample_stem != sample.raw_stem:
             raise CidNlAcquisitionError(
                 f"{peak.peak_id}: peak references a different sample"
             )
-        if peak.raw_file.stem != sample.metadata.raw_stem:
+        if peak.raw_file.stem != sample.raw_stem:
             raise CidNlAcquisitionError(
                 f"{peak.peak_id}: raw receipt mismatches its sample"
             )
@@ -769,8 +748,7 @@ def _bounded_subject_candidates(
 
 def _untargeted_search_scope(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
+    sample: SampleMetadata,
     acquisition_source_id: str,
     method_subject: CidNlMethodSubject,
     peaks: tuple[DiscoveryPeak, ...],
@@ -783,7 +761,7 @@ def _untargeted_search_scope(
     try:
         return UntargetedSearchScope(
             schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-            request=processing_owners.request,
+            method_subjects=method_subject,
             samples=(sample,),
             method_constraints=CaptureMethodConstraints(
                 boundary_policy="resolver_interval",
@@ -801,7 +779,7 @@ def _untargeted_search_scope(
                 CaptureCandidateBinding(
                     candidate_id=item.peak_id,
                     method_subject_id=method_subject.method_subject_id,
-                    sample_key=sample.identity.sample_key,
+                    sample_key=sample.sample_name,
                     acquisition_source_id=acquisition_source_id,
                     query_mz=item.peak_mz,
                     query_rt_min=item.ms1_search_rt_min,
@@ -822,8 +800,6 @@ def _untargeted_search_scope(
 
 def _validate_inputs(**values: object) -> None:
     expected = {
-        "processing_owners": ProcessingOwnerReferences,
-        "sample": ResolvedCanonicalSampleIdentity,
         "method_subject": CidNlMethodSubject,
         "peaks": tuple,
         "support_candidates": tuple,
@@ -846,11 +822,9 @@ def _validate_inputs(**values: object) -> None:
     method_subject = values["method_subject"]
     settings = values["settings"]
     peak_config = values["peak_config"]
-    processing_owners = values["processing_owners"]
     assert isinstance(method_subject, CidNlMethodSubject)
     assert isinstance(settings, DiscoverySettings)
     assert isinstance(peak_config, ExtractionConfig)
-    assert isinstance(processing_owners, ProcessingOwnerReferences)
     if method_subject.subject_kind != "untargeted_precursor":
         raise CidNlAcquisitionError(
             "adapter requires an Untargeted CID-NL method subject"

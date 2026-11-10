@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -91,8 +90,8 @@ def _outside_group_fixture(
             for peak, event in zip(peaks, evidence, strict=True)
         )
         assessment = mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners,
             sample=fixture.sample(stem),
+            acquisition_source=fixture.source(fixture.sample(stem)),
             method_subject=fixture.method_subject,
             detector_invocation_id=f"outside-group:{stem}",
             evaluation_receipt=replace(_completed_receipt(), query_rt_max=16.5),
@@ -110,7 +109,7 @@ def _outside_group_fixture(
         )
         for sample, assessment in assessments
         for hypothesis in compose_cid_nl_peak_hypotheses_from_assessment(
-            processing_owners=fixture.owners, sample=sample, assessment=assessment
+            sample=sample, assessment=assessment
         )
     )
     groups = construct_cross_sample_peak_group_hypotheses(
@@ -132,7 +131,6 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
     original_contents = None
     for ordered_groups in (groups, tuple(reversed(groups))):
         cells = compose_cid_nl_predecessor_cells(
-            processing_owners=fixture.owners,
             groups=ordered_groups,
             sample_assessments=tuple(assessments),
             alignment_config=CID_NL_ALIGNMENT_CONFIG,
@@ -148,15 +146,13 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             )
             for cell in cells
         } == {
-            (group.group_hypothesis_id, sample.identity.sample_key)
+            (group.group_hypothesis_id, sample.sample_name)
             for group in groups
             for sample, _assessment in assessments
         }
         for sample, assessment in assessments:
             sample_cells = tuple(
-                cell
-                for cell in cells
-                if cell.content.sample_key == sample.identity.sample_key
+                cell for cell in cells if cell.content.sample_key == sample.sample_name
             )
             assert all(cell.method_assessment is assessment for cell in sample_cells)
             direct = tuple(
@@ -190,12 +186,11 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
     third_group = next(
         cell.group_context.group
         for cell in cells
-        if cell.content.sample_key == fixture.sample("Third").identity.sample_key
+        if cell.content.sample_key == fixture.sample("Third").sample_name
         and cell.peak_observation is not None
     )
     with pytest.raises(ValueError, match="one exact sibling SUPPORT context"):
         compose_cid_nl_predecessor_cells(
-            processing_owners=fixture.owners,
             groups=(third_group,),
             sample_assessments=tuple(assessments),
             alignment_config=CID_NL_ALIGNMENT_CONFIG,
@@ -206,16 +201,13 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
 def _outside_population_handoff(tmp_path: Path):
     fixture, assessments, groups = _outside_group_fixture(tmp_path, (8.0, 12.0))
     cells = compose_cid_nl_predecessor_cells(
-        processing_owners=fixture.owners,
         groups=groups,
         sample_assessments=assessments,
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
         rt_frame=SampleRtFrame(),
     )
     identities = tuple(group.membership for group in groups)
-    binding = SimpleNamespace(
-        samples=fixture.samples, owners=fixture.owners, request=fixture.owners.request
-    )
+    binding = fixture
     coverage = _coverage_for_groups(
         binding, identities, fixture.samples, predecessor_cells=cells
     )
@@ -268,14 +260,14 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
     groups = tuple(
         group
         for group in all_groups
-        if group.member_subjects[0].sample_key == initial_sample.identity.sample_key
+        if group.member_subjects[0].sample_key == initial_sample.sample_name
     )
     assert len(groups) == 2
     recovered_group = min(groups, key=lambda group: group.family_center_rt)
     recovered_peak = cid_nl_peak(fixture, "Third", apex_rt=8.0)
     backfill_assessment = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=recovered_sample,
+        acquisition_source=fixture.source(recovered_sample),
         method_subject=fixture.method_subject,
         detector_invocation_id="group-local-recovery",
         evaluation_receipt=_completed_receipt(),
@@ -283,13 +275,12 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
     )
     assert backfill_assessment.content.method_result == "HOLD"
     cells = compose_cid_nl_predecessor_cells(
-        processing_owners=fixture.owners,
         groups=groups,
         sample_assessments=((initial_sample, initial_assessment),),
         backfill_assessments_by_group={
             (
                 recovered_group.group_hypothesis_id,
-                recovered_sample.identity.sample_key,
+                recovered_sample.sample_name,
                 fixture.method_subject.method_subject_id,
             ): (recovered_sample, backfill_assessment)
         },
@@ -300,7 +291,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
     recovered_cells = tuple(
         cell
         for cell in cells
-        if cell.content.sample_key == recovered_sample.identity.sample_key
+        if cell.content.sample_key == recovered_sample.sample_name
     )
     assert len(recovered_cells) == 1
     assert recovered_cells[0].content.group_hypothesis_id == (
@@ -362,21 +353,20 @@ def test_composer_distinguishes_completed_negative_search(
     fixture, spine, handoff = _owner_handoff(tmp_path)
     sample = fixture.sample("s4")
     negative_assessment = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=sample,
+        acquisition_source=fixture.source(sample),
         target=fixture.target,
         detector_invocation_id="gaussian15:s4:completed-negative",
         evaluation_receipt=_completed_receipt(),
     )
     negative_cell = mint_cell_observation_ref(
-        processing_owners=fixture.owners,
         sample=sample,
         target=fixture.target,
         group_context=spine.cells[0].group_context,
         method_assessment=negative_assessment,
     )
     predecessor_cells = tuple(
-        negative_cell if cell.content.sample_key == sample.identity.sample_key else cell
+        negative_cell if cell.content.sample_key == sample.sample_name else cell
         for cell in spine.cells
     )
     handoff = _owner_handoff_for_cells(
@@ -422,12 +412,10 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
         scan_number=42,
     )
     first_spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
         target=fixture.target,
         sample_assessments=((sample, first_assessment),),
     )
     second_spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
         target=fixture.target,
         sample_assessments=((sample, second_assessment),),
     )
@@ -484,12 +472,10 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         scan_number=52,
     )
     left_spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
         target=fixture.target,
         sample_assessments=((samples[0], first_assessment),),
     )
     right_spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
         target=fixture.target,
         sample_assessments=((samples[1], second_assessment),),
     )
@@ -503,7 +489,6 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
             group_spine.cells[0]
             if group_spine is supporting_spine
             else mint_cell_observation_ref(
-                processing_owners=fixture.owners,
                 sample=sample,
                 target=fixture.target,
                 group_context=group_spine.cells[0].group_context,
@@ -551,7 +536,7 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         for item in forward
     )
     expected_positions_by_sample = {
-        item.canonical_sample.identity.sample_key: {
+        item.canonical_sample.sample_name: {
             association.position.key
             for association in handoff.position_associations
             if association.position.sample is item.canonical_sample
@@ -560,7 +545,7 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
     }
     assert all(
         {association.position.key for association in item.position_associations}
-        == expected_positions_by_sample[item.canonical_sample.identity.sample_key]
+        == expected_positions_by_sample[item.canonical_sample.sample_name]
         for item in forward
     )
 
@@ -590,7 +575,6 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
         seed_count=2,
     )
     predecessor_spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
         target=fixture.target,
         sample_assessments=(
             (samples[0], first_assessment),
@@ -602,10 +586,10 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
         member.sample_key: member for member in predecessor.member_subjects
     }
     left = mint_cross_sample_group_identity(
-        member_subjects=(members_by_sample[samples[0].identity.sample_key],),
+        member_subjects=(members_by_sample[samples[0].sample_name],),
     )
     right = mint_cross_sample_group_identity(
-        member_subjects=(members_by_sample[samples[1].identity.sample_key],),
+        member_subjects=(members_by_sample[samples[1].sample_name],),
     )
     coverage = _coverage_for_groups(
         fixture,
@@ -640,19 +624,16 @@ def test_final_member_rejects_hold_method_lane(tmp_path: Path) -> None:
     fixture, spine, handoff = _owner_handoff(tmp_path)
     sample = fixture.sample("s1")
     hold_assessment = mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
         sample=sample,
+        acquisition_source=fixture.source(sample),
         target=fixture.target,
         detector_invocation_id="gaussian15:s1:hold-invalid-final-member",
         evaluation_receipt=_completed_receipt(),
     )
     source = next(
-        cell
-        for cell in spine.cells
-        if cell.content.sample_key == sample.identity.sample_key
+        cell for cell in spine.cells if cell.content.sample_key == sample.sample_name
     )
     invalid_source = mint_cell_observation_ref(
-        processing_owners=fixture.owners,
         sample=sample,
         target=fixture.target,
         group_context=source.group_context,

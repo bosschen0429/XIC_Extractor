@@ -31,18 +31,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     mint_cross_sample_group_identity,
 )
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
-from xic_extractor.processing_identity import (
-    AcquisitionInputBinding,
-    build_acquisition_source_identity,
-    build_processing_request_identity,
-    compose_processing_owner_references,
-    issue_processing_attempt,
-)
-from xic_extractor.sample_metadata import (
-    SampleMetadata,
-    mint_sample_metadata_snapshot,
-    resolve_canonical_sample_identity,
-)
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 def test_unchanged_identity_closes_complete_cartesian_population(
@@ -184,7 +173,7 @@ def test_split_maps_only_the_exact_same_sample_member(
         sorted((left, right), key=lambda group: group.group_hypothesis_id)
     )
     successor_by_sample = {
-        item.position.sample.lookup_token: item.final_successor
+        item.position.sample.raw_stem: item.final_successor
         for item in handoff.position_associations
     }
     assert successor_by_sample == {"sample-a": left, "sample-b": right}
@@ -317,57 +306,17 @@ def _coverage_context(
     *,
     sample_order: tuple[str, ...],
 ) -> _CoverageContext:
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    acquisitions = []
-    bindings = []
-    metadata = []
-    for index, sample in enumerate(sample_order, start=1):
-        raw_path = tmp_path / f"{sample}.raw"
-        raw_path.write_bytes(f"coverage:{sample}".encode())
-        acquisition = build_acquisition_source_identity(
-            raw_path,
-            acquisition_format="thermo_raw",
-            observation_namespace="test-backfill-coverage",
+    samples = tuple(
+        SampleMetadata(
+            sample_name=sample,
+            raw_stem=sample,
+            injection_order=index,
+            sample_role="study_sample",
         )
-        acquisitions.append(acquisition)
-        bindings.append(
-            AcquisitionInputBinding(
-                acquisition_source_id=acquisition.acquisition_source_id,
-                adapter_input_key=sample,
-                injection_order=index,
-            )
-        )
-        metadata.append(
-            SampleMetadata(
-                sample_name=sample,
-                raw_stem=sample,
-                injection_order=index,
-                sample_role="study_sample",
-            )
-        )
-    request = build_processing_request_identity(
-        acquisition_sources=tuple(acquisitions),
-        acquisition_bindings=tuple(bindings),
-        scientific_input_schema_version="backfill_coverage_test",
-        processing_algorithm_version="backfill_coverage_test",
-        processing_contract_version="processing_identity",
-        scientific_inputs={"fixture": "backfill-evaluation-coverage"},
-    )
-    snapshot = mint_sample_metadata_snapshot(
-        tuple(metadata),
-        identity_namespace="study:backfill-evaluation-coverage",
-    )
-    resolved = tuple(
-        resolve_canonical_sample_identity(snapshot, sample) for sample in sample_order
+        for index, sample in enumerate(sample_order, start=1)
     )
     return _CoverageContext(
-        processing_owners=compose_processing_owner_references(
-            request=request,
-            attempt=issue_processing_attempt(),
-            sample_snapshot=snapshot,
-            sample_resolutions=resolved,
-        ),
-        samples=resolved,
+        samples=samples,
         sample_order=sample_order,
         raw_sample_stems=frozenset(sample_order),
         alignment_config=AlignmentConfig(),
@@ -381,7 +330,7 @@ def _fixture(tmp_path: Path, *, sample_stems: tuple[str, ...]) -> _Fixture:
         member = original.cross_sample_member_subject
         assert member is not None
         fixture.members[sample_stem] = CrossSampleGroupMemberSubject(
-            sample_key=sample.identity.sample_key,
+            sample_key=sample.sample_name,
             subject_kind=member.subject_kind,
             subject_id=member.subject_id,
             physical_peaks=member.physical_peaks,
@@ -413,7 +362,6 @@ def _coverage(
         for sample in context.samples
     )
     return BackfillEvaluationCoverageBatch(
-        processing_owners=context.processing_owners,
         group_identities=groups,
         samples=context.samples,
         positions=positions,

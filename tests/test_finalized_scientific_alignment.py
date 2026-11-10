@@ -29,9 +29,6 @@ from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
 )
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import (
-    resolve_request_acquisition_source,
-)
 
 
 def test_finalizer_closes_exact_core_with_terminal_subject_variants(
@@ -65,11 +62,10 @@ def test_finalizer_closes_exact_core_with_terminal_subject_variants(
     )
 
     assert isinstance(result, FinalizedScientificAlignment)
-    assert result.processing_request is scope.request
     assert result.canonical_samples == tuple(
         sorted(
             scope.samples,
-            key=lambda sample: sample.identity.sample_key,
+            key=lambda sample: sample.sample_name,
         )
     )
     assert result.grouping_result is receipt
@@ -265,9 +261,8 @@ def _finalization_inputs(
     del monkeypatch
     tmp_path.mkdir(parents=True, exist_ok=True)
     fixture, spine, handoff = _owner_handoff(tmp_path)
-    request = fixture.owners.request
     receipt = _final_receipt(
-        SimpleNamespace(context=SimpleNamespace(processing_owners=fixture.owners)),
+        SimpleNamespace(context=SimpleNamespace(samples=fixture.samples)),
         predecessors=handoff.coverage.group_identities,
         successors=handoff.final_population,
     )
@@ -280,9 +275,7 @@ def _finalization_inputs(
         else np.zeros_like(rt)
         for index, _sample in enumerate(fixture.samples)
     )
-    candidate_ids = tuple(
-        f"candidate-{sample.lookup_token}" for sample in fixture.samples
-    )
+    candidate_ids = tuple(f"candidate-{sample.raw_stem}" for sample in fixture.samples)
     bindings = []
     traces = []
     for candidate_id, sample, intensity in zip(
@@ -291,10 +284,7 @@ def _finalization_inputs(
         intensities,
         strict=True,
     ):
-        source = resolve_request_acquisition_source(
-            processing_owners=fixture.owners,
-            sample=sample,
-        )
+        source = fixture.source(sample)
         bindings.append(
             _capture_binding(
                 candidate_id=candidate_id,
@@ -309,7 +299,7 @@ def _finalization_inputs(
         )
         traces.append(
             Trace.from_arrays(
-                sample_name=sample.metadata.sample_name,
+                sample_name=sample.sample_name,
                 mz=method_subject.precursor_mz,
                 rt=rt,
                 intensity=intensity,
@@ -322,7 +312,6 @@ def _finalization_inputs(
         )
     scope = TargetSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=request,
         samples=fixture.samples,
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",

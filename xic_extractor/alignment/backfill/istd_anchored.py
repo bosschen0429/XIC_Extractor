@@ -41,12 +41,9 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.observations import PeakObservationRef
-from xic_extractor.processing_identity import ProcessingOwnerReferences
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
-SampleAssessments = tuple[
-    tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
-]
+SampleAssessments = tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,8 +60,7 @@ class IstdAnchoredBackfill:
 
 def resolve_istd_anchored_backfill(
     *,
-    processing_owners: ProcessingOwnerReferences,
-    sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
+    sample_population: tuple[SampleMetadata, ...],
     target: ResolvedTargetDefinition,
     direct_supports: tuple[CidNlCellGroupSupport, ...],
     sample_assessments: SampleAssessments,
@@ -83,10 +79,9 @@ def resolve_istd_anchored_backfill(
     """
 
     assessment_by_sample = {
-        sample.identity.sample_key: assessment
-        for sample, assessment in sample_assessments
+        sample.sample_name: assessment for sample, assessment in sample_assessments
     }
-    sample_by_id = {sample.identity.sample_key: sample for sample in sample_population}
+    sample_by_id = {sample.sample_name: sample for sample in sample_population}
     owners = tuple(
         owner_from_cid_nl_assessment_support(
             sample=support.sample,
@@ -121,7 +116,7 @@ def resolve_istd_anchored_backfill(
     pair_rts = {
         sample_by_id[
             peak.content.sample_key
-        ].metadata.raw_stem: peak.content.integration.rt_apex_min
+        ].raw_stem: peak.content.integration.rt_apex_min
         for peak in paired_observations
     }
     decisions: list[ConservativeBackfillCellDecision] = []
@@ -131,38 +126,36 @@ def resolve_istd_anchored_backfill(
             supports=tuple(
                 sorted(
                     direct_supports,
-                    key=lambda support: support.sample.identity.sample_key,
+                    key=lambda support: support.sample.sample_name,
                 )
             ),
             config=alignment_config,
             rt_frame=rt_frame,
-            processing_attempt=processing_owners.attempt,
         )
         direct_by_sample = {
-            support.sample.identity.sample_key: support for support in direct_supports
+            support.sample.sample_name: support for support in direct_supports
         }
         cells = tuple(
             mint_cell_observation_ref(
-                processing_owners=processing_owners,
                 sample=sample,
                 target=target,
                 group_context=group_context,
                 method_assessment=assessment,
                 peak_observation=(
                     direct_by_sample[
-                        sample.identity.sample_key
+                        sample.sample_name
                     ].hypothesis.peak_observation_refs[0]
-                    if sample.identity.sample_key in direct_by_sample
+                    if sample.sample_name in direct_by_sample
                     else None
                 ),
                 peak_hypothesis=(
-                    direct_by_sample[sample.identity.sample_key].hypothesis
-                    if sample.identity.sample_key in direct_by_sample
+                    direct_by_sample[sample.sample_name].hypothesis
+                    if sample.sample_name in direct_by_sample
                     else None
                 ),
                 unassigned_support=(
                     assessment.content.method_result == "SUPPORT"
-                    and sample.identity.sample_key not in direct_by_sample
+                    and sample.sample_name not in direct_by_sample
                 ),
             )
             for sample, assessment in sample_assessments
@@ -174,7 +167,7 @@ def resolve_istd_anchored_backfill(
             group.owner_ids,
             tuple(
                 (
-                    support.sample.metadata.raw_stem,
+                    support.sample.raw_stem,
                     support.hypothesis.integration.rt_apex_min,
                 )
                 for support in direct_supports
@@ -189,11 +182,10 @@ def resolve_istd_anchored_backfill(
         )
         locations = locate_missing(
             tuple(
-                sample_by_id[sample_id].metadata.raw_stem
-                for sample_id in sorted(missing_ids)
+                sample_by_id[sample_id].raw_stem for sample_id in sorted(missing_ids)
             ),
             reference_samples=frozenset(
-                support.sample.metadata.raw_stem for support in direct_supports
+                support.sample.raw_stem for support in direct_supports
             ),
             rt_frame=rt_frame,
             backfill_half_window_min=rt_half_window_min,
@@ -203,11 +195,10 @@ def resolve_istd_anchored_backfill(
             sample = sample_by_id[sample_id]
             if assessment_by_sample[sample_id].content.method_result != "HOLD":
                 continue
-            location = locations.get(sample.metadata.raw_stem)
+            location = locations.get(sample.raw_stem)
             if location is None:
                 continue
             universe = mint_conservative_backfill_candidate_universe(
-                processing_owners=processing_owners,
                 sample=sample,
                 group_facts=(facts,),
                 candidate_assessment=assessment_by_sample[sample_id],

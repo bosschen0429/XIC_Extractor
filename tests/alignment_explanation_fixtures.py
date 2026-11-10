@@ -120,7 +120,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:explanation",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]

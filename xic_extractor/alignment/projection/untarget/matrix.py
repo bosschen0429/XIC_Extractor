@@ -103,7 +103,7 @@ def project_untarget_matrix(
         members = {member.sample_key: member for member in group.member_subjects}
         projected = []
         for sample in finalized_alignment.canonical_samples:
-            sample_id = sample.identity.sample_key
+            sample_id = sample.sample_name
             observation = by_position[group.group_hypothesis_id, sample_id]
             payload, integration = decisions[observation.key]
             projected.append(

@@ -199,13 +199,10 @@ def test_review_rows_never_become_alignment_roots(
             } == expected_ids
             assert all(not job.support_candidates for job in partition.jobs)
             # An accepted root does not authorize an unresolved MS1-only refill.
-            sample = next(
-                s for s in plan.context.samples if s.metadata.raw_stem == "Overlap"
-            )
+            sample = next(s for s in plan.context.samples if s.raw_stem == "Overlap")
             raw = raws[paths[1]]
             evaluations = []
             observation = capture_physical_backfill_observation(
-                processing_owners=plan.context.processing_owners,
                 sample=sample,
                 method_subject=plan.subject_batch.subjects[0],
                 trace=Trace(

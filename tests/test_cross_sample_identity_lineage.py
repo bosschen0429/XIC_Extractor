@@ -17,8 +17,6 @@ def _member(fixture, sample_stem: str, **peak_kwargs):
     )
 
     hypothesis = compose_ms1_observation_peak_hypothesis(
-        processing_owners=fixture.owners,
-        sample=fixture.sample(sample_stem),
         peak_observation=cid_nl_peak(fixture, sample_stem, **peak_kwargs),
     )
     return group_member_subject_from_peak_hypothesis(

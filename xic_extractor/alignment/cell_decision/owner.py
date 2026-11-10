@@ -207,7 +207,7 @@ def _decide_target(
     subject: TargetCellSubject,
 ) -> tuple[CellDecisionPayload, IntegrationResult | None]:
     terminal = subject.terminal_subject
-    sample_id = subject.canonical_sample.identity.sample_key
+    sample_id = subject.canonical_sample.sample_name
     if terminal.sample_key != sample_id:
         raise CellDecisionContractError(
             "Target terminal crossed the exact canonical sample"
@@ -359,12 +359,12 @@ def _decision_sort_key(decision: ProductionCellDecision) -> tuple[str, ...]:
         return (
             "target",
             subject.target.lookup_label,
-            subject.canonical_sample.identity.sample_key,
+            subject.canonical_sample.sample_name,
         )
     if type(subject) is GroupCellSubject:
         return (
             "untarget",
             subject.group_hypothesis_id,
-            subject.canonical_sample.identity.sample_key,
+            subject.canonical_sample.sample_name,
         )
     raise CellDecisionContractError("decision contains an unsupported subject")

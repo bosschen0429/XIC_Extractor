@@ -520,8 +520,8 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         evidence = cid_nl_evidence(fixture, name, scan_number=1, scan_rt_min=rt)
         support = cid_nl_unique_support(fixture, name, peak=peak, evidence=evidence)
         assessment = mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners,
             sample=sample,
+            acquisition_source=fixture.source(sample),
             target=fixture.target,
             detector_invocation_id=f"direct:{name}",
             evaluation_receipt=CidNlEvaluationReceipt(
@@ -537,7 +537,6 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
             individual_support_refs=(support,),
         )
         (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
-            processing_owners=fixture.owners,
             sample=sample,
             assessment=assessment,
         )
@@ -673,7 +672,7 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
             )
         )
         scope, result = regroup_cid_nl_cross_sample_groups(
-            processing_owners=fixture.owners,
+            samples=fixture.samples,
             grouping_scope=InitialGroupingScope(
                 (499.0, 501.0),
                 (7.0, 16.0),
@@ -681,7 +680,7 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
                 raw_model,
             ),
             grouping_result=CrossSampleGroupingResult(
-                fixture.owners,
+                fixture.samples,
                 _partition_transition(predecessors=population, successors=population),
                 raw_frame,
             ),

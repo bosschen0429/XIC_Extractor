@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import fields, replace
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -36,9 +36,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.untargeted_execution.partition import workers as partition_workers
-from xic_extractor.untargeted_execution.partition.models import (
-    build_sample_jobs,
-)
 
 
 @pytest.mark.parametrize(
@@ -88,7 +85,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         for sample, sample_candidates in inputs.candidates.items()
     }
     assert completed.processing_attempt_id == (
-        completed.application_result.processing_attempt.processing_attempt_id
+        completed.application_result.processing_attempt_id
     )
     composed_universes = [item[1:] for item in trace.hypothesis_universe_compositions]
     assert len(composed_universes) == len(set(composed_universes)), (
@@ -176,7 +173,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     expected_curve_links = {}
     application = completed.application_result
     samples_by_stem = {
-        sample.metadata.raw_stem: sample for sample in application.canonical_samples
+        sample.raw_stem: sample for sample in application.canonical_samples
     }
     for record in retained_discovery:
         work = record.work_item
@@ -192,10 +189,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         expected = _expected_retained_curve(
             kind="discovery_physical",
             candidate_id=record.peak_id,
-            sample_id=samples_by_stem[work.sample_stem].identity.sample_key,
+            sample_id=samples_by_stem[work.sample_stem].sample_name,
             trace=source_trace,
             evaluation=record.evaluation,
-            attempt_id=application.processing_attempt.processing_attempt_id,
+            attempt_id=application.processing_attempt_id,
         )
         expected_curves.append(expected)
         expected_curve_links.setdefault(record.peak_id, []).append(expected)
@@ -251,7 +248,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         )
     assert all(
         retained.partition_transition == final.partition_transition
-        and retained.processing_owners == final.processing_owners
+        and retained.samples == final.samples
         for retained, final in zip(
             trace.retained_contexts,
             trace.completed_contexts,
@@ -324,7 +321,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 for group in child.scientific_core.final_population
             ) == [1, 2]
             sample_id_by_stem = {
-                sample.metadata.raw_stem: sample.identity.sample_key
+                sample.raw_stem: sample.sample_name
                 for sample in child.scientific_core.canonical_samples
             }
             joint_group = next(
@@ -345,7 +342,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             (joint_cell,) = joint_final_cell.predecessor_cells
             assert any(
                 support.assessment is joint_cell.method_assessment
-                and support.sample.identity.sample_key == sample_id_by_stem["S3"]
+                and support.sample.sample_name == sample_id_by_stem["S3"]
                 for support in joint_cell.group_context.supports
             )
             assert all(
@@ -378,7 +375,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         batch = trace.captured_batches[0]
         assert len(batch.subject_batch.subjects) == 1
         for result in trace.runtime_results[0].sample_results:
-            stem = result.job.sample.metadata.raw_stem
+            stem = result.job.sample.raw_stem
             (candidate,) = batch.context.peaks_by_sample[stem]
             record = batch.context.physical_records_by_peak[candidate.peak_id]
             assert record.work_item.precursor_mz == candidate.best_event_precursor_mz
@@ -518,16 +515,12 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
     inputs = profile_replay.inputs
     trace = profile_replay.trace
 
-    from xic_extractor.configuration.signal_processing_profile import (
-        SignalProcessingProfile,
-    )
     from xic_extractor.peak_detection import capture as capture_owner
 
     batch = trace.captured_batches[0]
     from xic_extractor.peak_detection.cid_nl_peak_support import (
         DdaCidNlPeakSupportPolicy,
     )
-    from xic_extractor.processing_identity import resolve_request_acquisition_source
     from xic_extractor.untargeted_execution.partition import (
         cid_nl_backfill_acquisition,
     )
@@ -536,13 +529,12 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
     recovery_raw = partition_workers.open_raw(
         inputs.paths[0],
         tmp_path,
-        expected_acquisition_source=resolve_request_acquisition_source(
-            processing_owners=job.processing_owners, sample=job.sample
-        ),
+        expected_acquisition_source=job.acquisition_source_expectation.source,
     )
     recovery_args = dict(
-        processing_owners=job.processing_owners,
+        processing_attempt_id=job.processing_attempt_id,
         sample=job.sample,
+        acquisition_source=job.acquisition_source_expectation.source,
         method_subject=job.method_subject,
         group_center_rt=inputs.center_rt,
         group_center_mz=job.method_subject.precursor_mz,
@@ -581,19 +573,6 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
     assert integ.area_baseline_corrected == physical_facts.area_counts_seconds
     assert integ.height_smoothed == physical_facts.height
     assert recovered.assessment.content.method_result == "HOLD"
-    with pytest.raises(
-        capture_owner.SampleLocalCaptureError, match="question is not request-bound"
-    ):
-        cid_nl_backfill_acquisition.backfill_untargeted_cid_nl_sample_subject(
-            **(
-                recovery_args
-                | {
-                    "signal_processing_profile": SignalProcessingProfile(
-                        window_points=21
-                    )
-                }
-            )
-        )
     original_intensity = inputs.source_raws[inputs.paths[0]].intensity
     recovery_evaluations = []
     evaluate_recovery = capture_owner.evaluate_physical_peak
@@ -714,9 +693,7 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
         sink.finalize(
             explanation_summary(
                 {
-                    "processing_attempt_id": (
-                        job.processing_owners.attempt.processing_attempt_id
-                    ),
+                    "processing_attempt_id": (job.processing_attempt_id),
                 },
                 review_only=sink.review_only,
             )
@@ -733,43 +710,10 @@ def test_profile_replay_rejects_changed_partition_inputs(
     trace = profile_replay.trace
     case = profile_replay.case
 
-    from xic_extractor.configuration.signal_processing_profile import (
-        SignalProcessingProfile,
-    )
     from xic_extractor.processing_identity import IdentityContractError
 
     batch = trace.captured_batches[0]
-    from xic_extractor.untargeted_execution.partition.models import (
-        UntargetedPartitionError,
-    )
 
-    with pytest.raises(UntargetedPartitionError, match="profile is not request-bound"):
-        replace(
-            batch.jobs[0],
-            signal_processing_profile=SignalProcessingProfile(window_points=21),
-        )
-    first_job = batch.jobs[0]
-    sample_inputs = {
-        item.name: getattr(first_job, item.name)
-        for item in fields(first_job)
-        if item.init and item.name not in {"method_subject", "work_unit_key"}
-    }
-    subject_work_units = tuple(
-        (job.method_subject, job.work_unit_key)
-        for job in batch.jobs
-        if job.sample == first_job.sample
-    )
-    for changed, message in (
-        (
-            {"signal_processing_profile": SignalProcessingProfile(window_points=21)},
-            "profile is not request-bound",
-        ),
-        ({"physical_records": ()}, "candidate coverage changed"),
-    ):
-        with pytest.raises(UntargetedPartitionError, match=message):
-            build_sample_jobs(
-                **(sample_inputs | changed), subject_work_units=subject_work_units
-            )
     if not case.indexed_input:
         wrong_records = dict(batch.context.physical_records_by_peak)
         keys = tuple(wrong_records)
@@ -777,15 +721,12 @@ def test_profile_replay_rejects_changed_partition_inputs(
         with pytest.raises(IdentityContractError, match="crossed peak"):
             alignment_adapter.prepare_eager_untargeted_plan(
                 raw_paths=inputs.paths,
-                sample_metadata=tuple(
-                    sample.metadata for sample in batch.context.samples
-                ),
+                sample_metadata=tuple(sample for sample in batch.context.samples),
                 settings=inputs.settings,
                 peak_config=inputs.peak_config,
                 peaks_by_sample=batch.context.peaks_by_sample,
                 discovery_receipts_by_sample=inputs.receipts,
                 dll_dir=tmp_path,
-                sample_identity_namespace="test:physical-replay",
                 signal_processing_profile=inputs.profile,
                 physical_records_by_peak=wrong_records,
             )

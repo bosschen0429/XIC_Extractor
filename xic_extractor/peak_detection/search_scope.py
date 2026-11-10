@@ -1,18 +1,19 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
-    canonical_signal_processing_profile_bytes,
 )
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
     TargetListSnapshot,
+)
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CidNlMethodSubject,
+    UntargetedCidNlMethodSubjectBatch,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observations import (
@@ -21,13 +22,9 @@ from xic_extractor.peak_detection.observations import (
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
 )
-from xic_extractor.processing_identity import (
-    ProcessingRequestIdentity,
-)
-from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.sample_metadata import SampleMetadata
 
 SEARCH_SCOPE_SCHEMA_VERSION = "search_scope"
-PHYSICAL_CAPTURE_INPUT_KEY = "physical_capture_inputs"
 SearchScopeVariant = Literal["targeted", "untargeted"]
 CaptureBoundaryPolicy = Literal["resolver_interval", "targeted_gaussian15"]
 CaptureSelectionPolicy = Literal["capture_default", "retained_only"]
@@ -82,8 +79,7 @@ class EvidenceProviderBinding:
 @dataclass(frozen=True, slots=True)
 class TargetSearchScope:
     schema_version: str
-    request: ProcessingRequestIdentity
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    samples: tuple[SampleMetadata, ...]
     method_constraints: CaptureMethodConstraints
     evidence_providers: tuple[EvidenceProviderBinding, ...]
     declared_candidate_ids: tuple[str, ...]
@@ -99,8 +95,8 @@ class TargetSearchScope:
 @dataclass(frozen=True, slots=True)
 class UntargetedSearchScope:
     schema_version: str
-    request: ProcessingRequestIdentity
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    method_subjects: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch
+    samples: tuple[SampleMetadata, ...]
     method_constraints: CaptureMethodConstraints
     evidence_providers: tuple[EvidenceProviderBinding, ...]
     declared_candidate_ids: tuple[str, ...]
@@ -112,30 +108,6 @@ class UntargetedSearchScope:
 
 
 SearchScope: TypeAlias = TargetSearchScope | UntargetedSearchScope
-
-
-def physical_capture_input_payload(
-    profile: SignalProcessingProfile,
-) -> dict[str, object]:
-    """Carry the configured signal profile alongside the actual capture bindings."""
-    return {
-        "schema_version": "physical_capture_inputs",
-        "profile": json.loads(canonical_signal_processing_profile_bytes(profile)),
-    }
-
-
-def request_binds_physical_capture_profile(
-    request: ProcessingRequestIdentity,
-    profile: SignalProcessingProfile,
-) -> bool:
-    """Check the physical profile using the owner's exact parsed request."""
-    payload = _request_inputs(request).get(PHYSICAL_CAPTURE_INPUT_KEY)
-    return (
-        isinstance(payload, dict)
-        and payload.get("schema_version") == "physical_capture_inputs"
-        and payload.get("profile")
-        == json.loads(canonical_signal_processing_profile_bytes(profile))
-    )
 
 
 def require_capture_binding(
@@ -161,21 +133,6 @@ def require_capture_binding(
             f"Untargeted capture cannot authorize candidate {candidate!r}"
         )
     return binding
-
-
-def _request_inputs(request: ProcessingRequestIdentity) -> dict[str, object]:
-    return _parsed_request_inputs(request.normalized_scientific_inputs_json)
-
-
-@lru_cache(maxsize=1)
-def _parsed_request_inputs(normalized_inputs_json: str) -> dict[str, object]:
-    # This payload stays within the owner's read-only validation paths.
-    values = json.loads(normalized_inputs_json)
-    if not isinstance(values, dict):
-        raise SearchScopeContractError(
-            "processing request scientific inputs must be a mapping"
-        )
-    return values
 
 
 def target_ms1_subject_id(target: ResolvedTargetDefinition) -> str:

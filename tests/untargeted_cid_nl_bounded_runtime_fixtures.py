@@ -126,7 +126,6 @@ def _plan(
             tmp_path, paths, candidates
         ),
         dll_dir=tmp_path,
-        sample_identity_namespace="study:bounded-runtime",
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]

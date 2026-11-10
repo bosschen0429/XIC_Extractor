@@ -17,7 +17,6 @@ from typing import (
     Any,
     Generic,
     Protocol,
-    TypeAlias,
     TypeVar,
 )
 
@@ -25,10 +24,6 @@ from xic_extractor.execution.result_store import (
     SealedPartition,
     StreamedResultStore,
 )
-from xic_extractor.processing_identity import ProcessingOwnerReferences
-
-ProcessingOwners: TypeAlias = ProcessingOwnerReferences
-
 
 TPayload = TypeVar("TPayload")
 TAcquisitionResult = TypeVar("TAcquisitionResult")

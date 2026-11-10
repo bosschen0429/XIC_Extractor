@@ -2,12 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from xic_extractor.alignment.backfill.cid_nl_evidence import (
-    cid_nl_allows_physical_localization,
-    cid_nl_backfill_block_reason,
-)
 from xic_extractor.alignment.cell_observation.group_context import (
     CellObservationContractError,
 )
@@ -98,36 +92,3 @@ def resolve_cid_nl_cell_evidence(
     if observation is not None and is_ms1_only_cid_nl_backfill_assessment(assessment):
         return "ms1_only_backfill_observation"
     return "unresolved"
-
-
-@dataclass(frozen=True, slots=True)
-class CidNlCellEvidence:
-    """Bind CID-NL once at record admission, without changing persisted bytes.
-
-    Local interpretation remains lazy: no-input, outside-group and disabled
-    coverage must not pretend that an unexecuted search was evaluated.
-    """
-
-    assessment: CidNlMethodAssessmentRef
-
-    @property
-    def supported_peaks(self) -> frozenset[PeakObservationContent]:
-        return cid_nl_supported_peaks(self.assessment)
-
-    @property
-    def backfill_block_reason(self) -> str | None:
-        return cid_nl_backfill_block_reason(self.assessment)
-
-    @property
-    def allows_physical_localization(self) -> bool:
-        return cid_nl_allows_physical_localization(self.assessment)
-
-    def local_state(
-        self, observation: PeakObservationRef | None, hypothesis: PeakHypothesis | None
-    ) -> FinalCellEvidenceState:
-        return resolve_cid_nl_cell_evidence(self.assessment, observation, hypothesis)
-
-    def recovered_state(
-        self, hypothesis: PeakHypothesis | None
-    ) -> FinalCellEvidenceState:
-        return resolve_cid_nl_recovered_evidence(self.assessment, hypothesis)

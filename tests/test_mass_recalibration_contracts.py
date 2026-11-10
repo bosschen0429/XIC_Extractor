@@ -7,7 +7,6 @@ import pytest
 
 from tests.alignment_pipeline_helpers import physical_facts_fingerprint_beside
 from xic_extractor.configuration.mass_recalibration import MassRecalibration
-from xic_extractor.discovery.settings import discovery_settings_identity_fields
 from xic_extractor.presets import apply_to_discovery, load_preset
 from xic_extractor.presets.serialization import save_preset
 from xic_extractor.processing_run_spec import (
@@ -34,15 +33,12 @@ def test_preset_rollback_roundtrip_and_identity(tmp_path, policy):
         assert "mass_recalibration" not in content
     else:
         assert 'mass_recalibration = "easy_ic_probe"' in content
-    fields = discovery_settings_identity_fields(settings)
     method = json.loads(
         canonical_cid_nl_method_bytes(CidNlDiscoveryMethodSpec(settings))
     )
     if policy is MassRecalibration.NONE:
-        assert "mass_recalibration" not in fields
         assert "mass_recalibration" not in method["settings"]
     else:
-        assert fields["mass_recalibration"] == policy.value
         assert method["settings"]["mass_recalibration"] == policy.value
 
 
@@ -118,25 +114,6 @@ def test_method_spec_roundtrip_and_rejects_explicit_none(tmp_path, policy):
         )
         with pytest.raises(ValueError, match="none is recorded by omission"):
             deserialize_processing_run_spec(json.dumps(content))
-
-
-def test_none_request_payload_preserves_legacy_fields():
-    from tests.alignment_pipeline_helpers import peak_config
-    from xic_extractor.configuration.scientific_settings import (
-        SCIENTIFIC_SETTING_FIELDS,
-        scientific_settings_payload,
-    )
-
-    config = replace(peak_config(), mass_recalibration=MassRecalibration.NONE)
-    assert scientific_settings_payload(config) == {
-        key: getattr(config, key) for key in SCIENTIFIC_SETTING_FIELDS
-    }
-    assert (
-        scientific_settings_payload(
-            replace(config, mass_recalibration=MassRecalibration.EASY_IC_PROBE)
-        )["mass_recalibration"]
-        == MassRecalibration.EASY_IC_PROBE.value
-    )
 
 
 def test_fact_cache_policy_namespace_separates_numeric_facts(tmp_path):
