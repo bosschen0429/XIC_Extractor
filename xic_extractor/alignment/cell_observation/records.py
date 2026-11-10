@@ -28,7 +28,6 @@ from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
-    retry_predecessor_attempt_ids,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
@@ -184,13 +183,12 @@ def mint_cell_observation_ref(
 ) -> CellObservationRef:
     """Attach a completed assessment to an existing group without creating it."""
 
-    allowed_attempts = {
-        processing_owners.attempt.processing_attempt_id,
-        *retry_predecessor_attempt_ids(processing_owners.attempt),
-    }
-    if group_context.processing_attempt.processing_attempt_id not in allowed_attempts:
+    if (
+        group_context.processing_attempt.processing_attempt_id
+        != processing_owners.attempt.processing_attempt_id
+    ):
         raise CellObservationContractError(
-            "group SUPPORT closure is outside the current attempt or retry lineage"
+            "group SUPPORT closure is outside the current attempt"
         )
     group = group_context.group
     method_result = method_assessment.content.method_result

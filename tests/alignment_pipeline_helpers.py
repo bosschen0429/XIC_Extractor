@@ -16,7 +16,6 @@ from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
 )
 from xic_extractor.alignment.production_decisions import (
-    BackfillTier,
     ProductionCellDecision,
     ProductionDecisionSet,
     ProductionRowDecision,
@@ -405,7 +404,6 @@ _OWNER_NO_WRITE_VARIANT = {
     "absent": "searched_no_observation",
     "unchecked": "not_searched",
     "ambiguous_ms1_owner": "unresolved",
-    "duplicate_assigned": "rejected_observation",
 }
 
 
@@ -440,21 +438,10 @@ def finalized_writer_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet
                 if row.destination == "matrix"
                 else "finalized_archive"
             ),
-            identity_confidence="owner_finalized",
-            primary_evidence="completed_untarget_batch",
             identity_reason="test_route",
-            quantifiable_detected_count=sum(
-                item.write_matrix_value and item.raw_status == "detected"
-                for item in decisions
-            ),
-            quantifiable_backfill_count=accepted_backfill,
             accepted_cell_count=numeric_count,
             detected_count=sum(item.status == "detected" for item in row_cells),
             accepted_backfill_count=accepted_backfill,
-            review_backfill_count=0,
-            duplicate_assigned_count=sum(
-                item.status == "duplicate_assigned" for item in row_cells
-            ),
             ambiguous_ms1_owner_count=sum(
                 item.status == "ambiguous_ms1_owner" for item in row_cells
             ),
@@ -475,19 +462,15 @@ def _writer_cell_decision(feature_id: str, item: AlignedCell) -> ProductionCellD
     )
     if write and item.status == "detected":
         production_status: ProductionStatus = "detected"
-        backfill_tier: BackfillTier = ""
     elif write:
         production_status = "accepted_backfill"
-        backfill_tier = "accepted_backfill"
     else:
         production_status = "blank"
-        backfill_tier = ""
     return ProductionCellDecision(
         feature_id=feature_id,
         sample_stem=item.sample_stem,
         raw_status=item.status,
         production_status=production_status,
-        backfill_tier=backfill_tier,
         write_matrix_value=write,
         matrix_value=float(area) if write else None,
         blank_reason="" if write else _OWNER_NO_WRITE_VARIANT[item.status],

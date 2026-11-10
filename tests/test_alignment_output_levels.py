@@ -13,7 +13,6 @@ def test_production_output_level_is_matrix_only():
 def test_machine_output_level_adds_review_and_matrix_tsv():
     assert artifact_names_for_output_level("machine") == (
         "alignment_matrix.tsv",
-        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
     )
 
@@ -21,7 +20,6 @@ def test_machine_output_level_adds_review_and_matrix_tsv():
 def test_debug_output_level_adds_cell_status_and_owner_debug_tsvs():
     assert artifact_names_for_output_level("debug") == (
         "alignment_matrix.tsv",
-        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_cells.tsv",
         "alignment_explanation.sqlite",
@@ -31,7 +29,6 @@ def test_debug_output_level_adds_cell_status_and_owner_debug_tsvs():
 def test_validation_output_level_adds_cells_and_explanation():
     assert artifact_names_for_output_level("validation") == (
         "alignment_matrix.tsv",
-        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_cells.tsv",
         "alignment_explanation.sqlite",
@@ -41,24 +38,10 @@ def test_validation_output_level_adds_cells_and_explanation():
 def test_validation_minimal_output_level_is_machine_gate_surface_only():
     assert artifact_names_for_output_level("validation-minimal") == (
         "alignment_matrix.tsv",
-        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_backfill_cell_evidence.tsv",
         EXPLANATION_ARTIFACT_NAME,
     )
-
-
-@pytest.mark.parametrize(
-    "output_level",
-    ("machine", "debug", "validation", "validation-minimal"),
-)
-def test_all_output_levels_keep_same_provenance_filename_without_alias(
-    output_level,
-):
-    artifacts = artifact_names_for_output_level(output_level)
-
-    assert "alignment_owner_backfill_peak_fact_provenance.tsv" in artifacts
-    assert artifacts.count("alignment_owner_backfill_peak_fact_provenance.tsv") == 1
 
 
 @pytest.mark.parametrize("level", ["production", "machine"])

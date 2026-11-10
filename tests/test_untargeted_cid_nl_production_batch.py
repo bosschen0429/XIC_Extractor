@@ -632,14 +632,12 @@ def test_production_batch_executes_one_atomic_sample_phase(
             owner_backfill_xic_backend="raw",
             output_level="machine",
             peak_config=peak_config,
-            owner_backfill_peak_fact_provenance_row_count=1,
         ),
         production_decisions=writer_inputs.production_decisions,
     )
     assert {path.name for path in writer_dir.iterdir() if path.is_file()} == {
         "alignment_matrix.tsv",
         "alignment_run_metadata.json",
-        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
     }
     _assert_partition_composition_parity(
@@ -1395,11 +1393,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                         if decision.sample_stem == no_write_sample
                         else decision.production_status
                     ),
-                    backfill_tier=(
-                        ""
-                        if decision.sample_stem == no_write_sample
-                        else decision.backfill_tier
-                    ),
                     write_matrix_value=decision.sample_stem != no_write_sample,
                     matrix_value=(
                         None
@@ -1452,7 +1445,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 owner_backfill_xic_backend="raw",
                 output_level="machine",
                 peak_config=peak_config,
-                owner_backfill_peak_fact_provenance_row_count=1,
             ),
             production_decisions=decisions,
         )
@@ -1607,7 +1599,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
             owner_backfill_xic_backend="raw",
             output_level="machine",
             peak_config=peak_config,
-            owner_backfill_peak_fact_provenance_row_count=1,
         ),
         production_decisions=writer_inputs.production_decisions,
     )
@@ -1629,11 +1620,8 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         assert float(cell_rows[stem]["area"]) == pytest.approx(value, rel=5e-6)
     assert matrix_row["NoPeak"] == cell_rows["NoPeak"]["area"] == ""
     assert review_row["detected_count"] == "3"
-    assert review_row["quantifiable_detected_count"] == "3"
-    assert review_row["quantifiable_backfill_count"] == "1"
     assert review_row["accepted_backfill_count"] == "1"
     assert review_row["accepted_cell_count"] == "4"
-    assert review_row["absent_count"] == "1"
     for stem in sample_stems[:3]:
         assert cell_rows[stem]["status"] == "detected"
         assert cell_rows[stem]["source_candidate_id"] == (
@@ -1645,7 +1633,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     assert cell_rows["MS1Only"]["gap_fill_reason"] == "ms1_only_backfill_observation"
     assert cell_rows["NoPeak"]["status"] == "absent"
     assert cell_rows["NoPeak"]["source_candidate_id"] == ""
-    assert cell_rows["NoPeak"]["missing_observation_state"] == "unavailable"
 
     from xic_extractor.alignment_explanation.published_cells import read_published_cells
     from xic_extractor.alignment_explanation.reader import read_explanation_metadata

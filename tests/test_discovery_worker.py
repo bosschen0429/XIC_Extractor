@@ -121,10 +121,6 @@ def test_full_analysis_applies_default_runtime(
     assert captured_alignment["request"].execution.raw_worker_backend == "process"
     assert captured_alignment["request"].publication.output_level == "machine"
     assert captured_alignment["request"].publication.emit_alignment_cells is False
-    assert (
-        captured_alignment["request"].publication.emit_alignment_backfill_seed_audit
-        is False
-    )
     assert captured_alignment["request"].publication.emit_alignment_explanation is True
     assert captured_alignment["request"].publication.explanation_full_audit is False
     assert captured_alignment["request"].publication.explanation_curve_mz_ranges == ()

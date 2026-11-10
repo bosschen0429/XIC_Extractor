@@ -26,20 +26,14 @@ REVIEW_REQUIRED = (
     "feature_id",
     "detected_count",
     "ambiguous_ms1_owner_count",
-    "duplicate_assigned_count",
     "unchecked_count",
     "accepted_cell_count",
     "accepted_backfill_count",
-    "review_backfill_count",
-    "identity_decision",
-    "identity_confidence",
-    "primary_evidence",
     "row_flags",
     "reason",
 )
 MATRIX_REQUIRED = ("Mz", "RT")
 CELL_OPTIONAL_REQUIRED = ("feature_id", "sample_stem", "status")
-SEED_AUDIT_REQUIRED = ("feature_id", "sample_stem", "status")
 
 SUMMARY_COLUMNS = ("metric", "value", "detail")
 SENTINEL_COLUMNS = (
@@ -50,17 +44,11 @@ SENTINEL_COLUMNS = (
     "detected_count",
     "accepted_cell_count",
     "accepted_backfill_count",
-    "review_backfill_count",
     "ambiguous_ms1_owner_count",
-    "duplicate_assigned_count",
     "unchecked_count",
     "row_flags",
-    "identity_decision",
-    "identity_confidence",
-    "primary_evidence",
     "reason",
     "cell_status_counts",
-    "seed_audit_row_count",
     "recommended_action",
 )
 
@@ -128,25 +116,12 @@ def build_alignment_health_packet(
             required_columns=CELL_OPTIONAL_REQUIRED,
             encoding="utf-8-sig",
         )
-    seed_audit_path = alignment_dir / "alignment_owner_backfill_seed_audit.tsv"
-    seed_rows: list[dict[str, str]] = []
-    if seed_audit_path.is_file():
-        _seed_header, seed_rows = read_tsv_with_header(
-            seed_audit_path,
-            required_columns=SEED_AUDIT_REQUIRED,
-            encoding="utf-8-sig",
-        )
 
     cell_status_by_family = _status_counts_by_family(cell_rows)
-    seed_count_by_family = Counter(
-        text_value(row.get("feature_id")) for row in seed_rows
-    )
-    seed_count_by_family.pop("", None)
 
     sentinels = _sentinel_rows(
         review_rows,
         cell_status_by_family=cell_status_by_family,
-        seed_count_by_family=seed_count_by_family,
         limit=sentinel_limit,
     )
     summary_metrics = _summary_metrics(
@@ -155,14 +130,12 @@ def build_alignment_health_packet(
         matrix_header=matrix_header,
         identity_rows=identity_rows,
         cell_rows=cell_rows,
-        seed_rows=seed_rows,
         sentinels=sentinels,
     )
     inputs = _input_descriptors(
         review_path=review_path,
         matrix_path=matrix_path,
         cell_path=cell_path,
-        seed_audit_path=seed_audit_path if seed_audit_path.is_file() else None,
     )
     packet = {
         "schema_version": SCHEMA_VERSION,
@@ -198,47 +171,34 @@ def _summary_metrics(
     matrix_header: Sequence[str],
     identity_rows: Sequence[Mapping[str, str]],
     cell_rows: Sequence[Mapping[str, str]],
-    seed_rows: Sequence[Mapping[str, str]],
     sentinels: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
     sample_columns = [column for column in matrix_header if column not in {"Mz", "RT"}]
     row_flag_counts: Counter[str] = Counter()
-    identity_counts: Counter[str] = Counter()
     for row in review_rows:
-        identity_counts[text_value(row.get("identity_decision")) or "blank"] += 1
         for flag in split_semicolon_labels(row.get("row_flags")):
             row_flag_counts[flag] += 1
     cell_status_counts = Counter(text_value(row.get("status")) for row in cell_rows)
     cell_status_counts.pop("", None)
-    seed_status_counts = Counter(text_value(row.get("status")) for row in seed_rows)
-    seed_status_counts.pop("", None)
     return {
         "review_family_count": len(review_rows),
         "matrix_row_count": len(matrix_rows),
         "matrix_sample_column_count": len(sample_columns),
         "matrix_review_row_count": len(identity_rows),
         "cell_evidence_row_count": len(cell_rows),
-        "seed_audit_row_count": len(seed_rows),
         "detected_count_total": _sum_int(review_rows, "detected_count"),
         "accepted_cell_count_total": _sum_int(review_rows, "accepted_cell_count"),
         "accepted_backfill_count_total": _sum_int(
             review_rows,
             "accepted_backfill_count",
         ),
-        "review_backfill_count_total": _sum_int(review_rows, "review_backfill_count"),
         "ambiguous_ms1_owner_count_total": _sum_int(
             review_rows,
             "ambiguous_ms1_owner_count",
         ),
-        "duplicate_assigned_count_total": _sum_int(
-            review_rows,
-            "duplicate_assigned_count",
-        ),
         "unchecked_count_total": _sum_int(review_rows, "unchecked_count"),
-        "identity_decision_counts": dict(sorted(identity_counts.items())),
         "row_flag_counts": dict(sorted(row_flag_counts.items())),
         "cell_status_counts": dict(sorted(cell_status_counts.items())),
-        "seed_audit_status_counts": dict(sorted(seed_status_counts.items())),
         "sentinel_count": len(sentinels),
     }
 
@@ -247,7 +207,6 @@ def _sentinel_rows(
     review_rows: Sequence[Mapping[str, str]],
     *,
     cell_status_by_family: Mapping[str, Counter[str]],
-    seed_count_by_family: Mapping[str, int],
     limit: int,
 ) -> list[dict[str, object]]:
     candidates = []
@@ -269,23 +228,15 @@ def _sentinel_rows(
                 "accepted_backfill_count": _int_value(
                     row.get("accepted_backfill_count")
                 ),
-                "review_backfill_count": _int_value(row.get("review_backfill_count")),
                 "ambiguous_ms1_owner_count": _int_value(
                     row.get("ambiguous_ms1_owner_count"),
                 ),
-                "duplicate_assigned_count": _int_value(
-                    row.get("duplicate_assigned_count"),
-                ),
                 "unchecked_count": _int_value(row.get("unchecked_count")),
                 "row_flags": text_value(row.get("row_flags")),
-                "identity_decision": text_value(row.get("identity_decision")),
-                "identity_confidence": text_value(row.get("identity_confidence")),
-                "primary_evidence": text_value(row.get("primary_evidence")),
                 "reason": text_value(row.get("reason")),
                 "cell_status_counts": _format_counter(
                     cell_status_by_family.get(family_id, Counter()),
                 ),
-                "seed_audit_row_count": seed_count_by_family.get(family_id, 0),
                 "recommended_action": _recommended_action(issues),
             },
         )
@@ -305,10 +256,6 @@ def _issue_classes(row: Mapping[str, str]) -> tuple[str, ...]:
     issues: list[str] = []
     if _int_value(row.get("ambiguous_ms1_owner_count")) > 0:
         issues.append("owner_ambiguity")
-    if _int_value(row.get("duplicate_assigned_count")) > 0:
-        issues.append("duplicate_claim")
-    if _int_value(row.get("review_backfill_count")) > 0:
-        issues.append("backfill_review_dependency")
     if _int_value(row.get("accepted_backfill_count")) > 0:
         issues.append("accepted_backfill_dependency")
     if _int_value(row.get("unchecked_count")) > 0:
@@ -324,8 +271,6 @@ def _issue_classes(row: Mapping[str, str]) -> tuple[str, ...]:
 def _severity_score(row: Mapping[str, str], issues: Sequence[str]) -> int:
     score = 0
     score += _int_value(row.get("ambiguous_ms1_owner_count")) * 4
-    score += _int_value(row.get("duplicate_assigned_count")) * 5
-    score += _int_value(row.get("review_backfill_count")) * 2
     score += _int_value(row.get("accepted_backfill_count")) * 3
     score += _int_value(row.get("unchecked_count"))
     if "consolidation_loser" in issues:
@@ -337,11 +282,11 @@ def _severity_score(row: Mapping[str, str], issues: Sequence[str]) -> int:
 
 def _recommended_action(issues: Sequence[str]) -> str:
     issue_set = set(issues)
-    if "owner_ambiguity" in issue_set or "duplicate_claim" in issue_set:
+    if "owner_ambiguity" in issue_set:
         return "inspect_owner_assignment"
     if "consolidation_loser" in issue_set:
         return "inspect_primary_consolidation"
-    if issue_set & {"backfill_review_dependency", "accepted_backfill_dependency"}:
+    if "accepted_backfill_dependency" in issue_set:
         return "inspect_backfill_dependency"
     if "unchecked_pressure" in issue_set:
         return "inspect_unchecked_cells"
@@ -381,7 +326,6 @@ def _input_descriptors(
     review_path: Path,
     matrix_path: Path,
     cell_path: Path | None,
-    seed_audit_path: Path | None,
 ) -> dict[str, dict[str, object]]:
     inputs = {
         "alignment_review_tsv": _descriptor(review_path),
@@ -389,10 +333,6 @@ def _input_descriptors(
     }
     if cell_path is not None:
         inputs["alignment_cell_evidence_tsv"] = _descriptor(cell_path)
-    if seed_audit_path is not None:
-        inputs["alignment_owner_backfill_seed_audit_tsv"] = _descriptor(
-            seed_audit_path,
-        )
     return inputs
 
 

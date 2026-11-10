@@ -295,11 +295,11 @@ def test_cid_nl_support_accepts_loss_inside_ion_window(tmp_path: Path) -> None:
     )
 
 
-def test_retry_preserves_support_content(
+def test_new_attempt_preserves_support_content(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
-    retry = issue_processing_attempt(retry_of=fixture.attempt)
+    retry = issue_processing_attempt()
     retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
 
     first_evidence = _evidence(fixture.owners, fixture.sample)
@@ -444,11 +444,11 @@ def test_scan_mutation_invalidates_chromatographic_event_content(
     assert first.content != changed.content
 
 
-def test_retry_preserves_chromatographic_event_content(
+def test_new_attempt_preserves_chromatographic_event_content(
     tmp_path: Path,
 ) -> None:
     fixture = _identity_fixture(tmp_path)
-    retry = issue_processing_attempt(retry_of=fixture.attempt)
+    retry = issue_processing_attempt()
     retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
     first_peak = _peak(fixture.owners, fixture.sample)
     retry_peak = _peak(retry_owners, fixture.sample)

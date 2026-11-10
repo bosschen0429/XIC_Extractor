@@ -12,10 +12,7 @@ from xic_extractor.alignment.backfill.evidence_contract import (
     BackfillEvidenceRecord,
 )
 from xic_extractor.alignment.matrix import CellStatus
-from xic_extractor.alignment.production_decisions import (
-    BackfillTier,
-    ProductionStatus,
-)
+from xic_extractor.alignment.production_decisions import ProductionStatus
 
 _NONNEGATIVE_INTEGER = re.compile(r"0|[1-9][0-9]*")
 
@@ -41,7 +38,6 @@ def backfill_evidence_record_from_projection(
             ProductionStatus,
             _required_text(row, "production_cell_status"),
         ),
-        backfill_tier=cast(BackfillTier, row["backfill_tier"]),
         write_matrix_value=_parse_bool(row, "write_matrix_value", style="upper"),
         include_in_primary_matrix=_parse_bool(
             row,

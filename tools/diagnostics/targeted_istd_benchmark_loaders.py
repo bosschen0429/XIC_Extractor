@@ -279,12 +279,7 @@ def _sample_column_pairs(sample_columns: Sequence[str]) -> tuple[tuple[str, str]
 
 
 def _is_primary_review_row(row: Mapping[str, str]) -> bool:
-    if not _is_trueish(row.get("include_in_primary_matrix")):
-        return False
-    identity_decision = (row.get("identity_decision") or "").strip()
-    if identity_decision and identity_decision != "production_family":
-        return False
-    return True
+    return _is_trueish(row.get("include_in_primary_matrix"))
 
 
 def read_alignment_cells(path: Path) -> dict[tuple[str, str], AlignmentCell]:

@@ -178,7 +178,6 @@ def test_run_alignment_accepts_asls_baseline_integration_method_override(
             review_tsv=review,
             matrix_tsv=matrix,
             cells_tsv=None,
-            backfill_seed_audit_tsv=None,
             status_matrix_tsv=None,
         )
 
@@ -435,14 +434,12 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
         review = output_dir / "alignment_review.tsv"
         matrix = output_dir / "alignment_matrix.tsv"
         cells = output_dir / "alignment_cells.tsv"
-        seed_audit = output_dir / "alignment_owner_backfill_seed_audit.tsv"
-        for path in (review, matrix, cells, seed_audit):
+        for path in (review, matrix, cells):
             path.write_text("x\n", encoding="utf-8")
         return AlignmentRunOutputs(
             review_tsv=review,
             matrix_tsv=matrix,
             cells_tsv=cells,
-            backfill_seed_audit_tsv=seed_audit,
         )
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
@@ -465,10 +462,6 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
     )
 
     assert code == 0
-    assert (
-        captured_alignment["request"].publication.emit_alignment_backfill_seed_audit
-        is False
-    )
     assert captured_alignment["request"].publication.emit_alignment_cells is False
     assert len(bound_recipes) == 1
     assert (
@@ -584,9 +577,6 @@ backfill_expansion_productization = "clean-target-selective"
             "backfill_cell_evidence_tsv": (
                 output_dir / "alignment_backfill_cell_evidence.tsv"
             ),
-            "backfill_seed_audit_tsv": (
-                output_dir / "alignment_owner_backfill_seed_audit.tsv"
-            ),
         }
         for path in paths.values():
             path.write_text("x\n", encoding="utf-8")
@@ -663,14 +653,12 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
         review = output_dir / "alignment_review.tsv"
         matrix = output_dir / "alignment_matrix.tsv"
         light_cells = output_dir / "alignment_backfill_cell_evidence.tsv"
-        seed_audit = output_dir / "alignment_owner_backfill_seed_audit.tsv"
-        for path in (review, matrix, light_cells, seed_audit):
+        for path in (review, matrix, light_cells):
             path.write_text("x\n", encoding="utf-8")
         return AlignmentRunOutputs(
             review_tsv=review,
             matrix_tsv=matrix,
             backfill_cell_evidence_tsv=light_cells,
-            backfill_seed_audit_tsv=seed_audit,
         )
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
@@ -693,10 +681,6 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
     )
 
     assert code == 0
-    assert (
-        captured_alignment["request"].publication.emit_alignment_backfill_seed_audit
-        is False
-    )
     assert captured_alignment["request"].publication.emit_alignment_cells is False
 
 
@@ -1779,7 +1763,6 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
             review_tsv=None,
             matrix_tsv=None,
             cells_tsv=None,
-            backfill_seed_audit_tsv=None,
             status_matrix_tsv=None,
         )
 

@@ -21,7 +21,6 @@ CellStatus = Literal[
     "absent",
     "unchecked",
     "ambiguous_ms1_owner",
-    "duplicate_assigned",
 ]
 
 
@@ -41,19 +40,12 @@ class AlignedCell:
     source_candidate_id: str | None
     reason: str
     selected_integration: IntegrationResult | None = None
-    backfill_seed_mz: float | None = None
-    backfill_seed_rt: float | None = None
     backfill_request_rt_min: float | None = None
     backfill_request_rt_max: float | None = None
-    backfill_request_ppm: float | None = None
     group_hypothesis_id: str = ""
     feature_id: str = ""
-    group_construction_role: str = ""
-    group_delivery_role: str = ""
-    group_membership_source: str = ""
     gap_fill_state: str = ""
     gap_fill_reason: str = ""
-    missing_observation_state: str = ""
 
     @property
     def matrix_area(self) -> float | None:

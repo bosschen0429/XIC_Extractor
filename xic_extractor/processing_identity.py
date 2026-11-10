@@ -302,45 +302,14 @@ class ProcessingRequestIdentity:
 
 @dataclass(frozen=True, slots=True)
 class ProcessingAttemptIdentity:
-    """One execution of a request; a retry links its predecessor attempt."""
+    """One execution of a request."""
 
     processing_attempt_id: str
-    retry_of: ProcessingAttemptIdentity | None = None
 
     def __post_init__(self) -> None:
-        attempt_id = require_attempt_uuid(
+        require_attempt_uuid(
             self.processing_attempt_id, error_factory=IdentityContractError
         )
-        retry_of = self.retry_of
-        if retry_of is not None:
-            if not isinstance(retry_of, ProcessingAttemptIdentity):
-                raise IdentityContractError(
-                    "retry_of must be a ProcessingAttemptIdentity"
-                )
-            if retry_of.processing_attempt_id == attempt_id:
-                raise IdentityContractError("an attempt cannot retry itself")
-
-
-def retry_predecessor_attempt_ids(
-    attempt: ProcessingAttemptIdentity,
-) -> tuple[str, ...]:
-    """Return the complete owner-validated retry predecessor chain."""
-
-    if not isinstance(attempt, ProcessingAttemptIdentity):
-        raise IdentityContractError(
-            "attempt must be an owner-issued ProcessingAttemptIdentity"
-        )
-    predecessor_ids: list[str] = []
-    seen = {attempt.processing_attempt_id}
-    predecessor = attempt.retry_of
-    while predecessor is not None:
-        predecessor_id = predecessor.processing_attempt_id
-        if predecessor_id in seen:
-            raise IdentityContractError("retry predecessor chain must be acyclic")
-        seen.add(predecessor_id)
-        predecessor_ids.append(predecessor.processing_attempt_id)
-        predecessor = predecessor.retry_of
-    return tuple(predecessor_ids)
 
 
 @dataclass(frozen=True, slots=True)
@@ -706,18 +675,10 @@ def build_processing_request_identity(
     )
 
 
-def issue_processing_attempt(
-    *,
-    retry_of: ProcessingAttemptIdentity | None = None,
-) -> ProcessingAttemptIdentity:
-    """Issue a fresh attempt token, optionally linked to the attempt it retries."""
+def issue_processing_attempt() -> ProcessingAttemptIdentity:
+    """Issue a fresh attempt token."""
 
-    if retry_of is not None and not isinstance(retry_of, ProcessingAttemptIdentity):
-        raise IdentityContractError("retry_of must be a ProcessingAttemptIdentity")
-    return ProcessingAttemptIdentity(
-        processing_attempt_id=str(uuid.uuid4()),
-        retry_of=retry_of,
-    )
+    return ProcessingAttemptIdentity(processing_attempt_id=str(uuid.uuid4()))
 
 
 def compose_processing_owner_references(
@@ -777,6 +738,5 @@ __all__ = [
     "compose_processing_owner_references",
     "fingerprint_file_content",
     "issue_processing_attempt",
-    "retry_predecessor_attempt_ids",
     "resolve_request_acquisition_source",
 ]

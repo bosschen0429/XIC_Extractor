@@ -196,12 +196,12 @@ of `alignment_review.tsv`. Its `matrix_mz` and `matrix_rt` retain machine
 precision; `family_center_mz` remains available for groups outside Matrix.
 Consumers never reconstruct machine coordinates from rounded Matrix display.
 
-Each Matrix-backed Review row contains `matrix_row_binding_sha256`, covering
-the complete Matrix header, its row values and the explicit Review Matrix
-projection fields. Missing, duplicated, cross-bound or substituted rows are
-rejected even when displayed coordinates coincide. Review row order is free:
-its explicit indices must cover exactly 1..N. This is an integrity and
-association check, not scientific authenticity or activation authority.
+Review row order is free: the explicit `matrix_row_index` values must cover
+exactly 1..N, and each indexed row's `matrix_mz` (at display precision) and
+`matrix_rt` must match its Matrix row's `Mz` and `RT`. Missing or duplicated
+rows are rejected. Sample values are not cross-checked, so two rows with the
+same displayed coordinates can be swapped undetected. This is an association
+check, not scientific authenticity or activation authority.
 The old identity sidecar is not emitted or accepted by these readers.
 
 ---
@@ -227,13 +227,9 @@ report tables. It does not assert group identity across different input sets.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| has_anchor | bool | Has anchor evidence |
-| physical_peak_count | int | Number of physical peaks in the finalized group |
 | physical_peak_keys | string | Semicolon-separated physical peak keys; not event cluster IDs |
 | detected_count | int | Detected sample count |
-| absent_count | int | Absent sample count |
 | unchecked_count | int | Unchecked sample count |
-| duplicate_assigned_count | int | Duplicate assignment count |
 | ambiguous_ms1_owner_count | int | Ambiguous ownership count |
 | present_rate | float | Detection rate (0.0–1.0) |
 
@@ -241,24 +237,15 @@ report tables. It does not assert group identity across different input sets.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| row_identity_decision | string | Identity status |
-| row_identity_confidence | string | Confidence level |
-| row_identity_reason | string | Reason text |
 | row_flags | string | Semicolon-separated flags |
-| identity_decision | string | Identity decision |
-| identity_confidence | string | Decision confidence |
-| primary_evidence | string | Main evidence type |
 | identity_reason | string | Detailed reason |
 
 #### Quantification
 
 | Column | Type | Description |
 | --- | --- | --- |
-| quantifiable_detected_count | int | Detected and quantifiable |
-| quantifiable_backfill_count | int | Rescued and quantifiable |
 | accepted_cell_count | int | Accepted cells |
 | accepted_backfill_count | int | Accepted rescues |
-| review_backfill_count | int | Review-tier rescues |
 | include_in_primary_matrix | bool | Included in output matrix |
 
 #### Adduct Annotation
@@ -270,15 +257,12 @@ report tables. It does not assert group identity across different input sets.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| representative_samples | string | Up to 5 sample names with detection |
-| family_evidence | string | Evidence status recorded by the finalized owner |
 | warning | string | Warning flag (`no_anchor`, `high_unchecked`, `high_backfill_dependency`) |
 | reason | string | Comprehensive description |
 
 `high_backfill_dependency` marks rows with Backfill cells but no direct
-detection. Review uses the recorded cell decisions, not the wording of
-`family_evidence`, to determine this warning. Physical peak counts do not
-indicate how many event clusters were merged.
+detection. Review uses the recorded cell decisions to determine this warning.
+`physical_peak_keys` does not indicate how many event clusters were merged.
 
 ## Explanation format and reruns
 
@@ -299,4 +283,4 @@ within the generated output and must be regenerated together.
 Inspector and Workbench require the current explanation format. Older
 explanations are rejected with a message to rerun Alignment; no conversion
 or compatibility reader is provided. This does not change the Matrix row ID
-format or its row-binding column.
+format.

@@ -33,7 +33,6 @@ def alignment_output(folder: Path, *, raw_dir: Path | None = None) -> Path:
                 mz=str(100 + index),
                 rt="2.5",
                 feature_id=f"F{index:06d}",
-                sample_values=sample_values,
             )
         )
     write_tsv(folder / "alignment_matrix.tsv", matrix, ("Mz", "RT", *SAMPLES))

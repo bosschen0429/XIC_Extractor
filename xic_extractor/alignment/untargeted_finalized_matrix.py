@@ -17,7 +17,6 @@ from xic_extractor.alignment.matrix import (
 )
 from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
 from xic_extractor.alignment.production_decisions import (
-    BackfillTier,
     ProductionCellDecision,
     ProductionDecisionSet,
     ProductionRowDecision,
@@ -63,21 +62,13 @@ class FinalizedUntargetMatrixRow:
     neutral_loss_tag: str = ""
     has_anchor: bool = False
     members: tuple[object, ...] = ()
-    group_construction_role: str = "finalized_untargeted_cid_nl"
-    group_delivery_role: str = "finalized_owner_projection"
-    group_membership_source: str = "completed_untarget_batch"
     row_identity_basis: str = "no_split_peak_hypothesis"
     split_evaluation_status: str = "complete_no_product_ready_split"
     projection_status: str = "not_projection"
     center_mz_basis: str = PRESENTATION_FORMULA_VERSION
     center_rt_basis: str = PRESENTATION_FORMULA_VERSION
     center_weight_basis: str = "unique_owner_observations_equal_weight"
-    evidence_status: str = "finalized_untargeted_owner_complete"
     membership_risks: tuple[tuple[str, AcceptedMembershipRisk], ...] = ()
-
-    @property
-    def evidence(self) -> str:
-        return self.evidence_status
 
 
 @dataclass(frozen=True, slots=True)
@@ -430,16 +421,10 @@ def _aligned_cell(
         source_candidate_id=source_id,
         reason=owner_decision.source or owner_decision.variant,
         selected_integration=integration,
-        backfill_seed_mz=None,
-        backfill_seed_rt=None,
         backfill_request_rt_min=request_rt[0],
         backfill_request_rt_max=request_rt[1],
-        backfill_request_ppm=None,
         group_hypothesis_id=row.group_hypothesis_id,
         feature_id=row.feature_id,
-        group_construction_role=row.group_construction_role,
-        group_delivery_role=row.group_delivery_role,
-        group_membership_source=row.group_membership_source,
         gap_fill_state=("accepted" if status == "backfilled" else "not_applicable"),
         gap_fill_reason=(
             ""
@@ -447,9 +432,6 @@ def _aligned_cell(
             else "ms1_only_backfill_observation"
             if evidence.ms1_only_backfill_observations
             else owner_decision.source
-        ),
-        missing_observation_state=(
-            owner_decision.variant if owner_decision.value is None else ""
         ),
     )
 
@@ -568,19 +550,15 @@ def _writer_cell_decision(
     write = owner_decision.value is not None
     if write and cell.status == "detected":
         production_status: ProductionStatus = "detected"
-        backfill_tier: BackfillTier = ""
     elif write:
         production_status = "accepted_backfill"
-        backfill_tier = "accepted_backfill"
     else:
         production_status = "blank"
-        backfill_tier = ""
     return ProductionCellDecision(
         feature_id=row_id,
         sample_stem=cell.sample_stem,
         raw_status=cell.status,
         production_status=production_status,
-        backfill_tier=backfill_tier,
         write_matrix_value=write,
         matrix_value=owner_decision.value,
         blank_reason="" if write else owner_decision.variant,
@@ -608,21 +586,10 @@ def _writer_row_decision(
         identity_decision=(
             "finalized_matrix" if row.destination == "matrix" else "finalized_archive"
         ),
-        identity_confidence="owner_finalized",
-        primary_evidence="completed_untarget_batch",
         identity_reason=route_reason,
-        quantifiable_detected_count=sum(
-            item.write_matrix_value and cell.status == "detected"
-            for cell, item in zip(cells, decisions, strict=True)
-        ),
-        quantifiable_backfill_count=accepted_backfill_count,
         accepted_cell_count=numeric_count,
         detected_count=detected_count,
         accepted_backfill_count=accepted_backfill_count,
-        review_backfill_count=0,
-        duplicate_assigned_count=sum(
-            cell.status == "duplicate_assigned" for cell in cells
-        ),
         ambiguous_ms1_owner_count=sum(
             cell.status == "ambiguous_ms1_owner" for cell in cells
         ),

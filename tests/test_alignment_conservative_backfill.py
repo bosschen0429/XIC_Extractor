@@ -25,10 +25,6 @@ from xic_extractor.alignment.backfill.conservative import (
     mint_conservative_backfill_candidate_universe,
     plan_conservative_backfill_targets,
 )
-from xic_extractor.alignment.cell_observation.observations import (
-    CellObservationContractError,
-    mint_cell_observation_ref,
-)
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     CidNlReferenceSpine,
     build_cid_nl_reference_spine,
@@ -720,52 +716,6 @@ def test_rt_mismatch_remains_nonnumeric_without_drift_or_split_logic(
     assert decision.disposition == "hold"
     assert decision.matched_candidate is None
     assert decision.reason_codes == ("like_to_like_rt_mz_mismatch",)
-
-
-def test_group_support_closure_accepts_predecessor_but_rejects_sibling_attempt(
-    tmp_path: Path,
-) -> None:
-    fixture = _study_fixture(tmp_path, ("s1", "s2", "missing"))
-    predecessor_spine = _spine(
-        fixture,
-        support_apex_by_sample={"s1": 8.0, "s2": 8.0},
-        invocation="predecessor-group",
-    )
-    retry = fixture.retry()
-    retry_assessment = _assessment(
-        retry,
-        "missing",
-        support_apex=None,
-        scan_number=900,
-        invocation="retry-cell",
-    )
-
-    inherited = mint_cell_observation_ref(
-        processing_owners=retry.owners,
-        sample=retry.sample("missing"),
-        target=retry.target,
-        group_context=predecessor_spine.cells[0].group_context,
-        method_assessment=retry_assessment,
-    )
-    assert inherited.method_assessment is retry_assessment
-
-    sibling = fixture.retry()
-    sibling_spine = _spine(
-        sibling,
-        support_apex_by_sample={"s1": 8.0, "s2": 8.0},
-        invocation="sibling-group",
-    )
-    with pytest.raises(
-        CellObservationContractError,
-        match="current attempt or retry lineage",
-    ):
-        mint_cell_observation_ref(
-            processing_owners=retry.owners,
-            sample=retry.sample("missing"),
-            target=retry.target,
-            group_context=sibling_spine.cells[0].group_context,
-            method_assessment=retry_assessment,
-        )
 
 
 def _study_fixture(

@@ -97,8 +97,8 @@ Multi-tag CID-NL presets combine tags by `union` (OR) or `intersection` (AND):
 - Different tag hits across samples can share a row when the physical peak
   compatibility gates pass. Labels alone never establish identity.
 
-A built-in Alignment preset emits the seed audit and
-`alignment_backfill_cell_evidence.tsv` where the runner contract requires them.
+A built-in Alignment preset emits `alignment_backfill_cell_evidence.tsv` where
+the runner contract requires it.
 Non-standard peaks and candidate-only evidence stay outside automatic
 publication.
 

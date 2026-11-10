@@ -12,10 +12,7 @@ from xic_extractor.alignment.evidence_claims import (
     EvidenceQueryResult,
 )
 from xic_extractor.alignment.matrix import CellStatus
-from xic_extractor.alignment.production_decisions import (
-    BackfillTier,
-    ProductionStatus,
-)
+from xic_extractor.alignment.production_decisions import ProductionStatus
 
 ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION = (
     "alignment_backfill_cell_query_evidence"
@@ -26,7 +23,6 @@ ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS = (
     "sample_stem",
     "status",
     "production_cell_status",
-    "backfill_tier",
     "write_matrix_value",
     "include_in_primary_matrix",
     "identity_decision",
@@ -60,15 +56,9 @@ _CELL_STATUSES = frozenset(
         "absent",
         "unchecked",
         "ambiguous_ms1_owner",
-        "duplicate_assigned",
     }
 )
-_PRODUCTION_STATUSES = frozenset(
-    {"detected", "accepted_backfill", "review_backfill", "rejected_backfill", "blank"}
-)
-_BACKFILL_TIERS = frozenset(
-    {"", "accepted_backfill", "review_backfill", "rejected_backfill"}
-)
+_PRODUCTION_STATUSES = frozenset({"detected", "accepted_backfill", "blank"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +77,6 @@ class BackfillEvidenceRecord:
     sample_stem: str
     status: CellStatus
     production_cell_status: ProductionStatus
-    backfill_tier: BackfillTier
     write_matrix_value: bool
     include_in_primary_matrix: bool
     identity_decision: str
@@ -131,18 +120,6 @@ class BackfillEvidenceRecord:
         if self.production_cell_status not in _PRODUCTION_STATUSES:
             raise ValueError(
                 f"unsupported production_cell_status {self.production_cell_status!r}"
-            )
-        if self.backfill_tier not in _BACKFILL_TIERS:
-            raise ValueError(f"unsupported backfill_tier {self.backfill_tier!r}")
-        expected_tier = (
-            self.production_cell_status
-            if self.production_cell_status
-            in {"accepted_backfill", "review_backfill", "rejected_backfill"}
-            else ""
-        )
-        if self.backfill_tier != expected_tier:
-            raise ValueError(
-                "backfill_tier must match the production_cell_status rescue tier"
             )
         expected_write = self.production_cell_status in {
             "detected",

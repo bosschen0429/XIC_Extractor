@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -11,8 +9,6 @@ from dataclasses import dataclass
 from xic_extractor.output.alignment.output_rows import format_value
 from xic_extractor.tabular_io import escape_excel_formula
 
-MATRIX_ROW_BINDING_COLUMN = "matrix_row_binding_sha256"
-_MATRIX_ROW_BINDING_SCHEMA_VERSION = "alignment_matrix_row_binding"
 MATRIX_REVIEW_COLUMNS = (
     "feature_id",
     "matrix_row_index",
@@ -20,7 +16,6 @@ MATRIX_REVIEW_COLUMNS = (
     "matrix_rt",
     "center_mz_basis",
     "accepted_cell_count",
-    MATRIX_ROW_BINDING_COLUMN,
 )
 
 
@@ -104,21 +99,16 @@ def serialize_public_matrix_table(
 
 def bind_matrix_review_row(
     *,
-    matrix_header: Sequence[str],
-    matrix_row: Mapping[str, object],
     source_review: Mapping[str, object],
     index: int,
 ) -> dict[str, str]:
-    """Bind the required Review facts to one complete persisted Matrix row."""
+    """Render the Review facts that locate one persisted Matrix row."""
     review = {
         column: format_value(source_review.get(column, ""))
         for column in MATRIX_REVIEW_COLUMNS
     }
     review["matrix_row_index"] = str(index)
     review["matrix_mz"] = canonical_mz_text(source_review.get("matrix_mz", ""))
-    review[MATRIX_ROW_BINDING_COLUMN] = matrix_row_binding_sha256(
-        matrix_header=matrix_header, matrix_row=matrix_row, review_row=review
-    )
     return review
 
 
@@ -150,10 +140,7 @@ def matrix_review_rows(
         features.add(feature)
         position = str(row["matrix_row_index"]).strip()
         if not position:
-            if any(
-                str(row[column]).strip()
-                for column in ("matrix_mz", "matrix_rt", MATRIX_ROW_BINDING_COLUMN)
-            ):
+            if any(str(row[column]).strip() for column in ("matrix_mz", "matrix_rt")):
                 raise ValueError(
                     "archive Review row cannot contain Matrix projection values"
                 )
@@ -176,42 +163,7 @@ def matrix_review_rows(
             raise ValueError("Review matrix_mz binding mismatch")
         if not _exact_finite_numeric_equal(matrix["RT"], review["matrix_rt"]):
             raise ValueError("Review matrix_rt binding mismatch")
-        expected = matrix_row_binding_sha256(
-            matrix_header=matrix_header, matrix_row=matrix, review_row=review
-        )
-        if str(review[MATRIX_ROW_BINDING_COLUMN]) != expected:
-            raise ValueError("Review row binding mismatch")
     return ordered
-
-
-def matrix_row_binding_sha256(
-    *,
-    matrix_header: Sequence[str],
-    matrix_row: Mapping[str, object],
-    review_row: Mapping[str, object],
-) -> str:
-    """Bind the full Matrix header/value row and its explicit Review projection."""
-    if tuple(matrix_header[:2]) != ("Mz", "RT") or len(set(matrix_header)) != len(
-        matrix_header
-    ):
-        raise ValueError("alignment Matrix requires unique Mz/RT/sample columns")
-    _validate_serialized_row_shape(matrix_row, matrix_header, label="Matrix")
-    columns = tuple(
-        column
-        for column in MATRIX_REVIEW_COLUMNS
-        if column != MATRIX_ROW_BINDING_COLUMN
-    )
-    basis = {
-        "schema_version": _MATRIX_ROW_BINDING_SCHEMA_VERSION,
-        "matrix_header": list(matrix_header),
-        "matrix_row": [str(matrix_row[column]) for column in matrix_header],
-        "review_columns": columns,
-        "review_row": [str(review_row[column]) for column in columns],
-    }
-    payload = json.dumps(
-        basis, ensure_ascii=True, separators=(",", ":"), sort_keys=True
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
 
 
 def _validate_serialized_row_shape(
