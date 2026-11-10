@@ -551,7 +551,7 @@ def test_related_set_links_preserve_union_of_repeated_records(tmp_path):
     assert details == [details[0]] * 3
 
 
-def test_report_rejects_candidate_links_without_a_candidate(tmp_path):
+def test_report_rejects_terminal_without_a_candidate(tmp_path):
     report = tmp_path / "missing-candidate.sqlite"
     with pytest.raises(KeyError, match="missing"):
         with ExplanationReportWriter(report) as writer:
