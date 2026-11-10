@@ -206,8 +206,12 @@ def write_alignment_tsvs(
                 evidence = tuple(
                     cast(FinalGroupCellObservation, cell.evidence) for cell in cells
                 )
-                center_mz, center_rt, center_mz_basis, peaks = _reported_center(
-                    evidence, candidate_by_physical_id, ms1_apex_mz_by_candidate
+                peaks = _member_direct_peaks(evidence)
+                center_mz, center_rt, center_mz_basis = _reported_center(
+                    peaks,
+                    _apex_readings(
+                        peaks, candidate_by_physical_id, ms1_apex_mz_by_candidate
+                    ),
                 )
                 duplicate_peaks = seen_physical_peaks.intersection(peaks)
                 if duplicate_peaks:
@@ -400,22 +404,12 @@ def _cells_in_sample_order(
     return tuple(by_stem[sample_stem] for sample_stem in sample_order)
 
 
-def _reported_center(
+def _member_direct_peaks(
     observations: tuple[FinalGroupCellObservation, ...],
-    candidate_by_physical_id: Mapping[PeakObservationContent, str],
-    ms1_apex_mz_by_candidate: Mapping[str, float] | None,
-) -> tuple[float, float, str, tuple[PeakObservationContent, ...]]:
-    """The written m/z and RT of one group, its m/z basis and its member peaks.
+) -> tuple[PeakObservationContent, ...]:
+    """The group's member peaks read as direct observations, in measured order."""
 
-    RT is the mean apex of the group's direct member peaks. The m/z is their
-    mean measured m/z unless any of them has a Discovery MS1 apex reading; then
-    it is the mean of those readings, because the precursor m/z inferred from
-    product + loss has only MS2 accuracy (``docs/product/quant-matrix.md``).
-    This is the reported centre only: the group's own centre, which its
-    Backfill searches used, stays on the group.
-    """
-
-    facts: dict[PeakObservationContent, tuple[float, float]] = {}
+    peaks: set[PeakObservationContent] = set()
     for observation in observations:
         member_peaks = {
             peak
@@ -427,42 +421,65 @@ def _reported_center(
             peak = direct.content.physical_identity
             if peak not in member_peaks:
                 continue
-            if peak in facts:
+            if peak in peaks:
                 raise ValueError(
                     "Matrix presentation facts contain duplicate physical identity"
                 )
-            mz, rt = direct.content.mz, direct.content.integration.rt_apex_min
-            if not math.isfinite(mz) or not math.isfinite(rt):
-                raise ValueError(
-                    "Matrix row lacks finite owner-backed Mz/RT observations"
-                )
-            facts[peak] = (float(mz), float(rt))
-    if not facts:
+            peaks.add(peak)
+    if not peaks:
         raise ValueError("Matrix row lacks owner-backed Mz/RT observations")
-    ordered = tuple(sorted(facts.items(), key=lambda item: item[0].measured_order_key))
-    peaks = tuple(peak for peak, _values in ordered)
-    mz_values = tuple(values[0] for _peak, values in ordered)
-    rt_values = tuple(values[1] for _peak, values in ordered)
-    center_mz = sum(mz_values) / len(mz_values)
+    return tuple(sorted(peaks, key=lambda peak: peak.measured_order_key))
+
+
+def _apex_readings(
+    peaks: tuple[PeakObservationContent, ...],
+    candidate_by_physical_id: Mapping[PeakObservationContent, str],
+    ms1_apex_mz_by_candidate: Mapping[str, float] | None,
+) -> dict[PeakObservationContent, float]:
+    """Discovery's apex MS1 reading of each peak that has one."""
+
+    readings = {}
+    for peak in peaks if ms1_apex_mz_by_candidate else ():
+        candidate_id = candidate_by_physical_id.get(peak)
+        reading = (
+            None
+            if candidate_id is None
+            else cast(Mapping[str, float], ms1_apex_mz_by_candidate).get(candidate_id)
+        )
+        if reading is not None and math.isfinite(reading):
+            readings[peak] = float(reading)
+    return readings
+
+
+def _reported_center(
+    peaks: tuple[PeakObservationContent, ...],
+    apex_mz_by_peak: Mapping[PeakObservationContent, float],
+) -> tuple[float, float, str]:
+    """The written m/z and RT of a group's member peaks, and the m/z basis.
+
+    RT is the mean apex of the peaks. The m/z is their mean measured m/z unless
+    any of them has a Discovery MS1 apex reading; then it is the mean of those
+    readings, because the precursor m/z inferred from product + loss has only
+    MS2 accuracy (``docs/product/quant-matrix.md``). It reads only the peaks and
+    their readings. This is the reported centre only: the group's own centre,
+    which its Backfill searches used, stays on the group.
+    """
+
+    for peak in peaks:
+        if not math.isfinite(peak.mz) or not math.isfinite(
+            peak.integration.rt_apex_min
+        ):
+            raise ValueError("Matrix row lacks finite owner-backed Mz/RT observations")
+    center_mz = sum(float(peak.mz) for peak in peaks) / len(peaks)
     center_mz_basis = PRESENTATION_FORMULA_VERSION
-    readings = []
-    if ms1_apex_mz_by_candidate:
-        for peak in peaks:
-            candidate_id = candidate_by_physical_id.get(peak)
-            reading = (
-                None
-                if candidate_id is None
-                else ms1_apex_mz_by_candidate.get(candidate_id)
-            )
-            if reading is not None and math.isfinite(reading):
-                readings.append(float(reading))
+    readings = [apex_mz_by_peak[peak] for peak in peaks if peak in apex_mz_by_peak]
     if readings:
         center_mz = sum(readings) / len(readings)
         center_mz_basis = APEX_READING_CENTER_MZ_BASIS
-    center_rt = sum(rt_values) / len(rt_values)
+    center_rt = sum(float(peak.integration.rt_apex_min) for peak in peaks) / len(peaks)
     if not math.isfinite(center_mz) or not math.isfinite(center_rt):
         raise ValueError("writer projection produced non-finite coordinates")
-    return center_mz, center_rt, center_mz_basis, peaks
+    return center_mz, center_rt, center_mz_basis
 
 
 def _cell_context_facts(
