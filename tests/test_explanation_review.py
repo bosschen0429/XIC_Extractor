@@ -1032,15 +1032,16 @@ def test_persisted_membership_fields_reject_wrong_types(tmp_path, field, value):
     import zlib
 
     report, _ = _competition_review_report(tmp_path)
+    # An accepted risk is persisted once, with its group member.
     with sqlite3.connect(report) as db:
-        payload = db.execute(
-            "SELECT risks FROM cells WHERE risks IS NOT NULL"
-        ).fetchone()[0]
-        risks = json.loads(zlib.decompress(payload))
-        risks[0][field] = value
+        member, payload = db.execute(
+            "SELECT id,accepted_risk FROM members WHERE accepted_risk IS NOT NULL"
+        ).fetchone()
+        risk = json.loads(zlib.decompress(payload))
+        risk[field] = value
         db.execute(
-            "UPDATE cells SET risks=? WHERE risks IS NOT NULL",
-            (zlib.compress(json.dumps(risks).encode()),),
+            "UPDATE members SET accepted_risk=? WHERE id=?",
+            (zlib.compress(json.dumps(risk).encode()), member),
         )
     with pytest.raises((ExplanationError, ValueError), match="membership risk"):
         read_explanation_metadata(report)
