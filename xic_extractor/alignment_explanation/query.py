@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from xic_extractor.alignment_explanation.relations import relation
 from xic_extractor.alignment_explanation.review import (
     ATTENTION,
     EXCLUDED,
@@ -27,6 +28,7 @@ from xic_extractor.alignment_explanation.review import (
     ZERO_CELL,
     attention_reason,
     cell_attention,
+    group_attention,
 )
 from xic_extractor.alignment_explanation.storage import (
     decode_json,
@@ -102,8 +104,8 @@ def _review_items(
     candidates: dict[int, tuple[Any, ...]] = {}
     key_of: dict[int, CandidateKey] = {}
     for row in db.execute(
-        "SELECT id,candidate_id,sample,precursor_mz,method_subject,terminal_peak,"
-        "rt_apex_min FROM candidates ORDER BY id"
+        "SELECT id,candidate_id,sample,precursor_mz,method_subject,terminal_peak "
+        "FROM candidates ORDER BY id"
     ):
         candidates[row[0]] = row
         key_of[row[0]] = (row[1], samples[row[2]])
@@ -116,13 +118,18 @@ def _review_items(
     edge_attention: dict[int, int] = defaultdict(int)
     edge_sets: list[tuple[frozenset[int], int, str]] = []
     if "initial_edges" in present_tables(db):
-        for left, right, disposition, evidence, keys in db.execute(
-            "SELECT left_subject_id,right_subject_id,disposition,initial_evidence,"
-            "candidates FROM initial_edges ORDER BY id"
+        edge_members: dict[int, set[int]] = defaultdict(set)
+        for edge, candidate in db.execute(
+            f"SELECT edge,candidate FROM {relation(db, 'edge_candidates')}"
+        ):
+            edge_members[edge].add(candidate)
+        for edge, left, right, disposition, evidence in db.execute(
+            "SELECT id,left_subject_id,right_subject_id,disposition,initial_evidence "
+            "FROM initial_edges ORDER BY id"
         ):
             evidence = decode_json(evidence) or {}
             fact = {"disposition": disposition, "initial_evidence": evidence}
-            edge_rows = frozenset(json.loads(keys))
+            edge_rows = frozenset(edge_members.get(edge, ()))
             reason = attention_reason("initial_edges", fact)
             for candidate in edge_rows:
                 edge_attention[candidate] |= ATTENTION if reason else 0
@@ -177,17 +184,21 @@ def _review_items(
         ]
     ] = []
     grouped: set[int] = set()
+    group_rows: dict[int, list[int]] = defaultdict(list)
+    for group_id, candidate in db.execute(
+        f"SELECT group_id,candidate FROM {relation(db, 'group_candidates')} "
+        "ORDER BY group_id,candidate"
+    ):
+        group_rows[group_id].append(candidate)
     groups = list(
-        db.execute(
-            "SELECT id,feature_id,disposition,candidates FROM groups ORDER BY id"
-        )
+        db.execute("SELECT id,feature_id,disposition FROM groups ORDER BY id")
     )
     # Rows first, then groups without a row, in stored order.
     for with_row in (True, False):
-        for group_id, feature_id, disposition, keys in groups:
+        for group_id, feature_id, disposition in groups:
             if (feature_id is not None) != with_row:
                 continue
-            linked_rows: list[int] = json.loads(keys)
+            linked_rows = group_rows.get(group_id, [])
             grouped.update(linked_rows)
             if with_row:
                 definitions.append(
@@ -214,7 +225,7 @@ def _review_items(
             else [kind, identifier]
         )
         sort_key = json.dumps(ref, ensure_ascii=False, separators=(",", ":")).encode()
-        initial = ATTENTION if disposition in ("provisional", "unresolved") else 0
+        initial = ATTENTION if group_attention(disposition) else 0
         group_members: Mapping[str, set[str]] = (
             members.get(group_id, {}) if group_id is not None else {}
         )
@@ -223,9 +234,9 @@ def _review_items(
         observed = set()
         for row_id in ordered:
             cid, sid = key_of[row_id]
-            _, _, sample, mz, subject, terminal, own_rt = candidates[row_id]
+            _, _, sample, mz, subject, terminal = candidates[row_id]
             member_ids = group_members.get(sid)
-            observation: tuple[str | None, float | None] = (None, own_rt)
+            observation: tuple[str | None, float | None] = (None, None)
             if terminal is not None:
                 key, rt = peaks[terminal]
                 if not member_ids or key in member_ids:

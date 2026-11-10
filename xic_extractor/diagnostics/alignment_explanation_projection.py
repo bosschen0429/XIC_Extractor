@@ -98,7 +98,6 @@ def _emit_curve_payload(
     trace: Any = None,
     evaluation: Any = None,
     provenance: Mapping[str, Any] | None = None,
-    related: Iterable[tuple[str, str]] = (),
 ) -> None:
     """Serialize retained owner values; missing processing remains unavailable."""
     content = ref
@@ -195,7 +194,6 @@ def _emit_curve_payload(
         kind=kind,
         record_id=record_id,
         payload=envelope,
-        candidates=related,
     )
 
 
@@ -270,16 +268,6 @@ def prepare_alignment_explanation(
                 for stem, sample in samples.items()
             ]
         )
-        method_candidates: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(
-            set
-        )
-        member_candidates: dict[str, set[tuple[str, str]]] = defaultdict(set)
-        hypothesis_candidates: dict[tuple[str, str], set[tuple[str, str]]] = (
-            defaultdict(set)
-        )
-        physical_candidates: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(
-            set
-        )
         located_peaks: dict[str, Any] = {}
 
         def locate(content: Any) -> str:
@@ -334,7 +322,6 @@ def prepare_alignment_explanation(
             for candidate in phase_items("candidates", declared):
                 key = candidate.peak_id, sid
                 subject_id = memberships[candidate.peak_id]
-                method_candidates[subject_id, sid].add(key)
                 sink.add_candidate(
                     *key,
                     precursor_mz=precursor_mz_by_candidate[candidate.peak_id],
@@ -354,21 +341,6 @@ def prepare_alignment_explanation(
         ):
             work = record.work_item
             sid = samples[work.sample_stem].sample_name
-            related = {(record.peak_id, sid)}
-            if record.peak_id not in memberships:
-                sink.add_candidate(
-                    record.peak_id,
-                    sid,
-                    precursor_mz=work.precursor_mz,
-                    ms1_apex_mz=measured_mz.get(record.peak_id),
-                    physical_state=record.evaluation.state,
-                    physical_reason=record.evaluation.reason,
-                    rt_apex_min=(
-                        record.evaluation.facts.apex_rt_min
-                        if record.evaluation.facts is not None
-                        else None
-                    ),
-                )
             _emit_curve_payload(
                 sink,
                 None,
@@ -389,7 +361,6 @@ def prepare_alignment_explanation(
                 provenance={
                     "processing_attempt_id": application.processing_attempt_id,
                 },
-                related=related,
             )
 
         capture_evidence = completed.capture_evidence
@@ -398,11 +369,6 @@ def prepare_alignment_explanation(
             capture_evidence if full_audit or curve_mz_ranges else (),
         ):
             sid = evidence.sample_key
-            related = (
-                {(evidence.candidate_id, sid)}
-                if evidence.candidate_id is not None
-                else method_candidates[evidence.method_subject_id, sid]
-            )
             stage = (
                 "backfill_observation"
                 if evidence.capture_stage == "method_backfill"
@@ -421,7 +387,6 @@ def prepare_alignment_explanation(
                     "processing_attempt_id",
                     "method_subject_id",
                 ),
-                related=related,
             )
 
         for subject in phase_items("method_subjects", subjects.subjects):
@@ -447,21 +412,10 @@ def prepare_alignment_explanation(
             # than one completed relation; its content is the record.
             if content in emitted_assessments:
                 return
-            related = method_candidates[
-                content.method_subject.method_subject_id,
-                content.sample_key,
-            ]
             if (
                 content.detector_invocation_id == "untargeted-cid-nl-backfill"
                 and content.method_result == "SUPPORT"
             ):
-                # Backfill has no Discovery terminal. Retain its exact physical
-                # support links so the original candidate can explain the cell.
-                for relation in assessment.individual_support_refs:
-                    physical_candidates[
-                        content.sample_key,
-                        locate(relation.peak_observation),
-                    ].update(related)
                 if not capture_evidence:
                     for peak in assessment.candidate_peaks:
                         _emit_curve_payload(
@@ -469,7 +423,6 @@ def prepare_alignment_explanation(
                             peak,
                             content.sample_key,
                             kind="backfill_observation",
-                            related=related,
                         )
             sink.add_assessment(
                 {
@@ -513,33 +466,9 @@ def prepare_alignment_explanation(
         def emit_group(
             stage: str,
             group: Any,
-            methods: set[str],
             feature_id: str | None = None,
             position: tuple[float, float] | None = None,
         ) -> None:
-            related = set()
-            if stage == "initial_groups":
-                methods = {
-                    memberships[key[0]]
-                    for member in group.member_subjects
-                    for key in hypothesis_candidates[
-                        member.sample_key, member.subject_id
-                    ]
-                }
-            for member in group.member_subjects:
-                sid = member.sample_key
-                keys = (
-                    hypothesis_candidates[sid, member.subject_id]
-                    if member.subject_kind == "peak_hypothesis"
-                    else physical_candidates[sid, member.subject_id]
-                )
-                # Exact physical bindings survive successor hypothesis identities;
-                # provider scope prevents a shared peak crossing method subjects.
-                for peak in member.physical_peaks:
-                    keys = keys | physical_candidates[sid, locate(peak)]
-                keys = {key for key in keys if memberships[key[0]] in methods}
-                member_candidates[member.subject_id].update(keys)
-                related.update(keys)
             members = [
                 {
                     **_fields(member, "sample_key", "subject_kind", "subject_id"),
@@ -555,7 +484,6 @@ def prepare_alignment_explanation(
                     feature_id=feature_id,
                     disposition=group.disposition,
                     members=members,
-                    candidates=related,
                     center_mz=position[0] if position else None,
                     ppm=position[1] if position else None,
                 )
@@ -568,7 +496,6 @@ def prepare_alignment_explanation(
             sink.add_initial_group(
                 disposition=group.disposition,
                 members=members,
-                candidates=related,
                 inference_basis=None
                 if inference_basis is None
                 else asdict(inference_basis),
@@ -598,20 +525,14 @@ def prepare_alignment_explanation(
                     hypothesis_id=hypothesis.hypothesis_id,
                     physical_peak_key=locate(ref),
                 )
-                hypothesis_candidates[key[1], hypothesis.hypothesis_id].add(key)
-                physical_candidates[key[1], locate(ref)].add(key)
                 if not capture_evidence:
                     _emit_curve_payload(
                         sink,
                         ref,
                         sample_id=key[1],
                         kind=ref.capture_stage,
-                        related=(key,),
                     )
 
-            methods = {
-                provider.method_subject_id for provider in core.scope.evidence_providers
-            }
             # Same child and row order as the TSV writer that labels rows.
             feature_ids = {}
             for group, _cells in child.group_cells:
@@ -704,7 +625,6 @@ def prepare_alignment_explanation(
                 emit_group(
                     "final_groups",
                     group,
-                    methods,
                     feature_ids.get(group.group_hypothesis_id),
                     centers.get(group.group_hypothesis_id),
                 )
@@ -758,13 +678,9 @@ def prepare_alignment_explanation(
             if child_count % 256:
                 report_progress("children", child_count, len(application.children))
             for group in phase_items("initial_groups", completed.initial_groups):
-                emit_group("initial_groups", group, set())
+                emit_group("initial_groups", group)
 
             for edge in phase_items("initial_edges", completed.initial_edges):
-                related = (
-                    member_candidates[edge.left_owner.owner_id]
-                    | member_candidates[edge.right_owner.owner_id]
-                )
                 sink.add_initial_edge(
                     {
                         "left_subject_id": edge.left_owner.owner_id,
@@ -773,8 +689,7 @@ def prepare_alignment_explanation(
                         "initial_evidence": asdict(edge.initial_evidence),
                         "initial_context": edge.initial_context,
                         "alignment_config": asdict(edge.config),
-                    },
-                    related,
+                    }
                 )
 
             report_progress("finalizing", sink.record_count, None)

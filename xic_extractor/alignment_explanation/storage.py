@@ -77,9 +77,6 @@ TABLES: dict[str, tuple[str, ...]] = {
         "terminal_variant",
         "hypothesis_id",
         "terminal_peak",
-        "physical_state",
-        "physical_reason",
-        "rt_apex_min",
     ),
     "groups": (
         "id",
@@ -88,14 +85,12 @@ TABLES: dict[str, tuple[str, ...]] = {
         "destination",
         "center_mz",
         "ppm",
-        "candidates",
     ),
     "initial_groups": (
         "id",
         "disposition",
         "inference_basis",
         "inference_decisions",
-        "candidates",
     ),
     "members": (
         "id",
@@ -118,8 +113,11 @@ TABLES: dict[str, tuple[str, ...]] = {
         "support_origin",
         "peaks",
         "position_rt_min",
+        "evidence_states",
+        "reason_codes",
+        "signal_quality",
         "risks",
-        "details",
+        "observation",
     ),
     "method_assessments": (
         "id",
@@ -147,7 +145,6 @@ OPTIONAL_TABLES: dict[str, tuple[str, ...]] = {
         "initial_evidence",
         "initial_context",
         "alignment_config",
-        "candidates",
     ),
     "curves": (
         "payload_id",
@@ -158,7 +155,7 @@ OPTIONAL_TABLES: dict[str, tuple[str, ...]] = {
         "physical_peak_key",
         "codec",
         "payload",
-        "candidates",
+        "method_subject",
     ),
 }
 
@@ -184,17 +181,15 @@ _DDL = {
         "candidate_id TEXT NOT NULL, sample INTEGER NOT NULL, precursor_mz REAL, "
         "ms1_apex_mz REAL, neutral_loss_tag TEXT, peak_status TEXT, "
         "method_subject INTEGER, terminal_variant TEXT, hypothesis_id TEXT, "
-        "terminal_peak INTEGER, physical_state TEXT, physical_reason TEXT, "
-        "rt_apex_min REAL, UNIQUE(candidate_id, sample))"
+        "terminal_peak INTEGER, UNIQUE(candidate_id, sample))"
     ),
     "groups": (
         "CREATE TABLE groups (id INTEGER PRIMARY KEY, feature_id TEXT UNIQUE, "
-        "disposition TEXT, destination TEXT, center_mz REAL, ppm REAL, "
-        "candidates TEXT NOT NULL)"
+        "disposition TEXT, destination TEXT, center_mz REAL, ppm REAL)"
     ),
     "initial_groups": (
         "CREATE TABLE initial_groups (id INTEGER PRIMARY KEY, disposition TEXT, "
-        "inference_basis BLOB, inference_decisions BLOB, candidates TEXT NOT NULL)"
+        "inference_basis BLOB, inference_decisions BLOB)"
     ),
     "members": (
         "CREATE TABLE members (id INTEGER PRIMARY KEY, subject_id TEXT NOT NULL, "
@@ -206,7 +201,9 @@ _DDL = {
         "CREATE TABLE cells (group_id INTEGER NOT NULL, sample INTEGER NOT NULL, "
         "variant TEXT NOT NULL, value REAL, apex_rt_min REAL, source TEXT, "
         "support_origin TEXT NOT NULL, peaks TEXT NOT NULL, position_rt_min REAL, "
-        "risks BLOB, details BLOB NOT NULL, PRIMARY KEY(group_id, sample)) "
+        "evidence_states TEXT NOT NULL, reason_codes TEXT NOT NULL, "
+        "signal_quality TEXT NOT NULL, risks BLOB, observation BLOB, "
+        "PRIMARY KEY(group_id, sample)) "
         "WITHOUT ROWID"
     ),
     "method_assessments": (
@@ -224,14 +221,14 @@ _DDL = {
         "CREATE TABLE initial_edges (id INTEGER PRIMARY KEY, "
         "left_subject_id TEXT NOT NULL, right_subject_id TEXT NOT NULL, "
         "disposition TEXT, initial_evidence TEXT, initial_context TEXT, "
-        "alignment_config TEXT, candidates TEXT NOT NULL, "
+        "alignment_config TEXT, "
         "UNIQUE(left_subject_id, right_subject_id))"
     ),
     "curves": (
         "CREATE TABLE curves (payload_id INTEGER PRIMARY KEY, "
         "sample_id TEXT NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, "
         "candidate_id TEXT, physical_peak_key TEXT, codec TEXT NOT NULL, "
-        "payload BLOB NOT NULL, candidates TEXT NOT NULL)"
+        "payload BLOB NOT NULL, method_subject INTEGER)"
     ),
 }
 _INDEXES = (
@@ -240,6 +237,9 @@ _INDEXES = (
     "CREATE INDEX assessments_subject ON method_assessments(method_subject, sample)",
     "CREATE INDEX members_final ON members(final_group)",
     "CREATE INDEX members_initial ON members(initial_group)",
+    "CREATE INDEX candidates_hypothesis ON candidates(sample, hypothesis_id)",
+    "CREATE INDEX candidates_terminal ON candidates(terminal_peak)",
+    "CREATE INDEX candidates_id ON candidates(candidate_id)",
 )
 
 
@@ -259,12 +259,6 @@ def decode_json(payload: str | bytes | None) -> Any:
     if isinstance(payload, bytes):
         payload = zlib.decompress(payload).decode("utf-8")
     return json.loads(payload)
-
-
-def encode_details(value: Mapping[str, Any]) -> bytes:
-    """Cell details keep the decision owner's field order for display."""
-    text = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
-    return zlib.compress(text.encode("utf-8"), 1)
 
 
 def create_schema(db: sqlite3.Connection) -> None:
@@ -396,22 +390,6 @@ def _derived_counts(connection: sqlite3.Connection, tables: set[str]) -> dict[st
 def selection_mask_width(sample_count: int) -> int:
     """Bytes of one per-sample bit mask in review selection facts."""
     return max(1, (sample_count + 7) // 8)
-
-
-def validate_details(details: Any) -> dict[str, Any]:
-    if (
-        not isinstance(details, dict)
-        or not {
-            "evidence_states",
-            "reason_codes",
-            "signal_quality",
-        }
-        <= details.keys()
-    ):
-        raise ExplanationError(
-            "cell details are missing required fields; rerun Alignment"
-        )
-    return details
 
 
 @contextmanager

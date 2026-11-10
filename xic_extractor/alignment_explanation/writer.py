@@ -21,7 +21,6 @@ from .storage import (
     SCHEMA_VERSION,
     create_optional_table,
     create_schema,
-    encode_details,
     encode_object,
 )
 
@@ -29,7 +28,8 @@ CandidateKey = tuple[str, str]
 # m/z, apex RT and the query ppm of one physical peak; None when not recorded.
 PeakCoordinates = tuple[float | None, float | None, float | None]
 
-_CELL_SCALARS = frozenset(
+# The fields of one cell as the decision owner reports them.
+_CELL_FIELDS = frozenset(
     {
         "feature_id",
         "sample_key",
@@ -39,6 +39,11 @@ _CELL_SCALARS = frozenset(
         "source",
         "support_origin",
         "observation_ids",
+        "evidence_states",
+        "reason_codes",
+        "signal_quality",
+        "membership_risks",
+        "observation",
     }
 )
 
@@ -200,9 +205,6 @@ class ExplanationReportWriter:
         neutral_loss_tag: str | None = None,
         peak_status: str | None = None,
         method_subject_id: str | None = None,
-        physical_state: str | None = None,
-        physical_reason: str | None = None,
-        rt_apex_min: float | None = None,
     ) -> None:
         key = candidate_id, sample_key
         if key in self._candidates:
@@ -219,9 +221,6 @@ class ExplanationReportWriter:
             "terminal_variant": None,
             "hypothesis_id": None,
             "terminal_peak": None,
-            "physical_state": physical_state,
-            "physical_reason": physical_reason,
-            "rt_apex_min": rt_apex_min,
         }
 
     def add_terminal(
@@ -243,11 +242,6 @@ class ExplanationReportWriter:
             candidate["terminal_peak"] = self._peak_ids(
                 sample_key, (physical_peak_key,)
             )[0]
-
-    def _candidate_ids(self, keys: Iterable[CandidateKey]) -> str:
-        return json.dumps(
-            sorted({self._candidates[key]["id"] for key in keys}), separators=(",", ":")
-        )
 
     # Method evidence ----------------------------------------------------
 
@@ -334,7 +328,6 @@ class ExplanationReportWriter:
         feature_id: str | None,
         disposition: str,
         members: Sequence[Mapping[str, Any]],
-        candidates: Iterable[CandidateKey],
         center_mz: float | None = None,
         ppm: float | None = None,
     ) -> None:
@@ -348,7 +341,6 @@ class ExplanationReportWriter:
             None,
             center_mz,
             ppm,
-            self._candidate_ids(candidates),
         ]
         for member in members:
             self._member(member, initial=None, final=group_id)
@@ -361,7 +353,6 @@ class ExplanationReportWriter:
         *,
         disposition: str,
         members: Sequence[Mapping[str, Any]],
-        candidates: Iterable[CandidateKey],
         inference_basis: Mapping[str, Any] | None = None,
         inference_decisions: Sequence[Mapping[str, Any]] | None = None,
     ) -> None:
@@ -387,7 +378,6 @@ class ExplanationReportWriter:
                 disposition,
                 None if inference_basis is None else _compressed(inference_basis),
                 None if inference_decisions is None else _compressed(decisions),
-                self._candidate_ids(candidates),
             ]
         )
 
@@ -403,11 +393,11 @@ class ExplanationReportWriter:
             key = group_id, sample_key
             if key in self._cells:
                 raise ValueError("duplicate review cell for group and sample")
-            details = {k: v for k, v in cell.items() if k not in _CELL_SCALARS}
-            risks = details.pop("membership_risks", ())
-            details.setdefault("evidence_states", [])
-            details.setdefault("reason_codes", [])
-            details["signal_quality"] = [
+            unknown = set(cell) - _CELL_FIELDS
+            if unknown:
+                raise ValueError(f"undeclared cell fields: {sorted(unknown)}")
+            risks = cell.get("membership_risks", ())
+            signal_quality = [
                 {
                     **quality,
                     "observation_id": self._peak_ids(
@@ -424,24 +414,26 @@ class ExplanationReportWriter:
                 cell.get("support_origin", "unavailable"),
                 json.dumps(self._peak_ids(sample_key, cell.get("observation_ids", ()))),
                 None,
+                _ordered_json(list(cell.get("evidence_states", ()))),
+                _ordered_json(list(cell.get("reason_codes", ()))),
+                _ordered_json(signal_quality),
                 _compressed(list(risks)) if risks else None,
-                details,
+                None
+                if cell.get("observation") is None
+                else _compressed(cell["observation"]),
             ]
 
     def set_cell_position(self, group_id: str, sample_key: str, rt_min: float) -> None:
         """The recorded group position used to inspect an empty cell."""
         self._cells[group_id, sample_key][6] = rt_min
 
-    def add_initial_edge(
-        self, payload: Mapping[str, Any], candidates: Iterable[CandidateKey]
-    ) -> None:
+    def add_initial_edge(self, payload: Mapping[str, Any]) -> None:
         key = payload["left_subject_id"], payload["right_subject_id"]
         row = (
             payload.get("disposition"),
             encode_object(payload.get("initial_evidence")),
             encode_object(payload.get("initial_context")),
             encode_object(payload.get("alignment_config")),
-            self._candidate_ids(candidates),
         )
         if self._edges.setdefault(key, row) != row:
             raise ValueError(f"conflicting initial edge: {key}")
@@ -454,18 +446,25 @@ class ExplanationReportWriter:
         kind: str,
         record_id: str,
         payload: Mapping[str, Any],
-        candidates: Iterable[CandidateKey] = (),
         codec: str = "zlib-json-utf8",
     ) -> int:
-        """Store exact curve data once and return its database-local id."""
+        """Store exact curve data once and return its database-local id.
+
+        The provenance method subject is stored as a reference; the payload keeps
+        a null in its place and readers restore it.
+        """
         validate_curve_payload(
             payload, sample_id=sample_id, kind=kind, record_id=record_id
         )
         if codec != "zlib-json-utf8":
             raise ExplanationError(f"unsupported curve codec: {codec}")
+        provenance = payload["provenance"]
+        subject = provenance.get("method_subject_id")
+        self._subject_id(subject)
+        stored = {**payload, "provenance": {**provenance, "method_subject_id": None}}
         compressed = zlib.compress(
             json.dumps(
-                payload,
+                stored,
                 ensure_ascii=False,
                 sort_keys=True,
                 separators=(",", ":"),
@@ -481,9 +480,10 @@ class ExplanationReportWriter:
                 payload.get("candidate_id"),
                 payload.get("physical_peak_key"),
                 codec,
-                set(),
+                subject,
             ]
-        row[4].update(candidates)
+        elif row[4] != subject:
+            raise ValueError(f"one curve names two method subjects: {record_id}")
         return int(row[0])
 
     # Publication --------------------------------------------------------
@@ -505,7 +505,7 @@ class ExplanationReportWriter:
             self._subjects.values(),
         )
         db.executemany(
-            "INSERT INTO candidates VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO candidates VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (
                 (
                     row["id"],
@@ -519,18 +519,13 @@ class ExplanationReportWriter:
                     row["terminal_variant"],
                     row["hypothesis_id"],
                     row["terminal_peak"],
-                    row["physical_state"],
-                    row["physical_reason"],
-                    row["rt_apex_min"],
                 )
                 for (cid, sid), row in self._candidates.items()
             ),
         )
+        db.executemany("INSERT INTO groups VALUES (?,?,?,?,?,?)", self._groups.values())
         db.executemany(
-            "INSERT INTO groups VALUES (?,?,?,?,?,?,?)", self._groups.values()
-        )
-        db.executemany(
-            "INSERT INTO initial_groups VALUES (?,?,?,?,?)", self._initial_groups
+            "INSERT INTO initial_groups VALUES (?,?,?,?)", self._initial_groups
         )
         db.executemany(
             "INSERT INTO members VALUES (?,?,?,?,?,?,?,?,?)",
@@ -550,14 +545,9 @@ class ExplanationReportWriter:
             ),
         )
         db.executemany(
-            "INSERT INTO cells VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO cells VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                (
-                    self._groups[group_id][0],
-                    self._samples[sample],
-                    *row[:8],
-                    encode_details(row[8]),
-                )
+                (self._groups[group_id][0], self._samples[sample], *row)
                 for (group_id, sample), row in self._cells.items()
             ),
         )
@@ -575,7 +565,7 @@ class ExplanationReportWriter:
         if self._edges:
             create_optional_table(db, "initial_edges")
             db.executemany(
-                "INSERT INTO initial_edges VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO initial_edges VALUES (?,?,?,?,?,?,?)",
                 (
                     (index, *key, *row)
                     for index, (key, row) in enumerate(self._edges.items(), start=1)
@@ -595,7 +585,7 @@ class ExplanationReportWriter:
                         row[2],
                         row[3],
                         compressed,
-                        self._candidate_ids(row[4]),
+                        self._subject_id(row[4]),
                     )
                     for (sample_id, kind, record_id, compressed), row in (
                         self._curves.items()

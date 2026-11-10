@@ -22,6 +22,7 @@ from xic_extractor.alignment_explanation.errors import (
     ExplanationError,
 )
 
+from .relations import relation
 from .review import validate_membership_risks
 from .storage import (
     RecordKey,
@@ -30,12 +31,12 @@ from .storage import (
     open_readonly,
     present_tables,
     read_completed_summary,
-    validate_details,
 )
 
 CandidateKey = tuple[str, str]
 Link = tuple[str, str, str, str]
 
+_GROUPS = "SELECT id,feature_id,disposition,destination,center_mz,ppm FROM groups"
 _SCALAR_KINDS = ("rows", "final_groups", "terminal_subjects", "initial_edges")
 
 
@@ -86,8 +87,7 @@ class _Evidence:
             for row in db.execute(
                 "SELECT id,candidate_id,sample,precursor_mz,ms1_apex_mz,"
                 "neutral_loss_tag,peak_status,method_subject,terminal_variant,"
-                "hypothesis_id,terminal_peak,physical_state,physical_reason,"
-                "rt_apex_min FROM candidates ORDER BY id"
+                "hypothesis_id,terminal_peak FROM candidates ORDER BY id"
             )
         }
         self.candidate_ids = {
@@ -100,8 +100,34 @@ class _Evidence:
         row = self.candidate_rows[candidate_row_id]
         return row[1], self.samples[row[2]]
 
-    def keys(self, encoded: str) -> list[CandidateKey]:
-        return [self.key(row_id) for row_id in json.loads(encoded)]
+    def related(self, view: str, column: str, ids: Iterable[Any]) -> dict[Any, list]:
+        """Candidate keys each record relates to, through a relation view."""
+        result: dict[Any, list[CandidateKey]] = defaultdict(list)
+        view = relation(self.db, view)
+        for chunk in _chunks(sorted(set(ids))):
+            for record, candidate in self.db.execute(
+                f"SELECT {column},candidate FROM {view} "
+                f"WHERE {column} IN ({','.join('?' for _ in chunk)}) "
+                f"ORDER BY {column},candidate",
+                chunk,
+            ):
+                result[record].append(self.key(candidate))
+        return result
+
+    def linked(self, view: str, column: str, selected: set[int]) -> set[Any]:
+        """Records of a relation view that relate a selected candidate."""
+        found: set[Any] = set()
+        view = relation(self.db, view)
+        for chunk in _chunks(sorted(selected)):
+            found.update(
+                row[0]
+                for row in self.db.execute(
+                    f"SELECT DISTINCT {column} FROM {view} "
+                    f"WHERE candidate IN ({','.join('?' for _ in chunk)})",
+                    chunk,
+                )
+            )
+        return found
 
     def peak_keys(self, encoded: str) -> list[str]:
         return [self.peaks[peak_id][0] for peak_id in json.loads(encoded)]
@@ -128,23 +154,11 @@ class _Evidence:
 
     def candidate(self, row_id: int) -> dict[str, Any]:
         row = self.candidate_rows[row_id]
-        if row[7] is not None:
-            payload = {
-                "configured_neutral_loss_da": self.summary["neutral_loss_by_tag"][
-                    row[5]
-                ],
-                "method_subject_id": self.subjects[row[7]][0],
-                "neutral_loss_tag": row[5],
-                "peak_status": row[6],
-            }
-        else:
-            payload = {
-                "physical_state": row[11],
-                "reason": row[12],
-                "rt_apex_min": row[13],
-            }
         return {
-            **payload,
+            "configured_neutral_loss_da": self.summary["neutral_loss_by_tag"][row[5]],
+            "method_subject_id": self.subjects[row[7]][0],
+            "neutral_loss_tag": row[5],
+            "peak_status": row[6],
             "candidate_id": row[1],
             "sample_key": self.samples[row[2]],
             "sample_stem": self.stems[row[2]],
@@ -252,7 +266,8 @@ class _Evidence:
             ):
                 cells[group].append((sample, peaks, position))
         flags = self._row_risk_flags([row[0] for row in rows if row[1] is not None])
-        for group_id, feature_id, disposition, destination, center, ppm, keys in rows:
+        relations = self.related("group_candidates", "group_id", ids)
+        for group_id, feature_id, disposition, destination, center, ppm in rows:
             rid = feature_id if feature_id is not None else str(group_id)
             extractions = []
             for sample, peaks, position in cells.get(group_id, ()):
@@ -286,7 +301,7 @@ class _Evidence:
                 "member_subjects": members.get(group_id, []),
                 "xic_extractions": extractions,
             }
-            related = self.keys(keys)
+            related = relations.get(group_id, [])
             yield "final_groups", rid, group, related
             if feature_id is not None:
                 yield (
@@ -352,7 +367,10 @@ class _Evidence:
     ) -> Iterator[tuple[str, str, dict[str, Any], list[CandidateKey]]]:
         members = self.members("initial_group", (row[0] for row in rows))
         owner_risks = self._member_risks("initial_group", (row[0] for row in rows))
-        for group_id, disposition, basis, decisions, keys in rows:
+        relations = self.related(
+            "initial_group_candidates", "group_id", (row[0] for row in rows)
+        )
+        for group_id, disposition, basis, decisions in rows:
             record: dict[str, Any] = {
                 "disposition": disposition,
                 "member_subjects": members.get(group_id, []),
@@ -376,12 +394,12 @@ class _Evidence:
                 ]
             # The written record keeps every field in sorted order.
             record = json.loads(encode_object(record))
-            yield "initial_groups", str(group_id), record, self.keys(keys)
+            yield "initial_groups", str(group_id), record, relations.get(group_id, [])
 
     def edge_record(
         self, row: tuple[Any, ...]
     ) -> tuple[str, dict[str, Any], list[Any]]:
-        _, left, right, disposition, evidence, context, config, keys = row
+        edge, left, right, disposition, evidence, context, config = row
         return (
             _key(left, right),
             {
@@ -392,13 +410,13 @@ class _Evidence:
                 "left_subject_id": left,
                 "right_subject_id": right,
             },
-            self.keys(keys),
+            self.related("edge_candidates", "edge", (edge,)).get(edge, []),
         )
 
     def curve_record(
         self, row: tuple[Any, ...]
     ) -> tuple[str, dict[str, Any], list[Any]]:
-        payload_id, sample_id, kind, record_id, cid, peak, keys = row
+        payload_id, sample_id, kind, record_id, cid, peak = row
         return (
             str(payload_id),
             {
@@ -409,7 +427,9 @@ class _Evidence:
                 "record_id": record_id,
                 "sample_id": sample_id,
             },
-            self.keys(keys),
+            self.related("curve_candidates", "payload_id", (payload_id,)).get(
+                payload_id, []
+            ),
         )
 
     # Whole-report and selected reads ----------------------------------
@@ -454,7 +474,7 @@ class _Evidence:
                     add("terminal_subjects", _key(*key), self.terminal(row_id), (key,))
         if "final_groups" in kinds or "rows" in kinds:
             for kind, rid, record, related in self.group_records(
-                list(self.db.execute("SELECT * FROM groups ORDER BY id"))
+                list(self.db.execute(_GROUPS + " ORDER BY id"))
             ):
                 if kind in kinds:
                     add(kind, rid, record, related)
@@ -469,7 +489,7 @@ class _Evidence:
         if "capture_evidence" in kinds and "curves" in self.tables:
             for row in self.db.execute(
                 "SELECT payload_id,sample_id,kind,record_id,candidate_id,"
-                "physical_peak_key,candidates FROM curves ORDER BY payload_id"
+                "physical_peak_key FROM curves ORDER BY payload_id"
             ):
                 add("capture_evidence", *self.curve_record(row))
         return records, links
@@ -479,7 +499,8 @@ class _Evidence:
     ) -> dict[tuple[str, str], dict[str, Any]]:
         query = (
             "SELECT g.feature_id,c.sample,c.variant,c.value,c.apex_rt_min,c.source,"
-            "c.support_origin,c.peaks,c.details,c.group_id,c.risks FROM cells c "
+            "c.support_origin,c.peaks,c.evidence_states,c.reason_codes,"
+            "c.signal_quality,c.observation,c.group_id,c.risks FROM cells c "
             "JOIN groups g ON g.id=c.group_id"
         )
         rows: Iterable[tuple[Any, ...]]
@@ -494,7 +515,7 @@ class _Evidence:
                 )
             )
         rows = list(rows)
-        member_risks = self._member_risks("final_group", (row[9] for row in rows))
+        member_risks = self._member_risks("final_group", (row[12] for row in rows))
         result = {}
         for (
             feature_id,
@@ -505,11 +526,13 @@ class _Evidence:
             source,
             origin,
             peaks,
-            raw,
+            evidence_states,
+            reason_codes,
+            signal_quality,
+            observation,
             group,
             stored_risks,
         ) in rows:
-            details = validate_details(decode_json(raw))
             risks = self._validated(
                 [
                     *(risk for _, risk in member_risks.get((group, sample), ())),
@@ -524,8 +547,8 @@ class _Evidence:
                 "value": value,
                 "apex_rt_min": apex,
                 "source": source,
-                "evidence_states": details["evidence_states"],
-                "reason_codes": details["reason_codes"],
+                "evidence_states": json.loads(evidence_states),
+                "reason_codes": json.loads(reason_codes),
                 "support_origin": origin,
                 "observation_ids": self.peak_keys(peaks),
                 "signal_quality": [
@@ -533,20 +556,14 @@ class _Evidence:
                         **quality,
                         "observation_id": self.peaks[quality["observation_id"]][0],
                     }
-                    for quality in details["signal_quality"]
+                    for quality in json.loads(signal_quality)
                 ],
                 "membership_risks": risks,
-                **{
-                    key: value
-                    for key, value in details.items()
-                    if key
-                    not in {
-                        "evidence_states",
-                        "reason_codes",
-                        "signal_quality",
-                        "membership_risks",
-                    }
-                },
+                **(
+                    {}
+                    if observation is None
+                    else {"observation": decode_json(observation)}
+                ),
             }
         return result
 
@@ -605,53 +622,47 @@ class _Evidence:
                 add("exclusions", _key(*key), self.exclusion(row_id, reason[0]), (key,))
             if self.candidate_rows[row_id][8] is not None:
                 add("terminal_subjects", _key(*key), self.terminal(row_id), (key,))
-        group_rows = self._linked_rows("groups", selected, row_ids)
+        group_ids = self.linked("group_candidates", "group_id", selected)
+        group_rows = [
+            row
+            for row in self.db.execute(_GROUPS + " ORDER BY id")
+            if row[0] in group_ids or row[1] in row_ids
+        ]
         for kind, rid, record, related in self.group_records(group_rows):
             add(kind, rid, record, related)
-        initial_rows = self._linked_rows("initial_groups", selected)
+        initial_ids = self.linked("initial_group_candidates", "group_id", selected)
+        initial_rows = self._rows("initial_groups", "id", initial_ids)
         for kind, rid, record, related in self.initial_group_records(initial_rows):
             add(kind, rid, record, related)
         if "initial_edges" in self.tables:
-            for row in self._linked_rows("initial_edges", selected):
+            edges = self.linked("edge_candidates", "edge", selected)
+            for row in self._rows("initial_edges", "id", edges):
                 add("initial_edges", *self.edge_record(row))
         if "curves" in self.tables:
-            for row in self._linked_rows(
+            curves = self.linked("curve_candidates", "payload_id", selected)
+            for row in self._rows(
                 "curves",
-                selected,
+                "payload_id",
+                curves,
                 columns="payload_id,sample_id,kind,record_id,candidate_id,"
-                "physical_peak_key,candidates",
+                "physical_peak_key",
             ):
                 add("capture_evidence", *self.curve_record(row))
         return records, sorted(links)
 
-    def _linked_rows(
-        self,
-        table: str,
-        selected: set[int],
-        feature_ids: Sequence[str] = (),
-        *,
-        columns: str = "*",
+    def _rows(
+        self, table: str, key: str, ids: set[Any], *, columns: str = "*"
     ) -> list[tuple[Any, ...]]:
-        """Rows whose candidate list names a selected candidate (or a named row),
-        filtered in SQL so unrelated rows are never decoded."""
-        ids = sorted(selected)
-        found: dict[Any, tuple[Any, ...]] = {}
-        for chunk in _chunks(ids) if ids else ():
-            for row in self.db.execute(
-                f"SELECT {columns} FROM {table} t WHERE EXISTS (SELECT 1 FROM "
-                "json_each(t.candidates) j WHERE j.value IN "
-                f"({','.join('?' for _ in chunk)}))",
-                chunk,
-            ):
-                found[row[0]] = row
-        for chunk in _chunks(list(feature_ids)) if feature_ids else ():
-            for row in self.db.execute(
-                f"SELECT {columns} FROM {table} "
-                f"WHERE feature_id IN ({','.join('?' for _ in chunk)})",
-                chunk,
-            ):
-                found[row[0]] = row
-        return [found[key] for key in sorted(found)]
+        rows: list[tuple[Any, ...]] = []
+        for chunk in _chunks(sorted(ids)):
+            rows.extend(
+                self.db.execute(
+                    f"SELECT {columns} FROM {table} "
+                    f"WHERE {key} IN ({','.join('?' for _ in chunk)})",
+                    chunk,
+                )
+            )
+        return sorted(rows, key=lambda row: row[0])
 
 
 def _chunks(values: Sequence[Any], size: int = 900) -> Iterator[Sequence[Any]]:
@@ -700,24 +711,17 @@ def read_explanation_summary(path: Path) -> dict[str, Any]:
 def read_group_candidate_ids(path: Path, group_id: str) -> list[str]:
     """Candidate locators for a saved group, without loading its curve payloads."""
     with open_readonly(path) as db:
-        row = db.execute(
-            "SELECT candidates FROM groups WHERE feature_id=?", (group_id,)
-        ).fetchone()
-        if row is None:
-            return []
-        ids = json.loads(row[0])
-        if not ids:
-            return []
-        return sorted(
-            {
-                candidate_id
-                for (candidate_id,) in db.execute(
-                    "SELECT candidate_id FROM candidates "
-                    f"WHERE id IN ({','.join('?' for _ in ids)})",
-                    ids,
-                )
-            }
-        )
+        groups = relation(db, "group_candidates")
+        return [
+            candidate_id
+            for (candidate_id,) in db.execute(
+                f"SELECT DISTINCT c.candidate_id FROM {groups} r "
+                "JOIN groups g ON g.id=r.group_id "
+                "JOIN candidates c ON c.id=r.candidate "
+                "WHERE g.feature_id=? ORDER BY c.candidate_id",
+                (group_id,),
+            )
+        ]
 
 
 def read_row_cell_values(
@@ -807,7 +811,10 @@ def read_explanation_selection(
             if gid is None or gid in records.get("final_groups", {}):
                 continue
             rows = list(
-                connection.execute("SELECT * FROM groups WHERE feature_id=?", (gid,))
+                connection.execute(
+                    _GROUPS + " WHERE feature_id=?",
+                    (gid,),
+                )
             )
             for kind, rid, record, _ in evidence.group_records(rows):
                 if kind == "final_groups":
@@ -872,7 +879,9 @@ def read_alignment_curves(
         if "curves" not in present_tables(connection):
             return []
         query = (
-            "SELECT payload_id, sample_id, kind, record_id, codec, payload "
+            "SELECT payload_id, sample_id, kind, record_id, codec, payload, "
+            "(SELECT method_subject_id FROM method_subjects m "
+            "WHERE m.id=curves.method_subject) "
             "FROM curves WHERE 1=1"
         )
         params: list[Any] = []
@@ -883,12 +892,22 @@ def read_alignment_curves(
             query += f" AND record_id IN ({','.join('?' for _ in record_ids)})"
             params.extend(record_ids)
         results: list[dict[str, Any]] = []
-        for payload_id, sample_id, kind, record_id, codec, blob in connection.execute(
+        for (
+            payload_id,
+            sample_id,
+            kind,
+            record_id,
+            codec,
+            blob,
+            subject,
+        ) in connection.execute(
             query + " ORDER BY sample_id, record_id, payload_id", params
         ):
             if codec != "zlib-json-utf8":
                 raise ExplanationError(f"unsupported curve payload codec: {codec}")
             payload_data = decode_json(blob)
+            # The provenance subject is stored once, as the curve's reference.
+            payload_data["provenance"]["method_subject_id"] = subject
             validate_curve_payload(
                 payload_data, sample_id=sample_id, kind=kind, record_id=record_id
             )
@@ -912,9 +931,7 @@ def read_review_row_counts(
     samples = [s["sample_key"] for s in summary["samples"]]
     with open_readonly(path) as db:
         evidence = _Evidence(db, summary)
-        rows = list(
-            db.execute("SELECT * FROM groups WHERE feature_id IS NOT NULL ORDER BY id")
-        )
+        rows = list(db.execute(_GROUPS + " WHERE feature_id IS NOT NULL ORDER BY id"))
         counts = {
             group: (numeric, unresolved)
             for group, numeric, unresolved in db.execute(

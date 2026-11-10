@@ -30,6 +30,7 @@ from xic_extractor.alignment_explanation.review import (
     OBSERVED,
     ORIGIN_FLAGS,
     ZERO_CELL,
+    group_attention,
     selection_sample_facts,
 )
 from xic_extractor.alignment_explanation.review import (
@@ -207,7 +208,7 @@ class CidNlSource:
         sample_ids = set(flags)
         observed = {sid for sid, flag in flags.items() if flag & OBSERVED}
         group = self.records.get("final_groups", {}).get(gid, {})
-        attention = group.get("disposition") in ("provisional", "unresolved") or any(
+        attention = group_attention(group.get("disposition")) or any(
             flag & ATTENTION for flag in flags.values()
         )
         excluded = any(flag & EXCLUDED for flag in flags.values())
@@ -313,7 +314,7 @@ class CidNlSource:
                 ).add(sid)
         triggers = []
         group = self.records.get("final_groups", {}).get(gid, {})
-        if group.get("disposition") in ("provisional", "unresolved"):
+        if group_attention(group.get("disposition")):
             triggers.append(
                 {"scope": "group", "ref": gid, "reason": group["disposition"]}
             )

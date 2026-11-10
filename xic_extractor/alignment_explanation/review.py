@@ -129,6 +129,11 @@ def validate_membership_risks(risks: object) -> None:
             raise ValueError("malformed membership risk fields")
 
 
+def group_attention(disposition: Any) -> bool:
+    """A group whose recorded disposition is not settled needs attention."""
+    return disposition in ("provisional", "unresolved")
+
+
 def cell_attention(variant: Any, value: Any, risk_flagged: bool) -> str | None:
     """Why a recorded cell needs attention, from its variant, value and risks."""
     if risk_flagged:
@@ -163,9 +168,7 @@ def selection_sample_facts(
 ):
     """Reduce recorded facts once, preserving sample attribution for later scopes."""
     group = records.get("final_groups", {}).get(gid, {})
-    initial = (
-        ATTENTION if group.get("disposition") in ("provisional", "unresolved") else 0
-    )
+    initial = ATTENTION if group_attention(group.get("disposition")) else 0
     flags = {sid: initial for _, sid in keys}
     for cid, sid in keys:
         for record_kind, rid in links.get((cid, sid), ()):

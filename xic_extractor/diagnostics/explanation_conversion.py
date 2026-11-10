@@ -14,8 +14,6 @@ from typing import Any
 
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.storage import (
-    decode_json,
-    encode_details,
     encode_object,
     open_readonly,
     read_completed_summary,
@@ -61,25 +59,7 @@ def compact_explanation(
             )
             if progress:
                 progress("Copying cell values and review evidence")
-            out.executemany(
-                "UPDATE cells SET details=? WHERE group_id=? AND sample=?",
-                [
-                    (
-                        encode_details(
-                            {
-                                k: v
-                                for k, v in decode_json(details).items()
-                                if k != "observation"
-                            }
-                        ),
-                        group,
-                        sample,
-                    )
-                    for group, sample, details in out.execute(
-                        "SELECT group_id,sample,details FROM cells"
-                    )
-                ],
-            )
+            out.execute("UPDATE cells SET observation=NULL")
             stored = json.loads(out.execute("SELECT payload FROM run").fetchone()[0])
             stored.update(
                 matrix_path=str(matrix.resolve()),
