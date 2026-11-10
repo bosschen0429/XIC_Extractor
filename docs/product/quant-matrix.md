@@ -42,15 +42,11 @@ delivery seam as if they were already final.
   is `detected`, `backfilled`, or the cell's no-write reason.
 - Inclusion and counting consume those completed answers, not raw cells.
 
-Owner quantification is eligible only when the selected integration apex is
-strictly inside its selected left/right bounds. An endpoint apex remains an
-owner and remains visible in diagnostics, but its Matrix cell is
-`not_searched` with no area or selected integration, and it does not count as a
-detected owner for the Backfill sample-quorum gate. A Backfill observation may
-replace that censored owner only when its scalar and selected-integration
-boundaries are both interior and its primary Matrix area is valid; an
-endpoint or incomplete observation is censored by the same rule. This is a
-quantification-authority guard, not a new peak-selection or Backfill route.
+An owner whose apex is not strictly inside its left/right bounds (the selected
+integration's when present) has `quantification_eligible` set to false. That
+flag only keeps the owner out of the RT-calibration anchors. Cell decision and
+Backfill do not read it: a group member's cell takes its value from its peak
+integration, and Backfill counts direct support by sample.
 
 ### Matrix publication
 
