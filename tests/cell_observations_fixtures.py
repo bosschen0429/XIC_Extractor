@@ -30,7 +30,7 @@ from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    mint_cid_nl_method_assessment_ref,
+    mint_cid_nl_method_assessment,
 )
 
 
@@ -100,7 +100,7 @@ def _support_assessment(
         )
         for evidence in evidence_refs
     )
-    return mint_cid_nl_method_assessment_ref(
+    return mint_cid_nl_method_assessment(
         sample=fixture.sample(sample_stem),
         acquisition_source=fixture.source(fixture.sample(sample_stem)),
         target=fixture.target,
@@ -146,7 +146,7 @@ def _coverage_for_groups(
     cells = {
         (
             cell.group_context.group.group_hypothesis_id,
-            cell.content.sample_key,
+            cell.sample_key,
         ): cell
         for cell in predecessor_cells
     }

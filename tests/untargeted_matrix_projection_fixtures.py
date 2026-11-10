@@ -43,7 +43,7 @@ from xic_extractor.alignment.projection.untarget import (
 from xic_extractor.peak_detection.capture import capture_peak_hypotheses
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
-    mint_cid_nl_method_assessment_ref,
+    mint_cid_nl_method_assessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CID_NL_PROVIDER_ID
 from xic_extractor.peak_detection.search_scope import (
@@ -260,7 +260,7 @@ def _support_input(
         peak=peak,
         evidence=evidence,
     )
-    assessment = mint_cid_nl_method_assessment_ref(
+    assessment = mint_cid_nl_method_assessment(
         sample=fixture.sample(sample_stem),
         acquisition_source=fixture.source(fixture.sample(sample_stem)),
         method_subject=fixture.method_subject,

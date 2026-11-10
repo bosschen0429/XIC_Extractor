@@ -17,7 +17,7 @@ from xic_extractor.alignment.cid_nl_inputs import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
     is_cid_nl_missing_ms1_rejection,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support_models import (
@@ -99,7 +99,7 @@ class _BackfillSupportContext:
     not transported either.
     """
 
-    initial_assessment: CidNlMethodAssessmentRef | None
+    initial_assessment: CidNlMethodAssessment | None
     support_policy: DdaCidNlPeakSupportPolicy
 
 
@@ -113,7 +113,7 @@ def _backfill_support_context(
         initial_assessment=(
             assessment if is_cid_nl_missing_ms1_rejection(assessment) else None
         ),
-        support_policy=assessment.content.evaluation_receipt.support_policy,
+        support_policy=assessment.evaluation_receipt.support_policy,
     )
 
 

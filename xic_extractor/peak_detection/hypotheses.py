@@ -14,7 +14,7 @@ from xic_extractor.peak_detection.baseline import (
     integrate_with_baseline,
 )
 from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
-    CidNlChromatographicSupportRef,
+    CidNlChromatographicSupport,
 )
 from xic_extractor.peak_detection.evidence_facts import (
     CandidateEvidenceFacts,
@@ -38,7 +38,7 @@ from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,
     gaussian15_positive_asls_residual_metrics,
 )
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.signal_quality import measure_signal_quality
 from xic_extractor.peak_detection.traces import AnalysisMode, TraceGroup
 
@@ -95,7 +95,7 @@ class EvidenceVector:
     baseline_score: float | None = None
     common: CommonEvidence | None = None
     decision_semantics: EvidenceDecisionSemantics | None = None
-    cid_nl_chromatographic_support_ref: CidNlChromatographicSupportRef | None = None
+    cid_nl_chromatographic_support_ref: CidNlChromatographicSupport | None = None
 
 
 @dataclass(frozen=True)
@@ -121,7 +121,7 @@ class PeakHypothesis:
     evidence: EvidenceVector
     audit: AuditTrail
     hypothesis_method: str = ""
-    peak_observation_refs: tuple[PeakObservationRef, ...] = ()
+    peak_observation_refs: tuple[PeakObservation, ...] = ()
 
     @property
     def is_owner_backed(self) -> bool:

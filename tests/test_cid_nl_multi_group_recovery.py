@@ -56,13 +56,13 @@ from xic_extractor.output.alignment.tsv_writer import (
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     is_ms1_only_cid_nl_backfill_assessment,
-    mint_cid_nl_method_assessment_ref,
+    mint_cid_nl_method_assessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
-from xic_extractor.peak_detection.observations import mint_peak_observation_ref
+from xic_extractor.peak_detection.observations import mint_peak_observation
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.partition import cid_nl_backfill_acquisition
@@ -114,7 +114,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
             source="synthetic_gaussian",
             acquisition_source_id=source.acquisition_source_id,
         )
-        peak = mint_peak_observation_ref(
+        peak = mint_peak_observation(
             sample=sample,
             trace=trace,
             integration=IntegrationResult(
@@ -135,7 +135,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
         )
         evidence = cid_nl_evidence(fixture, name, scan_number=101, scan_rt_min=8.0)
         support = cid_nl_unique_support(fixture, name, peak=peak, evidence=evidence)
-        assessment = mint_cid_nl_method_assessment_ref(
+        assessment = mint_cid_nl_method_assessment(
             sample=sample,
             acquisition_source=fixture.source(sample),
             target=fixture.target,
@@ -152,7 +152,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
             evidence_refs=(evidence,),
             individual_support_refs=(support,),
         )
-        assert assessment.content.method_result == "SUPPORT"
+        assert assessment.method_result == "SUPPORT"
         (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
             sample=sample,
             assessment=assessment,
@@ -196,7 +196,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
             (
                 group.group_hypothesis_id,
                 fixture.sample(name).sample_name,
-                assessments[name].content.method_subject.method_subject_id,
+                assessments[name].method_subject.method_subject_id,
             )
         ] = (fixture.sample(name), assessments[name])
     if reverse:
@@ -207,7 +207,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
         backfills=backfills,
         alignment_config=config,
         member_observations={
-            peak.content.physical_identity: peak
+            peak.physical_identity: peak
             for assessment in assessments.values()
             for peak in assessment.candidate_peaks
         },
@@ -226,7 +226,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
     assert set(grouping.partition_transition.admitted_members) == {
         owners[name].cross_sample_member_subject for name in accepted
     }
-    assert set(retained) == {assessments[name].content for name in accepted}
+    assert set(retained) == {assessments[name] for name in accepted}
     assert {
         hypothesis.hypothesis_id
         for values in retained.values()
@@ -439,7 +439,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         expected = 8.0 + shifts[stem]
         assert attempt.query_rt == pytest.approx(expected)
         assert attempt.query_rt_basis == "calibrated_trajectory_fit"
-        receipt = attempt.assessment.content.evaluation_receipt
+        receipt = attempt.assessment.evaluation_receipt
         assert (receipt.query_rt_min, receipt.query_rt_max) == pytest.approx(
             (expected - half_window, expected + half_window)
         )
@@ -448,7 +448,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         if not empty:
             assert attempt.assessment.candidate_peaks[
                 0
-            ].content.integration.rt_apex_min == pytest.approx(expected)
+            ].integration.rt_apex_min == pytest.approx(expected)
     completed = complete_dense_partition(batch, result, alignment_config=config)
     writer = completed.application_result
     for _row, sample_stem, cell in written_cells(writer):
@@ -558,9 +558,9 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         r for r in result.sample_results if r.job.sample.raw_stem == "Rejected"
     )
     initial = rejected.adapter_result.assessment_input.assessment
-    assert initial.content.method_result is None
-    assert initial.content.technical_state == "not_evaluated"
-    assert initial.content.reason_codes == ("no_search_eligible_discovery_input",)
+    assert initial.method_result is None
+    assert initial.technical_state == "not_evaluated"
+    assert initial.reason_codes == ("no_search_eligible_discovery_input",)
     completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
@@ -574,8 +574,8 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
     if outcome == "support":
         assert decision.value is not None and decision.value > 0
         (recovery,) = rejected.backfill_attempts
-        assert recovery.assessment.content.method_result == "HOLD"
-        assert not recovery.assessment.evidence_refs
+        assert recovery.assessment.method_result == "HOLD"
+        assert not recovery.assessment.evidence_observations
         assert not recovery.assessment.individual_support_refs
         assert all(
             cell["source_candidate_id"] == ""
@@ -584,7 +584,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         )
     elif outcome == "empty":
         (recovery,) = rejected.backfill_attempts
-        assert recovery.assessment.content.method_result == "HOLD"
+        assert recovery.assessment.method_result == "HOLD"
         assert not recovery.assessment.candidate_peaks
         assert decision.value is None
     else:
@@ -769,7 +769,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             )
             is attempt
         )
-        receipt = attempt.assessment.content.evaluation_receipt
+        receipt = attempt.assessment.evaluation_receipt
         assert (receipt.query_rt_min, receipt.query_rt_max) == (
             center - peak_config.nl_rt_anchor_half_window_min,
             center + peak_config.nl_rt_anchor_half_window_min,
@@ -797,13 +797,13 @@ def test_runtime_recovers_every_authorized_rt_group(
             )
             assert len(successors) == 1
         recovery_is_support = all(
-            attempt.assessment.content.method_result == "SUPPORT"
+            attempt.assessment.method_result == "SUPPORT"
             for attempt in missing.backfill_attempts
         )
         if recovery_peaks == (8.0, 12.0) and shared_support == "separate":
             # Discarded local rows cannot supply NL to the new observations.
             assert all(
-                attempt.assessment.content.method_result == "HOLD"
+                attempt.assessment.method_result == "HOLD"
                 for attempt in missing.backfill_attempts
             )
         if (
@@ -825,8 +825,7 @@ def test_runtime_recovers_every_authorized_rt_group(
         if recovery_peaks == (8.0, 12.0) and recovery_is_support:
             assert all(cell.backfill_cell is not None for cell in missing_cells)
             assert all(
-                cell.backfill_cell.content.method_result == "SUPPORT"
-                for cell in missing_cells
+                cell.backfill_cell.method_result == "SUPPORT" for cell in missing_cells
             )
         if (
             recovery_peaks == (8.0, 12.0)
@@ -835,9 +834,7 @@ def test_runtime_recovers_every_authorized_rt_group(
         ):
             initial_groups = tuple(completed.initial_groups)
             member_observations = {
-                source.peak_observation.content.physical_peak_key: (
-                    source.peak_observation
-                )
+                source.peak_observation.physical_peak_key: (source.peak_observation)
                 for cell in scientific.cell_observations
                 for source in cell.predecessor_cells
                 if source.peak_observation is not None
@@ -1049,16 +1046,16 @@ def test_runtime_recovers_every_authorized_rt_group(
                     assert cell.backfill_cell is not None
                     assert cell.backfill_cell.method_assessment is recovery.assessment
                     allocated.append(
-                        cell.backfill_cell.peak_observation.content.physical_peak_key
+                        cell.backfill_cell.peak_observation.physical_peak_key
                     )
                 elif source is not None:
                     assert source.method_assessment is recovery.assessment
-                    allocated.append(source.peak_observation.content.physical_peak_key)
+                    allocated.append(source.peak_observation.physical_peak_key)
                 else:
                     assert cell.backfill_cell is not None
                     assert cell.backfill_cell.method_assessment is recovery.assessment
                     allocated.append(
-                        cell.backfill_cell.peak_observation.content.physical_peak_key
+                        cell.backfill_cell.peak_observation.physical_peak_key
                     )
         assert len(set(allocated)) == len(allocated)
         expected_assessments = {
@@ -1093,14 +1090,10 @@ def test_runtime_recovers_every_authorized_rt_group(
             for cell in ms1_only_cells:
                 (source,) = cell.predecessor_cells
                 assessment = source.method_assessment
-                assert assessment.content.reason_codes == (
-                    "no_unique_qualifying_relation",
-                )
+                assert assessment.reason_codes == ("no_unique_qualifying_relation",)
                 assert len(assessment.candidate_peaks) == 1
-                assert assessment.evidence_refs == ()
-                assert cell.integrations == (
-                    assessment.candidate_peaks[0].content.integration,
-                )
+                assert assessment.evidence_observations == ()
+                assert cell.integrations == (assessment.candidate_peaks[0].integration,)
             written = tuple(
                 decision for decision in decisions if decision.value is not None
             )
@@ -1243,11 +1236,11 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         tuple(group.group_center_rt for group in completed.initial_groups),
     )
     assert all(
-        attempt.assessment.content.method_result == "HOLD"
+        attempt.assessment.method_result == "HOLD"
         for attempt in missing.backfill_attempts
     )
     physical_ids = tuple(
-        attempt.assessment.candidate_peaks[0].content.physical_peak_key
+        attempt.assessment.candidate_peaks[0].physical_peak_key
         for attempt in missing.backfill_attempts
     )
     # Ions within the precursor tolerance share one Discovery ion channel.
@@ -1387,16 +1380,16 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     first, second = (
         attempt.assessment.candidate_peaks[0] for attempt in missing_attempts
     )
-    assert first.content.rt == second.content.rt
-    assert first.content.intensity == second.content.intensity
-    assert first.content.integration == second.content.integration
+    assert first.rt == second.rt
+    assert first.intensity == second.intensity
+    assert first.integration == second.integration
     assert first.generation_provenance.acquisition_source_id == (
         second.generation_provenance.acquisition_source_id
     )
     assert len(
         {
-            first.content.physical_peak_key,
-            second.content.physical_peak_key,
+            first.physical_peak_key,
+            second.physical_peak_key,
         }
     ) == (1 if mz_separation_ppm <= 20.0 else 2)
 
@@ -1564,15 +1557,11 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     )
     (attempt,) = missing.backfill_attempts
     if len(missing_peaks) == 1:
-        assert attempt.assessment.content.reason_codes == (
-            "no_unique_qualifying_relation",
-        )
+        assert attempt.assessment.reason_codes == ("no_unique_qualifying_relation",)
         assert len(attempt.assessment.candidate_peaks) == 1
     else:
         # No physical peak occupies the predicted position between the two peaks.
-        assert attempt.assessment.content.reason_codes == (
-            "insufficient_method_evidence",
-        )
+        assert attempt.assessment.reason_codes == ("insufficient_method_evidence",)
         assert attempt.assessment.candidate_peaks == ()
     completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
@@ -1592,7 +1581,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         assert decision.value is None
     else:
         assert cell_status(decision) == "backfilled"
-        integration = attempt.assessment.candidate_peaks[0].content.integration
+        integration = attempt.assessment.candidate_peaks[0].integration
         assert decision.value == pytest.approx(integration.area_ms1_morphology)
         from tools.diagnostics.output_population_census import main as population_main
         from xic_extractor.output.alignment.pipeline_outputs import (
@@ -1719,7 +1708,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
     missing = next(
         item for item in result.sample_results if item.job.sample.raw_stem == "Missing"
     )
-    assert missing.adapter_result.assessment_input.assessment.content.method_result == (
+    assert missing.adapter_result.assessment_input.assessment.method_result == (
         "SUPPORT"
     )
     completed = complete_dense_partition(
@@ -1778,7 +1767,7 @@ def _assert_alignment_uses_configured_recovery_groups(
             if item.job.sample.raw_stem == "Missing"
         )
         (recovery,) = missing.backfill_attempts
-        receipt = recovery.assessment.content.evaluation_receipt
+        receipt = recovery.assessment.evaluation_receipt
         half_window = peak_config.nl_rt_anchor_half_window_min
         assert (receipt.query_rt_min, receipt.query_rt_max) == (
             8.0 - half_window,

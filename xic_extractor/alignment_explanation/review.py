@@ -290,7 +290,7 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
     stages = {
         cell.peak_observation.capture_stage
         for cell in cells
-        if cell.peak_observation is not None and cell.content.method_result == "SUPPORT"
+        if cell.peak_observation is not None and cell.method_result == "SUPPORT"
     }
     origin = (
         "backfill_support"
@@ -304,10 +304,9 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
         observation = cell.peak_observation
         if observation is None:
             continue
-        content = observation.content
-        quality = content.integration.signal_quality
-        qualities[content.physical_peak_key] = {
-            "observation_id": content.physical_peak_key,
+        quality = observation.integration.signal_quality
+        qualities[observation.physical_peak_key] = {
+            "observation_id": observation.physical_peak_key,
             **(asdict(quality) if quality is not None else {"status": "not_recorded"}),
         }
     return {
@@ -322,15 +321,15 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
         "source": decision.source,
         "evidence_states": evidence.evidence_states,
         "reason_codes": sorted(
-            {reason for cell in cells for reason in cell.content.reason_codes}
+            {reason for cell in cells for reason in cell.reason_codes}
         ),
         "support_origin": origin,
         "signal_quality": [qualities[key] for key in sorted(qualities)],
         "observation_ids": sorted(
             {
-                cell.content.physical_peak_key
+                cell.physical_peak_key
                 for cell in cells
-                if cell.content.physical_peak_key is not None
+                if cell.physical_peak_key is not None
             }
         ),
     }

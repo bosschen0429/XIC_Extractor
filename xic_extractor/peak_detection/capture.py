@@ -26,12 +26,11 @@ from xic_extractor.peak_detection.ms1_trace_detection import (
     detect_ms1_trace_peak,
 )
 from xic_extractor.peak_detection.observations import (
-    PeakObservationContent,
+    PeakObservation,
     PeakObservationContractError,
-    PeakObservationGenerationProvenance,
-    PeakObservationRef,
-    _project_peak_observation_values,
-    mint_peak_observation_ref,
+    _owner_minted_peak_observation,
+    _project_peak_observation,
+    mint_peak_observation,
     mint_physical_peak_observations,
     physical_peak_observation_integration,
 )
@@ -74,8 +73,7 @@ class SampleLocalCapture:
     selected_hypothesis: PeakHypothesis | None
     physical_evaluation: PhysicalPeakEvaluation | None = None
     physical_selection_intensity: tuple[float, ...] | None = None
-    physical_observation_content: PeakObservationContent | None = None
-    physical_observation_provenance: PeakObservationGenerationProvenance | None = None
+    physical_observation: PeakObservation | None = None
 
 
 def capture_peak_hypotheses(
@@ -266,8 +264,7 @@ def _project_physical_capture(
 ) -> SampleLocalCapture:
     selected: PeakHypothesis | None = None
     selection_intensity: tuple[float, ...] | None = None
-    observation_content: PeakObservationContent | None = None
-    observation_provenance: PeakObservationGenerationProvenance | None = None
+    observation: PeakObservation | None = None
     if evaluation.state == "available":
         facts = evaluation.facts
         integration = evaluation.integration
@@ -290,7 +287,7 @@ def _project_physical_capture(
                 selection_reference_rt_min=binding.preferred_rt,
             ),
         )
-        observation_content, observation_provenance = _project_peak_observation_values(
+        observation = _project_peak_observation(
             sample_key=binding.sample_key,
             trace=trace,
             integration=selected.integration,
@@ -298,6 +295,10 @@ def _project_physical_capture(
             resolver_mode=scope.method_constraints.peak_config.resolver_mode,
             proposal_sources=selected.audit.proposal_sources,
             shared_trace_provenance=binding.acquired_trace_provenance,
+            physical_evaluation=evaluation,
+            signal_processing_profile=(
+                scope.method_constraints.signal_processing_profile
+            ),
         )
     detection = Ms1TracePeakDetection(
         status="detected" if selected is not None else "not_detected",
@@ -316,8 +317,7 @@ def _project_physical_capture(
         selected_hypothesis=selected,
         physical_evaluation=evaluation,
         physical_selection_intensity=selection_intensity,
-        physical_observation_content=observation_content,
-        physical_observation_provenance=observation_provenance,
+        physical_observation=observation,
     )
 
 
@@ -364,7 +364,7 @@ def capture_physical_backfill_observation(
     search_rt_window: tuple[float, float] | None = None,
     location_reliable: bool = True,
     evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
-) -> PeakObservationRef | None:
+) -> PeakObservation | None:
     """Capture a backfill question using its request-bound method and profile."""
     if (
         trace.mz != physical_mz
@@ -430,7 +430,7 @@ def mint_captured_peak_observation(
     capture: SampleLocalCapture,
     *,
     sample: SampleMetadata,
-) -> PeakObservationRef:
+) -> PeakObservation:
     if not isinstance(capture, SampleLocalCapture):
         raise SampleLocalCaptureError("observation requires SampleLocalCapture")
     selected = capture.selected_hypothesis
@@ -447,16 +447,21 @@ def mint_captured_peak_observation(
             "observation hypothesis bypasses the captured selection identity"
         )
     if capture.physical_evaluation is not None:
-        sample_key, content, provenance = _project_captured_physical_observation(
+        sample_key, projected = _project_captured_physical_observation(
             capture, selected
         )
         if sample_key != sample.sample_name:
             raise PeakObservationContractError(
                 "capture observation references a different sample"
             )
-        return PeakObservationRef(
-            content=content,
-            generation_provenance=provenance,
+        # Each mint issues its own object over the capture-time projection.
+        return _owner_minted_peak_observation(
+            sample_key=projected.sample_key,
+            mz=projected.mz,
+            rt=projected.rt,
+            intensity=projected.intensity,
+            integration=projected.integration,
+            generation_provenance=projected.generation_provenance,
             source_trace=capture.trace,
             physical_evaluation=capture.physical_evaluation,
             signal_processing_profile=(
@@ -464,7 +469,7 @@ def mint_captured_peak_observation(
             ),
             capture_stage="initial_capture",
         )
-    return mint_peak_observation_ref(
+    return mint_peak_observation(
         sample=sample,
         trace=capture.trace,
         integration=selected.integration,
@@ -478,11 +483,7 @@ def mint_captured_peak_observation(
 def _project_captured_physical_observation(
     capture: SampleLocalCapture,
     selected: PeakHypothesis,
-) -> tuple[
-    str,
-    PeakObservationContent,
-    PeakObservationGenerationProvenance,
-]:
+) -> tuple[str, PeakObservation]:
     """Reuse a capture-owner physical answer after rebinding its live trace."""
 
     binding = require_capture_binding(capture.scope, capture.candidate_id)
@@ -496,19 +497,18 @@ def _project_captured_physical_observation(
         or selected.integration != capture.receipt_hypothesis.integration
     ):
         raise PeakObservationContractError("capture selection changed")
-    content = capture.physical_observation_content
-    provenance = capture.physical_observation_provenance
-    if content is None or provenance is None:
+    projected = capture.physical_observation
+    if projected is None:
         raise PeakObservationContractError(
             "physical observation requires the capture owner projection"
         )
-    return binding.sample_key, content, provenance
+    return binding.sample_key, projected
 
 
 def bind_owner_backed_capture_hypothesis(
     capture: SampleLocalCapture,
     *,
-    observation: PeakObservationRef,
+    observation: PeakObservation,
     hypothesis: PeakHypothesis,
 ) -> SampleLocalCapture:
     """Bind the exact runtime-owned hypothesis to its already captured signal."""
@@ -516,7 +516,7 @@ def bind_owner_backed_capture_hypothesis(
     if not isinstance(capture, SampleLocalCapture):
         raise SampleLocalCaptureError("owner binding requires SampleLocalCapture")
     if (
-        not isinstance(observation, PeakObservationRef)
+        not isinstance(observation, PeakObservation)
         or type(hypothesis) is not PeakHypothesis
     ):
         raise SampleLocalCaptureError(
@@ -526,19 +526,19 @@ def bind_owner_backed_capture_hypothesis(
     if (
         selected is None
         or observation not in hypothesis.peak_observation_refs
-        or hypothesis.integration != observation.content.integration
+        or hypothesis.integration != observation.integration
     ):
         raise SampleLocalCaptureError(
             "owner hypothesis does not bind the captured physical selection"
         )
     try:
         if capture.physical_evaluation is not None:
-            _sample_key, content, provenance = _project_captured_physical_observation(
+            _sample_key, projected = _project_captured_physical_observation(
                 capture, selected
             )
             if (
-                observation.content != content
-                or observation.generation_provenance != provenance
+                observation != projected
+                or observation.generation_provenance != projected.generation_provenance
             ):
                 raise PeakObservationContractError("capture observation changed")
     except (PeakObservationContractError, SearchScopeContractError) as exc:

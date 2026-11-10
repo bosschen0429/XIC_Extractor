@@ -180,16 +180,10 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
         untargeted_capture,
         sample=untargeted_sample,
     )
-    assert targeted_observation.content.mz == untargeted_observation.content.mz
-    assert targeted_observation.content.rt == untargeted_observation.content.rt
-    assert (
-        targeted_observation.content.intensity
-        == untargeted_observation.content.intensity
-    )
-    assert (
-        targeted_observation.content.integration
-        == untargeted_observation.content.integration
-    )
+    assert targeted_observation.mz == untargeted_observation.mz
+    assert targeted_observation.rt == untargeted_observation.rt
+    assert targeted_observation.intensity == untargeted_observation.intensity
+    assert targeted_observation.integration == untargeted_observation.integration
     with pytest.raises(SearchScopeAuthorizationError, match="Target capture"):
         require_capture_binding(targeted, "candidate-b")
     with pytest.raises(SearchScopeAuthorizationError, match="Target capture"):
@@ -789,7 +783,7 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
     )
     projections = 0
     evaluation_calls = 0
-    real_projection = capture_owner._project_peak_observation_values
+    real_projection = capture_owner._project_peak_observation
     real_evaluation = capture_owner.evaluate_physical_peak
 
     def count_projection(**kwargs):
@@ -804,7 +798,7 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
 
     monkeypatch.setattr(
         capture_owner,
-        "_project_peak_observation_values",
+        "_project_peak_observation",
         count_projection,
     )
     monkeypatch.setattr(capture_owner, "evaluate_physical_peak", count_evaluation)
@@ -835,14 +829,7 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
             capture, scope=replace(scope)
         )
     assert capture.physical_evaluation is original_capture.physical_evaluation
-    assert (
-        capture.physical_observation_content
-        is original_capture.physical_observation_content
-    )
-    assert (
-        capture.physical_observation_provenance
-        is original_capture.physical_observation_provenance
-    )
+    assert capture.physical_observation is original_capture.physical_observation
     observation = capture_owner.mint_captured_peak_observation(
         capture,
         sample=sample,

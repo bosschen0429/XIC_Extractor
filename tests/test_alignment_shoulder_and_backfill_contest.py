@@ -185,7 +185,7 @@ def test_a_shoulder_separated_by_a_gap_is_not_split_from_the_peak() -> None:
 def _candidate(
     content_id: str, *, apex: float, mz: float = _MZ, query_ppm: float = 20.0
 ):
-    content = SimpleNamespace(
+    peak = SimpleNamespace(
         physical_peak_key=content_id,
         physical_identity=content_id,
         mz=mz,
@@ -194,17 +194,15 @@ def _candidate(
         integration=SimpleNamespace(
             rt_apex_min=apex, rt_left_min=apex - 0.6, rt_right_min=apex + 0.6
         ),
-    )
-    return SimpleNamespace(
-        content=content,
-        # These view-only fixtures have no context beyond their measured points.
-        # The minted completion fixtures exercise separately retained context.
-        source_trace=content,
         signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         generation_provenance=SimpleNamespace(
             query_ppm_tol=query_ppm, acquisition_source_id="source"
         ),
     )
+    # These view-only fixtures have no context beyond their measured points.
+    # The minted completion fixtures exercise separately retained context.
+    peak.source_trace = peak
+    return peak
 
 
 def _backfill(*peaks):
@@ -242,17 +240,17 @@ def test_backfill_different_apices_require_measured_same_lobe(
         peak = _candidate(str(index), apex=apex)
         # Different retained contexts of the same acquired signal.
         selection = slice(index, -2 + index)
-        peak.content.rt = tuple(rt[selection])
-        peak.content.intensity = tuple(raw[selection])
+        peak.rt = tuple(rt[selection])
+        peak.intensity = tuple(raw[selection])
         if case in {"different-raw", "same-apex-different-raw"} and index:
-            peak.content.intensity = tuple(value * 1.01 for value in raw[selection])
+            peak.intensity = tuple(value * 1.01 for value in raw[selection])
         if case == "short":
-            peak.content.rt = (8.99, 9.0, 9.02)
-            peak.content.intensity = (10.0, 20.0, 10.0)
+            peak.rt = (8.99, 9.0, 9.02)
+            peak.intensity = (10.0, 20.0, 10.0)
         if case == "source" and index:
             peak.generation_provenance.acquisition_source_id = "other-source"
         if case == "mass" and index:
-            peak.content.mz *= 1 + 100e-6
+            peak.mz *= 1 + 100e-6
         peaks.append(peak)
     backfills = {
         (

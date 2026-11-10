@@ -197,19 +197,15 @@ def _quality_review_report(
             low_signal_to_noise=ratio < 10.0 / 1.4826,
         )
         observation = NS(
-            content=NS(
-                physical_peak_key=f"obs-{sid}",
-                integration=NS(signal_quality=quality, rt_apex_min=1.0),
-            ),
+            physical_peak_key=f"obs-{sid}",
+            integration=NS(signal_quality=quality, rt_apex_min=1.0),
             capture_stage="initial_capture",
         )
         cell = NS(
             peak_observation=observation,
-            content=NS(
-                method_result="SUPPORT",
-                reason_codes=(),
-                physical_peak_key=f"obs-{sid}",
-            ),
+            method_result="SUPPORT",
+            reason_codes=(),
+            physical_peak_key=f"obs-{sid}",
         )
         decision = NS(
             subject=NS(canonical_sample=NS(sample_name=sid)),
@@ -217,7 +213,7 @@ def _quality_review_report(
             variant="quantified",
             value=value,
             source="raw_trapezoid",
-            selected_integration=observation.content.integration,
+            selected_integration=observation.integration,
         )
         cells.append(review_cell(decision))
         if membership_risks is not None:

@@ -5,11 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from xic_extractor.alignment.cell_observation.observations import (
+    CellObservation,
     CellObservationContractError,
-    CellObservationRef,
     CidNlCellGroupContext,
     CidNlCellGroupSupport,
-    mint_cell_observation_ref,
+    mint_cell_observation,
 )
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
@@ -25,10 +25,10 @@ from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     CidNlChromatographicSupportContractError,
-    compose_cid_nl_chromatographic_support_ref,
+    compose_cid_nl_chromatographic_support,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
     supported_cid_nl_peaks,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -36,7 +36,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_from_target,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     PeakHypothesisContractError,
     compose_cid_nl_peak_hypothesis,
@@ -45,24 +45,24 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 
 class CidNlEvidenceSpineError(ValueError):
-    """Raised when the bounded CellObservationRef reference spine cannot close
+    """Raised when the bounded CellObservation reference spine cannot close
     exactly.
     """
 
 
 @dataclass(frozen=True, slots=True)
-class TargetedCellObservationReferenceProjection:
+class TargetedCellObservationProjection:
     """Internal Targeted view of an already-minted cell; never a writer DTO."""
 
-    cell: CellObservationRef
+    cell: CellObservation
     group: CrossSamplePeakGroupHypothesis
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedCellObservationReferenceProjection:
+class UntargetedCellObservationProjection:
     """Internal Untargeted view of the same cell; never a Matrix DTO."""
 
-    cell: CellObservationRef
+    cell: CellObservation
     group: CrossSamplePeakGroupHypothesis
 
 
@@ -70,13 +70,13 @@ class UntargetedCellObservationReferenceProjection:
 class CidNlReferenceSpine:
     """One constructed owner spine and its two exact-reference fan-outs."""
 
-    assessments: tuple[CidNlMethodAssessmentRef, ...]
+    assessments: tuple[CidNlMethodAssessment, ...]
     support_hypotheses: tuple[PeakHypothesis, ...]
     group: CrossSamplePeakGroupHypothesis | None
-    cells: tuple[CellObservationRef, ...]
-    targeted_projections: tuple[TargetedCellObservationReferenceProjection, ...]
+    cells: tuple[CellObservation, ...]
+    targeted_projections: tuple[TargetedCellObservationProjection, ...]
     untargeted_projections: tuple[
-        UntargetedCellObservationReferenceProjection,
+        UntargetedCellObservationProjection,
         ...,
     ]
 
@@ -86,12 +86,12 @@ def build_cid_nl_reference_spine(
     target: ResolvedTargetDefinition | None = None,
     method_subject: CidNlMethodSubject | None = None,
     sample_assessments: tuple[
-        tuple[SampleMetadata, CidNlMethodAssessmentRef],
+        tuple[SampleMetadata, CidNlMethodAssessment],
         ...,
     ],
     config: AlignmentConfig | None = None,
 ) -> CidNlReferenceSpine:
-    """Build the CellObservationRef reference spine once.
+    """Build the CellObservation reference spine once.
 
     Expose two no-write views over the same cell closure.
     """
@@ -116,13 +116,13 @@ def build_cid_nl_reference_spine(
     support_inputs: list[
         tuple[
             SampleMetadata,
-            CidNlMethodAssessmentRef,
-            PeakObservationRef,
+            CidNlMethodAssessment,
+            PeakObservation,
             PeakHypothesis,
         ]
     ] = []
     for sample, assessment in ordered:
-        if assessment.content.method_result != "SUPPORT":
+        if assessment.method_result != "SUPPORT":
             continue
         selected_peaks = supported_cid_nl_peaks(assessment)
         if len(selected_peaks) != 1:
@@ -133,27 +133,27 @@ def build_cid_nl_reference_spine(
         peak = next(
             candidate
             for candidate in assessment.candidate_peaks
-            if candidate.content == selected_peak
+            if candidate == selected_peak
         )
         try:
-            chromatographic_support = compose_cid_nl_chromatographic_support_ref(
+            chromatographic_support = compose_cid_nl_chromatographic_support(
                 sample=sample,
                 scan_support_refs=tuple(
                     ref
                     for ref in assessment.individual_support_refs
-                    if ref.content.peak_observation == peak.content
+                    if ref.peak_observation == peak
                 ),
                 evidence_refs=tuple(
                     ref
-                    for ref in assessment.evidence_refs
+                    for ref in assessment.evidence_observations
                     if ref
                     in {
-                        support.content.evidence
+                        support.evidence
                         for support in assessment.individual_support_refs
-                        if support.content.peak_observation == peak.content
+                        if support.peak_observation == peak
                     }
                 )
-                if assessment.content.method_subject.composition
+                if assessment.method_subject.composition
                 else (),
             )
             hypothesis = compose_cid_nl_peak_hypothesis(
@@ -197,7 +197,7 @@ def build_cid_nl_reference_spine(
     )
     if len(groups) != 1:
         raise CidNlEvidenceSpineError(
-            "CellObservationRef reference spine cannot resolve multiple provisional "
+            "CellObservation reference spine cannot resolve multiple provisional "
             "groups; identity resolution belongs to the identity-trajectory owner"
         )
     group = groups[0]
@@ -221,7 +221,7 @@ def build_cid_nl_reference_spine(
         sample.sample_name: (peak, hypothesis)
         for sample, _, peak, hypothesis in support_inputs
     }
-    cells: list[CellObservationRef] = []
+    cells: list[CellObservation] = []
     for sample, assessment in ordered:
         support_pair = hypothesis_by_sample_id.get(sample.sample_name)
         peak_observation = None
@@ -229,12 +229,11 @@ def build_cid_nl_reference_spine(
         if support_pair is not None:
             peak_observation, peak_hypothesis = support_pair
         elif (
-            assessment.content.method_result == "HOLD"
-            and len(assessment.candidate_peaks) == 1
+            assessment.method_result == "HOLD" and len(assessment.candidate_peaks) == 1
         ):
             peak_observation = assessment.candidate_peaks[0]
         try:
-            cell = mint_cell_observation_ref(
+            cell = mint_cell_observation(
                 sample=sample,
                 target=target,
                 group_context=group_context,
@@ -247,11 +246,10 @@ def build_cid_nl_reference_spine(
         cells.append(cell)
     cell_tuple = tuple(cells)
     targeted = tuple(
-        TargetedCellObservationReferenceProjection(cell=cell, group=group)
-        for cell in cell_tuple
+        TargetedCellObservationProjection(cell=cell, group=group) for cell in cell_tuple
     )
     untargeted = tuple(
-        UntargetedCellObservationReferenceProjection(cell=cell, group=group)
+        UntargetedCellObservationProjection(cell=cell, group=group)
         for cell in cell_tuple
     )
     return CidNlReferenceSpine(
@@ -267,7 +265,7 @@ def build_cid_nl_reference_spine(
 __all__ = [
     "CidNlEvidenceSpineError",
     "CidNlReferenceSpine",
-    "TargetedCellObservationReferenceProjection",
-    "UntargetedCellObservationReferenceProjection",
+    "TargetedCellObservationProjection",
+    "UntargetedCellObservationProjection",
     "build_cid_nl_reference_spine",
 ]

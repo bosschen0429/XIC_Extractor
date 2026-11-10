@@ -31,8 +31,8 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
-    CidNlMethodAssessmentRef,
-    mint_cid_nl_method_assessment_ref,
+    CidNlMethodAssessment,
+    mint_cid_nl_method_assessment,
 )
 from xic_extractor.sample_metadata import SampleRole
 
@@ -231,7 +231,7 @@ def test_incomplete_group_snapshot_is_held_even_when_support_threshold_passes(
     retained_cells = tuple(
         cell
         for cell in spine.cells
-        if cell.content.sample_key != fixture.sample("s4").sample_name
+        if cell.sample_key != fixture.sample("s4").sample_name
     )
     facts = assess_conservative_backfill_group(
         retained_cells,
@@ -310,7 +310,7 @@ def test_terminal_method_results_precede_group_recovery_eligibility(
     retained_cells = tuple(
         cell
         for cell in incomplete_spine.cells
-        if cell.content.sample_key != incomplete_fixture.sample("omitted").sample_name
+        if cell.sample_key != incomplete_fixture.sample("omitted").sample_name
     )
     incomplete = assess_conservative_backfill_group(
         retained_cells,
@@ -398,12 +398,12 @@ def test_mapping_retains_owner_universe_order_while_pairing_by_rt(
         (early, late)
         for early in candidate_peaks
         for late in candidate_peaks
-        if early.content.integration.rt_apex_min < late.content.integration.rt_apex_min
-        and early.content.physical_peak_key > late.content.physical_peak_key
+        if early.integration.rt_apex_min < late.integration.rt_apex_min
+        and early.physical_peak_key > late.physical_peak_key
     )
     early_peak, late_peak = opposite_order_pair
-    early_rt = early_peak.content.integration.rt_apex_min
-    late_rt = late_peak.content.integration.rt_apex_min
+    early_rt = early_peak.integration.rt_apex_min
+    late_rt = late_peak.integration.rt_apex_min
     early = _spine(
         fixture,
         support_apex_by_sample={"a1": early_rt, "a2": early_rt},
@@ -425,7 +425,7 @@ def test_mapping_retains_owner_universe_order_while_pairing_by_rt(
     owner_ordered_peaks = tuple(
         sorted(
             opposite_order_pair,
-            key=lambda peak: peak.content.physical_peak_key,
+            key=lambda peak: peak.physical_peak_key,
         )
     )
     assert owner_ordered_peaks == (late_peak, early_peak)
@@ -723,7 +723,7 @@ def _reject_assessment(
     scan_number: int,
     invocation: str,
     target=None,
-) -> CidNlMethodAssessmentRef:
+) -> CidNlMethodAssessment:
     effective_target = fixture.target if target is None else target
     evidence = cid_nl_evidence(
         fixture,
@@ -731,7 +731,7 @@ def _reject_assessment(
         scan_number=scan_number,
         scan_rt_min=8.0,
     )
-    return mint_cid_nl_method_assessment_ref(
+    return mint_cid_nl_method_assessment(
         sample=fixture.sample(sample_stem),
         acquisition_source=fixture.source(fixture.sample(sample_stem)),
         target=effective_target,
@@ -756,11 +756,11 @@ def _assessment(
     scan_number: int,
     invocation: str,
     target=None,
-) -> CidNlMethodAssessmentRef:
+) -> CidNlMethodAssessment:
     sample = fixture.sample(sample_stem)
     effective_target = fixture.target if target is None else target
     if support_apex is None:
-        return mint_cid_nl_method_assessment_ref(
+        return mint_cid_nl_method_assessment(
             sample=sample,
             acquisition_source=fixture.source(sample),
             target=effective_target,
@@ -794,7 +794,7 @@ def _assessment(
         )
         for evidence in evidence_refs
     )
-    return mint_cid_nl_method_assessment_ref(
+    return mint_cid_nl_method_assessment(
         sample=sample,
         acquisition_source=fixture.source(sample),
         target=effective_target,
@@ -834,7 +834,7 @@ def _recovery_universe(
     sample_stem: str,
     peaks,
 ):
-    assessment = mint_cid_nl_method_assessment_ref(
+    assessment = mint_cid_nl_method_assessment(
         sample=fixture.sample(sample_stem),
         acquisition_source=fixture.source(fixture.sample(sample_stem)),
         target=fixture.target,

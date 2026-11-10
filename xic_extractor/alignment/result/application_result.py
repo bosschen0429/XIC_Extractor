@@ -12,12 +12,12 @@ from xic_extractor.alignment.result.scientific_alignment import (
 from xic_extractor.discovery.models import PeakStatus
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     UntargetedCidNlMethodSubjectBatch,
 )
-from xic_extractor.peak_detection.observations import PeakObservationContent
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
@@ -48,8 +48,8 @@ class UntargetedCandidateExclusion:
         "composite_requirement_not_supported",
         "cid_nl_requirement_not_supported",
     ] = "discovery_candidate_not_search_eligible"
-    composite_assessments: tuple[CidNlMethodAssessmentRef, ...] = ()
-    method_assessments: tuple[CidNlMethodAssessmentRef, ...] = ()
+    composite_assessments: tuple[CidNlMethodAssessment, ...] = ()
+    method_assessments: tuple[CidNlMethodAssessment, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,7 +175,7 @@ def _require_batch_population(
     }
     actual_subjects: Counter[str] = Counter()
     seen_groups: set[str] = set()
-    seen_physical: set[PeakObservationContent] = set()
+    seen_physical: set[PeakObservation] = set()
     for child in request.children:
         core = child.scientific_core
         actual.update(core.scope.declared_candidate_ids)

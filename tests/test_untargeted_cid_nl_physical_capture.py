@@ -249,9 +249,7 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     )
     assessment = result.assessment_input.assessment
     if not shifted_mass:
-        assert assessment.content.method_result == (
-            "SUPPORT" if fresh_available else "REJECT"
-        )
+        assert assessment.method_result == ("SUPPORT" if fresh_available else "REJECT")
         assert len(assessment.individual_support_refs) == (2 if fresh_available else 0)
     # Both candidates select the same MS1 peak, shifted traces included, so the
     # universe holds that peak once.
@@ -345,14 +343,14 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         (observed,) = (
             item
             for item in assessment.candidate_peaks
-            if item.content.integration.rt_apex_min == integration.rt_apex_min
+            if item.integration.rt_apex_min == integration.rt_apex_min
         )
         assert capture.selected_hypothesis.integration == integration
         assert (
-            observed.content.integration.area_baseline_corrected
+            observed.integration.area_baseline_corrected
             == integration.area_baseline_corrected
         )
-        assert observed.content.integration.rt_apex_min == integration.rt_apex_min
+        assert observed.integration.rt_apex_min == integration.rt_apex_min
     assert states == (["available"] if fresh_available else ["unavailable"])
     assert changed_questions == 0
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
@@ -502,13 +500,14 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
         physical_records=(record,),
     )
     assessment = result.assessment_input.assessment
-    assert assessment.content.method_result == "HOLD"
+    assert assessment.method_result == "HOLD"
     assert not assessment.individual_support_refs
-    assert {e.scan_number for e in assessment.evidence_refs} == {
+    assert {e.scan_number for e in assessment.evidence_observations} == {
         scan.scan_number for scan in source_raw.scans
     }
     assert all(
-        e.precursor_mz == pytest.approx(500.016) for e in assessment.evidence_refs
+        e.precursor_mz == pytest.approx(500.016)
+        for e in assessment.evidence_observations
     )
     # Alignment adopts that one measurement on the identical trace.
     (capture,) = result.captures
@@ -580,17 +579,15 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
     assessment = result.assessment_input.assessment
     left, right = sorted(
         assessment.candidate_peaks,
-        key=lambda peak: peak.content.integration.rt_apex_min,
+        key=lambda peak: peak.integration.rt_apex_min,
     )
-    assert left.content.integration.rt_right_min < (
-        right.content.integration.rt_left_min
-    )
-    assert assessment.content.method_result == "SUPPORT"
+    assert left.integration.rt_right_min < (right.integration.rt_left_min)
+    assert assessment.method_result == "SUPPORT"
     assert assessment.set_relation_refs == ()
     assert {
-        support.content.peak_observation.physical_peak_key
+        support.peak_observation.physical_peak_key
         for support in assessment.individual_support_refs
     } == {
-        left.content.physical_peak_key,
-        right.content.physical_peak_key,
+        left.physical_peak_key,
+        right.physical_peak_key,
     }

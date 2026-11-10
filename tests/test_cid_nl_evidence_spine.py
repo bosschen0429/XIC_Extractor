@@ -22,7 +22,7 @@ from tests.processing_identity_no_raw_fixture import (
 )
 from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
-    mint_cell_observation_ref,
+    mint_cell_observation,
 )
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
@@ -31,7 +31,7 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.peak_detection import cid_nl_method_assessment as assessment_module
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationContractError,
-    resolve_dda_cid_nl_candidate_set_relation_ref,
+    resolve_dda_cid_nl_candidate_set_relation,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
@@ -39,7 +39,7 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
-    mint_cid_nl_method_assessment_ref,
+    mint_cid_nl_method_assessment,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportContractError,
@@ -188,7 +188,7 @@ def test_parent_ms1_measurement_qualifies_inference_without_rewriting_origin(
     )
     assert bool(individual) is supported
     assert not sets
-    assessment = mint_cid_nl_method_assessment_ref(
+    assessment = mint_cid_nl_method_assessment(
         sample=fixture.sample("s1"),
         acquisition_source=fixture.source(fixture.sample("s1")),
         target=fixture.target,
@@ -206,7 +206,7 @@ def test_parent_ms1_measurement_qualifies_inference_without_rewriting_origin(
         individual_support_refs=individual,
         set_relation_refs=sets,
     )
-    assert assessment.content.method_result == ("SUPPORT" if supported else "HOLD")
+    assert assessment.method_result == ("SUPPORT" if supported else "HOLD")
     observation = evidence
     assert observation.precursor_mz_basis == "product_plus_neutral_loss"
     assert observation.precursor_mz == 500.0
@@ -214,8 +214,8 @@ def test_parent_ms1_measurement_qualifies_inference_without_rewriting_origin(
     assert observation.ms1_precursor_observation is not None
     assert observation.ms1_precursor_observation.centroid_mzs == tuple(centroids)
     if supported:
-        assert individual[0].content.precursor_mz == 500.001
-        assert individual[0].content.observed_loss_error_ppm == pytest.approx(
+        assert individual[0].precursor_mz == 500.001
+        assert individual[0].observed_loss_error_ppm == pytest.approx(
             0.001 / 116.0474 * 1e6
         )
     with pytest.raises(CidNlEvidenceContractError, match="recorded parent"):
@@ -307,21 +307,15 @@ def test_inferred_evidence_rejects_unbound_or_crossed_precursor_provenance(
 def test_s1_to_s5_truth_table_preserves_orthogonal_axes(tmp_path: Path) -> None:
     fixture, assessments = _truth_table_fixture(tmp_path)
 
-    by_sample = {
-        assessment.content.sample_key: assessment for assessment in assessments
-    }
+    by_sample = {assessment.sample_key: assessment for assessment in assessments}
 
-    assert by_sample[fixture.sample("s1").sample_name].content.method_result == (
-        "SUPPORT"
-    )
-    assert by_sample[fixture.sample("s2").sample_name].content.method_result == ("HOLD")
-    assert by_sample[fixture.sample("s3").sample_name].content.method_result == (
-        "REJECT"
-    )
-    assert by_sample[fixture.sample("s4").sample_name].content.method_result == ("HOLD")
+    assert by_sample[fixture.sample("s1").sample_name].method_result == ("SUPPORT")
+    assert by_sample[fixture.sample("s2").sample_name].method_result == ("HOLD")
+    assert by_sample[fixture.sample("s3").sample_name].method_result == ("REJECT")
+    assert by_sample[fixture.sample("s4").sample_name].method_result == ("HOLD")
     s5 = by_sample[fixture.sample("s5").sample_name]
-    assert s5.content.technical_state == "unsupported"
-    assert s5.content.method_result is None
+    assert s5.technical_state == "unsupported"
+    assert s5.method_result is None
     assert all(not hasattr(assessment, "peak_hypothesis") for assessment in assessments)
 
 
@@ -350,13 +344,13 @@ def test_set_relation_is_order_neutral_and_never_votes_twice(tmp_path: Path) -> 
         scan_rt_min=8.0,
     )
 
-    forward = resolve_dda_cid_nl_candidate_set_relation_ref(
+    forward = resolve_dda_cid_nl_candidate_set_relation(
         sample=fixture.sample("split"),
         canonical_evidence=evidence,
         candidate_peaks=(left, right),
         policy=cid_nl_support_policy(),
     )
-    reverse = resolve_dda_cid_nl_candidate_set_relation_ref(
+    reverse = resolve_dda_cid_nl_candidate_set_relation(
         sample=fixture.sample("split"),
         canonical_evidence=evidence,
         candidate_peaks=(right, left),
@@ -364,8 +358,8 @@ def test_set_relation_is_order_neutral_and_never_votes_twice(tmp_path: Path) -> 
     )
 
     assert forward == reverse
-    assert forward.content.relationship == "supports_one_or_more_of"
-    assert set(forward.content.matched_candidates) == {left.content, right.content}
+    assert forward.relationship == "supports_one_or_more_of"
+    assert set(forward.matched_candidates) == {left, right}
     assert not hasattr(forward, "individual_support_votes")
 
 
@@ -376,15 +370,15 @@ def test_zero_buffer_boundary_is_set_level_hold(tmp_path: Path) -> None:
         fixture,
         "edge",
         scan_number=45,
-        scan_rt_min=peak.content.integration.rt_left_min,
+        scan_rt_min=peak.integration.rt_left_min,
     )
-    relation = resolve_dda_cid_nl_candidate_set_relation_ref(
+    relation = resolve_dda_cid_nl_candidate_set_relation(
         sample=fixture.sample("edge"),
         canonical_evidence=evidence,
         candidate_peaks=(peak,),
         policy=cid_nl_support_policy(),
     )
-    assessment = mint_cid_nl_method_assessment_ref(
+    assessment = mint_cid_nl_method_assessment(
         sample=fixture.sample("edge"),
         acquisition_source=fixture.source(fixture.sample("edge")),
         target=fixture.target,
@@ -395,8 +389,8 @@ def test_zero_buffer_boundary_is_set_level_hold(tmp_path: Path) -> None:
         set_relation_refs=(relation,),
     )
 
-    assert relation.content.matched_candidates == (peak.content,)
-    assert assessment.content.method_result == "HOLD"
+    assert relation.matched_candidates == (peak,)
+    assert assessment.method_result == "HOLD"
     assert assessment.individual_support_refs == ()
 
 
@@ -447,14 +441,14 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
             )
         else:
             set_refs = (
-                resolve_dda_cid_nl_candidate_set_relation_ref(
+                resolve_dda_cid_nl_candidate_set_relation(
                     sample=sample,
                     canonical_evidence=evidence,
                     candidate_peaks=peaks,
                     policy=cid_nl_support_policy(),
                 ),
             )
-        assessment = mint_cid_nl_method_assessment_ref(
+        assessment = mint_cid_nl_method_assessment(
             sample=sample,
             acquisition_source=fixture.source(sample),
             target=fixture.target,
@@ -470,9 +464,9 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
             relations = assessment_module.evaluate_cid_nl_method_relations(
                 candidate_intervals=tuple(
                     assessment_module.CidNlCandidateInterval(
-                        peak.content.mz,
-                        peak.content.integration.rt_left_min,
-                        peak.content.integration.rt_right_min,
+                        peak.mz,
+                        peak.integration.rt_left_min,
+                        peak.integration.rt_right_min,
                     )
                     for peak in peaks
                 ),
@@ -507,7 +501,7 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
             )
         assert resolved_individual == individual_refs
         assert resolved_sets == set_refs
-        resolved_assessment = mint_cid_nl_method_assessment_ref(
+        resolved_assessment = mint_cid_nl_method_assessment(
             sample=sample,
             acquisition_source=fixture.source(sample),
             target=fixture.target,
@@ -519,13 +513,13 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
             set_relation_refs=resolved_sets,
         )
         assert resolved_assessment == assessment
-        assert assessment.content.method_result == expected_result
+        assert assessment.method_result == expected_result
         if expected_result == "SUPPORT":
-            assert individual_refs[0].content.peak_observation == left.content
+            assert individual_refs[0].peak_observation == left
             with pytest.raises(
                 DdaCidNlCandidateSetRelationContractError, match="individual support"
             ):
-                resolve_dda_cid_nl_candidate_set_relation_ref(
+                resolve_dda_cid_nl_candidate_set_relation(
                     sample=sample,
                     canonical_evidence=evidence,
                     candidate_peaks=peaks,
@@ -533,9 +527,7 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
                 )
         else:
             assert assessment.individual_support_refs == ()
-            assert set(set_refs[0].content.matched_candidates) == {
-                peak.content for peak in peaks
-            }
+            assert set(set_refs[0].matched_candidates) == {peak for peak in peaks}
 
 
 @pytest.mark.parametrize(
@@ -602,7 +594,7 @@ def test_assessment_requires_qualifying_evidence_before_reject(
         product_intensity=400.0,
     )
 
-    assessment = mint_cid_nl_method_assessment_ref(
+    assessment = mint_cid_nl_method_assessment(
         sample=sample,
         acquisition_source=fixture.source(sample),
         target=fixture.target,
@@ -611,8 +603,8 @@ def test_assessment_requires_qualifying_evidence_before_reject(
         evidence_refs=(evidence,),
     )
 
-    assert assessment.content.method_result == "HOLD"
-    assert assessment.content.reason_codes == ("insufficient_method_evidence",)
+    assert assessment.method_result == "HOLD"
+    assert assessment.reason_codes == ("insufficient_method_evidence",)
 
 
 def test_assessment_preserves_mixed_individual_and_set_scan_relations(
@@ -637,7 +629,7 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
         fixture,
         "mixed",
         scan_number=76,
-        scan_rt_min=peak.content.integration.rt_right_min,
+        scan_rt_min=peak.integration.rt_right_min,
     )
     individual = cid_nl_unique_support(
         fixture,
@@ -646,14 +638,14 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
         evidence=interior,
         candidate_peaks=peaks,
     )
-    set_relation = resolve_dda_cid_nl_candidate_set_relation_ref(
+    set_relation = resolve_dda_cid_nl_candidate_set_relation(
         sample=sample,
         canonical_evidence=boundary,
         candidate_peaks=peaks,
         policy=cid_nl_support_policy(),
     )
 
-    assessment = mint_cid_nl_method_assessment_ref(
+    assessment = mint_cid_nl_method_assessment(
         sample=sample,
         acquisition_source=fixture.source(sample),
         target=fixture.target,
@@ -665,7 +657,7 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
         set_relation_refs=(set_relation,),
     )
 
-    assert assessment.content.method_result == "SUPPORT"
+    assert assessment.method_result == "SUPPORT"
     assert assessment.individual_support_refs == (individual,)
     assert assessment.set_relation_refs == (set_relation,)
     assert assessment_module.resolve_cid_nl_method_relations(
@@ -674,9 +666,7 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
         candidate_peaks=peaks,
         policy=cid_nl_support_policy(),
     ) == ((individual,), (set_relation,))
-    assert set(set_relation.content.matched_candidates) == {
-        item.content for item in peaks
-    }
+    assert set(set_relation.matched_candidates) == {item for item in peaks}
 
 
 def test_cell_identity_binds_full_provisional_group_membership(
@@ -701,7 +691,7 @@ def test_cell_identity_binds_full_provisional_group_membership(
             peak=peak,
             evidence=evidence,
         )
-        assessment = mint_cid_nl_method_assessment_ref(
+        assessment = mint_cid_nl_method_assessment(
             sample=sample,
             acquisition_source=fixture.source(sample),
             target=fixture.target,
@@ -729,16 +719,14 @@ def test_cell_identity_binds_full_provisional_group_membership(
     combined_a = next(
         cell
         for cell in combined.cells
-        if cell.content.sample_key == sample_assessments[0][0].sample_name
+        if cell.sample_key == sample_assessments[0][0].sample_name
     )
 
     assert single.group.group_hypothesis_id != combined.group.group_hypothesis_id
     assert single.group.owner_ids != combined.group.owner_ids
-    assert single.cells[0].content != combined_a.content
-    assert single.cells[0].content.group_owner_ids == tuple(
-        sorted(single.group.owner_ids)
-    )
-    assert combined_a.content.group_owner_ids == tuple(sorted(combined.group.owner_ids))
+    assert single.cells[0] != combined_a
+    assert single.cells[0].group_owner_ids == tuple(sorted(single.group.owner_ids))
+    assert combined_a.group_owner_ids == tuple(sorted(combined.group.owner_ids))
 
 
 def test_non_support_cell_rejects_group_from_another_target(tmp_path: Path) -> None:
@@ -757,7 +745,7 @@ def test_non_support_cell_rejects_group_from_another_target(tmp_path: Path) -> N
         config=AlignmentConfig(anchor_min_seed_events=1),
     )
     assert spine.group is not None
-    hold_assessment = mint_cid_nl_method_assessment_ref(
+    hold_assessment = mint_cid_nl_method_assessment(
         sample=fixture.sample("hold"),
         acquisition_source=fixture.source(fixture.sample("hold")),
         target=fixture.other_target,
@@ -766,7 +754,7 @@ def test_non_support_cell_rejects_group_from_another_target(tmp_path: Path) -> N
     )
 
     with pytest.raises(CellObservationContractError, match="group recovery subject"):
-        mint_cell_observation_ref(
+        mint_cell_observation(
             sample=fixture.sample("hold"),
             target=fixture.other_target,
             group_context=spine.cells[0].group_context,
@@ -813,12 +801,12 @@ def test_reorder_is_neutral_and_multiple_scans_form_one_support_hypothesis(
         "evaluation_receipt": _completed_receipt(),
         "candidate_peaks": (peak,),
     }
-    forward = mint_cid_nl_method_assessment_ref(
+    forward = mint_cid_nl_method_assessment(
         **kwargs,
         evidence_refs=(first_evidence, second_evidence),
         individual_support_refs=(first_support, second_support),
     )
-    reverse = mint_cid_nl_method_assessment_ref(
+    reverse = mint_cid_nl_method_assessment(
         **kwargs,
         evidence_refs=(second_evidence, first_evidence),
         individual_support_refs=(second_support, first_support),
@@ -832,7 +820,7 @@ def test_reorder_is_neutral_and_multiple_scans_form_one_support_hypothesis(
     assert len(spine.support_hypotheses) == 1
     support = spine.support_hypotheses[0].evidence.cid_nl_chromatographic_support_ref
     assert support is not None
-    assert support.content.strict_nl_scan_count == 2
+    assert support.strict_nl_scan_count == 2
 
 
 def test_multi_scan_owner_projection_is_order_neutral_across_samples(
@@ -892,7 +880,7 @@ def test_duplicate_candidates_fail_closed(tmp_path: Path) -> None:
         DdaCidNlCandidateSetRelationContractError,
         match="unique",
     ):
-        resolve_dda_cid_nl_candidate_set_relation_ref(
+        resolve_dda_cid_nl_candidate_set_relation(
             sample=fixture.sample("sample"),
             canonical_evidence=evidence,
             candidate_peaks=(left, left),
@@ -906,7 +894,7 @@ def test_failed_attempt_cannot_become_reject_or_human_unassessable(
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("failed",)
     )
-    assessment = mint_cid_nl_method_assessment_ref(
+    assessment = mint_cid_nl_method_assessment(
         sample=fixture.sample("failed"),
         acquisition_source=fixture.source(fixture.sample("failed")),
         target=fixture.target,
@@ -922,8 +910,8 @@ def test_failed_attempt_cannot_become_reject_or_human_unassessable(
         technical_state="failed",
     )
 
-    assert assessment.content.method_result is None
-    assert assessment.content.reason_codes == ("detector_worker_failed",)
+    assert assessment.method_result is None
+    assert assessment.reason_codes == ("detector_worker_failed",)
     assert "unassessable" not in repr(assessment).lower()
 
 
@@ -944,7 +932,7 @@ def test_unique_case_rejects_set_relation_and_split_case_rejects_individual_vote
         DdaCidNlCandidateSetRelationContractError,
         match="individual support",
     ):
-        resolve_dda_cid_nl_candidate_set_relation_ref(
+        resolve_dda_cid_nl_candidate_set_relation(
             sample=fixture.sample("sample"),
             canonical_evidence=evidence,
             candidate_peaks=(peak,),
@@ -1015,7 +1003,7 @@ def _support_assessment(
         )
         for evidence in evidence_refs
     )
-    return mint_cid_nl_method_assessment_ref(
+    return mint_cid_nl_method_assessment(
         sample=fixture.sample(sample_stem),
         acquisition_source=fixture.source(fixture.sample(sample_stem)),
         target=fixture.target,
@@ -1116,13 +1104,13 @@ def test_cell_rejects_hypothesis_from_a_different_assessment_relation_set(
         "evaluation_receipt": _completed_receipt(),
         "candidate_peaks": (peak,),
     }
-    first_assessment = mint_cid_nl_method_assessment_ref(
+    first_assessment = mint_cid_nl_method_assessment(
         **common,
         detector_invocation_id="gaussian15:cross:first",
         evidence_refs=(first_evidence,),
         individual_support_refs=(first_support,),
     )
-    second_assessment = mint_cid_nl_method_assessment_ref(
+    second_assessment = mint_cid_nl_method_assessment(
         **common,
         detector_invocation_id="gaussian15:cross:second",
         evidence_refs=(second_evidence,),
@@ -1135,7 +1123,7 @@ def test_cell_rejects_hypothesis_from_a_different_assessment_relation_set(
     assert second_spine.group is not None
 
     with pytest.raises(CellObservationContractError, match="relations"):
-        mint_cell_observation_ref(
+        mint_cell_observation(
             sample=sample,
             target=fixture.target,
             group_context=second_spine.cells[0].group_context,

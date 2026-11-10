@@ -11,14 +11,14 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
     cid_nl_evidence_observation,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
+    DdaCidNlPeakSupport,
     DdaCidNlPeakSupportPolicy,
-    DdaCidNlPeakSupportRef,
-    resolve_dda_cid_nl_peak_support_ref,
+    resolve_dda_cid_nl_peak_support,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.observations import (
-    PeakObservationRef,
-    mint_peak_observation_ref,
+    PeakObservation,
+    mint_peak_observation,
 )
 from xic_extractor.peak_detection.traces import Trace
 
@@ -32,7 +32,7 @@ def cid_nl_peak(
     rt_left_min: float = 7.9,
     rt_right_min: float = 8.1,
     height: float = 500.0,
-) -> PeakObservationRef:
+) -> PeakObservation:
     sample = fixture.sample(sample_stem)
     source = fixture.source(sample)
     trace = Trace.from_arrays(
@@ -65,7 +65,7 @@ def cid_nl_peak(
         boundary_sources=("candidate_interval", "gaussian15"),
         raw_scan_indices=(1, 2, 3),
     )
-    return mint_peak_observation_ref(
+    return mint_peak_observation(
         sample=sample,
         trace=trace,
         integration=integration,
@@ -99,11 +99,11 @@ def cid_nl_unique_support(
     fixture: ProcessingIdentityNoRawFixture,
     sample_stem: str,
     *,
-    peak: PeakObservationRef,
+    peak: PeakObservation,
     evidence: CidNlEvidenceObservation,
-    candidate_peaks: tuple[PeakObservationRef, ...] | None = None,
-) -> DdaCidNlPeakSupportRef:
-    return resolve_dda_cid_nl_peak_support_ref(
+    candidate_peaks: tuple[PeakObservation, ...] | None = None,
+) -> DdaCidNlPeakSupport:
+    return resolve_dda_cid_nl_peak_support(
         sample=fixture.sample(sample_stem),
         canonical_evidence=evidence,
         candidate_peaks=candidate_peaks or (peak,),

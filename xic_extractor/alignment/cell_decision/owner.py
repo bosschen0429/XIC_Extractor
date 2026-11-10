@@ -227,7 +227,7 @@ def _decide_target(
         )
     integration = hypothesis.integration
     if _target_has_fragmented_low_signal(
-        integration, hypothesis.peak_observation_refs[0].content.intensity
+        integration, hypothesis.peak_observation_refs[0].intensity
     ):
         return NoWriteCellDecision("not_quantifiable"), integration
     return _payload_from_integration(integration), integration

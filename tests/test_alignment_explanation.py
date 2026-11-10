@@ -126,13 +126,13 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     assessment = next(
         item
         for item in completed.method_assessments
-        if item.content.sample_key == detail["candidates"][0]["sample_key"]
+        if item.sample_key == detail["candidates"][0]["sample_key"]
     )
     retained = records["method_assessments"][0]
-    assert retained["reason_codes"] == list(assessment.content.reason_codes)
-    assert retained["method_result"] == assessment.content.method_result
+    assert retained["reason_codes"] == list(assessment.reason_codes)
+    assert retained["method_result"] == assessment.method_result
     assert retained["evaluation_receipt"] == json.loads(
-        json.dumps(asdict(assessment.content.evaluation_receipt))
+        json.dumps(asdict(assessment.evaluation_receipt))
     )
     assert "artifact" not in retained
     assert all(item["candidate_id"] == candidate_id for item in detail["candidates"])

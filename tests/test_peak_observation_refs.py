@@ -18,8 +18,8 @@ from xic_extractor.peak_detection.models import (
     PeakResult,
 )
 from xic_extractor.peak_detection.observations import (
-    PeakObservationRef,
-    mint_peak_observation_ref,
+    PeakObservation,
+    mint_peak_observation,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -54,14 +54,14 @@ def test_query_provenance_does_not_change_selected_physical_content(
         acquisition_source_id=_source_id(identity.source),
     )
 
-    narrow = mint_peak_observation_ref(
+    narrow = mint_peak_observation(
         sample=identity.sample,
         trace=narrow_trace,
         integration=_integration(raw_scan_indices=(1, 2, 3)),
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
-    wide = mint_peak_observation_ref(
+    wide = mint_peak_observation(
         sample=identity.sample,
         trace=wide_trace,
         integration=_integration(raw_scan_indices=(2, 3, 4)),
@@ -72,9 +72,9 @@ def test_query_provenance_does_not_change_selected_physical_content(
     np.testing.assert_array_equal(narrow.source_trace.rt, narrow_trace.rt)
     np.testing.assert_array_equal(wide.source_trace.rt, wide_trace.rt)
     np.testing.assert_array_equal(wide.source_trace.intensity, wide_trace.intensity)
-    assert len(wide.source_trace.rt) > len(wide.content.rt)
-    assert narrow.content == wide.content
-    assert narrow.content.physical_peak_key == (wide.content.physical_peak_key)
+    assert len(wide.source_trace.rt) > len(wide.rt)
+    assert narrow == wide
+    assert narrow.physical_peak_key == (wide.physical_peak_key)
     assert narrow.generation_provenance != wide.generation_provenance
 
 
@@ -91,7 +91,7 @@ def test_selected_signal_mutation_changes_content(
         acquisition_source_id=_source_id(identity.source),
     )
 
-    mutated = mint_peak_observation_ref(
+    mutated = mint_peak_observation(
         sample=identity.sample,
         trace=mutated_trace,
         integration=_integration(
@@ -103,7 +103,7 @@ def test_selected_signal_mutation_changes_content(
         proposal_sources=("local_minimum",),
     )
 
-    assert original.content.physical_identity != mutated.content.physical_identity
+    assert original.physical_identity != mutated.physical_identity
 
 
 def test_integration_fact_mutation_changes_content_identity(tmp_path: Path) -> None:
@@ -114,7 +114,7 @@ def test_integration_fact_mutation_changes_content_identity(tmp_path: Path) -> N
         integration_method="alternate_integration",
     )
 
-    changed = mint_peak_observation_ref(
+    changed = mint_peak_observation(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=changed_integration,
@@ -122,7 +122,7 @@ def test_integration_fact_mutation_changes_content_identity(tmp_path: Path) -> N
         proposal_sources=("local_minimum",),
     )
 
-    assert original.content.physical_identity != changed.content.physical_identity
+    assert original.physical_identity != changed.physical_identity
 
 
 def test_equivalent_numeric_integration_inputs_have_one_content_identity(
@@ -139,14 +139,14 @@ def test_equivalent_numeric_integration_inputs_have_one_content_identity(
         area_raw_counts_seconds=3300,
     )
 
-    float_ref = mint_peak_observation_ref(
+    float_ref = mint_peak_observation(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=float_integration,
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
-    integer_ref = mint_peak_observation_ref(
+    integer_ref = mint_peak_observation(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=integer_integration,
@@ -155,10 +155,8 @@ def test_equivalent_numeric_integration_inputs_have_one_content_identity(
     )
 
     assert integer_integration == float_integration
-    assert integer_ref.content == float_ref.content
-    assert integer_ref.content.physical_peak_key == (
-        float_ref.content.physical_peak_key
-    )
+    assert integer_ref == float_ref
+    assert integer_ref.physical_peak_key == (float_ref.physical_peak_key)
 
 
 def test_integration_result_collapses_signed_zero() -> None:
@@ -192,14 +190,14 @@ def test_signed_zero_trace_values_have_one_observation_identity(
         intensity=signed_zero_intensity,
     )
 
-    positive = mint_peak_observation_ref(
+    positive = mint_peak_observation(
         sample=identity.sample,
         trace=positive_trace,
         integration=integration,
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
-    negative = mint_peak_observation_ref(
+    negative = mint_peak_observation(
         sample=identity.sample,
         trace=signed_zero_trace,
         integration=integration,
@@ -253,7 +251,7 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
         intensity=trace.intensity,
     )[0].integration
 
-    reference = mint_peak_observation_ref(
+    reference = mint_peak_observation(
         sample=identity.sample,
         trace=trace,
         integration=integration,
@@ -262,22 +260,22 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
     )
 
     assert integration.raw_scan_indices == (1, 2, 3)
-    assert reference.content.rt == (7.9, 8.0, 8.1)
-    assert reference.content.integration.rt_left_min == 7.94
-    assert reference.content.integration.rt_right_min == 8.06
+    assert reference.rt == (7.9, 8.0, 8.1)
+    assert reference.integration.rt_left_min == 7.94
+    assert reference.integration.rt_right_min == 8.06
 
 
 def test_proposal_source_reorder_is_canonicalized(tmp_path: Path) -> None:
     identity = _identity_fixture(tmp_path)
 
-    forward = mint_peak_observation_ref(
+    forward = mint_peak_observation(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
         resolver_mode="consensus",
         proposal_sources=("boundary_resolver", "local_minimum"),
     )
-    reversed_order = mint_peak_observation_ref(
+    reversed_order = mint_peak_observation(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
@@ -294,7 +292,7 @@ def test_resolver_change_preserves_content_but_changes_generation_provenance(
     identity = _identity_fixture(tmp_path)
 
     local_minimum = _mint_standard_reference(identity.source, identity.sample)
-    arbitrated = mint_peak_observation_ref(
+    arbitrated = mint_peak_observation(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
@@ -302,7 +300,7 @@ def test_resolver_change_preserves_content_but_changes_generation_provenance(
         proposal_sources=("local_minimum",),
     )
 
-    assert local_minimum.content == arbitrated.content
+    assert local_minimum == arbitrated
     assert local_minimum.generation_provenance != arbitrated.generation_provenance
 
 
@@ -338,8 +336,8 @@ def _standard_trace(source: AcquisitionSourceIdentity) -> Trace:
 def _mint_standard_reference(
     source: AcquisitionSourceIdentity,
     sample: SampleMetadata,
-) -> PeakObservationRef:
-    return mint_peak_observation_ref(
+) -> PeakObservation:
+    return mint_peak_observation(
         sample=sample,
         trace=_standard_trace(source),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
@@ -404,14 +402,14 @@ def test_advisory_quality_does_not_change_physical_content_identity(tmp_path):
         "available", noise_sigma=10.0, signal_to_noise=2.0, low_signal_to_noise=True
     )
     enriched = replace(
-        old.content,
-        integration=replace(old.content.integration, signal_quality=quality),
+        old,
+        integration=replace(old.integration, signal_quality=quality),
     )
-    assert enriched.physical_peak_key == old.content.physical_peak_key
-    assert enriched.physical_identity == old.content.physical_identity
-    assert observation_owner.index_physical_peaks(
-        (old, replace(old, content=enriched))
-    ) == {old.content.physical_identity: replace(old, content=enriched)}
+    assert enriched.physical_peak_key == old.physical_peak_key
+    assert enriched.physical_identity == old.physical_identity
+    assert observation_owner.index_physical_peaks((old, enriched)) == {
+        old.physical_identity: enriched
+    }
 
 
 @pytest.mark.parametrize(
@@ -453,7 +451,7 @@ def test_retained_candidate_batch_preserves_observation_values(
         for query in (1.3, 1.7)
     )
     expected = tuple(
-        mint_peak_observation_ref(
+        mint_peak_observation(
             sample=identity.sample,
             trace=trace,
             integration=observation_owner.physical_peak_observation_integration(
@@ -489,9 +487,9 @@ def test_retained_candidate_batch_preserves_observation_values(
     )
     assert len(actual) == 2
     for reference, projected in zip(expected, actual, strict=True):
-        assert reference.content == projected.content
+        assert reference == projected
         assert reference.generation_provenance == projected.generation_provenance
     assert (
-        actual[0].content.integration.area_ms1_morphology
-        > actual[1].content.integration.area_ms1_morphology
+        actual[0].integration.area_ms1_morphology
+        > actual[1].integration.area_ms1_morphology
     )

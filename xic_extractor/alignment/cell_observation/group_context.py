@@ -11,7 +11,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
@@ -49,7 +49,7 @@ class CidNlCellGroupSupport:
     """One exact SUPPORT closure that owns membership in a provisional group."""
 
     sample: SampleMetadata
-    assessment: CidNlMethodAssessmentRef
+    assessment: CidNlMethodAssessment
     hypothesis: PeakHypothesis
 
 
@@ -72,8 +72,8 @@ class CidNlCellGroupContext:
         subjects = tuple(
             sorted(
                 {
-                    support.assessment.content.method_subject.method_subject_id: (
-                        support.assessment.content.method_subject
+                    support.assessment.method_subject.method_subject_id: (
+                        support.assessment.method_subject
                     )
                     for support in self.supports
                 }.values(),

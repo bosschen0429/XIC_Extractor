@@ -248,7 +248,7 @@ def _build_publication_output(
         target_ids_by_label[target_label] = target_id
         targets_by_label[target_label] = target.target
         for backfill in result.scientific_core.targeted_backfill_decisions:
-            sample_id = backfill.target_cell.content.sample_key
+            sample_id = backfill.target_cell.sample_key
             backfills[(sample_id, target_id)] = backfill
         for projection_decision in result.completed_projection.decisions:
             subject = cast(Any, projection_decision.subject)

@@ -296,8 +296,8 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
                     for attempt in result.backfill_attempts:
                         stem = result.job.sample.raw_stem
                         if stem == "S21":
-                            assert attempt.assessment.content.method_result != "SUPPORT"
-                        receipt = attempt.assessment.content.evaluation_receipt
+                            assert attempt.assessment.method_result != "SUPPORT"
+                        receipt = attempt.assessment.evaluation_receipt
                         queries[result.job.sample.raw_stem] = (
                             attempt.query_rt,
                             attempt.query_rt_basis,
@@ -305,7 +305,7 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
                             receipt.query_rt_max,
                             attempt.assessment.candidate_peaks[
                                 0
-                            ].content.integration.rt_apex_min,
+                            ].integration.rt_apex_min,
                         )
                 adapter.execute_composition(partition, acquired, store)
             assert set(queries) == {"S20", "S21"}
@@ -875,7 +875,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     assert plan.subject_batch == subject_batch
     assert set(result.application_result.candidate_ids) == set(candidate_by_id)
     assert {
-        assessment.content.method_subject.method_subject_id
+        assessment.method_subject.method_subject_id
         for assessment in result.method_assessments
     } == eligible_subject_ids
     assert not result.application_result.excluded_candidates
@@ -885,13 +885,10 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         assert written_rows(tmp_path / "bounded-written", writer) == written_rows(
             tmp_path / "eager-written", eager.application_result
         )
-        assert {
-            assessment.content: assessment for assessment in result.method_assessments
-        } == {
-            assessment.content: assessment
+        assert {assessment: assessment for assessment in result.method_assessments} == {
+            assessment: assessment
             for assessment in eager.method_assessments
-            if assessment.content.method_subject.method_subject_id
-            in eligible_subject_ids
+            if assessment.method_subject.method_subject_id in eligible_subject_ids
         }
     from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_alignment_explanation,
@@ -1036,8 +1033,8 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
             )
         )
     assert len(bounded.method_assessments) == len(eager.method_assessments)
-    assert {item.content for item in bounded.method_assessments} == {
-        item.content for item in eager.method_assessments
+    assert {item for item in bounded.method_assessments} == {
+        item for item in eager.method_assessments
     }
     _assert_explanation_parity(tmp_path, plan, config, eager, bounded)
     partition_stages = [
@@ -1936,7 +1933,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
         (
             result.job.sample.sample_name,
             result.job.method_subject.method_subject_id,
-            tuple(ref.content for ref in result.effective_assessments),
+            tuple(ref for ref in result.effective_assessments),
         )
         for result in serial.sample_results
     )
@@ -1944,7 +1941,7 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
         (
             result.job.sample.sample_name,
             result.job.method_subject.method_subject_id,
-            tuple(ref.content for ref in result.effective_assessments),
+            tuple(ref for ref in result.effective_assessments),
         )
         for result in process.sample_results
     )

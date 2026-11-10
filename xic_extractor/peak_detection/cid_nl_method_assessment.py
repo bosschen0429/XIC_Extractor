@@ -7,13 +7,13 @@ searches, HOLD, and REJECT do not need fake ``PeakHypothesis`` objects.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
-    DdaCidNlCandidateSetRelationRef,
-    resolve_dda_cid_nl_candidate_set_relation_ref,
+    DdaCidNlCandidateSetRelation,
+    resolve_dda_cid_nl_candidate_set_relation,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
@@ -27,13 +27,12 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_from_target,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
+    DdaCidNlPeakSupport,
     DdaCidNlPeakSupportPolicy,
-    DdaCidNlPeakSupportRef,
-    resolve_dda_cid_nl_peak_support_ref,
+    resolve_dda_cid_nl_peak_support,
 )
 from xic_extractor.peak_detection.observations import (
-    PeakObservationContent,
-    PeakObservationRef,
+    PeakObservation,
 )
 from xic_extractor.precursor_evidence import PrecursorLossAssessment
 from xic_extractor.processing_identity import (
@@ -176,15 +175,19 @@ class CidNlEvaluationReceipt:
     physical_query_mz: float | None = None
 
     def __post_init__(self) -> None:
-        for field in ("query_rt_min", "query_rt_max", "physical_query_mz"):
-            value = getattr(self, field)
+        for name in ("query_rt_min", "query_rt_max", "physical_query_mz"):
+            value = getattr(self, name)
             if value is not None:
-                object.__setattr__(self, field, float(value) or 0.0)
+                object.__setattr__(self, name, float(value) or 0.0)
 
 
 @dataclass(frozen=True, slots=True)
-class CidNlMethodAssessmentContent:
-    """Orthogonal technical and method-result axes for one attempt."""
+class CidNlMethodAssessment:
+    """One complete method attempt: its technical and method-result axes.
+
+    Equality uses the attempt's values only; the scan-level relations that
+    decided the result travel with it without changing that equality.
+    """
 
     sample_key: str
     acquisition_source_id: str
@@ -193,42 +196,33 @@ class CidNlMethodAssessmentContent:
     method_version: str
     method_subject: CidNlMethodSubject
     detector_invocation_id: str
-    candidate_peaks: tuple[PeakObservationContent, ...]
+    candidate_peaks: tuple[PeakObservation, ...]
     evaluation_receipt: CidNlEvaluationReceipt
     evidence_observations: tuple[CidNlEvidenceObservation, ...]
     technical_state: CidNlTechnicalState
     method_result: CidNlMethodResult | None
     reason_codes: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class CidNlMethodAssessmentRef:
-    """One complete method attempt plus its exact typed upstream references."""
-
-    content: CidNlMethodAssessmentContent
-    candidate_peaks: tuple[PeakObservationRef, ...]
-    evidence_refs: tuple[CidNlEvidenceObservation, ...]
-    individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...]
-    set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...]
+    individual_support_refs: tuple[DdaCidNlPeakSupport, ...] = field(compare=False)
+    set_relation_refs: tuple[DdaCidNlCandidateSetRelation, ...] = field(compare=False)
 
 
 def resolve_cid_nl_method_relations(
     *,
     sample: SampleMetadata,
     evidence_refs: tuple[CidNlEvidenceObservation, ...],
-    candidate_peaks: tuple[PeakObservationRef, ...],
+    candidate_peaks: tuple[PeakObservation, ...],
     policy: DdaCidNlPeakSupportPolicy,
     relations: CidNlMethodRelations | None = None,
 ) -> tuple[
-    tuple[DdaCidNlPeakSupportRef, ...],
-    tuple[DdaCidNlCandidateSetRelationRef, ...],
+    tuple[DdaCidNlPeakSupport, ...],
+    tuple[DdaCidNlCandidateSetRelation, ...],
 ]:
     """Bind the shared relation answer to exact evidence and physical artifacts."""
     intervals = tuple(
         CidNlCandidateInterval(
-            peak.content.mz,
-            peak.content.integration.rt_left_min,
-            peak.content.integration.rt_right_min,
+            peak.mz,
+            peak.integration.rt_left_min,
+            peak.integration.rt_right_min,
         )
         for peak in candidate_peaks
     )
@@ -245,7 +239,7 @@ def resolve_cid_nl_method_relations(
             candidate_intervals=intervals, event_queries=queries, policy=policy
         )
     individual_refs = tuple(
-        resolve_dda_cid_nl_peak_support_ref(
+        resolve_dda_cid_nl_peak_support(
             sample=sample,
             canonical_evidence=evidence_refs[event_index],
             candidate_peaks=candidate_peaks,
@@ -254,7 +248,7 @@ def resolve_cid_nl_method_relations(
         for event_index, _candidate_index in relations.individual_relations
     )
     set_refs = tuple(
-        resolve_dda_cid_nl_candidate_set_relation_ref(
+        resolve_dda_cid_nl_candidate_set_relation(
             sample=sample,
             canonical_evidence=evidence_refs[event_index],
             candidate_peaks=candidate_peaks,
@@ -265,7 +259,7 @@ def resolve_cid_nl_method_relations(
     return individual_refs, set_refs
 
 
-def mint_cid_nl_method_assessment_ref(
+def mint_cid_nl_method_assessment(
     *,
     sample: SampleMetadata,
     acquisition_source: AcquisitionSourceIdentity,
@@ -273,12 +267,12 @@ def mint_cid_nl_method_assessment_ref(
     method_subject: CidNlMethodSubject | None = None,
     detector_invocation_id: str,
     evaluation_receipt: CidNlEvaluationReceipt,
-    candidate_peaks: tuple[PeakObservationRef, ...] = (),
+    candidate_peaks: tuple[PeakObservation, ...] = (),
     evidence_refs: tuple[CidNlEvidenceObservation, ...] = (),
-    individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...] = (),
-    set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...] = (),
+    individual_support_refs: tuple[DdaCidNlPeakSupport, ...] = (),
+    set_relation_refs: tuple[DdaCidNlCandidateSetRelation, ...] = (),
     technical_state: CidNlTechnicalState = "evaluated",
-) -> CidNlMethodAssessmentRef:
+) -> CidNlMethodAssessment:
     """Close one complete CID-NL attempt without granting product authority."""
 
     subject = _resolve_method_subject(
@@ -303,7 +297,7 @@ def mint_cid_nl_method_assessment_ref(
         individual_support_refs=individual,
         set_relation_refs=set_relations,
     )
-    content = CidNlMethodAssessmentContent(
+    return CidNlMethodAssessment(
         sample_key=sample.sample_name,
         acquisition_source_id=acquisition_source.acquisition_source_id,
         provider_id=CID_NL_PROVIDER_ID,
@@ -311,17 +305,12 @@ def mint_cid_nl_method_assessment_ref(
         method_version=CID_NL_METHOD_VERSION,
         method_subject=subject,
         detector_invocation_id=detector_invocation_id,
-        candidate_peaks=tuple(peak.content for peak in candidates),
+        candidate_peaks=candidates,
         evaluation_receipt=evaluation_receipt,
         evidence_observations=evidence,
         technical_state=technical_state,
         method_result=method_result,
         reason_codes=reason_codes,
-    )
-    return CidNlMethodAssessmentRef(
-        content=content,
-        candidate_peaks=candidates,
-        evidence_refs=evidence,
         individual_support_refs=individual,
         set_relation_refs=set_relations,
     )
@@ -348,7 +337,7 @@ def _resolve_method_subject(
 def _evidence_matches_candidate_universe(
     *,
     evidence: CidNlEvidenceObservation,
-    candidate_peaks: tuple[PeakObservationRef, ...],
+    candidate_peaks: tuple[PeakObservation, ...],
     support_policy: DdaCidNlPeakSupportPolicy,
 ) -> bool:
     observation = evidence
@@ -361,9 +350,9 @@ def _evidence_matches_candidate_universe(
     ):
         return False
     return any(
-        peak.content.integration.rt_left_min <= observation.support_rt_min
-        and observation.scan_rt_min <= peak.content.integration.rt_right_min
-        and abs(precursor.reference_mz - peak.content.mz)
+        peak.integration.rt_left_min <= observation.support_rt_min
+        and observation.scan_rt_min <= peak.integration.rt_right_min
+        and abs(precursor.reference_mz - peak.mz)
         <= support_policy.precursor_tolerance_da
         for peak in candidate_peaks
     )
@@ -371,25 +360,25 @@ def _evidence_matches_candidate_universe(
 
 def _is_strict_unique_support(
     *,
-    support: DdaCidNlPeakSupportRef,
-    candidate_peaks: tuple[PeakObservationRef, ...],
+    support: DdaCidNlPeakSupport,
+    candidate_peaks: tuple[PeakObservation, ...],
 ) -> bool:
-    selected = support.content.peak_observation
+    selected = support.peak_observation
     selected_interval = selected.integration
     if not (
         selected_interval.rt_left_min
-        < support.content.scan_rt_min
+        < support.scan_rt_min
         < selected_interval.rt_right_min
     ):
         return False
     for candidate in candidate_peaks:
-        if candidate.content == selected:
+        if candidate == selected:
             continue
-        if abs(support.content.precursor_mz - candidate.content.mz) > (
-            support.content.policy.precursor_tolerance_da
+        if abs(support.precursor_mz - candidate.mz) > (
+            support.policy.precursor_tolerance_da
         ):
             continue
-        interval = candidate.content.integration
+        interval = candidate.integration
         if (
             selected_interval.rt_left_min < interval.rt_right_min
             and interval.rt_left_min < selected_interval.rt_right_min
@@ -403,10 +392,10 @@ def _method_result(
     method_subject: CidNlMethodSubject,
     technical_state: CidNlTechnicalState,
     evaluation_receipt: CidNlEvaluationReceipt,
-    candidate_peaks: tuple[PeakObservationRef, ...],
+    candidate_peaks: tuple[PeakObservation, ...],
     evidence_refs: tuple[CidNlEvidenceObservation, ...],
-    individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
-    set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...],
+    individual_support_refs: tuple[DdaCidNlPeakSupport, ...],
+    set_relation_refs: tuple[DdaCidNlCandidateSetRelation, ...],
 ) -> tuple[CidNlMethodResult | None, tuple[str, ...]]:
     if technical_state != "evaluated":
         assert evaluation_receipt.reason_code is not None
@@ -431,64 +420,63 @@ def _method_result(
     return "HOLD", ("insufficient_method_evidence",)
 
 
-def is_cid_nl_missing_ms1_rejection(assessment: CidNlMethodAssessmentRef) -> bool:
+def is_cid_nl_missing_ms1_rejection(assessment: CidNlMethodAssessment) -> bool:
     """Recognize a completed rejection; group owners still authorize a revisit."""
     return (
-        assessment.content.technical_state == "evaluated"
-        and assessment.content.method_result == "REJECT"
-        and assessment.content.reason_codes
-        == ("qualifying_cid_nl_without_usable_ms1_peak",)
+        assessment.technical_state == "evaluated"
+        and assessment.method_result == "REJECT"
+        and assessment.reason_codes == ("qualifying_cid_nl_without_usable_ms1_peak",)
         and not assessment.candidate_peaks
     )
 
 
 def is_ms1_only_cid_nl_backfill_assessment(
-    assessment: CidNlMethodAssessmentRef,
+    assessment: CidNlMethodAssessment,
 ) -> bool:
     """Recognize a group-bounded Backfill that found one MS1 peak and no CID-NL.
 
     The group owner authorized the revisit; the result grants no detection.
     """
     return (
-        assessment.content.detector_invocation_id == "untargeted-cid-nl-backfill"
-        and assessment.content.technical_state == "evaluated"
-        and assessment.content.method_result == "HOLD"
-        and assessment.content.reason_codes == ("no_unique_qualifying_relation",)
+        assessment.detector_invocation_id == "untargeted-cid-nl-backfill"
+        and assessment.technical_state == "evaluated"
+        and assessment.method_result == "HOLD"
+        and assessment.reason_codes == ("no_unique_qualifying_relation",)
         and len(assessment.candidate_peaks) == 1
-        and not assessment.evidence_refs
+        and not assessment.evidence_observations
     )
 
 
 def is_unsearched_cid_nl_discovery_assessment(
-    assessment: CidNlMethodAssessmentRef,
+    assessment: CidNlMethodAssessment,
 ) -> bool:
     """Recognize missing eligible input, without granting recovery authority."""
     return (
-        assessment.content.technical_state == "not_evaluated"
-        and assessment.content.reason_codes == ("no_search_eligible_discovery_input",)
+        assessment.technical_state == "not_evaluated"
+        and assessment.reason_codes == ("no_search_eligible_discovery_input",)
     )
 
 
 def supported_cid_nl_peaks(
-    assessment: CidNlMethodAssessmentRef,
-) -> frozenset[PeakObservationContent]:
+    assessment: CidNlMethodAssessment,
+) -> frozenset[PeakObservation]:
     """Physical peaks that satisfy the complete owner-bound requirement."""
-    if assessment.content.technical_state != "evaluated":
+    if assessment.technical_state != "evaluated":
         return frozenset()
     return _supported_peaks(
-        assessment.content.method_subject,
+        assessment.method_subject,
         assessment.individual_support_refs,
     )
 
 
 def _supported_peaks(
     subject: CidNlMethodSubject,
-    individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
-) -> frozenset[PeakObservationContent]:
-    losses_by_peak: dict[PeakObservationContent, set[float]] = {}
+    individual_support_refs: tuple[DdaCidNlPeakSupport, ...],
+) -> frozenset[PeakObservation]:
+    losses_by_peak: dict[PeakObservation, set[float]] = {}
     for support in individual_support_refs:
-        losses_by_peak.setdefault(support.content.peak_observation, set()).add(
-            support.content.evidence.configured_neutral_loss_da
+        losses_by_peak.setdefault(support.peak_observation, set()).add(
+            support.evidence.configured_neutral_loss_da
         )
     required = set(subject.configured_losses)
     return frozenset(
@@ -504,18 +492,18 @@ def _canonical_candidates(
     value: object,
     *,
     allow_empty: bool,
-) -> tuple[PeakObservationRef, ...]:
+) -> tuple[PeakObservation, ...]:
     if not isinstance(value, tuple) or (not value and not allow_empty):
         raise CidNlMethodAssessmentContractError(
             "candidate_peaks must be an immutable tuple"
         )
-    if any(not isinstance(item, PeakObservationRef) for item in value):
+    if any(not isinstance(item, PeakObservation) for item in value):
         raise CidNlMethodAssessmentContractError(
             "candidate_peaks must contain owner-backed observations"
         )
-    refs = tuple(sorted(value, key=lambda item: item.content.measured_order_key))
+    refs = tuple(sorted(value, key=lambda item: item.measured_order_key))
     _require_unique_refs(
-        tuple(item.content.physical_peak_key for item in refs),
+        tuple(item.physical_peak_key for item in refs),
         field="candidate peak content",
     )
     return refs
@@ -529,20 +517,20 @@ def _canonical_evidence_refs(value: object) -> tuple[CidNlEvidenceObservation, .
     )
 
 
-def _canonical_individual_refs(value: object) -> tuple[DdaCidNlPeakSupportRef, ...]:
+def _canonical_individual_refs(value: object) -> tuple[DdaCidNlPeakSupport, ...]:
     return _canonical_refs(
         value,
-        expected_type=DdaCidNlPeakSupportRef,
+        expected_type=DdaCidNlPeakSupport,
         field="individual_support_refs",
     )
 
 
 def _canonical_set_refs(
     value: object,
-) -> tuple[DdaCidNlCandidateSetRelationRef, ...]:
+) -> tuple[DdaCidNlCandidateSetRelation, ...]:
     return _canonical_refs(
         value,
-        expected_type=DdaCidNlCandidateSetRelationRef,
+        expected_type=DdaCidNlCandidateSetRelation,
         field="set_relation_refs",
     )
 
@@ -557,13 +545,11 @@ def _canonical_refs(value: object, *, expected_type: type, field: str) -> tuple:
 
     def event_key(
         item: CidNlEvidenceObservation
-        | DdaCidNlPeakSupportRef
-        | DdaCidNlCandidateSetRelationRef,
+        | DdaCidNlPeakSupport
+        | DdaCidNlCandidateSetRelation,
     ) -> tuple:
         observation = (
-            item
-            if isinstance(item, CidNlEvidenceObservation)
-            else item.content.evidence
+            item if isinstance(item, CidNlEvidenceObservation) else item.evidence
         )
         return (
             observation.sample_key,
@@ -605,13 +591,12 @@ __all__ = [
     "CidNlCandidateInterval",
     "CidNlEvaluationReceipt",
     "CidNlEventQuery",
-    "CidNlMethodAssessmentContent",
+    "CidNlMethodAssessment",
     "CidNlMethodAssessmentContractError",
-    "CidNlMethodAssessmentRef",
     "CidNlMethodResult",
     "CidNlMethodRelations",
     "CidNlTechnicalState",
     "evaluate_cid_nl_method_relations",
-    "mint_cid_nl_method_assessment_ref",
+    "mint_cid_nl_method_assessment",
     "resolve_cid_nl_method_relations",
 ]

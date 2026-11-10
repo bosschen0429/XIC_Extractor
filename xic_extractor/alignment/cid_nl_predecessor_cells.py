@@ -9,9 +9,9 @@ from xic_extractor.alignment.cell_observation.group_context import (
     CidNlCellGroupSupport,
 )
 from xic_extractor.alignment.cell_observation.records import (
+    CellObservation,
     CellObservationContractError,
-    CellObservationRef,
-    mint_cell_observation_ref,
+    mint_cell_observation,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
@@ -22,34 +22,33 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentContent,
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
     is_ms1_only_cid_nl_backfill_assessment,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
-from xic_extractor.peak_detection.observations import PeakObservationContent
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.sample_metadata import SampleMetadata
 
 
 def compose_cid_nl_predecessor_cells(
     *,
     groups: tuple[CrossSamplePeakGroupHypothesis, ...],
-    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...],
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...],
     alignment_config: AlignmentConfig,
     sample_universe: frozenset[str] | None = None,
     rt_frame: RtFrame,
     backfill_assessments_by_group: Mapping[
         tuple[str, str, str],
-        tuple[SampleMetadata, CidNlMethodAssessmentRef],
+        tuple[SampleMetadata, CidNlMethodAssessment],
     ]
     | None = None,
     selected_cells: frozenset[tuple[str, str]] | None = None,
     retained_hypotheses_by_assessment: Mapping[
-        CidNlMethodAssessmentContent, tuple[PeakHypothesis, ...]
+        CidNlMethodAssessment, tuple[PeakHypothesis, ...]
     ]
     | None = None,
     rejected_backfill_cells: frozenset[tuple[str, str]] = frozenset(),
-) -> tuple[CellObservationRef, ...]:
+) -> tuple[CellObservation, ...]:
     """Attach initial evidence and only each group's own backfill assessment.
 
     An MS1-only Backfill peak in ``rejected_backfill_cells`` stays unresolved.
@@ -61,19 +60,19 @@ def compose_cid_nl_predecessor_cells(
     for (_, sample_id, subject_id), (sample, assessment) in backfills.items():
         if (
             sample.sample_name != sample_id
-            or assessment.content.sample_key != sample_id
-            or assessment.content.method_subject.method_subject_id != subject_id
+            or assessment.sample_key != sample_id
+            or assessment.method_subject.method_subject_id != subject_id
         ):
             raise CellObservationContractError(
                 "group backfill crossed its sample or method subject"
             )
     # Match the sample and measured assessment values, not artifact identities.
     unique_assessments: dict[
-        CidNlMethodAssessmentContent,
-        tuple[SampleMetadata, CidNlMethodAssessmentRef],
+        CidNlMethodAssessment,
+        tuple[SampleMetadata, CidNlMethodAssessment],
     ] = {}
     for sample, assessment in (*sample_assessments, *backfills.values()):
-        unique_assessments.setdefault(assessment.content, (sample, assessment))
+        unique_assessments.setdefault(assessment, (sample, assessment))
     sample_assessments = tuple(
         sorted(
             unique_assessments.values(),
@@ -84,13 +83,12 @@ def compose_cid_nl_predecessor_cells(
         owner_id for group in groups for owner_id in group.owner_ids
     )
     retained_by_assessment = dict(retained_hypotheses_by_assessment or {})
-    consumed_retained_keys: set[CidNlMethodAssessmentContent] = set()
+    consumed_retained_keys: set[CidNlMethodAssessment] = set()
     supports_list: list[CidNlCellGroupSupport] = []
     for sample, assessment in sample_assessments:
-        retained_key = assessment.content
-        retained_hypotheses = retained_by_assessment.get(retained_key, ())
-        if retained_key in retained_by_assessment:
-            consumed_retained_keys.add(retained_key)
+        retained_hypotheses = retained_by_assessment.get(assessment, ())
+        if assessment in retained_by_assessment:
+            consumed_retained_keys.add(assessment)
         supports_list.extend(
             CidNlCellGroupSupport(
                 sample=sample,
@@ -109,9 +107,7 @@ def compose_cid_nl_predecessor_cells(
     }
     missing_owner_ids = retained_hypothesis_ids - retained_support_ids
     if missing_owner_ids:
-        missing_member_observations_by_sample: dict[
-            str, set[PeakObservationContent]
-        ] = {}
+        missing_member_observations_by_sample: dict[str, set[PeakObservation]] = {}
         for group in groups:
             for member in group.member_subjects:
                 if member.subject_id in missing_owner_ids:
@@ -126,8 +122,7 @@ def compose_cid_nl_predecessor_cells(
                 set(),
             )
             if not missing_observation_ids.intersection(
-                candidate.content.physical_identity
-                for candidate in assessment.candidate_peaks
+                candidate.physical_identity for candidate in assessment.candidate_peaks
             ):
                 continue
             supports_list.extend(
@@ -170,7 +165,7 @@ def compose_cid_nl_predecessor_cells(
         for group in groups
     )
     assessments_by_sample_subject: dict[
-        tuple[str, str], list[CidNlMethodAssessmentRef]
+        tuple[str, str], list[CidNlMethodAssessment]
     ] = {}
     samples = {}
     for sample, assessment in sample_assessments:
@@ -178,7 +173,7 @@ def compose_cid_nl_predecessor_cells(
         samples[sample_id] = sample
         if id(assessment) in initial_assessment_objects:
             assessments_by_sample_subject.setdefault(
-                (sample_id, assessment.content.method_subject.method_subject_id), []
+                (sample_id, assessment.method_subject.method_subject_id), []
             ).append(assessment)
     support_contexts: dict[tuple[str, int], list[CidNlCellGroupContext]] = {}
     for context in contexts:
@@ -238,7 +233,7 @@ def compose_cid_nl_predecessor_cells(
                 (support,) = local
                 hypothesis = support.hypothesis
                 (observation,) = hypothesis.peak_observation_refs
-            elif assessment.content.method_result == "SUPPORT":
+            elif assessment.method_result == "SUPPORT":
                 siblings = tuple(
                     sibling
                     for sibling in support_contexts.get((sample_id, id(assessment)), ())
@@ -254,7 +249,7 @@ def compose_cid_nl_predecessor_cells(
                     else None
                 )
             elif (
-                assessment.content.method_result == "HOLD"
+                assessment.method_result == "HOLD"
                 and len(assessment.candidate_peaks) == 1
                 and not (
                     is_ms1_only_cid_nl_backfill_assessment(assessment)
@@ -267,7 +262,7 @@ def compose_cid_nl_predecessor_cells(
             ):
                 observation = assessment.candidate_peaks[0]
             cells.append(
-                mint_cell_observation_ref(
+                mint_cell_observation(
                     sample=sample,
                     group_context=context,
                     method_assessment=assessment,
@@ -275,7 +270,7 @@ def compose_cid_nl_predecessor_cells(
                     peak_hypothesis=hypothesis,
                     outside_group_context=outside_context,
                     unassigned_support=(
-                        assessment.content.method_result == "SUPPORT"
+                        assessment.method_result == "SUPPORT"
                         and not local
                         and outside_context is None
                     ),

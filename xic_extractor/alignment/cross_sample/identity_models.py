@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
-from xic_extractor.peak_detection.observations import PeakObservationContent
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.sample_metadata import SampleMetadata
 
 CrossSampleGroupDisposition: TypeAlias = Literal[
@@ -39,7 +39,7 @@ class CrossSampleGroupMemberSubject:
     sample_key: str
     subject_kind: Literal["peak_hypothesis"]
     subject_id: str
-    physical_peaks: tuple[PeakObservationContent, ...]
+    physical_peaks: tuple[PeakObservation, ...]
 
 
 def group_member_subject_from_peak_hypothesis(
@@ -55,7 +55,7 @@ def group_member_subject_from_peak_hypothesis(
     physical_ids = tuple(
         sorted(
             (
-                observation.content.physical_identity
+                observation.physical_identity
                 for observation in hypothesis.peak_observation_refs
             ),
             key=lambda content: content.measured_order_key,
@@ -65,7 +65,7 @@ def group_member_subject_from_peak_hypothesis(
         not physical_ids
         or len(set(physical_ids)) != len(physical_ids)
         or any(
-            observation.content.sample_key != sample_id
+            observation.sample_key != sample_id
             for observation in hypothesis.peak_observation_refs
         )
     ):
@@ -84,7 +84,7 @@ def canonical_group_members(
     if not member_subjects:
         raise CrossSampleContractError("cross-sample group requires a member")
     samples: set[str] = set()
-    physical: set[PeakObservationContent] = set()
+    physical: set[PeakObservation] = set()
     members: list[CrossSampleGroupMemberSubject] = []
     for member in member_subjects:
         if not isinstance(member, CrossSampleGroupMemberSubject):

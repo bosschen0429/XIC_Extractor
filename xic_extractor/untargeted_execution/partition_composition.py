@@ -55,7 +55,7 @@ from xic_extractor.peak_detection.capture import (
     rebind_untargeted_capture_scope,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
     is_unsearched_cid_nl_discovery_assessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -162,7 +162,7 @@ class UntargetedPartitionComposition:
     children: tuple[FinalizedUntargetApplicationResult, ...]
     excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
     capture_bindings: tuple[CaptureCandidateBinding, ...]
-    method_assessments: tuple[CidNlMethodAssessmentRef, ...]
+    method_assessments: tuple[CidNlMethodAssessment, ...]
     initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
     initial_edges: tuple[CrossSampleNeighborhoodEdge, ...]
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = ()
@@ -370,7 +370,7 @@ class _ProductionCompositionInputs:
     completions: tuple[
         tuple[CidNlWorksetCompletion, tuple[BackfillCompletionProjection, ...]], ...
     ]
-    method_assessments: tuple[CidNlMethodAssessmentRef, ...]
+    method_assessments: tuple[CidNlMethodAssessment, ...]
     initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
     initial_edges: tuple[CrossSampleNeighborhoodEdge, ...]
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = ()
@@ -446,8 +446,8 @@ def prepare_untargeted_partition_grouping(
             for assessment in result.effective_assessments
         )
         evaluated_unsupported = tuple(
-            ref.content.technical_state == "evaluated"
-            and ref.content.method_result in {"HOLD", "REJECT"}
+            ref.technical_state == "evaluated"
+            and ref.method_result in {"HOLD", "REJECT"}
             for ref in subject_assessments
         )
         if any(evaluated_unsupported) and all(
@@ -479,7 +479,7 @@ def prepare_untargeted_partition_grouping(
                 if method_subject_id in unsupported_subjects
                 and unsupported_subjects[method_subject_id][
                     0
-                ].content.method_subject.composition
+                ].method_subject.composition
                 is not None
                 else "cid_nl_requirement_not_supported"
                 if method_subject_id in unsupported_subjects
@@ -488,12 +488,12 @@ def prepare_untargeted_partition_grouping(
             composite_assessments=tuple(
                 ref
                 for ref in unsupported_subjects.get(method_subject_id, ())
-                if ref.content.method_subject.composition is not None
+                if ref.method_subject.composition is not None
             ),
             method_assessments=tuple(
                 ref
                 for ref in unsupported_subjects.get(method_subject_id, ())
-                if ref.content.method_subject.composition is None
+                if ref.method_subject.composition is None
             ),
         )
         for candidate_id, method_subject_id in (
@@ -616,7 +616,7 @@ def prepare_untargeted_partition_grouping(
             )
         }
         retained_hypotheses_by_assessment = {
-            assessment_by_sample_subject[key].content: hypotheses
+            assessment_by_sample_subject[key]: hypotheses
             for key, hypotheses in hypotheses_by_sample_subject.items()
         }
         for binding in child_bindings:
@@ -873,7 +873,7 @@ def _build_production_composition_inputs(
                 assessments,
                 key=lambda pair: (
                     pair[0].sample_name,
-                    subject_order[pair[1].content.method_subject.method_subject_id],
+                    subject_order[pair[1].method_subject.method_subject_id],
                 ),
             )
         )

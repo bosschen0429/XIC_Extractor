@@ -1165,7 +1165,7 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
     )
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         CidNlEvaluationReceipt,
-        mint_cid_nl_method_assessment_ref,
+        mint_cid_nl_method_assessment,
     )
 
     original, contexts, orders = _direct_conflict_case(
@@ -1185,7 +1185,7 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
         )
         evidence = cid_nl_evidence(fixture, name, scan_number=1, scan_rt_min=rt)
         support = cid_nl_unique_support(fixture, name, peak=peak, evidence=evidence)
-        assessment = mint_cid_nl_method_assessment_ref(
+        assessment = mint_cid_nl_method_assessment(
             sample=sample,
             acquisition_source=fixture.source(sample),
             target=fixture.target,

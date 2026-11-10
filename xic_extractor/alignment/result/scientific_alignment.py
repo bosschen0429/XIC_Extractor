@@ -11,8 +11,8 @@ from xic_extractor.alignment.backfill.conservative import (
     ConservativeBackfillCellDecision,
 )
 from xic_extractor.alignment.cell_observation.observations import (
+    CellObservation,
     CellObservationContractError,
-    CellObservationRef,
     FinalGroupCellObservation,
     compose_final_group_cell_observation_population,
 )
@@ -109,8 +109,8 @@ def finalize_scientific_alignment(
     captures: Sequence[SampleLocalCapture],
     grouping_result: CrossSampleGroupingResult,
     cell_observation_handoff: CrossSampleAssociationLineageHandoff | None,
-    predecessor_cell_observations: Sequence[CellObservationRef],
-    backfill_cell_observations: Sequence[CellObservationRef] = (),
+    predecessor_cell_observations: Sequence[CellObservation],
+    backfill_cell_observations: Sequence[CellObservation] = (),
     targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = (),
 ) -> FinalizedScientificAlignment:
     """Validate one complete capture population and close its shared core."""

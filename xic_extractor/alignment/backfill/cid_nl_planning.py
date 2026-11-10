@@ -29,7 +29,7 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
 from xic_extractor.sample_metadata import SampleMetadata
@@ -53,7 +53,7 @@ class CidNlBackfillQuestion:
     localization: BackfillPeakLocation | None = None
     observed_apex_tolerance_sec: float = 0.0
 
-    def resolve(self, assessment: CidNlMethodAssessmentRef) -> CidNlBackfillDecision:
+    def resolve(self, assessment: CidNlMethodAssessment) -> CidNlBackfillDecision:
         return CidNlBackfillDecision(
             question=self,
             assessment=assessment,
@@ -72,7 +72,7 @@ class CidNlBackfillQuestion:
 @dataclass(frozen=True, slots=True)
 class CidNlBackfillDecision:
     question: CidNlBackfillQuestion
-    assessment: CidNlMethodAssessmentRef
+    assessment: CidNlMethodAssessment
     action: Literal["reuse", "search", "skip"]
 
 
@@ -109,10 +109,7 @@ def plan_grouped_cid_nl_backfills(
             subject = select_cid_nl_group_backfill_subject(
                 group,
                 tuple(
-                    {
-                        direct[owner_id].content.method_subject
-                        for owner_id in group.owner_ids
-                    }
+                    {direct[owner_id].method_subject for owner_id in group.owner_ids}
                 ),
             )
             trajectory = workset.grouping_scope.peak_trajectories.trajectory_for(
@@ -142,7 +139,7 @@ def plan_grouped_cid_nl_backfills(
 
 
 def plan_subject_cid_nl_backfills(
-    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...],
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...],
     *,
     method_subject: CidNlMethodSubject,
     sample_population: tuple[SampleMetadata, ...],
@@ -151,7 +148,7 @@ def plan_subject_cid_nl_backfills(
     """Plan the direct subject route without inventing a frozen batch trajectory."""
     support_owners: list[SampleLocalMS1Owner] = []
     for sample, assessment in sample_assessments:
-        if assessment.content.method_result != "SUPPORT":
+        if assessment.method_result != "SUPPORT":
             continue
         hypotheses = compose_cid_nl_peak_hypotheses_from_assessment(
             sample=sample, assessment=assessment

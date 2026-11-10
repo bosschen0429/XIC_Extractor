@@ -41,7 +41,7 @@ from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
@@ -277,7 +277,7 @@ class UntargetedInitialSampleResult:
     adapter_result: CidNlAcquisitionResult
 
     @property
-    def effective_assessments(self) -> tuple[CidNlMethodAssessmentRef, ...]:
+    def effective_assessments(self) -> tuple[CidNlMethodAssessment, ...]:
         return (self.adapter_result.assessment_input.assessment,)
 
 
@@ -316,7 +316,7 @@ class UntargetedSampleResult:
         return self.backfill_attempts[0] if self.backfill_attempts else None
 
     @property
-    def effective_assessments(self) -> tuple[CidNlMethodAssessmentRef, ...]:
+    def effective_assessments(self) -> tuple[CidNlMethodAssessment, ...]:
         return (self.adapter_result.assessment_input.assessment,) + tuple(
             attempt.assessment for attempt in self.backfill_attempts
         )
@@ -338,9 +338,9 @@ class UntargetedSampleResult:
             matches = tuple(
                 attempt
                 for attempt in self.backfill_attempts
-                if attempt.assessment.content.evaluation_receipt.query_rt_min
+                if attempt.assessment.evaluation_receipt.query_rt_min
                 == max(0.0, center - half_window)
-                and attempt.assessment.content.evaluation_receipt.query_rt_max
+                and attempt.assessment.evaluation_receipt.query_rt_max
                 == center + half_window
             )
         if len(matches) > 1:
@@ -386,12 +386,12 @@ def _project_completed_backfill(
     if backfill is None:
         raise UntargetedPartitionError("initial assessment is not a backfill")
     assessment = backfill.assessment
-    receipt = assessment.content.evaluation_receipt
+    receipt = assessment.evaluation_receipt
     if (
-        assessment.content.technical_state != "evaluated"
-        or assessment.content.method_result != "HOLD"
+        assessment.technical_state != "evaluated"
+        or assessment.method_result != "HOLD"
         or assessment.candidate_peaks
-        or assessment.content.detector_invocation_id != "untargeted-cid-nl-backfill"
+        or assessment.detector_invocation_id != "untargeted-cid-nl-backfill"
         or not receipt.search_completed
         or not receipt.acquisition_supported
         or backfill.backfill_input is not None
@@ -405,7 +405,7 @@ def _project_completed_backfill(
         ppm_tol=job.method_subject.precursor_tolerance_ppm,
     )
     exact = exact_traces(
-        backfill.acquisition, expected_request, assessment.content.acquisition_source_id
+        backfill.acquisition, expected_request, assessment.acquisition_source_id
     )
     if len(exact) != 1 or (
         receipt.query_rt_min != expected_request.rt_min

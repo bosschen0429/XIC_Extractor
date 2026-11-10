@@ -34,7 +34,7 @@ from xic_extractor.peak_detection.capture import (
     mint_captured_peak_observation,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
@@ -42,8 +42,8 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
+    PeakObservation,
     PeakObservationGenerationProvenance,
-    PeakObservationRef,
     mint_physical_peak_observations,
 )
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
@@ -77,8 +77,8 @@ class TargetedSampleCapture:
     result: ExtractionResult
     candidate_id: str | None
     captured: SampleLocalCapture | None
-    selected_observation: PeakObservationRef | None
-    observation_universe: tuple[PeakObservationRef, ...]
+    selected_observation: PeakObservation | None
+    observation_universe: tuple[PeakObservation, ...]
     owner_hypothesis: PeakHypothesis | None = None
 
     @property
@@ -130,7 +130,7 @@ class TargetedCapturePopulation:
 
     def bind_assessments(
         self,
-        assessments: Sequence[tuple[SampleMetadata, CidNlMethodAssessmentRef]],
+        assessments: Sequence[tuple[SampleMetadata, CidNlMethodAssessment]],
     ) -> TargetedCapturePopulation:
         """Bind each selected observation to its assessment-universe hypothesis."""
 
@@ -173,7 +173,7 @@ class TargetedCapturePopulation:
 
     def rebind_to_recovery(
         self,
-        recovery_observations: Mapping[str, PeakObservationRef],
+        recovery_observations: Mapping[str, PeakObservation],
     ) -> TargetedCapturePopulation:
         """Capture again after Backfill replaced a sample's selected peak."""
 
@@ -516,7 +516,7 @@ def mint_candidate_peak_observation(
     *,
     config: ExtractionConfig,
     acquired_trace_provenance: PeakObservationGenerationProvenance | None,
-) -> PeakObservationRef:
+) -> PeakObservation:
     return mint_physical_peak_observations(
         sample=sample,
         trace=trace,

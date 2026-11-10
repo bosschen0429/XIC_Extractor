@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 from xic_extractor.alignment.cell_observation.cid_nl_evidence import (
@@ -23,13 +23,13 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
     CidNlMethodResult,
     CidNlTechnicalState,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -43,8 +43,13 @@ class OutsideGroupCellRelation:
 
 
 @dataclass(frozen=True, slots=True)
-class CellObservationContent:
-    """Orthogonal axes only; no value, writer, fill, or product authority."""
+class CellObservation:
+    """One exact cell closure under an already-existing provisional group.
+
+    Equality uses the cell's orthogonal axes only; the group context,
+    assessment, peak and hypothesis it closes over travel with it.  It carries
+    no value, writer, fill, or product authority.
+    """
 
     sample_key: str
     group_hypothesis_id: str
@@ -56,20 +61,15 @@ class CellObservationContent:
     physical_peak_key: str | None
     peak_hypothesis_id: str | None
     reason_codes: tuple[str, ...]
+    group_context: CidNlCellGroupContext = field(compare=False)
+    method_assessment: CidNlMethodAssessment = field(compare=False)
+    peak_observation: PeakObservation | None = field(compare=False)
+    peak_hypothesis: PeakHypothesis | None = field(compare=False)
     outside_group: OutsideGroupCellRelation | None = None
     unassigned_support: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class CellObservationRef:
-    """One exact cell closure under an already-existing provisional group."""
-
-    content: CellObservationContent
-    group_context: CidNlCellGroupContext
-    method_assessment: CidNlMethodAssessmentRef
-    peak_observation: PeakObservationRef | None
-    peak_hypothesis: PeakHypothesis | None
-    outside_group_context: CidNlCellGroupContext | None = None
+    outside_group_context: CidNlCellGroupContext | None = field(
+        default=None, compare=False
+    )
 
     def evidence_state(self) -> FinalCellEvidenceState:
         """The cell's own method meaning; lineage is closed by its caller."""
@@ -90,8 +90,8 @@ def _direct_member_integration(
     canonical_sample: SampleMetadata,
     terminal_variant: TerminalObservationVariant,
     terminal_hypothesis: PeakHypothesis | None,
-    method_assessment: CidNlMethodAssessmentRef | None,
-    peak_observation: PeakObservationRef | None,
+    method_assessment: CidNlMethodAssessment | None,
+    peak_observation: PeakObservation | None,
     peak_hypothesis: PeakHypothesis | None,
 ) -> IntegrationResult | None:
     if member is None:
@@ -116,7 +116,7 @@ def _direct_member_integration(
             member.subject_kind != "peak_hypothesis"
             or member.subject_id != direct_hypothesis.hypothesis_id
             or any(
-                observation.content.sample_key != sample_key
+                observation.sample_key != sample_key
                 for observation in direct_hypothesis.peak_observation_refs
             )
         ):
@@ -143,7 +143,7 @@ def _direct_member_integration(
 def _outside_group_relation(
     *,
     group_context: CidNlCellGroupContext,
-    method_assessment: CidNlMethodAssessmentRef,
+    method_assessment: CidNlMethodAssessment,
     outside_group_context: CidNlCellGroupContext | None,
 ) -> OutsideGroupCellRelation | None:
     if outside_group_context is None:
@@ -153,7 +153,7 @@ def _outside_group_relation(
             "outside-group context has the wrong owner type"
         )
     if (
-        method_assessment.content.method_result != "SUPPORT"
+        method_assessment.method_result != "SUPPORT"
         or outside_group_context.config != group_context.config
         or outside_group_context.group.group_hypothesis_id
         == group_context.group.group_hypothesis_id
@@ -165,7 +165,7 @@ def _outside_group_relation(
         support
         for support in outside_group_context.supports
         if support.assessment is method_assessment
-        and support.sample.sample_name == method_assessment.content.sample_key
+        and support.sample.sample_name == method_assessment.sample_key
     )
     if len(supports) != 1:
         raise CellObservationContractError(
@@ -182,29 +182,29 @@ def _outside_group_relation(
     )
 
 
-def mint_cell_observation_ref(
+def mint_cell_observation(
     *,
     sample: SampleMetadata,
     target: ResolvedTargetDefinition | None = None,
     group_context: CidNlCellGroupContext,
-    method_assessment: CidNlMethodAssessmentRef,
-    peak_observation: PeakObservationRef | None = None,
+    method_assessment: CidNlMethodAssessment,
+    peak_observation: PeakObservation | None = None,
     peak_hypothesis: PeakHypothesis | None = None,
     outside_group_context: CidNlCellGroupContext | None = None,
     unassigned_support: bool = False,
-) -> CellObservationRef:
+) -> CellObservation:
     """Attach a completed assessment to an existing group without creating it."""
 
     group = group_context.group
-    method_result = method_assessment.content.method_result
-    if method_assessment.content.sample_key != (sample.sample_name):
+    method_result = method_assessment.method_result
+    if method_assessment.sample_key != (sample.sample_name):
         raise CellObservationContractError("assessment references a different sample")
     support_binding = any(
-        support.assessment.content == method_assessment.content
+        support.assessment == method_assessment
         and support.sample.sample_name == sample.sample_name
         for support in group_context.supports
     )
-    if method_assessment.content.method_subject != group_context.method_subject and (
+    if method_assessment.method_subject != group_context.method_subject and (
         not support_binding
     ):
         raise CellObservationContractError(
@@ -212,7 +212,7 @@ def mint_cell_observation_ref(
         )
     if peak_hypothesis is not None and not any(
         support.hypothesis.hypothesis_id == peak_hypothesis.hypothesis_id
-        and support.assessment.content == method_assessment.content
+        and support.assessment == method_assessment
         for support in group_context.supports
     ):
         raise CellObservationContractError(
@@ -223,31 +223,26 @@ def mint_cell_observation_ref(
         method_assessment=method_assessment,
         outside_group_context=outside_group_context,
     )
-    content = CellObservationContent(
+    return CellObservation(
         sample_key=sample.sample_name,
         group_hypothesis_id=group.group_hypothesis_id,
         group_owner_ids=group_context.sorted_owner_ids,
         group_method_subject_id=group_context.method_subject_id,
         group_target_label=group_context.target_label,
-        technical_state=method_assessment.content.technical_state,
+        technical_state=method_assessment.technical_state,
         method_result=method_result,
         physical_peak_key=(
-            None
-            if peak_observation is None
-            else peak_observation.content.physical_peak_key
+            None if peak_observation is None else peak_observation.physical_peak_key
         ),
         peak_hypothesis_id=(
             None if peak_hypothesis is None else peak_hypothesis.hypothesis_id
         ),
-        reason_codes=method_assessment.content.reason_codes,
-        outside_group=outside_group,
-        unassigned_support=unassigned_support,
-    )
-    return CellObservationRef(
-        content=content,
+        reason_codes=method_assessment.reason_codes,
         group_context=group_context,
         method_assessment=method_assessment,
         peak_observation=peak_observation,
         peak_hypothesis=peak_hypothesis,
+        outside_group=outside_group,
+        unassigned_support=unassigned_support,
         outside_group_context=outside_group_context,
     )

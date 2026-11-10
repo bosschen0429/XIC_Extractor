@@ -1,7 +1,7 @@
 """Conservative no-write Backfill eligibility and mapping facts.
 
 This module plans backfill from direct-SUPPORT group membership and consumes
-canonical CellObservationRef evidence for final decisions. It may decide
+canonical CellObservation evidence for final decisions. It may decide
 whether an already-existing, frozen group is eligible for a bounded
 Backfill revisit and whether supplied backfill evidence has an unambiguous
 ordered one-to-one mapping.  It never creates a group, mints a cell, selects a
@@ -19,7 +19,7 @@ from xic_extractor.alignment.backfill.cid_nl_evidence import (
     cid_nl_backfill_block_reason,
 )
 from xic_extractor.alignment.cell_observation.observations import (
-    CellObservationRef,
+    CellObservation,
     CidNlCellGroupContext,
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
@@ -27,9 +27,9 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
 )
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     answer_physical_peak_question,
     mint_physical_peak_question,
@@ -60,12 +60,12 @@ class ConservativeBackfillGroupFacts:
     """Derived S/K and trace facts for one existing group snapshot."""
 
     group_context: CidNlCellGroupContext
-    source_cells: tuple[CellObservationRef, ...]
+    source_cells: tuple[CellObservation, ...]
     sample_population: tuple[SampleMetadata, ...]
     activation_eligible_sample_ids: tuple[str, ...]
     direct_support_sample_ids: tuple[str, ...]
     activation_eligible_support_sample_ids: tuple[str, ...]
-    support_trace_refs: tuple[PeakObservationRef, ...]
+    support_trace_refs: tuple[PeakObservation, ...]
     sample_count_n: int
     minimum_support_k: int
     direct_support_count_s: int
@@ -82,16 +82,16 @@ class ConservativeBackfillCandidateUniverse:
 
     sample: SampleMetadata
     group_facts: tuple[ConservativeBackfillGroupFacts, ...]
-    candidate_assessment: CidNlMethodAssessmentRef
+    candidate_assessment: CidNlMethodAssessment
     localization: BackfillPeakLocation | None = None
-    localization_sources: tuple[PeakObservationRef, ...] = ()
+    localization_sources: tuple[PeakObservation, ...] = ()
 
     @property
     def method_subject_id(self) -> str:
         return _group_method_subject_id(self.group_facts[0])
 
     @property
-    def candidate_peaks(self) -> tuple[PeakObservationRef, ...]:
+    def candidate_peaks(self) -> tuple[PeakObservation, ...]:
         return self.candidate_assessment.candidate_peaks
 
 
@@ -100,7 +100,7 @@ class ConservativeBackfillEvidence:
     """One peak selected only from an owner-bound backfill universe receipt."""
 
     candidate_universe: ConservativeBackfillCandidateUniverse
-    peak_observation: PeakObservationRef
+    peak_observation: PeakObservation
     evidence_source: str = "owner_backfill_revisit"
 
     @property
@@ -114,7 +114,7 @@ class ConservativeBackfillCellDecision:
     """A no-write mapping verdict for one sample × existing group cell."""
 
     group_facts: ConservativeBackfillGroupFacts
-    target_cell: CellObservationRef
+    target_cell: CellObservation
     candidate_universe: ConservativeBackfillCandidateUniverse | None
     candidate_evidence: tuple[ConservativeBackfillEvidence, ...]
     matched_candidate: ConservativeBackfillEvidence | None
@@ -144,16 +144,16 @@ def mint_conservative_backfill_candidate_universe(
     *,
     sample: SampleMetadata,
     group_facts: tuple[ConservativeBackfillGroupFacts, ...],
-    candidate_assessment: CidNlMethodAssessmentRef,
+    candidate_assessment: CidNlMethodAssessment,
     localization: BackfillPeakLocation | None = None,
-    localization_sources: tuple[PeakObservationRef, ...] = (),
+    localization_sources: tuple[PeakObservation, ...] = (),
 ) -> ConservativeBackfillCandidateUniverse:
     """Mint the sole target↔peak pairing authority for one Backfill revisit."""
 
     facts = _canonical_backfill_group_facts(group_facts)
     if (
-        candidate_assessment.content.sample_key != sample.sample_name
-        or candidate_assessment.content.method_subject.method_subject_id
+        candidate_assessment.sample_key != sample.sample_name
+        or candidate_assessment.method_subject.method_subject_id
         != _group_method_subject_id(facts[0])
     ):
         raise ConservativeBackfillContractError(
@@ -178,7 +178,7 @@ def plan_conservative_backfill_targets(
 
     The acquisition caller supplies groups constructed only from direct SUPPORT
     owners and a complete sample population. Scheduling needs their sample votes,
-    not a dense population of CellObservationRefs or quantitation artifacts.
+    not a dense population of CellObservations or quantitation artifacts.
     Final cell composition remains responsible for the output evidence. A
     rejected group is no row, so it searches no missing sample.
     """
@@ -202,7 +202,7 @@ def plan_conservative_backfill_targets(
 
 
 def assess_conservative_backfill_group(
-    source_cells: tuple[CellObservationRef, ...],
+    source_cells: tuple[CellObservation, ...],
     *,
     sample_population: tuple[SampleMetadata, ...],
     unsearched_sample_ids: tuple[str, ...] = (),
@@ -213,9 +213,7 @@ def assess_conservative_backfill_group(
         raise ConservativeBackfillContractError(
             "Backfill assessment requires an existing CellObservation group"
         )
-    ordered_cells = tuple(
-        sorted(source_cells, key=lambda cell: cell.content.sample_key)
-    )
+    ordered_cells = tuple(sorted(source_cells, key=lambda cell: cell.sample_key))
     ordered_samples = tuple(
         sorted(
             sample_population,
@@ -240,7 +238,7 @@ def assess_conservative_backfill_group(
         _support_trace(support.hypothesis.peak_observation_refs)
         for support in group_context.supports
     )
-    cell_sample_ids = tuple(cell.content.sample_key for cell in cells)
+    cell_sample_ids = tuple(cell.sample_key for cell in cells)
     sample_ids = tuple(sample.sample_name for sample in samples)
     sample_count = len(eligible_ids)
     minimum_support = minimum_direct_support_count(sample_count)
@@ -446,15 +444,14 @@ def map_conservative_backfill_candidates(
         ordered_candidates = tuple(
             sorted(
                 target_candidates,
-                key=lambda item: item.peak_observation.content.integration.rt_apex_min,
+                key=lambda item: item.peak_observation.integration.rt_apex_min,
             )
         )
         group_rts = tuple(
             _group_center_rt(group_facts[index]) for index in ordered_indexes
         )
         candidate_rts = tuple(
-            item.peak_observation.content.integration.rt_apex_min
-            for item in ordered_candidates
+            item.peak_observation.integration.rt_apex_min for item in ordered_candidates
         )
         if len(set(group_rts)) != len(group_rts) or len(set(candidate_rts)) != len(
             candidate_rts
@@ -561,16 +558,16 @@ def _canonical_cells(
     cells: object,
     *,
     group_context: CidNlCellGroupContext,
-) -> tuple[CellObservationRef, ...]:
+) -> tuple[CellObservation, ...]:
     if (
         not isinstance(cells, tuple)
         or not cells
-        or any(not isinstance(item, CellObservationRef) for item in cells)
+        or any(not isinstance(item, CellObservation) for item in cells)
     ):
         raise ConservativeBackfillContractError(
             "Backfill facts require immutable canonical CellObservation references"
         )
-    sample_ids = tuple(cell.content.sample_key for cell in cells)
+    sample_ids = tuple(cell.sample_key for cell in cells)
     if sample_ids != tuple(sorted(set(sample_ids))):
         raise ConservativeBackfillContractError(
             "CellObservation references must be unique and canonical-sorted by sample"
@@ -646,9 +643,9 @@ def _sample_is_activation_eligible(sample: SampleMetadata) -> bool:
 
 
 def _support_trace(
-    refs: tuple[PeakObservationRef, ...],
-) -> PeakObservationRef:
-    if len(refs) != 1 or not isinstance(refs[0], PeakObservationRef):
+    refs: tuple[PeakObservation, ...],
+) -> PeakObservation:
+    if len(refs) != 1 or not isinstance(refs[0], PeakObservation):
         raise ConservativeBackfillContractError(
             "CID-NL direct SUPPORT must retain exactly one physical trace reference"
         )
@@ -675,10 +672,8 @@ def _target_cell(
     facts: ConservativeBackfillGroupFacts,
     *,
     sample_id: str,
-) -> CellObservationRef:
-    cells = tuple(
-        cell for cell in facts.source_cells if cell.content.sample_key == sample_id
-    )
+) -> CellObservation:
+    cells = tuple(cell for cell in facts.source_cells if cell.sample_key == sample_id)
     if len(cells) != 1:
         raise ConservativeBackfillContractError(
             "frozen group does not contain exactly one canonical target sample cell"
@@ -725,7 +720,7 @@ def _candidate_group_mismatch_reason(
     query_rt = group_rt if location is None else location.location.query_rt
     if not provenance.query_rt_min <= query_rt <= provenance.query_rt_max:
         return "like_to_like_rt_mz_mismatch"
-    ppm_delta = abs(observation.content.mz - group_mz) / group_mz * 1_000_000.0
+    ppm_delta = abs(observation.mz - group_mz) / group_mz * 1_000_000.0
     if ppm_delta > provenance.query_ppm_tol:
         return "like_to_like_rt_mz_mismatch"
     return None
@@ -733,7 +728,7 @@ def _candidate_group_mismatch_reason(
 
 def _decision(
     facts: ConservativeBackfillGroupFacts,
-    cell: CellObservationRef,
+    cell: CellObservation,
     *,
     disposition: ConservativeBackfillDisposition,
     reasons: tuple[str, ...],

@@ -14,11 +14,11 @@ from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
-    resolve_dda_cid_nl_candidate_set_relation_ref,
+    resolve_dda_cid_nl_candidate_set_relation,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
-    mint_cid_nl_method_assessment_ref,
+    mint_cid_nl_method_assessment,
 )
 
 
@@ -41,7 +41,7 @@ def _truth_table_fixture(tmp_path: Path):
         peak=s1_peak,
         evidence=s1_evidence,
     )
-    s1 = mint_cid_nl_method_assessment_ref(
+    s1 = mint_cid_nl_method_assessment(
         sample=fixture.sample("s1"),
         acquisition_source=fixture.source(fixture.sample("s1")),
         target=fixture.target,
@@ -53,7 +53,7 @@ def _truth_table_fixture(tmp_path: Path):
     )
 
     s2_peak = cid_nl_peak(fixture, "s2")
-    s2 = mint_cid_nl_method_assessment_ref(
+    s2 = mint_cid_nl_method_assessment(
         sample=fixture.sample("s2"),
         acquisition_source=fixture.source(fixture.sample("s2")),
         target=fixture.target,
@@ -68,7 +68,7 @@ def _truth_table_fixture(tmp_path: Path):
         scan_number=43,
         scan_rt_min=8.0,
     )
-    s3 = mint_cid_nl_method_assessment_ref(
+    s3 = mint_cid_nl_method_assessment(
         sample=fixture.sample("s3"),
         acquisition_source=fixture.source(fixture.sample("s3")),
         target=fixture.target,
@@ -97,13 +97,13 @@ def _truth_table_fixture(tmp_path: Path):
         scan_number=44,
         scan_rt_min=8.0,
     )
-    s4_relation = resolve_dda_cid_nl_candidate_set_relation_ref(
+    s4_relation = resolve_dda_cid_nl_candidate_set_relation(
         sample=fixture.sample("s4"),
         canonical_evidence=s4_evidence,
         candidate_peaks=(s4_left, s4_right),
         policy=cid_nl_support_policy(),
     )
-    s4 = mint_cid_nl_method_assessment_ref(
+    s4 = mint_cid_nl_method_assessment(
         sample=fixture.sample("s4"),
         acquisition_source=fixture.source(fixture.sample("s4")),
         target=fixture.target,
@@ -114,7 +114,7 @@ def _truth_table_fixture(tmp_path: Path):
         set_relation_refs=(s4_relation,),
     )
 
-    s5 = mint_cid_nl_method_assessment_ref(
+    s5 = mint_cid_nl_method_assessment(
         sample=fixture.sample("s5"),
         acquisition_source=fixture.source(fixture.sample("s5")),
         target=fixture.target,

@@ -145,7 +145,7 @@ def test_unavailable_istd_alternate_does_not_block_workbook_publication(
 
     acquired = []
     assessments = []
-    mint_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment_ref
+    mint_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment
 
     def record_assessment(**kwargs):
         assessment = mint_assessment(**kwargs)
@@ -154,7 +154,7 @@ def test_unavailable_istd_alternate_does_not_block_workbook_publication(
 
     monkeypatch.setattr(
         targeted_cid_nl_assessment,
-        "mint_cid_nl_method_assessment_ref",
+        "mint_cid_nl_method_assessment",
         record_assessment,
     )
 
@@ -196,12 +196,12 @@ def test_unavailable_istd_alternate_does_not_block_workbook_publication(
             peak.physical_evaluation.state == "available"
             for peak in assessment.candidate_peaks
         )
-        assert len(assessment.evidence_refs) == 1
+        assert len(assessment.evidence_observations) == 1
         if boundary_event:
             assert source.cid_nl_relations.set_relation_event_indexes == (0,)
             assert assessment.individual_support_refs == ()
             assert len(assessment.set_relation_refs) == 1
-            assert assessment.content.method_result == "HOLD"
+            assert assessment.method_result == "HOLD"
             assert not published.selected_cid_nl_supported
         else:
             assert len(assessment.individual_support_refs) == 1
@@ -457,7 +457,7 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
         target,
     )
     assessments = []
-    original_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment_ref
+    original_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment
 
     def record_assessment(**kwargs):
         assessment = original_assessment(**kwargs)
@@ -466,7 +466,7 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
 
     monkeypatch.setattr(
         targeted_cid_nl_assessment,
-        "mint_cid_nl_method_assessment_ref",
+        "mint_cid_nl_method_assessment",
         record_assessment,
     )
 
@@ -483,7 +483,7 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
     # SampleA's local MS1 value stays selected beside SampleB's direct support.
     assert len(assessments) == 2
     assert assessments[0].individual_support_refs == ()
-    assert assessments[0].content.method_result != "SUPPORT"
+    assert assessments[0].method_result != "SUPPORT"
     result = finalized[0]
     decision_values = tuple(
         decision.value for decision in result.completed_projection.decisions
@@ -625,7 +625,7 @@ def test_targeted_relation_uses_quadrature_for_retained_product(
         target,
     )
     assessments = []
-    original_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment_ref
+    original_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment
 
     def record_assessment(**kwargs):
         assessment = original_assessment(**kwargs)
@@ -634,7 +634,7 @@ def test_targeted_relation_uses_quadrature_for_retained_product(
 
     monkeypatch.setattr(
         targeted_cid_nl_assessment,
-        "mint_cid_nl_method_assessment_ref",
+        "mint_cid_nl_method_assessment",
         record_assessment,
     )
     execute_targeted_production_workflow(
@@ -647,7 +647,7 @@ def test_targeted_relation_uses_quadrature_for_retained_product(
     )
     assert len(assessments) == 1
     assert len(assessments[0].individual_support_refs) == 1
-    assert assessments[0].content.method_result == "SUPPORT"
+    assert assessments[0].method_result == "SUPPORT"
 
 
 @pytest.mark.parametrize("sample_names", [("SampleA",), ("SampleA", "SampleB")])

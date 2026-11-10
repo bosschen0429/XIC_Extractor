@@ -281,16 +281,14 @@ def _expected_retained_curve(
         ):
             provenance[name] = getattr(generation, name)
     integration = (
-        observation.content.integration
-        if observation is not None
-        else evaluation.integration
+        observation.integration if observation is not None else evaluation.integration
     )
     value = {
         "schema_version": "curve_payload",
         "kind": kind,
         "sample_id": sample_id,
         "candidate_id": candidate_id,
-        "physical_peak_key": observation.content.physical_peak_key
+        "physical_peak_key": observation.physical_peak_key
         if observation is not None
         else None,
         "trace_coordinate": {
@@ -780,7 +778,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                 (
                     owner_name,
                     kwargs["sample"].sample_name,
-                    assessment.content,
+                    assessment,
                 )
             )
             return compose_hypothesis_universe(**kwargs)
@@ -1137,9 +1135,9 @@ def _assert_conservative_coverage_handoff(
             for result in runtime_result.sample_results
             if result.job.sample is position.sample
         )
-        assert source.content.method_result == "HOLD"
-        assert source.content.technical_state == "evaluated"
-        assert source.method_assessment.content.evaluation_receipt.search_completed
+        assert source.method_result == "HOLD"
+        assert source.technical_state == "evaluated"
+        assert source.method_assessment.evaluation_receipt.search_completed
         assert source.peak_observation is source.peak_hypothesis is None
     hold_cells = tuple(
         cell

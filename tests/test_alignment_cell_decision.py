@@ -40,7 +40,7 @@ from xic_extractor.alignment.cell_decision.owner import (
 )
 from xic_extractor.alignment.cell_observation.observations import (
     compose_final_group_cell_observation_population,
-    mint_cell_observation_ref,
+    mint_cell_observation,
 )
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
@@ -56,10 +56,10 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    mint_cid_nl_method_assessment_ref,
+    mint_cid_nl_method_assessment,
 )
 from xic_extractor.peak_detection.observations import (
-    mint_peak_observation_ref,
+    mint_peak_observation,
     physical_peak_observation_integration,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -294,17 +294,15 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
         == "unresolved"
     )
 
-    negative_assessment = mint_cid_nl_method_assessment_ref(
+    negative_assessment = mint_cid_nl_method_assessment(
         sample=sample,
         acquisition_source=fixture.source(sample),
         target=fixture.target,
         detector_invocation_id="gaussian15:s4:cell-decision-negative",
         evaluation_receipt=_completed_receipt(),
     )
-    source = next(
-        item for item in spine.cells if item.content.sample_key == sample.sample_name
-    )
-    negative_cell = mint_cell_observation_ref(
+    source = next(item for item in spine.cells if item.sample_key == sample.sample_name)
+    negative_cell = mint_cell_observation(
         sample=sample,
         target=fixture.target,
         group_context=source.group_context,
@@ -509,7 +507,7 @@ def _censored_peak(
         source="cell_decision_no_raw_fixture",
         acquisition_source_id=source.acquisition_source_id,
     )
-    return mint_peak_observation_ref(
+    return mint_peak_observation(
         sample=sample,
         trace=trace,
         integration=physical_peak_observation_integration(evaluation),

@@ -10,7 +10,7 @@ from xic_extractor.configuration.models import Target
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
-    compose_cid_nl_chromatographic_support_ref,
+    compose_cid_nl_chromatographic_support,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
@@ -19,7 +19,7 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportContractError,
     DdaCidNlPeakSupportPolicy,
-    resolve_dda_cid_nl_peak_support_ref,
+    resolve_dda_cid_nl_peak_support,
 )
 from xic_extractor.peak_detection.hypotheses import (
     IntegrationResult,
@@ -28,8 +28,8 @@ from xic_extractor.peak_detection.hypotheses import (
 )
 from xic_extractor.peak_detection.models import PeakDetectionResult
 from xic_extractor.peak_detection.observations import (
-    PeakObservationRef,
-    mint_peak_observation_ref,
+    PeakObservation,
+    mint_peak_observation,
 )
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     compose_cid_nl_peak_hypothesis,
@@ -62,18 +62,18 @@ def test_unique_dda_event_resolves_to_one_physical_peak(
     evidence = _evidence(fixture.source, fixture.sample)
     peak = _peak(fixture.source, fixture.sample)
 
-    support = resolve_dda_cid_nl_peak_support_ref(
+    support = resolve_dda_cid_nl_peak_support(
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(peak,),
         policy=_policy(),
     )
 
-    assert support.content.sample_key == (fixture.sample.sample_name)
-    assert support.content.dda_scan_number == 42
-    assert support.content.evidence == evidence
-    assert support.content.peak_observation == peak.content
-    assert support.content.relationship == "strict_nl_inside_ms1_peak_scope"
+    assert support.sample_key == (fixture.sample.sample_name)
+    assert support.dda_scan_number == 42
+    assert support.evidence == evidence
+    assert support.peak_observation == peak
+    assert support.relationship == "strict_nl_inside_ms1_peak_scope"
 
 
 def test_candidate_reorder_is_neutral(tmp_path: Path) -> None:
@@ -87,13 +87,13 @@ def test_candidate_reorder_is_neutral(tmp_path: Path) -> None:
         apex_intensity=300.0,
     )
 
-    forward = resolve_dda_cid_nl_peak_support_ref(
+    forward = resolve_dda_cid_nl_peak_support(
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(matching, nonmatching),
         policy=_policy(),
     )
-    reverse = resolve_dda_cid_nl_peak_support_ref(
+    reverse = resolve_dda_cid_nl_peak_support(
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(nonmatching, matching),
@@ -109,7 +109,7 @@ def test_missing_peak_match_fails_closed(tmp_path: Path) -> None:
     peak = _peak(fixture.source, fixture.sample)
 
     with pytest.raises(DdaCidNlPeakSupportContractError, match="missing"):
-        resolve_dda_cid_nl_peak_support_ref(
+        resolve_dda_cid_nl_peak_support(
             sample=fixture.sample,
             canonical_evidence=evidence,
             candidate_peaks=(peak,),
@@ -135,7 +135,7 @@ def test_dda_matching_uses_integration_bounds_not_padded_trace_points(
     )
 
     with pytest.raises(DdaCidNlPeakSupportContractError, match="missing"):
-        resolve_dda_cid_nl_peak_support_ref(
+        resolve_dda_cid_nl_peak_support(
             sample=fixture.sample,
             canonical_evidence=outside_evidence,
             candidate_peaks=(peak,),
@@ -143,14 +143,14 @@ def test_dda_matching_uses_integration_bounds_not_padded_trace_points(
         )
 
     inside_evidence = _evidence(fixture.source, fixture.sample, scan_rt_min=8.0)
-    support = resolve_dda_cid_nl_peak_support_ref(
+    support = resolve_dda_cid_nl_peak_support(
         sample=fixture.sample,
         canonical_evidence=inside_evidence,
         candidate_peaks=(peak,),
         policy=_policy(),
     )
-    assert support.content.peak_rt_min == pytest.approx(7.94)
-    assert support.content.peak_rt_max == pytest.approx(8.06)
+    assert support.peak_rt_min == pytest.approx(7.94)
+    assert support.peak_rt_max == pytest.approx(8.06)
 
 
 def test_multiple_matching_peaks_are_ambiguous(tmp_path: Path) -> None:
@@ -160,7 +160,7 @@ def test_multiple_matching_peaks_are_ambiguous(tmp_path: Path) -> None:
     second = _peak(fixture.source, fixture.sample, apex_intensity=501.0)
 
     with pytest.raises(DdaCidNlPeakSupportContractError, match="ambiguous"):
-        resolve_dda_cid_nl_peak_support_ref(
+        resolve_dda_cid_nl_peak_support(
             sample=fixture.sample,
             canonical_evidence=evidence,
             candidate_peaks=(first, second),
@@ -174,7 +174,7 @@ def test_duplicate_candidate_reference_is_ambiguous(tmp_path: Path) -> None:
     peak = _peak(fixture.source, fixture.sample)
 
     with pytest.raises(DdaCidNlPeakSupportContractError, match="ambiguous"):
-        resolve_dda_cid_nl_peak_support_ref(
+        resolve_dda_cid_nl_peak_support(
             sample=fixture.sample,
             canonical_evidence=evidence,
             candidate_peaks=(peak, peak),
@@ -193,8 +193,8 @@ def test_scan_and_peak_mutation_invalidate_support_content(tmp_path: Path) -> No
     scan_mutated = _resolve(fixture, changed_scan, original_peak)
     peak_mutated = _resolve(fixture, original_evidence, changed_peak)
 
-    assert original.content != scan_mutated.content
-    assert original.content != peak_mutated.content
+    assert original != scan_mutated
+    assert original != peak_mutated
 
 
 def test_nonselected_candidate_mutation_invalidates_bound_universe(
@@ -216,22 +216,22 @@ def test_nonselected_candidate_mutation_invalidates_bound_universe(
         apex_intensity=301.0,
     )
 
-    first = resolve_dda_cid_nl_peak_support_ref(
+    first = resolve_dda_cid_nl_peak_support(
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(selected, first_nonmatch),
         policy=_policy(),
     )
-    changed = resolve_dda_cid_nl_peak_support_ref(
+    changed = resolve_dda_cid_nl_peak_support(
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(selected, changed_nonmatch),
         policy=_policy(),
     )
 
-    assert first.content.peak_observation == (changed.content.peak_observation)
-    assert first.content.candidate_peaks != (changed.content.candidate_peaks)
-    assert first.content != changed.content
+    assert first.peak_observation == (changed.peak_observation)
+    assert first.candidate_peaks != (changed.candidate_peaks)
+    assert first != changed
 
 
 def test_non_strict_neutral_loss_cannot_mint_support(tmp_path: Path) -> None:
@@ -265,10 +265,8 @@ def test_cid_nl_support_accepts_loss_inside_ion_window(tmp_path: Path) -> None:
 
     support = _resolve(fixture, evidence, _peak(fixture.source, fixture.sample))
 
-    assert support.content.observed_loss_error_ppm == pytest.approx(40.0)
-    assert (
-        support.content.observed_loss_error_da < support.content.neutral_loss_window_da
-    )
+    assert support.observed_loss_error_ppm == pytest.approx(40.0)
+    assert support.observed_loss_error_da < support.neutral_loss_window_da
 
 
 def test_repeated_dda_scans_compose_one_order_neutral_chromatographic_event(
@@ -287,24 +285,24 @@ def test_repeated_dda_scans_compose_one_order_neutral_chromatographic_event(
         peak,
     )
 
-    forward = compose_cid_nl_chromatographic_support_ref(
+    forward = compose_cid_nl_chromatographic_support(
         sample=fixture.sample,
         scan_support_refs=(first, second),
     )
-    reverse = compose_cid_nl_chromatographic_support_ref(
+    reverse = compose_cid_nl_chromatographic_support(
         sample=fixture.sample,
         scan_support_refs=(second, first),
     )
 
     assert forward == reverse
     assert tuple(
-        member.support.dda_scan_number for member in forward.content.scan_supports
+        member.support.dda_scan_number for member in forward.scan_supports
     ) == (
         42,
         43,
     )
-    assert forward.content.strict_nl_scan_count == 2
-    assert forward.content.chromatographic_support_event_count == 1
+    assert forward.strict_nl_scan_count == 2
+    assert forward.chromatographic_support_event_count == 1
 
 
 def test_equivalent_numeric_policy_inputs_have_equal_support(
@@ -322,13 +320,13 @@ def test_equivalent_numeric_policy_inputs_have_equal_support(
         neutral_loss_tolerance_ppm=20.0,
     )
 
-    integer_ref = resolve_dda_cid_nl_peak_support_ref(
+    integer_ref = resolve_dda_cid_nl_peak_support(
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(peak,),
         policy=integer_policy,
     )
-    float_ref = resolve_dda_cid_nl_peak_support_ref(
+    float_ref = resolve_dda_cid_nl_peak_support(
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(peak,),
@@ -337,7 +335,7 @@ def test_equivalent_numeric_policy_inputs_have_equal_support(
 
     assert type(integer_policy.precursor_tolerance_da) is float
     assert type(integer_policy.neutral_loss_tolerance_ppm) is float
-    assert integer_ref.content == float_ref.content
+    assert integer_ref == float_ref
 
 
 def test_signed_zero_support_content_is_equal(
@@ -349,17 +347,15 @@ def test_signed_zero_support_content_is_equal(
         _evidence(fixture.source, fixture.sample),
         _peak(fixture.source, fixture.sample),
     )
-    signed_zero_content = replace(
-        reference.content,
+    signed_zero = replace(
+        reference,
         precursor_delta_da=-0.0,
         observed_loss_error_ppm=-0.0,
     )
-    signed_zero_reference = replace(reference, content=signed_zero_content)
 
-    assert math.copysign(1.0, signed_zero_content.precursor_delta_da) == 1.0
-    assert math.copysign(1.0, signed_zero_content.observed_loss_error_ppm) == 1.0
-    assert signed_zero_reference == reference
-    assert signed_zero_reference.content == reference.content
+    assert math.copysign(1.0, signed_zero.precursor_delta_da) == 1.0
+    assert math.copysign(1.0, signed_zero.observed_loss_error_ppm) == 1.0
+    assert signed_zero == reference
 
 
 def test_scan_mutation_invalidates_chromatographic_event_content(
@@ -367,7 +363,7 @@ def test_scan_mutation_invalidates_chromatographic_event_content(
 ) -> None:
     fixture = _identity_fixture(tmp_path)
     peak = _peak(fixture.source, fixture.sample)
-    first = compose_cid_nl_chromatographic_support_ref(
+    first = compose_cid_nl_chromatographic_support(
         sample=fixture.sample,
         scan_support_refs=(
             _resolve(
@@ -377,7 +373,7 @@ def test_scan_mutation_invalidates_chromatographic_event_content(
             ),
         ),
     )
-    changed = compose_cid_nl_chromatographic_support_ref(
+    changed = compose_cid_nl_chromatographic_support(
         sample=fixture.sample,
         scan_support_refs=(
             _resolve(
@@ -388,7 +384,7 @@ def test_scan_mutation_invalidates_chromatographic_event_content(
         ),
     )
 
-    assert first.content != changed.content
+    assert first != changed
 
 
 def test_cid_nl_event_composes_the_existing_peak_hypothesis_owner(
@@ -411,7 +407,7 @@ def test_cid_nl_event_composes_the_existing_peak_hypothesis_owner(
     assert hypothesis.hypothesis_method == "dda_cid_nl"
     assert hypothesis.peak_observation_refs == (peak,)
     assert hypothesis.evidence.cid_nl_chromatographic_support_ref == event
-    assert hypothesis.integration == peak.content.integration
+    assert hypothesis.integration == peak.integration
     assert hypothesis.trace_group_id == ""
     assert hypothesis.target_label == ""
     assert hypothesis.role == ""
@@ -501,9 +497,9 @@ def test_owner_backed_hypothesis_cannot_enter_selection_or_targeted_product(
 def _resolve(
     fixture: _IdentityFixture,
     evidence: CidNlEvidenceObservation,
-    peak: PeakObservationRef,
+    peak: PeakObservation,
 ):
-    return resolve_dda_cid_nl_peak_support_ref(
+    return resolve_dda_cid_nl_peak_support(
         sample=fixture.sample,
         canonical_evidence=evidence,
         candidate_peaks=(peak,),
@@ -514,14 +510,14 @@ def _resolve(
 def _event(
     source: AcquisitionSourceIdentity,
     sample: SampleMetadata,
-    peak: PeakObservationRef,
+    peak: PeakObservation,
     *,
     scan_numbers: tuple[int, ...] = (42,),
 ):
-    return compose_cid_nl_chromatographic_support_ref(
+    return compose_cid_nl_chromatographic_support(
         sample=sample,
         scan_support_refs=tuple(
-            resolve_dda_cid_nl_peak_support_ref(
+            resolve_dda_cid_nl_peak_support(
                 sample=sample,
                 canonical_evidence=_evidence(
                     source,
@@ -576,7 +572,7 @@ def _peak(
     apex_intensity: float = 500.0,
     rt_left_min: float = 7.9,
     rt_right_min: float = 8.1,
-) -> PeakObservationRef:
+) -> PeakObservation:
     acquisition_source = source
     trace = Trace.from_arrays(
         sample_name=sample.raw_stem,
@@ -602,7 +598,7 @@ def _peak(
         boundary_sources=("candidate_interval",),
         raw_scan_indices=(1, 2, 3),
     )
-    return mint_peak_observation_ref(
+    return mint_peak_observation(
         sample=sample,
         trace=trace,
         integration=integration,

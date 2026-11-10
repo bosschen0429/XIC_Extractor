@@ -26,7 +26,7 @@ from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import resolve_discovery_scan_events
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
-    DdaCidNlCandidateSetRelationRef,
+    DdaCidNlCandidateSetRelation,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceObservation,
@@ -34,10 +34,10 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
+    CidNlMethodAssessment,
     CidNlMethodAssessmentContractError,
-    CidNlMethodAssessmentRef,
     is_cid_nl_missing_ms1_rejection,
-    mint_cid_nl_method_assessment_ref,
+    mint_cid_nl_method_assessment,
     resolve_cid_nl_method_relations,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -45,11 +45,11 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
+    DdaCidNlPeakSupport,
     DdaCidNlPeakSupportPolicy,
-    DdaCidNlPeakSupportRef,
 )
 from xic_extractor.peak_detection.observations import (
-    PeakObservationRef,
+    PeakObservation,
     RetainedCaptureEvidence,
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
@@ -71,7 +71,7 @@ from xic_extractor.xic_models import XICRequest
 
 @dataclass(frozen=True, slots=True)
 class UntargetedCidNlBackfillAttemptResult:
-    assessment: CidNlMethodAssessmentRef
+    assessment: CidNlMethodAssessment
     backfill_input: UntargetedCidNlBackfillInput | None
     acquisition: TraceAcquisitionBatch
     group_hypothesis_id: str | None = None
@@ -370,7 +370,7 @@ def backfill_untargeted_cid_nl_sample_subject(
     support_policy: DdaCidNlPeakSupportPolicy,
     peak_config: ExtractionConfig,
     raw: CidNlRawSource | None,
-    initial_assessment: CidNlMethodAssessmentRef | None = None,
+    initial_assessment: CidNlMethodAssessment | None = None,
     settings: DiscoverySettings | None = None,
     signal_processing_profile: SignalProcessingProfile,
     _preacquired_traces: UntargetedCidNlBackfillTraceBatch | None = None,
@@ -390,8 +390,7 @@ def backfill_untargeted_cid_nl_sample_subject(
     if initial_assessment is not None:
         if (
             not is_cid_nl_missing_ms1_rejection(initial_assessment)
-            or initial_assessment.content.evaluation_receipt.support_policy
-            != support_policy
+            or initial_assessment.evaluation_receipt.support_policy != support_policy
         ):
             raise CidNlAcquisitionError(
                 "backfill requires the exact missing-MS1 rejection and support policy"
@@ -489,7 +488,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             group_hypothesis_id=group_hypothesis_id,
             request=context_request,
         )
-    observations: tuple[PeakObservationRef, ...] = ()
+    observations: tuple[PeakObservation, ...] = ()
     physical_evaluations: list[PhysicalPeakEvaluation] = []
     # Complete observations keep their original signal and integral. Only
     # clipped context permits one bounded reconsideration of the same search.
@@ -528,12 +527,12 @@ def backfill_untargeted_cid_nl_sample_subject(
             break
     observations = (observation,) if observation is not None else ()
     backfill_evidence: tuple[CidNlEvidenceObservation, ...] = ()
-    backfill_support: tuple[DdaCidNlPeakSupportRef, ...] = ()
-    backfill_sets: tuple[DdaCidNlCandidateSetRelationRef, ...] = ()
+    backfill_support: tuple[DdaCidNlPeakSupport, ...] = ()
+    backfill_sets: tuple[DdaCidNlCandidateSetRelation, ...] = ()
     if initial_assessment is not None and observations:
         backfill_evidence = tuple(
             ref
-            for ref in initial_assessment.evidence_refs
+            for ref in initial_assessment.evidence_observations
             if query_rt_min <= ref.scan_rt_min <= query_rt_max
         )
         backfill_support, backfill_sets = resolve_cid_nl_method_relations(
@@ -577,7 +576,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             )
         )
     try:
-        assessment = mint_cid_nl_method_assessment_ref(
+        assessment = mint_cid_nl_method_assessment(
             sample=sample,
             acquisition_source=source,
             method_subject=method_subject,
@@ -603,7 +602,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 search_completed=True,
                 reason_code=None,
                 evidence_scope=(
-                    initial_assessment.content.evaluation_receipt.evidence_scope
+                    initial_assessment.evaluation_receipt.evidence_scope
                     if initial_assessment is not None and backfill_evidence
                     else "subject_window"
                 ),
@@ -621,7 +620,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             sample=sample,
             candidate_assessment=assessment,
         )
-        if observations and assessment.content.method_result == "HOLD"
+        if observations and assessment.method_result == "HOLD"
         else None
     )
     return UntargetedCidNlBackfillAttemptResult(
@@ -656,17 +655,17 @@ def _composite_backfill_evidence(
     settings: DiscoverySettings,
     query_rt_min: float,
     query_rt_max: float,
-    observations: tuple[PeakObservationRef, ...],
+    observations: tuple[PeakObservation, ...],
     support_policy: DdaCidNlPeakSupportPolicy,
 ) -> tuple[
     tuple[CidNlEvidenceObservation, ...],
-    tuple[DdaCidNlPeakSupportRef, ...],
-    tuple[DdaCidNlCandidateSetRelationRef, ...],
+    tuple[DdaCidNlPeakSupport, ...],
+    tuple[DdaCidNlCandidateSetRelation, ...],
 ]:
     """Evaluate the configured loss set on the backfilled physical universe."""
     evidence_refs: list[CidNlEvidenceObservation] = []
-    individual_refs: list[DdaCidNlPeakSupportRef] = []
-    set_refs: list[DdaCidNlCandidateSetRelationRef] = []
+    individual_refs: list[DdaCidNlPeakSupport] = []
+    set_refs: list[DdaCidNlCandidateSetRelation] = []
     scan_numbers: set[int] = set()
     subject_seeds: list[DiscoveryEvent] = []
     for event in raw.iter_ms2_scans(query_rt_min, query_rt_max):

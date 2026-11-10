@@ -36,10 +36,10 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
-    mint_cid_nl_method_assessment_ref,
+    mint_cid_nl_method_assessment,
 )
 from xic_extractor.peak_detection.observations import (
-    mint_peak_observation_ref,
+    mint_peak_observation,
     physical_peak_observation_integration,
 )
 from xic_extractor.peak_detection.physical_peak_equivalence import (
@@ -99,7 +99,7 @@ def _view(
         else PHYSICAL_PEAK_POINT_POLICY,
     )
     assert evaluation.facts is not None
-    peak = mint_peak_observation_ref(
+    peak = mint_peak_observation(
         sample=sample,
         trace=Trace.from_arrays(
             sample_name=stem,
@@ -118,7 +118,7 @@ def _view(
         proposal_sources=("local_minimum", "gaussian15"),
     )
     evidence = cid_nl_evidence(fixture, stem, scan_number=101, scan_rt_min=query_rt)
-    assessment = mint_cid_nl_method_assessment_ref(
+    assessment = mint_cid_nl_method_assessment(
         sample=sample,
         acquisition_source=fixture.source(sample),
         target=fixture.target,
@@ -245,25 +245,25 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
             off_apex_difference=off_apex_difference and index == 1,
             unreliable=unreliable,
         )
-        assert assessment.content.method_result == ("SUPPORT" if support else "HOLD")
+        assert assessment.method_result == ("SUPPORT" if support else "HOLD")
         backfills[
             (
                 group.group_hypothesis_id,
                 sample.sample_name,
-                assessment.content.method_subject.method_subject_id,
+                assessment.method_subject.method_subject_id,
             )
         ] = (sample, assessment)
     comparison_peaks = [pair[1].candidate_peaks[0] for pair in backfills.values()]
     if direct:
         comparison_peaks.append(pairs["S"][1].candidate_peaks[0])
-    assert len({peak.content.integration.rt_apex_min for peak in comparison_peaks}) == (
+    assert len({peak.integration.rt_apex_min for peak in comparison_peaks}) == (
         1 if off_apex_difference or unreliable else 2
     )
-    assert len({peak.content.physical_identity for peak in comparison_peaks}) == (
+    assert len({peak.physical_identity for peak in comparison_peaks}) == (
         1 if unreliable else 2
     )
     if fresh_context:
-        integrations = [peak.content.integration for peak in comparison_peaks]
+        integrations = [peak.integration for peak in comparison_peaks]
         lower = max(i.rt_left_min for i in integrations)
         upper = min(i.rt_right_min for i in integrations)
         assert not all(lower < i.rt_apex_min < upper for i in integrations)
@@ -316,9 +316,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
                 coordinate_kind=TraceCoordinateKind.RT_ONLY,
             ),
             tuple(
-                XICRequest(
-                    peak.content.mz, float(shifted_rt[0]), float(shifted_rt[-1]), 20.0
-                )
+                XICRequest(peak.mz, float(shifted_rt[0]), float(shifted_rt[-1]), 20.0)
                 for peak in comparison_peaks
             ),
             ComparisonRaw(),
@@ -338,7 +336,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         backfills=backfills,
         alignment_config=config,
         member_observations={
-            peak.content.physical_identity: peak
+            peak.physical_identity: peak
             for _, assessment in pairs.values()
             for peak in assessment.candidate_peaks
         },
@@ -381,9 +379,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         rejected_backfill_cells=contested,
     )
     sample_cells = [
-        cell
-        for cell in cells
-        if cell.content.sample_key == fixture.sample("S").sample_name
+        cell for cell in cells if cell.sample_key == fixture.sample("S").sample_name
     ]
     assert len(sample_cells) == 2
     numeric_sources = [

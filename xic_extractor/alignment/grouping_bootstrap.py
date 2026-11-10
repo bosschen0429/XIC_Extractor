@@ -30,8 +30,7 @@ from xic_extractor.alignment.peak_trajectories import (
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentContent,
-    CidNlMethodAssessmentRef,
+    CidNlMethodAssessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubjectContractError,
@@ -100,7 +99,7 @@ class RetainedGroupingCandidate:
 
     sample: SampleMetadata
     peak_hypothesis: PeakHypothesis
-    direct_support_assessment: CidNlMethodAssessmentRef | None
+    direct_support_assessment: CidNlMethodAssessment | None
 
     @property
     def sample_key(self) -> str:
@@ -132,7 +131,7 @@ def measured_calibration_anchor_groups(
 
 def bootstrap_cid_nl_initial_population(
     *,
-    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessmentRef], ...],
+    sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...],
     alignment_config: AlignmentConfig,
     sample_universe: frozenset[str] | None = None,
     rt_frame: SampleRtFrame,
@@ -140,7 +139,7 @@ def bootstrap_cid_nl_initial_population(
     retain_observation_only_candidates: bool = False,
     elution_contexts: Sequence[SampleElutionContext] = (),
     retained_hypotheses_by_assessment: Mapping[
-        CidNlMethodAssessmentContent, tuple[PeakHypothesis, ...]
+        CidNlMethodAssessment, tuple[PeakHypothesis, ...]
     ]
     | None = None,
 ) -> tuple[
@@ -160,9 +159,7 @@ def bootstrap_cid_nl_initial_population(
         )
 
     method_subjects_by_id = {
-        assessment.content.method_subject.method_subject_id: (
-            assessment.content.method_subject
-        )
+        assessment.method_subject.method_subject_id: (assessment.method_subject)
         for _, assessment in sample_assessments
     }
     method_subjects = tuple(
@@ -174,17 +171,16 @@ def bootstrap_cid_nl_initial_population(
         raise GroupingBootstrapError(str(exc)) from exc
 
     hypotheses_by_sample: dict[str, tuple[PeakHypothesis, ...]] = {}
-    assessment_by_hypothesis: dict[str, CidNlMethodAssessmentRef] = {}
+    assessment_by_hypothesis: dict[str, CidNlMethodAssessment] = {}
     sample_by_id: dict[str, SampleMetadata] = {}
     owners: list[SampleLocalMS1Owner] = []
     retained_by_assessment = dict(retained_hypotheses_by_assessment or {})
-    consumed_retained_assessments: set[CidNlMethodAssessmentContent] = set()
+    consumed_retained_assessments: set[CidNlMethodAssessment] = set()
     for sample, assessment in sample_assessments:
         sample_id = sample.sample_name
-        retained_key = assessment.content
-        retained_hypotheses = retained_by_assessment.get(retained_key, ())
-        if retained_key in retained_by_assessment:
-            consumed_retained_assessments.add(retained_key)
+        retained_hypotheses = retained_by_assessment.get(assessment, ())
+        if assessment in retained_by_assessment:
+            consumed_retained_assessments.add(assessment)
         hypotheses = (
             bind_retained_peak_hypotheses_to_assessment_universe(
                 sample=sample,
@@ -241,10 +237,10 @@ def bootstrap_cid_nl_initial_population(
                     )
                 )
     searched_no_observation = not owners and all(
-        assessment.content.method_subject.target is not None
-        and assessment.content.technical_state == "evaluated"
-        and assessment.content.evaluation_receipt.acquisition_supported
-        and assessment.content.evaluation_receipt.search_completed
+        assessment.method_subject.target is not None
+        and assessment.technical_state == "evaluated"
+        and assessment.evaluation_receipt.acquisition_supported
+        and assessment.evaluation_receipt.search_completed
         and not assessment.candidate_peaks
         for _, assessment in sample_assessments
     )
@@ -322,13 +318,13 @@ def bootstrap_cid_nl_initial_population(
             min(hypothesis.integration.rt_left_min for hypothesis in hypotheses)
             if hypotheses
             else min(
-                cast(float, assessment.content.evaluation_receipt.query_rt_min)
+                cast(float, assessment.evaluation_receipt.query_rt_min)
                 for _, assessment in sample_assessments
             ),
             max(hypothesis.integration.rt_right_min for hypothesis in hypotheses)
             if hypotheses
             else max(
-                cast(float, assessment.content.evaluation_receipt.query_rt_max)
+                cast(float, assessment.evaluation_receipt.query_rt_max)
                 for _, assessment in sample_assessments
             ),
         ),

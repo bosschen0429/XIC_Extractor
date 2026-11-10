@@ -108,19 +108,19 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
     assert result.query_rt == query_rt
     assert result.query_rt_basis == query_basis
     assessment = result.assessment
-    assert assessment.content.method_result == "HOLD"
+    assert assessment.method_result == "HOLD"
     assert not assessment.individual_support_refs
     assert len(assessment.candidate_peaks) == 1
-    assert assessment.candidate_peaks[
-        0
-    ].content.integration.rt_apex_min == pytest.approx(expected_apex, abs=0.005)
+    assert assessment.candidate_peaks[0].integration.rt_apex_min == pytest.approx(
+        expected_apex, abs=0.005
+    )
     if tolerance is not None:
         evaluation = result.capture_evidence[0].physical_evaluation
         assert evaluation.facts is not None
         assert evaluation.question.search_rt_window == pytest.approx((7.35, 7.75))
         assert evaluation.facts.apex_rt_min > 7.75
         assert evaluation.facts.left_rt_min < query_rt < evaluation.facts.right_rt_min
-        receipt = assessment.content.evaluation_receipt
+        receipt = assessment.evaluation_receipt
         assert receipt.query_rt_min <= evaluation.facts.left_rt_min
         assert evaluation.facts.right_rt_min <= receipt.query_rt_max
     from xic_extractor.alignment.backfill.cid_nl_evidence import (
@@ -250,22 +250,22 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
         signal_processing_profile=TEST_PROFILE,
     )
 
-    assert result.assessment.content.technical_state == "evaluated"
+    assert result.assessment.technical_state == "evaluated"
     assert result.group_hypothesis_id == "group-physical"
-    assert result.assessment.content.method_subject is fixture.method_subject
-    assert result.assessment.content.evaluation_receipt.physical_query_mz == (
+    assert result.assessment.method_subject is fixture.method_subject
+    assert result.assessment.evaluation_receipt.physical_query_mz == (
         fixture.method_subject.precursor_mz + physical_mz_offset
     )
     assert result.acquisition.traces[0].coordinate.request.mz == pytest.approx(
         fixture.method_subject.precursor_mz + physical_mz_offset
     )
-    assert result.assessment.candidate_peaks[0].content.mz == pytest.approx(
+    assert result.assessment.candidate_peaks[0].mz == pytest.approx(
         fixture.method_subject.precursor_mz + physical_mz_offset
     )
-    assert result.assessment.content.method_result == "HOLD"
-    assert result.assessment.content.evaluation_receipt.search_completed is True
+    assert result.assessment.method_result == "HOLD"
+    assert result.assessment.evaluation_receipt.search_completed is True
     assert len(result.assessment.candidate_peaks) == 1
-    assert result.assessment.evidence_refs == ()
+    assert result.assessment.evidence_observations == ()
     assert result.backfill_input is not None
     assert result.acquisition.logical_xic_request_count == 2
     assert vendor_raw.chromatogram_request_counts == [2]
@@ -313,7 +313,7 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
     assert evaluation.state == "unavailable"
     assert evaluation.reason == "ambiguous_segment_candidates"
     assert evaluation.facts is None and evaluation.integration is None
-    receipt = result.assessment.content.evaluation_receipt
+    receipt = result.assessment.evaluation_receipt
     assert (receipt.query_rt_min, receipt.query_rt_max) == (7.5, 8.5)
     assert result.assessment.candidate_peaks == ()
 
@@ -420,7 +420,7 @@ def test_physical_backfill_context_is_not_search_permission(
         assert gate_result.facts.apex_rt_min == first.facts.apex_rt_min
     expected_window = (7.5, 8.5) if target_present and target_center == 8.45 else None
     assert first.question.search_rt_window == expected_window
-    receipt = batched.assessment.content.evaluation_receipt
+    receipt = batched.assessment.evaluation_receipt
     expected_receipt = (7.0, 9.0) if expected_window is not None else (7.5, 8.5)
     assert (receipt.query_rt_min, receipt.query_rt_max) == expected_receipt
     if target_present:
@@ -450,7 +450,7 @@ def test_physical_backfill_context_is_not_search_permission(
             assert first.facts.left_rt_min == original.facts.left_rt_min
             assert first.facts.right_rt_min == original.facts.right_rt_min
         # A measured MS1 peak alone still cannot assert method SUPPORT.
-        assert batched.assessment.content.method_result != "SUPPORT"
+        assert batched.assessment.method_result != "SUPPORT"
     else:
         assert first.state == "unavailable" and first.facts is None
         assert not batched.assessment.candidate_peaks
@@ -539,7 +539,7 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
         raw.__exit__(None, None, None)
 
     assessment = result.assessment
-    assert assessment.content.method_result == "SUPPORT"
+    assert assessment.method_result == "SUPPORT"
     assert len(assessment.candidate_peaks) == 1
     assert sorted(
         (
@@ -547,7 +547,7 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
             ref.configured_neutral_loss_da,
             ref.product_mz,
         )
-        for ref in assessment.evidence_refs
+        for ref in assessment.evidence_observations
     ) == [
         (scan.scan_number, 116.0474, pytest.approx(500.0 - 116.0474)),
         (scan.scan_number, 132.0423, pytest.approx(500.0 - 132.0423)),
@@ -567,7 +567,7 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
     )
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         CidNlEvaluationReceipt,
-        mint_cid_nl_method_assessment_ref,
+        mint_cid_nl_method_assessment,
     )
     from xic_extractor.peak_detection.traces import Trace
 
@@ -623,9 +623,9 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
         detector_invocation_id="untargeted-cid-nl-backfill",
         evaluation_receipt=receipt,
     )
-    assessment = mint_cid_nl_method_assessment_ref(**kwargs, candidate_peaks=(peak,))
-    assert assessment.content.method_result == "HOLD"
-    assert assessment.content.evaluation_receipt == receipt
-    assert assessment.candidate_peaks[0].content.integration.area_ms1_morphology == (
+    assessment = mint_cid_nl_method_assessment(**kwargs, candidate_peaks=(peak,))
+    assert assessment.method_result == "HOLD"
+    assert assessment.evaluation_receipt == receipt
+    assert assessment.candidate_peaks[0].integration.area_ms1_morphology == (
         evaluation.facts.area_counts_seconds
     )

@@ -219,10 +219,10 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         assert attempt.group_hypothesis_id in group_ids
         assert attempt.query_rt_basis == "trajectory_observed"
         assert attempt.query_rt == pytest.approx(expected_query[sample], abs=0.005)
-        assert attempt.assessment.content.method_result == "HOLD"
+        assert attempt.assessment.method_result == "HOLD"
         assert not attempt.assessment.individual_support_refs
         (peak,) = attempt.assessment.candidate_peaks
-        observed_queries[sample] = peak.content.integration.rt_apex_min
+        observed_queries[sample] = peak.integration.rt_apex_min
     assert observed_queries == pytest.approx(expected_query, abs=0.005)
     composed = adapter.execute_composition(
         partition, acquisition, store, retain_memory=True
