@@ -178,5 +178,7 @@ def test_untarget_owner_pickle_rebinds_completion(
     assert result.scientific_core is restored_core
     assert result.completed_projection is restored_projection
     assert restored_core.processing_request == core.processing_request
-    assert restored_projection.rows[0].counts == projection.rows[0].counts
+    assert [d.variant for d in restored_projection.rows[0].decisions] == [
+        d.variant for d in projection.rows[0].decisions
+    ]
     assert restored_projection.rows[0].route == projection.rows[0].route
