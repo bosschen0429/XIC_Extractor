@@ -33,6 +33,44 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 module docstring。Package 名稱不是分層證明：`alignment/` 同時含科學與外層
 adapter；通過 `pyproject.toml` 的 `[tool.importlinter]` 不代表所有 I/O 已隔離。
 
+## Core Model
+
+One concept, one representation, one source.
+
+- **One representation:** a concept is the same object and vocabulary from
+  where it is produced to where it is written.
+- **One source:** a fact is decided or computed in one place. Everything else
+  reads it; nothing recomputes or restates it.
+
+| Concept | What it is |
+| --- | --- |
+| Run | The samples, the settings and one run id |
+| Peak | One measured peak in one sample: m/z, apex, bounds, area, height, and its method evidence |
+| Group | Peaks across samples treated as one feature: its centre and whether it is delivered to the Matrix |
+| Cell | One group or target in one sample: a value or the reason there is none, and whether the evidence is direct or Backfill |
+| Matrix | Cell values laid out by group or target and sample, derived when written |
+
+- A new class, column or value belongs to one of these concepts. Another
+  spelling of an existing concept is not added; a new concept is added to this
+  table in the same change.
+- Concepts that look alike stay separate. Targeted and Untargeted cells are
+  decided from different evidence; a peak's measurement and its method evidence
+  are different facts.
+- An algorithm's working structures are its own, as long as they do not cross a
+  stage boundary or become a second vocabulary.
+- Validate where data enters or leaves the process: files, user input, written
+  output. Inside there is one copy and nothing to reconcile; a hash, receipt,
+  identity object or constructor self-check on an in-process handoff is a second
+  representation.
+- Refer to a sample, group or peak by its domain key, not by a minted
+  identifier.
+- Missing evidence means the answer is unavailable. It is never an inferred
+  zero or success.
+- Replacing a representation removes the old one and its adapters in the same
+  change.
+
+Code that does not follow this yet is debt to converge, not precedent.
+
 ## Design Principles
 
 - Make data flow and ownership obvious.
@@ -44,10 +82,6 @@ adapter；通過 `pyproject.toml` 的 `[tool.importlinter]` 不代表所有 I/O 
   shared behavior needs compatible current consumers on both sides.
 - Add configuration only for a present user's meaningful choice with an
   observable effect, counting its validation, replay, UI and documentation cost.
-- Reuse facts the owner already computed for unchanged inputs. Validate
-  persisted or external input at its real entry boundary, not again downstream.
-- Computing a domain answer is separate from hashing, serializing or minting
-  receipts; those belong to boundary adapters, never inside algorithm loops.
 - Reuse established primitives for the same rule; similar assertion syntax alone
   does not justify a shared validator.
 - Preserve public contracts unless an approved change names the consumer,
@@ -73,29 +107,19 @@ resources in `configuration/data/`.
 
 ## Change Locality
 
-For ownership, serialization, derived-fact or internal-defense changes:
+For a change to who produces a fact, how it is serialized or how it is
+identified:
 
-1. Identify the production entry, the producer that establishes the needed fact,
-   and its current consumers.
-2. A fallback, recomputation or deep revalidation needs a reachable path and an
-   observable loss. Construction, dataclass replacement and internal module
-   handoffs are not trust boundaries. Repair an internal bypass at its owner or
-   caller; uncertainty alone does not justify another defense.
-3. Identity and ordering:
-   - Allocate a public or persisted identifier only when a reference must cross
-     a file, table or human-facing boundary and no natural key suffices. Within
-     a process, reuse objects and domain keys; worker handoffs carry data, not
-     self-verifying identities.
-   - Order and break ties with raw measured facts, not aggregate centers,
-     scores, hashes or execution order. If competing facts share the full key,
-     report the ambiguity instead of inventing an identity.
-   - Check file fingerprints at file handoffs. An existing identifier, or a test
-     asserting it exists, is not a reason to keep it.
-4. Update consumers and retire superseded surfaces in the same change.
-5. Consumers that still rebuild owner-derived facts or parse another owner's
-   internal schema are unfinished decoupling.
-
-This is a check of the affected flow, recorded in the PR, not a repository audit.
+- Identify the production entry, the producer of the fact and its current
+  consumers, and apply the [Core Model](#core-model) to that flow. This is a
+  check of the affected flow, recorded in the PR, not a repository audit.
+- Allocate a public or persisted identifier only when a reference must cross a
+  file, table or human-facing boundary and no natural key suffices. An existing
+  identifier, or a test asserting it exists, is not a reason to keep it.
+- Order and break ties with raw measured facts, not aggregate centers, scores,
+  hashes or execution order. If competing facts share the full key, report the
+  ambiguity instead of inventing an identity.
+- Check file fingerprints at file handoffs.
 
 ### Internal Defense Growth Gate
 
@@ -122,40 +146,6 @@ package patterns from source.
   rationale, and unmatched-ignore alerting must remove it when the edge closes.
 - Optional census output belongs outside the repository or under an ignored
   path. It is review/debug evidence only.
-
-## Boundary Projection Closure
-
-For a non-trivial source-to-target conversion, identify the source owner,
-target consumer, identity/cardinality, preserved facts, deliberate loss, and
-the oracle that protects the consumer. Durable binding needs a current
-persisted/replay consumer or an actual admission/authority boundary; internal
-handoffs reuse established owner facts. Apply
-[Change Locality](#change-locality) before adding identity, proof, or
-construction machinery.
-
-- Preserve composite identity through maps and joins using the owner's domain keys.
-- Validate cardinality at the semantic owner.
-- Preserve terminal failure and provenance when a current consumer relies on
-  them.
-- Give persisted or canonical schemas a new semantic name when their meaning
-  changes; content changes retain the name.
-- Keep adapters translational: they may reject invalid projections but must
-  not silently recompute, collapse, or invent owner facts.
-- A lossy projection is valid only when its current consumer and reduced claim
-  are explicit. Missing owner evidence means the claim is unavailable, not
-  inferred zero or success.
-
-Persisted bytes prove their own shape and binding, not every statement stored
-inside them. Rehydrate only decision-bearing content: fields that select
-identity or value, grant writer authority, change product output, or determine
-a current domain/runtime result. Audit-only labels, counts, locators, and copied
-hashes remain telemetry unless a current consumer uses them to decide.
-
-Alignment Backfill records are owned by
-`xic_extractor.alignment.backfill.evidence_contract`; the strict TSV reader
-alone mints `EvidenceQueryResult`. The public label is compatibility
-metadata, not canonical identity proof. Exact headers, identity tuples and
-validation rules are owned by that reader, the writer and their tests.
 
 ## System Shape
 
@@ -211,54 +201,23 @@ model or reading completed evidence must not load scientific computation or
 RAW/DLL code through an unused capability. Delaying an import does not permit a
 forbidden dependency.
 
+`[tool.importlinter]` in `pyproject.toml` is the source for every enforced edge;
+this section states the shape and does not restate the contracts.
+
 - Domain algorithms depend only on arrays, typed configuration/context and small
   domain models; never on UI, workbook builders, CLI scripts, process backends,
   report renderers, or RAW/CSV adapters. Adapters, I/O, rendering and entry
   points depend inward.
-- `extraction/` and `untargeted_execution/` do not depend on each other; shared
-  scientific settings live in `configuration/scientific_settings.py`.
 - Main chain: applications → untargeted_execution／extraction → alignment →
-  discovery → peak_detection (import-linter `main-chain-layers`).
-  `acquisition/` stays inner (`acquisition-stays-inner`).
-- `applications/` is the outermost composition layer; nothing inner imports it.
-  It owns the run from configuration to publication. `extractor.run` is the
-  public root entry into it. Entry points pass typed intent, not flattened
-  execution arguments.
-- `execution/` and `untargeted_execution/` own execution, spooling and cleanup.
-  Scientific completion is pure over owner-bound inputs; runtime wraps it
-  without changing the result, and Matrix projection receives only the
-  finalized result.
-- `diagnostics/` is an outer layer; inner packages never import it.
-- `alignment_explanation/` owns the shared SQLite format, writer and
-  acquisition-free readers. Readers do not import publication or execution.
-  Matrix curation and duplicate screening share the published-cell reader.
-- `xic_inspector` reads completed evidence only. Source adapters interpret
-  method-specific records; API, selection and renderer stay method-neutral.
-  Scientific packages never import Inspector. The workbench hosts Inspector
-  views and owns sources, jobs and cancellation; [workbench and
-  review](product/workbench.md) defines what review may mean.
-- Delta-mass method modules work on in-memory features and traces; their
-  pipeline owns RAW acquisition and diagnostic CSV/JSON, which no product path
-  consumes.
-- Keep a compatibility facade only for a real external consumer. When replacing
-  an internal surface, remove the old implementation, alias, tests and shim.
-- The Untargeted application invokes retained CID-NL execution; Alignment has
-  no extraction imports. Alignment owns the pure finalized Matrix projection;
-  `output/alignment/` owns artifact selection, formatting, streaming or
-  materialization and atomic writing. The Untargeted execution adapter never
-  writes. Formal Alignment completion binds the candidate views, Matrix m/z
-  lookup, config and completed ISTD provenance before handoff; publication
-  does not reconstruct them from independent caller inputs. Low-level runtime
-  results remain available to explicit-input diagnostic consumers. The completed
-  result owns private-store retention and release, shared across its
-  immutable views; prepared Discovery resources transfer to that result.
-  Application publication owns cancellation and explanation lifetime through
-  writing and closes the result on every exit. Acquisition worker/cache lifetime
-  remains separate. GUI and CLI receive durable published outputs only.
-  `tests/test_docs_architecture_census.py` pins these execution boundaries.
-- Formal Untargeted partitions consume the pure CID-NL input contract in
-  `alignment/cid_nl_inputs.py` and require a resolved signal-processing profile
-  with Discovery physical facts.
+  discovery → peak_detection. `acquisition/` stays inner.
+- `applications/` is the outermost composition layer and owns a run from
+  configuration to publication; `extractor.run` is the public root entry into
+  it. Entry points pass typed intent, not flattened execution arguments.
+- `execution/` and `untargeted_execution/` schedule, store and clean up. Runtime
+  wraps scientific completion without changing its result.
+- `xic_inspector` reads completed evidence only; scientific packages never
+  import it.
+- Keep a compatibility facade only for a real external consumer.
 
 ## Ownership Map
 
@@ -285,7 +244,7 @@ forbidden dependency.
 | `sample_metadata.py` | canonical sample identity and immutable metadata snapshots |
 | `matrix_curation/` | post-Alignment curation over a published Matrix and its export; never Alignment decisions or normalization |
 | `evidence_artifacts.py` | completed-evidence locator: report and Matrix paths, Matrix SHA-256, attempt UUID, schema version |
-| `processing_identity.py` | request, attempt, source and retry-predecessor identity |
+| `processing_identity.py` | request, attempt and source identity |
 | `execution/attempt.py` | sole attempt construction, execution, settlement and finalization authority |
 | `acquisition_contract.py` | capability-bound acquisition batches and call/point facts |
 
@@ -340,23 +299,12 @@ selection and `AuditTrail` before any Matrix change; activation rules are in
 
 ## Writer Transaction Authority
 
-A finalizer must not reconstruct writer authority from caller-authored rows,
-manifests, diffs, receipts, counts, or a surrounding hash chain.
+Only the decision owner selects a cell's value and state. A writer renders that
+decision; it does not recompute it, and it does not take a value or state from
+review rows, manifests, counts or diagnostics.
 
-- Rehydrate persisted review evidence once into an immutable typed review set
-  with an explicit claim.
-- The writer finalizer accepts the current typed scientific owner result, that
-  owner-validated review set, and output-location mechanics.
-- Identity, selected value, eligibility, manifest rows, counts, rollback, and
-  terminal status are derived inside the transaction.
-- Audit receipts may contribute lineage but cannot select a cell, value,
-  state, or writer decision.
-- Publish final output only after the writer, expected-diff, rollback, and
-  terminal-receipt oracles succeed.
-
-Targeted and Untargeted retain their existing writer owners and publication
-mechanics. A new transaction shape requires a current consumer, authority
-boundary, compatibility impact, and rollback oracle.
+Output is published only after the write completed; a failed write leaves the
+previous output in place. Targeted and Untargeted keep their own writers.
 
 ## Runtime Execution
 
@@ -379,12 +327,6 @@ Identifiers, schema names and artifact names carry no version suffix: when
 content changes keep the name, when meaning changes choose a new name. Issue,
 PR and ticket numbers are never identifiers. This does not require unrelated
 renames.
-
-CID-NL is the supported Untargeted method. Its input interpretation lives in
-Discovery; method subjects and capture authorization live in
-`peak_detection/cid_nl_method_subject.py` and `peak_detection/search_scope.py`.
-Another method needs its own subjects, authorization and evidence adapter, not a
-second scheduling, settlement or output lifecycle.
 
 ## Diagnostics Contract
 

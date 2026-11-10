@@ -5,6 +5,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from tests.alignment_pipeline_helpers import writer_cells
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
@@ -190,40 +191,33 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     )
     if scenario == "pooled":
         assert all(item.content.method_result == "HOLD" for item in by_sample.values())
-        assert not writer.matrix.clusters
-        assert not writer.matrix.cells
+        assert not writer.clusters
         _assert_unsupported_exclusion_closes_exact_coverage(completed)
         destination = tmp_path / "empty-matrix.tsv"
         write_alignment_matrix_tsv(
             destination,
-            writer.matrix,
-            production_decisions=writer.production_decisions,
+            writer,
         )
         with destination.open(encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle, delimiter="\t")
             assert {"S1", "S2"}.issubset(reader.fieldnames)
             assert list(reader) == []
         return
-    assert len(writer.matrix.clusters) == 1
-    assert len(writer.matrix.cells) == len(paths)
+    assert len(writer.clusters) == 1
+    cells = tuple(writer_cells(writer))
+    assert len(cells) == len(paths)
     assert all(
-        writer.production_decisions.cell(
-            cell.cluster_id, cell.sample_stem
-        ).write_matrix_value
+        (cell.value is not None)
         == (
             not (
-                cell.sample_stem == "S4"
+                sample_stem == "S4"
                 and scenario in {"missing", "disjoint", "recovery_missing"}
             )
         )
-        for cell in writer.matrix.cells
+        for _row, sample_stem, cell in cells
     )
     destination = tmp_path / "matrix.tsv"
-    write_alignment_matrix_tsv(
-        destination,
-        writer.matrix,
-        production_decisions=writer.production_decisions,
-    )
+    write_alignment_matrix_tsv(destination, writer)
     with destination.open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
     assert len(rows) == 1
@@ -260,12 +254,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             association.position.group_identity.group_hypothesis_id
             for association in recovered_cell.position_associations
         ] == [before.group_hypothesis_id]
-        assert (
-            next(
-                cell for cell in writer.matrix.cells if cell.sample_stem == "S4"
-            ).source_candidate_id
-            is None
-        )
+        assert "S4" not in dict(writer.clusters[0].source_candidate_ids)
     if scenario == "different_tags":
         _assert_composite_labels_cannot_grant_membership(batch, runtime)
     if scenario == "one_scan":

@@ -119,7 +119,7 @@ decisions, RT calibration).
 
 **Purpose**: Build a no-RAW alignment health packet from existing alignment
 outputs so repeated 8RAW/FULL COHORT validation can quickly surface owner ambiguity,
-backfill dependency, unchecked pressure, and primary-consolidation sentinel
+backfill dependency, not-searched pressure, and primary-consolidation sentinel
 families.
 **Topic group**: `alignment_health_packet.py` (single-file)
 **Status note**: Writes `alignment_health_summary.json`,

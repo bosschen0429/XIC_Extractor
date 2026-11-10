@@ -30,8 +30,9 @@ XIC-specific task routing and invariants; global rules own general defaults.
 - **Code navigation:** for code-level questions or changes, use Codebase Memory
   (CBM) for callers, dependencies and impact once its index matches this checkout;
   read current source for exact text and negative claims.
-- **Change locality:** ownership, serialization, identity, derived-fact and
-  internal-defense changes follow
+- **Core model:** one concept, one representation, one source. Name the concept
+  a new class, column or value belongs to before adding it; see
+  [Core Model](docs/architecture-contract.md#core-model) and
   [Change Locality](docs/architecture-contract.md#change-locality).
 - **Domain purity:** core algorithms work on in-memory domain models. Never mix
   RAW/DLL I/O, multiprocessing, byte hashing or output formatting into

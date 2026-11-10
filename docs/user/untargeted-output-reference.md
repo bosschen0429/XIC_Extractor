@@ -177,7 +177,7 @@ the primary cross-sample quantitative output.
 | --- | --- | --- |
 | Mz | float | Family center m/z |
 | RT | float | Family center RT (min) |
-| *{sample_name}* | float | Area value for sample (blank if absent/unchecked) |
+| *{sample_name}* | float | Area value for sample (blank when the cell has no value) |
 
 Sample columns follow the order determined by `matrix.sample_order` (typically
 injection order when an injection-order source is provided).
@@ -188,8 +188,8 @@ The TSV uses stable display text for people and spreadsheet consumers:
   point. It is a display coordinate, not machine identity.
 - Nonblank sample areas use lowercase scientific notation with five digits
   after the decimal point (for example, `1.23457e+03`).
-- `RT` keeps its existing compact numeric rendering, and absent or unchecked
-  sample cells remain blank.
+- `RT` keeps its existing compact numeric rendering, and sample cells without
+  a value remain blank.
 
 Machine consumers bind Matrix rows to the nonblank `matrix_row_index` subset
 of `alignment_review.tsv`. Its `matrix_mz` and `matrix_rt` retain machine
@@ -229,8 +229,8 @@ report tables. It does not assert group identity across different input sets.
 | --- | --- | --- |
 | physical_peak_keys | string | Semicolon-separated physical peak keys; not event cluster IDs |
 | detected_count | int | Detected sample count |
-| unchecked_count | int | Unchecked sample count |
-| ambiguous_ms1_owner_count | int | Ambiguous ownership count |
+| not_searched_count | int | Samples whose cell was not searched |
+| unresolved_count | int | Samples whose candidate evidence did not resolve to one peak |
 | present_rate | float | Detection rate (0.0–1.0) |
 
 #### Identity Decision
@@ -257,7 +257,7 @@ report tables. It does not assert group identity across different input sets.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| warning | string | Warning flag (`no_anchor`, `high_unchecked`, `high_backfill_dependency`) |
+| warning | string | Warning flag (`no_anchor`, `high_not_searched`, `high_backfill_dependency`) |
 | reason | string | Comprehensive description |
 
 `high_backfill_dependency` marks rows with Backfill cells but no direct

@@ -25,9 +25,8 @@ def publish_owner_run(tmp_path, monkeypatch, level):
     )
     write_outputs_atomic(
         outputs,
-        writer.matrix,
+        writer,
         metadata={},
-        production_decisions=writer.production_decisions,
     )
     write_alignment_explanation(
         output_dir / EXPLANATION_ARTIFACT_NAME,

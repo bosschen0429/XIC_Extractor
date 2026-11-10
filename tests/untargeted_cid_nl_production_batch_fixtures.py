@@ -22,6 +22,7 @@ import xic_extractor.alignment.cid_nl_completion as cid_nl_completion_owner
 import xic_extractor.processing_identity as identity_owner
 import xic_extractor.raw_source_binding as raw_source_binding_owner
 import xic_extractor.untargeted_execution.alignment as alignment_adapter
+from tests.alignment_pipeline_helpers import writer_cells
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _FakeRaw,
@@ -141,11 +142,7 @@ def _assert_partition_composition_parity(
     recomposed = replace(completed, application_result=result)
     assert project_completed_untarget_batch_writer_inputs(
         recomposed.application_result
-    ).matrix == (
-        project_completed_untarget_batch_writer_inputs(
-            completed.application_result
-        ).matrix
-    )
+    ) == project_completed_untarget_batch_writer_inputs(completed.application_result)
     assert result.excluded_candidates == original.excluded_candidates
     assert result.physical_peak_keys == original.physical_peak_keys
     assert all(
@@ -1157,21 +1154,14 @@ def _assert_conservative_coverage_handoff(
         assert source.content.technical_state == "evaluated"
         assert source.method_assessment.content.evaluation_receipt.search_completed
         assert source.peak_observation is source.peak_hypothesis is None
-    hold_decisions = tuple(
-        decision
-        for decision in writer_inputs.production_decisions.cells.values()
-        if decision.sample_stem == "Hold"
+    hold_cells = tuple(
+        cell
+        for _row, sample_stem, cell in writer_cells(writer_inputs)
+        if sample_stem == "Hold"
     )
-    assert all(
-        not decision.write_matrix_value and decision.matrix_value is None
-        for decision in hold_decisions
-    )
+    assert all(cell.value is None for cell in hold_cells)
     matrix_path = tmp_path / "conservative-matrix.tsv"
-    write_alignment_matrix_tsv(
-        matrix_path,
-        writer_inputs.matrix,
-        production_decisions=writer_inputs.production_decisions,
-    )
+    write_alignment_matrix_tsv(matrix_path, writer_inputs)
     with matrix_path.open(encoding="utf-8", newline="") as handle:
         matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
     assert len(matrix_rows) == (0 if threshold else 1)

@@ -69,7 +69,13 @@ tests.
   computational scope, not chemical identity; see [Alignment](alignment.md).
 - `ProductionCellDecision`: the cell decision's value or typed no-write, with
   its selected integration and provenance. Observations do not select delivered
-  values themselves.
+  values themselves. The Alignment writers read it directly.
+- cell `status`: in the Alignment cell tables, the origin of the cell's peak
+  (`detected` from the group's own direct observation, `backfilled` from an
+  MS1-only Backfill value), otherwise the cell's
+  [no-write reason](decision-policy.md#no-write-reasons). A cell whose
+  direct observation yields no value keeps `detected`; its `reason` column
+  gives the no-write reason.
 - `workflow projection`: the owner of output row/cell identity, inclusion,
   counts, reasons and review routing. It never selects the cell value.
 - `feature_id`: in Alignment output, the report-scoped `F000001` label of one
@@ -277,7 +283,7 @@ Persisted and public exceptions retain their exact spelling:
 | `preferred_rt_recovery` | Existing proposal-source label |
 | `owner_backfill_xic_backend`, `owner_backfill_window_strategy`, `owner_backfill_superwindow_span_factor`, `owner_backfill_min_detected_samples` | Existing config and run-metadata keys |
 | `owner_backfill_evaluation_coverage` | Public run-output field |
-| `owner_finalized_cell_decision`, `owner_rehydrated` and their longer diagnostic forms | Existing metadata, decision, and diagnostic values |
+| `owner_finalized_cell_decision` and its longer diagnostic forms | Existing metadata, decision, and diagnostic values |
 | `alignment_owner_backfill_*`, `owner_backfill_revisit`, `alignment.owner_backfill` | Existing artifact names, source labels, and timing stage |
 
 The MS2 boundary search's `boundary_rescue` names a distinct peak-detection

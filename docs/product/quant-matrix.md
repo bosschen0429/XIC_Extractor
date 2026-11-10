@@ -38,12 +38,14 @@ delivery seam as if they were already final.
 - Untarget cell decision consumes completed Feature × Sample evidence first.
   Matrix projection then assigns output identities and wraps the unchanged
   value/no-write payload and selected integration in `ProductionCellDecision`.
+  The Alignment TSV writers render those decisions directly; a cell `status`
+  is `detected`, `backfilled`, or the cell's no-write reason.
 - Inclusion and counting consume those completed answers, not raw cells.
 
 Owner quantification is eligible only when the selected integration apex is
 strictly inside its selected left/right bounds. An endpoint apex remains an
 owner and remains visible in diagnostics, but its Matrix cell is
-`unchecked` with no area or selected integration, and it does not count as a
+`not_searched` with no area or selected integration, and it does not count as a
 detected owner for the Backfill sample-quorum gate. A Backfill observation may
 replace that censored owner only when its scalar and selected-integration
 boundaries are both interior and its primary Matrix area is valid; an
@@ -101,8 +103,6 @@ risk flags do not independently authorize a value or row.
 | Surface | Role |
 | --- | --- |
 | `alignment_matrix.tsv` / workbook `Matrix` | Primary product-facing numeric matrix |
-| `cell_provenance.tsv` | Cell-level provenance for accepted values |
-| `row_summary.tsv` | Matrix row identity and summary sidecar |
 | `ProductionCellDecision` | Published value/no-write decision retaining the selected integration and workflow-specific subject |
 
 Alignment additionally exposes `alignment_review.tsv` for group review and
@@ -127,7 +127,7 @@ and scored without a rerun. It does not establish production readiness by itself
 
 ## Verification
 
-- `tests/test_alignment_matrix.py`
+- `tests/test_alignment_tsv_writer.py`
 - `tests/test_alignment_cell_decision.py`
 
 ## Pitfalls

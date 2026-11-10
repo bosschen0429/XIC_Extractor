@@ -91,10 +91,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
             closed.append(True)
 
     completed = MockCompleted()
-    writer_inputs = SimpleNamespace(
-        matrix=_matrix(("S1",)),
-        production_decisions=object(),
-    )
+    writer_inputs = _matrix(("S1",))
     retained_sample_metadata = (
         SampleMetadata(
             sample_name="S1",
@@ -287,10 +284,7 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
         close=lambda: closed.append(True),
         application_result=SimpleNamespace(children=()),
     )
-    writer_inputs = SimpleNamespace(
-        matrix=_matrix(("S1",)),
-        production_decisions=object(),
-    )
+    writer_inputs = _matrix(("S1",))
     cancellation_checks = iter((False, False, True))
     monkeypatch.setattr(
         application_module,
@@ -572,11 +566,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         writer = output_owner.project_completed_untarget_batch_writer_inputs(
             completed.application_result
         )
-        write_alignment_matrix_tsv(
-            matrix_path,
-            writer.matrix,
-            production_decisions=writer.production_decisions,
-        )
+        write_alignment_matrix_tsv(matrix_path, writer)
         matrix_bytes = matrix_path.read_bytes()
         write_alignment_explanation(
             reference,
@@ -884,10 +874,7 @@ def test_pure_cid_nl_targets_csv_integration(
         application_result=SimpleNamespace(children=()),
         close=lambda: closed.append(True),
     )
-    writer_inputs = SimpleNamespace(
-        matrix=_matrix(("S1",)),
-        production_decisions=object(),
-    )
+    writer_inputs = _matrix(("S1",))
     fake_ref = SimpleNamespace(
         provenance={"workbook_sha256": "b" * 64},
         explanation_provenance={

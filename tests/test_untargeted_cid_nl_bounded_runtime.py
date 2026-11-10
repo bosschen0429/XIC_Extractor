@@ -12,6 +12,7 @@ from time import perf_counter, sleep
 
 import pytest
 
+from tests.alignment_pipeline_helpers import writer_cells, writer_view
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
@@ -900,8 +901,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     matrix_path = tmp_path / "eligibility.tsv"
     write_alignment_matrix_tsv(
         matrix_path,
-        writer.matrix,
-        production_decisions=writer.production_decisions,
+        writer,
     )
     report = write_alignment_explanation(
         tmp_path / "eligibility.sqlite",
@@ -1007,17 +1007,17 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     eager_writer = project_completed_untarget_batch_writer_inputs(
         eager.application_result
     )
-    assert bounded_writer.matrix == eager_writer.matrix
+    assert writer_view(bounded_writer) == writer_view(eager_writer)
     if scenario == "istd":
         expected_areas = {
-            (cell.cluster_id, cell.sample_stem): cell.area
-            for cell in eager_writer.matrix.cells
-            if cell.area is not None
+            (row.feature_id, sample_stem): cell.value
+            for row, sample_stem, cell in writer_cells(eager_writer)
+            if cell.value is not None
         }
         actual_areas = {
-            (cell.cluster_id, cell.sample_stem): cell.area
-            for cell in bounded_writer.matrix.cells
-            if cell.area is not None
+            (row.feature_id, sample_stem): cell.value
+            for row, sample_stem, cell in writer_cells(bounded_writer)
+            if cell.value is not None
         }
         assert expected_areas
         assert actual_areas == pytest.approx(expected_areas)
@@ -1109,8 +1109,7 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
         matrix = tmp_path / f"{name}.tsv"
         write_alignment_matrix_tsv(
             matrix,
-            writer.matrix,
-            production_decisions=writer.production_decisions,
+            writer,
         )
         report = write_alignment_explanation(
             tmp_path / f"{name}.sqlite",
@@ -1239,8 +1238,8 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
     writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
-    assert writer.matrix.cells
-    assert writer.matrix == baseline_writer.matrix
+    assert any(row.cells for row in writer.clusters)
+    assert writer_view(writer) == writer_view(baseline_writer)
     assert completed.application_result.candidate_ids == (
         baseline.application_result.candidate_ids
     )
@@ -1254,7 +1253,10 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         sample.metadata for sample in baseline.application_result.canonical_samples
     )
     assert completed_samples == baseline_samples
-    assert all(cell.area is None or cell.area > 0 for cell in writer.matrix.cells)
+    assert all(
+        cell.value is None or cell.value > 0
+        for _row, _stem, cell in writer_cells(writer)
+    )
     assert {
         sample.metadata.raw_stem
         for sample in completed.application_result.canonical_samples

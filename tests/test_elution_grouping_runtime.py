@@ -5,6 +5,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from tests.alignment_pipeline_helpers import writer_cells
 from tests.cid_nl_raw_fixture import _FakeRaw, _open_bound_raw, _peak_config, _settings
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
 from tests.untargeted_cid_nl_no_raw_fixture import (
@@ -12,6 +13,7 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.untargeted_finalized_matrix import (
+    cell_status,
     project_completed_untarget_batch_writer_inputs,
 )
 from xic_extractor.configuration.signal_processing_profile import (
@@ -238,21 +240,22 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     store.seal()
     completed = adapter.finalize_application(store, (initial_composed, composed))
     writer = project_completed_untarget_batch_writer_inputs(completed)
-    assert len(writer.matrix.cells) == 8
+    cells = tuple(writer_cells(writer))
+    assert len(cells) == 8
     direct_samples = {
         group.group_hypothesis_id: {owner.sample_stem for owner in group.owners}
         for group in groups
     }
-    for cell in writer.matrix.cells:
-        direct = cell.sample_stem in direct_samples[cell.group_hypothesis_id]
+    for row, sample_stem, cell in cells:
+        direct = sample_stem in direct_samples[row.group_hypothesis_id]
         expected_apex = (
-            expected_initial[cell.sample_stem]
-            if direct
-            else expected_query[cell.sample_stem]
+            expected_initial[sample_stem] if direct else expected_query[sample_stem]
         )
-        assert cell.status == ("detected" if direct else "backfilled")
-        assert cell.apex_rt == pytest.approx(expected_apex, abs=0.005)
-        assert cell.area is not None and cell.area > 0
+        assert cell_status(cell) == ("detected" if direct else "backfilled")
+        assert cell.selected_integration.rt_apex_min == pytest.approx(
+            expected_apex, abs=0.005
+        )
+        assert cell.value is not None and cell.value > 0
 
 
 def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
@@ -390,12 +393,13 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
     store.seal()
     completed = adapter.finalize_application(store, (initial_composed, composed))
     writer = project_completed_untarget_batch_writer_inputs(completed)
-    assert len(writer.matrix.cells) == 21
-    for cell in writer.matrix.cells:
-        apex = group_apex[cell.group_hypothesis_id]
-        if cell.sample_stem == "S6":
-            assert cell.source_candidate_id is None
-        direct = cell.sample_stem in samples[2 * group_apices.index(apex) :][:2]
-        assert cell.status == ("detected" if direct else "backfilled")
-        assert cell.apex_rt == pytest.approx(apex, abs=0.005)
-        assert cell.area is not None and cell.area > 0
+    cells = tuple(writer_cells(writer))
+    assert len(cells) == 21
+    for row, sample_stem, cell in cells:
+        apex = group_apex[row.group_hypothesis_id]
+        if sample_stem == "S6":
+            assert sample_stem not in dict(row.source_candidate_ids)
+        direct = sample_stem in samples[2 * group_apices.index(apex) :][:2]
+        assert cell_status(cell) == ("detected" if direct else "backfilled")
+        assert cell.selected_integration.rt_apex_min == pytest.approx(apex, abs=0.005)
+        assert cell.value is not None and cell.value > 0

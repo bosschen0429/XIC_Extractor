@@ -13,7 +13,7 @@ or product-delivery plan type.
 ## Decision
 
 - Keep the existing Backfill evidence TSV projection and its writer unchanged;
-  its strict reader is the only reader that mints `EvidenceQueryResult`.
+  the repository has no reader for it.
 - Do not introduce a generic evidence archive, a human-explanation subsystem,
   a product-delivery framework, or parallel writer authority without a newly
   proved current consumer and separately approved contract.

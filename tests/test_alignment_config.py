@@ -1,7 +1,6 @@
 import importlib
 import math
 import sys
-from typing import get_type_hints
 
 import pytest
 
@@ -16,17 +15,6 @@ def test_alignment_public_import_avoids_pipeline_and_raw_reader():
     assert "xic_extractor.extraction" not in newly_imported
     assert "xic_extractor.extractor" not in newly_imported
     assert "xic_extractor.raw_reader" not in newly_imported
-
-
-def test_alignment_public_type_hints_resolve_without_raw_reader_import():
-    before = set(sys.modules)
-
-    from xic_extractor.alignment.matrix import AlignedCell
-
-    hints = get_type_hints(AlignedCell)
-
-    assert "selected_integration" in hints
-    assert "xic_extractor.raw_reader" not in set(sys.modules) - before
 
 
 def test_default_config_matches_alignment_contract():

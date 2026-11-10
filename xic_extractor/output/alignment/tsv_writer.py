@@ -2,28 +2,26 @@ from __future__ import annotations
 
 import csv
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from contextlib import ExitStack
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from xic_extractor.alignment.backfill.evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
 )
-from xic_extractor.alignment.matrix import (
-    AlignedCell,
-    AlignmentMatrix,
-    cells_by_cluster,
-)
 from xic_extractor.alignment.owner_group_delivery import delivery_feature_id
-from xic_extractor.alignment.production_decisions import (
-    ProductionCellDecision,
-    ProductionDecisionSet,
+from xic_extractor.alignment.primary_matrix_area import (
+    primary_matrix_area_from_integration,
 )
 from xic_extractor.alignment.untargeted_finalized_matrix import (
-    CompletedUntargetBatchWriterInputs,
+    PRESENTATION_FORMULA_VERSION,
+    AlignmentMatrix,
     FinalizedUntargetMatrixRow,
+    backfill_query_bounds,
+    cell_origin,
+    cell_status,
 )
 from xic_extractor.output.alignment.matrix_output_contract import (
     MATRIX_REVIEW_COLUMNS,
@@ -41,6 +39,9 @@ from xic_extractor.output.alignment.product_matrix import (
 )
 from xic_extractor.tabular_io import escape_excel_formula
 
+if TYPE_CHECKING:
+    from xic_extractor.alignment.cell_decision.owner import ProductionCellDecision
+
 ALIGNMENT_REVIEW_COLUMNS = (
     "feature_id",
     *(
@@ -55,8 +56,8 @@ ALIGNMENT_REVIEW_COLUMNS = (
     "family_observed_neutral_loss_da",
     "physical_peak_keys",
     "detected_count",
-    "unchecked_count",
-    "ambiguous_ms1_owner_count",
+    "not_searched_count",
+    "unresolved_count",
     "present_rate",
     "identity_reason",
     "accepted_cell_count",
@@ -70,8 +71,6 @@ ALIGNMENT_REVIEW_COLUMNS = (
 
 ALIGNMENT_CELLS_COLUMNS = (
     "feature_id",
-    "gap_fill_state",
-    "gap_fill_reason",
     "sample_stem",
     "status",
     "area",
@@ -82,12 +81,9 @@ ALIGNMENT_CELLS_COLUMNS = (
     "height",
     "peak_start_rt",
     "peak_end_rt",
-    "rt_delta_sec",
-    "trace_quality",
     "noise_sigma",
     "signal_to_noise",
     "low_signal_to_noise",
-    "scan_support_score",
     "source_candidate_id",
     "neutral_loss_tag",
     "family_center_mz",
@@ -95,26 +91,10 @@ ALIGNMENT_CELLS_COLUMNS = (
     "reason",
 )
 
-BACKFILL_EVIDENCE_ROW_FLAGS = frozenset(
-    {
-        "backfill_cell_evidence_required",
-        "backfill_rescue_review_only",
-        "high_backfill_dependency",
-        "missing_independent_backfill_identity_evidence",
-        "rescue_heavy",
-    },
-)
-
-
-def _require_production_decisions(value: object) -> ProductionDecisionSet:
-    if not isinstance(value, ProductionDecisionSet):
-        raise TypeError("production_decisions must be owner-minted")
-    return value
-
 
 def write_alignment_tsv_row_batches(
     paths: Mapping[str, Path],
-    batches: Iterable[CompletedUntargetBatchWriterInputs],
+    rows: Iterable[FinalizedUntargetMatrixRow],
     *,
     sample_order: tuple[str, ...],
 ) -> int:
@@ -150,13 +130,11 @@ def write_alignment_tsv_row_batches(
                         [format_value(row.get(column, "")) for column in headers[name]]
                     )
 
-        for batch in batches:
-            matrix = batch.matrix
-            decisions = batch.production_decisions
-            writer_row_count += len(matrix.clusters)
+        for row in rows:
+            matrix = AlignmentMatrix(clusters=(row,), sample_order=sample_order)
+            writer_row_count += 1
             products = build_product_matrix_rows(
                 matrix,
-                production_decisions=decisions,
                 source_candidate_owners=source_candidate_owners,
             )
             projection_by_feature = {}
@@ -177,31 +155,16 @@ def write_alignment_tsv_row_batches(
                 emit(
                     "review",
                     _format_alignment_review_rows(
-                        _review_rows(
-                            matrix,
-                            production_decisions=decisions,
-                            matrix_projection=projection_by_feature,
-                        )
+                        _review_rows(matrix, matrix_projection=projection_by_feature)
                     ),
                 )
-            if "backfill" in writers:
-                for values in _backfill_cell_evidence_rows(matrix, decisions):
-                    writers["backfill"].writerow(
-                        [format_value(value) for value in values]
-                    )
-            if "cells" in writers:
-                emit("cells", _alignment_cell_rows(matrix))
+            emit("backfill", _backfill_cell_evidence_rows(matrix))
+            emit("cells", _alignment_cell_rows(matrix))
     return writer_row_count
 
 
-def write_alignment_review_tsv(
-    path: Path,
-    matrix: AlignmentMatrix,
-    *,
-    production_decisions: ProductionDecisionSet,
-) -> Path:
-    decisions = _require_production_decisions(production_decisions)
-    products = build_product_matrix_rows(matrix, production_decisions=decisions)
+def write_alignment_review_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
+    products = build_product_matrix_rows(matrix)
     projection = {
         str(product.review_projection["feature_id"]): bind_matrix_review_row(
             source_review=product.review_projection,
@@ -213,28 +176,14 @@ def write_alignment_review_tsv(
         path,
         ALIGNMENT_REVIEW_COLUMNS,
         _format_alignment_review_rows(
-            _review_rows(
-                matrix,
-                production_decisions=decisions,
-                matrix_projection=projection,
-            )
+            _review_rows(matrix, matrix_projection=projection)
         ),
     )
 
 
-def write_alignment_matrix_tsv(
-    path: Path,
-    matrix: AlignmentMatrix,
-    *,
-    production_decisions: ProductionDecisionSet,
-) -> Path:
-    decisions = _require_production_decisions(production_decisions)
-    rows = product_matrix_tsv_rows(
-        matrix,
-        production_decisions=decisions,
-    )
+def write_alignment_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
     table = serialize_public_matrix_table(
-        rows,
+        product_matrix_tsv_rows(matrix),
         sample_columns=matrix.sample_order,
     )
     return _write_tsv(path, table.header, table.rows)
@@ -256,113 +205,94 @@ def write_alignment_cells_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
 
 
 def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]:
-    clusters_by_id = {cluster.feature_id: cluster for cluster in matrix.clusters}
-    for cell in matrix.cells:
-        cluster = clusters_by_id[cell.cluster_id]
-        quality = (
-            cell.selected_integration.signal_quality
-            if cell.selected_integration is not None
+    for cluster in matrix.clusters:
+        candidate_ids = dict(cluster.source_candidate_ids)
+        for sample_stem, cell in zip(matrix.sample_order, cluster.cells, strict=True):
+            yield _cell_fields(cluster, sample_stem, cell, candidate_ids)
+
+
+def _cell_fields(
+    cluster: FinalizedUntargetMatrixRow,
+    sample_stem: str,
+    cell: ProductionCellDecision,
+    candidate_ids: Mapping[str, str],
+) -> dict[str, object]:
+    integration = cell.selected_integration
+    quality = integration.signal_quality if integration is not None else None
+    missing_area_reason = (
+        primary_matrix_area_from_integration(integration).reason
+        if cell_origin(cell) is not None
+        else ""
+    )
+    return {
+        "feature_id": delivery_feature_id(cluster),
+        "sample_stem": sample_stem,
+        "status": cell_status(cell),
+        "area": format_value(cell.value),
+        "primary_matrix_area": format_value(cell.value),
+        "primary_matrix_area_source": cell.source or missing_area_reason,
+        "primary_matrix_area_reason": missing_area_reason,
+        "apex_rt": format_value(
+            integration.rt_apex_min
+            if cell.value is not None and integration is not None
             else None
-        )
-        yield {
-            "feature_id": delivery_feature_id(cluster),
-            "gap_fill_state": cell.gap_fill_state,
-            "gap_fill_reason": cell.gap_fill_reason,
-            "sample_stem": cell.sample_stem,
-            "status": cell.status,
-            "area": format_value(cell.area),
-            "primary_matrix_area": format_value(cell.matrix_area),
-            "primary_matrix_area_source": cell.matrix_area_source,
-            "primary_matrix_area_reason": cell.matrix_area_missing_reason,
-            "apex_rt": format_value(cell.apex_rt),
-            "height": format_value(cell.height),
-            "peak_start_rt": format_value(cell.peak_start_rt),
-            "peak_end_rt": format_value(cell.peak_end_rt),
-            "rt_delta_sec": format_value(cell.rt_delta_sec),
-            "trace_quality": cell.trace_quality,
-            "noise_sigma": format_value(quality.noise_sigma)
-            if quality is not None
-            else "",
-            "signal_to_noise": format_value(quality.signal_to_noise)
-            if quality is not None
-            else "",
-            "low_signal_to_noise": quality.low_signal_to_noise
-            if quality is not None and quality.low_signal_to_noise is not None
-            else "",
-            "scan_support_score": format_value(cell.scan_support_score),
-            "source_candidate_id": cell.source_candidate_id or "",
-            "neutral_loss_tag": cluster.neutral_loss_tag,
-            "family_center_mz": format_value(cluster.family_center_mz),
-            "family_center_rt": format_value(cluster.family_center_rt),
-            "reason": cell.reason,
-        }
+        ),
+        "height": format_value(
+            integration.height_raw if integration is not None else None
+        ),
+        "peak_start_rt": format_value(
+            integration.rt_left_min if integration is not None else None
+        ),
+        "peak_end_rt": format_value(
+            integration.rt_right_min if integration is not None else None
+        ),
+        "noise_sigma": format_value(quality.noise_sigma) if quality is not None else "",
+        "signal_to_noise": format_value(quality.signal_to_noise)
+        if quality is not None
+        else "",
+        "low_signal_to_noise": quality.low_signal_to_noise
+        if quality is not None and quality.low_signal_to_noise is not None
+        else "",
+        "source_candidate_id": candidate_ids.get(sample_stem, ""),
+        "neutral_loss_tag": cluster.neutral_loss_tag,
+        "family_center_mz": format_value(cluster.family_center_mz),
+        "family_center_rt": format_value(cluster.family_center_rt),
+        "reason": cell.source or cell.variant,
+    }
 
 
 def write_alignment_backfill_cell_evidence_tsv(
-    path: Path,
-    matrix: AlignmentMatrix,
-    *,
-    production_decisions: ProductionDecisionSet,
+    path: Path, matrix: AlignmentMatrix
 ) -> Path:
     """Write the compact cell ledger needed by backfill evidence review surfaces."""
 
-    return _write_tsv_sequences(
+    return _write_tsv(
         path,
         ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
-        _backfill_cell_evidence_rows(matrix, production_decisions),
+        _backfill_cell_evidence_rows(matrix),
     )
 
 
 def _backfill_cell_evidence_rows(
     matrix: AlignmentMatrix,
-    production_decisions: ProductionDecisionSet,
-) -> Iterable[tuple[object, ...]]:
-    decisions = _require_production_decisions(production_decisions)
-    clusters_by_id = {cluster.feature_id: cluster for cluster in matrix.clusters}
-    backfill_family_ids = _backfill_evidence_family_ids(matrix, decisions)
-
-    def rows() -> Iterable[tuple[object, ...]]:
-        for cell in matrix.cells:
-            if cell.cluster_id not in backfill_family_ids:
+) -> Iterable[dict[str, object]]:
+    for cluster in matrix.clusters:
+        if not any(cell_origin(cell) == "backfilled" for cell in cluster.cells):
+            continue
+        candidate_ids = dict(cluster.source_candidate_ids)
+        for sample_stem, cell in zip(matrix.sample_order, cluster.cells, strict=True):
+            if cell_origin(cell) is None:
                 continue
-            cluster = clusters_by_id[cell.cluster_id]
-            row_decision = decisions.row(cell.cluster_id)
-            cell_decision = decisions.cell(cell.cluster_id, cell.sample_stem)
-            if not _include_backfill_evidence_cell(cell, cell_decision):
-                continue
-            yield (
-                ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
-                delivery_feature_id(cluster),
-                cell.sample_stem,
-                cell.status,
-                cell_decision.production_status,
-                cell_decision.write_matrix_value,
-                row_decision.include_in_primary_matrix,
-                row_decision.identity_decision,
-                ";".join(row_decision.row_flags),
-                format_value(cell.area),
-                format_value(cell.matrix_area),
-                cell.matrix_area_source,
-                cell.matrix_area_missing_reason,
-                format_value(cell.apex_rt),
-                format_value(cell.height),
-                format_value(cell.peak_start_rt),
-                format_value(cell.peak_end_rt),
-                format_value(cell.rt_delta_sec),
-                cell.trace_quality,
-                format_value(cell.scan_support_score),
-                cell.gap_fill_state,
-                cell.gap_fill_reason,
-                cell.source_candidate_id or "",
-                cluster.neutral_loss_tag,
-                format_value(cluster.family_center_mz),
-                format_value(cluster.family_center_rt),
-                cell.reason,
-                format_value(cell.backfill_request_rt_min),
-                format_value(cell.backfill_request_rt_max),
-            )
-
-    return rows()
+            query_rt_min, query_rt_max = backfill_query_bounds(cell)
+            yield {
+                **_cell_fields(cluster, sample_stem, cell, candidate_ids),
+                "schema_version": ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
+                "include_in_primary_matrix": cluster.destination == "matrix",
+                "identity_decision": _identity_decision(cluster),
+                "row_flags": _row_flags(cluster),
+                "backfill_query_rt_min": format_value(query_rt_min),
+                "backfill_query_rt_max": format_value(query_rt_max),
+            }
 
 
 def write_alignment_status_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
@@ -374,20 +304,15 @@ def write_alignment_status_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Pa
         *matrix.sample_order,
     )
     rows: list[dict[str, object]] = []
-    grouped_cells = cells_by_cluster(matrix)
     for cluster in matrix.clusters:
-        cluster_id = cluster.feature_id
-        cells = grouped_cells.get(cluster_id, ())
-        cells_by_sample = {cell.sample_stem: cell for cell in cells}
         row: dict[str, object] = {
             "feature_id": delivery_feature_id(cluster),
             "neutral_loss_tag": cluster.neutral_loss_tag,
             "family_center_mz": format_value(cluster.family_center_mz),
             "family_center_rt": format_value(cluster.family_center_rt),
         }
-        for sample_stem in matrix.sample_order:
-            cell = cells_by_sample.get(sample_stem)
-            row[sample_stem] = "" if cell is None else cell.status
+        for sample_stem, cell in zip(matrix.sample_order, cluster.cells, strict=True):
+            row[sample_stem] = cell_status(cell)
         rows.append(row)
     return _write_tsv(path, columns, rows)
 
@@ -395,24 +320,16 @@ def write_alignment_status_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Pa
 def _review_rows(
     matrix: AlignmentMatrix,
     *,
-    production_decisions: ProductionDecisionSet,
     matrix_projection: Mapping[str, Mapping[str, object]],
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    grouped_cells = cells_by_cluster(matrix)
     sample_count = len(matrix.sample_order)
-    decisions = production_decisions
     for cluster in matrix.clusters:
-        cluster_id = cluster.feature_id
-        cells = grouped_cells.get(cluster_id, ())
-        row_decision = decisions.row(cluster_id)
-        raw_status_counts = Counter(
-            decisions.cell(cluster_id, cell.sample_stem).raw_status for cell in cells
-        )
-        detected_count = raw_status_counts["detected"]
-        backfilled_count = raw_status_counts["backfilled"]
-        unchecked_count = raw_status_counts["unchecked"]
-        ambiguous_owner_count = raw_status_counts["ambiguous_ms1_owner"]
+        status_counts = Counter(cell_status(cell) for cell in cluster.cells)
+        detected_count = status_counts["detected"]
+        backfilled_count = status_counts["backfilled"]
+        not_searched_count = status_counts["not_searched"]
+        unresolved_count = status_counts["unresolved"]
         present_count = detected_count + backfilled_count
         rows.append(
             {
@@ -427,14 +344,16 @@ def _review_rows(
                 ),
                 "physical_peak_keys": ";".join(cluster.physical_peak_keys),
                 "detected_count": detected_count,
-                "unchecked_count": unchecked_count,
-                "ambiguous_ms1_owner_count": ambiguous_owner_count,
+                "not_searched_count": not_searched_count,
+                "unresolved_count": unresolved_count,
                 "present_rate": safe_rate(present_count, sample_count),
-                "identity_reason": row_decision.identity_reason,
-                "accepted_cell_count": row_decision.accepted_cell_count,
-                "accepted_backfill_count": row_decision.accepted_backfill_count,
-                "include_in_primary_matrix": row_decision.include_in_primary_matrix,
-                "row_flags": ";".join(row_decision.row_flags),
+                "identity_reason": cluster.route_reason,
+                "accepted_cell_count": sum(
+                    cell.value is not None for cell in cluster.cells
+                ),
+                "accepted_backfill_count": backfilled_count,
+                "include_in_primary_matrix": cluster.destination == "matrix",
+                "row_flags": _row_flags(cluster),
                 "membership_risk_flags": ";".join(
                     sorted(
                         {
@@ -449,64 +368,28 @@ def _review_rows(
                     sample_count=sample_count,
                     detected_count=detected_count,
                     backfilled_count=backfilled_count,
-                    unchecked_count=unchecked_count,
+                    not_searched_count=not_searched_count,
                 ),
                 "reason": _reason(
                     cluster,
                     present_count,
                     sample_count,
                     backfilled_count,
-                    ambiguous_owner_count,
+                    unresolved_count,
                 ),
             }
         )
     return rows
 
 
-def _backfill_evidence_family_ids(
-    matrix: AlignmentMatrix,
-    decisions: Any,
-) -> set[str]:
-    grouped_cells = cells_by_cluster(matrix)
-    family_ids: set[str] = set()
-    for cluster in matrix.clusters:
-        cluster_id = cluster.feature_id
-        cells = grouped_cells.get(cluster_id, ())
-        row_decision = decisions.row(cluster_id)
-        if any(cell.status == "backfilled" for cell in cells):
-            family_ids.add(cluster_id)
-            continue
-        if row_decision.accepted_backfill_count > 0:
-            family_ids.add(cluster_id)
-            continue
-        if set(row_decision.row_flags) & BACKFILL_EVIDENCE_ROW_FLAGS:
-            family_ids.add(cluster_id)
-            continue
-        if any(_cell_mentions_backfill(cell) for cell in cells):
-            family_ids.add(cluster_id)
-    return family_ids
-
-
-def _cell_mentions_backfill(cell: AlignedCell) -> bool:
-    values = (
-        cell.gap_fill_state,
-        cell.gap_fill_reason,
-        cell.trace_quality,
-        cell.matrix_area_source,
-        cell.matrix_area_missing_reason,
-        cell.reason,
+def _identity_decision(cluster: FinalizedUntargetMatrixRow) -> str:
+    return (
+        "finalized_matrix" if cluster.destination == "matrix" else "finalized_archive"
     )
-    return any("backfill" in str(value).lower() for value in values)
 
 
-def _include_backfill_evidence_cell(
-    cell: AlignedCell, decision: ProductionCellDecision
-) -> bool:
-    if cell.status in {"detected", "backfilled"}:
-        return True
-    if decision.write_matrix_value:
-        return True
-    return decision.production_status in {"detected", "accepted_backfill"}
+def _row_flags(cluster: FinalizedUntargetMatrixRow) -> str:
+    return f"finalized_route:{cluster.destination};{PRESENTATION_FORMULA_VERSION}"
 
 
 def _write_tsv(
@@ -526,33 +409,18 @@ def _write_tsv(
     return path
 
 
-def _write_tsv_sequences(
-    path: Path,
-    fieldnames: tuple[str, ...],
-    rows: Iterable[Sequence[object]],
-) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    escaped_fieldnames = [escape_excel_formula(column) for column in fieldnames]
-    with path.open("w", newline="", encoding="utf-8", buffering=1024 * 1024) as handle:
-        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-        writer.writerow(escaped_fieldnames)
-        for row in rows:
-            writer.writerow([format_value(value) for value in row])
-    return path
-
-
 def _warning(
     cluster: FinalizedUntargetMatrixRow,
     *,
     sample_count: int,
     detected_count: int,
     backfilled_count: int,
-    unchecked_count: int,
+    not_searched_count: int,
 ) -> str:
     if not cluster.has_anchor:
         return "no_anchor"
-    if sample_count > 0 and unchecked_count / sample_count > 0.5:
-        return "high_unchecked"
+    if sample_count > 0 and not_searched_count / sample_count > 0.5:
+        return "high_not_searched"
     if backfilled_count > 0 and detected_count == 0:
         return "high_backfill_dependency"
     return ""
@@ -563,7 +431,7 @@ def _reason(
     present_count: int,
     sample_count: int,
     backfilled_count: int,
-    ambiguous_owner_count: int,
+    unresolved_count: int,
 ) -> str:
     prefix = "anchor family" if cluster.has_anchor else "no anchor"
     parts = [
@@ -571,6 +439,6 @@ def _reason(
         f"{present_count}/{sample_count} present",
         f"{backfilled_count} MS1 backfilled",
     ]
-    if ambiguous_owner_count:
-        parts.append(f"{ambiguous_owner_count} ambiguous MS1 owner")
+    if unresolved_count:
+        parts.append(f"{unresolved_count} unresolved")
     return "; ".join(parts)

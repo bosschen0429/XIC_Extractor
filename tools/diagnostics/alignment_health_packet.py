@@ -25,8 +25,8 @@ SCHEMA_VERSION = "alignment_health_packet"
 REVIEW_REQUIRED = (
     "feature_id",
     "detected_count",
-    "ambiguous_ms1_owner_count",
-    "unchecked_count",
+    "unresolved_count",
+    "not_searched_count",
     "accepted_cell_count",
     "accepted_backfill_count",
     "row_flags",
@@ -44,8 +44,8 @@ SENTINEL_COLUMNS = (
     "detected_count",
     "accepted_cell_count",
     "accepted_backfill_count",
-    "ambiguous_ms1_owner_count",
-    "unchecked_count",
+    "unresolved_count",
+    "not_searched_count",
     "row_flags",
     "reason",
     "cell_status_counts",
@@ -192,11 +192,11 @@ def _summary_metrics(
             review_rows,
             "accepted_backfill_count",
         ),
-        "ambiguous_ms1_owner_count_total": _sum_int(
+        "unresolved_count_total": _sum_int(
             review_rows,
-            "ambiguous_ms1_owner_count",
+            "unresolved_count",
         ),
-        "unchecked_count_total": _sum_int(review_rows, "unchecked_count"),
+        "not_searched_count_total": _sum_int(review_rows, "not_searched_count"),
         "row_flag_counts": dict(sorted(row_flag_counts.items())),
         "cell_status_counts": dict(sorted(cell_status_counts.items())),
         "sentinel_count": len(sentinels),
@@ -228,10 +228,10 @@ def _sentinel_rows(
                 "accepted_backfill_count": _int_value(
                     row.get("accepted_backfill_count")
                 ),
-                "ambiguous_ms1_owner_count": _int_value(
-                    row.get("ambiguous_ms1_owner_count"),
+                "unresolved_count": _int_value(
+                    row.get("unresolved_count"),
                 ),
-                "unchecked_count": _int_value(row.get("unchecked_count")),
+                "not_searched_count": _int_value(row.get("not_searched_count")),
                 "row_flags": text_value(row.get("row_flags")),
                 "reason": text_value(row.get("reason")),
                 "cell_status_counts": _format_counter(
@@ -254,29 +254,20 @@ def _sentinel_rows(
 
 def _issue_classes(row: Mapping[str, str]) -> tuple[str, ...]:
     issues: list[str] = []
-    if _int_value(row.get("ambiguous_ms1_owner_count")) > 0:
+    if _int_value(row.get("unresolved_count")) > 0:
         issues.append("owner_ambiguity")
     if _int_value(row.get("accepted_backfill_count")) > 0:
         issues.append("accepted_backfill_dependency")
-    if _int_value(row.get("unchecked_count")) > 0:
-        issues.append("unchecked_pressure")
-    flags = set(split_semicolon_labels(row.get("row_flags")))
-    if "family_consolidation_loser" in flags:
-        issues.append("consolidation_loser")
-    if "ambiguous_ms1_owner_pressure" in flags:
-        issues.append("owner_pressure_flag")
+    if _int_value(row.get("not_searched_count")) > 0:
+        issues.append("not_searched_pressure")
     return tuple(dict.fromkeys(issues))
 
 
 def _severity_score(row: Mapping[str, str], issues: Sequence[str]) -> int:
     score = 0
-    score += _int_value(row.get("ambiguous_ms1_owner_count")) * 4
+    score += _int_value(row.get("unresolved_count")) * 4
     score += _int_value(row.get("accepted_backfill_count")) * 3
-    score += _int_value(row.get("unchecked_count"))
-    if "consolidation_loser" in issues:
-        score += 8
-    if "owner_pressure_flag" in issues:
-        score += 3
+    score += _int_value(row.get("not_searched_count"))
     return score
 
 
@@ -284,12 +275,10 @@ def _recommended_action(issues: Sequence[str]) -> str:
     issue_set = set(issues)
     if "owner_ambiguity" in issue_set:
         return "inspect_owner_assignment"
-    if "consolidation_loser" in issue_set:
-        return "inspect_primary_consolidation"
     if "accepted_backfill_dependency" in issue_set:
         return "inspect_backfill_dependency"
-    if "unchecked_pressure" in issue_set:
-        return "inspect_unchecked_cells"
+    if "not_searched_pressure" in issue_set:
+        return "inspect_not_searched_cells"
     return "context_only"
 
 

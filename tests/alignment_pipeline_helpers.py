@@ -1,28 +1,31 @@
 import csv
 import hashlib
-import math
-from dataclasses import replace
+from collections.abc import Iterator
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 
+from xic_extractor.alignment.cell_decision.owner import (
+    NoWriteCellDecision,
+    NoWriteState,
+    NumericCellDecision,
+    ProductionCellDecision,
+)
 from xic_extractor.alignment.cross_sample.identity_models import (
     CrossSampleGroupMemberSubject,
 )
 from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
-from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
 )
-from xic_extractor.alignment.production_decisions import (
-    ProductionCellDecision,
-    ProductionDecisionSet,
-    ProductionRowDecision,
-    ProductionStatus,
-)
 from xic_extractor.alignment.untargeted_finalized_matrix import (
+    AlignmentMatrix,
     FinalizedUntargetMatrixRow,
+    backfill_query_bounds,
+    cell_status,
 )
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
@@ -222,61 +225,128 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
     }
 
 
-def cluster(cluster_id: str = "ALN000001") -> FinalizedUntargetMatrixRow:
+@dataclass(frozen=True)
+class WriterEvidence:
+    """The ``FinalGroupCellObservation`` facts the Alignment writers read."""
+
+    direct_observations: tuple[object, ...] = ()
+    ms1_only_backfill_observations: tuple[object, ...] = ()
+    method_assessments: tuple[object, ...] = ()
+
+
+def owner_cell(
+    origin: Literal["detected", "backfilled"] | None = "detected",
+    *,
+    area: float | None = 100.0,
+    no_write: NoWriteState = "searched_no_observation",
+    integration: IntegrationResult | None = None,
+    source: str = "gaussian15_positive_asls_residual",
+) -> ProductionCellDecision:
+    """One owner cell decision as the writers read it.
+
+    A cell with an origin and an area is numeric. A detected cell without an
+    area keeps its direct observation and is ``not_quantifiable``. A cell without
+    an origin is the ``no_write`` state and has no peak.
+    """
+
+    peak = () if origin is None else (object(),)
+    payload: NumericCellDecision | NoWriteCellDecision
+    if origin is not None and area is not None:
+        payload = NumericCellDecision(value=area, source=source)
+    elif origin is not None:
+        payload = NoWriteCellDecision("not_quantifiable")
+    else:
+        payload = NoWriteCellDecision(no_write)
+    return ProductionCellDecision(
+        subject=None,
+        evidence=WriterEvidence(
+            direct_observations=peak,
+            ms1_only_backfill_observations=peak if origin == "backfilled" else (),
+        ),
+        payload=payload,
+        selected_integration=(
+            integration
+            if integration is not None or origin is None or area is None
+            else _integration(8.5)
+        ),
+    )
+
+
+def writer_row(
+    feature_id: str = "ALN000001",
+    *,
+    cells: tuple[ProductionCellDecision, ...] = (),
+    source_candidate_ids: tuple[tuple[str, str], ...] = (),
+    destination: Literal["matrix", "archive"] = "matrix",
+    family_center_mz: float = 500.0,
+    family_center_rt: float = 8.5,
+    neutral_loss_tag: str = "DNA_dR",
+    has_anchor: bool = True,
+) -> FinalizedUntargetMatrixRow:
     return FinalizedUntargetMatrixRow(
-        feature_id=cluster_id,
-        group_hypothesis_id=cluster_id,
-        destination="matrix",
-        family_center_mz=500.0,
-        family_center_rt=8.5,
+        feature_id=feature_id,
+        group_hypothesis_id=feature_id,
+        destination=destination,
+        family_center_mz=family_center_mz,
+        family_center_rt=family_center_rt,
         physical_peak_keys=(),
         family_product_mz=384.0,
         family_observed_neutral_loss_da=116.0,
-        neutral_loss_tag="DNA_dR",
-        has_anchor=True,
+        neutral_loss_tag=neutral_loss_tag,
+        has_anchor=has_anchor,
+        route_reason="test_route",
+        cells=cells,
+        source_candidate_ids=source_candidate_ids,
+    )
+
+
+def writer_cells(
+    matrix: AlignmentMatrix,
+) -> Iterator[tuple[FinalizedUntargetMatrixRow, str, ProductionCellDecision]]:
+    """Every written cell with its row and sample, in writer order."""
+
+    for row in matrix.clusters:
+        for sample_stem, cell in zip(matrix.sample_order, row.cells, strict=True):
+            yield row, sample_stem, cell
+
+
+def writer_view(matrix: AlignmentMatrix) -> tuple[object, ...]:
+    """Everything the writers read, comparable across independent runs."""
+
+    return (
+        matrix.sample_order,
+        tuple(
+            (
+                replace(row, cells=()),
+                tuple(
+                    (
+                        cell.payload,
+                        cell.selected_integration,
+                        cell_status(cell),
+                        backfill_query_bounds(cell),
+                    )
+                    for cell in row.cells
+                ),
+            )
+            for row in matrix.clusters
+        ),
     )
 
 
 def matrix(sample_order: tuple[str, ...]) -> AlignmentMatrix:
+    """One detected row whose every sample reads its own Discovery candidate."""
+
     return AlignmentMatrix(
-        clusters=(cluster(),),
-        cells=tuple(
-            AlignedCell(
-                sample_stem=sample_stem,
-                cluster_id="ALN000001",
-                status="detected",
-                area=100.0,
-                apex_rt=8.5,
-                height=50.0,
-                peak_start_rt=8.4,
-                peak_end_rt=8.6,
-                rt_delta_sec=0.0,
-                trace_quality="clean",
-                scan_support_score=0.8,
-                source_candidate_id=candidate_id(sample_stem),
-                reason="detected",
-            )
-            for sample_stem in sample_order
+        clusters=(
+            writer_row(
+                cells=tuple(owner_cell() for _ in sample_order),
+                source_candidate_ids=tuple(
+                    (sample_stem, candidate_id(sample_stem))
+                    for sample_stem in sample_order
+                ),
+            ),
         ),
         sample_order=sample_order,
-    )
-
-
-def cell(sample_stem: str, *, cluster_id: str) -> AlignedCell:
-    return AlignedCell(
-        sample_stem=sample_stem,
-        cluster_id=cluster_id,
-        status="backfilled",
-        area=100.0,
-        apex_rt=8.5,
-        height=50.0,
-        peak_start_rt=8.4,
-        peak_end_rt=8.6,
-        rt_delta_sec=0.0,
-        trace_quality="owner_backfill",
-        scan_support_score=None,
-        source_candidate_id=None,
-        reason="owner-centered MS1 backfill",
     )
 
 
@@ -395,83 +465,4 @@ def _owner(
             physical_peaks=(physical_peak,),
         ),
         is_provisional=is_provisional,
-    )
-
-
-_OWNER_NO_WRITE_VARIANT = {
-    "detected": "not_quantifiable",
-    "backfilled": "not_quantifiable",
-    "absent": "searched_no_observation",
-    "unchecked": "not_searched",
-    "ambiguous_ms1_owner": "unresolved",
-}
-
-
-def finalized_writer_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
-    """Writer inputs shaped like the finalized Untargeted owner's decisions.
-
-    A detected or backfilled cell with a finite positive area is numeric; every
-    other cell is a no-write decision. Row inclusion follows ``destination``.
-    """
-
-    cells_by_row: dict[str, list[AlignedCell]] = {}
-    for item in matrix.cells:
-        cells_by_row.setdefault(item.cluster_id, []).append(item)
-    cell_decisions = {}
-    row_decisions = {}
-    for row in matrix.clusters:
-        row_cells = tuple(cells_by_row.get(row.feature_id, ()))
-        decisions = tuple(
-            _writer_cell_decision(row.feature_id, item) for item in row_cells
-        )
-        for decision in decisions:
-            cell_decisions[(decision.feature_id, decision.sample_stem)] = decision
-        numeric_count = sum(item.write_matrix_value for item in decisions)
-        accepted_backfill = sum(
-            item.production_status == "accepted_backfill" for item in decisions
-        )
-        row_decisions[row.feature_id] = ProductionRowDecision(
-            feature_id=row.feature_id,
-            include_in_primary_matrix=row.destination == "matrix",
-            identity_decision=(
-                "finalized_matrix"
-                if row.destination == "matrix"
-                else "finalized_archive"
-            ),
-            identity_reason="test_route",
-            accepted_cell_count=numeric_count,
-            detected_count=sum(item.status == "detected" for item in row_cells),
-            accepted_backfill_count=accepted_backfill,
-            ambiguous_ms1_owner_count=sum(
-                item.status == "ambiguous_ms1_owner" for item in row_cells
-            ),
-            row_flags=(f"finalized_route:{row.destination}",),
-        )
-    return ProductionDecisionSet(cells=cell_decisions, rows=row_decisions)
-
-
-def _writer_cell_decision(feature_id: str, item: AlignedCell) -> ProductionCellDecision:
-    # The owner selects the primary area from the chosen integration when present.
-    area = item.matrix_area if item.selected_integration is not None else item.area
-    write = (
-        item.status in {"detected", "backfilled"}
-        and isinstance(area, (int, float))
-        and not isinstance(area, bool)
-        and math.isfinite(area)
-        and area > 0
-    )
-    if write and item.status == "detected":
-        production_status: ProductionStatus = "detected"
-    elif write:
-        production_status = "accepted_backfill"
-    else:
-        production_status = "blank"
-    return ProductionCellDecision(
-        feature_id=feature_id,
-        sample_stem=item.sample_stem,
-        raw_status=item.status,
-        production_status=production_status,
-        write_matrix_value=write,
-        matrix_value=float(area) if write else None,
-        blank_reason="" if write else _OWNER_NO_WRITE_VARIANT[item.status],
     )

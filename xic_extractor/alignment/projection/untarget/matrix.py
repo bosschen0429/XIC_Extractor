@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
@@ -28,27 +27,7 @@ if TYPE_CHECKING:
     )
 
 
-UntargetDecisionVariant: TypeAlias = Literal[
-    "numeric",
-    "not_searched",
-    "searched_no_observation",
-    "unresolved",
-    "rejected_observation",
-    "not_quantifiable",
-    "unavailable",
-]
 UntargetRowDestination: TypeAlias = Literal["matrix", "archive"]
-
-_DECISION_VARIANTS: tuple[UntargetDecisionVariant, ...] = (
-    "numeric",
-    "not_searched",
-    "searched_no_observation",
-    "unresolved",
-    "rejected_observation",
-    "not_quantifiable",
-    "unavailable",
-)
-_DECISION_VARIANT_SET = frozenset(_DECISION_VARIANTS)
 
 
 def _route_for_disposition(
@@ -61,32 +40,6 @@ def _route_for_disposition(
     raise UntargetProjectionContractError(
         "Untarget Matrix projection received an unsupported group disposition"
     )
-
-
-@dataclass(frozen=True, slots=True)
-class UntargetDecisionVariantCount:
-    """Count for one closed cell decision variant."""
-
-    variant: UntargetDecisionVariant
-    count: int
-
-
-@dataclass(frozen=True, slots=True)
-class UntargetRowDecisionCounts:
-    """Complete, ordered counts for the closed cell decision variant universe."""
-
-    by_variant: tuple[UntargetDecisionVariantCount, ...]
-
-    @property
-    def numeric_cells(self) -> int:
-        return self.count_for("numeric")
-
-    def count_for(self, variant: UntargetDecisionVariant) -> int:
-        if variant not in _DECISION_VARIANT_SET:
-            raise UntargetProjectionContractError(
-                "row decision count lookup uses an unsupported typed variant"
-            )
-        return next(item.count for item in self.by_variant if item.variant == variant)
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,7 +56,6 @@ class UntargetMatrixRow:
 
     group: CrossSampleGroupIdentity
     decisions: tuple[ProductionCellDecision, ...]
-    counts: UntargetRowDecisionCounts
     route: UntargetRowRoute
 
 
@@ -181,25 +133,8 @@ def _mint_matrix_row(
     return UntargetMatrixRow(
         group=group,
         decisions=decisions,
-        counts=_counts_for_decisions(decisions),
         route=UntargetRowRoute(
             destination=_route_for_disposition(group.disposition),
             reason=group.disposition,
         ),
-    )
-
-
-def _counts_for_decisions(
-    decisions: Sequence[ProductionCellDecision],
-) -> UntargetRowDecisionCounts:
-    variants = Counter(item.variant for item in decisions)
-    if not set(variants).issubset(_DECISION_VARIANT_SET):
-        raise UntargetProjectionContractError(
-            "Group decision uses an unsupported typed variant"
-        )
-    return UntargetRowDecisionCounts(
-        by_variant=tuple(
-            UntargetDecisionVariantCount(variant, variants[variant])
-            for variant in _DECISION_VARIANTS
-        )
     )

@@ -1,16 +1,15 @@
 import csv
 import math
+from dataclasses import replace
 from pathlib import Path
-from typing import Literal, TypeGuard
+from typing import Literal
 
 import pytest
 
-from tests.alignment_pipeline_helpers import finalized_writer_decisions
-from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.production_decisions import (
-    ProductionDecisionSet,
-)
+from tests.alignment_pipeline_helpers import owner_cell
+from xic_extractor.alignment.cell_decision.owner import ProductionCellDecision
 from xic_extractor.alignment.untargeted_finalized_matrix import (
+    AlignmentMatrix,
     FinalizedUntargetMatrixRow,
 )
 from xic_extractor.output.alignment.tsv_writer import ALIGNMENT_CELLS_COLUMNS
@@ -29,8 +28,8 @@ REVIEW_COLUMNS = [
     "family_observed_neutral_loss_da",
     "physical_peak_keys",
     "detected_count",
-    "unchecked_count",
-    "ambiguous_ms1_owner_count",
+    "not_searched_count",
+    "unresolved_count",
     "present_rate",
     "identity_reason",
     "accepted_cell_count",
@@ -46,22 +45,18 @@ REVIEW_COLUMNS = [
 def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Path):
     from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(has_anchor=True, member_count=1),),
-        cells=(
-            _cell("sample-a", "detected", area=10.0, candidate_id="sample-a#1"),
-            _cell("sample-b", "backfilled", area=20.0),
-            _cell("sample-c", "absent"),
-            _cell("sample-d", "detected", area=30.0, candidate_id="sample-d#1"),
+    matrix = _matrix(
+        ("sample-a", "sample-b", "sample-c", "sample-d"),
+        _row(
+            owner_cell(area=10.0),
+            owner_cell("backfilled", area=20.0),
+            owner_cell(None),
+            owner_cell(area=30.0),
+            member_count=1,
         ),
-        sample_order=("sample-a", "sample-b", "sample-c", "sample-d"),
     )
 
-    path = write_alignment_review_tsv(
-        tmp_path / "alignment_review.tsv",
-        matrix,
-        production_decisions=_production_decisions(matrix),
-    )
+    path = write_alignment_review_tsv(tmp_path / "alignment_review.tsv", matrix)
     rows = _read_tsv(path)
 
     assert list(rows[0]) == REVIEW_COLUMNS
@@ -85,14 +80,14 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         "family_observed_neutral_loss_da": "116.047",
         "physical_peak_keys": "ALN000001#peak-0",
         "detected_count": "2",
-        "unchecked_count": "0",
-        "ambiguous_ms1_owner_count": "0",
+        "not_searched_count": "0",
+        "unresolved_count": "0",
         "present_rate": "0.75",
         "identity_reason": "test_route",
         "accepted_cell_count": "3",
         "accepted_backfill_count": "1",
         "include_in_primary_matrix": "TRUE",
-        "row_flags": "finalized_route:matrix",
+        "row_flags": "finalized_route:matrix;cross_sample_owner_arithmetic_mean",
         "warning": "",
         "reason": "anchor family; 3/4 present; 1 MS1 backfilled",
     }
@@ -101,207 +96,116 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
 def test_write_alignment_review_tsv_warning_precedence(tmp_path: Path):
     from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
-    matrix = AlignmentMatrix(
-        clusters=(
-            _cluster(cluster_id="ALN000001", has_anchor=False),
-            _cluster(cluster_id="ALN000002", has_anchor=True),
-            _cluster(cluster_id="ALN000003", has_anchor=True),
-            _cluster(cluster_id="ALN000004", has_anchor=True),
-            _cluster(
-                cluster_id="ALN000005",
-                has_anchor=True,
-            ),
-            _cluster(
-                cluster_id="ALN000006",
-                has_anchor=True,
-            ),
+    not_searched = owner_cell(None, no_write="not_searched")
+    matrix = _matrix(
+        ("sample-a", "sample-b"),
+        _row(owner_cell(area=1.0), not_searched, has_anchor=False),
+        _row(not_searched, not_searched, feature_id="ALN000002"),
+        _row(
+            owner_cell("backfilled", area=1.0),
+            owner_cell(None),
+            feature_id="ALN000003",
         ),
-        cells=(
-            _cell("sample-a", "detected", cluster_id="ALN000001", area=1.0),
-            _cell("sample-b", "unchecked", cluster_id="ALN000001"),
-            _cell("sample-a", "unchecked", cluster_id="ALN000002"),
-            _cell("sample-b", "unchecked", cluster_id="ALN000002"),
-            _cell("sample-a", "backfilled", cluster_id="ALN000003", area=1.0),
-            _cell("sample-b", "absent", cluster_id="ALN000003"),
-            _cell("sample-a", "detected", cluster_id="ALN000004", area=1.0),
-            _cell("sample-b", "absent", cluster_id="ALN000004"),
-            _cell("sample-a", "detected", cluster_id="ALN000005", area=1.0),
-            _cell("sample-b", "backfilled", cluster_id="ALN000005", area=1.0),
-            _cell("sample-a", "backfilled", cluster_id="ALN000006", area=1.0),
-            _cell("sample-b", "absent", cluster_id="ALN000006"),
+        _row(owner_cell(area=1.0), owner_cell(None), feature_id="ALN000004"),
+        _row(
+            owner_cell(area=1.0),
+            owner_cell("backfilled", area=1.0),
+            feature_id="ALN000005",
         ),
-        sample_order=("sample-a", "sample-b"),
     )
 
-    rows = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
+    rows = _read_tsv(write_alignment_review_tsv(tmp_path / "review.tsv", matrix))
 
     assert [row["warning"] for row in rows] == [
         "no_anchor",
-        "high_unchecked",
+        "high_not_searched",
         "high_backfill_dependency",
         "",
         "",
-        "high_backfill_dependency",
     ]
+    assert [row["not_searched_count"] for row in rows] == ["1", "2", "0", "0", "0"]
 
 
 def test_review_uses_physical_members_and_owner_counts_not_evidence_text(tmp_path):
     from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(member_count=3),),
-        cells=(
-            _cell("direct", "detected", area=10.0),
-            _cell("backfill-a", "backfilled", area=20.0),
-            _cell("backfill-b", "backfilled", area=30.0),
+    matrix = _matrix(
+        ("direct", "backfill-a", "backfill-b"),
+        _row(
+            owner_cell(area=10.0),
+            owner_cell("backfilled", area=20.0),
+            owner_cell("backfilled", area=30.0),
+            member_count=3,
         ),
-        sample_order=("direct", "backfill-a", "backfill-b"),
     )
-    (row,) = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
+    (row,) = _read_tsv(write_alignment_review_tsv(tmp_path / "review.tsv", matrix))
     assert row["physical_peak_keys"] == (
         "ALN000001#peak-0;ALN000001#peak-1;ALN000001#peak-2"
-    )
-    assert (
-        not {"event_cluster_count", "event_cluster_ids", "event_member_count"}
-        & row.keys()
     )
     assert row["warning"] == ""
     assert row["reason"] == "anchor family; 3/3 present; 2 MS1 backfilled"
 
 
-def test_write_alignment_review_tsv_reports_ambiguous_ms1_owner_cells(
-    tmp_path: Path,
-):
+def test_write_alignment_review_tsv_reports_unresolved_cells(tmp_path: Path):
     from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(has_anchor=True),),
-        cells=(
-            _cell("sample-a", "detected", area=100.0),
-            _cell("sample-b", "ambiguous_ms1_owner"),
-            _cell("sample-c", "absent"),
-        ),
-        sample_order=("sample-a", "sample-b", "sample-c"),
-    )
-
-    rows = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
-
-    assert rows[0]["detected_count"] == "1"
-    assert rows[0]["present_rate"] == "0.333333"
-    assert "1 ambiguous MS1 owner" in rows[0]["reason"]
-
-
-def test_write_alignment_matrix_tsv_blanks_missing_and_invalid_areas(tmp_path: Path):
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(
-            _cell("detected-positive", "detected", area=1234.567),
-            _cell("detected-positive-2", "detected", area=2345.0),
-            _cell("rescued-positive", "backfilled", area=25.0),
-            _cell("absent-positive", "absent", area=30.0),
-            _cell("unchecked-positive", "unchecked", area=40.0),
-            _cell("none", "detected", area=None),
-            _cell("zero", "detected", area=0.0),
-            _cell("negative", "detected", area=-1.0),
-            _cell("nan", "detected", area=math.nan),
-        ),
-        sample_order=(
-            "detected-positive",
-            "detected-positive-2",
-            "rescued-positive",
-            "absent-positive",
-            "unchecked-positive",
-            "none",
-            "zero",
-            "negative",
-            "nan",
+    matrix = _matrix(
+        ("sample-a", "sample-b", "sample-c"),
+        _row(
+            owner_cell(area=100.0),
+            owner_cell(None, no_write="unresolved"),
+            owner_cell(None),
         ),
     )
 
-    rows = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
+    (row,) = _read_tsv(write_alignment_review_tsv(tmp_path / "review.tsv", matrix))
 
-    assert list(rows[0]) == [
-        "Mz",
-        "RT",
-        "detected-positive",
-        "detected-positive-2",
-        "rescued-positive",
-        "absent-positive",
-        "unchecked-positive",
-        "none",
-        "zero",
-        "negative",
-        "nan",
-    ]
-    assert rows[0]["Mz"] == "500.1230"
-    assert rows[0]["RT"] == "8.49"
-    assert rows[0]["detected-positive"] == "1.23457e+03"
-    assert rows[0]["detected-positive-2"] == "2.34500e+03"
-    assert rows[0]["rescued-positive"] == "2.50000e+01"
-    assert rows[0]["absent-positive"] == ""
-    assert rows[0]["unchecked-positive"] == ""
-    assert rows[0]["none"] == ""
-    assert rows[0]["zero"] == ""
-    assert rows[0]["negative"] == ""
-    assert rows[0]["nan"] == ""
+    assert row["detected_count"] == "1"
+    assert row["unresolved_count"] == "1"
+    assert row["present_rate"] == "0.333333"
+    assert row["reason"] == "anchor family; 1/3 present; 0 MS1 backfilled; 1 unresolved"
 
 
-def test_write_alignment_matrix_tsv_uses_stable_numeric_text_without_value_drift(
+def test_write_alignment_matrix_tsv_writes_owner_values_and_blanks_no_write_cells(
     tmp_path: Path,
-) -> None:
+):
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(
-            _cell("small", "detected", area=0.00123456),
-            _cell("large", "detected", area=123456789.0),
-            _cell("blank", "absent", area=42.0),
+    samples = (
+        "detected",
+        "small",
+        "large",
+        "backfilled",
+        "not-quantifiable",
+        "not-searched",
+        "unresolved",
+        "no-observation",
+    )
+    matrix = _matrix(
+        samples,
+        _row(
+            owner_cell(area=1234.567),
+            owner_cell(area=0.00123456),
+            owner_cell(area=123456789.0),
+            owner_cell("backfilled", area=25.0),
+            owner_cell(area=None),
+            owner_cell(None, no_write="not_searched"),
+            owner_cell(None, no_write="unresolved"),
+            owner_cell(None),
         ),
-        sample_order=("small", "large", "blank"),
     )
 
-    row = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )[0]
+    (row,) = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
 
+    assert list(row) == ["Mz", "RT", *samples]
     assert row["Mz"] == "500.1230"
     assert row["RT"] == "8.49"
+    assert row["detected"] == "1.23457e+03"
     assert row["small"] == "1.23456e-03"
     assert row["large"] == "1.23457e+08"
-    assert row["blank"] == ""
+    assert row["backfilled"] == "2.50000e+01"
     assert float(row["small"]) == float(f"{0.00123456:.6g}")
-    assert float(row["large"]) == float(f"{123456789.0:.6g}")
+    assert [row[sample] for sample in samples[4:]] == ["", "", "", ""]
 
 
 def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
@@ -315,49 +219,23 @@ def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
         write_alignment_review_tsv,
     )
 
-    matrix = AlignmentMatrix(
-        clusters=(
-            _cluster(
-                center_mz=500.123456,
-            ),
-        ),
-        cells=(
-            _cell("sample-a", "detected", area=100.0),
-            _cell("sample-b", "detected", area=110.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
+    matrix = _two_sample_matrix(center_mz=500.123456)
 
     matrix_row = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "alignment_matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )[0]
-    identity_row = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "alignment_review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
+        write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
     )[0]
     review_row = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "alignment_review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
+        write_alignment_review_tsv(tmp_path / "alignment_review.tsv", matrix)
     )[0]
 
     assert matrix_row["Mz"] == "500.1235"
-    assert identity_row["matrix_mz"] == "500.123456"
+    assert review_row["matrix_mz"] == "500.123456"
     assert review_row["family_center_mz"] == "500.123456"
     matrix_review_rows(
         matrix_header=tuple(matrix_row),
         matrix_rows=(matrix_row,),
-        review_columns=tuple(identity_row),
-        review_rows=(identity_row,),
+        review_columns=tuple(review_row),
+        review_rows=(review_row,),
     )
 
 
@@ -369,32 +247,13 @@ def test_alignment_matrix_mz_format_is_display_only_for_small_mz(
         write_alignment_review_tsv,
     )
 
-    matrix = AlignmentMatrix(
-        clusters=(
-            _cluster(
-                center_mz=5.123456,
-            ),
-        ),
-        cells=(
-            _cell("sample-a", "detected", area=100.0),
-            _cell("sample-b", "detected", area=110.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
+    matrix = _two_sample_matrix(center_mz=5.123456)
 
     matrix_row = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "alignment_matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
+        write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
     )[0]
     identity_row = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "alignment_review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
+        write_alignment_review_tsv(tmp_path / "alignment_review.tsv", matrix)
     )[0]
 
     assert matrix_row["Mz"] == "5.1235"
@@ -412,18 +271,10 @@ def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
     matrix = _display_collision_matrix()
 
     matrix_rows = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "alignment_matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
+        write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
     )
     identity_rows = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "alignment_review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
+        write_alignment_review_tsv(tmp_path / "alignment_review.tsv", matrix)
     )
 
     assert [row["Mz"] for row in matrix_rows] == ["500.1234", "500.1234"]
@@ -461,18 +312,10 @@ def test_alignment_matrix_identity_rejects_review_census_and_schema_mismatch(
 
     matrix = _display_collision_matrix()
     matrix_rows = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "alignment_matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
+        write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
     )
     identity_rows = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "alignment_review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
+        write_alignment_review_tsv(tmp_path / "alignment_review.tsv", matrix)
     )
     matrix_header = tuple(matrix_rows[0])
     identity_columns = tuple(identity_rows[0])
@@ -605,28 +448,12 @@ def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
         write_alignment_review_tsv,
     )
 
-    matrix = AlignmentMatrix(
-        clusters=(
-            _cluster(
-                center_rt=8.49123456,
-            ),
-        ),
-        cells=(
-            _cell("+sample", "detected", area=100.0, apex_rt=8.49123456),
-            _cell("safe", "detected", area=110.0, apex_rt=8.49123456),
-        ),
-        sample_order=("+sample", "safe"),
+    matrix = _matrix(
+        ("+sample", "safe"),
+        _row(owner_cell(area=100.0), owner_cell(area=110.0), center_rt=8.49123456),
     )
-    matrix_path = write_alignment_matrix_tsv(
-        tmp_path / "matrix.tsv",
-        matrix,
-        production_decisions=_production_decisions(matrix),
-    )
-    identity_path = write_alignment_review_tsv(
-        tmp_path / "identity.tsv",
-        matrix,
-        production_decisions=_production_decisions(matrix),
-    )
+    matrix_path = write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix)
+    identity_path = write_alignment_review_tsv(tmp_path / "identity.tsv", matrix)
 
     with matrix_path.open(encoding="utf-8", newline="") as handle:
         matrix_reader = csv.DictReader(handle, delimiter="\t")
@@ -654,69 +481,11 @@ def test_alignment_matrix_mz_format_preserves_nonfinite_blank_semantics(
 ) -> None:
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
-    matrix = AlignmentMatrix(
-        clusters=(
-            _cluster(
-                center_mz=center_mz,
-            ),
-        ),
-        cells=(
-            _cell("sample-a", "detected", area=100.0),
-            _cell("sample-b", "detected", area=110.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
+    matrix = _two_sample_matrix(center_mz=center_mz)
 
-    row = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )[0]
+    row = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))[0]
 
     assert row["Mz"] == ""
-
-
-def test_write_alignment_matrix_tsv_prefers_ms1_morphology_area(
-    tmp_path: Path,
-):
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(
-            _cell(
-                "sample-a",
-                "detected",
-                area=10.0,
-                selected_integration=_integration(
-                    raw_area=77.7,
-                    asls_area=55.5,
-                    morphology_area=66.6,
-                ),
-            ),
-            _cell("sample-b", "detected", area=20.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
-
-    rows = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
-
-    assert list(rows[0]) == [
-        "Mz",
-        "RT",
-        "sample-a",
-        "sample-b",
-    ]
-    assert rows[0]["sample-a"] == "6.66000e+01"
-    assert rows[0]["sample-b"] == "2.00000e+01"
 
 
 @pytest.mark.parametrize(
@@ -741,18 +510,12 @@ def test_alignment_writers_preserve_physical_owner_area_source(
         morphology_area=66.6,
         morphology_area_source=area_source,
     )
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(
-            _cell(
-                "sample-a",
-                "detected",
-                area=66.6,
-                selected_integration=integration,
-            ),
-            _cell("sample-b", "detected", area=77.7),
+    matrix = _matrix(
+        ("sample-a", "sample-b"),
+        _row(
+            owner_cell(area=66.6, integration=integration, source=area_source),
+            owner_cell(area=77.7),
         ),
-        sample_order=("sample-a", "sample-b"),
     )
 
     rows = _read_tsv(write_alignment_cells_tsv(tmp_path / "cells.tsv", matrix))
@@ -761,48 +524,9 @@ def test_alignment_writers_preserve_physical_owner_area_source(
     assert rows[0]["primary_matrix_area"] == "66.6"
     assert rows[0]["primary_matrix_area_source"] == area_source
     assert rows[0]["primary_matrix_area_reason"] == ""
-    values = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
+    values = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
     assert values[0]["sample-a"] == "6.66000e+01"
     assert values[0]["sample-b"] == "7.77000e+01"
-
-
-def test_write_alignment_matrix_tsv_blanks_ambiguous_ms1_owner_cells(
-    tmp_path: Path,
-):
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(
-            _cell(
-                "sample-a",
-                "ambiguous_ms1_owner",
-                area=100.0,
-                trace_quality="ambiguous_ms1_owner",
-            ),
-            _cell("sample-b", "detected", area=200.0),
-            _cell("sample-c", "detected", area=300.0),
-        ),
-        sample_order=("sample-a", "sample-b", "sample-c"),
-    )
-
-    rows = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
-
-    assert rows[0]["sample-a"] == ""
-    assert rows[0]["sample-b"] == "2.00000e+02"
-    assert rows[0]["sample-c"] == "3.00000e+02"
 
 
 def test_write_alignment_matrix_tsv_excludes_archived_rows(
@@ -810,42 +534,25 @@ def test_write_alignment_matrix_tsv_excludes_archived_rows(
 ):
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
-    matrix = AlignmentMatrix(
-        clusters=(
-            _cluster(
-                cluster_id="ALN000001",
-            ),
-            _cluster(
-                cluster_id="ALN000002",
-                has_anchor=False,
-                destination="archive",
-            ),
-            _cluster(
-                cluster_id="ALN000003",
-                destination="archive",
-            ),
+    matrix = _matrix(
+        ("sample-a", "sample-b"),
+        _row(owner_cell(area=100.0), owner_cell(area=110.0)),
+        _row(
+            owner_cell("backfilled", area=200.0),
+            owner_cell(None),
+            feature_id="ALN000002",
+            has_anchor=False,
+            destination="archive",
         ),
-        cells=(
-            _cell("sample-a", "detected", cluster_id="ALN000001", area=100.0),
-            _cell("sample-b", "detected", cluster_id="ALN000001", area=110.0),
-            _cell("sample-a", "backfilled", cluster_id="ALN000002", area=200.0),
-            _cell(
-                "sample-a",
-                "ambiguous_ms1_owner",
-                cluster_id="ALN000003",
-                area=300.0,
-            ),
+        _row(
+            owner_cell(None, no_write="unresolved"),
+            owner_cell(None),
+            feature_id="ALN000003",
+            destination="archive",
         ),
-        sample_order=("sample-a", "sample-b"),
     )
 
-    rows = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
+    rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
 
     assert [(row["Mz"], row["RT"]) for row in rows] == [("500.1230", "8.49")]
     assert rows[0]["sample-a"] == "1.00000e+02"
@@ -861,28 +568,11 @@ def test_write_alignment_review_tsv_maps_product_rows(
         write_alignment_review_tsv,
     )
 
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(
-            _cell("sample-a", "detected", area=100.0),
-            _cell("sample-b", "detected", area=110.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
+    matrix = _two_sample_matrix()
 
-    matrix_rows = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
+    matrix_rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
     identity_rows = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "alignment_review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
+        write_alignment_review_tsv(tmp_path / "alignment_review.tsv", matrix)
     )
 
     assert list(identity_rows[0]) == REVIEW_COLUMNS
@@ -902,69 +592,38 @@ def test_write_alignment_matrix_rejects_duplicate_source_candidate_writes(
 ) -> None:
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
-    matrix = AlignmentMatrix(
-        clusters=(
-            _cluster(
-                cluster_id="ALN000001",
-            ),
-            _cluster(
-                cluster_id="ALN000002",
-            ),
-        ),
-        cells=(
-            _cell(
-                "sample-a",
-                "detected",
-                cluster_id="ALN000001",
-                area=100.0,
-                candidate_id="shared#1",
-            ),
-            _cell("sample-b", "detected", cluster_id="ALN000001", area=110.0),
-            _cell(
-                "sample-a",
-                "detected",
-                cluster_id="ALN000002",
-                area=120.0,
-                candidate_id="shared#1",
-            ),
-            _cell("sample-b", "detected", cluster_id="ALN000002", area=130.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
+    cells = (owner_cell(area=100.0), owner_cell(area=110.0))
+    matrix = _matrix(
+        ("sample-a", "sample-b"),
+        _row(*cells, candidates=(("sample-a", "shared#1"),)),
+        _row(*cells, feature_id="ALN000002", candidates=(("sample-a", "shared#1"),)),
     )
 
     with pytest.raises(ValueError, match="source peak cannot contribute"):
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
+        write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix)
 
 
-def test_write_alignment_review_tsv_includes_production_decision_columns(
-    tmp_path: Path,
-):
+def test_write_alignment_review_tsv_reports_archived_row_route(tmp_path: Path):
     from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(has_anchor=False, destination="archive"),),
-        cells=(_cell("sample-a", "backfilled", area=200.0),),
-        sample_order=("sample-a",),
+    matrix = _matrix(
+        ("sample-a",),
+        _row(
+            owner_cell("backfilled", area=200.0),
+            has_anchor=False,
+            destination="archive",
+        ),
     )
 
-    rows = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
+    (row,) = _read_tsv(write_alignment_review_tsv(tmp_path / "review.tsv", matrix))
 
-    assert rows[0]["include_in_primary_matrix"] == "FALSE"
-    assert rows[0]["identity_reason"] == "test_route"
-    assert rows[0]["accepted_cell_count"] == "1"
-    assert rows[0]["accepted_backfill_count"] == "1"
-    assert rows[0]["include_in_primary_matrix"] == "FALSE"
-    assert rows[0]["row_flags"] == "finalized_route:archive"
+    assert row["include_in_primary_matrix"] == "FALSE"
+    assert row["identity_reason"] == "test_route"
+    assert row["accepted_cell_count"] == "1"
+    assert row["accepted_backfill_count"] == "1"
+    assert row["row_flags"] == (
+        "finalized_route:archive;cross_sample_owner_arithmetic_mean"
+    )
 
 
 def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
@@ -973,144 +632,85 @@ def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
         write_alignment_status_matrix_tsv,
     )
 
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(
-            _cell(
-                "sample-a",
-                "detected",
-                area=10.0,
-                candidate_id="sample-a#1",
-            ),
-            _cell("sample-b", "unchecked"),
+    samples = ("sample-a", "sample-b", "sample-c", "sample-d", "sample-e")
+    matrix = _matrix(
+        samples,
+        _row(
+            owner_cell(area=10.0),
+            owner_cell(None, no_write="not_searched"),
+            owner_cell(None, no_write="rejected_observation"),
+            owner_cell("backfilled", area=8.0),
+            owner_cell(area=None),
+            candidates=(("sample-a", "sample-a#1"),),
         ),
-        sample_order=("sample-a", "sample-b"),
     )
 
     cells = _read_tsv(write_alignment_cells_tsv(tmp_path / "cells.tsv", matrix))
-    status = _read_tsv(
+    (status,) = _read_tsv(
         write_alignment_status_matrix_tsv(tmp_path / "status.tsv", matrix)
     )
 
     assert list(cells[0]) == list(ALIGNMENT_CELLS_COLUMNS)
-    assert cells[0]["status"] == "detected"
+    assert [row["status"] for row in cells] == [
+        "detected",
+        "not_searched",
+        "rejected_observation",
+        "backfilled",
+        "detected",
+    ]
+    assert [status[sample] for sample in samples] == [row["status"] for row in cells]
     assert cells[0]["area"] == "10"
     assert cells[0]["primary_matrix_area"] == "10"
     assert cells[0]["primary_matrix_area_source"] == "gaussian15_positive_asls_residual"
     assert cells[0]["primary_matrix_area_reason"] == ""
     assert cells[0]["source_candidate_id"] == "sample-a#1"
+    assert cells[1]["reason"] == "not_searched"
+    assert cells[1]["primary_matrix_area_source"] == ""
+    assert cells[4]["area"] == ""
+    assert cells[4]["reason"] == "not_quantifiable"
+    assert cells[4]["primary_matrix_area_reason"] == "missing_ms1_morphology_area"
     assert not any(column.startswith("region_") for column in cells[0])
-    assert set(cells[0]).isdisjoint(
-        {
-            "backfill_ms2_trigger_scan_count",
-            "backfill_strict_nl_scan_count",
-            "backfill_ms2_trace_strength",
-            "backfill_dda_missing_nl_policy_status",
-            "backfill_family_ms2_required_tag_status",
-            "backfill_evidence_reason",
-        }
-    )
-    assert status[0]["sample-a"] == "detected"
-    assert status[0]["sample-b"] == "unchecked"
 
 
 def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.backfill.evidence_contract import (
-        BackfillEvidenceOwnerBindings,
-        EvidenceClaimState,
-    )
-    from xic_extractor.diagnostics.backfill_evidence.tsv import (
-        lookup_backfill_evidence_tsv,
-    )
     from xic_extractor.output.alignment.tsv_writer import (
         ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
         write_alignment_backfill_cell_evidence_tsv,
     )
 
-    matrix = AlignmentMatrix(
-        clusters=(
-            _cluster(cluster_id="ALN000001"),
-            _cluster(cluster_id="ALN000002"),
+    matrix = _matrix(
+        ("sample-a", "sample-b", "sample-c"),
+        _row(
+            owner_cell(area=10.0),
+            owner_cell("backfilled", area=8.0),
+            owner_cell(None, no_write="not_searched"),
+            candidates=(("sample-a", "sample-a#1"),),
         ),
-        cells=(
-            _cell(
-                "sample-a",
-                "detected",
-                cluster_id="ALN000001",
-                area=10.0,
-                candidate_id="sample-a#1",
-            ),
-            _cell("sample-b", "backfilled", cluster_id="ALN000001", area=8.0),
-            _cell("sample-c", "unchecked", cluster_id="ALN000001"),
-            _cell(
-                "sample-a",
-                "detected",
-                cluster_id="ALN000002",
-                area=20.0,
-                candidate_id="sample-a#2",
-            ),
+        _row(
+            owner_cell(area=20.0),
+            owner_cell(None),
+            owner_cell(None),
+            feature_id="ALN000002",
         ),
-        sample_order=("sample-a", "sample-b", "sample-c"),
     )
 
-    evidence_path = write_alignment_backfill_cell_evidence_tsv(
-        tmp_path / "alignment_backfill_cell_evidence.tsv",
-        matrix,
-        production_decisions=_production_decisions(matrix),
+    rows = _read_tsv(
+        write_alignment_backfill_cell_evidence_tsv(
+            tmp_path / "alignment_backfill_cell_evidence.tsv", matrix
+        )
     )
-    rows = _read_tsv(evidence_path)
 
     assert list(rows[0]) == list(ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS)
-    assert {row["feature_id"] for row in rows} == {"ALN000001"}
-    assert {row["sample_stem"] for row in rows} == {"sample-a", "sample-b"}
-    backfilled = next(row for row in rows if row["status"] == "backfilled")
-    assert backfilled["production_cell_status"] == "accepted_backfill"
-    assert backfilled["primary_matrix_area"] == "8"
-    assert "region_candidate_count" not in rows[0]
-    assert "region_shadow_verdict" not in rows[0]
-    assert "backfill_evidence_reason" not in rows[0]
-
-    result = lookup_backfill_evidence_tsv(
-        evidence_path,
-        feature_id="ALN000001",
-        sample_stem="sample-a",
-        owner_bindings=BackfillEvidenceOwnerBindings(
-            known_feature_ids=frozenset({"ALN000001"}),
-            known_sample_stems=frozenset({"sample-a", "sample-b"}),
-            candidate_samples={"sample-a#1": "sample-a"},
-        ),
-    )
-    assert len(result.records) == 1
-    assert result.records[0].feature_id == "ALN000001"
-    assert result.claim("record_content").state is EvidenceClaimState.STRUCTURE_BOUND
-    assert result.claim("cross_artifact_binding").state is (
-        EvidenceClaimState.OWNER_REHYDRATED
-    )
-
-
-def test_alignment_cells_tsv_has_no_region_audit_columns(tmp_path: Path) -> None:
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_cells_tsv
-
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(
-            _cell(
-                "sample-a",
-                "detected",
-                area=10.0,
-                candidate_id="sample-a#1",
-            ),
-        ),
-        sample_order=("sample-a",),
-    )
-
-    cells = _read_tsv(write_alignment_cells_tsv(tmp_path / "cells.tsv", matrix))
-    region_columns = [column for column in cells[0] if column.startswith("region_")]
-
-    assert cells[0]["status"] == "detected"
-    assert region_columns == []
+    assert [(row["feature_id"], row["sample_stem"], row["status"]) for row in rows] == [
+        ("ALN000001", "sample-a", "detected"),
+        ("ALN000001", "sample-b", "backfilled"),
+    ]
+    assert rows[0]["source_candidate_id"] == "sample-a#1"
+    assert rows[1]["primary_matrix_area"] == "8"
+    assert rows[1]["include_in_primary_matrix"] == "TRUE"
+    assert rows[1]["identity_decision"] == "finalized_matrix"
 
 
 def test_tsv_writers_escape_formula_like_text(tmp_path: Path):
@@ -1119,46 +719,19 @@ def test_tsv_writers_escape_formula_like_text(tmp_path: Path):
         write_alignment_review_tsv,
     )
 
-    matrix = AlignmentMatrix(
-        clusters=(
-            _cluster(
-                cluster_id="=cluster",
-                neutral_loss_tag="+NL",
-            ),
+    matrix = _matrix(
+        ("=sample", "+sample-2"),
+        _row(
+            owner_cell(area=10.0),
+            owner_cell(area=20.0),
+            feature_id="=cluster",
+            neutral_loss_tag="+NL",
+            candidates=(("=sample", "@candidate"), ("+sample-2", "@candidate-2")),
         ),
-        cells=(
-            _cell(
-                "=sample",
-                "detected",
-                cluster_id="=cluster",
-                area=10.0,
-                candidate_id="@candidate",
-            ),
-            _cell(
-                "+sample-2",
-                "detected",
-                cluster_id="=cluster",
-                area=20.0,
-                candidate_id="@candidate-2",
-            ),
-        ),
-        sample_order=("=sample", "+sample-2"),
     )
 
-    review = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
-    matrix_rows = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
+    review = _read_tsv(write_alignment_review_tsv(tmp_path / "review.tsv", matrix))
+    matrix_rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
 
     assert review[0]["feature_id"] == "'=cluster"
     assert review[0]["neutral_loss_tag"] == "'+NL"
@@ -1198,8 +771,36 @@ def test_private_write_tsv_accepts_generator_rows(tmp_path: Path) -> None:
     assert path.read_bytes() == b"name\tvalue\nrow-0\t0\nrow-1\t1\nrow-2\t2\n"
 
 
-def _production_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
-    return finalized_writer_decisions(matrix)
+def test_advisory_signal_quality_is_sample_scoped_and_matrix_unchanged(tmp_path):
+    from xic_extractor.output.alignment.tsv_writer import (
+        write_alignment_cells_tsv,
+        write_alignment_matrix_tsv,
+    )
+    from xic_extractor.peak_detection.signal_quality import SignalQuality
+
+    def cell(area: float, signal_to_noise: float | None) -> ProductionCellDecision:
+        integration = _integration(raw_area=area, asls_area=area)
+        if signal_to_noise is not None:
+            integration = replace(
+                integration,
+                signal_quality=SignalQuality(
+                    "available",
+                    noise_sigma=10.0,
+                    signal_to_noise=signal_to_noise,
+                    low_signal_to_noise=signal_to_noise < 10 / 1.4826,
+                ),
+            )
+        return owner_cell(area=area, integration=integration)
+
+    before = _matrix(("S1", "S2"), _row(cell(1000.0, None), cell(2000.0, None)))
+    after = _matrix(("S1", "S2"), _row(cell(1000.0, 20.0), cell(2000.0, 2.0)))
+    first = write_alignment_matrix_tsv(tmp_path / "before.tsv", before)
+    second = write_alignment_matrix_tsv(tmp_path / "after.tsv", after)
+    assert first.read_bytes() == second.read_bytes()
+    rows = _read_tsv(write_alignment_cells_tsv(tmp_path / "review-cells.tsv", after))
+    assert [row["sample_stem"] for row in rows] == ["S1", "S2"]
+    assert [row["low_signal_to_noise"] for row in rows] == ["FALSE", "TRUE"]
+    assert [row["signal_to_noise"] for row in rows] == ["20", "2"]
 
 
 def _read_tsv(path: Path) -> list[dict[str, str]]:
@@ -1207,9 +808,16 @@ def _read_tsv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle, delimiter="\t"))
 
 
-def _cluster(
-    *,
-    cluster_id: str = "ALN000001",
+def _matrix(
+    sample_order: tuple[str, ...], *rows: FinalizedUntargetMatrixRow
+) -> AlignmentMatrix:
+    return AlignmentMatrix(clusters=rows, sample_order=sample_order)
+
+
+def _row(
+    *cells: ProductionCellDecision,
+    feature_id: str = "ALN000001",
+    candidates: tuple[tuple[str, str], ...] = (),
     center_mz: float = 500.123,
     center_rt: float = 8.49,
     neutral_loss_tag: str = "DNA_dR",
@@ -1218,83 +826,41 @@ def _cluster(
     destination: Literal["matrix", "archive"] = "matrix",
 ) -> FinalizedUntargetMatrixRow:
     return FinalizedUntargetMatrixRow(
-        feature_id=cluster_id,
-        group_hypothesis_id=cluster_id,
+        feature_id=feature_id,
+        group_hypothesis_id=feature_id,
         destination=destination,
         family_center_mz=center_mz,
         family_center_rt=center_rt,
         physical_peak_keys=tuple(
-            f"{cluster_id}#peak-{index}" for index in range(member_count)
+            f"{feature_id}#peak-{index}" for index in range(member_count)
         ),
         family_product_mz=384.076,
         family_observed_neutral_loss_da=116.047,
         neutral_loss_tag=neutral_loss_tag,
         has_anchor=has_anchor,
+        route_reason="test_route",
+        cells=cells,
+        source_candidate_ids=candidates,
+    )
+
+
+def _two_sample_matrix(*, center_mz: float = 500.123) -> AlignmentMatrix:
+    return _matrix(
+        ("sample-a", "sample-b"),
+        _row(owner_cell(area=100.0), owner_cell(area=110.0), center_mz=center_mz),
     )
 
 
 def _display_collision_matrix() -> AlignmentMatrix:
-    return AlignmentMatrix(
-        clusters=(
-            _cluster(
-                cluster_id="ALN000001",
-                center_mz=500.123441,
-            ),
-            _cluster(
-                cluster_id="ALN000002",
-                center_mz=500.123449,
-            ),
+    return _matrix(
+        ("sample-a", "sample-b"),
+        _row(owner_cell(area=100.0), owner_cell(area=110.0), center_mz=500.123441),
+        _row(
+            owner_cell(area=120.0),
+            owner_cell(area=130.0),
+            feature_id="ALN000002",
+            center_mz=500.123449,
         ),
-        cells=(
-            _cell("sample-a", "detected", cluster_id="ALN000001", area=100.0),
-            _cell("sample-b", "detected", cluster_id="ALN000001", area=110.0),
-            _cell("sample-a", "detected", cluster_id="ALN000002", area=120.0),
-            _cell("sample-b", "detected", cluster_id="ALN000002", area=130.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
-
-
-def _cell(
-    sample_stem: str,
-    status,
-    *,
-    cluster_id: str = "ALN000001",
-    area: float | None = None,
-    candidate_id: str | None = None,
-    apex_rt: float = 8.49,
-    trace_quality: str | None = None,
-    selected_integration: IntegrationResult | None = None,
-) -> AlignedCell:
-    if (
-        selected_integration is None
-        and status in {"detected", "backfilled"}
-        and _positive_area(area)
-    ):
-        selected_integration = _integration(
-            raw_area=area,
-            asls_area=area,
-            morphology_area=area,
-        )
-    return AlignedCell(
-        sample_stem=sample_stem,
-        cluster_id=cluster_id,
-        status=status,
-        area=area,
-        apex_rt=apex_rt if area is not None else None,
-        height=100.0 if area is not None else None,
-        peak_start_rt=8.4 if area is not None else None,
-        peak_end_rt=8.6 if area is not None else None,
-        rt_delta_sec=0.0 if area is not None else None,
-        trace_quality=(
-            trace_quality
-            if trace_quality is not None
-            else ("clean" if area is not None else "unchecked")
-        ),
-        scan_support_score=0.8 if area is not None else None,
-        source_candidate_id=candidate_id,
-        reason="cell reason",
-        selected_integration=selected_integration,
     )
 
 
@@ -1323,66 +889,3 @@ def _integration(
             morphology_area_source if morphology_area is not None else ""
         ),
     )
-
-
-def _positive_area(value: float | None) -> TypeGuard[float]:
-    return (
-        value is not None
-        and isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(value)
-        and value > 0
-    )
-
-
-def test_advisory_signal_quality_is_sample_scoped_and_matrix_unchanged(tmp_path):
-    from dataclasses import replace
-
-    from xic_extractor.output.alignment.tsv_writer import (
-        write_alignment_cells_tsv,
-        write_alignment_matrix_tsv,
-    )
-    from xic_extractor.peak_detection.signal_quality import SignalQuality
-
-    cells = tuple(
-        _cell(sid, "detected", area=value)
-        for sid, value in (("S1", 1000.0), ("S2", 2000.0))
-    )
-    before = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=cells,
-        sample_order=("S1", "S2"),
-    )
-    after = replace(
-        before,
-        cells=tuple(
-            replace(
-                cell,
-                selected_integration=replace(
-                    cell.selected_integration,
-                    signal_quality=SignalQuality(
-                        "available",
-                        noise_sigma=10.0,
-                        signal_to_noise=ratio,
-                        low_signal_to_noise=ratio < 10 / 1.4826,
-                    ),
-                ),
-            )
-            for cell, ratio in zip(cells, (20.0, 2.0), strict=True)
-        ),
-    )
-    first = write_alignment_matrix_tsv(
-        tmp_path / "before.tsv",
-        before,
-        production_decisions=_production_decisions(before),
-    )
-    second = write_alignment_matrix_tsv(
-        tmp_path / "after.tsv",
-        after,
-        production_decisions=_production_decisions(after),
-    )
-    assert first.read_bytes() == second.read_bytes()
-    rows = _read_tsv(write_alignment_cells_tsv(tmp_path / "review-cells.tsv", after))
-    assert [row["sample_stem"] for row in rows] == ["S1", "S2"]
-    assert [row["low_signal_to_noise"] for row in rows] == ["FALSE", "TRUE"]
-    assert [row["signal_to_noise"] for row in rows] == ["20", "2"]
