@@ -623,10 +623,10 @@ def test_invalid_report_never_returns_empty_success(tmp_path, corruption, reader
             elif corruption == "schema":
                 connection.execute("DROP TABLE cells")
             else:
-                connection.execute("UPDATE run SET payload='{'")
+                connection.execute("UPDATE run SET payload='null'")
     message = (
         "重新執行 Alignment"
-        if corruption == "schema_identity"
+        if corruption in ("schema_identity", "payload")
         else "malformed|failed reading"
     )
     with pytest.raises(ExplanationError, match=message):
