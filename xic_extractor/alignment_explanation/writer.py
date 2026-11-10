@@ -172,8 +172,13 @@ class ExplanationReportWriter:
             if payload.get("composition") is None
             else encode_object(payload["composition"]),
         ]
-        existing = self._subjects.setdefault(sid, row)
-        if existing[1:] != row[1:]:
+        existing = self._subjects.get(sid)
+        if existing is not None and all(value is None for value in existing[2:]):
+            # A candidate named this subject first; its facts arrive now.
+            existing[2:] = row[2:]
+        elif existing is None:
+            self._subjects[sid] = row
+        elif existing[1:] != row[1:]:
             raise ValueError(f"conflicting method subject: {sid}")
 
     def _subject_id(self, method_subject_id: str | None) -> int | None:
