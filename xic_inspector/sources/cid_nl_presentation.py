@@ -845,27 +845,26 @@ def _attention_reason_label(item, samples) -> str:
     entries = []
     for trigger in item.details.get("attention_triggers", []):
         reason_codes = trigger.get("reason_codes") or [trigger.get("reason")]
-        reasons = []
-        for code in reason_codes:
-            if not isinstance(code, str) or not code:
-                continue
-            label = _REASON_LABELS.get(code)
-            reasons.append(f"{label}（{code}）" if label else code)
-        if not reasons:
+        codes = tuple(code for code in reason_codes if isinstance(code, str) and code)
+        if not codes:
             continue
-        affected = [
-            sample_labels.get(sample_id, sample_id)
-            for sample_id in trigger.get("sample_ids", [])
-            if isinstance(sample_id, str)
+        reasons = [
+            f"{_REASON_LABELS[code]}（{code}）" if code in _REASON_LABELS else code
+            for code in codes
         ]
+        sample_ids = tuple(
+            sorted(sid for sid in trigger.get("sample_ids", []) if isinstance(sid, str))
+        )
+        affected = [sample_labels.get(sample_id, sample_id) for sample_id in sample_ids]
         subject = "、".join(affected) if affected else "本項目"
         prefix = "相關方法評估為 HOLD：" if trigger.get("reason") == "HOLD" else ""
-        entries.append(f"{subject}：{prefix}{'、'.join(reasons)}")
+        entries.append((sample_ids, codes, f"{subject}：{prefix}{'、'.join(reasons)}"))
     if not entries:
         return ""
-    return (
-        "需留意原因（不代表正式定量採用）：" + "；".join(dict.fromkeys(entries)) + "。"
-    )
+    # The same facts read the same way after record renumbering: order by the
+    # affected samples and reason codes, not the storage refs of their evidence.
+    ordered = dict.fromkeys(text for _, _, text in sorted(entries))
+    return "需留意原因（不代表正式定量採用）：" + "；".join(ordered) + "。"
 
 
 def build_sample(

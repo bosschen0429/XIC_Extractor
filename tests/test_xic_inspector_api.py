@@ -202,6 +202,36 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     assert ("G1", "S2") not in _readable(scoped_item)
 
 
+@pytest.mark.parametrize("review_only", (False, True))
+def test_attention_reason_order_is_independent_of_record_ids(tmp_path, review_only):
+    from xic_inspector.api import prepare_report
+
+    def assessments(writer):
+        for code in ("no_unique_qualifying_relation", "insufficient_method_evidence"):
+            writer.add_assessment(
+                {
+                    "sample_key": "S1",
+                    "method_subject_id": "subject-C1",
+                    "method_result": "HOLD",
+                    "reason_codes": [code],
+                },
+                candidate_physical_peak_keys=(),
+            )
+
+    report, _, _ = create_inspector_report(
+        tmp_path, extend=assessments, review_only=review_only
+    )
+    selection = SelectionRequest(strategy="query", group_ids=("G1",))
+    before = prepare_report(report, selection).payload["items"][0]["reason_label"]
+    with sqlite3.connect(report) as db:
+        db.execute("UPDATE method_assessments SET id=100000-id")
+    after = prepare_report(report, selection).payload["items"][0]["reason_label"]
+    assert before == after
+    assert before.index("insufficient_method_evidence") < before.index(
+        "no_unique_qualifying_relation"
+    )
+
+
 def test_error_code_2_invalid_request() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
