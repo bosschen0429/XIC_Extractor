@@ -175,8 +175,28 @@ def _quality_review_report(
             selected_integration=observation.integration,
         )
         cells.append(review_cell(decision))
-        if membership_risks is not None:
-            cells[-1]["membership_risks"] = membership_risks.get(sid, [])
+        # Backfill admissions have no owning member; their risks stay on the cell.
+        cells[-1]["membership_risks"] = [
+            risk
+            for risk in (membership_risks or {}).get(sid, [])
+            if risk["phase"] == "backfill"
+        ]
+    # A grouping risk is accepted by the member that owns the peak.
+    member_risks = {
+        sid: risk
+        for sid, risks in (membership_risks or {}).items()
+        for risk in risks
+        if risk["phase"] != "backfill"
+    }
+    members = [
+        {
+            "sample_key": sid,
+            "subject_id": f"member-{sid}",
+            "subject_kind": "peak_hypothesis",
+            "physical_peak_keys": [f"obs-{sid}"],
+        }
+        for sid in ("S1", "S2")
+    ]
     samples = [{"sample_stem": sid, "sample_key": sid} for sid in ("S1", "S2")]
     with ExplanationReportWriter(report, review_only=True) as writer:
         writer.declare_samples(samples)
@@ -193,9 +213,20 @@ def _quality_review_report(
             "G1",
             feature_id="G1",
             disposition="completed",
-            members=[],
+            members=members,
             candidates=keys,
         )
+        if member_risks:
+            writer.add_initial_group(
+                disposition="completed",
+                members=members,
+                candidates=keys,
+                inference_basis={},
+                inference_decisions=[
+                    {"owner_id": f"member-{sid}", "accepted_risk": risk}
+                    for sid, risk in member_risks.items()
+                ],
+            )
         writer.add_cells("G1", cells)
         writer.finalize(
             explanation_summary(
