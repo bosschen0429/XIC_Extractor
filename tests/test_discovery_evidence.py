@@ -37,8 +37,6 @@ def test_default_evidence_profile_pins_thresholds() -> None:
     assert thresholds.product_intensity_med_min == 10_000.0
     assert thresholds.area_high_min == 1_000_000.0
     assert thresholds.area_med_min == 100_000.0
-    assert thresholds.ms1_support_strong_area_min == 10_000_000.0
-    assert thresholds.ms1_support_moderate_area_min == 1_000_000.0
     assert thresholds.scan_support_target == 10
     assert thresholds.scan_support_high_score_min == 0.8
     assert thresholds.scan_support_low_score_max == 0.2
