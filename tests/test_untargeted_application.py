@@ -11,7 +11,6 @@ import pytest
 import xic_extractor.applications.untargeted.application as application_module
 import xic_extractor.applications.untargeted.publication as publication_module
 import xic_extractor.output.alignment.pipeline_outputs as output_owner
-from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from tests.cid_nl_raw_fixture import _FakeRaw, _settings
@@ -91,7 +90,6 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
             closed.append(True)
 
     completed = MockCompleted()
-    writer_inputs = _matrix(("S1",))
     retained_sample_metadata = (
         SampleMetadata(
             sample_name="S1",
@@ -133,20 +131,9 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         "complete_untargeted_alignment",
         complete,
     )
-    monkeypatch.setattr(
-        output_owner,
-        "project_completed_untarget_batch_writer_inputs",
-        lambda value, **_kwargs: (
-            writer_inputs if value is completed.application_result else pytest.fail()
-        ),
-    )
-    monkeypatch.setattr(
-        output_owner,
-        "supports_streamed_untargeted_outputs",
-        lambda _outputs: False,
-    )
 
-    def write_outputs(*_args: object, **kwargs: object) -> None:
+    def write_outputs(_outputs: object, value: object, **kwargs: object) -> None:
+        assert value is completed.application_result
         captured_write.update(kwargs)
         if writer_fails:
             raise OSError("Matrix publication failed")
@@ -172,7 +159,9 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
 
         yield SimpleNamespace(consume_child=lambda _child: None, finalize=finalize)
 
-    monkeypatch.setattr(output_owner, "write_outputs_atomic", write_outputs)
+    monkeypatch.setattr(
+        publication_module, "write_completed_untargeted_outputs_atomic", write_outputs
+    )
     monkeypatch.setattr(
         publication_module, "prepare_alignment_explanation", prepare_explanation
     )
@@ -248,12 +237,7 @@ def test_pure_cid_nl_cancellation_after_completion_skips_publication(
     )
     monkeypatch.setattr(
         output_owner,
-        "project_completed_untarget_batch_writer_inputs",
-        lambda _value: pytest.fail("cancelled run reached writer projection"),
-    )
-    monkeypatch.setattr(
-        output_owner,
-        "write_outputs_atomic",
+        "write_alignment_tsvs",
         lambda *_args, **_kwargs: pytest.fail("cancelled run published outputs"),
     )
 
@@ -284,7 +268,6 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
         close=lambda: closed.append(True),
         application_result=SimpleNamespace(children=()),
     )
-    writer_inputs = _matrix(("S1",))
     cancellation_checks = iter((False, False, True))
     monkeypatch.setattr(
         application_module,
@@ -292,15 +275,6 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
         lambda **kwargs: _bind_mock_publication_inputs(completed, kwargs),
     )
 
-    def project(value: object, **_kwargs: object) -> object:
-        assert value is completed.application_result
-        return writer_inputs
-
-    monkeypatch.setattr(
-        output_owner,
-        "project_completed_untarget_batch_writer_inputs",
-        project,
-    )
     monkeypatch.setattr(
         publication_module,
         "prepare_alignment_explanation",
@@ -308,7 +282,7 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
     )
     monkeypatch.setattr(
         output_owner,
-        "write_outputs_atomic",
+        "write_alignment_tsvs",
         lambda *_args, **_kwargs: pytest.fail("cancelled run published outputs"),
     )
 
@@ -458,20 +432,11 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
         lambda **kwargs: _bind_mock_publication_inputs(completed, kwargs),
     )
 
-    def reject_projection(value: object, **_kwargs: object) -> object:
+    def reject_projection(_paths: object, value: object, **_kwargs: object) -> int:
         assert value is completed.application_result
         raise ValueError("invalid finalized projection")
 
-    monkeypatch.setattr(
-        output_owner,
-        "project_completed_untarget_batch_writer_inputs",
-        reject_projection,
-    )
-    monkeypatch.setattr(
-        output_owner,
-        "supports_streamed_untargeted_outputs",
-        lambda _outputs: False,
-    )
+    monkeypatch.setattr(output_owner, "write_alignment_tsvs", reject_projection)
     monkeypatch.setattr(
         publication_module,
         "prepare_alignment_explanation",
@@ -519,7 +484,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         write_alignment_explanation,
     )
     from xic_extractor.execution.result_store import StreamedResultStore
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_tsvs
     from xic_extractor.untargeted_execution.execution import (
         execute_untargeted_plan,
     )
@@ -563,10 +528,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
             }
 
     if failure is None:
-        writer = output_owner.project_completed_untarget_batch_writer_inputs(
-            completed.application_result
-        )
-        write_alignment_matrix_tsv(matrix_path, writer)
+        write_alignment_tsvs({"matrix": matrix_path}, completed.application_result)
         matrix_bytes = matrix_path.read_bytes()
         write_alignment_explanation(
             reference,
@@ -613,30 +575,33 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
 
     monkeypatch.setattr(StreamedResultStore, "_read_record", counted_read)
 
+    write_tsvs = output_owner.write_alignment_tsvs
     if failure == "projection":
-        project = output_owner.iter_completed_untarget_batch_writer_inputs
 
-        def fail_projection(*args, **kwargs):
-            yield from project(*args, **kwargs)
-            raise OSError("projection failed")
+        def fail_projection(paths, value, **kwargs):
+            consume = kwargs.get("consume_child")
+            consumed = 0
 
-        monkeypatch.setattr(
-            output_owner,
-            "iter_completed_untarget_batch_writer_inputs",
-            fail_projection,
-        )
+            def consume_then_fail(child):
+                nonlocal consumed
+                if consume is not None:
+                    consume(child)
+                consumed += 1
+                if consumed == len(value.children):
+                    raise OSError("projection failed")
+
+            return write_tsvs(
+                paths, value, **{**kwargs, "consume_child": consume_then_fail}
+            )
+
+        monkeypatch.setattr(output_owner, "write_alignment_tsvs", fail_projection)
     elif failure == "matrix":
-        from xic_extractor.output.alignment import pipeline_outputs
-
-        write_rows = pipeline_outputs.write_alignment_tsv_row_batches
 
         def fail_matrix(*args, **kwargs):
-            write_rows(*args, **kwargs)
+            write_tsvs(*args, **kwargs)
             raise OSError("matrix failed")
 
-        monkeypatch.setattr(
-            pipeline_outputs, "write_alignment_tsv_row_batches", fail_matrix
-        )
+        monkeypatch.setattr(output_owner, "write_alignment_tsvs", fail_matrix)
 
     def run():
         return application_module.run_untargeted_application(
@@ -822,7 +787,7 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
         write_alignment_explanation,
     )
 
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     arguments = dict(
@@ -874,7 +839,6 @@ def test_pure_cid_nl_targets_csv_integration(
         application_result=SimpleNamespace(children=()),
         close=lambda: closed.append(True),
     )
-    writer_inputs = _matrix(("S1",))
     fake_ref = SimpleNamespace(
         provenance={"workbook_sha256": "b" * 64},
         explanation_provenance={
@@ -905,19 +869,9 @@ def test_pure_cid_nl_targets_csv_integration(
         ),
     )
     monkeypatch.setattr(
-        output_owner,
-        "project_completed_untarget_batch_writer_inputs",
-        lambda _value, **_kwargs: writer_inputs,
-    )
-    monkeypatch.setattr(
-        output_owner,
-        "write_outputs_atomic",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        output_owner,
-        "supports_streamed_untargeted_outputs",
-        lambda _outputs: False,
+        publication_module,
+        "write_completed_untargeted_outputs_atomic",
+        lambda *_args, **_kwargs: 0,
     )
     monkeypatch.setattr(
         publication_module,

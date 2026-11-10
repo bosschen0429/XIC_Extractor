@@ -12,6 +12,7 @@ import csv
 import json
 import subprocess
 import sys
+import tempfile
 from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,7 +23,7 @@ import xic_extractor.alignment.cid_nl_completion as cid_nl_completion_owner
 import xic_extractor.processing_identity as identity_owner
 import xic_extractor.raw_source_binding as raw_source_binding_owner
 import xic_extractor.untargeted_execution.alignment as alignment_adapter
-from tests.alignment_pipeline_helpers import writer_cells
+from tests.alignment_pipeline_helpers import render, written_cells, written_rows
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _FakeRaw,
@@ -39,9 +40,6 @@ from tests.untargeted_partition_fixtures import (
     fixture_assessment,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.untargeted_finalized_matrix import (
-    project_completed_untarget_batch_writer_inputs,
-)
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.execution.process_memory import (
     ProcessMemorySample,
@@ -140,9 +138,10 @@ def _assert_partition_composition_parity(
         excluded_candidates=exclusions,
     )
     recomposed = replace(completed, application_result=result)
-    assert project_completed_untarget_batch_writer_inputs(
-        recomposed.application_result
-    ) == project_completed_untarget_batch_writer_inputs(completed.application_result)
+    with tempfile.TemporaryDirectory() as directory:
+        assert written_rows(
+            Path(directory) / "recomposed", recomposed.application_result
+        ) == written_rows(Path(directory) / "original", completed.application_result)
     assert result.excluded_candidates == original.excluded_candidates
     assert result.physical_peak_keys == original.physical_peak_keys
     assert all(
@@ -1100,8 +1099,6 @@ def _source_verification_inputs(tmp_path: Path):
 def _assert_conservative_coverage_handoff(
     completed, writer_inputs, batch, runtime_result, tmp_path, *, threshold: bool
 ) -> None:
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
     (child,) = completed.application_result.children
     scientific = child.scientific_core
     handoff = scientific.cell_observation_handoff
@@ -1146,12 +1143,12 @@ def _assert_conservative_coverage_handoff(
         assert source.peak_observation is source.peak_hypothesis is None
     hold_cells = tuple(
         cell
-        for _row, sample_stem, cell in writer_cells(writer_inputs)
+        for _row, sample_stem, cell in written_cells(writer_inputs)
         if sample_stem == "Hold"
     )
     assert all(cell.value is None for cell in hold_cells)
     matrix_path = tmp_path / "conservative-matrix.tsv"
-    write_alignment_matrix_tsv(matrix_path, writer_inputs)
+    render("matrix", matrix_path, writer_inputs)
     with matrix_path.open(encoding="utf-8", newline="") as handle:
         matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
     assert len(matrix_rows) == (0 if threshold else 1)

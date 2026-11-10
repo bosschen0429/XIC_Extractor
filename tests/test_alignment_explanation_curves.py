@@ -122,7 +122,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
         write_alignment_explanation,
     )
 
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     expected = {}

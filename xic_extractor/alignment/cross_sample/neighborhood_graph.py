@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.identity_models import (
     CrossSampleContractError,
     CrossSampleEdgeDisposition,
-    CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSampleInitialEdgeContext,
     CrossSampleNeighborhoodStatus,
@@ -20,6 +19,11 @@ from xic_extractor.alignment.edge_scoring import (
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.rt_frame import RtFrame
+
+if TYPE_CHECKING:
+    from xic_extractor.alignment.cross_sample.peak_groups import (
+        CrossSamplePeakGroupHypothesis,
+    )
 
 INITIAL_GROUPING_POLICY: Literal["feature-group-membership"] = (
     "feature-group-membership"
@@ -113,15 +117,15 @@ def _targeted_istd_rt_disposition(
 
 @dataclass(frozen=True, slots=True)
 class CrossSampleLineageEdge:
-    predecessor: CrossSampleGroupIdentity
-    successor: CrossSampleGroupIdentity
+    predecessor: CrossSamplePeakGroupHypothesis
+    successor: CrossSamplePeakGroupHypothesis
 
 
 @dataclass(frozen=True, slots=True)
 class CrossSamplePartitionTransition:
     status: CrossSampleNeighborhoodStatus
-    predecessors: tuple[CrossSampleGroupIdentity, ...]
-    successors: tuple[CrossSampleGroupIdentity, ...]
+    predecessors: tuple[CrossSamplePeakGroupHypothesis, ...]
+    successors: tuple[CrossSamplePeakGroupHypothesis, ...]
     lineage: tuple[CrossSampleLineageEdge, ...]
     reason: str
     admitted_members: tuple[CrossSampleGroupMemberSubject, ...] = ()
@@ -145,8 +149,8 @@ class CrossSamplePartitionTransition:
 
 def _expected_cross_sample_lineage(
     *,
-    predecessors: tuple[CrossSampleGroupIdentity, ...],
-    successors: tuple[CrossSampleGroupIdentity, ...],
+    predecessors: tuple[CrossSamplePeakGroupHypothesis, ...],
+    successors: tuple[CrossSamplePeakGroupHypothesis, ...],
 ) -> tuple[CrossSampleLineageEdge, ...]:
     lineage_edges: list[CrossSampleLineageEdge] = []
     for successor in successors:

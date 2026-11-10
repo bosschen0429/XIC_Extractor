@@ -51,7 +51,7 @@ def test_missing_report_is_unavailable(tmp_path):
 def test_candidate_measured_mz_roundtrip_without_center_fallback(
     tmp_path, monkeypatch, full_audit, second_measured_mz
 ):
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     first = candidates["S1"][0].peak_id
@@ -91,7 +91,7 @@ def test_old_named_folder_requires_rerun_instead_of_fallback(tmp_path):
 
 @pytest.mark.parametrize("scenario", ("positive", "all_hold", "review_only"))
 def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, scenario):
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, scenario
     )
     report = write_alignment_explanation(
@@ -277,7 +277,7 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
 ):
     from xic_extractor.execution.timing import TimingRecorder
 
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "all_hold"
     )
     kwargs = dict(
@@ -359,7 +359,7 @@ class _ChildBatch:
 
 @pytest.mark.parametrize("scenario", ("positive", "review_only"))
 def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, scenario):
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, scenario
     )
     application = completed.application_result
@@ -416,7 +416,7 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
 
 
 def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypatch):
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "all_hold"
     )
     report = tmp_path / "interrupted.sqlite"

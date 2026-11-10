@@ -29,8 +29,8 @@ from xic_extractor.alignment.cross_sample.association import (
     CrossSampleCoveragePositionAssociation,
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
+    CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
@@ -60,7 +60,7 @@ FinalCellEvidenceAggregate: TypeAlias = FinalCellEvidenceState | Literal["mixed"
 
 @dataclass(frozen=True, slots=True)
 class FinalGroupCellObservation:
-    """One immutable final ``CrossSampleGroupIdentity × sample`` closure.
+    """One immutable final ``CrossSamplePeakGroupHypothesis × sample`` closure.
 
     ``position_associations`` retain every coverage lane. ``predecessor_cells``
     retain actual method evidence; a declared no-input position has no synthetic
@@ -69,7 +69,7 @@ class FinalGroupCellObservation:
     quantifiability authority.
     """
 
-    group: CrossSampleGroupIdentity
+    group: CrossSamplePeakGroupHypothesis
     canonical_sample: SampleMetadata
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...]
     predecessor_cells: tuple[CellObservationRef, ...]
@@ -77,7 +77,7 @@ class FinalGroupCellObservation:
     backfill_cell: CellObservationRef | None = None
 
     @property
-    def key(self) -> tuple[CrossSampleGroupIdentity, str]:
+    def key(self) -> tuple[CrossSamplePeakGroupHypothesis, str]:
         """The actual final group and the sample's natural key."""
         return self.group, self.sample_key
 
@@ -228,14 +228,11 @@ def _compose_final_group_cell_observation_population(
                 (group.group_hypothesis_id, sample.sample_name), None
             )
             if recovered is not None:
-                if (
-                    len(associations) != 1
-                    or recovered.group_context.group_identity != group
-                ):
+                if len(associations) != 1 or recovered.group_context.group != group:
                     raise CellObservationContractError(
                         "backfill must extend one exact predecessor"
                     )
-                predecessor = associations[0].position.group_identity
+                predecessor = associations[0].position.group
                 if not set(predecessor.member_subjects).issubset(group.member_subjects):
                     raise CellObservationContractError(
                         "backfill changed original group membership"
@@ -299,21 +296,21 @@ def _index_predecessor_cells(
     for position in positions:
         key = (
             position.sample.sample_name,
-            position.group_identity.group_hypothesis_id,
+            position.group.group_hypothesis_id,
         )
         positions_by_key.setdefault(key, []).append(position)
     for cell in cells:
-        source_identity = cell.group_context.group_identity
+        source_group = cell.group_context.group
         matches = tuple(
             position
             for position in positions_by_key.get(
                 (
                     cell.content.sample_key,
-                    source_identity.group_hypothesis_id,
+                    source_group.group_hypothesis_id,
                 ),
                 (),
             )
-            if source_identity == position.group_identity
+            if source_group == position.group
         )
         if len(matches) != 1:
             raise CellObservationContractError(
@@ -343,7 +340,7 @@ def _derive_lane_evidence_state(
     *,
     association: CrossSampleCoveragePositionAssociation,
     source_cell: CellObservationRef | None,
-    final_group: CrossSampleGroupIdentity,
+    final_group: CrossSamplePeakGroupHypothesis,
     canonical_sample: SampleMetadata,
 ) -> FinalCellEvidenceState:
     if source_cell is None:
@@ -356,8 +353,8 @@ def _derive_lane_evidence_state(
                 "missing source cell requires exact no-input coverage"
             )
         return "not_searched"
-    source_identity = source_cell.group_context.group_identity
-    if source_identity != association.position.group_identity:
+    source_group = source_cell.group_context.group
+    if source_group != association.position.group:
         raise CellObservationContractError(
             "source CellObservationRef crossed the exact predecessor group identity"
         )
@@ -370,7 +367,7 @@ def _derive_lane_evidence_state(
             "source CellObservationRef crossed the exact canonical sample"
         )
     source_member = _member_for_sample(
-        source_identity,
+        source_group,
         association.position.sample.sample_name,
     )
     final_member = _member_for_sample(
@@ -441,7 +438,7 @@ def _derive_lane_evidence_state(
 
 
 def _member_for_sample(
-    group: CrossSampleGroupIdentity,
+    group: CrossSamplePeakGroupHypothesis,
     sample_key: str,
 ) -> CrossSampleGroupMemberSubject | None:
     matches = tuple(

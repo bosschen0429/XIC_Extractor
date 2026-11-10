@@ -10,9 +10,9 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSamplePartitionTransition,
+    CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.sample_metadata import (
@@ -38,8 +38,8 @@ class _Fixture:
 def _final_receipt(
     fixture: _Fixture,
     *,
-    predecessors: tuple[CrossSampleGroupIdentity, ...],
-    successors: tuple[CrossSampleGroupIdentity, ...],
+    predecessors: tuple[CrossSamplePeakGroupHypothesis, ...],
+    successors: tuple[CrossSamplePeakGroupHypothesis, ...],
 ) -> CrossSampleGroupingResult:
     canonical_predecessors = tuple(
         sorted(predecessors, key=lambda group: group.group_hypothesis_id)

@@ -11,7 +11,12 @@ import pytest
 
 import xic_extractor.untargeted_execution.alignment as alignment_adapter
 from tests.alignment_explanation_fixtures import explanation_summary
-from tests.alignment_pipeline_helpers import writer_cells
+from tests.alignment_pipeline_helpers import (
+    render,
+    written_cells,
+    written_groups,
+    written_source_candidates,
+)
 from tests.untargeted_cid_nl_production_batch_fixtures import (
     _assert_composite_no_input_exclusion_coverage,
     _assert_fresh_process_curve_parity,
@@ -29,9 +34,6 @@ from tests.untargeted_partition_fixtures import (
     fixture_assessment,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.untargeted_finalized_matrix import (
-    project_completed_untarget_batch_writer_inputs,
-)
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
@@ -215,13 +217,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         trace.runtime_fingerprints,
     )
     _assert_jobs_match_direct_construction(trace.captured_batches[0])
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
+    writer = completed.application_result
     matrix_path = tmp_path / "canonical-matrix.tsv"
-    write_alignment_matrix_tsv(matrix_path, writer)
+    render("matrix", matrix_path, writer)
     with matrix_path.open(encoding="utf-8", newline="") as handle:
         matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
     from xic_extractor.diagnostics.alignment_explanation_projection import (
@@ -350,8 +348,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 != ("no_search_eligible_discovery_input",)
                 for assessment in completed.method_assessments
             )
-            assert len(writer.clusters) == 3
-            assert len(tuple(writer_cells(writer))) == 3 * len(inputs.sample_stems)
+            assert len(written_groups(writer)) == 3
+            assert len(tuple(written_cells(writer))) == 3 * len(inputs.sample_stems)
             (matrix_row,) = matrix_rows
             assert matrix_row["S1"] == ""
             assert matrix_row["S2"]
@@ -367,7 +365,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert s4_cell.evidence_states == ("ms1_only_backfill_observation",)
             assert matrix_row["S4"]
         else:
-            assert len(tuple(writer_cells(writer))) == len(inputs.sample_stems)
+            assert len(tuple(written_cells(writer))) == len(inputs.sample_stems)
         close_and_verify_persisted_curves()
         return
     if case.nearby:
@@ -388,7 +386,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 "HOLD" if case.method_mode == "intersection" else "SUPPORT"
             )
         if case.method_mode == "intersection":
-            assert writer.clusters == ()
+            assert written_groups(writer) == ()
             assert all(
                 "incomplete_composite_requirement"
                 in fixture_assessment(result).content.reason_codes
@@ -407,7 +405,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             ) == [2]
             selected_cells = tuple(
                 (sample_stem, cell)
-                for _row, sample_stem, cell in writer_cells(writer)
+                for _row, sample_stem, cell in written_cells(writer)
                 if cell.selected_integration
             )
             assert {sample_stem for sample_stem, _cell in selected_cells} == set(
@@ -420,7 +418,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 assert cell.selected_integration.rt_apex_min == facts.apex_rt_min
             close_and_verify_persisted_curves()
             return
-    cells = tuple(writer_cells(writer))
+    cells = tuple(written_cells(writer))
     assert len(cells) == len(case.group_sizes) * len(inputs.sample_stems)
     for _row, sample_stem, cell in cells:
         if cell.selected_integration is None:
@@ -442,11 +440,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             [facts.area_counts_seconds] if expected_row_count else []
         )
     if case.nearby:
+        sources = written_source_candidates(tmp_path / "written", writer)
         assert (
             len(
                 {
-                    dict(row.source_candidate_ids).get(sample_stem)
-                    for row, sample_stem, _cell in writer_cells(writer)
+                    sources[row.group_hypothesis_id, sample_stem] or None
+                    for row, sample_stem, _cell in written_cells(writer)
                 }
             )
             == 2

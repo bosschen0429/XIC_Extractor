@@ -213,7 +213,7 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         for stems in (("A", "B", "S") if direct else ("A", "B"), ("C", "D"))
     )
     assert all(group.disposition == "established" for group in groups)
-    identities = tuple(group.membership for group in groups)
+    identities = tuple(groups)
     initial = CrossSampleGroupingResult(
         samples=fixture.samples,
         rt_frame=frame,

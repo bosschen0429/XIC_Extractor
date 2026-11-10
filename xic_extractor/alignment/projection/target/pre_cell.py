@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias, cast
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
+    CrossSamplePeakGroupHypothesis,
     group_member_subject_from_peak_hypothesis,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
@@ -41,10 +41,10 @@ class TargetRowBinding:
 
     variant: TargetRowBindingVariant
     target: ResolvedTargetDefinition
-    eligible_groups: tuple[CrossSampleGroupIdentity, ...]
+    eligible_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
 
     @property
-    def group(self) -> CrossSampleGroupIdentity | None:
+    def group(self) -> CrossSamplePeakGroupHypothesis | None:
         if self.variant == "bound":
             return self.eligible_groups[0]
         return None
@@ -153,14 +153,14 @@ def _eligible_groups(
     *,
     sample_by_id: dict[str, SampleMetadata],
     terminals: dict[str, TerminalSearchObservation],
-) -> tuple[CrossSampleGroupIdentity, ...]:
+) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     groups = finalized_alignment.final_population
     members_by_sample = {
         sample_id: _member_from_terminal(terminal=terminals[sample_id], sample=sample)
         for sample_id, sample in sample_by_id.items()
         if type(terminals[sample_id]) is ObservedSearchSubject
     }
-    eligible: list[CrossSampleGroupIdentity] = []
+    eligible: list[CrossSamplePeakGroupHypothesis] = []
     for group in groups:
         if group.disposition not in {"established", "provisional"}:
             continue
@@ -202,7 +202,7 @@ def _member_from_terminal(
 def _mint_row_binding(
     *,
     target: ResolvedTargetDefinition,
-    eligible_groups: tuple[CrossSampleGroupIdentity, ...],
+    eligible_groups: tuple[CrossSamplePeakGroupHypothesis, ...],
 ) -> TargetRowBinding:
     count = len(eligible_groups)
     sample_ids = tuple(

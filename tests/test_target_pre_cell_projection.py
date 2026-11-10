@@ -14,8 +14,8 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupIdentity,
     CrossSamplePartitionTransition,
+    CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.projection.target.pre_cell import (
     project_target_pre_cell,
@@ -174,7 +174,7 @@ def test_reversed_sample_order_and_no_observation_are_preserved(tmp_path: Path) 
 
 def _final_receipt(
     fixture: ProcessingIdentityNoRawFixture,
-    groups: tuple[CrossSampleGroupIdentity, ...],
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
 ) -> CrossSampleGroupingResult:
     population = tuple(sorted(groups, key=lambda group: group.group_hypothesis_id))
     return CrossSampleGroupingResult(

@@ -41,7 +41,7 @@ def _owner_handoff(tmp_path: Path):
         sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
     )
     assert spine.group is not None
-    group = spine.group.membership
+    group = spine.group
     return fixture, spine, _owner_handoff_for_cells(fixture, group, spine.cells)
 
 
@@ -121,7 +121,7 @@ def _not_planned_coverage(
     """Coverage shaped like CID-NL completion: no planned requests or terminals."""
     positions = tuple(
         BackfillPlanningPosition(
-            group_identity=group,
+            group=group,
             sample=sample,
             planning_reason=planning_reason(group, sample),
         )
@@ -129,7 +129,7 @@ def _not_planned_coverage(
         for sample in samples
     )
     return BackfillEvaluationCoverageBatch(
-        group_identities=groups,
+        groups=groups,
         samples=samples,
         positions=positions,
     )
@@ -145,7 +145,7 @@ def _coverage_for_groups(
 ):
     cells = {
         (
-            cell.group_context.group_identity.group_hypothesis_id,
+            cell.group_context.group.group_hypothesis_id,
             cell.content.sample_key,
         ): cell
         for cell in predecessor_cells

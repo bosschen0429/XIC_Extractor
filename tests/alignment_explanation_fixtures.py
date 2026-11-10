@@ -67,10 +67,7 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
         execute_dense_partition,
     )
     from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.untargeted_finalized_matrix import (
-        project_completed_untarget_batch_writer_inputs,
-    )
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_tsvs
     from xic_extractor.presets.apply import apply_to_discovery
     from xic_extractor.presets.loader import load_preset
     from xic_extractor.sample_metadata import SampleMetadata
@@ -139,12 +136,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
         alignment_config=config,
     )
     completed = complete_dense_partition(batch, runtime, alignment_config=config)
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
     matrix = tmp_path / "matrix.tsv"
-    write_alignment_matrix_tsv(
-        matrix,
-        writer,
-    )
-    return completed, writer, candidates, matrix, config
+    write_alignment_tsvs({"matrix": matrix}, completed.application_result)
+    return completed, candidates, matrix, config

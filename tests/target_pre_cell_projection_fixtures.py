@@ -14,6 +14,7 @@ from tests.cell_observations_fixtures import (
 from tests.cross_sample_association_lineage_fixtures import (
     _final_receipt as _lineage_final_receipt,
 )
+from tests.group_fixtures import group_from_members
 from tests.processing_identity_no_raw_fixture import (
     ProcessingIdentityNoRawFixture,
     build_processing_identity_no_raw_fixture,
@@ -27,9 +28,6 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
 )
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
-)
-from xic_extractor.alignment.cross_sample.peak_groups import (
-    mint_cross_sample_group_identity,
 )
 from xic_extractor.alignment.result import (
     FinalizedScientificAlignment,
@@ -115,7 +113,7 @@ def _finalized_case(
         target=fixture.target,
         sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
     )
-    predecessor = spine.group.membership
+    predecessor = spine.group
     member_by_stem = {
         sample.raw_stem: next(
             member
@@ -142,7 +140,7 @@ def _finalized_case(
         if not members:
             members.extend(predecessor.member_subjects)
         groups.append(
-            mint_cross_sample_group_identity(
+            group_from_members(
                 member_subjects=tuple(members),
                 disposition=disposition,
             )

@@ -28,9 +28,7 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.projection.target.post_cell import (
         TargetPostCellProjection,
     )
-    from xic_extractor.alignment.projection.untarget.matrix import (
-        UntargetMatrixProjection,
-    )
+    from xic_extractor.alignment.projection.untarget.matrix import GroupCells
 
 
 class ApplicationResultContractError(ValueError):
@@ -72,8 +70,10 @@ class FinalizedTargetApplicationResult:
 
 @dataclass(frozen=True, slots=True)
 class FinalizedUntargetApplicationResult:
+    """The finalized groups, each with its cells in canonical sample order."""
+
     scientific_core: FinalizedScientificAlignment
-    completed_projection: UntargetMatrixProjection
+    group_cells: tuple[GroupCells, ...]
 
     @property
     def variant(self) -> Literal["untargeted"]:
@@ -152,26 +152,6 @@ class FinalizedUntargetBatchApplicationResult:
             for content in member.physical_peaks
         )
 
-    @property
-    def rows(self) -> tuple[object, ...]:
-        return tuple(
-            row for child in self.children for row in child.completed_projection.rows
-        )
-
-    @property
-    def decisions(self) -> tuple[object, ...]:
-        return tuple(
-            decision
-            for child in self.children
-            for decision in child.completed_projection.decisions
-        )
-
-    @property
-    def lineage(self) -> tuple[object, ...]:
-        return tuple(
-            edge for child in self.children for edge in child.scientific_core.lineage
-        )
-
 
 FinalizedApplicationResult: TypeAlias = (
     FinalizedTargetApplicationResult
@@ -202,8 +182,8 @@ def _require_batch_population(
         actual_subjects.update(
             provider.method_subject_id for provider in core.scope.evidence_providers
         )
-        for row in child.completed_projection.rows:
-            group_id = row.group.group_hypothesis_id
+        for group, _cells in child.group_cells:
+            group_id = group.group_hypothesis_id
             if group_id in seen_groups:
                 raise ApplicationResultContractError(
                     "Untarget batch row identity conflicts across children"

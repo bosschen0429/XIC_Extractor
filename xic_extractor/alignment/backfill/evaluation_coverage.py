@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING, Literal
 from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
 )
-from xic_extractor.alignment.cross_sample.peak_groups import CrossSampleGroupIdentity
+from xic_extractor.alignment.cross_sample.peak_groups import (
+    CrossSamplePeakGroupHypothesis,
+)
 from xic_extractor.sample_metadata import SampleMetadata
 
 if TYPE_CHECKING:
@@ -53,7 +55,7 @@ class BackfillNoRequestDecision:
 
 @dataclass(frozen=True, slots=True)
 class BackfillPlanningPosition:
-    group_identity: CrossSampleGroupIdentity
+    group: CrossSamplePeakGroupHypothesis
     sample: SampleMetadata
     planning_reason: BackfillPlanningReason
     no_request_decision: BackfillNoRequestDecision | None = None
@@ -61,14 +63,14 @@ class BackfillPlanningPosition:
     @property
     def key(self) -> tuple[str, str]:
         return (
-            self.group_identity.group_hypothesis_id,
+            self.group.group_hypothesis_id,
             self.sample.sample_name,
         )
 
 
 @dataclass(frozen=True, slots=True)
 class BackfillEvaluationCoverageBatch:
-    group_identities: tuple[CrossSampleGroupIdentity, ...]
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...]
     samples: tuple[SampleMetadata, ...]
     positions: tuple[BackfillPlanningPosition, ...]
 

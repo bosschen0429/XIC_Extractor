@@ -115,7 +115,6 @@ def plan_grouped_cid_nl_backfills(
                     }
                 ),
             )
-            assert group.group_center_rt is not None
             trajectory = workset.grouping_scope.peak_trajectories.trajectory_for(
                 group.owners
             )

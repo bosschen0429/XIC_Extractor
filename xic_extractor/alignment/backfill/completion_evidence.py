@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from xic_extractor.acquisition_contract import TraceCoordinate
-from xic_extractor.alignment.cross_sample.peak_groups import CrossSampleGroupIdentity
+from xic_extractor.alignment.cross_sample.peak_groups import (
+    CrossSamplePeakGroupHypothesis,
+)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
@@ -17,7 +19,7 @@ class BackfillCompletionProjection:
     """Runtime-issued completion evidence; it makes no physical absence claim."""
 
     sample: SampleMetadata
-    group_identity: CrossSampleGroupIdentity
+    group: CrossSamplePeakGroupHypothesis
     group_center_mz: float
     group_center_rt: float
     query_rt: float

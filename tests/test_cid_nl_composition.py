@@ -4,7 +4,12 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from tests.alignment_pipeline_helpers import writer_cells
+from tests.alignment_pipeline_helpers import (
+    render,
+    written_cells,
+    written_groups,
+    written_rows,
+)
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
@@ -24,10 +29,6 @@ from xic_extractor.alignment.edge_scoring import (
     evaluate_owner_edge as _evaluate_owner_edge,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.alignment.untargeted_finalized_matrix import (
-    project_completed_untarget_batch_writer_inputs,
-)
-from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata
@@ -183,25 +184,20 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
     completed = complete_dense_partition(
         batch, runtime, alignment_config=alignment_config
     )
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result
-    )
+    writer = completed.application_result
     if scenario == "pooled":
         assert all(item.content.method_result == "HOLD" for item in by_sample.values())
-        assert not writer.clusters
+        assert not written_groups(writer)
         _assert_unsupported_exclusion_closes_exact_coverage(completed)
         destination = tmp_path / "empty-matrix.tsv"
-        write_alignment_matrix_tsv(
-            destination,
-            writer,
-        )
+        render("matrix", destination, writer)
         with destination.open(encoding="utf-8-sig", newline="") as handle:
             reader = csv.DictReader(handle, delimiter="\t")
             assert {"S1", "S2"}.issubset(reader.fieldnames)
             assert list(reader) == []
         return
-    assert len(writer.clusters) == 1
-    cells = tuple(writer_cells(writer))
+    assert len(written_groups(writer)) == 1
+    cells = tuple(written_cells(writer))
     assert len(cells) == len(paths)
     assert all(
         (cell.value is not None)
@@ -214,7 +210,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         for _row, sample_stem, cell in cells
     )
     destination = tmp_path / "matrix.tsv"
-    write_alignment_matrix_tsv(destination, writer)
+    render("matrix", destination, writer)
     with destination.open(encoding="utf-8-sig", newline="") as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
     assert len(rows) == 1
@@ -248,10 +244,14 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         )
         assert recovered_cell.predecessor_cells == ()
         assert [
-            association.position.group_identity.group_hypothesis_id
+            association.position.group.group_hypothesis_id
             for association in recovered_cell.position_associations
         ] == [before.group_hypothesis_id]
-        assert "S4" not in dict(writer.clusters[0].source_candidate_ids)
+        assert all(
+            cell["source_candidate_id"] == ""
+            for cell in written_rows(tmp_path / "written", writer)["cells"]
+            if cell["sample_stem"] == "S4"
+        )
     if scenario == "different_tags":
         _assert_composite_labels_cannot_grant_membership(batch, runtime)
     if scenario == "one_scan":

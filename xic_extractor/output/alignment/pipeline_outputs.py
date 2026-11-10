@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,13 +25,6 @@ from xic_extractor.alignment.backfill.scope import (
 from xic_extractor.alignment.config import (
     BackfillXicBackend,
 )
-from xic_extractor.alignment.untargeted_finalized_matrix import (
-    AlignmentMatrix,
-    FinalizedUntargetMatrixRow,
-    completed_untarget_batch_sample_order,
-    iter_completed_untarget_batch_writer_inputs,
-    project_completed_untarget_batch_writer_inputs,
-)
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -43,14 +36,7 @@ from xic_extractor.output.alignment.output_levels import (
     AlignmentOutputLevel,
     artifact_names_for_output_level,
 )
-from xic_extractor.output.alignment.tsv_writer import (
-    write_alignment_backfill_cell_evidence_tsv,
-    write_alignment_cells_tsv,
-    write_alignment_matrix_tsv,
-    write_alignment_review_tsv,
-    write_alignment_status_matrix_tsv,
-    write_alignment_tsv_row_batches,
-)
+from xic_extractor.output.alignment.tsv_writer import write_alignment_tsvs
 
 
 @dataclass(frozen=True)
@@ -182,119 +168,9 @@ def write_completed_untargeted_outputs_atomic(
     membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
     before_write: Callable[[], None] | None = None,
 ) -> int:
-    """Publish completed matrix facts through the selected atomic output path."""
-    stream_outputs = supports_streamed_untargeted_outputs(outputs)
-    matrix = None
-    if not stream_outputs:
-        with timing_recorder.stage("alignment.project_outputs"):
-            matrix = project_completed_untarget_batch_writer_inputs(
-                completed,
-                consume_child=consume_child,
-                ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
-                membership_risks_by_owner=membership_risks_by_owner,
-            )
+    """Render every requested TSV in one pass, then publish them atomically."""
     if before_write is not None:
         before_write()
-    with timing_recorder.stage("alignment.write_outputs"):
-        if stream_outputs:
-            return write_streamed_untargeted_outputs_atomic(
-                outputs,
-                iter_completed_untarget_batch_writer_inputs(
-                    completed,
-                    consume_child=consume_child,
-                    ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
-                    membership_risks_by_owner=membership_risks_by_owner,
-                ),
-                sample_order=completed_untarget_batch_sample_order(completed),
-                metadata=metadata,
-                timing_recorder=timing_recorder,
-            )
-        assert matrix is not None
-        write_outputs_atomic(
-            outputs,
-            matrix,
-            metadata=metadata,
-            timing_recorder=timing_recorder,
-        )
-        return len(matrix.clusters)
-
-
-def write_outputs_atomic(
-    outputs: AlignmentRunOutputs,
-    matrix: AlignmentMatrix,
-    *,
-    metadata: dict[str, str],
-    timing_recorder: TimingRecorder | None = None,
-) -> None:
-    output_paths_and_writers: list[tuple[Path, Callable[[Path], Path]]] = []
-    recorder = (
-        timing_recorder
-        if timing_recorder is not None and timing_recorder.instrument_writers
-        else TimingRecorder.disabled("writer")
-    )
-    if outputs.matrix_tsv is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.matrix_tsv,
-                lambda path: write_alignment_matrix_tsv(path, matrix),
-            ),
-        )
-    if outputs.review_tsv is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.review_tsv,
-                lambda path: write_alignment_review_tsv(path, matrix),
-            ),
-        )
-    if outputs.cells_tsv is not None:
-        output_paths_and_writers.append(
-            (outputs.cells_tsv, lambda path: write_alignment_cells_tsv(path, matrix)),
-        )
-    if outputs.backfill_cell_evidence_tsv is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.backfill_cell_evidence_tsv,
-                lambda path: write_alignment_backfill_cell_evidence_tsv(path, matrix),
-            ),
-        )
-    if outputs.status_matrix_tsv is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.status_matrix_tsv,
-                lambda path: write_alignment_status_matrix_tsv(path, matrix),
-            )
-        )
-    if outputs.run_metadata_json is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.run_metadata_json,
-                lambda path: _write_metadata_json(path, metadata),
-            ),
-        )
-    _write_artifacts_atomic(
-        output_paths_and_writers,
-        recorder=recorder,
-    )
-
-
-def supports_streamed_untargeted_outputs(outputs: AlignmentRunOutputs) -> bool:
-    """TSV-only finalized output needs no global cell or decision population."""
-
-    return outputs.matrix_tsv is not None and outputs.status_matrix_tsv is None
-
-
-def write_streamed_untargeted_outputs_atomic(
-    outputs: AlignmentRunOutputs,
-    rows: Iterable[FinalizedUntargetMatrixRow],
-    *,
-    sample_order: tuple[str, ...],
-    metadata: dict[str, str],
-    timing_recorder: TimingRecorder,
-) -> int:
-    """Render finalized rows once, then use the existing publication transaction."""
-
-    if not supports_streamed_untargeted_outputs(outputs):
-        raise ValueError("requested output consumer requires a materialized matrix")
     row_paths = {
         name: path
         for name, path in (
@@ -302,6 +178,7 @@ def write_streamed_untargeted_outputs_atomic(
             ("review", outputs.review_tsv),
             ("backfill", outputs.backfill_cell_evidence_tsv),
             ("cells", outputs.cells_tsv),
+            ("status", outputs.status_matrix_tsv),
         )
         if path is not None
     }
@@ -312,77 +189,56 @@ def write_streamed_untargeted_outputs_atomic(
 
     def render_all(temp_paths: Mapping[Path, Path]) -> None:
         nonlocal row_count
-        row_count = write_alignment_tsv_row_batches(
+        row_count = write_alignment_tsvs(
             {name: temp_paths[path] for name, path in row_paths.items()},
-            rows,
-            sample_order=sample_order,
+            completed,
+            consume_child=consume_child,
+            ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
+            membership_risks_by_owner=membership_risks_by_owner,
         )
         if outputs.run_metadata_json is not None:
             _write_metadata_json(temp_paths[outputs.run_metadata_json], metadata)
 
-    _write_artifacts_atomic(
-        [(path, None) for path in paths],
-        recorder=(
-            timing_recorder
-            if timing_recorder.instrument_writers
-            else TimingRecorder.disabled("writer")
-        ),
-        render_all=render_all,
-    )
+    with timing_recorder.stage("alignment.write_outputs"):
+        _write_artifacts_atomic(
+            paths,
+            recorder=(
+                timing_recorder
+                if timing_recorder.instrument_writers
+                else TimingRecorder.disabled("writer")
+            ),
+            render_all=render_all,
+        )
     return row_count
 
 
 def _write_artifacts_atomic(
-    output_paths_and_writers: Sequence[tuple[Path, Callable[[Path], Path] | None]],
+    final_paths: Sequence[Path],
     *,
     recorder: TimingRecorder,
-    render_all: Callable[[Mapping[Path, Path]], None] | None = None,
+    render_all: Callable[[Mapping[Path, Path]], None],
 ) -> None:
-    temp_paths = [
-        _temp_path(final_path) for final_path, _writer in output_paths_and_writers
-    ]
-    backup_paths = [
-        _backup_path(final_path) for final_path, _writer in output_paths_and_writers
-    ]
+    temp_paths = [_temp_path(final_path) for final_path in final_paths]
+    backup_paths = [_backup_path(final_path) for final_path in final_paths]
     backups: list[tuple[Path, Path]] = []
     replaced_paths: list[Path] = []
     try:
-        if render_all is not None:
-            with recorder.stage("writer.streamed_rows.render"):
-                render_all(
-                    {path: _temp_path(path) for path, _ in output_paths_and_writers}
-                )
-        for final_path, writer in output_paths_and_writers:
+        with recorder.stage("writer.streamed_rows.render"):
+            render_all({path: _temp_path(path) for path in final_paths})
+        for final_path in final_paths:
             temp_path = _temp_path(final_path)
             artifact = _writer_artifact_name(final_path)
-            render_elapsed = None
-            if render_all is None:
-                with recorder.stage(f"writer.{artifact}.render") as stage:
-                    assert writer is not None
-                    writer(temp_path)
-                    stage.metrics["bytes"] = (
-                        temp_path.stat().st_size if temp_path.exists() else None
-                    )
-                    stage.metrics["availability"] = "partial"
-                    stage.metrics["reason"] = (
-                        "renderer combines serialization and temp-file write"
-                    )
-                render_elapsed = stage.elapsed_sec
             rendered_bytes = temp_path.stat().st_size if temp_path.exists() else None
             recorder.observe(
                 "writer_render_time_sec",
-                value=render_elapsed,
+                value=None,
                 scope=artifact,
                 unit="seconds",
                 source="alignment.pipeline_outputs",
-                availability="partial" if render_all is None else "unavailable",
+                availability="unavailable",
                 reason=(
-                    "render timing includes the renderer's temp-file write"
-                    if render_all is None
-                    else (
-                        "one shared streamed render is measured by "
-                        "writer.streamed_rows.render"
-                    )
+                    "one shared streamed render is measured by "
+                    "writer.streamed_rows.render"
                 ),
             )
             recorder.observe(
@@ -418,13 +274,13 @@ def _write_artifacts_atomic(
                     "phase cannot be separated without changing writer behavior"
                 ),
             )
-        for final_path, _writer in output_paths_and_writers:
+        for final_path in final_paths:
             backup_path = _backup_path(final_path)
             backup_path.unlink(missing_ok=True)
             if final_path.exists():
                 final_path.replace(backup_path)
                 backups.append((final_path, backup_path))
-        for final_path, _writer in output_paths_and_writers:
+        for final_path in final_paths:
             temp_path = _temp_path(final_path)
             artifact = _writer_artifact_name(final_path)
             with recorder.stage(f"writer.{artifact}.rename") as stage:

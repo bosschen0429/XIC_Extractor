@@ -7,7 +7,6 @@ from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupIdentity,
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.rt_frame import RtFrame
@@ -36,10 +35,6 @@ def select_cid_nl_group_backfill_subject(
 ) -> CidNlMethodSubject:
     """Select the same canonical search subject before and after cell assembly."""
     center = group.group_center_mz
-    if center is None:
-        raise CellObservationContractError(
-            "group backfill subject requires a finite group center m/z"
-        )
     return min(
         subjects,
         key=lambda subject: (
@@ -92,10 +87,6 @@ class CidNlCellGroupContext:
             select_cid_nl_group_backfill_subject(self.group, subjects),
         )
         object.__setattr__(self, "_owner_ids", tuple(sorted(self.group.owner_ids)))
-
-    @property
-    def group_identity(self) -> CrossSampleGroupIdentity:
-        return self.group.membership
 
     @property
     def method_subjects(self) -> tuple[CidNlMethodSubject, ...]:

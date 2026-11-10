@@ -471,8 +471,8 @@ def write_grouping_result(
         group_rows.append(
             {
                 "group_id": group.group_hypothesis_id,
-                "mz": group.family_center_mz,
-                "rt": group.family_center_rt,
+                "mz": group.group_center_mz,
+                "rt": group.group_center_rt,
                 "sample_count": len({owner.sample_stem for owner in group.owners}),
                 "disposition": group.disposition,
                 "basis": basis.basis if basis else "",

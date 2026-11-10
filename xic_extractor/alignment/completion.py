@@ -361,12 +361,12 @@ def _finish_variant(
 
         untarget_decisions = decide_group_cell_population(scientific)
         stage = WorkflowStage.POST_CELL_PROJECTION
-        untarget_projection = project_untarget_matrix(scientific, untarget_decisions)
+        group_cells = project_untarget_matrix(scientific, untarget_decisions)
         stage = WorkflowStage.APPLICATION_RESULT
         # No adapter callback intervenes between these owner completions.
         return FinalizedUntargetApplicationResult(
             scientific_core=scientific,
-            completed_projection=untarget_projection,
+            group_cells=group_cells,
         )
     except Exception as exc:
         raise WorkflowStageFailure(stage, exc) from exc

@@ -19,7 +19,7 @@ from xic_extractor.alignment.projection.target.post_cell import (
     project_target_post_cell,
 )
 from xic_extractor.alignment.projection.target.pre_cell import project_target_pre_cell
-from xic_extractor.alignment.projection.untarget import UntargetMatrixProjection
+from xic_extractor.alignment.projection.untarget import GroupCells
 from xic_extractor.alignment.projection.untarget import matrix as untarget_matrix
 from xic_extractor.alignment.result import (
     FinalizedTargetApplicationResult,
@@ -49,7 +49,7 @@ def _target_completion(
 def _untarget_completion(
     root: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> tuple[object, UntargetMatrixProjection]:
+) -> tuple[object, tuple[GroupCells, ...]]:
     pre_cell, _decisions, completed = _completed_projection(
         root,
         monkeypatch,
@@ -104,14 +104,14 @@ def test_untarget_result_binds_complete_rows_without_matrix_reconstruction(
 
     result = FinalizedUntargetApplicationResult(
         scientific_core=cast(Any, scientific_core),
-        completed_projection=projection,
+        group_cells=projection,
     )
 
     assert type(result) is FinalizedUntargetApplicationResult
     assert result.variant == "untargeted"
     assert result.canonical_samples == scientific_core.canonical_samples
     assert result.scientific_core is scientific_core
-    assert result.completed_projection is projection
+    assert result.group_cells is projection
 
 
 def test_untarget_result_consumes_projection_without_recomputing_it(
@@ -136,11 +136,11 @@ def test_untarget_result_consumes_projection_without_recomputing_it(
 
     result = FinalizedUntargetApplicationResult(
         scientific_core=cast(Any, scientific_core),
-        completed_projection=projection,
+        group_cells=projection,
     )
 
     assert result.scientific_core is scientific_core
-    assert result.completed_projection is projection
+    assert result.group_cells is projection
 
 
 def _restore_test_mapping_proxy(values):
@@ -168,14 +168,14 @@ def test_untarget_owner_pickle_rebinds_completion(
     restored_core, restored_projection = _pickle_completed_owner((core, projection))
     assert restored_core is not core
     assert restored_projection is not projection
-    assert restored_projection.finalized_alignment is restored_core
     result = FinalizedUntargetApplicationResult(
         scientific_core=restored_core,
-        completed_projection=restored_projection,
+        group_cells=restored_projection,
     )
     assert result.scientific_core is restored_core
-    assert result.completed_projection is restored_projection
-    assert [d.variant for d in restored_projection.rows[0].decisions] == [
-        d.variant for d in projection.rows[0].decisions
-    ]
-    assert restored_projection.rows[0].route == projection.rows[0].route
+    assert result.group_cells is restored_projection
+    (restored_group, restored_cells), *_ = restored_projection
+    (group, cells), *_ = projection
+    assert [d.variant for d in restored_cells] == [d.variant for d in cells]
+    assert restored_group == group
+    assert restored_group.destination == group.destination

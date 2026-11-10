@@ -263,7 +263,7 @@ def _finalization_inputs(
     fixture, spine, handoff = _owner_handoff(tmp_path)
     receipt = _final_receipt(
         SimpleNamespace(context=SimpleNamespace(samples=fixture.samples)),
-        predecessors=handoff.coverage.group_identities,
+        predecessors=handoff.coverage.groups,
         successors=handoff.final_population,
     )
     method_subject = spine.cells[0].group_context.method_subject

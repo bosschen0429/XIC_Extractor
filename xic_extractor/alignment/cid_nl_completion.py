@@ -345,10 +345,7 @@ def _prepare_cell_coverage(
                 method_subject_id = (
                     cell.method_assessment.content.method_subject.method_subject_id
                 )
-                if (
-                    facts.group_context.group.group_center_rt is None
-                    or (*key, method_subject_id) not in group_backfills
-                ):
+                if (*key, method_subject_id) not in group_backfills:
                     continue
             conservative_positions.append((sample, facts))
     return _CellCoveragePlan(cell_by_key, tuple(conservative_positions), True)
@@ -394,7 +391,7 @@ def _close_cell_coverage(
     cell_by_key = plan.cells
     completions = {
         (
-            item.group_identity.group_hypothesis_id,
+            item.group.group_hypothesis_id,
             item.sample.sample_name,
             item.backfill_assessment.content.method_subject.method_subject_id,
         ): item
@@ -402,7 +399,7 @@ def _close_cell_coverage(
     }
     no_request_decisions = {}
     for sample, facts in plan.conservative_positions:
-        group = facts.group_context.group_identity
+        group = facts.group_context.group
         key = (group.group_hypothesis_id, sample.sample_name)
         completion = None
         universes: tuple[ConservativeBackfillCandidateUniverse, ...] = ()
@@ -424,7 +421,7 @@ def _close_cell_coverage(
         )
     positions = tuple(
         BackfillPlanningPosition(
-            group_identity=group,
+            group=group,
             sample=sample,
             planning_reason=_cell_planning_reason(
                 cell, no_request, backfill_enabled=plan.backfill_enabled
@@ -439,7 +436,7 @@ def _close_cell_coverage(
         )
     )
     return BackfillEvaluationCoverageBatch(
-        group_identities=repair_groups,
+        groups=repair_groups,
         samples=samples,
         positions=positions,
     )

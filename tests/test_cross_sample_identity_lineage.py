@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from tests.cid_nl_peak_support_no_raw_fixture import cid_nl_peak
+from tests.group_fixtures import group_from_members
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
@@ -34,13 +35,8 @@ def _subjects(tmp_path, *sample_stems: str):
 
 
 def test_group_identity_is_order_invariant(tmp_path) -> None:
-    from xic_extractor.alignment.cross_sample.peak_groups import (
-        mint_cross_sample_group_identity,
-    )
 
     fixture, members = _subjects(tmp_path, "sample-a", "sample-b")
-    forward = mint_cross_sample_group_identity(member_subjects=members)
-    reversed_group = mint_cross_sample_group_identity(
-        member_subjects=tuple(reversed(members))
-    )
+    forward = group_from_members(member_subjects=members)
+    reversed_group = group_from_members(member_subjects=tuple(reversed(members)))
     assert forward == reversed_group

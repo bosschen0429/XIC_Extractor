@@ -24,6 +24,7 @@ from tests.cell_observations_fixtures import (
 )
 from tests.cid_nl_evidence_spine_fixtures import _completed_receipt
 from tests.cid_nl_peak_support_no_raw_fixture import PRECURSOR_MZ
+from tests.group_fixtures import group_from_members
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
@@ -46,9 +47,6 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
 )
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
-)
-from xic_extractor.alignment.cross_sample.peak_groups import (
-    mint_cross_sample_group_identity,
 )
 from xic_extractor.alignment.projection.target.pre_cell import project_target_pre_cell
 from xic_extractor.alignment.projection.untarget import (
@@ -225,9 +223,12 @@ def test_group_population_preserves_complete_member_and_nonmember_positions(
         else:
             assert payload.variant == "not_searched"
             assert integration is None
-    projection = project_untarget_matrix(alignment, answers)
+    group_cells = project_untarget_matrix(alignment, answers)
     member = next(
-        d for d in projection.decisions if d.subject.member_subject is not None
+        d
+        for _group, cells in group_cells
+        for d in cells
+        if d.subject.member_subject is not None
     )
     integration = member.selected_integration
     original_area = integration.area_raw_counts_seconds
@@ -314,7 +315,7 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
     )
     handoff = _owner_handoff_for_cells(
         fixture,
-        handoff.coverage.group_identities[0],
+        handoff.coverage.groups[0],
         predecessor_cells,
     )
     negative_cells = compose_final_group_cell_observation_population(
@@ -376,9 +377,9 @@ def test_group_merge_selects_one_direct_integration_among_lanes(
         target=fixture.target,
         sample_assessments=((samples[1], assessments[1]),),
     )
-    left = left_spine.group.membership
-    right = right_spine.group.membership
-    merged = mint_cross_sample_group_identity(
+    left = left_spine.group
+    right = right_spine.group
+    merged = group_from_members(
         member_subjects=left.member_subjects + right.member_subjects,
     )
     # CID-NL composition gives each spine a cell only for its searched sample.
@@ -442,11 +443,11 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
         target=fixture.target,
         sample_assessments=tuple(zip(samples, assessments, strict=True)),
     )
-    predecessor = spine.group.membership
-    left = mint_cross_sample_group_identity(
+    predecessor = spine.group
+    left = group_from_members(
         member_subjects=(predecessor.member_subjects[0],),
     )
-    right = mint_cross_sample_group_identity(
+    right = group_from_members(
         member_subjects=(predecessor.member_subjects[1],),
     )
     coverage = _coverage_for_groups(

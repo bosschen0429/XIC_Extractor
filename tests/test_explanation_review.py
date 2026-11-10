@@ -43,7 +43,7 @@ from xic_workbench.acquisition import (
 
 
 def test_old_query_index_is_rejected_without_conversion(tmp_path, monkeypatch):
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     source = write_alignment_explanation(
@@ -82,7 +82,7 @@ def test_old_query_index_is_rejected_without_conversion(tmp_path, monkeypatch):
 def test_explanation_from_an_older_alignment_is_rejected_on_open(
     tmp_path, monkeypatch, stale_content
 ):
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     source = write_alignment_explanation(
@@ -239,7 +239,7 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
 def test_default_review_keeps_values_and_query_without_curves(
     tmp_path, monkeypatch, scenario, missing_cell_column
 ):
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, scenario
     )
     report = write_alignment_explanation(
@@ -263,8 +263,8 @@ def test_default_review_keeps_values_and_query_without_curves(
             getattr(decision, "value", None),
         )
         for child in completed.application_result.children
-        for row in child.completed_projection.rows
-        for decision in row.decisions
+        for _group, cells in child.group_cells
+        for decision in cells
     )
     actual = sorted(
         (row["sample_key"], row["variant"], row["value"])
@@ -335,7 +335,7 @@ def test_default_review_keeps_values_and_query_without_curves(
 def test_selected_curves_are_explicit_and_other_ranges_stay_small(
     tmp_path, monkeypatch
 ):
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     arguments = dict(
@@ -361,7 +361,7 @@ def test_selected_curves_are_explicit_and_other_ranges_stay_small(
 
 
 def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monkeypatch):
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     full = write_alignment_explanation(
@@ -412,7 +412,7 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
 def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
     tmp_path, monkeypatch
 ):
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     review = write_alignment_explanation(
@@ -456,7 +456,7 @@ def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
 
 
 def _two_sample_curve_review(tmp_path, monkeypatch):
-    completed, writer, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     review = write_alignment_explanation(
@@ -946,7 +946,7 @@ def test_produced_membership_risk_reaches_final_samples(
         build_batch_rt_calibration,
     )
 
-    completed, _, candidates, matrix, config = run_alignment_fixture(
+    completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     # Re-evaluate the real owners with a frozen, independently measured sparse
@@ -1046,7 +1046,7 @@ def test_production_publication_automatically_includes_recorded_risk(
     )
     from xic_extractor.execution.timing import TimingRecorder
 
-    completed, _, candidates, _, config = run_alignment_fixture(
+    completed, candidates, _, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     completed = completed.bind_publication_inputs(

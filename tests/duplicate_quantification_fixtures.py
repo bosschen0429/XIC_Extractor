@@ -4,16 +4,17 @@ from tests.alignment_explanation_fixtures import run_alignment_fixture
 from xic_extractor.diagnostics.alignment_explanation_projection import (
     write_alignment_explanation,
 )
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.output_levels import EXPLANATION_ARTIFACT_NAME
 from xic_extractor.output.alignment.pipeline_outputs import (
     output_paths,
-    write_outputs_atomic,
+    write_completed_untargeted_outputs_atomic,
 )
 
 
 def publish_owner_run(tmp_path, monkeypatch, level):
     """A published Alignment folder of one owner run, with its explanation."""
-    completed, writer, candidates, _, config = run_alignment_fixture(
+    completed, candidates, _, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
     )
     output_dir = tmp_path / "published"
@@ -23,10 +24,11 @@ def publish_owner_run(tmp_path, monkeypatch, level):
         emit_alignment_cells=False,
         emit_alignment_status_matrix=False,
     )
-    write_outputs_atomic(
+    write_completed_untargeted_outputs_atomic(
         outputs,
-        writer,
+        completed.application_result,
         metadata={},
+        timing_recorder=TimingRecorder.disabled("writer"),
     )
     write_alignment_explanation(
         output_dir / EXPLANATION_ARTIFACT_NAME,

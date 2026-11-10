@@ -371,8 +371,6 @@ def _validate_group_owners(
 ) -> None:
     owner_ids: list[str] = []
     for group in groups:
-        if not isinstance(group.owner_ids, tuple):
-            raise ValueError("group owner_ids must be a tuple")
         group_owner_ids = tuple(
             _required_text(owner_id, field="group owner_ids")
             for owner_id in group.owner_ids
