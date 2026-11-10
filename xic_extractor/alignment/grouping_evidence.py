@@ -98,9 +98,9 @@ def _calibrated_regions(
 def _observed_regions(members: Sequence[SampleLocalMS1Owner]) -> dict[str, _Region]:
     return {
         member.owner_id: (
-            member.owner_peak_start_rt,
-            member.owner_apex_rt,
-            member.owner_peak_end_rt,
+            member.peak.integration.rt_left_min,
+            member.peak.integration.rt_apex_min,
+            member.peak.integration.rt_right_min,
         )
         for member in members
     }
@@ -187,9 +187,7 @@ def owner_uncertainty_reason(
     config: AlignmentConfig,
     rules: GroupingRules,
 ) -> str:
-    if owner.is_provisional:
-        return "provisional_owner"
-    if owner.owner_area <= 0.0:
+    if owner.peak.integration.area_raw_counts_seconds <= 0.0:
         return "nonpositive_owner_area"
     if "ambiguous" in owner.assignment_reason:
         return "ambiguous_owner_assignment"

@@ -110,7 +110,7 @@ def cid_nl_index_queries(
     owner: SampleLocalMS1Owner, config: AlignmentConfig
 ) -> tuple[tuple[tuple[str, str], float, float], ...]:
     event = owner.primary_identity_event
-    axes = [("precursor", owner.precursor_mz, config.max_ppm)]
+    axes = [("precursor", owner.peak.mz, config.max_ppm)]
     if event is not None:
         axes.extend(
             (
@@ -258,8 +258,8 @@ def compatible_composite_owners(
             return False
         if (
             owner.raw_file != assessment.acquisition_source_id
-            or owner.selected_integration != peak.integration
-            or owner.precursor_mz != peak.mz
+            or owner.peak.integration != peak.integration
+            or owner.peak.mz != peak.mz
         ):
             return False
     return True
@@ -311,7 +311,7 @@ def _duplicate_context(
     if any(
         owner.assignment_reason == "owner_tail_assignment"
         or any(
-            abs(event.seed_rt - owner.owner_apex_rt) * 60.0
+            abs(event.seed_rt - owner.peak.integration.rt_apex_min) * 60.0
             > config.owner_apex_close_sec
             for event in owner.supporting_events
         )
@@ -345,7 +345,7 @@ def _index_query_alternatives(
         cid_nl_index_queries(owner, config),
     )
     if key := cid_nl_composition_index_key(owner):
-        alternatives += (((key, owner.precursor_mz, config.max_ppm),),)
+        alternatives += (((key, owner.peak.mz, config.max_ppm),),)
     return alternatives
 
 

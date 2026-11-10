@@ -22,6 +22,7 @@ from tests.cross_sample_association_lineage_fixtures import (
     _final_receipt as _lineage_final_receipt,
 )
 from tests.group_fixtures import group_from_members
+from tests.owner_peak_fixtures import bound_capture
 from tests.search_scope_capture_fixtures import _capture_binding, _peak_config
 from tests.untargeted_cid_nl_no_raw_fixture import (
     UntargetedCidNlNoRawFixture,
@@ -210,7 +211,10 @@ def _untarget_projection_inputs(
         capture_bindings=tuple(bindings),
     )
     captures = tuple(
-        capture_peak_hypotheses(scope=scope, candidate_id=item, trace=trace)
+        bound_capture(
+            capture_peak_hypotheses(scope=scope, candidate_id=item, trace=trace),
+            scope=scope,
+        )
         for item, trace in zip(candidate_ids, traces, strict=True)
     )
     alignment = finalizer_owner.finalize_scientific_alignment(

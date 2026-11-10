@@ -34,6 +34,9 @@ from xic_extractor.peak_detection.observations import (
     mint_physical_peak_observations,
     physical_peak_observation_integration,
 )
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    MeasuredPeakHypothesis,
+)
 from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
@@ -74,6 +77,7 @@ class SampleLocalCapture:
     physical_evaluation: PhysicalPeakEvaluation | None = None
     physical_selection_intensity: tuple[float, ...] | None = None
     physical_observation: PeakObservation | None = None
+    measured_hypothesis: MeasuredPeakHypothesis | None = None
 
 
 def capture_peak_hypotheses(
@@ -509,7 +513,7 @@ def bind_owner_backed_capture_hypothesis(
     capture: SampleLocalCapture,
     *,
     observation: PeakObservation,
-    hypothesis: PeakHypothesis,
+    hypothesis: MeasuredPeakHypothesis,
 ) -> SampleLocalCapture:
     """Bind the exact runtime-owned hypothesis to its already captured signal."""
 
@@ -517,17 +521,13 @@ def bind_owner_backed_capture_hypothesis(
         raise SampleLocalCaptureError("owner binding requires SampleLocalCapture")
     if (
         not isinstance(observation, PeakObservation)
-        or type(hypothesis) is not PeakHypothesis
+        or type(hypothesis) is not MeasuredPeakHypothesis
     ):
         raise SampleLocalCaptureError(
             "owner binding requires exact observation and hypothesis values"
         )
     selected = capture.selected_hypothesis
-    if (
-        selected is None
-        or observation not in hypothesis.peak_observation_refs
-        or hypothesis.integration != observation.integration
-    ):
+    if selected is None or hypothesis.peak != observation:
         raise SampleLocalCaptureError(
             "owner hypothesis does not bind the captured physical selection"
         )
@@ -545,11 +545,7 @@ def bind_owner_backed_capture_hypothesis(
         raise SampleLocalCaptureError(
             "owner hypothesis does not bind the captured physical selection"
         ) from exc
-    return replace(
-        capture,
-        hypotheses=(hypothesis,),
-        selected_hypothesis=hypothesis,
-    )
+    return replace(capture, measured_hypothesis=hypothesis)
 
 
 def _hypothesis_context(

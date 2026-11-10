@@ -528,7 +528,6 @@ def _owner(
     observed_loss: float = 116.0474,
     evidence_score: int = 80,
     seed_event_count: int = 2,
-    is_provisional: bool = False,
 ) -> SampleLocalMS1Owner:
     event = IdentityEvent(
         candidate_id=f"{sample_stem}#{suffix}",
@@ -557,21 +556,14 @@ def _owner(
         owner_id=f"OWN-{sample_stem}-{suffix}",
         sample_stem=sample_stem,
         raw_file=f"{sample_stem}.raw",
-        precursor_mz=precursor_mz,
-        owner_apex_rt=apex_rt,
-        owner_peak_start_rt=apex_rt - 0.05,
-        owner_peak_end_rt=apex_rt + 0.05,
-        owner_area=1_000.0,
-        owner_height=100.0,
+        peak=physical_peak,
         primary_identity_event=event,
         supporting_events=(),
         assignment_reason="owner_exact_apex_match",
-        selected_integration=_integration(apex_rt),
         cross_sample_member_subject=CrossSampleGroupMemberSubject(
             sample_key=f"test-sample:{sample_stem}",
             subject_kind="peak_hypothesis",
             subject_id=hypothesis_id,
             physical_peaks=(physical_peak,),
         ),
-        is_provisional=is_provisional,
     )

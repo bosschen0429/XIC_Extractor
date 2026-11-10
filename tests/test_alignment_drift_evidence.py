@@ -5,6 +5,7 @@ import pytest
 from tests.alignment_drift_evidence_fixtures import (
     _known_reference_workbook,
 )
+from tests.owner_peak_fixtures import with_peak
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.drift_evidence import (
     DriftEvidenceLookup,
@@ -96,7 +97,7 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
         # The identity source supplies no order-gap evidence; metadata must not
         # silently replace that absence when the two contexts are consolidated.
         assert frame.drift_injection_order_gap("early", "late") is None
-    assert tuple(owner.owner_apex_rt for owner in owners) == (8.0, 9.0)
+    assert tuple(owner.peak.integration.rt_apex_min for owner in owners) == (8.0, 9.0)
 
 
 def test_zero_rt_calibration_is_available_without_becoming_drift_pair_evidence():
@@ -335,11 +336,8 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
 
     assert_unavailable_pair_uses_only_raw(other, lookup)
     other_rt = replace(
-        late,
+        with_peak(late, apex_rt=9.5, start_rt=9.4, end_rt=9.6),
         owner_id="different-peak",
-        owner_apex_rt=9.5,
-        owner_peak_start_rt=9.4,
-        owner_peak_end_rt=9.6,
     )
     assert_unavailable_pair_uses_only_raw(other_rt, lookup)
     # An overlapping SUPPORT owner prevents a unique binding; removing it later
@@ -485,12 +483,12 @@ def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_pe
     competitor = _owner(
         "early",
         "other",
-        apex_rt=early.owner_apex_rt + 2,
+        apex_rt=early.peak.integration.rt_apex_min + 2,
         precursor_mz=600,
         product_mz=483.9526,
     )
     owners = (early, late, competitor)
-    original = tuple((o.owner_apex_rt, o.selected_integration) for o in owners)
+    original = tuple(o.peak for o in owners)
     universe = frozenset({"early", "late"})
     order = {"early": 10, "late": 40}
     lookup = reference.bind(owners, sample_universe=universe, injection_order=order)
@@ -511,7 +509,7 @@ def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_pe
         frozenset((early.owner_id, late.owner_id)),
         frozenset((competitor.owner_id,)),
     }
-    assert tuple((o.owner_apex_rt, o.selected_integration) for o in owners) == original
+    assert tuple(o.peak for o in owners) == original
 
 
 def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(

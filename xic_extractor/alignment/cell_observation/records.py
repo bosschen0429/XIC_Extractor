@@ -27,9 +27,9 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodResult,
     CidNlTechnicalState,
 )
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservation
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -64,7 +64,7 @@ class CellObservation:
     group_context: CidNlCellGroupContext = field(compare=False)
     method_assessment: CidNlMethodAssessment = field(compare=False)
     peak_observation: PeakObservation | None = field(compare=False)
-    peak_hypothesis: PeakHypothesis | None = field(compare=False)
+    peak_hypothesis: MeasuredPeakHypothesis | None = field(compare=False)
     outside_group: OutsideGroupCellRelation | None = None
     unassigned_support: bool = False
     outside_group_context: CidNlCellGroupContext | None = field(
@@ -89,10 +89,10 @@ def _direct_member_integration(
     member: CrossSampleGroupMemberSubject | None,
     canonical_sample: SampleMetadata,
     terminal_variant: TerminalObservationVariant,
-    terminal_hypothesis: PeakHypothesis | None,
+    terminal_hypothesis: MeasuredPeakHypothesis | None,
     method_assessment: CidNlMethodAssessment | None,
     peak_observation: PeakObservation | None,
-    peak_hypothesis: PeakHypothesis | None,
+    peak_hypothesis: MeasuredPeakHypothesis | None,
 ) -> IntegrationResult | None:
     if member is None:
         return None
@@ -106,19 +106,14 @@ def _direct_member_integration(
     ):
         direct_hypothesis = terminal_hypothesis
     if direct_hypothesis is not None:
-        if type(direct_hypothesis) is not PeakHypothesis or not (
-            direct_hypothesis.is_owner_backed
-        ):
+        if type(direct_hypothesis) is not MeasuredPeakHypothesis:
             raise CellObservationContractError(
                 "direct member hypothesis is not owner-backed"
             )
         if (
             member.subject_kind != "peak_hypothesis"
             or member.subject_id != direct_hypothesis.hypothesis_id
-            or any(
-                observation.sample_key != sample_key
-                for observation in direct_hypothesis.peak_observation_refs
-            )
+            or direct_hypothesis.peak.sample_key != sample_key
         ):
             raise CellObservationContractError(
                 "direct hypothesis does not mint the exact final member"
@@ -130,7 +125,7 @@ def _direct_member_integration(
                 raise CellObservationContractError(
                     "direct member hypothesis is outside the exact SUPPORT subset"
                 )
-        return direct_hypothesis.integration
+        return direct_hypothesis.peak.integration
     if peak_observation is not None:
         # Final members bind owner-backed hypotheses; an observation alone
         # cannot mint the exact member.
@@ -189,7 +184,7 @@ def mint_cell_observation(
     group_context: CidNlCellGroupContext,
     method_assessment: CidNlMethodAssessment,
     peak_observation: PeakObservation | None = None,
-    peak_hypothesis: PeakHypothesis | None = None,
+    peak_hypothesis: MeasuredPeakHypothesis | None = None,
     outside_group_context: CidNlCellGroupContext | None = None,
     unassigned_support: bool = False,
 ) -> CellObservation:

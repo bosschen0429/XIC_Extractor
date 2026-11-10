@@ -50,10 +50,10 @@ from xic_extractor.peak_detection.capture import (
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
 )
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
 )
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
     UntargetedSearchScope,
@@ -91,7 +91,7 @@ class CaptureWorkflowArguments:
     candidate_id: str
     trace: Trace
     owner_observation: PeakObservation | None = None
-    owner_hypothesis: PeakHypothesis | None = None
+    owner_hypothesis: MeasuredPeakHypothesis | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,9 +217,8 @@ def _compose_application_result(
                         "completed capture crossed its workflow scope or input"
                     )
                 if item.owner_hypothesis is not None and (
-                    capture.selected_hypothesis is not item.owner_hypothesis
-                    or item.owner_observation
-                    not in item.owner_hypothesis.peak_observation_refs
+                    capture.measured_hypothesis is not item.owner_hypothesis
+                    or item.owner_observation != item.owner_hypothesis.peak
                 ):
                     raise AlignmentWorkflowContractError(
                         "completed capture crossed its owner binding"

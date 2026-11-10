@@ -997,7 +997,8 @@ def test_produced_membership_risk_reaches_final_samples(
             assert estimate.method == "median_shift"
             assert estimate.anchor_count == 2
             assert estimate.rt_min == pytest.approx(
-                owner.owner_apex_rt - (0.1 if owner.sample_stem == "S2" else 0)
+                owner.peak.integration.rt_apex_min
+                - (0.1 if owner.sample_stem == "S2" else 0)
             )
     expected = {
         member.sample_key: json.loads(json.dumps(asdict(risks[member.subject_id])))

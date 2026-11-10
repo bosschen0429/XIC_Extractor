@@ -140,9 +140,7 @@ def resolve_istd_anchored_backfill(
                 group_context=group_context,
                 method_assessment=assessment,
                 peak_observation=(
-                    direct_by_sample[
-                        sample.sample_name
-                    ].hypothesis.peak_observation_refs[0]
+                    direct_by_sample[sample.sample_name].hypothesis.peak
                     if sample.sample_name in direct_by_sample
                     else None
                 ),
@@ -166,7 +164,7 @@ def resolve_istd_anchored_backfill(
             tuple(
                 (
                     support.sample.raw_stem,
-                    support.hypothesis.integration.rt_apex_min,
+                    support.hypothesis.peak.integration.rt_apex_min,
                 )
                 for support in direct_supports
             ),

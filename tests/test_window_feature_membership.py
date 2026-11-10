@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from tests.alignment_pipeline_helpers import resolved_elution_context
+from tests.owner_peak_fixtures import measured_peak, with_peak
 from tests.window_feature_membership_fixtures import (
     _synthetic_owner,
 )
@@ -37,7 +38,6 @@ from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
 )
-from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.ms1_shape_identity import prepare_local_peak_shape
 
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -113,12 +113,14 @@ def _owners(case: str) -> tuple[tuple[SampleLocalMS1Owner, ...], dict[str, int]]
                 owner_id=f"{case}:{index}",
                 sample_stem=sample,
                 raw_file=f"{sample}.raw",
-                precursor_mz=mz,
-                owner_apex_rt=rt,
-                owner_peak_start_rt=rt - 0.05,
-                owner_peak_end_rt=rt + 0.05,
-                owner_area=max(1.0, row["area"]),
-                owner_height=100.0,
+                peak=measured_peak(
+                    mz=mz,
+                    apex_rt=rt,
+                    start_rt=rt - 0.05,
+                    end_rt=rt + 0.05,
+                    area=max(1.0, row["area"]),
+                    height=100.0,
+                ),
                 primary_identity_event=event,
                 supporting_events=(),
                 assignment_reason="same_apex_window",
@@ -140,10 +142,10 @@ def _warp() -> BatchRtWarp:
 @pytest.mark.parametrize("reverse", (False, True))
 def test_calibrated_band_outweighs_free_shift_pattern_seed(reverse: bool) -> None:
     owners = tuple(
-        replace(
+        with_peak(
             _synthetic_owner(sample, owner_id, apex),
-            owner_peak_start_rt=start,
-            owner_peak_end_rt=end,
+            start_rt=start,
+            end_rt=end,
         )
         for sample, owner_id, apex, start, end in (
             ("a", "observed", 7.75, 7.50, 8.18),
@@ -196,10 +198,10 @@ def test_partial_region_calibration_keeps_supported_common_apices(
     reverse: bool,
 ) -> None:
     owners = tuple(
-        replace(
+        with_peak(
             _synthetic_owner(sample, owner_id, apex),
-            owner_peak_start_rt=apex - 0.15,
-            owner_peak_end_rt=apex + 0.15,
+            start_rt=apex - 0.15,
+            end_rt=apex + 0.15,
         )
         for sample, owner_id, apex in (
             ("a", "a-early", 10.0),
@@ -280,7 +282,8 @@ def test_unrelated_calibration_preserves_unsupported_raw_pattern(
         )
     )
     assert all(
-        frame.calibrated_rt_min(owner.sample_stem, owner.owner_apex_rt) is None
+        frame.calibrated_rt_min(owner.sample_stem, owner.peak.integration.rt_apex_min)
+        is None
         for owner in raw_owners
     )
     trajectories = resolve_peak_trajectories(
@@ -329,12 +332,12 @@ def test_retained_m298_configuration_preserves_sample_occupancy(
         ("b", "b-late", 10, 14.03733, 298.151085, 182.106867, 13.58118, 14.28465),
     )
     owners = tuple(
-        replace(
+        with_peak(
             _synthetic_owner(
                 sample, owner_id, apex, precursor_mz=mz, product_mz=product
             ),
-            owner_peak_start_rt=start,
-            owner_peak_end_rt=end,
+            start_rt=start,
+            end_rt=end,
         )
         for sample, owner_id, _, apex, mz, product, start, end in rows
     )
@@ -463,7 +466,10 @@ def test_peak_shape_contradiction_is_soft_only_for_final_membership(
             tracks=(
                 PeakTrajectory(
                     tuple(owner.owner_id for owner in owners),
-                    tuple((owner.sample_stem, owner.owner_apex_rt) for owner in owners),
+                    tuple(
+                        (owner.sample_stem, owner.peak.integration.rt_apex_min)
+                        for owner in owners
+                    ),
                 ),
             )
         )
@@ -528,15 +534,15 @@ def test_peak_regions_need_overlap_not_mutual_apex_containment(
     bootstrap: bool, right_start: float, joins: bool
 ) -> None:
     owners = (
-        replace(
+        with_peak(
             _synthetic_owner("left", "left", 10.0),
-            owner_peak_start_rt=9.8,
-            owner_peak_end_rt=10.25,
+            start_rt=9.8,
+            end_rt=10.25,
         ),
-        replace(
+        with_peak(
             _synthetic_owner("right", "right", 10.5),
-            owner_peak_start_rt=right_start,
-            owner_peak_end_rt=10.8,
+            start_rt=right_start,
+            end_rt=10.8,
         ),
     )
     frame = SampleRtFrame(
@@ -565,9 +571,11 @@ def test_final_mixed_frame_comparison_does_not_relax_backfill_regions():
     offsets = np.linspace(-0.6, 0.6, 121)
     owners = tuple(
         replace(
-            _synthetic_owner(sample, sample, apex),
-            owner_peak_start_rt=apex - half_width,
-            owner_peak_end_rt=apex + half_width,
+            with_peak(
+                _synthetic_owner(sample, sample, apex),
+                start_rt=apex - half_width,
+                end_rt=apex + half_width,
+            ),
             peak_shape=prepare_local_peak_shape(
                 offsets + apex,
                 np.exp(-0.5 * (offsets / width) ** 2),
@@ -604,7 +612,13 @@ def test_final_mixed_frame_comparison_does_not_relax_backfill_regions():
         "accepted_contradiction" in d.accepted_risk.risk_flags
         for d in result.sparse_decisions
     )
-    assert [(owner.owner_apex_rt, owner.owner_area) for owner in owners] == [
+    assert [
+        (
+            owner.peak.integration.rt_apex_min,
+            owner.peak.integration.area_raw_counts_seconds,
+        )
+        for owner in owners
+    ] == [
         (10.0, 1000.0),
         (9.0, 1000.0),
         (10.5, 1000.0),
@@ -617,10 +631,10 @@ def test_region_separation_is_soft_for_final_and_strict_for_backfill(bootstrap):
     # Band a spans more than one member's narrow region (a1 and a4 exclude each
     # other's apex); band b lies outside band a's consensus region.
     owners = tuple(
-        replace(
+        with_peak(
             _synthetic_owner(sample, sample, apex),
-            owner_peak_start_rt=apex - 0.1,
-            owner_peak_end_rt=apex + 0.1,
+            start_rt=apex - 0.1,
+            end_rt=apex + 0.1,
         )
         for sample, apex in (
             ("a1", 10.0),
@@ -749,15 +763,17 @@ def test_tissue_rt_outlier_has_no_feasible_same_group_alternative() -> None:
     evidence = json.loads((_FIXTURES / "tissue_247_peak_shapes.json").read_text())
     owners = tuple(
         replace(
-            _synthetic_owner(
-                row["sample"],
-                row["owner_id"],
-                row["apex_rt"],
-                precursor_mz=row["mz"],
-                product_mz=row["product_mz"],
+            with_peak(
+                _synthetic_owner(
+                    row["sample"],
+                    row["owner_id"],
+                    row["apex_rt"],
+                    precursor_mz=row["mz"],
+                    product_mz=row["product_mz"],
+                ),
+                start_rt=row["bounds"][0],
+                end_rt=row["bounds"][1],
             ),
-            owner_peak_start_rt=row["bounds"][0],
-            owner_peak_end_rt=row["bounds"][1],
             peak_shape=prepare_local_peak_shape(
                 row["rt"],
                 row["intensity"],
@@ -957,9 +973,7 @@ def test_coobserved_method_witness_withdraws_only_contradicted_membership(
         "missing_second_peak",
         "overlapping_peaks",
         "ambiguous_method",
-        "provisional_anchor",
         "weak_anchor",
-        "provisional_member",
         "weak_member",
     ],
 )
@@ -971,7 +985,7 @@ def test_incomplete_coobserved_witness_does_not_veto_a_bootstrap_pattern(control
     if control == "missing_second_peak":
         owners.pop(1)
     elif control == "overlapping_peaks":
-        owners[0] = replace(owners[0], owner_peak_end_rt=12.0)
+        owners[0] = with_peak(owners[0], end_rt=12.0)
     elif control == "ambiguous_method":
         owners = [
             replace(
@@ -984,9 +998,6 @@ def test_incomplete_coobserved_witness_does_not_veto_a_bootstrap_pattern(control
             )
             for owner in owners
         ]
-    elif control.startswith("provisional"):
-        index = 1 if control.endswith("anchor") else 3
-        owners[index] = replace(owners[index], is_provisional=True)
     else:
         index = 1 if control.endswith("anchor") else 3
         owners[index] = replace(
@@ -1027,28 +1038,13 @@ def test_incomplete_coobserved_witness_does_not_veto_a_bootstrap_pattern(control
 
 
 @pytest.mark.parametrize("overlap", [False, True])
-def test_bootstrap_coobserved_witness_uses_selected_integration_segments(overlap):
+def test_bootstrap_coobserved_witness_uses_selected_peak_segments(overlap):
     owners, geometry = _method_disambiguated_pattern_conflict()
     for index in (0, 1):
         owner = owners[index]
-        left = owner.owner_apex_rt - 0.05
-        right = 12.0 if overlap and index == 0 else owner.owner_apex_rt + 0.05
-        owners[index] = replace(
-            owner,
-            # The original search bounds deliberately suggest the opposite.
-            owner_peak_start_rt=left if overlap else 9.0,
-            owner_peak_end_rt=owner.owner_apex_rt + 0.05 if overlap else 12.0,
-            selected_integration=IntegrationResult(
-                rt_left_min=left,
-                rt_apex_min=owner.owner_apex_rt,
-                rt_right_min=right,
-                raw_apex_rt_min=owner.owner_apex_rt,
-                rt_width_min=right - left,
-                height_raw=100.0,
-                height_smoothed=100.0,
-                area_raw_counts_seconds=1000.0,
-            ),
-        )
+        apex = owner.peak.integration.rt_apex_min
+        right = 12.0 if overlap and index == 0 else apex + 0.05
+        owners[index] = with_peak(owner, start_rt=apex - 0.05, end_rt=right)
     result = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
@@ -1439,12 +1435,10 @@ def test_nearby_mass_outlier_cannot_cut_a_clean_band() -> None:
         product_mz=150.050293,
     )
     outlier = replace(
-        owners[0],
+        with_peak(owners[0], mz=266.097693, apex_rt=30.0, start_rt=29.95, end_rt=30.05),
         owner_id="mass-window-outlier",
         sample_stem="mass-window-outlier",
         raw_file="mass-window-outlier.raw",
-        precursor_mz=266.097693,
-        owner_apex_rt=30.0,
         primary_identity_event=outlier_event,
     )
     result = infer_feature_memberships(
@@ -1514,12 +1508,14 @@ def test_equal_band_competition_selects_and_records_the_alternative() -> None:
             owner_id=name,
             sample_stem=sample,
             raw_file=f"{sample}.raw",
-            precursor_mz=500.0,
-            owner_apex_rt=rt,
-            owner_peak_start_rt=rt - 0.05,
-            owner_peak_end_rt=rt + 0.05,
-            owner_area=1000.0,
-            owner_height=100.0,
+            peak=measured_peak(
+                mz=500.0,
+                apex_rt=rt,
+                start_rt=rt - 0.05,
+                end_rt=rt + 0.05,
+                area=1000.0,
+                height=100.0,
+            ),
             primary_identity_event=event,
             supporting_events=(),
             assignment_reason="same_apex_window",
@@ -1562,12 +1558,14 @@ def test_sparse_feature_uses_warp_only_across_distant_injections() -> None:
             owner_id=sample,
             sample_stem=sample,
             raw_file=f"{sample}.raw",
-            precursor_mz=500.0,
-            owner_apex_rt=rt,
-            owner_peak_start_rt=rt - 0.05,
-            owner_peak_end_rt=rt + 0.05,
-            owner_area=1000.0,
-            owner_height=100.0,
+            peak=measured_peak(
+                mz=500.0,
+                apex_rt=rt,
+                start_rt=rt - 0.05,
+                end_rt=rt + 0.05,
+                area=1000.0,
+                height=100.0,
+            ),
             primary_identity_event=event,
             supporting_events=(),
             assignment_reason="same_apex_window",
@@ -1804,11 +1802,11 @@ def test_dense_band_survives_a_long_absence_in_injection_order(
         replace(
             owner,
             peak_shape=prepare_local_peak_shape(
-                offsets + owner.owner_apex_rt,
+                offsets + owner.peak.integration.rt_apex_min,
                 3 - offsets
                 if different_shape and order >= 35
                 else np.exp(-0.5 * (offsets / 0.07) ** 2),
-                apex_rt_min=owner.owner_apex_rt,
+                apex_rt_min=owner.peak.integration.rt_apex_min,
             ),
         )
         for owner, order in zip(owners, orders, strict=True)

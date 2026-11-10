@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.owner_peak_fixtures import measured_peak, with_peak
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
@@ -209,12 +210,14 @@ def _owner(sample: str, label: str, rt: float) -> SampleLocalMS1Owner:
         owner_id=f"{sample}:{label}",
         sample_stem=sample,
         raw_file=f"{sample}.raw",
-        precursor_mz=500.0,
-        owner_apex_rt=rt,
-        owner_peak_start_rt=rt - 0.1,
-        owner_peak_end_rt=rt + 0.1,
-        owner_area=1000.0,
-        owner_height=100.0,
+        peak=measured_peak(
+            mz=500.0,
+            apex_rt=rt,
+            start_rt=rt - 0.1,
+            end_rt=rt + 0.1,
+            area=1000.0,
+            height=100.0,
+        ),
         primary_identity_event=None,
         supporting_events=(),
         assignment_reason="same_apex_window",
@@ -650,9 +653,9 @@ def test_mass_neighborhoods_keep_boundary_owners_and_ms1_only_positions(
             )
             if sample != "c":
                 owners.extend(
-                    replace(
+                    with_peak(
                         _owner(sample, f"{mz}:{label}", rt + shift),
-                        precursor_mz=mz * (1.0 + owner_offset_ppm * 1e-6),
+                        mz=mz * (1.0 + owner_offset_ppm * 1e-6),
                     )
                     for label, rt in (("early", 10.0), ("late", 10.6))
                 )
@@ -711,10 +714,7 @@ def test_membership_exclusion_requires_distinct_physical_segments(shared_lobe, r
         _owner("b", "late", contexts[1].landmarks[1].apex_rt),
     ]
     if shared_lobe:
-        owners = [
-            replace(owner, owner_peak_start_rt=8.58, owner_peak_end_rt=10.45)
-            for owner in owners
-        ]
+        owners = [with_peak(owner, start_rt=8.58, end_rt=10.45) for owner in owners]
     unrelated_signal = sum(
         1000.0 * np.exp(-0.5 * ((rt - peak.apex_rt) / 0.035) ** 2)
         for peak in contexts[0].landmarks
@@ -740,7 +740,7 @@ def test_membership_exclusion_requires_distinct_physical_segments(shared_lobe, r
         # Allowing membership does not pick an arbitrary shoulder as the
         # missing sample's observed Backfill position. Direct apices survive.
         assert dict(model.trajectory_for(owners).sample_apices) == {
-            owner.sample_stem: owner.owner_apex_rt for owner in owners
+            owner.sample_stem: owner.peak.integration.rt_apex_min for owner in owners
         }
 
 
@@ -933,13 +933,13 @@ def _direct_conflict_case(second_owner_rt, *, independent_branch=False):
     # Same-sample early/late evidence from the reduced 659.346 case. Cross-sample
     # shifts of 160-175 s are deliberately valid, not a distinct-peak oracle.
     owners = [
-        replace(
+        with_peak(
             _owner("BC1095", "reference", 32.988294154916666),
-            precursor_mz=659.3459114397047,
+            mz=659.3459114397047,
         ),
-        replace(
+        with_peak(
             _owner("BC1165", "reference", second_owner_rt),
-            precursor_mz=659.346488450235,
+            mz=659.346488450235,
         ),
     ]
     contexts = [
@@ -1029,7 +1029,9 @@ def test_direct_conflict_withdraws_only_dependent_locations(
         for track in original_tracks
     )
     trajectory = model.trajectory_for(owners)
-    expected = {owner.sample_stem: owner.owner_apex_rt for owner in owners}
+    expected = {
+        owner.sample_stem: owner.peak.integration.rt_apex_min for owner in owners
+    }
     if independent_branch:
         expected["independent"] = 32.988294154916666 - 2.9
     assert dict(trajectory.sample_apices) == pytest.approx(expected)
@@ -1068,7 +1070,10 @@ def test_direct_binding_does_not_invent_conflict_from_drift_offset_or_missing_bi
     )
     trajectory = model.trajectory_for(owners)
     assert dict(trajectory.sample_apices) == pytest.approx(
-        {**{o.sample_stem: o.owner_apex_rt for o in owners}, "BC1116": 35.7000614}
+        {
+            **{o.sample_stem: o.peak.integration.rt_apex_min for o in owners},
+            "BC1116": 35.7000614,
+        }
     )
     location = trajectory.backfill_locations(
         ("BC1116",),
@@ -1083,7 +1088,7 @@ def test_direct_binding_does_not_invent_conflict_from_drift_offset_or_missing_bi
 def test_same_selected_segment_does_not_make_two_landmarks_distinct_peaks():
     owners, contexts, orders = _direct_conflict_case(33.103192714116666)
     # Two maxima inside one selected segment do not establish distinct peaks.
-    owners[1] = replace(owners[1], owner_peak_end_rt=35.9)
+    owners[1] = with_peak(owners[1], end_rt=35.9)
     model = resolve_peak_trajectories(
         owners, contexts, config=AlignmentConfig(), injection_order=orders
     )
@@ -1097,7 +1102,10 @@ def test_retained_247_locations_survive_a_separate_contradicted_link():
         ).read_text()
     )
     owners = [
-        replace(_owner(row["sample_stem"], "reference", row["owner_apex_rt"]), **row)
+        with_peak(
+            _owner(row["sample_stem"], "reference", row["apex_rt"]),
+            **{key: value for key, value in row.items() if key != "sample_stem"},
+        )
         for row in data["owners"]
     ]
     contexts = [
@@ -1124,7 +1132,7 @@ def test_retained_247_locations_survive_a_separate_contradicted_link():
         "NormalBC2282_DNA": 12.46524381305,
     }
     assert dict(trajectory.sample_apices) == pytest.approx(
-        {**{o.sample_stem: o.owner_apex_rt for o in owners}, **expected}
+        {**{o.sample_stem: o.peak.integration.rt_apex_min for o in owners}, **expected}
     )
     locations = trajectory.backfill_locations(
         tuple(expected),
@@ -1178,7 +1186,10 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
     )
     owners, retained = [], []
     for original_owner in original:
-        name, rt = original_owner.sample_stem, original_owner.owner_apex_rt
+        name, rt = (
+            original_owner.sample_stem,
+            original_owner.peak.integration.rt_apex_min,
+        )
         sample = fixture.sample(name)
         peak = cid_nl_peak(
             fixture, name, apex_rt=rt, rt_left_min=rt - 0.1, rt_right_min=rt + 0.1

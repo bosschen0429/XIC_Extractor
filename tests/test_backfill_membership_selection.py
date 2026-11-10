@@ -96,7 +96,7 @@ def test_complete_backfill_configuration_can_rescue_rejected_prefix(seconds, rev
         rules=CID_NL_GROUPING_RULES,
         config=AlignmentConfig(preferred_rt_sec=120),
         rt_frame=SampleRtFrame().with_coordinate_override(
-            lambda owner: owner.owner_apex_rt
+            lambda owner: owner.peak.integration.rt_apex_min
         ),
         trajectories=PeakTrajectories(),
     )
@@ -163,7 +163,7 @@ def test_complete_extension_still_rejects_two_rt_populations():
         rules=CID_NL_GROUPING_RULES,
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame().with_coordinate_override(
-            lambda owner: owner.owner_apex_rt
+            lambda owner: owner.peak.integration.rt_apex_min
         ),
         trajectories=PeakTrajectories(),
     )

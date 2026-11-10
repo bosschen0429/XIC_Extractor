@@ -150,7 +150,7 @@ class BatchRtWarp:
         return _interpolated_offset(self._knots(sample_stem), rt_min)
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
-        return self.common_rt_min(owner.sample_stem, owner.owner_apex_rt)
+        return self.common_rt_min(owner.sample_stem, owner.peak.integration.rt_apex_min)
 
     def common_rt_min(self, sample_stem: str, observed_rt: float) -> float:
         # Knots are keyed by common RT; re-key them by observed RT to invert.

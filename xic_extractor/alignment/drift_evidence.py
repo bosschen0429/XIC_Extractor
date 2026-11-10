@@ -175,7 +175,8 @@ class KnownIstdReference:
 
     def _corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float | None:
         return interpolate_calibrated_rt_min(
-            owner.owner_apex_rt, self._knots_by_sample.get(owner.sample_stem, ())
+            owner.peak.integration.rt_apex_min,
+            self._knots_by_sample.get(owner.sample_stem, ()),
         )
 
     def bind(
@@ -204,7 +205,9 @@ class KnownIstdReference:
             matches = tuple(
                 owner
                 for owner in owners_by_sample.get(sample, ())
-                if owner.owner_peak_start_rt <= rt <= owner.owner_peak_end_rt
+                if owner.peak.integration.rt_left_min
+                <= rt
+                <= owner.peak.integration.rt_right_min
                 and owner.primary_identity_event is not None
                 and target.neutral_loss_da is not None
                 and target.nl_ppm_max is not None
@@ -219,8 +222,7 @@ class KnownIstdReference:
                 )[2]
                 # The measured coordinate above identifies the physical peak;
                 # expected RT must not clip a shifted, already measured ISTD.
-                and abs(owner.precursor_mz - target.mz)
-                <= target.mz * target.ppm_tol / 1e6
+                and abs(owner.peak.mz - target.mz) <= target.mz * target.ppm_tol / 1e6
             )
             for owner in matches:
                 counts[owner.owner_id] = counts.get(owner.owner_id, 0) + 1
@@ -265,7 +267,13 @@ class KnownIstdOwnerLookup:
         a, b = self._by_owner.get(left.owner_id), self._by_owner.get(right.owner_id)
         if a is None or b is None or a[0] != b[0]:
             return None
-        return abs((left.owner_apex_rt - a[1]) - (right.owner_apex_rt - b[1])) * 60.0
+        return (
+            abs(
+                (left.peak.integration.rt_apex_min - a[1])
+                - (right.peak.integration.rt_apex_min - b[1])
+            )
+            * 60.0
+        )
 
     def has_direct_reference_pair(
         self,

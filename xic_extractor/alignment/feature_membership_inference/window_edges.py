@@ -73,8 +73,8 @@ def _window_candidate_edges(
             if not trajectories.permits_membership((left.owner_id, right.owner_id)):
                 continue
             if not within_ppm(
-                max(left.precursor_mz, right.precursor_mz),
-                min(left.precursor_mz, right.precursor_mz),
+                max(left.peak.mz, right.peak.mz),
+                min(left.peak.mz, right.peak.mz),
                 config.max_ppm,
             ):
                 continue
@@ -121,8 +121,8 @@ def _window_candidate_edges(
             # turn distinct coeluting bands into near-equal alternatives.
             precursor_fraction = (
                 absolute_ppm_error(
-                    max(left.precursor_mz, right.precursor_mz),
-                    min(left.precursor_mz, right.precursor_mz),
+                    max(left.peak.mz, right.peak.mz),
+                    min(left.peak.mz, right.peak.mz),
                 )
                 / config.max_ppm
             )

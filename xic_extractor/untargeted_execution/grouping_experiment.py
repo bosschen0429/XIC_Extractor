@@ -55,7 +55,7 @@ def grouping_experiment_from_prepared(
             ):
                 raise ValueError("Grouping replay requires scalar CID-NL observations")
             for capture in workset.captures:
-                hypothesis = capture.selected_hypothesis
+                hypothesis = capture.measured_hypothesis
                 if hypothesis is not None and hypothesis.hypothesis_id in owners:
                     candidates[hypothesis.hypothesis_id].add(capture.candidate_id)
             bindings = tuple(

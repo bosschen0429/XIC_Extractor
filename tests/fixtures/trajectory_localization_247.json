@@ -6,38 +6,38 @@
   "owners": [
     {
       "sample_stem": "BenignfatBC1228_DNA",
-      "precursor_mz": 247.13860110519437,
-      "owner_apex_rt": 12.505830475733335,
-      "owner_peak_start_rt": 12.305033354666667,
-      "owner_peak_end_rt": 12.889055568783334
+      "mz": 247.13860110519437,
+      "apex_rt": 12.505830475733335,
+      "start_rt": 12.305033354666667,
+      "end_rt": 12.889055568783334
     },
     {
       "sample_stem": "BenignfatBC1108_DNA",
-      "precursor_mz": 247.13823384000852,
-      "owner_apex_rt": 12.541894421616666,
-      "owner_peak_start_rt": 12.307538368283334,
-      "owner_peak_end_rt": 12.898258531466666
+      "mz": 247.13823384000852,
+      "apex_rt": 12.541894421616666,
+      "start_rt": 12.307538368283334,
+      "end_rt": 12.898258531466666
     },
     {
       "sample_stem": "NormalBC2289_DNA",
-      "precursor_mz": 247.13812292026248,
-      "owner_apex_rt": 12.526563289316666,
-      "owner_peak_start_rt": 12.216361605316667,
-      "owner_peak_end_rt": 12.876296467183332
+      "mz": 247.13812292026248,
+      "apex_rt": 12.526563289316666,
+      "start_rt": 12.216361605316667,
+      "end_rt": 12.876296467183332
     },
     {
       "sample_stem": "Breast_Cancer_Tissue_pooled_QC5",
-      "precursor_mz": 247.1378846191406,
-      "owner_apex_rt": 12.239137091183332,
-      "owner_peak_start_rt": 11.94081287625,
-      "owner_peak_end_rt": 12.569781551183333
+      "mz": 247.1378846191406,
+      "apex_rt": 12.239137091183332,
+      "start_rt": 11.94081287625,
+      "end_rt": 12.569781551183333
     },
     {
       "sample_stem": "BenignfatBC1067_DNA",
-      "precursor_mz": 247.13872457620982,
-      "owner_apex_rt": 12.508849926149999,
-      "owner_peak_start_rt": 12.216765001083333,
-      "owner_peak_end_rt": 12.8804439224
+      "mz": 247.13872457620982,
+      "apex_rt": 12.508849926149999,
+      "start_rt": 12.216765001083333,
+      "end_rt": 12.8804439224
     }
   ],
   "contexts": [

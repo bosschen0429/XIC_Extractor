@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from tests.membership_fixtures import cid_nl_owner
+from tests.owner_peak_fixtures import with_peak
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.feature_membership_inference import (
@@ -51,7 +52,9 @@ def test_local_density_preserves_closed_radius_and_duplicate_coordinates(
     owners = tuple(cid_nl_owner(str(i), str(i), apex_rt=rt) for i, rt in enumerate(rts))
     frame = SampleRtFrame()
     if corrected:
-        frame = frame.with_coordinate_override(lambda owner: owner.owner_apex_rt / 2)
+        frame = frame.with_coordinate_override(
+            lambda owner: owner.peak.integration.rt_apex_min / 2
+        )
     for population in (owners, owners[::-1], ()):
         comparison = MembershipComparison(
             population,
@@ -78,7 +81,7 @@ def _infer_common_rt(owners, injection_order):
         config=AlignmentConfig(),
         rt_frame=SampleRtFrame(
             injection_order=injection_order
-        ).with_coordinate_override(lambda owner: owner.owner_apex_rt),
+        ).with_coordinate_override(lambda owner: owner.peak.integration.rt_apex_min),
     )
 
 
@@ -271,7 +274,6 @@ def test_weak_final_owner_is_selected_without_granting_quantitation():
     strong = cid_nl_owner("a", "strong")
     weak = replace(
         cid_nl_owner("b", "weak", evidence_score=1),
-        is_provisional=True,
         quantification_eligible=False,
     )
     result = infer((strong, weak))
@@ -292,9 +294,11 @@ def test_weak_calibration_halves_only_rt_cost_not_mass_or_shape():
     x = np.linspace(-0.6, 0.6, 121)
     owners = tuple(
         replace(
-            cid_nl_owner(s, s, apex_rt=rt, precursor_mz=mz),
-            owner_peak_start_rt=9.0,
-            owner_peak_end_rt=11.0,
+            with_peak(
+                cid_nl_owner(s, s, apex_rt=rt, precursor_mz=mz),
+                start_rt=9.0,
+                end_rt=11.0,
+            ),
             peak_shape=prepare_local_peak_shape(
                 x + rt, np.exp(-0.5 * (x / width) ** 2), apex_rt_min=rt
             ),
@@ -399,7 +403,9 @@ def test_equal_worst_pair_cost_selects_better_average_peer_fit(reverse):
             replace(owner, owner_id=f"renamed-{i}")
             for i, owner in enumerate(reversed(owners))
         )
-    measured = {o.owner_id: (o.sample_stem, o.owner_apex_rt) for o in owners}
+    measured = {
+        o.owner_id: (o.sample_stem, o.peak.integration.rt_apex_min) for o in owners
+    }
     result = infer(owners)
     earlier = next(
         {measured[key] for key in g.owner_ids}
@@ -418,7 +424,9 @@ def test_non_equivalent_choice_does_not_depend_on_id_or_input_order():
     )
 
     def selected(items):
-        by_id = {o.owner_id: (o.sample_stem, o.owner_apex_rt) for o in items}
+        by_id = {
+            o.owner_id: (o.sample_stem, o.peak.integration.rt_apex_min) for o in items
+        }
         return {frozenset(by_id[i] for i in g.owner_ids) for g in infer(items).groups}
 
     changed = tuple(

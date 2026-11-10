@@ -271,8 +271,12 @@ class SampleRtFrame:
         right: SampleLocalMS1Owner,
     ) -> float | None:
         if self._sample_calibration is not None:
-            a = self.calibrated_rt_min(left.sample_stem, left.owner_apex_rt)
-            b = self.calibrated_rt_min(right.sample_stem, right.owner_apex_rt)
+            a = self.calibrated_rt_min(
+                left.sample_stem, left.peak.integration.rt_apex_min
+            )
+            b = self.calibrated_rt_min(
+                right.sample_stem, right.peak.integration.rt_apex_min
+            )
             return abs(a - b) * 60.0 if a is not None and b is not None else None
         if self._drift is None:
             return None
@@ -282,8 +286,8 @@ class SampleRtFrame:
         right_delta = self._drift.sample_delta_min(right.sample_stem)
         if left_delta is None or right_delta is None:
             return None
-        left_corrected_rt = left.owner_apex_rt - left_delta
-        right_corrected_rt = right.owner_apex_rt - right_delta
+        left_corrected_rt = left.peak.integration.rt_apex_min - left_delta
+        right_corrected_rt = right.peak.integration.rt_apex_min - right_delta
         return abs(left_corrected_rt - right_corrected_rt) * 60.0
 
     def has_direct_reference_pair(
@@ -312,7 +316,7 @@ class SampleRtFrame:
         return (
             source.corrected_rt_min(owner)
             if source is not None
-            else owner.owner_apex_rt
+            else owner.peak.integration.rt_apex_min
         )
 
     def has_support(self, sample_stem: str) -> bool:
@@ -365,9 +369,9 @@ class SampleRtFrame:
         start, apex, end = (
             self.calibrated_rt_min(owner.sample_stem, value)
             for value in (
-                owner.owner_peak_start_rt,
-                owner.owner_apex_rt,
-                owner.owner_peak_end_rt,
+                owner.peak.integration.rt_left_min,
+                owner.peak.integration.rt_apex_min,
+                owner.peak.integration.rt_right_min,
             )
         )
         if apex is None:
@@ -378,7 +382,7 @@ class SampleRtFrame:
         """Final membership consumes estimates without widening strong support."""
         if self._coordinate_override is not None:
             return RtEstimate(self._coordinate_override(owner), "diagnostic_override")
-        return self.estimate_rt(owner.sample_stem, owner.owner_apex_rt)
+        return self.estimate_rt(owner.sample_stem, owner.peak.integration.rt_apex_min)
 
     def estimate_rt(self, sample_stem: str, observed_rt: float) -> RtEstimate | None:
         if self._sample_calibration is not None:

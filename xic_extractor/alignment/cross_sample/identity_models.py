@@ -6,8 +6,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import PeakObservation
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 from xic_extractor.sample_metadata import SampleMetadata
 
 CrossSampleGroupDisposition: TypeAlias = Literal[
@@ -45,36 +45,20 @@ class CrossSampleGroupMemberSubject:
 def group_member_subject_from_peak_hypothesis(
     *,
     sample: SampleMetadata,
-    hypothesis: PeakHypothesis,
+    hypothesis: MeasuredPeakHypothesis,
 ) -> CrossSampleGroupMemberSubject:
     if not isinstance(sample, SampleMetadata):
         raise CrossSampleContractError("sample must be canonically resolved")
-    if not isinstance(hypothesis, PeakHypothesis) or not hypothesis.is_owner_backed:
+    if not isinstance(hypothesis, MeasuredPeakHypothesis):
         raise CrossSampleContractError("hypothesis must be owner-backed")
     sample_id = sample.sample_name
-    physical_ids = tuple(
-        sorted(
-            (
-                observation.physical_identity
-                for observation in hypothesis.peak_observation_refs
-            ),
-            key=lambda content: content.measured_order_key,
-        )
-    )
-    if (
-        not physical_ids
-        or len(set(physical_ids)) != len(physical_ids)
-        or any(
-            observation.sample_key != sample_id
-            for observation in hypothesis.peak_observation_refs
-        )
-    ):
+    if hypothesis.peak.sample_key != sample_id:
         raise CrossSampleContractError("peak hypothesis crossed physical observation")
     return CrossSampleGroupMemberSubject(
         sample_key=sample_id,
         subject_kind="peak_hypothesis",
         subject_id=hypothesis.hypothesis_id,
-        physical_peaks=physical_ids,
+        physical_peaks=(hypothesis.peak.physical_identity,),
     )
 
 

@@ -55,13 +55,13 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     is_ms1_only_cid_nl_backfill_assessment,
 )
 from xic_extractor.peak_detection.elution_context import SampleElutionContext
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
 )
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
     HYPOTHESIS_METHOD_MS1_OBSERVATION,
+    MeasuredPeakHypothesis,
 )
 from xic_extractor.peak_detection.physical_peak_equivalence import (
     PhysicalPeakView,
@@ -89,12 +89,12 @@ def build_targeted_cross_sample_groups(
         sample.sample_name: assessment for sample, assessment in sample_assessments
     }
     owners: list[SampleLocalMS1Owner] = []
-    selected_by_id: dict[str, PeakHypothesis] = {}
+    selected_by_id: dict[str, MeasuredPeakHypothesis] = {}
     for capture in captures:
-        selected = capture.selected_hypothesis
+        selected = capture.measured_hypothesis
         if selected is None:
             continue
-        observation = selected.peak_observation_refs[0]
+        observation = selected.peak
         sample_id = observation.sample_key
         sample = sample_by_id.get(sample_id)
         if sample is None or sample_id in selected_by_id:
@@ -102,7 +102,7 @@ def build_targeted_cross_sample_groups(
                 "Targeted selection crossed or duplicated its canonical sample"
             )
         assessment = assessment_by_id.get(sample_id)
-        if selected.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL:
+        if selected.method == HYPOTHESIS_METHOD_DDA_CID_NL:
             if assessment is None:
                 raise CrossSampleGroupingContractError(
                     "Targeted CID-NL selection lacks its method assessment"
@@ -112,7 +112,7 @@ def build_targeted_cross_sample_groups(
                 assessment=assessment,
                 hypothesis=selected,
             )
-        elif selected.hypothesis_method == HYPOTHESIS_METHOD_MS1_OBSERVATION:
+        elif selected.method == HYPOTHESIS_METHOD_MS1_OBSERVATION:
             owner = (
                 owner_from_cid_nl_assessment_observation(
                     sample=sample,
@@ -166,7 +166,7 @@ def build_initial_cid_nl_cross_sample_groups(
     rt_frame: SampleRtFrame,
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     retained_hypotheses_by_assessment: Mapping[
-        CidNlMethodAssessment, tuple[PeakHypothesis, ...]
+        CidNlMethodAssessment, tuple[MeasuredPeakHypothesis, ...]
     ]
     | None = None,
 ) -> tuple[
@@ -278,13 +278,13 @@ def admit_cid_nl_group_backfills(
     CrossSampleGroupingResult,
     tuple[CrossSamplePeakGroupHypothesis, ...],
     dict[str, str],
-    dict[CidNlMethodAssessment, tuple[PeakHypothesis, ...]],
+    dict[CidNlMethodAssessment, tuple[MeasuredPeakHypothesis, ...]],
     frozenset[tuple[str, str]],
 ]:
     """Choose bounded acquired candidates while preserving all original owners."""
     by_id = {group.group_hypothesis_id: group for group in groups}
     proposals = []
-    retained: dict[CidNlMethodAssessment, tuple[PeakHypothesis, ...]] = {}
+    retained: dict[CidNlMethodAssessment, tuple[MeasuredPeakHypothesis, ...]] = {}
     for key, (sample, assessment) in sorted(backfills.items()):
         group_id, sample_id, subject_id = key
         group = by_id[group_id]
@@ -322,7 +322,7 @@ def admit_cid_nl_group_backfills(
         )
         physical_key = (
             sample_id,
-            hypothesis.peak_observation_refs[0].physical_identity,
+            hypothesis.peak.physical_identity,
         )
         if any(member.sample_key == sample_id for member in group.member_subjects):
             continue
@@ -337,7 +337,7 @@ def admit_cid_nl_group_backfills(
         )
     comparison_views = dict(physical_peak_views or {})
     for _, _, _, hypothesis, _ in proposals:
-        observation = hypothesis.peak_observation_refs[0]
+        observation = hypothesis.peak
         observation_id = observation.physical_identity
         if observation_id not in comparison_views:
             comparison_views[observation_id] = physical_peak_view_from_observation(
@@ -396,8 +396,7 @@ def admit_cid_nl_group_backfills(
     low_localization = {
         i
         for i, proposal in enumerate(eligible)
-        if (evaluation := proposal[3].peak_observation_refs[0].physical_evaluation)
-        is not None
+        if (evaluation := proposal[3].peak.physical_evaluation) is not None
         and evaluation.question.selection_policy_version
         == PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
     }
@@ -552,12 +551,15 @@ def _is_shoulder_of(
     config: AlignmentConfig,
 ) -> bool:
     return (
-        owner.owner_area < neighbour.owner_area
+        owner.peak.integration.area_raw_counts_seconds
+        < neighbour.peak.integration.area_raw_counts_seconds
         and (
-            owner.owner_peak_end_rt == neighbour.owner_peak_start_rt
-            or owner.owner_peak_start_rt == neighbour.owner_peak_end_rt
+            owner.peak.integration.rt_right_min
+            == neighbour.peak.integration.rt_left_min
+            or owner.peak.integration.rt_left_min
+            == neighbour.peak.integration.rt_right_min
         )
-        and within_ppm(owner.precursor_mz, neighbour.precursor_mz, config.preferred_ppm)
+        and within_ppm(owner.peak.mz, neighbour.peak.mz, config.preferred_ppm)
     )
 
 

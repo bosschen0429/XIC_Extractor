@@ -25,8 +25,8 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
     is_ms1_only_cid_nl_backfill_assessment,
 )
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import PeakObservation
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -44,7 +44,7 @@ def compose_cid_nl_predecessor_cells(
     | None = None,
     selected_cells: frozenset[tuple[str, str]] | None = None,
     retained_hypotheses_by_assessment: Mapping[
-        CidNlMethodAssessment, tuple[PeakHypothesis, ...]
+        CidNlMethodAssessment, tuple[MeasuredPeakHypothesis, ...]
     ]
     | None = None,
     rejected_backfill_cells: frozenset[tuple[str, str]] = frozenset(),
@@ -232,7 +232,7 @@ def compose_cid_nl_predecessor_cells(
             if local:
                 (support,) = local
                 hypothesis = support.hypothesis
-                (observation,) = hypothesis.peak_observation_refs
+                observation = hypothesis.peak
             elif assessment.method_result == "SUPPORT":
                 siblings = tuple(
                     sibling

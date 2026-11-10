@@ -96,7 +96,7 @@ class _NearestInjectionMedians:
         return statistics.median(
             self.corrected_rt[owner.owner_id]
             if self.corrected_rt is not None
-            else owner.owner_apex_rt
+            else owner.peak.integration.rt_apex_min
             for owner in nearest
         )
 
@@ -145,7 +145,7 @@ def _join_window_bands(
         ]
         return (
             statistics.median(measured_rts) if measured_rts else None,
-            statistics.median(owner.precursor_mz for owner in group),
+            statistics.median(owner.peak.mz for owner in group),
             rules.mass_center(group),
         )
 
@@ -327,7 +327,7 @@ def _bridge_separated_window_bands(
             for key, group in bands.items()
         }
         mz_centers = {
-            key: statistics.median(owner.precursor_mz for owner in group)
+            key: statistics.median(owner.peak.mz for owner in group)
             for key, group in bands.items()
         }
         method_centers = {key: rules.mass_center(group) for key, group in bands.items()}
@@ -426,8 +426,8 @@ def _window_band_candidate(
         return None
     if not any(
         within_ppm(
-            max(owner.precursor_mz, item.precursor_mz),
-            min(owner.precursor_mz, item.precursor_mz),
+            max(owner.peak.mz, item.peak.mz),
+            min(owner.peak.mz, item.peak.mz),
             config.max_ppm,
         )
         for item in band
@@ -467,9 +467,9 @@ def _window_band_candidate(
             shape_conflicts[first].add(second)
             shape_conflicts[second].add(first)
         return None
-    precursor_median = statistics.median(item.precursor_mz for item in band)
+    precursor_median = statistics.median(item.peak.mz for item in band)
     precursor_fraction = (
-        absolute_ppm_error(owner.precursor_mz, precursor_median) / config.max_ppm
+        absolute_ppm_error(owner.peak.mz, precursor_median) / config.max_ppm
     )
     method_fraction = rules.mass_fraction(
         rules.mass_center((owner,)), rules.mass_center(band), config

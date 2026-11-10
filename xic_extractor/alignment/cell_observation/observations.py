@@ -34,9 +34,9 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
 )
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observations import PeakObservation
+from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 from xic_extractor.sample_metadata import SampleMetadata
 
 TerminalObservationVariant: TypeAlias = Literal[
@@ -120,7 +120,7 @@ class FinalGroupCellObservation:
         )
 
     @property
-    def direct_hypotheses(self) -> tuple[PeakHypothesis, ...]:
+    def direct_hypotheses(self) -> tuple[MeasuredPeakHypothesis, ...]:
         return tuple(
             cell.peak_hypothesis
             for cell in self.effective_cells
@@ -130,9 +130,7 @@ class FinalGroupCellObservation:
     @property
     def integrations(self) -> tuple[IntegrationResult, ...]:
         direct = tuple(
-            hypothesis.integration
-            for hypothesis in self.direct_hypotheses
-            if hypothesis.integration is not None
+            hypothesis.peak.integration for hypothesis in self.direct_hypotheses
         )
         ms1_only = tuple(
             observation.integration

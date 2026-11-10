@@ -185,7 +185,7 @@ def resolve_targeted_istd_backfill(
         for item in population.capture_inputs
         if item.owner_hypothesis is not None
         and item.owner_observation is not None
-        and item.owner_hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+        and item.owner_hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL
     )
     return resolve_istd_anchored_backfill(
         sample_population=population.samples,

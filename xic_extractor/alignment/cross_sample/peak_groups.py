@@ -184,8 +184,8 @@ def _hypothesis_from_owner_group(
     )
     if center is None:
         center = (
-            sum(owner.precursor_mz for owner in group) / len(group),
-            sum(owner.owner_apex_rt for owner in group) / len(group),
+            sum(owner.peak.mz for owner in group) / len(group),
+            sum(owner.peak.integration.rt_apex_min for owner in group) / len(group),
         )
     events = tuple(
         owner.primary_identity_event
@@ -200,9 +200,6 @@ def _hypothesis_from_owner_group(
         if not events
         else sum(event.observed_neutral_loss_da for event in events) / len(events)
     )
-    is_singleton = len(group) == 1
-    has_definitive = any(not owner.is_provisional for owner in group)
-    unsupported_singleton = is_singleton and not has_definitive
     return CrossSamplePeakGroupHypothesis(
         member_subjects=members,
         disposition=disposition
@@ -213,12 +210,8 @@ def _hypothesis_from_owner_group(
         neutral_loss_tag=group[0].neutral_loss_tag,
         group_product_mz=center_product_mz,
         group_observed_neutral_loss_da=center_loss,
-        has_anchor=has_definitive or not is_singleton,
-        evidence=(
-            f"{evidence};provisional_singleton_review_only"
-            if unsupported_singleton and "provisional_singleton" not in evidence
-            else evidence
-        ),
+        has_anchor=True,
+        evidence=evidence,
         inference_basis=inference_basis,
         inference_decisions=inference_decisions,
     )

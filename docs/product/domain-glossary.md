@@ -48,7 +48,12 @@ tests.
 ## Evidence Terms
 
 - `Trace`: intensity over retention time for a feature, target or candidate.
-- `PeakHypothesis`: a proposed peak identity, RT window and integration basis.
+- `PeakHypothesis`: a peak-picking candidate on one trace: a proposed peak, RT
+  window and integration basis before capture binds the selected peak.
+- `MeasuredPeakHypothesis`: one captured physical peak (`PeakObservation`) and
+  the method that proposes it (DDA CID-NL or MS1 observation). Targeted and
+  Untargeted share it after capture; its peak is the only holder of the
+  measurement.
 - `selected hypothesis`: the chosen `PeakHypothesis` and its audit context.
   Selection identifies the candidate a projection uses; it does not by itself
   grant counted detection or writer authority.
@@ -261,7 +266,7 @@ prose either. Use them only in the senses in this table or in the preserved
 spellings below.
 
 The surviving `owner` senses are the sample-local MS1 peak to which candidates
-are attributed (`SampleLocalMS1Owner`, `owner_apex_rt`), processing authority
+are attributed (`SampleLocalMS1Owner` and its `peak`), processing authority
 (`capture_owner`), and module responsibility.
 
 `physical` means the MS1-measured ion or chromatographic peak itself, as opposed

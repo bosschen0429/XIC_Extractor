@@ -6,9 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.configuration.models import Target
-from xic_extractor.extraction.result_assembly import build_extraction_result
-from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     compose_cid_nl_chromatographic_support,
 )
@@ -21,21 +18,14 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
     resolve_dda_cid_nl_peak_support,
 )
-from xic_extractor.peak_detection.hypotheses import (
-    IntegrationResult,
-    PeakHypothesis,
-    PeakHypothesisAuthorityError,
-)
-from xic_extractor.peak_detection.models import PeakDetectionResult
+from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
     mint_peak_observation,
 )
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    MeasuredPeakHypothesis,
     compose_cid_nl_peak_hypothesis,
-)
-from xic_extractor.peak_detection.selection_decision import (
-    selection_decision_from_hypothesis,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -400,20 +390,13 @@ def test_cid_nl_event_composes_the_existing_peak_hypothesis_owner(
         chromatographic_support=event,
     )
 
-    assert isinstance(hypothesis, PeakHypothesis)
-    assert hypothesis.hypothesis_id == (
-        "sample-a|dda_cid_nl|500.0|8.0|500.0|7.9|8.1|3|42:None|43:None"
+    assert hypothesis == MeasuredPeakHypothesis(
+        hypothesis_id=("sample-a|dda_cid_nl|500.0|8.0|500.0|7.9|8.1|3|42:None|43:None"),
+        method="dda_cid_nl",
+        peak=peak,
+        chromatographic_support=event,
     )
-    assert hypothesis.hypothesis_method == "dda_cid_nl"
-    assert hypothesis.peak_observation_refs == (peak,)
-    assert hypothesis.evidence.cid_nl_chromatographic_support_ref == event
-    assert hypothesis.integration == peak.integration
-    assert hypothesis.trace_group_id == ""
-    assert hypothesis.target_label == ""
-    assert hypothesis.role == ""
-    assert hypothesis.istd_pair == ""
-    assert hypothesis.analysis_mode == "workflow_neutral"
-    assert hypothesis.audit.selected is False
+    assert hypothesis.peak is peak
 
 
 def test_cid_nl_hypothesis_peak_or_event_mutation_invalidates_identity(
@@ -437,61 +420,6 @@ def test_cid_nl_hypothesis_peak_or_event_mutation_invalidates_identity(
     )
 
     assert first.hypothesis_id != changed.hypothesis_id
-
-
-def test_owner_backed_hypothesis_cannot_enter_selection_or_targeted_product(
-    tmp_path: Path,
-) -> None:
-    fixture = _identity_fixture(tmp_path)
-    peak = _peak(fixture.source, fixture.sample)
-    event = _event(fixture.source, fixture.sample, peak)
-    hypothesis = compose_cid_nl_peak_hypothesis(
-        sample=fixture.sample,
-        peak_observation=peak,
-        chromatographic_support=event,
-    )
-
-    with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
-        selection_decision_from_hypothesis(hypothesis)
-    with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
-        build_extraction_result(
-            peak_result=PeakDetectionResult(
-                status="PEAK_NOT_FOUND",
-                peak=None,
-                n_points=0,
-                max_smoothed=None,
-                n_prominent_peaks=0,
-            ),
-            nl_result=None,
-            candidate_ms2_evidence=None,
-            target=Target(
-                label="control",
-                mz=_PRECURSOR_MZ,
-                rt_min=7.5,
-                rt_max=8.5,
-                ppm_tol=10.0,
-                neutral_loss_da=_NEUTRAL_LOSS_DA,
-                nl_ppm_warn=20.0,
-                nl_ppm_max=50.0,
-                is_istd=False,
-                istd_pair="",
-            ),
-            candidate=None,
-            scoring_context_builder=None,
-            selected_hypothesis=hypothesis,
-        )
-    with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
-        ExtractionResult(
-            peak_result=PeakDetectionResult(
-                status="PEAK_NOT_FOUND",
-                peak=None,
-                n_points=0,
-                max_smoothed=None,
-                n_prominent_peaks=0,
-            ),
-            nl=None,
-            selected_hypothesis=hypothesis,
-        )
 
 
 def _resolve(

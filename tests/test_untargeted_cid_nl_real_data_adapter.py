@@ -821,7 +821,7 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         sample=scenario.fixture.sample("S1"),
         assessment=assessment,
     )
-    assert {item.hypothesis_method for item in hypotheses} == {
+    assert {item.method for item in hypotheses} == {
         "dda_cid_nl",
         "ms1_physical_observation",
     }
@@ -843,9 +843,7 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         (hypothesis.hypothesis_id,) for hypothesis in hypotheses
     )
     direct_support = {
-        candidate.peak_hypothesis.hypothesis_method: (
-            candidate.direct_support_assessment
-        )
+        candidate.peak_hypothesis.method: (candidate.direct_support_assessment)
         for candidate in candidates
     }
     assert direct_support == {

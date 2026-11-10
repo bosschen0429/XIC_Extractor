@@ -844,16 +844,17 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
         hypothesis=owner_hypothesis,
     )
 
-    assert bound.selected_hypothesis is owner_hypothesis
+    assert bound.measured_hypothesis is owner_hypothesis
+    assert bound.selected_hypothesis is capture.selected_hypothesis
     assert evaluation.facts is not None
-    assert owner_hypothesis.integration.rt_apex_min == evaluation.facts.apex_rt_min
+    assert owner_hypothesis.peak.integration.rt_apex_min == evaluation.facts.apex_rt_min
     assert (
-        owner_hypothesis.integration.area_ms1_morphology
+        owner_hypothesis.peak.integration.area_ms1_morphology
         == evaluation.facts.area_counts_seconds
     )
     if ripple:
-        assert owner_hypothesis.integration.rt_left_min <= 6.8
-        assert owner_hypothesis.integration.rt_right_min >= 9.2
+        assert owner_hypothesis.peak.integration.rt_left_min <= 6.8
+        assert owner_hypothesis.peak.integration.rt_right_min >= 9.2
     assert projections == 1
     assert evaluation_calls == 0
 

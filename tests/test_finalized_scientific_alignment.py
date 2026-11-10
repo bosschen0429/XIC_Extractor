@@ -12,6 +12,7 @@ import pytest
 import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
 from tests.cell_observations_fixtures import _owner_handoff
 from tests.cross_sample_association_lineage_fixtures import _final_receipt
+from tests.owner_peak_fixtures import bound_capture
 from tests.search_scope_capture_fixtures import _capture_binding, _peak_config
 from xic_extractor.alignment.result import (
     FinalizedScientificAlignment,
@@ -329,10 +330,13 @@ def _finalization_inputs(
         target=fixture.target,
     )
     captures = tuple(
-        capture_peak_hypotheses(
+        bound_capture(
+            capture_peak_hypotheses(
+                scope=scope,
+                candidate_id=candidate_id,
+                trace=trace,
+            ),
             scope=scope,
-            candidate_id=candidate_id,
-            trace=trace,
         )
         for candidate_id, trace in zip(candidate_ids, traces, strict=True)
     )

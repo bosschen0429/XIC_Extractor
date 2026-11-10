@@ -30,11 +30,13 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.hypotheses import (
     IntegrationResult,
     PeakHypothesis,
-    validate_peak_hypothesis_selection_authority,
 )
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 from xic_extractor.peak_detection.observations import (
     PeakObservationGenerationProvenance,
+)
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    MeasuredPeakHypothesis,
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.selection_decision import (
@@ -61,6 +63,9 @@ class ExtractionResult:
     score_breakdown: tuple[tuple[str, str], ...] = ()
     selected_hypothesis: PeakHypothesis | None = None
     selection_decision: PeakHypothesisSelectionDecision | None = None
+    # The captured peak a finalized result reports; its integration is the
+    # one written as RT, area, height and bounds.
+    measured_hypothesis: MeasuredPeakHypothesis | None = None
     acquisition_trace: Trace | None = None
     acquisition_observation_provenance: PeakObservationGenerationProvenance | None = (
         None
@@ -89,13 +94,6 @@ class ExtractionResult:
             and item.accepted
             for item in self.method_candidate_evidence
         )
-
-    def __post_init__(self) -> None:
-        if self.selected_hypothesis is not None:
-            validate_peak_hypothesis_selection_authority(
-                self.selected_hypothesis,
-                consumer="ExtractionResult",
-            )
 
     @property
     def peak(self) -> PeakResult | None:
@@ -127,6 +125,8 @@ class ExtractionResult:
 
     @property
     def _selected_integration(self) -> IntegrationResult | None:
+        if self.measured_hypothesis is not None:
+            return self.measured_hypothesis.peak.integration
         if self.selected_hypothesis is None:
             return None
         return self.selected_hypothesis.integration

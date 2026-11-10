@@ -101,7 +101,7 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
     assert len(targeted.direct_support_sample_ids) == 4
     assert len(targeted.support_trace_refs) == 4
     assert all(
-        trace is support.hypothesis.peak_observation_refs[0]
+        trace is support.hypothesis.peak
         for trace, support in zip(
             targeted.support_trace_refs,
             targeted.group_context.supports,

@@ -432,7 +432,7 @@ def _selected_cell_source(
     )
     if len(hypothesis_ids) != 1:
         raise ValueError(
-            "direct writer cell requires one source PeakHypothesis identity"
+            "direct writer cell requires one source MeasuredPeakHypothesis identity"
         )
     # A source outside Discovery has no candidate ID; the physical source remains
     # retained on the completed observation.

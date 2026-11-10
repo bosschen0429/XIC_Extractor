@@ -111,9 +111,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         for candidate in retained_candidates
     }
     assert all(
-        capture.selected_hypothesis is None
-        or retained_hypotheses_by_id[capture.selected_hypothesis.hypothesis_id]
-        == capture.selected_hypothesis
+        capture.measured_hypothesis is None
+        or retained_hypotheses_by_id[capture.measured_hypothesis.hypothesis_id]
+        == capture.measured_hypothesis
         for capture in trace.retained_captures
     )
     assert all(

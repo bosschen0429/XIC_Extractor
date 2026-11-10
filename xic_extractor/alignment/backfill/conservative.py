@@ -235,8 +235,7 @@ def assess_conservative_backfill_group(
         sample_id for sample_id in direct_support_ids if sample_id in eligible_ids
     )
     support_traces = tuple(
-        _support_trace(support.hypothesis.peak_observation_refs)
-        for support in group_context.supports
+        support.hypothesis.peak for support in group_context.supports
     )
     cell_sample_ids = tuple(cell.sample_key for cell in cells)
     sample_ids = tuple(sample.sample_name for sample in samples)
@@ -640,16 +639,6 @@ def _sample_is_activation_eligible(sample: SampleMetadata) -> bool:
     return (
         not sample.excluded and sample.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
     )
-
-
-def _support_trace(
-    refs: tuple[PeakObservation, ...],
-) -> PeakObservation:
-    if len(refs) != 1 or not isinstance(refs[0], PeakObservation):
-        raise ConservativeBackfillContractError(
-            "CID-NL direct SUPPORT must retain exactly one physical trace reference"
-        )
-    return refs[0]
 
 
 def _group_reason_codes(

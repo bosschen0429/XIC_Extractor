@@ -65,7 +65,10 @@ def evaluate_owner_edge(
     rt_frame: RtFrame,
     method_evidence: MethodPairEvidence,
 ) -> OwnerEdgeEvidence:
-    rt_raw_delta_sec = abs(left.owner_apex_rt - right.owner_apex_rt) * 60.0
+    rt_raw_delta_sec = (
+        abs(left.peak.integration.rt_apex_min - right.peak.integration.rt_apex_min)
+        * 60.0
+    )
     drift_source = rt_frame.drift_source
     injection_order_gap = rt_frame.drift_injection_order_gap(
         left.sample_stem, right.sample_stem
@@ -146,7 +149,7 @@ def _hard_gate_failure(
         return "same_sample", False
     if method_evidence.identity_failure:
         return method_evidence.identity_failure, False
-    if pair_ppm(left.precursor_mz, right.precursor_mz) > config.max_ppm:
+    if pair_ppm(left.peak.mz, right.peak.mz) > config.max_ppm:
         return "precursor_mz_out_of_tolerance", False
     if (
         peak_correspondence_conflict(
@@ -171,7 +174,10 @@ def _owner_quality(
 ) -> OwnerQuality:
     if "ambiguous" in left.assignment_reason or "ambiguous" in right.assignment_reason:
         return "ambiguous_nearby"
-    if left.owner_area <= 0 or right.owner_area <= 0:
+    if (
+        left.peak.integration.area_raw_counts_seconds <= 0
+        or right.peak.integration.area_raw_counts_seconds <= 0
+    ):
         return "weak"
     if duplicate_context == "tail_assignment":
         return "tail_supported"
@@ -412,10 +418,10 @@ def _evidence(
         left_sample_stem=left.sample_stem,
         right_sample_stem=right.sample_stem,
         neutral_loss_tag=left.neutral_loss_tag,
-        left_precursor_mz=left.precursor_mz,
-        right_precursor_mz=right.precursor_mz,
-        left_rt_min=left.owner_apex_rt,
-        right_rt_min=right.owner_apex_rt,
+        left_precursor_mz=left.peak.mz,
+        right_precursor_mz=right.peak.mz,
+        left_rt_min=left.peak.integration.rt_apex_min,
+        right_rt_min=right.peak.integration.rt_apex_min,
         decision=decision,
         failure_reason=failure_reason,
         rt_raw_delta_sec=rt_raw_delta_sec,
