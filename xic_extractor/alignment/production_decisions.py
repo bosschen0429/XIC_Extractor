@@ -5,14 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-ProductionStatus = Literal[
-    "detected",
-    "accepted_backfill",
-    "review_backfill",
-    "rejected_backfill",
-    "blank",
-]
-BackfillTier = Literal["", "accepted_backfill", "review_backfill", "rejected_backfill"]
+ProductionStatus = Literal["detected", "accepted_backfill", "blank"]
 
 
 @dataclass(frozen=True)
@@ -21,7 +14,6 @@ class ProductionCellDecision:
     sample_stem: str
     raw_status: str
     production_status: ProductionStatus
-    backfill_tier: BackfillTier
     write_matrix_value: bool
     matrix_value: float | None
     blank_reason: str
@@ -33,12 +25,9 @@ class ProductionRowDecision:
     include_in_primary_matrix: bool
     identity_decision: str
     identity_reason: str
-    quantifiable_backfill_count: int
     accepted_cell_count: int
     detected_count: int
     accepted_backfill_count: int
-    review_backfill_count: int
-    duplicate_assigned_count: int
     ambiguous_ms1_owner_count: int
     row_flags: tuple[str, ...]
 

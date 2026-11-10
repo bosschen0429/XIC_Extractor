@@ -30,7 +30,6 @@ REVIEW_COLUMNS = [
     "physical_peak_keys",
     "detected_count",
     "unchecked_count",
-    "duplicate_assigned_count",
     "ambiguous_ms1_owner_count",
     "present_rate",
     "identity_reason",
@@ -39,7 +38,6 @@ REVIEW_COLUMNS = [
     "include_in_primary_matrix",
     "row_flags",
     "membership_risk_flags",
-    "membership_risks_json",
     "warning",
     "reason",
 ]
@@ -79,7 +77,6 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         }
     } == {
         "membership_risk_flags": "",
-        "membership_risks_json": "[]",
         "feature_id": "ALN000001",
         "neutral_loss_tag": "DNA_dR",
         "family_center_mz": "500.123",
@@ -89,7 +86,6 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         "physical_peak_keys": "ALN000001#peak-0",
         "detected_count": "2",
         "unchecked_count": "0",
-        "duplicate_assigned_count": "0",
         "ambiguous_ms1_owner_count": "0",
         "present_rate": "0.75",
         "identity_reason": "test_route",
@@ -183,63 +179,6 @@ def test_review_uses_physical_members_and_owner_counts_not_evidence_text(tmp_pat
     )
     assert row["warning"] == ""
     assert row["reason"] == "anchor family; 3/3 present; 2 MS1 backfilled"
-
-
-def test_write_alignment_review_tsv_reports_duplicate_assigned_cells(tmp_path: Path):
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
-
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(has_anchor=False),),
-        cells=(
-            _cell("sample-a", "duplicate_assigned"),
-            _cell("sample-b", "duplicate_assigned"),
-            _cell("sample-c", "unchecked"),
-        ),
-        sample_order=("sample-a", "sample-b", "sample-c"),
-    )
-
-    rows = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
-
-    assert rows[0]["reason"] == (
-        "no anchor; 0/3 present; 0 MS1 backfilled; 2 duplicate-assigned"
-    )
-
-
-def test_write_alignment_review_tsv_counts_duplicate_assigned_separately(
-    tmp_path: Path,
-):
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
-
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(has_anchor=True),),
-        cells=(
-            _cell("sample-a", "detected", area=100.0),
-            _cell("sample-b", "backfilled", area=90.0),
-            _cell("sample-c", "duplicate_assigned"),
-            _cell("sample-d", "absent"),
-        ),
-        sample_order=("sample-a", "sample-b", "sample-c", "sample-d"),
-    )
-
-    rows = _read_tsv(
-        write_alignment_review_tsv(
-            tmp_path / "review.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
-
-    assert rows[0]["detected_count"] == "1"
-    assert rows[0]["unchecked_count"] == "0"
-    assert rows[0]["duplicate_assigned_count"] == "1"
-    assert rows[0]["present_rate"] == "0.5"
-    assert "1 duplicate-assigned" in rows[0]["reason"]
 
 
 def test_write_alignment_review_tsv_reports_ambiguous_ms1_owner_cells(
@@ -833,37 +772,6 @@ def test_alignment_writers_preserve_physical_owner_area_source(
     assert values[0]["sample-b"] == "7.77000e+01"
 
 
-def test_write_alignment_matrix_tsv_blanks_duplicate_assigned_cells(tmp_path: Path):
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(
-            _cell(
-                "sample-a",
-                "duplicate_assigned",
-                area=100.0,
-                trace_quality="assigned_duplicate",
-            ),
-            _cell("sample-b", "detected", area=200.0),
-            _cell("sample-c", "detected", area=300.0),
-        ),
-        sample_order=("sample-a", "sample-b", "sample-c"),
-    )
-
-    rows = _read_tsv(
-        write_alignment_matrix_tsv(
-            tmp_path / "matrix.tsv",
-            matrix,
-            production_decisions=_production_decisions(matrix),
-        )
-    )
-
-    assert rows[0]["sample-a"] == ""
-    assert rows[0]["sample-b"] == "2.00000e+02"
-    assert rows[0]["sample-c"] == "3.00000e+02"
-
-
 def test_write_alignment_matrix_tsv_blanks_ambiguous_ms1_owner_cells(
     tmp_path: Path,
 ):
@@ -923,7 +831,7 @@ def test_write_alignment_matrix_tsv_excludes_archived_rows(
             _cell("sample-a", "backfilled", cluster_id="ALN000002", area=200.0),
             _cell(
                 "sample-a",
-                "duplicate_assigned",
+                "ambiguous_ms1_owner",
                 cluster_id="ALN000003",
                 area=300.0,
             ),
@@ -1059,31 +967,6 @@ def test_write_alignment_review_tsv_includes_production_decision_columns(
     assert rows[0]["row_flags"] == "finalized_route:archive"
 
 
-def test_write_alignment_status_matrix_tsv_preserves_duplicate_assigned(
-    tmp_path: Path,
-):
-    from xic_extractor.output.alignment.tsv_writer import (
-        write_alignment_status_matrix_tsv,
-    )
-
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(
-            _cell(
-                "sample-a",
-                "duplicate_assigned",
-                area=None,
-                trace_quality="assigned_duplicate",
-            ),
-        ),
-        sample_order=("sample-a",),
-    )
-
-    rows = _read_tsv(write_alignment_status_matrix_tsv(tmp_path / "status.tsv", matrix))
-
-    assert rows[0]["sample-a"] == "duplicate_assigned"
-
-
 def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
     from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_cells_tsv,
@@ -1183,10 +1066,7 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     assert {row["feature_id"] for row in rows} == {"ALN000001"}
     assert {row["sample_stem"] for row in rows} == {"sample-a", "sample-b"}
     backfilled = next(row for row in rows if row["status"] == "backfilled")
-    assert backfilled["production_cell_status"] in {
-        "accepted_backfill",
-        "review_backfill",
-    }
+    assert backfilled["production_cell_status"] == "accepted_backfill"
     assert backfilled["primary_matrix_area"] == "8"
     assert "region_candidate_count" not in rows[0]
     assert "region_shadow_verdict" not in rows[0]
@@ -1231,54 +1111,6 @@ def test_alignment_cells_tsv_has_no_region_audit_columns(tmp_path: Path) -> None
 
     assert cells[0]["status"] == "detected"
     assert region_columns == []
-
-
-def test_write_alignment_owner_backfill_seed_audit_tsv_is_sidecar(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.alignment.tsv_writer import (
-        ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS,
-        ALIGNMENT_CELLS_COLUMNS,
-        write_alignment_backfill_seed_audit_tsv,
-        write_alignment_cells_tsv,
-    )
-
-    matrix = AlignmentMatrix(
-        clusters=(_cluster(),),
-        cells=(
-            _cell(
-                "sample-a",
-                "backfilled",
-                area=10.0,
-                backfill_seed=True,
-            ),
-            _cell("sample-b", "backfilled", area=8.0),
-            _cell("sample-c", "detected", area=9.0, backfill_seed=True),
-        ),
-        sample_order=("sample-a", "sample-b", "sample-c"),
-    )
-
-    cells = _read_tsv(write_alignment_cells_tsv(tmp_path / "cells.tsv", matrix))
-    audit = _read_tsv(
-        write_alignment_backfill_seed_audit_tsv(
-            tmp_path / "alignment_owner_backfill_seed_audit.tsv",
-            matrix,
-        )
-    )
-
-    assert list(cells[0]) == list(ALIGNMENT_CELLS_COLUMNS)
-    assert list(audit[0]) == list(ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS)
-    assert len(audit) == 1
-    assert audit[0]["feature_id"] == "ALN000001"
-    assert audit[0]["sample_stem"] == "sample-a"
-    assert audit[0]["status"] == "backfilled"
-    assert audit[0]["neutral_loss_tag"] == "DNA_dR"
-    assert audit[0]["backfill_seed_mz"] == "500.222"
-    assert audit[0]["backfill_seed_rt"] == "8.55"
-    assert audit[0]["backfill_request_rt_min"] == "5.55"
-    assert audit[0]["backfill_request_rt_max"] == "11.55"
-    assert audit[0]["backfill_request_ppm"] == "20"
-    assert audit[0]["backfill_apex_delta_sec"] == "-3.6"
 
 
 def test_tsv_writers_escape_formula_like_text(tmp_path: Path):
@@ -1432,7 +1264,6 @@ def _cell(
     candidate_id: str | None = None,
     apex_rt: float = 8.49,
     trace_quality: str | None = None,
-    backfill_seed: bool = False,
     selected_integration: IntegrationResult | None = None,
 ) -> AlignedCell:
     if (
@@ -1464,11 +1295,6 @@ def _cell(
         source_candidate_id=candidate_id,
         reason="cell reason",
         selected_integration=selected_integration,
-        backfill_seed_mz=500.222 if backfill_seed else None,
-        backfill_seed_rt=8.55 if backfill_seed else None,
-        backfill_request_rt_min=5.55 if backfill_seed else None,
-        backfill_request_rt_max=11.55 if backfill_seed else None,
-        backfill_request_ppm=20.0 if backfill_seed else None,
     )
 
 

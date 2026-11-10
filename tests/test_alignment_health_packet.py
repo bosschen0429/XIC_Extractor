@@ -14,7 +14,6 @@ def test_alignment_health_packet_reports_alignment_sentinels(tmp_path: Path) -> 
     alignment_dir.mkdir()
     _write_required_alignment_artifacts(alignment_dir)
     _write_cell_evidence(alignment_dir)
-    _write_seed_audit(alignment_dir)
 
     outputs = health.build_alignment_health_packet(
         alignment_dir=alignment_dir,
@@ -30,13 +29,12 @@ def test_alignment_health_packet_reports_alignment_sentinels(tmp_path: Path) -> 
     sentinel = packet["sentinel_rows"][0]
     assert sentinel["feature_id"] == "FAM_BAD"
     assert sentinel["issue_class"] == (
-        "owner_ambiguity;duplicate_claim;"
+        "owner_ambiguity;"
         "accepted_backfill_dependency;unchecked_pressure;consolidation_loser;"
         "owner_pressure_flag"
     )
     assert sentinel["recommended_action"] == "inspect_owner_assignment"
     assert sentinel["cell_status_counts"] == "ambiguous_ms1_owner:1;rescued:1"
-    assert sentinel["seed_audit_row_count"] == 2
     sentinel_tsv = outputs.sentinels_tsv.read_text(encoding="utf-8")
     assert "FAM_BAD" in sentinel_tsv
     assert "owner_ambiguity" in sentinel_tsv
@@ -58,7 +56,6 @@ def test_alignment_health_packet_allows_missing_optional_artifacts(
     packet = json.loads(outputs.summary_json.read_text(encoding="utf-8"))
     metrics = packet["summary_metrics"]
     assert metrics["cell_evidence_row_count"] == 0
-    assert metrics["seed_audit_row_count"] == 0
     assert outputs.summary_tsv.is_file()
 
 
@@ -85,11 +82,11 @@ def test_alignment_health_packet_requires_review_columns(tmp_path: Path) -> None
 def _write_required_alignment_artifacts(alignment_dir: Path) -> None:
     (alignment_dir / "alignment_review.tsv").write_text(
         "feature_id\tmatrix_row_index\tdetected_count\tambiguous_ms1_owner_count\t"
-        "duplicate_assigned_count\tunchecked_count\taccepted_cell_count\t"
+        "unchecked_count\taccepted_cell_count\t"
         "accepted_backfill_count\trow_flags\treason\n"
-        "FAM_BAD\t1\t4\t2\t1\t1\t2\t1\t"
+        "FAM_BAD\t1\t4\t2\t1\t2\t1\t"
         "family_consolidation_loser;ambiguous_ms1_owner_pressure\tneeds review\n"
-        "FAM_OK\t2\t5\t0\t0\t0\t5\t0\t\tok\n",
+        "FAM_OK\t2\t5\t0\t0\t5\t0\t\tok\n",
         encoding="utf-8",
     )
     (alignment_dir / "alignment_matrix.tsv").write_text(
@@ -104,14 +101,5 @@ def _write_cell_evidence(alignment_dir: Path) -> None:
         "FAM_BAD\tSampleA\trescued\n"
         "FAM_BAD\tSampleB\tambiguous_ms1_owner\n"
         "FAM_OK\tSampleA\tdetected\n",
-        encoding="utf-8",
-    )
-
-
-def _write_seed_audit(alignment_dir: Path) -> None:
-    (alignment_dir / "alignment_owner_backfill_seed_audit.tsv").write_text(
-        "feature_id\tsample_stem\tstatus\n"
-        "FAM_BAD\tSampleA\trescued\n"
-        "FAM_BAD\tSampleB\tmissing\n",
         encoding="utf-8",
     )

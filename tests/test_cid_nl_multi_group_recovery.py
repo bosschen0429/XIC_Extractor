@@ -1144,7 +1144,6 @@ def test_runtime_recovers_every_authorized_rt_group(
                 decision.matrix_value is not None
                 and decision.raw_status == "backfilled"
                 and decision.production_status == "accepted_backfill"
-                and decision.backfill_tier == "accepted_backfill"
                 and decision.blank_reason == ""
                 for decision in written
             )
@@ -1481,9 +1480,6 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
 
 
 def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
-    import csv
-    import json
-
     from xic_extractor.alignment_explanation.reader import (
         read_explanation_metadata,
     )
@@ -1492,22 +1488,16 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
     )
     from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_matrix_tsv,
-        write_alignment_review_tsv,
     )
     from xic_inspector.api import SelectionRequest, prepare_report
 
     config = AlignmentConfig(anchor_min_seed_events=1)
     matrix = tmp_path / "matrix.tsv"
-    review = tmp_path / "review.tsv"
-    for path, write in (
-        (matrix, write_alignment_matrix_tsv),
-        (review, write_alignment_review_tsv),
-    ):
-        write(
-            path,
-            writer.matrix,
-            production_decisions=writer.production_decisions,
-        )
+    write_alignment_matrix_tsv(
+        matrix,
+        writer.matrix,
+        production_decisions=writer.production_decisions,
+    )
     original = matrix.read_bytes()
     report = write_alignment_explanation(
         tmp_path / "backfill.sqlite",
@@ -1529,15 +1519,6 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
     )
     assert "backfill_competition" in risk["risk_flags"]
     assert risk["alternative_partition"] and risk["cost_gap"] >= 0
-    with review.open(encoding="utf-8-sig", newline="") as stream:
-        published = [
-            risk
-            for row in csv.DictReader(stream, delimiter="\t")
-            for risk in json.loads(row["membership_risks_json"])
-            if risk["phase"] == "backfill"
-        ]
-    assert len(published) == 1
-    assert published[0]["sample_key"] == accepted[0]["sample_key"]
     payload = prepare_report(
         report,
         SelectionRequest(strategy="query", group_ids=(accepted[0]["feature_id"],)),

@@ -125,8 +125,8 @@ families.
 **Status note**: Writes `alignment_health_summary.json`,
 `alignment_health_summary.tsv`, and `alignment_health_family_sentinels.tsv`.
 It reads `alignment_review.tsv` (including its Matrix projection),
-`alignment_matrix.tsv`, optional `alignment_backfill_cell_evidence.tsv`
-or `alignment_cells.tsv`, and optional `alignment_owner_backfill_seed_audit.tsv`.
+`alignment_matrix.tsv`, and optional `alignment_backfill_cell_evidence.tsv`
+or `alignment_cells.tsv`.
 It is `diagnostic_only`: it does not read RAW, recompute evidence, change
 selected peaks/areas/counting, alter matrix identity, or grant product
 authority.

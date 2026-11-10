@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import csv
-import json
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from contextlib import ExitStack
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -18,10 +16,7 @@ from xic_extractor.alignment.matrix import (
     AlignmentMatrix,
     cells_by_cluster,
 )
-from xic_extractor.alignment.owner_group_delivery import (
-    GROUP_BACKFILL_SEED_AUDIT_COLUMNS,
-    delivery_feature_id,
-)
+from xic_extractor.alignment.owner_group_delivery import delivery_feature_id
 from xic_extractor.alignment.production_decisions import (
     ProductionCellDecision,
     ProductionDecisionSet,
@@ -61,7 +56,6 @@ ALIGNMENT_REVIEW_COLUMNS = (
     "physical_peak_keys",
     "detected_count",
     "unchecked_count",
-    "duplicate_assigned_count",
     "ambiguous_ms1_owner_count",
     "present_rate",
     "identity_reason",
@@ -70,7 +64,6 @@ ALIGNMENT_REVIEW_COLUMNS = (
     "include_in_primary_matrix",
     "row_flags",
     "membership_risk_flags",
-    "membership_risks_json",
     "warning",
     "reason",
 )
@@ -110,29 +103,6 @@ BACKFILL_EVIDENCE_ROW_FLAGS = frozenset(
         "missing_independent_backfill_identity_evidence",
         "rescue_heavy",
     },
-)
-
-
-ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS = (
-    "feature_id",
-    *GROUP_BACKFILL_SEED_AUDIT_COLUMNS,
-    "sample_stem",
-    "status",
-    "area",
-    "apex_rt",
-    "peak_start_rt",
-    "peak_end_rt",
-    "rt_delta_sec",
-    "neutral_loss_tag",
-    "family_center_mz",
-    "family_center_rt",
-    "backfill_seed_mz",
-    "backfill_seed_rt",
-    "backfill_request_rt_min",
-    "backfill_request_rt_max",
-    "backfill_request_ppm",
-    "backfill_apex_delta_sec",
-    "reason",
 )
 
 
@@ -366,7 +336,6 @@ def _backfill_cell_evidence_rows(
                 cell.sample_stem,
                 cell.status,
                 cell_decision.production_status,
-                cell_decision.backfill_tier,
                 cell_decision.write_matrix_value,
                 row_decision.include_in_primary_matrix,
                 row_decision.identity_decision,
@@ -394,50 +363,6 @@ def _backfill_cell_evidence_rows(
             )
 
     return rows()
-
-
-def write_alignment_backfill_seed_audit_tsv(
-    path: Path,
-    matrix: AlignmentMatrix,
-) -> Path:
-    clusters_by_id = {cluster.feature_id: cluster for cluster in matrix.clusters}
-    rows: list[dict[str, object]] = []
-    for cell in matrix.cells:
-        if cell.status != "backfilled" or cell.backfill_seed_mz is None:
-            continue
-        cluster = clusters_by_id[cell.cluster_id]
-        rows.append(
-            {
-                "feature_id": delivery_feature_id(cluster),
-                "group_construction_role": cell.group_construction_role,
-                "group_delivery_role": cell.group_delivery_role,
-                "group_membership_source": cell.group_membership_source,
-                "gap_fill_state": cell.gap_fill_state,
-                "gap_fill_reason": cell.gap_fill_reason,
-                "missing_observation_state": cell.missing_observation_state,
-                "sample_stem": cell.sample_stem,
-                "status": cell.status,
-                "area": cell.area,
-                "apex_rt": cell.apex_rt,
-                "peak_start_rt": cell.peak_start_rt,
-                "peak_end_rt": cell.peak_end_rt,
-                "rt_delta_sec": cell.rt_delta_sec,
-                "neutral_loss_tag": cluster.neutral_loss_tag,
-                "family_center_mz": cluster.family_center_mz,
-                "family_center_rt": cluster.family_center_rt,
-                "backfill_seed_mz": cell.backfill_seed_mz,
-                "backfill_seed_rt": cell.backfill_seed_rt,
-                "backfill_request_rt_min": cell.backfill_request_rt_min,
-                "backfill_request_rt_max": cell.backfill_request_rt_max,
-                "backfill_request_ppm": cell.backfill_request_ppm,
-                "backfill_apex_delta_sec": _rt_delta_sec(
-                    cell.apex_rt,
-                    cell.backfill_seed_rt,
-                ),
-                "reason": cell.reason,
-            }
-        )
-    return _write_tsv(path, ALIGNMENT_BACKFILL_SEED_AUDIT_COLUMNS, rows)
 
 
 def write_alignment_status_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
@@ -487,7 +412,6 @@ def _review_rows(
         detected_count = raw_status_counts["detected"]
         backfilled_count = raw_status_counts["backfilled"]
         unchecked_count = raw_status_counts["unchecked"]
-        duplicate_assigned_count = raw_status_counts["duplicate_assigned"]
         ambiguous_owner_count = raw_status_counts["ambiguous_ms1_owner"]
         present_count = detected_count + backfilled_count
         rows.append(
@@ -504,7 +428,6 @@ def _review_rows(
                 "physical_peak_keys": ";".join(cluster.physical_peak_keys),
                 "detected_count": detected_count,
                 "unchecked_count": unchecked_count,
-                "duplicate_assigned_count": duplicate_assigned_count,
                 "ambiguous_ms1_owner_count": ambiguous_owner_count,
                 "present_rate": safe_rate(present_count, sample_count),
                 "identity_reason": row_decision.identity_reason,
@@ -521,14 +444,6 @@ def _review_rows(
                         }
                     )
                 ),
-                "membership_risks_json": json.dumps(
-                    [
-                        {"sample_key": sample, **asdict(risk)}
-                        for sample, risk in cluster.membership_risks
-                    ],
-                    ensure_ascii=False,
-                    allow_nan=False,
-                ),
                 "warning": _warning(
                     cluster,
                     sample_count=sample_count,
@@ -541,7 +456,6 @@ def _review_rows(
                     present_count,
                     sample_count,
                     backfilled_count,
-                    duplicate_assigned_count,
                     ambiguous_owner_count,
                 ),
             }
@@ -562,14 +476,7 @@ def _backfill_evidence_family_ids(
         if any(cell.status == "backfilled" for cell in cells):
             family_ids.add(cluster_id)
             continue
-        if any(
-            count > 0
-            for count in (
-                row_decision.quantifiable_backfill_count,
-                row_decision.accepted_backfill_count,
-                row_decision.review_backfill_count,
-            )
-        ):
+        if row_decision.accepted_backfill_count > 0:
             family_ids.add(cluster_id)
             continue
         if set(row_decision.row_flags) & BACKFILL_EVIDENCE_ROW_FLAGS:
@@ -599,12 +506,7 @@ def _include_backfill_evidence_cell(
         return True
     if decision.write_matrix_value:
         return True
-    return decision.production_status in {
-        "detected",
-        "accepted_backfill",
-        "review_backfill",
-        "rejected_backfill",
-    }
+    return decision.production_status in {"detected", "accepted_backfill"}
 
 
 def _write_tsv(
@@ -661,7 +563,6 @@ def _reason(
     present_count: int,
     sample_count: int,
     backfilled_count: int,
-    duplicate_assigned_count: int,
     ambiguous_owner_count: int,
 ) -> str:
     prefix = "anchor family" if cluster.has_anchor else "no anchor"
@@ -670,14 +571,6 @@ def _reason(
         f"{present_count}/{sample_count} present",
         f"{backfilled_count} MS1 backfilled",
     ]
-    if duplicate_assigned_count:
-        parts.append(f"{duplicate_assigned_count} duplicate-assigned")
     if ambiguous_owner_count:
         parts.append(f"{ambiguous_owner_count} ambiguous MS1 owner")
     return "; ".join(parts)
-
-
-def _rt_delta_sec(left_rt: float | None, right_rt: float | None) -> float | None:
-    if left_rt is None or right_rt is None:
-        return None
-    return (left_rt - right_rt) * 60.0

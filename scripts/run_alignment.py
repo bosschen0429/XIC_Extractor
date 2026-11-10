@@ -242,7 +242,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 explanation_full_audit=args.explanation_full_audit,
                 explanation_curve_mz_ranges=tuple(args.explanation_curve_mz_range),
                 emit_alignment_status_matrix=args.emit_alignment_status_matrix,
-                emit_alignment_backfill_seed_audit=args.emit_alignment_backfill_seed_audit,
             ),
         )
         context = UntargetedExecutionContext(timing_recorder=timing_recorder)
@@ -298,8 +297,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Alignment matrix TSV: {outputs.matrix_tsv}")
     if outputs.cells_tsv is not None:
         print(f"Alignment cells TSV: {outputs.cells_tsv}")
-    if outputs.backfill_seed_audit_tsv is not None:
-        print(f"Alignment backfill seed audit TSV: {outputs.backfill_seed_audit_tsv}")
     if outputs.status_matrix_tsv is not None:
         print(f"Alignment status matrix TSV: {outputs.status_matrix_tsv}")
     if outputs.run_metadata_json is not None:
@@ -596,14 +593,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--baseline-integration-method",
         help="Baseline integration method. Only asls is supported.",
-    )
-    parser.add_argument(
-        "--emit-alignment-backfill-seed-audit",
-        action="store_true",
-        help=(
-            "Emit lightweight owner-backfill seed provenance needed by retained "
-            "backfill evidence gates and seed-specific overlay galleries."
-        ),
     )
     parser.add_argument("--emit-alignment-status-matrix", action="store_true")
     return parser.parse_args(argv)

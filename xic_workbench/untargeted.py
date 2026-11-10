@@ -377,7 +377,6 @@ def _alignment_available_outputs(
         ("matrix_tsv", outputs.matrix_tsv),
         ("backfill_cell_evidence_tsv", outputs.backfill_cell_evidence_tsv),
         ("cells_tsv", outputs.cells_tsv),
-        ("backfill_seed_audit_tsv", outputs.backfill_seed_audit_tsv),
         ("status_matrix_tsv", outputs.status_matrix_tsv),
         ("run_metadata_json", outputs.run_metadata_json),
     )

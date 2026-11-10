@@ -931,10 +931,9 @@ def test_accepted_competition_roundtrip_keeps_sample_attribution_and_values(tmp_
 
 
 @pytest.mark.parametrize("full_audit", (False, True))
-def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
+def test_produced_membership_risk_reaches_final_samples(
     tmp_path, monkeypatch, full_audit
 ):
-    import csv
     from dataclasses import asdict, replace
 
     from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
@@ -946,10 +945,6 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
         RtCalibrationPolicy,
         build_batch_rt_calibration,
     )
-    from xic_extractor.alignment.untargeted_finalized_matrix import (
-        project_completed_untarget_batch_writer_inputs,
-    )
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_review_tsv
 
     completed, _, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "positive"
@@ -996,9 +991,6 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
         for group in completed.initial_groups
         for member in group.member_subjects
     }
-    writer = project_completed_untarget_batch_writer_inputs(
-        completed.application_result, membership_risks_by_owner=risks
-    )
     original = matrix.read_bytes()
     report = write_alignment_explanation(
         tmp_path / "produced.sqlite",
@@ -1012,19 +1004,6 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
     assert {
         cell["sample_key"]: cell["membership_risks"][0] for cell in cells
     } == expected
-    review = tmp_path / "review.tsv"
-    write_alignment_review_tsv(
-        review,
-        writer.matrix,
-        production_decisions=writer.production_decisions,
-    )
-    with review.open(encoding="utf-8-sig", newline="") as stream:
-        rows = list(csv.DictReader(stream, delimiter="\t"))
-    actual = {}
-    for row in rows:
-        for risk in json.loads(row["membership_risks_json"]):
-            actual[risk.pop("sample_key")] = risk
-    assert actual == expected
     assert matrix.read_bytes() == original
 
 

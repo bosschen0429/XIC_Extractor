@@ -46,7 +46,6 @@ from xic_extractor.output.alignment.output_levels import (
 )
 from xic_extractor.output.alignment.tsv_writer import (
     write_alignment_backfill_cell_evidence_tsv,
-    write_alignment_backfill_seed_audit_tsv,
     write_alignment_cells_tsv,
     write_alignment_matrix_tsv,
     write_alignment_review_tsv,
@@ -61,7 +60,6 @@ class AlignmentRunOutputs:
     matrix_tsv: Path | None = None
     backfill_cell_evidence_tsv: Path | None = None
     cells_tsv: Path | None = None
-    backfill_seed_audit_tsv: Path | None = None
     status_matrix_tsv: Path | None = None
     run_metadata_json: Path | None = None
     owner_backfill_evaluation_coverage: BackfillEvaluationCoverageBatch | None = None
@@ -78,7 +76,6 @@ def output_paths(
     output_level: AlignmentOutputLevel,
     emit_alignment_cells: bool,
     emit_alignment_status_matrix: bool,
-    emit_alignment_backfill_seed_audit: bool = False,
     emit_target_snapshot_metadata: bool = False,
 ) -> AlignmentRunOutputs:
     artifacts = set(artifact_names_for_output_level(output_level))
@@ -105,11 +102,6 @@ def output_paths(
         backfill_cell_evidence_tsv=(
             output_dir / "alignment_backfill_cell_evidence.tsv"
             if "alignment_backfill_cell_evidence.tsv" in artifacts
-            else None
-        ),
-        backfill_seed_audit_tsv=(
-            output_dir / "alignment_owner_backfill_seed_audit.tsv"
-            if emit_alignment_backfill_seed_audit
             else None
         ),
         status_matrix_tsv=(
@@ -282,16 +274,6 @@ def write_outputs_atomic(
                 ),
             ),
         )
-    if outputs.backfill_seed_audit_tsv is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.backfill_seed_audit_tsv,
-                lambda path: write_alignment_backfill_seed_audit_tsv(
-                    path,
-                    matrix,
-                ),
-            ),
-        )
     if outputs.status_matrix_tsv is not None:
         output_paths_and_writers.append(
             (
@@ -315,12 +297,7 @@ def write_outputs_atomic(
 def supports_streamed_untargeted_outputs(outputs: AlignmentRunOutputs) -> bool:
     """TSV-only finalized output needs no global cell or decision population."""
 
-    return outputs.matrix_tsv is not None and not any(
-        (
-            outputs.status_matrix_tsv,
-            outputs.backfill_seed_audit_tsv,
-        )
-    )
+    return outputs.matrix_tsv is not None and outputs.status_matrix_tsv is None
 
 
 def write_streamed_untargeted_outputs_atomic(

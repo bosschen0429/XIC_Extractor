@@ -230,7 +230,6 @@ report tables. It does not assert group identity across different input sets.
 | physical_peak_keys | string | Semicolon-separated physical peak keys; not event cluster IDs |
 | detected_count | int | Detected sample count |
 | unchecked_count | int | Unchecked sample count |
-| duplicate_assigned_count | int | Duplicate assignment count |
 | ambiguous_ms1_owner_count | int | Ambiguous ownership count |
 | present_rate | float | Detection rate (0.0–1.0) |
 

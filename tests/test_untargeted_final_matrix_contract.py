@@ -20,9 +20,6 @@ FORBIDDEN_PRIMARY_STATUSES = {
     "detected",
     "backfilled",
     "accepted_backfill",
-    "review_backfill",
-    "rejected_backfill",
-    "duplicate_assigned",
     "ambiguous_ms1_owner",
     "absent",
     "unchecked",
@@ -58,7 +55,7 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
             _cell("s2", "FAM_PROVISIONAL", "backfilled", 75.0),
             _cell("s1", "FAM002", "backfilled", 80.0),
             _cell("s2", "FAM002", "absent", None),
-            _cell("s1", "FAM003", "duplicate_assigned", 70.0),
+            _cell("s1", "FAM003", "unchecked", 70.0),
             _cell("s2", "FAM003", "ambiguous_ms1_owner", None),
         ),
     )
@@ -149,11 +146,7 @@ def _cell(
         trace_quality="clean" if area is not None else status,
         scan_support_score=0.8 if area is not None else None,
         source_candidate_id=f"{sample_stem}#1" if status == "detected" else None,
-        reason=(
-            "duplicate MS1 peak claim; winner=FAM001; original_status=detected"
-            if status == "duplicate_assigned"
-            else status
-        ),
+        reason=status,
         selected_integration=selected_integration,
     )
 
