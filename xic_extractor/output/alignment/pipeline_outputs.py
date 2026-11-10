@@ -164,7 +164,6 @@ def write_completed_untargeted_outputs_atomic(
     metadata: dict[str, str],
     timing_recorder: TimingRecorder,
     consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
-    ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
     before_write: Callable[[], None] | None = None,
 ) -> int:
@@ -193,7 +192,6 @@ def write_completed_untargeted_outputs_atomic(
             {name: temp_paths[path] for name, path in row_paths.items()},
             completed,
             consume_child=consume_child,
-            ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
             membership_risks_by_owner=membership_risks_by_owner,
         )
         if outputs.run_metadata_json is not None:

@@ -2,8 +2,9 @@
 
 A batch is rendered in one pass, one group at a time, so no output keeps the
 whole Matrix in memory. Row-level values that exist only in the written
-outputs (the reported m/z and RT, the ordinal ``feature_id``, the cell's
-source candidate) are derived here when written.
+outputs (the reported RT, the ordinal ``feature_id``, the cell's source
+candidate) are derived here when written; the reported m/z is the group's own
+centre.
 """
 
 from __future__ import annotations
@@ -56,9 +57,8 @@ if TYPE_CHECKING:
         FinalizedUntargetBatchApplicationResult,
     )
 
-PRESENTATION_FORMULA_VERSION = "cross_sample_owner_arithmetic_mean"
-# Mean of Discovery's apex MS1 readings of the row's direct members.
-APEX_READING_CENTER_MZ_BASIS = "discovery_ms1_apex_mean"
+# How a group's centre is computed: the plain mean over its members.
+GROUP_CENTER_BASIS = "cross_sample_owner_arithmetic_mean"
 
 CellOrigin = Literal["detected", "backfilled"]
 
@@ -150,15 +150,10 @@ def write_alignment_tsvs(
     completed: FinalizedUntargetBatchApplicationResult,
     *,
     consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
-    ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
 ) -> int:
     """Render the requested TSVs (``matrix``, ``review``, ``backfill``,
-    ``cells``, ``status``) in one bounded pass and return the group count.
-
-    ``ms1_apex_mz_by_candidate`` holds Discovery's apex MS1 readings; they set
-    only the reported m/z (see ``_reported_center``).
-    """
+    ``cells``, ``status``) in one bounded pass and return the group count."""
 
     sample_order = completed_untarget_batch_sample_order(completed)
     headers = {
@@ -194,11 +189,6 @@ def write_alignment_tsvs(
         for child in completed.children:
             core = child.scientific_core
             direct_candidate_ids = _direct_candidate_ids(core)
-            candidate_by_physical_id = (
-                _direct_candidate_ids_by_physical_id(core)
-                if ms1_apex_mz_by_candidate
-                else {}
-            )
             for group, canonical_cells in child.group_cells:
                 group_count += 1
                 feature_id = feature_id_label(group_count)
@@ -207,12 +197,10 @@ def write_alignment_tsvs(
                     cast(FinalGroupCellObservation, cell.evidence) for cell in cells
                 )
                 peaks = _member_direct_peaks(evidence)
-                center_mz, center_rt, center_mz_basis = _reported_center(
-                    peaks,
-                    _apex_readings(
-                        peaks, candidate_by_physical_id, ms1_apex_mz_by_candidate
-                    ),
-                )
+                center_mz = float(group.group_center_mz)
+                center_rt = _member_mean_rt(peaks)
+                if not math.isfinite(center_mz):
+                    raise ValueError("group centre m/z is not finite")
                 duplicate_peaks = seen_physical_peaks.intersection(peaks)
                 if duplicate_peaks:
                     raise ValueError(
@@ -283,7 +271,7 @@ def write_alignment_tsvs(
                             "feature_id": feature_id,
                             "matrix_mz": center_mz,
                             "matrix_rt": center_rt,
-                            "center_mz_basis": center_mz_basis,
+                            "center_mz_basis": GROUP_CENTER_BASIS,
                             "accepted_cell_count": sum(
                                 cell.value is not None for cell in cells
                             ),
@@ -431,55 +419,13 @@ def _member_direct_peaks(
     return tuple(sorted(peaks, key=lambda peak: peak.measured_order_key))
 
 
-def _apex_readings(
-    peaks: tuple[PeakObservationContent, ...],
-    candidate_by_physical_id: Mapping[PeakObservationContent, str],
-    ms1_apex_mz_by_candidate: Mapping[str, float] | None,
-) -> dict[PeakObservationContent, float]:
-    """Discovery's apex MS1 reading of each peak that has one."""
-
-    readings = {}
-    for peak in peaks if ms1_apex_mz_by_candidate else ():
-        candidate_id = candidate_by_physical_id.get(peak)
-        reading = (
-            None
-            if candidate_id is None
-            else cast(Mapping[str, float], ms1_apex_mz_by_candidate).get(candidate_id)
-        )
-        if reading is not None and math.isfinite(reading):
-            readings[peak] = float(reading)
-    return readings
-
-
-def _reported_center(
-    peaks: tuple[PeakObservationContent, ...],
-    apex_mz_by_peak: Mapping[PeakObservationContent, float],
-) -> tuple[float, float, str]:
-    """The written m/z and RT of a group's member peaks, and the m/z basis.
-
-    RT is the mean apex of the peaks. The m/z is their mean measured m/z unless
-    any of them has a Discovery MS1 apex reading; then it is the mean of those
-    readings, because the precursor m/z inferred from product + loss has only
-    MS2 accuracy (``docs/product/quant-matrix.md``). It reads only the peaks and
-    their readings. This is the reported centre only: the group's own centre,
-    which its Backfill searches used, stays on the group.
-    """
+def _member_mean_rt(peaks: tuple[PeakObservationContent, ...]) -> float:
+    """The written RT of a group: the mean apex of its member peaks."""
 
     for peak in peaks:
-        if not math.isfinite(peak.mz) or not math.isfinite(
-            peak.integration.rt_apex_min
-        ):
-            raise ValueError("Matrix row lacks finite owner-backed Mz/RT observations")
-    center_mz = sum(float(peak.mz) for peak in peaks) / len(peaks)
-    center_mz_basis = PRESENTATION_FORMULA_VERSION
-    readings = [apex_mz_by_peak[peak] for peak in peaks if peak in apex_mz_by_peak]
-    if readings:
-        center_mz = sum(readings) / len(readings)
-        center_mz_basis = APEX_READING_CENTER_MZ_BASIS
-    center_rt = sum(float(peak.integration.rt_apex_min) for peak in peaks) / len(peaks)
-    if not math.isfinite(center_mz) or not math.isfinite(center_rt):
-        raise ValueError("writer projection produced non-finite coordinates")
-    return center_mz, center_rt, center_mz_basis
+        if not math.isfinite(peak.integration.rt_apex_min):
+            raise ValueError("Matrix row lacks finite owner-backed RT observations")
+    return sum(float(peak.integration.rt_apex_min) for peak in peaks) / len(peaks)
 
 
 def _cell_context_facts(
@@ -561,22 +507,6 @@ def _direct_candidate_ids(
         candidate_ids[key] = min(
             candidate_ids.get(key, subject.candidate_id), subject.candidate_id
         )
-    return candidate_ids
-
-
-def _direct_candidate_ids_by_physical_id(
-    scientific_core: FinalizedScientificAlignment,
-) -> dict[PeakObservationContent, str]:
-    candidate_ids: dict[PeakObservationContent, str] = {}
-    for subject in scientific_core.terminal_subjects:
-        if type(subject) is not ObservedSearchSubject:
-            continue
-        for ref in subject.hypothesis.peak_observation_refs:
-            physical_id = ref.content.physical_identity
-            candidate_ids[physical_id] = min(
-                candidate_ids.get(physical_id, subject.candidate_id),
-                subject.candidate_id,
-            )
     return candidate_ids
 
 
@@ -734,7 +664,7 @@ def _review_row(
 
 
 def _row_flags(group: CrossSamplePeakGroupHypothesis) -> str:
-    return f"finalized_route:{group.destination};{PRESENTATION_FORMULA_VERSION}"
+    return f"finalized_route:{group.destination};{GROUP_CENTER_BASIS}"
 
 
 def _warning(

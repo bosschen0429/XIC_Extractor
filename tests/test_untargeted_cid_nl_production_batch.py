@@ -1315,31 +1315,8 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             )
     assert row["center_mz_basis"] == "cross_sample_owner_arithmetic_mean"
 
-    # Discovery's apex MS1 readings replace the reported center only; members
-    # without a reading and the repaired cell do not dilute it.
-    direct_candidates = [
-        candidate for values in peaks_by_sample.values() for candidate in values
-    ]
-    readings = {
-        candidate.peak_id: candidate.best_event_precursor_mz * (1 - (12 + index) * 1e-6)
-        for index, candidate in enumerate(direct_candidates[:-1])
-    }
-    reported = written_rows(
-        tmp_path / "reported", writer_inputs, ms1_apex_mz_by_candidate=readings
-    )
-    (reported_row,) = reported["review"]
-    assert float(reported_row["family_center_mz"]) == pytest.approx(
-        sum(readings.values()) / len(readings)
-    )
-    assert reported_row["center_mz_basis"] == "discovery_ms1_apex_mean"
-    assert reported_row["family_center_rt"] == row["family_center_rt"]
-    assert [
-        {key: value for key, value in cell.items() if not key.startswith("family_")}
-        for cell in reported["cells"]
-    ] == [
-        {key: value for key, value in cell.items() if not key.startswith("family_")}
-        for cell in written["cells"]
-    ]
+    # The written m/z is the group's own centre, the one its Backfill used.
+    assert float(row["family_center_mz"]) == written_group.group_center_mz
 
     weighted_values = dict(zip(sample_stems, (1.0, 9.0, 2.0, 9.0), strict=True))
     for variant, no_write_sample in (("unequal", None), ("no-write", "Hold")):
