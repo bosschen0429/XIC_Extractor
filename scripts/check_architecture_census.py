@@ -485,17 +485,21 @@ def write_architecture_census_json(
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+# Construction-time hooks where this repository grew self-validation and sealing.
+CONSTRUCTION_HOOKS = frozenset({"__post_init__", "__init_subclass__"})
+
+
 @dataclass
 class _DefenseScope:
+    path: str
     name: str
     fingerprint: str
     line: int
-    counts: dict[str, int]
+    hook_statements: int
 
 
-def _internal_defense_profile(source: str) -> list[_DefenseScope]:
-    """Collect bounded syntax signals; this is not a semantic trust analysis."""
-    tree = ast.parse(source)
+def _internal_defense_profile(source: str, path: str) -> list[_DefenseScope]:
+    """Count statements in construction hooks; not a semantic trust analysis."""
     result: list[_DefenseScope] = []
 
     def scan(scope: Any, name: str) -> None:
@@ -520,57 +524,37 @@ def _internal_defense_profile(source: str) -> list[_DefenseScope]:
                 continue
             body.append(statement)
             collect(statement)
-        token_nodes = nodes
-        signature = ""
-        if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            token_nodes = [*nodes, *ast.walk(scope.args)]
-            signature = ast.dump(scope.args)
-        counts = {
-            "mint-token": sum(
-                isinstance(label, str) and label.lower().endswith("mint_token")
-                for node in token_nodes
-                for label in [
-                    getattr(
-                        node,
-                        "id",
-                        getattr(
-                            node,
-                            "attr",
-                            getattr(node, "arg", getattr(node, "value", None)),
-                        ),
-                    )
-                ]
-            ),
-        }
-        result.append(
-            _DefenseScope(
-                name=name,
-                fingerprint=type(scope).__name__
-                + signature
-                + "".join(ast.dump(n) for n in body),
-                line=getattr(scope, "lineno", 1),
-                counts=counts,
+        if getattr(scope, "name", None) in CONSTRUCTION_HOOKS:
+            result.append(
+                _DefenseScope(
+                    path=path,
+                    name=name,
+                    fingerprint=ast.dump(scope.args)
+                    + "".join(ast.dump(n) for n in body),
+                    line=scope.lineno,
+                    hook_statements=sum(isinstance(n, ast.stmt) for n in nodes),
+                )
             )
-        )
         for child in children:
             scan(child, child.name if name == "<module>" else name + "." + child.name)
 
-    scan(tree, "<module>")
+    scan(ast.parse(source), "<module>")
     return result
 
 
 def _match_defense_scopes(
     previous: list[_DefenseScope], current: list[_DefenseScope]
 ) -> dict[int, _DefenseScope]:
-    """Match occurrences, then unambiguous exact-body renames, never copies."""
+    """Match path and name, name across moves, then exact-body renames, not copies."""
     remaining = list(previous)
     matched: dict[int, _DefenseScope] = {}
-    for index, scope in enumerate(current):
-        for old in remaining:
-            if old.name == scope.name:
-                matched[index] = old
-                remaining.remove(old)
-                break
+    for key in (lambda s: (s.path, s.name), lambda s: s.name):
+        for index, scope in enumerate(current):
+            for old in remaining if index not in matched else ():
+                if key(old) == key(scope):
+                    matched[index] = old
+                    remaining.remove(old)
+                    break
     for index, scope in enumerate(current):
         if index in matched:
             continue
@@ -613,7 +597,7 @@ def validate_internal_defense_growth(
             "-M",
             "--name-status",
             "-z",
-            "--diff-filter=AMRT",
+            "--diff-filter=ADMRT",
             commit,
             "--",
             "xic_extractor",
@@ -621,7 +605,8 @@ def validate_internal_defense_growth(
         .decode()
         .split("\0")[:-1]
     )
-    problems = []
+    previous: list[_DefenseScope] = []
+    current: list[_DefenseScope] = []
     for status in changes:
         original = next(changes)
         relative = next(changes) if status.startswith("R") else original
@@ -630,23 +615,23 @@ def validate_internal_defense_growth(
         path = (repo_root / relative).resolve()
         if not path.is_relative_to(repo_root.resolve()):
             raise ValueError("internal-defense source escapes repository")
-        before = b"" if status == "A" else git("show", commit + ":" + original)
-        after = git("show", ":" + relative) if staged else path.read_bytes()
-        previous = _internal_defense_profile(before.decode("utf-8-sig"))
-        current = _internal_defense_profile(after.decode("utf-8-sig"))
-        matched = _match_defense_scopes(previous, current)
-        for index, scope in enumerate(current):
-            old_counts = matched[index].counts if index in matched else {}
-            for rule, count in scope.counts.items():
-                old_count = old_counts.get(rule, 0)
-                if count > old_count:
-                    problems.append(
-                        f"{relative}:{scope.line}: internal-defense {rule} growth "
-                        f"in {scope.name} "
-                        f"({old_count} -> {count}); remove unnecessary machinery "
-                        "or seek "
-                        "a maintainer decision on the gate scope"
-                    )
+        if status != "A":
+            before = git("show", commit + ":" + original).decode("utf-8-sig")
+            previous += _internal_defense_profile(before, relative)
+        if status != "D":
+            after = git("show", ":" + relative) if staged else path.read_bytes()
+            current += _internal_defense_profile(after.decode("utf-8-sig"), relative)
+    matched = _match_defense_scopes(previous, current)
+    problems = []
+    for index, scope in enumerate(current):
+        old = matched[index].hook_statements if index in matched else 0
+        if scope.hook_statements > old:
+            problems.append(
+                f"{scope.path}:{scope.line}: internal-defense construction-hook "
+                f"growth in {scope.name} ({old} -> {scope.hook_statements} "
+                "statements); remove unnecessary machinery or seek "
+                "a maintainer decision on the gate scope"
+            )
     return problems
 
 

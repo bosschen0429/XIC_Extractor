@@ -42,15 +42,17 @@ def _defense_gate_repo(tmp_path: Path, source: str) -> Path:
     return path
 
 
-_MINT = "def mint(value):\n return Ref(value, _MINT_TOKEN)\n"
+_HOOK = "class Ref:\n def __post_init__(self):\n  require(self.value)\n"
 
 
 @pytest.mark.parametrize(
     "after",
     (
-        "_OWNER_MINT_TOKEN = object()\n",
-        "class Ref:\n _mint_token: object\n",
-        _MINT,
+        _HOOK,
+        "class Ref:\n def __post_init__(self):\n  if self.value < 0:\n"
+        "   raise ValueError\n",
+        "class Ref:\n def __init_subclass__(cls):\n  raise TypeError\n",
+        "if condition:\n" + "".join(" " + line + "\n" for line in _HOOK.splitlines()),
     ),
 )
 def test_internal_defense_growth_is_rejected(tmp_path: Path, after: str) -> None:
@@ -60,7 +62,7 @@ def test_internal_defense_growth_is_rejected(tmp_path: Path, after: str) -> None
     problems = census.validate_internal_defense_growth(tmp_path, "HEAD")
 
     assert any(
-        "mint-token" in problem and "xic_extractor/example.py:" in problem
+        "construction-hook" in problem and "xic_extractor/example.py:" in problem
         for problem in problems
     )
 
@@ -68,18 +70,15 @@ def test_internal_defense_growth_is_rejected(tmp_path: Path, after: str) -> None
 @pytest.mark.parametrize(
     ("before", "after"),
     (
-        (_MINT, _MINT),
-        (_MINT, ""),
+        (_HOOK, _HOOK),
+        (_HOOK, ""),
+        (_HOOK + "  require(self.other)\n", _HOOK),
         (
-            "class Ref:\n _mint_token: object\n def check(self):\n"
-            "  return self._mint_token is _MINT_TOKEN\n",
-            "class Ref:\n _mint_token: object\n",
+            _HOOK,
+            'class Ref:\n """Updated explanation."""\n def __post_init__(self):\n'
+            '  """Updated explanation."""\n  require(self.value)\n',
         ),
-        (
-            _MINT,
-            "def mint(value):\n"
-            ' """Updated explanation."""\n return Ref(value, _MINT_TOKEN)\n',
-        ),
+        (_HOOK, "class Ref:\n def __post_init__(self):\n  require(self.renamed)\n"),
     ),
 )
 def test_internal_defense_gate_preserves_existing_boundaries_and_cleanup(
@@ -98,7 +97,7 @@ def test_internal_defense_gate_preserves_existing_boundaries_and_cleanup(
 def test_internal_defense_gate_tracks_module_renames(
     tmp_path: Path, staged: bool, growth: bool
 ) -> None:
-    path = _defense_gate_repo(tmp_path, "_MINT_TOKEN = object()\n" + _MINT)
+    path = _defense_gate_repo(tmp_path, _HOOK)
     destination = path.with_name("renamed.py")
     subprocess.run(
         ["git", "-C", str(tmp_path), "mv", str(path), str(destination)],
@@ -107,9 +106,7 @@ def test_internal_defense_gate_tracks_module_renames(
         env=census._git_subprocess_environment(),
     )
     if growth:
-        destination.write_text(
-            destination.read_text() + "def remint(value):\n return mint(_MINT_TOKEN)\n"
-        )
+        destination.write_text(destination.read_text() + "  require(self.other)\n")
         subprocess.run(
             ["git", "-C", str(tmp_path), "add", "."],
             check=True,
@@ -123,19 +120,47 @@ def test_internal_defense_gate_tracks_module_renames(
 
 
 @pytest.mark.parametrize(
+    ("remaining", "moved", "growth"),
+    (
+        ("", _HOOK, False),
+        (None, _HOOK, False),
+        ("", _HOOK + "  require(self.other)\n", True),
+    ),
+)
+def test_internal_defense_gate_tracks_scopes_moved_between_modules(
+    tmp_path: Path, remaining: str | None, moved: str, growth: bool
+) -> None:
+    path = _defense_gate_repo(tmp_path, _HOOK + "def keep():\n pass\n" * 9)
+    if remaining is None:
+        path.unlink()
+    else:
+        path.write_text(remaining, encoding="utf-8")
+    path.with_name("destination.py").write_text(moved, encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "-A"],
+        check=True,
+        capture_output=True,
+        env=census._git_subprocess_environment(),
+    )
+    problems = census.validate_internal_defense_growth(tmp_path, "HEAD", staged=True)
+    assert bool(problems) is growth
+    assert all("xic_extractor/destination.py:" in problem for problem in problems)
+
+
+@pytest.mark.parametrize(
     "source",
     (
-        "class AlignmentConfig:\n def __post_init__(self):\n"
-        "  assert 0 <= self.probability <= 1\n",
         "def _validate_target_relationships(rows):\n"
         " assert all(row.parent in rows for row in rows)\n",
-        "class LocalPeakShape:\n def __post_init__(self):\n  assert self.width > 0\n",
-        "class ArtifactRef:\n def __post_init__(self):\n  verify(self.artifact)\n",
+        "class Accumulator:\n def __init__(self, samples):\n"
+        "  self.samples = tuple(samples)\n  self.rows = {}\n",
+        "def parse(text):\n if not text:\n  raise ValueError('empty')\n"
+        " return text.split()\n",
         "import hashlib\ndef fingerprint(path):\n"
         " return hashlib.sha256(path.read_bytes()).hexdigest()\n",
     ),
 )
-def test_internal_defense_gate_allows_validation_and_hashing(
+def test_internal_defense_gate_allows_ordinary_functions(
     tmp_path: Path, source: str
 ) -> None:
     path = _defense_gate_repo(tmp_path, "")
@@ -146,16 +171,17 @@ def test_internal_defense_gate_allows_validation_and_hashing(
 def test_internal_defense_gate_compares_duplicate_scopes_by_occurrence(
     tmp_path: Path,
 ) -> None:
-    path = _defense_gate_repo(
-        tmp_path,
-        "def mint(value):\n pass\nif condition:\n def mint(value):\n  pass\n",
+    empty = "class Ref:\n def __post_init__(self):\n  pass\n"
+    nested = "if condition:\n" + "".join(
+        " " + line + "\n" for line in empty.splitlines()
     )
+    path = _defense_gate_repo(tmp_path, empty + nested)
     path.write_text(
-        _MINT + "if condition:\n def mint(value):\n  pass\n",
+        empty + "  require(self.value)\n" + nested,
         encoding="utf-8",
     )
     assert any(
-        "mint-token" in p
+        "construction-hook" in p
         for p in census.validate_internal_defense_growth(tmp_path, "HEAD")
     )
 
@@ -163,26 +189,16 @@ def test_internal_defense_gate_compares_duplicate_scopes_by_occurrence(
 @pytest.mark.parametrize(
     ("before", "after", "growth"),
     (
+        (_HOOK, _HOOK.replace("class Ref", "class NewRef"), False),
         (
-            "def _mint_ref(data):\n return Ref(data, _MINT_TOKEN)\n",
-            "def mint_ref(data):\n return Ref(data, _MINT_TOKEN)\n",
-            False,
-        ),
-        (
-            "class OldRef:\n _mint_token: object\n",
-            "class NewRef:\n _mint_token: object\n",
-            False,
-        ),
-        (
-            "def mint_ref(data):\n return Ref(data, _MINT_TOKEN)\n",
-            "def mint_ref(data):\n return Ref(data, _MINT_TOKEN)\n"
-            "def copy_ref(data):\n return Ref(data, _MINT_TOKEN)\n",
+            _HOOK,
+            _HOOK + _HOOK.replace("class Ref", "class CopyRef"),
             True,
         ),
         (
-            "def old(data):\n return Ref(data, _MINT_TOKEN)\n",
-            "def first(data):\n return Ref(data, _MINT_TOKEN)\n"
-            "def second(data):\n return Ref(data, _MINT_TOKEN)\n",
+            _HOOK.replace("class Ref", "class Old"),
+            _HOOK.replace("class Ref", "class First")
+            + _HOOK.replace("class Ref", "class Second"),
             True,
         ),
     ),
@@ -197,7 +213,7 @@ def test_internal_defense_gate_preserves_renamed_but_not_copied_scopes(
 
 def test_internal_defense_gate_uses_index_not_unstaged_source(tmp_path: Path) -> None:
     path = _defense_gate_repo(tmp_path, "")
-    path.write_text("_OWNER_MINT_TOKEN = object()\n", encoding="utf-8")
+    path.write_text(_HOOK, encoding="utf-8")
     subprocess.run(
         ["git", "-C", str(tmp_path), "add", "."],
         check=True,
@@ -214,7 +230,7 @@ def test_internal_defense_gate_uses_index_not_unstaged_source(tmp_path: Path) ->
         env=census._git_subprocess_environment(),
         capture_output=True,
     )
-    path.write_text("_OWNER_MINT_TOKEN = object()\n", encoding="utf-8")
+    path.write_text(_HOOK, encoding="utf-8")
     assert census.validate_internal_defense_growth(tmp_path, "HEAD", staged=True) == []
     assert census.validate_internal_defense_growth(tmp_path, "HEAD")
 
@@ -227,9 +243,9 @@ def test_internal_defense_cli_blocks_growth_and_missing_base(
     path = _defense_gate_repo(tmp_path, "")
     monkeypatch.setattr(census, "ROOT", tmp_path)
     assert census.main(["--internal-defense-base", "HEAD"]) == 0
-    path.write_text("_OWNER_MINT_TOKEN = object()\n", encoding="utf-8")
+    path.write_text(_HOOK, encoding="utf-8")
     assert census.main(["--internal-defense-base", "HEAD"]) == 1
-    assert "mint-token" in capsys.readouterr().err
+    assert "construction-hook" in capsys.readouterr().err
     assert census.main(["--internal-defense-base", "missing-ref"]) == 1
     assert "baseline" in capsys.readouterr().err
 

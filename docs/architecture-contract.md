@@ -124,11 +124,16 @@ identified:
 ### Internal Defense Growth Gate
 
 `scripts/check_architecture_census.py --internal-defense-base REF` blocks
-growth in mint-token uses in changed `xic_extractor` source (pre-commit against
-HEAD, CI against the base commit). It is a syntactic trigger: validators and
-hashing are not gated, and renames or indirect calls limit coverage. There is no
-suppression flag. A blocked change removes the unnecessary machinery or gets an
-explicit maintainer decision; the agent does not grant its own exception.
+construction-time self-validation growth in changed `xic_extractor` source
+(pre-commit against HEAD, CI against the base commit): a `__post_init__` or
+`__init_subclass__` body with more statements than its counterpart in REF. A
+hook keeps its counterpart when it keeps its qualified name, moves with that
+name to another changed module, or is renamed with an identical body; a copy
+counts as new. Validation moved into helpers, plain functions, `__init__`, new wrapper
+classes and restated vocabulary are not gated; each ticket's acceptance owns
+those. There is no suppression flag. A blocked change removes the unnecessary
+machinery or gets an explicit maintainer decision; the agent does not grant its
+own exception.
 
 ### Executable Census And Dependency Gate
 
