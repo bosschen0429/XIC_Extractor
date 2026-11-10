@@ -403,7 +403,7 @@ def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
     output.mkdir()
     batch = tmp_path / "batch.csv"
     batch.write_text(
-        "sample_stem,candidate_count,high_count,medium_count,low_count\nA,3,1,1,1\n",
+        "sample_stem,peak_count,admitted_peak_count\nA,3,1\n",
         encoding="utf-8",
     )
     matrix = output / "alignment_matrix.tsv"
@@ -491,7 +491,7 @@ def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
     output.mkdir()
     index = output / "discovery_batch_index.csv"
     index.write_text(
-        "sample_stem,candidate_count,high_count,medium_count,low_count\nA,1,1,0,0\n",
+        "sample_stem,peak_count,admitted_peak_count\nA,1,1\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(

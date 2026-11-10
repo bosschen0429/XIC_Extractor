@@ -17,6 +17,7 @@ from tests.cid_nl_raw_fixture import (
     _peak_config,
     _settings,
 )
+from tests.discovery_csv_fixtures import located_scan_ids, representative_event
 from tests.untargeted_cid_nl_real_data_adapter_fixtures import (
     _without_ms1_peak,
     build_sample_adapter_fixture,
@@ -57,7 +58,7 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     assert assessment.method_result == "SUPPORT"
     assert tuple(
         sorted(evidence.scan_number for evidence in assessment.evidence_observations)
-    ) == tuple(sorted(candidates[0].event_scan_ids))
+    ) == tuple(sorted(located_scan_ids(candidates[0])))
     assert len(result.assessment_input.assessment.evidence_observations) == 2
     assert result.acquisition is not None
     assert result.acquisition.logical_xic_request_count == 1
@@ -96,7 +97,7 @@ def test_adapter_retains_acquisition_evidence_before_later_relation_failure(
 
     (((support,), set_relations),) = successful_relations
     assert set_relations == ()
-    assert support.evidence.scan_number in candidates[0].event_scan_ids
+    assert support.evidence.scan_number in located_scan_ids(candidates[0])
 
 
 def test_adapter_preserves_strict_scans_within_mixed_candidate(
@@ -114,7 +115,7 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
     candidates = scenario.discover(source_raw)
     (candidate,) = candidates
     assert candidate.precursor_mz_basis == "mixed"
-    assert set(candidate.event_scan_ids) == {
+    assert set(located_scan_ids(candidate)) == {
         *strict_scan_ids,
         inferred_scan.scan_number,
     }
@@ -166,15 +167,15 @@ def test_adapter_keeps_direct_support_separate_from_same_peak_inferred_evidence(
     (candidate,) = candidates
     assert candidate.precursor_mz_basis == "mixed"
     assert candidate.best_ms2_scan_id == representative.scan_number
-    assert set(candidate.event_scan_ids) == {
+    assert set(located_scan_ids(candidate)) == {
         first.scan_number,
         inferred.scan_number,
         representative.scan_number,
     }
     inferred_product_mz = float(source_raw.scans[1].masses[0])
     assert (
-        abs(inferred_product_mz - candidate.best_event_product_mz)
-        / candidate.best_event_product_mz
+        abs(inferred_product_mz - representative_event(candidate).product_mz)
+        / representative_event(candidate).product_mz
         * 1e6
         > scenario.settings.product_mz_tolerance_ppm
     )
@@ -486,7 +487,7 @@ def test_peaks_without_their_event_table_cannot_be_assessed(
     )
     raw, _vendor = scenario.open_raw(source_raw)
 
-    with pytest.raises(CidNlAcquisitionError, match="regenerate Discovery"):
+    with pytest.raises(ValueError, match="lack the representative scan"):
         scenario.adapt(candidates, raw=raw)
 
 
@@ -514,6 +515,7 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
         sample=scenario.fixture.sample("S1"),
         acquisition_source=scenario.fixture.source(scenario.fixture.sample("S1")),
         peaks=candidates,
+        physical_records=scenario.physical_records,
         settings=scenario.settings,
         raw=raw,
         signal_processing_profile=TEST_PROFILE,
@@ -543,17 +545,21 @@ def test_elution_context_shares_acquisition_without_widening_capture(
     fixture = build_sample_adapter_fixture(tmp_path)
     source = _FakeRaw((7.8,))
     source.intensity += 700.0 * np.exp(-0.5 * ((source.rt - 8.5) / 0.035) ** 2)
+    records: dict = {}
     candidate = _current_candidates(
         source,
         raw_file=fixture.source_paths["S1"],
         settings=_settings(),
+        physical_records=records,
     )[0]
     duplicate = replace(candidate, peak_id=candidate.peak_id + ":duplicate")
+    records[duplicate.peak_id] = records[candidate.peak_id]
     raw, vendor = _open_bound_raw(fixture, "S1", source, tmp_path=tmp_path)
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source(fixture.sample("S1")),
         peaks=tuple(sorted((candidate, duplicate), key=lambda item: item.peak_id)),
+        physical_records=records,
         settings=_settings(),
         raw=raw,
         signal_processing_profile=SignalProcessingProfile(),
@@ -565,8 +571,9 @@ def test_elution_context_shares_acquisition_without_widening_capture(
         peak.apex_rt for peak in batch.elution_contexts[0].landmarks
     ] == pytest.approx([7.8, 8.5], abs=0.005)
     original = batch.acquired_trace(candidate.peak_id)
-    assert original.coordinate.request.rt_min == candidate.ms1_search_rt_min
-    assert original.coordinate.request.rt_max == candidate.ms1_search_rt_max
+    work = records[candidate.peak_id].work_item
+    assert original.coordinate.request.rt_min == work.xic_rt_min
+    assert original.coordinate.request.rt_max == work.xic_rt_max
     first_scan, last_scan = source.scan_window_for_request(original.coordinate.request)
     mask = slice(first_scan - 1, last_scan)
     np.testing.assert_array_equal(original.trace.rt, source.rt[mask])
@@ -586,10 +593,11 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
     candidates = scenario.discover(source_raw)
     assert len(candidates) == 1
     candidate = candidates[0]
-    assert candidate.best_event_rt <= scenario.settings.rt_max
+    assert representative_event(candidate).rt <= scenario.settings.rt_max
     assert candidate.ms1_apex_rt is not None
     assert candidate.ms1_apex_rt > scenario.settings.rt_max
-    assert candidate.ms1_apex_rt <= candidate.ms1_search_rt_max
+    work = scenario.physical_records[candidate.peak_id].work_item
+    assert candidate.ms1_apex_rt <= work.xic_rt_max
     raw, _vendor_raw = scenario.open_raw(source_raw)
 
     result = scenario.adapt(candidates, raw=raw)
@@ -597,11 +605,11 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
     receipt = result.assessment_input.assessment.evaluation_receipt
     assert receipt.query_rt_min == min(
         scenario.settings.rt_min,
-        candidate.ms1_search_rt_min,
+        work.xic_rt_min,
     )
     assert receipt.query_rt_max == max(
         scenario.settings.rt_max,
-        candidate.ms1_search_rt_max,
+        work.xic_rt_max,
     )
 
 
@@ -844,19 +852,3 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         "dda_cid_nl": assessment,
         "ms1_physical_observation": None,
     }
-
-
-def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> None:
-    scenario = build_sample_adapter_scenario(tmp_path)
-    source_raw = _FakeRaw((8.0,))
-
-    candidate = scenario.discover(source_raw)[0]
-    assert candidate.ms1_apex_rt is not None
-    drifted = replace(candidate, ms1_apex_rt=candidate.ms1_apex_rt + 0.1)
-    raw, _vendor_raw = scenario.open_raw(source_raw)
-
-    with pytest.raises(
-        CidNlAcquisitionError,
-        match="apex_rt_min mismatches current receipt",
-    ):
-        scenario.adapt((drifted,), raw=raw)

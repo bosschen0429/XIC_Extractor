@@ -12,6 +12,7 @@ from time import perf_counter, sleep
 
 import pytest
 
+from tests.alignment_explanation_fixtures import plan_discovery_facts
 from tests.alignment_pipeline_helpers import (
     render,
     written_cells,
@@ -27,6 +28,7 @@ from tests.cid_nl_raw_fixture import (
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
+from tests.discovery_csv_fixtures import representative_event
 from tests.untargeted_cid_nl_bounded_runtime_fixtures import (
     _plan,
 )
@@ -244,7 +246,9 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
         assert len(candidates[path.stem]) == 2
         if index >= 20:
             candidates[path.stem] = tuple(
-                c for c in candidates[path.stem] if c.best_event_precursor_mz < 500.5
+                c
+                for c in candidates[path.stem]
+                if representative_event(c).precursor_mz < 500.5
             )
         if index == 21:
             # The target MS1 signal remains without independent MS2 support.
@@ -899,6 +903,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     report = write_alignment_explanation(
         tmp_path / "eligibility.sqlite",
         completed=result,
+        **plan_discovery_facts(plan),
         peaks_by_sample=plan.context.peaks_by_sample,
         matrix_path=matrix_path,
         alignment_config=config,
@@ -1091,6 +1096,7 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
         report = write_alignment_explanation(
             tmp_path / f"{name}.sqlite",
             completed=completed,
+            **plan_discovery_facts(plan),
             peaks_by_sample=plan.context.peaks_by_sample,
             matrix_path=matrix,
             alignment_config=config,

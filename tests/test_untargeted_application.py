@@ -11,6 +11,7 @@ import pytest
 import xic_extractor.applications.untargeted.application as application_module
 import xic_extractor.applications.untargeted.publication as publication_module
 import xic_extractor.output.alignment.pipeline_outputs as output_owner
+from tests.alignment_explanation_fixtures import explanation_discovery_facts
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from tests.cid_nl_raw_fixture import _FakeRaw, _settings
@@ -60,6 +61,11 @@ def _bind_mock_publication_inputs(completed, kwargs):
     completed.publication_inputs = SimpleNamespace(
         peaks_by_sample=candidates.feature_view(),
         ms1_apex_mz_by_candidate=candidates.ms1_apex_mz_by_candidate,
+        # A stand-in precursor; this mocked Alignment has no physical records.
+        precursor_mz_by_candidate={
+            cid: location.peak_mz for cid, location in candidates.locations.items()
+        },
+        neutral_loss_by_tag=kwargs["settings"].neutral_loss_by_tag,
         alignment_config=kwargs["alignment_config"],
         known_istd_reference_provenance=(
             None if reference is None else reference.explanation_provenance
@@ -501,7 +507,13 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     assert len(completed.application_result.children) == 3
     candidates = plan.context.peaks_by_sample
     completed = completed.bind_publication_inputs(
-        peaks_by_sample=candidates, alignment_config=config
+        peaks_by_sample=candidates,
+        precursor_mz_by_candidate={
+            cid: record.work_item.precursor_mz
+            for cid, record in plan.context.physical_records_by_peak.items()
+        },
+        neutral_loss_by_tag=plan.context.settings.neutral_loss_by_tag,
+        alignment_config=config,
     )
     output_dir = tmp_path / "out"
     output_dir.mkdir()
@@ -533,6 +545,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         write_alignment_explanation(
             reference,
             completed=completed,
+            **explanation_discovery_facts(completed),
             peaks_by_sample=candidates,
             matrix_path=matrix_path,
             alignment_config=config,
@@ -792,6 +805,7 @@ def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatc
     )
     arguments = dict(
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -1141,15 +1155,21 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
             )
             == 2
         )
+        with output.events_csv.open(encoding="utf-8-sig", newline="") as handle:
+            (inferred_event,) = [
+                row
+                for row in csv.DictReader(handle)
+                if float(row["precursor_mz"]) == 700.0
+            ]
+        assert inferred_event["neutral_loss_mass_error_ppm"] == ""
         with output.peaks_csv.open(encoding="utf-8-sig", newline="") as handle:
             inferred = [
                 row
                 for row in csv.DictReader(handle)
-                if float(row["best_event_precursor_mz"]) == 700.0
+                if row["peak_id"] == inferred_event["peak_id"]
             ]
         assert len(inferred) == 1
         assert inferred[0]["precursor_mz_basis"] == "product_plus_neutral_loss"
-        assert inferred[0]["neutral_loss_mass_error_ppm"] == ""
         retained_inferred_areas[output.peaks_csv.parent.name] = float(
             inferred[0]["ms1_area"]
         )

@@ -355,8 +355,6 @@ _THRESHOLD_FLOAT_FIELDS = (
     "product_intensity_med_min",
     "area_high_min",
     "area_med_min",
-    "ms1_support_strong_area_min",
-    "ms1_support_moderate_area_min",
     "scan_support_high_score_min",
     "scan_support_low_score_max",
 )
@@ -398,7 +396,6 @@ def test_evidence_thresholds_reject_negative_population(field: str) -> None:
         {"rt_near_max_min": 0.41},
         {"product_intensity_high_min": 9_999.0},
         {"area_high_min": 99_999.0},
-        {"ms1_support_strong_area_min": 999_999.0},
         {"scan_support_low_score_max": 0.9},
         {"scan_support_high_score_min": 1.01},
         {"scan_support_low_score_max": 1.01},

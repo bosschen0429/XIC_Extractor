@@ -85,7 +85,7 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
     index_path = output_dir / "discovery_batch_index.csv"
     index_path.parent.mkdir()
     index_path.write_text(
-        "sample,high_count,medium_count,low_count,candidate_count\n",
+        "sample_stem,peak_count,admitted_peak_count\n",
         encoding="utf-8",
     )
     captured: dict[str, object] = {}

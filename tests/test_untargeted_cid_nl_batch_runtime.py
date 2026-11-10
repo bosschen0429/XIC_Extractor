@@ -14,6 +14,7 @@ from tests.cid_nl_runtime_fixtures import (
     build_discovery_receipts,
     install_runtime_raws,
 )
+from tests.discovery_csv_fixtures import representative_event
 from tests.untargeted_cid_nl_batch_runtime_fixtures import (
     _nearby_subject_candidates,
 )
@@ -101,7 +102,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
                 (
                     candidate.peak_id,
                     subject_by_precursor[
-                        candidate.best_event_precursor_mz
+                        representative_event(candidate).precursor_mz
                     ].method_subject_id,
                 )
                 for candidates in peaks_by_sample.values()
@@ -233,9 +234,11 @@ def _subjects(
         sorted(
             (
                 mint_untargeted_cid_nl_method_subject(
-                    precursor_mz=candidate.best_event_precursor_mz,
+                    precursor_mz=representative_event(candidate).precursor_mz,
                     precursor_tolerance_ppm=precursor_tolerance_ppm,
-                    neutral_loss_da=candidate.configured_neutral_loss_da,
+                    neutral_loss_da=representative_event(
+                        candidate
+                    ).configured_neutral_loss_da,
                 )
                 for candidate in candidates
             ),

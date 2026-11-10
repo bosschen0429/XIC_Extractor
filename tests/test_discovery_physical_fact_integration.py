@@ -226,8 +226,11 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
         rel=0.03,
     )
     assert all(candidate.status == "admitted" for candidate in candidates)
+    peak_ids = {candidate.peak_id for candidate in candidates}
     assert sorted(
-        scan for candidate in candidates for scan in candidate.event_scan_ids
+        int(row["ms2_scan_number"])
+        for row in _read_csv(outputs.events_csv)
+        if row["peak_id"] in peak_ids
     ) == [100, 200]
     # More physical questions must not repeat RAW acquisition or lose their
     # independent candidate -> physical-answer binding after persistence.
@@ -328,10 +331,6 @@ def test_discovery_retained_physical_peak_cardinality(
     )
     path = write_discovery_peaks_csv(tmp_path / "peaks.csv", result.peaks)
     valid = list(read_discovery_peaks_csv(path))
-    if representative_scan is not None:
-        # The complete main envelope has one representative. Earlier seeds
-        # have clipped whole contours, rather than independently closed peaks.
-        assert all(not c.is_provisional for c in valid)
     # This retained-input test protects peak cardinality and localization, not
     # an old smoother's exact apex scan or an unverified quantitative truth.
     assert sorted(c.ms1_apex_rt for c in valid) == pytest.approx(
@@ -366,15 +365,15 @@ def test_merged_physical_candidate_persists_representative_search_window(
     from xic_extractor.discovery.output_publication import (
         publish_discovery_batch_sample,
     )
+    from xic_extractor.discovery.physical_fact_record import (
+        validate_peak_physical_measurement,
+    )
     from xic_extractor.discovery.strict_event_receipts import (
         read_parent_ms1_observations,
     )
     from xic_extractor.execution.timing import TimingRecorder
     from xic_extractor.peak_detection.physical_peak_codec import (
         serialize_physical_peak_evaluation,
-    )
-    from xic_extractor.untargeted_execution.alignment import (
-        _restore_physical_peak,
     )
 
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
@@ -455,7 +454,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
         ms1_centroid=lambda *_: None,
     )
     # The physical peak is measured and represented once; each attached event
-    # keeps its own parent-ion proof in tag_evidence_json.
+    # keeps its own parent-ion proof in the event table.
     (candidate,) = result.peaks
     (binding,) = result.physical_bindings
     assert binding.peak is candidate
@@ -467,8 +466,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
         assert len(parent_batches) == 1 and len(parent_batches[0]) == 1
     assert candidate.admitted
     assert candidate.matched_tag_names == ("dR", "R")
-    assert candidate.event_scan_ids == (10, 20)
-    assert candidate.ms2_product_max_intensity == 20000.0
+    assert [event.scan_number for event in candidate.located_events] == [10, 20]
     assert {event.peak_id for event in result.attachments} == {candidate.peak_id}
     assert (
         len(
@@ -510,18 +508,9 @@ def test_merged_physical_candidate_persists_representative_search_window(
     restored_record = next(
         record for record in records if record.peak_id == candidate.peak_id
     )
-    (csv_candidate,) = read_discovery_peaks_csv(csv_path)
-    restored = _restore_physical_peak(csv_candidate, restored_record)
-    assert (
-        restored.ms1_search_rt_min
-        == candidate.ms1_search_rt_min
-        == selected.work_item.xic_rt_min
-    )
-    assert (
-        restored.ms1_search_rt_max
-        == candidate.ms1_search_rt_max
-        == selected.work_item.xic_rt_max
-    )
+    (restored,) = read_discovery_peaks_csv(csv_path)
+    validate_peak_physical_measurement(restored, restored_record)
+    assert restored_record.work_item == selected.work_item
     assert restored.best_ms2_scan_id == selected.work_item.best_ms2_scan_id
     assert selected.evaluation.facts is not None
     assert (
@@ -543,11 +532,11 @@ def test_merged_physical_candidate_persists_representative_search_window(
         == before_evaluation
     )
     assert raw.raw_chromatogram_call_count == 1
-    for name in ("ms1_search_rt_min", "ms1_search_rt_max"):
-        with pytest.raises(ValueError, match="search window"):
-            replace(
-                binding,
-                peak=replace(candidate, **{name: getattr(candidate, name) + 0.01}),
+    for name in ("ms1_apex_rt", "ms1_area", "ms1_height"):
+        with pytest.raises(ValueError, match=f"physical {name} crosses"):
+            validate_peak_physical_measurement(
+                replace(restored, **{name: getattr(restored, name) + 0.01}),
+                restored_record,
             )
 
 
@@ -850,8 +839,9 @@ def test_short_discovery_request_reacquires_points_without_assuming_peak_support
     (candidate,) = result.peaks
     assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
     final_request = reacquired.traces[0].coordinate.request
-    assert candidate.ms1_search_rt_min == final_request.rt_min
-    assert candidate.ms1_search_rt_max == final_request.rt_max
+    (work,) = result.physical_work_manifest
+    assert work.xic_rt_min == final_request.rt_min
+    assert work.xic_rt_max == final_request.rt_max
 
 
 def test_single_seed_discovery_acquires_complete_physical_context(
@@ -886,7 +876,8 @@ def test_single_seed_discovery_acquires_complete_physical_context(
     candidate = result.peaks[0]
     assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
     assert candidate.ms1_peak_rt_end is not None
-    assert candidate.ms1_search_rt_max - candidate.ms1_peak_rt_end >= 0.04
+    work = result.physical_work_manifest[0]
+    assert work.xic_rt_max - candidate.ms1_peak_rt_end >= 0.04
     full_trace_evaluation = evaluate_physical_peak(
         prepare_physical_signal(full_rt, full_intensity, profile=profile),
         query_rt_min=12.063,
@@ -946,9 +937,9 @@ def test_product_inferred_single_seed_uses_widened_initial_context(
 
     assert result.measurements.reacquisition_request_count == 0
     candidate = result.peaks[0]
-    assert candidate.ms1_trace_quality == "clean"
-    assert candidate.ms1_search_rt_min == pytest.approx(11.463)
-    assert candidate.ms1_search_rt_max == pytest.approx(12.663)
+    work = result.physical_work_manifest[0]
+    assert work.xic_rt_min == pytest.approx(11.463)
+    assert work.xic_rt_max == pytest.approx(12.663)
     assert candidate.ms1_apex_rt == pytest.approx(12.14)
 
 
@@ -1056,8 +1047,7 @@ def test_qualification_survives_physical_fact_reuse(
         assert qualifier.call_count == 0
         return
     (candidate,) = result.peaks
-    assert candidate.ms1_trace_quality == "clean"
-    assert candidate.is_provisional is False
+    assert candidate.status == "admitted"
     # Raw extent requests one bounded shared read, but does not reprepare or
     # requalify the final trace for repeated NL events.
     assert result.measurements.reacquisition_request_count == 1
@@ -1318,11 +1308,8 @@ def test_discovery_publishes_physical_qualification(
     assert rt[0] < evaluation.facts.left_rt_min < query_rt
     assert query_rt < evaluation.facts.right_rt_min < rt[-1]
     if trace_case == "overlapping_components":
-        assert candidate.ms1_trace_quality == "physical_shoulder_overlap"
+        assert evaluation.requires_overlap_review
         assert candidate.status == "overlap"
-        assert candidate.is_provisional
-        assert candidate.review_priority == "MEDIUM"
-        assert "physical_shoulder_overlap" in candidate.reason
 
     from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
     from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
@@ -1334,10 +1321,7 @@ def test_discovery_publishes_physical_qualification(
     (published,) = read_discovery_peaks_csv(path)
     assert published.ms1_area == pytest.approx(candidate.ms1_area)
     assert published.ms1_apex_rt == pytest.approx(candidate.ms1_apex_rt)
-    assert published.ms1_trace_quality == candidate.ms1_trace_quality
-    assert published.is_provisional == candidate.is_provisional
-    assert published.reason == candidate.reason
-    assert published.review_priority == candidate.review_priority
+    assert published.status == candidate.status
 
 
 @pytest.mark.parametrize("same_question", [True, False])
@@ -1407,7 +1391,6 @@ def test_physical_fact_sharing_uses_one_raw_peak(
         assert candidate.matched_tag_names == ("dR", "R")
         # One scan matching two tags is two events: (scan, tag, product).
         assert candidate.attached_event_count == 2
-        assert candidate.review_priority == "HIGH"
         assert candidate.status == "admitted"
     else:
         path = tmp_path / "discovery_physical_facts.json"
@@ -1512,7 +1495,9 @@ def test_inferred_precursor_is_measured_once_in_the_window_of_its_apex_ion(
     assert raw.request_batches[0][0].mz == pytest.approx(group.mz)
     assert raw.request_batches[-1][0].mz == pytest.approx(apex_mz)
     (candidate,) = result.peaks
-    assert candidate.best_event_precursor_mz == group.mz
+    assert result.physical_bindings[0].physical_fact_record.work_item.precursor_mz == (
+        group.mz
+    )
     assert candidate.ms1_apex_mz == pytest.approx(apex_mz)
     # The peak's one measurement is the apex ion's window, which Alignment
     # reads; the peak keeps the name of the ion XIC that located it.
@@ -1520,7 +1505,7 @@ def test_inferred_precursor_is_measured_once_in_the_window_of_its_apex_ion(
     assert candidate.peak_mz == record.work_item.xic_mz
     assert record.work_item.xic_mz == pytest.approx(apex_mz)
     assert record.acquired_trace.coordinate.request.mz == pytest.approx(apex_mz)
-    assert candidate.xic_mz == record.work_item.ion_mz == group.mz
+    assert record.work_item.ion_mz == group.mz
     assert candidate.peak_id == record.work_item.peak_id
     assert candidate.peak_id == "TumorBC2312_DNA@mz500_rt12.1400"
 
@@ -1567,7 +1552,8 @@ def test_pipeline_publishes_inferred_precursor_ms1_ion_from_raw_handle(
 
     (candidate,) = _read_csv(outputs.peaks_csv)
     assert candidate["precursor_mz_basis"] == "product_plus_neutral_loss"
-    assert float(candidate["best_event_precursor_mz"]) == pytest.approx(500.0)
+    (event,) = _read_csv(outputs.events_csv)
+    assert float(event["precursor_mz"]) == pytest.approx(500.0)
     assert float(candidate["ms1_apex_mz"]) == pytest.approx(apex_ion_mz)
 
 
@@ -1582,7 +1568,9 @@ def test_inferred_precursor_meeting_two_ions_reports_no_ms1_ion(
     group, _raw, result = _inferred_apex_case(tmp_path, _two_ions)
 
     (candidate,) = result.peaks
-    assert candidate.best_event_precursor_mz == group.mz
+    assert result.physical_bindings[0].physical_fact_record.work_item.precursor_mz == (
+        group.mz
+    )
     assert candidate.ms1_apex_mz is None
     assert candidate.status in {
         "admitted",
@@ -1598,7 +1586,9 @@ def test_selected_precursor_reports_no_ms1_ion(tmp_path: Path) -> None:
     )
 
     (candidate,) = result.peaks
-    assert candidate.best_event_precursor_mz == group.mz
+    assert result.physical_bindings[0].physical_fact_record.work_item.precursor_mz == (
+        group.mz
+    )
     assert candidate.ms1_apex_mz is None
 
 
@@ -1612,9 +1602,10 @@ def test_inferred_precursor_with_a_doubly_charged_isotope_is_held_for_review(
     )
 
     (candidate,) = result.peaks
-    assert candidate.best_event_precursor_mz == group.mz
+    assert result.physical_bindings[0].physical_fact_record.work_item.precursor_mz == (
+        group.mz
+    )
     assert candidate.status == "doubly_charged"
-    assert "doubly charged" in candidate.reason
     (binding,) = result.physical_bindings
     assert binding.peak.status == ("doubly_charged")
 
@@ -1700,7 +1691,6 @@ def test_held_inferred_peak_remains_in_review_and_physical_sidecar(
     (candidate,) = read_discovery_peaks_csv(outputs.peaks_csv)
     assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
     assert candidate.status == "doubly_charged"
-    assert "doubly charged" in candidate.reason
     assert candidate.ms1_apex_rt == pytest.approx(10.0)
     assert candidate.ms1_apex_mz == pytest.approx(apex_ion_mz)
     assert candidate.ms1_area > 0
@@ -1771,7 +1761,7 @@ def test_a_selected_precursor_carries_a_peak_with_two_ions(
         # Different precursor-evidence origins locate one peak, not measured
         # copies; only the recorded precursor's event attaches.
         (candidate,) = result.peaks
-        assert candidate.event_scan_ids == (10, 11)
+        assert [event.scan_number for event in candidate.located_events] == [10, 11]
         assert candidate.attached_event_count == 1
         assert len(result.physical_evaluations) == 1
         events = {event.ms2_scan_number: event for event in result.attachments}
@@ -1846,7 +1836,6 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
     (candidate,) = result.peaks
     expected_state = "doubly_charged" if has_isotope else "no_nl_event"
     assert candidate.status == expected_state
-    assert ("doubly charged" in candidate.reason) is has_isotope
     assert candidate.ms1_apex_mz == pytest.approx(apex_ion_mz)
     (binding,) = result.physical_bindings
     assert binding.peak.status == expected_state

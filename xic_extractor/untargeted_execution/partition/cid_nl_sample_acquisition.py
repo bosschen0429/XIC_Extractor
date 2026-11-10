@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from dataclasses import field as dataclass_field
 
@@ -20,7 +21,11 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.models import DiscoveryEvent, DiscoveryPeak
+from xic_extractor.discovery.models import (
+    DiscoveryEvent,
+    DiscoveryPeak,
+    representative_event_rt,
+)
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import (
@@ -61,7 +66,6 @@ from xic_extractor.peak_detection.observations import (
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
-from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
     CaptureCandidateBinding,
@@ -165,19 +169,22 @@ class UntargetedCidNlSampleTraceBatch:
 def _sample_capture_requests(
     *,
     peaks: tuple[DiscoveryPeak, ...],
+    physical_records: Mapping[str, DiscoveryPhysicalFactRecord],
     settings: DiscoverySettings,
 ) -> tuple[tuple[XICRequest, ...], tuple[int, ...]]:
     """Each peak's XIC exactly as Discovery measured it, read once per window.
 
-    Discovery measures every peak in the window centred on its ``peak_mz``.
+    Discovery measures every peak in the window centred on its ``peak_mz``;
+    its physical record keeps that window.
     """
     unique: dict[XICRequest, int] = {}
     indices = []
     for item in peaks:
+        work = _physical_record(physical_records, item).work_item
         request = XICRequest(
             mz=item.peak_mz,
-            rt_min=item.ms1_search_rt_min,
-            rt_max=item.ms1_search_rt_max,
+            rt_min=work.xic_rt_min,
+            rt_max=work.xic_rt_max,
             ppm_tol=settings.precursor_mz_tolerance_ppm,
         )
         indices.append(unique.setdefault(request, len(unique)))
@@ -189,6 +196,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     sample: SampleMetadata,
     acquisition_source: AcquisitionSourceIdentity,
     peaks: tuple[DiscoveryPeak, ...],
+    physical_records: Mapping[str, DiscoveryPhysicalFactRecord],
     settings: DiscoverySettings,
     raw: CidNlRawSource,
     signal_processing_profile: SignalProcessingProfile,
@@ -207,9 +215,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
             "sample trace batch peaks must be canonical and unique"
         )
     raw_stem = sample.raw_stem
-    if any(
-        peak.sample_stem != raw_stem or peak.raw_file.stem != raw_stem for peak in peaks
-    ):
+    if any(peak.sample_stem != raw_stem for peak in peaks):
         raise CidNlAcquisitionError(
             "sample trace batch peaks crossed the resolved sample"
         )
@@ -224,6 +230,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     )
     requests, indices = _sample_capture_requests(
         peaks=capture_candidates,
+        physical_records=physical_records,
         settings=settings,
     )
     context_requests = _elution_context_requests(
@@ -377,6 +384,7 @@ def adapt_current_discovery_sample_subject(
         )
     source = acquisition_source
     scan_seeds = _located_discovery_events(seed_candidates + support_seed_candidates)
+    records_by_peak = {record.peak_id: record for record in physical_records}
 
     search_scope = _untargeted_search_scope(
         sample=sample,
@@ -386,7 +394,7 @@ def adapt_current_discovery_sample_subject(
         capture_candidates=peak_candidates,
         peak_config=peak_config,
         signal_processing_profile=signal_processing_profile,
-        physical_records=physical_records,
+        physical_records=records_by_peak,
     )
     capture_evidence: list[RetainedCaptureEvidence] = []
     acquisition, observations, captures = _adopt_peak_observations(
@@ -398,6 +406,7 @@ def adapt_current_discovery_sample_subject(
         raw=raw,
         source=source,
         search_scope=search_scope,
+        physical_records=records_by_peak,
         evidence_sink=capture_evidence,
         _preacquired_traces=_preacquired_traces,
     )
@@ -489,20 +498,9 @@ def _located_discovery_events(
     """Every event the Discovery event table locates on these peaks.
 
     The table, not RAW, carries each event's precursor and parent-MS1 facts.
-    A peak whose located scans differ from its declared scans belongs to
-    another Discovery run, so its evidence cannot be assessed.
     """
     events: dict[tuple[object, ...], DiscoveryEvent] = {}
     for peak in peaks:
-        if {event.scan_number for event in peak.located_events} != set(
-            peak.event_scan_ids
-        ) or any(
-            event.sample_stem != peak.sample_stem for event in peak.located_events
-        ):
-            raise CidNlAcquisitionError(
-                f"{peak.peak_id}: Discovery event table does not close the peak's "
-                "declared MS2 scans; regenerate Discovery with the current version"
-            )
         for event in peak.located_events:
             events.setdefault(
                 (
@@ -527,6 +525,7 @@ def _adopt_peak_observations(
     raw: CidNlRawSource,
     source,
     search_scope: UntargetedSearchScope,
+    physical_records: Mapping[str, DiscoveryPhysicalFactRecord],
     evidence_sink: list[RetainedCaptureEvidence] | None = None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
 ) -> tuple[
@@ -538,6 +537,7 @@ def _adopt_peak_observations(
         return None, (), ()
     requests, indices = _sample_capture_requests(
         peaks=peaks,
+        physical_records=physical_records,
         settings=settings,
     )
     if _preacquired_traces is None:
@@ -599,8 +599,6 @@ def _adopt_peak_observations(
             raise CidNlAcquisitionError(
                 f"{peak.peak_id}: current MS1 receipt was not reacquired"
             )
-        if capture.physical_evaluation is not None:
-            _validate_physical_candidate_receipt(peak, capture.physical_evaluation)
         observation = capture_owner.mint_captured_peak_observation(
             capture,
             sample=sample,
@@ -622,15 +620,6 @@ def _adopt_peak_observations(
     if len(set(observations)) != len(observations):
         raise CidNlAcquisitionError("Discovery delivered one physical peak twice")
     return acquisition, tuple(observations), tuple(captures)
-
-
-def method_label(peak: DiscoveryPeak) -> str:
-    """Return a diagnostic-only label; it is never configured Target identity."""
-
-    return (
-        f"untargeted:{peak.best_event_precursor_mz:.8g}:"
-        f"NL{peak.configured_neutral_loss_da:.8g}"
-    )
 
 
 def _mint_assessment(
@@ -716,10 +705,6 @@ def _bounded_subject_candidates(
             raise CidNlAcquisitionError(
                 f"{peak.peak_id}: peak references a different sample"
             )
-        if peak.raw_file.stem != sample.raw_stem:
-            raise CidNlAcquisitionError(
-                f"{peak.peak_id}: raw receipt mismatches its sample"
-            )
     return tuple(
         sorted(
             (
@@ -730,16 +715,16 @@ def _bounded_subject_candidates(
                     method_subject.precursor_mz,
                     method_subject.precursor_tolerance_ppm,
                 )
+                and peak.neutral_loss_tag in settings.selected_tag_names
                 and any(
                     math.isclose(
-                        peak.configured_neutral_loss_da,
+                        settings.neutral_loss_by_tag[peak.neutral_loss_tag],
                         loss,
                         rel_tol=_WRITER_ROUNDING_REL_TOL,
                         abs_tol=_WRITER_ROUNDING_ABS_TOL,
                     )
                     for loss in method_subject.configured_losses
                 )
-                and peak.neutral_loss_tag in settings.selected_tag_names
             ),
             key=lambda item: item.peak_id,
         )
@@ -755,9 +740,8 @@ def _untargeted_search_scope(
     capture_candidates: tuple[DiscoveryPeak, ...],
     peak_config: ExtractionConfig,
     signal_processing_profile: SignalProcessingProfile,
-    physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
+    physical_records: Mapping[str, DiscoveryPhysicalFactRecord],
 ) -> UntargetedSearchScope:
-    records = {record.peak_id: record for record in physical_records}
     try:
         return UntargetedSearchScope(
             schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
@@ -782,20 +766,32 @@ def _untargeted_search_scope(
                     sample_key=sample.sample_name,
                     acquisition_source_id=acquisition_source_id,
                     query_mz=item.peak_mz,
-                    query_rt_min=item.ms1_search_rt_min,
-                    query_rt_max=item.ms1_search_rt_max,
+                    query_rt_min=record.work_item.xic_rt_min,
+                    query_rt_max=record.work_item.xic_rt_max,
                     query_ppm_tol=method_subject.precursor_tolerance_ppm,
-                    preferred_rt=item.best_event_rt,
-                    physical_evaluation=(records[item.peak_id].evaluation),
+                    preferred_rt=representative_event_rt(item),
+                    physical_evaluation=record.evaluation,
                     # The query names the peak's ion; the retained evaluation
                     # belongs to the XIC Discovery measured, which is read here.
-                    physical_evaluation_mz=(records[item.peak_id].work_item.xic_mz),
+                    physical_evaluation_mz=record.work_item.xic_mz,
                 )
                 for item in capture_candidates
+                for record in (_physical_record(physical_records, item),)
             ),
         )
     except SearchScopeContractError as exc:
         raise CidNlAcquisitionError(str(exc)) from exc
+
+
+def _physical_record(
+    physical_records: Mapping[str, DiscoveryPhysicalFactRecord], peak: DiscoveryPeak
+) -> DiscoveryPhysicalFactRecord:
+    try:
+        return physical_records[peak.peak_id]
+    except KeyError as exc:
+        raise CidNlAcquisitionError(
+            f"{peak.peak_id}: Discovery peak lacks its physical record"
+        ) from exc
 
 
 def _validate_inputs(**values: object) -> None:
@@ -877,36 +873,10 @@ def _validate_inputs(**values: object) -> None:
         )
 
 
-def _validate_physical_candidate_receipt(
-    peak: DiscoveryPeak,
-    evaluation: PhysicalPeakEvaluation,
-) -> None:
-    facts = evaluation.facts
-    if evaluation.state != "available" or facts is None:
-        raise CidNlAcquisitionError("physical receipt was not reacquired")
-    for field, expected in (
-        ("apex_rt_min", peak.ms1_apex_rt),
-        ("left_rt_min", peak.ms1_peak_rt_start),
-        ("right_rt_min", peak.ms1_peak_rt_end),
-        ("area_counts_seconds", peak.ms1_area),
-        ("height", peak.ms1_height),
-    ):
-        if expected is None or not math.isclose(
-            getattr(facts, field),
-            expected,
-            rel_tol=_WRITER_ROUNDING_REL_TOL,
-            abs_tol=_WRITER_ROUNDING_ABS_TOL,
-        ):
-            raise CidNlAcquisitionError(
-                f"{peak.peak_id}: physical {field} mismatches current receipt"
-            )
-
-
 __all__ = [
     "CidNlAcquisitionResult",
     "UntargetedCidNlSampleTraceBatch",
     "acquire_untargeted_cid_nl_sample_trace_batch",
     "adapt_current_discovery_sample_subject",
-    "method_label",
     "UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE",
 ]

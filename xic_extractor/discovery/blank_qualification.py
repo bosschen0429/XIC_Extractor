@@ -13,7 +13,9 @@ import numpy as np
 from xic_extractor.raw_reader import open_raw
 
 if TYPE_CHECKING:
-    from xic_extractor.discovery.models import DiscoveryPeak
+    from xic_extractor.discovery.physical_fact_record import (
+        DiscoveryPeakPhysicalBinding,
+    )
 
 BLANK_BACKGROUND_LIBRARY_SCHEMA = "blank_background_library"
 
@@ -329,59 +331,40 @@ def resolve_background_library(
 
 
 def apply_blank_qualification_to_peaks(
-    peaks: Sequence[DiscoveryPeak],
+    bindings: Sequence[DiscoveryPeakPhysicalBinding],
     library: BlankBackgroundLibrary | None,
     *,
     ppm_tol: float = 10.0,
     fold_change_threshold: float = 3.0,
-) -> tuple[DiscoveryPeak, ...]:
+) -> tuple[DiscoveryPeakPhysicalBinding, ...]:
     """Mark peaks of pure background ions; a blank match alone does not.
 
-    A peak matching a blank ion within ppm_tol whose height is below
-    fold_change_threshold times the blank intensity is system background: it
-    is not admitted, its review priority is LOW and its reason explains the
-    match. A higher peak keeps its admission and notes the match.
+    A peak whose representative precursor matches a blank ion within ppm_tol
+    and whose height is below fold_change_threshold times the blank intensity
+    is system background and is not admitted. A higher peak keeps its
+    admission.
     """
     if library is None or not library.ions:
-        return tuple(peaks)
+        return tuple(bindings)
 
-    updated: list[DiscoveryPeak] = []
-    for candidate in peaks:
-        matches = library.match(candidate.best_event_precursor_mz, ppm_tol=ppm_tol)
+    updated: list[DiscoveryPeakPhysicalBinding] = []
+    for binding in bindings:
+        candidate = binding.peak
+        matches = library.match(
+            binding.physical_fact_record.work_item.precursor_mz, ppm_tol=ppm_tol
+        )
         if not matches:
-            updated.append(candidate)
+            updated.append(binding)
             continue
 
-        best_ion, delta_ppm = matches[0]
+        best_ion, _delta_ppm = matches[0]
         blank_int = best_ion.max_intensity
         tissue_height = float(candidate.ms1_height)
         fc = (tissue_height / blank_int) if blank_int > 0 else 0.0
 
         if fc < fold_change_threshold:
-            reason_msg = (
-                f"system background: blank m/z {best_ion.mz:.4f}, "
-                f"delta {delta_ppm:+.1f} ppm, "
-                f"FC {fc:.2f}x < {fold_change_threshold:.1f}x"
-            )
-            updated.append(
-                replace(
-                    candidate,
-                    status="blank",
-                    review_priority="LOW",
-                    reason=reason_msg,
-                )
-            )
+            updated.append(replace(binding, peak=replace(candidate, status="blank")))
         else:
-            override_msg = (
-                f"{candidate.reason}; blank match m/z {best_ion.mz:.4f} "
-                f"({delta_ppm:+.1f} ppm) "
-                f"but high abundance tissue signal ({fc:.1f}x)"
-            )
-            updated.append(
-                replace(
-                    candidate,
-                    reason=override_msg,
-                )
-            )
+            updated.append(binding)
 
     return tuple(updated)

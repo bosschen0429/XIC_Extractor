@@ -1,6 +1,7 @@
 import csv
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,23 +23,32 @@ from xic_extractor.discovery.models import (
     DISCOVERY_PEAK_COLUMNS,
     EventAttachment,
 )
+from xic_extractor.discovery.priority import order_discovery_peak_bindings
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 
 
-def test_peak_table_leads_with_review_and_status_fields() -> None:
-    assert DISCOVERY_PEAK_COLUMNS[:8] == (
-        "review_priority",
+def test_peak_table_writes_each_peak_fact_once() -> None:
+    # Event values live in the event table; measured traces in the sidecar.
+    assert DISCOVERY_PEAK_COLUMNS == (
         "status",
-        "evidence_tier",
         "evidence_score",
-        "ms2_support",
-        "ms1_support",
-        "rt_alignment",
+        "attached_event_count",
         "peak_id",
+        "sample_stem",
+        "peak_mz",
+        "precursor_mz_basis",
+        "ms1_apex_mz",
+        "ms1_apex_rt",
+        "ms1_peak_rt_start",
+        "ms1_peak_rt_end",
+        "ms1_area",
+        "ms1_height",
+        "best_ms2_scan_id",
+        "neutral_loss_tag",
+        "matched_tag_names",
     )
-    assert DISCOVERY_PEAK_COLUMNS[-1] == "is_provisional"
 
 
 def test_event_table_ends_with_the_located_peak_and_attachment() -> None:
@@ -51,7 +61,6 @@ def test_event_table_ends_with_the_located_peak_and_attachment() -> None:
 
 def test_peak_csv_round_trips_through_the_reader(tmp_path: Path) -> None:
     peak = _peak(
-        event_scan_ids=(6095, 6100, 6112),
         matched_tag_names=("DNA_dR", "R"),
         status="overlap",
         ms1_apex_mz=258.1083,
@@ -60,14 +69,9 @@ def test_peak_csv_round_trips_through_the_reader(tmp_path: Path) -> None:
 
     (row,) = _read_csv(path)
     assert row["status"] == "overlap"
-    assert row["event_scan_ids"] == "6095;6100;6112"
-    assert row["raw_file"] == "C:\\data\\Sample_1.raw"
+    assert row["matched_tag_names"] == "DNA_dR;R"
     (restored,) = read_discovery_peaks_csv(path)
-    assert restored.peak_id == peak.peak_id
-    assert restored.event_scan_ids == peak.event_scan_ids
-    assert restored.matched_tag_names == peak.matched_tag_names
-    assert restored.status == "overlap"
-    assert restored.ms1_apex_mz == pytest.approx(258.1083)
+    assert restored == peak
 
 
 def test_peak_csv_writes_a_header_without_peaks(tmp_path: Path) -> None:
@@ -77,43 +81,105 @@ def test_peak_csv_writes_a_header_without_peaks(tmp_path: Path) -> None:
         assert list(csv.reader(handle)) == [list(DISCOVERY_PEAK_COLUMNS)]
 
 
-def test_peak_rows_follow_the_review_queue(tmp_path: Path) -> None:
-    peaks = [
-        _peak(peak_id="low", review_priority="LOW", attached_event_count=9),
-        _peak(peak_id="medium-b", evidence_score=75, ms2_product_max_intensity=1.0),
-        _peak(peak_id="medium-c", evidence_score=40, attached_event_count=9),
-        _peak(peak_id="high-1", review_priority="HIGH", attached_event_count=2),
-        _peak(peak_id="high-3", review_priority="HIGH", attached_event_count=3),
-    ]
+def test_peak_rows_keep_the_order_discovery_settled(tmp_path: Path) -> None:
+    peaks = [_peak(peak_id=peak_id) for peak_id in ("b", "c", "a")]
 
     path = write_discovery_peaks_csv(tmp_path / "peaks.csv", peaks)
 
-    assert [row["peak_id"] for row in _read_csv(path)] == [
-        "high-3",
-        "high-1",
-        "medium-b",
-        "medium-c",
-        "low",
+    assert [row["peak_id"] for row in _read_csv(path)] == ["b", "c", "a"]
+
+
+def test_peak_rows_follow_the_review_queue() -> None:
+    settings = DiscoverySettings(
+        neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474)
+    )
+
+    def binding(
+        peak_id: str,
+        *,
+        status: str = "admitted",
+        attached: int = 2,
+        score: int = 50,
+        intensity: float = 1000.0,
+        event_rt: float = 7.84,
+        shoulder: bool = False,
+    ) -> _OrderedBinding:
+        event = _seed(scan_number=6095, rt=event_rt, product_intensity=intensity)
+        return _OrderedBinding(
+            peak=_peak(
+                peak_id=peak_id,
+                status=status,
+                attached_event_count=attached,
+                evidence_score=score,
+                located_events=(event,),
+            ),
+            physical_evaluation=SimpleNamespace(
+                state="available", requires_overlap_review=shoulder
+            ),
+            final_ordinal=0,
+        )
+
+    ordered = order_discovery_peak_bindings(
+        (
+            binding("blank", status="blank", score=99),
+            binding("single", attached=1, score=90),
+            binding("far", event_rt=7.0, score=95),
+            binding("shoulder", shoulder=True, score=95),
+            binding("lead-weak", score=40),
+            binding("lead-strong", score=80),
+            binding("lead-strong-intense", score=80, intensity=5000.0),
+        ),
+        settings=settings,  # type: ignore[arg-type]
+    )
+
+    # Two attached events at the event RT on an unshouldered peak lead; then
+    # stronger evidence; blank background last.
+    assert [item.peak.peak_id for item in ordered] == [
+        "lead-strong-intense",
+        "lead-strong",
+        "lead-weak",
+        "far",
+        "shoulder",
+        "single",
+        "blank",
     ]
+    assert [item.final_ordinal for item in ordered] == list(range(7))
+
+
+@dataclass(frozen=True)
+class _OrderedBinding:
+    peak: object
+    physical_evaluation: object
+    final_ordinal: int
+
+
+def test_peak_table_from_an_older_discovery_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "peaks.csv"
+    path.write_text(
+        ",".join(("review_priority", *DISCOVERY_PEAK_COLUMNS)) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="regenerate Discovery"):
+        read_discovery_peaks_csv(path)
 
 
 def test_peak_csv_escapes_text_for_csv_and_spreadsheets(tmp_path: Path) -> None:
     peak = _peak(
-        raw_file=Path("=cmd.raw"),
         sample_stem='Sample, "quoted"',
-        reason="@review",
+        neutral_loss_tag="@review",
     )
 
     (row,) = _read_csv(write_discovery_peaks_csv(tmp_path / "peaks.csv", [peak]))
 
-    assert row["raw_file"] == "'=cmd.raw"
     assert row["sample_stem"] == 'Sample, "quoted"'
-    assert row["reason"] == "'@review"
+    assert row["neutral_loss_tag"] == "'@review"
+    assert format_discovery_csv_value("raw_file", Path("=cmd.raw")) == "'=cmd.raw"
 
 
-def test_seed_scan_ids_formatter_does_not_join_string_characters() -> None:
-    assert format_discovery_csv_value("event_scan_ids", (6095, 6100)) == "6095;6100"
-    assert format_discovery_csv_value("event_scan_ids", "6095;6100") == "6095;6100"
+def test_tag_names_formatter_does_not_join_string_characters() -> None:
+    assert format_discovery_csv_value("matched_tag_names", ("A", "B")) == "A;B"
+    assert format_discovery_csv_value("matched_tag_names", "A;B") == "A;B"
 
 
 def test_event_table_keeps_the_located_peak_of_an_unattached_event(
@@ -216,6 +282,7 @@ def test_event_table_round_trips_the_evidence_alignment_assesses(
     restored = read_discovery_events_csv(
         path,
         raw_file=inferred.raw_file,
+        sample_stem=inferred.sample_stem,
         neutral_loss_by_tag={"DNA_dR": inferred.configured_neutral_loss_da},
     )
 
@@ -225,10 +292,7 @@ def test_event_table_round_trips_the_evidence_alignment_assesses(
         assert back.peak_id == item.peak_id
         assert back.unattached_reason == item.unattached_reason
         assert back.precursor_verified == item.precursor_verified
-        # Event-level tag JSON is not part of the table; every assessed fact is.
-        assert replace(back.event, tag_evidence_json="{}", matched_tag_names=()) == (
-            replace(item.event, tag_evidence_json="{}", matched_tag_names=())
-        )
+        assert back.event == item.event
     assert by_scan[33623].event.ms1_precursor_observation.centroid_mzs == (
         961.4281,
         961.4302,
@@ -252,7 +316,10 @@ def test_event_table_from_an_older_discovery_is_rejected(tmp_path: Path) -> None
 
     with pytest.raises(ValueError, match="regenerate Discovery"):
         read_discovery_events_csv(
-            path, raw_file=Path("S.raw"), neutral_loss_by_tag={"DNA_dR": 116.0474}
+            path,
+            raw_file=Path("S.raw"),
+            sample_stem="S",
+            neutral_loss_by_tag={"DNA_dR": 116.0474},
         )
 
 

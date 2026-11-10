@@ -24,7 +24,6 @@ from xic_extractor.discovery.cid_nl_search import (
     CidNlSearchSource,
     search_cid_nl_sample,
 )
-from xic_extractor.discovery.evidence_score import score_peak_evidence
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
     DiscoveryPeak,
@@ -38,8 +37,8 @@ from xic_extractor.discovery.ms1_capture import (
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPeakPhysicalBinding,
     DiscoveryPhysicalFactRecord,
-    bind_physical_facts_to_final_peaks,
 )
+from xic_extractor.discovery.priority import order_discovery_peak_bindings
 from xic_extractor.discovery.processing_run_spec_adapter import (
     validate_processing_run_spec_call,
 )
@@ -97,19 +96,19 @@ def _bound_background_library(content: str) -> BlankBackgroundLibrary:
 
 
 def _apply_blank_qualification_if_enabled(
-    peaks: tuple[DiscoveryPeak, ...],
+    bindings: tuple[DiscoveryPeakPhysicalBinding, ...],
     *,
     settings: DiscoverySettings,
     timing_recorder: TimingRecorder,
     sample_stem: str,
     acquisition_input: ProcessingAcquisitionInput,
-) -> tuple[DiscoveryPeak, ...]:
+) -> tuple[DiscoveryPeakPhysicalBinding, ...]:
     if not settings.enable_blank_qualification:
-        return peaks
+        return bindings
     with timing_recorder.stage(
         "discover.blank_qualification",
         sample_stem=sample_stem,
-        metrics={"peak_count": len(peaks)},
+        metrics={"peak_count": len(bindings)},
     ) as stage:
         if acquisition_input.blank_library_sha256 is None:
             library = None
@@ -118,13 +117,13 @@ def _apply_blank_qualification_if_enabled(
         else:
             library = _bound_background_library(acquisition_input.blank_library_content)
         qualified = apply_blank_qualification_to_peaks(
-            peaks,
+            bindings,
             library,
             ppm_tol=settings.blank_ppm_tol,
             fold_change_threshold=settings.blank_fold_change_threshold,
         )
         stage.metrics["excluded_background_count"] = sum(
-            peak.status == "blank" for peak in qualified
+            binding.peak.status == "blank" for binding in qualified
         )
         return qualified
 
@@ -387,26 +386,18 @@ def _discover_completed_sample(
     )
     if acquisition_observer is not None:
         acquisition_observer(acquired)
-    sample_stem = raw_path.stem
-    with timing_recorder.stage(
-        "discover.evidence_score",
-        sample_stem=sample_stem,
-        metrics={"peak_count": len(acquired.peaks)},
-    ):
-        peaks = score_peak_evidence(acquired.peaks, settings=settings)
-    peaks = _apply_blank_qualification_if_enabled(
-        peaks,
+    physical_bindings = order_discovery_peak_bindings(
+        _apply_blank_qualification_if_enabled(
+            acquired.physical_bindings,
+            settings=settings,
+            timing_recorder=timing_recorder,
+            sample_stem=raw_path.stem,
+            acquisition_input=acquisition_input,
+        ),
         settings=settings,
-        timing_recorder=timing_recorder,
-        sample_stem=sample_stem,
-        acquisition_input=acquisition_input,
-    )
-    physical_bindings = bind_physical_facts_to_final_peaks(
-        acquired.physical_bindings,
-        peaks,
     )
     return _DiscoverySampleResult(
-        peaks=peaks,
+        peaks=tuple(binding.peak for binding in physical_bindings),
         attachments=acquired.attachments,
         ms1_measurements=acquired.ms1_measurements,
         raw_open_receipt=acquired.raw_open_receipt,

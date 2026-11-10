@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
+from tests.discovery_csv_fixtures import located_scan_ids
 from tests.discovery_ms1_capture_fixtures import (
     _FakeRaw,
     _gaussian,
@@ -60,7 +61,7 @@ def test_events_across_a_broad_peak_measure_one_peak() -> None:
 
     (peak,) = result.peaks
     assert peak.attached_event_count == 3
-    assert peak.event_scan_ids == (10, 20, 30)
+    assert located_scan_ids(peak) == (10, 20, 30)
     assert peak.admitted
     assert {event.peak_id for event in result.attachments} == {peak.peak_id}
 
@@ -75,7 +76,9 @@ def test_isomers_at_one_mass_are_two_peaks_on_one_channel() -> None:
 
     assert channel.events == seeds
     assert len(result.peaks) == 2
-    assert {peak.xic_mz for peak in result.peaks} == {channel.mz}
+    assert {record.work_item.ion_mz for record in result.physical_evaluations} == {
+        channel.mz
+    }
     events = _events_by_scan(result)
     assert events[10].peak_id != events[20].peak_id
     assert all(event.peak_id for event in result.attachments)

@@ -125,15 +125,13 @@ _THRESHOLD_FLOAT_KEYS = (
     "product_intensity_med_min",
     "area_high_min",
     "area_med_min",
-    "ms1_support_strong_area_min",
-    "ms1_support_moderate_area_min",
     "scan_support_high_score_min",
     "scan_support_low_score_max",
 )
 _THRESHOLD_KEYS = (
-    *_THRESHOLD_FLOAT_KEYS[:9],
+    *_THRESHOLD_FLOAT_KEYS[:7],
     "scan_support_target",
-    *_THRESHOLD_FLOAT_KEYS[9:],
+    *_THRESHOLD_FLOAT_KEYS[7:],
 )
 
 
@@ -737,14 +735,6 @@ def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
         ),
         area_med_min=_float_from_text(
             thresholds_value["area_med_min"], field="area_med_min"
-        ),
-        ms1_support_strong_area_min=_float_from_text(
-            thresholds_value["ms1_support_strong_area_min"],
-            field="ms1_support_strong_area_min",
-        ),
-        ms1_support_moderate_area_min=_float_from_text(
-            thresholds_value["ms1_support_moderate_area_min"],
-            field="ms1_support_moderate_area_min",
         ),
         scan_support_target=_integer(
             thresholds_value["scan_support_target"], field="scan_support_target"

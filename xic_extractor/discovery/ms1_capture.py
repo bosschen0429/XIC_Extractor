@@ -21,15 +21,11 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.event_evidence import (
-    events_neutral_loss_error_basis,
     events_precursor_mz_basis,
-    max_scan_precursor_abs_delta_da,
-    merge_event_evidence,
     ordered_tag_names,
-    scan_precursor_delta_da,
     select_representative_event,
-    tag_intersection_status,
 )
+from xic_extractor.discovery.evidence_score import score_discovery_evidence
 from xic_extractor.discovery.models import (
     DiscoveryEvent,
     DiscoveryIon,
@@ -41,12 +37,9 @@ from xic_extractor.discovery.models import (
     located_event_order,
 )
 from xic_extractor.discovery.physical_fact_record import (
+    DISCOVERY_TRACE_ADAPTER_NAMESPACE,
     DiscoveryPeakPhysicalBinding,
     DiscoveryPhysicalFactRecord,
-)
-from xic_extractor.discovery.priority import (
-    assign_review_priority,
-    build_peak_reason,
 )
 from xic_extractor.discovery.same_ion_peaks import group_same_ion_peaks
 from xic_extractor.discovery.settings import DiscoverySettings
@@ -192,8 +185,7 @@ def capture_ms1_peaks(
     physical_capture = PhysicalPeakCapture(
         raw.batch_xic_source(),
         acquisition_source=acquisition_source,
-        # Keep persisted acquisition coordinates compatible with current sidecars.
-        adapter_namespace="xic_extractor.discovery.ms1_capture",
+        adapter_namespace=DISCOVERY_TRACE_ADAPTER_NAMESPACE,
         profile=signal_processing_profile,
     )
     # Every event may expose an incomplete edge, so context is resolved for the
@@ -432,91 +424,44 @@ def _measured_peak(
         representative, captured, work_ordinal=work_ordinal, ion_mz=ion_mz
     )
     peak_id = record.work_item.peak_id
-    trace_quality = captured.trace_quality
-    event_delta_min = facts.apex_rt_min - representative.rt
-    priority = assign_review_priority(
-        attached_event_count=len(attached),
-        ms1_event_delta_min=event_delta_min,
-        settings=settings,
-    )
-    reason = build_peak_reason(
-        attached_event_count=len(attached),
-        ms1_event_delta_min=event_delta_min,
-        settings=settings,
-    )
-    physical_overlap = trace_quality == "physical_shoulder_overlap"
-    if physical_overlap:
-        priority = "MEDIUM"
-        reason += "; physical_shoulder_overlap"
-    if doubly_charged:
-        reason = (
-            "inferred precursor reads a doubly charged isotope at the peak apex; "
-            "retained for review"
-        )
     matched_tags = ordered_tag_names(
         (event.neutral_loss_tag for event in evidence), settings=settings
     )
     peak = DiscoveryPeak(
         peak_id=peak_id,
-        raw_file=representative.raw_file,
         sample_stem=representative.sample_stem,
         peak_mz=peak_mz,
-        xic_mz=ion_mz,
-        best_event_precursor_mz=representative.precursor_mz,
-        best_event_product_mz=representative.product_mz,
-        best_event_neutral_loss_da=representative.observed_neutral_loss_da,
         neutral_loss_tag=representative.neutral_loss_tag,
-        configured_neutral_loss_da=representative.configured_neutral_loss_da,
-        neutral_loss_mass_error_ppm=representative.observed_loss_error_ppm,
         best_ms2_scan_id=representative.scan_number,
-        best_event_rt=representative.rt,
-        event_scan_ids=tuple(sorted({event.scan_number for event in evidence})),
         attached_event_count=len(attached),
-        event_rt_min=min(event.rt for event in evidence),
-        event_rt_max=max(event.rt for event in evidence),
-        ms2_product_max_intensity=max(event.product_intensity for event in evidence),
-        ms1_search_rt_min=request.rt_min,
-        ms1_search_rt_max=request.rt_max,
         ms1_apex_rt=facts.apex_rt_min,
         ms1_area=facts.area_counts_seconds,
         ms1_height=facts.height,
         ms1_peak_rt_start=facts.left_rt_min,
         ms1_peak_rt_end=facts.right_rt_min,
-        ms1_event_delta_min=event_delta_min,
-        ms1_trace_quality=trace_quality,
-        review_priority=priority,
-        reason=reason,
         status=_peak_status(
             doubly_charged=doubly_charged,
             overlap=evaluation.requires_overlap_review,
             attached_event_count=len(attached),
         ),
-        ms1_scan_support_score=min(
-            1.0,
-            float(facts.scan_support_count)
-            / float(settings.evidence_profile.thresholds.scan_support_target),
-        ),
         ms1_apex_mz=apex_mz,
-        neutral_loss_error_basis=events_neutral_loss_error_basis(evidence),
+        evidence_score=score_discovery_evidence(
+            attached_event_count=len(attached),
+            ms1_event_delta_min=facts.apex_rt_min - representative.rt,
+            ms2_product_max_intensity=max(
+                event.product_intensity for event in evidence
+            ),
+            ms1_area=facts.area_counts_seconds,
+            ms1_scan_support_score=min(
+                1.0,
+                float(facts.scan_support_count)
+                / float(settings.evidence_profile.thresholds.scan_support_target),
+            ),
+            settings=settings,
+        ),
         precursor_mz_basis=events_precursor_mz_basis(evidence),
-        scan_precursor_mz=representative.scan_precursor_mz,
-        scan_precursor_delta_da=scan_precursor_delta_da(representative),
-        max_scan_precursor_abs_delta_da=max_scan_precursor_abs_delta_da(evidence),
-        selected_tag_count=len(settings.selected_tag_names),
-        matched_tag_count=len(matched_tags),
         matched_tag_names=matched_tags,
-        primary_tag_name=representative.neutral_loss_tag,
-        tag_combine_mode=settings.tag_combine_mode,
-        tag_intersection_status=tag_intersection_status(
-            matched_tags, settings=settings
-        ),
-        tag_evidence_json=merge_event_evidence(evidence, settings=settings),
         located_events=located_event_order(evidence),
-        # Provisional trace shape is judged with every event that locates it.
-        is_provisional=(
-            physical_overlap
-            or (len(located_events) < 2 and trace_quality == "provisional")
-        ),
     )
     peak_attachments = tuple(
         EventAttachment(

@@ -47,6 +47,18 @@ DISCOVERY_BATCH_RECEIPT_COLUMNS = (
     "acquisition_format",
     "observation_namespace",
 )
+DISCOVERY_BATCH_INDEX_COLUMNS = (
+    "schema_version",
+    "sample_stem",
+    "raw_file",
+    "peak_csv",
+    "event_csv",
+    "peak_count",
+    "admitted_peak_count",
+    "event_count",
+    *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+    "mass_recalibration",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,10 +303,7 @@ def _canonical_peaks(
     peak_ids = tuple(item.peak_id for item in ordered)
     if len(peak_ids) != len(set(peak_ids)):
         raise IdentityContractError("peak universe IDs must be unique")
-    if any(
-        item.sample_stem != sample_stem or item.raw_file.stem != sample_stem
-        for item in ordered
-    ):
+    if any(item.sample_stem != sample_stem for item in ordered):
         raise IdentityContractError("peak universe contains a different sample")
     return ordered
 
@@ -356,6 +365,7 @@ def canonical_sample_stems(values: Sequence[str]) -> tuple[str, ...]:
 
 
 __all__ = (
+    "DISCOVERY_BATCH_INDEX_COLUMNS",
     "DISCOVERY_BATCH_INDEX_SCHEMA_VERSION",
     "DISCOVERY_BATCH_RECEIPT_COLUMNS",
     "DISCOVERY_PEAK_CSV_SCHEMA_VERSION",

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
-from dataclasses import asdict
 from pathlib import Path
 from typing import Protocol
 
@@ -159,7 +157,6 @@ def _events_from_scan_profile(
                     neutral_loss_da=neutral_loss_da,
                     observed_loss_da=observed_loss_da,
                     observed_loss_error_ppm=observed_loss_error_ppm,
-                    tolerance_ppm=settings.nl_tolerance_ppm,
                     precursor_mz_basis=basis,
                 )
             )
@@ -182,7 +179,6 @@ def _events_from_scan_profile(
                 neutral_loss_da=neutral_loss_da,
                 observed_loss_da=neutral_loss_da,
                 observed_loss_error_ppm=None,
-                tolerance_ppm=settings.nl_tolerance_ppm,
                 precursor_mz_basis="product_plus_neutral_loss",
             )
         )
@@ -238,7 +234,6 @@ def _build_event(
     neutral_loss_da: float,
     observed_loss_da: float,
     observed_loss_error_ppm: float | None,
-    tolerance_ppm: float,
     precursor_mz_basis: PrecursorMzBasis,
 ) -> DiscoveryEvent:
     return DiscoveryEvent(
@@ -253,18 +248,6 @@ def _build_event(
         configured_neutral_loss_da=neutral_loss_da,
         observed_neutral_loss_da=observed_loss_da,
         observed_loss_error_ppm=observed_loss_error_ppm,
-        matched_tag_names=(profile.tag,),
-        tag_evidence_json=_tag_evidence_json(
-            profile.tag,
-            scan=scan,
-            precursor_mz=precursor_mz,
-            product_mz=product_mz,
-            product_intensity=product_intensity,
-            observed_loss_error_ppm=observed_loss_error_ppm,
-            neutral_loss_da=neutral_loss_da,
-            tolerance_ppm=tolerance_ppm,
-            precursor_mz_basis=precursor_mz_basis,
-        ),
         scan_precursor_mz=scan.precursor_mz,
         precursor_mz_basis=precursor_mz_basis,
         precursor_metadata=scan.precursor_metadata,
@@ -297,43 +280,3 @@ def _event_candidate_rank(event: DiscoveryEvent) -> tuple[float, float, int]:
         -event.product_intensity,
         event.scan_number,
     )
-
-
-def _tag_evidence_json(
-    tag: str,
-    *,
-    scan: Ms2Scan,
-    precursor_mz: float,
-    product_mz: float,
-    product_intensity: float,
-    observed_loss_error_ppm: float | None,
-    neutral_loss_da: float,
-    tolerance_ppm: float,
-    precursor_mz_basis: PrecursorMzBasis,
-) -> str:
-    scan_precursor_delta_da = scan.precursor_mz - precursor_mz
-    loss_error_da, loss_window_da, _ = neutral_loss_match(
-        precursor_mz, product_mz, neutral_loss_da, tolerance_ppm
-    )
-    payload = {
-        tag: {
-            "scan_count": 1,
-            "scan_ids": [scan.scan_number],
-            "rt_min": scan.rt,
-            "rt_max": scan.rt,
-            "precursor_mz_basis": precursor_mz_basis,
-            "scan_precursor_mz": scan.precursor_mz,
-            "precursor_metadata": asdict(scan.precursor_metadata)
-            if scan.precursor_metadata is not None
-            else None,
-            "scan_precursor_delta_da": scan_precursor_delta_da,
-            "product_mz": product_mz,
-            "max_intensity": product_intensity,
-            "neutral_loss_error_ppm": observed_loss_error_ppm,
-            "neutral_loss_error_da": loss_error_da
-            if observed_loss_error_ppm is not None
-            else None,
-            "neutral_loss_window_da": loss_window_da,
-        }
-    }
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"))

@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from tests.alignment_explanation_fixtures import (
+    explanation_discovery_facts,
     explanation_summary,
     run_alignment_fixture,
 )
@@ -49,6 +50,7 @@ def test_old_query_index_is_rejected_without_conversion(tmp_path, monkeypatch):
     source = write_alignment_explanation(
         tmp_path / "old.sqlite",
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -88,6 +90,7 @@ def test_explanation_from_an_older_alignment_is_rejected_on_open(
     source = write_alignment_explanation(
         tmp_path / "old.sqlite",
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -245,6 +248,7 @@ def test_default_review_keeps_values_and_query_without_curves(
     report = write_alignment_explanation(
         tmp_path / "review.sqlite",
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -340,6 +344,7 @@ def test_selected_curves_are_explicit_and_other_ranges_stay_small(
     )
     arguments = dict(
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -367,6 +372,7 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
     full = write_alignment_explanation(
         tmp_path / "full.sqlite",
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -418,6 +424,7 @@ def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
     review = write_alignment_explanation(
         tmp_path / "review.sqlite",
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -427,7 +434,12 @@ def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
 
     class Raw:
         def extract_xic(self, mz, lower, upper, ppm):
-            assert mz == candidates["S1"][0].best_event_precursor_mz
+            assert (
+                mz
+                == explanation_discovery_facts(completed)["precursor_mz_by_candidate"][
+                    candidates["S1"][0].peak_id
+                ]
+            )
             assert upper - lower == 1.0
             rt = np.linspace(lower, upper, 51)
             return rt, 1000 * np.exp(-(((rt - 8) / 0.08) ** 2))
@@ -462,6 +474,7 @@ def _two_sample_curve_review(tmp_path, monkeypatch):
     review = write_alignment_explanation(
         tmp_path / "two-sample-review.sqlite",
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -996,6 +1009,7 @@ def test_produced_membership_risk_reaches_final_samples(
         tmp_path / "produced.sqlite",
         full_audit=full_audit,
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -1050,7 +1064,9 @@ def test_production_publication_automatically_includes_recorded_risk(
         tmp_path, monkeypatch, "positive"
     )
     completed = completed.bind_publication_inputs(
-        peaks_by_sample=candidates, alignment_config=config
+        peaks_by_sample=candidates,
+        **explanation_discovery_facts(completed),
+        alignment_config=config,
     )
     policy = UntargetedPublicationPolicy()
     directory = tmp_path / "published"

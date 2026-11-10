@@ -50,8 +50,8 @@ def test_run_discovery_cli_passes_single_raw_settings(
         output_dir.mkdir(parents=True, exist_ok=True)
         candidates_csv = output_dir / "discovery_peaks.csv"
         review_csv = output_dir / "discovery_events.csv"
-        candidates_csv.write_text("review_priority\n", encoding="utf-8")
-        review_csv.write_text("review_priority\n", encoding="utf-8")
+        candidates_csv.write_text("peak_id\n", encoding="utf-8")
+        review_csv.write_text("peak_id\n", encoding="utf-8")
         return DiscoveryRunOutputs(
             peaks_csv=candidates_csv,
             events_csv=review_csv,

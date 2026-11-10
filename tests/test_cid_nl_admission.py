@@ -51,13 +51,11 @@ def test_alignment_and_delta_mass_read_one_peak_mass(tmp_path, apex_mz):
     (peak,) = _current_candidates(
         _FakeRaw((8.0,)), raw_file=raw_path, settings=_settings()
     )
-    # An inferred precursor whose event estimate, XIC center and apex reading
-    # all differ: the producer writes one peak mass and every consumer reads it.
+    # An inferred precursor whose apex reading differs from its XIC center:
+    # the producer writes one peak mass and every consumer reads it.
     peak_mz = 500.0 if apex_mz is None else apex_mz
     peak = replace(
         peak,
-        best_event_precursor_mz=500.004,
-        xic_mz=500.0,
         ms1_apex_mz=apex_mz,
         peak_mz=peak_mz,
         status="admitted",
@@ -166,7 +164,7 @@ def test_review_rows_never_become_alignment_roots(
     source = DiscoveryInputSource(batch)
     for peaks in candidates.values():
         for peak in peaks:
-            assert source.locations[peak.peak_id].peak_mz == peak.xic_mz
+            assert source.locations[peak.peak_id].peak_mz == peak.peak_mz
     prepared = prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
         peaks_by_sample=source if indexed else candidates,

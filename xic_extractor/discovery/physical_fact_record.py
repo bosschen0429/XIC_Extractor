@@ -2,21 +2,36 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
+    TraceAcquisitionCapability,
+    TraceCoordinateKind,
+    mint_trace_acquisition_capability,
 )
 from xic_extractor.discovery.models import (
     DiscoveryPeak,
     DiscoveryPhysicalWorkItem,
-    discovery_peak_output_sort_key,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     validate_bounded_physical_peak_evaluation,
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
+
+DISCOVERY_TRACE_ADAPTER_NAMESPACE = "xic_extractor.discovery.ms1_capture"
+
+
+def discovery_trace_capability(
+    acquisition_source: AcquisitionSourceIdentity,
+) -> TraceAcquisitionCapability:
+    """The capability of every MS1 trace Discovery acquires from one RAW."""
+    return mint_trace_acquisition_capability(
+        acquisition_source,
+        adapter_namespace=DISCOVERY_TRACE_ADAPTER_NAMESPACE,
+        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
+    )
 
 
 def admits_cid_nl_alignment(
@@ -109,38 +124,36 @@ def validate_discovery_peak_physical_binding(
         raise ValueError("Discovery physical binding crosses acquisition record")
     if work_item.peak_id != binding.peak.peak_id:
         raise ValueError("Discovery physical binding crosses peak identity")
+
+
+def validate_peak_physical_measurement(
+    peak: DiscoveryPeak, record: DiscoveryPhysicalFactRecord
+) -> None:
+    """Reject a peak row whose measurement differs from its physical record.
+
+    The peak table and the physical sidecar both carry the peak's apex,
+    bounds, area and height; a reader that pairs them requires they agree.
+    """
+
+    work = record.work_item
     if (
-        binding.peak.ms1_search_rt_min != work_item.xic_rt_min
-        or binding.peak.ms1_search_rt_max != work_item.xic_rt_max
+        work.peak_id != peak.peak_id
+        or work.sample_stem != peak.sample_stem
+        or work.best_ms2_scan_id != peak.best_ms2_scan_id
     ):
-        raise ValueError("Discovery physical binding crosses peak search window")
-
-
-def bind_physical_facts_to_final_peaks(
-    bindings: tuple[DiscoveryPeakPhysicalBinding, ...],
-    peaks: tuple[DiscoveryPeak, ...],
-) -> tuple[DiscoveryPeakPhysicalBinding, ...]:
-    """Attach scored and qualified peaks without changing physical authority."""
-
-    if len(bindings) != len(peaks):
-        raise ValueError("Discovery final peak/binding cardinality mismatch")
-    return tuple(
-        replace(binding, peak=peak)
-        for binding, peak in zip(bindings, peaks, strict=True)
-    )
-
-
-def order_physical_bindings_for_peak_csv(
-    bindings: tuple[DiscoveryPeakPhysicalBinding, ...],
-) -> tuple[DiscoveryPeakPhysicalBinding, ...]:
-    ordered = sorted(
-        bindings,
-        key=lambda binding: discovery_peak_output_sort_key(binding.peak),
-    )
-    return tuple(
-        replace(binding, final_ordinal=final_ordinal)
-        for final_ordinal, binding in enumerate(ordered)
-    )
+        raise ValueError(f"{peak.peak_id}: physical record crosses its peak row")
+    facts = record.evaluation.facts
+    if facts is None:
+        return
+    for name, value in (
+        ("ms1_apex_rt", facts.apex_rt_min),
+        ("ms1_peak_rt_start", facts.left_rt_min),
+        ("ms1_peak_rt_end", facts.right_rt_min),
+        ("ms1_area", facts.area_counts_seconds),
+        ("ms1_height", facts.height),
+    ):
+        if getattr(peak, name) != value:
+            raise ValueError(f"{peak.peak_id}: physical {name} crosses its peak row")
 
 
 def _validate_evaluation_work_identity(
@@ -178,10 +191,11 @@ def _validate_acquired_trace_work_identity(
 
 
 __all__ = [
+    "DISCOVERY_TRACE_ADAPTER_NAMESPACE",
     "DiscoveryPeakPhysicalBinding",
     "DiscoveryPhysicalFactRecord",
-    "bind_physical_facts_to_final_peaks",
-    "order_physical_bindings_for_peak_csv",
     "validate_discovery_peak_physical_binding",
     "validate_discovery_physical_fact_record",
+    "discovery_trace_capability",
+    "validate_peak_physical_measurement",
 ]

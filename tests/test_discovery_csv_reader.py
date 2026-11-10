@@ -1,5 +1,4 @@
 import csv
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -8,7 +7,7 @@ from tests.alignment_pipeline_helpers import (
     _owner_closed_receipt_fields,
     physical_facts_fingerprint_beside,
 )
-from xic_extractor.discovery.batch_contract import DISCOVERY_BATCH_RECEIPT_COLUMNS
+from xic_extractor.discovery.batch_contract import DISCOVERY_BATCH_INDEX_COLUMNS
 from xic_extractor.discovery.models import DISCOVERY_PEAK_COLUMNS
 
 
@@ -35,83 +34,6 @@ def test_old_discovery_index_requires_regeneration(tmp_path: Path) -> None:
         read_discovery_batch_index(path)
 
 
-@pytest.mark.parametrize("provisional,seed_count", [(True, 1), (True, 2), (False, 2)])
-def test_owner_bound_csv_preserves_final_provisional_decision(
-    tmp_path: Path,
-    provisional: bool,
-    seed_count: int,
-) -> None:
-    from xic_extractor.discovery.batch_contract import (
-        mint_discovery_peak_universe_receipt,
-    )
-    from xic_extractor.discovery.csv_reader import (
-        read_discovery_peaks_csv,
-        read_owner_bound_discovery_peaks_csv,
-    )
-    from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
-    from xic_extractor.processing_identity import (
-        build_local_acquisition_source_identity,
-    )
-
-    path = tmp_path / "candidates.csv"
-    _write_csv(path, DISCOVERY_PEAK_COLUMNS, [_candidate_row()])
-    (original,) = read_discovery_peaks_csv(path)
-    candidate = replace(
-        original,
-        ms1_trace_quality="provisional",
-        is_provisional=provisional,
-        attached_event_count=seed_count,
-    )
-    write_discovery_peaks_csv(path, (candidate,))
-    raw = tmp_path / "Sample_1.raw"
-    raw.write_bytes(b"synthetic acquisition")
-    source = build_local_acquisition_source_identity(
-        raw,
-        acquisition_format="thermo_raw",
-        observation_namespace="test",
-    )
-    receipt = mint_discovery_peak_universe_receipt(
-        sample_stem="Sample_1",
-        acquisition_source=source,
-        peak_csv=path,
-        physical_facts=physical_facts_fingerprint_beside(path),
-        peaks=(candidate,),
-    )
-    (restored,) = read_owner_bound_discovery_peaks_csv(path, receipt=receipt)
-    assert restored.is_provisional is provisional
-    assert restored.attached_event_count == seed_count
-    assert restored.ms1_trace_quality == "provisional"
-
-
-@pytest.mark.parametrize("value", ["", "true", "1", "unknown"])
-def test_candidate_csv_rejects_invalid_provisional_flag(
-    tmp_path: Path, value: str
-) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
-
-    path = tmp_path / "candidates.csv"
-    columns = tuple(c for c in DISCOVERY_PEAK_COLUMNS if c != "is_provisional")
-    _write_csv(
-        path, (*columns, "is_provisional"), [_candidate_row(is_provisional=value)]
-    )
-    with pytest.raises(ValueError, match="is_provisional must be TRUE or FALSE"):
-        read_discovery_peaks_csv(path)
-
-
-def test_candidate_csv_requires_current_provisional_column(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
-
-    path = tmp_path / "candidates.csv"
-    columns = tuple(c for c in DISCOVERY_PEAK_COLUMNS if c != "is_provisional")
-    row = _candidate_row(ms1_trace_quality="provisional")
-    row.pop("is_provisional", None)
-    _write_csv(path, columns, [row])
-    with pytest.raises(ValueError, match="missing required columns: is_provisional"):
-        read_discovery_peaks_csv(path)
-
-
 def test_read_discovery_batch_index_preserves_order_and_resolves_candidate_paths(
     tmp_path: Path,
 ) -> None:
@@ -128,15 +50,7 @@ def test_read_discovery_batch_index_preserves_order_and_resolves_candidate_paths
         _write_csv(candidate_path, DISCOVERY_PEAK_COLUMNS, [])
     _write_csv(
         index_path,
-        (
-            "schema_version",
-            "sample_stem",
-            "raw_file",
-            "peak_csv",
-            "event_csv",
-            "peak_count",
-            *DISCOVERY_BATCH_RECEIPT_COLUMNS,
-        ),
+        DISCOVERY_BATCH_INDEX_COLUMNS,
         [
             {
                 **_owner_closed_receipt_fields("Sample_B", candidate_paths[0]),
@@ -179,15 +93,7 @@ def test_read_discovery_batch_index_accepts_utf8_bom(tmp_path: Path) -> None:
     _write_csv(candidate_path, DISCOVERY_PEAK_COLUMNS, [])
     _write_csv(
         index_path,
-        (
-            "schema_version",
-            "sample_stem",
-            "raw_file",
-            "peak_csv",
-            "event_csv",
-            "peak_count",
-            *DISCOVERY_BATCH_RECEIPT_COLUMNS,
-        ),
+        DISCOVERY_BATCH_INDEX_COLUMNS,
         [
             {
                 "sample_stem": "Sample_A",
@@ -220,15 +126,7 @@ def test_read_discovery_batch_index_unescapes_known_formula_fields(
         _write_csv(candidate_path, DISCOVERY_PEAK_COLUMNS, [])
     _write_csv(
         index_path,
-        (
-            "schema_version",
-            "sample_stem",
-            "raw_file",
-            "peak_csv",
-            "event_csv",
-            "peak_count",
-            *DISCOVERY_BATCH_RECEIPT_COLUMNS,
-        ),
+        DISCOVERY_BATCH_INDEX_COLUMNS,
         [
             {
                 **_owner_closed_receipt_fields("=Sample", candidate_paths[0]),
@@ -266,33 +164,22 @@ def test_read_discovery_candidates_csv_parses_full_candidate_row(
 
     (candidate,) = read_discovery_peaks_csv(csv_path)
 
-    assert candidate.review_priority == "HIGH"
     assert candidate.evidence_score == 82
     assert candidate.peak_id == "Sample_1@mz500.123456_rt8.4800"
-    assert candidate.xic_mz == pytest.approx(500.123456)
+    assert candidate.peak_mz == pytest.approx(500.123456)
     assert candidate.admitted
-    assert candidate.best_event_precursor_mz == pytest.approx(500.123456)
-    assert candidate.best_event_product_mz == pytest.approx(384.076056)
-    assert candidate.best_event_neutral_loss_da == pytest.approx(116.0474)
-    assert candidate.best_event_rt == pytest.approx(8.49)
     assert candidate.attached_event_count == 3
     assert candidate.ms1_apex_rt == pytest.approx(8.48)
     assert candidate.ms1_area == pytest.approx(123456.7)
-    assert candidate.ms2_product_max_intensity == pytest.approx(9876.5)
-    assert candidate.raw_file == Path("C:/raw/Sample_1.raw")
+    assert candidate.ms1_height == pytest.approx(2222.2)
+    assert candidate.ms1_peak_rt_start == pytest.approx(8.40)
+    assert candidate.ms1_peak_rt_end == pytest.approx(8.60)
+    assert candidate.ms1_apex_mz is None
     assert candidate.sample_stem == "Sample_1"
     assert candidate.best_ms2_scan_id == 6095
-    assert candidate.event_scan_ids == (6095, 6098, 6102)
-    assert candidate.ms1_event_delta_min == pytest.approx(-0.01)
-    assert candidate.ms1_scan_support_score == pytest.approx(0.8)
-    assert candidate.neutral_loss_error_basis == "measured_scan_precursor_product"
+    assert candidate.neutral_loss_tag == "DNA_dR"
     assert candidate.precursor_mz_basis == "scan_precursor"
-    assert candidate.scan_precursor_mz == pytest.approx(500.123456)
-    assert candidate.scan_precursor_delta_da == pytest.approx(0.0)
-    assert candidate.max_scan_precursor_abs_delta_da == pytest.approx(0.0)
     assert candidate.matched_tag_names == ("DNA_dR",)
-    assert candidate.matched_tag_count == 1
-    assert candidate.tag_combine_mode == "single"
 
 
 def test_read_discovery_candidates_preserves_multi_tag_evidence(
@@ -300,24 +187,14 @@ def test_read_discovery_candidates_preserves_multi_tag_evidence(
 ) -> None:
     from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 
-    row = _candidate_row(
-        selected_tag_count="3",
-        matched_tag_count="2",
-        matched_tag_names="dR;R",
-        primary_tag_name="dR",
-        tag_combine_mode="union",
-        tag_intersection_status="incomplete",
-        tag_evidence_json='{"dR":{"scan_count":1},"R":{"scan_count":1}}',
-    )
+    row = _candidate_row(matched_tag_names="dR;R", neutral_loss_tag="dR")
     csv_path = tmp_path / "discovery_peaks.csv"
     _write_csv(csv_path, DISCOVERY_PEAK_COLUMNS, [row])
 
     candidates = read_discovery_peaks_csv(csv_path)
 
     assert candidates[0].matched_tag_names == ("dR", "R")
-    assert candidates[0].matched_tag_count == 2
-    assert candidates[0].tag_combine_mode == "union"
-    assert "scan_count" in candidates[0].tag_evidence_json
+    assert candidates[0].neutral_loss_tag == "dR"
 
 
 def test_read_discovery_candidates_csv_unescapes_known_formula_fields(
@@ -328,7 +205,6 @@ def test_read_discovery_candidates_csv_unescapes_known_formula_fields(
     row = _candidate_row(
         peak_id="'=Sample@mz500.123456_rt8.4800",
         sample_stem="'=Sample",
-        raw_file="'-raw.raw",
     )
     csv_path = tmp_path / "discovery_peaks.csv"
     _write_csv(csv_path, DISCOVERY_PEAK_COLUMNS, [row])
@@ -337,7 +213,6 @@ def test_read_discovery_candidates_csv_unescapes_known_formula_fields(
 
     assert candidate.peak_id == "=Sample@mz500.123456_rt8.4800"
     assert candidate.sample_stem == "=Sample"
-    assert candidate.raw_file == Path("-raw.raw")
 
 
 def test_readers_reject_missing_required_columns(tmp_path: Path) -> None:
@@ -351,15 +226,13 @@ def test_readers_reject_missing_required_columns(tmp_path: Path) -> None:
     candidates_path = tmp_path / "discovery_peaks.csv"
     _write_csv(
         candidates_path,
-        tuple(
-            column for column in DISCOVERY_PEAK_COLUMNS if column != "tag_evidence_json"
-        ),
+        tuple(column for column in DISCOVERY_PEAK_COLUMNS if column != "ms1_height"),
         [],
     )
 
     with pytest.raises(ValueError, match="regenerate Discovery"):
         read_discovery_batch_index(batch_path)
-    with pytest.raises(ValueError, match="missing required columns"):
+    with pytest.raises(ValueError, match="regenerate Discovery"):
         read_discovery_peaks_csv(candidates_path)
 
 
@@ -384,10 +257,7 @@ def test_read_discovery_peaks_csv_rejects_duplicate_peak_id(
 
 @pytest.mark.parametrize(
     ("column", "value"),
-    [
-        ("precursor_mz_basis", "target_lookup"),
-        ("neutral_loss_error_basis", "measured_truth"),
-    ],
+    [("precursor_mz_basis", "target_lookup")],
 )
 def test_read_discovery_candidates_csv_rejects_invalid_basis_enum(
     tmp_path: Path,
@@ -411,9 +281,9 @@ def test_read_discovery_candidates_csv_rejects_invalid_basis_enum(
     ("column", "value"),
     [
         ("evidence_score", "not-int"),
-        ("best_event_precursor_mz", "not-float"),
+        ("ms1_area", "not-float"),
         ("status", "maybe"),
-        ("event_scan_ids", "1;two"),
+        ("best_ms2_scan_id", "two"),
     ],
 )
 def test_read_discovery_candidates_csv_rejects_malformed_typed_fields_with_row_number(
@@ -443,7 +313,7 @@ def test_discovery_input_source_defers_typed_rows_and_loads_selected_features(
             sample="Sample_1",
             scan=6095,
             state="admitted",
-            reason="多行證據\n第二行",
+            tag="多行證據\n第二行",
         ),
         _indexed_candidate_row(
             tmp_path,
@@ -467,7 +337,7 @@ def test_discovery_input_source_defers_typed_rows_and_loads_selected_features(
     assert parsed_rows == []
     (feature,) = source.feature_view()["Sample_1"]
     assert feature.peak_id == rows[0]["peak_id"]
-    assert feature.reason == "多行證據\n第二行"
+    assert feature.neutral_loss_tag == "多行證據\n第二行"
     assert parsed_rows == [rows[0]["peak_id"]]
     loaded = source.load_candidates((rows[1]["peak_id"],))
     assert [item.peak_id for item in loaded["Sample_1"]] == [rows[1]["peak_id"]]
@@ -612,23 +482,16 @@ def _indexed_candidate_row(
     state: str,
     basis: str = "scan_precursor",
     mz: float = 500.123456,
-    reason: str = "strict NL seed",
+    tag: str = "DNA_dR",
 ) -> dict[str, str]:
-    product_mz = mz - 116.0474
     admitted = state == "admitted"
     return _candidate_row(
         peak_id=f"{sample}@mz{mz:.6f}_rt{scan}",
         peak_mz=f"{mz:.6f}",
-        xic_mz=f"{mz:.6f}",
-        best_event_precursor_mz=f"{mz:.6f}",
-        best_event_product_mz=f"{product_mz:.6f}",
-        scan_precursor_mz=f"{mz:.6f}",
-        raw_file=str(root / f"{sample}.raw"),
         sample_stem=sample,
         best_ms2_scan_id=str(scan),
-        event_scan_ids=str(scan),
         precursor_mz_basis=basis,
-        reason=reason,
+        neutral_loss_tag=tag,
         status=state,
         attached_event_count="1" if admitted else "0",
     )
@@ -648,56 +511,22 @@ def _write_csv(
 
 def _candidate_row(**overrides: str) -> dict[str, str]:
     row = {
-        "review_priority": "HIGH",
         "status": "admitted",
-        "evidence_tier": "A",
         "evidence_score": "82",
-        "ms2_support": "strong",
-        "ms1_support": "clean",
-        "rt_alignment": "aligned",
-        "peak_id": "Sample_1@mz500.123456_rt8.4800",
-        "peak_mz": "500.123456",
-        "xic_mz": "500.123456",
-        "best_event_precursor_mz": "500.123456",
-        "best_event_product_mz": "384.076056",
-        "best_event_neutral_loss_da": "116.0474",
-        "ms1_apex_rt": "8.48",
-        "ms1_area": "123456.7",
         "attached_event_count": "3",
-        "best_event_rt": "8.49",
-        "ms2_product_max_intensity": "9876.5",
-        "reason": "strict NL seed",
-        "raw_file": "C:/raw/Sample_1.raw",
+        "peak_id": "Sample_1@mz500.123456_rt8.4800",
         "sample_stem": "Sample_1",
-        "best_ms2_scan_id": "6095",
-        "event_scan_ids": "6095;6098;6102",
-        "neutral_loss_tag": "DNA_dR",
-        "configured_neutral_loss_da": "116.0474",
-        "neutral_loss_mass_error_ppm": "2.5",
-        "neutral_loss_error_basis": "measured_scan_precursor_product",
+        "peak_mz": "500.123456",
         "precursor_mz_basis": "scan_precursor",
-        "scan_precursor_mz": "500.123456",
-        "scan_precursor_delta_da": "0.0",
-        "max_scan_precursor_abs_delta_da": "0.0",
-        "event_rt_min": "8.45",
-        "event_rt_max": "8.55",
-        "ms1_search_rt_min": "8.25",
-        "ms1_search_rt_max": "8.75",
-        "ms1_event_delta_min": "-0.01",
+        "ms1_apex_mz": "",
+        "ms1_apex_rt": "8.48",
         "ms1_peak_rt_start": "8.40",
         "ms1_peak_rt_end": "8.60",
+        "ms1_area": "123456.7",
         "ms1_height": "2222.2",
-        "ms1_apex_mz": "",
-        "ms1_trace_quality": "clean",
-        "ms1_scan_support_score": "0.8",
-        "selected_tag_count": "1",
-        "matched_tag_count": "1",
+        "best_ms2_scan_id": "6095",
+        "neutral_loss_tag": "DNA_dR",
         "matched_tag_names": "DNA_dR",
-        "primary_tag_name": "DNA_dR",
-        "tag_combine_mode": "single",
-        "tag_intersection_status": "not_required",
-        "tag_evidence_json": '{"DNA_dR":{"scan_count":3}}',
-        "is_provisional": "FALSE",
     }
     row.update(overrides)
     return row

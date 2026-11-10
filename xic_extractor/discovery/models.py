@@ -20,15 +20,8 @@ if TYPE_CHECKING:
     )
     from xic_extractor.processing_identity import FileContentFingerprint
 
-ReviewPriority = Literal["HIGH", "MEDIUM", "LOW"]
 GroupPrecursorMzBasis = Literal[
     "scan_precursor", "scan_monoisotopic", "product_plus_neutral_loss", "mixed"
-]
-NeutralLossErrorBasis = Literal[
-    "measured_scan_precursor_product",
-    "recorded_monoisotopic_precursor_product",
-    "configured_loss_inferred_precursor",
-    "mixed",
 ]
 PeakStatus = Literal[
     "admitted",
@@ -47,60 +40,25 @@ PEAK_STATUSES: tuple[PeakStatus, ...] = (
 )
 
 DISCOVERY_PEAK_COLUMNS = (
-    "review_priority",
     "status",
-    "evidence_tier",
     "evidence_score",
-    "ms2_support",
-    "ms1_support",
-    "rt_alignment",
-    "peak_id",
-    "peak_mz",
-    "xic_mz",
-    "best_event_precursor_mz",
-    "best_event_product_mz",
-    "best_event_neutral_loss_da",
-    "ms1_apex_rt",
-    "ms1_area",
     "attached_event_count",
-    "best_event_rt",
-    "ms2_product_max_intensity",
-    "reason",
-    "raw_file",
+    "peak_id",
     "sample_stem",
-    "best_ms2_scan_id",
-    "event_scan_ids",
-    "neutral_loss_tag",
-    "configured_neutral_loss_da",
-    "neutral_loss_mass_error_ppm",
-    "neutral_loss_error_basis",
+    "peak_mz",
     "precursor_mz_basis",
-    "scan_precursor_mz",
-    "scan_precursor_delta_da",
-    "max_scan_precursor_abs_delta_da",
-    "event_rt_min",
-    "event_rt_max",
-    "ms1_search_rt_min",
-    "ms1_search_rt_max",
-    "ms1_event_delta_min",
+    "ms1_apex_mz",
+    "ms1_apex_rt",
     "ms1_peak_rt_start",
     "ms1_peak_rt_end",
+    "ms1_area",
     "ms1_height",
-    "ms1_apex_mz",
-    "ms1_trace_quality",
-    "ms1_scan_support_score",
-    "selected_tag_count",
-    "matched_tag_count",
+    "best_ms2_scan_id",
+    "neutral_loss_tag",
     "matched_tag_names",
-    "primary_tag_name",
-    "tag_combine_mode",
-    "tag_intersection_status",
-    "tag_evidence_json",
-    "is_provisional",
 )
 
 DISCOVERY_EVENT_COLUMNS = (
-    "sample_stem",
     "ms2_scan_number",
     "ms2_rt",
     "neutral_loss_tag",
@@ -139,8 +97,6 @@ class DiscoveryEvent:
     configured_neutral_loss_da: float
     observed_neutral_loss_da: float
     observed_loss_error_ppm: float | None
-    matched_tag_names: tuple[str, ...] = ()
-    tag_evidence_json: str = "{}"
     scan_precursor_mz: float | None = None
     precursor_mz_basis: PrecursorMzBasis = "scan_precursor"
     precursor_metadata: Ms2PrecursorMetadata | None = None
@@ -287,70 +243,30 @@ class DiscoveryPeak:
     """One physical MS1 peak on one ion's XIC, with the NL events locating it.
 
     ``peak_mz`` is the peak's ion mass: the apex reading of an inferred
-    precursor, else ``xic_mz``. Every consumer reads it. ``xic_mz`` is the XIC
-    center, the ion's MS1 reading before acquisition. ``best_event_*`` fields
-    are the representative event's values. Peak facts come from the physical
-    measurement. Evidence fields (scan IDs, tag evidence, RT range, product
-    intensity) cover every event locating the peak; ``attached_event_count``
-    counts those that attach and admit it. The representative event is attached
-    when any event attaches.
+    precursor, else the XIC center. Every consumer reads it. Peak facts come
+    from the physical measurement. ``best_ms2_scan_id`` names the
+    representative event, whose values live in the event table;
+    ``attached_event_count`` counts the located events that attach and admit
+    the peak. The representative event is attached when any event attaches.
     """
 
     peak_id: str
-    raw_file: Path
     sample_stem: str
     peak_mz: float
-    xic_mz: float
-    best_event_precursor_mz: float
-    best_event_product_mz: float
-    best_event_neutral_loss_da: float
     neutral_loss_tag: str
-    configured_neutral_loss_da: float
-    neutral_loss_mass_error_ppm: float | None
     best_ms2_scan_id: int
-    best_event_rt: float
-    event_scan_ids: tuple[int, ...]
     attached_event_count: int
-    event_rt_min: float
-    event_rt_max: float
-    ms2_product_max_intensity: float
-    ms1_search_rt_min: float
-    ms1_search_rt_max: float
     ms1_apex_rt: float
     ms1_area: float
     ms1_height: float
     ms1_peak_rt_start: float
     ms1_peak_rt_end: float
-    ms1_event_delta_min: float
-    ms1_trace_quality: str
-    review_priority: ReviewPriority
-    reason: str
     status: PeakStatus
-    ms1_scan_support_score: float | None = None
     # Qualified MS1 ion reading at the apex of an inferred precursor.
     ms1_apex_mz: float | None = None
     evidence_score: int = 0
-    evidence_tier: str = "E"
-    ms2_support: str = "weak"
-    ms1_support: str = "missing"
-    rt_alignment: str = "missing"
-    neutral_loss_error_basis: NeutralLossErrorBasis = "measured_scan_precursor_product"
     precursor_mz_basis: GroupPrecursorMzBasis = "scan_precursor"
-    scan_precursor_mz: float | None = None
-    scan_precursor_delta_da: float | None = None
-    max_scan_precursor_abs_delta_da: float | None = None
-    selected_tag_count: int = 1
-    matched_tag_count: int = 1
     matched_tag_names: tuple[str, ...] = ()
-    primary_tag_name: str = ""
-    tag_combine_mode: Literal["single", "union", "intersection"] = "single"
-    tag_intersection_status: Literal[
-        "not_required",
-        "complete",
-        "incomplete",
-    ] = "not_required"
-    tag_evidence_json: str = "{}"
-    is_provisional: bool = False
     # Every strict NL event locating this peak, attached or not. The event
     # table persists them; readers restore them by ``peak_id``.
     located_events: tuple[DiscoveryEvent, ...] = dataclass_field(
@@ -488,24 +404,13 @@ class EventAttachment:
         return self.event.observed_loss_error_ppm
 
 
-_DISCOVERY_PRIORITY_RANK = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+def representative_event_rt(peak: DiscoveryPeak) -> float:
+    """RT of the MS2 scan ``best_ms2_scan_id`` among the peak's located events."""
 
-
-def discovery_peak_output_sort_key(peak: DiscoveryPeak) -> tuple[object, ...]:
-    """Canonical Discovery peak order shared by outputs and handoffs."""
-
-    return (
-        _DISCOVERY_PRIORITY_RANK.get(
-            peak.review_priority,
-            len(_DISCOVERY_PRIORITY_RANK),
-        ),
-        -peak.evidence_score,
-        -peak.attached_event_count,
-        -peak.ms2_product_max_intensity,
-        -peak.ms1_area,
-        peak.best_event_rt,
-        peak.peak_id,
-    )
+    for event in peak.located_events:
+        if event.scan_number == peak.best_ms2_scan_id:
+            return event.rt
+    raise ValueError(f"{peak.peak_id}: located events lack the representative scan")
 
 
 def discovery_event_output_sort_key(event: EventAttachment) -> tuple[object, ...]:

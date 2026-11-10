@@ -27,8 +27,8 @@ from xic_extractor.alignment.result.scientific_alignment import (
 )
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
+    DISCOVERY_BATCH_INDEX_COLUMNS,
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
-    DISCOVERY_BATCH_RECEIPT_COLUMNS,
     discovery_receipt_index_fields,
     mint_discovery_peak_universe_receipt,
 )
@@ -114,19 +114,7 @@ def write_batch(
         row.update(_owner_closed_receipt_fields(sample_stem, candidates_csv))
         rows.append(row)
     batch_index = batch_dir / "discovery_batch_index.csv"
-    write_csv(
-        batch_index,
-        (
-            "schema_version",
-            "sample_stem",
-            "raw_file",
-            "peak_csv",
-            "event_csv",
-            "peak_count",
-            *DISCOVERY_BATCH_RECEIPT_COLUMNS,
-        ),
-        rows,
-    )
+    write_csv(batch_index, DISCOVERY_BATCH_INDEX_COLUMNS, rows)
     return batch_index
 
 
@@ -175,55 +163,22 @@ def candidate_id(sample_stem: str) -> str:
 
 def candidate_row(sample_stem: str) -> dict[str, str]:
     return {
-        "review_priority": "HIGH",
-        "evidence_tier": "A",
-        "evidence_score": "80",
-        "ms2_support": "strong",
-        "ms1_support": "clean",
-        "rt_alignment": "aligned",
         "status": "admitted",
-        "peak_id": candidate_id(sample_stem),
-        "peak_mz": "500.0",
-        "xic_mz": "500.0",
-        "best_event_precursor_mz": "500.0",
-        "best_event_product_mz": "384.0",
-        "best_event_neutral_loss_da": "116.0",
-        "best_event_rt": "8.5",
+        "evidence_score": "80",
         "attached_event_count": "2",
-        "ms1_apex_rt": "8.5",
-        "ms1_area": "1000.0",
-        "ms2_product_max_intensity": "500.0",
-        "reason": "seed",
-        "raw_file": f"C:/stale/{sample_stem}.raw",
+        "peak_id": candidate_id(sample_stem),
         "sample_stem": sample_stem,
-        "best_ms2_scan_id": "1",
-        "event_scan_ids": "1;2",
-        "neutral_loss_tag": "DNA_dR",
-        "configured_neutral_loss_da": "116.0",
-        "neutral_loss_mass_error_ppm": "1.0",
-        "neutral_loss_error_basis": "measured_scan_precursor_product",
+        "peak_mz": "500.0",
         "precursor_mz_basis": "scan_precursor",
-        "scan_precursor_mz": "500.0",
-        "scan_precursor_delta_da": "0.0",
-        "max_scan_precursor_abs_delta_da": "0.0",
-        "event_rt_min": "8.4",
-        "event_rt_max": "8.6",
-        "ms1_search_rt_min": "8.2",
-        "ms1_search_rt_max": "8.8",
-        "ms1_event_delta_min": "0.0",
+        "ms1_apex_mz": "",
+        "ms1_apex_rt": "8.5",
         "ms1_peak_rt_start": "8.4",
         "ms1_peak_rt_end": "8.6",
+        "ms1_area": "1000.0",
         "ms1_height": "100.0",
-        "ms1_trace_quality": "clean",
-        "is_provisional": "FALSE",
-        "ms1_scan_support_score": "0.8",
-        "selected_tag_count": "1",
-        "matched_tag_count": "1",
+        "best_ms2_scan_id": "1",
+        "neutral_loss_tag": "DNA_dR",
         "matched_tag_names": "DNA_dR",
-        "primary_tag_name": "DNA_dR",
-        "tag_combine_mode": "single",
-        "tag_intersection_status": "not_required",
-        "tag_evidence_json": '{"DNA_dR":{"scan_count":2}}',
     }
 
 

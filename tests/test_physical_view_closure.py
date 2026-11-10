@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
+from tests.discovery_csv_fixtures import located_scan_ids
 from tests.discovery_ms1_capture_fixtures import (
     _channel,
     _FakeRaw,
@@ -92,7 +93,7 @@ def test_post_measurement_centroids_do_not_decide_peak_identity(
     }
     assert len(result.physical_evaluations) == expected
     assert sorted(
-        scan for candidate in result.peaks for scan in candidate.event_scan_ids
+        scan for candidate in result.peaks for scan in located_scan_ids(candidate)
     ) == [10, 11, 12]
     for candidate, binding in zip(result.peaks, result.physical_bindings, strict=True):
         assert (
@@ -166,11 +167,11 @@ def test_one_ion_in_two_windows_is_one_peak_whatever_the_input_order(
     )
 
     (peak,) = result.peaks
-    assert peak.event_scan_ids == (10, 11)
+    assert located_scan_ids(peak) == (10, 11)
     # The kept measurement is the window that loses no centroid.
-    assert peak.xic_mz == pytest.approx(500.0075)
-    assert peak.peak_id == "TumorBC2312_DNA@mz500.0075_rt9.0000"
     (record,) = result.physical_evaluations
+    assert record.work_item.ion_mz == pytest.approx(500.0075)
+    assert peak.peak_id == "TumorBC2312_DNA@mz500.0075_rt9.0000"
     assert peak.ms1_area == record.evaluation.facts.area_counts_seconds
     # Every event is judged against that one peak; the 499.995 precursor lies
     # 25 ppm from it and is located but not attached.
@@ -197,6 +198,6 @@ def test_distinct_ions_in_overlapping_windows_stay_apart() -> None:
         ms1_centroid=lambda *_: None,
     )
 
-    assert sorted(peak.event_scan_ids for peak in result.peaks) == [(10,), (11,)]
+    assert sorted(located_scan_ids(peak) for peak in result.peaks) == [(10,), (11,)]
     areas = sorted(peak.ms1_area for peak in result.peaks)
     assert areas[0] == pytest.approx(0.13 * areas[1])

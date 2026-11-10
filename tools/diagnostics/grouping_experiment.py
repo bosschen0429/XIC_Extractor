@@ -116,13 +116,11 @@ def main(argv: list[str] | None = None) -> int:
                 "sample_stem",
                 "candidate_id",
                 "mz",
-                "seed_mz",
                 "apex_rt",
-                "seed_rt",
                 "peak_status",
                 "attached_event_count",
+                "best_ms2_scan_id",
                 "area",
-                "reason",
             )
             write_table(args.output_dir / "candidates.tsv", rows, columns)
             counts = Counter(row["sample_stem"] for row in rows)

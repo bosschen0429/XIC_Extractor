@@ -156,6 +156,15 @@ def complete_dense_partition(
         initial_groups=partition.initial_groups,
         initial_edges=partition.initial_edges,
         capture_evidence=partition.capture_evidence,
+    ).bind_publication_inputs(
+        peaks_by_sample=context.peaks_by_sample,
+        precursor_mz_by_candidate={
+            cid: record.work_item.precursor_mz
+            for cid, record in context.physical_records_by_peak.items()
+        },
+        neutral_loss_by_tag=context.settings.neutral_loss_by_tag,
+        alignment_config=alignment_config,
+        known_istd_reference=known_istd_reference,
     )
 
 

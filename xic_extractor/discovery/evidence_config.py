@@ -30,8 +30,6 @@ class DiscoveryEvidenceThresholds:
     product_intensity_med_min: float = 10_000.0
     area_high_min: float = 1_000_000.0
     area_med_min: float = 100_000.0
-    ms1_support_strong_area_min: float = 10_000_000.0
-    ms1_support_moderate_area_min: float = 1_000_000.0
     scan_support_target: int = 10
     scan_support_high_score_min: float = 0.8
     scan_support_low_score_max: float = 0.2
@@ -45,8 +43,6 @@ class DiscoveryEvidenceThresholds:
             "product_intensity_med_min",
             "area_high_min",
             "area_med_min",
-            "ms1_support_strong_area_min",
-            "ms1_support_moderate_area_min",
             "scan_support_high_score_min",
             "scan_support_low_score_max",
         )
@@ -67,8 +63,6 @@ class DiscoveryEvidenceThresholds:
             raise ValueError("Discovery product-intensity thresholds must be ordered")
         if self.area_high_min < self.area_med_min:
             raise ValueError("Discovery area thresholds must be ordered")
-        if self.ms1_support_strong_area_min < self.ms1_support_moderate_area_min:
-            raise ValueError("Discovery MS1-support thresholds must be ordered")
         if (
             self.scan_support_high_score_min > 1.0
             or self.scan_support_low_score_max > 1.0

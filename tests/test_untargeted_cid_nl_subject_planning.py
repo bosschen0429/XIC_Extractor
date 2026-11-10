@@ -17,6 +17,7 @@ from tests.cid_nl_raw_fixture import (
 from tests.cid_nl_runtime_fixtures import (
     build_discovery_receipts,
 )
+from tests.discovery_csv_fixtures import representative_event
 from tests.untargeted_cid_nl_batch_runtime_fixtures import _nearby_subject_candidates
 from tests.untargeted_cid_nl_production_batch_fixtures import (
     _assert_jobs_match_direct_construction,
@@ -46,9 +47,6 @@ def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
     )
     inferred = replace(
         candidates[0],
-        best_event_precursor_mz=445.2140,
-        xic_mz=445.2140,
-        best_event_product_mz=445.2140 - 116.0474,
         ms1_apex_mz=445.2071,
         peak_mz=445.2071,
         precursor_mz_basis="product_plus_neutral_loss",
@@ -60,8 +58,6 @@ def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
     )
     assert len(subjects.subjects) == 1
     assert subjects.subjects[0].precursor_mz == 445.2071
-    assert inferred.best_event_precursor_mz == 445.2140
-    assert inferred.best_event_product_mz == 445.2140 - 116.0474
 
     selected = replace(
         inferred,
@@ -156,9 +152,8 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
             15.2587890625,
             (512.0, 512.0),
         ),
-        ((500.0, 500.0), (116.0474, 132.0423), 20.0, (500.0, 500.0)),
     ),
-    ids=("nearby", "outside", "fixed-anchor", "inclusive-bound", "scalar-losses"),
+    ids=("nearby", "outside", "fixed-anchor", "inclusive-bound"),
 )
 def test_production_batch_preserves_bounded_subject_membership(
     tmp_path: Path, masses, losses, ppm, centers
@@ -234,7 +229,8 @@ def test_production_batch_preserves_bounded_subject_membership(
     )
     assert permuted.subject_batch == batch.subject_batch
     assert (
-        tuple(candidate.best_event_precursor_mz for candidate in candidates) == masses
+        tuple(representative_event(candidate).precursor_mz for candidate in candidates)
+        == masses
     )
     assert tuple(job.method_subject for job in batch.jobs) == (
         batch.subject_batch.subjects

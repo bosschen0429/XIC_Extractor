@@ -241,6 +241,8 @@ def write_alignment_explanation(
     peaks_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
     matrix_path: Path,
     alignment_config: AlignmentConfig,
+    precursor_mz_by_candidate: Mapping[str, float],
+    neutral_loss_by_tag: Mapping[str, float],
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     known_istd_reference_provenance: Mapping[str, object] | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
@@ -253,6 +255,8 @@ def write_alignment_explanation(
         completed=completed,
         peaks_by_sample=peaks_by_sample,
         alignment_config=alignment_config,
+        precursor_mz_by_candidate=precursor_mz_by_candidate,
+        neutral_loss_by_tag=neutral_loss_by_tag,
         ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
         known_istd_reference_provenance=known_istd_reference_provenance,
         progress_callback=progress_callback,
@@ -271,6 +275,8 @@ def prepare_alignment_explanation(
     completed: CompletedUntargetBatchWorkflowResult,
     peaks_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
     alignment_config: AlignmentConfig,
+    precursor_mz_by_candidate: Mapping[str, float],
+    neutral_loss_by_tag: Mapping[str, float],
     ms1_apex_mz_by_candidate: Mapping[str, float] | None = None,
     known_istd_reference_provenance: Mapping[str, object] | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
@@ -378,13 +384,12 @@ def prepare_alignment_explanation(
                 sink.add_candidate(
                     *key,
                     {
-                        **_fields(
-                            candidate,
-                            "configured_neutral_loss_da",
-                            "neutral_loss_tag",
-                        ),
+                        "configured_neutral_loss_da": neutral_loss_by_tag[
+                            candidate.neutral_loss_tag
+                        ],
+                        "neutral_loss_tag": candidate.neutral_loss_tag,
                         "peak_status": candidate.status,
-                        "precursor_mz": candidate.best_event_precursor_mz,
+                        "precursor_mz": precursor_mz_by_candidate[candidate.peak_id],
                         "candidate_id": candidate.peak_id,
                         "sample_stem": stem,
                         "sample_key": sid,

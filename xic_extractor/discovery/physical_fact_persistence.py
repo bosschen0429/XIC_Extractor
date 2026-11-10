@@ -15,11 +15,11 @@ from xic_extractor.acquisition_contract import (
 )
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
-    deserialize_signal_processing_profile,
 )
 from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalFactRecord,
+    discovery_trace_capability,
     validate_discovery_physical_fact_record,
 )
 from xic_extractor.discovery.physical_fact_source import (
@@ -28,9 +28,8 @@ from xic_extractor.discovery.physical_fact_source import (
     PhysicalFactSource,
 )
 from xic_extractor.peak_detection.physical_peak_codec import (
-    deserialize_physical_peak_evaluation,
     physical_evaluation_from_payload,
-    serialize_physical_peak_evaluation,
+    physical_evaluation_payload,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
@@ -82,15 +81,16 @@ _WORK_KEYS = (
     "xic_rt_min",
     "xic_rt_max",
     "xic_ppm_tol",
-    "peak_id",
-    "selection_subject_id",
 )
 _RECORD_KEYS = (
-    "peak_id",
-    "selection_subject_id",
     "acquired_trace",
+    "retained_prepared_signal",
     "physical_evaluation",
 )
+_PHYSICAL_EVALUATION_SCHEMA = "physical_peak_evaluation_persistence"
+# The trace RT and raw intensity are the record's acquired trace; the sidecar
+# stores them once there and restores the prepared signal from it.
+_RETAINED_ARRAYS = ("baseline", "smoothed", "positive_signal")
 
 
 def _retained_signal_content(evaluation: PhysicalPeakEvaluation) -> dict | None:
@@ -101,7 +101,7 @@ def _retained_signal_content(evaluation: PhysicalPeakEvaluation) -> dict | None:
         "schema_version": "retained_prepared_signal",
         **{
             name: [_float_text(value) for value in getattr(signal, name)]
-            for name in ("rt", "raw", "baseline", "smoothed", "positive_signal")
+            for name in _RETAINED_ARRAYS
         },
     }
 
@@ -118,31 +118,31 @@ def _restore_retained_signal(
     if value is None:
         return replace(evaluation, retained_prepared_signal=None)
     signal = _mapping(value, label="retained_prepared_signal")
-    names = ("rt", "raw", "baseline", "smoothed", "positive_signal")
     _require_keys(
         signal,
-        ("schema_version", *names),
+        ("schema_version", *_RETAINED_ARRAYS),
         label="retained_prepared_signal",
     )
     if signal["schema_version"] != "retained_prepared_signal":
         raise ValueError("unsupported retained prepared signal schema")
+    rt = tuple(float(value) for value in acquired.trace.rt)
     arrays = {
         name: tuple(
             _float_from_text(point, field=f"retained_prepared_signal.{name}")
             for point in _list(signal[name], label=name)
         )
-        for name in names
+        for name in _RETAINED_ARRAYS
     }
-    if (
-        arrays["rt"] != tuple(acquired.trace.rt)
-        or arrays["raw"] != tuple(acquired.trace.intensity)
-        or any(len(values) != len(arrays["rt"]) for values in arrays.values())
-    ):
+    if any(len(values) != len(rt) for values in arrays.values()):
         raise ValueError("retained prepared signal crosses acquired trace")
     return replace(
         evaluation,
         retained_prepared_signal=PreparedSignal(
-            projection=evaluation.prepared, profile=profile, **arrays
+            projection=evaluation.prepared,
+            profile=profile,
+            rt=rt,
+            raw=tuple(float(value) for value in acquired.trace.intensity),
+            **arrays,
         ),
     )
 
@@ -218,7 +218,14 @@ def serialize_discovery_physical_fact_sidecar(
         record_tuple,
         acquisition_input=acquisition_input,
     )
+    capability = discovery_trace_capability(acquisition_input.acquisition_source)
     profile = run_spec.signal_processing_profile
+    for record in record_tuple:
+        # Both are stored once per sidecar, so each record must carry them.
+        if record.acquired_trace.coordinate.capability != capability:
+            raise ValueError("Discovery physical record crosses its trace capability")
+        if record.evaluation.prepared.profile != profile:
+            raise ValueError("Discovery physical record crosses run profile")
     return _canonical_json_bytes(
         {
             "schema_version": DISCOVERY_PHYSICAL_FACT_SIDECAR_SCHEMA_VERSION,
@@ -229,22 +236,18 @@ def serialize_discovery_physical_fact_sidecar(
             "work_manifest": [_work_content(item) for item in manifest_tuple],
             "records": [
                 {
-                    "peak_id": record.peak_id,
-                    "selection_subject_id": record.selection_subject_id,
                     "acquired_trace": json.loads(
-                        serialize_acquired_trace(record.acquired_trace).decode("utf-8")
+                        serialize_acquired_trace(
+                            record.acquired_trace, with_capability=False
+                        ).decode("utf-8")
                     ),
                     "retained_prepared_signal": _retained_signal_content(
                         record.evaluation
                     ),
-                    "physical_evaluation": json.loads(
-                        serialize_physical_peak_evaluation(
-                            record.rt,
-                            record.raw,
-                            profile=profile,
-                            evaluation=record.evaluation,
-                        ).decode("utf-8")
-                    ),
+                    "physical_evaluation": {
+                        "schema_version": _PHYSICAL_EVALUATION_SCHEMA,
+                        "evaluation": physical_evaluation_payload(record.evaluation),
+                    },
                 }
                 for record in record_tuple
             ],
@@ -281,7 +284,6 @@ class IndexedDiscoveryPhysicalFacts:
         self.precursor_mz: dict[str, float] = {}
         resolved_candidate_ids: set[str] = set()
         manifest_ids: list[str] = []
-        record_ids: list[str] = []
         questions: set[tuple[object, ...]] = set()
 
         def manifest_visitor(index: int, value: dict) -> None:
@@ -307,14 +309,17 @@ class IndexedDiscoveryPhysicalFacts:
                 self.precursor_mz[item.peak_id] = item.precursor_mz
 
         def record_visitor(index: int, value: dict) -> None:
-            cid = _text(value.get("peak_id"), field="peak_id")
-            record_ids.append(cid)
+            # The sidecar writes its manifest before its records.
+            if index >= len(manifest_ids):
+                raise ValueError("Discovery physical records crossed their manifest")
+            cid = manifest_ids[index]
             if cid in candidate_ids:
                 physical = _mapping(
                     value.get("physical_evaluation"), label="physical_evaluation"
                 )
                 evaluation = _mapping(physical.get("evaluation"), label="evaluation")
-                trace = _mapping(physical["trace"], label="trace")
+                acquired = _mapping(value.get("acquired_trace"), label="acquired_trace")
+                trace = _mapping(acquired.get("trace"), label="trace")
                 owner_evaluation = physical_evaluation_from_payload(
                     evaluation,
                     profile=expected_run_spec.signal_processing_profile,
@@ -323,11 +328,8 @@ class IndexedDiscoveryPhysicalFacts:
                         for point in _list(trace["rt"], label="rt")
                     ),
                     raw=tuple(
-                        _float_from_text(point, field="raw")
-                        for point in _list(
-                            trace["raw"],
-                            label="raw",
-                        )
+                        _float_from_text(point, field="intensity")
+                        for point in _list(trace["intensity"], label="intensity")
                     ),
                 )
                 if (
@@ -340,13 +342,11 @@ class IndexedDiscoveryPhysicalFacts:
             path,
             manifest_visitor=manifest_visitor,
             record_visitor=record_visitor,
-            retain_record=lambda _index, value: value.get("peak_id") in candidate_ids,
+            retain_record=lambda index, _value: manifest_ids[index] in candidate_ids,
             spool_dir=spool_dir,
         )
         self.resolved_candidate_ids = frozenset(resolved_candidate_ids)
         try:
-            if manifest_ids != record_ids:
-                raise ValueError("Discovery physical records crossed their manifest")
             if set(self.candidate_ordinals) != candidate_ids:
                 raise ValueError("Discovery candidate lacks its exact physical record")
             # Reuse the strict header owner without materializing either array.
@@ -367,6 +367,7 @@ class IndexedDiscoveryPhysicalFacts:
             ),
             self.source.read_record(index),
             expected_run_spec=self.run_spec,
+            expected_acquisition_input=self.acquisition_input,
         )
 
     def load_candidates(
@@ -498,7 +499,10 @@ def _read_discovery_physical_fact_records_direct(
         raise ValueError("Discovery physical sidecar lost a physical work record")
     return tuple(
         restore_discovery_physical_fact_record(
-            item, raw_record, expected_run_spec=expected_run_spec
+            item,
+            raw_record,
+            expected_run_spec=expected_run_spec,
+            expected_acquisition_input=expected_acquisition_input,
         )
         for item, raw_record in zip(persisted_manifest, raw_records, strict=True)
     )
@@ -509,66 +513,36 @@ def restore_discovery_physical_fact_record(
     raw_record: object,
     *,
     expected_run_spec: ProcessingRunSpec,
+    expected_acquisition_input: ProcessingAcquisitionInput,
 ) -> DiscoveryPhysicalFactRecord:
     """Restore one record selected from an owner-verified sidecar manifest."""
     record = _mapping(raw_record, label="record")
-    _require_keys(
-        record,
-        _RECORD_KEYS[:3] + ("retained_prepared_signal",) + _RECORD_KEYS[3:],
-        label="record",
-    )
-    if _text(record["peak_id"], field="peak_id") != item.peak_id:
-        raise ValueError("Discovery physical sidecar peak ID changed")
-    if (
-        _text(record["selection_subject_id"], field="selection_subject_id")
-        != item.selection_subject_id
-    ):
-        raise ValueError("Discovery physical selection subject changed")
-
+    _require_keys(record, _RECORD_KEYS, label="record")
     acquired = deserialize_acquired_trace(
         _canonical_json_bytes(
             _mapping(record["acquired_trace"], label="acquired_trace")
         ),
+        capability=discovery_trace_capability(
+            expected_acquisition_input.acquisition_source
+        ),
     )
-
     phys_val = _mapping(record["physical_evaluation"], label="physical_evaluation")
     _require_keys(
-        phys_val,
-        ("schema_version", "profile", "trace", "evaluation"),
-        label="physical_evaluation",
+        phys_val, ("schema_version", "evaluation"), label="physical_evaluation"
     )
-    if phys_val["schema_version"] != "physical_peak_evaluation_persistence":
+    if phys_val["schema_version"] != _PHYSICAL_EVALUATION_SCHEMA:
         raise ValueError("unsupported physical evaluation persistence schema")
-    profile_content = _mapping(phys_val["profile"], label="profile")
-    profile = deserialize_signal_processing_profile(
-        _canonical_json_bytes(profile_content)
-    )
-    if profile != expected_run_spec.signal_processing_profile:
-        raise ValueError("Discovery physical sidecar crosses run profile")
-    eval_payload = _mapping(phys_val["evaluation"], label="evaluation")
-    trace_content = _mapping(phys_val["trace"], label="physical trace")
+    profile = expected_run_spec.signal_processing_profile
     evaluation = physical_evaluation_from_payload(
-        eval_payload,
+        _mapping(phys_val["evaluation"], label="evaluation"),
         profile=profile,
-        rt=tuple(
-            _float_from_text(point, field="rt")
-            for point in _list(trace_content["rt"], label="rt")
-        ),
-        raw=tuple(
-            _float_from_text(point, field="raw")
-            for point in _list(trace_content["raw"], label="raw")
-        ),
+        rt=tuple(float(value) for value in acquired.trace.rt),
+        raw=tuple(float(value) for value in acquired.trace.intensity),
     )
-
     restored = DiscoveryPhysicalFactRecord(
         work_item=item,
         acquired_trace=acquired,
-        evaluation=_restore_retained_signal(
-            record,
-            evaluation,
-            expected_run_spec.signal_processing_profile,
-            acquired,
-        ),
+        evaluation=_restore_retained_signal(record, evaluation, profile, acquired),
     )
     validate_discovery_physical_fact_record(restored)
     return restored
@@ -643,47 +617,15 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
     raw_records = _list(root["records"], label="records")
     if len(raw_records) != len(persisted_manifest):
         raise ValueError("Discovery physical sidecar lost a physical work record")
-    records: list[DiscoveryPhysicalFactRecord] = []
-    for item, raw_record in zip(persisted_manifest, raw_records, strict=True):
-        record = _mapping(raw_record, label="record")
-        _require_keys(
-            record,
-            _RECORD_KEYS[:3] + ("retained_prepared_signal",) + _RECORD_KEYS[3:],
-            label="record",
+    records = [
+        restore_discovery_physical_fact_record(
+            item,
+            raw_record,
+            expected_run_spec=expected_run_spec,
+            expected_acquisition_input=expected_acquisition_input,
         )
-        if _text(record["peak_id"], field="peak_id") != item.peak_id:
-            raise ValueError("Discovery physical sidecar peak ID changed")
-        if (
-            _text(record["selection_subject_id"], field="selection_subject_id")
-            != item.selection_subject_id
-        ):
-            raise ValueError("Discovery physical selection subject changed")
-        acquired_value = _mapping(record["acquired_trace"], label="acquired_trace")
-        acquired = deserialize_acquired_trace(
-            _canonical_json_bytes(acquired_value),
-            expected_acquisition_source=expected_acquisition_input.acquisition_source,
-        )
-        physical_value = _mapping(
-            record["physical_evaluation"], label="physical_evaluation"
-        )
-        _, _, profile, evaluation = deserialize_physical_peak_evaluation(
-            _canonical_json_bytes(physical_value),
-            expected_profile=expected_run_spec.signal_processing_profile,
-        )
-        if profile != expected_run_spec.signal_processing_profile:
-            raise ValueError("Discovery physical sidecar crosses profile identity")
-        restored = DiscoveryPhysicalFactRecord(
-            work_item=item,
-            acquired_trace=acquired,
-            evaluation=_restore_retained_signal(
-                record,
-                evaluation,
-                expected_run_spec.signal_processing_profile,
-                acquired,
-            ),
-        )
-        validate_discovery_physical_fact_record(restored)
-        records.append(restored)
+        for item, raw_record in zip(persisted_manifest, raw_records, strict=True)
+    ]
     result = tuple(records)
     # Nested decoders already enforce their canonical bytes, and each record
     # decoder validates its exact work/trace/evaluation binding. Re-encode
@@ -773,8 +715,6 @@ def _work_content(item: DiscoveryPhysicalWorkItem) -> dict[str, object]:
         "xic_rt_min": _float_text(item.xic_rt_min),
         "xic_rt_max": _float_text(item.xic_rt_max),
         "xic_ppm_tol": _float_text(item.xic_ppm_tol),
-        "peak_id": item.peak_id,
-        "selection_subject_id": item.selection_subject_id,
     }
 
 
@@ -785,7 +725,7 @@ def _work_from_content(
 
     content = _mapping(value, label="physical work item")
     _require_keys(content, _WORK_KEYS, label="physical work item")
-    item = DiscoveryPhysicalWorkItem(
+    return DiscoveryPhysicalWorkItem(
         work_ordinal=_integer(content["work_ordinal"], field="work_ordinal"),
         acquisition_source_id=(
             acquisition_input.acquisition_source.acquisition_source_id
@@ -809,14 +749,6 @@ def _work_from_content(
         xic_rt_max=_float_from_text(content["xic_rt_max"], field="xic_rt_max"),
         xic_ppm_tol=_float_from_text(content["xic_ppm_tol"], field="xic_ppm_tol"),
     )
-    if _text(content["peak_id"], field="peak_id") != item.peak_id:
-        raise ValueError("physical work candidate ID does not match owner content")
-    if (
-        _text(content["selection_subject_id"], field="selection_subject_id")
-        != item.selection_subject_id
-    ):
-        raise ValueError("physical work selection subject does not match owner content")
-    return item
 
 
 def _validate_acquisition_input(

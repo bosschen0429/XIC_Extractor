@@ -19,8 +19,8 @@ from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
 )
 from xic_extractor.discovery.batch_contract import (
+    DISCOVERY_BATCH_INDEX_COLUMNS,
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
-    DISCOVERY_BATCH_RECEIPT_COLUMNS,
     discovery_receipt_index_fields,
     mint_discovery_peak_universe_receipt,
 )
@@ -58,18 +58,7 @@ def _write_owner_closed_batch_index(
                 **_owner_closed_receipt_fields(sample_stem, candidate_path),
             }
         )
-    write_csv(
-        path,
-        (
-            "schema_version",
-            "sample_stem",
-            "raw_file",
-            "peak_csv",
-            "peak_count",
-            *DISCOVERY_BATCH_RECEIPT_COLUMNS,
-        ),
-        batch_rows,
-    )
+    write_csv(path, DISCOVERY_BATCH_INDEX_COLUMNS, batch_rows)
 
 
 @pytest.mark.parametrize("output_level", ("production", "machine"))
@@ -1118,14 +1107,7 @@ def _write_owner_closed_preflight_batch(
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     batch_index = tmp_path / "discovery_batch_index.csv"
-    fieldnames = (
-        "schema_version",
-        "sample_stem",
-        "raw_file",
-        "peak_csv",
-        "peak_count",
-        *DISCOVERY_BATCH_RECEIPT_COLUMNS,
-    )
+    fieldnames = DISCOVERY_BATCH_INDEX_COLUMNS
     rows: list[dict[str, str]] = []
     for sample_stem in sample_stems:
         raw_path = raw_dir / f"{sample_stem}.raw"

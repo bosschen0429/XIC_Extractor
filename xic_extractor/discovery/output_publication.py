@@ -10,8 +10,8 @@ from xic_extractor.configuration.mass_recalibration import (
     MassRecalibrationResult,
 )
 from xic_extractor.discovery.batch_contract import (
+    DISCOVERY_BATCH_INDEX_COLUMNS,
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
-    DISCOVERY_BATCH_RECEIPT_COLUMNS,
     DiscoveryPeakUniverseReceipt,
     discovery_receipt_index_fields,
     mint_discovery_peak_universe_receipt,
@@ -27,12 +27,10 @@ from xic_extractor.discovery.models import (
     DiscoveryPeak,
     DiscoveryRunOutputs,
     EventAttachment,
-    ReviewPriority,
 )
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPeakPhysicalBinding,
     DiscoveryPhysicalFactRecord,
-    order_physical_bindings_for_peak_csv,
 )
 from xic_extractor.discovery.physical_fact_sidecar import (
     stage_discovery_physical_fact_sidecar as write_discovery_physical_fact_sidecar,
@@ -44,22 +42,6 @@ from xic_extractor.processing_run_spec import (
     ProcessingRunSpec,
 )
 from xic_extractor.tabular_io import write_delimited_rows
-
-_BATCH_INDEX_COLUMNS = (
-    "schema_version",
-    "sample_stem",
-    "raw_file",
-    "peak_csv",
-    "event_csv",
-    "peak_count",
-    "admitted_peak_count",
-    "event_count",
-    "high_count",
-    "medium_count",
-    "low_count",
-    *DISCOVERY_BATCH_RECEIPT_COLUMNS,
-    "mass_recalibration",
-)
 
 
 @dataclass(frozen=True)
@@ -142,10 +124,7 @@ def _write_sample_outputs(
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...],
     physical_bindings: tuple[DiscoveryPeakPhysicalBinding, ...],
 ) -> DiscoveryRunOutputs:
-    physical_bindings = order_physical_bindings_for_peak_csv(physical_bindings)
-    if {binding.peak.peak_id for binding in physical_bindings} != {
-        peak.peak_id for peak in peaks
-    }:
+    if tuple(binding.peak for binding in physical_bindings) != peaks:
         raise ValueError("Discovery peaks and physical bindings diverged")
     output_dir.mkdir(parents=True, exist_ok=True)
     peaks_path = output_dir / "discovery_peaks.csv"
@@ -288,7 +267,6 @@ def _batch_index_row(
     receipt: DiscoveryPeakUniverseReceipt,
     index_parent: Path,
 ) -> dict[str, str]:
-    counts = _priority_counts(peaks)
     return {
         "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
         "sample_stem": format_discovery_csv_value("sample_stem", raw_path.stem),
@@ -304,9 +282,6 @@ def _batch_index_row(
         "peak_count": str(len(peaks)),
         "admitted_peak_count": str(sum(peak.admitted for peak in peaks)),
         "event_count": str(len(events)),
-        "high_count": str(counts["HIGH"]),
-        "medium_count": str(counts["MEDIUM"]),
-        "low_count": str(counts["LOW"]),
         **discovery_receipt_index_fields(receipt),
     }
 
@@ -317,15 +292,6 @@ def _relative_batch_artifact(path: Path, *, parent: Path) -> str:
     except ValueError as exc:
         raise ValueError("Discovery batch artifact must stay under its index") from exc
     return relative.as_posix()
-
-
-def _priority_counts(
-    peaks: tuple[DiscoveryPeak, ...],
-) -> dict[ReviewPriority, int]:
-    counts: dict[ReviewPriority, int] = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
-    for peak in peaks:
-        counts[peak.review_priority] += 1
-    return counts
 
 
 def write_batch_index(
@@ -342,7 +308,7 @@ def write_batch_index(
         write_delimited_rows(
             output_path,
             rows,
-            _BATCH_INDEX_COLUMNS,
+            DISCOVERY_BATCH_INDEX_COLUMNS,
             delimiter=",",
             encoding="utf-8",
             extrasaction="raise",
