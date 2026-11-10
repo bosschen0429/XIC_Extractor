@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import sqlite3
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 from tests.alignment_explanation_fixtures import curve_provenance, explanation_summary
 
@@ -18,10 +19,12 @@ def create_review_batch(tmp_path, sample_count=2):
     )
 
     sample_ids = tuple(f"S{i + 1}" for i in range(sample_count))
+    samples = [{"sample_key": s, "sample_stem": s} for s in sample_ids]
     matrix = tmp_path / "matrix.tsv"
     matrix.write_text("recorded matrix fixture", encoding="utf-8")
     report = tmp_path / "review.sqlite"
     with ExplanationReportWriter(report, review_only=True) as writer:
+        writer.declare_samples(samples)
         for rid, route, values in (
             ("a-complete", "matrix", tuple(100 * (i + 1) for i in range(sample_count))),
             ("b-missing", "matrix", (300,) + ("unavailable",) * (sample_count - 1)),
@@ -33,27 +36,16 @@ def create_review_batch(tmp_path, sample_count=2):
                 if isinstance(value, int):
                     cid = f"{rid}-{sid}"
                     keys.append((cid, sid))
-                    writer.add_candidate(
-                        cid,
-                        sid,
-                        {
-                            "candidate_id": cid,
-                            "sample_key": sid,
-                            "precursor_mz": value,
-                            "rt_apex_min": 1,
-                        },
-                    )
-            writer.add_record(
-                "rows",
+                    writer.add_candidate(cid, sid, precursor_mz=value, rt_apex_min=1)
+            writer.add_final_group(
                 rid,
-                {
-                    "feature_id": rid,
-                    "route": {"destination": route, "reason": "recorded"},
-                },
-                keys,
+                feature_id=rid,
+                disposition="recorded",
+                members=[],
+                candidates=keys,
             )
-            writer.add_record("final_groups", rid, {"feature_id": rid}, keys)
-            writer.add_row_cells(
+            writer.set_row_destination(rid, route)
+            writer.add_cells(
                 rid,
                 [
                     {
@@ -63,26 +55,14 @@ def create_review_batch(tmp_path, sample_count=2):
                     }
                     for sid, value in zip(sample_ids, values, strict=True)
                 ],
-                {sid: i for i, sid in enumerate(sample_ids)},
             )
-        writer.add_candidate(
-            "orphan",
-            "S1",
-            {
-                "candidate_id": "orphan",
-                "sample_key": "S1",
-                "precursor_mz": 600,
-                "rt_apex_min": 1,
-            },
-        )
+        writer.add_candidate("orphan", "S1", precursor_mz=600, rt_apex_min=1)
         writer.finalize(
             explanation_summary(
                 {
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                    "samples": [
-                        {"sample_key": s, "sample_stem": s} for s in sample_ids
-                    ],
+                    "samples": samples,
                     "selection_evidence_capability": "recorded_decisions",
                 },
                 review_only=writer.review_only,
@@ -107,33 +87,24 @@ def create_nearest_review_batch(tmp_path):
         ("missing-mz", ((None, 1.0),), False),
         ("multi-witness", ((350.0, 2.0), (123.4, 2.5)), False),
     ]
+    samples = [{"sample_key": "S1", "sample_stem": "S1"}]
     with ExplanationReportWriter(report, review_only=True) as writer:
+        writer.declare_samples(samples)
         for rid, witnesses, unresolved in rows:
             keys = []
             for index, (mz, rt) in enumerate(witnesses):
                 cid = f"{rid}-{index}"
                 keys.append((cid, "S1"))
-                writer.add_candidate(
-                    cid,
-                    "S1",
-                    {
-                        "candidate_id": cid,
-                        "sample_key": "S1",
-                        "precursor_mz": mz,
-                        "rt_apex_min": rt,
-                    },
-                )
-            writer.add_record(
-                "rows",
+                writer.add_candidate(cid, "S1", precursor_mz=mz, rt_apex_min=rt)
+            writer.add_final_group(
                 rid,
-                {
-                    "feature_id": rid,
-                    "route": {"destination": "matrix", "reason": "recorded"},
-                },
-                keys,
+                feature_id=rid,
+                disposition="recorded",
+                members=[],
+                candidates=keys,
             )
-            writer.add_record("final_groups", rid, {"feature_id": rid}, keys)
-            writer.add_row_cells(
+            writer.set_row_destination(rid, "matrix")
+            writer.add_cells(
                 rid,
                 [
                     {
@@ -142,14 +113,13 @@ def create_nearest_review_batch(tmp_path):
                         "value": None if unresolved else 100.0,
                     }
                 ],
-                {"S1": 0},
             )
         writer.finalize(
             explanation_summary(
                 {
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                    "samples": [{"sample_key": "S1", "sample_stem": "S1"}],
+                    "samples": samples,
                     "selection_evidence_capability": "recorded_decisions",
                 },
                 review_only=writer.review_only,
@@ -167,24 +137,56 @@ def read_report_payload(path: Path) -> dict:
     return json.loads(match.group(1))
 
 
-def link_report_record(
-    connection: sqlite3.Connection, row: tuple[str, str, str, str]
-) -> None:
-    """Insert one flat link through the normalized persisted representation."""
-    candidate_id, sample_id, kind, record_id = row
-    set_id = connection.execute(
-        "SELECT COALESCE(MAX(set_id), 0) + 1 FROM link_members"
-    ).fetchone()[0]
-    connection.execute(
-        "INSERT OR IGNORE INTO link_members SELECT ?,c.id FROM candidates c "
-        "JOIN samples s ON s.id=c.sample WHERE c.candidate_id=? AND s.sample_key=?",
-        (set_id, candidate_id, sample_id),
-    )
-    connection.execute(
-        "INSERT OR IGNORE INTO record_links "
-        "SELECT ?, id FROM records WHERE kind=? AND record_id=?",
-        (set_id, kind, record_id),
-    )
+def inspector_curve_payload(
+    sample_id: str,
+    candidate_id: str | None,
+    physical_peak_key: str | None,
+    *,
+    kind: str = "initial_capture",
+    attempt_id: str = "att-01",
+    mz: float = 500.0,
+    apex_rt: float = 1.0,
+) -> dict[str, Any]:
+    """One valid retained curve centred on ``apex_rt``."""
+    from xic_extractor.peak_detection.integration_result import IntegrationResult
+
+    rts = [round(apex_rt + offset, 6) for offset in (-0.2, -0.1, 0.0, 0.1, 0.2)]
+    return {
+        "schema_version": "curve_payload",
+        "kind": kind,
+        "sample_id": sample_id,
+        "candidate_id": candidate_id,
+        "physical_peak_key": physical_peak_key,
+        "trace_coordinate": {
+            "mz": mz,
+            "rt_min": rts[0],
+            "rt_max": rts[-1],
+            "ppm_tol": 10.0,
+        },
+        "curves": {
+            "rt": rts,
+            "raw": [10.0, 50.0, 1000.0, 40.0, 5.0],
+            "baseline": None,
+            "smoothed": None,
+            "positive": None,
+        },
+        "integration": asdict(
+            IntegrationResult(
+                rt_left_min=rts[1],
+                rt_apex_min=apex_rt,
+                rt_right_min=rts[3],
+                raw_apex_rt_min=apex_rt,
+                rt_width_min=rts[3] - rts[1],
+                height_raw=1000.0,
+                height_smoothed=1000.0,
+                area_raw_counts_seconds=2500.0,
+            )
+        ),
+        "provenance": {
+            **curve_provenance(),
+            "processing_attempt_id": attempt_id,
+        },
+    }
 
 
 def create_inspector_report(
@@ -192,9 +194,17 @@ def create_inspector_report(
     *,
     attempt_id: str = "att-01",
     samples: list[dict[str, str]] | None = None,
+    base_cell: dict[str, Any] | None = None,
+    extend: Callable[[Any], None] | None = None,
+    summary: dict[str, Any] | None = None,
+    review_only: bool = False,
 ) -> tuple[Path, Path, str]:
+    """One saved row ``G1`` whose candidate ``C1`` was observed as ``obs-01``.
+
+    ``extend`` receives the active writer before finalization, so a case adds
+    its own evidence through the same writer.
+    """
     from xic_extractor.alignment_explanation.writer import ExplanationReportWriter
-    from xic_extractor.peak_detection.integration_result import IntegrationResult
 
     db_path = directory / "alignment_explanation.sqlite"
     matrix_path = directory / "alignment_matrix.tsv"
@@ -211,88 +221,47 @@ def create_inspector_report(
             {"sample_stem": "s1", "sample_key": "S1"},
             {"sample_stem": "s2", "sample_key": "S2"},
         ]
+    samples = [{"sample_stem": sample["sample_key"], **sample} for sample in samples]
 
     sid = samples[0]["sample_key"]
-    with ExplanationReportWriter(db_path) as writer:
-        writer.add_candidate(
+    with ExplanationReportWriter(db_path, review_only=review_only) as writer:
+        writer.declare_samples(samples)
+        writer.add_peak(sid, "obs-01", (None, 1.0, None))
+        writer.add_candidate("C1", sid, precursor_mz=500.0)
+        writer.add_terminal(
             "C1",
             sid,
-            {
-                "candidate_id": "C1",
-                "sample_key": sid,
-                "precursor_mz": 500.0,
-            },
+            variant="observed",
+            hypothesis_id="hypothesis-01",
+            physical_peak_key="obs-01",
         )
-        writer.add_record(
-            "rows",
+        writer.add_final_group(
             "G1",
-            {
-                "feature_id": "G1",
-                "reason": "Passed alignment",
-            },
-            [("C1", sid)],
+            feature_id="G1",
+            disposition="completed",
+            members=[],
+            candidates=[("C1", sid)],
         )
-        writer.add_record(
-            "final_groups",
+        writer.add_cells(
             "G1",
-            {"feature_id": "G1", "disposition": "completed"},
-            [("C1", sid)],
+            [
+                {
+                    "sample_key": sid,
+                    "variant": "numeric",
+                    "value": 1000.0,
+                    **(base_cell or {}),
+                }
+            ],
         )
-        writer.add_record(
-            "cell_decisions",
-            "cd-01",
-            {"feature_id": "G1", "sample_id": sid, "quantitative_value": 1000.0},
-            [("C1", sid)],
-        )
-        writer.add_record(
-            "terminal_subjects",
-            "terminal-01",
-            {"observations": [{"physical_peak_key": "obs-01", "rt_apex_min": 1.0}]},
-            [("C1", sid)],
-        )
-        # Add a curve payload for C1
-        curve_envelope = {
-            "schema_version": "curve_payload",
-            "kind": "initial_capture",
-            "sample_id": sid,
-            "candidate_id": "C1",
-            "physical_peak_key": "obs-01",
-            "trace_coordinate": {
-                "mz": 500.0,
-                "rt_min": 0.8,
-                "rt_max": 1.2,
-                "ppm_tol": 10.0,
-            },
-            "curves": {
-                "rt": [0.8, 0.9, 1.0, 1.1, 1.2],
-                "raw": [10.0, 50.0, 1000.0, 40.0, 5.0],
-                "baseline": None,
-                "smoothed": None,
-                "positive": None,
-            },
-            "integration": asdict(
-                IntegrationResult(
-                    rt_left_min=0.9,
-                    rt_apex_min=1.0,
-                    rt_right_min=1.1,
-                    raw_apex_rt_min=1.0,
-                    rt_width_min=0.20000000000000007,
-                    height_raw=1000.0,
-                    height_smoothed=1000.0,
-                    area_raw_counts_seconds=2500.0,
-                )
-            ),
-            "provenance": {
-                **curve_provenance(),
-                "processing_attempt_id": attempt_id,
-            },
-        }
         writer.add_curve_payload(
             sample_id=sid,
             kind="initial_capture",
             record_id="obs-01",
-            payload=curve_envelope,
+            payload=inspector_curve_payload(sid, "C1", "obs-01", attempt_id=attempt_id),
+            candidates=[("C1", sid)],
         )
+        if extend is not None:
+            extend(writer)
         writer.finalize(
             explanation_summary(
                 {
@@ -300,6 +269,7 @@ def create_inspector_report(
                     "matrix_path": str(matrix_path),
                     "matrix_sha256": matrix_hash,
                     "samples": samples,
+                    **(summary or {}),
                 },
                 review_only=writer.review_only,
             )

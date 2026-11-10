@@ -6,7 +6,6 @@ import base64
 import json
 import os
 import re
-import sqlite3
 import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -14,7 +13,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from tests.inspector_fixtures import create_inspector_report, link_report_record
+from tests.inspector_fixtures import create_inspector_report
 from tests.raw_header_fakes import install_fake_raw_headers
 from tests.workbench_browser_fixtures import DEADLINE_SCALE as DEADLINE_SCALE
 from tests.workbench_browser_fixtures import browser as browser
@@ -1715,27 +1714,21 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     workbench, tmp_path
 ):
     page = workbench
-    db, _, _ = create_inspector_report(tmp_path)
+
     # Keep the existing curve-bearing fixture, extending only review row scope
     # beyond the UI's 25-item page. No scientific values are asserted here.
-    groups = {"row-01": "G1"}
-    with sqlite3.connect(db) as connection:
+    def more_rows(writer):
         for index in range(2, 27):
-            row, group = f"row-{index:02}", f"G{index:02}"
-            groups[row] = group
-            for kind, identity, payload in (
-                ("rows", row, {"feature_id": group}),
-                (
-                    "final_groups",
-                    group,
-                    {"feature_id": group, "disposition": "completed"},
-                ),
-            ):
-                connection.execute(
-                    "INSERT INTO records (kind, record_id, payload) VALUES (?, ?, ?)",
-                    (kind, identity, json.dumps(payload)),
-                )
-                link_report_record(connection, ("C1", "S1", kind, identity))
+            group = f"G{index:02}"
+            writer.add_final_group(
+                group,
+                feature_id=group,
+                disposition="completed",
+                members=[],
+                candidates=[("C1", "S1")],
+            )
+
+    create_inspector_report(tmp_path, extend=more_rows)
     _open_results(page)
     page.locator("#source").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
@@ -1743,7 +1736,7 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     page.locator("#next").click()
     expect(page.locator("#item-list button")).to_have_count(1)
     off_page_id = page.locator("#item-list button").get_attribute("data-item-id")
-    off_page_group = groups[json.loads(off_page_id)[-1]]
+    off_page_group = json.loads(off_page_id)[-1]
     page.locator("#previous").click()
     expect(page.locator("#item-list button")).to_have_count(25)
     assert off_page_id not in page.locator("#item-list button").evaluate_all(

@@ -77,7 +77,12 @@ def _group_with_missing_apex_review(tmp_path, *, extraction_by_sample=None):
             feature_id="G1",
             disposition="saved",
             members=[
-                {"sample_key": sid, "subject_id": cid, "physical_peak_keys": [cid]}
+                {
+                    "sample_key": sid,
+                    "subject_id": cid,
+                    "subject_kind": "peak_hypothesis",
+                    "physical_peak_keys": [cid],
+                }
                 for cid, sid in keys
             ],
             candidates=keys,
@@ -87,7 +92,9 @@ def _group_with_missing_apex_review(tmp_path, *, extraction_by_sample=None):
         writer.set_row_destination("G1", "matrix")
         if extraction_by_sample:
             writer.add_peak(
-                "S3", "backfilled-peak", (extraction["S3"][0], 8.0, extraction["S3"][1])
+                "S3",
+                "backfilled-peak",
+                (extraction["S3"][0], 8.0, extraction["S3"][1]),
             )
         writer.add_cells(
             "G1",
@@ -186,7 +193,7 @@ def _quality_review_report(
             "G1",
             feature_id="G1",
             disposition="completed",
-            members=(),
+            members=[],
             candidates=keys,
         )
         writer.add_cells("G1", cells)
