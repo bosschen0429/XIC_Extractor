@@ -33,7 +33,6 @@ REVIEW_COLUMNS = [
     "duplicate_assigned_count",
     "ambiguous_ms1_owner_count",
     "present_rate",
-    "identity_decision",
     "identity_reason",
     "accepted_cell_count",
     "accepted_backfill_count",
@@ -93,7 +92,6 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         "duplicate_assigned_count": "0",
         "ambiguous_ms1_owner_count": "0",
         "present_rate": "0.75",
-        "identity_decision": "finalized_matrix",
         "identity_reason": "test_route",
         "accepted_cell_count": "3",
         "accepted_backfill_count": "1",
@@ -1053,7 +1051,7 @@ def test_write_alignment_review_tsv_includes_production_decision_columns(
         )
     )
 
-    assert rows[0]["identity_decision"] == "finalized_archive"
+    assert rows[0]["include_in_primary_matrix"] == "FALSE"
     assert rows[0]["identity_reason"] == "test_route"
     assert rows[0]["accepted_cell_count"] == "1"
     assert rows[0]["accepted_backfill_count"] == "1"

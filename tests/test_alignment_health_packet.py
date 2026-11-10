@@ -86,10 +86,10 @@ def _write_required_alignment_artifacts(alignment_dir: Path) -> None:
     (alignment_dir / "alignment_review.tsv").write_text(
         "feature_id\tmatrix_row_index\tdetected_count\tambiguous_ms1_owner_count\t"
         "duplicate_assigned_count\tunchecked_count\taccepted_cell_count\t"
-        "accepted_backfill_count\tidentity_decision\trow_flags\treason\n"
-        "FAM_BAD\t1\t4\t2\t1\t1\t2\t1\tfinalized_archive\t"
+        "accepted_backfill_count\trow_flags\treason\n"
+        "FAM_BAD\t1\t4\t2\t1\t1\t2\t1\t"
         "family_consolidation_loser;ambiguous_ms1_owner_pressure\tneeds review\n"
-        "FAM_OK\t2\t5\t0\t0\t0\t5\t0\tfinalized_matrix\t\tok\n",
+        "FAM_OK\t2\t5\t0\t0\t0\t5\t0\t\tok\n",
         encoding="utf-8",
     )
     (alignment_dir / "alignment_matrix.tsv").write_text(

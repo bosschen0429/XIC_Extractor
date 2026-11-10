@@ -308,44 +308,6 @@ def test_main_reports_missing_required_workbook_column(
     assert "NL (Da)" in capsys.readouterr().err
 
 
-def test_provisional_discovery_candidate_is_not_primary_hit(tmp_path: Path):
-    targeted = tmp_path / "targeted.xlsx"
-    alignment = tmp_path / "alignment"
-    _write_targeted_workbook(
-        targeted,
-        targets=[_target("d3-5-medC", 245.0, 11.0, 13.0, 129.0, 116.0474)],
-        samples=("S1", "S2", "S3"),
-    )
-    row = _review_row("FAM_PROV", 245.0, 12.0, 129.0, 116.0474, True)
-    row["identity_decision"] = "provisional_discovery"
-    _write_alignment_run(
-        alignment,
-        review_rows=[row],
-        matrix_rows=[
-            _matrix_row(
-                "FAM_PROV",
-                (10.0, 100.0, 1000.0),
-                samples=("S1", "S2", "S3"),
-            ),
-        ],
-        cell_rows=[
-            _cell_row("FAM_PROV", "S1", 12.00, 10.0),
-            _cell_row("FAM_PROV", "S2", 12.01, 100.0),
-            _cell_row("FAM_PROV", "S3", 12.02, 1000.0),
-        ],
-        samples=("S1", "S2", "S3"),
-    )
-
-    _outputs, summaries = benchmark.run_targeted_istd_benchmark(
-        targeted_workbook=targeted,
-        alignment_dir=alignment,
-        output_dir=tmp_path / "benchmark",
-    )
-
-    assert summaries[0].primary_match_count == 0
-    assert summaries[0].failure_modes == ("MISS",)
-
-
 def test_sample_normalization_maps_qc_underscore_names(tmp_path: Path):
     targeted = tmp_path / "targeted.xlsx"
     alignment = tmp_path / "alignment"
@@ -872,7 +834,6 @@ REVIEW_COLUMNS = (
     "family_product_mz",
     "family_observed_neutral_loss_da",
     "include_in_primary_matrix",
-    "identity_decision",
 )
 
 CELL_COLUMNS = (

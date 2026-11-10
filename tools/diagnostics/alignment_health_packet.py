@@ -30,7 +30,6 @@ REVIEW_REQUIRED = (
     "unchecked_count",
     "accepted_cell_count",
     "accepted_backfill_count",
-    "identity_decision",
     "row_flags",
     "reason",
 )
@@ -51,7 +50,6 @@ SENTINEL_COLUMNS = (
     "duplicate_assigned_count",
     "unchecked_count",
     "row_flags",
-    "identity_decision",
     "reason",
     "cell_status_counts",
     "seed_audit_row_count",
@@ -197,9 +195,7 @@ def _summary_metrics(
 ) -> dict[str, object]:
     sample_columns = [column for column in matrix_header if column not in {"Mz", "RT"}]
     row_flag_counts: Counter[str] = Counter()
-    identity_counts: Counter[str] = Counter()
     for row in review_rows:
-        identity_counts[text_value(row.get("identity_decision")) or "blank"] += 1
         for flag in split_semicolon_labels(row.get("row_flags")):
             row_flag_counts[flag] += 1
     cell_status_counts = Counter(text_value(row.get("status")) for row in cell_rows)
@@ -228,7 +224,6 @@ def _summary_metrics(
             "duplicate_assigned_count",
         ),
         "unchecked_count_total": _sum_int(review_rows, "unchecked_count"),
-        "identity_decision_counts": dict(sorted(identity_counts.items())),
         "row_flag_counts": dict(sorted(row_flag_counts.items())),
         "cell_status_counts": dict(sorted(cell_status_counts.items())),
         "seed_audit_status_counts": dict(sorted(seed_status_counts.items())),
@@ -270,7 +265,6 @@ def _sentinel_rows(
                 ),
                 "unchecked_count": _int_value(row.get("unchecked_count")),
                 "row_flags": text_value(row.get("row_flags")),
-                "identity_decision": text_value(row.get("identity_decision")),
                 "reason": text_value(row.get("reason")),
                 "cell_status_counts": _format_counter(
                     cell_status_by_family.get(family_id, Counter()),

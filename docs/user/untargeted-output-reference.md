@@ -238,11 +238,7 @@ report tables. It does not assert group identity across different input sets.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| row_identity_decision | string | Identity status |
-| row_identity_confidence | string | Confidence level |
-| row_identity_reason | string | Reason text |
 | row_flags | string | Semicolon-separated flags |
-| identity_decision | string | Identity decision |
 | identity_reason | string | Detailed reason |
 
 #### Quantification
