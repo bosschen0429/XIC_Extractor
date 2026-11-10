@@ -110,13 +110,8 @@ def run_untargeted_application(
         discovery_batch_index=request.discovery_batch_index,
         raw_dir=request.raw_dir,
         dll_dir=request.dll_dir,
-        owner_backfill_xic_backend="raw",
-        owner_backfill_window_strategy="exact",
-        owner_backfill_superwindow_span_factor=2,
         output_level=request.publication.output_level,
         peak_config=request.peak_config,
-        backfill_scope="full-audit",
-        output_scope="full-audit",
         signal_processing_profile=signal_processing_profile,
     )
     # Source-bound Discovery receipts carry each RAW's mass result.
@@ -134,11 +129,6 @@ def run_untargeted_application(
     )
     if not request.alignment_config.backfill_enabled:
         metadata["backfill_execution"] = "not_run"
-    metadata.update(
-        {
-            "matrix_value_policy": "owner_finalized_cell_decision",
-        }
-    )
     if resolved_known_istd_reference is not None:
         metadata.update(
             {

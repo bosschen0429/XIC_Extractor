@@ -192,14 +192,14 @@ The TSV uses stable display text for people and spreadsheet consumers:
   a value remain blank.
 
 Machine consumers bind Matrix rows to the nonblank `matrix_row_index` subset
-of `alignment_review.tsv`. Its `matrix_mz` and `matrix_rt` retain machine
-precision; `family_center_mz` remains available for groups outside Matrix.
-Consumers never reconstruct machine coordinates from rounded Matrix display.
+of `alignment_review.tsv`. Its `family_center_mz` and `family_center_rt` keep
+machine precision for every group, in Matrix or not. Consumers never
+reconstruct machine coordinates from rounded Matrix display.
 
 Review row order is free: the explicit `matrix_row_index` values must cover
-exactly 1..N, and each indexed row's `matrix_mz` (at display precision) and
-`matrix_rt` must match its Matrix row's `Mz` and `RT`. Missing or duplicated
-rows are rejected. Sample values are not cross-checked, so two rows with the
+exactly 1..N, and each indexed row's `family_center_mz` (at display precision)
+and `family_center_rt` must match its Matrix row's `Mz` and `RT`. Missing or
+duplicated rows are rejected. Sample values are not cross-checked, so two rows with the
 same displayed coordinates can be swapped undetected. This is an association
 check, not scientific authenticity or activation authority.
 The old identity sidecar is not emitted or accepted by these readers.
@@ -211,15 +211,18 @@ The old identity sidecar is not emitted or accepted by these readers.
 One row per cross-sample group. Alignment quality and identity decisions.
 `feature_id` is the group label (for example `F000001`), shared by the
 report tables. It does not assert group identity across different input sets.
+Each fact appears once, and no cell grows with the number of samples or
+members; a group's member peaks are in the Inspector and the explanation.
 
 #### Core Identity
 
 | Column | Type | Description |
 | --- | --- | --- |
 | feature_id | string | Report-scoped group label (`F000001`) shared by the report tables |
+| matrix_row_index | int | The group's Matrix row (1..N); blank when the group is not in Matrix |
 | neutral_loss_tag | string | NL identifier |
-| family_center_mz | float | Center m/z: the group's centre, the mean of its members' `peak_mz` (`center_mz_basis = cross_sample_owner_arithmetic_mean`); Backfill searches the same value |
-| family_center_rt | float | Center RT (min) |
+| family_center_mz | float | Center m/z: the group's centre, the mean of its members' `peak_mz`; Backfill searches the same value |
+| family_center_rt | float | Center RT (min): the mean apex RT of its members |
 | family_product_mz | float | Product m/z |
 | family_observed_neutral_loss_da | float | Observed NL (Da) |
 
@@ -227,42 +230,49 @@ report tables. It does not assert group identity across different input sets.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| physical_peak_keys | string | Semicolon-separated physical peak keys; not event cluster IDs |
 | detected_count | int | Detected sample count |
 | not_searched_count | int | Samples whose cell was not searched |
 | unresolved_count | int | Samples whose candidate evidence did not resolve to one peak |
-| present_rate | float | Detection rate (0.0–1.0) |
 
 #### Identity Decision
 
 | Column | Type | Description |
 | --- | --- | --- |
-| row_flags | string | Semicolon-separated flags |
-| identity_reason | string | Detailed reason |
+| identity_reason | string | The group's disposition. Only `established` groups enter Matrix; `unresolved`, `rejected` and other dispositions stay in Review with a blank `matrix_row_index` |
 
 #### Quantification
 
 | Column | Type | Description |
 | --- | --- | --- |
-| accepted_cell_count | int | Accepted cells |
-| accepted_backfill_count | int | Accepted rescues |
-| include_in_primary_matrix | bool | Included in output matrix |
-
-#### Adduct Annotation
-
-| Column | Type | Description |
-| --- | --- | --- |
+| accepted_cell_count | int | Cells with a Matrix value |
+| accepted_backfill_count | int | Of those, cells filled by Backfill |
 
 #### Context
 
 | Column | Type | Description |
 | --- | --- | --- |
+| membership_risk_flags | string | Semicolon-separated kinds of risk accepted when the group's members or Backfills were chosen (each kind listed once) |
 | warning | string | Warning flag (`no_anchor`, `high_not_searched`, `high_backfill_dependency`) |
-| reason | string | Comprehensive description |
 
 `high_backfill_dependency` marks rows with Backfill cells but no direct
 detection. Review uses the recorded cell decisions to determine this warning.
-`physical_peak_keys` does not indicate how many event clusters were merged.
+
+### `alignment_cells.tsv`, `alignment_backfill_cell_evidence.tsv`
+
+One row per cell (`alignment_cells.tsv`, written on request) or per cell with
+a peak in a group that has a Backfill cell (`alignment_backfill_cell_evidence.tsv`,
+validation output). Both identify the group by `feature_id` only; its centre
+and tag are in Review. `area` is the Matrix value; `primary_matrix_area_source`
+names how it was integrated or, for a cell without a value, why not. The
+Backfill evidence file adds `backfill_query_rt_min` and `backfill_query_rt_max`.
+
+### `alignment_run_metadata.json`
+
+The inputs and settings of the run: `discovery_batch_index`, `raw_dir`,
+`dll_dir`, `output_level`, `resolver_mode`, `baseline_integration_method`,
+`signal_processing_profile_json`, `mass_recalibration_by_sample`,
+`processing_attempt_id`, the `known_istd_reference_*` keys when an ISTD
+reference was used, and `backfill_execution` when Backfill did not run.
 
 ## Explanation format and reruns
 

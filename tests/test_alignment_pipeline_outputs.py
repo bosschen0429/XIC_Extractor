@@ -15,26 +15,27 @@ from xic_extractor.output.alignment.pipeline_outputs import (
 )
 
 
-def test_alignment_metadata_records_method_and_output_contract() -> None:
+def test_alignment_metadata_records_inputs_and_settings() -> None:
     peak_config = _peak_config()
 
     metadata = alignment_metadata(
         discovery_batch_index=Path("batch.csv"),
         raw_dir=Path("raw"),
         dll_dir=Path("dll"),
-        owner_backfill_xic_backend="raw",
         output_level="validation",
         peak_config=peak_config,
     )
 
-    assert metadata["schema_version"] == "alignment-results"
-    assert metadata["feature_id_policy"] == "report_scoped_measured_member_order"
-    assert metadata["matrix_value_policy"] == "canonical_signal_profile_selected_area"
+    assert set(metadata) == {
+        "discovery_batch_index",
+        "raw_dir",
+        "dll_dir",
+        "output_level",
+        "resolver_mode",
+        "baseline_integration_method",
+        "signal_processing_profile_json",
+    }
     assert metadata["baseline_integration_method"] == "asls"
-    assert metadata["backfill_scope"] == "full-audit"
-    assert metadata["output_scope"] == "full-audit"
-    assert metadata["selected_family_source"] == ""
-    assert metadata["scope_warning"] == ""
     profile = json.loads(metadata["signal_processing_profile_json"])
     assert profile["schema_version"] == "signal_processing_profile"
     assert profile["method"] == "gaussian"
@@ -51,34 +52,11 @@ def test_alignment_metadata_records_baseline_integration_method() -> None:
         discovery_batch_index=Path("batch.csv"),
         raw_dir=Path("raw"),
         dll_dir=Path("dll"),
-        owner_backfill_xic_backend="raw",
         output_level="machine",
         peak_config=peak_config,
     )
 
     assert metadata["baseline_integration_method"] == "asls"
-
-
-def test_alignment_metadata_records_backfill_scope() -> None:
-    metadata = alignment_metadata(
-        discovery_batch_index=Path("batch.csv"),
-        raw_dir=Path("raw"),
-        dll_dir=Path("dll"),
-        owner_backfill_xic_backend="raw",
-        output_level="validation",
-        peak_config=_peak_config(),
-        backfill_scope="selected-families",
-        output_scope="diagnostic_only",
-        selected_family_count=2,
-        selected_family_source="tsv:selected.tsv",
-        scope_warning="diagnostic_only_incomplete_scope",
-    )
-
-    assert metadata["backfill_scope"] == "selected-families"
-    assert metadata["output_scope"] == "diagnostic_only"
-    assert metadata["selected_family_count"] == "2"
-    assert metadata["selected_family_source"] == "tsv:selected.tsv"
-    assert metadata["scope_warning"] == "diagnostic_only_incomplete_scope"
 
 
 def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(

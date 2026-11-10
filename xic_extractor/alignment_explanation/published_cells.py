@@ -37,7 +37,7 @@ def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
     rows = {
         record["feature_id"]: (
             int(record["matrix_row_index"]),
-            float(record["matrix_mz"]),
+            float(record["family_center_mz"]),
         )
         for record in identity
         if record["matrix_row_index"]

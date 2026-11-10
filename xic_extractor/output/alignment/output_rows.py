@@ -6,12 +6,6 @@ from pathlib import Path
 from xic_extractor.tabular_io import escape_excel_formula
 
 
-def safe_rate(numerator: int, denominator: int) -> float:
-    if denominator <= 0:
-        return 0.0
-    return numerator / denominator
-
-
 def format_value(value: object) -> str:
     if value is None:
         return ""

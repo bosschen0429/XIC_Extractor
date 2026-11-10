@@ -4,8 +4,6 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
-BackfillXicBackend = Literal["raw", "ms1_index", "ms1_index_hybrid"]
-
 
 @dataclass(frozen=True)
 class AlignmentConfig:

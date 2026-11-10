@@ -833,7 +833,6 @@ REVIEW_COLUMNS = (
     "family_center_rt",
     "family_product_mz",
     "family_observed_neutral_loss_da",
-    "include_in_primary_matrix",
 )
 
 CELL_COLUMNS = (
@@ -860,7 +859,6 @@ def _review_row(
         "family_center_rt": rt,
         "family_product_mz": product,
         "family_observed_neutral_loss_da": nl,
-        "include_in_primary_matrix": str(primary).upper(),
     }
 
 

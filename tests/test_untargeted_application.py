@@ -1081,7 +1081,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
     value_columns = (
         "sample_stem",
         "source_candidate_id",
-        "family_center_mz",
+        "feature_id",
         "status",
         "area",
         "height",
@@ -1105,14 +1105,8 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
     }
     assert {row["status"] for row in cells} == {"detected"}
     # Fixture apex = 100 baseline + (sample index + 1) * 500.
-    heights = {
-        (row["sample_stem"], row["family_center_mz"]): float(row["height"])
-        for row in cells
-    }
-    assert heights == {
-        ("sample-a", "701"): 600.0,
-        ("sample-b", "701"): 1100.0,
-    }
+    heights = {row["sample_stem"]: float(row["height"]) for row in cells}
+    assert heights == {"sample-a": 600.0, "sample-b": 1100.0}
     areas = {row["sample_stem"]: float(row["area"]) for row in cells}
     assert areas["sample-b"] / areas["sample-a"] == pytest.approx(2.0, rel=0.01)
 

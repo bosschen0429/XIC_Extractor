@@ -15,7 +15,6 @@ from xic_extractor.tabular_io import (
     file_sha256,
     optional_float,
     read_tsv_with_header,
-    split_semicolon_labels,
     text_value,
     write_tsv,
 )
@@ -29,8 +28,6 @@ REVIEW_REQUIRED = (
     "not_searched_count",
     "accepted_cell_count",
     "accepted_backfill_count",
-    "row_flags",
-    "reason",
 )
 MATRIX_REQUIRED = ("Mz", "RT")
 CELL_OPTIONAL_REQUIRED = ("feature_id", "sample_stem", "status")
@@ -46,8 +43,6 @@ SENTINEL_COLUMNS = (
     "accepted_backfill_count",
     "unresolved_count",
     "not_searched_count",
-    "row_flags",
-    "reason",
     "cell_status_counts",
     "recommended_action",
 )
@@ -174,10 +169,6 @@ def _summary_metrics(
     sentinels: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
     sample_columns = [column for column in matrix_header if column not in {"Mz", "RT"}]
-    row_flag_counts: Counter[str] = Counter()
-    for row in review_rows:
-        for flag in split_semicolon_labels(row.get("row_flags")):
-            row_flag_counts[flag] += 1
     cell_status_counts = Counter(text_value(row.get("status")) for row in cell_rows)
     cell_status_counts.pop("", None)
     return {
@@ -197,7 +188,6 @@ def _summary_metrics(
             "unresolved_count",
         ),
         "not_searched_count_total": _sum_int(review_rows, "not_searched_count"),
-        "row_flag_counts": dict(sorted(row_flag_counts.items())),
         "cell_status_counts": dict(sorted(cell_status_counts.items())),
         "sentinel_count": len(sentinels),
     }
@@ -232,8 +222,6 @@ def _sentinel_rows(
                     row.get("unresolved_count"),
                 ),
                 "not_searched_count": _int_value(row.get("not_searched_count")),
-                "row_flags": text_value(row.get("row_flags")),
-                "reason": text_value(row.get("reason")),
                 "cell_status_counts": _format_counter(
                     cell_status_by_family.get(family_id, Counter()),
                 ),

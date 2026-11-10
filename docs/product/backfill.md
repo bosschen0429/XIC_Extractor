@@ -331,8 +331,8 @@ membership.
 ## Surfaces
 
 - `alignment_backfill_cell_evidence.tsv` is a compact validation output for
-  accepted Backfill cells. Schema `alignment_backfill_cell_query_evidence` adds
-  `backfill_query_rt_min` and `backfill_query_rt_max` from the executed assessment;
+  accepted Backfill cells. It adds `backfill_query_rt_min` and
+  `backfill_query_rt_max` from the executed assessment; Review's
   `family_center_rt` remains a distinct group-level display value. Unavailable
   query bounds are empty, never copied from that display value. Readers require
   the query-bound columns; old compact TSV exports must be regenerated.

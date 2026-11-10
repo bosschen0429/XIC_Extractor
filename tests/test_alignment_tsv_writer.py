@@ -21,31 +21,23 @@ from xic_extractor.peak_detection.hypotheses import IntegrationResult
 REVIEW_COLUMNS = [
     "feature_id",
     "matrix_row_index",
-    "matrix_mz",
-    "matrix_rt",
-    "center_mz_basis",
     "neutral_loss_tag",
     "family_center_mz",
     "family_center_rt",
     "family_product_mz",
     "family_observed_neutral_loss_da",
-    "physical_peak_keys",
     "detected_count",
     "not_searched_count",
     "unresolved_count",
-    "present_rate",
     "identity_reason",
     "accepted_cell_count",
     "accepted_backfill_count",
-    "include_in_primary_matrix",
-    "row_flags",
     "membership_risk_flags",
     "warning",
-    "reason",
 ]
 
 
-def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Path):
+def test_write_alignment_review_tsv_columns_and_counts(tmp_path: Path):
     matrix = _matrix(
         ("sample-a", "sample-b", "sample-c", "sample-d"),
         _row(
@@ -61,36 +53,22 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
     rows = _read_tsv(path)
 
     assert list(rows[0]) == REVIEW_COLUMNS
-    assert {
-        key: value
-        for key, value in rows[0].items()
-        if key
-        not in {
-            "matrix_row_index",
-            "matrix_mz",
-            "matrix_rt",
-            "center_mz_basis",
-        }
-    } == {
+    assert rows[0] == {
         "membership_risk_flags": "",
         "feature_id": "F000001",
+        "matrix_row_index": "1",
         "neutral_loss_tag": "DNA_dR",
         "family_center_mz": "500.123",
         "family_center_rt": "8.49",
         "family_product_mz": "384.076",
         "family_observed_neutral_loss_da": "116.047",
-        "physical_peak_keys": "F000001#peak-0",
         "detected_count": "2",
         "not_searched_count": "0",
         "unresolved_count": "0",
-        "present_rate": "0.75",
         "identity_reason": "test_route",
         "accepted_cell_count": "3",
         "accepted_backfill_count": "1",
-        "include_in_primary_matrix": "TRUE",
-        "row_flags": "finalized_route:matrix;cross_sample_owner_arithmetic_mean",
         "warning": "",
-        "reason": "anchor family; 3/4 present; 1 MS1 backfilled",
     }
 
 
@@ -121,7 +99,7 @@ def test_write_alignment_review_tsv_warning_precedence(tmp_path: Path):
     assert [row["not_searched_count"] for row in rows] == ["1", "2", "0", "0", "0"]
 
 
-def test_review_uses_physical_members_and_owner_counts_not_evidence_text(tmp_path):
+def test_review_counts_owner_cells_across_physical_members(tmp_path):
     matrix = _matrix(
         ("direct", "backfill-a", "backfill-b"),
         _row(
@@ -132,9 +110,10 @@ def test_review_uses_physical_members_and_owner_counts_not_evidence_text(tmp_pat
         ),
     )
     (row,) = _read_tsv(render("review", tmp_path / "review.tsv", matrix))
-    assert row["physical_peak_keys"] == ("F000001#peak-0;F000001#peak-1;F000001#peak-2")
+    assert row["detected_count"] == "1"
+    assert row["accepted_cell_count"] == "3"
+    assert row["accepted_backfill_count"] == "2"
     assert row["warning"] == ""
-    assert row["reason"] == "anchor family; 3/3 present; 2 MS1 backfilled"
 
 
 def test_write_alignment_review_tsv_reports_unresolved_cells(tmp_path: Path):
@@ -151,8 +130,7 @@ def test_write_alignment_review_tsv_reports_unresolved_cells(tmp_path: Path):
 
     assert row["detected_count"] == "1"
     assert row["unresolved_count"] == "1"
-    assert row["present_rate"] == "0.333333"
-    assert row["reason"] == "anchor family; 1/3 present; 0 MS1 backfilled; 1 unresolved"
+    assert row["accepted_cell_count"] == "1"
 
 
 def test_write_alignment_matrix_tsv_writes_owner_values_and_blanks_no_write_cells(
@@ -212,7 +190,6 @@ def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
     ]
 
     assert matrix_row["Mz"] == "500.1235"
-    assert review_row["matrix_mz"] == "500.123456"
     assert review_row["family_center_mz"] == "500.123456"
     matrix_review_rows(
         matrix_header=tuple(matrix_row),
@@ -235,7 +212,7 @@ def test_alignment_matrix_mz_format_is_display_only_for_small_mz(
     )[0]
 
     assert matrix_row["Mz"] == "5.1235"
-    assert identity_row["matrix_mz"] == "5.123456"
+    assert identity_row["family_center_mz"] == "5.123456"
 
 
 def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
@@ -249,7 +226,7 @@ def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
     )
 
     assert [row["Mz"] for row in matrix_rows] == ["500.1234", "500.1234"]
-    assert [row["matrix_mz"] for row in identity_rows] == [
+    assert [row["family_center_mz"] for row in identity_rows] == [
         "500.123441",
         "500.123449",
     ]
@@ -300,7 +277,7 @@ def test_alignment_matrix_identity_rejects_review_census_and_schema_mismatch(
         identity_rows.append(dict(identity_rows[-1]))
     elif mutation == "missing_column":
         identity_columns = tuple(
-            column for column in identity_columns if column != "center_mz_basis"
+            column for column in identity_columns if column != "family_center_rt"
         )
     else:
         identity_columns = (*identity_columns, "unknown_identity_field")
@@ -336,7 +313,7 @@ def test_alignment_matrix_identity_requires_current_schema() -> None:
         review_rows=(identity,),
     )
     for columns in (
-        tuple(c for c in MATRIX_REVIEW_COLUMNS if c != "center_mz_basis"),
+        tuple(c for c in MATRIX_REVIEW_COLUMNS if c != "family_center_rt"),
         (*MATRIX_REVIEW_COLUMNS, "unknown_identity_field"),
     ):
         with pytest.raises(ValueError, match="Review.*fields|row fields"):
@@ -383,9 +360,9 @@ def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
     if mutation == "identity_overflow":
         identity_row[None] = ["overflow"]
     elif mutation == "identity_missing_key":
-        identity_row.pop("center_mz_basis")
+        identity_row.pop("family_center_rt")
     elif mutation == "identity_truncated":
-        identity_row["center_mz_basis"] = None
+        identity_row["family_center_rt"] = None
     elif mutation == "matrix_overflow":
         matrix_row[None] = ["overflow"]
     elif mutation == "matrix_missing_key":
@@ -426,7 +403,7 @@ def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
         identity_rows = list(identity_reader)
 
     assert matrix_header == ("Mz", "RT", "'+sample", "safe")
-    assert matrix_rows[0]["RT"] == identity_rows[0]["matrix_rt"] == "8.49123"
+    assert matrix_rows[0]["RT"] == identity_rows[0]["family_center_rt"] == "8.49123"
     matrix_review_rows(
         matrix_header=matrix_header,
         matrix_rows=matrix_rows,
@@ -474,9 +451,7 @@ def test_alignment_writers_preserve_physical_owner_area_source(
     rows = _read_tsv(render("cells", tmp_path / "cells.tsv", matrix))
 
     assert rows[0]["area"] == "66.6"
-    assert rows[0]["primary_matrix_area"] == "66.6"
     assert rows[0]["primary_matrix_area_source"] == area_source
-    assert rows[0]["primary_matrix_area_reason"] == ""
     values = _read_tsv(render("matrix", tmp_path / "matrix.tsv", matrix))
     assert values[0]["sample-a"] == "6.66000e+01"
     assert values[0]["sample-b"] == "7.77000e+01"
@@ -511,7 +486,7 @@ def test_write_alignment_matrix_tsv_excludes_archived_rows(
 def test_write_alignment_review_tsv_maps_product_rows(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.output.alignment.tsv_writer import (
+    from xic_extractor.output.alignment.matrix_output_contract import (
         MATRIX_REVIEW_COLUMNS,
     )
 
@@ -527,10 +502,8 @@ def test_write_alignment_review_tsv_maps_product_rows(
     assert {key: identity_rows[0][key] for key in MATRIX_REVIEW_COLUMNS} == {
         "feature_id": "F000001",
         "matrix_row_index": "1",
-        "matrix_mz": "500.123",
-        "matrix_rt": matrix_rows[0]["RT"],
-        "center_mz_basis": "cross_sample_owner_arithmetic_mean",
-        "accepted_cell_count": "2",
+        "family_center_mz": "500.123",
+        "family_center_rt": matrix_rows[0]["RT"],
     }
 
 
@@ -560,13 +533,11 @@ def test_write_alignment_review_tsv_reports_archived_row_route(tmp_path: Path):
 
     (row,) = _read_tsv(render("review", tmp_path / "review.tsv", matrix))
 
-    assert row["include_in_primary_matrix"] == "FALSE"
+    assert row["matrix_row_index"] == ""
+    assert row["family_center_mz"] == "500.123"
     assert row["identity_reason"] == "test_route"
     assert row["accepted_cell_count"] == "1"
     assert row["accepted_backfill_count"] == "1"
-    assert row["row_flags"] == (
-        "finalized_route:archive;cross_sample_owner_arithmetic_mean"
-    )
 
 
 def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
@@ -596,22 +567,18 @@ def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
     ]
     assert [status[sample] for sample in samples] == [row["status"] for row in cells]
     assert cells[0]["area"] == "10"
-    assert cells[0]["primary_matrix_area"] == "10"
     assert cells[0]["primary_matrix_area_source"] == "gaussian15_positive_asls_residual"
-    assert cells[0]["primary_matrix_area_reason"] == ""
     assert cells[0]["source_candidate_id"] == "sample-a#1"
-    assert cells[1]["reason"] == "not_searched"
     assert cells[1]["primary_matrix_area_source"] == ""
     assert cells[4]["area"] == ""
-    assert cells[4]["reason"] == "not_quantifiable"
-    assert cells[4]["primary_matrix_area_reason"] == "missing_ms1_morphology_area"
+    assert cells[4]["primary_matrix_area_source"] == "missing_ms1_morphology_area"
     assert not any(column.startswith("region_") for column in cells[0])
 
 
 def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.output.alignment.tsv_writer import (
+    from xic_extractor.alignment.backfill.evidence_contract import (
         ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     )
 
@@ -640,9 +607,7 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
         ("F000001", "sample-b", "backfilled"),
     ]
     assert rows[0]["source_candidate_id"] == "sample-a#1"
-    assert rows[1]["primary_matrix_area"] == "8"
-    assert rows[1]["include_in_primary_matrix"] == "TRUE"
-    assert rows[1]["identity_decision"] == "finalized_matrix"
+    assert rows[1]["area"] == "8"
 
 
 def test_tsv_writers_escape_formula_like_text(tmp_path: Path):

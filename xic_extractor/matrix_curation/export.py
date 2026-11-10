@@ -336,9 +336,8 @@ def prepare_matrix_curation(
     features = tuple(
         FeatureIdentity(
             feature_id=str(identity["feature_id"]),
-            matrix_mz=float(str(identity["matrix_mz"])),
-            matrix_rt=float(str(identity["matrix_rt"])),
-            center_mz_basis=str(identity.get("center_mz_basis", "")),
+            matrix_mz=float(str(identity["family_center_mz"])),
+            matrix_rt=float(str(identity["family_center_rt"])),
         )
         for identity in identities
     )

@@ -1619,7 +1619,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     # The written row carries the group's own tag, fragment and anchor.
     (review,) = written_rows(tmp_path / "written", writer)["review"]
     assert review["detected_count"] == "2"
-    assert review["reason"].startswith("anchor family")
+    assert review["warning"] != "no_anchor"
     assert review["neutral_loss_tag"] == (
         batch.subject_batch.subjects[0].method_subject_id
         if composition
