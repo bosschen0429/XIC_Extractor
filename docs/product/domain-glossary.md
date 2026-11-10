@@ -277,7 +277,7 @@ Persisted and public exceptions retain their exact spelling:
 | `preferred_rt_recovery` | Existing proposal-source label |
 | `owner_backfill_xic_backend`, `owner_backfill_window_strategy`, `owner_backfill_superwindow_span_factor`, `owner_backfill_min_detected_samples` | Existing config and run-metadata keys |
 | `owner_backfill_evaluation_coverage` | Public run-output field |
-| `owner_finalized_cell_decision`, `owner_rehydrated` and their longer diagnostic forms | Existing metadata, decision, and diagnostic values |
+| `owner_finalized_cell_decision` and its longer diagnostic forms | Existing metadata, decision, and diagnostic values |
 | `alignment_owner_backfill_*`, `owner_backfill_revisit`, `alignment.owner_backfill` | Existing artifact names, source labels, and timing stage |
 
 The MS2 boundary search's `boundary_rescue` names a distinct peak-detection

@@ -151,11 +151,10 @@ identity or value, grant writer authority, change product output, or determine
 a current domain/runtime result. Audit-only labels, counts, locators, and copied
 hashes remain telemetry unless a current consumer uses them to decide.
 
-Alignment Backfill records are owned by
-`xic_extractor.alignment.backfill.evidence_contract`; the strict TSV reader
-alone mints `EvidenceQueryResult`. The public label is compatibility
-metadata, not canonical identity proof. Exact headers, identity tuples and
-validation rules are owned by that reader, the writer and their tests.
+The Alignment Backfill cell evidence TSV columns are owned by
+`xic_extractor.alignment.backfill.evidence_contract`; the writer and its tests
+own the rows. The public label is compatibility metadata, not canonical
+identity proof.
 
 ## System Shape
 

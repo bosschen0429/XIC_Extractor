@@ -348,9 +348,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
     import csv
 
     from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
-    from xic_extractor.diagnostics.backfill_evidence.tsv import (
-        iter_backfill_evidence_tsv,
-    )
     from xic_extractor.output.alignment.tsv_writer import (
         write_alignment_backfill_cell_evidence_tsv,
     )
@@ -480,7 +477,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
                 assert float(row["backfill_query_rt_min"]) == pytest.approx(
                     8.0 + shifts[row["sample_stem"]] - half_window
                 )
-        assert len(tuple(iter_backfill_evidence_tsv(path))) == len(rows)
 
 
 @pytest.mark.parametrize(
