@@ -232,6 +232,29 @@ def test_attention_reason_order_is_independent_of_record_ids(tmp_path, review_on
     )
 
 
+def test_review_candidate_scope_paginates_in_recorded_order(tmp_path):
+    from xic_inspector.api import prepare_report
+
+    def ungrouped(writer):
+        for cid in ("last", "first", "middle"):
+            writer.add_candidate(cid, "S2", precursor_mz=510.0, **discovery(cid))
+
+    report, _, _ = create_inspector_report(tmp_path, extend=ungrouped, review_only=True)
+    prepared = prepare_report(
+        report,
+        SelectionRequest(
+            strategy="query",
+            review_scope="candidates",
+            sample_ids=("S1", "S2"),
+            offset=1,
+            limit=2,
+        ),
+    )
+    assert [
+        item["witnesses"][0]["candidate_id"] for item in prepared.payload["items"]
+    ] == ["first", "middle"]
+
+
 def test_error_code_2_invalid_request() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
