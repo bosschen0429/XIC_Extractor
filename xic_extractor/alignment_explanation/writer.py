@@ -201,11 +201,13 @@ class ExplanationReportWriter:
         sample_key: str,
         *,
         precursor_mz: float | None,
+        neutral_loss_tag: str,
+        method_subject_id: str,
         ms1_apex_mz: float | None = None,
-        neutral_loss_tag: str | None = None,
         peak_status: str | None = None,
-        method_subject_id: str | None = None,
     ) -> None:
+        """One declared Discovery candidate: its tag and method subject are part
+        of what readers show for it."""
         key = candidate_id, sample_key
         if key in self._candidates:
             raise ValueError("duplicate diagnostic candidate/sample")

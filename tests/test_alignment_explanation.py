@@ -262,7 +262,13 @@ def test_partial_write_never_publishes_complete_report(tmp_path):
 
     with pytest.raises(OSError, match="interrupted write"):
         with ExplanationReportWriter(report) as writer:
-            writer.add_candidate("a", "s", precursor_mz=None)
+            writer.add_candidate(
+                "a",
+                "s",
+                precursor_mz=None,
+                neutral_loss_tag="dR",
+                method_subject_id="m",
+            )
             raise OSError("interrupted write")
     assert not report.exists()
     assert not report.with_name(report.name + ".tmp").exists()

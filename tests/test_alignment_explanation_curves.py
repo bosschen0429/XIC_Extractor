@@ -33,7 +33,13 @@ def test_curve_payload_write_and_read() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.sqlite"
         with ExplanationReportWriter(db_path) as writer:
-            writer.add_candidate("C1", "S1", precursor_mz=450.1234)
+            writer.add_candidate(
+                "C1",
+                "S1",
+                precursor_mz=450.1234,
+                neutral_loss_tag="dR",
+                method_subject_id="m",
+            )
             curve_envelope = {
                 "schema_version": "curve_payload",
                 "kind": "initial_capture",
