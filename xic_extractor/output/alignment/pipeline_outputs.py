@@ -19,12 +19,6 @@ if TYPE_CHECKING:
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
 )
-from xic_extractor.alignment.backfill.peak_fact_provenance import (
-    BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION,
-    EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
-    BackfillPeakFactProvenanceBatch,
-    render_backfill_peak_fact_provenance_tsv,
-)
 from xic_extractor.alignment.backfill.scope import (
     REQUEST_PLAN_VERSION,
 )
@@ -65,7 +59,6 @@ from xic_extractor.output.alignment.tsv_writer import (
 class AlignmentRunOutputs:
     review_tsv: Path | None = None
     matrix_tsv: Path | None = None
-    owner_backfill_peak_fact_provenance_tsv: Path | None = None
     backfill_cell_evidence_tsv: Path | None = None
     cells_tsv: Path | None = None
     backfill_seed_audit_tsv: Path | None = None
@@ -102,11 +95,6 @@ def output_paths(
         matrix_tsv=(
             output_dir / "alignment_matrix.tsv"
             if "alignment_matrix.tsv" in artifacts
-            else None
-        ),
-        owner_backfill_peak_fact_provenance_tsv=(
-            output_dir / "alignment_owner_backfill_peak_fact_provenance.tsv"
-            if "alignment_owner_backfill_peak_fact_provenance.tsv" in artifacts
             else None
         ),
         cells_tsv=(
@@ -156,18 +144,9 @@ def alignment_metadata(
     signal_processing_profile: SignalProcessingProfile = (
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
-    owner_backfill_peak_fact_provenance_row_count: int = 0,
 ) -> dict[str, str]:
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
         raise TypeError("signal_processing_profile must be a SignalProcessingProfile")
-    if (
-        isinstance(owner_backfill_peak_fact_provenance_row_count, bool)
-        or not isinstance(owner_backfill_peak_fact_provenance_row_count, int)
-        or owner_backfill_peak_fact_provenance_row_count < 0
-    ):
-        raise ValueError(
-            "owner_backfill_peak_fact_provenance_row_count must be non-negative"
-        )
     metadata = {
         "schema_version": "alignment-results",
         "discovery_batch_index": str(discovery_batch_index),
@@ -197,12 +176,6 @@ def alignment_metadata(
         "signal_processing_profile_json": serialize_signal_processing_profile(
             signal_processing_profile
         ).decode("utf-8"),
-        "owner_backfill_peak_fact_provenance_schema_version": (
-            BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION
-        ),
-        "owner_backfill_peak_fact_provenance_row_count": str(
-            owner_backfill_peak_fact_provenance_row_count
-        ),
     }
     return metadata
 
@@ -250,7 +223,6 @@ def write_completed_untargeted_outputs_atomic(
             outputs,
             writer_inputs.matrix,
             metadata=metadata,
-            backfill_peak_fact_provenance=EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
             production_decisions=writer_inputs.production_decisions,
             timing_recorder=timing_recorder,
         )
@@ -262,21 +234,9 @@ def write_outputs_atomic(
     matrix: AlignmentMatrix,
     *,
     metadata: dict[str, str],
-    backfill_peak_fact_provenance: BackfillPeakFactProvenanceBatch = (
-        EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH
-    ),
     production_decisions: ProductionDecisionSet,
     timing_recorder: TimingRecorder | None = None,
 ) -> None:
-    if not isinstance(
-        backfill_peak_fact_provenance,
-        BackfillPeakFactProvenanceBatch,
-    ):
-        raise TypeError("owner_backfill_peak_fact_provenance must be a typed batch")
-    metadata = _metadata_bound_to_peak_fact_provenance(
-        metadata,
-        row_count=len(backfill_peak_fact_provenance.rows),
-    )
     if not isinstance(production_decisions, ProductionDecisionSet):
         raise TypeError("production_decisions must be owner-minted")
     output_paths_and_writers: list[tuple[Path, Callable[[Path], Path]]] = []
@@ -332,16 +292,6 @@ def write_outputs_atomic(
                 ),
             ),
         )
-    if outputs.owner_backfill_peak_fact_provenance_tsv is not None:
-        output_paths_and_writers.append(
-            (
-                outputs.owner_backfill_peak_fact_provenance_tsv,
-                lambda path: _write_backfill_peak_fact_provenance_temp(
-                    path,
-                    backfill_peak_fact_provenance,
-                ),
-            )
-        )
     if outputs.status_matrix_tsv is not None:
         output_paths_and_writers.append(
             (
@@ -396,8 +346,6 @@ def write_streamed_untargeted_outputs_atomic(
         if path is not None
     }
     paths = list(row_paths.values())
-    if outputs.owner_backfill_peak_fact_provenance_tsv is not None:
-        paths.append(outputs.owner_backfill_peak_fact_provenance_tsv)
     if outputs.run_metadata_json is not None:
         paths.append(outputs.run_metadata_json)
     row_count = 0
@@ -409,19 +357,8 @@ def write_streamed_untargeted_outputs_atomic(
             batches,
             sample_order=sample_order,
         )
-        if outputs.owner_backfill_peak_fact_provenance_tsv is not None:
-            _write_backfill_peak_fact_provenance_temp(
-                temp_paths[outputs.owner_backfill_peak_fact_provenance_tsv],
-                EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
-            )
         if outputs.run_metadata_json is not None:
-            _write_metadata_json(
-                temp_paths[outputs.run_metadata_json],
-                _metadata_bound_to_peak_fact_provenance(
-                    metadata,
-                    row_count=len(EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows),
-                ),
-            )
+            _write_metadata_json(temp_paths[outputs.run_metadata_json], metadata)
 
     _write_artifacts_atomic(
         [(path, None) for path in paths],
@@ -566,45 +503,6 @@ def _write_artifacts_atomic(
         for backup_path in backup_paths:
             backup_path.unlink(missing_ok=True)
         raise
-
-
-def _metadata_nonnegative_int(metadata: dict[str, str], key: str) -> int:
-    value = metadata.get(key, "")
-    try:
-        parsed = int(value)
-    except ValueError as exc:
-        raise ValueError(f"alignment metadata {key} must be an integer") from exc
-    if parsed < 0:
-        raise ValueError(f"alignment metadata {key} must be non-negative")
-    return parsed
-
-
-def _metadata_bound_to_peak_fact_provenance(
-    metadata: dict[str, str],
-    *,
-    row_count: int,
-) -> dict[str, str]:
-    key = "owner_backfill_peak_fact_provenance_row_count"
-    bound = dict(metadata)
-    if key in bound and _metadata_nonnegative_int(bound, key) != row_count:
-        raise ValueError(
-            "alignment metadata owner_backfill_peak_fact_provenance_row_count "
-            "does not match the typed provenance batch"
-        )
-    bound[key] = str(row_count)
-    return bound
-
-
-def _write_backfill_peak_fact_provenance_temp(
-    path: Path,
-    batch: BackfillPeakFactProvenanceBatch,
-) -> Path:
-    """Write owner-rendered bytes into the outer transaction's one temp path."""
-
-    payload = render_backfill_peak_fact_provenance_tsv(batch)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(payload)
-    return path
 
 
 def _temp_path(final_path: Path) -> Path:

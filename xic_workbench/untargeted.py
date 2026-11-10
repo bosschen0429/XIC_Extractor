@@ -375,10 +375,6 @@ def _alignment_available_outputs(
     published = (
         ("review_tsv", outputs.review_tsv),
         ("matrix_tsv", outputs.matrix_tsv),
-        (
-            "owner_backfill_peak_fact_provenance_tsv",
-            outputs.owner_backfill_peak_fact_provenance_tsv,
-        ),
         ("backfill_cell_evidence_tsv", outputs.backfill_cell_evidence_tsv),
         ("cells_tsv", outputs.cells_tsv),
         ("backfill_seed_audit_tsv", outputs.backfill_seed_audit_tsv),

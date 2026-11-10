@@ -128,17 +128,6 @@ def test_cli_keeps_original_rows_and_records_each_decision(tmp_path):
     assert summary["sample_count"] == len(SAMPLES)
 
 
-def test_cli_rejects_stale_identity_without_publishing(tmp_path):
-    source, samples = _inputs(tmp_path)
-    matrix = source / "alignment_matrix.tsv"
-    matrix.write_text(matrix.read_text().replace("\t8\t", "\t9\t"))
-    output = tmp_path / "curated"
-    result = _run(source, samples, output)
-    assert result.returncode == 2
-    assert "binding" in result.stderr
-    assert not output.exists()
-
-
 @pytest.mark.parametrize("threshold", ["nan", "-0.1", "1.1", None])
 def test_cli_rejects_invalid_or_missing_threshold(tmp_path, threshold):
     source, samples = _inputs(tmp_path)

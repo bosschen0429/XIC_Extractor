@@ -1703,7 +1703,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         )
         required = (
             "alignment_backfill_cell_evidence.tsv",
-            "alignment_review.tsv:has_anchor",
             "alignment_review.tsv:neutral_loss_tag",
             "alignment_review.tsv:family_product_mz",
         )

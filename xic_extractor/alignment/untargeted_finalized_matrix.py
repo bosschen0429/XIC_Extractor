@@ -72,12 +72,7 @@ class FinalizedUntargetMatrixRow:
     center_mz_basis: str = PRESENTATION_FORMULA_VERSION
     center_rt_basis: str = PRESENTATION_FORMULA_VERSION
     center_weight_basis: str = "unique_owner_observations_equal_weight"
-    evidence_status: str = "finalized_untargeted_owner_complete"
     membership_risks: tuple[tuple[str, AcceptedMembershipRisk], ...] = ()
-
-    @property
-    def evidence(self) -> str:
-        return self.evidence_status
 
 
 @dataclass(frozen=True, slots=True)
@@ -608,13 +603,7 @@ def _writer_row_decision(
         identity_decision=(
             "finalized_matrix" if row.destination == "matrix" else "finalized_archive"
         ),
-        identity_confidence="owner_finalized",
-        primary_evidence="completed_untarget_batch",
         identity_reason=route_reason,
-        quantifiable_detected_count=sum(
-            item.write_matrix_value and cell.status == "detected"
-            for cell, item in zip(cells, decisions, strict=True)
-        ),
         quantifiable_backfill_count=accepted_backfill_count,
         accepted_cell_count=numeric_count,
         detected_count=detected_count,

@@ -27,11 +27,10 @@ def test_alignment_health_packet_reports_alignment_sentinels(tmp_path: Path) -> 
     assert metrics["review_family_count"] == 2
     assert metrics["matrix_sample_column_count"] == 2
     assert metrics["ambiguous_ms1_owner_count_total"] == 2
-    assert metrics["review_backfill_count_total"] == 3
     sentinel = packet["sentinel_rows"][0]
     assert sentinel["feature_id"] == "FAM_BAD"
     assert sentinel["issue_class"] == (
-        "owner_ambiguity;duplicate_claim;backfill_review_dependency;"
+        "owner_ambiguity;duplicate_claim;"
         "accepted_backfill_dependency;unchecked_pressure;consolidation_loser;"
         "owner_pressure_flag"
     )
@@ -87,11 +86,10 @@ def _write_required_alignment_artifacts(alignment_dir: Path) -> None:
     (alignment_dir / "alignment_review.tsv").write_text(
         "feature_id\tmatrix_row_index\tdetected_count\tambiguous_ms1_owner_count\t"
         "duplicate_assigned_count\tunchecked_count\taccepted_cell_count\t"
-        "accepted_backfill_count\treview_backfill_count\tidentity_decision\t"
-        "identity_confidence\tprimary_evidence\trow_flags\treason\n"
-        "FAM_BAD\t1\t4\t2\t1\t1\t2\t1\t3\tmanual_review\treview\towner\t"
+        "accepted_backfill_count\tidentity_decision\trow_flags\treason\n"
+        "FAM_BAD\t1\t4\t2\t1\t1\t2\t1\tfinalized_archive\t"
         "family_consolidation_loser;ambiguous_ms1_owner_pressure\tneeds review\n"
-        "FAM_OK\t2\t5\t0\t0\t0\t5\t0\t0\taccepted\thigh\tanchor\t\tok\n",
+        "FAM_OK\t2\t5\t0\t0\t0\t5\t0\tfinalized_matrix\t\tok\n",
         encoding="utf-8",
     )
     (alignment_dir / "alignment_matrix.tsv").write_text(

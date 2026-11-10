@@ -7,7 +7,6 @@ import pytest
 
 from tests.alignment_pipeline_helpers import finalized_writer_decisions
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.owner_group_delivery import GROUP_REVIEW_PROJECTION_COLUMNS
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
 )
@@ -19,42 +18,29 @@ from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 REVIEW_COLUMNS = [
     "feature_id",
-    *GROUP_REVIEW_PROJECTION_COLUMNS,
     "matrix_row_index",
     "matrix_mz",
     "matrix_rt",
     "center_mz_basis",
-    "matrix_row_binding_sha256",
     "neutral_loss_tag",
     "family_center_mz",
     "family_center_rt",
     "family_product_mz",
     "family_observed_neutral_loss_da",
-    "has_anchor",
-    "physical_peak_count",
     "physical_peak_keys",
     "detected_count",
-    "absent_count",
     "unchecked_count",
     "duplicate_assigned_count",
     "ambiguous_ms1_owner_count",
     "present_rate",
     "identity_decision",
-    "identity_confidence",
-    "primary_evidence",
     "identity_reason",
-    "quantifiable_detected_count",
-    "quantifiable_backfill_count",
     "accepted_cell_count",
     "accepted_backfill_count",
-    "review_backfill_count",
     "include_in_primary_matrix",
     "row_flags",
-    "membership_risk_status",
     "membership_risk_flags",
     "membership_risks_json",
-    "representative_samples",
-    "family_evidence",
     "warning",
     "reason",
 ]
@@ -91,43 +77,28 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
             "matrix_mz",
             "matrix_rt",
             "center_mz_basis",
-            "matrix_row_binding_sha256",
         }
     } == {
-        "membership_risk_status": "not_recorded",
         "membership_risk_flags": "",
         "membership_risks_json": "[]",
         "feature_id": "ALN000001",
-        "group_construction_role": "finalized_untargeted_cid_nl",
-        "group_delivery_role": "finalized_owner_projection",
-        "group_membership_source": "completed_untarget_batch",
         "neutral_loss_tag": "DNA_dR",
         "family_center_mz": "500.123",
         "family_center_rt": "8.49",
         "family_product_mz": "384.076",
         "family_observed_neutral_loss_da": "116.047",
-        "has_anchor": "TRUE",
-        "physical_peak_count": "1",
         "physical_peak_keys": "ALN000001#peak-0",
         "detected_count": "2",
-        "absent_count": "1",
         "unchecked_count": "0",
         "duplicate_assigned_count": "0",
         "ambiguous_ms1_owner_count": "0",
         "present_rate": "0.75",
         "identity_decision": "finalized_matrix",
-        "identity_confidence": "owner_finalized",
-        "primary_evidence": "completed_untarget_batch",
         "identity_reason": "test_route",
-        "quantifiable_detected_count": "2",
-        "quantifiable_backfill_count": "1",
         "accepted_cell_count": "3",
         "accepted_backfill_count": "1",
-        "review_backfill_count": "0",
         "include_in_primary_matrix": "TRUE",
         "row_flags": "finalized_route:matrix",
-        "representative_samples": "sample-a;sample-b;sample-d",
-        "family_evidence": "finalized_untargeted_owner_complete",
         "warning": "",
         "reason": "anchor family; 3/4 present; 1 MS1 backfilled",
     }
@@ -205,7 +176,6 @@ def test_review_uses_physical_members_and_owner_counts_not_evidence_text(tmp_pat
             production_decisions=_production_decisions(matrix),
         )
     )
-    assert row["physical_peak_count"] == "3"
     assert row["physical_peak_keys"] == (
         "ALN000001#peak-0;ALN000001#peak-1;ALN000001#peak-2"
     )
@@ -268,7 +238,6 @@ def test_write_alignment_review_tsv_counts_duplicate_assigned_separately(
     )
 
     assert rows[0]["detected_count"] == "1"
-    assert rows[0]["absent_count"] == "1"
     assert rows[0]["unchecked_count"] == "0"
     assert rows[0]["duplicate_assigned_count"] == "1"
     assert rows[0]["present_rate"] == "0.5"
@@ -537,13 +506,11 @@ def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
         "duplicate",
         "missing",
         "extra",
-        "matrix_swap",
-        "cross_bound",
         "missing_column",
         "unknown_column",
     ),
 )
-def test_alignment_matrix_identity_binding_rejects_every_row_substitution(
+def test_alignment_matrix_identity_rejects_review_census_and_schema_mismatch(
     tmp_path: Path,
     mutation: str,
 ) -> None:
@@ -586,20 +553,12 @@ def test_alignment_matrix_identity_binding_rejects_every_row_substitution(
         identity_rows.pop()
     elif mutation == "extra":
         identity_rows.append(dict(identity_rows[-1]))
-    elif mutation == "reordered":
-        identity_rows.reverse()
-    elif mutation == "matrix_swap":
-        matrix_rows.reverse()
     elif mutation == "missing_column":
         identity_columns = tuple(
             column for column in identity_columns if column != "center_mz_basis"
         )
-    elif mutation == "unknown_column":
-        identity_columns = (*identity_columns, "unknown_identity_field")
     else:
-        first_id = identity_rows[0]["feature_id"]
-        identity_rows[0]["feature_id"] = identity_rows[1]["feature_id"]
-        identity_rows[1]["feature_id"] = first_id
+        identity_columns = (*identity_columns, "unknown_identity_field")
 
     with pytest.raises(ValueError, match="Review"):
         matrix_review_rows(
@@ -610,11 +569,10 @@ def test_alignment_matrix_identity_binding_rejects_every_row_substitution(
         )
 
 
-def test_alignment_matrix_identity_requires_current_schema_and_binding() -> None:
+def test_alignment_matrix_identity_requires_current_schema() -> None:
     from tests.matrix_review_fixtures import current_matrix_review_row
     from xic_extractor.output.alignment.matrix_output_contract import (
         MATRIX_REVIEW_COLUMNS,
-        MATRIX_ROW_BINDING_COLUMN,
         matrix_review_rows,
     )
 
@@ -625,7 +583,6 @@ def test_alignment_matrix_identity_requires_current_schema_and_binding() -> None
         mz="500.123",
         rt="8.49",
         feature_id="ALN000001",
-        sample_values={"sample-a": "100"},
     )
     matrix_review_rows(
         matrix_header=matrix_header,
@@ -634,7 +591,7 @@ def test_alignment_matrix_identity_requires_current_schema_and_binding() -> None
         review_rows=(identity,),
     )
     for columns in (
-        tuple(c for c in MATRIX_REVIEW_COLUMNS if c != MATRIX_ROW_BINDING_COLUMN),
+        tuple(c for c in MATRIX_REVIEW_COLUMNS if c != "center_mz_basis"),
         (*MATRIX_REVIEW_COLUMNS, "unknown_identity_field"),
     ):
         with pytest.raises(ValueError, match="Review.*fields|row fields"):
@@ -677,7 +634,6 @@ def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
         mz="500.123",
         rt="8.49",
         feature_id="ALN000001",
-        sample_values={"sample-a": "100"},
     )
     if mutation == "identity_overflow":
         identity_row[None] = ["overflow"]
@@ -1025,14 +981,7 @@ def test_write_alignment_review_tsv_maps_product_rows(
 
     assert list(identity_rows[0]) == REVIEW_COLUMNS
     assert len(identity_rows) == len(matrix_rows) == 1
-    row_binding = identity_rows[0]["matrix_row_binding_sha256"]
-    assert len(row_binding) == 64
-    assert set(row_binding) <= set("0123456789abcdef")
-    assert {
-        key: identity_rows[0][key]
-        for key in MATRIX_REVIEW_COLUMNS
-        if key != "matrix_row_binding_sha256"
-    } == {
+    assert {key: identity_rows[0][key] for key in MATRIX_REVIEW_COLUMNS} == {
         "feature_id": "ALN000001",
         "matrix_row_index": "1",
         "matrix_mz": "500.123",
@@ -1105,14 +1054,9 @@ def test_write_alignment_review_tsv_includes_production_decision_columns(
     )
 
     assert rows[0]["identity_decision"] == "finalized_archive"
-    assert rows[0]["identity_confidence"] == "owner_finalized"
-    assert rows[0]["primary_evidence"] == "completed_untarget_batch"
     assert rows[0]["identity_reason"] == "test_route"
-    assert rows[0]["quantifiable_detected_count"] == "0"
-    assert rows[0]["quantifiable_backfill_count"] == "1"
     assert rows[0]["accepted_cell_count"] == "1"
     assert rows[0]["accepted_backfill_count"] == "1"
-    assert rows[0]["review_backfill_count"] == "0"
     assert rows[0]["include_in_primary_matrix"] == "FALSE"
     assert rows[0]["row_flags"] == "finalized_route:archive"
 
@@ -1388,7 +1332,6 @@ def test_tsv_writers_escape_formula_like_text(tmp_path: Path):
 
     assert review[0]["feature_id"] == "'=cluster"
     assert review[0]["neutral_loss_tag"] == "'+NL"
-    assert review[0]["representative_samples"] == "'=sample;+sample-2"
     assert "'=sample" in matrix_rows[0]
 
 
@@ -1442,7 +1385,6 @@ def _cluster(
     neutral_loss_tag: str = "DNA_dR",
     has_anchor: bool = True,
     member_count: int = 0,
-    evidence_status: str = "finalized_untargeted_owner_complete",
     destination: Literal["matrix", "archive"] = "matrix",
 ) -> FinalizedUntargetMatrixRow:
     return FinalizedUntargetMatrixRow(
@@ -1458,7 +1400,6 @@ def _cluster(
         family_observed_neutral_loss_da=116.047,
         neutral_loss_tag=neutral_loss_tag,
         has_anchor=has_anchor,
-        evidence_status=evidence_status,
     )
 
 

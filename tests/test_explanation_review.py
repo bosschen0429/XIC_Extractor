@@ -1022,7 +1022,6 @@ def test_produced_membership_risk_reaches_final_samples_and_review_tsv(
         rows = list(csv.DictReader(stream, delimiter="\t"))
     actual = {}
     for row in rows:
-        assert row["membership_risk_status"] == "recorded"
         for risk in json.loads(row["membership_risks_json"]):
             actual[risk.pop("sample_key")] = risk
     assert actual == expected

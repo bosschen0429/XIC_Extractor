@@ -50,7 +50,7 @@ def test_output_transaction_requires_owner_minted_decisions_before_writes(
     )
 
 
-def test_matrix_only_output_plan_omits_unselected_provenance(
+def test_matrix_only_output_plan_writes_only_the_matrix(
     tmp_path: Path,
 ) -> None:
     outputs = output_paths(
@@ -71,7 +71,6 @@ def test_matrix_only_output_plan_omits_unselected_provenance(
 
     assert outputs.matrix_tsv is not None
     assert outputs.matrix_tsv.exists()
-    assert outputs.owner_backfill_peak_fact_provenance_tsv is None
     assert sorted(path.name for path in (tmp_path / "out").iterdir()) == [
         "alignment_matrix.tsv"
     ]
@@ -147,8 +146,6 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
     with outputs.review_tsv.open(encoding="utf-8", newline="") as handle:
         review_row = next(csv.DictReader(handle, delimiter="\t"))
     assert review_row["detected_count"] == "0"
-    assert review_row["absent_count"] == "2"
-    assert review_row["representative_samples"] == ""
 
 
 def test_a_withheld_owner_decision_leaves_the_matrix_cell_empty(
@@ -203,7 +200,6 @@ def _divergent_owner_decisions(
             key: replace(
                 decision,
                 include_in_primary_matrix=True,
-                quantifiable_detected_count=2,
                 accepted_cell_count=2,
             )
             for key, decision in rebuilt.rows.items()

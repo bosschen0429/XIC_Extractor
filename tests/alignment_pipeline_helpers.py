@@ -440,13 +440,7 @@ def finalized_writer_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet
                 if row.destination == "matrix"
                 else "finalized_archive"
             ),
-            identity_confidence="owner_finalized",
-            primary_evidence="completed_untarget_batch",
             identity_reason="test_route",
-            quantifiable_detected_count=sum(
-                item.write_matrix_value and item.raw_status == "detected"
-                for item in decisions
-            ),
             quantifiable_backfill_count=accepted_backfill,
             accepted_cell_count=numeric_count,
             detected_count=sum(item.status == "detected" for item in row_cells),

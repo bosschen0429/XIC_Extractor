@@ -19,26 +19,22 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
     "production": ("alignment_matrix.tsv",),
     "machine": (
         "alignment_matrix.tsv",
-        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
     ),
     "debug": (
         "alignment_matrix.tsv",
-        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_cells.tsv",
         EXPLANATION_ARTIFACT_NAME,
     ),
     "validation": (
         "alignment_matrix.tsv",
-        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_cells.tsv",
         EXPLANATION_ARTIFACT_NAME,
     ),
     "validation-minimal": (
         "alignment_matrix.tsv",
-        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_backfill_cell_evidence.tsv",
         EXPLANATION_ARTIFACT_NAME,

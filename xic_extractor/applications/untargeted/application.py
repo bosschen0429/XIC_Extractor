@@ -7,9 +7,6 @@ from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
-from xic_extractor.alignment.backfill.peak_fact_provenance import (
-    EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
-)
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.grouping_experiment import replay_grouping
 from xic_extractor.applications.untargeted.istd_reference import (
@@ -121,9 +118,6 @@ def run_untargeted_application(
         backfill_scope="full-audit",
         output_scope="full-audit",
         signal_processing_profile=signal_processing_profile,
-        owner_backfill_peak_fact_provenance_row_count=len(
-            EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows
-        ),
     )
     # Source-bound Discovery receipts carry each RAW's mass result.
     # Publication renders these facts; it never recomputes a mass policy.

@@ -909,7 +909,6 @@ def _curation_folder(folder: Path) -> Path:
                 mz=repr(mz),
                 rt=str(rt),
                 feature_id=feature_id,
-                sample_values=sample_values,
             )
         )
     write_tsv(folder / "alignment_matrix.tsv", matrix, ("Mz", "RT", *STUDY))
@@ -1008,7 +1007,6 @@ def test_export_excludes_unassigned_derivative_without_inventing_a_parent(
                 mz=repr(feature.matrix_mz),
                 rt="10.0",
                 feature_id=feature.feature_id,
-                sample_values=sample_values,
             )
         )
     write_tsv(source / "alignment_matrix.tsv", matrix, ("Mz", "RT", *STUDY))

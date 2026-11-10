@@ -19,11 +19,8 @@ from xic_extractor.alignment.matrix import (
     cells_by_cluster,
 )
 from xic_extractor.alignment.owner_group_delivery import (
-    CROSS_SAMPLE_GROUP_CELL_COLUMNS,
     GROUP_BACKFILL_SEED_AUDIT_COLUMNS,
-    GROUP_REVIEW_PROJECTION_COLUMNS,
     delivery_feature_id,
-    delivery_group_projection,
 )
 from xic_extractor.alignment.production_decisions import (
     ProductionCellDecision,
@@ -51,7 +48,6 @@ from xic_extractor.tabular_io import escape_excel_formula
 
 ALIGNMENT_REVIEW_COLUMNS = (
     "feature_id",
-    *GROUP_REVIEW_PROJECTION_COLUMNS,
     *(
         column
         for column in MATRIX_REVIEW_COLUMNS
@@ -62,38 +58,28 @@ ALIGNMENT_REVIEW_COLUMNS = (
     "family_center_rt",
     "family_product_mz",
     "family_observed_neutral_loss_da",
-    "has_anchor",
-    "physical_peak_count",
     "physical_peak_keys",
     "detected_count",
-    "absent_count",
     "unchecked_count",
     "duplicate_assigned_count",
     "ambiguous_ms1_owner_count",
     "present_rate",
     "identity_decision",
-    "identity_confidence",
-    "primary_evidence",
     "identity_reason",
-    "quantifiable_detected_count",
-    "quantifiable_backfill_count",
     "accepted_cell_count",
     "accepted_backfill_count",
-    "review_backfill_count",
     "include_in_primary_matrix",
     "row_flags",
-    "membership_risk_status",
     "membership_risk_flags",
     "membership_risks_json",
-    "representative_samples",
-    "family_evidence",
     "warning",
     "reason",
 )
 
 ALIGNMENT_CELLS_COLUMNS = (
     "feature_id",
-    *CROSS_SAMPLE_GROUP_CELL_COLUMNS,
+    "gap_fill_state",
+    "gap_fill_reason",
     "sample_stem",
     "status",
     "area",
@@ -106,7 +92,6 @@ ALIGNMENT_CELLS_COLUMNS = (
     "peak_end_rt",
     "rt_delta_sec",
     "trace_quality",
-    "signal_quality_status",
     "noise_sigma",
     "signal_to_noise",
     "low_signal_to_noise",
@@ -215,8 +200,6 @@ def write_alignment_tsv_row_batches(
                 emit("matrix", table.rows)
                 if "review" in writers:
                     bound = bind_matrix_review_row(
-                        matrix_header=matrix_header,
-                        matrix_row=table.rows[0],
                         source_review=product.review_projection,
                         index=product_count,
                     )
@@ -250,23 +233,12 @@ def write_alignment_review_tsv(
 ) -> Path:
     decisions = _require_production_decisions(production_decisions)
     products = build_product_matrix_rows(matrix, production_decisions=decisions)
-    table = serialize_public_matrix_table(
-        (
-            {"Mz": product.mz, "RT": product.rt, **product.sample_values}
-            for product in products
-        ),
-        sample_columns=matrix.sample_order,
-    )
     projection = {
         str(product.review_projection["feature_id"]): bind_matrix_review_row(
-            matrix_header=table.header,
-            matrix_row=values,
             source_review=product.review_projection,
             index=index,
         )
-        for index, (product, values) in enumerate(
-            zip(products, table.rows, strict=True), start=1
-        )
+        for index, product in enumerate(products, start=1)
     }
     return _write_tsv(
         path,
@@ -325,12 +297,8 @@ def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]
         )
         yield {
             "feature_id": delivery_feature_id(cluster),
-            "group_construction_role": cell.group_construction_role,
-            "group_delivery_role": cell.group_delivery_role,
-            "group_membership_source": cell.group_membership_source,
             "gap_fill_state": cell.gap_fill_state,
             "gap_fill_reason": cell.gap_fill_reason,
-            "missing_observation_state": cell.missing_observation_state,
             "sample_stem": cell.sample_stem,
             "status": cell.status,
             "area": format_value(cell.area),
@@ -343,9 +311,6 @@ def _alignment_cell_rows(matrix: AlignmentMatrix) -> Iterable[dict[str, object]]
             "peak_end_rt": format_value(cell.peak_end_rt),
             "rt_delta_sec": format_value(cell.rt_delta_sec),
             "trace_quality": cell.trace_quality,
-            "signal_quality_status": quality.status
-            if quality is not None
-            else "not_recorded",
             "noise_sigma": format_value(quality.noise_sigma)
             if quality is not None
             else "",
@@ -522,7 +487,6 @@ def _review_rows(
         )
         detected_count = raw_status_counts["detected"]
         backfilled_count = raw_status_counts["backfilled"]
-        absent_count = raw_status_counts["absent"]
         unchecked_count = raw_status_counts["unchecked"]
         duplicate_assigned_count = raw_status_counts["duplicate_assigned"]
         ambiguous_owner_count = raw_status_counts["ambiguous_ms1_owner"]
@@ -530,7 +494,6 @@ def _review_rows(
         rows.append(
             {
                 "feature_id": delivery_feature_id(cluster),
-                **delivery_group_projection(cluster),
                 **matrix_projection.get(delivery_feature_id(cluster), {}),
                 "neutral_loss_tag": cluster.neutral_loss_tag,
                 "family_center_mz": cluster.family_center_mz,
@@ -539,33 +502,18 @@ def _review_rows(
                 "family_observed_neutral_loss_da": (
                     cluster.family_observed_neutral_loss_da
                 ),
-                "has_anchor": cluster.has_anchor,
-                "physical_peak_count": len(cluster.physical_peak_keys),
                 "physical_peak_keys": ";".join(cluster.physical_peak_keys),
                 "detected_count": detected_count,
-                "absent_count": absent_count,
                 "unchecked_count": unchecked_count,
                 "duplicate_assigned_count": duplicate_assigned_count,
                 "ambiguous_ms1_owner_count": ambiguous_owner_count,
                 "present_rate": safe_rate(present_count, sample_count),
                 "identity_decision": row_decision.identity_decision,
-                "identity_confidence": row_decision.identity_confidence,
-                "primary_evidence": row_decision.primary_evidence,
                 "identity_reason": row_decision.identity_reason,
-                "quantifiable_detected_count": (
-                    row_decision.quantifiable_detected_count
-                ),
-                "quantifiable_backfill_count": (
-                    row_decision.quantifiable_backfill_count
-                ),
                 "accepted_cell_count": row_decision.accepted_cell_count,
                 "accepted_backfill_count": row_decision.accepted_backfill_count,
-                "review_backfill_count": row_decision.review_backfill_count,
                 "include_in_primary_matrix": row_decision.include_in_primary_matrix,
                 "row_flags": ";".join(row_decision.row_flags),
-                "membership_risk_status": "recorded"
-                if cluster.membership_risks
-                else "not_recorded",
                 "membership_risk_flags": ";".join(
                     sorted(
                         {
@@ -583,8 +531,6 @@ def _review_rows(
                     ensure_ascii=False,
                     allow_nan=False,
                 ),
-                "representative_samples": _representative_samples(cells, decisions),
-                "family_evidence": cluster.evidence,
                 "warning": _warning(
                     cluster,
                     sample_count=sample_count,
@@ -693,25 +639,6 @@ def _write_tsv_sequences(
         for row in rows:
             writer.writerow([format_value(value) for value in row])
     return path
-
-
-def _representative_samples(
-    cells: tuple[AlignedCell, ...], decisions: ProductionDecisionSet
-) -> str:
-    samples = [
-        cell.sample_stem
-        for cell in cells
-        if decisions.cell(cell.cluster_id, cell.sample_stem).raw_status
-        in {"detected", "backfilled"}
-    ]
-    return _cap_semicolon(samples)
-
-
-def _cap_semicolon(values: list[str]) -> str:
-    capped = values[:5]
-    if len(values) > 5:
-        capped.append("...")
-    return ";".join(capped)
 
 
 def _warning(

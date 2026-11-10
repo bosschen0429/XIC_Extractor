@@ -34,16 +34,10 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
 ):
     matrix = AlignmentMatrix(
         clusters=(
-            _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
-            _feature(
-                "FAM_PROVISIONAL", evidence="", has_anchor=False, destination="archive"
-            ),
-            _feature("FAM002", evidence="", has_anchor=False, destination="archive"),
-            _feature(
-                "FAM003",
-                evidence="owner_complete_link;owner_count=2",
-                destination="archive",
-            ),
+            _feature("FAM001"),
+            _feature("FAM_PROVISIONAL", has_anchor=False, destination="archive"),
+            _feature("FAM002", has_anchor=False, destination="archive"),
+            _feature("FAM003", destination="archive"),
         ),
         sample_order=("s1", "s2", "s3"),
         cells=(
@@ -95,7 +89,6 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
     assert len(matrix_projection) == len(tsv_rows)
     assert matrix_projection[0]["matrix_row_index"] == "1"
     assert matrix_projection[0]["feature_id"] == "FAM001"
-    assert matrix_projection[0]["matrix_row_binding_sha256"]
     assert len(identity_rows) == len(matrix.clusters)
 
 
@@ -106,7 +99,6 @@ def _production_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
 def _feature(
     feature_id: str,
     *,
-    evidence: str,
     has_anchor: bool = True,
     group_hypothesis_id: str = "",
     destination: Literal["matrix", "archive"] = "matrix",
@@ -122,7 +114,6 @@ def _feature(
         family_observed_neutral_loss_da=116.047,
         neutral_loss_tag="DNA_dR",
         has_anchor=has_anchor,
-        evidence_status=evidence,
     )
 
 

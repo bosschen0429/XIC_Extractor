@@ -14,9 +14,6 @@ from xic_extractor.alignment.production_decisions import (
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     FinalizedUntargetMatrixRow,
 )
-from xic_extractor.output.alignment.matrix_output_contract import (
-    MATRIX_ROW_BINDING_COLUMN,
-)
 from xic_extractor.output.alignment.output_rows import (
     production_matrix_area,
 )
@@ -113,7 +110,6 @@ def _matrix_review_projection(
         "matrix_rt": rt,
         "center_mz_basis": cluster.center_mz_basis,
         "accepted_cell_count": len(product_cells),
-        MATRIX_ROW_BINDING_COLUMN: "",
     }
 
 

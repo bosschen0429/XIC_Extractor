@@ -30,10 +30,7 @@ REVIEW_REQUIRED = (
     "unchecked_count",
     "accepted_cell_count",
     "accepted_backfill_count",
-    "review_backfill_count",
     "identity_decision",
-    "identity_confidence",
-    "primary_evidence",
     "row_flags",
     "reason",
 )
@@ -50,14 +47,11 @@ SENTINEL_COLUMNS = (
     "detected_count",
     "accepted_cell_count",
     "accepted_backfill_count",
-    "review_backfill_count",
     "ambiguous_ms1_owner_count",
     "duplicate_assigned_count",
     "unchecked_count",
     "row_flags",
     "identity_decision",
-    "identity_confidence",
-    "primary_evidence",
     "reason",
     "cell_status_counts",
     "seed_audit_row_count",
@@ -225,7 +219,6 @@ def _summary_metrics(
             review_rows,
             "accepted_backfill_count",
         ),
-        "review_backfill_count_total": _sum_int(review_rows, "review_backfill_count"),
         "ambiguous_ms1_owner_count_total": _sum_int(
             review_rows,
             "ambiguous_ms1_owner_count",
@@ -269,7 +262,6 @@ def _sentinel_rows(
                 "accepted_backfill_count": _int_value(
                     row.get("accepted_backfill_count")
                 ),
-                "review_backfill_count": _int_value(row.get("review_backfill_count")),
                 "ambiguous_ms1_owner_count": _int_value(
                     row.get("ambiguous_ms1_owner_count"),
                 ),
@@ -279,8 +271,6 @@ def _sentinel_rows(
                 "unchecked_count": _int_value(row.get("unchecked_count")),
                 "row_flags": text_value(row.get("row_flags")),
                 "identity_decision": text_value(row.get("identity_decision")),
-                "identity_confidence": text_value(row.get("identity_confidence")),
-                "primary_evidence": text_value(row.get("primary_evidence")),
                 "reason": text_value(row.get("reason")),
                 "cell_status_counts": _format_counter(
                     cell_status_by_family.get(family_id, Counter()),
@@ -307,8 +297,6 @@ def _issue_classes(row: Mapping[str, str]) -> tuple[str, ...]:
         issues.append("owner_ambiguity")
     if _int_value(row.get("duplicate_assigned_count")) > 0:
         issues.append("duplicate_claim")
-    if _int_value(row.get("review_backfill_count")) > 0:
-        issues.append("backfill_review_dependency")
     if _int_value(row.get("accepted_backfill_count")) > 0:
         issues.append("accepted_backfill_dependency")
     if _int_value(row.get("unchecked_count")) > 0:
@@ -325,7 +313,6 @@ def _severity_score(row: Mapping[str, str], issues: Sequence[str]) -> int:
     score = 0
     score += _int_value(row.get("ambiguous_ms1_owner_count")) * 4
     score += _int_value(row.get("duplicate_assigned_count")) * 5
-    score += _int_value(row.get("review_backfill_count")) * 2
     score += _int_value(row.get("accepted_backfill_count")) * 3
     score += _int_value(row.get("unchecked_count"))
     if "consolidation_loser" in issues:
@@ -341,7 +328,7 @@ def _recommended_action(issues: Sequence[str]) -> str:
         return "inspect_owner_assignment"
     if "consolidation_loser" in issue_set:
         return "inspect_primary_consolidation"
-    if issue_set & {"backfill_review_dependency", "accepted_backfill_dependency"}:
+    if "accepted_backfill_dependency" in issue_set:
         return "inspect_backfill_dependency"
     if "unchecked_pressure" in issue_set:
         return "inspect_unchecked_cells"

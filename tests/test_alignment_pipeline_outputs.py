@@ -1,4 +1,3 @@
-import csv
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -10,14 +9,6 @@ from tests.alignment_pipeline_helpers import finalized_writer_decisions
 from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from xic_extractor.alignment import AlignmentConfig
-from xic_extractor.alignment.backfill.peak_fact_provenance import (
-    BackfillPeakFactProvenanceBatch,
-    run_profile_row,
-)
-from xic_extractor.configuration.signal_processing_profile import (
-    SignalProcessingProfile,
-    deserialize_signal_processing_profile,
-)
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.pipeline_outputs import (
     alignment_metadata,
@@ -52,11 +43,6 @@ def test_alignment_metadata_records_method_and_output_contract() -> None:
     assert profile["physical_signal_formula"] == (
         "gaussian_raw_minus_nonnegative_asls_rt_raw_positive"
     )
-    assert metadata["owner_backfill_peak_fact_provenance_schema_version"] == (
-        "alignment_owner_backfill_peak_fact_provenance"
-    )
-    assert "_v1" not in metadata["owner_backfill_peak_fact_provenance_schema_version"]
-    assert metadata["owner_backfill_peak_fact_provenance_row_count"] == "0"
 
 
 def test_alignment_metadata_records_baseline_integration_method() -> None:
@@ -110,9 +96,6 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
     assert outputs.review_tsv == tmp_path / "alignment_review.tsv"
     assert outputs.backfill_cell_evidence_tsv == (
         tmp_path / "alignment_backfill_cell_evidence.tsv"
-    )
-    assert outputs.owner_backfill_peak_fact_provenance_tsv == (
-        tmp_path / "alignment_owner_backfill_peak_fact_provenance.tsv"
     )
     assert outputs.cells_tsv is None
     assert outputs.status_matrix_tsv is None
@@ -297,109 +280,24 @@ def test_production_and_machine_plans_write_identical_matrix_bytes(
     assert production_bytes == machine_outputs.matrix_tsv.read_bytes()
 
 
-def test_writer_binds_provenance_row_count_into_persisted_metadata(
-    tmp_path: Path,
-) -> None:
-    output_dir = tmp_path / "out"
-    outputs = pipeline_outputs_module.AlignmentRunOutputs(
-        owner_backfill_peak_fact_provenance_tsv=(
-            output_dir / "alignment_owner_backfill_peak_fact_provenance.tsv"
-        ),
-        run_metadata_json=output_dir / "alignment_run_metadata.json",
-    )
-    matrix = _matrix(("Sample_A", "Sample_B"))
-    AlignmentConfig()
-    profile = SignalProcessingProfile(window_points=21)
-
-    pipeline_outputs_module.write_outputs_atomic(
-        outputs,
-        matrix,
-        metadata={},
-        production_decisions=finalized_writer_decisions(matrix),
-        backfill_peak_fact_provenance=BackfillPeakFactProvenanceBatch(
-            (run_profile_row(profile),)
-        ),
-    )
-
-    assert outputs.run_metadata_json is not None
-    persisted = json.loads(outputs.run_metadata_json.read_text(encoding="utf-8"))
-    assert persisted["owner_backfill_peak_fact_provenance_row_count"] == "1"
-    assert outputs.owner_backfill_peak_fact_provenance_tsv is not None
-    with outputs.owner_backfill_peak_fact_provenance_tsv.open(
-        encoding="utf-8", newline=""
-    ) as stream:
-        reader = csv.DictReader(stream, delimiter="\t")
-        assert reader.fieldnames == ["row_kind", "schema_version", "profile_json"]
-        (row,) = reader
-    assert row["row_kind"] == "run_profile"
-    assert deserialize_signal_processing_profile(row["profile_json"]) == profile
-
-
-def test_writer_rejects_provenance_row_count_mismatch_before_final_writes(
-    tmp_path: Path,
-) -> None:
-    output_dir = tmp_path / "out"
-    outputs = pipeline_outputs_module.AlignmentRunOutputs(
-        owner_backfill_peak_fact_provenance_tsv=(
-            output_dir / "alignment_owner_backfill_peak_fact_provenance.tsv"
-        ),
-        run_metadata_json=output_dir / "alignment_run_metadata.json",
-    )
-    final_paths = (
-        outputs.owner_backfill_peak_fact_provenance_tsv,
-        outputs.run_metadata_json,
-    )
-    for path in final_paths:
-        assert path is not None
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(b"prior output")
-    matrix = _matrix(("Sample_A", "Sample_B"))
-    AlignmentConfig()
-
-    with pytest.raises(ValueError, match="does not match the typed provenance batch"):
-        pipeline_outputs_module.write_outputs_atomic(
-            outputs,
-            matrix,
-            metadata={"owner_backfill_peak_fact_provenance_row_count": "0"},
-            production_decisions=finalized_writer_decisions(matrix),
-        )
-
-    assert all(
-        path is not None and path.read_bytes() == b"prior output"
-        for path in final_paths
-    )
-    assert not tuple(output_dir.glob("*.tmp"))
-    assert not tuple(output_dir.glob("*.bak"))
-
-
-def test_provenance_outer_transaction_never_nests_or_leaks_temp_files(
+def test_outer_transaction_restores_prior_outputs_without_leaking_temp_files(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     output_dir = tmp_path / "out"
-    provenance_path = output_dir / "alignment_owner_backfill_peak_fact_provenance.tsv"
+    matrix_path = output_dir / "alignment_matrix.tsv"
     status_path = output_dir / "alignment_matrix_status.tsv"
     outputs = pipeline_outputs_module.AlignmentRunOutputs(
-        owner_backfill_peak_fact_provenance_tsv=provenance_path,
+        matrix_tsv=matrix_path,
         status_matrix_tsv=status_path,
     )
     output_dir.mkdir(parents=True)
-    provenance_path.write_bytes(b"prior provenance")
+    matrix_path.write_bytes(b"prior matrix")
     status_path.write_bytes(b"prior status")
-    original_write_bytes = Path.write_bytes
-    nested_temp_attempts: list[Path] = []
-
-    def fail_if_nested_temp(path: Path, payload: bytes) -> int:
-        if path.name.endswith(".tmp.tmp"):
-            nested_temp_attempts.append(path)
-            original_write_bytes(path, payload[:1])
-            raise RuntimeError("nested provenance temp write")
-        return original_write_bytes(path, payload)
 
     def fail_later_writer(*_args, **_kwargs):
         raise RuntimeError("injected status writer failure")
 
-    monkeypatch.setattr(Path, "write_bytes", fail_if_nested_temp)
     monkeypatch.setattr(
         pipeline_outputs_module,
         "write_alignment_status_matrix_tsv",
@@ -416,8 +314,7 @@ def test_provenance_outer_transaction_never_nests_or_leaks_temp_files(
             production_decisions=finalized_writer_decisions(matrix),
         )
 
-    assert nested_temp_attempts == []
-    assert provenance_path.read_bytes() == b"prior provenance"
+    assert matrix_path.read_bytes() == b"prior matrix"
     assert status_path.read_bytes() == b"prior status"
     leftovers = tuple(
         path

@@ -32,10 +32,7 @@ class ProductionRowDecision:
     feature_id: str
     include_in_primary_matrix: bool
     identity_decision: str
-    identity_confidence: str
-    primary_evidence: str
     identity_reason: str
-    quantifiable_detected_count: int
     quantifiable_backfill_count: int
     accepted_cell_count: int
     detected_count: int

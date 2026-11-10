@@ -790,7 +790,7 @@ def test_targeted_and_untargeted_read_one_sequence_owner(
     assert untargeted["Blank_1"]["sample_role"] == "blank"
 
 
-def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
+def test_each_issued_attempt_is_distinct_and_leaves_request_unchanged(
     tmp_path: Path,
 ) -> None:
     path = _raw(tmp_path / "sample_a.raw", b"source-a")
@@ -802,14 +802,9 @@ def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
         ),
     )
     first_attempt = issue_processing_attempt()
-    retry = issue_processing_attempt(retry_of=first_attempt)
+    second_attempt = issue_processing_attempt()
 
-    assert retry.processing_attempt_id != first_attempt.processing_attempt_id
-    assert retry.retry_of is first_attempt
-    assert {field.name for field in fields(first_attempt)} == {
-        "processing_attempt_id",
-        "retry_of",
-    }
+    assert second_attempt.processing_attempt_id != first_attempt.processing_attempt_id
 
     assert request.processing_algorithm_version == (
         TARGETED_PROCESSING_ALGORITHM_VERSION

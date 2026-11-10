@@ -57,24 +57,6 @@ class ProcessingIdentityNoRawFixture:
             raise AssertionError(f"fixture sample is not unique: {raw_stem}")
         return matches[0]
 
-    def retry(self) -> ProcessingIdentityNoRawFixture:
-        retry_attempt = issue_processing_attempt(retry_of=self.attempt)
-        retry_owners = compose_processing_owner_references(
-            request=self.request,
-            attempt=retry_attempt,
-            sample_snapshot=self.samples[0].snapshot,
-            sample_resolutions=self.samples,
-            target_snapshot=self.target.snapshot,
-        )
-        return ProcessingIdentityNoRawFixture(
-            request=self.request,
-            attempt=retry_attempt,
-            samples=self.samples,
-            target=self.target,
-            other_target=self.other_target,
-            owners=retry_owners,
-        )
-
 
 def build_processing_identity_no_raw_fixture(
     tmp_path: Path,
