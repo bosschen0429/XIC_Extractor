@@ -564,6 +564,7 @@ class CidNlSource:
                 row_ids=tuple(
                     sorted({item.identifier for item in expanded if item.kind == "row"})
                 ),
+                summary=self.summary,
             )
             selected_source = CidNlSource(self.path, metadata=metadata)
             restored = {

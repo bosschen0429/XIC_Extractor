@@ -26,6 +26,7 @@ from xic_extractor.alignment_explanation.review import (
     ORIGIN_FLAGS,
     ZERO_CELL,
     attention_reason,
+    cell_attention,
 )
 from xic_extractor.alignment_explanation.storage import (
     decode_json,
@@ -140,29 +141,30 @@ def _review_items(
         "WHERE m.final_group IS NOT NULL"
     ):
         members[group][samples[sample]].add(key)
-    # A cell's member risks, by their flags only; Backfill risks are decoded.
-    member_flags: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
-    for group, sample, flags in db.execute(
-        "SELECT final_group,sample,risk_flags FROM members "
-        "WHERE final_group IS NOT NULL AND risk_flags IS NOT NULL"
-    ):
-        member_flags[group, sample].append({"risk_flags": json.loads(flags)})
-    cells: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    # Cells needing attention through an accepted member risk; Backfill risks,
+    # stored with the cell, are decoded only where present.
+    flagged = set(
+        db.execute(
+            "SELECT final_group,sample FROM members WHERE final_group IS NOT NULL "
+            "AND risk_flags IS NOT NULL AND risk_flags!='[]'"
+        )
+    )
+    # group -> (sample key, cell flag) in sample order
+    cells: dict[int, list[tuple[str, int]]] = defaultdict(list)
+    origin_mask = sum(ORIGIN_FLAGS.values())
     for group, sample, variant, value, origin, observed, risks in db.execute(
         "SELECT group_id,sample,variant,value,support_origin,peaks!='[]',risks "
         "FROM cells ORDER BY group_id,sample"
     ):
-        backfill = decode_json(risks) or []
-        cells[group].append(
-            {
-                "sample_key": samples[sample],
-                "variant": variant,
-                "value": value,
-                "support_origin": origin,
-                "observed": bool(observed),
-                "membership_risks": [*member_flags.get((group, sample), ()), *backfill],
-            }
+        risky = (group, sample) in flagged or any(
+            risk.get("risk_flags") for risk in decode_json(risks) or ()
         )
+        flag = NULL_CELL if value is None else ZERO_CELL if value == 0 else 0
+        if cell_attention(variant, value, risky) is not None:
+            flag |= ATTENTION
+        if observed:
+            flag |= OBSERVED
+        cells[group].append((samples[sample], flag | ORIGIN_FLAGS.get(origin, 0)))
 
     definitions: list[
         tuple[
@@ -238,19 +240,8 @@ def _review_items(
             flags[sid] |= edge_attention.get(row_id, 0)
             if row_id in excluded:
                 flags[sid] |= EXCLUDED
-        for cell in cells.get(group_id, ()) if kind == "row" and group_id else ():
-            sid = cell["sample_key"]
-            flag = flags.setdefault(sid, initial)
-            value = cell["value"]
-            flag |= NULL_CELL if value is None else ZERO_CELL if value == 0 else 0
-            if attention_reason("cell_decisions", cell) is not None:
-                flag |= ATTENTION
-            if cell["observed"]:
-                flag |= OBSERVED
-            flag = (flag & ~sum(ORIGIN_FLAGS.values())) | ORIGIN_FLAGS.get(
-                cell["support_origin"], 0
-            )
-            flags[sid] = flag
+        for sid, cell_flag in cells.get(group_id, ()) if group_id is not None else ():
+            flags[sid] = (flags.get(sid, initial) & ~origin_mask) | cell_flag
         observed.update(sid for sid, keys in group_members.items() if keys)
         for sid in observed & flags.keys():
             flags[sid] |= OBSERVED

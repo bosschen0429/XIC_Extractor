@@ -605,32 +605,53 @@ class _Evidence:
                 add("exclusions", _key(*key), self.exclusion(row_id, reason[0]), (key,))
             if self.candidate_rows[row_id][8] is not None:
                 add("terminal_subjects", _key(*key), self.terminal(row_id), (key,))
-        group_rows = [
-            row
-            for row in self.db.execute("SELECT * FROM groups ORDER BY id")
-            if row[1] in row_ids or selected.intersection(json.loads(row[6]))
-        ]
+        group_rows = self._linked_rows("groups", selected, row_ids)
         for kind, rid, record, related in self.group_records(group_rows):
             add(kind, rid, record, related)
-        initial_rows = [
-            row
-            for row in self.db.execute("SELECT * FROM initial_groups ORDER BY id")
-            if selected.intersection(json.loads(row[4]))
-        ]
+        initial_rows = self._linked_rows("initial_groups", selected)
         for kind, rid, record, related in self.initial_group_records(initial_rows):
             add(kind, rid, record, related)
         if "initial_edges" in self.tables:
-            for row in self.db.execute("SELECT * FROM initial_edges ORDER BY id"):
-                if selected.intersection(json.loads(row[7])):
-                    add("initial_edges", *self.edge_record(row))
+            for row in self._linked_rows("initial_edges", selected):
+                add("initial_edges", *self.edge_record(row))
         if "curves" in self.tables:
-            for row in self.db.execute(
-                "SELECT payload_id,sample_id,kind,record_id,candidate_id,"
-                "physical_peak_key,candidates FROM curves ORDER BY payload_id"
+            for row in self._linked_rows(
+                "curves",
+                selected,
+                columns="payload_id,sample_id,kind,record_id,candidate_id,"
+                "physical_peak_key,candidates",
             ):
-                if selected.intersection(json.loads(row[6])):
-                    add("capture_evidence", *self.curve_record(row))
+                add("capture_evidence", *self.curve_record(row))
         return records, sorted(links)
+
+    def _linked_rows(
+        self,
+        table: str,
+        selected: set[int],
+        feature_ids: Sequence[str] = (),
+        *,
+        columns: str = "*",
+    ) -> list[tuple[Any, ...]]:
+        """Rows whose candidate list names a selected candidate (or a named row),
+        filtered in SQL so unrelated rows are never decoded."""
+        ids = sorted(selected)
+        found: dict[Any, tuple[Any, ...]] = {}
+        for chunk in _chunks(ids) if ids else ():
+            for row in self.db.execute(
+                f"SELECT {columns} FROM {table} t WHERE EXISTS (SELECT 1 FROM "
+                "json_each(t.candidates) j WHERE j.value IN "
+                f"({','.join('?' for _ in chunk)}))",
+                chunk,
+            ):
+                found[row[0]] = row
+        for chunk in _chunks(list(feature_ids)) if feature_ids else ():
+            for row in self.db.execute(
+                f"SELECT {columns} FROM {table} "
+                f"WHERE feature_id IN ({','.join('?' for _ in chunk)})",
+                chunk,
+            ):
+                found[row[0]] = row
+        return [found[key] for key in sorted(found)]
 
 
 def _chunks(values: Sequence[Any], size: int = 900) -> Iterator[Sequence[Any]]:
@@ -766,10 +787,14 @@ def read_explanation_selection(
     *,
     candidate_keys: Sequence[tuple[str, str]],
     row_ids: Sequence[str],
+    summary: Mapping[str, Any] | None = None,
 ) -> ExplanationMetadata:
-    """Restore detailed review records only for the selected witnesses and rows."""
+    """Restore detailed review records only for the selected witnesses and rows.
+
+    A caller that already admitted this report's summary passes it on.
+    """
     with open_readonly(path) as connection:
-        summary = read_completed_summary(connection)
+        summary = dict(summary) if summary else read_completed_summary(connection)
         evidence = _Evidence(connection, summary)
         candidates = {
             key: evidence.candidate(evidence.candidate_ids[key])

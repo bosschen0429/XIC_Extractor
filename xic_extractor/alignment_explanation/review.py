@@ -129,16 +129,23 @@ def validate_membership_risks(risks: object) -> None:
             raise ValueError("malformed membership risk fields")
 
 
+def cell_attention(variant: Any, value: Any, risk_flagged: bool) -> str | None:
+    """Why a recorded cell needs attention, from its variant, value and risks."""
+    if risk_flagged:
+        return "accepted_membership_risk"
+    if variant == "unresolved" and value is None:
+        return "unresolved"
+    return None
+
+
 def attention_reason(kind: str, fact: dict[str, Any]) -> str | None:
     """One recorded-fact predicate for selection and its displayed explanation."""
     if kind == "cell_decisions":
-        if any(risk.get("risk_flags") for risk in fact.get("membership_risks", [])):
-            return "accepted_membership_risk"
-        if (
-            fact.get("variant") == "unresolved"
-            and fact.get("value", fact.get("quantitative_value")) is None
-        ):
-            return "unresolved"
+        return cell_attention(
+            fact.get("variant"),
+            fact.get("value", fact.get("quantitative_value")),
+            any(risk.get("risk_flags") for risk in fact.get("membership_risks", [])),
+        )
     elif kind == "method_assessments" and fact.get("method_result") == "HOLD":
         return "HOLD"
     elif kind == "initial_edges":
