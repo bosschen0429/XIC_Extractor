@@ -1527,7 +1527,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         for decision in owner_row.decisions
     }
     assert set(owner_decisions) == set(sample_stems)
-    assert owner_row.counts.numeric_cells == 4
+    assert sum(d.value is not None for d in owner_row.decisions) == 4
     ms1_only = owner_decisions["MS1Only"]
     assert ms1_only.variant == "numeric" and ms1_only.value > 0
     assert ms1_only.evidence.evidence_states == ("ms1_only_backfill_observation",)

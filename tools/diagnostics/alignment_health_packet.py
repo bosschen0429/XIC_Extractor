@@ -260,11 +260,6 @@ def _issue_classes(row: Mapping[str, str]) -> tuple[str, ...]:
         issues.append("accepted_backfill_dependency")
     if _int_value(row.get("not_searched_count")) > 0:
         issues.append("not_searched_pressure")
-    flags = set(split_semicolon_labels(row.get("row_flags")))
-    if "family_consolidation_loser" in flags:
-        issues.append("consolidation_loser")
-    if "ambiguous_ms1_owner_pressure" in flags:
-        issues.append("owner_pressure_flag")
     return tuple(dict.fromkeys(issues))
 
 
@@ -273,10 +268,6 @@ def _severity_score(row: Mapping[str, str], issues: Sequence[str]) -> int:
     score += _int_value(row.get("unresolved_count")) * 4
     score += _int_value(row.get("accepted_backfill_count")) * 3
     score += _int_value(row.get("not_searched_count"))
-    if "consolidation_loser" in issues:
-        score += 8
-    if "owner_pressure_flag" in issues:
-        score += 3
     return score
 
 
@@ -284,8 +275,6 @@ def _recommended_action(issues: Sequence[str]) -> str:
     issue_set = set(issues)
     if "owner_ambiguity" in issue_set:
         return "inspect_owner_assignment"
-    if "consolidation_loser" in issue_set:
-        return "inspect_primary_consolidation"
     if "accepted_backfill_dependency" in issue_set:
         return "inspect_backfill_dependency"
     if "not_searched_pressure" in issue_set:

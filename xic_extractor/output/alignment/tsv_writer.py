@@ -81,12 +81,9 @@ ALIGNMENT_CELLS_COLUMNS = (
     "height",
     "peak_start_rt",
     "peak_end_rt",
-    "rt_delta_sec",
-    "trace_quality",
     "noise_sigma",
     "signal_to_noise",
     "low_signal_to_noise",
-    "scan_support_score",
     "source_candidate_id",
     "neutral_loss_tag",
     "family_center_mz",
@@ -249,8 +246,6 @@ def _cell_fields(
         "peak_end_rt": format_value(
             integration.rt_right_min if integration is not None else None
         ),
-        "rt_delta_sec": "",
-        "trace_quality": "finalized_owner_decision",
         "noise_sigma": format_value(quality.noise_sigma) if quality is not None else "",
         "signal_to_noise": format_value(quality.signal_to_noise)
         if quality is not None
@@ -258,7 +253,6 @@ def _cell_fields(
         "low_signal_to_noise": quality.low_signal_to_noise
         if quality is not None and quality.low_signal_to_noise is not None
         else "",
-        "scan_support_score": "",
         "source_candidate_id": candidate_ids.get(sample_stem, ""),
         "neutral_loss_tag": cluster.neutral_loss_tag,
         "family_center_mz": format_value(cluster.family_center_mz),

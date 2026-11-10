@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import FrozenInstanceError
 
 import pytest
@@ -85,10 +84,6 @@ def test_completed_values_project_to_exact_group_sample_positions(
                 numeric_by_sample[subject.canonical_sample.metadata.raw_stem] = (
                     decision.value
                 )
-        counts = Counter(d.variant for d in row.decisions)
-        assert {item.variant: item.count for item in row.counts.by_variant} == {
-            item.variant: counts[item.variant] for item in row.counts.by_variant
-        }
     if group_mode != "single":
         assert numeric_by_sample["sample-c"] == pytest.approx(
             2 * numeric_by_sample["sample-b"]
@@ -111,7 +106,9 @@ def test_disposition_projects_row_route_and_complete_counts(
     assert row.route.destination == (
         "matrix" if disposition == "established" else "archive"
     )
-    assert row.counts.numeric_cells == (2 if disposition == "established" else 1)
+    assert sum(d.value is not None for d in row.decisions) == (
+        2 if disposition == "established" else 1
+    )
     reordered = project_untarget_matrix(
         alignment, dict(reversed(tuple(answers.items())))
     )

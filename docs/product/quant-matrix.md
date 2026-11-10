@@ -103,8 +103,6 @@ risk flags do not independently authorize a value or row.
 | Surface | Role |
 | --- | --- |
 | `alignment_matrix.tsv` / workbook `Matrix` | Primary product-facing numeric matrix |
-| `cell_provenance.tsv` | Cell-level provenance for accepted values |
-| `row_summary.tsv` | Matrix row identity and summary sidecar |
 | `ProductionCellDecision` | Published value/no-write decision retaining the selected integration and workflow-specific subject |
 
 Alignment additionally exposes `alignment_review.tsv` for group review and
