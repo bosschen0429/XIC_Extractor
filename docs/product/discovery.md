@@ -89,11 +89,10 @@ without reading RAW again.
   attached against it.
 - **Valley.** An event on a valley shared by two peaks belongs to the earlier
   peak.
-- **Evidence.** `event_scan_ids`, tag evidence, the event RT range and
-  `ms2_product_max_intensity` cover every event located on the peak, attached or
-  not, because Alignment re-judges them from the event table. `attached_event_count` and
-  `status` count attached events only. The `best_event_*` columns are the
-  representative event's values, not the peak's mass.
+- **Evidence.** The event table lists every event located on the peak,
+  attached or not, because Alignment re-judges them from it; the peak row keeps
+  only `best_ms2_scan_id`, which names the representative event there, not the
+  peak's mass. `attached_event_count` and `status` count attached events only.
 - **Mass.** `peak_mz` is the peak's ion mass: the [accurate-mass
   reading](#accurate-mass-reading) for an inferred precursor, else `xic_mz`.
   Discovery writes it once; Alignment and Delta Mass read it.
@@ -138,11 +137,11 @@ measurement; it does not quantify each NL request independently.
 
 Each raw valley-separated peak owns one measurement. NL events only locate
 that owner and contribute their independent method evidence. Multiple events
-on that peak produce one retained physical record and peak row with all scan
-receipts, not competing areas. Completed readers decode the stored result
+on that peak produce one retained physical record and peak row, not competing
+areas; the event table keeps each event. Completed readers decode the stored result
 without preparing or evaluating the signal again. The canonical measurement
-query is the raw apex, while `best_event_rt` remains the representative NL
-event's RT.
+query is the raw apex, while the representative NL event keeps its own MS2 RT
+in the event table.
 
 Discovery uses the shared physical peak owner. An ordinary candidate needs two
 adjacent acquired points supporting its half-prominence top, and relief above

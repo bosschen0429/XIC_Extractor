@@ -1,6 +1,5 @@
 from dataclasses import replace
 
-from tests.discovery_csv_fixtures import _peak
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
@@ -9,7 +8,6 @@ from xic_extractor.discovery.evidence_config import (
     DiscoveryEvidenceWeights,
 )
 from xic_extractor.discovery.evidence_score import score_discovery_evidence
-from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import DiscoverySettings
 
 
@@ -47,13 +45,7 @@ def test_default_evidence_profile_pins_thresholds() -> None:
 
 
 def test_score_discovery_evidence_preserves_default_baseline() -> None:
-    evidence = score_discovery_evidence(_candidate(), settings=_settings())
-
-    assert evidence.score == 71
-    assert evidence.tier == "B"
-    assert evidence.ms2_support == "strong"
-    assert evidence.ms1_support == "moderate"
-    assert evidence.rt_alignment == "aligned"
+    assert score_discovery_evidence(**_inputs(), settings=_settings()) == 71
 
 
 def test_score_discovery_evidence_uses_custom_weight_from_settings() -> None:
@@ -64,9 +56,7 @@ def test_score_discovery_evidence_uses_custom_weight_from_settings() -> None:
         )
     )
 
-    evidence = score_discovery_evidence(_candidate(), settings=settings)
-
-    assert evidence.score == 76
+    assert score_discovery_evidence(**_inputs(), settings=settings) == 76
 
 
 def test_score_discovery_evidence_uses_custom_thresholds_from_settings() -> None:
@@ -77,10 +67,7 @@ def test_score_discovery_evidence_uses_custom_thresholds_from_settings() -> None
         )
     )
 
-    evidence = score_discovery_evidence(_candidate(), settings=settings)
-
-    assert evidence.score == 66
-    assert evidence.rt_alignment == "near"
+    assert score_discovery_evidence(**_inputs(), settings=settings) == 66
 
 
 def test_score_discovery_evidence_adds_high_numeric_scan_support() -> None:
@@ -90,16 +77,12 @@ def test_score_discovery_evidence_adds_high_numeric_scan_support() -> None:
             scan_support_high=12,
         )
     )
-    candidate = replace(
-        _candidate(),
-        ms1_trace_quality="POOR",
-        ms1_scan_support_score=0.9,
+
+    score = score_discovery_evidence(
+        **_inputs(ms1_scan_support_score=0.9), settings=settings
     )
 
-    evidence = score_discovery_evidence(candidate, settings=settings)
-
-    assert evidence.score == 78
-    assert evidence.ms1_support == "moderate"
+    assert score == 78
 
 
 def test_score_discovery_evidence_penalizes_low_numeric_scan_support() -> None:
@@ -109,40 +92,28 @@ def test_score_discovery_evidence_penalizes_low_numeric_scan_support() -> None:
             scan_support_low=-12,
         )
     )
-    candidate = replace(
-        _candidate(),
-        ms1_trace_quality="GOOD",
-        ms1_scan_support_score=0.1,
+
+    score = score_discovery_evidence(
+        **_inputs(ms1_scan_support_score=0.1), settings=settings
     )
 
-    evidence = score_discovery_evidence(candidate, settings=settings)
-
-    assert evidence.score == 54
-    assert evidence.ms1_support == "weak"
+    assert score == 54
 
 
 def test_score_discovery_evidence_keeps_mid_scan_support_neutral() -> None:
-    candidate = replace(
-        _candidate(),
-        ms1_trace_quality="GOOD",
-        ms1_scan_support_score=0.5,
+    score = score_discovery_evidence(
+        **_inputs(ms1_scan_support_score=0.5), settings=_settings()
     )
 
-    evidence = score_discovery_evidence(candidate, settings=_settings())
-
-    assert evidence.score == 66
+    assert score == 66
 
 
 def test_low_numeric_scan_support_lowers_the_score() -> None:
-    candidate = replace(
-        _candidate(),
-        ms1_trace_quality="GOOD",
-        ms1_scan_support_score=0.1,
+    score = score_discovery_evidence(
+        **_inputs(ms1_scan_support_score=0.1), settings=_settings()
     )
 
-    evidence = score_discovery_evidence(candidate, settings=_settings())
-
-    assert evidence.score == 56
+    assert score == 56
 
 
 def _settings(
@@ -160,12 +131,11 @@ def _settings(
     )
 
 
-def _candidate() -> DiscoveryPeak:
-    return _peak(
-        attached_event_count=2,
-        ms1_apex_rt=7.84,
-        ms1_area=500_000.0,
-        ms2_product_max_intensity=50_000.0,
-        ms1_event_delta_min=0.01,
-        ms1_scan_support_score=0.8,
-    )
+def _inputs(*, ms1_scan_support_score: float = 0.8) -> dict[str, float]:
+    return {
+        "attached_event_count": 2,
+        "ms1_area": 500_000.0,
+        "ms2_product_max_intensity": 50_000.0,
+        "ms1_event_delta_min": 0.01,
+        "ms1_scan_support_score": ms1_scan_support_score,
+    }

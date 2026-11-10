@@ -41,6 +41,7 @@ from tests.untargeted_partition_fixtures import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
+from xic_extractor.discovery.models import representative_event_rt
 from xic_extractor.execution.process_memory import (
     ProcessMemorySample,
     ProcessTreeMemorySampler,
@@ -609,11 +610,8 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                 (candidate,) = discovery.peaks
                 # The physical raw apex must not replace the retained NL time.
                 observed_nl_rts = tuple(seed.rt for seed in seeds)
-                assert candidate.best_event_rt in observed_nl_rts
+                assert representative_event_rt(candidate) in observed_nl_rts
                 assert record.work_item.query_rt_min not in observed_nl_rts
-                assert candidate.ms1_event_delta_min == pytest.approx(
-                    candidate.ms1_apex_rt - candidate.best_event_rt
-                )
             rt_min = min(
                 record.work_item.xic_rt_min for record in discovery.physical_evaluations
             )
@@ -873,9 +871,10 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                 (
                     sample_stem,
                     candidate.peak_id,
-                    candidate.event_scan_ids,
-                    candidate.event_rt_min,
-                    candidate.event_rt_max,
+                    tuple(
+                        (event.scan_number, event.rt)
+                        for event in candidate.located_events
+                    ),
                 )
                 for sample_stem, sample_candidates in candidates.items()
                 for candidate in sample_candidates

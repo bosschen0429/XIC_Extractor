@@ -233,10 +233,6 @@ def build_partition_context(
             or work.acquisition_source_id
             != sources_by_stem[peak.sample_stem].acquisition_source_id
             or work.best_ms2_scan_id != peak.best_ms2_scan_id
-            or work.precursor_mz != peak.best_event_precursor_mz
-            or work.product_mz != peak.best_event_product_mz
-            or work.xic_rt_min != peak.ms1_search_rt_min
-            or work.xic_rt_max != peak.ms1_search_rt_max
             or record.evaluation.prepared.profile != signal_processing_profile
         ):
             raise IdentityContractError(
@@ -404,9 +400,7 @@ def _peak_map(
         ids = tuple(item.peak_id for item in ordered)
         if len(ids) != len(set(ids)):
             raise IdentityContractError("peak universe IDs must be unique")
-        if any(
-            item.sample_stem != stem or item.raw_file.stem != stem for item in ordered
-        ):
+        if any(item.sample_stem != stem for item in ordered):
             raise IdentityContractError(
                 f"peak universe for {stem!r} contains a different sample"
             )

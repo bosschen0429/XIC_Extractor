@@ -9,7 +9,6 @@ from xic_extractor.discovery.models import (
     DiscoveryPeak,
     EventAttachment,
     discovery_event_output_sort_key,
-    discovery_peak_output_sort_key,
 )
 from xic_extractor.tabular_io import (
     escape_excel_formula,
@@ -19,13 +18,10 @@ from xic_extractor.tabular_io import (
 
 
 def write_discovery_peaks_csv(path: Path, peaks: Iterable[DiscoveryPeak]) -> Path:
-    """One row per measured peak, review fields first."""
+    """One row per measured peak, in the given order, judgment fields first."""
     return _write_csv(
         path,
-        [
-            _row(peak, DISCOVERY_PEAK_COLUMNS)
-            for peak in sorted(peaks, key=discovery_peak_output_sort_key)
-        ],
+        [_row(peak, DISCOVERY_PEAK_COLUMNS) for peak in peaks],
         DISCOVERY_PEAK_COLUMNS,
     )
 
@@ -64,7 +60,7 @@ def format_discovery_csv_value(column: str, value: object) -> str:
         return ""
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
-    if column in {"event_scan_ids", "matched_tag_names"}:
+    if column == "matched_tag_names":
         if isinstance(value, str):
             return value
         if isinstance(value, tuple):

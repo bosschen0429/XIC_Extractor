@@ -99,7 +99,7 @@ def _plan(
                 tuple(
                     c
                     for c in sample_candidates
-                    if c.best_event_precursor_mz == precursor
+                    if physical_records[c.peak_id].work_item.precursor_mz == precursor
                 )
                 if path in paths[:2]
                 else ()

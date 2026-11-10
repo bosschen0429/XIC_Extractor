@@ -139,3 +139,24 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
     matrix = tmp_path / "matrix.tsv"
     write_alignment_tsvs({"matrix": matrix}, completed.application_result)
     return completed, candidates, matrix, config
+
+
+def explanation_discovery_facts(completed) -> dict[str, object]:
+    """The Discovery facts a completed Alignment binds for its explanation."""
+    inputs = completed.publication_inputs
+    return {
+        "precursor_mz_by_candidate": inputs.precursor_mz_by_candidate,
+        "neutral_loss_by_tag": inputs.neutral_loss_by_tag,
+    }
+
+
+def plan_discovery_facts(plan) -> dict[str, object]:
+    """The same Discovery facts, from an eager plan's retained physical records."""
+    context = plan.context
+    return {
+        "precursor_mz_by_candidate": {
+            cid: record.work_item.precursor_mz
+            for cid, record in context.physical_records_by_peak.items()
+        },
+        "neutral_loss_by_tag": context.settings.neutral_loss_by_tag,
+    }

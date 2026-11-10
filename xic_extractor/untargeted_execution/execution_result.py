@@ -65,6 +65,8 @@ class UntargetedPublicationInputs:
 
     peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]]
     ms1_apex_mz_by_candidate: Mapping[str, float]
+    precursor_mz_by_candidate: Mapping[str, float]
+    neutral_loss_by_tag: Mapping[str, float]
     alignment_config: AlignmentConfig
     known_istd_reference_provenance: Mapping[str, object] | None
 
@@ -141,6 +143,8 @@ class CompletedUntargetBatchWorkflowResult:
         self,
         *,
         peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
+        precursor_mz_by_candidate: Mapping[str, float],
+        neutral_loss_by_tag: Mapping[str, float],
         alignment_config: AlignmentConfig,
         known_istd_reference: KnownIstdReference | None = None,
     ) -> CompletedUntargetBatchWorkflowResult:
@@ -165,6 +169,10 @@ class CompletedUntargetBatchWorkflowResult:
             _publication_inputs=UntargetedPublicationInputs(
                 peaks_by_sample=candidates,
                 ms1_apex_mz_by_candidate=MappingProxyType(apex_mz),
+                precursor_mz_by_candidate=MappingProxyType(
+                    dict(precursor_mz_by_candidate)
+                ),
+                neutral_loss_by_tag=MappingProxyType(dict(neutral_loss_by_tag)),
                 alignment_config=alignment_config,
                 known_istd_reference_provenance=(
                     None

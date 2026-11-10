@@ -9,9 +9,7 @@ import pytest
 
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
-    TraceCoordinateKind,
     acquire_trace_batch,
-    mint_trace_acquisition_capability,
 )
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.signal_processing_profile import (
@@ -23,6 +21,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
     deserialize_discovery_physical_fact_sidecar,
     serialize_discovery_physical_fact_sidecar,
 )
+from xic_extractor.discovery.physical_fact_record import discovery_trace_capability
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -134,11 +133,7 @@ def _acquired_trace(acquisition_input, *, terminal: str, ordinal: int) -> Acquir
         def scan_window_for_request(self, _request):
             return (1000 + ordinal, 1010 + ordinal)
 
-    capability = mint_trace_acquisition_capability(
-        acquisition_input.acquisition_source,
-        adapter_namespace="tests.discovery_physical_fact_persistence",
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
-    )
+    capability = discovery_trace_capability(acquisition_input.acquisition_source)
     request = XICRequest(
         mz=500.0 + ordinal,
         rt_min=request_rt[0],
@@ -328,8 +323,6 @@ def test_discovery_sidecar_rejects_exact_duplicate_physical_questions(
         "best_ms2_scan_id",
         "precursor_mz",
         "product_mz",
-        "peak_id",
-        "selection_subject_id",
     ):
         value["work_manifest"][1][field] = value["work_manifest"][0][field]
 

@@ -406,14 +406,11 @@ def _ordered_existing_paths(
 def _read_batch_counts(index_path: Path) -> tuple[dict[str, int] | None, int]:
     if not index_path.exists():
         return None, 0
-    totals = {"HIGH": 0, "MEDIUM": 0, "LOW": 0, "total": 0, "admitted": 0}
+    totals = {"total": 0, "admitted": 0}
     sample_count = 0
     with index_path.open(newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
             sample_count += 1
-            totals["HIGH"] += _int_csv_value(row, "high_count")
-            totals["MEDIUM"] += _int_csv_value(row, "medium_count")
-            totals["LOW"] += _int_csv_value(row, "low_count")
             totals["total"] += _int_csv_value(row, "peak_count")
             totals["admitted"] += _int_csv_value(row, "admitted_peak_count")
     return totals, sample_count

@@ -1,36 +1,70 @@
-from xic_extractor.discovery.models import ReviewPriority
+"""Row order of one sample's Discovery peaks."""
+
+from dataclasses import replace
+
+from xic_extractor.discovery.models import representative_event_rt
+from xic_extractor.discovery.physical_fact_record import DiscoveryPeakPhysicalBinding
 from xic_extractor.discovery.settings import DiscoverySettings
 
 _RT_DELTA_EPSILON_MIN = 1e-9
 
 
-def assign_review_priority(
+def order_discovery_peak_bindings(
+    bindings: tuple[DiscoveryPeakPhysicalBinding, ...],
     *,
-    attached_event_count: int,
-    ms1_event_delta_min: float,
     settings: DiscoverySettings,
-) -> ReviewPriority:
-    if attached_event_count >= 2 and _within_padding(
-        ms1_event_delta_min, settings=settings
+) -> tuple[DiscoveryPeakPhysicalBinding, ...]:
+    """Order peaks for the peak table and physical sidecar, numbering each one.
+
+    Peaks a reviewer should see first lead: two or more attached events at the
+    event RT on an unshouldered peak, then the rest, then blank background;
+    stronger evidence first within each.
+    """
+
+    ordered = sorted(
+        bindings, key=lambda binding: _output_sort_key(binding, settings=settings)
+    )
+    return tuple(
+        replace(binding, final_ordinal=final_ordinal)
+        for final_ordinal, binding in enumerate(ordered)
+    )
+
+
+def _output_sort_key(
+    binding: DiscoveryPeakPhysicalBinding, *, settings: DiscoverySettings
+) -> tuple[object, ...]:
+    peak = binding.peak
+    best_event_rt = representative_event_rt(peak)
+    return (
+        _review_rank(binding, best_event_rt=best_event_rt, settings=settings),
+        -peak.evidence_score,
+        -peak.attached_event_count,
+        -max(event.product_intensity for event in peak.located_events),
+        -peak.ms1_area,
+        best_event_rt,
+        peak.peak_id,
+    )
+
+
+def _review_rank(
+    binding: DiscoveryPeakPhysicalBinding,
+    *,
+    best_event_rt: float,
+    settings: DiscoverySettings,
+) -> int:
+    peak = binding.peak
+    if peak.status == "blank":
+        return 2
+    evaluation = binding.physical_evaluation
+    shouldered = (
+        evaluation.state not in {"unavailable", "failed"}
+        and evaluation.requires_overlap_review
+    )
+    if (
+        peak.attached_event_count >= 2
+        and abs(peak.ms1_apex_rt - best_event_rt)
+        <= settings.ms1_search_padding_min + _RT_DELTA_EPSILON_MIN
+        and not shouldered
     ):
-        return "HIGH"
-    return "MEDIUM"
-
-
-def build_peak_reason(
-    *,
-    attached_event_count: int,
-    ms1_event_delta_min: float,
-    settings: DiscoverySettings,
-) -> str:
-    if attached_event_count < 1:
-        return "MS1 peak found; no NL event attaches"
-    if attached_event_count >= 2:
-        if _within_padding(ms1_event_delta_min, settings=settings):
-            return "strong MS2 NL event set; MS1 peak found near event RT"
-        return "MS1 peak offset from event RT"
-    return "single MS2 NL event; MS1 peak found"
-
-
-def _within_padding(delta_min: float, *, settings: DiscoverySettings) -> bool:
-    return abs(delta_min) <= settings.ms1_search_padding_min + _RT_DELTA_EPSILON_MIN
+        return 0
+    return 1

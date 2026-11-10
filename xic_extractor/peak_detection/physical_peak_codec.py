@@ -161,8 +161,7 @@ def rehydrate_physical_peak_evaluation(
         not _same_trace_values(actual.prepared.rt, expected.prepared.rt)
         or not _same_trace_values(actual.prepared.raw, expected.prepared.raw)
         or actual.prepared.profile != expected.prepared.profile
-        or _physical_evaluation_payload(actual)
-        != _physical_evaluation_payload(expected)
+        or physical_evaluation_payload(actual) != physical_evaluation_payload(expected)
     ):
         raise ValueError(
             "persisted physical evaluation does not match live owner result"
@@ -252,7 +251,7 @@ def deserialize_physical_peak_evaluation(
             "schema_version": _PERSISTED_PHYSICAL_EVALUATION_SCHEMA,
             "profile": profile_content,
             "trace": trace,
-            "evaluation": _physical_evaluation_payload(evaluation),
+            "evaluation": physical_evaluation_payload(evaluation),
         }
     )
     if canonical != raw_payload:
@@ -273,11 +272,11 @@ def _persisted_physical_payload(
             "rt": [_physical_float_text(item) for item in rt],
             "raw": [_physical_float_text(item) for item in raw],
         },
-        "evaluation": _physical_evaluation_payload(evaluation),
+        "evaluation": physical_evaluation_payload(evaluation),
     }
 
 
-def _physical_evaluation_payload(
+def physical_evaluation_payload(
     evaluation: PhysicalPeakEvaluation,
 ) -> dict[str, object]:
     prepared = evaluation.prepared

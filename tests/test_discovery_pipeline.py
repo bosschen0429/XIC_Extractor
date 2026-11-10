@@ -1,5 +1,6 @@
 import concurrent.futures
 import csv
+import json
 import math
 import multiprocessing
 import pickle
@@ -25,6 +26,7 @@ from xic_extractor.acquisition_contract import (
     _mint_raw_acquisition_session_receipt,
 )
 from xic_extractor.discovery import pipeline as _pipeline
+from xic_extractor.discovery.batch_contract import DISCOVERY_BATCH_INDEX_COLUMNS
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
     read_owner_bound_discovery_peaks_csv,
@@ -33,12 +35,12 @@ from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
     DiscoveryEvidenceProfile,
 )
+from xic_extractor.discovery.evidence_score import score_discovery_evidence
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
 )
 from xic_extractor.discovery.ms1_capture import _DiscoveryMs1Measurements
 from xic_extractor.discovery.output_publication import (
-    _BATCH_INDEX_COLUMNS,
     write_batch_index,
 )
 from xic_extractor.discovery.pipeline import (
@@ -147,16 +149,26 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
         (candidate,) = read_discovery_peaks_csv(output_dir / "discovery_peaks.csv")
         assert candidate.sample_stem == sample
         assert candidate.matched_tag_names == tuple(name for name, _ in tags)
-        assert candidate.tag_combine_mode == combine_mode
-        assert candidate.tag_intersection_status == (
-            "complete" if selection == "intersection" else "not_required"
-        )
-        assert candidate.configured_neutral_loss_da == tags[0][1]
-        assert candidate.best_event_product_mz == pytest.approx(500.0 - tags[0][1])
-        assert candidate.event_scan_ids == (100, 101)
+        assert candidate.neutral_loss_tag == tags[0][0]
+        events = _read_csv(output_dir / "discovery_events.csv")
+        (best,) = [
+            row
+            for row in events
+            if row["ms2_scan_number"] == str(candidate.best_ms2_scan_id)
+            and row["neutral_loss_tag"] == candidate.neutral_loss_tag
+        ]
+        assert float(best["product_mz"]) == pytest.approx(500.0 - tags[0][1])
+        assert {
+            row["ms2_scan_number"]
+            for row in events
+            if row["peak_id"] == candidate.peak_id
+        } == {"100", "101"}
         assert candidate.ms1_apex_rt == pytest.approx(apex)
-        assert candidate.ms1_search_rt_min == pytest.approx(apex - 0.7)
-        assert candidate.ms1_search_rt_max == pytest.approx(apex + 0.71)
+        (work,) = json.loads(
+            (output_dir / "discovery_physical_facts.json").read_text(encoding="utf-8")
+        )["work_manifest"]
+        assert float.fromhex(work["xic_rt_min"]) == pytest.approx(apex - 0.7)
+        assert float.fromhex(work["xic_rt_max"]) == pytest.approx(apex + 0.71)
         assert candidate.ms1_area == pytest.approx(
             height
             * 0.1
@@ -286,11 +298,8 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
     rows = _read_csv(outputs.peaks_csv)
     assert len(rows) == 1
     assert rows[0]["best_ms2_scan_id"] == "202"
-    assert rows[0]["event_scan_ids"] == "101;202"
     assert rows[0]["attached_event_count"] == "2"
     assert rows[0]["status"] == "blank"
-    assert rows[0]["status"] == "blank"
-    assert "FC 2.04x < 3.0x" in rows[0]["reason"]
     event_rows = _read_csv(outputs.events_csv)
     assert [row["ms2_scan_number"] for row in event_rows] == ["101", "202"]
     assert {row["peak_id"] for row in event_rows} == {rows[0]["peak_id"]}
@@ -327,15 +336,14 @@ def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
     assert len(rows) == 2
     assert len({row["peak_id"] for row in rows}) == 2
     assert {row["best_ms2_scan_id"] for row in rows} == {"19561"}
-    rows_by_product = {row["best_event_product_mz"]: row for row in rows}
+    product_by_peak = {
+        row["peak_id"]: row["product_mz"] for row in _read_csv(outputs.events_csv)
+    }
+    rows_by_product = {product_by_peak[row["peak_id"]]: row for row in rows}
     inferred = rows_by_product["184.113235"]
     direct = rows_by_product["185.115845"]
     assert inferred["precursor_mz_basis"] == "product_plus_neutral_loss"
-    assert inferred["neutral_loss_error_basis"] == (
-        "configured_loss_inferred_precursor"
-    )
     assert direct["precursor_mz_basis"] == "scan_precursor"
-    assert direct["neutral_loss_error_basis"] == "measured_scan_precursor_product"
 
 
 @pytest.mark.parametrize("reverse_products", [False, True])
@@ -380,8 +388,11 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
 
     rows = _read_csv(outputs.peaks_csv)
     assert len(rows) == 2
+    precursor_by_peak = {
+        row["peak_id"]: row["precursor_mz"] for row in _read_csv(outputs.events_csv)
+    }
     areas = {
-        round(float(row["best_event_precursor_mz"]), 4): float(row["ms1_area"])
+        round(float(precursor_by_peak[row["peak_id"]]), 4): float(row["ms1_area"])
         for row in rows
     }
     assert set(areas) == set(amplitudes)
@@ -463,8 +474,6 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     }
     assert "discovery_receipt_id" not in index_rows[0]
     assert "acquisition_source_id" not in index_rows[0]
-    assert [row["medium_count"] for row in index_rows] == ["0", "1"]
-    assert [row["low_count"] for row in index_rows] == ["1", "0"]
     assert [row["peak_csv"] for row in index_rows] == [
         "TumorBC2312_DNA/discovery_peaks.csv",
         "NormalBC2257_DNA/discovery_peaks.csv",
@@ -482,9 +491,7 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         tmp_path / "out" / "NormalBC2257_DNA" / "discovery_peaks.csv"
     )
     assert first_rows[0]["status"] == "blank"
-    assert "FC 2.04x < 3.0x" in first_rows[0]["reason"]
     assert second_rows[0]["status"] == "admitted"
-    assert "high abundance tissue signal (3.1x)" in second_rows[0]["reason"]
     assert [row["peak_id"] for row in first_review_rows] == [first_rows[0]["peak_id"]]
     assert [row["sample_stem"] for row in second_rows] == ["NormalBC2257_DNA"]
     assert not (tmp_path / "out" / "discovery_peaks.csv").exists()
@@ -1251,7 +1258,7 @@ def test_batch_pipeline_escapes_excel_formula_strings_in_index(
 def test_batch_index_writer_preserves_csv_and_timing_contract(tmp_path: Path) -> None:
     timing = TimingRecorder("discovery", timer=iter([1.0, 1.25]).__next__)
     output_path = tmp_path / "nested" / "discovery_batch_index.csv"
-    row = dict.fromkeys(_BATCH_INDEX_COLUMNS, "")
+    row = dict.fromkeys(DISCOVERY_BATCH_INDEX_COLUMNS, "")
     row.update(
         {
             "sample_stem": "Sample_A",
@@ -1259,9 +1266,6 @@ def test_batch_index_writer_preserves_csv_and_timing_contract(tmp_path: Path) ->
             "peak_csv": "Sample_A/discovery_peaks.csv",
             "event_csv": "Sample_A/discovery_events.csv",
             "peak_count": "2",
-            "high_count": "1",
-            "medium_count": "1",
-            "low_count": "0",
         }
     )
 
@@ -1273,7 +1277,7 @@ def test_batch_index_writer_preserves_csv_and_timing_contract(tmp_path: Path) ->
     assert b"\r\n" in raw
     with output_path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
-        assert reader.fieldnames == list(_BATCH_INDEX_COLUMNS)
+        assert reader.fieldnames == list(DISCOVERY_BATCH_INDEX_COLUMNS)
         assert list(reader) == [row]
     assert [(record.stage, record.metrics) for record in timing.records] == [
         (
@@ -1284,7 +1288,7 @@ def test_batch_index_writer_preserves_csv_and_timing_contract(tmp_path: Path) ->
 
 
 def test_batch_index_writer_rejects_unexpected_columns(tmp_path: Path) -> None:
-    row = dict.fromkeys(_BATCH_INDEX_COLUMNS, "")
+    row = dict.fromkeys(DISCOVERY_BATCH_INDEX_COLUMNS, "")
     row["unexpected"] = "value"
 
     with pytest.raises(ValueError, match="dict contains fields not in fieldnames"):
@@ -1364,7 +1368,7 @@ def test_pipeline_threads_evidence_profile_into_scoring(
     assert rows[0]["evidence_score"] == "58"
 
 
-def test_pipeline_populates_ms1_scan_support_score_from_profile_target(
+def test_pipeline_scores_ms1_scan_support_against_the_profile_target(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1397,7 +1401,14 @@ def test_pipeline_populates_ms1_scan_support_score_from_profile_target(
     )
     count = np.count_nonzero((raw._rt >= start) & (raw._rt <= end))
     assert 0 < count < 150
-    assert float(rows[0]["ms1_scan_support_score"]) == pytest.approx(count / 150)
+    assert int(rows[0]["evidence_score"]) == score_discovery_evidence(
+        attached_event_count=int(rows[0]["attached_event_count"]),
+        ms1_event_delta_min=float(rows[0]["ms1_apex_rt"]) - 7.80,
+        ms2_product_max_intensity=3000.0,
+        ms1_area=float(rows[0]["ms1_area"]),
+        ms1_scan_support_score=count / 150,
+        settings=settings,
+    )
 
 
 def test_pipeline_records_an_event_without_ms1_signal_without_a_peak(
@@ -1448,7 +1459,6 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
         "discover.ms2_events",
         "discover.ion_grouping",
         "discover.ms1_capture",
-        "discover.evidence_score",
         "discover.blank_qualification",
         "discover.write_peaks_csv",
         "discover.write_events_csv",
@@ -1461,7 +1471,6 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     assert records_by_stage["discover.ion_grouping"].metrics["ion_count"] == 1
     assert records_by_stage["discover.ms1_capture"].metrics["peak_count"] == 1
     assert records_by_stage["discover.ms1_capture"].metrics["event_count"] == 1
-    assert records_by_stage["discover.evidence_score"].metrics["peak_count"] == 1
     assert (
         records_by_stage["discover.blank_qualification"].metrics[
             "excluded_background_count"

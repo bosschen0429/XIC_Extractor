@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
+from tests.discovery_csv_fixtures import located_scan_ids
 from tests.discovery_ms1_capture_fixtures import (
     _BoundedRaw,
     _FakeRaw,
@@ -251,11 +252,11 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
         assert sorted(c.ms1_apex_rt for c in measured) == pytest.approx([5.0, 5.15])
         # The analytic second Gaussian remains one raw basin past its 10%
         # quantitative return; its tail event is not an orphan component.
-        assert {c.event_scan_ids for c in measured} == {(10,), (11, 12)}
+        assert {located_scan_ids(c) for c in measured} == {(10,), (11, 12)}
         assert result.measurements.initial_request_count == 1
         snapshot = sorted(
             (
-                c.event_scan_ids,
+                located_scan_ids(c),
                 c.ms1_apex_rt,
                 c.ms1_area,
                 c.ms1_peak_rt_start,

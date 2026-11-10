@@ -3,6 +3,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from tests.alignment_explanation_fixtures import explanation_discovery_facts
 from tests.alignment_pipeline_helpers import (
     render,
     written_cells,
@@ -1437,6 +1438,7 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
         tmp_path / "backfill.sqlite",
         full_audit=False,
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,

@@ -72,6 +72,7 @@ class SampleAdapterScenario:
         located = located_events_by_peak(
             path,
             raw_file=self.fixture.source_paths["S1"],
+            sample_stem="S1",
             neutral_loss_by_tag=self.settings.neutral_loss_by_tag,
         )
         return tuple(

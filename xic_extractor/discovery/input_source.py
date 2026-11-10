@@ -15,11 +15,11 @@ from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
     _machine_field,
     _parse_peak_row,
-    _require_columns,
     parse_discovery_event_row,
-    require_discovery_event_columns,
+    require_current_discovery_columns,
 )
 from xic_extractor.discovery.models import (
+    DISCOVERY_EVENT_COLUMNS,
     DISCOVERY_PEAK_COLUMNS,
     DiscoveryEvent,
     DiscoveryPeak,
@@ -32,9 +32,8 @@ class CandidateLocation:
     candidate_id: str
     sample_stem: str
     peak_mz: float
-    configured_neutral_loss_da: float
+    neutral_loss_tag: str
     admitted: bool
-    precursor_mz_basis: str
     offset: int
     byte_size: int
     row_number: int
@@ -89,7 +88,9 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
             with path.open("rb") as stream:
                 reader = csv.DictReader(_CsvLines(stream))
                 header = tuple(reader.fieldnames or ())
-                _require_columns(path, header, DISCOVERY_PEAK_COLUMNS)
+                require_current_discovery_columns(
+                    path, header, DISCOVERY_PEAK_COLUMNS, table="peak table"
+                )
                 self._headers[stem] = header
                 row_number = 2
                 while True:
@@ -113,9 +114,8 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
                         cid,
                         stem,
                         mz,
-                        float(row["configured_neutral_loss_da"]),
+                        row["neutral_loss_tag"],
                         row["status"] == "admitted",
-                        row["precursor_mz_basis"],
                         offset,
                         stream.tell() - offset,
                         row_number,
@@ -147,15 +147,15 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
         with path.open("rb") as stream:
             reader = csv.DictReader(_CsvLines(stream))
             header = tuple(reader.fieldnames or ())
-            require_discovery_event_columns(path, header)
+            require_current_discovery_columns(
+                path, header, DISCOVERY_EVENT_COLUMNS, table="event table"
+            )
             row_number = 2
             while True:
                 offset = stream.tell()
                 row = next(reader, None)
                 if row is None:
                     break
-                if _machine_field(row, "sample_stem") != stem:
-                    raise ValueError("Discovery event row crossed its sample")
                 peak_id = _machine_field(row, "peak_id")
                 if peak_id:
                     location = self.locations.get(peak_id)
@@ -185,7 +185,10 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
         if not rows:
             return ()
         path = self.batch.event_csvs[stem]
+        raw_file = self.batch.raw_files[stem]
         assert path is not None
+        if raw_file is None:
+            raise ValueError(f"{stem}: Discovery batch index names no RAW file")
         if self._stat(path) != self._event_stats[stem]:
             raise ValueError("Discovery event table changed after indexing")
         events = []
@@ -200,7 +203,8 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
                         path,
                         location.row_number,
                         row,
-                        raw_file=candidate.raw_file,
+                        raw_file=raw_file,
+                        sample_stem=stem,
                         neutral_loss_by_tag=neutral_loss_by_tag,
                     ).event
                 )

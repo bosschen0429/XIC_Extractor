@@ -2,7 +2,10 @@
 
 from dataclasses import replace
 
-from tests.alignment_explanation_fixtures import run_alignment_fixture
+from tests.alignment_explanation_fixtures import (
+    explanation_discovery_facts,
+    run_alignment_fixture,
+)
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
@@ -53,6 +56,7 @@ def test_explanation_freezes_final_rt_owner_and_preserves_reference_provenance(
     path = write_alignment_explanation(
         tmp_path / "final.sqlite",
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,

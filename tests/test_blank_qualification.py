@@ -1,4 +1,6 @@
+from dataclasses import dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -194,7 +196,6 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         BlankBackgroundIon,
         BlankBackgroundLibrary,
     )
-    from xic_extractor.discovery.models import DiscoveryPeak
     from xic_extractor.discovery.pipeline import _apply_blank_qualification_if_enabled
     from xic_extractor.discovery.processing_run_spec_adapter import (
         compile_discovery_processing_run_spec,
@@ -220,17 +221,19 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         source_blanks=("B1",),
     )
 
-    def peak(precursor_mz: float, height: float) -> DiscoveryPeak:
-        return _peak(
-            raw_file=Path("test.raw"),
-            sample_stem="test",
-            best_event_precursor_mz=precursor_mz,
-            xic_mz=precursor_mz,
-            ms1_height=height,
-            ms1_area=height,
-            attached_event_count=2,
-            review_priority="HIGH",
-            reason="initial candidate",
+    def peak(precursor_mz: float, height: float) -> _Binding:
+        # Qualification reads the peak and its representative precursor only.
+        return _Binding(
+            peak=_peak(
+                sample_stem="test",
+                peak_mz=precursor_mz,
+                ms1_height=height,
+                ms1_area=height,
+                attached_event_count=2,
+            ),
+            physical_fact_record=SimpleNamespace(
+                work_item=SimpleNamespace(precursor_mz=precursor_mz)
+            ),
         )
 
     # FC = 80000 / 100000 = 0.8 < 3.0: system background.
@@ -266,19 +269,9 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         return
 
     # c_background is not admitted
-    assert qualified[0].status == "blank"
-    assert qualified[0].review_priority == "LOW"
-    assert "system background: blank m/z 300.1000" in qualified[0].reason
-
-    # c_override preserved
-    assert qualified[1].admitted
-    assert qualified[1].review_priority == "HIGH"
-    assert "high abundance tissue signal (8.0x)" in qualified[1].reason
-
-    # c_clean preserved unchanged
-    assert qualified[2].admitted
-    assert qualified[2].review_priority == "HIGH"
-    assert qualified[2].reason == "initial candidate"
+    assert qualified[0].peak == replace(c_background.peak, status="blank")
+    # c_override and c_clean are preserved unchanged
+    assert qualified[1:] == (c_override, c_clean)
 
 
 def test_blank_library_gzip_serialization(tmp_path: Path) -> None:
@@ -545,3 +538,9 @@ def test_run_discovery_explicit_disable_skips_blank_directory(
     assert len(settings_seen) == 2
     assert all(not settings.enable_blank_qualification for settings in settings_seen)
     assert not (output / "blank_library.json").exists()
+
+
+@dataclass(frozen=True)
+class _Binding:
+    peak: object
+    physical_fact_record: object

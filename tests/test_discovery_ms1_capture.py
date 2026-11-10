@@ -1,5 +1,3 @@
-import csv
-import json
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -19,8 +17,13 @@ from tests.discovery_ms1_capture_fixtures import (
     _settings,
 )
 from xic_extractor.acquisition_contract import AcquisitionContractError
+from xic_extractor.discovery.evidence_score import score_discovery_evidence
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
-from xic_extractor.discovery.models import DiscoveryIon, DiscoveryPeak
+from xic_extractor.discovery.models import (
+    DiscoveryIon,
+    DiscoveryPeak,
+    representative_event_rt,
+)
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_peaks,
 )
@@ -104,7 +107,9 @@ def test_capture_runs_physical_peak_detection() -> None:
     assert candidate.ms1_apex_rt == pytest.approx(9.02)
     assert candidate.ms1_height is not None and 900.0 < candidate.ms1_height < 1000.0
     assert candidate.ms1_area is not None
-    assert candidate.ms1_event_delta_min == pytest.approx(0.02)
+    assert candidate.ms1_apex_rt - representative_event_rt(candidate) == (
+        pytest.approx(0.02)
+    )
 
 
 @pytest.mark.parametrize(
@@ -315,22 +320,25 @@ def test_ms1_peak_fields_are_filled_from_physical_facts(scans_target: int) -> No
     assert candidate.ms1_apex_rt == pytest.approx(7.91)
     assert candidate.ms1_height == facts.height
     assert candidate.ms1_area == facts.area_counts_seconds
-    assert candidate.ms1_scan_support_score == min(
-        1.0, facts.scan_support_count / scans_target
+    assert candidate.evidence_score == score_discovery_evidence(
+        attached_event_count=2,
+        ms1_event_delta_min=candidate.ms1_apex_rt - 7.90,
+        ms2_product_max_intensity=9000.0,
+        ms1_area=facts.area_counts_seconds,
+        ms1_scan_support_score=min(1.0, facts.scan_support_count / scans_target),
+        settings=settings,
     )
     if scans_target == 10:
-        assert candidate.ms1_scan_support_score == 1.0
+        assert facts.scan_support_count >= scans_target
     else:
-        assert 0.0 < candidate.ms1_scan_support_score < 1.0
+        assert 0 < facts.scan_support_count < scans_target
     assert candidate.ms1_peak_rt_start == facts.left_rt_min
     assert candidate.ms1_peak_rt_end == facts.right_rt_min
-    assert candidate.ms1_event_delta_min == pytest.approx(0.01)
-    assert candidate.ms1_trace_quality == "clean"
-    assert candidate.review_priority == "HIGH"
-    assert candidate.reason == "strong MS2 NL event set; MS1 peak found near event RT"
+    assert candidate.ms1_apex_rt - representative_event_rt(candidate) == (
+        pytest.approx(0.01)
+    )
     assert candidate.best_ms2_scan_id == 20
-    assert candidate.event_scan_ids == (10, 20)
-    assert candidate.ms2_product_max_intensity == 9000.0
+    assert _scan_ids(candidate) == (10, 20)
 
 
 @pytest.mark.parametrize(
@@ -361,7 +369,7 @@ def test_an_event_without_ms1_signal_is_recorded_without_a_peak(
     assert event.unattached_reason
 
 
-def test_single_seed_with_ms1_peak_is_medium_priority() -> None:
+def test_single_seed_with_ms1_peak_attaches_one_event() -> None:
     group = _channel((_seed(scan_number=10, rt=7.80),))
     raw = _peak_raw(center=7.8, sigma=0.06, height=100)
 
@@ -371,8 +379,8 @@ def test_single_seed_with_ms1_peak_is_medium_priority() -> None:
         settings=_settings(ms1_search_padding_min=0.20),
     )[0]
 
-    assert candidate.review_priority == "MEDIUM"
-    assert candidate.reason == "single MS2 NL event; MS1 peak found"
+    assert candidate.attached_event_count == 1
+    assert candidate.status == "admitted"
 
 
 @pytest.mark.parametrize("sigma", [0.12, 0.15])
@@ -400,7 +408,7 @@ def test_single_raw_basin_keeps_events_outside_quantitative_return(
     # valley. Its 10% return is an integration bound, not a different NL owner:
     # both events locate the one peak, attached or outside its bounds.
     (peak,) = result.peaks
-    assert peak.ms1_event_delta_min == pytest.approx(0.26)
+    assert peak.ms1_apex_rt - representative_event_rt(peak) == pytest.approx(0.26)
     assert peak.ms1_area > 0
     events = {event.ms2_scan_number: event for event in result.attachments}
     assert events[20].peak_id == peak.peak_id
@@ -423,17 +431,12 @@ def test_capture_merges_candidates_inside_same_ms1_peak_boundary() -> None:
     assert len(candidates) == 1
     candidate = candidates[0]
     assert candidate.best_ms2_scan_id == 20
-    assert candidate.event_scan_ids == (10, 20)
+    assert _scan_ids(candidate) == (10, 20)
     assert candidate.attached_event_count == 2
-    assert candidate.event_rt_min == pytest.approx(7.80)
-    assert candidate.event_rt_max == pytest.approx(8.04)
-    assert candidate.ms1_search_rt_min == pytest.approx(7.20)
-    assert candidate.ms1_search_rt_max == pytest.approx(8.64)
+    assert [event.rt for event in candidate.located_events] == pytest.approx(
+        [7.80, 8.04]
+    )
     assert candidate.ms1_area is not None and candidate.ms1_area > 0
-    assert candidate.ms2_product_max_intensity == 9000.0
-    assert candidate.review_priority == "HIGH"
-    # Evidence is combined before candidate creation, not by merging quantities.
-    assert candidate.reason == "strong MS2 NL event set; MS1 peak found near event RT"
 
 
 @pytest.mark.parametrize("dominant_tag", ["dR", "R"])
@@ -441,7 +444,6 @@ def test_capture_merges_candidates_inside_same_ms1_peak_boundary() -> None:
 def test_verified_multitag_peak_persists_each_tags_best_scan(
     tmp_path: Path, dominant_tag: str, equal_intensity: bool
 ) -> None:
-    from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 
     settings = _multi_tag_settings()
@@ -486,32 +488,11 @@ def test_verified_multitag_peak_persists_each_tags_best_scan(
     assert len(candidates) == 1
     candidate = candidates[0]
     assert candidate.matched_tag_names == ("dR", "R")
-    assert candidate.event_scan_ids == (10, 11, 20, 21)
+    assert _scan_ids(candidate) == (10, 11, 20, 21)
     assert candidate.best_ms2_scan_id == expected_by_tag["dR"].scan_number
-
-    path = write_discovery_peaks_csv(tmp_path / "candidates.csv", candidates)
-    with path.open(encoding="utf-8-sig", newline="") as stream:
-        (row,) = csv.DictReader(stream)
-    evidence = json.loads(row["tag_evidence_json"])
-    for tag, best in expected_by_tag.items():
-        summary = evidence[tag]
-        assert summary["max_intensity"] == best.product_intensity
-        assert summary["product_mz"] == best.product_mz
-        assert summary["neutral_loss_error_ppm"] == best.observed_loss_error_ppm
-        assert summary["neutral_loss_error_da"] == pytest.approx(0.0001)
-        assert summary["scan_precursor_mz"] == best.scan_precursor_mz
-        assert (
-            summary["precursor_metadata"]["master_scan_number"] == best.scan_number - 1
-        )
-        assert summary["scan_count"] == 2
-        assert summary["scan_ids"] == sorted(
-            seed.scan_number for seed in seeds if seed.neutral_loss_tag == tag
-        )
-    # Each tag's per-scan facts reach Alignment as the peak's located events.
-    assert {
-        (event.neutral_loss_tag, event.scan_number, event.product_mz)
-        for event in candidate.located_events
-    } == {(seed.neutral_loss_tag, seed.scan_number, seed.product_mz) for seed in seeds}
+    # Each tag's per-scan facts reach the event table and Alignment as the
+    # peak's located events.
+    assert set(candidate.located_events) == set(seeds)
 
 
 def test_capture_does_not_merge_distinct_ms1_peak_boundaries() -> None:
@@ -531,10 +512,10 @@ def test_capture_does_not_merge_distinct_ms1_peak_boundaries() -> None:
     )
 
     assert len(candidates) == 2
-    assert [candidate.event_scan_ids for candidate in candidates] == [(10,), (20,)]
+    assert [_scan_ids(candidate) for candidate in candidates] == [(10,), (20,)]
 
 
-def test_ms1_seed_delta_is_signed_but_priority_uses_absolute_distance() -> None:
+def test_ms1_seed_delta_is_signed() -> None:
     group = _channel(
         (
             _seed(scan_number=10, rt=7.80, product_intensity=3000.0),
@@ -549,9 +530,9 @@ def test_ms1_seed_delta_is_signed_but_priority_uses_absolute_distance() -> None:
         settings=_settings(ms1_search_padding_min=0.20),
     )[0]
 
-    assert candidate.ms1_event_delta_min == pytest.approx(-0.20)
-    assert candidate.review_priority == "HIGH"
-    assert candidate.reason == "strong MS2 NL event set; MS1 peak found near event RT"
+    assert candidate.ms1_apex_rt - representative_event_rt(candidate) == (
+        pytest.approx(-0.20)
+    )
 
 
 @pytest.mark.parametrize(
@@ -607,8 +588,7 @@ def test_best_seed_tie_breaks_by_error_then_rt_then_scan_for_candidate(
     )[0]
 
     assert candidate.best_ms2_scan_id == expected_scan
-    assert candidate.best_event_rt == expected_rt
-    assert candidate.ms1_event_delta_min == pytest.approx(7.90 - expected_rt)
+    assert representative_event_rt(candidate) == expected_rt
 
 
 def test_owner_acquisition_shares_identical_contexts_and_preserves_separate_windows(
@@ -839,3 +819,7 @@ def _peak_raw(
     return _FakeRaw(
         rt=rt, intensity=_gaussian(rt, center=center, sigma=sigma, height=height)
     )
+
+
+def _scan_ids(peak: DiscoveryPeak) -> tuple[int, ...]:
+    return tuple(sorted({event.scan_number for event in peak.located_events}))

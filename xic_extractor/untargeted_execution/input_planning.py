@@ -26,6 +26,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalFactRecord,
     admits_cid_nl_alignment,
+    validate_peak_physical_measurement,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -260,7 +261,9 @@ def prepare_untargeted_subject_membership(
     composition = cid_nl_composition(settings)
     for candidate in candidates:
         precursor_mz = float(candidate.peak_mz)
-        neutral_loss_da = float(candidate.configured_neutral_loss_da)
+        neutral_loss_da = float(
+            settings.neutral_loss_by_tag.get(candidate.neutral_loss_tag, math.nan)
+        )
         if (
             not math.isfinite(precursor_mz)
             or precursor_mz <= 0.0
@@ -275,7 +278,7 @@ def prepare_untargeted_subject_membership(
                 (
                     None
                     if composition is not None
-                    else candidate.configured_neutral_loss_da,
+                    else settings.neutral_loss_by_tag[candidate.neutral_loss_tag],
                     candidate.peak_id,
                 )
                 for candidate in candidates
@@ -407,9 +410,6 @@ def prepare_indexed_untargeted_plan(
     dll_dir: Path,
     profile: SignalProcessingProfile,
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...],
-    restore_candidate: Callable[
-        [DiscoveryPeak, DiscoveryPhysicalFactRecord], DiscoveryPeak
-    ],
 ) -> UntargetedInputPlan:
     """Keep whole-batch IDs, not whole-batch candidates or physical graphs."""
     composition = cid_nl_composition(settings)
@@ -424,20 +424,18 @@ def prepare_indexed_untargeted_plan(
     def load_inputs(candidate_ids: tuple[str, ...]):
         candidates = source.load_candidates(candidate_ids)
         records: dict[str, DiscoveryPhysicalFactRecord] = {}
-        restored: dict[str, tuple[DiscoveryPeak, ...]] = {}
         for stem, values in candidates.items():
             if not values:
-                restored[stem] = ()
                 continue
             local_records = physical_sources[stem].load_candidates(
                 tuple(candidate.peak_id for candidate in values)
             )
+            for candidate in values:
+                validate_peak_physical_measurement(
+                    candidate, local_records[candidate.peak_id]
+                )
             records.update(local_records)
-            restored[stem] = tuple(
-                restore_candidate(candidate, local_records[candidate.peak_id])
-                for candidate in values
-            )
-        return restored, records
+        return candidates, records
 
     def load_partition(candidate_ids: tuple[str, ...]):
         candidates, records = load_inputs(candidate_ids)
@@ -461,7 +459,9 @@ def prepare_indexed_untargeted_plan(
                 (
                     None
                     if composition is not None
-                    else source.locations[cid].configured_neutral_loss_da,
+                    else settings.neutral_loss_by_tag[
+                        source.locations[cid].neutral_loss_tag
+                    ],
                     cid,
                 )
                 for cid in feature_ids

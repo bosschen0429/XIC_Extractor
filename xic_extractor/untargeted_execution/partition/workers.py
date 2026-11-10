@@ -235,6 +235,12 @@ def _execute_initial_assessment_batch(
                 sample=job.sample,
                 acquisition_source=job.acquisition_source_expectation.source,
                 peaks=candidates,
+                physical_records={
+                    record.peak_id: record
+                    for state in states
+                    if state.error is None
+                    for record in _request_subject_physical_records(state.job)
+                },
                 settings=job.settings,
                 raw=raw,
                 signal_processing_profile=job.signal_processing_profile,

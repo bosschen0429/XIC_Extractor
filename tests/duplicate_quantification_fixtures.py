@@ -1,6 +1,9 @@
 """Helpers shared by test_duplicate_quantification and other test modules."""
 
-from tests.alignment_explanation_fixtures import run_alignment_fixture
+from tests.alignment_explanation_fixtures import (
+    explanation_discovery_facts,
+    run_alignment_fixture,
+)
 from xic_extractor.diagnostics.alignment_explanation_projection import (
     write_alignment_explanation,
 )
@@ -33,6 +36,7 @@ def publish_owner_run(tmp_path, monkeypatch, level):
     write_alignment_explanation(
         output_dir / EXPLANATION_ARTIFACT_NAME,
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=outputs.matrix_tsv,
         alignment_config=config,

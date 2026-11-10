@@ -12,7 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.alignment_explanation_fixtures import curve_provenance, explanation_summary
+from tests.alignment_explanation_fixtures import (
+    curve_provenance,
+    explanation_discovery_facts,
+    explanation_summary,
+)
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
@@ -144,6 +148,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
         tmp_path / "metadata.sqlite",
         full_audit=True,
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,

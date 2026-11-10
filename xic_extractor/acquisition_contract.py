@@ -175,10 +175,16 @@ _XIC_REQUEST_KEYS = ("mz", "rt_min", "rt_max", "ppm_tol")
 _TRACE_ARRAY_KEYS = ("rt", "intensity")
 
 
-def serialize_acquired_trace(acquired_trace: AcquiredTrace) -> bytes:
-    """Canonically encode a complete acquired trace without owner recomputation."""
+def serialize_acquired_trace(
+    acquired_trace: AcquiredTrace, *, with_capability: bool = True
+) -> bytes:
+    """Canonically encode a complete acquired trace without owner recomputation.
 
-    content = _acquired_trace_content(acquired_trace)
+    A caller that stores the acquisition capability once for many traces
+    omits it here and supplies it again to ``deserialize_acquired_trace``.
+    """
+
+    content = _acquired_trace_content(acquired_trace, with_capability=with_capability)
     return _canonical_json_bytes(
         {
             "schema_version": _ACQUIRED_TRACE_SCHEMA_VERSION,
@@ -191,8 +197,12 @@ def deserialize_acquired_trace(
     payload: bytes | str,
     *,
     expected_acquisition_source: AcquisitionSourceIdentity | None = None,
+    capability: TraceAcquisitionCapability | None = None,
 ) -> AcquiredTrace:
-    """Strictly reconstitute an acquired trace through acquisition-owner types."""
+    """Strictly reconstitute an acquired trace through acquisition-owner types.
+
+    ``capability`` is the stored-once capability of a payload encoded without it.
+    """
 
     raw = payload.encode("utf-8") if isinstance(payload, str) else payload
     if not isinstance(raw, bytes):
@@ -211,7 +221,11 @@ def deserialize_acquired_trace(
         raise AcquisitionContractError("unsupported acquired trace schema_version")
 
     coordinate_value = _required_mapping(root["coordinate"], label="coordinate")
-    _require_keys(coordinate_value, _TRACE_COORDINATE_KEYS, label="coordinate")
+    _require_keys(
+        coordinate_value,
+        _TRACE_COORDINATE_KEYS if capability is None else _TRACE_COORDINATE_KEYS[1:],
+        label="coordinate",
+    )
     request_value = _required_mapping(
         coordinate_value["request"], label="coordinate request"
     )
@@ -222,7 +236,12 @@ def deserialize_acquired_trace(
         rt_max=_float_from_text(request_value["rt_max"], field="request.rt_max"),
         ppm_tol=_float_from_text(request_value["ppm_tol"], field="request.ppm_tol"),
     )
-    capability = _capability_from_payload(coordinate_value["capability"])
+    if capability is None:
+        capability = _capability_from_payload(coordinate_value["capability"])
+    elif not isinstance(capability, TraceAcquisitionCapability):
+        raise AcquisitionContractError(
+            "capability must be a TraceAcquisitionCapability"
+        )
     if (
         expected_acquisition_source is not None
         and capability.acquisition_source != expected_acquisition_source
@@ -254,7 +273,9 @@ def deserialize_acquired_trace(
         ),
     )
     acquired = AcquiredTrace(coordinate=coordinate, trace=trace)
-    content = _acquired_trace_content(acquired)
+    content = _acquired_trace_content(
+        acquired, with_capability="capability" in coordinate_value
+    )
     canonical = _canonical_json_bytes(
         {"schema_version": _ACQUIRED_TRACE_SCHEMA_VERSION, **content}
     )
@@ -263,14 +284,21 @@ def deserialize_acquired_trace(
     return acquired
 
 
-def _acquired_trace_content(acquired_trace: AcquiredTrace) -> dict[str, object]:
+def _acquired_trace_content(
+    acquired_trace: AcquiredTrace, *, with_capability: bool = True
+) -> dict[str, object]:
     if not isinstance(acquired_trace, AcquiredTrace):
         raise TypeError("acquired_trace must be an AcquiredTrace")
     coordinate = acquired_trace.coordinate
     request = coordinate.request
+    capability = (
+        {"capability": _capability_content(coordinate.capability)}
+        if with_capability
+        else {}
+    )
     return {
         "coordinate": {
-            "capability": _capability_content(coordinate.capability),
+            **capability,
             "request": {
                 "mz": _float_text(request.mz),
                 "rt_min": _float_text(request.rt_min),

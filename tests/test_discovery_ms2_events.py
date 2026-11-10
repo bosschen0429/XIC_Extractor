@@ -1,4 +1,3 @@
-import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -9,6 +8,7 @@ from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 
 NEUTRAL_LOSS_DA = 116.0474
@@ -94,10 +94,13 @@ def test_quadrature_window_accepts_forty_ppm_loss_and_rejects_outside_product() 
     assert len(direct) == 1
     assert direct[0].product_mz == pytest.approx(product_inside)
     assert direct[0].observed_loss_error_ppm == pytest.approx(40.0)
-    tag_evidence = json.loads(direct[0].tag_evidence_json)["DNA_dR"]
-    assert (
-        tag_evidence["neutral_loss_error_da"] < tag_evidence["neutral_loss_window_da"]
+    loss_error_da, loss_window_da, _ = neutral_loss_match(
+        direct[0].precursor_mz,
+        direct[0].product_mz,
+        direct[0].configured_neutral_loss_da,
+        20.0,
     )
+    assert loss_error_da < loss_window_da
 
 
 def test_parse_error_event_is_ignored() -> None:
@@ -218,9 +221,8 @@ def test_isolation_offset_product_infers_monoisotopic_precursor_seed() -> None:
     assert seed.product_mz == pytest.approx(product_mz)
     assert seed.observed_neutral_loss_da == pytest.approx(NEUTRAL_LOSS_DA)
     assert seed.observed_loss_error_ppm is None
-    evidence = json.loads(seed.tag_evidence_json)
-    assert evidence["DNA_dR"]["precursor_mz_basis"] == "product_plus_neutral_loss"
-    assert evidence["DNA_dR"]["scan_precursor_mz"] == pytest.approx(scan_precursor_mz)
+    assert seed.precursor_mz_basis == "product_plus_neutral_loss"
+    assert seed.scan_precursor_mz == pytest.approx(scan_precursor_mz)
 
 
 def test_same_ms2_scan_can_emit_direct_and_inferred_precursor_seeds() -> None:

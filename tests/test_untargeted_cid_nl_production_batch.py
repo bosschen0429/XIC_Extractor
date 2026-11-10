@@ -12,6 +12,7 @@ import pytest
 
 import xic_extractor.alignment.cid_nl_completion as cid_nl_completion_owner
 import xic_extractor.untargeted_execution.alignment as alignment_adapter
+from tests.alignment_explanation_fixtures import explanation_discovery_facts
 from tests.alignment_pipeline_helpers import (
     render,
     written_cells,
@@ -31,6 +32,7 @@ from tests.cid_nl_runtime_fixtures import (
     install_runtime_raw,
     install_runtime_raws,
 )
+from tests.discovery_csv_fixtures import representative_event
 from tests.untargeted_cid_nl_batch_runtime_fixtures import _nearby_subject_candidates
 from tests.untargeted_cid_nl_production_batch_fixtures import (
     _assert_conservative_coverage_handoff,
@@ -216,6 +218,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         report = write_alignment_explanation(
             tmp_path / "no-input-review.sqlite",
             completed=completed,
+            **explanation_discovery_facts(completed),
             peaks_by_sample=peaks_by_sample,
             matrix_path=destination,
             alignment_config=alignment_config,
@@ -706,7 +709,7 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
             source_raw.scans = (first_raw.scans[0], second_raw.scans[0])
             source_raws[raw_path] = source_raw
             first, second = sorted(
-                nearby, key=lambda item: item.best_event_precursor_mz
+                nearby, key=lambda item: representative_event(item).precursor_mz
             )
             peaks_by_sample[raw_path.stem] = (first, second)
     if above_threshold:
@@ -1555,6 +1558,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     write_alignment_explanation(
         published / "alignment_explanation.sqlite",
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=peaks_by_sample,
         matrix_path=published_outputs.matrix_tsv,
         alignment_config=alignment_config,

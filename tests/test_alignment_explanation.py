@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass, replace
 import pytest
 
 from tests.alignment_explanation_fixtures import (
+    explanation_discovery_facts,
     explanation_summary,
     run_alignment_fixture,
 )
@@ -62,6 +63,7 @@ def test_candidate_measured_mz_roundtrip_without_center_fallback(
     report = write_alignment_explanation(
         tmp_path / "measured.sqlite",
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -77,7 +79,10 @@ def test_candidate_measured_mz_roundtrip_without_center_fallback(
         ]
         assert candidate["sample_stem"] == stem
         assert candidate["ms1_apex_mz"] == expected
-        assert candidate["precursor_mz"] == candidates[stem][0].best_event_precursor_mz
+        assert (
+            candidate["precursor_mz"]
+            == explanation_discovery_facts(completed)["precursor_mz_by_candidate"][cid]
+        )
 
 
 def test_old_named_folder_requires_rerun_instead_of_fallback(tmp_path):
@@ -98,6 +103,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         tmp_path / "report.sqlite",
         full_audit=True,
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
         alignment_config=config,
@@ -223,6 +229,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             report,
             full_audit=True,
             completed=completed,
+            **explanation_discovery_facts(completed),
             peaks_by_sample=candidates,
             matrix_path=matrix,
             alignment_config=config,
@@ -235,6 +242,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             tmp_path / "missing_audit.sqlite",
             full_audit=True,
             completed=missing_audit,
+            **explanation_discovery_facts(missing_audit),
             peaks_by_sample=candidates,
             matrix_path=matrix,
             alignment_config=config,
@@ -288,6 +296,7 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
     original = write_alignment_explanation(
         tmp_path / "original.sqlite",
         completed=completed,
+        **explanation_discovery_facts(completed),
         **kwargs,
         full_audit=True,
     )
@@ -331,6 +340,7 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
             tmp_path / "duplicated.sqlite",
             full_audit=True,
             completed=duplicated,
+            **explanation_discovery_facts(duplicated),
             progress_callback=progress,
             **kwargs,
         )
@@ -371,6 +381,7 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
     original = write_alignment_explanation(
         tmp_path / "memory.sqlite",
         completed=completed,
+        **explanation_discovery_facts(completed),
         **kwargs,
         full_audit=True,
     )
@@ -404,6 +415,7 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
         tmp_path / "stored.sqlite",
         full_audit=True,
         completed=replace(completed, application_result=restored),
+        **explanation_discovery_facts(replace(completed, application_result=restored)),
         **kwargs,
     )
     assert loads == len(application.children), (loads, len(application.children))
@@ -430,6 +442,7 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
             report,
             full_audit=True,
             completed=completed,
+            **explanation_discovery_facts(completed),
             peaks_by_sample=candidates,
             matrix_path=matrix,
             alignment_config=config,

@@ -10,13 +10,17 @@ from types import SimpleNamespace
 import pytest
 
 import xic_extractor.untargeted_execution.alignment as alignment_adapter
-from tests.alignment_explanation_fixtures import explanation_summary
+from tests.alignment_explanation_fixtures import (
+    explanation_discovery_facts,
+    explanation_summary,
+)
 from tests.alignment_pipeline_helpers import (
     render,
     written_cells,
     written_groups,
     written_source_candidates,
 )
+from tests.discovery_csv_fixtures import representative_event
 from tests.untargeted_cid_nl_production_batch_fixtures import (
     _assert_composite_no_input_exclusion_coverage,
     _assert_fresh_process_curve_parity,
@@ -230,6 +234,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         tmp_path / "producer-evidence.sqlite",
         full_audit=True,
         completed=completed,
+        **explanation_discovery_facts(completed),
         peaks_by_sample=inputs.candidates,
         matrix_path=matrix_path,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
@@ -375,10 +380,13 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             stem = result.job.sample.raw_stem
             (candidate,) = batch.context.peaks_by_sample[stem]
             record = batch.context.physical_records_by_peak[candidate.peak_id]
-            assert record.work_item.precursor_mz == candidate.best_event_precursor_mz
+            assert (
+                record.work_item.precursor_mz
+                == representative_event(candidate).precursor_mz
+            )
             assert (
                 record.acquired_trace.coordinate.request.mz
-                == candidate.best_event_precursor_mz
+                == representative_event(candidate).precursor_mz
             )
             assert record.evaluation.facts == inputs.physical_facts[stem]
             assert fixture_assessment(result).method_result == (

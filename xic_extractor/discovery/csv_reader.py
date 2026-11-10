@@ -7,8 +7,8 @@ from pathlib import Path, PureWindowsPath
 from typing import cast
 
 from xic_extractor.discovery.batch_contract import (
+    DISCOVERY_BATCH_INDEX_COLUMNS,
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
-    DISCOVERY_BATCH_RECEIPT_COLUMNS,
     DiscoveryPeakUniverseReceipt,
     discovery_receipt_from_index_fields,
     validate_discovery_peak_artifact,
@@ -22,7 +22,6 @@ from xic_extractor.discovery.models import (
     DiscoveryPeak,
     EventAttachment,
     GroupPrecursorMzBasis,
-    NeutralLossErrorBasis,
     PeakStatus,
     located_event_order,
 )
@@ -30,15 +29,8 @@ from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import IdentityContractError
 
-_BATCH_REQUIRED_COLUMNS = ("sample_stem", "raw_file", "peak_csv")
-_BATCH_OWNER_REQUIRED_COLUMNS = (
-    "schema_version",
-    *_BATCH_REQUIRED_COLUMNS,
-    "peak_count",
-    *DISCOVERY_BATCH_RECEIPT_COLUMNS,
-)
 _BATCH_UNESCAPE_FIELDS = {"sample_stem", "raw_file", "peak_csv", "event_csv"}
-_PEAK_UNESCAPE_FIELDS = {"sample_stem", "raw_file", "peak_id"}
+_PEAK_UNESCAPE_FIELDS = {"sample_stem", "peak_id"}
 _EVENT_PRECURSOR_BASES = {
     "scan_precursor",
     "scan_monoisotopic",
@@ -49,12 +41,6 @@ _ALLOWED_PRECURSOR_MZ_BASIS = {
     "scan_precursor",
     "scan_monoisotopic",
     "product_plus_neutral_loss",
-    "mixed",
-}
-_ALLOWED_NEUTRAL_LOSS_ERROR_BASIS = {
-    "measured_scan_precursor_product",
-    "recorded_monoisotopic_precursor_product",
-    "configured_loss_inferred_precursor",
     "mixed",
 }
 
@@ -72,14 +58,9 @@ def read_discovery_batch_index(
     path: Path,
 ) -> DiscoveryBatchInput:
     rows, fieldnames = _read_csv_rows(path)
-    if "peak_csv" not in fieldnames or "acquisition_local_file_revision" not in (
-        fieldnames
-    ):
-        raise ValueError(
-            f"{path}: unsupported Discovery batch index; "
-            "regenerate Discovery with the current version"
-        )
-    _require_columns(path, fieldnames, _BATCH_OWNER_REQUIRED_COLUMNS)
+    require_current_discovery_columns(
+        path, fieldnames, DISCOVERY_BATCH_INDEX_COLUMNS, table="batch index"
+    )
 
     sample_order: list[str] = []
     peak_csvs: dict[str, Path] = {}
@@ -142,7 +123,9 @@ def read_discovery_peaks_csv(
     path: Path,
 ) -> tuple[DiscoveryPeak, ...]:
     rows, fieldnames = _read_csv_rows(path)
-    _require_columns(path, fieldnames, DISCOVERY_PEAK_COLUMNS)
+    require_current_discovery_columns(
+        path, fieldnames, DISCOVERY_PEAK_COLUMNS, table="peak table"
+    )
 
     peaks: list[DiscoveryPeak] = []
     seen_peak_ids: dict[str, int] = {}
@@ -183,12 +166,16 @@ def located_events_by_peak(
     path: Path,
     *,
     raw_file: Path,
+    sample_stem: str,
     neutral_loss_by_tag: Mapping[str, float],
 ) -> dict[str, tuple[DiscoveryEvent, ...]]:
     """Every event locating each peak of one sample's event table."""
     grouped: dict[str, list[DiscoveryEvent]] = {}
     for item in read_discovery_events_csv(
-        path, raw_file=raw_file, neutral_loss_by_tag=neutral_loss_by_tag
+        path,
+        raw_file=raw_file,
+        sample_stem=sample_stem,
+        neutral_loss_by_tag=neutral_loss_by_tag,
     ):
         if item.peak_id:
             grouped.setdefault(item.peak_id, []).append(item.event)
@@ -199,29 +186,39 @@ def read_discovery_events_csv(
     path: Path,
     *,
     raw_file: Path,
+    sample_stem: str,
     neutral_loss_by_tag: Mapping[str, float],
 ) -> tuple[EventAttachment, ...]:
     """Read one sample's event table back into its events and located peaks."""
     rows, fieldnames = _read_csv_rows(path)
-    require_discovery_event_columns(path, fieldnames)
+    require_current_discovery_columns(
+        path, fieldnames, DISCOVERY_EVENT_COLUMNS, table="event table"
+    )
     return tuple(
         parse_discovery_event_row(
             path,
             row_number,
             row,
             raw_file=raw_file,
+            sample_stem=sample_stem,
             neutral_loss_by_tag=neutral_loss_by_tag,
         )
         for row_number, row in rows
     )
 
 
-def require_discovery_event_columns(path: Path, fieldnames: tuple[str, ...]) -> None:
-    missing = [column for column in DISCOVERY_EVENT_COLUMNS if column not in fieldnames]
-    if missing:
+def require_current_discovery_columns(
+    path: Path,
+    fieldnames: tuple[str, ...],
+    columns: tuple[str, ...],
+    *,
+    table: str,
+) -> None:
+    """Reject a Discovery table another version wrote; it has no reader here."""
+    if fieldnames != columns:
         raise ValueError(
-            f"{path}: unsupported Discovery event table (missing "
-            f"{', '.join(missing)}); regenerate Discovery with the current version"
+            f"{path}: unsupported Discovery {table} (its columns are not the "
+            "current ones); regenerate Discovery with the current version"
         )
 
 
@@ -231,6 +228,7 @@ def parse_discovery_event_row(
     row: Mapping[str, str],
     *,
     raw_file: Path,
+    sample_stem: str,
     neutral_loss_by_tag: Mapping[str, float],
 ) -> EventAttachment:
     values = dict(row)
@@ -282,7 +280,7 @@ def parse_discovery_event_row(
         )
         event = DiscoveryEvent(
             raw_file=raw_file,
-            sample_stem=_machine_field(values, "sample_stem"),
+            sample_stem=sample_stem,
             scan_number=_parse_int(path, row_number, values, "ms2_scan_number"),
             rt=number("ms2_rt"),
             precursor_mz=number("precursor_mz"),
@@ -292,7 +290,6 @@ def parse_discovery_event_row(
             configured_neutral_loss_da=float(neutral_loss_by_tag[tag]),
             observed_neutral_loss_da=number("observed_neutral_loss_da"),
             observed_loss_error_ppm=optional("neutral_loss_mass_error_ppm"),
-            matched_tag_names=(tag,),
             scan_precursor_mz=optional("scan_precursor_mz"),
             precursor_mz_basis=basis,  # type: ignore[arg-type]
             precursor_metadata=metadata,
@@ -328,17 +325,6 @@ def _read_csv_rows(
         raise ValueError(f"{path}: CSV file could not be read: {exc}") from exc
 
 
-def _require_columns(
-    path: Path,
-    fieldnames: tuple[str, ...],
-    required_columns: tuple[str, ...],
-) -> None:
-    missing = [column for column in required_columns if column not in fieldnames]
-    if missing:
-        joined = ", ".join(missing)
-        raise ValueError(f"{path}: missing required columns: {joined}")
-
-
 def _parse_peak_row(
     path: Path,
     row_number: int,
@@ -355,63 +341,26 @@ def _parse_peak_row(
     def text(column: str) -> str:
         return _required_text(path, row_number, row, column)
 
-    def flag(column: str) -> bool:
-        return _parse_bool(path, row_number, row, column)
-
     def integer(column: str) -> int:
         return _parse_int(path, row_number, row, column)
 
     return DiscoveryPeak(
         peak_id=_machine_text(peak_id),
-        raw_file=_raw_file_path(_machine_field(row, "raw_file")),
         sample_stem=_machine_field(row, "sample_stem"),
         peak_mz=number("peak_mz"),
-        xic_mz=number("xic_mz"),
-        best_event_precursor_mz=number("best_event_precursor_mz"),
-        best_event_product_mz=number("best_event_product_mz"),
-        best_event_neutral_loss_da=number("best_event_neutral_loss_da"),
         neutral_loss_tag=text("neutral_loss_tag"),
-        configured_neutral_loss_da=number("configured_neutral_loss_da"),
-        neutral_loss_mass_error_ppm=optional("neutral_loss_mass_error_ppm"),
         best_ms2_scan_id=integer("best_ms2_scan_id"),
-        best_event_rt=number("best_event_rt"),
-        event_scan_ids=_parse_int_tuple(path, row_number, row, "event_scan_ids"),
         attached_event_count=integer("attached_event_count"),
-        event_rt_min=number("event_rt_min"),
-        event_rt_max=number("event_rt_max"),
-        ms2_product_max_intensity=number("ms2_product_max_intensity"),
-        ms1_search_rt_min=number("ms1_search_rt_min"),
-        ms1_search_rt_max=number("ms1_search_rt_max"),
         ms1_apex_rt=number("ms1_apex_rt"),
         ms1_area=number("ms1_area"),
         ms1_height=number("ms1_height"),
         ms1_peak_rt_start=number("ms1_peak_rt_start"),
         ms1_peak_rt_end=number("ms1_peak_rt_end"),
-        ms1_event_delta_min=number("ms1_event_delta_min"),
-        ms1_trace_quality=text("ms1_trace_quality"),
-        review_priority=text("review_priority"),  # type: ignore[arg-type]
-        reason=text("reason"),
         status=_parse_status(path, row_number, row),
-        ms1_scan_support_score=optional("ms1_scan_support_score"),
         ms1_apex_mz=optional("ms1_apex_mz"),
         evidence_score=integer("evidence_score"),
-        evidence_tier=text("evidence_tier"),
-        ms2_support=text("ms2_support"),
-        ms1_support=text("ms1_support"),
-        rt_alignment=text("rt_alignment"),
-        neutral_loss_error_basis=_parse_neutral_loss_error_basis(path, row_number, row),
         precursor_mz_basis=_parse_precursor_mz_basis(path, row_number, row),
-        scan_precursor_mz=optional("scan_precursor_mz"),
-        scan_precursor_delta_da=optional("scan_precursor_delta_da"),
-        max_scan_precursor_abs_delta_da=optional("max_scan_precursor_abs_delta_da"),
-        selected_tag_count=integer("selected_tag_count"),
-        matched_tag_count=integer("matched_tag_count"),
         matched_tag_names=_parse_text_tuple(row, "matched_tag_names"),
-        primary_tag_name=text("primary_tag_name"),
-        tag_combine_mode=text("tag_combine_mode"),  # type: ignore[arg-type]
-        tag_intersection_status=text("tag_intersection_status"),  # type: ignore[arg-type]
-        tag_evidence_json=text("tag_evidence_json"),
-        is_provisional=flag("is_provisional"),
     )
 
 
@@ -437,21 +386,6 @@ def _machine_text(value: str) -> str:
     if len(value) >= 2 and value[0] == "'" and value[1] in ("=", "+", "-", "@"):
         return value[1:]
     return value
-
-
-def _parse_neutral_loss_error_basis(
-    path: Path,
-    row_number: int,
-    row: dict[str, str],
-) -> NeutralLossErrorBasis:
-    value = _required_text(path, row_number, row, "neutral_loss_error_basis")
-    if value not in _ALLOWED_NEUTRAL_LOSS_ERROR_BASIS:
-        allowed = ", ".join(sorted(_ALLOWED_NEUTRAL_LOSS_ERROR_BASIS))
-        raise ValueError(
-            f"{path}: row {row_number}: neutral_loss_error_basis must be one "
-            f"of {allowed}: {value!r}"
-        )
-    return cast(NeutralLossErrorBasis, value)
 
 
 def _parse_status(path: Path, row_number: int, row: dict[str, str]) -> PeakStatus:
@@ -561,23 +495,6 @@ def _parse_bool(path: Path, row_number: int, row: dict[str, str], column: str) -
     raise ValueError(
         f"{path}: row {row_number}: {column} must be TRUE or FALSE: {value!r}"
     )
-
-
-def _parse_int_tuple(
-    path: Path,
-    row_number: int,
-    row: dict[str, str],
-    column: str,
-) -> tuple[int, ...]:
-    value = row.get(column, "")
-    if value == "":
-        return ()
-    try:
-        return tuple(int(item) for item in value.split(";") if item)
-    except ValueError as exc:
-        raise ValueError(
-            f"{path}: row {row_number}: {column} must be semicolon-separated integers"
-        ) from exc
 
 
 def _parse_float_tuple(

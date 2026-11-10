@@ -177,7 +177,7 @@ def test_alignment_metadata_keeps_two_samples_probe_results(tmp_path, monkeypatc
     index = write_batch(tmp_path, ("S1", "S2"))
     with index.open(encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
-        columns = [*reader.fieldnames, "mass_recalibration"]
+        columns = list(reader.fieldnames or ())
         rows = list(reader)
     expected = {}
     for row, a in zip(rows, (-0.4, 0.7), strict=True):

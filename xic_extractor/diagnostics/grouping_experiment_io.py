@@ -65,13 +65,10 @@ def query_discovery(
             "sample_stem": sample,
             "candidate_id": candidate.peak_id,
             "mz": candidate.peak_mz,
-            "seed_mz": candidate.best_event_precursor_mz,
             "apex_rt": candidate.ms1_apex_rt,
-            "seed_rt": candidate.best_event_rt,
             "peak_status": candidate.status,
             "attached_event_count": candidate.attached_event_count,
             "area": candidate.ms1_area,
-            "reason": candidate.reason,
         }
         for sample in source.batch.sample_order
         for candidate in candidates[sample]

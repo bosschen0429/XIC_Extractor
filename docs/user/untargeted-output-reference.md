@@ -11,99 +11,53 @@ gates.
 ### `discovery_peaks.csv`
 
 One row per physical MS1 peak per sample: one ion's XIC, one raw
-valley-separated peak, one measurement. Full provenance for audit.
-
-#### Review Columns
+valley-separated peak, one measurement. Each fact about a peak appears once:
+the representative MS2 event and every other located event are rows of
+`discovery_events.csv`, found by `peak_id` (and `best_ms2_scan_id` for the
+representative); the measured trace and its evaluation are in
+`discovery_physical_facts.json`. No cell grows with the number of MS2 scans.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| review_priority | string | `HIGH`, `MEDIUM`, or `LOW` |
-| status | string | See status values below |
-| evidence_tier | string | Confidence tier (A–E) |
-| evidence_score | int | Numeric evidence score |
-| ms2_support | string | MS2 evidence level |
-| ms1_support | string | MS1 peak support level |
-| rt_alignment | string | RT alignment quality |
+| status | string | Whether the peak enters Alignment; see status values below |
+| evidence_score | int | Evidence score 0–100 from the attached events, their RT match, product intensity, MS1 area and scan support |
+| attached_event_count | int | Number of located events that attach to the peak |
+| peak_id | string | `{sample}@mz{XIC center m/z}_rt{query RT}`; unique within the sample |
+| sample_stem | string | Sample name (from filename) |
+| peak_mz | float | The peak's ion mass, read by Alignment and Delta Mass: `ms1_apex_mz` when present, else the XIC center |
+| precursor_mz_basis | string | Precursor source basis over the located events: `scan_precursor`, `scan_monoisotopic`, `product_plus_neutral_loss`, or `mixed` |
+| ms1_apex_mz | float | MS1 ion m/z read at the peak apex when all of the peak's events are inferred (blank for a recorded precursor, two ions, or no reading) |
+| ms1_apex_rt | float | MS1 peak apex RT (min) |
+| ms1_peak_rt_start | float | MS1 peak start RT (min) |
+| ms1_peak_rt_end | float | MS1 peak end RT (min) |
+| ms1_area | float | MS1 peak area |
+| ms1_height | float | MS1 peak height |
+| best_ms2_scan_id | int | MS2 scan of the representative event in `discovery_events.csv` |
+| neutral_loss_tag | string | NL tag of the representative event |
+| matched_tag_names | string | Semicolon-separated NL tags of the located events, in configured tag order |
 
 Status values, highest precedence first: `blank` (demoted by blank
 qualification), `doubly_charged` (the MS1 ion reads as a doubly charged
 isotope), `overlap` (shoulder or overlapping envelope), `no_nl_event` (no
 attached NL event), `admitted`. Only `admitted` peaks enter Alignment.
 
-#### Identity Columns
-
-| Column | Type | Description |
-| --- | --- | --- |
-| peak_id | string | `{sample}@mz{xic_mz}_rt{raw apex RT}`; unique within the sample |
-| peak_mz | float | The peak's ion mass, read by Alignment and Delta Mass: `ms1_apex_mz` when present, else `xic_mz` |
-| xic_mz | float | XIC center: the ion's MS1 reading before acquisition |
-
-#### Measurement Columns
-
-| Column | Type | Description |
-| --- | --- | --- |
-| best_event_precursor_mz | float | Representative event's precursor m/z; not the peak's measured mass |
-| best_event_product_mz | float | Representative event's product ion m/z |
-| best_event_neutral_loss_da | float | Representative event's observed neutral loss (Da) |
-| ms1_apex_rt | float | MS1 peak apex RT (min) |
-| ms1_area | float | MS1 peak area |
-| attached_event_count | int | Number of events attached to the peak |
-| best_event_rt | float | Representative event's MS2 RT (min) |
-| ms2_product_max_intensity | float | Maximum product ion intensity over located events |
-| reason | string | Inclusion/flag reason |
-
-#### Shape Column
-
-| Column | Type | Description |
-| --- | --- | --- |
-| is_provisional | bool | Peak shape is provisional or overlapping |
-
-#### Provenance Columns
-
-| Column | Type | Description |
-| --- | --- | --- |
-| raw_file | string | RAW data file path |
-| sample_stem | string | Sample name (from filename) |
-| best_ms2_scan_id | int | Representative event's MS2 scan number |
-| event_scan_ids | string | Semicolon-separated MS2 scans of every event located on the peak |
-| neutral_loss_tag | string | NL identifier/tag |
-| configured_neutral_loss_da | float | Configured NL mass |
-| neutral_loss_mass_error_ppm | float | Descriptive NL mass error (ppm of configured loss); acceptance uses the quadrature per-ion m/z window |
-| neutral_loss_error_basis | string | Error measurement basis |
-| precursor_mz_basis | string | Precursor source basis |
-| scan_precursor_mz | float | Scan-observed precursor m/z |
-| scan_precursor_delta_da | float | Precursor m/z deviation |
-| max_scan_precursor_abs_delta_da | float | Maximum precursor deviation |
-| event_rt_min | float | Earliest located event RT |
-| event_rt_max | float | Latest located event RT |
-| ms1_search_rt_min | float | MS1 search window min |
-| ms1_search_rt_max | float | MS1 search window max |
-| ms1_event_delta_min | float | MS1 apex RT minus `best_event_rt` |
-| ms1_peak_rt_start | float | MS1 peak start RT |
-| ms1_peak_rt_end | float | MS1 peak end RT |
-| ms1_height | float | MS1 peak height |
-| ms1_apex_mz | float | MS1 ion m/z read at the peak apex when all of the peak's events are inferred (blank for a recorded precursor, two ions, or no reading) |
-| ms1_trace_quality | string | `good`, `fair`, or `poor` |
-| ms1_scan_support_score | float | Scan matching score |
-| selected_tag_count | int | Selected NL tag count |
-| matched_tag_count | int | Matched tag count |
-| matched_tag_names | string | Semicolon-separated tag names |
-| primary_tag_name | string | Primary NL tag |
-| tag_combine_mode | string | `single`, `union`, or `intersection` |
-| tag_intersection_status | string | `not_required`, `complete`, or `incomplete` |
-| tag_evidence_json | string | JSON evidence details |
+Rows are ordered for review: peaks with two or more attached events whose
+apex lies within the MS1 search padding of the representative event and
+without a shoulder first, then the other peaks, then `blank` peaks; within
+each, higher `evidence_score`, more attached events, stronger product
+intensity and larger area first.
 
 ---
 
 ### `discovery_events.csv`
 
-One row per strict NL event (MS2 scan, tag and product) per sample. Each event
+One row per strict NL event (MS2 scan, tag and product) per sample; the
+sample is the folder and its `discovery_batch_index.csv` row. Each event
 names the peak it locates and, when it does not attach there, why. Alignment
 reads its evidence from this table.
 
 | Column | Type | Description |
 | --- | --- | --- |
-| sample_stem | string | Sample name |
 | ms2_scan_number | int | MS2 scan number |
 | ms2_rt | float | MS2 scan RT (min) |
 | neutral_loss_tag | string | NL tag |
@@ -143,9 +97,6 @@ One row per sample. Links each sample to its output files.
 | peak_count | int | Total peaks |
 | admitted_peak_count | int | Admitted peaks |
 | event_count | int | Total events |
-| high_count | int | HIGH priority count |
-| medium_count | int | MEDIUM priority count |
-| low_count | int | LOW priority count |
 | peak_csv_schema_version | string | Peak CSV format |
 | peak_csv_sha256 | string | SHA-256 of the peak CSV bytes |
 | peak_csv_byte_size | int | Peak CSV byte size |
@@ -161,7 +112,8 @@ Alignment rejects a peak CSV or physical-facts file whose bytes no longer
 match these fingerprints.
 RAW sources use local file revisions without scanning the file contents.
 Moving or copying RAW files requires regenerating Discovery and its acquisition
-cache. Earlier Discovery source schemas must also be regenerated; existing
+cache. Discovery tables written by another version, whose columns differ from
+the ones listed here, are rejected with a request to rerun Discovery; existing
 Matrix, Review, and explanation reports remain readable.
 
 ---

@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from tempfile import mkdtemp
 from threading import Lock
-from typing import Any, cast
+from typing import cast
 
 from xic_extractor.acquisition.raw_paths import existing_raw_paths
 from xic_extractor.alignment.config import AlignmentConfig
@@ -35,7 +35,6 @@ from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
     located_events_by_peak,
 )
-from xic_extractor.discovery.csv_writer import format_discovery_csv_value
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_persistence import (
@@ -43,7 +42,10 @@ from xic_extractor.discovery.physical_fact_persistence import (
     IndexedDiscoveryPhysicalFacts,
     read_discovery_physical_fact_records,
 )
-from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
+from xic_extractor.discovery.physical_fact_record import (
+    DiscoveryPhysicalFactRecord,
+    validate_peak_physical_measurement,
+)
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_with_expectations,
 )
@@ -203,6 +205,8 @@ class PreparedUntargetedAlignmentInputs:
     physical_sources: dict[str, IndexedDiscoveryPhysicalFacts]
     physical_spool_dir: Path | None
     evidence_store: StreamedResultStore | None
+    # Each candidate's representative MS2 precursor, read from its physical work.
+    precursor_mz_by_candidate: dict[str, float]
     _resources: ExitStack = field(repr=False)
 
     def retained_physical_records(
@@ -409,7 +413,6 @@ def prepare_untargeted_alignment_inputs(
                     dll_dir=dll_dir,
                     profile=signal_processing_profile,
                     acquisition_source_expectations=expectations,
-                    restore_candidate=_restore_physical_peak,
                 )
         else:
             with recorder.stage("alignment.load_physical_facts"):
@@ -446,6 +449,15 @@ def prepare_untargeted_alignment_inputs(
             physical_sources,
             physical_spool_dir,
             evidence_store,
+            precursor_mz_by_candidate={
+                cid: precursor_mz
+                for source in physical_sources.values()
+                for cid, precursor_mz in source.precursor_mz.items()
+            }
+            | {
+                cid: record.work_item.precursor_mz
+                for cid, record in physical_records.items()
+            },
             _resources=resources,
         )
     except BaseException:
@@ -532,6 +544,8 @@ def complete_untargeted_alignment(
         completed = completed.with_discovery_inputs(prepared)
         completed = completed.bind_publication_inputs(
             peaks_by_sample=peaks_by_sample,
+            precursor_mz_by_candidate=prepared.precursor_mz_by_candidate,
+            neutral_loss_by_tag=settings.neutral_loss_by_tag,
             alignment_config=alignment_config,
             known_istd_reference=known_istd_reference,
         )
@@ -663,13 +677,14 @@ def _load_physical_replay_inputs(
         # The event table hands over each peak's located events; peaks built
         # in memory by Discovery already carry them.
         event_csv = discovery_batch.event_csvs.get(stem)
-        sample_input = peaks_by_sample[stem]
+        raw_file = discovery_batch.raw_files.get(stem)
         located = (
             None
-            if event_csv is None or not sample_input
+            if event_csv is None or raw_file is None or not peaks_by_sample[stem]
             else located_events_by_peak(
                 event_csv,
-                raw_file=sample_input[0].raw_file,
+                raw_file=raw_file,
+                sample_stem=stem,
                 neutral_loss_by_tag=settings.neutral_loss_by_tag,
             )
         )
@@ -679,12 +694,12 @@ def _load_physical_replay_inputs(
             record = by_id.get(peak.peak_id)
             if record is None:
                 raise ValueError("Discovery peak lacks its exact physical record")
-            restored = _restore_physical_peak(peak, record)
-            if located is not None:
-                restored = replace(
-                    restored, located_events=located.get(peak.peak_id, ())
-                )
-            sample_peaks.append(restored)
+            validate_peak_physical_measurement(peak, record)
+            sample_peaks.append(
+                peak
+                if located is None
+                else replace(peak, located_events=located.get(peak.peak_id, ()))
+            )
             if peak.peak_id in sample_records:
                 raise ValueError("Discovery physical peak identity is duplicated")
             sample_records[peak.peak_id] = record
@@ -722,45 +737,6 @@ def _load_physical_replay_inputs(
                 selected_records[cid] = rec
 
     return restored, selected_records, acquisition_source_expectations
-
-
-def _restore_physical_peak(
-    peak: DiscoveryPeak,
-    record: DiscoveryPhysicalFactRecord,
-) -> DiscoveryPeak:
-    work = record.work_item
-    if (
-        record.peak_id != peak.peak_id
-        or work.sample_stem != peak.sample_stem
-        or work.best_ms2_scan_id != peak.best_ms2_scan_id
-    ):
-        raise ValueError("physical replay crossed exact Discovery peak identity")
-    values: dict[str, Any] = {
-        "best_event_precursor_mz": work.precursor_mz,
-        "best_event_product_mz": work.product_mz,
-        "ms1_search_rt_min": work.xic_rt_min,
-        "ms1_search_rt_max": work.xic_rt_max,
-    }
-    facts = record.evaluation.facts
-    if facts is not None:
-        values.update(
-            ms1_apex_rt=facts.apex_rt_min,
-            ms1_peak_rt_start=facts.left_rt_min,
-            ms1_peak_rt_end=facts.right_rt_min,
-            ms1_area=facts.area_counts_seconds,
-            ms1_height=facts.height,
-            # The physical question is canonical to the measured peak; the
-            # retained CSV receipt still owns the representative NL event RT.
-            ms1_event_delta_min=facts.apex_rt_min - peak.best_event_rt,
-        )
-    for name, value in values.items():
-        candidate_val = getattr(peak, name)
-        if candidate_val != value and (
-            format_discovery_csv_value(name, candidate_val)
-            != format_discovery_csv_value(name, value)
-        ):
-            raise ValueError(f"{peak.peak_id}: physical {name} crossed its CSV receipt")
-    return replace(peak, **values)
 
 
 __all__ = [
