@@ -16,7 +16,6 @@ from xic_extractor.alignment_explanation.errors import (
     ExplanationError,
     ExplanationUnavailableError,
 )
-from xic_extractor.alignment_explanation.review import REVIEW_SCHEMA_VERSION
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (
     InspectorCancelled,
@@ -161,7 +160,7 @@ class ReviewWorkspace:
                     sample_ids=sample_ids,
                     limit=25,
                     review_scope="matrix"
-                    if summary.get("schema_version") == REVIEW_SCHEMA_VERSION
+                    if summary.get("retention") == "review"
                     else "all",
                 ),
             )

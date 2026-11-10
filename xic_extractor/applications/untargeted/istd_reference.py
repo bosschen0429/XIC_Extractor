@@ -62,7 +62,7 @@ def extract_batch_known_istd_reference(
         results_by_sample[sample_stem] = result
 
     declared_cohorts = {row.raw_stem: row.batch_id for row in sample_metadata or ()}
-    coordinates, selections = resolve_istd_reference_peaks(
+    coordinates = resolve_istd_reference_peaks(
         istd_targets,
         results_by_sample,
         alignment_config=AlignmentConfig(),
@@ -76,7 +76,6 @@ def extract_batch_known_istd_reference(
         coordinates,
         source_identifier=source_identifier,
         source_sha256=source_sha256,
-        peak_selections=selections,
     )
 
 

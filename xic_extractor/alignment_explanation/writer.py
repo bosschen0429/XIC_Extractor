@@ -1,4 +1,8 @@
-"""One atomic, bounded write transaction for completed Alignment explanations."""
+"""One atomic write transaction for completed Alignment evidence.
+
+The producer names samples, peaks, candidates and groups by their domain keys;
+the writer stores each concept once and turns references into row ids.
+"""
 
 from __future__ import annotations
 
@@ -13,13 +17,43 @@ from typing import Any
 from xic_extractor.alignment_explanation.errors import ExplanationError
 
 from .curves import validate_curve_payload
-from .query import build_query_index
-from .review import REVIEW_SCHEMA_VERSION, encode_row_evidence
-from .storage import SCHEMA_VERSION, create_schema, encode_object
+from .storage import (
+    SCHEMA_VERSION,
+    create_optional_table,
+    create_schema,
+    encode_details,
+    encode_object,
+)
+
+CandidateKey = tuple[str, str]
+# m/z, apex RT and the query ppm of one physical peak; None when not recorded.
+PeakCoordinates = tuple[float | None, float | None, float | None]
+
+_CELL_SCALARS = frozenset(
+    {
+        "feature_id",
+        "sample_key",
+        "variant",
+        "value",
+        "apex_rt_min",
+        "source",
+        "support_origin",
+        "observation_ids",
+    }
+)
+
+
+def _ordered_json(value: Any) -> str:
+    """JSON keeping the owner's field order, as readers display it."""
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+
+
+def _compressed(value: Any) -> bytes:
+    return zlib.compress(_ordered_json(value).encode("utf-8"), 1)
 
 
 class ExplanationReportWriter:
-    """One bounded SQLite transaction, published only by explicit finalization."""
+    """Buffer one run's evidence; publish it only by explicit finalization."""
 
     def __init__(
         self,
@@ -33,17 +67,43 @@ class ExplanationReportWriter:
         self.connection: sqlite3.Connection | None = None
         self.review_only = review_only
         self.curve_mz_ranges = tuple(curve_mz_ranges)
-        self.candidate_count = 0
-        self.record_counts: dict[str, int] = {}
-        self._candidates: dict[tuple[str, str], dict[str, Any]] = {}
-        self._candidate_rowids: dict[tuple[str, str], int] = {}
-        self._record_rowids: dict[tuple[str, str | int], int] = {}
-        self._buffered_records: dict[int, tuple[str, str | int, str | bytes]] = {}
-        self._related_sets: dict[tuple[tuple[str, str], ...], int] = {}
-        self._buffered_link_members: list[tuple[int, int]] = []
-        self._buffered_record_links: list[tuple[int, int]] = []
-        self._buffered_curve_payloads: list[tuple[int, str, str, str, str, bytes]] = []
-        self._curve_rowids: dict[tuple[str, str, str, bytes], int] = {}
+        self._samples: dict[str, int] = {}
+        self._peaks: dict[tuple[str, str], list[Any]] = {}
+        self._subjects: dict[str, list[Any]] = {}
+        self._candidates: dict[CandidateKey, dict[str, Any]] = {}
+        self._groups: dict[str, list[Any]] = {}
+        self._group_ids: list[str] = []
+        self._initial_groups: list[list[Any]] = []
+        self._members: dict[tuple[str, str], list[Any]] = {}
+        self._cells: dict[tuple[str, str], list[Any]] = {}
+        self._assessments: list[tuple[Any, ...]] = []
+        self._exclusions: dict[CandidateKey, str] = {}
+        self._edges: dict[tuple[str, str], tuple[Any, ...]] = {}
+        self._last_record_id = 0
+        self._curves: dict[tuple[str, str, str, bytes], list[Any]] = {}
+
+    def _record_id(self) -> int:
+        """Records without a natural key share one numbering, in emission order,
+        so a displayed record reference names exactly one record."""
+        self._last_record_id += 1
+        return self._last_record_id
+
+    @property
+    def candidate_count(self) -> int:
+        return len(self._candidates)
+
+    @property
+    def record_count(self) -> int:
+        return (
+            len(self._subjects)
+            + len(self._assessments)
+            + len(self._exclusions)
+            + len(self._groups)
+            + len(self._initial_groups)
+            + len(self._edges)
+            + len(self._curves)
+            + len(self._cells)
+        )
 
     def __enter__(self) -> ExplanationReportWriter:
         if self.path.exists() or self.temporary.exists():
@@ -52,17 +112,11 @@ class ExplanationReportWriter:
             pass
         try:
             self.connection = sqlite3.connect(self.temporary)
-            self.connection.execute("PRAGMA foreign_keys = ON;")
-            self.connection.execute(
-                "PRAGMA page_size = 4096;"
-                if self.review_only
-                else "PRAGMA page_size = 32768;"
-            )
+            self.connection.execute("PRAGMA page_size = 4096;")
             self.connection.execute("PRAGMA synchronous = OFF;")
             self.connection.execute("PRAGMA journal_mode = OFF;")
-            self.connection.execute("PRAGMA cache_size = -32000;")
-            self.connection.execute("PRAGMA temp_store = FILE;")
-            create_schema(self.connection, review_only=self.review_only)
+            create_schema(self.connection)
+            self.connection.execute("BEGIN")
         except BaseException:
             self.abort()
             raise
@@ -76,103 +130,316 @@ class ExplanationReportWriter:
             raise RuntimeError("explanation writer is not active")
         return self.connection
 
-    def add_candidate(self, cid: str, sid: str, payload: Mapping[str, Any]) -> None:
-        key = (cid, sid)
+    # Peaks and subjects -------------------------------------------------
+
+    def add_peak(
+        self,
+        sample_key: str,
+        physical_peak_key: str,
+        coordinates: PeakCoordinates = (None, None, None),
+    ) -> None:
+        """Record one physical peak once; its coordinates are fixed by the peak."""
+        stored = self._peaks.setdefault(
+            (sample_key, physical_peak_key), [len(self._peaks) + 1, None, None, None]
+        )
+        for index, value in enumerate(coordinates, start=1):
+            if value is None:
+                continue
+            if stored[index] is None:
+                stored[index] = value
+            elif stored[index] != value:
+                raise ValueError(
+                    f"distinct peaks share one locator: {physical_peak_key}"
+                )
+
+    def _peak_ids(self, sample_key: str, keys: Iterable[str]) -> list[int]:
+        ids = []
+        for key in keys:
+            self.add_peak(sample_key, key)
+            ids.append(self._peaks[sample_key, key][0])
+        return ids
+
+    def add_method_subject(self, payload: Mapping[str, Any]) -> None:
+        sid = payload["method_subject_id"]
+        row = [
+            len(self._subjects) + 1,
+            sid,
+            payload.get("subject_kind"),
+            payload.get("precursor_mz"),
+            payload.get("precursor_tolerance_ppm"),
+            payload.get("neutral_loss_da"),
+            None
+            if payload.get("composition") is None
+            else encode_object(payload["composition"]),
+        ]
+        existing = self._subjects.setdefault(sid, row)
+        if existing[1:] != row[1:]:
+            raise ValueError(f"conflicting method subject: {sid}")
+
+    def _subject_id(self, method_subject_id: str | None) -> int | None:
+        if method_subject_id is None:
+            return None
+        if method_subject_id not in self._subjects:
+            self.add_method_subject({"method_subject_id": method_subject_id})
+        return int(self._subjects[method_subject_id][0])
+
+    # Candidates ---------------------------------------------------------
+
+    def add_candidate(
+        self,
+        candidate_id: str,
+        sample_key: str,
+        *,
+        precursor_mz: float | None,
+        ms1_apex_mz: float | None = None,
+        neutral_loss_tag: str | None = None,
+        peak_status: str | None = None,
+        method_subject_id: str | None = None,
+        physical_state: str | None = None,
+        physical_reason: str | None = None,
+        rt_apex_min: float | None = None,
+    ) -> None:
+        key = candidate_id, sample_key
         if key in self._candidates:
             raise ValueError("duplicate diagnostic candidate/sample")
-        self._candidates[key] = dict(payload)
-        self._candidate_rowids[key] = len(self._candidate_rowids) + 1
-        self.candidate_count += 1
+        self._candidates[key] = {
+            "id": len(self._candidates) + 1,
+            "precursor_mz": precursor_mz,
+            "ms1_apex_mz": ms1_apex_mz,
+            "neutral_loss_tag": neutral_loss_tag,
+            "peak_status": peak_status,
+            "method_subject": method_subject_id,
+            "terminal_variant": None,
+            "hypothesis_id": None,
+            "terminal_peak": None,
+            "physical_state": physical_state,
+            "physical_reason": physical_reason,
+            "rt_apex_min": rt_apex_min,
+        }
 
-    def add_record(
+    def add_terminal(
         self,
-        kind: str,
-        identity: str | int | None,
+        candidate_id: str,
+        sample_key: str,
+        *,
+        variant: str,
+        hypothesis_id: str | None = None,
+        physical_peak_key: str | None = None,
+    ) -> None:
+        """A candidate's terminal search subject: its variant and observed peak."""
+        candidate = self._candidates[candidate_id, sample_key]
+        if candidate["terminal_variant"] is not None:
+            raise ValueError("duplicate terminal subject for one candidate")
+        candidate["terminal_variant"] = variant
+        candidate["hypothesis_id"] = hypothesis_id
+        if physical_peak_key is not None:
+            candidate["terminal_peak"] = self._peak_ids(
+                sample_key, (physical_peak_key,)
+            )[0]
+
+    def _candidate_ids(self, keys: Iterable[CandidateKey]) -> str:
+        return json.dumps(
+            sorted({self._candidates[key]["id"] for key in keys}), separators=(",", ":")
+        )
+
+    # Method evidence ----------------------------------------------------
+
+    def add_assessment(
+        self,
         payload: Mapping[str, Any],
-        related: Iterable[tuple[str, str]],
-    ) -> bool:
-        # Records without a natural locator use their actual database primary key.
-        if identity is None:
-            identity = len(self._record_rowids) + 1
-        encoded = encode_object(payload)
-        key = (kind, identity)
-        stored_payload = (
-            zlib.compress(encoded.encode("utf-8"), 1) if self.review_only else encoded
-        )
-        rowid = self._record_rowids.get(key)
-        is_new = rowid is None
-        if rowid is not None:
-            pending = self._buffered_records.get(rowid)
-            existing_payload = (
-                pending[2]
-                if pending is not None
-                else self._connection()
-                .execute("SELECT payload FROM records WHERE id=?", (rowid,))
-                .fetchone()[0]
-            )
-            if existing_payload != stored_payload:
-                raise ValueError(f"conflicting diagnostic owner identity: {key}")
-        else:
-            rowid = len(self._record_rowids) + 1
-            self._record_rowids[key] = rowid
-            self._buffered_records[rowid] = (kind, identity, stored_payload)
-            self.record_counts[kind] = self.record_counts.get(kind, 0) + 1
-            if len(self._buffered_records) >= 20000:
-                self._flush_records()
-        self._link_record(kind, identity, related)
-        return is_new
-
-    def add_row_cells(
-        self,
-        row_id: str,
-        cells: Sequence[Mapping[str, Any]],
-        samples: Mapping[str, int],
+        *,
+        candidate_physical_peak_keys: Sequence[str],
     ) -> None:
-        record_id = self._record_rowids["rows", row_id]
-        evidence = encode_row_evidence(cells, samples)
-        self._connection().executemany(
-            "INSERT INTO cells VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        sample_key = payload["sample_key"]
+        self._sample(sample_key)
+        self._assessments.append(
             (
-                (
-                    record_id,
-                    samples[cell["sample_key"]],
-                    cell["variant"],
-                    cell.get("value"),
-                    cell.get("apex_rt_min"),
-                    cell.get("source"),
-                    cell.get("support_origin", "unavailable"),
-                    json.dumps(cell.get("observation_ids", []), separators=(",", ":")),
-                )
-                for cell in cells
-            ),
-        )
-        self._connection().execute(
-            "INSERT INTO row_evidence VALUES (?, ?)", (record_id, evidence)
-        )
-        self.record_counts["cell_decisions"] = self.record_counts.get(
-            "cell_decisions", 0
-        ) + len(cells)
-
-    def _link_record(
-        self, kind: str, identity: str | int, related: Iterable[tuple[str, str]]
-    ) -> None:
-        # Sample cells share their group's candidate set. Store the set once;
-        # the logical links view expands it only for a reader's selected scope.
-        members = tuple(sorted(set(related)))
-        if not members:
-            return
-        set_id = self._related_sets.get(members)
-        if set_id is None:
-            set_id = len(self._related_sets)
-            self._related_sets[members] = set_id
-            self._buffered_link_members.extend(
-                (set_id, self._candidate_rowids[cid, sid]) for cid, sid in members
+                self._record_id(),
+                sample_key,
+                self._subject_id(payload["method_subject_id"]),
+                payload.get("provider_id"),
+                payload.get("method_id"),
+                payload.get("method_version"),
+                payload.get("detector_invocation_id"),
+                payload.get("technical_state"),
+                payload.get("method_result"),
+                json.dumps(list(payload.get("reason_codes", ())), ensure_ascii=False),
+                json.dumps(self._peak_ids(sample_key, candidate_physical_peak_keys)),
+                None if self.review_only else payload.get("acquisition_source_id"),
+                None
+                if self.review_only or payload.get("evaluation_receipt") is None
+                else encode_object(payload["evaluation_receipt"]),
             )
-        self._buffered_record_links.append(
-            (set_id, self._record_rowids[kind, identity])
         )
-        if len(self._buffered_record_links) + len(self._buffered_link_members) >= 50000:
-            self._flush_links()
+
+    def add_exclusion(
+        self, candidate_id: str, sample_key: str, reason_code: str
+    ) -> None:
+        key = candidate_id, sample_key
+        if self._exclusions.setdefault(key, reason_code) != reason_code:
+            raise ValueError(f"conflicting candidate exclusion: {key}")
+
+    # Groups -------------------------------------------------------------
+
+    def _sample(self, sample_key: str) -> None:
+        if sample_key not in self._samples:
+            raise ExplanationError(f"undeclared sample: {sample_key}")
+
+    def declare_samples(self, samples: Sequence[Mapping[str, str]]) -> None:
+        """Samples in run order; every other table refers to these ordinals."""
+        if self._samples:
+            raise ValueError("samples are declared once")
+        self._sample_rows = [
+            (index, sample["sample_key"], sample["sample_stem"])
+            for index, sample in enumerate(samples)
+        ]
+        self._samples = {key: index for index, key, _ in self._sample_rows}
+
+    def _member(
+        self, member: Mapping[str, Any], *, initial: int | None, final: str | None
+    ) -> None:
+        sample_key = member["sample_key"]
+        key = sample_key, member["subject_id"]
+        peaks = self._peak_ids(sample_key, member.get("physical_peak_keys", ()))
+        row = self._members.setdefault(
+            key,
+            [
+                len(self._members) + 1,
+                member.get("subject_kind"),
+                None,
+                None,
+                peaks,
+                None,
+                None,
+            ],
+        )
+        if row[1] != member.get("subject_kind") or row[4] != peaks:
+            raise ValueError(f"one group member differs between groups: {key}")
+        slot, value = (2, initial) if final is None else (3, final)
+        if row[slot] is not None and row[slot] != value:
+            raise ValueError(f"group member belongs to two groups: {key}")
+        row[slot] = value
+
+    def add_final_group(
+        self,
+        group_id: str,
+        *,
+        feature_id: str | None,
+        disposition: str,
+        members: Sequence[Mapping[str, Any]],
+        candidates: Iterable[CandidateKey],
+        center_mz: float | None = None,
+        ppm: float | None = None,
+    ) -> None:
+        """One final group; with a feature id it is also one result row."""
+        if group_id in self._groups:
+            raise ValueError(f"duplicate final group: {group_id}")
+        self._groups[group_id] = [
+            self._record_id(),
+            feature_id,
+            disposition,
+            None,
+            center_mz,
+            ppm,
+            self._candidate_ids(candidates),
+        ]
+        for member in members:
+            self._member(member, initial=None, final=group_id)
+
+    def set_row_destination(self, group_id: str, destination: str) -> None:
+        self._groups[group_id][3] = destination
+
+    def add_initial_group(
+        self,
+        *,
+        disposition: str,
+        members: Sequence[Mapping[str, Any]],
+        candidates: Iterable[CandidateKey],
+        inference_basis: Mapping[str, Any] | None = None,
+        inference_decisions: Sequence[Mapping[str, Any]] | None = None,
+    ) -> None:
+        row_id = self._record_id()
+        for member in members:
+            self._member(member, initial=row_id, final=None)
+        owners = {member["subject_id"]: member["sample_key"] for member in members}
+        decisions = []
+        for decision in inference_decisions or ():
+            risk = decision.get("accepted_risk")
+            owner = decision.get("owner_id")
+            if risk is not None and isinstance(owner, str) and owner in owners:
+                # An accepted risk belongs to its member; cells read it there.
+                # Its flags are a column so selection reads them undecoded.
+                row = self._members[owners[owner], owner]
+                row[5] = _compressed({**risk, "risk_flags": None})
+                row[6] = json.dumps(list(risk["risk_flags"]), ensure_ascii=False)
+                decision = {**decision, "accepted_risk": None}
+            decisions.append(decision)
+        self._initial_groups.append(
+            [
+                row_id,
+                disposition,
+                None if inference_basis is None else _compressed(inference_basis),
+                None if inference_decisions is None else _compressed(decisions),
+                self._candidate_ids(candidates),
+            ]
+        )
+
+    def add_cells(self, group_id: str, cells: Sequence[Mapping[str, Any]]) -> None:
+        """A result row's cells; one cell per sample, scalars as columns.
+
+        A cell's ``membership_risks`` are the risks no group member owns
+        (Backfill admissions); a member's accepted risk is stored with the member.
+        """
+        for cell in cells:
+            sample_key = cell["sample_key"]
+            self._sample(sample_key)
+            key = group_id, sample_key
+            if key in self._cells:
+                raise ValueError("duplicate review cell for group and sample")
+            details = {k: v for k, v in cell.items() if k not in _CELL_SCALARS}
+            risks = details.pop("membership_risks", ())
+            details.setdefault("evidence_states", [])
+            details.setdefault("reason_codes", [])
+            details["signal_quality"] = [
+                {
+                    **quality,
+                    "observation_id": self._peak_ids(
+                        sample_key, (quality["observation_id"],)
+                    )[0],
+                }
+                for quality in cell.get("signal_quality", [])
+            ]
+            self._cells[key] = [
+                cell["variant"],
+                cell.get("value"),
+                cell.get("apex_rt_min"),
+                cell.get("source"),
+                cell.get("support_origin", "unavailable"),
+                json.dumps(self._peak_ids(sample_key, cell.get("observation_ids", ()))),
+                None,
+                _compressed(list(risks)) if risks else None,
+                details,
+            ]
+
+    def set_cell_position(self, group_id: str, sample_key: str, rt_min: float) -> None:
+        """The recorded group position used to inspect an empty cell."""
+        self._cells[group_id, sample_key][6] = rt_min
+
+    def add_initial_edge(
+        self, payload: Mapping[str, Any], candidates: Iterable[CandidateKey]
+    ) -> None:
+        key = payload["left_subject_id"], payload["right_subject_id"]
+        row = (
+            payload.get("disposition"),
+            encode_object(payload.get("initial_evidence")),
+            encode_object(payload.get("initial_context")),
+            encode_object(payload.get("alignment_config")),
+            self._candidate_ids(candidates),
+        )
+        if self._edges.setdefault(key, row) != row:
+            raise ValueError(f"conflicting initial edge: {key}")
+
+    # Curves -------------------------------------------------------------
 
     def add_curve_payload(
         self,
@@ -180,139 +447,179 @@ class ExplanationReportWriter:
         kind: str,
         record_id: str,
         payload: Mapping[str, Any],
+        candidates: Iterable[CandidateKey] = (),
         codec: str = "zlib-json-utf8",
     ) -> int:
-        """Store exact curve data once and return its database-local rowid."""
+        """Store exact curve data once and return its database-local id."""
         validate_curve_payload(
             payload, sample_id=sample_id, kind=kind, record_id=record_id
         )
         if codec != "zlib-json-utf8":
             raise ExplanationError(f"unsupported curve codec: {codec}")
-        encoded_json = json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        ).encode("utf-8")
-        compressed = zlib.compress(encoded_json, level=1)
-        key = (sample_id, kind, record_id, compressed)
-        existing = self._curve_rowids.get(key)
-        if existing is not None:
-            return existing
-        payload_id = len(self._curve_rowids) + 1
-        self._curve_rowids[key] = payload_id
-        self._buffered_curve_payloads.append(
-            (payload_id, sample_id, kind, record_id, codec, compressed)
+        compressed = zlib.compress(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8"),
+            level=1,
         )
-        if len(self._buffered_curve_payloads) >= 5000:
-            self._flush_curve_payloads()
-        return payload_id
+        key = (sample_id, kind, record_id, compressed)
+        row = self._curves.get(key)
+        if row is None:
+            row = self._curves[key] = [
+                self._record_id(),
+                payload.get("candidate_id"),
+                payload.get("physical_peak_key"),
+                codec,
+                set(),
+            ]
+        row[4].update(candidates)
+        return int(row[0])
 
-    def _flush_curve_payloads(self) -> None:
-        if self._buffered_curve_payloads:
-            self._connection().executemany(
-                "INSERT INTO curve_payloads VALUES (?, ?, ?, ?, ?, ?)",
-                self._buffered_curve_payloads,
-            )
-            self._buffered_curve_payloads.clear()
-
-    def _flush_records(self) -> None:
-        if self._buffered_records:
-            self._connection().executemany(
-                "INSERT INTO records VALUES (?, ?, ?, ?)",
-                ((rowid, *record) for rowid, record in self._buffered_records.items()),
-            )
-            self._buffered_records.clear()
-
-    def _flush_links(self) -> None:
-        if self._buffered_record_links:
-            self._flush_records()
-            self._connection().executemany(
-                "INSERT INTO link_members VALUES (?, ?)",
-                self._buffered_link_members,
-            )
-            self._connection().executemany(
-                "INSERT OR IGNORE INTO record_links VALUES (?, ?)",
-                self._buffered_record_links,
-            )
-            self._buffered_link_members.clear()
-            self._buffered_record_links.clear()
+    # Publication --------------------------------------------------------
 
     def finalize(self, summary: Mapping[str, Any]) -> Path:
-        self._flush_records()
-        self._flush_links()
-        self._flush_curve_payloads()
-        samples = {
-            sample["sample_key"]: i for i, sample in enumerate(summary["samples"])
-        }
-        self._connection().executemany(
-            "INSERT INTO samples VALUES (?, ?, ?)",
+        db = self._connection()
+        if not self._samples:
+            self.declare_samples(summary["samples"])
+        db.executemany("INSERT INTO samples VALUES (?,?,?)", self._sample_rows)
+        db.executemany(
+            "INSERT INTO peaks VALUES (?,?,?,?,?,?)",
             (
-                (i, sample["sample_key"], sample["sample_stem"])
-                for i, sample in enumerate(summary["samples"])
+                (row[0], self._samples[sample], key, *row[1:])
+                for (sample, key), row in self._peaks.items()
             ),
         )
-        if self._candidates:
-            located_fields = {
-                "candidate_id",
-                "sample_key",
-                "sample_stem",
-                "precursor_mz",
-                "ms1_apex_mz",
-            }
-            self._connection().executemany(
-                "INSERT INTO candidates VALUES (?, ?, ?, ?, ?, ?)",
+        db.executemany(
+            "INSERT INTO method_subjects VALUES (?,?,?,?,?,?,?)",
+            self._subjects.values(),
+        )
+        db.executemany(
+            "INSERT INTO candidates VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
                 (
-                    (
-                        self._candidate_rowids[cid, sid],
-                        cid,
-                        samples[sid],
-                        payload.get("precursor_mz"),
-                        payload.get("ms1_apex_mz"),
-                        encode_object(
-                            {
-                                k: v
-                                for k, v in payload.items()
-                                if k not in located_fields
-                            }
-                        ),
-                    )
-                    for (cid, sid), payload in self._candidates.items()
+                    row["id"],
+                    cid,
+                    self._samples[sid],
+                    row["precursor_mz"],
+                    row["ms1_apex_mz"],
+                    row["neutral_loss_tag"],
+                    row["peak_status"],
+                    self._subject_id(row["method_subject"]),
+                    row["terminal_variant"],
+                    row["hypothesis_id"],
+                    row["terminal_peak"],
+                    row["physical_state"],
+                    row["physical_reason"],
+                    row["rt_apex_min"],
+                )
+                for (cid, sid), row in self._candidates.items()
+            ),
+        )
+        db.executemany(
+            "INSERT INTO groups VALUES (?,?,?,?,?,?,?)", self._groups.values()
+        )
+        db.executemany(
+            "INSERT INTO initial_groups VALUES (?,?,?,?,?)", self._initial_groups
+        )
+        db.executemany(
+            "INSERT INTO members VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                (
+                    row[0],
+                    subject_id,
+                    self._samples[sample],
+                    row[1],
+                    row[2],
+                    None if row[3] is None else self._groups[row[3]][0],
+                    json.dumps(row[4]),
+                    row[5],
+                    row[6],
+                )
+                for (sample, subject_id), row in self._members.items()
+            ),
+        )
+        db.executemany(
+            "INSERT INTO cells VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                (
+                    self._groups[group_id][0],
+                    self._samples[sample],
+                    *row[:8],
+                    encode_details(row[8]),
+                )
+                for (group_id, sample), row in self._cells.items()
+            ),
+        )
+        db.executemany(
+            "INSERT INTO method_assessments VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ((row[0], self._samples[row[1]], *row[2:]) for row in self._assessments),
+        )
+        db.executemany(
+            "INSERT INTO exclusions VALUES (?,?)",
+            (
+                (self._candidates[key]["id"], reason)
+                for key, reason in self._exclusions.items()
+            ),
+        )
+        if self._edges:
+            create_optional_table(db, "initial_edges")
+            db.executemany(
+                "INSERT INTO initial_edges VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    (index, *key, *row)
+                    for index, (key, row) in enumerate(self._edges.items(), start=1)
                 ),
             )
-            self._candidates.clear()
-        self._connection().execute(
-            "INSERT INTO metadata VALUES ('summary', ?)",
+        if self._curves:
+            create_optional_table(db, "curves")
+            db.executemany(
+                "INSERT INTO curves VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    (
+                        row[0],
+                        sample_id,
+                        kind,
+                        record_id,
+                        row[1],
+                        row[2],
+                        row[3],
+                        compressed,
+                        self._candidate_ids(row[4]),
+                    )
+                    for (sample_id, kind, record_id, compressed), row in (
+                        self._curves.items()
+                    )
+                ),
+            )
+        db.execute(
+            "INSERT INTO run VALUES (?)",
             (
                 encode_object(
-                    dict(
-                        {
+                    {
+                        **{
                             key: value
                             for key, value in summary.items()
                             if key != "samples"
                         },
-                        schema_version=REVIEW_SCHEMA_VERSION
-                        if self.review_only
-                        else SCHEMA_VERSION,
-                        plot_evidence_capability=(
+                        "schema_version": SCHEMA_VERSION,
+                        "plot_evidence_capability": (
                             "retained_curves"
-                            if not self.review_only or self._curve_rowids
+                            if not self.review_only or self._curves
                             else "metadata_only"
                         ),
-                        diagnostic_only=True,
-                        completion="post_matrix_publication",
-                    )
+                        "diagnostic_only": True,
+                        "completion": "post_matrix_publication",
+                    }
                 ),
             ),
         )
-        if self.review_only:
-            build_query_index(
-                self._connection(),
-                dict(summary),
-            )
-        self._connection().commit()
-        self._connection().close()
+        db.execute("ANALYZE")
+        db.commit()
+        db.close()
         self.connection = None
         if self.path.exists():
             raise FileExistsError(f"explanation artifact already exists: {self.path}")
@@ -321,36 +628,6 @@ class ExplanationReportWriter:
 
     def abort(self) -> None:
         if self.connection is not None:
-            self._connection().close()
+            self.connection.close()
             self.connection = None
-        self._candidates.clear()
-        self._candidate_rowids.clear()
-        self._record_rowids.clear()
-        self._buffered_records.clear()
-        self._related_sets.clear()
-        self._buffered_link_members.clear()
-        self._buffered_record_links.clear()
-        self._buffered_curve_payloads.clear()
-        self._curve_rowids.clear()
         self.temporary.unlink(missing_ok=True)
-
-
-def write_explanation_report(
-    path: Path,
-    *,
-    summary: Mapping[str, Any],
-    candidates: Iterable[tuple[str, str, Mapping[str, Any]]],
-    records: Mapping[tuple[str, str], Mapping[str, Any]],
-    links: Iterable[tuple[str, str, str, str]],
-) -> Path:
-    """Publish one complete projection; never overwrite an existing artifact."""
-    with ExplanationReportWriter(path) as writer:
-        for cid, sid, payload in candidates:
-            writer.add_candidate(cid, sid, payload)
-            del payload
-        for (kind, identity), payload in records.items():
-            writer.add_record(kind, identity, payload, ())
-            del payload
-        for cid, sid, kind, identity in links:
-            writer._link_record(kind, identity, ((cid, sid),))
-        return writer.finalize(summary)

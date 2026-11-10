@@ -20,7 +20,6 @@ from xic_extractor.alignment.backfill.istd_anchored import (
 )
 from xic_extractor.alignment.cell_observation.observations import CidNlCellGroupSupport
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.drift_evidence import IstdReferencePeakSelection
 from xic_extractor.alignment.peak_trajectories import PeakTrajectory
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.configuration.models import ExtractionConfig, Target
@@ -43,7 +42,7 @@ def resolve_istd_reference_peaks(
     *,
     alignment_config: AlignmentConfig,
     sample_cohorts: Mapping[str, str],
-) -> tuple[dict[tuple[str, str], float], tuple[IstdReferencePeakSelection, ...]]:
+) -> dict[tuple[str, str], float]:
     """Recover an observed ISTD peak without manufacturing local NL support.
 
     Direct Targeted selections freeze the peer evidence. A missing selection,
@@ -91,11 +90,6 @@ def resolve_istd_reference_peaks(
             if len(alternatives) == 1:
                 contested.add((alternatives[0], sample))
     coordinates = dict(direct)
-    selections = {}
-    for (label, sample), rt in direct.items():
-        selections[label, sample] = IstdReferencePeakSelection(
-            label, sample, rt, rt, (label, sample) in supported, "direct_targeted"
-        )
     frame = SampleRtFrame(
         sample_universe=frozenset(results_by_sample),
         sample_cohorts=sample_cohorts,
@@ -139,24 +133,10 @@ def resolve_istd_reference_peaks(
             ]
             if len(matches) != 1:
                 continue
-            index, evaluation = matches[0]
+            _, evaluation = matches[0]
             assert evaluation.integration is not None
-            rt = evaluation.integration.rt_apex_min
-            nl_observed = (
-                result.cid_nl_relations is not None
-                and index in result.cid_nl_relations.supported_candidate_indexes
-            )
-            coordinates[key] = rt
-            selections[key] = IstdReferencePeakSelection(
-                target.label,
-                sample,
-                rt,
-                direct.get(key),
-                nl_observed,
-                "cross_sample_physical_peak",
-                tuple(sorted(s for s, _ in peers)),
-            )
-    return coordinates, tuple(selections[key] for key in sorted(selections))
+            coordinates[key] = evaluation.integration.rt_apex_min
+    return coordinates
 
 
 def resolve_targeted_istd_backfill(

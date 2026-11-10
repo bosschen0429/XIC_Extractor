@@ -15,6 +15,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from xic_extractor.matrix_curation.export import (
+    RUN_METADATA_NAME,
     STEPS,
     default_output_dir,
     export_matrix_curation,
@@ -95,7 +96,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             istd, istd_source = read_istd_file(args.istd_list), str(args.istd_list)
         else:
             istd = read_run_istd(source)
-            istd_source = f"run explanation: {source.explanation_path}" if istd else ""
+            istd_source = (
+                f"run metadata: {source.source_dir / RUN_METADATA_NAME}" if istd else ""
+            )
         output_dir = args.output_dir or default_output_dir(source)
         summary = json.loads(
             export_matrix_curation(

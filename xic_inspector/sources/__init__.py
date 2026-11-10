@@ -47,9 +47,7 @@ def open_source(path, *, query_only=False):
     from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
 
     summary = read_summary(path)
-    from xic_extractor.alignment_explanation.review import REVIEW_SCHEMA_VERSION
-
-    if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
+    if summary["retention"] == "review":
         return IndexedCidNlSource(path, summary)
     return CidNlSource(path, query_only=query_only)
 

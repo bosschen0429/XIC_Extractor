@@ -18,7 +18,7 @@ from xic_extractor.matrix_curation.finite_fraction import FINITE_FRACTION_STEP
 from xic_extractor.matrix_curation.istd import (
     IstdWindow,
     match_istd,
-    windows_from_explanation,
+    windows_from_target_snapshot,
 )
 from xic_extractor.matrix_curation.same_compound import (
     REVIEW_NAME as SAME_COMPOUND_REVIEW_NAME,
@@ -77,6 +77,8 @@ class CurationSource:
     dll_dir: Path | None = None
     # The run's per-cell explanation, when the folder has one.
     explanation_path: Path | None = None
+    # The run's declared target list, from the Alignment run metadata.
+    target_snapshot: str | None = None
 
 
 def locate_curation_source(source_dir: Path) -> CurationSource:
@@ -101,6 +103,7 @@ def locate_curation_source(source_dir: Path) -> CurationSource:
         for value in (run.get("raw_dir"), run.get("dll_dir"))
     )
     explanation = source_dir / EXPLANATION_ARTIFACT_NAME
+    snapshot = run.get("known_istd_reference_target_snapshot")
     return CurationSource(
         source_dir,
         matrix,
@@ -108,6 +111,7 @@ def locate_curation_source(source_dir: Path) -> CurationSource:
         raw_dir,
         dll_dir,
         explanation if explanation.is_file() else None,
+        snapshot if isinstance(snapshot, str) else None,
     )
 
 
@@ -132,18 +136,11 @@ def cell_evidence_problem(source: CurationSource) -> str:
 
 def read_run_istd(source: CurationSource) -> tuple[IstdWindow, ...] | None:
     """The internal standards the run declared, or None when it cannot be read."""
-    if source.explanation_path is None:
+    if source.target_snapshot is None:
         return None
-    from xic_extractor.alignment_explanation.errors import ExplanationError
-    from xic_extractor.alignment_explanation.reader import (
-        read_explanation_summary,
-    )
-
     try:
-        return windows_from_explanation(
-            read_explanation_summary(source.explanation_path)
-        )
-    except ExplanationError, ValueError:
+        return windows_from_target_snapshot(source.target_snapshot)
+    except ValueError:
         return None
 
 

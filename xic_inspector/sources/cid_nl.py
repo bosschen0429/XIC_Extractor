@@ -29,7 +29,6 @@ from xic_extractor.alignment_explanation.review import (
     NULL_CELL,
     OBSERVED,
     ORIGIN_FLAGS,
-    REVIEW_SCHEMA_VERSION,
     ZERO_CELL,
     selection_sample_facts,
 )
@@ -69,8 +68,7 @@ class CidNlSource:
         )
         self.summary = metadata.summary
         self._compact_selection = (
-            not from_selection
-            and self.summary["schema_version"] == REVIEW_SCHEMA_VERSION
+            not from_selection and self.summary["retention"] == "review"
         )
         self._query_only = self._compact_selection and query_only
         self._row_samples = read_review_row_samples(path) if self._query_only else {}

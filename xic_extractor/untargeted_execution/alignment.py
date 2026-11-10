@@ -547,7 +547,6 @@ def complete_untargeted_alignment(
             precursor_mz_by_candidate=prepared.precursor_mz_by_candidate,
             neutral_loss_by_tag=settings.neutral_loss_by_tag,
             alignment_config=alignment_config,
-            known_istd_reference=known_istd_reference,
         )
         pending.pop_all()
         return completed

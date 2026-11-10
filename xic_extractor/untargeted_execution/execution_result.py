@@ -14,7 +14,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleNeighborhoodEdge,
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetBatchApplicationResult,
 )
@@ -68,7 +67,6 @@ class UntargetedPublicationInputs:
     precursor_mz_by_candidate: Mapping[str, float]
     neutral_loss_by_tag: Mapping[str, float]
     alignment_config: AlignmentConfig
-    known_istd_reference_provenance: Mapping[str, object] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,7 +144,6 @@ class CompletedUntargetBatchWorkflowResult:
         precursor_mz_by_candidate: Mapping[str, float],
         neutral_loss_by_tag: Mapping[str, float],
         alignment_config: AlignmentConfig,
-        known_istd_reference: KnownIstdReference | None = None,
     ) -> CompletedUntargetBatchWorkflowResult:
         """Close the Alignment handoff without loading its streamed children.
 
@@ -174,11 +171,6 @@ class CompletedUntargetBatchWorkflowResult:
                 ),
                 neutral_loss_by_tag=MappingProxyType(dict(neutral_loss_by_tag)),
                 alignment_config=alignment_config,
-                known_istd_reference_provenance=(
-                    None
-                    if known_istd_reference is None
-                    else known_istd_reference.explanation_provenance
-                ),
             ),
         )
 

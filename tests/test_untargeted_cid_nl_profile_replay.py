@@ -76,7 +76,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
 
     publication = completed.publication_inputs
     assert publication.alignment_config == AlignmentConfig(anchor_min_seed_events=1)
-    assert publication.known_istd_reference_provenance is None
     assert dict(publication.ms1_apex_mz_by_candidate) == {
         candidate.candidate_id: candidate.ms1_apex_mz
         for sample_candidates in inputs.candidates.values()

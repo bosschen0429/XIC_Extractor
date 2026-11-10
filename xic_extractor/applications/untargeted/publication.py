@@ -104,7 +104,6 @@ def publish_untargeted_outputs(
                         ms1_apex_mz_by_candidate=inputs.ms1_apex_mz_by_candidate,
                         precursor_mz_by_candidate=inputs.precursor_mz_by_candidate,
                         neutral_loss_by_tag=inputs.neutral_loss_by_tag,
-                        known_istd_reference_provenance=inputs.known_istd_reference_provenance,
                         progress_callback=timing_recorder.heartbeat_event,
                         full_audit=policy.explanation_full_audit,
                         curve_mz_ranges=policy.explanation_curve_mz_ranges,

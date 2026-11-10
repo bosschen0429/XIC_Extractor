@@ -164,7 +164,6 @@ def complete_dense_partition(
         },
         neutral_loss_by_tag=context.settings.neutral_loss_by_tag,
         alignment_config=alignment_config,
-        known_istd_reference=known_istd_reference,
     )
 
 

@@ -512,48 +512,6 @@ def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_pe
     assert tuple(o.peak for o in owners) == original
 
 
-def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor.alignment.sample_rt_calibration import (
-        interpolate_calibrated_rt_min,
-    )
-
-    reference = _batch_reference(
-        tmp_path,
-        {
-            "early": _LANDMARK_RTS,
-            "late": _STRETCHED_RTS,
-        },
-    )
-    assert reference.explanation_provenance.get("calibration") is None
-    prepared = reference.prepare_batch(
-        sample_universe=frozenset({"early", "late", "missing"}),
-        injection_order={"early": 1, "late": 2},
-    )
-
-    def cannot_refit(*args, **kwargs):
-        raise AssertionError("receipt must not recalculate calibration")
-
-    monkeypatch.setattr(type(reference), "prepare_batch", cannot_refit)
-    receipt = reference.explanation_provenance
-    assert receipt == prepared.explanation_provenance
-    assert {k: receipt[k] for k in reference.provenance} == reference.provenance
-    calibration = receipt["calibration"]
-    assert calibration["schema_version"] == "known_istd_calibration"
-    assert calibration["extrapolation"] == "unavailable"
-    assert len(calibration["measurements"]) == 16
-    samples = {sample["sample_stem"]: sample for sample in calibration["samples"]}
-    assert samples["missing"]["status"] == "unavailable"
-    assert samples["missing"]["domain_rt_min"] is None
-    knots = samples["early"]["knots"]
-    assert samples["early"]["domain_rt_min"] == [8, 40]
-    assert interpolate_calibrated_rt_min(14, knots) == pytest.approx(14 * 1.125)
-    assert interpolate_calibrated_rt_min(7, knots) is None
-    assert interpolate_calibrated_rt_min(41, knots) is None
-
-
 def test_batch_reference_does_not_invent_missing_measured_landmarks(
     tmp_path: Path,
 ) -> None:
@@ -578,13 +536,8 @@ def test_batch_reference_does_not_invent_missing_measured_landmarks(
         sample_universe=universe,
         injection_order=order,
     )
-    receipt = lookup.reference.explanation_provenance["calibration"]
-    middle_map = next(r for r in receipt["samples"] if r["sample_stem"] == "middle")
-    assert middle_map["knots"] == []
-    assert middle_map["status"] == "unavailable"
     # Neither other injections nor interpolation may manufacture the missing
     # measured positions needed to authorize a LOESS map.
-    assert sum(r["sample_stem"] == "middle" for r in receipt["measurements"]) == 2
     assert lookup.corrected_pair_delta_sec(early, middle) is None
     assert lookup.corrected_pair_delta_sec(middle, late) is None
 

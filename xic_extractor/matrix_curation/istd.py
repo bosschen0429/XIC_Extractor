@@ -75,15 +75,11 @@ def read_istd_file(path: Path) -> tuple[IstdWindow, ...]:
     return windows_from_targets(read_istd_targets(path).targets)
 
 
-def windows_from_explanation(summary: Mapping[str, Any]) -> tuple[IstdWindow, ...]:
-    """Standards the run declared, from its explanation completion summary.
+def windows_from_target_snapshot(snapshot: object) -> tuple[IstdWindow, ...]:
+    """Standards the run declared, from its run metadata target snapshot.
 
     Empty when the run used no internal standard list.
     """
-    reference = summary.get("known_istd_reference")
-    if not isinstance(reference, Mapping):
-        return ()
-    snapshot = reference.get("target_snapshot")
     if not isinstance(snapshot, str):
         return ()
     definitions = json.loads(snapshot).get("definitions") or ()

@@ -286,7 +286,6 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
             peaks_by_sample=kwargs["peaks_by_sample"],
             **explanation_discovery_facts(completed),
             alignment_config=kwargs["alignment_config"],
-            known_istd_reference=kwargs["known_istd_reference"],
         ),
     )
     outputs = application.run_untargeted_application(

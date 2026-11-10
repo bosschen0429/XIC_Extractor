@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.matrix_curation.export import (
+    RUN_METADATA_NAME,
     CurationSource,
     default_output_dir,
     describe_steps,
@@ -191,5 +192,5 @@ def _istd_label(source: CurationSource, istd_source: dict[str, str] | None) -> s
     if istd_source is None:
         return ""
     if istd_source["kind"] == "run":
-        return f"run explanation: {source.explanation_path}"
+        return f"run metadata: {source.source_dir / RUN_METADATA_NAME}"
     return istd_source["label"]

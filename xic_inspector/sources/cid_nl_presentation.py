@@ -728,13 +728,7 @@ def _decision_label(cells):
     cell = cells[0]
     value = cell["quantitative_value"]
     if value is None:
-        variant = cell.get("variant")
-        variant_label = {
-            "not_searched": "未搜尋",
-            "rejected_observation": "觀察未採用",
-            "unavailable": "無可用觀察",
-            "unresolved": "決策未解決",
-        }.get(variant)
+        variant_label = _RESULT_VARIANT_LABELS.get(cell.get("variant"))
         if variant_label:
             return variant_label
         return "記錄為空值"
