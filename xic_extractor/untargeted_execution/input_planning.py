@@ -16,13 +16,6 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryPeak
-from xic_extractor.discovery.physical_fact_persistence import (
-    IndexedDiscoveryPhysicalFacts,
-)
-from xic_extractor.discovery.physical_fact_record import (
-    DiscoveryPhysicalFactRecord,
-    validate_peak_physical_measurement,
-)
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlComposition,
@@ -54,7 +47,6 @@ class UntargetedInputPlan:
         [tuple[str, ...]],
         tuple[
             dict[str, tuple[DiscoveryPeak, ...]],
-            dict[str, DiscoveryPhysicalFactRecord],
             dict[str, tuple[DiscoveryPeak, ...]],
         ],
     ]
@@ -234,7 +226,6 @@ def cid_nl_composition(settings: DiscoverySettings) -> CidNlComposition | None:
 def prepare_indexed_untargeted_plan(
     *,
     source: DiscoveryInputSource,
-    physical_sources: Mapping[str, IndexedDiscoveryPhysicalFacts],
     raw_paths: tuple[Path, ...],
     sample_metadata: tuple[SampleMetadata, ...],
     settings: DiscoverySettings,
@@ -245,32 +236,11 @@ def prepare_indexed_untargeted_plan(
 ) -> UntargetedInputPlan:
     """Keep whole-batch IDs, not whole-batch candidates or physical graphs."""
     composition = cid_nl_composition(settings)
-    feature_ids = tuple(
-        cid
-        for cid in source.feature_candidate_ids()
-        if cid
-        in physical_sources[source.locations[cid].sample_stem].resolved_candidate_ids
-    )
+    feature_ids = source.feature_candidate_ids()
     precursor_by_id = {cid: source.locations[cid].peak_mz for cid in feature_ids}
 
-    def load_inputs(candidate_ids: tuple[str, ...]):
-        candidates = source.load_candidates(candidate_ids)
-        records: dict[str, DiscoveryPhysicalFactRecord] = {}
-        for stem, values in candidates.items():
-            if not values:
-                continue
-            local_records = physical_sources[stem].load_candidates(
-                tuple(candidate.peak_id for candidate in values)
-            )
-            for candidate in values:
-                validate_peak_physical_measurement(
-                    candidate, local_records[candidate.peak_id]
-                )
-            records.update(local_records)
-        return candidates, records
-
     def load_partition(candidate_ids: tuple[str, ...]):
-        candidates, records = load_inputs(candidate_ids)
+        candidates = source.load_candidates(candidate_ids)
         located = {
             stem: tuple(
                 replace(
@@ -283,7 +253,7 @@ def prepare_indexed_untargeted_plan(
             )
             for stem, values in candidates.items()
         }
-        return located, records, {stem: () for stem in source}
+        return located, {stem: () for stem in source}
 
     subject_batch = mint_cid_nl_subject_membership(
         candidates=_subject_candidates(
@@ -322,7 +292,6 @@ def prepare_indexed_untargeted_plan(
         receipt_map={
             stem: receipt for stem, receipt in receipts.items() if receipt is not None
         },
-        physical_records={},
         signal_processing_profile=profile,
     )
     return UntargetedInputPlan(

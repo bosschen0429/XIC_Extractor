@@ -28,19 +28,8 @@ from xic_extractor.discovery.models import (
     DiscoveryRunOutputs,
     EventAttachment,
 )
-from xic_extractor.discovery.physical_fact_record import (
-    DiscoveryPeakPhysicalBinding,
-    DiscoveryPhysicalFactRecord,
-)
-from xic_extractor.discovery.physical_fact_sidecar import (
-    stage_discovery_physical_fact_sidecar as write_discovery_physical_fact_sidecar,
-)
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
-from xic_extractor.processing_run_spec import (
-    ProcessingAcquisitionInput,
-    ProcessingRunSpec,
-)
 from xic_extractor.tabular_io import write_delimited_rows
 
 
@@ -61,10 +50,6 @@ def publish_discovery_batch_sample(
     output_dir: Path,
     acquisition_source: AcquisitionSourceIdentity,
     timing_recorder: TimingRecorder,
-    run_spec: ProcessingRunSpec,
-    acquisition_input: ProcessingAcquisitionInput,
-    physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = (),
-    physical_bindings: tuple[DiscoveryPeakPhysicalBinding, ...] = (),
     mass_recalibration_result: MassRecalibrationResult = (
         VENDOR_MASS_RECALIBRATION_RESULT
     ),
@@ -85,17 +70,12 @@ def publish_discovery_batch_sample(
         events,
         timing_recorder=timing_recorder,
         sample_stem=raw_path.stem,
-        run_spec=run_spec,
-        acquisition_input=acquisition_input,
-        physical_evaluations=physical_evaluations,
-        physical_bindings=physical_bindings,
     )
     receipt = mint_discovery_peak_universe_receipt(
         sample_stem=raw_path.stem,
         acquisition_source=acquisition_source,
         peak_csv=outputs.peaks_csv,
         peaks=peaks,
-        physical_facts=outputs.physical_facts_fingerprint,
         mass_recalibration_result=mass_recalibration_result,
     )
     return PublishedDiscoverySample(
@@ -119,20 +99,12 @@ def _write_sample_outputs(
     *,
     timing_recorder: TimingRecorder,
     sample_stem: str,
-    run_spec: ProcessingRunSpec,
-    acquisition_input: ProcessingAcquisitionInput,
-    physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...],
-    physical_bindings: tuple[DiscoveryPeakPhysicalBinding, ...],
 ) -> DiscoveryRunOutputs:
-    if tuple(binding.peak for binding in physical_bindings) != peaks:
-        raise ValueError("Discovery peaks and physical bindings diverged")
     output_dir.mkdir(parents=True, exist_ok=True)
     peaks_path = output_dir / "discovery_peaks.csv"
     events_path = output_dir / "discovery_events.csv"
-    physical_facts_path = output_dir / "discovery_physical_facts.json"
-    physical_work_manifest = tuple(record.work_item for record in physical_evaluations)
 
-    final_paths = [peaks_path, events_path, physical_facts_path]
+    final_paths = [peaks_path, events_path]
     temp_paths = [_discovery_output_temp_path(path) for path in final_paths]
     backup_paths = [_discovery_output_backup_path(path) for path in final_paths]
     existed_before = {path: path.exists() for path in final_paths}
@@ -162,23 +134,6 @@ def _write_sample_outputs(
                 columns=DISCOVERY_EVENT_COLUMNS,
                 row_count=len(events),
             )
-        physical_tmp = temp_paths[2]
-        with timing_recorder.stage(
-            "discover.write_physical_facts_sidecar",
-            sample_stem=sample_stem,
-            metrics={
-                "work_count": len(physical_work_manifest),
-                "record_count": len(physical_evaluations),
-            },
-        ) as stage:
-            physical_facts_fingerprint = write_discovery_physical_fact_sidecar(
-                physical_tmp,
-                run_spec=run_spec,
-                acquisition_input=acquisition_input,
-                work_manifest=physical_work_manifest,
-                records=physical_evaluations,
-            )
-            stage.metrics["byte_size"] = physical_tmp.stat().st_size
     except Exception:
         for path in (*temp_paths, *backup_paths):
             path.unlink(missing_ok=True)
@@ -227,13 +182,7 @@ def _write_sample_outputs(
                 path.with_name(f"{path.name}.tmp").unlink(missing_ok=True)
             raise
 
-    return DiscoveryRunOutputs(
-        peaks_csv=peaks_path,
-        events_csv=events_path,
-        physical_facts_json=physical_facts_path,
-        physical_bindings=physical_bindings,
-        physical_facts_fingerprint=physical_facts_fingerprint,
-    )
+    return DiscoveryRunOutputs(peaks_csv=peaks_path, events_csv=events_path)
 
 
 def _verify_staged_discovery_csv(

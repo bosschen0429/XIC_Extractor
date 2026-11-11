@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from tests.alignment_pipeline_helpers import physical_facts_fingerprint_beside
 from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _FakeThermoRaw,
@@ -31,13 +29,6 @@ from xic_extractor.discovery.csv_writer import (
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryPeak, EventAttachment
-from xic_extractor.discovery.physical_fact_persistence import (
-    write_discovery_physical_fact_sidecar,
-)
-from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
-from xic_extractor.discovery.processing_run_spec_adapter import (
-    compile_discovery_processing_run_spec,
-)
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.processing_identity import (
     build_local_acquisition_source_identity,
@@ -75,7 +66,6 @@ def build_discovery_receipts(
             sample_stem=raw_path.stem,
             acquisition_source=source,
             peak_csv=candidate_csv,
-            physical_facts=physical_facts_fingerprint_beside(candidate_csv),
             peaks=candidates,
         )
     return receipts
@@ -86,47 +76,21 @@ def persist_discovery_batch(
     raw_paths: tuple[Path, ...],
     settings: DiscoverySettings,
     peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
-    physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord],
-    signal_processing_profile: SignalProcessingProfile,
     root: Path,
 ) -> DiscoveryBatchInput:
     """Write in-memory Discovery results as the batch Discovery publishes.
 
-    Each sample gets its peak table, event table and physical-fact sidecar,
-    bound by an owner-closed receipt.
+    Each sample gets its peak table and event table, bound by an owner-closed
+    receipt.
     """
-    spec = compile_discovery_processing_run_spec(
-        raw_paths,
-        discovery_settings=settings,
-        signal_processing_profile=signal_processing_profile,
-    )
     peak_csvs: dict[str, Path] = {}
     event_csvs: dict[str, Path | None] = {}
     receipts: dict[str, DiscoveryPeakUniverseReceipt] = {}
-    for raw_path, acquisition_input in zip(
-        raw_paths, spec.acquisition_inputs, strict=True
-    ):
+    for raw_path in raw_paths:
         stem = raw_path.stem
         peaks = tuple(peaks_by_sample.get(stem, ()))
         folder = root / stem
         folder.mkdir(parents=True, exist_ok=True)
-        # A fixture may keep only some records or join several captures;
-        # the published manifest numbers its work contiguously from zero.
-        records = tuple(
-            replace(record, work_item=replace(record.work_item, work_ordinal=index))
-            for index, record in enumerate(
-                record
-                for record in physical_records_by_peak.values()
-                if record.work_item.sample_stem == stem
-            )
-        )
-        write_discovery_physical_fact_sidecar(
-            folder / "discovery_physical_facts.json",
-            run_spec=spec,
-            acquisition_input=acquisition_input,
-            work_manifest=tuple(record.work_item for record in records),
-            records=records,
-        )
         receipts.update(build_discovery_receipts(folder, (raw_path,), {stem: peaks}))
         peak_csvs[stem] = folder / f"{stem}.owner-candidates.csv"
         event_csvs[stem] = write_discovery_events_csv(
@@ -158,7 +122,6 @@ def prepare_persisted_discovery_plan(
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
-    physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord],
     dll_dir: Path,
     signal_processing_profile: SignalProcessingProfile,
     root: Path,
@@ -168,11 +131,9 @@ def prepare_persisted_discovery_plan(
         raw_paths=raw_paths,
         settings=settings,
         peaks_by_sample=peaks_by_sample,
-        physical_records_by_peak=physical_records_by_peak,
-        signal_processing_profile=signal_processing_profile,
         root=root / "discovery",
     )
-    prepared = prepare_untargeted_alignment_inputs(
+    return prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
         peaks_by_sample=DiscoveryInputSource(batch),
         raw_dir=raw_paths[0].parent,
@@ -184,19 +145,16 @@ def prepare_persisted_discovery_plan(
         signal_processing_profile=signal_processing_profile,
         raw_workers=1,
     )
-    return prepared.plan
 
 
 def load_plan_inputs(
     plan: UntargetedInputPlan,
-) -> tuple[
-    dict[str, tuple[DiscoveryPeak, ...]], dict[str, DiscoveryPhysicalFactRecord]
-]:
-    """Load every Alignment candidate of a plan with its physical record."""
-    candidates, records, _support = plan.partition_input_loader(
+) -> dict[str, tuple[DiscoveryPeak, ...]]:
+    """Load every Alignment candidate of a plan."""
+    candidates, _support = plan.partition_input_loader(
         tuple(cid for cid, _ in plan.subject_batch.candidate_memberships)
     )
-    return candidates, records
+    return candidates
 
 
 def install_runtime_raw(

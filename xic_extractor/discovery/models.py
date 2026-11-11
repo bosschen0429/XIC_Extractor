@@ -1,9 +1,8 @@
-import math
 from collections.abc import Iterable
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.precursor_evidence import (
@@ -13,12 +12,6 @@ from xic_extractor.precursor_evidence import (
     supports_direct_nl,
 )
 from xic_extractor.precursor_evidence import PrecursorMzBasis as PrecursorMzBasis
-
-if TYPE_CHECKING:
-    from xic_extractor.discovery.physical_fact_record import (
-        DiscoveryPeakPhysicalBinding,
-    )
-    from xic_extractor.processing_identity import FileContentFingerprint
 
 GroupPrecursorMzBasis = Literal[
     "scan_precursor", "scan_monoisotopic", "product_plus_neutral_loss", "mixed"
@@ -49,10 +42,9 @@ DISCOVERY_PEAK_COLUMNS = (
     "precursor_mz_basis",
     "ms1_apex_mz",
     "ms1_apex_rt",
-    "ms1_peak_rt_start",
-    "ms1_peak_rt_end",
-    "ms1_area",
-    "ms1_height",
+    "ms1_search_rt_min",
+    "ms1_search_rt_max",
+    "query_rt_min",
     "best_ms2_scan_id",
     "neutral_loss_tag",
     "matched_tag_names",
@@ -141,110 +133,17 @@ class DiscoveryIon:
     events: tuple[DiscoveryEvent, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class DiscoveryPhysicalWorkItem:
-    """CID-NL sidecar projection of completed physical work and method identity.
-
-    This persisted schema serves Discovery replay and Alignment. Shared physical
-    capture takes method-independent search coordinates, not this projection.
-    ``ion_mz`` is the ion's XIC center read before acquisition and names the
-    peak; the ``xic_*`` fields are the window actually measured, which is
-    centred on the apex reading when the peak was measured again there.
-    """
-
-    work_ordinal: int
-    acquisition_source_id: str
-    sample_stem: str
-    best_ms2_scan_id: int
-    precursor_mz: float
-    product_mz: float
-    query_rt_min: float
-    context_rt_start_min: float
-    context_rt_end_min: float
-    ion_mz: float
-    xic_mz: float
-    xic_rt_min: float
-    xic_rt_max: float
-    xic_ppm_tol: float
-
-    def __post_init__(self) -> None:
-        if (
-            isinstance(self.work_ordinal, bool)
-            or not isinstance(self.work_ordinal, int)
-            or self.work_ordinal < 0
-        ):
-            raise ValueError("work_ordinal must be a non-negative integer")
-        for field in (
-            "acquisition_source_id",
-            "sample_stem",
-        ):
-            if not getattr(self, field):
-                raise ValueError(f"{field} must be non-empty text")
-        if (
-            isinstance(self.best_ms2_scan_id, bool)
-            or not isinstance(self.best_ms2_scan_id, int)
-            or self.best_ms2_scan_id < 0
-        ):
-            raise ValueError("best_ms2_scan_id must be a non-negative integer")
-        for field in (
-            "precursor_mz",
-            "product_mz",
-            "query_rt_min",
-            "context_rt_start_min",
-            "context_rt_end_min",
-            "ion_mz",
-            "xic_mz",
-            "xic_rt_min",
-            "xic_rt_max",
-            "xic_ppm_tol",
-        ):
-            value = getattr(self, field)
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise TypeError(f"{field} must be numeric")
-            if not math.isfinite(float(value)):
-                raise ValueError(f"{field} must be finite")
-        if (
-            self.precursor_mz <= 0.0
-            or self.product_mz <= 0.0
-            or self.ion_mz <= 0.0
-            or self.xic_mz <= 0.0
-            or self.xic_ppm_tol <= 0.0
-        ):
-            raise ValueError("physical work m/z values must be positive")
-        if self.context_rt_start_min < 0.0:
-            raise ValueError("context_rt_start_min must be non-negative")
-        if self.context_rt_start_min > self.context_rt_end_min:
-            raise ValueError("physical work context has an invalid RT window")
-        if self.xic_rt_min < 0.0 or self.xic_rt_min > self.xic_rt_max:
-            raise ValueError("physical work XIC request has an invalid RT window")
-        if not self.xic_rt_min <= self.query_rt_min <= self.xic_rt_max:
-            raise ValueError("physical work query RT must be inside its XIC request")
-
-    @property
-    def peak_id(self) -> str:
-        return build_discovery_peak_id(
-            sample_stem=self.sample_stem,
-            xic_mz=self.ion_mz,
-            peak_rt_min=self.query_rt_min,
-        )
-
-    @property
-    def selection_subject_id(self) -> str:
-        return build_discovery_physical_selection_subject_id(
-            sample_stem=self.sample_stem,
-            best_ms2_scan_id=self.best_ms2_scan_id,
-            precursor_mz=self.precursor_mz,
-            product_mz=self.product_mz,
-        )
-
-
 @dataclass(frozen=True)
 class DiscoveryPeak:
     """One physical MS1 peak on one ion's XIC, with the NL events locating it.
 
     ``peak_mz`` is the peak's ion mass: the apex reading of an inferred
-    precursor, else the XIC center. Every consumer reads it. Peak facts come
-    from the physical measurement. ``best_ms2_scan_id`` names the
+    precursor, else the XIC center. Every consumer reads it.
+    ``ms1_apex_rt`` is the apex Discovery judged the peak at. The XIC window
+    ``ms1_search_rt_min``..``ms1_search_rt_max`` at ``peak_mz`` and
+    ``query_rt_min`` are the capture conditions of that measurement; Alignment
+    measures the peak again from RAW with them and publishes its own
+    measurement. ``best_ms2_scan_id`` names the
     representative event, whose values live in the event table;
     ``attached_event_count`` counts the located events that attach and admit
     the peak. The representative event is attached when any event attaches.
@@ -257,10 +156,9 @@ class DiscoveryPeak:
     best_ms2_scan_id: int
     attached_event_count: int
     ms1_apex_rt: float
-    ms1_area: float
-    ms1_height: float
-    ms1_peak_rt_start: float
-    ms1_peak_rt_end: float
+    ms1_search_rt_min: float
+    ms1_search_rt_max: float
+    query_rt_min: float
     status: PeakStatus
     # Qualified MS1 ion reading at the apex of an inferred precursor.
     ms1_apex_mz: float | None = None
@@ -445,10 +343,7 @@ def located_event_order(
 class DiscoveryRunOutputs:
     peaks_csv: Path
     events_csv: Path
-    physical_facts_json: Path
     batch_index_csv: Path | None = None
-    physical_bindings: tuple["DiscoveryPeakPhysicalBinding", ...] = ()
-    physical_facts_fingerprint: "FileContentFingerprint | None" = None
 
 
 @dataclass(frozen=True)
@@ -464,20 +359,6 @@ def build_discovery_peak_id(
     peak_rt_min: float,
 ) -> str:
     return f"{sample_stem}@mz{_format_id_mz(xic_mz)}_rt{peak_rt_min:.4f}"
-
-
-def build_discovery_physical_selection_subject_id(
-    *,
-    sample_stem: str,
-    best_ms2_scan_id: int,
-    precursor_mz: float,
-    product_mz: float,
-) -> str:
-    return (
-        "discovery-physical-work:"
-        f"{sample_stem}:{best_ms2_scan_id}:"
-        f"{float(precursor_mz).hex()}:{float(product_mz).hex()}"
-    )
 
 
 def _format_id_mz(value: float) -> str:

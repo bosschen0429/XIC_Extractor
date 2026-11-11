@@ -16,7 +16,6 @@ from xic_extractor.peak_detection.signal_quality import SignalQuality
 
 VALID_CURVE_KINDS = frozenset(
     {
-        "discovery_physical",
         "initial_capture",
         "backfill_observation",
     }

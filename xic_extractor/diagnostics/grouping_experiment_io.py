@@ -11,7 +11,7 @@ from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.identity_models import (
@@ -38,8 +38,11 @@ from xic_extractor.peak_detection.elution_context import (
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_shape_identity import LocalPeakShape
 from xic_extractor.peak_detection.observations import PeakObservation
-from xic_extractor.peak_detection.physical_peak_codec import signal_quality_from_payload
 from xic_extractor.peak_detection.physical_peak_models import PhysicalSegment
+from xic_extractor.peak_detection.signal_quality import (
+    SignalQuality,
+    SignalQualityStatus,
+)
 from xic_extractor.rt_calibration_codec import (
     rt_calibration_from_payload as _read_rt_calibration_payload,
 )
@@ -70,7 +73,6 @@ def query_discovery(
             "attached_event_count": candidate.attached_event_count,
             # The representative event's values are its event-table row.
             "best_ms2_scan_id": candidate.best_ms2_scan_id,
-            "area": candidate.ms1_area,
         }
         for sample in source.batch.sample_order
         for candidate in candidates[sample]
@@ -687,3 +689,49 @@ def write_grouping_result(
         "changed_observation_count": len(changes),
         "groups_by_disposition": dict(Counter(group.disposition for group in groups)),
     }
+
+
+def signal_quality_from_payload(value: object) -> SignalQuality | None:
+    """Read optional quality facts in physical, observation and replay payloads."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("signal_quality must be one JSON object")
+    quality = value
+    if set(quality) != {
+        "status",
+        "noise_sigma",
+        "signal_to_noise",
+        "low_signal_to_noise",
+    }:
+        raise ValueError("signal_quality fields must match the declared schema")
+    status = quality["status"]
+    if status not in (
+        "available",
+        "insufficient_points",
+        "invalid_trace",
+        "missing_baseline",
+        "zero_noise",
+    ):
+        raise ValueError("signal_quality has an unknown status")
+    values: dict[str, float | None] = {}
+    for key in ("noise_sigma", "signal_to_noise"):
+        number = quality[key]
+        if number is not None and (
+            isinstance(number, bool)
+            or not isinstance(number, (int, float))
+            or not math.isfinite(number)
+            or number < 0
+        ):
+            raise ValueError(f"signal_quality {key} must be finite and nonnegative")
+        values[key] = None if number is None else float(number)
+    low = quality["low_signal_to_noise"]
+    if low is not None and not isinstance(low, bool):
+        raise ValueError("signal_quality low_signal_to_noise must be boolean or null")
+    sigma, ratio = values["noise_sigma"], values["signal_to_noise"]
+    if status == "available":
+        if sigma is None or sigma <= 0 or ratio is None or low is None:
+            raise ValueError("available signal_quality requires positive noise and S/N")
+    elif ratio is not None or low is not None:
+        raise ValueError("unavailable signal_quality cannot claim S/N or good quality")
+    return SignalQuality(cast(SignalQualityStatus, status), sigma, ratio, low)

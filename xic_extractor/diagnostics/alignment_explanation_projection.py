@@ -20,7 +20,6 @@ from xic_extractor.alignment_explanation.review import review_cell
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
 )
-from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.rt_calibration_codec import rt_calibration_payload
 
 if TYPE_CHECKING:
@@ -330,38 +329,6 @@ def prepare_alignment_explanation(
                     peak_status=candidate.status,
                     method_subject_id=subject_id,
                 )
-
-        for record in phase_items(
-            "discovery_physical",
-            (
-                completed.discovery_physical_records
-                if full_audit or curve_mz_ranges
-                else ()
-            ),
-        ):
-            work = record.work_item
-            sid = samples[work.sample_stem].sample_name
-            _emit_curve_payload(
-                sink,
-                None,
-                sid,
-                candidate_id=record.peak_id,
-                kind="discovery_physical",
-                trace=Trace(
-                    sample_name=work.sample_stem,
-                    mz=work.xic_mz,
-                    rt=record.acquired_trace.trace.rt,
-                    intensity=record.acquired_trace.trace.intensity,
-                    rt_min=work.xic_rt_min,
-                    rt_max=work.xic_rt_max,
-                    ppm_tol=work.xic_ppm_tol,
-                    acquisition_source_id=work.acquisition_source_id,
-                ),
-                evaluation=record.evaluation,
-                provenance={
-                    "processing_attempt_id": application.processing_attempt_id,
-                },
-            )
 
         capture_evidence = completed.capture_evidence
         for evidence in phase_items(

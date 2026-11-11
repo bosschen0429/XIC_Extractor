@@ -7,14 +7,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 
-import os
-import shutil
 from collections import Counter
 from collections.abc import Callable, Mapping
 from contextlib import ExitStack
-from dataclasses import dataclass, field
 from pathlib import Path
-from tempfile import mkdtemp
 from threading import Lock
 from typing import cast
 
@@ -26,33 +22,17 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.batch_contract import (
-    DiscoveryPeakUniverseReceipt,
-    validate_discovery_physical_facts_artifact,
-)
+from xic_extractor.discovery.batch_contract import DiscoveryPeakUniverseReceipt
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.discovery.physical_fact_persistence import (
-    DetachedIndexedDiscoveryPhysicalFacts,
-    IndexedDiscoveryPhysicalFacts,
-)
-from xic_extractor.discovery.physical_fact_record import (
-    DiscoveryPhysicalFactRecord,
-)
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_with_expectations,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.execution.timing import TimingRecorder
-from xic_extractor.execution.workers import WorkerAdmissionPool
-from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.processing_run_spec import (
-    ProcessingAcquisitionInput,
-    ProcessingRunSpec,
-)
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution import (
     execute_untargeted_plan,
@@ -72,165 +52,6 @@ _SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl"
 _RUNTIME_ARTIFACT_NAMESPACE = "untargeted-cid-nl-alignment"
 
 
-@dataclass(frozen=True, slots=True)
-class _PhysicalIndexJob:
-    path: Path
-    receipt: DiscoveryPeakUniverseReceipt
-    expected_run_spec: ProcessingRunSpec
-    expected_acquisition_input: ProcessingAcquisitionInput
-    candidate_ids: frozenset[str]
-    spool_dir: Path
-
-
-@dataclass(frozen=True, slots=True)
-class _PhysicalIndexWorkerResult:
-    sample_stem: str
-    transfer: DetachedIndexedDiscoveryPhysicalFacts
-    worker_pid: int
-
-
-@dataclass(frozen=True, slots=True)
-class _PhysicalIndexBatchResult:
-    sources: dict[str, IndexedDiscoveryPhysicalFacts]
-    worker_pids: tuple[int, ...]
-
-
-def _index_discovery_physical_source(
-    job: _PhysicalIndexJob,
-) -> _PhysicalIndexWorkerResult:
-    validate_discovery_physical_facts_artifact(job.receipt, job.path)
-    indexed = IndexedDiscoveryPhysicalFacts(
-        job.path,
-        expected_run_spec=job.expected_run_spec,
-        expected_acquisition_input=job.expected_acquisition_input,
-        candidate_ids=job.candidate_ids,
-        spool_dir=job.spool_dir,
-    )
-    try:
-        return _PhysicalIndexWorkerResult(
-            sample_stem=job.expected_acquisition_input.sample_stem,
-            transfer=indexed.detach(),
-            worker_pid=os.getpid(),
-        )
-    finally:
-        indexed.close()
-
-
-def _index_discovery_physical_sources(
-    jobs: tuple[_PhysicalIndexJob, ...],
-    *,
-    raw_workers: int,
-    raw_worker_backend: str,
-    should_cancel: Callable[[], bool] | None = None,
-    progress_callback: Callable[[dict[str, object]], None] | None = None,
-) -> _PhysicalIndexBatchResult:
-    """Build bounded sidecar indexes and adopt their private spools in the caller."""
-
-    sources: dict[str, IndexedDiscoveryPhysicalFacts] = {}
-    worker_pids: list[int] = []
-
-    def adopt(
-        completed: int,
-        total: int,
-        job: _PhysicalIndexJob,
-        result: _PhysicalIndexWorkerResult,
-    ) -> None:
-        if result.sample_stem != job.expected_acquisition_input.sample_stem:
-            raise ValueError("physical index worker crossed sample identity")
-        if result.sample_stem in sources:
-            raise ValueError("physical index worker duplicated sample identity")
-        sources[result.sample_stem] = IndexedDiscoveryPhysicalFacts.from_detached(
-            result.transfer,
-            expected_run_spec=job.expected_run_spec,
-            expected_acquisition_input=job.expected_acquisition_input,
-        )
-        worker_pids.append(result.worker_pid)
-        if progress_callback is not None:
-            progress_callback(
-                {
-                    "event": "alignment_input_index",
-                    "sample_stem": result.sample_stem,
-                    "completed": completed,
-                    "total": total,
-                }
-            )
-
-    try:
-        with WorkerAdmissionPool(
-            max_workers=raw_workers,
-            backend=raw_worker_backend,
-            thread_name_prefix="physical-fact-index",
-        ) as pool:
-            pool.run_windowed(
-                jobs,
-                _index_discovery_physical_source,
-                on_completed=adopt,
-                should_cancel=should_cancel,
-            )
-        if pool.first_error is not None:
-            raise pool.first_error
-        ordered_sources = {
-            job.expected_acquisition_input.sample_stem: sources[
-                job.expected_acquisition_input.sample_stem
-            ]
-            for job in jobs
-        }
-        return _PhysicalIndexBatchResult(
-            sources=ordered_sources,
-            worker_pids=tuple(worker_pids),
-        )
-    except BaseException:
-        for source in sources.values():
-            source.close()
-        raise
-
-
-@dataclass(slots=True)
-class PreparedUntargetedAlignmentInputs:
-    """Prepared inputs own their private indexes until transferred to a result."""
-
-    plan: UntargetedInputPlan
-    physical_sources: dict[str, IndexedDiscoveryPhysicalFacts]
-    physical_spool_dir: Path | None
-    # Each candidate's representative MS2 precursor, read from its physical work.
-    precursor_mz_by_candidate: dict[str, float]
-    _resources: ExitStack = field(repr=False)
-
-    def retained_physical_records(
-        self,
-    ) -> (
-        tuple[DiscoveryPhysicalFactRecord, ...]
-        | ImmutableSequence[DiscoveryPhysicalFactRecord]
-    ):
-        """Expose retained records without materializing the indexed sidecars."""
-        if self.physical_sources:
-            sources = self.physical_sources
-            chunks = tuple(
-                (stem, indices[start : start + 64])
-                for stem, source in sources.items()
-                for indices in (tuple(sorted(source.candidate_ordinals.values())),)
-                for start in range(0, len(indices), 64)
-            )
-
-            def load_records(index: int) -> tuple[DiscoveryPhysicalFactRecord, ...]:
-                stem, indices = chunks[index]
-                return tuple(sources[stem].read_record(item) for item in indices)
-
-            return ImmutableSequence(tuple(len(ids) for _, ids in chunks), load_records)
-        if self.physical_spool_dir is not None:
-            shutil.rmtree(self.physical_spool_dir, ignore_errors=True)
-            self.physical_spool_dir = None
-        return ()
-
-    def take_result_resources(self) -> ExitStack:
-        """Transfer only resource handles, not the finished planning state."""
-        return self._resources.pop_all()
-
-    def close(self) -> None:
-        """Release all private inputs once, including when one close fails."""
-        self._resources.close()
-
-
 def prepare_untargeted_alignment_inputs(
     *,
     discovery_batch: DiscoveryBatchInput,
@@ -248,7 +69,7 @@ def prepare_untargeted_alignment_inputs(
     should_cancel: Callable[[], bool] | None = None,
     verified_acquisition_sources: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
-) -> PreparedUntargetedAlignmentInputs:
+) -> UntargetedInputPlan:
     """Prepare Discovery-backed inputs without scheduling Backfill or outputs."""
     raw_paths = existing_raw_paths(
         sample_order=discovery_batch.sample_order,
@@ -308,85 +129,29 @@ def prepare_untargeted_alignment_inputs(
         )
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     output_dir.mkdir(parents=True, exist_ok=True)
-    resources = ExitStack()
-
-    physical_sources: dict[str, IndexedDiscoveryPhysicalFacts] = {}
-    physical_spool_dir: Path | None = None
-    try:
-        with recorder.stage("alignment.verify_acquisition_sources"):
-            spec, expectations = (
-                compile_discovery_processing_run_spec_with_expectations(
-                    ordered_raw_paths,
-                    discovery_settings=settings,
-                    signal_processing_profile=signal_processing_profile,
-                    fingerprint_workers=raw_workers,
-                    verified_acquisition_sources=verified_acquisition_sources,
-                )
-            )
-        physical_spool_dir = Path(
-            mkdtemp(prefix=".physical_fact_indexes_", dir=output_dir)
+    with recorder.stage("alignment.verify_acquisition_sources"):
+        _spec, expectations = compile_discovery_processing_run_spec_with_expectations(
+            ordered_raw_paths,
+            discovery_settings=settings,
+            signal_processing_profile=signal_processing_profile,
+            fingerprint_workers=raw_workers,
+            verified_acquisition_sources=verified_acquisition_sources,
         )
-        resources.callback(shutil.rmtree, physical_spool_dir, ignore_errors=True)
-        jobs = tuple(
-            _PhysicalIndexJob(
-                path=(
-                    discovery_batch.peak_csvs[acquisition_input.sample_stem].parent
-                    / "discovery_physical_facts.json"
-                ),
-                receipt=discovery_batch.peak_receipts[acquisition_input.sample_stem],
-                expected_run_spec=spec,
-                expected_acquisition_input=acquisition_input,
-                candidate_ids=frozenset(feature_ids),
-                spool_dir=physical_spool_dir,
-            )
-            for acquisition_input in spec.acquisition_inputs
-            for feature_ids in (
-                peaks_by_sample.feature_candidate_ids(acquisition_input.sample_stem),
-            )
-            if feature_ids
+    with recorder.stage("alignment.prepare_feature_inputs") as stage:
+        stage.metrics["feature_candidate_count"] = len(
+            peaks_by_sample.feature_candidate_ids()
         )
-        with recorder.stage("alignment.index_physical_facts") as stage:
-            indexed = _index_discovery_physical_sources(
-                jobs,
-                raw_workers=raw_workers,
-                raw_worker_backend=raw_worker_backend,
-                should_cancel=should_cancel,
-                progress_callback=recorder.heartbeat_event,
-            )
-            for source in indexed.sources.values():
-                resources.callback(source.close)
-            physical_sources.update(indexed.sources)
-            stage.metrics["feature_candidate_count"] = len(
-                peaks_by_sample.feature_candidate_ids()
-            )
-            stage.metrics["discovery_record_count"] = len(peaks_by_sample.locations)
-        with recorder.stage("alignment.prepare_feature_inputs"):
-            plan = prepare_indexed_untargeted_plan(
-                source=peaks_by_sample,
-                physical_sources=physical_sources,
-                raw_paths=ordered_raw_paths,
-                sample_metadata=retained_sample_metadata,
-                settings=settings,
-                peak_config=peak_config,
-                dll_dir=dll_dir,
-                profile=signal_processing_profile,
-                acquisition_source_expectations=expectations,
-            )
-
-        return PreparedUntargetedAlignmentInputs(
-            plan,
-            physical_sources,
-            physical_spool_dir,
-            precursor_mz_by_candidate={
-                cid: precursor_mz
-                for source in physical_sources.values()
-                for cid, precursor_mz in source.precursor_mz.items()
-            },
-            _resources=resources,
+        stage.metrics["discovery_record_count"] = len(peaks_by_sample.locations)
+        return prepare_indexed_untargeted_plan(
+            source=peaks_by_sample,
+            raw_paths=ordered_raw_paths,
+            sample_metadata=retained_sample_metadata,
+            settings=settings,
+            peak_config=peak_config,
+            dll_dir=dll_dir,
+            profile=signal_processing_profile,
+            acquisition_source_expectations=expectations,
         )
-    except BaseException:
-        resources.close()
-        raise
 
 
 def complete_untargeted_alignment(
@@ -418,7 +183,7 @@ def complete_untargeted_alignment(
 
     if progress_callback:
         progress_callback({"stage": "alignment_inputs"})
-    prepared = prepare_untargeted_alignment_inputs(
+    plan = prepare_untargeted_alignment_inputs(
         discovery_batch=discovery_batch,
         peaks_by_sample=peaks_by_sample,
         raw_dir=raw_dir,
@@ -441,9 +206,7 @@ def complete_untargeted_alignment(
             else None
         ),
     )
-    plan = prepared.plan
     with ExitStack() as pending:
-        pending.callback(prepared.close)
         completed = cast(
             CompletedUntargetBatchWorkflowResult,
             execute_prepared_alignment(
@@ -465,10 +228,9 @@ def complete_untargeted_alignment(
         )
         pending.callback(completed.close)
 
-        completed = completed.with_discovery_inputs(prepared)
         completed = completed.bind_publication_inputs(
             peaks_by_sample=peaks_by_sample,
-            precursor_mz_by_candidate=prepared.precursor_mz_by_candidate,
+            precursor_mz_by_candidate=peaks_by_sample.precursor_mz_by_candidate,
             neutral_loss_by_tag=settings.neutral_loss_by_tag,
             alignment_config=alignment_config,
         )

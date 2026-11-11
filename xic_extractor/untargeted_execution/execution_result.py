@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import TYPE_CHECKING
 
 from xic_extractor.alignment.completion import AlignmentWorkflowContractError
 from xic_extractor.alignment.config import AlignmentConfig
@@ -19,18 +17,12 @@ from xic_extractor.alignment.result.application_result import (
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryPeak
-from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
 )
 from xic_extractor.peak_detection.observations import RetainedCaptureEvidence
-
-if TYPE_CHECKING:
-    from xic_extractor.untargeted_execution.alignment import (
-        PreparedUntargetedAlignmentInputs,
-    )
 
 
 @dataclass(slots=True)
@@ -39,22 +31,17 @@ class _CompletedResultResources:
 
     store: StreamedResultStore | None = None
     retain_partition_spool: bool = False
-    discovery_resources: ExitStack | None = None
     closed: bool = False
 
     def close(self) -> None:
         if self.closed:
             return
         self.closed = True
-        try:
-            if self.store is not None:
-                if self.retain_partition_spool:
-                    self.store.preserve_results()
-                else:
-                    self.store.cleanup()
-        finally:
-            if self.discovery_resources is not None:
-                self.discovery_resources.close()
+        if self.store is not None:
+            if self.retain_partition_spool:
+                self.store.preserve_results()
+            else:
+                self.store.cleanup()
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,10 +66,6 @@ class CompletedUntargetBatchWorkflowResult:
     initial_groups: (
         tuple[CrossSamplePeakGroupHypothesis, ...]
         | ImmutableSequence[CrossSamplePeakGroupHypothesis]
-    ) = field(default=(), repr=False, compare=False)
-    discovery_physical_records: (
-        tuple[DiscoveryPhysicalFactRecord, ...]
-        | ImmutableSequence[DiscoveryPhysicalFactRecord]
     ) = field(default=(), repr=False, compare=False)
     capture_evidence: (
         tuple[RetainedCaptureEvidence, ...] | ImmutableSequence[RetainedCaptureEvidence]
@@ -120,16 +103,6 @@ class CompletedUntargetBatchWorkflowResult:
             capture_evidence=store.sequence("capture_evidence"),
             _resources=_CompletedResultResources(store, retain_partition_spool),
         )
-
-    def with_discovery_inputs(
-        self, inputs: PreparedUntargetedAlignmentInputs
-    ) -> CompletedUntargetBatchWorkflowResult:
-        """Adopt the prepared Discovery resources along with their lazy records."""
-        completed = replace(
-            self, discovery_physical_records=inputs.retained_physical_records()
-        )
-        self._resources.discovery_resources = inputs.take_result_resources()
-        return completed
 
     def bind_publication_inputs(
         self,

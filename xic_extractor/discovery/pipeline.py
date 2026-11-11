@@ -27,17 +27,13 @@ from xic_extractor.discovery.cid_nl_search import (
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
     DiscoveryPeak,
-    DiscoveryPhysicalWorkItem,
     DiscoveryRunOutputs,
     EventAttachment,
 )
 from xic_extractor.discovery.ms1_capture import (
     _DiscoveryMs1Measurements,
 )
-from xic_extractor.discovery.physical_fact_record import (
-    DiscoveryPeakPhysicalBinding,
-    DiscoveryPhysicalFactRecord,
-)
+from xic_extractor.discovery.peak_binding import DiscoveryPeakPhysicalBinding
 from xic_extractor.discovery.priority import order_discovery_peak_bindings
 from xic_extractor.discovery.processing_run_spec_adapter import (
     validate_processing_run_spec_call,
@@ -84,8 +80,6 @@ class _DiscoverySampleResult:
     attachments: tuple[EventAttachment, ...]
     ms1_measurements: _DiscoveryMs1Measurements | None
     raw_open_receipt: RawAcquisitionSessionReceipt | None
-    physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...]
-    physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...]
     physical_bindings: tuple[DiscoveryPeakPhysicalBinding, ...]
     mass_recalibration_result: MassRecalibrationResult = MassRecalibrationResult("none")
 
@@ -164,10 +158,6 @@ def run_discovery(
         sample_output_dir=output_dir,
         acquisition_source=acquisition_input.acquisition_source,
         timing_recorder=recorder,
-        run_spec=run_spec,
-        acquisition_input=acquisition_input,
-        physical_evaluations=discovery_result.physical_evaluations,
-        physical_bindings=discovery_result.physical_bindings,
         mass_recalibration_result=discovery_result.mass_recalibration_result,
     )
     receipt_index = output_publication.write_batch_index(
@@ -245,10 +235,6 @@ def run_discovery_batch(
             output_dir=output_dir,
             acquisition_source=acquisition_source,
             timing_recorder=recorder,
-            run_spec=run_spec,
-            acquisition_input=acquisition_input,
-            physical_evaluations=discovery_result.physical_evaluations,
-            physical_bindings=discovery_result.physical_bindings,
             mass_recalibration_result=discovery_result.mass_recalibration_result,
         )
         per_sample.append(publication.outputs)
@@ -401,8 +387,6 @@ def _discover_completed_sample(
         attachments=acquired.attachments,
         ms1_measurements=acquired.ms1_measurements,
         raw_open_receipt=acquired.raw_open_receipt,
-        physical_work_manifest=acquired.physical_work_manifest,
-        physical_evaluations=acquired.physical_evaluations,
         physical_bindings=physical_bindings,
         mass_recalibration_result=acquired.mass_recalibration_result,
     )
@@ -469,8 +453,6 @@ def _acquire_discovery_sample(
                 attachments=acquisition_result.attachments,
                 ms1_measurements=acquisition_result.measurements,
                 raw_open_receipt=raw_open_receipt,
-                physical_work_manifest=acquisition_result.physical_work_manifest,
-                physical_evaluations=acquisition_result.physical_evaluations,
                 physical_bindings=acquisition_result.physical_bindings,
                 mass_recalibration_result=raw.mass_recalibration_result,
             )

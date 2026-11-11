@@ -30,17 +30,12 @@ from xic_extractor.discovery.models import (
     DiscoveryEvent,
     DiscoveryIon,
     DiscoveryPeak,
-    DiscoveryPhysicalWorkItem,
     EventAttachment,
     PeakStatus,
-    build_discovery_physical_selection_subject_id,
+    build_discovery_peak_id,
     located_event_order,
 )
-from xic_extractor.discovery.physical_fact_record import (
-    DISCOVERY_TRACE_ADAPTER_NAMESPACE,
-    DiscoveryPeakPhysicalBinding,
-    DiscoveryPhysicalFactRecord,
-)
+from xic_extractor.discovery.peak_binding import DiscoveryPeakPhysicalBinding
 from xic_extractor.discovery.same_ion_peaks import group_same_ion_peaks
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.mass_accuracy import weighted_ion_mz, within_ppm
@@ -56,6 +51,7 @@ MS1Centroid = Callable[[float, float, float], tuple[float, float] | None]
 """(apex RT, m/z min, m/z max) -> (m/z, intensity) of the most intense MS1
 centroid at that scan."""
 
+DISCOVERY_TRACE_ADAPTER_NAMESPACE = "xic_extractor.discovery.ms1_capture"
 _DISCOVERY_MS1_PREDICTION_MAX_REQUESTS = 256
 # The apex scan and one MS1 scan on each side read the ion's m/z; readings
 # spread wider than a few ppm come from more than one ion.
@@ -140,8 +136,6 @@ class _DiscoveryMs1AcquisitionResult:
     peaks: tuple[DiscoveryPeak, ...]
     attachments: tuple[EventAttachment, ...]
     measurements: _DiscoveryMs1Measurements
-    physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...]
-    physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...]
     physical_bindings: tuple[DiscoveryPeakPhysicalBinding, ...]
 
 
@@ -222,39 +216,32 @@ def capture_ms1_peaks(
     )
     if measurement_observer is not None:
         measurement_observer(measurements)
-    peaks: list[DiscoveryPeak] = []
-    records: list[DiscoveryPhysicalFactRecord] = []
+    bindings: list[DiscoveryPeakPhysicalBinding] = []
     for index, (captured, ion_mz, peak_located, ion_reading) in enumerate(measured):
-        peak, record, peak_attachments = _measured_peak(
+        peak, representative, peak_attachments = _measured_peak(
             captured,
             peak_located,
-            work_ordinal=index,
             settings=settings,
             ion_mz=ion_mz,
             ion_reading=ion_reading,
         )
-        peaks.append(peak)
-        records.append(record)
+        bindings.append(
+            DiscoveryPeakPhysicalBinding(
+                final_ordinal=index,
+                peak=peak,
+                physical_evaluation=captured.evaluation,
+                representative_event=representative,
+            )
+        )
         attachments.extend(peak_attachments)
-    peak_ids = [peak.peak_id for peak in peaks]
+    peak_ids = [binding.peak.peak_id for binding in bindings]
     if len(peak_ids) != len(set(peak_ids)):
         raise ValueError("Discovery measured one physical peak twice")
-    bindings = tuple(
-        DiscoveryPeakPhysicalBinding(
-            acquisition_source=acquisition_source,
-            final_ordinal=index,
-            peak=peak,
-            physical_fact_record=record,
-        )
-        for index, (peak, record) in enumerate(zip(peaks, records, strict=True))
-    )
     return _DiscoveryMs1AcquisitionResult(
-        peaks=tuple(peaks),
+        peaks=tuple(binding.peak for binding in bindings),
         attachments=tuple(attachments),
         measurements=measurements,
-        physical_work_manifest=tuple(record.work_item for record in records),
-        physical_evaluations=tuple(records),
-        physical_bindings=bindings,
+        physical_bindings=tuple(bindings),
     )
 
 
@@ -390,11 +377,10 @@ def _measured_peak(
     captured: CapturedPhysicalPeak,
     located: Sequence[tuple[DiscoveryIon, DiscoveryEvent]],
     *,
-    work_ordinal: int,
     settings: DiscoverySettings,
     ion_mz: float,
     ion_reading: tuple[float | None, bool],
-) -> tuple[DiscoveryPeak, DiscoveryPhysicalFactRecord, tuple[EventAttachment, ...]]:
+) -> tuple[DiscoveryPeak, DiscoveryEvent, tuple[EventAttachment, ...]]:
     """One measured peak, its attached attachments, and why the rest do not attach."""
     evaluation = captured.evaluation
     facts = evaluation.facts
@@ -427,10 +413,14 @@ def _measured_peak(
     representative = select_representative_event(
         attached or located_events, settings=settings
     )
-    record = _cid_nl_physical_record(
-        representative, captured, work_ordinal=work_ordinal, ion_mz=ion_mz
+    question = evaluation.question
+    window = captured.acquired_trace.coordinate.request
+    # A peak keeps the XIC center of the ion that first measured it as its name.
+    peak_id = build_discovery_peak_id(
+        sample_stem=representative.sample_stem,
+        xic_mz=ion_mz,
+        peak_rt_min=question.query_rt_min,
     )
-    peak_id = record.work_item.peak_id
     matched_tags = ordered_tag_names(
         (event.neutral_loss_tag for event in evidence), settings=settings
     )
@@ -442,10 +432,9 @@ def _measured_peak(
         best_ms2_scan_id=representative.scan_number,
         attached_event_count=len(attached),
         ms1_apex_rt=facts.apex_rt_min,
-        ms1_area=facts.area_counts_seconds,
-        ms1_height=facts.height,
-        ms1_peak_rt_start=facts.left_rt_min,
-        ms1_peak_rt_end=facts.right_rt_min,
+        ms1_search_rt_min=window.rt_min,
+        ms1_search_rt_max=window.rt_max,
+        query_rt_min=question.query_rt_min,
         status=_peak_status(
             doubly_charged=doubly_charged,
             overlap=evaluation.requires_overlap_review,
@@ -480,7 +469,7 @@ def _measured_peak(
         )
         for ion, event in located
     )
-    return peak, record, peak_attachments
+    return peak, representative, peak_attachments
 
 
 def _peak_status(
@@ -544,11 +533,11 @@ def _event_rt_attaches_to_peak(
 
 
 def _seed_subject_id(event: DiscoveryEvent) -> str:
-    return build_discovery_physical_selection_subject_id(
-        sample_stem=event.sample_stem,
-        best_ms2_scan_id=event.scan_number,
-        precursor_mz=event.precursor_mz,
-        product_mz=event.product_mz,
+    """One physical search per NL event."""
+    return (
+        "discovery-physical-work:"
+        f"{event.sample_stem}:{event.scan_number}:"
+        f"{float(event.precursor_mz).hex()}:{float(event.product_mz).hex()}"
     )
 
 
@@ -728,37 +717,3 @@ def _predicted_chunked_call_count(
 def _chunks(values: Sequence[Any], size: int) -> Iterable[Sequence[Any]]:
     for start in range(0, len(values), size):
         yield values[start : start + size]
-
-
-def _cid_nl_physical_record(
-    representative: DiscoveryEvent,
-    captured: CapturedPhysicalPeak,
-    *,
-    work_ordinal: int,
-    ion_mz: float,
-) -> DiscoveryPhysicalFactRecord:
-    """Project completed physical work into the retained CID-NL sidecar schema."""
-    acquired = captured.acquired_trace
-    coordinate = acquired.coordinate
-    request = coordinate.request
-    question = captured.evaluation.question
-    return DiscoveryPhysicalFactRecord(
-        work_item=DiscoveryPhysicalWorkItem(
-            work_ordinal=work_ordinal,
-            acquisition_source_id=coordinate.capability.acquisition_source.acquisition_source_id,
-            sample_stem=representative.sample_stem,
-            best_ms2_scan_id=representative.scan_number,
-            precursor_mz=representative.precursor_mz,
-            product_mz=representative.product_mz,
-            query_rt_min=question.query_rt_min,
-            context_rt_start_min=question.context_rt_start_min,
-            context_rt_end_min=question.context_rt_end_min,
-            ion_mz=ion_mz,
-            xic_mz=request.mz,
-            xic_rt_min=request.rt_min,
-            xic_rt_max=request.rt_max,
-            xic_ppm_tol=request.ppm_tol,
-        ),
-        acquired_trace=acquired,
-        evaluation=captured.evaluation,
-    )

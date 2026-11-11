@@ -358,7 +358,6 @@ class UntargetedRun:
             for label, path in (
                 ("Discovery 峰表", item.peaks_csv),
                 ("Discovery 事件表", item.events_csv),
-                ("Discovery physical facts", item.physical_facts_json),
             ):
                 if Path(path).is_file():
                     found.append((label, Path(path)))

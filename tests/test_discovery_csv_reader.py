@@ -5,7 +5,6 @@ import pytest
 
 from tests.alignment_pipeline_helpers import (
     _owner_closed_receipt_fields,
-    physical_facts_fingerprint_beside,
 )
 from xic_extractor.discovery.batch_contract import DISCOVERY_BATCH_INDEX_COLUMNS
 from xic_extractor.discovery.models import DISCOVERY_PEAK_COLUMNS
@@ -461,7 +460,6 @@ def _discovery_input_batch(
             sample_stem=stem,
             acquisition_source=source,
             peak_csv=path,
-            physical_facts=physical_facts_fingerprint_beside(path),
             peaks=candidates,
         )
     order = tuple(rows_by_sample)
