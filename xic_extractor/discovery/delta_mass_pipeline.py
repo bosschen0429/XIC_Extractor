@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import time
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -65,10 +66,19 @@ def run_delta_mass_discovery(
     output_dir: Path,
     strategy: DeltaMassDiscoveryStrategy,
     cid_nl_peaks_csv: Path | None = None,
+    raw_paths: Sequence[Path] | None = None,
 ) -> DeltaMassDiscoveryOutputs:
-    """Detect features per RAW, acquire one batch, then write diagnostic results."""
+    """Detect features per RAW, acquire one batch, then write diagnostic results.
+
+    ``raw_paths`` limits the run to selected samples of ``raw_dir``; omitted,
+    every RAW in the folder is analyzed.
+    """
     raw_paths = sorted(
-        p for p in raw_dir.iterdir() if p.is_file() and p.suffix.lower() == ".raw"
+        raw_paths
+        if raw_paths is not None
+        else (
+            p for p in raw_dir.iterdir() if p.is_file() and p.suffix.lower() == ".raw"
+        )
     )
     if not raw_paths:
         raise ValueError(f"no RAW files in {raw_dir}")

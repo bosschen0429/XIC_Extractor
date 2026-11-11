@@ -331,18 +331,97 @@ def test_new_cid_nl_and_delta_mass_method_round_trips_every_field(tmp_path):
     ]
 
 
-def test_workbench_rejects_running_a_delta_mass_method(tmp_path):
-    from xic_extractor.presets import PresetError
+@pytest.mark.parametrize("preset", ["pt_pattern", "pt_pattern_cid_nl_dr"])
+def test_workbench_runs_delta_mass_discovery_without_alignment(
+    tmp_path, monkeypatch, preset
+):
+    import xic_workbench.untargeted as module
+    from xic_extractor.discovery.delta_mass_csv import DeltaMassDiscoveryOutputs
+    from xic_extractor.discovery.models import DiscoveryRunOutputs
 
-    with pytest.raises(PresetError, match="命令列|xic-delta-mass-discovery-cli"):
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raws = []
+    for stem in ("A", "B"):
+        (raw_dir / f"{stem}.raw").touch()
+        raws.append(raw_dir / f"{stem}.raw")
+    (raw_dir / "excluded.raw").touch()
+    monkeypatch.setattr(
+        module,
+        "read_analysis_set",
+        lambda *_args: SimpleNamespace(
+            raw_paths=tuple(raws),
+            sample_metadata=tuple(SampleMetadata(r.stem, r.stem) for r in raws),
+        ),
+    )
+    discovered = {}
+
+    def discovery(paths, *, output_dir, settings, **_kwargs):
+        discovered.update(paths=paths, loss=settings.neutral_loss_profiles)
+        per_sample = []
+        for path in paths:
+            folder = output_dir / path.stem
+            folder.mkdir(parents=True)
+            peaks = folder / "discovery_peaks.csv"
+            peaks.write_text(
+                f"peak_id,sample_stem\n{path.stem}-1,{path.stem}\n", encoding="utf-8"
+            )
+            per_sample.append(DiscoveryRunOutputs(peaks, folder / "e", folder / "f"))
+        return DiscoveryBatchOutputs(output_dir / "index.csv", tuple(per_sample))
+
+    captured = {}
+
+    def delta_mass(
+        *, raw_dir, output_dir, strategy, cid_nl_peaks_csv, raw_paths, **_kwargs
+    ):
+        captured.update(
+            label=strategy.label,
+            peaks=cid_nl_peaks_csv.read_text(encoding="utf-8")
+            if cid_nl_peaks_csv
+            else None,
+            raws=tuple(raw_paths),
+        )
+        candidates = output_dir / "delta_mass_candidates.csv"
+        candidates.write_text(
+            "status\ncandidate\nrejected\ncandidate\n", encoding="utf-8"
+        )
+        return DeltaMassDiscoveryOutputs(
+            candidates, output_dir / "positions.csv", output_dir / "sidecar.json"
+        )
+
+    monkeypatch.setattr(module, "run_discovery_batch", discovery)
+    monkeypatch.setattr(module, "run_delta_mass_discovery", delta_mass)
+    monkeypatch.setattr(
+        module,
+        "run_untargeted_application",
+        lambda *_args, **_kwargs: pytest.fail("Delta Mass must not run Alignment"),
+    )
+    summary = UntargetedRun(
         parse_request(
             {
-                "preset": "pt_pattern",
-                "raw_dir": str(tmp_path),
+                "preset": preset,
+                "preset_snapshot": method_details(preset)["draft"],
+                "raw_dir": str(raw_dir),
                 "dll_dir": str(tmp_path),
                 "output_dir": str(tmp_path / "out"),
             }
-        )
+        ),
+        progress=lambda *_args: None,
+        should_cancel=lambda: False,
+    ).execute()
+
+    assert captured["label"] == preset
+    # The selected samples, not every RAW in the folder.
+    assert captured["raws"] == tuple(raws)
+    assert summary["modules"] == {"delta_mass": "completed"}
+    assert summary["delta_mass"]["candidate_count"] == 2
+    assert summary["matrix_tsv"] is None
+    if preset == "pt_pattern":
+        assert captured["peaks"] is None and not discovered
+    else:
+        assert [p.neutral_loss_da for p in discovered["loss"]] == [116.0474]
+        # One dR peak table across samples, for the composite's base join.
+        assert captured["peaks"] == "peak_id,sample_stem\nA-1,A\nB-1,B\n"
 
 
 def test_method_adapter_rejects_unknown_override_without_writing(tmp_path) -> None:

@@ -26,9 +26,16 @@ In **Untargeted Discovery → 分析方法**:
 5. Apply to use the edited method for the current batch. **另存方法檔…** writes a
    reusable TOML; built-in methods are never overwritten. A new Delta Mass
    method writes `mass_recalibration = "easy_ic_restore"`. Cancel leaves the
-   previously applied method intact. The Workbench runs CID-NL Discovery; run a
-   Delta Mass method from its saved TOML with `xic-delta-mass-discovery-cli`.
-6. Advanced parameters remain a secondary, collapsed control. RT defaults to
+   previously applied method intact.
+6. **開始 Untargeted 分析** runs a Delta Mass method as Discovery only: the result
+   lists the diagnostic candidate tables (`delta_mass_candidates.csv`,
+   `delta_mass_positions.csv`, sidecar) without cross-sample alignment or a
+   matrix. Pt pattern + CID-NL dR first runs CID-NL dR Discovery on the same
+   samples (`cid_nl_dR/`) and joins its merged `discovery_peaks.csv`. The same
+   run from the command line is `xic-discovery-cli --preset dna_dr`, then
+   `xic-delta-mass-discovery-cli --cid-nl-peaks-csv` with the samples' peak
+   tables merged into one file.
+7. Advanced parameters remain a secondary, collapsed control. RT defaults to
    each RAW file's full acquisition range from instrument metadata. Enable
    optional RT cropping only when needed; either bound may remain automatic.
    Apply and Save As preserve explicit crop values, while automatic bounds are

@@ -11,17 +11,26 @@ from xic_extractor.presets.apply import (
     apply_to_delta_mass_discovery,
 )
 from xic_extractor.presets.loader import load_preset
-from xic_extractor.presets.models import PresetError
+from xic_extractor.presets.models import Preset, PresetError
 
 if TYPE_CHECKING:
     from xic_extractor.discovery.delta_mass_strategy import DeltaMassDiscoveryStrategy
 
 
-def resolve_delta_mass_discovery(preset_name: str) -> DeltaMassDiscoveryStrategy:
-    """Resolve a preset into the method and detector settings for one run."""
+def resolve_delta_mass_discovery(
+    preset: str | Preset, *, label: str | None = None
+) -> DeltaMassDiscoveryStrategy:
+    """Resolve a preset into the method and detector settings for one run.
+
+    ``preset`` is a built-in name, a TOML path, or an already admitted preset
+    (for example a Workbench method draft); ``label`` names it in the sidecar.
+    """
     from xic_extractor.discovery.delta_mass_strategy import DeltaMassDiscoveryStrategy
 
-    preset = load_preset(preset_name)
+    if isinstance(preset, str):
+        label = label or preset
+        preset = load_preset(preset)
+    preset_name = label or preset.name
     settings = apply_to_delta_mass_discovery(preset)
     detector = preset.discovery_overrides.get("detector", {})
     if not isinstance(detector, Mapping):

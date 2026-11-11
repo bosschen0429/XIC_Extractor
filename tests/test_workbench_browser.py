@@ -1024,7 +1024,6 @@ def test_untargeted_delta_mass_method_edits_with_shared_terms(workbench, tmp_pat
     expect(page.locator("#method-preview")).to_contain_text(
         "Delta Mass · 基準＋3 個伴隨離子"
     )
-    expect(page.locator("#untargeted-checklist")).to_contain_text("命令列")
     page.locator("#method-edit").click()
     dialog = page.locator("#method-editor")
     expect(page.locator("#method-dm-on")).to_be_checked()

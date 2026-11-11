@@ -193,7 +193,7 @@ def test_actual_workbench_entry_rejects_invalid_preset_before_fingerprint_or_raw
     with pytest.raises(PresetError):
         parse_request(
             {
-                "preset": "pt_pattern",
+                "preset": "no_such_preset",
                 "raw_dir": str(raw_dir),
                 "dll_dir": str(tmp_path / "dll"),
                 "output_dir": str(tmp_path / "out"),
