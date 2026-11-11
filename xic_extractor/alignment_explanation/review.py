@@ -139,17 +139,9 @@ def cell_attention(variant: Any, value: Any, risk_flagged: bool) -> str | None:
     return None
 
 
-def attention_reason(kind: str, fact: dict[str, Any]) -> str | None:
-    """One recorded-fact predicate for selection and its displayed explanation."""
-    if kind == "cell_decisions":
-        return cell_attention(
-            fact.get("variant"),
-            fact.get("value", fact.get("quantitative_value")),
-            any(risk.get("risk_flags") for risk in fact.get("membership_risks", [])),
-        )
-    elif kind == "method_assessments" and fact.get("method_result") == "HOLD":
-        return "HOLD"
-    return None
+def assessment_attention(method_result: Any) -> str | None:
+    """Why a recorded method assessment needs attention."""
+    return "HOLD" if method_result == "HOLD" else None
 
 
 def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:

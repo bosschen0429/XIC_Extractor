@@ -20,7 +20,7 @@ from typing import Any, Literal
 from xic_extractor.alignment_explanation.relations import relation
 from xic_extractor.alignment_explanation.review import (
     RECORDED_ORIGINS,
-    attention_reason,
+    assessment_attention,
     cell_attention,
     group_attention,
 )
@@ -110,10 +110,7 @@ def _query_views(db: sqlite3.Connection) -> None:
     db.create_function(
         "assessment_attention",
         1,
-        lambda result: (
-            attention_reason("method_assessments", {"method_result": result})
-            is not None
-        ),
+        lambda result: assessment_attention(result) is not None,
         deterministic=True,
     )
     db.create_function(

@@ -17,13 +17,15 @@ from typing import Any
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     CandidateKey,
+    GroupEvidence,
     ReviewEvidence,
     read_alignment_curves,
     read_alignment_explanation,
     read_review_evidence,
 )
 from xic_extractor.alignment_explanation.review import (
-    attention_reason,
+    assessment_attention,
+    cell_attention,
     group_attention,
 )
 from xic_inspector.selection.canonical import (
@@ -45,8 +47,8 @@ def read_summary(path: str | Path) -> dict[str, Any]:
 
 @dataclass(frozen=True, slots=True)
 class Card:
-    """One evidence card: a recorded fact, and which of the item's samples and
-    candidates it concerns, known when the card is built."""
+    """One evidence card as presented: a recorded fact, and which of the item's
+    samples and candidates it concerns."""
 
     kind: str
     ref: CardRef
@@ -57,11 +59,15 @@ class Card:
 
 @dataclass(frozen=True, slots=True)
 class ItemEvidence:
-    """One scoped review item and the evidence it is presented with."""
+    """One scoped review item: its state, computed from the evidence, and the
+    cards it is presented with."""
 
     item: CanonicalItem
     cards: tuple[Card, ...]
-    source: dict[str, Any]
+    route: dict[str, Any]
+    reason: Any
+    state: Any
+    losses: tuple[float, ...]
     cells: tuple[dict[str, Any], ...]
     sample_status: dict[str, str]
     support_origins: dict[str, dict[str, Any]]
@@ -74,6 +80,9 @@ def _candidate_ref(key: CandidateKey) -> str:
     return json.dumps(key, separators=(",", ":"))
 
 
+Linked = dict[str, tuple[dict[str, Any], set[CandidateKey]]]
+
+
 def build_item_evidence(
     evidence: ReviewEvidence,
     attempt_id: str,
@@ -82,119 +91,88 @@ def build_item_evidence(
     gid: str | None,
     keys: Iterable[CandidateKey],
     scope: set[str],
-    source: dict[str, Any],
 ) -> ItemEvidence:
-    """Scope one item to its candidates and build its cards from their facts."""
+    """Scope one item to its candidates, compute its state from their facts and
+    the group's cells, then build its cards for presentation."""
     keys = set(keys)
     scoped = sorted(key for key in keys if key[1] in scope)
     group = evidence.groups.get(gid) if gid is not None else None
-    group_record = group.record if group is not None else {}
-    found: dict[tuple[str, CardRef], tuple[dict[str, Any], set[CandidateKey]]] = {}
+    subjects: Linked = {}
+    assessments: Linked = {}
+    initial: Linked = {}
+    curves: Linked = {}
+    groups: dict[str, set[CandidateKey]] = {}
 
-    def add(card_kind: str, ref: CardRef, facts: dict[str, Any], key) -> None:
-        found.setdefault((card_kind, ref), (facts, set()))[1].add(key)
+    def link(found: Linked, ref: str, facts: dict[str, Any], key) -> None:
+        found.setdefault(ref, (facts, set()))[1].add(key)
 
     for key in scoped:
         candidate = evidence.candidates[key]
-        add(
-            "method_subjects",
-            candidate.method_subject_id,
-            candidate.method_subject,
-            key,
-        )
+        link(subjects, candidate.method_subject_id, candidate.method_subject, key)
         for ref, assessment in candidate.assessments:
-            add("method_assessments", ref, assessment, key)
-        if candidate.exclusion is not None:
-            add("exclusions", _candidate_ref(key), candidate.exclusion, key)
-        if candidate.terminal is not None:
-            add("terminal_subjects", _candidate_ref(key), candidate.terminal, key)
+            link(assessments, ref, assessment, key)
         for ref in candidate.groups:
-            other = evidence.groups[ref]
             # A candidate's other recorded rows belong to their own items.
-            if other.feature_id not in (None, gid):
-                continue
-            add("final_groups", ref, other.record, key)
-            if other.row is not None:
-                add("rows", ref, other.row, key)
+            if evidence.groups[ref].feature_id in (None, gid):
+                groups.setdefault(ref, set()).add(key)
         for ref in candidate.initial_groups:
-            add("initial_groups", ref, evidence.initial_groups[ref], key)
+            link(initial, ref, evidence.initial_groups[ref], key)
         for ref in candidate.curves:
-            curve = evidence.curves[ref]
-            if curve["sample_id"] == key[1]:
-                add("capture_evidence", ref, curve, key)
-    cards = [
-        Card(
-            card_kind,
-            ref,
-            facts,
-            frozenset(linked),
-            frozenset(sid for _, sid in linked),
-        )
-        for (card_kind, ref), (facts, linked) in found.items()
+            if evidence.curves[ref]["sample_id"] == key[1]:
+                link(curves, ref, evidence.curves[ref], key)
+    excluded_keys = [key for key in scoped if evidence.candidates[key].exclusion]
+    cells = [
+        {**cell, "quantitative_value": cell["value"]}
+        for sid, cell in sorted(group.cells.items() if kind == "row" and group else ())
+        if sid in scope
     ]
-    cell_samples: set[str] = set()
-    if kind == "row" and group is not None:
-        for sid, cell in sorted(group.cells.items()):
-            if sid not in scope:
-                continue
-            cards.append(
-                Card(
-                    "cell_decisions",
-                    (identifier, sid),
-                    cell,
-                    frozenset(),
-                    frozenset((sid,)),
-                )
-            )
-            cell_samples.add(sid)
-    cards.sort(key=lambda card: (card.kind, card.ref))
-    witnesses = _witnesses(evidence, kind, identifier, gid, group_record, scoped)
+    cells_by_sample = {cell["sample_key"]: cell for cell in cells}
+    witnesses = _witnesses(evidence, kind, identifier, gid, group, scoped)
 
     triggers: list[dict[str, Any]] = []
-    if group_attention(group_record.get("disposition")):
-        triggers.append(
-            {"scope": "group", "ref": gid, "reason": group_record["disposition"]}
+    if group is not None and group_attention(group.disposition):
+        triggers.append({"scope": "group", "ref": gid, "reason": group.disposition})
+    for sid, cell in cells_by_sample.items():
+        reason = cell_attention(
+            cell["variant"],
+            cell["value"],
+            any(risk.get("risk_flags") for risk in cell["membership_risks"]),
         )
-    cells = []
-    for card in cards:
-        reason = attention_reason(card.kind, card.facts)
-        if card.kind == "cell_decisions":
-            cells.append({**card.facts, "quantitative_value": card.facts["value"]})
         if reason:
-            trigger: dict[str, Any] = {
-                "scope": "sample",
-                "ref": card.ref,
-                "reason": reason,
-                "sample_ids": sorted(card.samples),
-            }
-            reason_codes = card.facts.get("reason_codes")
-            if isinstance(reason_codes, list):
-                trigger["reason_codes"] = [
-                    code for code in reason_codes if isinstance(code, str)
-                ]
-            triggers.append(trigger)
-    excluded = {
-        sid for card in cards if card.kind == "exclusions" for sid in card.samples
-    }
+            triggers.append(
+                _trigger((identifier, sid), reason, {sid}, cell["reason_codes"])
+            )
+    for ref, (assessment, linked) in sorted(assessments.items()):
+        reason = assessment_attention(assessment["method_result"])
+        if reason:
+            triggers.append(
+                _trigger(
+                    ref,
+                    reason,
+                    {sid for _, sid in linked},
+                    assessment["reason_codes"],
+                )
+            )
+    excluded = {sid for _, sid in excluded_keys}
     stratum = classify_scoped_stratum(
         is_attention=bool(triggers),
         is_excluded=bool(excluded),
         has_null_cell=any(c["quantitative_value"] is None for c in cells),
         has_zero_cell=any(c["quantitative_value"] == 0 for c in cells),
     )
-    sample_ids = sorted({sid for _, sid in scoped} | cell_samples)
+    sample_ids = sorted({sid for _, sid in scoped} | set(cells_by_sample))
     sample_status: dict[str, str] = {}
     for sid in sample_ids:
-        local_cells = [c for c in cells if c["sample_key"] == sid]
+        local = cells_by_sample.get(sid)
         local_attention = any(sid in t.get("sample_ids", ()) for t in triggers)
         sample_status[sid] = (
             classify_scoped_stratum(
                 is_attention=local_attention,
                 is_excluded=sid in excluded,
-                has_null_cell=any(c["quantitative_value"] is None for c in local_cells),
-                has_zero_cell=any(c["quantitative_value"] == 0 for c in local_cells),
+                has_null_cell=local is not None and local["value"] is None,
+                has_zero_cell=local is not None and local["value"] == 0,
             )
-            if local_cells or local_attention or sid in excluded
+            if local is not None or local_attention or sid in excluded
             else "unavailable"
         )
     _, ref = build_canonical_ref(
@@ -203,20 +181,27 @@ def build_item_evidence(
         identifier,
         sample_id=next(iter(keys))[1] if kind == "candidate" else None,
     )
-    members = tuple(group_record.get("member_subjects", ()))
+    members = tuple(group.members) if group is not None else ()
     support_observations = {
-        sid: _support_observation_refs(sid, members, witnesses, cards)
+        sid: _support_observation_refs(
+            sid, members, witnesses, cells_by_sample.get(sid)
+        )
         for sid in sample_ids
     }
     origins = {
-        sid: _support_origin(sid, support_observations[sid], cards)
+        sid: _support_origin(
+            sid,
+            support_observations[sid],
+            cells_by_sample.get(sid),
+            curves,
+            assessments,
+        )
         for sid in sample_ids
     }
     initial_member_ids = {
         member["subject_id"]
-        for card in cards
-        if card.kind == "initial_groups"
-        for member in card.facts.get("member_subjects", [])
+        for record, _ in initial.values()
+        for member in record.get("member_subjects", [])
     }
     review_summary = {
         "observed_sample_count": len(
@@ -241,15 +226,82 @@ def build_item_evidence(
         # Selection reads the review facts; rendering presents the triggers.
         details={"attention_triggers": triggers, "review_summary": review_summary},
     )
+    row = group if kind == "row" else None
+    route = {"destination": row.destination, "reason": row.disposition} if row else {}
+    cards = [
+        *(
+            Card(card_kind, card_ref, facts, frozenset(linked), _samples(linked))
+            for card_kind, found in (
+                ("method_subjects", subjects),
+                ("method_assessments", assessments),
+                ("initial_groups", initial),
+                ("capture_evidence", curves),
+            )
+            for card_ref, (facts, linked) in found.items()
+        ),
+        *(
+            Card(
+                card_kind,
+                _candidate_ref(key),
+                facts,
+                frozenset((key,)),
+                frozenset((key[1],)),
+            )
+            for key in scoped
+            for card_kind, facts in (
+                ("exclusions", evidence.candidates[key].exclusion),
+                ("terminal_subjects", evidence.candidates[key].terminal),
+            )
+            if facts is not None
+        ),
+        *(
+            Card(card_kind, group_ref, facts, frozenset(linked), _samples(linked))
+            for group_ref, linked in groups.items()
+            for card_kind, facts in (
+                ("final_groups", presentation.group_facts(evidence.groups[group_ref])),
+                ("rows", presentation.row_facts(evidence.groups[group_ref])),
+            )
+            if facts is not None
+        ),
+        *(
+            Card(
+                "cell_decisions",
+                (identifier, cell["sample_key"]),
+                {
+                    key: value
+                    for key, value in cell.items()
+                    if key != "quantitative_value"
+                },
+                frozenset(),
+                frozenset((cell["sample_key"],)),
+            )
+            for cell in cells
+        ),
+    ]
+    cards.sort(key=lambda card: (card.kind, card.ref))
     return ItemEvidence(
         item=item,
         cards=tuple(cards),
-        source=source,
+        route=route,
+        reason=group.disposition if group is not None else "unavailable",
+        # The labels name the first related group's recorded disposition.
+        state=evidence.groups[min(groups)].disposition
+        if groups
+        else route.get("reason"),
+        losses=tuple(
+            sorted(
+                {
+                    facts["neutral_loss_da"]
+                    for facts, _ in subjects.values()
+                    if isinstance(facts["neutral_loss_da"], (int, float))
+                }
+            )
+        ),
         cells=tuple(cells),
         sample_status=sample_status,
         support_origins=origins,
         review_summary=review_summary,
-        # A featureless group's or a candidate's source names no group.
+        # A featureless group or a candidate names no published row.
         members=members if kind == "row" else (),
         measured_mz={
             key: evidence.candidates[key].fields["ms1_apex_mz"] for key in scoped
@@ -257,17 +309,31 @@ def build_item_evidence(
     )
 
 
+def _samples(keys: Iterable[CandidateKey]) -> frozenset[str]:
+    return frozenset(sid for _, sid in keys)
+
+
+def _trigger(ref, reason, samples, reason_codes) -> dict[str, Any]:
+    return {
+        "scope": "sample",
+        "ref": ref,
+        "reason": reason,
+        "sample_ids": sorted(samples),
+        "reason_codes": [code for code in reason_codes if isinstance(code, str)],
+    }
+
+
 def _witnesses(
     evidence: ReviewEvidence,
     kind: str,
     identifier: str,
     gid: str | None,
-    group_record: dict[str, Any],
+    group: GroupEvidence | None,
     scoped: list[CandidateKey],
 ) -> list[Witness]:
     """Each scoped candidate's terminal observation that the group kept."""
     members_by_sample: dict[str, set[str]] = {}
-    for member in group_record.get("member_subjects", []):
+    for member in group.members if group is not None else ():
         members_by_sample.setdefault(member["sample_key"], set()).update(
             member["physical_peak_keys"]
         )
@@ -296,7 +362,7 @@ def _witnesses(
     return witnesses
 
 
-def _support_observation_refs(sample_id, members, witnesses, cards):
+def _support_observation_refs(sample_id, members, witnesses, cell):
     refs = {
         witness.observation_id
         for witness in witnesses
@@ -308,57 +374,42 @@ def _support_observation_refs(sample_id, members, witnesses, cards):
         if member["sample_key"] == sample_id
         for peak in member["physical_peak_keys"]
     )
-    refs.update(
-        peak
-        for card in cards
-        if card.kind == "cell_decisions" and card.facts["sample_key"] == sample_id
-        for peak in card.facts["observation_ids"]
-    )
+    refs.update(cell["observation_ids"] if cell is not None else ())
     return sorted(refs)
 
 
-def _support_origin(sample_id, observation_refs, cards):
+def _support_origin(sample_id, observation_refs, cell, curves, assessments):
     """The cell's recorded origin; without a cell, derive it from the sample's
     retained captures and supporting method assessments of its observations."""
-    recorded = {
-        card.facts["support_origin"]
-        for card in cards
-        if card.kind == "cell_decisions" and card.facts["sample_key"] == sample_id
-    }
-    if recorded:
-        kind = next(
-            (
-                value
-                for value in ("backfill_support", "discovery_support")
-                if value in recorded
-            ),
-            "unavailable",
-        )
+    if cell is not None:
+        kind = cell["support_origin"]
         return {
-            "kind": kind,
-            "label": presentation.support_origin_label(kind),
+            "kind": kind
+            if kind in ("backfill_support", "discovery_support")
+            else "unavailable",
+            "label": presentation.support_origin_label(
+                kind
+                if kind in ("backfill_support", "discovery_support")
+                else "unavailable"
+            ),
             "method_refs": [],
             "capture_refs": [],
             "observation_refs": observation_refs,
         }
     observation_set = set(observation_refs)
-    captures = []
-    methods = []
-    for card in cards:
-        facts = card.facts
-        if facts.get("sample_key", facts.get("sample_id")) != sample_id:
-            continue
-        if (
-            card.kind == "capture_evidence"
-            and facts["physical_peak_key"] in observation_set
-        ):
-            captures.append((card.ref, facts))
-        elif (
-            card.kind == "method_assessments"
-            and facts["method_result"] == "SUPPORT"
-            and observation_set.intersection(facts["candidate_physical_peak_keys"])
-        ):
-            methods.append((card.ref, facts))
+    captures = [
+        (ref, facts)
+        for ref, (facts, _) in curves.items()
+        if facts["sample_id"] == sample_id
+        and facts["physical_peak_key"] in observation_set
+    ]
+    methods = [
+        (ref, facts)
+        for ref, (facts, _) in assessments.items()
+        if facts["sample_key"] == sample_id
+        and facts["method_result"] == "SUPPORT"
+        and observation_set.intersection(facts["candidate_physical_peak_keys"])
+    ]
     capture_kinds = {facts["kind"] for _, facts in captures}
     invocations = {facts["detector_invocation_id"] for _, facts in methods}
     if (
@@ -409,12 +460,11 @@ class CidNlSource:
             build_item_evidence(
                 evidence,
                 self.attempt_id,
-                "row" if group.row is not None else "group",
+                "row" if group.feature_id is not None else "group",
                 ref,
                 ref,
                 group.candidates,
                 sample_ids,
-                group.row if group.row is not None else group.record,
             )
             for ref, group in evidence.groups.items()
         ]
@@ -427,7 +477,6 @@ class CidNlSource:
                 None,
                 (key,),
                 sample_ids,
-                candidate.fields,
             )
             for key, candidate in evidence.candidates.items()
             if key not in grouped

@@ -58,11 +58,18 @@ class CandidateEvidence:
 
 @dataclass(frozen=True, slots=True)
 class GroupEvidence:
-    """One final group: its record, its result row and its cells by sample."""
+    """One final group; with a feature ID it is a published row.
+
+    ``xic_extractions`` are the coordinates its cells were read at, and
+    ``risk_flags`` the membership risk flags of a row's members and cells.
+    """
 
     feature_id: str | None
-    record: dict[str, Any]
-    row: dict[str, Any] | None
+    disposition: str | None
+    destination: str | None
+    members: list[dict[str, Any]]
+    xic_extractions: list[dict[str, Any]]
+    risk_flags: list[str]
     candidates: frozenset[CandidateKey]
     cells: dict[str, dict[str, Any]]
 
@@ -307,7 +314,7 @@ class _Report:
         candidates: Mapping[int, set[CandidateKey]],
         cells: Mapping[str, dict[str, dict[str, Any]]],
     ) -> dict[str, GroupEvidence]:
-        """Each group with its final-group record and, with a feature id, its row."""
+        """Each read group, keyed by its feature ID or else its row id."""
         members = self.members("final_group", (row[0] for row in rows))
         positions: dict[int, list[Any]] = defaultdict(list)
         ids = [row[0] for row in rows]
@@ -350,19 +357,11 @@ class _Report:
             result[feature_id if feature_id is not None else str(group_id)] = (
                 GroupEvidence(
                     feature_id=feature_id,
-                    record={
-                        "disposition": disposition,
-                        **({} if feature_id is None else {"feature_id": feature_id}),
-                        "member_subjects": members.get(group_id, []),
-                        "xic_extractions": extractions,
-                    },
-                    row=None
-                    if feature_id is None
-                    else {
-                        "feature_id": feature_id,
-                        "membership_risk_flags": flags.get(group_id, []),
-                        "route": {"destination": destination, "reason": disposition},
-                    },
+                    disposition=disposition,
+                    destination=destination,
+                    members=members.get(group_id, []),
+                    xic_extractions=extractions,
+                    risk_flags=flags.get(group_id, []),
                     candidates=frozenset(candidates.get(group_id, ())),
                     cells=cells.get(feature_id, {}) if feature_id is not None else {},
                 )
@@ -724,13 +723,20 @@ def read_alignment_explanation(
             "method_assessments": [assessments[ref] for ref in sorted(assessments)],
             "groups": [
                 {
-                    **group.record,
+                    "disposition": group.disposition,
                     **(
                         {}
-                        if group.row is None
+                        if group.feature_id is None
+                        else {"feature_id": group.feature_id}
+                    ),
+                    "member_subjects": group.members,
+                    "xic_extractions": group.xic_extractions,
+                    **(
+                        {}
+                        if group.feature_id is None
                         else {
-                            "destination": group.row["route"]["destination"],
-                            "membership_risk_flags": group.row["membership_risk_flags"],
+                            "destination": group.destination,
+                            "membership_risk_flags": group.risk_flags,
                             "cells": list(cells.get(ref, {}).values()),
                         }
                     ),
@@ -821,11 +827,9 @@ def read_candidate_examples(path: Path) -> list[dict[str, Any]]:
 def read_review_row_counts(
     path: Path, summary: Mapping[str, Any]
 ) -> Iterator[dict[str, Any]]:
-    """Overview facts from named cell columns, without reasons, risks or curves."""
+    """Overview facts from named row and cell columns, without reasons or curves."""
     samples = [s["sample_key"] for s in summary["samples"]]
     with open_readonly(path) as db:
-        report = _Report(db, summary)
-        rows = list(db.execute(_GROUPS + " WHERE feature_id IS NOT NULL ORDER BY id"))
         counts = {
             group: (numeric, unresolved)
             for group, numeric, unresolved in db.execute(
@@ -834,12 +838,14 @@ def read_review_row_counts(
                 "sum(variant='unresolved') FROM cells GROUP BY group_id"
             )
         }
-        for (group_id, *_), group in zip(
-            rows, report.groups(rows, {}, {}).values(), strict=True
+        for group_id, feature_id, destination in db.execute(
+            "SELECT id,feature_id,destination FROM groups "
+            "WHERE feature_id IS NOT NULL ORDER BY id"
         ):
             numeric, unresolved = counts.get(group_id, (None, 0))
             yield {
-                "row": group.row,
+                "feature_id": feature_id,
+                "destination": destination,
                 "numeric_samples": [samples[int(i)] for i in numeric.split(",")]
                 if numeric
                 else [],

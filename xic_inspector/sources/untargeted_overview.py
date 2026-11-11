@@ -12,9 +12,8 @@ def review_overview(path, summary):
     coverage: Counter[str] = Counter()
     sample_count = len(summary["samples"])
     for record in read_review_row_counts(path, summary):
-        row, numeric = record["row"], record["numeric_samples"]
-        destination = row["route"]["destination"]
-        rows[row["feature_id"]] = {
+        numeric, destination = record["numeric_samples"], record["destination"]
+        rows[record["feature_id"]] = {
             "destination": destination,
             "numeric_count": len(numeric),
             "unresolved_count": record["unresolved_count"],

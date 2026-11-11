@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from xic_inspector.selection.canonical import CanonicalItem
 
 if TYPE_CHECKING:
+    from xic_extractor.alignment_explanation.reader import GroupEvidence
     from xic_inspector.sources.cid_nl import Card, CardRef, ItemEvidence
 
 _RECORD_TITLES = {
@@ -93,6 +94,27 @@ _RESULT_VARIANT_LABELS = {
     "unavailable": "沒有可用觀察",
     "unresolved": "決策尚未解決",
 }
+
+
+def group_facts(group: GroupEvidence) -> dict[str, Any]:
+    """A final group as its evidence card shows it."""
+    return {
+        "disposition": group.disposition,
+        **({} if group.feature_id is None else {"feature_id": group.feature_id}),
+        "member_subjects": group.members,
+        "xic_extractions": group.xic_extractions,
+    }
+
+
+def row_facts(group: GroupEvidence) -> dict[str, Any] | None:
+    """A published row and its output destination, as its card shows it."""
+    if group.feature_id is None:
+        return None
+    return {
+        "feature_id": group.feature_id,
+        "membership_risk_flags": group.risk_flags,
+        "route": {"destination": group.destination, "reason": group.disposition},
+    }
 
 
 def _decision_reason(cells: list[dict[str, Any]]) -> str:
@@ -669,11 +691,7 @@ def _decision_label(cells):
 def _item_labels(view: ItemEvidence, samples, route):
     """Describe recorded outcomes without promoting them to scientific claims."""
     item = view.item
-    group: dict[str, Any] = next(
-        (card.facts for card in view.cards if card.kind == "final_groups"),
-        {},
-    )
-    state = group.get("disposition", route.get("reason"))
+    state = view.state
     title, outcome = {
         "established": ("已建立分組", "本次已建立分組"),
         "provisional": ("暫定分組", "本次分組仍為暫定"),
@@ -737,14 +755,7 @@ def _item_labels(view: ItemEvidence, samples, route):
         "matrix": "結果去向為定量矩陣",
         "archive": "結果留存於封存紀錄，未列入定量矩陣",
     }.get(destination, "未記錄輸出去向")
-    losses = sorted(
-        {
-            card.facts["neutral_loss_da"]
-            for card in view.cards
-            if card.kind == "method_subjects"
-            and isinstance(card.facts.get("neutral_loss_da"), (int, float))
-        }
-    )
+    losses = view.losses
     reason_label = f"{outcome}，{population}；{route_outcome}。"
     attention = _attention_reason_label(item, samples)
     if attention:
@@ -857,11 +868,8 @@ def build_render_item(
 ) -> dict[str, Any]:
     """Assemble presentation from selected evidence; never select or reload it."""
     item = view.item
-    source = view.source
-    route = source.get("route", {})
-    reason = route.get(
-        "reason", source.get("reason", source.get("disposition", "unavailable"))
-    )
+    route = view.route
+    reason = view.reason
     return {
         "id": item.serialized_ref,
         "kind": item.kind,

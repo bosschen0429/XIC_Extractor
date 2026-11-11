@@ -79,7 +79,6 @@ class IndexedCidNlSource(CidNlSource):
                     None,
                     (key,),
                     scope,
-                    evidence.candidates[key].fields,
                 )
             else:
                 group = evidence.groups[item.identifier]
@@ -91,7 +90,6 @@ class IndexedCidNlSource(CidNlSource):
                     item.identifier,
                     group.candidates,
                     scope,
-                    group.row if group.row is not None else group.record,
                 )
             views.append(
                 replace(
