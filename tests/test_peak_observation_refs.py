@@ -74,8 +74,43 @@ def test_query_provenance_does_not_change_selected_physical_content(
     np.testing.assert_array_equal(wide.source_trace.intensity, wide_trace.intensity)
     assert len(wide.source_trace.rt) > len(wide.rt)
     assert narrow == wide
-    assert narrow.physical_peak_key == (wide.physical_peak_key)
+    # Each XIC query is reported at its own locator.
+    assert narrow.physical_peak_key != wide.physical_peak_key
     assert narrow.generation_provenance != wide.generation_provenance
+
+
+def test_one_peak_integrated_in_two_windows_has_two_locators(tmp_path: Path) -> None:
+    # Backfill can read one peak's scans in two RT windows; the baseline each
+    # window sees gives a different corrected area for the same raw signal.
+    identity = _identity_fixture(tmp_path)
+    rt = (7.5, 7.7, 7.9, 8.0, 8.1, 8.3, 8.5)
+    intensity = (0.0, 0.0, 50.0, 500.0, 50.0, 0.0, 0.0)
+
+    def measured(rt_min: float, area_baseline_corrected: float) -> PeakObservation:
+        return mint_peak_observation(
+            sample=identity.sample,
+            trace=_trace(
+                rt=rt,
+                intensity=intensity,
+                rt_min=rt_min,
+                rt_max=rt_min + 2.0,
+                acquisition_source_id=_source_id(identity.source),
+            ),
+            integration=replace(
+                _integration(raw_scan_indices=(2, 3, 4)),
+                area_baseline_corrected=area_baseline_corrected,
+            ),
+            resolver_mode="local_minimum",
+            proposal_sources=("local_minimum",),
+        )
+
+    first = measured(6.9, 90.0)
+    second = measured(6.95, 95.0)
+    again = measured(6.9, 90.0)
+
+    assert first != second
+    assert first.physical_peak_key != second.physical_peak_key
+    assert first.physical_peak_key == again.physical_peak_key
 
 
 def test_selected_signal_mutation_changes_content(

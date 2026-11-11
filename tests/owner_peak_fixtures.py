@@ -12,7 +12,10 @@ from xic_extractor.peak_detection.capture import (
     mint_captured_peak_observation,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.peak_detection.observations import PeakObservation
+from xic_extractor.peak_detection.observations import (
+    PeakObservation,
+    PeakObservationGenerationProvenance,
+)
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     compose_ms1_observation_peak_hypothesis,
 )
@@ -20,6 +23,23 @@ from xic_extractor.peak_detection.search_scope import (
     SearchScope,
     require_capture_binding,
 )
+
+
+def peak_query_provenance(
+    rt: tuple[float, ...], *, ppm_tol: float = 20.0
+) -> PeakObservationGenerationProvenance:
+    """The XIC query a test peak was read from: a window around its scans."""
+
+    return PeakObservationGenerationProvenance(
+        acquisition_source_id="test-source",
+        query_rt_min=rt[0] - 0.5,
+        query_rt_max=rt[-1] + 0.5,
+        query_ppm_tol=ppm_tol,
+        trace_source="test",
+        selected_trace_indices=tuple(range(len(rt))),
+        resolver_mode="local_minimum",
+        proposal_sources=(),
+    )
 
 
 def measured_peak(
@@ -61,7 +81,7 @@ def measured_peak(
             raw_scan_indices=tuple(range(len(rt))),
             **values,
         ),
-        generation_provenance=None,  # type: ignore[arg-type]
+        generation_provenance=peak_query_provenance(rt),
         source_trace=None,  # type: ignore[arg-type]
     )
 

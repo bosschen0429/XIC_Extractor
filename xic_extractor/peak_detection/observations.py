@@ -103,8 +103,14 @@ class PeakObservation:
 
     @property
     def physical_peak_key(self) -> str:
-        """Measured coordinates that locate this peak in a written report."""
+        """Measured coordinates that locate this peak in a written report.
 
+        The XIC query is part of the locator: the same selected scans read in
+        another RT window or tolerance can integrate differently (baseline and
+        smoothing see another trace), and each such measurement is reported.
+        """
+
+        provenance = self.generation_provenance
         return "|".join(
             (
                 self.sample_key,
@@ -114,6 +120,9 @@ class PeakObservation:
                 str(len(self.rt)),
                 repr(self.integration.rt_apex_min),
                 repr(self.integration.height_raw),
+                repr(provenance.query_rt_min),
+                repr(provenance.query_rt_max),
+                repr(provenance.query_ppm_tol),
             )
         )
 
