@@ -339,3 +339,56 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         full_audit=True,
     )
     assert report.exists()
+
+
+def test_alignment_rejects_raw_replaced_after_discovery_without_recalibration(
+    tmp_path,
+):
+    from tests.cid_nl_runtime_fixtures import persist_discovery_batch
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+
+    stems = ("Clean1", "Clean2")
+    paths = tuple(tmp_path / f"{stem}.raw" for stem in stems)
+    for path in paths:
+        path.write_bytes(path.stem.encode())
+    settings = replace(
+        _settings(),
+        ms1_search_padding_min=0.6,
+        mass_recalibration=MassRecalibration.NONE,
+    )
+    candidates = {
+        path.stem: _current_candidates(
+            _FakeRaw((8.0,)), raw_file=path, settings=settings
+        )
+        for path in paths
+    }
+    batch = persist_discovery_batch(
+        raw_paths=paths,
+        settings=settings,
+        peaks_by_sample=candidates,
+        root=tmp_path / "discovery",
+    )
+    # The same-named RAW is replaced after Discovery.
+    paths[1].write_bytes(b"another acquisition under the same name")
+
+    with pytest.raises(ValueError, match="RAW changed after Discovery.*Clean2"):
+        prepare_untargeted_alignment_inputs(
+            discovery_batch=batch,
+            peaks_by_sample=DiscoveryInputSource(batch),
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            output_dir=tmp_path / "inputs",
+            settings=settings,
+            peak_config=_peak_config(tmp_path),
+            signal_processing_profile=TEST_PROFILE,
+            sample_metadata=tuple(
+                SampleMetadata(
+                    sample_name=stem,
+                    raw_stem=stem,
+                    injection_order=i + 1,
+                    sample_role="sample",
+                )
+                for i, stem in enumerate(stems)
+            ),
+            raw_workers=1,
+        )

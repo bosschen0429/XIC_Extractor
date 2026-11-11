@@ -678,10 +678,8 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
     def more_stages(writer):
         for kind, observation_id, record_id in (
             ("initial_capture", "obs-earlier", "obs-earlier"),
-            # Reports written before Alignment measured Discovery peaks itself
-            # still hold Discovery curves.
-            ("discovery_physical", "obs-01", "obs-01"),
-            ("discovery_physical", None, "C1"),
+            ("backfill_observation", "obs-01", "obs-01"),
+            ("backfill_observation", None, "C1"),
         ):
             payload_ids.append(
                 writer.add_curve_payload(

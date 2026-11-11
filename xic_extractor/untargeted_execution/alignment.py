@@ -137,6 +137,21 @@ def prepare_untargeted_alignment_inputs(
             fingerprint_workers=raw_workers,
             verified_acquisition_sources=verified_acquisition_sources,
         )
+        # Discovery's event table and the RAW Alignment reads must be the same
+        # acquisition, with or without mass recalibration.
+        changed = [
+            stem
+            for stem, expectation in zip(
+                discovery_batch.sample_order, expectations, strict=True
+            )
+            if expectation.source
+            != discovery_batch.peak_receipts[stem].acquisition_source
+        ]
+        if changed:
+            raise ValueError(
+                "RAW changed after Discovery; regenerate Discovery for: "
+                + ", ".join(changed)
+            )
     with recorder.stage("alignment.prepare_feature_inputs") as stage:
         stage.metrics["feature_candidate_count"] = len(
             peaks_by_sample.feature_candidate_ids()

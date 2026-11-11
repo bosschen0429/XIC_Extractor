@@ -115,7 +115,8 @@ RAW sources use local file revisions without scanning the file contents.
 Moving or copying RAW files requires regenerating Discovery and its acquisition
 cache. Discovery tables written by another version, whose columns differ from
 the ones listed here, are rejected with a request to rerun Discovery; existing
-Matrix, Review, and explanation reports remain readable.
+Matrix and Review outputs remain readable. Explanation reports follow the
+format rule below.
 
 ---
 

@@ -18,9 +18,6 @@ VALID_CURVE_KINDS = frozenset(
     {
         "initial_capture",
         "backfill_observation",
-        # No run writes Discovery curves any more; reports that hold them stay
-        # readable.
-        "discovery_physical",
     }
 )
 ALLOWED_CURVE_PAYLOAD_KEYS = frozenset(
@@ -68,7 +65,7 @@ def validate_curve_payload(
 ) -> None:
     """Validate the selected persisted envelope once at its storage boundary."""
     if kind not in VALID_CURVE_KINDS:
-        raise ExplanationError(f"undeclared curve kind: {kind}")
+        raise ExplanationError(f"undeclared curve kind: {kind}; rerun Alignment")
     if not isinstance(payload, Mapping):
         raise ExplanationError("curve payload must be an object")
     extra = set(payload) - ALLOWED_CURVE_PAYLOAD_KEYS
