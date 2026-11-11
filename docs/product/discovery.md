@@ -209,8 +209,9 @@ once more in the window centred on the reading, with the same RT context and
 tolerance, selecting the peak at its raw apex. That one measurement is the
 peak's area and bounds, and Alignment adopts it unchanged. The physical facts
 record the window actually measured as `xic_mz` and the ion's XIC center as
-`ion_mz`. A window that selects
-nothing there keeps the first measurement, and the reading is not taken.
+`ion_mz`. A window that selects nothing there, or selects a peak with another
+raw apex because its extra signal merges or splits peaks, keeps the first
+measurement, and the reading is not taken.
 
 After [same-ion](#ions-peaks-and-events) grouping, a peak whose events are all
 inferred reports the reading its window is centred on as `ms1_apex_mz`; it is

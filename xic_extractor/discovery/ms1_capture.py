@@ -277,9 +277,10 @@ def _one_measurement_per_ion_peak(
     A measurement located only by inferred precursors is first read at its
     apex and measured once more in the window centred on that ion, with the
     same RT context; the reading is the ion's m/z only when that window
-    measures the peak. Measurements of one ion peak are then grouped (see
-    ``same_ion_peaks``); a recorded precursor already fixes the ion, so a group
-    holding one keeps a measurement it located. The kept measurement is the
+    measures the peak, selecting a peak with the same raw apex. Measurements of
+    one ion peak are then grouped (see ``same_ion_peaks``); a recorded
+    precursor already fixes the ion, so a group holding one keeps a
+    measurement it located. The kept measurement is the
     peak, every event of the group is attached against it, and a group whose
     events are all inferred reports its kept window's reading and judges the
     doubly charged isotope once at that peak's apex. A peak keeps the XIC
@@ -311,9 +312,15 @@ def _one_measurement_per_ion_peak(
         if mz is not None and mz == capture_by_work[ordinal].search.request.mz
     }
     for ordinal, captured in zip(moved, remeasured, strict=True):
-        # A window that selects no peak at the apex keeps the first measurement
-        # and does not take the reading.
-        if captured.evaluation.facts is not None:
+        # The new window measures the peak only when it selects a peak with the
+        # same raw apex. Extra signal in that window can merge or split peaks so
+        # the segment at the apex is another peak; that window, like one that
+        # selects nothing there, keeps the first measurement and its reading.
+        if (
+            captured.evaluation.facts is not None
+            and captured.evaluation.question.query_rt_min
+            == capture_by_work[ordinal].evaluation.question.query_rt_min
+        ):
             centred[ordinal] = captured
             centred_mz[captured.work_ordinal] = moved[ordinal]
             ion_mz[captured.work_ordinal] = min(

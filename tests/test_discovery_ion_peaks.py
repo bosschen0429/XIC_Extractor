@@ -290,3 +290,64 @@ def test_adjacent_channels_measure_their_shared_peak_once() -> None:
         peak.peak_id
     }
     assert all(event.peak_id for event in result.attachments)
+
+
+class _RecentredWindowRaw(_FakeRaw):
+    """The ion's own window reads two peaks; a shifted window reads one broad one.
+
+    The shifted window's broad peak covers the second peak's apex but has its
+    raw apex at the first peak's apex, as when extra signal enters a window.
+    """
+
+    def extract_xic_many(self, requests):
+        super().extract_xic_many(requests)
+        broad = _gaussian(self.rt, center=9.00, sigma=0.20, height=1e4)
+        return tuple(
+            XICTrace.from_arrays(
+                self.rt, self.intensity if request.mz == 500.0 else broad
+            )
+            for request in requests
+        )
+
+
+def test_a_recentred_window_that_selects_another_peak_keeps_the_first() -> None:
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+
+    rt = np.linspace(8.4, 9.8, 281)
+    raw = _RecentredWindowRaw(
+        rt=rt,
+        intensity=_gaussian(rt, center=9.00, sigma=0.03, height=1e4)
+        + _gaussian(rt, center=9.40, sigma=0.03, height=3e3),
+    )
+    inferred = replace(
+        _seed(scan_number=12, rt=9.40),
+        precursor_mz_basis="product_plus_neutral_loss",
+        observed_loss_error_ppm=None,
+        scan_precursor_mz=500.5,
+        precursor_metadata=Ms2PrecursorMetadata(
+            master_scan_number=9,
+            charge=1,
+            isolation_width_da=1.6,
+            isolation_offset_da=0.0,
+        ),
+    )
+    seeds = (_seed(scan_number=10, rt=9.00), inferred)
+    settings = _settings()
+
+    result = capture_ms1_peaks(
+        raw,
+        build_discovery_ions(seeds, settings=settings),
+        acquisition_source=raw.acquisition_source,
+        settings=settings,
+        signal_processing_profile=TEST_PROFILE,
+        # The second peak's apex reads the ion 6 ppm above its window centre.
+        ms1_centroid=lambda _rt, low, high: (
+            (500.003, 1.0) if low < 500.003 < high else None
+        ),
+    )
+
+    apex_by_peak = {peak.peak_id: peak.ms1_apex_rt for peak in result.peaks}
+    events = _events_by_scan(result)
+    assert sorted(round(apex, 2) for apex in apex_by_peak.values()) == [9.0, 9.4]
+    assert round(apex_by_peak[events[10].peak_id], 2) == 9.0
+    assert round(apex_by_peak[events[12].peak_id], 2) == 9.4
