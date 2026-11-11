@@ -137,11 +137,10 @@ measurement; it does not quantify each NL request independently.
 
 Each raw valley-separated peak owns one measurement. NL events only locate
 that owner and contribute their independent method evidence. Multiple events
-on that peak produce one retained physical record and peak row, not competing
-areas; the event table keeps each event. Completed readers decode the stored result
-without preparing or evaluating the signal again. The canonical measurement
-query is the raw apex, while the representative NL event keeps its own MS2 RT
-in the event table.
+on that peak produce one measurement and one peak row, not competing areas;
+the event table keeps each event. The canonical measurement query is the raw
+apex, while the representative NL event keeps its own MS2 RT in the event
+table.
 
 Discovery uses the shared physical peak owner. An ordinary candidate needs two
 adjacent acquired points supporting its half-prominence top, and relief above
@@ -206,12 +205,13 @@ the method's accurate-mass scan, while ddMS2 runs at a quarter of its
 resolution, so product + loss only points at the ion. When the
 intensity-weighted reading differs from the XIC center, the peak is measured
 once more in the window centred on the reading, with the same RT context and
-tolerance, selecting the peak at its raw apex. That one measurement is the
-peak's area and bounds, and Alignment adopts it unchanged. The physical facts
-record the window actually measured as `xic_mz` and the ion's XIC center as
-`ion_mz`. A window that selects nothing there, or selects a peak with another
-raw apex because its extra signal merges or splits peaks, keeps the first
-measurement, and the reading is not taken.
+tolerance, selecting the peak at its raw apex. That one measurement judges
+the peak. The peak table records its window (`peak_mz`, `ms1_search_rt_min`,
+`ms1_search_rt_max`) and the `query_rt_min` that selects the peak in it;
+Alignment measures the peak again from RAW with these and publishes its own
+measurement. `peak_id` keeps the ion's XIC center. A window that selects nothing
+there, or selects a peak with another raw apex because its extra signal merges
+or splits peaks, keeps the first measurement, and the reading is not taken.
 
 After [same-ion](#ions-peaks-and-events) grouping, a peak whose events are all
 inferred reports the reading its window is centred on as `ms1_apex_mz`; it is

@@ -198,11 +198,10 @@ def test_application_snapshot_and_cli_replay_preserve_formal_grouping(
 
     monkeypatch.setattr(workers, "_execute_backfill_batch", forbidden)
     plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
-    closed = []
     monkeypatch.setattr(
         application,
         "prepare_untargeted_alignment_inputs",
-        lambda **kwargs: SimpleNamespace(plan=plan, close=lambda: closed.append(True)),
+        lambda **kwargs: plan,
     )
     snapshot = application.snapshot_untargeted_grouping(
         UntargetedRequest(
@@ -223,7 +222,6 @@ def test_application_snapshot_and_cli_replay_preserve_formal_grouping(
     inputs, provenance = read_grouping_inputs(snapshot)
     groups = replay_grouping(inputs)
     assert len(groups) == 1
-    assert closed == [True]
     assert len(scheduled) == 1
     assert [phase.name for phase in scheduled[0]["phases"]] == [
         "initial-acquisition",
@@ -720,7 +718,6 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
 def test_compare_membership_reports_merges_and_splits_against_previous_replay(
     tmp_path,
 ):
-    from types import SimpleNamespace
 
     from xic_extractor.diagnostics.grouping_experiment_io import (
         compare_membership,

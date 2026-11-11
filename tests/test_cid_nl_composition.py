@@ -60,7 +60,6 @@ def evaluate_owner_edge(left, right, *, config, **kwargs):
 def test_configured_composition_runs_discovery_to_owner_matrix(
     tmp_path, monkeypatch, mode, scenario
 ):
-    physical_records = {}
     preset_file = tmp_path / "method.toml"
     preset_file.write_text(
         'name = "two losses"\ndescription = "Composition fixture"\n'
@@ -113,7 +112,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             source,
             raw_file=path,
             settings=settings,
-            physical_records=physical_records,
         )
         if recovery and index == 3:
             candidates[path.stem] = ()
@@ -133,11 +131,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     assert len(batch.subject_batch.subjects) == 1
     install_runtime_raws(monkeypatch, sources_by_path=sources, tmp_path=tmp_path)

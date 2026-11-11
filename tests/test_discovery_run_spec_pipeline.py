@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import concurrent.futures
-import json
 import multiprocessing
 import pickle
 from concurrent.futures import Future
@@ -17,9 +16,6 @@ from tests.discovery_pipeline_fixtures import (
     _read_csv,
     _scan_event,
     _settings,
-)
-from xic_extractor.acquisition_contract import (
-    serialize_acquired_trace,
 )
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
@@ -46,18 +42,13 @@ _run_discovery_sample_process_job = partial(
 
 
 @pytest.mark.parametrize("workers", (1, 2))
-@pytest.mark.parametrize("surface", ("rows", "facts"))
 def test_discovery_persists_feature_facts_and_measured_review_support(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     workers: int,
-    surface: str,
 ) -> None:
     from xic_extractor.discovery import output_publication, pipeline
     from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
-    from xic_extractor.discovery.physical_fact_persistence import (
-        read_discovery_physical_fact_records,
-    )
 
     paths = (tmp_path / "sample-a.raw", tmp_path / "sample-b.raw")
     for path in paths:
@@ -142,7 +133,7 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         outputs.per_sample,
         strict=True,
     ):
-        candidates, physical = captured[acquisition.sample_stem]
+        candidates, _publication = captured[acquisition.sample_stem]
         # Only the m/z 700 and 701 ions have MS1 signal: two measured peaks.
         assert {item.precursor_mz_basis for item in candidates} == {
             "scan_precursor",
@@ -151,10 +142,6 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         assert len(candidates) == 2
         expected_path = tmp_path / f"{acquisition.sample_stem}.csv"
         write_discovery_peaks_csv(expected_path, candidates)
-        assert output.physical_facts_json is not None
-        payload = json.loads(output.physical_facts_json.read_text(encoding="utf-8"))
-        if surface == "facts":
-            assert len(payload["records"]) == len(payload["work_manifest"]) == 2
         assert output.peaks_csv.read_bytes() == expected_path.read_bytes()
         # The m/z 500 and 501 events are recorded without a peak.
         events = _read_csv(output.events_csv)
@@ -173,77 +160,7 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
             )
             == 2
         )
-        assert len(payload["records"]) == len(payload["work_manifest"]) == 2
-        records = read_discovery_physical_fact_records(
-            output.physical_facts_json,
-            expected_run_spec=spec,
-            expected_acquisition_input=acquisition,
-        )
-        assert {record.peak_id for record in records} == {
-            item.peak_id for item in candidates
-        }
-        original_records = {
-            record.peak_id: record for record in physical["physical_evaluations"]
-        }
-        for record in records:
-            original = original_records[record.peak_id]
-            assert record.evaluation == original.evaluation
-            assert serialize_acquired_trace(record.acquired_trace) == (
-                serialize_acquired_trace(original.acquired_trace)
-            )
-
-
-def test_physical_bindings_match_published_candidates_by_id(
-    tmp_path: Path,
-) -> None:
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"owner-bound-order")
-    settings = _settings()
-    spec = compile_discovery_processing_run_spec(
-        (raw_path,),
-        discovery_settings=settings,
-    )
-    raw = _OwnerBoundFakeRawHandle(
-        spec.acquisition_inputs[0].acquisition_source,
-        [
-            _scan_event(
-                scan_number=202,
-                rt=8.0,
-                product_intensity=9000.0,
-                precursor_mz=258.1085,
-            ),
-            _scan_event(
-                scan_number=101,
-                rt=8.0,
-                product_intensity=3000.0,
-                precursor_mz=300.1085,
-            ),
-        ],
-        rt=np.linspace(7.4, 8.6, 241),
-        intensity=1000.0
-        * np.exp(-0.5 * ((np.linspace(7.4, 8.6, 241) - 8.0) / 0.04) ** 2),
-    )
-    outputs = run_discovery_batch(
-        (raw_path,),
-        output_dir=tmp_path / "discovery",
-        settings=settings,
-        dll_dir=tmp_path / "dll",
-        raw_opener=lambda _path, _dll_dir: raw,
-        run_spec=spec,
-    )
-    batch = read_discovery_batch_index(
-        outputs.batch_index_csv,
-    )
-    receipt = batch.peak_receipts[raw_path.stem]
-    canonical_candidates = read_owner_bound_discovery_peaks_csv(
-        batch.peak_csvs[raw_path.stem],
-        receipt=receipt,
-    )
-    bindings = outputs.per_sample[0].physical_bindings
-    reordered_candidates = tuple(reversed(canonical_candidates))
-    assert tuple(binding.peak.peak_id for binding in bindings) != tuple(
-        candidate.peak_id for candidate in reordered_candidates
-    )
+        assert not (output.peaks_csv.parent / "discovery_physical_facts.json").exists()
 
 
 def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
@@ -329,15 +246,11 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
     for serial_output, process_output in zip(
         serial.per_sample, process.per_sample, strict=True
     ):
-        assert serial_output.physical_facts_json is not None
-        assert process_output.physical_facts_json is not None
-        assert serial_output.physical_facts_json.read_bytes() == (
-            process_output.physical_facts_json.read_bytes()
+        assert serial_output.peaks_csv.read_bytes() == (
+            process_output.peaks_csv.read_bytes()
         )
-        assert serial_output.physical_bindings
-        assert process_output.physical_bindings == serial_output.physical_bindings
-        assert pickle.loads(pickle.dumps(process_output.physical_bindings)) == (
-            process_output.physical_bindings
+        assert serial_output.events_csv.read_bytes() == (
+            process_output.events_csv.read_bytes()
         )
 
     context = multiprocessing.get_context("spawn")
@@ -357,11 +270,6 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         completed_worker_results[0].publication.index_row
     )
     assert restored_result.publication.outputs == process.per_sample[0]
-
-    first_bindings = serial.per_sample[0].physical_bindings
-    assert first_bindings[0].acquisition_source == (
-        spec.acquisition_inputs[0].acquisition_source
-    )
 
 
 def test_real_spawn_rejects_full_mismatched_process_job_with_exact_identity(

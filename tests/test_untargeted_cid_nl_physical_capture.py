@@ -33,14 +33,13 @@ from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition impo
         (False, "inferred"),
     ],
 )
-def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
+def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     fresh_available: bool,
     precursor_case: str,
 ) -> None:
     from types import SimpleNamespace
-    from unittest.mock import Mock
 
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
@@ -50,23 +49,14 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         capture_ms1_peaks,
     )
     from xic_extractor.discovery.ms2_events import collect_strict_nl_events
-    from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
     from xic_extractor.discovery.strict_event_receipts import (
         read_parent_ms1_observations,
     )
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
-    from xic_extractor.peak_detection import capture as capture_owner
     from xic_extractor.peak_detection.observations import (
         physical_peak_observation_integration,
     )
-    from xic_extractor.peak_detection.physical_peak_evaluation import (
-        evaluate_physical_peak,
-        prepare_physical_signal,
-    )
-    from xic_extractor.peak_detection.traces import trace_from_xic_request
-    from xic_extractor.untargeted_execution.partition import (
-        cid_nl_sample_acquisition as adapter,
-    )
+    from xic_extractor.xic_models import XICRequest
 
     fixture = build_sample_adapter_fixture(tmp_path)
     shifted_mass = precursor_case == "shifted"
@@ -183,59 +173,11 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
     assert set(located_scan_ids(discovery.peaks[0])) == {
         seed.scan_number for seed in seeds
     }
-    legacy_records = tuple(
-        DiscoveryPhysicalFactRecord(
-            work_item=record.work_item,
-            acquired_trace=record.acquired_trace,
-            evaluation=evaluate_physical_peak(
-                prepare_physical_signal(
-                    record.acquired_trace.trace.rt,
-                    record.acquired_trace.trace.intensity,
-                    profile=profile,
-                ),
-                query_rt_min=record.evaluation.question.query_rt_min,
-                request_context_rt_start_min=(
-                    record.evaluation.question.context_rt_start_min
-                ),
-                request_context_rt_end_min=(
-                    record.evaluation.question.context_rt_end_min
-                ),
-                selection_policy_version="baseline_peak_contains_query",
-            ),
-        )
-        for record in (
-            binding.physical_fact_record for binding in discovery.physical_bindings
-        )
-    )
+    (candidate,) = discovery.peaks
+    (discovered,) = discovery.physical_bindings
     if not fresh_available:
+        # RAW no longer shows the peak under the same acquisition identity.
         source_raw.intensity = np.zeros_like(source_raw.rt)
-    evaluate = Mock(wraps=evaluate_physical_peak)
-    prepare = Mock(wraps=prepare_physical_signal)
-    for module in (adapter, capture_owner):
-        for name, spy in (
-            ("evaluate_physical_peak", evaluate),
-            ("prepare_physical_signal", prepare),
-        ):
-            if hasattr(module, name):
-                monkeypatch.setattr(module, name, spy)
-    if not fresh_available:
-        # A shared unchanged request reuses its result; changed RAW under the
-        # same acquisition identity must fail, not silently remeasure it.
-        with pytest.raises(ValueError, match="physical capture data"):
-            adapt_current_discovery_sample_subject(
-                processing_attempt_id=fixture.processing_attempt_id,
-                sample=fixture.sample("S1"),
-                acquisition_source=fixture.source(fixture.sample("S1")),
-                method_subject=fixture.method_subject,
-                peaks=discovery.peaks,
-                settings=settings,
-                peak_config=peak_config,
-                raw=raw,
-                signal_processing_profile=profile,
-                physical_records=legacy_records,
-            )
-        assert evaluate.call_count == prepare.call_count == 0
-        return
     result = adapt_current_discovery_sample_subject(
         processing_attempt_id=fixture.processing_attempt_id,
         sample=fixture.sample("S1"),
@@ -246,121 +188,53 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         peak_config=peak_config,
         raw=raw,
         signal_processing_profile=profile,
-        physical_records=legacy_records,
     )
     assessment = result.assessment_input.assessment
+    assert result.acquisition is not None
+    # The peak table's capture conditions name one XIC: its window at peak_mz.
+    (acquired,) = result.acquisition.traces
+    assert acquired.coordinate.request == XICRequest(
+        mz=candidate.peak_mz,
+        rt_min=candidate.ms1_search_rt_min,
+        rt_max=candidate.ms1_search_rt_max,
+        ppm_tol=settings.precursor_mz_tolerance_ppm,
+    )
+    if not fresh_available:
+        # Alignment's own measurement decides admission: a peak it cannot
+        # measure does not enter Alignment, and nothing fails.
+        assert result.captures == ()
+        assert assessment.candidate_peaks == ()
+        return
     if not shifted_mass:
-        assert assessment.method_result == ("SUPPORT" if fresh_available else "REJECT")
-        assert len(assessment.individual_support_refs) == (2 if fresh_available else 0)
+        assert assessment.method_result == "SUPPORT"
+        assert len(assessment.individual_support_refs) == 2
     # Both candidates select the same MS1 peak, shifted traces included, so the
     # universe holds that peak once.
-    assert len(assessment.candidate_peaks) == (1 if fresh_available else 0)
-    assert result.acquisition is not None
-    assert len(result.acquisition.traces) == 1
-    states = []
-    changed_questions = 0
-    captures = {capture.candidate_id: capture for capture in result.captures}
-    assert len(captures) == 1
-    # The shared complete query is unchanged, so Alignment only reads its result.
-    assert evaluate.call_count == 0
-    assert prepare.call_count == 0
-    for record in legacy_records:
-        candidate = next(
-            item for item in discovery.peaks if item.peak_id == record.peak_id
-        )
-        acquired = next(
-            item
-            for item in result.acquisition.traces
-            if item.coordinate.request.mz == candidate.peak_mz
-        )
-        assert (
-            acquired.coordinate.request.ppm_tol == settings.precursor_mz_tolerance_ppm
-        )
-        changed = acquired.coordinate.request.rt_min < record.work_item.xic_rt_min or (
-            acquired.coordinate.request.rt_max > record.work_item.xic_rt_max
-        )
-        changed_questions += changed
-        expected = evaluate_physical_peak(
-            prepare_physical_signal(
-                acquired.trace.rt, acquired.trace.intensity, profile=profile
-            ),
-            query_rt_min=record.evaluation.question.query_rt_min,
-            request_context_rt_start_min=acquired.coordinate.request.rt_min,
-            request_context_rt_end_min=acquired.coordinate.request.rt_max,
-        )
-        assert (expected != record.evaluation) == changed
-        capture = captures[record.peak_id]
-        assert capture.physical_evaluation == expected
-        binding = next(
-            item
-            for item in capture.scope.capture_bindings
-            if item.candidate_id == record.peak_id
-        )
-        assert binding.physical_evaluation is capture.physical_evaluation
-        assert (
-            capture.physical_evaluation.question.selection_policy_version
-            == "baseline_peak_contains_query"
-        )
-        assert binding.acquisition_source_id == source.acquisition_source_id
-        assert binding.sample_key == fixture.sample("S1").sample_name
-        states.append(expected.state)
-        replay_binding = replace(
-            binding,
-            query_mz=record.work_item.xic_mz,
-            query_rt_min=record.work_item.xic_rt_min,
-            query_rt_max=record.work_item.xic_rt_max,
-            query_ppm_tol=record.work_item.xic_ppm_tol,
-            physical_evaluation=record.evaluation,
-            physical_evaluation_mz=record.work_item.xic_mz,
-        )
-        replay_scope = replace(
-            capture.scope,
-            capture_bindings=tuple(
-                replay_binding if item.candidate_id == record.peak_id else item
-                for item in capture.scope.capture_bindings
-            ),
-        )
-        replay = capture_owner.capture_peak_hypotheses(
-            scope=replay_scope,
-            candidate_id=record.peak_id,
-            trace=trace_from_xic_request(
-                sample_name=binding.sample_key,
-                request=record.acquired_trace.coordinate.request,
-                xic_trace=record.acquired_trace.trace,
-                source="retained-discovery-physical",
-                acquisition_source_id=binding.acquisition_source_id,
-            ),
-        )
-        assert replay.physical_evaluation == record.evaluation
-        assert (
-            replay.physical_evaluation.question.selection_policy_version
-            == "baseline_peak_contains_query"
-        )
-        if expected.state == "unavailable":
-            assert capture.selected_hypothesis is None
-            continue
-        integration = physical_peak_observation_integration(expected)
-        # A candidate that selected an already retained peak supports it.
-        (observed,) = (
-            item
-            for item in assessment.candidate_peaks
-            if item.integration.rt_apex_min == integration.rt_apex_min
-        )
-        assert capture.selected_hypothesis.integration == integration
-        assert (
-            observed.integration.area_baseline_corrected
-            == integration.area_baseline_corrected
-        )
-        assert observed.integration.rt_apex_min == integration.rt_apex_min
-    assert states == (["available"] if fresh_available else ["unavailable"])
-    assert changed_questions == 0
+    assert len(assessment.candidate_peaks) == 1
+    (capture,) = result.captures
+    # Equal RAW, window, query RT and settings give Discovery's measurement.
+    assert capture.physical_evaluation == discovered.physical_evaluation
+    binding = next(
+        item
+        for item in capture.scope.capture_bindings
+        if item.candidate_id == candidate.peak_id
+    )
+    assert binding.physical_evaluation is capture.physical_evaluation
+    assert binding.acquisition_source_id == source.acquisition_source_id
+    assert binding.sample_key == fixture.sample("S1").sample_name
+    integration = physical_peak_observation_integration(capture.physical_evaluation)
+    # A candidate that selected an already retained peak supports it.
+    (observed,) = assessment.candidate_peaks
+    assert capture.selected_hypothesis.integration == integration
+    assert (
+        observed.integration.area_baseline_corrected
+        == integration.area_baseline_corrected
+    )
+    assert observed.integration.rt_apex_min == integration.rt_apex_min
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source(fixture.sample("S1")),
         peaks=discovery.peaks,
-        physical_records={
-            record.peak_id: record for record in discovery.physical_evaluations
-        },
         settings=settings,
         raw=raw,
         signal_processing_profile=profile,
@@ -377,7 +251,6 @@ def test_shared_discovery_query_reuses_retained_peak_and_preserves_support(
         peak_config=peak_config,
         raw=raw,
         signal_processing_profile=profile,
-        physical_records=legacy_records,
         _preacquired_traces=batch,
     )
     assert reused.acquisition is batch.acquisition
@@ -477,19 +350,17 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
         )
     )
     (candidate,) = discovery.peaks
-    (record,) = discovery.physical_evaluations
+    (discovered,) = discovery.physical_bindings
+    (unread_binding,) = unread_discovery.physical_bindings
     # Discovery measures the peak once more in the measured ion's window, which
-    # excludes the coeluting interference the inferred window included.
-    assert (
-        unread_discovery.physical_evaluations[0].work_item.ion_mz
-        == record.work_item.ion_mz
-        == pytest.approx(500.016)
-    )
+    # excludes the coeluting interference the inferred window included. The
+    # peak keeps the name of the 500.016 ion XIC that located it.
     assert candidate.peak_id == unread.peak_id
-    assert candidate.peak_mz == record.work_item.xic_mz
+    assert "@mz500.016_" in candidate.peak_id
     assert candidate.peak_mz == pytest.approx(physical_mz)
-    assert candidate.ms1_area == pytest.approx(
-        unread.ms1_area / (1 + interference_abundance)
+    assert discovered.physical_evaluation.facts.area_counts_seconds == pytest.approx(
+        unread_binding.physical_evaluation.facts.area_counts_seconds
+        / (1 + interference_abundance)
     )
     method_subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=subject_mz,
@@ -506,7 +377,6 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
         peak_config=peak_config,
         raw=raw,
         signal_processing_profile=profile,
-        physical_records=(record,),
     )
     assessment = result.assessment_input.assessment
     assert assessment.method_result == "HOLD"
@@ -518,16 +388,16 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
         e.precursor_mz == pytest.approx(500.016)
         for e in assessment.evidence_observations
     )
-    # Alignment adopts that one measurement on the identical trace.
+    # Alignment measures that peak again in the same window and gets the same.
     (capture,) = result.captures
-    assert capture.trace.mz == record.work_item.xic_mz
-    assert capture.trace.rt_min == record.work_item.xic_rt_min
-    assert capture.trace.rt_max == record.work_item.xic_rt_max
-    assert capture.physical_evaluation == record.evaluation
+    assert capture.trace.mz == candidate.peak_mz
+    assert capture.trace.rt_min == candidate.ms1_search_rt_min
+    assert capture.trace.rt_max == candidate.ms1_search_rt_max
+    assert capture.physical_evaluation == discovered.physical_evaluation
     assert capture.selected_hypothesis is not None
     assert (
         capture.selected_hypothesis.integration.area_baseline_corrected
-        == candidate.ms1_area
+        == discovered.physical_evaluation.facts.area_counts_seconds
     )
     assert representative_event(candidate).precursor_mz == pytest.approx(500.016)
 
@@ -583,7 +453,6 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         peak_config=peak_config,
         raw=raw,
         signal_processing_profile=profile,
-        physical_records=discovery.physical_evaluations,
     )
     assessment = result.assessment_input.assessment
     left, right = sorted(

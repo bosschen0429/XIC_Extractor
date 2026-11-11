@@ -88,18 +88,13 @@ def test_post_measurement_centroids_do_not_decide_peak_identity(
         write_discovery_peaks_csv(tmp_path / "candidates.csv", result.peaks)
     )
     assert len(published) == expected
-    assert {c.peak_id: c.ms1_area for c in published} == {
-        c.peak_id: c.ms1_area for c in result.peaks
-    }
-    assert len(result.physical_evaluations) == expected
+    assert tuple(published) == result.peaks
+    assert len(result.physical_bindings) == expected
     assert sorted(
         scan for candidate in result.peaks for scan in located_scan_ids(candidate)
     ) == [10, 11, 12]
-    for candidate, binding in zip(result.peaks, result.physical_bindings, strict=True):
-        assert (
-            candidate.ms1_area == binding.physical_evaluation.facts.area_counts_seconds
-        )
-        assert candidate.ms1_area == pytest.approx(
+    for binding in result.physical_bindings:
+        assert binding.physical_evaluation.facts.area_counts_seconds == pytest.approx(
             1000 * 0.06 * np.sqrt(2 * np.pi) * 60, rel=0.06
         )
 
@@ -169,10 +164,7 @@ def test_one_ion_in_two_windows_is_one_peak_whatever_the_input_order(
     (peak,) = result.peaks
     assert located_scan_ids(peak) == (10, 11)
     # The kept measurement is the window that loses no centroid.
-    (record,) = result.physical_evaluations
-    assert record.work_item.ion_mz == pytest.approx(500.0075)
     assert peak.peak_id == "TumorBC2312_DNA@mz500.0075_rt9.0000"
-    assert peak.ms1_area == record.evaluation.facts.area_counts_seconds
     # Every event is judged against that one peak; the 499.995 precursor lies
     # 25 ppm from it and is located but not attached.
     reasons = {
@@ -199,5 +191,8 @@ def test_distinct_ions_in_overlapping_windows_stay_apart() -> None:
     )
 
     assert sorted(located_scan_ids(peak) for peak in result.peaks) == [(10,), (11,)]
-    areas = sorted(peak.ms1_area for peak in result.peaks)
+    areas = sorted(
+        binding.physical_evaluation.facts.area_counts_seconds
+        for binding in result.physical_bindings
+    )
     assert areas[0] == pytest.approx(0.13 * areas[1])

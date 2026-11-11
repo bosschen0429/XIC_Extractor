@@ -15,7 +15,11 @@ from tests.alignment_explanation_fixtures import explanation_discovery_facts
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from tests.cid_nl_raw_fixture import _FakeRaw, _settings
-from tests.cid_nl_runtime_fixtures import install_runtime_raws, load_plan_inputs
+from tests.cid_nl_runtime_fixtures import (
+    install_runtime_raws,
+    load_plan_inputs,
+    representative_precursors,
+)
 from tests.discovery_pipeline_fixtures import (
     _OwnerBoundFakeRawHandle,
     _scan_event,
@@ -48,9 +52,6 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.discovery import pipeline as discovery_pipeline
 from xic_extractor.discovery.csv_reader import read_discovery_batch_index
-from xic_extractor.discovery.physical_fact_persistence import (
-    read_discovery_physical_fact_records,
-)
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -493,12 +494,10 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         retain_partition_memory=False,
     )
     assert len(completed.application_result.children) == 3
-    candidates, records = load_plan_inputs(plan)
+    candidates = load_plan_inputs(plan)
     completed = completed.bind_publication_inputs(
         peaks_by_sample=candidates,
-        precursor_mz_by_candidate={
-            cid: record.work_item.precursor_mz for cid, record in records.items()
-        },
+        precursor_mz_by_candidate=representative_precursors(candidates),
         neutral_loss_by_tag=plan.context.settings.neutral_loss_by_tag,
         alignment_config=config,
     )
@@ -914,7 +913,7 @@ def test_alignment_applies_discovery_mass_result_without_reopening_raw(
 
 
 @pytest.mark.parametrize("backfill_enabled", (True, False))
-def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignment(
+def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     backfill_enabled: bool,
@@ -1107,7 +1106,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
     assert (cli_output / "alignment_review.tsv").read_bytes() == (
         alignment.review_tsv.read_bytes()
     )
-    # Product-derived m/z 700 retains its physical facts below, but supplies no
+    # Product-derived m/z 700 keeps its peak row below, but supplies no
     # independent NL support. Only selected-precursor m/z 701 reaches Matrix.
     assert [row["Mz"] for row in matrix] == ["701.0000"]
     by_candidate = {row["source_candidate_id"]: row for row in cells}
@@ -1126,32 +1125,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
         for stem in batch.sample_order
         if batch.peak_receipts[stem] is not None
     } == {"sample-a": 2, "sample-b": 2}
-    assert {
-        output.peaks_csv.parent.name: len(
-            json.loads(output.physical_facts_json.read_text(encoding="utf-8"))[
-                "records"
-            ]
-        )
-        for output in discovery.per_sample
-        if output.physical_facts_json is not None
-    } == {"sample-a": 2, "sample-b": 2}
-    retained_inferred_areas = {}
-    for acquisition, output in zip(
-        spec.acquisition_inputs,
-        discovery.per_sample,
-        strict=True,
-    ):
-        assert output.physical_facts_json is not None
-        assert (
-            len(
-                read_discovery_physical_fact_records(
-                    output.physical_facts_json,
-                    expected_run_spec=spec,
-                    expected_acquisition_input=acquisition,
-                )
-            )
-            == 2
-        )
+    for output in discovery.per_sample:
         with output.events_csv.open(encoding="utf-8-sig", newline="") as handle:
             (inferred_event,) = [
                 row
@@ -1167,13 +1141,11 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
             ]
         assert len(inferred) == 1
         assert inferred[0]["precursor_mz_basis"] == "product_plus_neutral_loss"
-        retained_inferred_areas[output.peaks_csv.parent.name] = float(
-            inferred[0]["ms1_area"]
+        assert (
+            float(inferred[0]["ms1_search_rt_min"])
+            <= float(inferred[0]["query_rt_min"])
+            <= float(inferred[0]["ms1_search_rt_max"])
         )
-    assert retained_inferred_areas["sample-a"] > 0.0
-    assert retained_inferred_areas["sample-b"] / retained_inferred_areas[
-        "sample-a"
-    ] == pytest.approx(2.0, rel=0.01)
 
 
 @pytest.mark.parametrize(

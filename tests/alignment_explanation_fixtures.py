@@ -67,7 +67,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
     from xic_extractor.presets.loader import load_preset
     from xic_extractor.sample_metadata import SampleMetadata
 
-    physical_records = {}
     preset = tmp_path / "method.toml"
     mode = "intersection" if scenario == "all_hold" else "union"
     preset.write_text(
@@ -92,7 +91,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
             source,
             raw_file=path,
             settings=settings,
-            physical_records=physical_records,
         )
     batch = build_dense_partition(
         raw_paths=paths,
@@ -110,11 +108,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     install_runtime_raws(monkeypatch, sources_by_path=sources, tmp_path=tmp_path)
     config = AlignmentConfig(
@@ -143,13 +136,13 @@ def explanation_discovery_facts(completed) -> dict[str, object]:
 
 
 def plan_discovery_facts(plan) -> dict[str, object]:
-    """The same Discovery facts, from the plan's persisted physical records."""
-    from tests.cid_nl_runtime_fixtures import load_plan_inputs
+    """The same Discovery facts, from the plan's persisted Discovery tables."""
+    from tests.cid_nl_runtime_fixtures import (
+        load_plan_inputs,
+        representative_precursors,
+    )
 
-    _candidates, records = load_plan_inputs(plan)
     return {
-        "precursor_mz_by_candidate": {
-            cid: record.work_item.precursor_mz for cid, record in records.items()
-        },
+        "precursor_mz_by_candidate": representative_precursors(load_plan_inputs(plan)),
         "neutral_loss_by_tag": plan.context.settings.neutral_loss_by_tag,
     }

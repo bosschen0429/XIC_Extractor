@@ -83,7 +83,6 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     monkeypatch: pytest.MonkeyPatch,
     backfill_enabled: bool,
 ) -> None:
-    physical_records = {}
     stems = ("SupportA1", "SupportA2", "SupportB1", "SupportB2", "Missing")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     for raw_path in raw_paths:
@@ -106,7 +105,6 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
             source_raw,
             raw_file=raw_path,
             settings=settings,
-            physical_records=physical_records,
         )
         source_raws[raw_path] = source_raw
         selected_candidates[raw_path.stem] = candidates[0]
@@ -131,11 +129,6 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         peaks_by_sample=peaks_by_sample,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (peaks_by_sample).values()
-            for c in values
-        },
     )
     assert len(batch.subject_batch.subjects) == 2
     assert (
@@ -237,7 +230,6 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
 def test_sample_job_builder_binds_shared_inputs_to_each_subject(
     tmp_path: Path,
 ) -> None:
-    physical_records = {}
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
     settings = replace(
@@ -248,7 +240,6 @@ def test_sample_job_builder_binds_shared_inputs_to_each_subject(
         raw_path,
         settings=settings,
         peak_config=peak_config,
-        physical_records=physical_records,
     )
     batch = build_dense_partition(
         raw_paths=(raw_path,),
@@ -265,11 +256,6 @@ def test_sample_job_builder_binds_shared_inputs_to_each_subject(
         peaks_by_sample={"S1": candidates},
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in ({"S1": candidates}).values()
-            for c in values
-        },
     )
     first = batch.jobs[0]
     shared = {
@@ -328,12 +314,8 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
             self.publication_inputs = SimpleNamespace(**kwargs)
             return self
 
-        def with_discovery_inputs(self, prepared):
-            self.discovery_inputs = prepared
-            return self
-
         def close(self):
-            self.discovery_inputs.close()
+            self.closed = True
 
     completed = MockCompleted()
     calls: list[tuple[str, object]] = []
@@ -356,14 +338,6 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
         alignment_adapter,
         "execute_untargeted_plan",
         execute,
-    )
-
-    monkeypatch.setattr(
-        alignment_adapter,
-        "_index_discovery_physical_sources",
-        lambda *args, **kwargs: alignment_adapter._PhysicalIndexBatchResult(
-            sources={}, worker_pids=()
-        ),
     )
 
     result = alignment_adapter.complete_untargeted_alignment(
@@ -389,7 +363,6 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
     )
 
     assert result.application_result is application_result
-    assert result.discovery_inputs is not None
     result.close()
     assert result.publication_inputs.peaks_by_sample is source
     assert result.publication_inputs.alignment_config == AlignmentConfig()
@@ -410,7 +383,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    physical_records = {}
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
     # The atomic phase must contain two disjoint method worksets.
@@ -422,7 +394,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
         raw_path,
         settings=settings,
         peak_config=peak_config,
-        physical_records=physical_records,
     )
     batch = build_dense_partition(
         raw_paths=(raw_path,),
@@ -439,11 +410,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
         peaks_by_sample={"S1": candidates},
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in ({"S1": candidates}).values()
-            for c in values
-        },
     )
     vendor_raw = install_runtime_raw(
         monkeypatch,
@@ -564,7 +530,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     monkeypatch,
     scenario: str,
 ) -> None:
-    physical_records = {}
     above_threshold = scenario == "ambiguous_hold_above_threshold"
     ambiguous = scenario.startswith("ambiguous_hold_")
     stems = ("Support", "Hold", "Support2") if above_threshold else ("Support", "Hold")
@@ -612,13 +577,11 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         source_raws[raw_paths[0]],
         raw_file=raw_paths[0],
         settings=settings,
-        physical_records=physical_records,
     )
     direct_hold_candidates = _current_candidates(
         source_raws[raw_paths[1]],
         raw_file=raw_paths[1],
         settings=settings,
-        physical_records=physical_records,
     )
     peaks_by_sample: dict[str, tuple[DiscoveryPeak, ...]] = {
         "Support": support_candidates[:1],
@@ -642,7 +605,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
                     raw,
                     raw_file=raw_path,
                     settings=settings,
-                    physical_records=physical_records,
                 )[0]
                 for raw in (first_raw, second_raw)
             )
@@ -658,7 +620,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
             source_raws[raw_paths[2]],
             raw_file=raw_paths[2],
             settings=settings,
-            physical_records=physical_records,
         )
     from tests.cid_nl_runtime_fixtures import prepare_persisted_discovery_plan
     from xic_extractor.untargeted_execution.execution import execute_untargeted_plan
@@ -680,11 +641,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         root=tmp_path / "persisted",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (peaks_by_sample).values()
-            for c in values
-        },
     )
     opened = install_runtime_raws(
         monkeypatch,
@@ -742,7 +698,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     monkeypatch: pytest.MonkeyPatch,
     supported_samples: int,
 ) -> None:
-    physical_records = {}
     from xic_extractor.untargeted_execution import partition_composition as production
 
     stems = ("Early", "Middle", "Late")
@@ -759,7 +714,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
             raws[path],
             raw_file=path,
             settings=settings,
-            physical_records=physical_records,
         )
     batch = build_dense_partition(
         raw_paths=paths,
@@ -777,11 +731,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     initial_contexts = []
@@ -853,7 +802,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    physical_records = {}
     from openpyxl import Workbook
 
     from xic_extractor.applications.untargeted.istd_reference import (
@@ -892,7 +840,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
             raw,
             raw_file=path,
             settings=settings,
-            physical_records=physical_records,
         )
     batch = build_dense_partition(
         raw_paths=paths,
@@ -910,11 +857,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime_plain = execute_dense_partition(
@@ -1033,7 +975,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     monkeypatch,
     recovery_case: str,
 ) -> None:
-    physical_records = {}
     sample_stems = (
         ("Support1", "Hold")
         if recovery_case == "threshold"
@@ -1060,7 +1001,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 source_raws[raw_path],
                 raw_file=raw_path,
                 settings=settings,
-                physical_records=physical_records,
             )[0],
         )
         for raw_path in raw_paths[:-1]
@@ -1082,11 +1022,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         peaks_by_sample=peaks_by_sample,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (peaks_by_sample).values()
-            for c in values
-        },
     )
     opened = install_runtime_raws(
         monkeypatch,
@@ -1299,7 +1234,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     monkeypatch,
     output_level: str,
 ) -> None:
-    physical_records = {}
     sample_stems = ("Support1", "Support2", "Support3", "MS1Only", "NoPeak")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in sample_stems)
     settings = _settings()
@@ -1323,7 +1257,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
                 source_raws[raw_path],
                 raw_file=raw_path,
                 settings=settings,
-                physical_records=physical_records,
             )
         )
         for raw_path in raw_paths
@@ -1355,11 +1288,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         peaks_by_sample=peaks_by_sample,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (peaks_by_sample).values()
-            for c in values
-        },
     )
     install_runtime_raws(monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path)
 

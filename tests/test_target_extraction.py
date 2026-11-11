@@ -982,11 +982,6 @@ def test_istd_reference_selection_is_not_nearest_apex_always(
 def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
     tmp_path, is_istd
 ):
-    from xic_extractor.peak_detection.physical_peak_codec import (
-        physical_evaluation_from_payload,
-        physical_evaluation_payload,
-    )
-
     target = replace(_intent_target(15.5), is_istd=is_istd)
     config = _strategy_config(tmp_path)
     rt = np.linspace(0.0, 24.0, 2401)
@@ -1041,16 +1036,9 @@ def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
         if evaluation.integration is not None
         and evaluation.integration.rt_apex_min == result.reported_rt
     )
-    restored = physical_evaluation_from_payload(
-        physical_evaluation_payload(selected),
-        profile=selected.retained_prepared_signal.profile,
-        rt=tuple(float(value) for value in rt),
-        raw=tuple(float(value) for value in intensity),
-    )
-    assert restored.integration == selected.integration
     if is_istd:
         assert target_extraction.credible_istd_anchor_rt(result) == result.reported_rt
         assert (
-            restored.question.selection_policy_version
+            selected.question.selection_policy_version
             == "reference_localized_contour_peak"
         )

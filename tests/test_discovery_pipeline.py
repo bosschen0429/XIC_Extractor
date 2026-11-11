@@ -1,7 +1,5 @@
 import concurrent.futures
 import csv
-import json
-import math
 import multiprocessing
 import pickle
 from concurrent.futures import Future
@@ -60,6 +58,9 @@ from xic_extractor.discovery.sample_process_execution import (
     run_discovery_sample_process_job,
 )
 from xic_extractor.execution.timing import TimingRecord, TimingRecorder
+from xic_extractor.peak_detection.physical_peak_population import (
+    measure_physical_peak_population,
+)
 from xic_extractor.processing_identity import (
     build_local_acquisition_source_identity,
 )
@@ -67,7 +68,7 @@ from xic_extractor.raw_source_binding import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
-from xic_extractor.xic_models import XICTrace
+from xic_extractor.xic_models import XICRequest, XICTrace
 
 
 @pytest.mark.parametrize(
@@ -164,19 +165,9 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
             if row["peak_id"] == candidate.peak_id
         } == {"100", "101"}
         assert candidate.ms1_apex_rt == pytest.approx(apex)
-        (work,) = json.loads(
-            (output_dir / "discovery_physical_facts.json").read_text(encoding="utf-8")
-        )["work_manifest"]
-        assert float.fromhex(work["xic_rt_min"]) == pytest.approx(apex - 0.7)
-        assert float.fromhex(work["xic_rt_max"]) == pytest.approx(apex + 0.71)
-        assert candidate.ms1_area == pytest.approx(
-            height
-            * 0.1
-            * np.sqrt(2.0 * np.pi)
-            * 60.0
-            * math.erf(math.sqrt(math.log(10))),
-            rel=0.01,
-        )
+        assert candidate.ms1_search_rt_min == pytest.approx(apex - 0.7)
+        assert candidate.ms1_search_rt_max == pytest.approx(apex + 0.71)
+        assert not (output_dir / "discovery_physical_facts.json").exists()
         assert candidate.status == "admitted"
         events = _read_csv(output_dir / "discovery_events.csv")
         assert {row["peak_id"] for row in events} == {candidate.peak_id}
@@ -294,7 +285,7 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
 
     assert outputs.peaks_csv == output_dir / "discovery_peaks.csv"
     assert outputs.events_csv == output_dir / "discovery_events.csv"
-    assert outputs.physical_facts_json == output_dir / "discovery_physical_facts.json"
+    assert not (output_dir / "discovery_physical_facts.json").exists()
     rows = _read_csv(outputs.peaks_csv)
     assert len(rows) == 1
     assert rows[0]["best_ms2_scan_id"] == "202"
@@ -391,12 +382,10 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
     precursor_by_peak = {
         row["peak_id"]: row["precursor_mz"] for row in _read_csv(outputs.events_csv)
     }
-    areas = {
-        round(float(precursor_by_peak[row["peak_id"]]), 4): float(row["ms1_area"])
-        for row in rows
-    }
-    assert set(areas) == set(amplitudes)
-    assert areas[258.6085] > areas[258.1085] > 0.0
+    # Each inferred ion is its own measured peak.
+    assert {round(float(precursor_by_peak[row["peak_id"]]), 4) for row in rows} == set(
+        amplitudes
+    )
     assert len({row["peak_id"] for row in rows}) == 2
     assert {row["best_ms2_scan_id"] for row in rows} == {"19561"}
     # Neither inferred ion has a parent MS1 reading, so no event attaches.
@@ -1396,16 +1385,43 @@ def test_pipeline_scores_ms1_scan_support_against_the_profile_target(
     )
 
     rows = _read_csv(outputs.peaks_csv)
-    start, end = (
-        float(rows[0][name]) for name in ("ms1_peak_rt_start", "ms1_peak_rt_end")
+    # The published capture conditions measure the peak again, as Alignment does.
+    window_start = float(rows[0]["ms1_search_rt_min"])
+    window_end = float(rows[0]["ms1_search_rt_max"])
+    (trace,) = raw.extract_xic_many(
+        (
+            XICRequest(
+                mz=float(rows[0]["peak_mz"]),
+                rt_min=window_start,
+                rt_max=window_end,
+                ppm_tol=settings.precursor_mz_tolerance_ppm,
+            ),
+        )
     )
-    count = np.count_nonzero((raw._rt >= start) & (raw._rt <= end))
+    facts = (
+        measure_physical_peak_population(
+            trace.rt,
+            trace.intensity,
+            context_rt_start_min=window_start,
+            context_rt_end_min=window_end,
+            profile=_compiled_run_spec(
+                (tmp_path / "Sample.raw",), settings
+            ).signal_processing_profile,
+        )
+        .evaluate(float(rows[0]["query_rt_min"]))
+        .facts
+    )
+    assert facts is not None
+    assert facts.apex_rt_min == float(rows[0]["ms1_apex_rt"])
+    count = np.count_nonzero(
+        (raw._rt >= facts.left_rt_min) & (raw._rt <= facts.right_rt_min)
+    )
     assert 0 < count < 150
     assert int(rows[0]["evidence_score"]) == score_discovery_evidence(
         attached_event_count=int(rows[0]["attached_event_count"]),
         ms1_event_delta_min=float(rows[0]["ms1_apex_rt"]) - 7.80,
         ms2_product_max_intensity=3000.0,
-        ms1_area=float(rows[0]["ms1_area"]),
+        ms1_area=facts.area_counts_seconds,
         ms1_scan_support_score=count / 150,
         settings=settings,
     )
@@ -1462,7 +1478,6 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
         "discover.blank_qualification",
         "discover.write_peaks_csv",
         "discover.write_events_csv",
-        "discover.write_physical_facts_sidecar",
         "discover.publish_outputs",
         "discover.write_batch_index",
     }
@@ -1480,7 +1495,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     assert records_by_stage["discover.write_peaks_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.write_events_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.publish_outputs"].metrics == {
-        "artifact_count": 3,
+        "artifact_count": 2,
         "replaced_existing_count": 0,
     }
 

@@ -236,7 +236,6 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
 
 
 def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monkeypatch):
-    physical_records = {}
     from xic_extractor.untargeted_execution.partition_composition import (
         finalize_untargeted_partition_grouping,
         prepare_untargeted_partition_grouping,
@@ -257,7 +256,6 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
             raw,
             raw_file=path,
             settings=settings,
-            physical_records=physical_records,
         )
     batch = build_dense_partition(
         raw_paths=paths,
@@ -270,11 +268,6 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     config = AlignmentConfig(anchor_min_seed_events=1)
@@ -343,7 +336,6 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
 def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
     tmp_path, monkeypatch, empty, half_window
 ):
-    physical_records = {}
     import csv
 
     from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
@@ -367,7 +359,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
                 raw,
                 raw_file=path,
                 settings=settings,
-                physical_records=physical_records,
             )
             if path.stem.startswith("S")
             else ()
@@ -393,11 +384,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     config = AlignmentConfig(anchor_min_seed_events=1)
@@ -471,7 +457,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
 def test_rejected_discovery_input_cannot_supply_backfill_support(
     tmp_path, monkeypatch, outcome
 ):
-    physical_records = {}
 
     stems = ("S1", "S2", "Rejected")
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
@@ -485,7 +470,6 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
             raw,
             raw_file=path,
             settings=settings,
-            physical_records=physical_records,
         )
         if path.stem == "Rejected":
             candidates[path.stem] = tuple(
@@ -514,11 +498,6 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     recovery_calls = []
@@ -604,7 +583,6 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
 def test_runtime_recovers_every_authorized_rt_group(
     tmp_path, monkeypatch, batched, recovery_peaks, shared_support
 ):
-    physical_records = {}
     support = {"S1": (8.0,), "S2": (8.0,), "S3": (12.0,), "S4": (12.0,)}
     if shared_support == "configured":
         support = {"S1": (8.0,), "S2": (8.0,), "S3": (8.12,)}
@@ -649,7 +627,6 @@ def test_runtime_recovers_every_authorized_rt_group(
             raw,
             raw_file=path,
             settings=settings,
-            physical_records=physical_records,
         )
         current_candidates = tuple(
             sorted(current_candidates, key=lambda candidate: candidate.peak_id)
@@ -678,11 +655,6 @@ def test_runtime_recovers_every_authorized_rt_group(
         peak_config=peak_config,
         peaks_by_sample=candidates,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in candidates.values()
-            for c in values
-        },
     )
     if shared_support == "configured":
         _assert_alignment_uses_configured_recovery_groups(
@@ -730,10 +702,6 @@ def test_runtime_recovers_every_authorized_rt_group(
                 dll_dir=tmp_path,
                 work_unit_key=sample.raw_stem,
                 signal_processing_profile=context.signal_processing_profile,
-                physical_records=tuple(
-                    context.physical_records_by_peak[c.peak_id]
-                    for c in (candidates[sample.raw_stem])
-                ),
             )
             for sample in context.samples
         )
@@ -1135,7 +1103,6 @@ def test_runtime_recovers_every_authorized_rt_group(
 def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     tmp_path, monkeypatch, mz_separation_ppm
 ):
-    physical_records = {}
     """A shared physical peak must not be assigned to both groups."""
 
     centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": (8.06,)}
@@ -1180,7 +1147,6 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
             raw,
             raw_file=path,
             settings=settings,
-            physical_records=physical_records,
         )
         candidates[path.stem] = (
             current
@@ -1203,11 +1169,6 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     result = execute_partition(
@@ -1262,7 +1223,6 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
 def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     tmp_path, monkeypatch, mz_separation_ppm, reverse, sloped_background
 ):
-    physical_records = {}
     """Overlapping extraction windows cannot supply one peak to two rows."""
 
     ms1_centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": (8.06,)}
@@ -1326,7 +1286,6 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
                 raw,
                 raw_file=path,
                 settings=settings,
-                physical_records=physical_records,
             )
             if path.stem != "Missing"
             else ()
@@ -1349,11 +1308,6 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     result = execute_partition(
@@ -1479,7 +1433,6 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
 def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     tmp_path, monkeypatch, missing_peaks, expected_state, composition
 ):
-    physical_records = {}
     centers = {"S1": (8.0,), "S2": (8.0,), "Missing": missing_peaks}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
     settings, peak_config = (
@@ -1514,7 +1467,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
                 raw,
                 raw_file=path,
                 settings=settings,
-                physical_records=physical_records,
             )
             if path.stem != "Missing"
             else ()
@@ -1535,11 +1487,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     result = execute_partition(
@@ -1638,7 +1585,6 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
     # Missing has CID-NL support only for its own peak at 9.6 min; its peak in
     # the S1/S2 group at 8.0 min carries no MS2. Support elsewhere must not
     # stop the group-bounded revisit.
-    physical_records = {}
     ms1_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (8.0, 9.6)}
     nl_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (9.6,)}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ms1_centers)
@@ -1667,7 +1613,6 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
             raw,
             raw_file=path,
             settings=settings,
-            physical_records=physical_records,
         )
     batch = build_dense_partition(
         raw_paths=paths,
@@ -1685,11 +1630,6 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         peaks_by_sample=candidates,
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     result = execute_partition(
@@ -1773,8 +1713,6 @@ def _assert_alignment_uses_configured_recovery_groups(
         raw_paths=paths,
         settings=settings,
         peaks_by_sample=candidates,
-        physical_records_by_peak=kwargs["physical_records_by_peak"],
-        signal_processing_profile=TEST_PROFILE,
         root=tmp_path / "discovery",
     )
     completed = complete_untargeted_alignment(

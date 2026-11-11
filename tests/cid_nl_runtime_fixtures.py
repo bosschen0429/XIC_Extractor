@@ -269,3 +269,18 @@ def install_runtime_raws(
         "xic_extractor.raw_mass_recalibration_batch.open_raw", _open_runtime_raw
     )
     return opened
+
+
+def representative_precursors(
+    candidates_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
+) -> dict[str, float]:
+    """Each candidate's representative MS2 precursor, from its located events."""
+    return {
+        peak.peak_id: next(
+            event.precursor_mz
+            for event in peak.located_events
+            if event.scan_number == peak.best_ms2_scan_id
+        )
+        for peaks in candidates_by_sample.values()
+        for peak in peaks
+    }

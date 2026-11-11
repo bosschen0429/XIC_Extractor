@@ -60,7 +60,8 @@ def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl(
     assert candidate.ms1_apex_rt == pytest.approx(5.0, abs=0.03)
     # The NL event sits beyond the peak's right bound plus the attachment
     # tolerance, so the measured peak is kept without NL support.
-    assert candidate.ms1_peak_rt_end + 0.1 < representative_event(candidate).rt
+    facts = result.physical_bindings[0].physical_evaluation.facts
+    assert facts.right_rt_min + 0.1 < representative_event(candidate).rt
     assert candidate.status == "no_nl_event"
     assert result.measurements.reacquisition_request_count == 1
 

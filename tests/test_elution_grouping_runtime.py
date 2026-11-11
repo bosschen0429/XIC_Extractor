@@ -52,7 +52,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     )
     profile = SignalProcessingProfile()
     config = _peak_config(tmp_path)
-    raws, candidates, records = {}, {}, {}
+    raws, candidates = {}, {}
     expected_initial = {}
     expected_query = {}
     shifts = (
@@ -89,9 +89,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
             )
         assert len(discovery.peaks) == 1
         candidates[sample] = discovery.peaks
-        records.update(
-            {record.peak_id: record for record in discovery.physical_evaluations}
-        )
         raws[path] = source
     paths = tuple(fixture.source_paths.values())
     plan = prepare_persisted_discovery_plan(
@@ -111,7 +108,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         root=tmp_path / "persisted",
         dll_dir=tmp_path,
         signal_processing_profile=profile,
-        physical_records_by_peak=records,
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     import xic_extractor.untargeted_execution.partition.workers as workers
@@ -277,7 +273,7 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
     )
     profile = SignalProcessingProfile()
     config = _peak_config(tmp_path)
-    raws, candidates, records = {}, {}, {}
+    raws, candidates = {}, {}
     for index, sample in enumerate(samples):
         path = fixture.source_paths[sample]
         ms2_apex = group_apices[0 if sample == "S6" else index // 2]
@@ -309,9 +305,6 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
             )
         assert len(discovery.peaks) == 1
         candidates[sample] = discovery.peaks
-        records.update(
-            {record.peak_id: record for record in discovery.physical_evaluations}
-        )
         raws[path] = source
     assert candidates["S6"][0].precursor_mz_basis == "product_plus_neutral_loss"
     paths = tuple(fixture.source_paths.values())
@@ -332,7 +325,6 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
         root=tmp_path / "persisted",
         dll_dir=tmp_path,
         signal_processing_profile=profile,
-        physical_records_by_peak=records,
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     import xic_extractor.untargeted_execution.partition.workers as workers

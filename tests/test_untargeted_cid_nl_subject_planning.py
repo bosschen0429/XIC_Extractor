@@ -117,7 +117,6 @@ def test_production_batch_preserves_bounded_subject_membership(
     peak_config = _peak_config(tmp_path)
     from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 
-    physical_records = {}
     candidates = tuple(
         _current_candidates(
             _FakeRaw(
@@ -127,13 +126,11 @@ def test_production_batch_preserves_bounded_subject_membership(
             settings=replace(
                 settings, neutral_loss_profiles=(NeutralLossProfile("DNA_dR", loss),)
             ),
-            physical_records=physical_records,
         )[0]
         for index, (mz, loss) in enumerate(zip(masses, losses, strict=True))
     )
     arguments = dict(
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak=physical_records,
         raw_paths=(raw_path,),
         sample_metadata=(
             SampleMetadata(

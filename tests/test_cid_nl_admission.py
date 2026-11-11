@@ -12,7 +12,7 @@ from tests.cid_nl_raw_fixture import (
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
-from tests.physical_peak_evaluation_persistence_fixtures import (
+from tests.physical_peak_evaluation_fixtures import (
     _overlapping_triplet_trace,
 )
 from xic_extractor.alignment.config import AlignmentConfig
@@ -26,9 +26,6 @@ from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import capture_ms1_peaks
 from xic_extractor.discovery.ms2_events import collect_strict_nl_events
-from xic_extractor.discovery.physical_fact_persistence import (
-    write_discovery_physical_fact_sidecar,
-)
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -135,13 +132,6 @@ def test_review_rows_never_become_alignment_roots(
             (expected_ids if peak.admitted else rejected_ids).add(peak.peak_id)
         folder = tmp_path / path.stem
         folder.mkdir()
-        write_discovery_physical_fact_sidecar(
-            folder / "discovery_physical_facts.json",
-            run_spec=spec,
-            acquisition_input=source,
-            work_manifest=capture.physical_work_manifest,
-            records=capture.physical_evaluations,
-        )
         receipts.update(
             build_discovery_receipts(folder, (path,), {path.stem: capture.peaks})
         )
@@ -164,7 +154,7 @@ def test_review_rows_never_become_alignment_roots(
     for peaks in candidates.values():
         for peak in peaks:
             assert source.locations[peak.peak_id].peak_mz == peak.peak_mz
-    prepared = prepare_untargeted_alignment_inputs(
+    plan = prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
         peaks_by_sample=source,
         raw_dir=tmp_path,
@@ -184,64 +174,56 @@ def test_review_rows_never_become_alignment_roots(
         ),
         raw_workers=1,
     )
-    try:
-        plan = prepared.plan
+    assert {cid for cid, _ in plan.subject_batch.candidate_memberships} == expected_ids
+    if with_supported:
+        partition = materialize_untargeted_partition(plan, plan.subject_batch)
         assert {
-            cid for cid, _ in plan.subject_batch.candidate_memberships
+            c.peak_id for job in partition.jobs for c in job.candidates
         } == expected_ids
-        if with_supported:
-            partition = materialize_untargeted_partition(plan, plan.subject_batch)
-            assert {
-                c.peak_id for job in partition.jobs for c in job.candidates
-            } == expected_ids
-            assert all(not job.support_candidates for job in partition.jobs)
-            # An accepted root does not authorize an unresolved MS1-only refill.
-            sample = next(s for s in plan.context.samples if s.raw_stem == "Overlap")
-            raw = raws[paths[1]]
-            evaluations = []
-            observation = capture_physical_backfill_observation(
-                sample=sample,
-                method_subject=plan.subject_batch.subjects[0],
-                trace=Trace(
-                    sample_name="Overlap",
-                    mz=500.0,
-                    rt=raw.rt,
-                    intensity=raw.intensity,
-                    rt_min=float(raw.rt[0]),
-                    rt_max=float(raw.rt[-1]),
-                    ppm_tol=settings.precursor_mz_tolerance_ppm,
-                    acquisition_source_id=spec.acquisition_inputs[
-                        1
-                    ].acquisition_source.acquisition_source_id,
-                ),
-                query_rt_min=8.0,
-                physical_mz=500.0,
-                profile=TEST_PROFILE,
-                resolver_mode="local_minimum",
-                evaluation_sink=evaluations.append,
-            )
-            assert (
-                evaluations[0].state == "available"
-                and evaluations[0].requires_overlap_review
-            )
-            assert observation is None
-        result = execute_untargeted_plan(
-            plan,
-            output_dir=tmp_path / "alignment",
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            raw_workers=1,
+        assert all(not job.support_candidates for job in partition.jobs)
+        # An accepted root does not authorize an unresolved MS1-only refill.
+        sample = next(s for s in plan.context.samples if s.raw_stem == "Overlap")
+        raw = raws[paths[1]]
+        evaluations = []
+        observation = capture_physical_backfill_observation(
+            sample=sample,
+            method_subject=plan.subject_batch.subjects[0],
+            trace=Trace(
+                sample_name="Overlap",
+                mz=500.0,
+                rt=raw.rt,
+                intensity=raw.intensity,
+                rt_min=float(raw.rt[0]),
+                rt_max=float(raw.rt[-1]),
+                ppm_tol=settings.precursor_mz_tolerance_ppm,
+                acquisition_source_id=spec.acquisition_inputs[
+                    1
+                ].acquisition_source.acquisition_source_id,
+            ),
+            query_rt_min=8.0,
+            physical_mz=500.0,
+            profile=TEST_PROFILE,
+            resolver_mode="local_minimum",
+            evaluation_sink=evaluations.append,
         )
-        assert set(result.application_result.candidate_ids) == expected_ids
-        assert not result.application_result.excluded_candidates
-        assert not rejected_ids.intersection(
-            subject.candidate_id
-            for child in result.application_result.children
-            for subject in child.scientific_core.terminal_subjects
+        assert (
+            evaluations[0].state == "available"
+            and evaluations[0].requires_overlap_review
         )
-        if not with_supported:
-            assert (
-                not result.application_result.children and not result.method_assessments
-            )
-            assert sum(map(len, opened.values())) == 0
-    finally:
-        prepared.close()
+        assert observation is None
+    result = execute_untargeted_plan(
+        plan,
+        output_dir=tmp_path / "alignment",
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        raw_workers=1,
+    )
+    assert set(result.application_result.candidate_ids) == expected_ids
+    assert not result.application_result.excluded_candidates
+    assert not rejected_ids.intersection(
+        subject.candidate_id
+        for child in result.application_result.children
+        for subject in child.scientific_core.terminal_subjects
+    )
+    if not with_supported:
+        assert not result.application_result.children and not result.method_assessments
+        assert sum(map(len, opened.values())) == 0

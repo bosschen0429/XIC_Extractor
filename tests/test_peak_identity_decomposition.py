@@ -307,8 +307,5 @@ def _discovery_ms1_peak_probe(
     return (
         representative_event(candidate).precursor_mz,
         candidate.ms1_apex_rt,
-        candidate.ms1_peak_rt_start,
-        candidate.ms1_peak_rt_end,
-        candidate.ms1_height,
-        candidate.ms1_area,
+        candidate.query_rt_min,
     )

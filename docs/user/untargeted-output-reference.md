@@ -14,8 +14,13 @@ One row per physical MS1 peak per sample: one ion's XIC, one raw
 valley-separated peak, one measurement. Each fact about a peak appears once:
 the representative MS2 event and every other located event are rows of
 `discovery_events.csv`, found by `peak_id` (and `best_ms2_scan_id` for the
-representative); the measured trace and its evaluation are in
-`discovery_physical_facts.json`. No cell grows with the number of MS2 scans.
+representative). No cell grows with the number of MS2 scans.
+
+The table does not publish the peak's measurement. It records the conditions
+Discovery measured the peak under: the XIC at `peak_mz` over
+`ms1_search_rt_min`..`ms1_search_rt_max`, and the `query_rt_min` that selects
+the peak in it. Alignment measures every peak again from RAW with these
+conditions and the run's settings, and that measurement is the published one.
 
 | Column | Type | Description |
 | --- | --- | --- |
@@ -27,11 +32,10 @@ representative); the measured trace and its evaluation are in
 | peak_mz | float | The peak's ion mass, read by Alignment and Delta Mass: `ms1_apex_mz` when present, else the XIC center |
 | precursor_mz_basis | string | Precursor source basis over the located events: `scan_precursor`, `scan_monoisotopic`, `product_plus_neutral_loss`, or `mixed` |
 | ms1_apex_mz | float | MS1 ion m/z read at the peak apex when all of the peak's events are inferred (blank for a recorded precursor, two ions, or no reading) |
-| ms1_apex_rt | float | MS1 peak apex RT (min) |
-| ms1_peak_rt_start | float | MS1 peak start RT (min) |
-| ms1_peak_rt_end | float | MS1 peak end RT (min) |
-| ms1_area | float | MS1 peak area |
-| ms1_height | float | MS1 peak height |
+| ms1_apex_rt | float | Apex RT (min) Discovery judged the peak at; Delta Mass pairs its candidates with CID-NL peaks by it |
+| ms1_search_rt_min | float | Start of the XIC RT window the peak was measured in (min) |
+| ms1_search_rt_max | float | End of that XIC RT window (min) |
+| query_rt_min | float | RT (min) that selects the peak within that window: the raw apex of its peak |
 | best_ms2_scan_id | int | MS2 scan of the representative event in `discovery_events.csv` |
 | neutral_loss_tag | string | NL tag of the representative event |
 | matched_tag_names | string | Semicolon-separated NL tags of the located events, in configured tag order |
@@ -95,21 +99,18 @@ One row per sample. Links each sample to its output files.
 | peak_csv | string | Path to `discovery_peaks.csv` |
 | event_csv | string | Path to `discovery_events.csv` |
 | peak_count | int | Total peaks |
-| admitted_peak_count | int | Admitted peaks |
+| admitted_peak_count | int | Peaks Discovery judged `admitted`. Alignment measures each again and drops one whose measurement is not available or needs overlap review, so this does not guarantee the number of peaks entering Alignment |
 | event_count | int | Total events |
 | peak_csv_schema_version | string | Peak CSV format |
 | peak_csv_sha256 | string | SHA-256 of the peak CSV bytes |
 | peak_csv_byte_size | int | Peak CSV byte size |
-| physical_facts_sha256 | string | SHA-256 of the sample's `discovery_physical_facts.json` bytes |
-| physical_facts_byte_size | int | `discovery_physical_facts.json` byte size |
 | acquisition_local_file_revision | string | JSON array of device, file identity, size, modification and creation/change timestamps |
 | acquisition_byte_size | int | RAW file byte size |
 | acquisition_format | string | Acquisition format, for example `thermo_raw` |
 | observation_namespace | string | Adapter-readable observation namespace |
 | mass_recalibration | string | Recalibration result; omitted when vendor masses were used unchanged |
 
-Alignment rejects a peak CSV or physical-facts file whose bytes no longer
-match these fingerprints.
+Alignment rejects a peak CSV whose bytes no longer match these fingerprints.
 RAW sources use local file revisions without scanning the file contents.
 Moving or copying RAW files requires regenerating Discovery and its acquisition
 cache. Discovery tables written by another version, whose columns differ from

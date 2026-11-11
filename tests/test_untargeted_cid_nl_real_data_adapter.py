@@ -515,7 +515,6 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
         sample=scenario.fixture.sample("S1"),
         acquisition_source=scenario.fixture.source(scenario.fixture.sample("S1")),
         peaks=candidates,
-        physical_records=scenario.physical_records,
         settings=scenario.settings,
         raw=raw,
         signal_processing_profile=TEST_PROFILE,
@@ -545,21 +544,17 @@ def test_elution_context_shares_acquisition_without_widening_capture(
     fixture = build_sample_adapter_fixture(tmp_path)
     source = _FakeRaw((7.8,))
     source.intensity += 700.0 * np.exp(-0.5 * ((source.rt - 8.5) / 0.035) ** 2)
-    records: dict = {}
     candidate = _current_candidates(
         source,
         raw_file=fixture.source_paths["S1"],
         settings=_settings(),
-        physical_records=records,
     )[0]
     duplicate = replace(candidate, peak_id=candidate.peak_id + ":duplicate")
-    records[duplicate.peak_id] = records[candidate.peak_id]
     raw, vendor = _open_bound_raw(fixture, "S1", source, tmp_path=tmp_path)
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
         sample=fixture.sample("S1"),
         acquisition_source=fixture.source(fixture.sample("S1")),
         peaks=tuple(sorted((candidate, duplicate), key=lambda item: item.peak_id)),
-        physical_records=records,
         settings=_settings(),
         raw=raw,
         signal_processing_profile=SignalProcessingProfile(),
@@ -571,9 +566,8 @@ def test_elution_context_shares_acquisition_without_widening_capture(
         peak.apex_rt for peak in batch.elution_contexts[0].landmarks
     ] == pytest.approx([7.8, 8.5], abs=0.005)
     original = batch.acquired_trace(candidate.peak_id)
-    work = records[candidate.peak_id].work_item
-    assert original.coordinate.request.rt_min == work.xic_rt_min
-    assert original.coordinate.request.rt_max == work.xic_rt_max
+    assert original.coordinate.request.rt_min == candidate.ms1_search_rt_min
+    assert original.coordinate.request.rt_max == candidate.ms1_search_rt_max
     first_scan, last_scan = source.scan_window_for_request(original.coordinate.request)
     mask = slice(first_scan - 1, last_scan)
     np.testing.assert_array_equal(original.trace.rt, source.rt[mask])
@@ -596,8 +590,7 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
     assert representative_event(candidate).rt <= scenario.settings.rt_max
     assert candidate.ms1_apex_rt is not None
     assert candidate.ms1_apex_rt > scenario.settings.rt_max
-    work = scenario.physical_records[candidate.peak_id].work_item
-    assert candidate.ms1_apex_rt <= work.xic_rt_max
+    assert candidate.ms1_apex_rt <= candidate.ms1_search_rt_max
     raw, _vendor_raw = scenario.open_raw(source_raw)
 
     result = scenario.adapt(candidates, raw=raw)
@@ -605,11 +598,11 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
     receipt = result.assessment_input.assessment.evaluation_receipt
     assert receipt.query_rt_min == min(
         scenario.settings.rt_min,
-        work.xic_rt_min,
+        candidate.ms1_search_rt_min,
     )
     assert receipt.query_rt_max == max(
         scenario.settings.rt_max,
-        work.xic_rt_max,
+        candidate.ms1_search_rt_max,
     )
 
 
@@ -730,7 +723,6 @@ def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
 
 
 def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> None:
-    physical_records = {}
     fixture = build_sample_adapter_fixture(tmp_path)
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
@@ -739,7 +731,6 @@ def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> No
             source_raw,
             raw_file=fixture.source_paths["S1"],
             settings=settings,
-            physical_records=physical_records,
         )[0]
     )
 
@@ -754,7 +745,6 @@ def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> No
         peak_config=_peak_config(tmp_path),
         raw=None,
         signal_processing_profile=TEST_PROFILE,
-        physical_records=tuple(physical_records[c.candidate_id] for c in (())),
     )
 
     assert result.assessment_input.assessment.technical_state == ("not_evaluated")
@@ -791,7 +781,6 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
             peak_config=scenario.peak_config,
             raw=None,
             signal_processing_profile=TEST_PROFILE,
-            physical_records=tuple(scenario.physical_records.values()),
         )
 
 

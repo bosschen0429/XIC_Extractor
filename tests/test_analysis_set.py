@@ -112,7 +112,6 @@ def test_header_names_cannot_collide_with_another_raw_alias(header_names):
 def test_retained_alignment_keeps_full_root_injection_order(
     tmp_path, monkeypatch, same_stem_context, retained_copy
 ):
-    physical_records = {}
     from tests.cid_nl_raw_fixture import (
         TEST_PROFILE,
         _current_candidates,
@@ -161,7 +160,6 @@ def test_retained_alignment_keeps_full_root_injection_order(
             _FakeRaw((7.98,)),
             raw_file=p,
             settings=settings,
-            physical_records=physical_records,
         )
         for p in selected_paths
     }
@@ -169,11 +167,9 @@ def test_retained_alignment_keeps_full_root_injection_order(
         raw_paths=selected_paths,
         settings=settings,
         peaks_by_sample=candidates,
-        physical_records_by_peak=physical_records,
-        signal_processing_profile=TEST_PROFILE,
         root=tmp_path / "discovery",
     )
-    prepared = prepare_untargeted_alignment_inputs(
+    plan = prepare_untargeted_alignment_inputs(
         signal_processing_profile=TEST_PROFILE,
         discovery_batch=batch,
         peaks_by_sample=DiscoveryInputSource(batch),
@@ -183,21 +179,15 @@ def test_retained_alignment_keeps_full_root_injection_order(
         settings=settings,
         peak_config=config,
     )
-    try:
-        orders = {s.raw_stem: s.injection_order for s in prepared.plan.context.samples}
-        assert orders == {"A": 1 if same_stem_context else 2, "B": 3}
-        assert [
-            (s.raw_stem, s.sample_name, s.sample_role)
-            for s in prepared.plan.context.samples
-        ] == [("A", "A", "sample"), ("B", "B", "sample")]
-        assert orders == {
-            e.raw_stem: e.injection_order
-            for e in read_analysis_set(
-                tmp_path, tmp_path, analysis="untargeted"
-            ).analyzed
-        }
-    finally:
-        prepared.close()
+    orders = {s.raw_stem: s.injection_order for s in plan.context.samples}
+    assert orders == {"A": 1 if same_stem_context else 2, "B": 3}
+    assert [
+        (s.raw_stem, s.sample_name, s.sample_role) for s in plan.context.samples
+    ] == [("A", "A", "sample"), ("B", "B", "sample")]
+    assert orders == {
+        e.raw_stem: e.injection_order
+        for e in read_analysis_set(tmp_path, tmp_path, analysis="untargeted").analyzed
+    }
 
 
 def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
@@ -221,13 +211,11 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
     for path in paths:
         path.write_bytes(path.name.encode())
     settings, config = _settings(), _peak_config(tmp_path)
-    physical_records = {}
     candidates = {
         p.stem: _current_candidates(
             _FakeRaw((7.98,)),
             raw_file=p,
             settings=settings,
-            physical_records=physical_records,
         )
         for p in paths
     }
@@ -235,8 +223,6 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
         raw_paths=paths,
         settings=settings,
         peaks_by_sample=candidates,
-        physical_records_by_peak=physical_records,
-        signal_processing_profile=TEST_PROFILE,
         root=tmp_path / "discovery",
     )
     metadata = (
@@ -251,7 +237,7 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
         ),
         SampleMetadata("B", "B", injection_order=3, sample_role="qc"),
     )
-    prepared = prepare_untargeted_alignment_inputs(
+    plan = prepare_untargeted_alignment_inputs(
         signal_processing_profile=TEST_PROFILE,
         discovery_batch=batch,
         peaks_by_sample=DiscoveryInputSource(batch),
@@ -262,13 +248,9 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
         peak_config=config,
         sample_metadata=metadata,
     )
-    try:
-        assert [
-            (s.raw_stem, s.injection_order, s.sample_role)
-            for s in prepared.plan.context.samples
-        ] == [("A", 1, "sample"), ("B", 3, "qc")]
-    finally:
-        prepared.close()
+    assert [
+        (s.raw_stem, s.injection_order, s.sample_role) for s in plan.context.samples
+    ] == [("A", 1, "sample"), ("B", 3, "qc")]
 
 
 def test_copies_resolve_to_one_shallow_member() -> None:

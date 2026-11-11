@@ -139,37 +139,3 @@ def test_sqlite_diagnostic_roundtrip(tmp_path: Path):
     assert rows_generic == rows_cid_nl
     assert rows_generic["diagnostic_only"] is True
     assert rows_generic["processing_algorithm_version"] == "discovery"
-
-
-def test_sidecar_roundtrip_with_generic_discovery_method_spec(tmp_path: Path):
-    from tests.discovery_physical_fact_persistence_fixtures import _population, _spec
-    from xic_extractor.discovery.physical_fact_persistence import (
-        read_discovery_physical_fact_sidecar,
-        write_discovery_physical_fact_sidecar,
-    )
-
-    _, base_spec, acquisition_input = _spec(tmp_path)
-    custom_method = GenericDiscoveryMethodSpec(
-        settings=MockDeltaMassDiscoverySettings(),
-        method="delta_mass",
-        schema_version="1.0.0",
-    )
-    spec = replace(base_spec, discovery_method=custom_method)
-    manifest, records = _population(spec, acquisition_input)
-    sidecar_path = tmp_path / "out" / "custom_physical_facts.json"
-
-    write_discovery_physical_fact_sidecar(
-        sidecar_path,
-        run_spec=spec,
-        acquisition_input=acquisition_input,
-        work_manifest=manifest,
-        records=records,
-    )
-
-    rehydrated = read_discovery_physical_fact_sidecar(
-        sidecar_path,
-        expected_run_spec=spec,
-        expected_acquisition_input=acquisition_input,
-        expected_work_manifest=manifest,
-    )
-    assert len(rehydrated) == len(records)

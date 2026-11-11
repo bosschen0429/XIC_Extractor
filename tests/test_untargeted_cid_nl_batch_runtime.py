@@ -40,7 +40,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     monkeypatch,
     initial_trace_without_peak: bool,
 ) -> None:
-    physical_records = {}
     stems = ("S1", "S2", "Missing")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     for raw_path in raw_paths:
@@ -56,7 +55,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             raw_path,
             settings=settings,
             peak_config=peak_config,
-            physical_records=physical_records,
         )
         source_raws[raw_path] = source_raw
         peaks_by_sample[raw_path.stem] = candidates
@@ -67,7 +65,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             raw_paths[2],
             settings=settings,
             peak_config=peak_config,
-            physical_records=physical_records,
         )
         source_raws[raw_paths[2]] = source_raw
         peaks_by_sample["Missing"] = candidates
@@ -131,11 +128,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             peaks_by_sample,
         ),
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (peaks_by_sample).values()
-            for c in values
-        },
     )
     opened = install_runtime_raws(
         monkeypatch,
@@ -161,10 +153,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
                 f"untargeted-cid-nl:{sample.raw_stem}:{subject.method_subject_id}"
             ),
             signal_processing_profile=context.signal_processing_profile,
-            physical_records=tuple(
-                context.physical_records_by_peak[c.peak_id]
-                for c in (context.peaks_by_sample[sample.raw_stem])
-            ),
         )
         for subject in subjects
         for sample in context.samples
