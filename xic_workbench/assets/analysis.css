@@ -907,14 +907,6 @@
 #target-table {
   position: relative;
 }
-#target-table .select-band {
-  position: absolute;
-  left: 0;
-  right: 0;
-  border: 1px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  pointer-events: none;
-}
 #target-rows td.target-handle,
 #target-head th.target-handle {
   width: 2.5em;

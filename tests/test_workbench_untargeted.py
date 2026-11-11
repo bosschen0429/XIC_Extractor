@@ -349,7 +349,7 @@ def test_workbench_runs_delta_mass_discovery_without_alignment(
     monkeypatch.setattr(
         module,
         "read_analysis_set",
-        lambda *_args: SimpleNamespace(
+        lambda *_args, **_kwargs: SimpleNamespace(
             raw_paths=tuple(raws),
             sample_metadata=tuple(SampleMetadata(r.stem, r.stem) for r in raws),
         ),
