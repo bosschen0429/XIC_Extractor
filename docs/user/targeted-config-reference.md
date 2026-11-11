@@ -30,9 +30,15 @@ records the effective settings and resource allocation.
 | `label` | Unique target name; becomes a public output identifier |
 | `mz` | Positive precursor m/z |
 | `expected_rt_min` | Expected retention time **in minutes**, not a lower RT bound |
-| `method` | Blank selects MS1 only with the shared 20 ppm precursor tolerance; `dR`, `R`, or `MeR` selects a shared built-in CID-NL recipe; any other value names a custom identification method. Older tables call this column `cid_nl_tag`; it is read as `method` |
 | `role` | `analyte` or `istd` |
 | `istd_pair` | Optional ISTD label for an analyte; blank for an ISTD or an analyte without a paired ISTD |
+| `cid_nl_loss_da` | Optional CID-NL neutral loss in Da, below `mz`, for example `116.0474` (dR), `132.0423` (R) or `146.0579` (MeR); any value is used as written |
+| `delta_mass_mz` | Optional comma-separated Delta Mass Δm/z of companion ions, relative to `mz`, for example `+1.0021, +4.0052`; positive or negative |
+
+Both blank means MS1 only with the shared 20 ppm precursor tolerance. With both
+filled, both conditions must match the same peak. Older tables with a single
+`method` (or `cid_nl_tag`) column are read and converted; see
+[Earlier target tables](#earlier-target-tables).
 
 Additional descriptive metadata is retained. Retired scientific fields such as
 `rt_min`, `rt_max`, `ppm_tol`, `neutral_loss_da`, `nl_ppm_warn`, `nl_ppm_max`, and
@@ -41,7 +47,7 @@ Expected RT guides identity, including the declared analyte–ISTD offset; it do
 not crop the acquired candidate universe.
 MS1-only rows retain their declared name, m/z and expected RT. They do not
 require an ISTD pair and do not acquire CID-NL support from their label or a
-missing tag. A table may mix MS1-only and tagged targets.
+missing loss. A table may mix MS1-only, CID-NL and Delta Mass targets.
 Selection compares retained regions across the batch, using the reference RT,
 supported sample drift, same-ion target order, and acquired signal. There is no
 fixed 0.75-minute acceptance window. A plausible but uncertain correspondence
@@ -52,10 +58,12 @@ double tops can require review without suppressing the measured total.
 
 ## Portable method
 
-A method `.xlsx` has `Method` and `Targets` worksheets, plus an
-`Identification Methods` worksheet when it defines custom methods. `Method` uses
-`key,value` (optional `description`) and has exactly one row: `strategy,cid-nl`.
-This format marker does not override each target's method.
+A method `.xlsx` has `Method` and `Targets` worksheets, plus a `Delta Mass`
+worksheet when any target has Delta Mass ions. `Method` uses `key,value`
+(optional `description`) with `strategy,cid-nl`, plus the list-shared Delta Mass
+settings when used: `delta_mass_mz_tolerance_ppm`, `delta_mass_apex_floor_sec`,
+`delta_mass_scan_interval_multiplier`, `delta_mass_shape_window_sec` and
+`delta_mass_min_shape_r`.
 A target-table `.xlsx` has exactly one `Targets` worksheet with the columns above.
 Headers occupy the first row. Use actual values, not formulas or Excel error cells.
 Numeric text and descriptive metadata survive round trips without rounding.
@@ -63,48 +71,50 @@ Numeric text and descriptive metadata survive round trips without rounding.
 Download [method XLSX](../../xic_extractor/configuration/data/targeted-method.xlsx)
 or [target-table XLSX](../../xic_extractor/configuration/data/targets.xlsx), or use
 the links in the target-list card. Save a copy before editing. These are format
-examples, not evidence that the listed method is appropriate for your samples.
+examples, not evidence that the listed specificity suits your samples.
 
-### Design and reuse an identification method
+### Set specificity in the target editor
 
-1. Open **管理辨認方法**, choose **＋ 新增方法**, name it, and add
-   **＋ CID-NL 條件** or **＋ Delta Mass 條件**.
-2. Choose **全部符合（AND）** or **任一符合（OR）**. Conditions must refer to the
-   same quantitation peak, not different peaks in the run. HCD-PI is not
-   implemented and is not an available condition.
-3. For Delta Mass, the quantitation ion is fixed at `0`; enter positive or negative
-   partner Δ m/z values. The Target's m/z and reported area always belong to that
-   zero position. Neutral mass differences require charge conversion first.
-   Ratio limits and shape comparison sit on each partner's row; ratios only
-   annotate, never reject peaks. Co-elution and shape thresholds stay in the
-   collapsed **進階：共洗脫與峰形** panel.
-4. **儲存方法** keeps the definition. It does not change which targets use it.
-5. In the target editor, pick the method in each row's **辨認方法** column, or use
-   **全部目標改用** to fill every row. Blank (MS1 only) means no identification
-   condition. A method still used by targets cannot be deleted.
-6. Save the workspace or **另存清單**. XLSX export includes the definitions, so a
-   later import preserves the complete method, not only target rows.
+1. Open **檢視與編輯**. Select targets the same way as samples: drag over the row
+   numbers, Ctrl adds, Shift extends, and a search selects what it finds.
+2. Fill **CID-NL 中性丟失（Da）** and/or **Delta Mass Δm/z** in the toolbar and
+   choose **套用**; only filled fields are written. **設為 MS1 only** clears both.
+3. Click a target's **Delta Mass Δm/z** cell to edit its companion ions: Δm/z,
+   intensity-ratio range (for example `0.2–0.8`; recorded, never used to reject)
+   and shape comparison. The preview plots the ions at the target's actual m/z.
+   A new ion is named by its Δm/z with four decimals, for example `+4.0052`; two
+   ions that round to the same name cannot be saved.
+4. Co-elution and shape thresholds are in the collapsed
+   **進階：Delta Mass 判斷設定（整份清單共用）** panel.
+5. Save the workspace or **另存清單**. XLSX export includes the Delta Mass details.
 
-The `Identification Methods` worksheet has one row per CID-NL condition and
-one row per Delta Mass ion:
+The `Delta Mass` worksheet has one row per target ion:
 
-| Method | Combine | m/z Tolerance ppm | Condition | Kind | CID-NL Tag | Position | Delta m/z | Ratio Min | Ratio Max | Compare Shape |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Pt-pair | all | 20 | 1 | cid_nl | dR | | | | | |
-| Pt-pair | all | 20 | 2 | delta_mass | | quant | 0 | | | FALSE |
-| Pt-pair | all | 20 | 2 | delta_mass | | partner_1 | -1.9981 | 0.1 | 10 | TRUE |
+| Target | Position | Delta m/z | Ratio Min | Ratio Max | Compare Shape |
+| --- | --- | --- | --- | --- | --- |
+| Pt-GG | +1.0021 | 1.002111 | 0.514 | 2.056 | TRUE |
+| Pt-GG | +4.0052 | 4.005213 | 0.11 | 0.45 | FALSE |
 
-Optional `Apex Floor sec`, `Scan Interval Multiplier`, `Shape Window sec` and
-`Min Shape r` columns hold Delta Mass co-elution/shape thresholds; blank uses the
-defaults. Method- and condition-level values must agree on every row of that
-method or condition. Each Delta Mass condition needs exactly one ion at `0`.
-Every method needs at least one condition; use a blank target `method` for MS1 only.
+Each `Delta m/z` must appear in that target's `delta_mass_mz` cell. An ion listed
+in the cell without a row uses its offset as its name, ratio 0.1–10 and shape
+comparison on.
 
-Overlapping ion windows are rejected. Two-position methods require a measured
-partner. Unmet methods do not fall back to MS1-only. `Method Evidence` explains
+Overlapping ion windows are rejected. A Delta Mass target requires its companion
+ions; it does not fall back to MS1-only. `Method Evidence` explains
 matched/not-matched/not-acquired conditions for each candidate; missing MS2 is
 not counted as a chemical failure, but cannot fulfill CID-NL. Inspector reads saved
-method/evidence rows without rerunning analysis. A configurable method is not automatically a scientifically validated method; evaluate its suitability for your samples separately.
+rows without rerunning analysis. A configurable specificity is not automatically
+scientifically validated; evaluate its suitability for your samples separately.
+
+### Earlier target tables
+
+A `method` (or `cid_nl_tag`) column is converted when read: `dR`, `R` and `MeR`
+become their losses; a named method from an `Identification Methods` worksheet
+becomes its CID-NL loss and Delta Mass ions (names, ratios and shape comparison
+kept). A method the new columns cannot express is rejected with the affected
+targets: a method with only a CID-NL condition (it required the loss; the
+CID-NL column alone only ranks peaks), any-of combination, two conditions of
+one kind, or tolerance and co-elution settings that differ between methods. Saving writes the new format.
 
 Drag a file into the target-list import area or use **選擇檔案**. XLSX content
 automatically distinguishes a method from a target table; CSV/TSV are target tables.

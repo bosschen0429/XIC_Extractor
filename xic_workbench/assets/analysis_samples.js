@@ -1,6 +1,7 @@
 // Shared sample roles, exclusions and optional acquisition-information import.
 import { analysis } from "./analysis_jobs.js";
 import { checklist } from "./analysis_setup.js";
+import { createRowSelection } from "./analysis_row_selection.js";
 import { createSampleMetadata } from "./analysis_sample_metadata.js";
 import {
   $,
@@ -184,10 +185,13 @@ async function relistIfChanged(page) {
 }
 
 // Editor selection: drag a band, Ctrl adds, Shift extends, search selects.
-const selection = { stems: new Set(), anchor: null };
-let drag = null;
-// A drag ends with a click on its last row; that click must not reselect.
-let suppressClickUntil = 0;
+const selection = createRowSelection({
+  box: () => $("sample-table"),
+  rowSelector: "tr[data-stem]",
+  keyOf: (tr) => tr.dataset.stem,
+  order: () => visibleRows().map((row) => row.raw_stem),
+  onChange: () => renderSelection(),
+});
 function visibleRows() {
   const filter = $("sample-filter").value.trim().toLowerCase();
   return sampleMetadata
@@ -199,18 +203,17 @@ function visibleRows() {
     );
 }
 function clearSelection() {
-  selection.stems = new Set();
-  selection.anchor = null;
+  selection.clear();
 }
 // Job state changes outside this module call this through lock().
 export function renderSampleActions() {
   if ($("sample-editor")?.open) renderSelection();
 }
 function renderSelection() {
-  const count = selection.stems.size;
+  const count = selection.keys.size;
   const rows = sampleMetadata
     .forPage(editing)
-    .rows.filter((row) => selection.stems.has(row.raw_stem));
+    .rows.filter((row) => selection.keys.has(row.raw_stem));
   const disabled = !count || !sampleMetadata.canEdit;
   $("sample-selection").textContent = count
     ? `選取的 ${count} 個 設為`
@@ -220,13 +223,13 @@ function renderSelection() {
   $("sample-exclude").textContent =
     rows.length && rows.every((row) => row.excluded) ? "取消排除" : "排除";
   for (const tr of $("sample-rows").querySelectorAll("tr[data-stem]"))
-    tr.classList.toggle("selected", selection.stems.has(tr.dataset.stem));
+    tr.classList.toggle("selected", selection.keys.has(tr.dataset.stem));
 }
 function renderSamples() {
   const set = sampleMetadata.forPage(editing);
   const rows = visibleRows();
   const known = new Set(set.rows.map((row) => row.raw_stem));
-  selection.stems = new Set([...selection.stems].filter((s) => known.has(s)));
+  selection.retain(known);
   $("sample-rows").replaceChildren(
     ...rows.map((row) => {
       const tr = el("tr");
@@ -256,7 +259,7 @@ function renderSamples() {
   lock();
 }
 function apply(change) {
-  const stems = [...selection.stems];
+  const stems = [...selection.keys];
   if (!stems.length || !sampleMetadata.canEdit) return;
   clearSelection();
   act(() => sampleMetadata.edit(editing, stems, change));
@@ -265,91 +268,9 @@ function apply(change) {
 function toggleExclusion() {
   const rows = sampleMetadata
     .forPage(editing)
-    .rows.filter((row) => selection.stems.has(row.raw_stem));
+    .rows.filter((row) => selection.keys.has(row.raw_stem));
   apply({ excluded: !rows.every((row) => row.excluded) });
 }
-function clickRow(stem, event) {
-  if (event.shiftKey && selection.anchor !== null) {
-    const order = visibleRows().map((row) => row.raw_stem);
-    const [a, b] = [order.indexOf(selection.anchor), order.indexOf(stem)].sort(
-      (x, y) => x - y,
-    );
-    if (a >= 0)
-      for (const each of order.slice(a, b + 1)) selection.stems.add(each);
-  } else if (event.ctrlKey || event.metaKey) {
-    if (!selection.stems.delete(stem)) selection.stems.add(stem);
-    selection.anchor = stem;
-  } else {
-    const only = selection.stems.size === 1 && selection.stems.has(stem);
-    selection.stems = only ? new Set() : new Set([stem]);
-    selection.anchor = stem;
-  }
-  renderSelection();
-}
-function startDrag(event) {
-  const tr = event.target.closest("tr[data-stem]");
-  if (!tr || event.button !== 0 || event.shiftKey) return;
-  const box = $("sample-table");
-  const bounds = box.getBoundingClientRect();
-  drag = {
-    box,
-    band: null,
-    y0: event.clientY - bounds.top + box.scrollTop,
-    y: event.clientY,
-    base: event.ctrlKey || event.metaKey ? new Set(selection.stems) : new Set(),
-    last: null,
-    moved: false,
-  };
-  event.preventDefault();
-  // Keep keyboard role shortcuts with the table, not a previously focused field.
-  box.focus({ preventScroll: true });
-}
-function moveDrag(event) {
-  if (!drag) return;
-  const { box } = drag;
-  const bounds = box.getBoundingClientRect();
-  drag.y = event.clientY;
-  const y = event.clientY - bounds.top + box.scrollTop;
-  if (!drag.moved && Math.abs(y - drag.y0) < 4) return;
-  if (!drag.moved) {
-    drag.moved = true;
-    drag.band = el("div", undefined, "select-band");
-    box.append(drag.band);
-  }
-  // Holding near an edge keeps scrolling so a long range needs one gesture.
-  if (event.clientY > bounds.bottom - 28) box.scrollTop += 14;
-  else if (event.clientY < bounds.top + 28) box.scrollTop -= 14;
-  const y1 = Math.max(
-    0,
-    Math.min(event.clientY - bounds.top + box.scrollTop, box.scrollHeight),
-  );
-  const top = Math.min(drag.y0, y1);
-  const bottom = Math.max(drag.y0, y1);
-  drag.band.style.top = `${top}px`;
-  drag.band.style.height = `${bottom - top}px`;
-  const hit = new Set(drag.base);
-  for (const tr of box.querySelectorAll("tr[data-stem]")) {
-    const rect = tr.getBoundingClientRect();
-    const a = rect.top - bounds.top + box.scrollTop;
-    if (a + rect.height > top && a < bottom) {
-      hit.add(tr.dataset.stem);
-      drag.last = tr.dataset.stem;
-    }
-  }
-  selection.stems = hit;
-  renderSelection();
-}
-function endDrag(event) {
-  if (!drag) return;
-  const ended = drag;
-  drag = null;
-  ended.band?.remove();
-  if (ended.moved) {
-    if (ended.last !== null) selection.anchor = ended.last;
-    suppressClickUntil = event.timeStamp + 80;
-  }
-}
-
 // Jobs
 
 export function bindSamples() {
@@ -402,21 +323,14 @@ export function bindSamples() {
   $("sample-filter").oninput = () => {
     clearSelection();
     if ($("sample-filter").value.trim())
-      selection.stems = new Set(visibleRows().map((row) => row.raw_stem));
+      selection.keys = new Set(visibleRows().map((row) => row.raw_stem));
     renderSamples();
   };
-  $("sample-rows").addEventListener("pointerdown", startDrag);
-  document.addEventListener("pointermove", moveDrag);
-  document.addEventListener("pointerup", endDrag);
-  $("sample-rows").addEventListener("click", (event) => {
-    const tr = event.target.closest("tr[data-stem]");
-    if (!tr || event.timeStamp < suppressClickUntil) return;
-    clickRow(tr.dataset.stem, event);
-  });
+  selection.bind($("sample-rows"));
   $("sample-editor").addEventListener("keydown", (event) => {
     if (event.target.closest("input, select, textarea")) return;
     const role = roles[Number(event.key) - 1];
-    if (/^[1-5]$/.test(event.key) && selection.stems.size && role) {
+    if (/^[1-5]$/.test(event.key) && selection.keys.size && role) {
       event.preventDefault();
       apply({ sample_role: role });
     }

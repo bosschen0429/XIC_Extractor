@@ -6,7 +6,7 @@ def targeted_rows():
     common = {
         "mz": "250",
         "expected_rt_min": "2",
-        "method": "dR",
+        "cid_nl_loss_da": "116.0474",
         "role": "analyte",
         "istd_pair": "",
     }

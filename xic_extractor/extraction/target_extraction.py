@@ -28,7 +28,7 @@ from xic_extractor.extraction.scoring_factory import (
 )
 from xic_extractor.extraction.targeted_peak_selection import (
     assess_targeted_candidate_population,
-    discovery_settings_for_tag,
+    discovery_settings_for_loss,
     prepare_targeted_method_seeds,
     targeted_ms2_precursor_scope,
     targeted_physical_peak_policy,
@@ -148,7 +148,7 @@ def process_file(
                     sample_key=sample_name, rt_min=start, rt_max=end, events=()
                 )
             )
-            seeds_by_tag = prepare_sample_method_seeds(raw, sample_window, targets)
+            seeds_by_loss = prepare_sample_method_seeds(raw, sample_window, targets)
             results: dict[str, ExtractionResult] = {}
             diagnostics: list[DiagnosticRecord] = []
             istd_shape_metrics_by_label: dict[str, tuple[float, float | None]] = {}
@@ -163,8 +163,8 @@ def process_file(
                     target,
                     reference_rt=None,
                     sample_window=sample_window,
-                    method_seeds=seeds_by_tag.get(target.cid_nl_tag),
-                    prepared_method_seeds=seeds_by_tag,
+                    method_seeds=_target_seeds(seeds_by_loss, target),
+                    prepared_method_seeds=seeds_by_loss,
                     strict_preferred_rt=False,
                     results=results,
                     diagnostics=diagnostics,
@@ -197,8 +197,8 @@ def process_file(
                     target,
                     reference_rt=reference_rt,
                     sample_window=sample_window,
-                    method_seeds=seeds_by_tag.get(target.cid_nl_tag),
-                    prepared_method_seeds=seeds_by_tag,
+                    method_seeds=_target_seeds(seeds_by_loss, target),
+                    prepared_method_seeds=seeds_by_loss,
                     paired_target=istd_targets.get(target.istd_pair),
                     sample_drift=sample_drift,
                     strict_preferred_rt=(
@@ -235,7 +235,7 @@ def extract_one_target(
     reference_rt: float | None,
     sample_window: Ms2Window | None = None,
     method_seeds: tuple | None = None,
-    prepared_method_seeds: dict[str, tuple] | None = None,
+    prepared_method_seeds: dict[float, tuple] | None = None,
     paired_target: Target | None = None,
     sample_drift: float = 0.0,
     strict_preferred_rt: bool = False,
@@ -291,7 +291,7 @@ def extract_one_target(
             raw, sample_window, [target]
         )
     if method_seeds is None and target.neutral_loss_da is not None:
-        method_seeds = prepared_method_seeds[target.cid_nl_tag]
+        method_seeds = prepared_method_seeds[target.neutral_loss_da]
     profile = resolve_signal_processing_profile(
         signal_processing_method=config.signal_processing_method,
         signal_processing_window_points=config.signal_processing_window_points,
@@ -340,7 +340,7 @@ def extract_one_target(
         paired_istd_fwhm=paired_istd_fwhm,
         paired_istd_anchor_rt=istd_rt_in_this_sample,
     )
-    if target.identification_method is not None:
+    if target.identification is not None:
         from xic_extractor.extraction.targeted_method_conditions import (
             assess_targeted_method_conditions,
         )
@@ -479,9 +479,14 @@ def _finite_positive(value: float | None) -> bool:
     return value is not None and math.isfinite(value) and value > 0
 
 
+def _target_seeds(seeds_by_loss: dict[float, tuple], target: Target) -> tuple | None:
+    loss = target.neutral_loss_da
+    return None if loss is None else seeds_by_loss.get(loss)
+
+
 def prepare_sample_method_seeds(
     raw: Any, window: Ms2Window, targets: list[Target]
-) -> dict[str, tuple]:
+) -> dict[float, tuple]:
     """Read shared parent facts once; retain alternatives for each target's mass."""
     from xic_extractor.discovery.strict_event_receipts import (
         read_parent_ms1_observations,
@@ -489,10 +494,10 @@ def prepare_sample_method_seeds(
 
     prepared = prepare_targeted_method_seeds(window, targets)
     return {
-        tag: read_parent_ms1_observations(
+        loss: read_parent_ms1_observations(
             raw,
             seeds,
-            tolerance_ppm=discovery_settings_for_tag(tag).precursor_mz_tolerance_ppm,
+            tolerance_ppm=discovery_settings_for_loss(loss).precursor_mz_tolerance_ppm,
         )
-        for tag, seeds in prepared.items()
+        for loss, seeds in prepared.items()
     }

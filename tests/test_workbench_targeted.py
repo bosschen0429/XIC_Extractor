@@ -15,7 +15,7 @@ def test_config_round_trip_preserves_target_precision_and_hidden_metadata(tmp_pa
             label="standard",
             mz="258.108500",
             expected_rt_min="8.000",
-            cid_nl_tag="dR",
+            cid_nl_loss_da="116.0474",
             role="istd",
             istd_pair="",
             source_note="preserve me",
@@ -65,7 +65,7 @@ def test_invalid_targets_leave_saved_input_unchanged(tmp_path):
         label="standard",
         mz="258",
         expected_rt_min="8",
-        cid_nl_tag="dR",
+        cid_nl_loss_da="116.0474",
         role="istd",
         istd_pair="",
     )

@@ -16,7 +16,7 @@ def test_json_settings_and_targets_have_one_state_file(tmp_path):
             "label": "IS",
             "mz": "258.1085",
             "expected_rt_min": "9",
-            "method": "dR",
+            "cid_nl_loss_da": "116.0474",
             "role": "istd",
             "istd_pair": "",
         }

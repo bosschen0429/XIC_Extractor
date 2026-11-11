@@ -404,24 +404,24 @@
         ['目標 m/z', target['m/z']], ['m/z 容差 (ppm)', target['ppm tol']],
         ['NL (Da)', target['NL (Da)']], ['NL 容差 warn / max (ppm)', `${value(target['NL ppm warn'])} / ${value(target['NL ppm max'])}`],
         ['樣本適用範圍', target['Sample applicability']],
+        ['特異性', target['Specificity']],
       ]));
-      if (item.details.identification_method) {
-        const saved = item.details.identification_method;
-        const combinationLabel = saved.combine_mode === 'any' ? '符合任一條件（OR）' : '符合全部條件（AND）';
-        method.append(facts([['辨認方式', combinationLabel], ['m/z 容差 (ppm)', saved.mz_tolerance_ppm]]));
-        const definitions = element('details'); definitions.append(element('summary', '已儲存的辨認條件'));
-        saved.conditions.forEach((condition, index) => {
-          definitions.append(element('h4', `${index + 1}. ${condition.kind === 'cid_nl' ? `CID-NL · ${condition.tag}` : 'Delta Mass'}`));
-          if (condition.kind === 'delta_mass') {
-            definitions.append(facts(condition.positions.map(p => [p.label, `${p.offset_mz > 0 ? '+' : ''}${p.offset_mz} m/z${p.offset_mz === 0 ? '（定量離子）' : ''}${p.compare_shape ? ' · 比較峰形' : ''}`])));
-            definitions.append(facts([['共洗脫容差 (s)', condition.apex_floor_sec], ['峰形最低 r', condition.min_shape_r], ['強度比例／峰形參考', '定量離子（0）']]));
-          }
-        });
+      const ions = item.details.delta_mass_ions || [];
+      if (ions.length) {
+        const definitions = element('details'); definitions.append(element('summary', 'Delta Mass 伴隨離子'));
+        definitions.append(facts([['基準離子', '目標 m/z（定量）'], ...ions.map(ion => [ion['Position'], `Δm/z ${Number(ion['Delta m/z']) > 0 ? '+' : ''}${ion['Delta m/z']} · 強度比範圍 ${ion['Ratio Min']}–${ion['Ratio Max']}（只記錄，不淘汰）${ion['Compare Shape'] === 'TRUE' ? ' · 比對峰形' : ''}`])]));
+        definitions.append(facts([['m/z 容差 (ppm)', ions[0]['m/z Tolerance ppm']], ['共洗脫容差下限 (s)', ions[0]['Apex Floor sec']], ['最低峰形 r', ions[0]['Min Shape r']]]));
         method.append(definitions);
+      }
+      // Saved answers stand on their own; earlier workbooks carry no Delta Mass
+      // sheet and recorded their own all/any combination.
+      const methodEvidence = item.details.method_evidence || [];
+      if (methodEvidence.length || (item.details.delta_mass_evidence || []).length) {
+        const combinationLabel = methodEvidence.some(record => record['Combine'] === 'any') ? '任一符合' : '全部符合';
         const statuses = {matched: '符合', not_matched: '不符合', not_acquired: '沒有 MS2', not_evaluated: '未評估', TRUE: '是', FALSE: '否', pass: '通過', fail: '未通過'};
         for (const [title, records, fields, collapsed] of [
-          [`辨認條件結果 · ${combinationLabel}`, item.details.method_evidence || [], [['SampleName', '樣本'], ['Candidate', '候選'], ['Candidate RT', '候選峰 RT'], ['Selected', '已選'], ['Method Accepted', '方法符合'], ['Condition', '條件編號'], ['Condition Label', '條件'], ['Status', '結果'], ['Reason', '說明']], false],
-          ['Delta Mass 配對明細', item.details.delta_mass_evidence || [], [['SampleName', '樣本'], ['Candidate RT', '候選峰 RT'], ['Condition', '條件'], ['Pattern Status', '配對'], ['Position', '位置'], ['Expected m/z', '查詢 m/z'], ['Height Ratio to Quant', '相對定量離子強度'], ['Ratio Status', '比例參考'], ['Shape r', '峰形 r'], ['Reason', '原因']], true],
+          [`特異性條件結果 · ${combinationLabel}`, item.details.method_evidence || [], [['SampleName', '樣本'], ['Candidate', '候選'], ['Candidate RT', '候選峰 RT'], ['Selected', '已選'], ['Method Accepted', '方法符合'], ['Condition', '條件編號'], ['Condition Label', '條件'], ['Status', '結果'], ['Reason', '說明']], false],
+          ['Delta Mass 配對明細', item.details.delta_mass_evidence || [], [['SampleName', '樣本'], ['Candidate RT', '候選峰 RT'], ['Condition', '條件'], ['Pattern Status', '配對'], ['Position', '位置'], ['Expected m/z', '查詢 m/z'], ['Height Ratio to Quant', '相對基準離子強度'], ['Ratio Status', '比例參考'], ['Shape r', '峰形 r'], ['Reason', '原因']], true],
         ]) {
           if (!records.length) continue;
           const evidence = element(collapsed ? 'details' : 'div'); evidence.append(element(collapsed ? 'summary' : 'h4', title));

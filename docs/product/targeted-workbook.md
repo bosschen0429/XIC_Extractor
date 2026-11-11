@@ -15,9 +15,9 @@ inspection belongs to the workbench XIC view, not the XLSX.
 | `需檢查` | Only the results counted in 先看, one row each; absent when there are none | Human |
 | `面積` | Saved Area per sample × target; analytes sharing an ISTD sit together, followed by that ISTD | Human, in-sheet calculation |
 | `XIC Results` | One row per sample-target result | Inspector, ISTD reference, human |
-| `Targets` | Admitted target intent | Inspector, human |
-| `Identification Methods` | Used custom method definitions with combination mode and clauses | Inspector, reproducibility |
-| `Method Evidence` | Same-peak candidate/condition statuses and method acceptance | Inspector, human |
+| `Targets` | Admitted target intent, including `Specificity` | Inspector, human |
+| `Delta Mass` | Delta Mass ions of each target, with the list-shared thresholds; only with Delta Mass targets | Inspector, reproducibility |
+| `Method Evidence` | Same-peak candidate/condition statuses and acceptance; only with Delta Mass targets | Inspector, human |
 | `Delta Mass Evidence` | Per-position pattern answers and selected-candidate flags; only with Delta Mass clauses | Inspector, human |
 | `Run Metadata` | `Key`, `說明`, `Value` | Inspector, workbook compare |
 | `欄位說明` | Meaning and unit of every delivered column | Human |
@@ -30,23 +30,25 @@ positions or a numeric layout tag. Workbooks carrying the retired layout tag
 must be regenerated. Human sheets may change layout; they never change saved
 values or decisions.
 
-Custom-method runs append `Method` to `Targets`. Existing CID-NL/MS1-only runs
-keep their original sheets and columns. `Method Evidence` records each sample,
-target, candidate interval, selected flag, all/any combination, method acceptance,
-and clause status: `matched`, `not_matched`, `not_acquired`, or `not_evaluated`
-when no candidate could be assessed.
+`Targets.Specificity` states each target's specificity and parameters, for
+example `MS1 only`, `CID-NL 116.0474` or `CID-NL 116.0474 + Delta Mass +1.0034`.
+For a Delta Mass target, `Method Evidence` records each sample, target,
+candidate interval, selected flag, acceptance (every condition must match), and
+clause status: `matched`, `not_matched`, `not_acquired`, or `not_evaluated`
+when no candidate could be assessed. CID-NL clauses are labelled by their loss,
+for example `CID-NL 116.0474`.
 
-`Identification Methods` uses the same table as a portable method file: one row
-per CID-NL condition and one row per Delta Mass ion, with `Method`, `Combine`,
-`m/z Tolerance ppm`, `Condition`, `Kind`, `CID-NL Tag`, `Position`, `Delta m/z`,
-ratio, shape and co-elution columns. Method- and condition-level values repeat on
-each of their rows. Inspector rebuilds the definitions from this table.
+`Delta Mass` has one row per target ion, like the method file's sheet: `Target`,
+`Position`, `Delta m/z`, `Ratio Min`, `Ratio Max`, `Compare Shape`, followed by
+the list-shared `m/z Tolerance ppm` and co-elution/shape thresholds repeated on
+each row. Inspector reads the ions from this table.
 
 Delta Mass details record XIC query masses, not measured centroids. Height ratios
 and shape comparisons reference the quantitation ion; ratios remain annotation.
 `Apex Delta to Quant sec` is each ion's apex RT minus the quantitation ion's apex RT.
-Inspector shows **辨認條件結果** and collapsible **Delta Mass 配對明細** from these
-saved answers. CID-NL clauses in custom methods are reported in `Method Evidence`,
+Inspector shows **特異性條件結果** and collapsible **Delta Mass 配對明細** from
+these saved answers. CID-NL clauses of Delta Mass targets are reported in
+`Method Evidence`,
 not fabricated legacy NL columns. Neither writer nor Inspector reruns scientific
 decisions.
 

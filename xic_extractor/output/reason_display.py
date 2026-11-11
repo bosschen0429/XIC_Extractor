@@ -36,10 +36,10 @@ _RESTATED_REVIEW = frozenset({"insufficient_typed_evidence"})
 
 _REASON_TEXT = {
     "identification_method_supported": (
-        "所選峰符合辨認方法；各條件結果見 Method Evidence"
+        "所選峰符合全部特異性條件；各條件結果見 Method Evidence"
     ),
     "identification_method_not_supported": (
-        "沒有候選峰符合辨認方法；各條件結果見 Method Evidence"
+        "沒有候選峰符合全部特異性條件；各條件結果見 Method Evidence"
     ),
     "targeted_cross_sample_region_conflict": "跨樣本峰對應衝突；不給定量值",
     "targeted_retention_context_unavailable": "跨 target RT 證據不足；目前對應為暫定",

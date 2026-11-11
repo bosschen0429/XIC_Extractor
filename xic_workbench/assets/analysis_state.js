@@ -3,7 +3,8 @@
 export const state = {
   config: null,
   targets: [],
-  identificationMethods: {},
+  // Delta Mass details: list-shared settings and each target row's ions.
+  deltaMass: { settings: {}, ions: new Map() },
   method: null,
   importing: false,
   view: "targeted",
@@ -12,7 +13,7 @@ export const state = {
 export function initializeConfig(config) {
   state.config = config;
   state.targets = config.targets;
-  state.identificationMethods = config.identification_methods || {};
+  setDeltaMass(config.delta_mass);
 }
 export function updateConfig(values) {
   Object.assign(state.config, values);
@@ -47,11 +48,21 @@ export function removeTarget(index) {
 export function addTarget(row) {
   state.targets.push(row);
 }
-export function setIdentificationMethods(methods, oldName, newName) {
-  state.identificationMethods = methods;
-  if (oldName && oldName !== newName)
-    for (const target of state.targets)
-      if (target.method === oldName) target.method = newName;
+// Saved details name targets by label; the editor keys them by row, because a
+// label changes one keystroke at a time and may pass through another's name.
+export function setDeltaMass(payload) {
+  const byLabel = payload?.ions || {};
+  state.deltaMass = {
+    settings: {
+      ...state.config.targeted_specificity.delta_mass_settings,
+      ...(payload?.settings || {}),
+    },
+    ions: new Map(
+      state.targets
+        .filter((row) => Object.hasOwn(byLabel, row.label))
+        .map((row) => [row, structuredClone(byLabel[row.label])]),
+    ),
+  };
 }
 export function markClosed() {
   state.closed = true;

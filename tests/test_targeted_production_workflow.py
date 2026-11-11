@@ -102,7 +102,6 @@ def test_unavailable_istd_alternate_does_not_block_workbook_publication(
         neutral_loss_da=neutral_loss,
         nl_ppm_warn=20.0 if neutral_loss is not None else None,
         nl_ppm_max=40.0 if neutral_loss is not None else None,
-        cid_nl_tag="dR" if neutral_loss is not None else "",
     )
 
     class Raw(ScopedMs2WindowReader):
@@ -736,7 +735,7 @@ def test_neutral_loss_disabled_target_uses_shared_cell_decision(tmp_path: Path) 
                 "label": target.label,
                 "mz": str(target.mz),
                 "expected_rt_min": "1.5",
-                "cid_nl_tag": "",
+                "cid_nl_loss_da": "",
                 "role": "analyte",
                 "istd_pair": "",
             }

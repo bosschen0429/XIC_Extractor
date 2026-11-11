@@ -225,11 +225,11 @@ def test_istd_upload_rejects_invalid_content_without_writing(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "method,tag,count",
-    [("dna_dr", "dR", 6), ("rna_ribose", "R", 1), ("rna_mer", "MeR", 0)],
+    "method,loss,count",
+    [("dna_dr", 116.0474, 6), ("rna_ribose", 132.0423, 1), ("rna_mer", 146.0579, 0)],
 )
 def test_istd_http_preview_and_upload_share_method_applicability(
-    tmp_path, method, tag, count
+    tmp_path, method, loss, count
 ):
     import base64
 
@@ -256,6 +256,6 @@ def test_istd_http_preview_and_upload_share_method_applicability(
             assert status == 200
             selection = result["selection"]
             assert len(selection["targets"]) == count
-            assert all(t["cid_nl_tag"] == tag for t in selection["targets"])
+            assert all(t["neutral_loss_da"] == loss for t in selection["targets"])
             assert len(selection["method_skipped"]) == 7 - count
             assert selection["skipped_count"] == 7

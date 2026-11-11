@@ -15,10 +15,6 @@ from xic_extractor.configuration.settings import (
     build_extraction_config,
     resolve_settings,
 )
-from xic_extractor.configuration.targeted_identification import (
-    identification_methods_payload,
-    parse_identification_methods,
-)
 from xic_extractor.configuration.targeted_method_files import (
     apply_targeted_method,
     create_targeted_method,
@@ -29,6 +25,8 @@ from xic_extractor.configuration.workspace_state import (
     read_workspace,
     workspace_settings,
 )
+
+DELTA_MASS_RECEIPT = "delta_mass.json"
 
 LOGGER = logging.getLogger(__name__)
 
@@ -89,14 +87,12 @@ def prepare_targeted_config(
     )
     if method is None:
         method = create_targeted_method(
-            {},
-            state["targets"],
-            identification_methods=state.get("identification_methods", {}),
+            {}, state["targets"], delta_mass=state.get("delta_mass")
         )
-    target_rows, targets, methods = (
+    target_rows, targets, delta_mass = (
         method.target_rows,
         method.targets,
-        method.identification_methods,
+        method.delta_mass,
     )
     order_source = values.get("injection_order_source", "").strip()
     output_dir = (
@@ -118,10 +114,9 @@ def prepare_targeted_config(
         for warning in warnings:
             LOGGER.warning(warning)
         write_config_snapshot(receipt_dir, values, target_rows)
-        if methods:
-            (receipt_dir / "identification_methods.json").write_text(
-                json.dumps(identification_methods_payload(methods), ensure_ascii=False),
-                encoding="utf-8",
+        if delta_mass:
+            (receipt_dir / DELTA_MASS_RECEIPT).write_text(
+                json.dumps(delta_mass, ensure_ascii=False), encoding="utf-8"
             )
         output_dir.mkdir(parents=True, exist_ok=True)
         config = build_extraction_config(
@@ -167,13 +162,13 @@ def load_config_snapshot(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     config = build_extraction_config(parsed, settings, settings_path, output_dir)
-    method_path = config_dir / "identification_methods.json"
-    methods = parse_identification_methods(
-        json.loads(method_path.read_text(encoding="utf-8"))
-        if method_path.exists()
-        else {}
+    details_path = config_dir / DELTA_MASS_RECEIPT
+    targets = _read_targets(
+        targets_path,
+        delta_mass=json.loads(details_path.read_text(encoding="utf-8"))
+        if details_path.exists()
+        else None,
     )
-    targets = _read_targets(targets_path, identification_methods=methods)
     target_config_hash = compute_target_config_hash(targets_path)
     config = ExtractionConfig(
         **{

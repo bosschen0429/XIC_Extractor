@@ -71,7 +71,13 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
     ("Targets", "m/z", "目標前驅離子質荷比。", "m/z"),
     ("Targets", "ppm tol", "擷取 XIC 的質量容許誤差。", "ppm"),
     ("Targets", "RT min / RT max", "RT 定位提示範圍，不是身分確認的硬界線。", "min"),
-    ("Targets", "NL (Da)", "設定的中性丟失質量；空白＝未設定，不是測得零。", "Da"),
+    (
+        "Targets",
+        "NL (Da)",
+        "只用 CID-NL 時的中性丟失質量；空白＝未設定，不是測得零。"
+        "與 Delta Mass 並用時見 Specificity 與 Method Evidence。",
+        "Da",
+    ),
     (
         "Targets",
         "Expected product m/z",
@@ -85,6 +91,13 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
         "ppm",
     ),
     (
+        "Targets",
+        "Specificity",
+        "MS1 only、CID-NL（中性丟失 Da）、Delta Mass（各伴隨離子 Δm/z）或兩者；"
+        "兩者都設定時，兩個條件都要符合。",
+        "",
+    ),
+    (
         "Run Metadata",
         "Key / 說明 / Value",
         "分析設定與版本，供比對兩次執行是否相同。",
@@ -93,19 +106,17 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
 )
 _HEADERS = ("工作表", "欄位", "意思", "單位")
 _IDENTIFICATION_GUIDE = (
-    ("Targets", "Method", "本次使用的辨認方法；定量仍取 Target m/z 通道。", ""),
     (
-        "Identification Methods",
-        "Method / Combine / Condition / Kind",
-        "方法定義：all＝全部條件符合，any＝任一條件符合。"
-        "CID-NL 條件一列；Delta Mass 條件每個離子一列。",
-        "",
+        "Delta Mass",
+        "Position / Delta m/z",
+        "伴隨離子名稱與相對目標 m/z（基準離子 base）的 m/z 差；每個目標每個離子一列。",
+        "m/z",
     ),
     (
-        "Identification Methods",
-        "Position / Delta m/z",
-        "離子名稱與相對定量離子的 m/z 差（定量離子為 0）。",
-        "m/z",
+        "Delta Mass",
+        "Ratio Min / Ratio Max / Compare Shape",
+        "強度比範圍（只記錄，不淘汰）與是否比對峰形。",
+        "",
     ),
     (
         "Method Evidence",
@@ -115,9 +126,9 @@ _IDENTIFICATION_GUIDE = (
     ),
     (
         "Method Evidence",
-        "Combine / Method Accepted / Condition / Status",
+        "Specificity / Method Accepted / Condition / Status",
         "matched＝符合、not_matched＝不符合、not_acquired＝沒有 MS2、"
-        "not_evaluated＝沒有候選峰可評估。所有條件都看同一個候選峰。",
+        "not_evaluated＝沒有候選峰可評估。所有條件都看同一個候選峰，且都要符合。",
         "",
     ),
     (

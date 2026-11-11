@@ -27,6 +27,7 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
+from xic_extractor.discovery.delta_mass_pipeline import run_delta_mass_discovery
 from xic_extractor.discovery.models import DiscoveryBatchOutputs
 from xic_extractor.discovery.pipeline import run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
@@ -40,6 +41,7 @@ from xic_extractor.presets import (
     bind_cid_nl_recipe,
     load_preset,
 )
+from xic_extractor.presets.delta_mass import resolve_delta_mass_discovery
 from xic_extractor.raw_sequence import read_analysis_set
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
@@ -98,7 +100,10 @@ def parse_request(values: dict[str, Any]) -> DiscoveryRequest:
         preset_from_payload(snapshot_value) if snapshot_value is not None else None
     )
     bound_preset = snapshot or load_preset(preset)
-    bind_cid_nl_recipe(bound_preset, "full", recipe_overrides=overrides)
+    if _is_delta_mass(bound_preset):
+        resolve_delta_mass_discovery(bound_preset, label=preset)
+    else:
+        bind_cid_nl_recipe(bound_preset, "full", recipe_overrides=overrides)
 
     return DiscoveryRequest(
         preset=preset,
@@ -143,14 +148,18 @@ class UntargetedRun:
 
     def execute(self) -> dict[str, Any]:
         self._raise_if_cancelled("Untargeted run cancelled before start")
-        summary = self._run_full()
+        delta_mass = self.request.preset_snapshot is not None and _is_delta_mass(
+            self.request.preset_snapshot
+        )
+        summary = self._run_delta_mass() if delta_mass else self._run_full()
         summary["published_paths"] = [
             str(path) for path in _ordered_existing_paths(self.available_outputs)
         ]
-        summary["modules"] = {
-            "alignment": "completed",
-            "backfill": "enabled",
-        }
+        summary["modules"] = (
+            {"delta_mass": "completed"}
+            if delta_mass
+            else {"alignment": "completed", "backfill": "enabled"}
+        )
         summary["samples"] = [asdict(row) for row in self.samples]
         return summary
 
@@ -189,6 +198,98 @@ class UntargetedRun:
         summary = self._discovery_summary(index_path)
         summary.update(_alignment_summary(outputs))
         return summary
+
+    def _run_delta_mass(self) -> dict[str, Any]:
+        """Delta Mass Discovery only: diagnostic candidates, no Alignment or matrix.
+
+        A composite with CID-NL dR first runs dR Discovery on the same RAW and
+        joins its peaks, as the command-line route does in two steps.
+        """
+        request = self.request
+        assert request.preset_snapshot is not None
+        self.stage = "讀取 RAW 資料來源"
+        raw_paths = self._prepare_samples(request.raw_dir)
+        if request.raw_dir is None or not raw_paths:
+            raise ValueError(f"RAW 資料夾中找不到 .raw 檔案：{request.raw_dir}")
+        strategy = resolve_delta_mass_discovery(
+            request.preset_snapshot, label=request.preset
+        )
+        peaks_csv = None
+        if strategy.cid_nl_composite:
+            peaks_csv = self._run_cid_nl_dr(raw_paths)
+            self._raise_if_cancelled("Untargeted run cancelled after CID-NL dR")
+        self.stage = "Delta Mass Discovery"
+        self.progress(0, 0, "Delta Mass Discovery…")
+        outputs = run_delta_mass_discovery(
+            raw_dir=request.raw_dir,
+            dll_dir=request.dll_dir,
+            output_dir=request.output_dir,
+            strategy=strategy,
+            cid_nl_peaks_csv=peaks_csv,
+            raw_paths=raw_paths,
+            should_cancel=self.should_cancel,
+            progress_callback=lambda done, total, sample: self.progress(
+                done, total, f"Delta Mass Discovery: {sample}"
+            ),
+        )
+        self._raise_if_cancelled("Untargeted run cancelled after Delta Mass")
+        self.available_outputs += (
+            ("Delta Mass 候選表", outputs.candidates_csv),
+            ("Delta Mass 離子明細", outputs.positions_csv),
+            ("Delta Mass 執行紀錄", outputs.sidecar_json),
+        )
+        self.progress(1, 1, "完成")
+        with outputs.candidates_csv.open(encoding="utf-8", newline="") as handle:
+            statuses = [row.get("status") for row in csv.DictReader(handle)]
+        return {
+            "output_dir": str(request.output_dir),
+            "sample_count": len(raw_paths),
+            "delta_mass": {
+                "candidates_csv": str(outputs.candidates_csv),
+                "candidate_count": statuses.count("candidate"),
+                "cid_nl_peaks_csv": str(peaks_csv) if peaks_csv else None,
+            },
+            "alignment_outputs": {},
+            "matrix_tsv": None,
+        }
+
+    def _run_cid_nl_dr(self, raw_paths: tuple[Path, ...]) -> Path:
+        """dR Discovery for the composite's base join; peaks merged into one table."""
+        request = self.request
+        self.stage = "CID-NL dR Discovery"
+        settings = bind_cid_nl_recipe(load_preset("dna_dr"), "full").discovery_settings
+        directory = request.output_dir / "cid_nl_dR"
+        outputs = run_discovery_batch(
+            raw_paths,
+            output_dir=directory,
+            settings=settings,
+            dll_dir=request.dll_dir,
+            run_spec=compile_discovery_processing_run_spec(
+                raw_paths, discovery_settings=settings
+            ),
+            max_workers=min(len(raw_paths), request.execution_profile.parallel_workers),
+            should_cancel=self.should_cancel,
+            progress_callback=lambda done, total, sample: self.progress(
+                done, total, f"CID-NL dR Discovery: {sample}"
+            ),
+        )
+        merged = directory / "discovery_peaks.csv"
+        header: list[str] | None = None
+        with merged.open("w", encoding="utf-8", newline="") as target:
+            writer = None
+            for item in outputs.per_sample:
+                with Path(item.peaks_csv).open(encoding="utf-8", newline="") as handle:
+                    reader = csv.DictReader(handle)
+                    if writer is None:
+                        header = list(reader.fieldnames or ())
+                        writer = csv.DictWriter(target, fieldnames=header)
+                        writer.writeheader()
+                    elif list(reader.fieldnames or ()) != header:
+                        raise ValueError(f"{item.peaks_csv}: peak table columns differ")
+                    writer.writerows(reader)
+        self._retain_discovery_outputs(outputs, outputs.batch_index_csv)
+        self.available_outputs += (("CID-NL dR 峰表（合併）", merged),)
+        return merged
 
     def _run_alignment(self, *, index_path: Path, raw_dir: Path) -> AlignmentRunOutputs:
         request = self.request
@@ -341,6 +442,10 @@ class UntargetedRun:
         if self.should_cancel():
             self.cancellation_reason = message
             raise InterruptedError(message)
+
+
+def _is_delta_mass(preset: Preset) -> bool:
+    return any(tag.strategy == "delta_mass" for tag in preset.tags)
 
 
 def _alignment_summary(outputs: AlignmentRunOutputs) -> dict[str, Any]:

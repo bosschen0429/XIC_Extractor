@@ -81,7 +81,8 @@ function resultBase(kind, result) {
     result.output_dir || result.excel_path?.replace(/[\\/][^\\/]+$/, "");
   head.append(titleBlock);
   container.replaceChildren(head);
-  const primaryPath = result.excel_path || result.matrix_tsv;
+  const primaryPath =
+    result.excel_path || result.matrix_tsv || result.delta_mass?.candidates_csv;
   const artifacts = result.artifacts || [];
   const downloads = el("div", undefined, "artifact-list");
   const primary = artifacts.find((artifact) => artifact.path === primaryPath);
@@ -89,7 +90,9 @@ function resultBase(kind, result) {
     downloads.append(
       artifactLink(primary, {
         targeted: "下載結果 Excel",
-        untargeted: "下載 Alignment 矩陣",
+        untargeted: result.delta_mass
+          ? "下載 Delta Mass 候選表"
+          : "下載 Alignment 矩陣",
         curation: "下載整理後矩陣",
       }[kind]),
     );
@@ -133,9 +136,23 @@ export function renderResults() {
   if (result) {
     const { container, downloads, details } = resultBase("untargeted", result);
     const metrics = el("div", undefined, "result-metrics");
-    metric(metrics, result.overview?.matrix_count, "矩陣群組");
-    metric(metrics, result.overview?.complete_count, "全部樣本都有值");
+    if (result.delta_mass) {
+      // Delta Mass Discovery yields diagnostic candidates, not an aligned matrix.
+      metric(metrics, result.delta_mass.candidate_count, "Delta Mass 候選");
+      metric(metrics, result.sample_count, "RAW 檔案");
+    } else {
+      metric(metrics, result.overview?.matrix_count, "矩陣群組");
+      metric(metrics, result.overview?.complete_count, "全部樣本都有值");
+    }
     container.append(metrics);
+    if (result.delta_mass)
+      container.append(
+        el(
+          "p",
+          "Delta Mass 只做 Discovery：候選供診斷參考，未做跨樣本對齊與矩陣。",
+          "subtle",
+        ),
+      );
     const actions = el("div", undefined, "button-row");
     const evidence = result.evidence?.path || result.evidence?.report_path;
     if (evidence) {

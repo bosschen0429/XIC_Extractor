@@ -43,7 +43,7 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
                 "label": "ISTD",
                 "mz": "500",
                 "expected_rt_min": "12",
-                "cid_nl_tag": "dR",
+                "cid_nl_loss_da": "116.0474",
                 "role": "istd",
                 "istd_pair": "",
             }

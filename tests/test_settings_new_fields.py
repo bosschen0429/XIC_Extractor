@@ -20,8 +20,8 @@ def test_run_metadata_records_effective_shared_strategy(tmp_path):
     receipt = json.loads(metadata["targeted_strategy"])
     assert receipt["strategy"] == TARGETED_STRATEGY
     assert receipt["candidate_coverage"] == "complete_acquisition_exact_mass"
-    assert receipt["cid_nl_recipes"]["dR"]["nl_tolerance_ppm"] == 20
-    assert set(receipt["cid_nl_recipes"]) == {"dR", "R", "MeR"}
+    assert receipt["cid_nl_mass_policy"]["nl_tolerance_ppm"] == 20
+    assert "cid_nl_recipes" not in receipt
     assert not warnings
 
 

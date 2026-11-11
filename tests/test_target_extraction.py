@@ -313,7 +313,7 @@ def _intent_target(expected_rt=2.0):
                 label="ISTD",
                 mz="258.1085",
                 expected_rt_min=str(expected_rt),
-                cid_nl_tag="dR",
+                cid_nl_loss_da="116.0474",
                 role="istd",
                 istd_pair="",
             )
@@ -494,7 +494,7 @@ def test_targeted_products_use_discovery_seeds_once_per_tag(
     from xic_extractor.discovery.ms2_events import discovery_events_from_scan
     from xic_extractor.extraction.targeted_peak_selection import (
         _discovery_method_products,
-        discovery_settings_for_tag,
+        discovery_settings_for_loss,
         prepare_targeted_method_seeds,
     )
     from xic_extractor.ms2_scan_models import Ms2Window
@@ -520,9 +520,9 @@ def test_targeted_products_use_discovery_seeds_once_per_tag(
     )
     prepared = prepare_targeted_method_seeds(window, [target, target])
     assert len(calls) == 1
-    products = _discovery_method_products(window, target, prepared["dR"])
+    products = _discovery_method_products(window, target, prepared[116.0474])
     seeds = discovery_events_from_scan(
-        scan, raw_file=Path("sample"), settings=discovery_settings_for_tag("dR")
+        scan, raw_file=Path("sample"), settings=discovery_settings_for_loss(116.0474)
     )
     assert [
         (p.precursor_mz, p.product_mz, p.precursor_mz_basis, p.observed_loss_error_ppm)
@@ -598,7 +598,7 @@ def test_target_identity_does_not_promote_coisolated_mass_compatibility(
         target,
         reference_rt=2.0,
         sample_window=window,
-        method_seeds=seeds["dR"],
+        method_seeds=seeds[116.0474],
         results=results,
         diagnostics=[],
         scoring_context_factory=build_scoring_context_factory(config=config),
@@ -623,7 +623,7 @@ def test_targeted_scan_resolution_keeps_recorded_support_over_precise_inference(
         resolve_discovery_scan_events,
     )
     from xic_extractor.extraction.targeted_peak_selection import (
-        discovery_settings_for_tag,
+        discovery_settings_for_loss,
     )
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
     from xic_extractor.precursor_evidence import Ms1PrecursorObservation
@@ -642,7 +642,7 @@ def test_targeted_scan_resolution_keeps_recorded_support_over_precise_inference(
             master_scan_number=6,
         ),
     )
-    settings = discovery_settings_for_tag("dR")
+    settings = discovery_settings_for_loss(116.0474)
     seeds = tuple(
         replace(
             seed,
@@ -713,7 +713,7 @@ def test_shared_scan_preserves_each_targets_recorded_precursor_support(tmp_path)
             target,
             reference_rt=8.0,
             sample_window=window,
-            method_seeds=prepared["dR"],
+            method_seeds=prepared[116.0474],
             results=results,
             diagnostics=[],
             scoring_context_factory=build_scoring_context_factory(config=config),

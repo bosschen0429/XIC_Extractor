@@ -45,6 +45,24 @@ class CurationOperations(Protocol):
     ) -> dict[str, Any]: ...
 
 
+def targeted_specificity_choices() -> dict[str, Any]:
+    """Editor defaults: common CID-NL losses and list-shared Delta Mass settings."""
+    from dataclasses import asdict
+
+    from xic_extractor.configuration.targeted_identification import (
+        DEFAULT_DELTA_MASS_SETTINGS,
+        LEGACY_CID_NL_LOSSES,
+    )
+
+    return {
+        "cid_nl_losses": [
+            {"name": name, "loss_da": loss}
+            for name, loss in LEGACY_CID_NL_LOSSES.items()
+        ],
+        "delta_mass_settings": asdict(DEFAULT_DELTA_MASS_SETTINGS),
+    }
+
+
 def _validate_path(value: str, kind: Any) -> dict[str, Any]:
     """Explain an unusable path in the user's terms, not the OS exception text."""
     folder = kind in {"folder", "output"}
@@ -155,9 +173,8 @@ class AnalysisWorkspace:
             "review_source": self.defaults.get("source", ""),
             "settings": settings,
             "targets": read_targets(config_dir=self.config_dir),
-            "identification_methods": read_workspace(self.config_dir).get(
-                "identification_methods", {}
-            ),
+            "delta_mass": read_workspace(self.config_dir).get("delta_mass"),
+            "targeted_specificity": targeted_specificity_choices(),
             "targeted_form": {"settings": setting_fields()},
             "targeted_method": {
                 **method_summary(settings),
@@ -258,20 +275,6 @@ class AnalysisWorkspace:
     def action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
         if action == "paths/validate":
             return _validate_path(str(values.get("path", "")), values.get("kind"))
-        if action == "targeted/method/validate":
-            from xic_extractor.configuration.targeted_identification import (
-                identification_methods_payload,
-                parse_identification_methods,
-            )
-
-            try:
-                methods = parse_identification_methods(values["identification_methods"])
-            except ValueError as exc:
-                return {"valid": False, "error": str(exc)}
-            return {
-                "valid": True,
-                "identification_methods": identification_methods_payload(methods),
-            }
         if action == "targeted/method/save":
             from xic_extractor.configuration.targeted_method_files import (
                 create_targeted_method,
@@ -303,7 +306,7 @@ class AnalysisWorkspace:
             method = create_targeted_method(
                 values["settings"],
                 values["targets"],
-                identification_methods=values.get("identification_methods", {}),
+                delta_mass=values.get("delta_mass"),
             )
             save_targeted_method(method, path)
             return {
@@ -312,9 +315,6 @@ class AnalysisWorkspace:
                 "message": f"已儲存方法：{name}",
             }
         if action == "targeted/method/load":
-            from xic_extractor.configuration.targeted_identification import (
-                identification_methods_payload,
-            )
             from xic_extractor.configuration.targeted_method_files import (
                 apply_targeted_method,
                 load_targeted_method,
@@ -326,9 +326,7 @@ class AnalysisWorkspace:
             return {
                 "settings": settings,
                 "targets": [dict(row) for row in method.target_rows],
-                "identification_methods": identification_methods_payload(
-                    method.identification_methods
-                ),
+                "delta_mass": method.delta_mass,
                 "summary": method_summary(settings),
             }
         if action == "preferences":
@@ -346,7 +344,7 @@ class AnalysisWorkspace:
                 values["settings"],
                 values["targets"],
                 config_dir=self.config_dir,
-                identification_methods=values.get("identification_methods"),
+                delta_mass=values.get("delta_mass"),
             )
             if values.get("output_dir"):
                 write_preferences(
@@ -380,11 +378,9 @@ class AnalysisWorkspace:
             )
 
             path = Path(values["path"])
-            if values.get("identification_methods"):
+            if values.get("delta_mass"):
                 method = create_targeted_method(
-                    {},
-                    values["targets"],
-                    identification_methods=values["identification_methods"],
+                    {}, values["targets"], delta_mass=values["delta_mass"]
                 )
                 save_targeted_method(method, path)
             else:
@@ -497,16 +493,19 @@ class AnalysisWorkspace:
         if action == "matrix-curation/source":
             return self.curation.describe_source(self.config_dir, values)
         if action in {"istd", "istd/upload"}:
+            from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
             from xic_extractor.configuration.targets import read_istd_targets
-            from xic_extractor.presets.apply import apply_to_discovery
             from xic_workbench.methods import preset_from_payload
             from xic_workbench.target_import import import_istd_upload
 
             profiles = None
             if "preset_snapshot" in values:
-                profiles = apply_to_discovery(
-                    preset_from_payload(values["preset_snapshot"])
-                ).neutral_loss_profiles
+                # A Delta Mass method's applicable standards follow its CID-NL tags.
+                profiles = tuple(
+                    NeutralLossProfile(tag.name, tag.value)
+                    for tag in preset_from_payload(values["preset_snapshot"]).tags
+                    if tag.strategy == "neutral_loss" and tag.value is not None
+                )
             if action == "istd/upload":
                 return json_value(
                     import_istd_upload(

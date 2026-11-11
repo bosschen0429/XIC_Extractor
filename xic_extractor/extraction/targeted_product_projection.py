@@ -76,10 +76,10 @@ def project_targeted_result(
                 "exclusion_reasons",
             ),
         )
-    if target.identification_method is not None:
+    if target.identification is not None:
         if result.selected_method_supported:
             support = _merge_reasons(support, ("identification_method_supported",))
-        elif target.identification_method.conditions and not any(
+        elif not any(
             candidate.accepted for candidate in result.method_candidate_evidence
         ):
             not_counted = _merge_reasons(

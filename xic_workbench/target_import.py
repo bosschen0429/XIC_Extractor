@@ -23,9 +23,6 @@ MAX_UPLOAD_BYTES = 1024 * 1024
 
 def preview_target_upload(name: object, content: object, settings: dict) -> dict:
     """Decode browser bytes and delegate semantics; never persist a preview."""
-    from xic_extractor.configuration.targeted_identification import (
-        identification_methods_payload,
-    )
     from xic_extractor.configuration.targeted_method_files import (
         apply_targeted_method,
         load_targeted_method,
@@ -46,9 +43,7 @@ def preview_target_upload(name: object, content: object, settings: dict) -> dict
             return {
                 "kind": "method",
                 "targets": [dict(row) for row in method.target_rows],
-                "identification_methods": identification_methods_payload(
-                    method.identification_methods
-                ),
+                "delta_mass": method.delta_mass,
                 "settings": applied,
                 "summary": method_summary(applied),
             }
@@ -113,7 +108,11 @@ def uploaded_target_file(name: object, content: object) -> Iterator[Path]:
 def import_targets(path: Path) -> list[dict[str, str]]:
     source = Path(path)
     if source.suffix.lower() in {".csv", ".tsv"}:
-        return read_target_draft_rows(source)
+        from xic_extractor.configuration.legacy_target_methods import (
+            upgrade_target_table,
+        )
+
+        return upgrade_target_table(read_target_draft_rows(source))[0]
     if source.suffix.lower() == ".xlsx":
         return load_target_table(source)
     raise ConfigError(f"{source}: 請選擇 XLSX、CSV 或 TSV 目標表；不支援 .xls。")

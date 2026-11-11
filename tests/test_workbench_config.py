@@ -254,7 +254,7 @@ def test_default_workspace_save_and_cli_share_isolated_settings(isolated_config_
                         "label": "test",
                         "mz": "258.1085",
                         "expected_rt_min": "9.0",
-                        "method": "dR",
+                        "cid_nl_loss_da": "116.0474",
                         "role": "istd",
                         "istd_pair": "",
                     }

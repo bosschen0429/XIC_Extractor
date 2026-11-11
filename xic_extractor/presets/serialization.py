@@ -10,7 +10,10 @@ from collections.abc import Mapping
 from dataclasses import asdict, replace
 from pathlib import Path
 
-from xic_extractor.configuration.mass_recalibration import MassRecalibration
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibration,
+    resolve_mass_recalibration,
+)
 from xic_extractor.presets.apply import (
     apply_to_alignment,
     apply_to_delta_mass_discovery,
@@ -75,6 +78,13 @@ def serialize_preset(
         effective.pop("ratio_reference_position")
         effective["delta_mass_mz_tolerance_ppm"] = effective.pop("mz_tolerance_ppm")
         effective["detector"] = effective_preset.discovery_overrides.get("detector", {})
+        # Omitted means none for Delta Mass; keep an explicit policy explicit.
+        recalibration = effective_preset.discovery_overrides.get("mass_recalibration")
+        if recalibration is not None:
+            effective = {
+                "mass_recalibration": resolve_mass_recalibration(recalibration).value,
+                **effective,
+            }
         discovery_values: Mapping[str, object] = effective
         discovery_fields: tuple[str, ...] = tuple(effective)
     else:

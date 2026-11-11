@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from xic_extractor.configuration.atomic_write import atomic_write_text
-from xic_extractor.configuration.csv_io import normalize_target_row
+from xic_extractor.configuration.legacy_target_methods import upgrade_target_table
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
@@ -28,7 +28,10 @@ def read_workspace(config_dir: Path) -> dict:
         }
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(state, dict) or set(state) - {"identification_methods"} != {
+        if not isinstance(state, dict) or set(state) - {
+            "delta_mass",
+            "identification_methods",
+        } != {
             "application",
             "batch",
             "targets",
@@ -53,9 +56,15 @@ def read_workspace(config_dir: Path) -> dict:
             for row in state["targets"]
         ):
             raise ValueError("invalid target rows")
-        state["targets"] = [normalize_target_row(row) for row in state["targets"]]
-        if not isinstance(state.get("identification_methods", {}), dict):
+        legacy = state.pop("identification_methods", None)
+        if legacy is not None and not isinstance(legacy, dict):
             raise ValueError("invalid identification method map")
+        rows, legacy_details = upgrade_target_table(state["targets"], legacy)
+        state["targets"] = rows
+        if legacy_details is not None:
+            state["delta_mass"] = legacy_details
+        if not isinstance(state.get("delta_mass", {}), dict):
+            raise ValueError("invalid Delta Mass details")
         return state
     except (OSError, ValueError, TypeError, ConfigError) as exc:
         raise ConfigError(
@@ -77,11 +86,14 @@ def save_workspace(
     *,
     settings: dict[str, str] | None = None,
     targets: list[dict[str, str]] | None = None,
-    identification_methods: dict | None = None,
+    delta_mass: dict | None = None,
 ) -> None:
+    """Targets and their Delta Mass details are always written together."""
     state = read_workspace(config_dir)
-    if identification_methods is not None:
-        state["identification_methods"] = identification_methods
+    if targets is not None:
+        state.pop("delta_mass", None)
+        if delta_mass:
+            state["delta_mass"] = delta_mass
     for key, value in (settings or {}).items():
         if key == "parallel_workers":
             continue

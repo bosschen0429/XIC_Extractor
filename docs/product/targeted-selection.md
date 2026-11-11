@@ -32,26 +32,40 @@ reported observed-loss error in ppm remains a descriptive measurement.
 
 ### MS1-only target intent
 
-A blank `method` declares an MS1-only target. Intake retains the shared
-20 ppm precursor tolerance and leaves neutral loss and its tolerances
-unconfigured. Missing MS2 is not chemical identity evidence.
+Blank `cid_nl_loss_da` and `delta_mass_mz` declare an MS1-only target. Intake
+retains the shared 20 ppm precursor tolerance and leaves neutral loss and its
+tolerances unconfigured. Missing MS2 is not chemical identity evidence.
 
-### Reusable identification methods
+### Per-target specificity
 
-`configuration.targeted_identification` admits named methods containing a flat,
-nonempty list of CID-NL and/or Delta Mass conditions. `combine_mode=all` requires
-every condition; `any` requires at least one. HCD-PI and nested expressions are
-not implemented.
+`configuration.targeted_identification` owns a target's specificity: MS1 only,
+CID-NL, Delta Mass, or CID-NL + Delta Mass. It follows from two target columns;
+there are no named methods.
 
-Each target row has exactly one `method`: blank (MS1 only), a built-in CID-NL
-tag (`dR`, `R`, `MeR`), or the name of a defined method. Older tables name this
-column `cid_nl_tag`; its values carry over unchanged. Built-in tags retain the
-existing Targeted CID-NL assessment policy; in a custom method a CID-NL card must
-match according to the all/any rule. Custom methods use one shared
-quantitation/partner m/z tolerance.
+- `cid_nl_loss_da` is a neutral loss in Da below the target m/z. CID-NL searches
+  by this value under the shared `DEFAULT_CID_NL_MASS_POLICY`; 116.0474 (dR),
+  132.0423 (R) and 146.0579 (MeR) are suggestions, not names.
+- `delta_mass_mz` lists companion-ion offsets. Each target keeps its own ion
+  names, ratio ranges and shape comparison; m/z tolerance and co-elution/shape
+  thresholds are shared by the whole list.
 
-Delta Mass positions use signed `offset_mz` relative to the Target's quantitation
-ion at zero. The pure settings conversion normalizes the lowest mass internally;
+CID-NL alone keeps the existing Targeted CID-NL assessment (ranking support).
+With Delta Mass, every declared condition must match the same peak; there is no
+any-of combination. HCD-PI is not implemented.
+
+Earlier tables had one `method` (or `cid_nl_tag`) column naming `dR`/`R`/`MeR`
+or a user-defined identification method. Reading converts them: tags become their
+loss values; a named method becomes its CID-NL value and Delta Mass ions (names,
+ratios and shape comparison carried over; its quantitation ion becomes `base`).
+A method the parameter columns cannot express is rejected with the affected
+targets: a method with only a CID-NL condition (it required the loss, while
+the CID-NL column alone ranks peaks), any-of combination, more than one
+condition of a kind, or tolerance and co-elution settings that differ from the
+shared values. Writing always uses the
+new columns.
+
+Delta Mass ions use signed offsets relative to the Target's quantitation
+ion (`base`) at zero. The pure settings conversion normalizes the lowest mass internally;
 users neither select a quantitation position per target nor arrange a base ion.
 Co-elution tolerance, ratios and configured shape comparisons reference the
 quantitation ion. Ratios

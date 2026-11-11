@@ -118,7 +118,7 @@ class TargetedCandidateAssessment:
 
     def method_admits(self, candidate: PeakCandidate) -> bool:
         return (
-            self.target.identification_method is None
+            self.target.identification is None
             or self.method_assessments[candidate].accepted
         )
 
@@ -165,10 +165,7 @@ class TargetedCandidateAssessment:
                     component_apex_rts=components,
                     chemical_support=(
                         (
-                            bool(
-                                self.target.identification_method
-                                and self.target.identification_method.conditions
-                            )
+                            self.target.identification is not None
                             and self.method_admits(candidate)
                         )
                         or self.method_relations is not None
@@ -292,8 +289,7 @@ class TargetedCandidateAssessment:
             method_candidate_evidence=tuple(self.method_assessments.values()),
             selected_method_candidate_index=(
                 tuple(self.candidate_evaluations).index(candidate)
-                if candidate is not None
-                and self.target.identification_method is not None
+                if candidate is not None and self.target.identification is not None
                 else None
             ),
         )
@@ -619,9 +615,11 @@ def targeted_ms2_precursor_scope(targets: list[Target]) -> PrecursorMassScope | 
     Method products and triggers keep a seed or recorded precursor only within
     the target's precursor tolerance; the margin absorbs float roundoff alone.
     """
-    from xic_extractor.configuration.targeted_identification import target_cid_nl_tags
+    from xic_extractor.configuration.targeted_identification import (
+        target_cid_nl_losses,
+    )
 
-    nl_targets = [target for target in targets if target_cid_nl_tags(target)]
+    nl_targets = [target for target in targets if target_cid_nl_losses(target)]
     if not nl_targets:
         return None
     return PrecursorMassScope.around(
@@ -634,28 +632,30 @@ def targeted_ms2_precursor_scope(targets: list[Target]) -> PrecursorMassScope | 
             for target in nl_targets
         ),
         maximum_inference_radius_da=max(
-            discovery_settings_for_tag(tag).ms2_precursor_tol_da
+            discovery_settings_for_loss(loss).ms2_precursor_tol_da
             for target in nl_targets
-            for tag in target_cid_nl_tags(target)
+            for loss in target_cid_nl_losses(target)
         ),
     )
 
 
 def prepare_targeted_method_seeds(
     window: Ms2Window, targets: list[Target]
-) -> dict[str, tuple]:
+) -> dict[float, tuple]:
     """Parse each chemistry once for the sample, independent of target count."""
     from pathlib import Path
 
-    from xic_extractor.configuration.targeted_identification import target_cid_nl_tags
+    from xic_extractor.configuration.targeted_identification import (
+        target_cid_nl_losses,
+    )
     from xic_extractor.discovery.ms2_events import discovery_events_from_scan
 
     prepared = {}
-    for tag in dict.fromkeys(
-        tag for target in targets for tag in target_cid_nl_tags(target)
+    for loss in dict.fromkeys(
+        loss for target in targets for loss in target_cid_nl_losses(target)
     ):
-        settings = discovery_settings_for_tag(tag)
-        prepared[tag] = tuple(
+        settings = discovery_settings_for_loss(loss)
+        prepared[loss] = tuple(
             seed
             for event in window.events
             if event.parse_error is None and event.scan is not None
@@ -674,8 +674,10 @@ def _discovery_method_products(
         resolve_discovery_scan_events,
     )
 
+    loss = target.neutral_loss_da
+    assert loss is not None
     if seeds is None:
-        seeds = prepare_targeted_method_seeds(window, [target])[target.cid_nl_tag]
+        seeds = prepare_targeted_method_seeds(window, [target])[loss]
     base_by_scan = {
         event.scan_number: event.scan.base_peak
         for event in window.events
@@ -688,14 +690,11 @@ def _discovery_method_products(
         tuple(
             seed for seed in seeds if abs(seed.precursor_mz - target.mz) <= tolerance_da
         ),
-        settings=discovery_settings_for_tag(target.cid_nl_tag),
+        settings=discovery_settings_for_loss(loss),
         precursor_reference_requirement=TARGETED_PRECURSOR_REFERENCE,
     )
-    assert target.neutral_loss_da is not None
-    expected_product = target.mz - target.neutral_loss_da
-    inference_tolerance = discovery_settings_for_tag(
-        target.cid_nl_tag
-    ).ms2_precursor_tol_da
+    expected_product = target.mz - loss
+    inference_tolerance = discovery_settings_for_loss(loss).ms2_precursor_tol_da
     return tuple(
         MS2ProductEvidence(
             scan_rt=seed.rt,
@@ -724,13 +723,13 @@ def _discovery_method_products(
     )
 
 
-def discovery_settings_for_tag(tag: str):
+def discovery_settings_for_loss(neutral_loss_da: float):
     from dataclasses import asdict
 
-    from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
+    from xic_extractor.configuration.targeted_strategy import targeted_loss_profile
     from xic_extractor.discovery.settings import DiscoverySettings
 
-    profile = targeted_tag_profile(tag)
+    profile = targeted_loss_profile(neutral_loss_da)
     values = asdict(profile)
     values["neutral_loss_profiles"] = profile.neutral_loss_profiles
     return DiscoverySettings(**values)

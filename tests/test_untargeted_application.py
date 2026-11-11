@@ -1110,15 +1110,15 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
     "filename", ["targets.csv", "targets.xlsx", "targeted-method.xlsx"]
 )
 @pytest.mark.parametrize(
-    "method,tag,count",
-    [("dna_dr", "dR", 6), ("rna_ribose", "R", 1), ("rna_mer", "MeR", 0)],
+    "method,loss,count",
+    [("dna_dr", 116.0474, 6), ("rna_ribose", 132.0423, 1), ("rna_mer", 146.0579, 0)],
 )
 def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     tmp_path,
     monkeypatch,
     filename,
     method,
-    tag,
+    loss,
     count,
 ):
     import xic_extractor.acquisition.raw_paths as raw_sources
@@ -1173,7 +1173,7 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
         assert not captured
     else:
         assert captured["targets"] == tuple(
-            t for t in all_targets if t.is_istd and t.cid_nl_tag == tag
+            t for t in all_targets if t.is_istd and t.neutral_loss_da == loss
         )
         assert len(captured["targets"]) == count
         assert captured["sample_metadata"] == metadata

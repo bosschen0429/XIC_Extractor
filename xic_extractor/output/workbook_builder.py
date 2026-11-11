@@ -79,7 +79,7 @@ def write_workbook_from_rows(
     )
     build_field_guide_sheet(
         wb.create_sheet("欄位說明"),
-        identification_methods=any(target.identification_method for target in targets),
+        identification_methods=any(target.identification for target in targets),
     )
     if diagnostics:
         build_diagnostic_events_sheet(wb.create_sheet("診斷事件"), diagnostics)

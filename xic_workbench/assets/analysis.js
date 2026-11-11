@@ -27,7 +27,8 @@ import {
 } from "./analysis_state.js";
 import {
   bindTargeted,
-  renderIdentificationSummary,
+  loadDeltaMass,
+  renderCidSuggestions,
   renderSettings,
   renderTargetedMethods,
   saveTargeted,
@@ -105,7 +106,8 @@ try {
   await window.XicReview.session;
   stopWindowTracking = ui.trackWindow();
   initializeConfig(await api("/api/config"));
-  renderIdentificationSummary();
+  loadDeltaMass(state.config.delta_mass);
+  renderCidSuggestions();
   ui.setTheme(state.config.preferences.theme || "light");
   $("dll-dir").value = state.config.settings.dll_dir || "";
   applyThemeButton();
