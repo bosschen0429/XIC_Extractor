@@ -182,11 +182,15 @@ export function checklist(kind) {
     items.push(pathItem(OUTPUT_LABEL, "u-output_dir", "尚未選擇位置"));
     items.push(readerItem("u-dll_dir"));
     const preset = $("u-preset");
+    // Workbench runs CID-NL Discovery; Delta Mass methods run from a saved file.
+    const deltaMass = state.method?.preview?.delta_mass_companions !== undefined;
     items.push(
       checkItem(
-        state.method ? "ok" : "todo",
+        state.method && !deltaMass ? "ok" : "todo",
         "分析方法",
-        preset.selectedOptions[0]?.textContent || "尚未選擇方法",
+        deltaMass
+          ? "Delta Mass 方法目前請另存方法檔，以命令列執行"
+          : preset.selectedOptions[0]?.textContent || "尚未選擇方法",
         "u-preset",
       ),
     );

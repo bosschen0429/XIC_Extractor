@@ -432,3 +432,34 @@ def test_cid_nl_uses_the_declared_loss_value_on_the_same_peak(
     assert [c.status for c in candidate.conditions] == [status, "matched"]
     assert result.selected_method_supported is (status == "matched")
     assert (result.reported_peak_area is not None) is (status == "matched")
+
+
+def test_list_shared_delta_mass_settings_round_trip_through_the_method_sheet(
+    tmp_path,
+):
+    from dataclasses import fields
+
+    from xic_extractor.configuration.delta_mass_table import DELTA_MASS_SETTING_KEYS
+    from xic_extractor.configuration.targeted_identification import DeltaMassSettings
+
+    assert set(DELTA_MASS_SETTING_KEYS.values()) == {
+        item.name for item in fields(DeltaMassSettings)
+    }
+    settings = {
+        "mz_tolerance_ppm": 12.0,
+        "apex_floor_sec": 2.0,
+        "scan_interval_multiplier": 1.5,
+        "shape_window_sec": 8.0,
+        "min_shape_r": 0.8,
+    }
+    method = create_targeted_method(
+        {},
+        [row(delta_mass_mz="-2.0")],
+        delta_mass={"settings": settings, "ions": {}},
+    )
+    path = tmp_path / "shared.xlsx"
+    save_targeted_method(method, path)
+    loaded = load_targeted_method(path)
+    assert loaded.delta_mass["settings"] == settings
+    assert loaded.targets[0].ppm_tol == 12.0
+    assert loaded.targets == method.targets

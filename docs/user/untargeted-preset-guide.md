@@ -10,14 +10,24 @@ named method. Choose a built-in method in the workbench, or import your own save
 In **Untargeted Discovery → 分析方法**:
 
 1. Select a built-in preset, or choose **匯入方法…** to open a TOML file.
-2. Choose **編輯方法…** to select dR, R, and MeR, edit neutral-loss tag
-   names/masses, or add a custom NL. **新增方法…** starts a new method.
-3. Choose whether the same peak must match any or all selected tags. The method
-   summary updates as you edit; it describes the configuration, not a predicted
-   analytical result.
-4. Apply to use the edited method for the current run. Save As writes a reusable
-   TOML independently. Cancel leaves the previously applied method intact.
-5. Advanced parameters remain a secondary, collapsed control. RT defaults to
+2. Choose **編輯方法…**. Enable the **CID-NL 中性丟失** card to list neutral
+   losses (name and Da), the **Delta Mass** card to list companion ions, or
+   both. **新增方法…** starts a new method.
+3. Delta Mass lists Δm/z and intensity-ratio range per ion; Δm/z is ≥ 0 because
+   the base ion is the lightest one. The collapsed **進階：離子角色與篩選門檻**
+   panel holds ion roles (可當搜尋起點、比對峰形、最弱且高於背景、支撐基準強度) and
+   thresholds; defaults come from the selected preset. Ion names follow their
+   Δm/z with four decimals (for example `+4.0052`) unless the preset already
+   named them.
+4. With two or more pieces of evidence, choose **全部符合** or **任一符合**.
+   Delta Mass with CID-NL supports **全部符合** only. The method summary updates
+   as you edit; it describes the configuration, not a predicted analytical result.
+5. Apply to use the edited method for the current batch. **另存方法檔…** writes a
+   reusable TOML; built-in methods are never overwritten. A new Delta Mass
+   method writes `mass_recalibration = "easy_ic_restore"`. Cancel leaves the
+   previously applied method intact. The Workbench runs CID-NL Discovery; run a
+   Delta Mass method from its saved TOML with `xic-delta-mass-discovery-cli`.
+6. Advanced parameters remain a secondary, collapsed control. RT defaults to
    each RAW file's full acquisition range from instrument metadata. Enable
    optional RT cropping only when needed; either bound may remain automatic.
    Apply and Save As preserve explicit crop values, while automatic bounds are
@@ -46,7 +56,7 @@ scientific settings; it does not turn the workbench into a partial-workflow edit
 | `rna_ribose` | R | CID neutral loss | 132.0423 | Ribose neutral-loss starting method |
 | `rna_mer` | MeR | CID neutral loss | 146.0579 | MeR neutral-loss starting method |
 
-The GUI starting list contains only dR, R, and MeR. The workbench method editor accepts pure CID-NL methods only.
+The GUI list also offers the built-in Pt pattern methods for editing and saving.
 
 ---
 
@@ -76,8 +86,8 @@ value = 116.0474                 # neutral loss mass (Da)
   requires every configured tag on that peak in the same sample. Evidence on
   separate peaks or in separate samples cannot satisfy AND. Both combinations
   use the shared Alignment/Backfill path and canonical Matrix writer.
-- The GUI and CID-NL runners accept `strategy = "neutral_loss"`. Pt methods
-  remain on the separate delta-mass Discovery path.
+- The CID-NL runners accept `strategy = "neutral_loss"`. Pt and other Delta
+  Mass methods run on the separate delta-mass Discovery path.
 - `value` must be a finite number (not boolean, infinity, or NaN).
 
 ## Discovery Defaults

@@ -1,8 +1,8 @@
 # Targeted Extraction
 
 Use Targeted when you have a known target list and want to measure and review
-a batch. Prepare names, m/z and expected RT; specify identification methods
-and internal-standard relationships where applicable. The main result is one
+a batch. Prepare names, m/z and expected RT; specify each target's specificity
+(CID-NL neutral loss and/or Delta Mass ions) and internal-standard relationships where applicable. The main result is one
 Excel workbook, read from batch summary to the individual results needing attention.
 
 ![Targeted workspace: data and output, samples, target list, and pre-run checks](assets/targeted-workspace.png)
@@ -47,7 +47,7 @@ workbook sheet names and the exact editable fields.
 | --- | --- |
 | RAW directory | Batch of Thermo `.raw` files to process |
 | DLL directory | RawFileReader 8.0.42 folder selected by setup; not the Xcalibur folder |
-| Target table | Names, m/z, expected RT, identification method, role, and ISTD pairing |
+| Target table | Names, m/z, expected RT, role, ISTD pairing, CID-NL neutral loss and Delta Mass Δm/z |
 | Reusable analysis method | Processing strategy plus the complete targets/ISTD table |
 | Environment and output | DLL and output location; shared worker count in execution resources |
 
@@ -58,14 +58,16 @@ prefixes.
 ## Analysis Method And Saved Settings
 
 The normal flow is **select samples → choose method/targets → run → review**.
-The target table specifies name, m/z, expected RT in minutes, identification
-`method`, role and an optional ISTD relationship. An analyte may reference an ISTD
-row or leave the pair blank; an ISTD does not reference another row. The method
-is the single chemistry input: `dR`, `R` or `MeR` for a built-in CID-NL recipe, or
-the name of a custom method (see the [configuration reference](targeted-config-reference.md)).
-Leave it blank for MS1-only extraction; no neutral-loss evidence is required
-and the shared 20 ppm precursor tolerance applies. Names such as `D1` or `R1`
-are identifiers, not chemistry tags. Rows with different methods may share a batch.
+The target table specifies name, m/z, expected RT in minutes, role, an optional
+ISTD relationship and the target's specificity. An analyte may reference an ISTD
+row or leave the pair blank; an ISTD does not reference another row. Specificity
+comes from two parameter columns: a CID-NL neutral loss in Da (for example
+116.0474 for dR) and Delta Mass Δm/z of companion ions (see the
+[configuration reference](targeted-config-reference.md)). Leave both blank for
+MS1-only extraction; no neutral-loss evidence is required and the shared 20 ppm
+precursor tolerance applies. With both filled, both conditions must match. Names
+such as `D1` or `R1` are identifiers, not chemistry. Rows with different
+specificity may share a batch.
 MS1-only compares retained regions using the reference RT, supported batch drift,
 and same-ion target order before deciding which touching lobes to integrate
 together. There is no fixed RT acceptance window. Plausible uncertain matches,

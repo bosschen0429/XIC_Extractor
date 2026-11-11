@@ -3,7 +3,8 @@
 export const state = {
   config: null,
   targets: [],
-  identificationMethods: {},
+  // Delta Mass details: list-shared settings and each target's ions by label.
+  deltaMass: { settings: {}, ions: {} },
   method: null,
   importing: false,
   view: "targeted",
@@ -12,7 +13,7 @@ export const state = {
 export function initializeConfig(config) {
   state.config = config;
   state.targets = config.targets;
-  state.identificationMethods = config.identification_methods || {};
+  setDeltaMass(config.delta_mass);
 }
 export function updateConfig(values) {
   Object.assign(state.config, values);
@@ -47,11 +48,14 @@ export function removeTarget(index) {
 export function addTarget(row) {
   state.targets.push(row);
 }
-export function setIdentificationMethods(methods, oldName, newName) {
-  state.identificationMethods = methods;
-  if (oldName && oldName !== newName)
-    for (const target of state.targets)
-      if (target.method === oldName) target.method = newName;
+export function setDeltaMass(payload) {
+  state.deltaMass = {
+    settings: {
+      ...state.config.targeted_specificity.delta_mass_settings,
+      ...(payload?.settings || {}),
+    },
+    ions: structuredClone(payload?.ions || {}),
+  };
 }
 export function markClosed() {
   state.closed = true;

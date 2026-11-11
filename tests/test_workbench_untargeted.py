@@ -272,6 +272,79 @@ def test_method_adapter_exposes_effective_controls_and_saves_owner_toml(
     assert method_details(destination)["effective_values"]["nl_tolerance_ppm"] == 12.5
 
 
+@pytest.mark.parametrize("preset", ["pt_pattern", "pt_pattern_cid_nl_dr"])
+def test_delta_mass_preset_saves_unchanged_with_its_mass_policy(tmp_path, preset):
+    from xic_extractor.presets.apply import apply_to_delta_mass_discovery
+
+    assert preset in {item["key"] for item in list_methods()}
+    details = method_details(preset)
+    assert details["tuning_controls"] == []
+    assert details["preview"]["delta_mass_companions"] == 3
+    destination = tmp_path / "pt.toml"
+    save_method(details["draft"], destination)
+    saved, builtin = load_preset(destination), load_preset(preset)
+    assert apply_to_delta_mass_discovery(saved) == apply_to_delta_mass_discovery(
+        builtin
+    )
+    # Delta Mass omitting the key means none; the saved file keeps Easy-IC.
+    assert saved.discovery_overrides["mass_recalibration"] == "easy_ic_restore"
+    assert saved.discovery_overrides == builtin.discovery_overrides
+    assert (saved.tags, saved.combine_mode) == (builtin.tags, builtin.combine_mode)
+
+
+def test_new_cid_nl_and_delta_mass_method_round_trips_every_field(tmp_path):
+    overrides = method_details("pt_pattern")["draft"]["overrides"]
+    draft = {
+        "name": "Iso + dR",
+        "description": "Workbench 建立的方法",
+        "combine_mode": "intersection",
+        "tags": [
+            {"strategy": "delta_mass", "name": "Delta Mass", "pattern_id": "dm"},
+            {"strategy": "neutral_loss", "name": "DNA_dR", "neutral_loss_da": 116.0474},
+        ],
+        "overrides": {
+            **overrides,
+            "mass_recalibration": "easy_ic_restore",
+            "positions": [
+                {"label": "base", "delta_da": 0.0, "ratio_min": 1.0, "ratio_max": 1.0},
+                {
+                    "label": "+1.0034",
+                    "delta_da": 1.003355,
+                    "ratio_min": 0.05,
+                    "ratio_max": 0.5,
+                },
+            ],
+            "anchor_positions": ["base"],
+            "discriminating_positions": ["+1.0034"],
+            "lowest_position": "+1.0034",
+            "base_support_positions": ["+1.0034"],
+        },
+    }
+    destination = tmp_path / "new.toml"
+    save_method(draft, destination)
+    reloaded = method_details(destination)["draft"]
+    assert reloaded["overrides"] == draft["overrides"]
+    assert reloaded["combine_mode"] == "intersection"
+    assert [(t["strategy"], t["name"]) for t in reloaded["tags"]] == [
+        ("delta_mass", "Delta Mass"),
+        ("neutral_loss", "DNA_dR"),
+    ]
+
+
+def test_workbench_rejects_running_a_delta_mass_method(tmp_path):
+    from xic_extractor.presets import PresetError
+
+    with pytest.raises(PresetError, match="命令列|xic-delta-mass-discovery-cli"):
+        parse_request(
+            {
+                "preset": "pt_pattern",
+                "raw_dir": str(tmp_path),
+                "dll_dir": str(tmp_path),
+                "output_dir": str(tmp_path / "out"),
+            }
+        )
+
+
 def test_method_adapter_rejects_unknown_override_without_writing(tmp_path) -> None:
     details = method_details("dna_dr")
     draft = details["draft"]

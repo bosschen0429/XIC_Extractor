@@ -8,10 +8,8 @@ settings are ``delta_mass_*`` keys of the Method sheet.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import fields
 
 from xic_extractor.configuration.models import ConfigError
-from xic_extractor.configuration.targeted_identification import DeltaMassSettings
 
 DELTA_MASS_SHEET = "Delta Mass"
 DELTA_MASS_HEADERS = (
@@ -29,8 +27,13 @@ _ION_FIELDS = (
     ("Ratio Max", "ratio_max"),
     ("Compare Shape", "compare_shape"),
 )
+# Method-sheet keys of the list-shared settings.
 DELTA_MASS_SETTING_KEYS = {
-    f"delta_mass_{item.name}": item.name for item in fields(DeltaMassSettings)
+    "delta_mass_mz_tolerance_ppm": "mz_tolerance_ppm",
+    "delta_mass_apex_floor_sec": "apex_floor_sec",
+    "delta_mass_scan_interval_multiplier": "scan_interval_multiplier",
+    "delta_mass_shape_window_sec": "shape_window_sec",
+    "delta_mass_min_shape_r": "min_shape_r",
 }
 
 

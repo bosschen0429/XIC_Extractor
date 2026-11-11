@@ -45,6 +45,24 @@ class CurationOperations(Protocol):
     ) -> dict[str, Any]: ...
 
 
+def targeted_specificity_choices() -> dict[str, Any]:
+    """Editor defaults: common CID-NL losses and list-shared Delta Mass settings."""
+    from dataclasses import asdict
+
+    from xic_extractor.configuration.targeted_identification import (
+        DEFAULT_DELTA_MASS_SETTINGS,
+        LEGACY_CID_NL_LOSSES,
+    )
+
+    return {
+        "cid_nl_losses": [
+            {"name": name, "loss_da": loss}
+            for name, loss in LEGACY_CID_NL_LOSSES.items()
+        ],
+        "delta_mass_settings": asdict(DEFAULT_DELTA_MASS_SETTINGS),
+    }
+
+
 def _validate_path(value: str, kind: Any) -> dict[str, Any]:
     """Explain an unusable path in the user's terms, not the OS exception text."""
     folder = kind in {"folder", "output"}
@@ -156,6 +174,7 @@ class AnalysisWorkspace:
             "settings": settings,
             "targets": read_targets(config_dir=self.config_dir),
             "delta_mass": read_workspace(self.config_dir).get("delta_mass"),
+            "targeted_specificity": targeted_specificity_choices(),
             "targeted_form": {"settings": setting_fields()},
             "targeted_method": {
                 **method_summary(settings),

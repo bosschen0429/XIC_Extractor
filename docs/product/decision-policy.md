@@ -184,8 +184,8 @@ Targeted-specific rules to keep explicit:
   detection by implication.
 - Every configured Targeted target is evaluated for each selected analysis sample.
   Sample names do not gate targets or paired-area references. Each target
-  declares its own CID-NL tag; Untargeted
-  method-level dR/R/MeR selection does not restrict the Targeted list.
+  declares its own CID-NL loss; Untargeted
+  method-level neutral-loss selection does not restrict the Targeted list.
 - ISTD and analyte missing-MS2/NL behavior are not symmetric. A configured ISTD
   plausible dropout can be counted as `detected_flagged`; an analyte NL fail or
   missing MS2 needs paired support before it can count.

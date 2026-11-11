@@ -70,11 +70,6 @@
               <select id="target-method-select" data-analysis-idle><option value="">目前工作區設定</option></select>
               <button id="target-method-load" type="button" title="取代目前清單；RAW 資料夾、上機資訊和本機設定不變。" data-analysis-idle>載入清單</button>
             </div>
-            <div class="path-line target-method-row">
-              <label for="target-identification-edit">自訂辨認方法</label>
-              <span id="target-identification-summary" class="target-identification-summary"></span>
-              <button id="target-identification-edit" type="button" data-analysis-idle>管理辨認方法</button>
-            </div>
             <div class="actions list-actions">
               <button id="target-method-save" type="button" data-analysis-idle>另存清單</button>
               <button id="target-export" type="button" data-analysis-idle>匯出目標表 XLSX</button>
@@ -340,35 +335,9 @@
   <div class="dialog-body">
     <p id="target-import-summary"></p>
     <p class="subtle">確認後取代目前目標清單；RAW 資料夾、上機資訊與本機設定不變。儲存或開始分析後才會保存。</p>
-    <div class="table-scroll"><table><thead><tr><th>目標</th><th>m/z</th><th>預期 RT</th><th>角色</th><th>ISTD 配對</th></tr></thead><tbody id="target-import-rows"></tbody></table></div>
+    <div class="table-scroll"><table><thead><tr><th>目標</th><th>m/z</th><th>預期 RT</th><th>角色</th><th>ISTD 配對</th><th>特異性</th></tr></thead><tbody id="target-import-rows"></tbody></table></div>
   </div>
   <div class="dialog-foot"><button type="button" data-close="target-import-preview">取消</button><button id="target-import-confirm" type="button">確認匯入並取代</button></div>
-</dialog>
-
-<dialog id="target-identification-editor" class="wide-dialog" aria-labelledby="target-identification-title">
-  <div class="dialog-head"><h2 id="target-identification-title">辨認方法</h2><button type="button" class="dialog-close" data-close="target-identification-editor" aria-label="關閉辨認方法">×</button></div>
-  <div class="dialog-body">
-    <div class="method-picker">
-      <label for="target-identification-select">方法</label>
-      <select id="target-identification-select"></select>
-      <button id="target-identification-new" type="button">＋ 新增方法</button>
-      <button id="target-identification-delete" type="button">刪除此方法</button>
-    </div>
-    <div class="method-fields">
-      <label>方法名稱<input id="target-identification-name" /></label>
-      <label>條件組合<select id="target-identification-combine"><option value="all">全部符合（AND）</option><option value="any">任一符合（OR）</option></select></label>
-      <label>m/z 容差（ppm）<input id="target-identification-ppm" type="number" min="0" step="any" /></label>
-    </div>
-    <p class="subtle">每個條件都判斷同一個候選峰；面積一律取目標 m/z（定量離子）。</p>
-    <div id="target-identification-conditions"></div>
-    <div class="method-add-condition">
-      <button id="target-condition-add-cid" type="button">＋ CID-NL 條件</button>
-      <button id="target-condition-add-delta" type="button">＋ Delta Mass 條件</button>
-    </div>
-    <p class="subtle">樣本沒有 MS2 時記為「沒有 MS2」，不算不符合；但 CID-NL 條件因此不成立。</p>
-    <p id="target-identification-error" class="error" role="alert"></p>
-  </div>
-  <div class="dialog-foot"><button type="button" data-close="target-identification-editor">關閉</button><button id="target-identification-apply" type="button" class="primary">儲存方法</button></div>
 </dialog>
 
 <dialog id="target-editor" class="wide-dialog">
@@ -386,17 +355,30 @@
     </button>
   </div>
   <div class="dialog-body">
-    <div class="target-bulk-method">
-      <label for="target-bulk-method">全部目標改用</label>
-      <select id="target-bulk-method"></select>
-      <button id="target-bulk-apply" type="button">套用到全部目標</button>
+    <div class="target-toolbar">
+      <input id="target-filter" type="search" placeholder="搜尋目標" aria-label="搜尋目標；符合的目標會被選取" />
+      <span id="target-selection" class="target-selection" aria-live="polite">先框選或搜尋</span>
+      <div id="target-bulk" class="target-bulk">
+        <label>CID-NL 中性丟失（Da）<input id="target-bulk-cid" list="cid-nl-losses" inputmode="decimal" placeholder="例如 116.0474" /></label>
+        <label>Delta Mass Δm/z<input id="target-bulk-delta" placeholder="例如 +1.0021, +4.0052" /></label>
+        <button id="target-bulk-apply" type="button">套用</button>
+        <button id="target-bulk-ms1" type="button">設為 MS1 only</button>
+      </div>
     </div>
-    <div class="table-scroll editor-table">
+    <datalist id="cid-nl-losses"></datalist>
+    <p class="subtle">特異性由兩個參數欄決定：都空白是 MS1 only；兩欄都填時，兩個條件都要符合。點 Delta Mass 欄可編輯伴隨離子。</p>
+    <div id="target-table" class="table-scroll editor-table" tabindex="-1">
       <table>
         <thead id="target-head"></thead>
         <tbody id="target-rows"></tbody>
       </table>
     </div>
+    <details id="target-delta-advanced" class="target-advanced">
+      <summary>進階：Delta Mass 判斷設定（整份清單共用）</summary>
+      <div id="target-delta-settings" class="method-advanced-grid"></div>
+      <p class="subtle">共洗脫容差取「下限」與「MS1 掃描間隔 × 倍數」中較大者；峰形以目標 m/z（基準離子）為參考。</p>
+    </details>
+    <p id="target-editor-error" class="inline-status error" role="alert" hidden></p>
   </div>
   <div class="dialog-foot">
     <button id="target-add" type="button" class="spacer">
@@ -476,37 +458,29 @@
       <svg class="icon"><use href="#i-x" /></svg>
     </button>
   </div>
-  <div class="dialog-body">
-    <div class="settings-grid">
-      <label class="field">名稱<input id="method-name" /></label
-      ><label class="field"
-        >組合方式<select id="method-combine">
-          <option value="single">single · 單一標籤</option>
-          <option value="union">union · 任一標籤</option>
-          <option value="intersection">intersection · 全部標籤</option>
+  <div class="dialog-body method-dialog">
+    <div class="method-head">
+      <label class="field">名稱<input id="method-name" /></label>
+      <label id="method-combine-field" class="field" hidden
+        >組合<select id="method-combine">
+          <option value="all">全部符合</option>
+          <option value="any">任一符合</option>
         </select></label
       >
     </div>
-    <p class="subtle">套用只更新目前批次，保存批次設定或開始分析才會留下變更。另存方法檔供其他批次使用，不會套用到目前批次。</p>
-    <div class="table-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>啟用</th>
-            <th>標籤名稱</th>
-            <th>Neutral loss (Da)</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="method-tags"></tbody>
-      </table>
-    </div>
+    <p class="subtle">套用只更新目前批次，保存批次設定或開始分析才會留下變更。另存方法檔供其他批次使用；內建方法不會被覆寫。</p>
+    <section class="evidence-card">
+      <label class="evidence-toggle"><input id="method-cid-on" type="checkbox" /> <strong>CID-NL 中性丟失</strong> <span class="subtle">MS2 失去固定質量的片段</span></label>
+      <div id="method-cid-body"></div>
+    </section>
+    <section class="evidence-card">
+      <label class="evidence-toggle"><input id="method-dm-on" type="checkbox" /> <strong>Delta Mass</strong> <span class="subtle">同一 RT 一起出現的 MS1 離子</span></label>
+      <div id="method-dm-body"></div>
+    </section>
     <p id="method-error" class="inline-status error" hidden></p>
   </div>
   <div class="dialog-foot">
-    <button id="method-add-tag" type="button" class="spacer">
-      <svg class="icon"><use href="#i-plus" /></svg>新增 neutral loss</button
-    ><button id="method-save-as" type="button">另存方法檔…</button
+    <button id="method-save-as" type="button" class="spacer">另存方法檔…</button
     ><button id="method-apply" type="button" class="primary">
       套用至批次設定
     </button>

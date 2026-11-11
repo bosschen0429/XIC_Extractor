@@ -1,4 +1,4 @@
-"""Qt-free CID-NL method editing for the local workbench."""
+"""Qt-free CID-NL and Delta Mass method editing for the local workbench."""
 
 from __future__ import annotations
 
@@ -6,8 +6,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.presets.apply import apply_to_discovery, filter_cid_nl_recipe_presets
+from xic_extractor.presets.apply import (
+    apply_to_delta_mass_discovery,
+    apply_to_discovery,
+)
 from xic_extractor.presets.loader import (
+    DELTA_MASS_DISCOVERY_OVERRIDE_KEYS,
     DISCOVERY_TUNING_OVERRIDE_KEYS,
     list_presets,
     load_preset,
@@ -26,12 +30,9 @@ _DISPLAY_NAMES = {
     "dna_dr": "dR · DNA · 116.0474 Da",
     "rna_ribose": "R · RNA · 132.0423 Da",
     "rna_mer": "MeR · RNA · 146.0579 Da",
+    "pt_pattern": "Pt pattern · Delta Mass",
+    "pt_pattern_cid_nl_dr": "Pt pattern ＋ CID-NL dR",
 }
-_STARTING_TAGS = (
-    ("DNA_dR", 116.0474),
-    ("RNA_ribose", 132.0423),
-    ("RNA_MeR", 146.0579),
-)
 _NUMERIC_CONTROLS = (
     # These controls accept continuous values. HTML step is anchored at min,
     # so a fixed increment rejects valid defaults (for example 20 from 0.01).
@@ -49,7 +50,7 @@ _OVERRIDE_KEYS = frozenset(key for key, *_ in _NUMERIC_CONTROLS) | {"resolver_mo
 
 def list_methods() -> list[dict[str, Any]]:
     methods: list[dict[str, Any]] = []
-    for key in filter_cid_nl_recipe_presets(list_presets()):
+    for key in list_presets():
         if key not in _DISPLAY_NAMES:
             continue
         preset = load_preset(key)
@@ -69,30 +70,36 @@ def method_details(preset: str | Path | Preset) -> dict[str, Any]:
     loaded = preset if isinstance(preset, Preset) else load_preset(preset)
     overrides: dict[str, object] = dict(loaded.discovery_overrides)
     _validate_gui_method(loaded, overrides)
-    settings = apply_to_discovery(loaded, explicit_tuning_overrides=overrides or None)
     draft = preset_to_payload(loaded)
     draft["overrides"] = overrides
-    selected = {tag.name for tag in loaded.tags}
-    for name, value in _STARTING_TAGS:
-        if name not in selected:
-            draft["tags"].append(
-                {
-                    "enabled": False,
-                    "strategy": "neutral_loss",
-                    "name": name,
-                    "neutral_loss_da": value,
-                    "pattern_id": None,
-                }
-            )
+    neutral_losses = [
+        {"name": tag.name, "neutral_loss_da": tag.value}
+        for tag in loaded.tags
+        if tag.strategy == "neutral_loss"
+    ]
+    if _has_delta_mass(loaded):
+        pattern = apply_to_delta_mass_discovery(loaded)
+        # Delta Mass Discovery has no page-level tuning; the editor owns it.
+        return {
+            "preset": preset_to_payload(loaded),
+            "draft": draft,
+            "preview": {
+                "combine_mode": loaded.combine_mode,
+                "tags": neutral_losses,
+                "delta_mass_companions": len(pattern.positions) - 1,
+                "rt_range_mode": "acquisition",
+            },
+            "tuning_controls": [],
+            "effective_values": {},
+        }
+    settings = apply_to_discovery(loaded, explicit_tuning_overrides=overrides or None)
     effective = {key: getattr(settings, key) for key in _OVERRIDE_KEYS}
     return {
         "preset": preset_to_payload(loaded),
         "draft": draft,
         "preview": {
             "combine_mode": loaded.combine_mode,
-            "tags": [
-                {"name": tag.name, "neutral_loss_da": tag.value} for tag in loaded.tags
-            ],
+            "tags": neutral_losses,
             "rt_min": settings.rt_min,
             "rt_max": settings.rt_max,
             "rt_range_mode": (
@@ -135,14 +142,18 @@ def tuning_controls() -> list[dict[str, Any]]:
 def validate_method(values: dict[str, Any]) -> dict[str, Any]:
     preset, overrides = _draft(values)
     _validate_gui_method(preset, overrides)
-    settings = apply_to_discovery(
-        preset,
-        explicit_tuning_overrides=overrides or None,
-    )
+    if _has_delta_mass(preset):
+        effective: dict[str, object] = {}
+    else:
+        settings = apply_to_discovery(
+            preset,
+            explicit_tuning_overrides=overrides or None,
+        )
+        effective = {key: getattr(settings, key) for key in _OVERRIDE_KEYS}
     return {
         "preset": preset_to_payload(preset),
         "overrides": dict(overrides),
-        "effective_values": {key: getattr(settings, key) for key in _OVERRIDE_KEYS},
+        "effective_values": effective,
     }
 
 
@@ -220,6 +231,17 @@ def _draft(values: dict[str, Any]) -> tuple[Preset, dict[str, object]]:
     for index, raw in enumerate(raw_tags, start=1):
         if not isinstance(raw, dict):
             raise TypeError(f"tags[{index}] must be an object")
+        if raw.get("enabled", True) is True and raw.get("strategy") == "delta_mass":
+            tags.append(
+                PresetTag(
+                    strategy="delta_mass",
+                    name=_required_text(raw.get("name"), f"tags[{index}].name"),
+                    pattern_id=_required_text(
+                        raw.get("pattern_id"), f"tags[{index}].pattern_id"
+                    ),
+                )
+            )
+            continue
         tag_unknown = sorted(
             set(raw)
             - {"enabled", "strategy", "name", "neutral_loss_da", "value", "pattern_id"}
@@ -233,7 +255,7 @@ def _draft(values: dict[str, Any]) -> tuple[Preset, dict[str, object]]:
             continue
         strategy = raw.get("strategy", "neutral_loss")
         if strategy != "neutral_loss" or raw.get("pattern_id") is not None:
-            raise PresetError("GUI 僅支援純 CID-NL 方法；原方法未變更")
+            raise PresetError(f"tags[{index}] has an unsupported strategy")
         value = raw.get("neutral_loss_da", raw.get("value"))
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f"tags[{index}] requires a neutral_loss_da number")
@@ -247,7 +269,12 @@ def _draft(values: dict[str, Any]) -> tuple[Preset, dict[str, object]]:
     overrides = values.get("overrides", {})
     if not isinstance(overrides, Mapping):
         raise TypeError("method overrides must be an object")
-    unknown_overrides = sorted(set(overrides) - DISCOVERY_TUNING_OVERRIDE_KEYS)
+    override_keys = (
+        DELTA_MASS_DISCOVERY_OVERRIDE_KEYS
+        if any(tag.strategy == "delta_mass" for tag in tags)
+        else DISCOVERY_TUNING_OVERRIDE_KEYS
+    )
+    unknown_overrides = sorted(set(overrides) - override_keys)
     if unknown_overrides:
         raise ValueError(f"unsupported override: {unknown_overrides[0]}")
     alignment_overrides = values.get("alignment_overrides", {})
@@ -270,16 +297,31 @@ def _draft(values: dict[str, Any]) -> tuple[Preset, dict[str, object]]:
     )
 
 
+def _has_delta_mass(preset: Preset) -> bool:
+    return any(tag.strategy == "delta_mass" for tag in preset.tags)
+
+
 def _validate_gui_method(
     preset: Preset, overrides: Mapping[str, object] | None = None
 ) -> None:
-    if any(
-        tag.strategy != "neutral_loss" or tag.pattern_id is not None
-        for tag in preset.tags
-    ):
-        raise PresetError("GUI 僅支援純 CID-NL 方法；原方法未變更")
-    settings = apply_to_discovery(preset, explicit_tuning_overrides=overrides)
-    CidNlDiscoveryMethodSpec(settings=settings)
+    if _has_delta_mass(preset):
+        apply_to_delta_mass_discovery(
+            Preset(
+                name=preset.name,
+                description=preset.description,
+                tags=preset.tags,
+                combine_mode=preset.combine_mode,
+                discovery_overrides={
+                    **preset.discovery_overrides,
+                    **(overrides or {}),
+                },
+                alignment_overrides=preset.alignment_overrides,
+                source=preset.source,
+            )
+        )
+    else:
+        settings = apply_to_discovery(preset, explicit_tuning_overrides=overrides)
+        CidNlDiscoveryMethodSpec(settings=settings)
     serialize_preset(preset, discovery_overrides=overrides)
 
 

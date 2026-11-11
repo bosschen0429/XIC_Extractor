@@ -37,6 +37,7 @@ from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.presets import (
     BoundCidNlRecipe,
     Preset,
+    PresetError,
     bind_cid_nl_recipe,
     load_preset,
 )
@@ -98,6 +99,11 @@ def parse_request(values: dict[str, Any]) -> DiscoveryRequest:
         preset_from_payload(snapshot_value) if snapshot_value is not None else None
     )
     bound_preset = snapshot or load_preset(preset)
+    if any(tag.strategy == "delta_mass" for tag in bound_preset.tags):
+        raise PresetError(
+            "Delta Mass 方法目前無法在 Workbench 執行；請另存方法檔，"
+            "再以 xic-delta-mass-discovery-cli 執行。"
+        )
     bind_cid_nl_recipe(bound_preset, "full", recipe_overrides=overrides)
 
     return DiscoveryRequest(
