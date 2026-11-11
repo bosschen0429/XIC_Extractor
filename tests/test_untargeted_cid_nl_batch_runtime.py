@@ -117,7 +117,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=index,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for index, stem in enumerate(stems, start=1)
         ),

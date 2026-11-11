@@ -71,20 +71,28 @@ def test_review_groups_use_confirmed_roles_by_raw_stem_without_raw_reads(tmp_pat
                 SampleMetadata(
                     "unrelated display alias",
                     "RENAMED_sample",
-                    sample_role="study_sample",
+                    sample_role="sample",
                     group="Study",
                 )
             ),
-            asdict(SampleMetadata("Pool", "Pool", sample_role="pooled_qc")),
-            asdict(SampleMetadata("TumorBC12345_DNA", "TumorBC12345_DNA")),
-            asdict(SampleMetadata("not in report", "extra", group="Excluded")),
+            asdict(SampleMetadata("Pool", "Pool", sample_role="qc")),
+            asdict(
+                SampleMetadata(
+                    "TumorBC12345_DNA", "TumorBC12345_DNA", sample_role="sample"
+                )
+            ),
+            asdict(
+                SampleMetadata(
+                    "not in report", "extra", sample_role="other", group="Excluded"
+                )
+            ),
         ],
     )
     # Curves group by confirmed role; stored study groups are not shown.
     assert review_sample_groups(config, raw_dir, source) == {
-        "canonical-study": "研究樣本",
-        "canonical-qc": "Pooled QC",
-        "TumorBC12345_DNA": "未指定",
+        "canonical-study": "Sample",
+        "canonical-qc": "QC",
+        "TumorBC12345_DNA": "Sample",
     }
     assert review_sample_groups(config, tmp_path / "different-raw-folder", source) == {}
 
@@ -111,8 +119,8 @@ def test_sequence_preview_does_not_wait_for_raw_headers(tmp_path, monkeypatch):
     assert result["summary"]["chronology_pending"] is True
     assert result["summary"]["unmatched_sequence_names"]
     assert [row["sample_role"] for row in result["samples"]] == [
-        "study_sample",
-        "pooled_qc",
+        "sample",
+        "qc",
     ]
     assert all(row["injection_order"] is None for row in result["samples"])
     saved = load_sample_metadata(sample_annotations_path(tmp_path / "config", raw_dir))
@@ -174,23 +182,23 @@ def test_confirmed_sample_metadata_preserves_qc_and_blank_roles(
     config = tmp_path / "config"
     raw_dir = _raw_batch(tmp_path, monkeypatch, ("S1", "S2"))
     rows = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
-    rows[0]["sample_role"] = "pooled_qc"
+    rows[0]["sample_role"] = "qc"
     rows[1]["sample_role"] = "blank"
     save_batch_samples(config, raw_dir, rows)
     restored = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
     assert [(row["raw_stem"], row["sample_role"]) for row in restored] == [
-        ("S1", "pooled_qc"),
+        ("S1", "qc"),
         ("S2", "blank"),
     ]
 
 
 def test_overview_lists_excluded_samples_with_their_reasons() -> None:
     rows = (
-        SampleMetadata("a", "a", sample_role="study_sample"),
+        SampleMetadata("a", "a", sample_role="sample"),
         SampleMetadata(
             "g",
             "g",
-            sample_role="study_sample",
+            sample_role="sample",
             excluded=True,
             exclusion_reason="clogged",
         ),
@@ -249,15 +257,14 @@ def test_an_exclusion_without_reason_is_saved_and_reused(tmp_path, monkeypatch) 
     assert reread[1]["exclusion_reason"] == ""
 
 
-def test_filename_preview_preserves_unknown_role_when_groups_are_saved(
-    tmp_path, monkeypatch
-):
+def test_filename_preview_gives_every_raw_a_role_that_is_saved(tmp_path, monkeypatch):
     config = tmp_path / "config"
-    raw_dir = _raw_batch(tmp_path, monkeypatch, ("S1", "QC_1"))
+    raw_dir = _raw_batch(tmp_path, monkeypatch, ("S1", "QC_1", "Wash"))
     result = read_batch_samples(config, raw_dir, dll_dir=None, read_headers=False)
-    assert all(row["sample_role"] == "unknown" for row in result["samples"])
+    roles = {row["raw_stem"]: row["sample_role"] for row in result["samples"]}
+    assert roles == {"S1": "sample", "QC_1": "qc", "Wash": "other"}
     result["samples"][0]["group"] = "Exposure"
     save_batch_samples(config, raw_dir, result["samples"])
     saved = load_sample_metadata(sample_annotations_path(config, raw_dir))
-    assert all(row.sample_role == "unknown" for row in saved)
+    assert {row.raw_stem: row.sample_role for row in saved} == roles
     assert saved[0].group == "Exposure"

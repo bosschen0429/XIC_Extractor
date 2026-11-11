@@ -61,7 +61,7 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
         "XIC Results",
         "Role / Group",
         "ISTD 或 Analyte；樣品資訊明確組別優先，"
-        "其次 QC／pooled_qc 角色歸 QC，其餘 Other。",
+        "其次依樣本角色歸 Sample／QC／STD／Blank／Other。",
         "",
     ),
     ("XIC Results", "NL", "中性丟失摘要，供追查用。", ""),

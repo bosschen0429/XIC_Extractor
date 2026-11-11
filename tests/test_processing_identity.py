@@ -337,7 +337,7 @@ def test_sample_metadata_alias_projection_binds_targeted_sources(
             "sample_name": "QC1",
             "raw_stem": raw_path.stem,
             "injection_order": "1",
-            "sample_role": "pooled_qc",
+            "sample_role": "qc",
         }
     )
     metadata_path.write_text(
@@ -411,6 +411,7 @@ def test_targeted_and_untargeted_read_one_sequence_owner(
         "NormalBC001_DNA": 2,
         "TumorBC001_DNA": 3,
         "QC_Pool_1": 4,
+        "Blank_1": 5,
     }
     for row in targeted.sample_metadata:
         assert (row.injection_order, row.sample_role) == (

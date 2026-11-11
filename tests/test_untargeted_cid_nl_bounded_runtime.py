@@ -110,7 +110,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
                 sample_name=path.stem,
                 raw_stem=path.stem,
                 injection_order=i,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for i, path in enumerate(paths, 1)
         ),
@@ -261,7 +261,7 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
                 sample_name=path.stem,
                 raw_stem=path.stem,
                 injection_order=i,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for i, path in enumerate(paths, 1)
         ),

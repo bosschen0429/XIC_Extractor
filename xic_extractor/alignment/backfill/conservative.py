@@ -42,7 +42,7 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 POLICY_VERSION = "conservative-backfill"
 PRODUCT_AUTHORITY = "none"
-ACTIVATION_ELIGIBLE_SAMPLE_ROLES = frozenset({"study_sample", "qc", "pooled_qc"})
+ACTIVATION_ELIGIBLE_SAMPLE_ROLES = frozenset({"sample", "qc"})
 
 ConservativeBackfillDisposition = Literal[
     "candidate_mapped",

@@ -920,7 +920,7 @@ def _samples(path: Path) -> Path:
                 "schema_version": "sample_metadata",
                 "sample_name": sample,
                 "raw_stem": sample,
-                "sample_role": "study_sample",
+                "sample_role": "sample",
                 "excluded": "FALSE",
                 "exclusion_reason": "",
             }

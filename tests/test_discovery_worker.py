@@ -61,10 +61,10 @@ def _full_request(
     monkeypatch.setattr(
         module,
         "read_analysis_set",
-        lambda _raw_dir, _dll_dir, samples: SimpleNamespace(
+        lambda _raw_dir, _dll_dir, samples, **_kwargs: SimpleNamespace(
             raw_paths=(raw_path,),
             sample_metadata=samples
-            or (SampleMetadata("A", "A", sample_role="study_sample"),),
+            or (SampleMetadata("A", "A", sample_role="sample"),),
         ),
     )
     monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)

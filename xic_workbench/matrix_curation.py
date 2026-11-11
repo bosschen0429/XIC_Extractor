@@ -98,8 +98,7 @@ def describe_source(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
         "sample_source": sample_source,
         "sample_count": len(metadata or ()),
         "study_sample_count": sum(
-            row.sample_role == "study_sample" and not row.excluded
-            for row in metadata or ()
+            row.sample_role == "sample" and not row.excluded for row in metadata or ()
         ),
         "istd_source": istd_source,
         "istd_count": len(istd or ()),

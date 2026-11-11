@@ -35,12 +35,14 @@ def test_batch_header_reads_overlap_without_changing_acquisition_order(
         rendezvous.wait()
         return (
             header(str(path.resolve()), 11 if path.stem == "A" else 0),
-            "study_sample",
+            "sample",
             path.stem,
         )
 
     monkeypatch.setattr(raw_sequence, "_analysis_header", read_header)
-    result = raw_sequence.read_analysis_set(tmp_path, tmp_path, raw_paths=paths)
+    result = raw_sequence.read_analysis_set(
+        tmp_path, tmp_path, raw_paths=paths, analysis="untargeted"
+    )
     assert [(entry.raw_stem, entry.injection_order) for entry in result.analyzed] == [
         ("B", 1),
         ("A", 2),
@@ -58,15 +60,17 @@ def header_rows(headers, roles):
 
 def resolve(headers, roles, metadata=None):
     timeline = build_injection_timeline(headers, PerturbationPolicy())
-    return select_analysis_set(timeline, header_rows(headers, roles), metadata or ())
+    return select_analysis_set(
+        timeline, header_rows(headers, roles), metadata or (), analysis="untargeted"
+    )
 
 
 def test_flat_and_nested_layouts_give_the_same_analysis_set() -> None:
     names = [
         ("Blank_1", "blank", 0),
-        ("SDOLEK-1", "system_suitability", 11),
+        ("SDOLEK-1", "other", 11),
         ("QC1", "qc", 22),
-        ("Tumor_1", "study_sample", 33),
+        ("Tumor_1", "sample", 33),
     ]
     flat = [header(f"/b/{n}.raw", m) for n, _, m in names]
     nested = [
@@ -88,13 +92,13 @@ def test_flat_and_nested_layouts_give_the_same_analysis_set() -> None:
 def test_header_names_cannot_collide_with_another_raw_alias(header_names):
     headers = [header("/b/A.raw", 0), header("/b/B.raw", 11)]
     rows = {
-        h.raw_path: SampleMetadata(
-            name, Path(h.raw_path).stem, sample_role="study_sample"
-        )
+        h.raw_path: SampleMetadata(name, Path(h.raw_path).stem, sample_role="sample")
         for h, name in zip(headers, header_names, strict=True)
     }
     result = select_analysis_set(
-        build_injection_timeline(headers, PerturbationPolicy()), rows
+        build_injection_timeline(headers, PerturbationPolicy()),
+        rows,
+        analysis="untargeted",
     )
     for token in ("A", "B"):
         matches = [
@@ -137,7 +141,7 @@ def test_retained_alignment_keeps_full_root_injection_order(
     facts = {
         path: (
             header(str(path), minutes[i]),
-            "blank" if i == 0 else "study_sample",
+            "blank" if i == 0 else "sample",
             path.stem,
         )
         for i, path in enumerate(paths)
@@ -200,10 +204,12 @@ def test_retained_alignment_keeps_full_root_injection_order(
         assert [
             (s.raw_stem, s.sample_name, s.sample_role)
             for s in prepared.plan.context.samples
-        ] == [("A", "A", "study_sample"), ("B", "B", "study_sample")]
+        ] == [("A", "A", "sample"), ("B", "B", "sample")]
         assert orders == {
             e.raw_stem: e.injection_order
-            for e in read_analysis_set(tmp_path, tmp_path).analyzed
+            for e in read_analysis_set(
+                tmp_path, tmp_path, analysis="untargeted"
+            ).analyzed
         }
     finally:
         prepared.close()
@@ -262,16 +268,16 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
         ),
     )
     metadata = (
-        SampleMetadata("A", "A", injection_order=1, sample_role="study_sample"),
+        SampleMetadata("A", "A", injection_order=1, sample_role="sample"),
         SampleMetadata(
             "C",
             "C",
             injection_order=2,
-            sample_role="study_sample",
+            sample_role="sample",
             excluded=True,
             exclusion_reason="operator exclusion",
         ),
-        SampleMetadata("B", "B", injection_order=3, sample_role="pooled_qc"),
+        SampleMetadata("B", "B", injection_order=3, sample_role="qc"),
     )
     prepared = prepare_untargeted_alignment_inputs(
         signal_processing_profile=TEST_PROFILE,
@@ -288,7 +294,7 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
         assert [
             (s.raw_stem, s.injection_order, s.sample_role)
             for s in prepared.plan.context.samples
-        ] == [("A", 1, "study_sample"), ("B", 3, "pooled_qc")]
+        ] == [("A", 1, "sample"), ("B", 3, "qc")]
     finally:
         prepared.close()
 
@@ -296,9 +302,7 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
 def test_copies_resolve_to_one_shallow_member() -> None:
     top = header("/b/Tumor_1.raw", 0)
     copy = replace(top, raw_path="/b/validation/Tumor_1.raw")
-    result = resolve(
-        [copy, top], {top.raw_path: "study_sample", copy.raw_path: "study_sample"}
-    )
+    result = resolve([copy, top], {top.raw_path: "sample", copy.raw_path: "sample"})
     assert result.raw_paths == (Path("/b/Tumor_1.raw"),)
 
 
@@ -308,35 +312,35 @@ def test_metadata_overrides_header_role_and_excludes_injected_samples() -> None:
         header("/b/Pool_A.raw", 11),
         header("/b/Tumor_1.raw", 22),
     ]
-    roles = {h.raw_path: "study_sample" for h in headers}
+    roles = {h.raw_path: "sample" for h in headers}
     metadata = [
         SampleMetadata(
             "Normal_1", "normal_1", excluded=True, exclusion_reason="design defect"
         ),
         SampleMetadata("Pool A", "Pool_A", sample_role="blank"),
-        SampleMetadata("Tumor", "Tumor_1", sample_role="unknown"),
+        SampleMetadata("Tumor", "Tumor_1", sample_role=None),
     ]
     result = resolve(headers, roles, metadata)
     assert [
         (e.raw_stem, e.sample_role, e.role_source, e.context_reason)
         for e in result.entries
     ] == [
-        ("Normal_1", "study_sample", "raw_header", "excluded"),
+        ("Normal_1", "sample", "raw_header", "excluded"),
         ("Pool_A", "blank", "sample_metadata", "role"),
-        ("Tumor_1", "study_sample", "raw_header", None),
+        ("Tumor_1", "sample", "raw_header", None),
     ]
 
 
 def test_distinct_analyzed_injections_sharing_a_stem_are_rejected() -> None:
     first = header("/b/a/S.raw", 0, source="D:/run1/S.raw")
     second = header("/b/c/S.raw", 11, source="D:/run2/S.raw")
-    roles = {first.raw_path: "study_sample", second.raw_path: "study_sample"}
+    roles = {first.raw_path: "sample", second.raw_path: "sample"}
     with pytest.raises(ValueError, match="share RAW stem: S"):
         resolve([first, second], roles)
     roles[second.raw_path] = "blank"
     assert resolve([first, second], roles).raw_paths == (Path("/b/a/S.raw"),)
     third = header("/b/c/S__2.raw", 22)
-    roles[third.raw_path] = "study_sample"
+    roles[third.raw_path] = "sample"
     result = resolve([first, second, third], roles)
     assert [row.sample_name for row in result.sample_metadata] == ["S", "S__3", "S__2"]
 
@@ -353,20 +357,83 @@ def test_discover_raw_files_is_recursive(tmp_path: Path) -> None:
 def test_unreadable_raw_stops_only_when_it_would_be_analyzed() -> None:
     readable = header("/b/S1.raw", 0)
     timeline = build_injection_timeline([readable], PerturbationPolicy())
-    rows = header_rows([readable], {readable.raw_path: "study_sample"})
+    rows = header_rows([readable], {readable.raw_path: "sample"})
 
     def unread(stem, role):
         return {f"/b/{stem}.raw": SampleMetadata(stem, stem, sample_role=role)}
 
-    result = select_analysis_set(timeline, rows, unreadable=unread("Blank_9", "blank"))
+    result = select_analysis_set(
+        timeline, rows, unreadable=unread("Blank_9", "blank"), analysis="untargeted"
+    )
     assert result.raw_paths == (Path("/b/S1.raw"),)
     assert result.unreadable == (Path("/b/Blank_9.raw"),)
     excluded = SampleMetadata("S9", "S9", excluded=True)
     assert select_analysis_set(
-        timeline, rows, [excluded], unreadable=unread("S9", "study_sample")
+        timeline,
+        rows,
+        [excluded],
+        unreadable=unread("S9", "sample"),
+        analysis="untargeted",
     ).unreadable == (Path("/b/S9.raw"),)
     with pytest.raises(ValueError, match="要分析的 RAW 檔頭.*S9.raw"):
-        select_analysis_set(timeline, rows, unreadable=unread("S9", "study_sample"))
+        select_analysis_set(
+            timeline, rows, unreadable=unread("S9", "sample"), analysis="untargeted"
+        )
+
+
+def test_targeted_analyzes_every_role_and_untargeted_only_samples_and_qc() -> None:
+    names = [
+        ("Blank_1", "blank", 0),
+        ("SDOLEK-1", "other", 11),
+        ("STD_1", "std", 22),
+        ("QC1", "qc", 33),
+        ("Tumor_1", "sample", 44),
+        ("Tumor_2", "sample", 55),
+    ]
+    headers = [header(f"/b/{n}.raw", m) for n, _, m in names]
+    rows = header_rows(
+        headers, {h.raw_path: r for h, (_, r, _) in zip(headers, names, strict=True)}
+    )
+    timeline = build_injection_timeline(headers, PerturbationPolicy())
+    excluded = [SampleMetadata("Tumor_2", "Tumor_2", excluded=True)]
+
+    targeted = select_analysis_set(timeline, rows, excluded, analysis="targeted")
+    untargeted = select_analysis_set(timeline, rows, excluded, analysis="untargeted")
+
+    assert [e.raw_stem for e in targeted.analyzed] == [
+        "Blank_1",
+        "SDOLEK-1",
+        "STD_1",
+        "QC1",
+        "Tumor_1",
+    ]
+    assert [e.raw_stem for e in untargeted.analyzed] == ["QC1", "Tumor_1"]
+    # Exclusion is the only way out of Targeted, and it keeps the role.
+    assert (targeted.entries[-1].sample_role, targeted.entries[-1].context_reason) == (
+        "sample",
+        "excluded",
+    )
+
+
+def test_listing_keeps_unreadable_raw_without_deciding_membership() -> None:
+    readable = header("/b/S1.raw", 0)
+    timeline = build_injection_timeline([readable], PerturbationPolicy())
+    rows = header_rows([readable], {readable.raw_path: "sample"})
+    unread = {
+        "/b/Blank_9.raw": SampleMetadata("Blank_9", "Blank_9", sample_role="blank")
+    }
+
+    listed = select_analysis_set(timeline, rows, unreadable=unread, analysis=None)
+
+    assert listed.analyzed == ()
+    assert [
+        (row.raw_stem, row.sample_role, row.injection_order)
+        for row in listed.sample_metadata
+    ] == [("S1", "sample", 1), ("Blank_9", "blank", None)]
+    assert listed.unreadable == (Path("/b/Blank_9.raw"),)
+    # Targeted analyzes a blank, so its unreadable header now stops the run.
+    with pytest.raises(ValueError, match="Blank_9.raw"):
+        select_analysis_set(timeline, rows, unreadable=unread, analysis="targeted")
 
 
 def test_reader_stops_on_an_unreadable_analysis_raw(tmp_path: Path) -> None:
@@ -374,7 +441,7 @@ def test_reader_stops_on_an_unreadable_analysis_raw(tmp_path: Path) -> None:
 
     (tmp_path / "S1.raw").write_bytes(b"not a raw")
     with pytest.raises(ValueError, match="S1.raw"):
-        read_analysis_set(tmp_path, tmp_path / "missing-dll")
+        read_analysis_set(tmp_path, tmp_path / "missing-dll", analysis="untargeted")
 
 
 def test_selected_analysis_does_not_open_explicit_context(tmp_path, monkeypatch):
@@ -390,7 +457,7 @@ def test_selected_analysis_does_not_open_explicit_context(tmp_path, monkeypatch)
         assert path.stem in {"S1", "S2"}, "excluded/context RAW must not be opened"
         return (
             header(str(path.resolve()), 20 if path.stem == "S1" else 10),
-            "study_sample",
+            "sample",
             path.stem,
         )
 
@@ -402,7 +469,7 @@ def test_selected_analysis_does_not_open_explicit_context(tmp_path, monkeypatch)
         SampleMetadata("old", "old", excluded=True, exclusion_reason="replaced"),
     )
     analysis = raw_sequence.read_analysis_set(
-        tmp_path, tmp_path, metadata, include_context=False
+        tmp_path, tmp_path, metadata, include_context=False, analysis="untargeted"
     )
     assert set(opened) == {"S1.raw", "S2.raw"}
     assert [entry.raw_stem for entry in analysis.analyzed] == ["S2", "S1"]
@@ -426,7 +493,7 @@ def test_selected_unreadable_header_reports_the_file_and_original_reason(
 
     monkeypatch.setattr(raw_sequence, "_analysis_header", fail_header)
     with pytest.raises(ValueError, match="S1.raw.*no MS controller"):
-        raw_sequence.read_analysis_set(tmp_path, tmp_path)
+        raw_sequence.read_analysis_set(tmp_path, tmp_path, analysis="untargeted")
 
 
 def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
@@ -451,14 +518,14 @@ def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
     def analysis_header(path: Path, _dll: Path):
         rel = path.relative_to(tmp_path).with_suffix("").as_posix()
         h = header(str(path.resolve()), clock[rel])
-        return h, "study_sample", f"header {path.stem}"
+        return h, "sample", f"header {path.stem}"
 
     monkeypatch.setattr(raw_sequence, "_analysis_header", analysis_header)
     sequence = tmp_path / "sequence.docx"
     _create_synthetic_docx(sequence)
 
     result = raw_sequence.read_analysis_set(
-        tmp_path, tmp_path, sequence_source=sequence
+        tmp_path, tmp_path, sequence_source=sequence, analysis="untargeted"
     )
 
     rows = {row.raw_stem: row for row in result.sample_metadata}
@@ -474,11 +541,11 @@ def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
         f"header {stem}" for stem in rows
     }
     assert (rows["QC_Pool_1"].sample_role, rows["Blank_1"].sample_role) == (
-        "pooled_qc",
+        "qc",
         "blank",
     )
     assert rows["TumorBC001_DNA"].group == ""
-    assert rows["Old_S1"].sample_role == "study_sample"
+    assert rows["Old_S1"].sample_role == "sample"
     assert result.sequence is not None and result.sequence.matched_count == 4
 
 
@@ -496,7 +563,7 @@ def test_repeated_sequence_names_match_injections_not_nested_copies(
 
     def analysis_header(path: Path, _dll: Path):
         rel = path.relative_to(tmp_path).with_suffix("").as_posix()
-        return header(str(path.resolve()), clock[rel]), "study_sample", path.stem
+        return header(str(path.resolve()), clock[rel]), "sample", path.stem
 
     monkeypatch.setattr(raw_sequence, "_analysis_header", analysis_header)
     sequence = tmp_path / "sequence.csv"
@@ -505,7 +572,7 @@ def test_repeated_sequence_names_match_injections_not_nested_copies(
     )
 
     result = raw_sequence.read_analysis_set(
-        tmp_path, tmp_path, sequence_source=sequence
+        tmp_path, tmp_path, sequence_source=sequence, analysis="untargeted"
     )
 
     assert [(row.raw_stem, row.sample_role) for row in result.sample_metadata] == [
@@ -546,8 +613,8 @@ def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
         "_injection_header",
         lambda handle, path: header(str(path.resolve()), 0),
     )
-    first = raw_sequence.read_analysis_set(tmp_path, tmp_path)
-    second = raw_sequence.read_analysis_set(tmp_path, tmp_path)
+    first = raw_sequence.read_analysis_set(tmp_path, tmp_path, analysis="untargeted")
+    second = raw_sequence.read_analysis_set(tmp_path, tmp_path, analysis="untargeted")
     assert first == second
     assert first.analyzed[0].role_source == "raw_header"
     assert opens == [raw]
@@ -557,7 +624,7 @@ def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
     replacement.write_bytes(b"y")
     os.utime(replacement, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
     replacement.replace(raw)
-    replaced = raw_sequence.read_analysis_set(tmp_path, tmp_path)
+    replaced = raw_sequence.read_analysis_set(tmp_path, tmp_path, analysis="untargeted")
     assert replaced.analyzed[0].metadata.sample_name == "header y"
     assert opens == [raw, raw]
 

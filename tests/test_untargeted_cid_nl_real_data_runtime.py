@@ -494,7 +494,7 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
                 sample_name="S1",
                 raw_stem="S1",
                 injection_order=1,
-                sample_role="study_sample",
+                sample_role="sample",
             ),
             SampleMetadata(
                 sample_name="S2",
@@ -696,7 +696,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
                 sample_name="S1",
                 raw_stem="S1",
                 injection_order=1,
-                sample_role="study_sample",
+                sample_role="sample",
             ),
             SampleMetadata(
                 sample_name="S2",
@@ -708,13 +708,13 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
                 sample_name="Missing",
                 raw_stem="Missing",
                 injection_order=3,
-                sample_role="study_sample",
+                sample_role="sample",
             ),
             SampleMetadata(
                 sample_name="NoPeak",
                 raw_stem="NoPeak",
                 injection_order=4,
-                sample_role="study_sample",
+                sample_role="sample",
             ),
             SampleMetadata(
                 sample_name="Blank",
@@ -908,7 +908,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
                     sample_name=path.stem,
                     raw_stem=path.stem,
                     injection_order=index,
-                    sample_role="study_sample",
+                    sample_role="sample",
                 )
                 for index, path in enumerate(raw_paths, start=1)
             ),
@@ -1024,7 +1024,7 @@ def test_context_rejects_same_stem_receipt_from_different_acquisition(
                     sample_name="S1",
                     raw_stem="S1",
                     injection_order=1,
-                    sample_role="study_sample",
+                    sample_role="sample",
                 ),
             ),
             method_subject=subject,
@@ -1087,7 +1087,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=index,
-                sample_role="study_sample",
+                sample_role="sample",
                 excluded=excluded and stem == "Empty",
                 exclusion_reason="test exclusion"
                 if excluded and stem == "Empty"

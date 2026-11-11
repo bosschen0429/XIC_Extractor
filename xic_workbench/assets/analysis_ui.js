@@ -1,7 +1,7 @@
 import { curation } from "./analysis_curation.js";
 // Transport and reusable DOM/form controls shared by analysis views.
 import { analysis } from "./analysis_jobs.js";
-import { sampleMetadata } from "./analysis_samples.js";
+import { listSamples, sampleMetadata } from "./analysis_samples.js";
 import { checklist } from "./analysis_setup.js";
 import { state } from "./analysis_state.js";
 
@@ -197,9 +197,9 @@ export function pathField(
   input.addEventListener("change", () =>
     act(async () => {
       const page = prefix === "t-" ? "targeted" : "untargeted";
-      if (["data_dir", "raw_dir"].includes(key))
-        await sampleMetadata.preview(page, validate);
-      else await validate();
+      if (["data_dir", "raw_dir"].includes(key)) {
+        if (await validate()) await listSamples(page);
+      } else await validate();
     }),
   );
   if (input.value && key !== "dll_dir") act(validate);

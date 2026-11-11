@@ -114,7 +114,7 @@ def _plan(
                 sample_role=(
                     "blank"
                     if scenario == "blank_missing" and path == paths[-1]
-                    else "study_sample"
+                    else "sample"
                 ),
             )
             for index, path in enumerate(paths)

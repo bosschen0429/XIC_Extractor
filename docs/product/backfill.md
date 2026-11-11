@@ -111,7 +111,7 @@ that group.
 
 | Quantity | Rule |
 | --- | --- |
-| `N` | Counts non-excluded study, QC, and pooled-QC samples. Blank, calibrator, system-suitability, solvent, and unknown roles do not vote. |
+| `N` | Counts non-excluded `sample` and `qc` injections. `std`, `blank` and `other` roles do not vote. |
 | `K` | `K = max(2, N//20)`. |
 | `S` | Counts distinct eligible samples with direct SUPPORT for that exact group. Each sample counts once. |
 

@@ -727,7 +727,7 @@ def test_physical_capture_reuses_owner_evaluation_across_mint_and_bind(
 
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
-        sample_roles={"S1": "study_sample"},
+        sample_roles={"S1": "sample"},
     )
     sample = fixture.sample("S1")
     method_subject = fixture.method_subject

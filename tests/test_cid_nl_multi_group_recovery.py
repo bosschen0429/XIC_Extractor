@@ -387,7 +387,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
                 sample_name=path.stem,
                 raw_stem=path.stem,
                 injection_order=i,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for i, path in enumerate(paths, 1)
         ),
@@ -511,7 +511,7 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
                     (outcome == "blank" and stem == "Rejected")
                     or (outcome == "below-quorum" and stem == "S2")
                 )
-                else "study_sample",
+                else "sample",
             )
             for i, stem in enumerate(stems)
         ),
@@ -679,7 +679,7 @@ def test_runtime_recovers_every_authorized_rt_group(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=i + 1,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for i, stem in enumerate(centers)
         ),
@@ -1200,7 +1200,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=index + 1,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for index, stem in enumerate(centers)
         ),
@@ -1349,7 +1349,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=index + 1,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for index, stem in enumerate(ms1_centers)
         ),
@@ -1538,7 +1538,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=index + 1,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for index, stem in enumerate(centers)
         ),
@@ -1691,7 +1691,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=index + 1,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for index, stem in enumerate(ms1_centers)
         ),

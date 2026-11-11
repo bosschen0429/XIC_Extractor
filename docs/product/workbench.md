@@ -20,7 +20,10 @@ Worker counts come from the shared execution profile, not saved GUI settings.
 
 Setup presents data, method/targets, then samples and internal standards. Import
 and file tools are collapsible; sample conflicts, exclusions and method-specific
-internal-standard applicability remain visible.
+internal-standard applicability remain visible. The sample step is one line of
+role and exclusion counts plus the 上機資訊 file; **調整** opens the sample
+editor, where the user selects rows (drag, Ctrl, Shift or search) and applies a
+role or exclusion with one click or keys 1–5, and exports the sample data.
 
 The page shows either the setup of the next analysis or one opened result,
 never both. A finished run opens its result, with overview, review and

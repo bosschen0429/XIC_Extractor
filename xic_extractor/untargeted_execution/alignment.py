@@ -308,7 +308,9 @@ def prepare_untargeted_alignment_inputs(
 
         by_path = {
             path.resolve(): entry.metadata
-            for entry in read_analysis_set(raw_dir, dll_dir).entries
+            for entry in read_analysis_set(
+                raw_dir, dll_dir, analysis="untargeted"
+            ).entries
             for path in entry.copy_paths
         }
         missing_paths = [

@@ -614,7 +614,7 @@ def test_word_import_preview_finishes_or_stops_without_losing_confirmed_samples(
             asdict(
                 SampleMetadata("NormalBC001_DNA", "NormalBC001_DNA", group="Confirmed")
             ),
-            asdict(SampleMetadata("QC_Pool_1", "QC_Pool_1", sample_role="pooled_qc")),
+            asdict(SampleMetadata("QC_Pool_1", "QC_Pool_1", sample_role="qc")),
         ],
     )
     saved_path = sample_annotations_path(config_dir, raw_dir)
@@ -693,7 +693,7 @@ def test_targeted_reports_sequence_warnings_before_analysis_and_after_reload(
             raise RawReaderError("unreadable test header")
         return (
             header(str(path), 0 if path.stem == "A" else 11),
-            "study_sample",
+            "sample",
             path.stem,
         )
 
@@ -1972,8 +1972,8 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
         [
             asdict(SampleMetadata(sid, sid, sample_role=role, group="Stored"))
             for sid, role in (
-                ("S1", "study_sample"),
-                ("S2", "study_sample"),
+                ("S1", "sample"),
+                ("S2", "sample"),
                 ("S3", "qc"),
             )
         ],
@@ -2746,7 +2746,7 @@ def test_sample_restore_is_bound_to_current_inputs(
     if changed_input == "saved_role":
         page.locator("#samples-edit").click()
         with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
-            page.get_by_label("S1 角色", exact=True).select_option("study_sample")
+            page.get_by_label("S1 角色", exact=True).select_option("sample")
         page.keyboard.press("Escape")
         with page.expect_response(lambda r: r.url.endswith("/api/untargeted/save")):
             page.locator("#untargeted-save").click()
@@ -2774,9 +2774,7 @@ def test_sample_restore_is_bound_to_current_inputs(
         assert "custom_roles" not in payload
     else:
         expected = (
-            {**row, "sample_role": "study_sample"}
-            if changed_input == "saved_role"
-            else row
+            {**row, "sample_role": "sample"} if changed_input == "saved_role" else row
         )
         assert payload["samples"] == [expected]
         expect(page.locator("#samples-conflicts")).to_contain_text("old_blank.raw")
@@ -3470,7 +3468,7 @@ def test_sample_save_preserves_editor_selection_and_focus(
     page.locator("#t-samples-edit").click()
     pending = []
     page.route("**/api/samples/save", lambda route: pending.append(route))
-    page.get_by_label("Tumor_A 角色", exact=True).select_option("pooled_qc")
+    page.get_by_label("Tumor_A 角色", exact=True).select_option("qc")
     selected = page.get_by_label("選取 Normal_A", exact=True)
     selected.check()
     other_role = page.get_by_label("Normal_A 角色", exact=True)
@@ -3510,7 +3508,7 @@ def test_an_open_sample_editor_follows_another_tabs_job(
         fake_runs.release.set()
         expect(role).to_be_enabled()
         expect(excluded).to_be_enabled()
-        expect(role).to_have_value("study_sample")
+        expect(role).to_have_value("sample")
         expect(excluded).not_to_be_checked()
     finally:
         fake_runs.release.set()
@@ -3556,7 +3554,7 @@ def test_sample_edits_save_in_order_and_persist_the_latest_role(
         persisted = read_batch_samples(config_dir, batch, dll_dir=tmp_path)["samples"]
         assert {row["raw_stem"]: row["sample_role"] for row in persisted} == {
             "Tumor_A": "blank",
-            "Normal_A": "study_sample",
+            "Normal_A": "sample",
         }
         expect(role).to_have_value("blank")
     finally:
@@ -3705,7 +3703,7 @@ def test_legacy_groups_stay_in_inspector_but_not_analysis_setup(
         config_dir,
         batch,
         [
-            asdict(SampleMetadata(stem, stem, sample_role="study_sample", group=group))
+            asdict(SampleMetadata(stem, stem, sample_role="sample", group=group))
             for stem, group in groups.items()
         ],
     )
@@ -4247,7 +4245,7 @@ def test_sample_refresh_keeps_the_latest_action_when_sequence_blurs(
             {
                 "sample_name": name,
                 "raw_stem": name,
-                "sample_role": "study_sample",
+                "sample_role": "sample",
                 "group": name,
                 "excluded": False,
                 "exclusion_reason": "",
@@ -4307,7 +4305,7 @@ def test_late_automatic_sample_preview_cannot_replace_newer_manual_read(
         page.locator("#u-raw_dir").fill(str(batch))
         page.locator("#u-raw_dir").press("Tab")
     page.wait_for_function("window.previewHeld === true")
-    save_role("study_sample")
+    save_role("sample")
     _expand_section(page, "#sample-tools")
     page.locator("#samples-refresh").click()
     expect(page.locator("#role-summary")).to_contain_text("研究樣本 2")

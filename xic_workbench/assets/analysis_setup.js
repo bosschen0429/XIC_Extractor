@@ -219,7 +219,6 @@ export function checklist(kind) {
 // Sample readiness covers roles and exclusions; statistical groups are not inputs.
 function sampleItems(page) {
   const set = sampleMetadata.forPage(page);
-  const refresh = sampleId(page, "samples-refresh");
   const edit = sampleId(page, "samples-edit");
   if (!set.rows.length) {
     const order = $(samplePages[page].sequence)?.value.trim();
@@ -228,9 +227,9 @@ function sampleItems(page) {
         "info",
         "樣本角色（選用）",
         order
-          ? `上機資訊 ${pathTail(order)}；可先確認角色與排除；分組不是分析輸入`
-          : "可直接分析時讀取 RAW 角色；也可在樣本明細先確認角色與排除",
-        refresh,
+          ? `上機資訊 ${pathTail(order)}；選好 RAW 資料夾後自動列出樣本`
+          : "選好 RAW 資料夾後自動列出樣本與角色",
+        edit,
       ),
     ];
   }

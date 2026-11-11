@@ -432,6 +432,7 @@ def _raw_paths_from_dir(
     analysis_set = read_analysis_set(
         raw_dir,
         dll_dir,
+        analysis="untargeted",
         sequence_source=sample_metadata.resolve() if sample_metadata else None,
     )
     return tuple(sorted(analysis_set.raw_paths, key=lambda path: path.name.lower()))

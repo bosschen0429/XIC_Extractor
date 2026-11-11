@@ -30,7 +30,7 @@ def build_sample_adapter_fixture(tmp_path: Path, *, sample_stem: str = "S1"):
     """One study sample with a Thermo-format synthetic source, not vendor I/O."""
     return build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
-        sample_roles={sample_stem: "study_sample"},
+        sample_roles={sample_stem: "sample"},
         thermo_raw_sources=True,
     )
 

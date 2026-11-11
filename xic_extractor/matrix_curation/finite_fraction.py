@@ -45,7 +45,7 @@ def evaluate_finite_fraction(
     count = int(mask.sum())
     if not count:
         raise ValueError(
-            "no eligible study samples: require study_sample and excluded=FALSE"
+            "no eligible study samples: require sample_role=sample and excluded=FALSE"
         )
     finite_counts = np.isfinite(values[:, mask]).sum(axis=1)
     results = []
@@ -69,9 +69,7 @@ def evaluate_finite_fraction(
 
 
 def _eligible(samples: Sequence[SampleMetadata]) -> tuple[bool, ...]:
-    return tuple(
-        row.sample_role == "study_sample" and not row.excluded for row in samples
-    )
+    return tuple(row.sample_role == "sample" and not row.excluded for row in samples)
 
 
 class FiniteFractionStep:
@@ -98,7 +96,7 @@ class FiniteFractionStep:
         if samples.samples is None:
             return samples.problem
         if not any(_eligible(samples.samples)):
-            return "樣本資料中沒有可用的研究樣本（sample_role=study_sample 且未排除）。"
+            return "樣本資料中沒有可用的研究樣本（sample_role=sample 且未排除）。"
         return ""
 
     def evaluate(

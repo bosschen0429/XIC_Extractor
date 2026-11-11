@@ -6,7 +6,8 @@ from dataclasses import replace
 from pathlib import Path, PureWindowsPath
 
 from xic_extractor.analysis_set import (
-    ANALYSIS_SAMPLE_ROLES,
+    ANALYZED_ROLES,
+    AnalysisKind,
     AnalysisSet,
     discover_raw_files,
     select_analysis_set,
@@ -43,6 +44,7 @@ def read_analysis_set(
     dll_dir: Path,
     sample_metadata: Sequence[SampleMetadata] | None = None,
     *,
+    analysis: AnalysisKind | None,
     sequence_source: Path | None = None,
     raw_paths: Sequence[Path] | None = None,
     include_context: bool = True,
@@ -50,6 +52,9 @@ def read_analysis_set(
     should_cancel: Callable[[], bool] | None = None,
 ) -> AnalysisSet:
     """Resolve who each RAW below root is and when it was injected.
+
+    ``analysis`` selects whose membership rules apply (see ``select_analysis_set``);
+    ``None`` lists every RAW without deciding membership.
 
     ``raw_paths`` names the RAW files when a caller already holds them (for
     example a Discovery batch); otherwise files below ``raw_root`` are discovered.
@@ -90,13 +95,17 @@ def read_analysis_set(
             and (
                 annotation.excluded
                 or (
-                    annotation.sample_role != "unknown"
-                    and annotation.sample_role not in ANALYSIS_SAMPLE_ROLES
+                    annotation.sample_role is not None
+                    and analysis is not None
+                    and annotation.sample_role not in ANALYZED_ROLES[analysis]
                 )
             )
         ):
             unopened[str(path.resolve())] = replace(
-                annotation, batch_id=annotation.batch_id or root.name
+                annotation,
+                sample_role=annotation.sample_role
+                or infer_sample_role(None, sample_name=path.stem),
+                batch_id=annotation.batch_id or root.name,
             )
             continue
         header_paths.append((index, path))
@@ -151,6 +160,7 @@ def read_analysis_set(
         timeline,
         header_rows,
         tuple(_sequence_overrides(sequence, sample_metadata).values()),
+        analysis=analysis,
         unreadable=unread,
         sequence=sequence,
         unopened_context=unopened,

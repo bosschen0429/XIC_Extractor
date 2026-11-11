@@ -65,7 +65,7 @@ def _outside_group_fixture(
     support_centers: tuple[float, ...],
 ):
     fixture = build_untargeted_cid_nl_no_raw_fixture(
-        tmp_path, sample_roles={"Multi": "study_sample", "Third": "study_sample"}
+        tmp_path, sample_roles={"Multi": "sample", "Third": "sample"}
     )
     assessments = []
     for stem, centers in (("Multi", support_centers), ("Third", (16.0,))):
