@@ -34,18 +34,6 @@ def discovery_trace_capability(
     )
 
 
-def admits_cid_nl_alignment(
-    peak: DiscoveryPeak, record: DiscoveryPhysicalFactRecord | None
-) -> bool:
-    """Bind method admission to a resolved physical peak before input grouping."""
-    return (
-        peak.admitted
-        and record is not None
-        and record.evaluation.state == "available"
-        and not record.evaluation.requires_overlap_review
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class DiscoveryPhysicalFactRecord:
     work_item: DiscoveryPhysicalWorkItem

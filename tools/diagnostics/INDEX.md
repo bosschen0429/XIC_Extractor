@@ -61,7 +61,7 @@ Backfill, or duplicate view.
 `xic_extractor.diagnostics.duplicate_quantification`
 **Status**: diagnostic_only. Reads the Matrix projection of
 `alignment_review.tsv`, the compact `alignment_backfill_cell_evidence.tsv` (or `alignment_cells.tsv`
-for `validation`/`debug`) and `alignment_explanation.sqlite` from a
+for `debug`) and `alignment_explanation.sqlite` from a
 `validation-minimal` or richer output. Does not open RAW or change Matrix values;
 a screening count, not chemical identity.
 

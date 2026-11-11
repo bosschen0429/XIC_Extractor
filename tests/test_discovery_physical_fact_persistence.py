@@ -92,7 +92,6 @@ def _physical_index_jobs(tmp_path: Path, *, count: int):
 
 def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, spec, acquisition_input = _spec(tmp_path)
     manifest, records = _population(spec, acquisition_input)
@@ -112,13 +111,6 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         expected_work_manifest=manifest,
     )
 
-    from xic_extractor.peak_detection import physical_peak_codec as owner
-
-    def unexpected_recompute(*args, **kwargs):
-        raise AssertionError("evidence retrieval must not prepare or evaluate")
-
-    monkeypatch.setattr(owner, "prepare_physical_signal", unexpected_recompute)
-    monkeypatch.setattr(owner, "evaluate_physical_peak", unexpected_recompute)
     retained = read_discovery_physical_fact_records(
         path, expected_run_spec=spec, expected_acquisition_input=acquisition_input
     )

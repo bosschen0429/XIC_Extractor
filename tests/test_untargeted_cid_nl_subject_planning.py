@@ -14,11 +14,7 @@ from tests.cid_nl_raw_fixture import (
     _peak_config,
     _settings,
 )
-from tests.cid_nl_runtime_fixtures import (
-    build_discovery_receipts,
-)
 from tests.discovery_csv_fixtures import representative_event
-from tests.untargeted_cid_nl_batch_runtime_fixtures import _nearby_subject_candidates
 from tests.untargeted_cid_nl_production_batch_fixtures import (
     _assert_jobs_match_direct_construction,
 )
@@ -26,51 +22,6 @@ from tests.untargeted_partition_fixtures import (
     build_dense_partition,
 )
 from xic_extractor.sample_metadata import SampleMetadata
-
-
-def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.untargeted_execution.input_planning import (
-        prepare_untargeted_subject_membership,
-    )
-
-    physical_records = {}
-    raw_path = tmp_path / "S1.synthetic"
-    raw_path.write_bytes(b"physical-ion-planning:S1")
-    settings = replace(_settings(), neutral_loss_profile=None)
-    _, candidates = _nearby_subject_candidates(
-        raw_path,
-        settings=settings,
-        peak_config=_peak_config(tmp_path),
-        physical_records=physical_records,
-    )
-    inferred = replace(
-        candidates[0],
-        ms1_apex_mz=445.2071,
-        peak_mz=445.2071,
-        precursor_mz_basis="product_plus_neutral_loss",
-    )
-    subjects = prepare_untargeted_subject_membership(
-        peaks_by_sample={"S1": (inferred,)},
-        settings=settings,
-        physical_records_by_peak=physical_records,
-    )
-    assert len(subjects.subjects) == 1
-    assert subjects.subjects[0].precursor_mz == 445.2071
-
-    selected = replace(
-        inferred,
-        ms1_apex_mz=None,
-        peak_mz=445.2140,
-        precursor_mz_basis="scan_precursor",
-    )
-    fallback = prepare_untargeted_subject_membership(
-        peaks_by_sample={"S1": (selected,)},
-        settings=settings,
-        physical_records_by_peak=physical_records,
-    )
-    assert fallback.subjects[0].precursor_mz == 445.2140
 
 
 def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
@@ -194,11 +145,6 @@ def test_production_batch_preserves_bounded_subject_membership(
         ),
         settings=settings,
         peak_config=peak_config,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path,
-            (raw_path,),
-            {"S1": candidates},
-        ),
         dll_dir=tmp_path,
     )
 

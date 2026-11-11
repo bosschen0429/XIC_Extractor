@@ -33,7 +33,6 @@ from xic_extractor.execution.timing import TimingRecorder
 
 def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_rework(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
     raw_path.write_bytes(b"timed sidecar")
@@ -67,20 +66,6 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
         signal_processing_profile=profile,
         ms1_centroid=lambda *_: None,
     )
-    from xic_extractor.peak_detection import physical_peak_codec as owner
-
-    calls = {"prepare": 0, "evaluate": 0}
-
-    def unexpected_prepare(*_args, **_kwargs):
-        calls["prepare"] += 1
-        pytest.fail("producer re-prepared a persisted physical fact")
-
-    def unexpected_evaluate(*_args, **_kwargs):
-        calls["evaluate"] += 1
-        pytest.fail("producer rehydrated a persisted physical fact")
-
-    monkeypatch.setattr(owner, "prepare_physical_signal", unexpected_prepare)
-    monkeypatch.setattr(owner, "evaluate_physical_peak", unexpected_evaluate)
     recorder = TimingRecorder("discovery", run_id="timed-publication")
 
     outputs = publish_discovery_batch_sample(
@@ -115,7 +100,6 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
         "artifact_count": 3,
         "replaced_existing_count": 0,
     }
-    assert calls == {"prepare": 0, "evaluate": 0}
 
 
 @pytest.mark.parametrize("failure", ["sidecar", "publish"])

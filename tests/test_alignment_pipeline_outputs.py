@@ -22,7 +22,7 @@ def test_alignment_metadata_records_inputs_and_settings() -> None:
         discovery_batch_index=Path("batch.csv"),
         raw_dir=Path("raw"),
         dll_dir=Path("dll"),
-        output_level="validation",
+        output_level="debug",
         peak_config=peak_config,
     )
 

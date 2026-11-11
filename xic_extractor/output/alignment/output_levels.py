@@ -5,13 +5,12 @@ from typing import Literal
 from xic_extractor.alignment_explanation.storage import EXPLANATION_ARTIFACT_NAME
 
 # The explanation report is a per-cell projection of results already written
-# elsewhere. Diagnostic and validation levels produce it; validation-minimal
+# elsewhere. The debug level produces it; validation-minimal
 # keeps the compact form so a run can be scored without a rerun.
 AlignmentOutputLevel = Literal[
     "production",
     "machine",
     "debug",
-    "validation",
     "validation-minimal",
 ]
 
@@ -22,12 +21,6 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
         "alignment_review.tsv",
     ),
     "debug": (
-        "alignment_matrix.tsv",
-        "alignment_review.tsv",
-        "alignment_cells.tsv",
-        EXPLANATION_ARTIFACT_NAME,
-    ),
-    "validation": (
         "alignment_matrix.tsv",
         "alignment_review.tsv",
         "alignment_cells.tsv",

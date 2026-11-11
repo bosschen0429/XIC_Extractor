@@ -318,6 +318,29 @@ def test_run_alignment_cli_accepts_output_level_debug(
     assert captured["request"].execution.raw_worker_backend == "process"
 
 
+def test_run_alignment_cli_rejects_retired_validation_output_level(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        run_alignment.main(
+            [
+                "--preset",
+                "dna_dr",
+                "--discovery-batch-index",
+                str(tmp_path / "discovery_batch_index.csv"),
+                "--raw-dir",
+                str(tmp_path),
+                "--dll-dir",
+                str(tmp_path),
+                "--output-level",
+                "validation",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert "invalid choice: 'validation'" in capsys.readouterr().err
+
+
 def test_run_alignment_cli_accepts_raw_worker_backend(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

@@ -10,7 +10,10 @@ from tests.alignment_pipeline_helpers import (
     written_source_candidates,
 )
 from tests.cid_nl_raw_fixture import _FakeRaw, _open_bound_raw, _peak_config, _settings
-from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
+from tests.cid_nl_runtime_fixtures import (
+    install_runtime_raws,
+    prepare_persisted_discovery_plan,
+)
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
@@ -28,9 +31,6 @@ from xic_extractor.output.alignment.tsv_writer import cell_status
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution import (
     UntargetedPartitionPipelineAdapter,
-)
-from xic_extractor.untargeted_execution.input_planning import (
-    prepare_eager_untargeted_plan,
 )
 
 
@@ -94,7 +94,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         )
         raws[path] = source
     paths = tuple(fixture.source_paths.values())
-    plan = prepare_eager_untargeted_plan(
+    plan = prepare_persisted_discovery_plan(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -108,9 +108,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         settings=settings,
         peak_config=config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
+        root=tmp_path / "persisted",
         dll_dir=tmp_path,
         signal_processing_profile=profile,
         physical_records_by_peak=records,
@@ -317,7 +315,7 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
         raws[path] = source
     assert candidates["S6"][0].precursor_mz_basis == "product_plus_neutral_loss"
     paths = tuple(fixture.source_paths.values())
-    plan = prepare_eager_untargeted_plan(
+    plan = prepare_persisted_discovery_plan(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -331,9 +329,7 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
         settings=settings,
         peak_config=config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
+        root=tmp_path / "persisted",
         dll_dir=tmp_path,
         signal_processing_profile=profile,
         physical_records_by_peak=records,

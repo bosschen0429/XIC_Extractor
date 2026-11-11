@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
+from tests.cid_nl_runtime_fixtures import prepare_persisted_discovery_plan
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
 )
@@ -17,9 +18,6 @@ from xic_extractor.alignment.result.application_result import (
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
-)
-from xic_extractor.discovery.batch_contract import (
-    DiscoveryPeakUniverseReceipt,
 )
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
@@ -42,9 +40,6 @@ from xic_extractor.untargeted_execution.execution import (
 from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )
-from xic_extractor.untargeted_execution.input_planning import (
-    prepare_eager_untargeted_plan,
-)
 from xic_extractor.untargeted_execution.partition.execution import execute_partition
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionResult,
@@ -63,23 +58,22 @@ def build_dense_partition(
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
-    discovery_receipts_by_sample: Mapping[str, DiscoveryPeakUniverseReceipt],
     dll_dir: Path,
     signal_processing_profile: SignalProcessingProfile,
     physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord],
 ) -> UntargetedPartitionInputs:
-    """Prepare one dense partition through the formal eager plan owner."""
+    """Prepare one dense partition from a persisted Discovery batch."""
 
-    plan = prepare_eager_untargeted_plan(
+    plan = prepare_persisted_discovery_plan(
         raw_paths=raw_paths,
         sample_metadata=sample_metadata,
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
-        discovery_receipts_by_sample=discovery_receipts_by_sample,
+        physical_records_by_peak=physical_records_by_peak,
         dll_dir=dll_dir,
         signal_processing_profile=signal_processing_profile,
-        physical_records_by_peak=physical_records_by_peak,
+        root=raw_paths[0].parent / "persisted",
     )
     return materialize_untargeted_partition(plan, plan.subject_batch)
 

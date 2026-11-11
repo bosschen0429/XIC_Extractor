@@ -233,8 +233,8 @@ not calibrated detection probabilities or validated LOD/LOQ.
 `IntegrationResult.signal_quality` carries status, noise sigma, SNR and the
 advisory `low_signal_to_noise` flag (SNR below `10 / 1.4826`). Fewer than three
 points, invalid RT/intensity, missing baseline, and zero noise cannot produce
-a good-quality or infinite-SNR answer. Old artifacts lacking the field remain
-not recorded, including after physical rehydration. The advisory fact is not
+a good-quality or infinite-SNR answer. Old artifacts lacking the field decode
+as not recorded. The advisory fact is not
 part of physical content identity. Existing `baseline_residual_mad` and area
 uncertainty retain their original AsLS-residual meaning.
 

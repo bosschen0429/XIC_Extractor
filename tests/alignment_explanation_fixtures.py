@@ -54,7 +54,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
         _peak_config,
     )
     from tests.cid_nl_runtime_fixtures import (
-        build_discovery_receipts,
         install_runtime_raws,
     )
     from tests.untargeted_partition_fixtures import (
@@ -109,9 +108,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -147,12 +143,13 @@ def explanation_discovery_facts(completed) -> dict[str, object]:
 
 
 def plan_discovery_facts(plan) -> dict[str, object]:
-    """The same Discovery facts, from an eager plan's retained physical records."""
-    context = plan.context
+    """The same Discovery facts, from the plan's persisted physical records."""
+    from tests.cid_nl_runtime_fixtures import load_plan_inputs
+
+    _candidates, records = load_plan_inputs(plan)
     return {
         "precursor_mz_by_candidate": {
-            cid: record.work_item.precursor_mz
-            for cid, record in context.physical_records_by_peak.items()
+            cid: record.work_item.precursor_mz for cid, record in records.items()
         },
-        "neutral_loss_by_tag": context.settings.neutral_loss_by_tag,
+        "neutral_loss_by_tag": plan.context.settings.neutral_loss_by_tag,
     }

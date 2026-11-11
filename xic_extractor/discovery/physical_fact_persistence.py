@@ -113,8 +113,8 @@ def _restore_retained_signal(
     acquired: AcquiredTrace,
 ) -> PhysicalPeakEvaluation:
     value = record.get("retained_prepared_signal")
-    # A historical sidecar has no retained processed evidence. Rehydration is
-    # scientific validation and cannot manufacture that missing evidence.
+    # A historical sidecar has no retained processed evidence; decoding cannot
+    # manufacture it.
     if value is None:
         return replace(evaluation, retained_prepared_signal=None)
     signal = _mapping(value, label="retained_prepared_signal")

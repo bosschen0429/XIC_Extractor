@@ -373,7 +373,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
     )
     from xic_extractor.execution.timing import TimingRecorder
     from xic_extractor.peak_detection.physical_peak_codec import (
-        serialize_physical_peak_evaluation,
+        physical_evaluation_payload,
     )
 
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
@@ -479,9 +479,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
     )
     selected = binding.physical_fact_record
     before_trace = serialize_acquired_trace(selected.acquired_trace)
-    before_evaluation = serialize_physical_peak_evaluation(
-        selected.rt, selected.raw, profile=profile, evaluation=selected.evaluation
-    )
+    before_evaluation = physical_evaluation_payload(selected.evaluation)
     outputs = publish_discovery_batch_sample(
         raw_path,
         result.peaks,
@@ -522,15 +520,8 @@ def test_merged_physical_candidate_persists_representative_search_window(
         restored.ms1_height == candidate.ms1_height == selected.evaluation.facts.height
     )
     assert serialize_acquired_trace(restored_record.acquired_trace) == before_trace
-    assert (
-        serialize_physical_peak_evaluation(
-            restored_record.rt,
-            restored_record.raw,
-            profile=profile,
-            evaluation=restored_record.evaluation,
-        )
-        == before_evaluation
-    )
+    assert restored_record.evaluation.prepared.profile == profile
+    assert physical_evaluation_payload(restored_record.evaluation) == before_evaluation
     assert raw.raw_chromatogram_call_count == 1
     for name in ("ms1_apex_rt", "ms1_area", "ms1_height"):
         with pytest.raises(ValueError, match=f"physical {name} crosses"):
@@ -586,19 +577,15 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         rt=trace_rt,
         intensity=100.0 + 500.0 * np.exp(-0.5 * ((trace_rt - 7.80) / 0.08) ** 2),
     )
-    from xic_extractor.peak_detection import physical_peak_codec as physical_owner
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        prepare_physical_signal,
+    )
 
     physical_calls = {"prepare": 0, "evaluate": 0}
-    real_prepare = physical_owner.prepare_physical_signal
-    real_evaluate = physical_owner.evaluate_physical_peak
 
     def counted_prepare(*args, **kwargs):
         physical_calls["prepare"] += 1
-        return real_prepare(*args, **kwargs)
-
-    def counted_evaluate(*args, **kwargs):
-        physical_calls["evaluate"] += 1
-        return real_evaluate(*args, **kwargs)
+        return prepare_physical_signal(*args, **kwargs)
 
     def counted_answer(*args, **kwargs):
         physical_calls["evaluate"] += 1
@@ -612,8 +599,6 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         "xic_extractor.acquisition.physical_capture.answer_physical_peak_question",
         counted_answer,
     )
-    monkeypatch.setattr(physical_owner, "prepare_physical_signal", counted_prepare)
-    monkeypatch.setattr(physical_owner, "evaluate_physical_peak", counted_evaluate)
     captured_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = ()
 
     def capture_sidecar(path, **kwargs):

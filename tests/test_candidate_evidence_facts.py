@@ -23,9 +23,6 @@ from xic_extractor.peak_detection.ms1_morphology import (
     gaussian15_positive_asls_residual_trace,
 )
 from xic_extractor.peak_detection.peak_integration import find_peak_and_area
-from xic_extractor.peak_detection.physical_peak_codec import (
-    rehydrate_physical_peak_evaluation,
-)
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     answer_physical_peak_question,
     enumerate_physical_segment_universe,
@@ -233,15 +230,6 @@ def test_physical_owner_mints_closed_unique_admissible_bounded_facts() -> None:
     )
     assert not hasattr(evaluation, "rt")
     validate_bounded_physical_peak_evaluation(evaluation)
-    assert (
-        rehydrate_physical_peak_evaluation(
-            rt,
-            raw,
-            profile=profile,
-            expected=evaluation,
-        )
-        == evaluation
-    )
 
 
 def test_physical_owner_excludes_noncontaining_segments_from_admissibility() -> None:
@@ -327,19 +315,8 @@ def test_malformed_trace_has_failed_terminal_question_and_rehydrates() -> None:
     assert evaluation.facts is None
     assert evaluation.integration is None
     assert evaluation.operations == ("trace_evaluation",)
-    replay = rehydrate_physical_peak_evaluation(
-        rt,
-        raw,
-        profile=profile,
-        expected=evaluation,
-        request_context_rt_start_min=1.0,
-        request_context_rt_end_min=2.0,
-    )
-    assert replay.state == "failed"
-    assert replay.reason == "nonfinite_trace"
-    np.testing.assert_array_equal(replay.prepared.rt, rt)
-    assert replay.prepared.raw == tuple(raw)
-    assert replay.facts is None
+    np.testing.assert_array_equal(evaluation.prepared.rt, rt)
+    assert evaluation.prepared.raw == tuple(raw)
 
 
 def test_nonpositive_trace_is_unavailable_before_asls_or_smoothing() -> None:
