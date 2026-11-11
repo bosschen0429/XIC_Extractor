@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -27,6 +27,9 @@ from xic_extractor.discovery.detected_features import write_detected_features_cs
 from xic_extractor.discovery.local_ms1_features import (
     LocalMs1FeatureSettings,
     build_local_ms1_feature_table,
+)
+from xic_extractor.discovery.sample_process_execution import (
+    raise_if_discovery_cancelled,
 )
 from xic_extractor.raw_reader import open_raw
 from xic_extractor.tabular_io import read_delimited_rows
@@ -67,11 +70,14 @@ def run_delta_mass_discovery(
     strategy: DeltaMassDiscoveryStrategy,
     cid_nl_peaks_csv: Path | None = None,
     raw_paths: Sequence[Path] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> DeltaMassDiscoveryOutputs:
     """Detect features per RAW, acquire one batch, then write diagnostic results.
 
     ``raw_paths`` limits the run to selected samples of ``raw_dir``; omitted,
-    every RAW in the folder is analyzed.
+    every RAW in the folder is analyzed. A cancellation stops before the next
+    RAW and before any output is written.
     """
     raw_paths = sorted(
         raw_paths
@@ -91,7 +97,10 @@ def run_delta_mass_discovery(
     )
     candidates: list[DeltaMassCandidate] = []
     samples = []
-    for raw_path in raw_paths:
+    for done, raw_path in enumerate(raw_paths):
+        raise_if_discovery_cancelled(should_cancel)
+        if progress_callback is not None:
+            progress_callback(done, len(raw_paths), raw_path.stem)
         started = time.perf_counter()
         with open_raw(
             raw_path, dll_dir=dll_dir, mass_recalibration=strategy.mass_recalibration
@@ -175,6 +184,7 @@ def run_delta_mass_discovery(
         "samples": samples,
         "status": "diagnostic_only",
     }
+    raise_if_discovery_cancelled(should_cancel)
     return write_delta_mass_outputs(
         output_dir, tuple(candidates), sidecar, strategy.settings
     )

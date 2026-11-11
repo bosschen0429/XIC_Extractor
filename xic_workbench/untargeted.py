@@ -227,7 +227,12 @@ class UntargetedRun:
             strategy=strategy,
             cid_nl_peaks_csv=peaks_csv,
             raw_paths=raw_paths,
+            should_cancel=self.should_cancel,
+            progress_callback=lambda done, total, sample: self.progress(
+                done, total, f"Delta Mass Discovery: {sample}"
+            ),
         )
+        self._raise_if_cancelled("Untargeted run cancelled after Delta Mass")
         self.available_outputs += (
             ("Delta Mass 候選表", outputs.candidates_csv),
             ("Delta Mass 離子明細", outputs.positions_csv),

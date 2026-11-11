@@ -841,3 +841,65 @@ def test_alignment_istd_config_uses_recipe_mass_policy(tmp_path, policy):
         run._alignment_peak_config(settings).mass_recalibration
         is settings.mass_recalibration
     )
+
+
+def test_delta_mass_discovery_stops_on_cancel_before_reading_raw(tmp_path):
+    from xic_extractor.discovery.delta_mass_pipeline import run_delta_mass_discovery
+    from xic_extractor.presets.delta_mass import resolve_delta_mass_discovery
+
+    (tmp_path / "A.raw").write_bytes(b"not a raw file")
+    with pytest.raises(InterruptedError):
+        run_delta_mass_discovery(
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            output_dir=tmp_path / "out",
+            strategy=resolve_delta_mass_discovery("pt_pattern"),
+            should_cancel=lambda: True,
+        )
+    assert not (tmp_path / "out").exists()
+
+
+def test_cancelled_delta_mass_run_is_not_reported_as_completed(tmp_path, monkeypatch):
+    import xic_workbench.untargeted as module
+
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw = raw_dir / "A.raw"
+    raw.touch()
+    monkeypatch.setattr(
+        module,
+        "read_analysis_set",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            raw_paths=(raw,), sample_metadata=(SampleMetadata("A", "A"),)
+        ),
+    )
+    cancelled = []
+    received = {}
+
+    def delta_mass(*, should_cancel, **_kwargs):
+        # The stop arrives while the last RAW is being analyzed.
+        received["should_cancel"] = should_cancel
+        cancelled.append(True)
+        return SimpleNamespace(
+            candidates_csv=tmp_path / "c.csv",
+            positions_csv=tmp_path / "p.csv",
+            sidecar_json=tmp_path / "s.json",
+        )
+
+    monkeypatch.setattr(module, "run_delta_mass_discovery", delta_mass)
+    run = UntargetedRun(
+        parse_request(
+            {
+                "preset": "pt_pattern",
+                "preset_snapshot": method_details("pt_pattern")["draft"],
+                "raw_dir": str(raw_dir),
+                "dll_dir": str(tmp_path),
+                "output_dir": str(tmp_path / "out"),
+            }
+        ),
+        progress=lambda *_args: None,
+        should_cancel=lambda: bool(cancelled),
+    )
+    with pytest.raises(InterruptedError):
+        run.execute()
+    assert received["should_cancel"] is run.should_cancel
