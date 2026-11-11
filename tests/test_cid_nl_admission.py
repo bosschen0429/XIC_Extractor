@@ -227,3 +227,115 @@ def test_review_rows_never_become_alignment_roots(
     if not with_supported:
         assert not result.application_result.children and not result.method_assessments
         assert sum(map(len, opened.values())) == 0
+
+
+@pytest.mark.parametrize("alignment_signal", ["flat", "overlap"])
+def test_alignment_measurement_decides_admission_through_the_whole_run(
+    tmp_path, monkeypatch, alignment_signal
+):
+    """Discovery admits Clean2's peak; RAW read by Alignment no longer holds an
+    available, unshouldered peak there, so that peak does not enter Alignment
+    and the run and its explanation complete."""
+    from tests.alignment_pipeline_helpers import render
+    from tests.cid_nl_runtime_fixtures import (
+        load_plan_inputs,
+        persist_discovery_batch,
+        representative_precursors,
+    )
+    from xic_extractor.diagnostics.alignment_explanation_projection import (
+        write_alignment_explanation,
+    )
+
+    stems = ("Clean1", "Clean2")
+    paths = tuple(tmp_path / f"{stem}.raw" for stem in stems)
+    for path in paths:
+        path.write_bytes(path.stem.encode())
+    settings = replace(_settings(), ms1_search_padding_min=0.6)
+    raws, candidates = {}, {}
+    for path in paths:
+        raw = _FakeRaw((8.0,))
+        if path.stem == "Clean2":
+            raw.intensity *= 2
+        raws[path] = raw
+        candidates[path.stem] = _current_candidates(
+            raw, raw_file=path, settings=settings
+        )
+        assert [peak.status for peak in candidates[path.stem]] == ["admitted"]
+    batch = persist_discovery_batch(
+        raw_paths=paths,
+        settings=settings,
+        peaks_by_sample=candidates,
+        root=tmp_path / "discovery",
+    )
+    # The RAW changes between Discovery and Alignment.
+    changed = raws[paths[1]]
+    if alignment_signal == "flat":
+        changed.intensity[:] = 0.0
+    else:
+        rt, intensity = _overlapping_triplet_trace()
+        changed.rt = 7.5 + rt * 0.1
+        changed.intensity = intensity
+        changed.scans = tuple(
+            replace(scan, rt=float(changed.rt[scan.scan_number - 1]))
+            for scan in changed.scans
+        )
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    source = DiscoveryInputSource(batch)
+    plan = prepare_untargeted_alignment_inputs(
+        discovery_batch=batch,
+        peaks_by_sample=source,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "inputs",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        signal_processing_profile=TEST_PROFILE,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=i + 1,
+                sample_role="sample",
+            )
+            for i, stem in enumerate(stems)
+        ),
+        raw_workers=1,
+    )
+    (kept,) = candidates["Clean1"]
+    (dropped,) = candidates["Clean2"]
+    # Discovery's admission still declares both peaks.
+    assert {cid for cid, _ in plan.subject_batch.candidate_memberships} == {
+        kept.peak_id,
+        dropped.peak_id,
+    }
+    config = AlignmentConfig(anchor_min_seed_events=1)
+    completed = execute_untargeted_plan(
+        plan,
+        output_dir=tmp_path / "alignment",
+        alignment_config=config,
+        raw_workers=1,
+    )
+    measured = {
+        evidence.candidate_id
+        for evidence in completed.capture_evidence
+        if evidence.capture_stage == "initial_capture"
+    }
+    assert measured == {kept.peak_id}
+    # The batch still accounts for every declared peak exactly once.
+    (exclusion,) = completed.application_result.excluded_candidates
+    assert exclusion.candidate_id == dropped.peak_id
+    assert exclusion.peak_status == "admitted"
+    assert exclusion.reason_code == "discovery_candidate_not_search_eligible"
+    matrix = render("matrix", tmp_path / "matrix.tsv", completed.application_result)
+    loaded = load_plan_inputs(plan)
+    report = write_alignment_explanation(
+        tmp_path / "explanation.sqlite",
+        completed=completed,
+        peaks_by_sample=loaded,
+        matrix_path=matrix,
+        alignment_config=config,
+        precursor_mz_by_candidate=representative_precursors(loaded),
+        neutral_loss_by_tag=settings.neutral_loss_by_tag,
+        full_audit=True,
+    )
+    assert report.exists()

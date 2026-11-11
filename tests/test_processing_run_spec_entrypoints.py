@@ -21,7 +21,6 @@ from xic_extractor.presets import PresetError
 from xic_extractor.processing_run_spec import (
     ProcessingRunSpec,
     canonical_processing_run_spec_bytes,
-    serialize_processing_run_spec,
 )
 from xic_workbench.untargeted import DiscoveryRequest, UntargetedRun, parse_request
 from xic_workbench.untargeted import (
@@ -55,10 +54,7 @@ def test_equal_workbench_cli_inputs_compile_equal_immutable_identity(
     assert canonical_processing_run_spec_bytes(workbench_spec) == (
         canonical_processing_run_spec_bytes(cli_spec)
     )
-    assert serialize_processing_run_spec(
-        workbench_spec
-    ) == serialize_processing_run_spec(cli_spec)
-    assert str(tmp_path).encode("utf-8") not in serialize_processing_run_spec(
+    assert str(tmp_path).encode("utf-8") not in canonical_processing_run_spec_bytes(
         workbench_spec
     )
     assert pickle.loads(pickle.dumps(workbench_spec)) == workbench_spec
@@ -144,7 +140,8 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
 
     specs = tuple(cast(object, captured[key]) for key in ("workbench", "cli"))
     serialized = tuple(
-        serialize_processing_run_spec(cast(ProcessingRunSpec, spec)) for spec in specs
+        canonical_processing_run_spec_bytes(cast(ProcessingRunSpec, spec))
+        for spec in specs
     )
     assert serialized[0] == serialized[1]
     assert {

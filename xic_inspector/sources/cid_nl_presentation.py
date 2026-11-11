@@ -65,6 +65,7 @@ _TECHNICAL_LABELS = {
 
 
 _STAGE_LABELS = {
+    "discovery_physical": "探索階段曲線",
     "initial_capture": "首次擷取曲線",
     "backfill_observation": "Backfill（回填）曲線",
 }

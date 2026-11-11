@@ -11,7 +11,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Iterator,
-    Literal,
     Mapping,
     Protocol,
     cast,
@@ -23,13 +22,11 @@ if TYPE_CHECKING:
 
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
-    resolve_mass_recalibration,
 )
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
     canonical_signal_processing_profile_bytes,
-    deserialize_signal_processing_profile,
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -39,11 +36,8 @@ from xic_extractor.validation_primitives import (
     canonical_json_bytes,
     json_unique_mapping_hook,
     parse_canonical_float_hex,
-    parse_json_mapping_payload,
-    require_boolean,
     require_integer,
     require_keys,
-    require_list,
     require_mapping,
     require_optional_lower_sha256,
     require_optional_text,
@@ -51,58 +45,8 @@ from xic_extractor.validation_primitives import (
 )
 
 PROCESSING_RUN_SPEC_SCHEMA_VERSION = "processing_run_spec_source_revision"
-PROCESSING_RUN_SPEC_ENVELOPE_VERSION = "processing_run_spec_envelope"
 CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION = "cid_nl_discovery_method"
 
-_RUN_CONTENT_KEYS = (
-    "schema_version",
-    "acquisition_inputs",
-    "discovery_method",
-    "signal_processing_profile",
-)
-_RUN_ENVELOPE_KEYS = (
-    "schema_version",
-    "content",
-)
-_ACQUISITION_INPUT_KEYS = (
-    "input_ordinal",
-    "adapter_input_key",
-    "sample_stem",
-    "acquisition_source",
-)
-_ACQUISITION_SOURCE_KEYS = (
-    "content_sha256",
-    "local_file_revision",
-    "byte_size",
-    "acquisition_format",
-    "observation_namespace",
-)
-_METHOD_CONTENT_KEYS = (
-    "schema_version",
-    "method",
-    "settings",
-)
-_SETTINGS_KEYS = (
-    "neutral_loss_profiles",
-    "selected_tag_names",
-    "tag_combine_mode",
-    "nl_tolerance_ppm",
-    "precursor_mz_tolerance_ppm",
-    "product_mz_tolerance_ppm",
-    "product_search_ppm",
-    "ms2_precursor_tol_da",
-    "nl_min_intensity_ratio",
-    "ms1_search_padding_min",
-    "rt_min",
-    "rt_max",
-    "resolver_mode",
-    "evidence_profile",
-    "enable_blank_qualification",
-    "blank_library_path",
-    "blank_ppm_tol",
-    "blank_fold_change_threshold",
-)
-_EVIDENCE_PROFILE_KEYS = ("name", "weights", "thresholds")
 _WEIGHT_KEYS = (
     "ms1_peak_present",
     "seed_event_per",
@@ -300,29 +244,6 @@ def canonical_processing_run_spec_bytes(spec: ProcessingRunSpec) -> bytes:
     if not isinstance(spec, ProcessingRunSpec):
         raise TypeError("spec must be a ProcessingRunSpec")
     return _canonical_json_bytes(_run_content(spec))
-
-
-def serialize_processing_run_spec(spec: ProcessingRunSpec) -> bytes:
-    if not isinstance(spec, ProcessingRunSpec):
-        raise TypeError("spec must be a ProcessingRunSpec")
-    return _canonical_json_bytes(
-        {
-            "schema_version": PROCESSING_RUN_SPEC_ENVELOPE_VERSION,
-            "content": _run_content(spec),
-        }
-    )
-
-
-def deserialize_processing_run_spec(payload: bytes | str) -> ProcessingRunSpec:
-    raw, content = _decode_json_object(payload, label="ProcessingRunSpec")
-    _require_keys(content, _RUN_ENVELOPE_KEYS, label="ProcessingRunSpec envelope")
-    if content["schema_version"] != PROCESSING_RUN_SPEC_ENVELOPE_VERSION:
-        raise ValueError("unsupported ProcessingRunSpec envelope schema_version")
-    run_content = _mapping(content["content"], label="ProcessingRunSpec content")
-    spec = _run_spec_from_content(run_content)
-    if serialize_processing_run_spec(spec) != raw:
-        raise ValueError("ProcessingRunSpec payload is not canonical")
-    return spec
 
 
 def _run_content(spec: ProcessingRunSpec) -> dict[str, object]:
@@ -562,270 +483,6 @@ def _method_content(
     }
 
 
-def _run_spec_from_content(content: Mapping[str, object]) -> ProcessingRunSpec:
-    _require_keys(content, _RUN_CONTENT_KEYS, label="ProcessingRunSpec content")
-    schema_version = _text(content["schema_version"], field="schema_version")
-    if schema_version != PROCESSING_RUN_SPEC_SCHEMA_VERSION:
-        raise ValueError(
-            "unsupported ProcessingRunSpec schema_version; "
-            "regenerate Discovery with the current version"
-        )
-    input_values = _list(content["acquisition_inputs"], label="acquisition_inputs")
-    inputs: list[ProcessingAcquisitionInput] = []
-    for value in input_values:
-        item = _mapping(value, label="acquisition input")
-        _require_keys(
-            item,
-            _ACQUISITION_INPUT_KEYS + ("blank_library_sha256",),
-            label="acquisition input",
-        )
-        source_value = _mapping(item["acquisition_source"], label="acquisition source")
-        _require_keys(
-            source_value, _ACQUISITION_SOURCE_KEYS, label="acquisition source"
-        )
-        inputs.append(
-            ProcessingAcquisitionInput(
-                input_ordinal=_integer(item["input_ordinal"], field="input_ordinal"),
-                adapter_input_key=_text(
-                    item["adapter_input_key"], field="adapter_input_key"
-                ),
-                sample_stem=_text(item["sample_stem"], field="sample_stem"),
-                acquisition_source=AcquisitionSourceIdentity(
-                    content_sha256=_optional_text(
-                        source_value["content_sha256"], field="content_sha256"
-                    ),
-                    local_file_revision=(
-                        cast(
-                            tuple[int, int, int, int, int],
-                            tuple(
-                                _integer(value, field="local_file_revision")
-                                for value in _list(
-                                    source_value["local_file_revision"],
-                                    label="local_file_revision",
-                                )
-                            ),
-                        )
-                        if source_value["local_file_revision"] is not None
-                        else None
-                    ),
-                    byte_size=_integer(source_value["byte_size"], field="byte_size"),
-                    acquisition_format=_text(
-                        source_value["acquisition_format"],
-                        field="acquisition_format",
-                    ),
-                    observation_namespace=_text(
-                        source_value["observation_namespace"],
-                        field="observation_namespace",
-                    ),
-                ),
-                blank_library_sha256=_optional_text(
-                    item.get("blank_library_sha256"),
-                    field="blank_library_sha256",
-                ),
-            )
-        )
-    method = _method_from_content(
-        _mapping(content["discovery_method"], label="discovery method content")
-    )
-    profile_content = _mapping(
-        content["signal_processing_profile"], label="signal_processing_profile"
-    )
-    profile = deserialize_signal_processing_profile(
-        _canonical_json_bytes(profile_content)
-    )
-    return ProcessingRunSpec(
-        acquisition_inputs=tuple(inputs),
-        discovery_method=method,
-        signal_processing_profile=profile,
-        schema_version=schema_version,
-    )
-
-
-def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
-    _require_keys(content, _METHOD_CONTENT_KEYS, label="discovery method content")
-    method_name = str(content["method"])
-
-    if method_name != "cid_nl":
-        return GenericDiscoveryMethodSpec(
-            settings=content["settings"],
-            method=method_name,
-            schema_version=str(content["schema_version"]),
-        )
-
-    from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-    from xic_extractor.discovery.evidence_config import (
-        DiscoveryEvidenceProfile,
-        DiscoveryEvidenceThresholds,
-        DiscoveryEvidenceWeights,
-    )
-    from xic_extractor.discovery.settings import DiscoverySettings
-
-    settings_value = _mapping(content["settings"], label="Discovery settings")
-    recalibration_value = settings_value.get("mass_recalibration")
-    _require_keys(
-        settings_value,
-        _SETTINGS_KEYS
-        if recalibration_value is None
-        else (*_SETTINGS_KEYS, "mass_recalibration"),
-        label="Discovery settings",
-    )
-    mass_recalibration = (
-        MassRecalibration.NONE
-        if recalibration_value is None
-        else resolve_mass_recalibration(
-            _text(recalibration_value, field="mass_recalibration")
-        )
-    )
-    if recalibration_value is not None and (
-        mass_recalibration is MassRecalibration.NONE
-    ):
-        raise ValueError("mass_recalibration none is recorded by omission")
-    profile_values = _list(
-        settings_value["neutral_loss_profiles"], label="neutral_loss_profiles"
-    )
-    profiles: list[NeutralLossProfile] = []
-    for value in profile_values:
-        profile_value = _mapping(value, label="neutral loss profile")
-        _require_keys(
-            profile_value,
-            ("tag", "neutral_loss_da"),
-            label="neutral loss profile",
-        )
-        profiles.append(
-            NeutralLossProfile(
-                tag=_text(profile_value["tag"], field="neutral loss tag"),
-                neutral_loss_da=_float_from_text(
-                    profile_value["neutral_loss_da"], field="neutral_loss_da"
-                ),
-            )
-        )
-    evidence_value = _mapping(
-        settings_value["evidence_profile"], label="evidence_profile"
-    )
-    _require_keys(evidence_value, _EVIDENCE_PROFILE_KEYS, label="evidence_profile")
-    weights_value = _mapping(evidence_value["weights"], label="evidence weights")
-    _require_keys(weights_value, _WEIGHT_KEYS, label="evidence weights")
-    thresholds_value = _mapping(
-        evidence_value["thresholds"], label="evidence thresholds"
-    )
-    _require_keys(thresholds_value, _THRESHOLD_KEYS, label="evidence thresholds")
-    weights = DiscoveryEvidenceWeights(
-        **{key: _integer(weights_value[key], field=key) for key in _WEIGHT_KEYS}
-    )
-    thresholds = DiscoveryEvidenceThresholds(
-        rt_aligned_max_min=_float_from_text(
-            thresholds_value["rt_aligned_max_min"], field="rt_aligned_max_min"
-        ),
-        rt_near_max_min=_float_from_text(
-            thresholds_value["rt_near_max_min"], field="rt_near_max_min"
-        ),
-        rt_shifted_max_min=_float_from_text(
-            thresholds_value["rt_shifted_max_min"], field="rt_shifted_max_min"
-        ),
-        product_intensity_high_min=_float_from_text(
-            thresholds_value["product_intensity_high_min"],
-            field="product_intensity_high_min",
-        ),
-        product_intensity_med_min=_float_from_text(
-            thresholds_value["product_intensity_med_min"],
-            field="product_intensity_med_min",
-        ),
-        area_high_min=_float_from_text(
-            thresholds_value["area_high_min"], field="area_high_min"
-        ),
-        area_med_min=_float_from_text(
-            thresholds_value["area_med_min"], field="area_med_min"
-        ),
-        scan_support_target=_integer(
-            thresholds_value["scan_support_target"], field="scan_support_target"
-        ),
-        scan_support_high_score_min=_float_from_text(
-            thresholds_value["scan_support_high_score_min"],
-            field="scan_support_high_score_min",
-        ),
-        scan_support_low_score_max=_float_from_text(
-            thresholds_value["scan_support_low_score_max"],
-            field="scan_support_low_score_max",
-        ),
-    )
-    evidence_profile = DiscoveryEvidenceProfile(
-        name=cast(
-            Literal["default"],
-            _text(evidence_value["name"], field="evidence profile name"),
-        ),
-        weights=weights,
-        thresholds=thresholds,
-    )
-    selected_values = _list(
-        settings_value["selected_tag_names"], label="selected_tag_names"
-    )
-    settings = DiscoverySettings(
-        neutral_loss_profiles=tuple(profiles),
-        selected_tag_names=tuple(
-            _text(value, field="selected_tag_names") for value in selected_values
-        ),
-        tag_combine_mode=cast(
-            Literal["single", "union", "intersection"],
-            _text(settings_value["tag_combine_mode"], field="tag_combine_mode"),
-        ),
-        nl_tolerance_ppm=_float_from_text(
-            settings_value["nl_tolerance_ppm"], field="nl_tolerance_ppm"
-        ),
-        precursor_mz_tolerance_ppm=_float_from_text(
-            settings_value["precursor_mz_tolerance_ppm"],
-            field="precursor_mz_tolerance_ppm",
-        ),
-        product_mz_tolerance_ppm=_float_from_text(
-            settings_value["product_mz_tolerance_ppm"],
-            field="product_mz_tolerance_ppm",
-        ),
-        product_search_ppm=_float_from_text(
-            settings_value["product_search_ppm"], field="product_search_ppm"
-        ),
-        ms2_precursor_tol_da=_float_from_text(
-            settings_value["ms2_precursor_tol_da"], field="ms2_precursor_tol_da"
-        ),
-        nl_min_intensity_ratio=_float_from_text(
-            settings_value["nl_min_intensity_ratio"],
-            field="nl_min_intensity_ratio",
-        ),
-        ms1_search_padding_min=_float_from_text(
-            settings_value["ms1_search_padding_min"],
-            field="ms1_search_padding_min",
-        ),
-        rt_min=None
-        if settings_value["rt_min"] is None
-        else _float_from_text(settings_value["rt_min"], field="rt_min"),
-        rt_max=None
-        if settings_value["rt_max"] is None
-        else _float_from_text(settings_value["rt_max"], field="rt_max"),
-        resolver_mode=_text(settings_value["resolver_mode"], field="resolver_mode"),
-        evidence_profile=evidence_profile,
-        enable_blank_qualification=_boolean(
-            settings_value["enable_blank_qualification"],
-            field="enable_blank_qualification",
-        ),
-        blank_library_path=_optional_text(
-            settings_value["blank_library_path"],
-            field="blank_library_path",
-        ),
-        blank_ppm_tol=_float_from_text(
-            settings_value["blank_ppm_tol"],
-            field="blank_ppm_tol",
-        ),
-        blank_fold_change_threshold=_float_from_text(
-            settings_value["blank_fold_change_threshold"],
-            field="blank_fold_change_threshold",
-        ),
-        mass_recalibration=mass_recalibration,
-    )
-    return CidNlDiscoveryMethodSpec(
-        settings=settings,
-        method=_text(content["method"], field="method"),
-        schema_version=_text(content["schema_version"], field="schema_version"),
-    )
-
-
 def _validate_discovery_settings(settings: DiscoverySettings) -> None:
     from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
     from xic_extractor.discovery.evidence_config import (
@@ -938,13 +595,10 @@ _canonical_json_bytes = canonical_json_bytes
 _unique_mapping = json_unique_mapping_hook
 _require_keys = require_keys
 _mapping = require_mapping
-_list = require_list
 _required_text = require_text
 _optional_text = require_optional_text
-_boolean = require_boolean
 _float_text = canonical_float_hex
 _float_from_text = parse_canonical_float_hex
-_decode_json_object = parse_json_mapping_payload
 
 
 def _text(value: object, *, field: str) -> str:
@@ -957,7 +611,6 @@ def _integer(value: object, *, field: str) -> int:
 
 __all__ = [
     "CID_NL_DISCOVERY_METHOD_SCHEMA_VERSION",
-    "PROCESSING_RUN_SPEC_ENVELOPE_VERSION",
     "PROCESSING_RUN_SPEC_SCHEMA_VERSION",
     "CidNlDiscoveryMethodSpec",
     "DiscoveryMethodSpec",
@@ -968,7 +621,5 @@ __all__ = [
     "canonical_cid_nl_method_bytes",
     "canonical_processing_run_spec_bytes",
     "compile_processing_run_spec",
-    "deserialize_processing_run_spec",
     "normalize_generic_method_settings",
-    "serialize_processing_run_spec",
 ]

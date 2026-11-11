@@ -27,8 +27,6 @@ from xic_extractor.processing_run_spec import (
     GenericDiscoveryMethodSpec,
     GenericMethodSettings,
     compile_processing_run_spec,
-    deserialize_processing_run_spec,
-    serialize_processing_run_spec,
 )
 from xic_extractor.untargeted_execution.input_planning import (
     is_supported_alignment_discovery,
@@ -68,16 +66,11 @@ def test_compile_processing_run_spec_with_custom_discovery_method(tmp_path: Path
 
     assert run_spec.discovery_method.method == "delta_mass"
 
-    # Serialization and deserialization roundtrip preserves spec equality
-    # and attribute access
-    serialized = serialize_processing_run_spec(run_spec)
-    deserialized = deserialize_processing_run_spec(serialized)
-    assert deserialized.discovery_method.method == "delta_mass"
-    assert deserialized == run_spec
-    assert isinstance(deserialized.discovery_method.settings, GenericMethodSettings)
-    assert deserialized.discovery_method.settings.pattern_id == "pt"
-    assert deserialized.discovery_method.settings["pattern_id"] == "pt"
-    assert deserialized.discovery_method.settings == MockDeltaMassDiscoverySettings()
+    settings = run_spec.discovery_method.settings
+    assert isinstance(settings, GenericMethodSettings)
+    assert settings.pattern_id == "pt"
+    assert settings["pattern_id"] == "pt"
+    assert settings == MockDeltaMassDiscoverySettings()
 
 
 def test_is_supported_alignment_discovery_accepts_single_and_multi_tag_settings():

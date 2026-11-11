@@ -18,6 +18,9 @@ VALID_CURVE_KINDS = frozenset(
     {
         "initial_capture",
         "backfill_observation",
+        # No run writes Discovery curves any more; reports that hold them stay
+        # readable.
+        "discovery_physical",
     }
 )
 ALLOWED_CURVE_PAYLOAD_KEYS = frozenset(
