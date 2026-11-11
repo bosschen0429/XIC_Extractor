@@ -8,7 +8,6 @@ from typing import Any, Literal
 
 import numpy as np
 
-from tests.owner_peak_fixtures import peak_query_provenance
 from xic_extractor.alignment.cell_decision.owner import (
     NoWriteCellDecision,
     NoWriteState,
@@ -549,9 +548,7 @@ def _owner(
         # The suffix separates distinct owners that share one apex in a sample.
         intensity=(1.0 + sum(map(ord, suffix)) / 1000.0, 100.0, 1.0),
         integration=replace(_integration(apex_rt), raw_scan_indices=(0, 1, 2)),
-        generation_provenance=peak_query_provenance(
-            (apex_rt - 0.05, apex_rt, apex_rt + 0.05)
-        ),
+        generation_provenance=None,
         source_trace=None,
     )
     hypothesis_id = f"{sample_stem}|hypothesis|{suffix}"
