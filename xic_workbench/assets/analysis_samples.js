@@ -150,6 +150,9 @@ export async function listSamples(page, importSequence = false) {
   if (!$(spec.rawDir).value.trim()) return;
   // Another analysis owns the job slot; file names still give every row a role.
   if (isBusy()) {
+    // A running sample read already delivers header facts for these inputs;
+    // a filename preview would supersede it with less.
+    if (analysis?.snapshot.job?.kind === "samples") return;
     await sampleMetadata.preview(page);
     return;
   }
@@ -423,7 +426,7 @@ export function bindSamples() {
       const page = editing;
       const path = await requestPath(
         "匯出樣本資料 TSV / CSV",
-        `${$(samplePages[page].output).value}/sample_metadata.tsv`,
+        `${$(samplePages[page].output).value.replace(/[\\/]+$/, "")}\\sample_metadata.tsv`,
       );
       if (path) {
         await api("/api/samples/export", {
