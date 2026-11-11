@@ -408,11 +408,16 @@
       ]));
       const ions = item.details.delta_mass_ions || [];
       if (ions.length) {
-        const combinationLabel = '全部符合';
         const definitions = element('details'); definitions.append(element('summary', 'Delta Mass 伴隨離子'));
         definitions.append(facts([['基準離子', '目標 m/z（定量）'], ...ions.map(ion => [ion['Position'], `Δm/z ${Number(ion['Delta m/z']) > 0 ? '+' : ''}${ion['Delta m/z']} · 強度比範圍 ${ion['Ratio Min']}–${ion['Ratio Max']}（只記錄，不淘汰）${ion['Compare Shape'] === 'TRUE' ? ' · 比對峰形' : ''}`])]));
         definitions.append(facts([['m/z 容差 (ppm)', ions[0]['m/z Tolerance ppm']], ['共洗脫容差下限 (s)', ions[0]['Apex Floor sec']], ['最低峰形 r', ions[0]['Min Shape r']]]));
         method.append(definitions);
+      }
+      // Saved answers stand on their own; earlier workbooks carry no Delta Mass
+      // sheet and recorded their own all/any combination.
+      const methodEvidence = item.details.method_evidence || [];
+      if (methodEvidence.length || (item.details.delta_mass_evidence || []).length) {
+        const combinationLabel = methodEvidence.some(record => record['Combine'] === 'any') ? '任一符合' : '全部符合';
         const statuses = {matched: '符合', not_matched: '不符合', not_acquired: '沒有 MS2', not_evaluated: '未評估', TRUE: '是', FALSE: '否', pass: '通過', fail: '未通過'};
         for (const [title, records, fields, collapsed] of [
           [`特異性條件結果 · ${combinationLabel}`, item.details.method_evidence || [], [['SampleName', '樣本'], ['Candidate', '候選'], ['Candidate RT', '候選峰 RT'], ['Selected', '已選'], ['Method Accepted', '方法符合'], ['Condition', '條件編號'], ['Condition Label', '條件'], ['Status', '結果'], ['Reason', '說明']], false],

@@ -246,7 +246,11 @@ function loadDeltaMass(editor, overrides) {
   const shapes = new Set(overrides.discriminating_positions || []);
   const supports = new Set(overrides.base_support_positions || []);
   editor.base = base
-    ? { ...base, anchor: anchors.has(base.label) }
+    ? {
+        ...base,
+        anchor: anchors.has(base.label),
+        lowest: overrides.lowest_position === base.label,
+      }
     : { label: "base", delta_da: 0, ratio_min: 1, ratio_max: 1, anchor: true };
   editor.ions = rest.map((position) => ({
     label: position.label,
@@ -323,7 +327,8 @@ function editorDraft(editor) {
       discriminating_positions: ions
         .filter((ion) => ion.compare_shape)
         .map((ion) => ion.label),
-      lowest_position: ions.find((ion) => ion.lowest)?.label || "",
+      lowest_position:
+        [editor.base, ...ions].find((ion) => ion.lowest)?.label || "",
       base_support_positions: ions
         .filter((ion) => ion.support)
         .map((ion) => ion.label),
@@ -526,7 +531,8 @@ function renderRoles() {
     input.setAttribute("aria-label", `${label}（${ion.label || "未填 Δm/z"}）`);
     input.onchange = () => {
       if (key === "lowest")
-        for (const each of methodDraft.ions) each.lowest = each === ion;
+        for (const each of [methodDraft.base, ...methodDraft.ions])
+          each.lowest = each === ion;
       else ion[key] = input.checked;
     };
     const td = el("td", undefined, "center");
@@ -538,7 +544,7 @@ function renderRoles() {
     el("td", `${methodDraft.base.label}（基準）`, "mono"),
     check(methodDraft.base, "anchor", "可當搜尋起點"),
     el("td", "參考", "center subtle"),
-    el("td", "", "center"),
+    check(methodDraft.base, "lowest", "最弱且高於背景"),
     el("td", "", "center"),
   );
   table.append(baseRow);

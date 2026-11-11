@@ -938,6 +938,30 @@ def test_target_delta_mass_editor_names_ions_and_previews_actual_mz(
     expect(page.locator("#target-delta-advanced")).not_to_have_attribute("open", "")
 
 
+def test_unreadable_ratio_range_blocks_saving_the_target_list(workbench, config_dir):
+    page = workbench
+    page.locator("#target-edit").click()
+    page.get_by_role(
+        "button", name="編輯 Delta Mass Δm/z（第 1 列）", exact=True
+    ).click()
+    editor = page.locator(".target-delta-row .delta-editor")
+    editor.get_by_role("button", name="＋ 伴隨離子").click()
+    editor.get_by_role("textbox", name="Δm/z（第 1 個伴隨離子）").fill("+2")
+    editor.get_by_role("textbox", name="強度比範圍（第 1 個伴隨離子）").fill("0.8-0.2")
+    before = (config_dir / "workspace.json").read_bytes()
+    page.locator("#target-editor-save").click()
+    # The cell no longer matches the stored 0.1–10; nothing is saved.
+    expect(page.locator("#target-editor")).to_be_visible()
+    expect(page.locator("#target-editor-error")).to_contain_text("強度比範圍")
+    assert (config_dir / "workspace.json").read_bytes() == before
+    editor.get_by_role("textbox", name="強度比範圍（第 1 個伴隨離子）").fill("0.2-0.8")
+    page.locator("#target-editor-save").click()
+    expect(page.locator("#target-editor")).not_to_be_visible()
+    state = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
+    (ion,) = state["delta_mass"]["ions"]["Browser target"]
+    assert (ion["ratio_min"], ion["ratio_max"]) == (0.2, 0.8)
+
+
 def test_target_ions_follow_their_row_not_a_label_typed_through(
     workbench, config_dir, tmp_path
 ):
@@ -1108,6 +1132,43 @@ def test_untargeted_delta_mass_method_edits_with_shared_terms(workbench, tmp_pat
     dialog.get_by_role("button", name="＋ 中性丟失").click()
     expect(page.locator("#method-combine-field")).to_be_visible()
     page.locator("#method-combine").select_option("any")
+
+
+def test_unchanged_delta_mass_method_keeps_the_base_ion_roles(workbench, tmp_path):
+    from dataclasses import replace
+
+    from xic_extractor.presets import load_preset
+    from xic_extractor.presets.serialization import save_preset
+
+    builtin = load_preset("pt_pattern")
+    original = tmp_path / "base-lowest.toml"
+    save_preset(
+        replace(
+            builtin,
+            discovery_overrides={
+                **builtin.discovery_overrides,
+                "lowest_position": "base",
+            },
+        ),
+        original,
+    )
+    page = workbench
+    _view(page, "untargeted")
+    _expand_section(page, "#method-file-tools")
+    page.locator("#method-import").click()
+    page.locator("#path-dialog-value").fill(str(original))
+    with page.expect_response("**/api/method"):
+        page.locator("#path-dialog").get_by_role("button", name="確定").click()
+    page.locator("#method-edit").click()
+    saved = tmp_path / "copy.toml"
+    page.locator("#method-save-as").click()
+    page.locator("#path-dialog-value").fill(str(saved))
+    with page.expect_response("**/api/method/save"):
+        page.locator("#path-dialog").get_by_role("button", name="確定").click()
+    assert (
+        load_preset(saved).discovery_overrides
+        == load_preset(original).discovery_overrides
+    )
 
 
 def test_new_untargeted_delta_mass_method_restores_easy_ic(workbench, tmp_path):
@@ -2691,6 +2752,65 @@ def test_saved_method_and_delta_evidence_is_visible_and_readonly(workbench, tmp_
     expect(page.get_by_role("cell", name="沒有 MS2", exact=True)).to_be_visible()
     page.locator(".tgt-review").screenshot(path=str(tmp_path / "method-evidence.png"))
     assert path.read_bytes() == original
+
+
+def test_earlier_workbook_evidence_shows_without_the_delta_mass_sheet(
+    workbench, tmp_path
+):
+    from openpyxl import Workbook
+
+    book = Workbook()
+    targets = book.active
+    targets.title = "Targets"
+    targets.append(["Label", "Role", "m/z", "RT min", "RT max", "Method"])
+    targets.append(["Custom target", "Analyte", 302, 2, 2, "my pair"])
+    results = book.create_sheet("XIC Results")
+    results.append(
+        [
+            "SampleName",
+            "Target",
+            "RT",
+            "Area",
+            "PeakStart",
+            "PeakEnd",
+            "Reason",
+            "Review",
+            "Review Reason",
+            "Counted Detection",
+        ]
+    )
+    results.append(
+        ["Sample A", "Custom target", 2, 123.5, 1.9, 2.1, "", "", "", "TRUE"]
+    )
+    metadata = book.create_sheet("Run Metadata")
+    metadata.append(["Key", "Value"])
+    metadata.append(["targeted_output_schema_version", "targeted_output"])
+    definitions = book.create_sheet("Identification Methods")
+    definitions.append(["Method", "Combine", "Condition", "Kind", "CID-NL Tag"])
+    definitions.append(["my pair", "any", 1, "cid_nl", "dR"])
+    answers = book.create_sheet("Method Evidence")
+    answers.append(
+        ["SampleName", "Target", "Method", "Combine", "Condition Label", "Status"]
+    )
+    answers.append(
+        ["Sample A", "Custom target", "my pair", "any", "CID-NL · dR", "not_acquired"]
+    )
+    evidence = book.create_sheet("Delta Mass Evidence")
+    evidence.append(["SampleName", "Target", "Method", "Pattern Status", "Position"])
+    evidence.append(["Sample A", "Custom target", "my pair", "pass", "heavy"])
+    path = tmp_path / "earlier.xlsx"
+    book.save(path)
+    book.close()
+    page = workbench
+    _open_results(page)
+    page.locator("#source").fill(str(path))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Custom target").click()
+    review = page.locator(".tgt-review")
+    expect(review).to_contain_text("特異性條件結果 · 任一符合")
+    expect(page.get_by_role("cell", name="沒有 MS2", exact=True)).to_be_visible()
+    page.locator("summary", has_text="Delta Mass 配對明細").click()
+    expect(review).to_contain_text("heavy")
 
 
 def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):

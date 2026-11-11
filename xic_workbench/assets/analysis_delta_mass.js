@@ -60,9 +60,14 @@ export function ionsForOffsets(offsets, existing = []) {
     return kept ? { ...kept } : newIon(offset);
   });
 }
+// Ions whose ratio cell holds text that is not a range; the stored values are
+// stale until the cell is corrected, so saving must stop.
+const unreadableRatios = new WeakSet();
 export function ionsError(ions, { allowNegative }) {
   for (const [index, ion] of ions.entries()) {
     const where = `第 ${index + 1} 個伴隨離子`;
+    if (unreadableRatios.has(ion))
+      return `${where}：強度比範圍看不懂，請輸入下限–上限（例如 0.2–0.8）或單一數字。`;
     if (ion.offset_mz === null || !Number.isFinite(ion.offset_mz))
       return `${where}：請填寫 Δm/z。`;
     if (ion.offset_mz === 0) return `${where}：Δm/z 不可為 0（0 是基準離子）。`;
@@ -117,7 +122,10 @@ export function deltaMassEditor(options) {
       ratio.addEventListener("change", () => {
         const range = parseRatioRange(ratio.value);
         ratio.setCustomValidity(range ? "" : "請輸入 0.2–0.8 或單一數字");
-        if (range) [ion.ratio_min, ion.ratio_max] = range;
+        if (range) {
+          [ion.ratio_min, ion.ratio_max] = range;
+          unreadableRatios.delete(ion);
+        } else unreadableRatios.add(ion);
         changed();
       });
       const cells = [[offset, "num"], [ratio, "num"]];
