@@ -15,7 +15,7 @@ from tests.alignment_explanation_fixtures import explanation_discovery_facts
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from tests.cid_nl_raw_fixture import _FakeRaw, _settings
-from tests.cid_nl_runtime_fixtures import install_runtime_raws
+from tests.cid_nl_runtime_fixtures import install_runtime_raws, load_plan_inputs
 from tests.discovery_pipeline_fixtures import (
     _OwnerBoundFakeRawHandle,
     _scan_event,
@@ -488,12 +488,11 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         retain_partition_memory=False,
     )
     assert len(completed.application_result.children) == 3
-    candidates = plan.context.peaks_by_sample
+    candidates, records = load_plan_inputs(plan)
     completed = completed.bind_publication_inputs(
         peaks_by_sample=candidates,
         precursor_mz_by_candidate={
-            cid: record.work_item.precursor_mz
-            for cid, record in plan.context.physical_records_by_peak.items()
+            cid: record.work_item.precursor_mz for cid, record in records.items()
         },
         neutral_loss_by_tag=plan.context.settings.neutral_loss_by_tag,
         alignment_config=config,

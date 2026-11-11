@@ -1,8 +1,7 @@
-"""Prepare eager or indexed Untargeted inputs and exact subject worksets."""
+"""Prepare indexed Untargeted inputs and exact subject worksets."""
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -15,9 +14,6 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.batch_contract import (
-    DiscoveryPeakUniverseReceipt,
-)
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.physical_fact_persistence import (
@@ -25,7 +21,6 @@ from xic_extractor.discovery.physical_fact_persistence import (
 )
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalFactRecord,
-    admits_cid_nl_alignment,
     validate_peak_physical_measurement,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
@@ -41,38 +36,29 @@ from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 from xic_extractor.sample_metadata import (
     SampleMetadata,
 )
-from xic_extractor.untargeted_execution.partition.models import (
-    UntargetedPartitionJob,
-    build_sample_jobs,
-)
 from xic_extractor.untargeted_execution.partition.request import (
     UntargetedPartitionContext,
-    build_partition_context,
     compose_partition_context,
 )
 
 
 @dataclass(frozen=True, slots=True)
 class UntargetedInputPlan:
-    """Request-bound subject inputs with eager templates or a lazy partition loader."""
+    """Request-bound subject inputs with a lazy partition loader."""
 
     subject_batch: UntargetedCidNlMethodSubjectBatch
     context: UntargetedPartitionContext
-    sample_job_templates: tuple[UntargetedPartitionJob, ...]
     runtime_subjects: tuple[CidNlMethodSubject, ...]
     excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
-    partition_input_loader: (
-        Callable[
-            [tuple[str, ...]],
-            tuple[
-                dict[str, tuple[DiscoveryPeak, ...]],
-                dict[str, DiscoveryPhysicalFactRecord],
-                dict[str, tuple[DiscoveryPeak, ...]],
-            ],
-        ]
-        | None
-    ) = None
-    dll_dir: Path | None = None
+    partition_input_loader: Callable[
+        [tuple[str, ...]],
+        tuple[
+            dict[str, tuple[DiscoveryPeak, ...]],
+            dict[str, DiscoveryPhysicalFactRecord],
+            dict[str, tuple[DiscoveryPeak, ...]],
+        ],
+    ]
+    dll_dir: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,18 +186,6 @@ def _known_istd_comparison_intervals(
     )
 
 
-def is_pure_single_provider_cid_nl(settings: DiscoverySettings) -> bool:
-    """Return whether settings select the production-owned pure CID-NL route."""
-
-    if not isinstance(settings, DiscoverySettings):
-        return False
-    try:
-        CidNlDiscoveryMethodSpec(settings=settings)
-    except TypeError, ValueError:
-        return False
-    return True
-
-
 def is_supported_alignment_discovery(settings: DiscoverySettings) -> bool:
     """Return whether settings select a supported discovery method for alignment."""
 
@@ -239,58 +213,6 @@ def _subject_candidates(
     )
 
 
-def prepare_untargeted_subject_membership(
-    *,
-    peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
-    settings: DiscoverySettings,
-    physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord],
-) -> UntargetedCidNlMethodSubjectBatch:
-    """Resolve exact subject membership for a closed precursor working set."""
-    candidates = tuple(
-        candidate
-        for sample_candidates in peaks_by_sample.values()
-        for candidate in sample_candidates
-        if admits_cid_nl_alignment(
-            candidate, physical_records_by_peak.get(candidate.peak_id)
-        )
-    )
-    candidate_ids = tuple(candidate.peak_id for candidate in candidates)
-    if len(candidate_ids) != len(set(candidate_ids)):
-        raise ValueError("Discovery candidate identity must be globally unique")
-
-    composition = cid_nl_composition(settings)
-    for candidate in candidates:
-        precursor_mz = float(candidate.peak_mz)
-        neutral_loss_da = float(
-            settings.neutral_loss_by_tag.get(candidate.neutral_loss_tag, math.nan)
-        )
-        if (
-            not math.isfinite(precursor_mz)
-            or precursor_mz <= 0.0
-            or not math.isfinite(neutral_loss_da)
-            or neutral_loss_da <= 0.0
-        ):
-            raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
-    precursor_by_id = {candidate.peak_id: candidate.peak_mz for candidate in candidates}
-    return mint_cid_nl_subject_membership(
-        candidates=_subject_candidates(
-            [
-                (
-                    None
-                    if composition is not None
-                    else settings.neutral_loss_by_tag[candidate.neutral_loss_tag],
-                    candidate.peak_id,
-                )
-                for candidate in candidates
-            ],
-            precursor_by_id,
-        ),
-        precursor_by_id=precursor_by_id,
-        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-        composition=composition,
-    )
-
-
 def cid_nl_composition(settings: DiscoverySettings) -> CidNlComposition | None:
     """Resolve the configured requirement shared by all precursor worksets."""
     combine_mode = settings.tag_combine_mode
@@ -306,96 +228,6 @@ def cid_nl_composition(settings: DiscoverySettings) -> CidNlComposition | None:
         )
         if len(settings.neutral_loss_profiles) > 1 and combine_mode != "single"
         else None
-    )
-
-
-def prepare_eager_untargeted_plan(
-    *,
-    raw_paths: tuple[Path, ...],
-    sample_metadata: tuple[SampleMetadata, ...],
-    settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
-    peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
-    discovery_receipts_by_sample: Mapping[
-        str,
-        DiscoveryPeakUniverseReceipt,
-    ],
-    dll_dir: Path,
-    signal_processing_profile: SignalProcessingProfile,
-    physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord],
-    acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
-    | None = None,
-) -> UntargetedInputPlan:
-    """Seal exact candidate membership before any subject-local runtime work."""
-
-    if not is_pure_single_provider_cid_nl(settings):
-        raise ValueError(
-            "Untargeted CID-NL production requires a pure single-provider route"
-        )
-    if not isinstance(dll_dir, Path):
-        raise TypeError("dll_dir must be a Path")
-    subject_batch = prepare_untargeted_subject_membership(
-        peaks_by_sample=peaks_by_sample,
-        settings=settings,
-        physical_records_by_peak=physical_records_by_peak,
-    )
-    context = build_partition_context(
-        raw_paths=raw_paths,
-        sample_metadata=sample_metadata,
-        method_subject=subject_batch,
-        settings=settings,
-        peak_config=peak_config,
-        peaks_by_sample=peaks_by_sample,
-        discovery_receipts_by_sample=discovery_receipts_by_sample,
-        signal_processing_profile=signal_processing_profile,
-        physical_records_by_peak=physical_records_by_peak,
-        acquisition_source_expectations=acquisition_source_expectations,
-        feature_candidate_ids=tuple(
-            cid for cid, _ in subject_batch.candidate_memberships
-        ),
-    )
-    ordered_physical_records = tuple(
-        record
-        for _candidate_id, record in sorted(context.physical_records_by_peak.items())
-    )
-    physical_records_by_sample: dict[str, list[DiscoveryPhysicalFactRecord]] = {}
-    for record in ordered_physical_records:
-        physical_records_by_sample.setdefault(record.work_item.sample_stem, []).append(
-            record
-        )
-    templates = tuple(
-        job
-        for sample in context.samples
-        for job in build_sample_jobs(
-            processing_attempt_id=context.processing_attempt_id,
-            method_subjects=context.method_subject,
-            sample=sample,
-            subject_work_units=tuple(
-                (
-                    subject,
-                    f"untargeted-cid-nl:{sample.raw_stem}:{subject.method_subject_id}",
-                )
-                for subject in subject_batch.subjects[:1]
-            ),
-            candidates=context.peaks_by_sample[sample.raw_stem],
-            discovery_receipt=context.discovery_receipts_by_sample[sample.raw_stem],
-            settings=context.settings,
-            peak_config=context.peak_config,
-            raw_path=context.raw_paths_by_sample[sample.raw_stem],
-            acquisition_source_expectation=context.acquisition_sources_by_sample[
-                sample.raw_stem
-            ],
-            dll_dir=dll_dir,
-            signal_processing_profile=context.signal_processing_profile,
-            physical_records=tuple(physical_records_by_sample.get(sample.raw_stem, ())),
-        )
-    )
-    return UntargetedInputPlan(
-        subject_batch=subject_batch,
-        context=context,
-        sample_job_templates=templates,
-        runtime_subjects=subject_batch.subjects,
-        excluded_candidates=(),
     )
 
 
@@ -496,7 +328,6 @@ def prepare_indexed_untargeted_plan(
     return UntargetedInputPlan(
         subject_batch=subject_batch,
         context=context,
-        sample_job_templates=(),
         runtime_subjects=subject_batch.subjects,
         excluded_candidates=(),
         partition_input_loader=load_partition,

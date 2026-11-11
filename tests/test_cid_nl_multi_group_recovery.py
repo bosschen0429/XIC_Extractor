@@ -268,9 +268,6 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -394,9 +391,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -518,9 +512,6 @@ def test_rejected_discovery_input_cannot_supply_backfill_support(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -686,9 +677,6 @@ def test_runtime_recovers_every_authorized_rt_group(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
             c.peak_id: physical_records[c.peak_id]
@@ -718,7 +706,13 @@ def test_runtime_recovers_every_authorized_rt_group(
             precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
             neutral_loss_da=116.0474,
         )
-        context = build_partition_context(**kwargs, method_subject=subject)
+        context = build_partition_context(
+            **kwargs,
+            discovery_receipts_by_sample=build_discovery_receipts(
+                tmp_path, paths, candidates
+            ),
+            method_subject=subject,
+        )
         jobs = tuple(
             UntargetedPartitionJob(
                 processing_attempt_id=context.processing_attempt_id,
@@ -1207,9 +1201,6 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -1356,9 +1347,6 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -1545,9 +1533,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -1698,9 +1683,6 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -1755,9 +1737,8 @@ def test_alignment_uses_configured_recovery_groups(tmp_path, monkeypatch):
 def _assert_alignment_uses_configured_recovery_groups(
     tmp_path, monkeypatch, paths, raws, candidates, kwargs, settings, peak_config
 ):
-    from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
-    from xic_extractor.processing_identity import AcquisitionSourceExpectation
-    from xic_extractor.raw_source_binding import stat_identity
+    from tests.cid_nl_runtime_fixtures import persist_discovery_batch
+    from xic_extractor.discovery.input_source import DiscoveryInputSource
     from xic_extractor.untargeted_execution import execution as bounded_runtime
     from xic_extractor.untargeted_execution.alignment import (
         complete_untargeted_alignment,
@@ -1788,34 +1769,18 @@ def _assert_alignment_uses_configured_recovery_groups(
         return result
 
     monkeypatch.setattr(bounded_runtime, "execute_partition", retain_runtime)
-    monkeypatch.setattr(
-        "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",
-        lambda **options: (
-            options["peaks_by_sample"],
-            kwargs["physical_records_by_peak"],
-            tuple(
-                AcquisitionSourceExpectation(
-                    kwargs["discovery_receipts_by_sample"][
-                        path.stem
-                    ].acquisition_source,
-                    stat_identity(path.stat()),
-                )
-                for path in options["raw_paths"]
-            ),
-        ),
+    batch = persist_discovery_batch(
+        raw_paths=paths,
+        settings=settings,
+        peaks_by_sample=candidates,
+        physical_records_by_peak=kwargs["physical_records_by_peak"],
+        signal_processing_profile=TEST_PROFILE,
+        root=tmp_path / "discovery",
     )
     completed = complete_untargeted_alignment(
         signal_processing_profile=TEST_PROFILE,
-        discovery_batch=DiscoveryBatchInput(
-            sample_order=tuple(candidates),
-            peak_csvs={
-                stem: tmp_path / f"{stem}.owner-candidates.csv" for stem in candidates
-            },
-            raw_files={path.stem: path for path in paths},
-            event_csvs={stem: None for stem in candidates},
-            peak_receipts=kwargs["discovery_receipts_by_sample"],
-        ),
-        peaks_by_sample=candidates,
+        discovery_batch=batch,
+        peaks_by_sample=DiscoveryInputSource(batch),
         sample_metadata=kwargs["sample_metadata"],
         raw_dir=tmp_path,
         dll_dir=tmp_path,

@@ -1,6 +1,6 @@
 """Persisted CID-NL replay baseline, synthetic input builders and parity oracles.
 
-The replay baseline is two samples, a single DNA_dR loss, eager/indexed input,
+The replay baseline is two samples, a single DNA_dR loss, indexed input,
 RT 13.1–13.4 min and Gaussian15 processing. Scenario parameters explicitly
 select group sizes, tag composition, nearby mass and physical-family context.
 Other builders retain their own settings; they do not inherit replay defaults.
@@ -391,13 +391,8 @@ print(json.dumps({'curves': curves, 'links': links}))
         assert {normalize(item) for item in source_values} <= linked
 
 
-@pytest.fixture(params=(False, True), ids=("eager", "indexed"))
-def replay_indexed_input(request):
-    return request.param
-
-
 @pytest.fixture
-def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
+def profile_replay(tmp_path, monkeypatch, request):
     """Run persisted Discovery through the real adapter; keep each test isolated.
 
     Only the end-to-end matrix test expands the eight scientific scenarios.
@@ -408,7 +403,6 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
         if hasattr(request, "param")
         else ((2,), "single", False, False, 0.0)
     )
-    indexed_input = replay_indexed_input
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
@@ -977,9 +971,7 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
     obsolete_marker.write_bytes(b"obsolete attempt status")
     completed = alignment_adapter.complete_untargeted_alignment(
         discovery_batch=discovery_batch,
-        peaks_by_sample=(
-            DiscoveryInputSource(discovery_batch) if indexed_input else candidates
-        ),
+        peaks_by_sample=(DiscoveryInputSource(discovery_batch)),
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "alignment",
@@ -1003,7 +995,6 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                 nearby=nearby,
                 family_context=family_context,
                 family_precursor_delta=family_precursor_delta,
-                indexed_input=indexed_input,
             ),
             inputs=SimpleNamespace(
                 candidates=candidates,
@@ -1077,9 +1068,6 @@ def _source_verification_inputs(tmp_path: Path):
             settings=settings,
             peak_config=peak_config,
             peaks_by_sample={"S1": candidates},
-            discovery_receipts_by_sample=build_discovery_receipts(
-                tmp_path, (path,), {"S1": candidates}
-            ),
             dll_dir=tmp_path,
             signal_processing_profile=TEST_PROFILE,
             physical_records_by_peak=physical_records,

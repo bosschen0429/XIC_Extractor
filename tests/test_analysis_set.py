@@ -12,8 +12,6 @@ from xic_extractor.injection_timeline import (
     PerturbationPolicy,
     build_injection_timeline,
 )
-from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.raw_source_binding import stat_identity
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -122,8 +120,8 @@ def test_retained_alignment_keeps_full_root_injection_order(
         _peak_config,
         _settings,
     )
-    from tests.cid_nl_runtime_fixtures import build_discovery_receipts
-    from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
+    from tests.cid_nl_runtime_fixtures import persist_discovery_batch
+    from xic_extractor.discovery.input_source import DiscoveryInputSource
     from xic_extractor.raw_sequence import read_analysis_set
     from xic_extractor.untargeted_execution.alignment import (
         prepare_untargeted_alignment_inputs,
@@ -167,31 +165,18 @@ def test_retained_alignment_keeps_full_root_injection_order(
         )
         for p in selected_paths
     }
-    receipts = build_discovery_receipts(tmp_path, selected_paths, candidates)
-    batch = DiscoveryBatchInput(
-        sample_order=("A", "B"),
-        peak_csvs={},
-        raw_files={p.stem: p for p in selected_paths},
-        event_csvs={},
-        peak_receipts=receipts,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",
-        lambda **options: (
-            options["peaks_by_sample"],
-            physical_records,
-            tuple(
-                AcquisitionSourceExpectation(
-                    receipts[path.stem].acquisition_source, stat_identity(path.stat())
-                )
-                for path in options["raw_paths"]
-            ),
-        ),
+    batch = persist_discovery_batch(
+        raw_paths=selected_paths,
+        settings=settings,
+        peaks_by_sample=candidates,
+        physical_records_by_peak=physical_records,
+        signal_processing_profile=TEST_PROFILE,
+        root=tmp_path / "discovery",
     )
     prepared = prepare_untargeted_alignment_inputs(
         signal_processing_profile=TEST_PROFILE,
         discovery_batch=batch,
-        peaks_by_sample=candidates,
+        peaks_by_sample=DiscoveryInputSource(batch),
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "out",
@@ -226,8 +211,8 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
         _peak_config,
         _settings,
     )
-    from tests.cid_nl_runtime_fixtures import build_discovery_receipts
-    from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
+    from tests.cid_nl_runtime_fixtures import persist_discovery_batch
+    from xic_extractor.discovery.input_source import DiscoveryInputSource
     from xic_extractor.untargeted_execution.alignment import (
         prepare_untargeted_alignment_inputs,
     )
@@ -246,26 +231,13 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
         )
         for p in paths
     }
-    receipts = build_discovery_receipts(tmp_path, paths, candidates)
-    batch = DiscoveryBatchInput(
-        sample_order=("A", "B"),
-        peak_csvs={},
-        raw_files={p.stem: p for p in paths},
-        event_csvs={},
-        peak_receipts=receipts,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",
-        lambda **options: (
-            options["peaks_by_sample"],
-            physical_records,
-            tuple(
-                AcquisitionSourceExpectation(
-                    receipts[path.stem].acquisition_source, stat_identity(path.stat())
-                )
-                for path in options["raw_paths"]
-            ),
-        ),
+    batch = persist_discovery_batch(
+        raw_paths=paths,
+        settings=settings,
+        peaks_by_sample=candidates,
+        physical_records_by_peak=physical_records,
+        signal_processing_profile=TEST_PROFILE,
+        root=tmp_path / "discovery",
     )
     metadata = (
         SampleMetadata("A", "A", injection_order=1, sample_role="sample"),
@@ -282,7 +254,7 @@ def test_supplied_metadata_with_an_excluded_sample_aligns_the_analyzed_samples(
     prepared = prepare_untargeted_alignment_inputs(
         signal_processing_profile=TEST_PROFILE,
         discovery_batch=batch,
-        peaks_by_sample=candidates,
+        peaks_by_sample=DiscoveryInputSource(batch),
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "out",

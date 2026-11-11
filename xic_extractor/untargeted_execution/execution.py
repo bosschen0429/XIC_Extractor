@@ -115,52 +115,47 @@ def materialize_untargeted_partition(
     if subject_batch.candidate_memberships != expected_batch.candidate_memberships:
         raise ValueError("CID-NL partition crossed prepared candidate memberships")
 
-    if plan.partition_input_loader is not None:
-        candidates, records, support = plan.partition_input_loader(
-            tuple(cid for cid, _ in subject_batch.candidate_memberships)
-        )
-        context = replace(
-            plan.context,
-            peaks_by_sample=candidates,
-            physical_records_by_peak=records,
-        )
-        assert plan.dll_dir is not None
-        templates: list[UntargetedPartitionJob] = []
-        for sample in context.samples:
-            stem = sample.raw_stem
-            templates.extend(
-                build_sample_jobs(
-                    processing_attempt_id=context.processing_attempt_id,
-                    method_subjects=context.method_subject,
-                    sample=sample,
-                    subject_work_units=tuple(
-                        (
-                            subject,
-                            f"untargeted-cid-nl:{stem}:{subject.method_subject_id}",
-                        )
-                        for subject in subject_batch.subjects[:1]
-                    ),
-                    candidates=candidates[stem],
-                    discovery_receipt=context.discovery_receipts_by_sample[stem],
-                    settings=context.settings,
-                    peak_config=context.peak_config,
-                    raw_path=context.raw_paths_by_sample[stem],
-                    dll_dir=plan.dll_dir,
-                    signal_processing_profile=context.signal_processing_profile,
-                    physical_records=tuple(
-                        records[item.peak_id] for item in candidates[stem]
-                    ),
-                    acquisition_source_expectation=context.acquisition_sources_by_sample[
-                        stem
-                    ],
-                    subject_partition=subject_batch,
-                    support_candidates=support[stem],
-                    acquisition_cache_dir=acquisition_cache_dir,
-                )
+    candidates, records, support = plan.partition_input_loader(
+        tuple(cid for cid, _ in subject_batch.candidate_memberships)
+    )
+    context = replace(
+        plan.context,
+        peaks_by_sample=candidates,
+        physical_records_by_peak=records,
+    )
+    templates: list[UntargetedPartitionJob] = []
+    for sample in context.samples:
+        stem = sample.raw_stem
+        templates.extend(
+            build_sample_jobs(
+                processing_attempt_id=context.processing_attempt_id,
+                method_subjects=context.method_subject,
+                sample=sample,
+                subject_work_units=tuple(
+                    (
+                        subject,
+                        f"untargeted-cid-nl:{stem}:{subject.method_subject_id}",
+                    )
+                    for subject in subject_batch.subjects[:1]
+                ),
+                candidates=candidates[stem],
+                discovery_receipt=context.discovery_receipts_by_sample[stem],
+                settings=context.settings,
+                peak_config=context.peak_config,
+                raw_path=context.raw_paths_by_sample[stem],
+                dll_dir=plan.dll_dir,
+                signal_processing_profile=context.signal_processing_profile,
+                physical_records=tuple(
+                    records[item.peak_id] for item in candidates[stem]
+                ),
+                acquisition_source_expectation=context.acquisition_sources_by_sample[
+                    stem
+                ],
+                subject_partition=subject_batch,
+                support_candidates=support[stem],
+                acquisition_cache_dir=acquisition_cache_dir,
             )
-    else:
-        context = plan.context
-        templates = list(plan.sample_job_templates)
+        )
     jobs = []
     subjects_by_id = {
         subject.method_subject_id: subject for subject in subject_batch.subjects
@@ -262,16 +257,15 @@ class UntargetedPartitionPipelineAdapter:
         current_candidate_count = 0
         current_mass_bin: int | None = None
         worksets = self._prepared_worksets.worksets
-        if plan.partition_input_loader is not None:
-            worksets = tuple(
-                sorted(
-                    worksets,
-                    key=lambda workset: (
-                        min(subject.precursor_mz for subject in workset),
-                        min(subject.method_subject_id for subject in workset),
-                    ),
-                )
+        worksets = tuple(
+            sorted(
+                worksets,
+                key=lambda workset: (
+                    min(subject.precursor_mz for subject in workset),
+                    min(subject.method_subject_id for subject in workset),
+                ),
             )
+        )
         for workset in worksets:
             mass_bin = int(min(subject.precursor_mz for subject in workset) // 100.0)
             candidate_count = sum(
@@ -288,13 +282,8 @@ class UntargetedPartitionPipelineAdapter:
                 )
             if current_subjects and (
                 len(current_subjects) + len(workset) > subjects_per_partition
-                or (
-                    plan.partition_input_loader is not None
-                    and (
-                        current_mass_bin != mass_bin
-                        or current_candidate_count + candidate_count > 1024
-                    )
-                )
+                or current_mass_bin != mass_bin
+                or current_candidate_count + candidate_count > 1024
             ):
                 subject_partitions_list.append(
                     tuple(
@@ -369,7 +358,7 @@ class UntargetedPartitionPipelineAdapter:
                     ),
                 ),
             )
-            dll_dir = _plan_dll_dir(plan)
+            dll_dir = plan.dll_dir
             # Both acquisition lanes share the full process budget. A lane
             # waiting on grouping/composition does not strand half the workers.
             self._process_pools = (
@@ -821,13 +810,4 @@ def _sample_worker_subject_owners(
     partition_batches: tuple[object, ...],
 ) -> tuple[object, ...]:
     values = [plan.subject_batch, *partition_batches]
-    values.extend(template._request_subjects for template in plan.sample_job_templates)
     return tuple({id(value): value for value in values}.values())
-
-
-def _plan_dll_dir(plan: UntargetedInputPlan) -> Path:
-    if plan.dll_dir is not None:
-        return plan.dll_dir
-    if plan.sample_job_templates:
-        return plan.sample_job_templates[0].dll_dir
-    raise RuntimeError("process worker pool requires a planned DLL directory")

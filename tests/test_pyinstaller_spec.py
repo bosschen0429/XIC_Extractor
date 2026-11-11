@@ -139,7 +139,7 @@ from xic_extractor.untargeted_execution.alignment import (
     complete_untargeted_alignment,
 )
 from xic_extractor.untargeted_execution.input_planning import (
-    is_pure_single_provider_cid_nl,
+    is_supported_alignment_discovery,
 )
 from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses,
@@ -174,14 +174,14 @@ from xic_extractor.presets import bind_cid_nl_recipe, load_preset
 
 preset = load_preset("dna_dr")
 recipe = bind_cid_nl_recipe(preset, "align_only")
-if not is_pure_single_provider_cid_nl(recipe.discovery_settings):
+if not is_supported_alignment_discovery(recipe.discovery_settings):
     raise RuntimeError("installed public CID-NL preset did not satisfy its predicate")
 
 public_objects = {
     "bind_cid_nl_recipe": bind_cid_nl_recipe,
     "run_untargeted_application": run_untargeted_application,
     "complete_untargeted_alignment": complete_untargeted_alignment,
-    "is_pure_single_provider_cid_nl": is_pure_single_provider_cid_nl,
+    "is_supported_alignment_discovery": is_supported_alignment_discovery,
     "load_preset": load_preset,
     "write_alignment_tsvs": write_alignment_tsvs,
 }
@@ -676,7 +676,7 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
     assert metadata["public_names"] == [
         "bind_cid_nl_recipe",
         "complete_untargeted_alignment",
-        "is_pure_single_provider_cid_nl",
+        "is_supported_alignment_discovery",
         "load_preset",
         "run_untargeted_application",
         "write_alignment_tsvs",

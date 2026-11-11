@@ -9,7 +9,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import xic_extractor.untargeted_execution.alignment as alignment_adapter
 from tests.alignment_explanation_fixtures import (
     explanation_discovery_facts,
     explanation_summary,
@@ -30,9 +29,6 @@ from tests.untargeted_cid_nl_production_batch_fixtures import (
 )
 from tests.untargeted_cid_nl_production_batch_fixtures import (
     profile_replay as profile_replay,
-)
-from tests.untargeted_cid_nl_production_batch_fixtures import (
-    replay_indexed_input as replay_indexed_input,
 )
 from tests.untargeted_partition_fixtures import (
     fixture_assessment,
@@ -124,12 +120,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     # Owner-produced arrays survive both sidecar and runtime partition handoff.
     retained_discovery = tuple(completed.discovery_physical_records)
-    # Indexed input exposes published candidate bindings lazily; eager input
-    # also retains the source-only records behind merged representatives.
-    expected_retained = (
-        inputs.source_records if case.indexed_input else inputs.source_evidence
-    )
-    assert {item.peak_id for item in retained_discovery} == set(expected_retained)
+    # Indexed input exposes published candidate bindings lazily.
+    assert {item.peak_id for item in retained_discovery} == set(inputs.source_records)
     for retained in retained_discovery:
         source = inputs.source_evidence[retained.peak_id]
         assert (
@@ -704,32 +696,3 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
     _assert_fresh_process_curve_parity(
         recovery_path, [_expected_capture_curve(item) for item in recovery_sources]
     )
-
-
-def test_profile_replay_rejects_changed_partition_inputs(
-    tmp_path: Path, profile_replay
-) -> None:
-    inputs = profile_replay.inputs
-    trace = profile_replay.trace
-    case = profile_replay.case
-
-    from xic_extractor.processing_identity import IdentityContractError
-
-    batch = trace.captured_batches[0]
-
-    if not case.indexed_input:
-        wrong_records = dict(batch.context.physical_records_by_peak)
-        keys = tuple(wrong_records)
-        wrong_records[keys[0]] = wrong_records[keys[1]]
-        with pytest.raises(IdentityContractError, match="crossed peak"):
-            alignment_adapter.prepare_eager_untargeted_plan(
-                raw_paths=inputs.paths,
-                sample_metadata=tuple(sample for sample in batch.context.samples),
-                settings=inputs.settings,
-                peak_config=inputs.peak_config,
-                peaks_by_sample=batch.context.peaks_by_sample,
-                discovery_receipts_by_sample=inputs.receipts,
-                dll_dir=tmp_path,
-                signal_processing_profile=inputs.profile,
-                physical_records_by_peak=wrong_records,
-            )

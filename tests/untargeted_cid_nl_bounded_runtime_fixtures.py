@@ -13,15 +13,15 @@ from tests.cid_nl_raw_fixture import (
     _peak_config,
     _settings,
 )
-from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
+from tests.cid_nl_runtime_fixtures import (
+    install_runtime_raws,
+    prepare_persisted_discovery_plan,
+)
 from tests.untargeted_cid_nl_batch_runtime_fixtures import _nearby_subject_candidates
 from xic_extractor.applications.untargeted.istd_reference import (
     read_known_istd_reference,
 )
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.untargeted_execution.input_planning import (
-    prepare_eager_untargeted_plan,
-)
 
 
 def _plan(
@@ -104,7 +104,7 @@ def _plan(
                 if path in paths[:2]
                 else ()
             )
-    plan = prepare_eager_untargeted_plan(
+    plan = prepare_persisted_discovery_plan(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -122,9 +122,7 @@ def _plan(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
+        root=tmp_path / "persisted",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={

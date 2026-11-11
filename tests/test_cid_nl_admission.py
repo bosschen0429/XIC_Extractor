@@ -76,10 +76,9 @@ def test_alignment_and_delta_mass_read_one_peak_mass(tmp_path, apex_mz):
     assert delta_mass_row.peak_mz == peak_mz
 
 
-@pytest.mark.parametrize("indexed", [False, True], ids=["eager", "indexed"])
 @pytest.mark.parametrize("with_supported", [False, True], ids=["all_review", "mixed"])
 def test_review_rows_never_become_alignment_roots(
-    tmp_path, monkeypatch, indexed, with_supported
+    tmp_path, monkeypatch, with_supported
 ):
     stems = ("Rescued", "Overlap", "Orphan") + (
         ("Clean1", "Clean2") if with_supported else ()
@@ -167,7 +166,7 @@ def test_review_rows_never_become_alignment_roots(
             assert source.locations[peak.peak_id].peak_mz == peak.peak_mz
     prepared = prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
-        peaks_by_sample=source if indexed else candidates,
+        peaks_by_sample=source,
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "inputs",

@@ -27,7 +27,11 @@ from tests.cid_nl_raw_fixture import (
     _peak_config,
     _settings,
 )
-from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
+from tests.cid_nl_runtime_fixtures import (
+    install_runtime_raws,
+    load_plan_inputs,
+    prepare_persisted_discovery_plan,
+)
 from tests.discovery_csv_fixtures import representative_event
 from tests.untargeted_cid_nl_bounded_runtime_fixtures import (
     _plan,
@@ -44,9 +48,6 @@ from xic_extractor.untargeted_execution.execution import (
 )
 from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
-)
-from xic_extractor.untargeted_execution.input_planning import (
-    prepare_eager_untargeted_plan,
 )
 
 
@@ -103,7 +104,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
             physical_records=physical_records,
         )
         assert len(candidates[path.stem]) == 12
-    plan = prepare_eager_untargeted_plan(
+    plan = prepare_persisted_discovery_plan(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -117,9 +118,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
+        root=tmp_path / "persisted",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -254,7 +253,7 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
             # The target MS1 signal remains without independent MS2 support.
             # A correct Backfill query cannot supply it.
             raw.scans = tuple(s for s in raw.scans if s.precursor_mz < 500.5)
-    plan = prepare_eager_untargeted_plan(
+    plan = prepare_persisted_discovery_plan(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -268,9 +267,7 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
+        root=tmp_path / "persisted",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -671,6 +668,7 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         (f"candidate-{index}", subject.method_subject_id)
         for index, subject in enumerate(subjects)
     )
+    planned_ids = tuple(cid for cid, _ in plan.subject_batch.candidate_memberships)
     packing_plan = replace(
         plan,
         subject_batch=mint_untargeted_cid_nl_method_subject_batch(
@@ -678,6 +676,8 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
             candidate_memberships=memberships,
         ),
         runtime_subjects=subjects,
+        # The packing subjects are synthetic; load the planned peaks instead.
+        partition_input_loader=lambda _ids: plan.partition_input_loader(planned_ids),
     )
     prepare_worksets = bounded_owner.prepare_untargeted_alignment_worksets
     prepared = prepare_worksets(packing_plan)
@@ -830,7 +830,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     subject_batch = plan.subject_batch
     candidate_by_id = {
         candidate.peak_id: candidate
-        for candidates in plan.context.peaks_by_sample.values()
+        for candidates in load_plan_inputs(plan)[0].values()
         for candidate in candidates
     }
     eligible_subject_ids = {
@@ -904,7 +904,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         tmp_path / "eligibility.sqlite",
         completed=result,
         **plan_discovery_facts(plan),
-        peaks_by_sample=plan.context.peaks_by_sample,
+        peaks_by_sample=load_plan_inputs(plan)[0],
         matrix_path=matrix_path,
         alignment_config=config,
     )
@@ -1097,7 +1097,7 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
             tmp_path / f"{name}.sqlite",
             completed=completed,
             **plan_discovery_facts(plan),
-            peaks_by_sample=plan.context.peaks_by_sample,
+            peaks_by_sample=load_plan_inputs(plan)[0],
             matrix_path=matrix,
             alignment_config=config,
         )
@@ -1600,7 +1600,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         expected_initial_sample_ids = {
             sample.sample_name
             for sample in plan.context.samples
-            if plan.context.peaks_by_sample[sample.raw_stem]
+            if load_plan_inputs(plan)[0].get(sample.raw_stem)
         }
         assert {
             job.sample.sample_name for job in batch.jobs
@@ -1674,7 +1674,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     )
     assert type(result) is CompletedUntargetBatchWorkflowResult
     initial_sample_count = sum(
-        bool(plan.context.peaks_by_sample[sample.raw_stem])
+        bool(load_plan_inputs(plan)[0].get(sample.raw_stem))
         for sample in plan.context.samples
     )
     assert job_counts == [initial_sample_count * 2, initial_sample_count]
@@ -2403,7 +2403,8 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
         )
         for child in restored.sequence("children")
     )
-    assert recovered == child_ids
+    # The spool keeps partition write order; the result restores canonical order.
+    assert sorted(recovered, key=repr) == sorted(child_ids, key=repr)
 
     # The point of the index: one record, addressed by position, off disk.
     first_child_partition = next(
@@ -2416,7 +2417,7 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
         tuple(
             observation.key for observation in first.scientific_core.cell_observations
         )
-        == child_ids[0]
+        == recovered[0]
     )
 
 

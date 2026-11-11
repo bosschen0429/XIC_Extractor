@@ -16,7 +16,7 @@ from tests.cid_nl_raw_fixture import (
     _FakeRaw,
     _peak_config,
 )
-from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
+from tests.cid_nl_runtime_fixtures import install_runtime_raws
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
     complete_dense_partition,
@@ -131,9 +131,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={

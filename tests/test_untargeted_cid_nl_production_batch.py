@@ -54,6 +54,7 @@ from xic_extractor.alignment.result.scientific_alignment import (
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
+from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import (
     DiscoveryPeak,
 )
@@ -128,11 +129,6 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path,
-            raw_paths,
-            peaks_by_sample,
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -267,9 +263,6 @@ def test_sample_job_builder_binds_shared_inputs_to_each_subject(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample={"S1": candidates},
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, (raw_path,), {"S1": candidates}
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -293,7 +286,8 @@ def test_sample_job_builder_binds_shared_inputs_to_each_subject(
     ):
         with pytest.raises(UntargetedPartitionError, match=message):
             build_sample_jobs(
-                **shared, subject_work_units=(work_units[0], (subject, key))
+                **(shared | {"subject_partition": None}),
+                subject_work_units=(work_units[0], (subject, key)),
             )
 
 
@@ -317,11 +311,12 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
     )
     discovery_batch = DiscoveryBatchInput(
         sample_order=("S1",),
-        peak_csvs={"S1": tmp_path / "S1.csv"},
+        peak_csvs={"S1": tmp_path / "S1.owner-candidates.csv"},
         raw_files={"S1": raw_path},
         event_csvs={"S1": None},
         peak_receipts=receipts,
     )
+    source = DiscoveryInputSource(discovery_batch)
     built = object()
     application_result = object()
 
@@ -354,7 +349,7 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
 
     monkeypatch.setattr(
         alignment_adapter,
-        "prepare_eager_untargeted_plan",
+        "prepare_indexed_untargeted_plan",
         build,
     )
     monkeypatch.setattr(
@@ -365,14 +360,16 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
 
     monkeypatch.setattr(
         alignment_adapter,
-        "_load_physical_replay_inputs",
-        lambda **kwargs: (kwargs["peaks_by_sample"], {}, None),
+        "_index_discovery_physical_sources",
+        lambda *args, **kwargs: alignment_adapter._PhysicalIndexBatchResult(
+            sources={}, worker_pids=()
+        ),
     )
 
     result = alignment_adapter.complete_untargeted_alignment(
         signal_processing_profile=TEST_PROFILE,
         discovery_batch=discovery_batch,
-        peaks_by_sample={"S1": candidates},
+        peaks_by_sample=source,
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "out",
@@ -394,69 +391,19 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
     assert result.application_result is application_result
     assert result.discovery_inputs is not None
     result.close()
-    assert result.publication_inputs.peaks_by_sample == {"S1": candidates}
+    assert result.publication_inputs.peaks_by_sample is source
     assert result.publication_inputs.alignment_config == AlignmentConfig()
     assert [name for name, _kwargs in calls] == ["build", "execute"]
     build_kwargs = calls[0][1]
     assert isinstance(build_kwargs, dict)
     assert build_kwargs["raw_paths"] == (raw_path,)
-    assert build_kwargs["peaks_by_sample"] == {"S1": candidates}
-    assert build_kwargs["discovery_receipts_by_sample"] == receipts
+    assert build_kwargs["source"] is source
     sample_metadata = build_kwargs["sample_metadata"]
     assert isinstance(sample_metadata, tuple)
     assert tuple(row.raw_stem for row in sample_metadata) == ("S1",)
     assert tuple(row.injection_order for row in sample_metadata) == (7,)
     assert tuple(row.sample_role for row in sample_metadata) == ("blank",)
     assert tuple(row.excluded for row in sample_metadata) == (True,)
-
-
-def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -> None:
-    physical_records = {}
-    raw_path = tmp_path / "S1.synthetic"
-    raw_path.write_bytes(b"production-batch:S1")
-    settings = _settings()
-    peak_config = _peak_config(tmp_path)
-    _source_raw, candidates = _nearby_subject_candidates(
-        raw_path,
-        settings=settings,
-        peak_config=peak_config,
-        physical_records=physical_records,
-    )
-    crossed_settings = type(settings)(
-        neutral_loss_profiles=(
-            settings.neutral_loss_profiles[0],
-            settings.neutral_loss_profiles[0],
-        ),
-        selected_tag_names=settings.selected_tag_names,
-        tag_combine_mode="intersection",
-        nl_tolerance_ppm=settings.nl_tolerance_ppm,
-        precursor_mz_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-    )
-
-    try:
-        build_dense_partition(
-            raw_paths=(raw_path,),
-            sample_metadata=(SampleMetadata(sample_name="S1", raw_stem="S1"),),
-            settings=crossed_settings,
-            peak_config=peak_config,
-            peaks_by_sample={"S1": candidates},
-            discovery_receipts_by_sample=build_discovery_receipts(
-                tmp_path,
-                (raw_path,),
-                {"S1": candidates},
-            ),
-            dll_dir=tmp_path,
-            signal_processing_profile=TEST_PROFILE,
-            physical_records_by_peak={
-                c.peak_id: physical_records[c.peak_id]
-                for values in ({"S1": candidates}).values()
-                for c in values
-            },
-        )
-    except ValueError as exc:
-        assert "single-provider" in str(exc)
-    else:
-        raise AssertionError("duplicate tag settings must be rejected")
 
 
 def test_production_batch_executes_one_atomic_sample_phase(
@@ -490,11 +437,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample={"S1": candidates},
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path,
-            (raw_path,),
-            {"S1": candidates},
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -718,12 +660,10 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
             settings=settings,
             physical_records=physical_records,
         )
+    from tests.cid_nl_runtime_fixtures import prepare_persisted_discovery_plan
     from xic_extractor.untargeted_execution.execution import execute_untargeted_plan
-    from xic_extractor.untargeted_execution.input_planning import (
-        prepare_eager_untargeted_plan,
-    )
 
-    plan = prepare_eager_untargeted_plan(
+    plan = prepare_persisted_discovery_plan(
         raw_paths=raw_paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -737,11 +677,7 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path,
-            raw_paths,
-            peaks_by_sample,
-        ),
+        root=tmp_path / "persisted",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -839,9 +775,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -975,9 +908,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=candidates,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, paths, candidates
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -1150,11 +1080,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path,
-            raw_paths,
-            peaks_by_sample,
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
@@ -1428,9 +1353,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
-        discovery_receipts_by_sample=build_discovery_receipts(
-            tmp_path, raw_paths, peaks_by_sample
-        ),
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
         physical_records_by_peak={
