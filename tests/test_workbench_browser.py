@@ -3766,6 +3766,33 @@ def test_sample_editor_selects_by_drag_search_and_shift_and_marks_other_rows(
     }
 
 
+def test_sample_click_right_after_a_drag_selects_that_row(
+    workbench, config_dir, tmp_path, monkeypatch
+):
+    page = workbench
+    install_fake_raw_headers(monkeypatch)
+    batch = tmp_path / "raw"
+    stems = ("S1", "S2", "S3", "S4", "S5")
+    _placeholder_batch(batch, stems)
+    _relist_samples(page)
+    expect(page.locator("#t-role-summary")).to_have_text(
+        "Sample 5", timeout=BACKGROUND_JOB_TIMEOUT_MS
+    )
+    _wait_for_analysis_status(page, "已完成")
+    page.locator("#t-samples-edit").click()
+    first = _sample_row(page, "S1").bounding_box()
+    last = _sample_row(page, "S3").bounding_box()
+    page.mouse.move(first["x"] + 20, first["y"] + first["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(last["x"] + 20, last["y"] + last["height"] / 2, steps=6)
+    page.mouse.up()
+    expect(page.locator("#sample-selection")).to_have_text("選取的 3 個 設為")
+    # Only the click that ends the drag is ignored; the next one selects.
+    _sample_row(page, "S4").click()
+    _sample_row(page, "S5").click(modifiers=["Shift"])
+    expect(page.locator("#sample-selection")).to_have_text("選取的 2 個 設為")
+
+
 def test_an_open_sample_editor_follows_another_tabs_job(
     workbench, fake_runs, config_dir, tmp_path, monkeypatch
 ):

@@ -58,7 +58,7 @@ for asset in (
     "analysis_curation_session.js",
     "analysis_ui.js", "analysis_setup.js",
     "analysis_targeted.js", "analysis_untargeted.js", "analysis_samples.js",
-    "analysis_delta_mass.js",
+    "analysis_delta_mass.js", "analysis_row_selection.js",
     "analysis_jobs.js", "analysis_results.js", "analysis_curation.js",
     "analysis_reader.js",
 ):
@@ -464,6 +464,7 @@ def test_pyinstaller_collects_workbench_frontend() -> None:
         ("analysis_setup.js", "xic_workbench/assets"),
         ("analysis_targeted.js", "xic_workbench/assets"),
         ("analysis_delta_mass.js", "xic_workbench/assets"),
+        ("analysis_row_selection.js", "xic_workbench/assets"),
         ("analysis_untargeted.js", "xic_workbench/assets"),
         ("analysis_samples.js", "xic_workbench/assets"),
         ("analysis_jobs.js", "xic_workbench/assets"),

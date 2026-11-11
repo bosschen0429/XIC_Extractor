@@ -53,6 +53,10 @@ _ASSETS = {
         "analysis_setup.js",
         "text/javascript; charset=utf-8",
     ),
+    "/assets/analysis_row_selection.js": (
+        "analysis_row_selection.js",
+        "text/javascript; charset=utf-8",
+    ),
     "/assets/analysis_delta_mass.js": (
         "analysis_delta_mass.js",
         "text/javascript; charset=utf-8",

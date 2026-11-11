@@ -9,6 +9,7 @@ import {
   ionsForOffsets,
   parseOffsets,
 } from "./analysis_delta_mass.js";
+import { createRowSelection } from "./analysis_row_selection.js";
 import { checklist, dirty, setMethodState } from "./analysis_setup.js";
 import {
   addTarget,
@@ -316,10 +317,14 @@ function renderTargetPreview() {
 
 // Target editor: rows are selected like samples — drag a band over the row
 // numbers, Ctrl adds, Shift extends, and a search selects what it finds.
-const selection = { rows: new Set(), anchor: null };
-let drag = null;
-// A drag ends with a click on its last row; only that click is not a selection.
-let suppressedClick = { row: null, until: 0 };
+const selection = createRowSelection({
+  box: () => $("target-table"),
+  rowSelector: "tr[data-target]",
+  startSelector: "td.target-handle",
+  keyOf: (tr) => state.targets[Number(tr.dataset.target)],
+  order: () => visibleTargets(),
+  onChange: () => renderSelection(),
+});
 let expandedRow = null;
 function visibleTargets() {
   const filter = $("target-filter").value.trim().toLowerCase();
@@ -333,9 +338,8 @@ function visibleTargets() {
   );
 }
 function renderSelection() {
-  const known = new Set(state.targets);
-  selection.rows = new Set([...selection.rows].filter((row) => known.has(row)));
-  const count = selection.rows.size;
+  selection.retain(new Set(state.targets));
+  const count = selection.keys.size;
   $("target-selection").textContent = count
     ? `已選 ${count} 個目標`
     : "先框選或搜尋";
@@ -344,83 +348,9 @@ function renderSelection() {
   for (const tr of $("target-rows").querySelectorAll("tr[data-target]"))
     tr.classList.toggle(
       "selected",
-      selection.rows.has(state.targets[Number(tr.dataset.target)]),
+      selection.keys.has(state.targets[Number(tr.dataset.target)]),
     );
 }
-function clickHandle(row, event) {
-  if (event.shiftKey && selection.anchor !== null) {
-    const order = visibleTargets();
-    const [a, b] = [order.indexOf(selection.anchor), order.indexOf(row)].sort(
-      (x, y) => x - y,
-    );
-    if (a >= 0) for (const each of order.slice(a, b + 1)) selection.rows.add(each);
-  } else if (event.ctrlKey || event.metaKey) {
-    if (!selection.rows.delete(row)) selection.rows.add(row);
-    selection.anchor = row;
-  } else {
-    const only = selection.rows.size === 1 && selection.rows.has(row);
-    selection.rows = only ? new Set() : new Set([row]);
-    selection.anchor = row;
-  }
-  renderSelection();
-}
-function startDrag(event) {
-  const handle = event.target.closest("td.target-handle");
-  if (!handle || event.button !== 0 || event.shiftKey) return;
-  const box = $("target-table");
-  const bounds = box.getBoundingClientRect();
-  drag = {
-    box,
-    band: null,
-    y0: event.clientY - bounds.top + box.scrollTop,
-    base: event.ctrlKey || event.metaKey ? new Set(selection.rows) : new Set(),
-    last: null,
-    moved: false,
-  };
-  event.preventDefault();
-}
-function moveDrag(event) {
-  if (!drag) return;
-  const { box } = drag;
-  const bounds = box.getBoundingClientRect();
-  const y = event.clientY - bounds.top + box.scrollTop;
-  if (!drag.moved && Math.abs(y - drag.y0) < 4) return;
-  if (!drag.moved) {
-    drag.moved = true;
-    drag.band = el("div", undefined, "select-band");
-    box.append(drag.band);
-  }
-  if (event.clientY > bounds.bottom - 28) box.scrollTop += 14;
-  else if (event.clientY < bounds.top + 28) box.scrollTop -= 14;
-  const y1 = Math.max(0, Math.min(y, box.scrollHeight));
-  const top = Math.min(drag.y0, y1);
-  const bottom = Math.max(drag.y0, y1);
-  drag.band.style.top = `${top}px`;
-  drag.band.style.height = `${bottom - top}px`;
-  const hit = new Set(drag.base);
-  for (const tr of box.querySelectorAll("tr[data-target]")) {
-    const rect = tr.getBoundingClientRect();
-    const a = rect.top - bounds.top + box.scrollTop;
-    if (a + rect.height > top && a < bottom) {
-      const row = state.targets[Number(tr.dataset.target)];
-      hit.add(row);
-      drag.last = row;
-    }
-  }
-  selection.rows = hit;
-  renderSelection();
-}
-function endDrag(event) {
-  if (!drag) return;
-  const ended = drag;
-  drag = null;
-  ended.band?.remove();
-  if (ended.moved) {
-    if (ended.last !== null) selection.anchor = ended.last;
-    suppressedClick = { row: ended.last, until: event.timeStamp + 80 };
-  }
-}
-
 const targetColumns = [
   ["label", "名稱"],
   ["pairing", "角色／ISTD 配對"],
@@ -609,7 +539,7 @@ function targetListError() {
   return "";
 }
 function applyBulk(ms1Only) {
-  const rows = [...selection.rows];
+  const rows = [...selection.keys];
   if (!rows.length) return;
   const cid = ms1Only ? "" : $("target-bulk-cid").value.trim();
   const deltaText = ms1Only ? "" : $("target-bulk-delta").value.trim();
@@ -639,8 +569,7 @@ export function renderCidSuggestions() {
   );
 }
 function openTargetEditor() {
-  selection.rows = new Set();
-  selection.anchor = null;
+  selection.clear();
   expandedRow = null;
   $("target-filter").value = "";
   $("target-editor-error").hidden = true;
@@ -713,22 +642,12 @@ export function bindTargeted() {
   });
   $("target-edit").onclick = openTargetEditor;
   $("target-filter").oninput = () => {
-    selection.rows = new Set();
-    selection.anchor = null;
+    selection.clear();
     if ($("target-filter").value.trim())
-      selection.rows = new Set(visibleTargets());
+      selection.keys = new Set(visibleTargets());
     renderTargets();
   };
-  $("target-rows").addEventListener("pointerdown", startDrag);
-  document.addEventListener("pointermove", moveDrag);
-  document.addEventListener("pointerup", endDrag);
-  $("target-rows").addEventListener("click", (event) => {
-    const handle = event.target.closest("td.target-handle");
-    if (!handle) return;
-    const row = state.targets[Number(handle.closest("tr[data-target]").dataset.target)];
-    if (row === suppressedClick.row && event.timeStamp < suppressedClick.until) return;
-    clickHandle(row, event);
-  });
+  selection.bind($("target-rows"));
   $("target-bulk-apply").onclick = () => act(() => applyBulk(false));
   $("target-bulk-ms1").onclick = () => act(() => applyBulk(true));
   $("target-add").onclick = () => {
