@@ -34,6 +34,10 @@ XIC-specific task routing and invariants; global rules own general defaults.
   a new class, column or value belongs to before adding it; see
   [Core Model](docs/architecture-contract.md#core-model) and
   [Change Locality](docs/architecture-contract.md#change-locality).
+- **Ownership:** this codebase is yours: what it's for and how it's built are
+  your call, and you'll keep building on it. Merge duplication and remove what a
+  change replaces in the same delivery; add no feature, abstraction, defensive
+  branch or document the task does not need.
 - **Domain purity:** core algorithms work on in-memory domain models. Never mix
   RAW/DLL I/O, multiprocessing, byte hashing or output formatting into
   mathematical or alignment algorithms.
