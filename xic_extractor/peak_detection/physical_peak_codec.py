@@ -1,25 +1,19 @@
-"""Strict physical result decoding, with explicit opt-in scientific replay."""
+"""Strict physical evaluation payload encoding and decoding."""
 
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Mapping
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from typing import cast
 
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
-    canonical_signal_processing_profile_bytes,
-    deserialize_signal_processing_profile,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     _physical_operation,
     _physical_state,
-    _physical_vector,
-    evaluate_physical_peak,
-    prepare_physical_signal,
     validate_bounded_physical_peak_evaluation,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
@@ -36,14 +30,6 @@ from xic_extractor.peak_detection.signal_quality import (
     SignalQualityStatus,
 )
 
-_PERSISTED_PHYSICAL_EVALUATION_SCHEMA = "physical_peak_evaluation_persistence"
-_PERSISTED_PHYSICAL_KEYS = (
-    "schema_version",
-    "profile",
-    "trace",
-    "evaluation",
-)
-_PERSISTED_TRACE_KEYS = ("rt", "raw")
 _PERSISTED_EVALUATION_KEYS = (
     "state",
     "reason",
@@ -121,159 +107,6 @@ _INTEGRATION_KEYS = (
     "ms1_morphology_trace_window_points",
     "ms1_morphology_trace_effective_points",
 )
-
-
-def rehydrate_physical_peak_evaluation(
-    rt_values: object,
-    intensity_values: object,
-    *,
-    profile: SignalProcessingProfile,
-    expected: PhysicalPeakEvaluation,
-    request_context_rt_start_min: float | None = None,
-    request_context_rt_end_min: float | None = None,
-) -> PhysicalPeakEvaluation:
-    if not isinstance(expected, PhysicalPeakEvaluation):
-        raise TypeError("expected must be a PhysicalPeakEvaluation")
-    prepared_result = prepare_physical_signal(
-        rt_values,
-        intensity_values,
-        profile=profile,
-    )
-    actual = evaluate_physical_peak(
-        prepared_result,
-        query_rt_min=expected.question.query_rt_min,
-        request_context_rt_start_min=request_context_rt_start_min,
-        request_context_rt_end_min=request_context_rt_end_min,
-        selection_policy_version=expected.question.selection_policy_version,
-        search_rt_window=expected.question.search_rt_window,
-    )
-    # Old persisted evaluations did not record this advisory fact. Rehydrating
-    # their physical decision must not silently manufacture recorded quality.
-    if (
-        expected.integration is not None
-        and expected.integration.signal_quality is None
-        and actual.integration is not None
-    ):
-        actual = replace(
-            actual, integration=replace(actual.integration, signal_quality=None)
-        )
-    if (
-        not _same_trace_values(actual.prepared.rt, expected.prepared.rt)
-        or not _same_trace_values(actual.prepared.raw, expected.prepared.raw)
-        or actual.prepared.profile != expected.prepared.profile
-        or physical_evaluation_payload(actual) != physical_evaluation_payload(expected)
-    ):
-        raise ValueError(
-            "persisted physical evaluation does not match live owner result"
-        )
-    return actual
-
-
-def serialize_physical_peak_evaluation(
-    rt_values: object,
-    intensity_values: object,
-    *,
-    profile: SignalProcessingProfile,
-    evaluation: PhysicalPeakEvaluation,
-) -> bytes:
-    """Purely encode one complete owner-rehydratable physical evaluation."""
-
-    if not isinstance(profile, SignalProcessingProfile):
-        raise TypeError("profile must be a SignalProcessingProfile")
-    if not isinstance(evaluation, PhysicalPeakEvaluation):
-        raise TypeError("evaluation must be a PhysicalPeakEvaluation")
-    rt = _physical_vector(rt_values, field="rt_values")
-    raw = _physical_vector(intensity_values, field="intensity_values")
-    validate_bounded_physical_peak_evaluation(evaluation)
-    if not _same_trace_values(rt, evaluation.prepared.rt) or not _same_trace_values(
-        raw, evaluation.prepared.raw
-    ):
-        raise ValueError("physical evaluation crosses RT/raw content")
-    if evaluation.prepared.profile != profile:
-        raise ValueError("physical evaluation crosses signal-processing profile")
-    return _canonical_physical_json_bytes(
-        _persisted_physical_payload(rt, raw, profile, evaluation)
-    )
-
-
-def deserialize_physical_peak_evaluation(
-    payload: bytes | str,
-    *,
-    expected_profile: SignalProcessingProfile | None = None,
-) -> tuple[
-    tuple[float, ...],
-    tuple[float, ...],
-    SignalProcessingProfile,
-    PhysicalPeakEvaluation,
-]:
-    """Decode the recorded result without repeating scientific processing."""
-
-    raw_payload = payload.encode("utf-8") if isinstance(payload, str) else payload
-    if not isinstance(raw_payload, bytes):
-        raise TypeError("physical evaluation payload must be bytes or str")
-    try:
-        decoded = raw_payload.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise ValueError("physical evaluation payload must be UTF-8") from exc
-    try:
-        value = json.loads(decoded, object_pairs_hook=_unique_physical_mapping)
-    except json.JSONDecodeError as exc:
-        raise ValueError("physical evaluation payload must be valid JSON") from exc
-    root = _physical_mapping(value, label="physical evaluation payload")
-    _require_physical_keys(root, _PERSISTED_PHYSICAL_KEYS, label="physical payload")
-    if root["schema_version"] != _PERSISTED_PHYSICAL_EVALUATION_SCHEMA:
-        raise ValueError("unsupported physical evaluation persistence schema")
-
-    profile_content = _physical_mapping(root["profile"], label="profile")
-    profile = deserialize_signal_processing_profile(
-        _canonical_physical_json_bytes(profile_content)
-    )
-    if expected_profile is not None and profile != expected_profile:
-        raise ValueError("persisted physical profile crosses expected run profile")
-
-    trace = _physical_mapping(root["trace"], label="trace")
-    _require_physical_keys(trace, _PERSISTED_TRACE_KEYS, label="trace")
-    rt = tuple(
-        _physical_float_from_text(item, field="trace.rt")
-        for item in _physical_list(trace["rt"], label="trace.rt")
-    )
-    raw = tuple(
-        _physical_float_from_text(item, field="trace.raw")
-        for item in _physical_list(trace["raw"], label="trace.raw")
-    )
-    evaluation_value = _physical_mapping(root["evaluation"], label="evaluation")
-    evaluation = physical_evaluation_from_payload(
-        evaluation_value, profile=profile, rt=rt, raw=raw
-    )
-    # Canonical validation checks the stored representation, not a new decision.
-    canonical = _canonical_physical_json_bytes(
-        {
-            "schema_version": _PERSISTED_PHYSICAL_EVALUATION_SCHEMA,
-            "profile": profile_content,
-            "trace": trace,
-            "evaluation": physical_evaluation_payload(evaluation),
-        }
-    )
-    if canonical != raw_payload:
-        raise ValueError("physical evaluation payload is not canonical")
-    return rt, raw, profile, evaluation
-
-
-def _persisted_physical_payload(
-    rt: tuple[float, ...],
-    raw: tuple[float, ...],
-    profile: SignalProcessingProfile,
-    evaluation: PhysicalPeakEvaluation,
-) -> dict[str, object]:
-    return {
-        "schema_version": _PERSISTED_PHYSICAL_EVALUATION_SCHEMA,
-        "profile": json.loads(canonical_signal_processing_profile_bytes(profile)),
-        "trace": {
-            "rt": [_physical_float_text(item) for item in rt],
-            "raw": [_physical_float_text(item) for item in raw],
-        },
-        "evaluation": physical_evaluation_payload(evaluation),
-    }
 
 
 def physical_evaluation_payload(
@@ -736,17 +569,6 @@ def signal_quality_from_payload(value: object) -> SignalQuality | None:
     return SignalQuality(cast(SignalQualityStatus, status), sigma, ratio, low)
 
 
-def _unique_physical_mapping(
-    pairs: list[tuple[str, object]],
-) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"physical payload has duplicate field: {key}")
-        result[key] = value
-    return result
-
-
 def _physical_mapping(value: object, *, label: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError(f"{label} must be one JSON object")
@@ -823,12 +645,6 @@ def _physical_text_tuple(value: object, *, field: str) -> tuple[str, ...]:
     )
 
 
-def _canonical_physical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value, ensure_ascii=False, allow_nan=False, separators=(",", ":")
-    ).encode("utf-8")
-
-
 def _physical_float_text(value: float) -> str:
     number = float(value)
     if number == 0.0:
@@ -838,10 +654,3 @@ def _physical_float_text(value: float) -> str:
     if math.isinf(number):
         return "inf" if number > 0 else "-inf"
     return number.hex()
-
-
-def _same_trace_values(left: tuple[float, ...], right: tuple[float, ...]) -> bool:
-    return len(left) == len(right) and all(
-        a == b or (math.isnan(a) and math.isnan(b))
-        for a, b in zip(left, right, strict=True)
-    )

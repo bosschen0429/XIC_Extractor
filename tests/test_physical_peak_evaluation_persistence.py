@@ -28,8 +28,8 @@ from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
     physical_candidates_result,
 )
 from xic_extractor.peak_detection.physical_peak_codec import (
-    deserialize_physical_peak_evaluation,
-    serialize_physical_peak_evaluation,
+    physical_evaluation_from_payload,
+    physical_evaluation_payload,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     enumerate_physical_segment_universe,
@@ -45,8 +45,20 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_REFERENCE_POLICY,
     PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
+    PhysicalPeakEvaluation,
 )
 from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
+
+
+def _stored(evaluation: PhysicalPeakEvaluation) -> PhysicalPeakEvaluation:
+    """Decode an evaluation from its persisted sidecar form, as a reader does."""
+    prepared = evaluation.prepared
+    return physical_evaluation_from_payload(
+        json.loads(json.dumps(physical_evaluation_payload(evaluation))),
+        profile=prepared.profile,
+        rt=tuple(float(value) for value in prepared.rt),
+        raw=tuple(float(value) for value in prepared.raw),
+    )
 
 
 @pytest.mark.parametrize(
@@ -91,13 +103,7 @@ def test_background_contrast_rejects_weak_peak_for_capture_and_backfill(
         assert backfill.facts is None
     else:
         assert backfill.facts.area_counts_seconds == detected.facts.area_counts_seconds
-    payload = serialize_physical_peak_evaluation(
-        rt,
-        raw,
-        profile=SignalProcessingProfile(),
-        evaluation=backfill,
-    )
-    assert deserialize_physical_peak_evaluation(payload)[-1] == backfill
+    assert _stored(backfill) == backfill
 
 
 @pytest.mark.parametrize("query_rt", [0.8, 1.2])
@@ -141,13 +147,7 @@ def test_backfill_recovers_the_complete_peak_containing_the_query(
     assert backfill.facts.area_counts_seconds == centered.facts.area_counts_seconds
     assert backfill.facts.left_rt_min == centered.facts.left_rt_min
     assert backfill.facts.right_rt_min == centered.facts.right_rt_min
-    payload = serialize_physical_peak_evaluation(
-        rt,
-        raw,
-        profile=SignalProcessingProfile(),
-        evaluation=backfill,
-    )
-    assert deserialize_physical_peak_evaluation(payload)[-1] == backfill
+    assert _stored(backfill) == backfill
 
 
 def test_backfill_window_does_not_take_a_neighbor_outside_the_expected_rt() -> None:
@@ -253,13 +253,7 @@ def test_unreliable_location_evaluates_unique_acquired_peak() -> None:
     assert result.state == "available"
     assert result.facts is not None
     assert result.facts.apex_rt_min == pytest.approx(0.4)
-    payload = serialize_physical_peak_evaluation(
-        rt,
-        raw,
-        profile=SignalProcessingProfile(),
-        evaluation=result,
-    )
-    restored = deserialize_physical_peak_evaluation(payload)[-1]
+    restored = _stored(result)
     assert restored == result
 
 
@@ -304,13 +298,7 @@ def test_supported_short_peak_survives_noise_hits_and_persistence(
     candidates = physical_candidates_result(prepared, result.segment_universe)
     assert any(c.peak.rt == result.facts.apex_rt_min for c in candidates.candidates)
     assert "near_detection_limit" not in result.integration.boundary_sources
-    payload = serialize_physical_peak_evaluation(
-        rt,
-        raw,
-        profile=SignalProcessingProfile(),
-        evaluation=result,
-    )
-    *_, restored = deserialize_physical_peak_evaluation(payload)
+    restored = _stored(result)
     assert restored == result
 
 
@@ -395,10 +383,7 @@ def test_search_window_keeps_complete_peak_and_round_trips() -> None:
     assert result.question.search_rt_window == (2.8, 3.2)
     assert result.question.context_rt_start_min == 0.0
     assert result.question.context_rt_end_min == 6.0
-    payload = serialize_physical_peak_evaluation(
-        rt, raw, profile=prepared.prepared.profile, evaluation=result
-    )
-    assert deserialize_physical_peak_evaluation(payload)[-1] == result
+    assert _stored(result) == result
 
 
 def test_search_window_does_not_resolve_two_eligible_peaks_by_strength() -> None:
@@ -539,23 +524,8 @@ def test_heavily_interrupted_peak_without_contrast_persists_unavailable(
     assert fresh.state == "unavailable"
     assert fresh.reason == "insufficient_local_peak_contrast"
     assert fresh.facts is None and fresh.integration is None
-    fresh_payload = serialize_physical_peak_evaluation(
-        rt,
-        raw,
-        profile=profile,
-        evaluation=fresh,
-    )
-    *_, restored_fresh = deserialize_physical_peak_evaluation(fresh_payload)
+    restored_fresh = _stored(fresh)
     assert restored_fresh == fresh
-    assert (
-        serialize_physical_peak_evaluation(
-            rt,
-            raw,
-            profile=profile,
-            evaluation=restored_fresh,
-        )
-        == fresh_payload
-    )
 
 
 @pytest.mark.parametrize(
@@ -592,7 +562,6 @@ def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
         raw[193:209] = 100.0 + 200.0 * np.exp(
             -(((np.arange(193, 209) - 200) / 25.0) ** 2)
         )
-    profile = SignalProcessingProfile()
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
         query_rt_min=2.0,
@@ -616,10 +585,7 @@ def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
     assert other.state == result.state
     assert other.answer.selected_segment == result.answer.selected_segment
     assert other.integration == result.integration
-    payload = serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=result
-    )
-    *_, restored = deserialize_physical_peak_evaluation(payload)
+    restored = _stored(result)
     assert restored == result
 
 
@@ -745,13 +711,7 @@ def test_compact_continuous_doublet_keeps_component_areas(
             expected_area,
             rel=0.03,
         )
-        payload = serialize_physical_peak_evaluation(
-            rt,
-            raw,
-            profile=prepared.prepared.profile,
-            evaluation=result,
-        )
-        assert deserialize_physical_peak_evaluation(payload)[-1] == result
+        assert _stored(result) == result
         selected.append(facts)
     assert selected[0].right_rt_min <= selected[1].left_rt_min
 
@@ -792,10 +752,7 @@ def test_continuous_peak_with_isolated_dropouts_keeps_morphology_area(
         )
         * 60.0
     )
-    payload = serialize_physical_peak_evaluation(
-        rt, raw, profile=SignalProcessingProfile(), evaluation=result
-    )
-    *_, restored = deserialize_physical_peak_evaluation(payload)
+    restored = _stored(result)
     assert restored == result
 
 
@@ -1044,13 +1001,7 @@ def test_overlapping_components_keep_one_envelope_and_review(
     assert discovery.facts.right_rt_min > 7.0
     assert discovery.integration == targeted.integration
     assert discovery.requires_overlap_review
-    payload = serialize_physical_peak_evaluation(
-        rt,
-        raw,
-        profile=profile,
-        evaluation=discovery,
-    )
-    *_, restored = deserialize_physical_peak_evaluation(payload)
+    restored = _stored(discovery)
     assert restored == discovery
     assert restored.requires_overlap_review
 
@@ -1230,23 +1181,8 @@ def test_current_discovery_qualification_persists_exactly(
             # The whole background contour reaches the acquired edge. Neither
             # workflow may turn one local fluctuation into a measured peak.
             assert answer.reason == "incomplete_peak_context"
-        payload = serialize_physical_peak_evaluation(
-            rt,
-            raw,
-            profile=profile,
-            evaluation=answer,
-        )
-        *_, restored = deserialize_physical_peak_evaluation(payload)
+        restored = _stored(answer)
         assert restored == answer
-        assert (
-            serialize_physical_peak_evaluation(
-                rt,
-                raw,
-                profile=profile,
-                evaluation=restored,
-            )
-            == payload
-        )
 
 
 def test_is_provisional_peak_shape() -> None:
@@ -1673,16 +1609,7 @@ def test_no_selection_policy_roundtrip_preserves_physical_context(
     else:
         assert evaluation.reason == ordinary.reason == "no_signal_above_baseline"
 
-    payload = serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=evaluation
-    )
-    retained_rt, retained_raw, retained_profile, retained = (
-        deserialize_physical_peak_evaluation(payload, expected_profile=profile)
-    )
-    np.testing.assert_array_equal(retained_rt, rt)
-    np.testing.assert_array_equal(retained_raw, raw)
-    assert retained_profile == profile
-    assert retained == evaluation
+    assert _stored(evaluation) == evaluation
 
 
 @pytest.mark.parametrize("terminal", ["available", "unavailable", "failed"])
@@ -1714,100 +1641,22 @@ def test_physical_evaluation_persistence_decodes_terminal_owner_state(
         request_context_rt_end_min=context[1],
     )
 
-    payload = serialize_physical_peak_evaluation(
-        rt,
-        raw,
-        profile=profile,
-        evaluation=evaluation,
-    )
-    _, _, rehydrated_profile, rehydrated = deserialize_physical_peak_evaluation(
-        payload,
-        expected_profile=profile,
-    )
+    restored = _stored(evaluation)
 
-    assert rehydrated_profile == profile
     if terminal == "failed":
-        np.testing.assert_array_equal(rehydrated.prepared.rt, rt)
-        np.testing.assert_array_equal(rehydrated.prepared.raw, raw)
-        assert rehydrated.reason == evaluation.reason
-        assert rehydrated.segment_universe.segments == ()
-        assert rehydrated.facts is None
+        np.testing.assert_array_equal(restored.prepared.rt, rt)
+        np.testing.assert_array_equal(restored.prepared.raw, raw)
+        assert restored.reason == evaluation.reason
+        assert restored.segment_universe.segments == ()
+        assert restored.facts is None
     else:
-        assert rehydrated == evaluation
-    assert rehydrated.state == terminal
-    with pytest.raises(ValueError, match="not canonical"):
-        deserialize_physical_peak_evaluation(payload + b" ")
+        assert restored == evaluation
+    assert restored.state == terminal
 
 
-@pytest.mark.parametrize(
-    "mutate",
-    [
-        lambda value: value["evaluation"]["answer"].__setitem__(
-            "selected_segment_index", -1
-        ),
-        lambda value: value["trace"]["rt"].__setitem__(0, "-0x0.0p+0"),
-        lambda value: value["trace"]["rt"].__setitem__(0, "0x0p+0"),
-        lambda value: value["profile"].__setitem__("window_points", 3.0),
-        lambda value: value.__setitem__(
-            "profile", dict(reversed(tuple(value["profile"].items())))
-        ),
-        lambda value: value.__setitem__(
-            "trace", dict(reversed(tuple(value["trace"].items())))
-        ),
-        lambda value: value.__setitem__(
-            "evaluation", dict(reversed(tuple(value["evaluation"].items())))
-        ),
-    ],
-)
-def test_physical_evaluation_persistence_rejects_invalid_stored_structure(
-    mutate,
-) -> None:
-    profile = SignalProcessingProfile(window_points=3)
-    rt = np.linspace(0.0, 3.0, 31)
-    raw = np.full(31, 10.0)
-    raw[7:10] += [30.0, 100.0, 30.0]
-    evaluation = evaluate_physical_peak(
-        prepare_physical_signal(rt, raw, profile=profile),
-        query_rt_min=0.8,
-    )
-    value = json.loads(
-        serialize_physical_peak_evaluation(
-            rt,
-            raw,
-            profile=profile,
-            evaluation=evaluation,
-        )
-    )
-    mutate(value)
-
-    with pytest.raises(ValueError):
-        deserialize_physical_peak_evaluation(
-            json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-        )
-
-
-def test_sidecar_write_and_external_read_do_not_repeat_scientific_processing(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor.peak_detection import physical_peak_codec as owner
-
+def test_sidecar_read_returns_the_recorded_evaluations(tmp_path: Path) -> None:
     _, spec, acquisition_input = _spec(tmp_path)
     manifest, records = _population(spec, acquisition_input)
-    calls = {"prepare": 0, "evaluate": 0}
-    real_prepare = owner.prepare_physical_signal
-    real_evaluate = owner.evaluate_physical_peak
-
-    def counted_prepare(*args, **kwargs):
-        calls["prepare"] += 1
-        return real_prepare(*args, **kwargs)
-
-    def counted_evaluate(*args, **kwargs):
-        calls["evaluate"] += 1
-        return real_evaluate(*args, **kwargs)
-
-    monkeypatch.setattr(owner, "prepare_physical_signal", counted_prepare)
-    monkeypatch.setattr(owner, "evaluate_physical_peak", counted_evaluate)
     path = tmp_path / "facts.json"
 
     write_discovery_physical_fact_sidecar(
@@ -1817,7 +1666,6 @@ def test_sidecar_write_and_external_read_do_not_repeat_scientific_processing(
         work_manifest=manifest,
         records=records,
     )
-    assert calls == {"prepare": 0, "evaluate": 0}
 
     restored = read_discovery_physical_fact_sidecar(
         path,
@@ -1826,46 +1674,9 @@ def test_sidecar_write_and_external_read_do_not_repeat_scientific_processing(
         expected_work_manifest=manifest,
     )
     assert len(restored) == len(records)
-    # A reader returns the producer's recorded measurements, not a replay.
-    assert calls == {"prepare": 0, "evaluate": 0}
     assert tuple(record.evaluation for record in restored) == tuple(
         record.evaluation for record in records
     )
-
-
-def test_explicit_scientific_replay_rejects_changed_raw_input() -> None:
-    from xic_extractor.peak_detection.physical_peak_codec import (
-        rehydrate_physical_peak_evaluation,
-    )
-
-    profile = SignalProcessingProfile(window_points=3)
-    rt = np.linspace(0.0, 3.0, 31)
-    raw = np.full(31, 10.0)
-    raw[7:10] += [30.0, 100.0, 30.0]
-    evaluation = evaluate_physical_peak(
-        prepare_physical_signal(rt, raw, profile=profile), query_rt_min=0.8
-    )
-    value = json.loads(
-        serialize_physical_peak_evaluation(
-            rt, raw, profile=profile, evaluation=evaluation
-        )
-    )
-    value["trace"]["raw"][0] = (11.0).hex()
-    recorded_rt, changed_raw, _, recorded = deserialize_physical_peak_evaluation(
-        json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-    )
-    # Decoding preserves stored results; only an explicit replay tests the science.
-    assert recorded.facts == evaluation.facts
-    assert recorded.integration == evaluation.integration
-    with pytest.raises(ValueError, match="does not match live owner result"):
-        rehydrate_physical_peak_evaluation(
-            recorded_rt,
-            changed_raw,
-            profile=profile,
-            expected=recorded,
-            request_context_rt_start_min=recorded.question.context_rt_start_min,
-            request_context_rt_end_min=recorded.question.context_rt_end_min,
-        )
 
 
 @pytest.mark.parametrize("point_count", [1501, 3001])
@@ -1935,12 +1746,8 @@ def test_brief_apex_dropout_does_not_create_two_quantitative_components(
     assert prepared.prepared.raw[middle - 1 : middle + 2] == (0.0, 0.0, 0.0)
 
 
-def test_optional_quality_round_trip_and_old_payload_rehydration():
+def test_optional_quality_round_trip_and_old_payload_decoding():
     from dataclasses import replace
-
-    from xic_extractor.peak_detection.physical_peak_codec import (
-        rehydrate_physical_peak_evaluation,
-    )
 
     rt = np.linspace(0.0, 2.0, 101)
     raw = 10.0 + 200.0 * np.exp(-0.5 * ((rt - 1.0) / 0.1) ** 2)
@@ -1952,22 +1759,12 @@ def test_optional_quality_round_trip_and_old_payload_rehydration():
     )
     assert current.integration is not None
     assert current.integration.signal_quality.status == "available"
-    payload = serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=current
-    )
-    assert deserialize_physical_peak_evaluation(payload)[-1] == current
+    assert _stored(current) == current
     old = replace(
         current, integration=replace(current.integration, signal_quality=None)
     )
-    old_payload = serialize_physical_peak_evaluation(
-        rt, raw, profile=profile, evaluation=old
-    )
-    assert b'"signal_quality"' not in old_payload
-    restored = deserialize_physical_peak_evaluation(old_payload)[-1]
+    assert "signal_quality" not in json.dumps(physical_evaluation_payload(old))
+    restored = _stored(old)
     assert restored.integration.signal_quality is None
-    assert (
-        rehydrate_physical_peak_evaluation(rt, raw, profile=profile, expected=restored)
-        == old
-    )
     assert old.facts == current.facts
     assert old.answer == current.answer

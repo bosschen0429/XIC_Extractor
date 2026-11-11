@@ -349,7 +349,6 @@ def forbidden(*args, **kwargs):
     raise AssertionError('readonly evidence must not execute scientific preparation')
 for name in (
     'prepare_physical_signal', 'evaluate_physical_peak',
-    'rehydrate_physical_peak_evaluation',
 ):
     setattr(evidence_facts, name, forbidden)
 from xic_extractor.alignment_explanation.reader import (

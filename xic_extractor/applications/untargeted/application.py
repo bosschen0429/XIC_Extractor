@@ -391,7 +391,6 @@ def _reject_alignment_output_collisions(
         "production",
         "machine",
         "debug",
-        "validation",
         "validation-minimal",
     )
     owned_names = {

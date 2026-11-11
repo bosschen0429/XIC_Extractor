@@ -50,9 +50,7 @@ def test_duplicate_quantification_classifies_row_pairs_by_direct_detections():
 
 
 # Machine is what Workbench Untargeted publishes: no backfill ledger.
-@pytest.mark.parametrize(
-    "level", ("machine", "validation-minimal", "validation", "debug")
-)
+@pytest.mark.parametrize("level", ("machine", "validation-minimal", "debug"))
 def test_duplicate_quantification_reads_published_output_levels(
     tmp_path, monkeypatch, level
 ):

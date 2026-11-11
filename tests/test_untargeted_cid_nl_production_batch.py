@@ -1368,9 +1368,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         assert float(review_row["group_center_rt"]) == pytest.approx(center_rt)
 
 
-@pytest.mark.parametrize(
-    "output_level", ("machine", "validation-minimal", "validation", "debug")
-)
+@pytest.mark.parametrize("output_level", ("machine", "validation-minimal", "debug"))
 def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     tmp_path: Path,
     monkeypatch,

@@ -169,7 +169,7 @@ def test_run_alignment_rejects_stale_owner_edge_outputs_before_raw(
                 alignment_config=AlignmentConfig(),
                 peak_config=_peak_config(),
                 discovery_settings=_settings(),
-                publication=UntargetedPublicationPolicy(output_level="validation"),
+                publication=UntargetedPublicationPolicy(output_level="debug"),
             )
         )
 

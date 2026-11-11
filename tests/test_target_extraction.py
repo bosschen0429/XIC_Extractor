@@ -983,8 +983,8 @@ def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
     tmp_path, is_istd
 ):
     from xic_extractor.peak_detection.physical_peak_codec import (
-        deserialize_physical_peak_evaluation,
-        serialize_physical_peak_evaluation,
+        physical_evaluation_from_payload,
+        physical_evaluation_payload,
     )
 
     target = replace(_intent_target(15.5), is_istd=is_istd)
@@ -1041,14 +1041,12 @@ def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
         if evaluation.integration is not None
         and evaluation.integration.rt_apex_min == result.reported_rt
     )
-    restored = deserialize_physical_peak_evaluation(
-        serialize_physical_peak_evaluation(
-            rt,
-            intensity,
-            profile=selected.retained_prepared_signal.profile,
-            evaluation=selected,
-        )
-    )[-1]
+    restored = physical_evaluation_from_payload(
+        physical_evaluation_payload(selected),
+        profile=selected.retained_prepared_signal.profile,
+        rt=tuple(float(value) for value in rt),
+        raw=tuple(float(value) for value in intensity),
+    )
     assert restored.integration == selected.integration
     if is_istd:
         assert target_extraction.credible_istd_anchor_rt(result) == result.reported_rt

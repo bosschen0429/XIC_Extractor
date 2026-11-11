@@ -522,13 +522,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "production",
             "machine",
             "debug",
-            "validation",
             "validation-minimal",
         ),
         default="production",
         help=(
             "Alignment artifact level. Default production writes only "
-            "alignment_matrix.tsv; use machine/debug/validation or explicit "
+            "alignment_matrix.tsv; use machine/debug or explicit "
             "emit flags for additional artifacts."
         ),
     )
