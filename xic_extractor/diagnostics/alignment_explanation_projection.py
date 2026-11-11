@@ -267,10 +267,14 @@ def prepare_alignment_explanation(
         located_peaks: dict[str, Any] = {}
 
         def locate(content: Any) -> str:
-            """Written locator of one physical peak; never shared by two peaks."""
+            """Written locator of one physical peak; never shared by two peaks.
+
+            A peak is its selected raw signal. Reads of it in other XIC windows
+            can integrate differently; each cell keeps its own value and curve.
+            """
             key: str = content.physical_peak_key
-            identity = content.physical_identity
-            if located_peaks.setdefault(key, identity) != identity:
+            signal = (content.sample_key, content.mz, content.rt, content.intensity)
+            if located_peaks.setdefault(key, signal) != signal:
                 raise ValueError(f"distinct physical peaks share one locator: {key}")
             sink.add_peak(
                 content.sample_key,

@@ -1267,8 +1267,9 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
 
 @pytest.mark.parametrize("mz_separation_ppm", [0.0, 12.0, 21.1])
 @pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("sloped_background", [False, True])
 def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
-    tmp_path, monkeypatch, mz_separation_ppm, reverse
+    tmp_path, monkeypatch, mz_separation_ppm, reverse, sloped_background
 ):
     physical_records = {}
     """Overlapping extraction windows cannot supply one peak to two rows."""
@@ -1311,6 +1312,10 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         path.write_bytes(path.stem.encode())
         raw = MassAwareRaw(nl_centers[path.stem])
         raw.rt = np.linspace(7.4, 8.7, 521)
+        if sloped_background and path.stem == "Missing":
+            # The two recovery windows clip a sloped background differently, so
+            # the one peak they read integrates to two baseline-corrected areas.
+            raw.rt = np.linspace(6.8, 9.4, 1041)
         raw.intensity = sum(
             (
                 1000 * np.exp(-0.5 * ((raw.rt - center) / 0.018) ** 2)
@@ -1318,6 +1323,8 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
             ),
             np.zeros_like(raw.rt),
         )
+        if sloped_background and path.stem == "Missing":
+            raw.intensity = raw.intensity + 40.0 * (raw.rt - 6.8)
         raw.scans = tuple(
             replace(scan, scan_number=int(np.argmin(np.abs(raw.rt - scan.rt))) + 1)
             for scan in raw.scans
@@ -1383,7 +1390,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     )
     assert first.rt == second.rt
     assert first.intensity == second.intensity
-    assert first.integration == second.integration
+    assert (first.integration == second.integration) is not sloped_background
     assert first.generation_provenance.acquisition_source_id == (
         second.generation_provenance.acquisition_source_id
     )
