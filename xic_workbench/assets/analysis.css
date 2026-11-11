@@ -922,7 +922,6 @@
 #target-head th.target-handle {
   width: 2.5em;
   color: var(--subtle);
-  text-align: right;
   cursor: pointer;
   user-select: none;
 }

@@ -194,6 +194,17 @@ const DM_THRESHOLDS = [
   ["min_background_sigma", "最弱離子背景倍數（σ）"],
   ["min_base_support", "基準支撐下限"],
 ];
+// Delta Mass Discovery keys that a CID-NL-only method does not accept.
+const DELTA_MASS_ONLY_KEYS = new Set([
+  "method_label",
+  "positions",
+  "anchor_positions",
+  "discriminating_positions",
+  "lowest_position",
+  "base_support_positions",
+  "detector",
+  ...DM_THRESHOLDS.map(([key]) => key),
+]);
 let deltaDefaults = null;
 let methodAdvancedOpen = false;
 async function deltaMassDefaults() {
@@ -325,13 +336,10 @@ function editorDraft(editor) {
       },
     };
   } else {
-    // CID-NL tuning stays with the page controls; Delta Mass keys do not apply.
-    const cidKeys = new Set(
-      state.method?.tuning_controls?.map((control) => control.key) || [],
-    );
+    // Keep every CID-NL value, including ones without a page control.
     overrides = Object.fromEntries(
       Object.entries(source.overrides || {}).filter(
-        ([key]) => cidKeys.has(key) || key === "mass_recalibration",
+        ([key]) => !DELTA_MASS_ONLY_KEYS.has(key),
       ),
     );
   }

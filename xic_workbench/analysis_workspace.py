@@ -493,16 +493,19 @@ class AnalysisWorkspace:
         if action == "matrix-curation/source":
             return self.curation.describe_source(self.config_dir, values)
         if action in {"istd", "istd/upload"}:
+            from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
             from xic_extractor.configuration.targets import read_istd_targets
-            from xic_extractor.presets.apply import apply_to_discovery
             from xic_workbench.methods import preset_from_payload
             from xic_workbench.target_import import import_istd_upload
 
             profiles = None
             if "preset_snapshot" in values:
-                profiles = apply_to_discovery(
-                    preset_from_payload(values["preset_snapshot"])
-                ).neutral_loss_profiles
+                # A Delta Mass method's applicable standards follow its CID-NL tags.
+                profiles = tuple(
+                    NeutralLossProfile(tag.name, tag.value)
+                    for tag in preset_from_payload(values["preset_snapshot"]).tags
+                    if tag.strategy == "neutral_loss" and tag.value is not None
+                )
             if action == "istd/upload":
                 return json_value(
                     import_istd_upload(
