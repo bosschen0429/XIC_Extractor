@@ -11,10 +11,6 @@ from pathlib import Path
 from statistics import median
 from typing import TYPE_CHECKING, Any
 
-from xic_extractor.alignment.cross_sample.neighborhood_graph import (
-    INITIAL_GROUPING_POLICY,
-    UNLISTED_PAIR_DISPOSITION,
-)
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
@@ -680,24 +676,9 @@ def prepare_alignment_explanation(
             for group in phase_items("initial_groups", completed.initial_groups):
                 emit_group("initial_groups", group)
 
-            for edge in phase_items("initial_edges", completed.initial_edges):
-                sink.add_initial_edge(
-                    {
-                        "left_subject_id": edge.left_owner.owner_id,
-                        "right_subject_id": edge.right_owner.owner_id,
-                        "disposition": edge.disposition,
-                        "initial_evidence": asdict(edge.initial_evidence),
-                        "initial_context": edge.initial_context,
-                        "alignment_config": asdict(edge.config),
-                    }
-                )
-
             report_progress("finalizing", sink.record_count, None)
             with Path(matrix_path).open("rb") as handle:
                 matrix_hash = hashlib.file_digest(handle, "sha256").hexdigest()
-            initial_group_member_count = sum(
-                len(group.member_subjects) for group in completed.initial_groups
-            )
             summary: dict[str, Any] = {
                 **_RUN_CONTRACT_SUMMARY,
                 "processing_attempt_id": application.processing_attempt_id,
@@ -728,33 +709,9 @@ def prepare_alignment_explanation(
                 if curve_mz_ranges
                 else "none",
                 "curve_mz_ranges": list(curve_mz_ranges),
-                "initial_edge_coverage": {
-                    "policy": INITIAL_GROUPING_POLICY,
-                    "unlisted_pairs": UNLISTED_PAIR_DISPOSITION,
-                    "rt_pruning": True,
-                    # Retained records, not comparisons performed. The sparse
-                    # path evaluates witness pairs without keeping a pair
-                    # graph, so calling this "evaluated" reported zero
-                    # comparisons for a run that made them.
-                    "retained_pair_record_count": len(completed.initial_edges),
-                    "compressed_group_count": len(completed.initial_groups),
-                    "compressed_member_count": initial_group_member_count,
-                },
                 "audit_availability": {
-                    name: (
-                        "recorded"
-                        if getattr(completed, name)
-                        # Groups exist, so pairs were compared; what is absent
-                        # is the retained pair graph, not the evaluation.
-                        else "not_retained"
-                        if name == "initial_edges" and completed.initial_groups
-                        else "unavailable"
-                    )
-                    for name in (
-                        "method_assessments",
-                        "initial_groups",
-                        "initial_edges",
-                    )
+                    name: "recorded" if getattr(completed, name) else "unavailable"
+                    for name in ("method_assessments", "initial_groups")
                 },
             }
             frame = completed.sample_rt_frame

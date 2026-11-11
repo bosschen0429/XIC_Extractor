@@ -94,9 +94,6 @@ sample selection and acquisition-range controls.
 - Recorded review conditions, such as a related method HOLD, are explanations.
   They are not the final cell decision, and the absence of a review condition is
   not scientific acceptance.
-- Peer-group links and internal pair-support edges show recorded comparisons.
-  They do not create a scientific relationship, and connected direct edges do
-  not imply that every pair agrees.
 
 ## Reading order
 
@@ -138,8 +135,7 @@ the published Matrix hash. It cannot authorize a writer or prove readiness.
   produce a current report.
 - Explanation publication follows successful Matrix writing. If explanation IO
   fails, the command fails and the Matrix can remain without a report.
-- Edge records name their RT basis (`raw` or `drift_corrected`). Aligned-time
-  plots replay the final frozen `SampleRtFrame` calibration, never the bootstrap
+- Aligned-time plots replay the final frozen `SampleRtFrame` calibration, never the bootstrap
   ISTD-reference fit. Raw and processed curves, apex and integration bounds use
   the same [graded query](rt-calibration.md#graded-query-support).
   A sample with no estimate displays raw RT and is explicitly labelled as such.

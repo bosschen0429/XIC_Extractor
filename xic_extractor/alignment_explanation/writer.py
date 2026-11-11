@@ -86,7 +86,6 @@ class ExplanationReportWriter:
         self._cells: dict[tuple[str, str], list[Any]] = {}
         self._assessments: list[tuple[Any, ...]] = []
         self._exclusions: dict[CandidateKey, str] = {}
-        self._edges: dict[tuple[str, str], tuple[Any, ...]] = {}
         self._last_record_id = 0
         self._curves: dict[tuple[Any, ...], list[Any]] = {}
 
@@ -108,7 +107,6 @@ class ExplanationReportWriter:
             + len(self._exclusions)
             + len(self._groups)
             + len(self._initial_groups)
-            + len(self._edges)
             + len(self._curves)
             + len(self._cells)
         )
@@ -432,17 +430,6 @@ class ExplanationReportWriter:
         """The recorded group position used to inspect an empty cell."""
         self._cells[group_id, sample_key][6] = rt_min
 
-    def add_initial_edge(self, payload: Mapping[str, Any]) -> None:
-        key = payload["left_subject_id"], payload["right_subject_id"]
-        row = (
-            payload.get("disposition"),
-            encode_object(payload.get("initial_evidence")),
-            encode_object(payload.get("initial_context")),
-            encode_object(payload.get("alignment_config")),
-        )
-        if self._edges.setdefault(key, row) != row:
-            raise ValueError(f"conflicting initial edge: {key}")
-
     # Curves -------------------------------------------------------------
 
     def add_curve_payload(
@@ -579,15 +566,6 @@ class ExplanationReportWriter:
                 for key, reason in self._exclusions.items()
             ),
         )
-        if self._edges:
-            create_optional_table(db, "initial_edges")
-            db.executemany(
-                "INSERT INTO initial_edges VALUES (?,?,?,?,?,?,?)",
-                (
-                    (index, *key, *row)
-                    for index, (key, row) in enumerate(self._edges.items(), start=1)
-                ),
-            )
         if self._curves:
             create_optional_table(db, "curves")
             db.executemany(

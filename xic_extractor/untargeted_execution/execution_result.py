@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 from xic_extractor.alignment.completion import AlignmentWorkflowContractError
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleNeighborhoodEdge,
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.result.application_result import (
@@ -81,10 +80,6 @@ class CompletedUntargetBatchWorkflowResult:
         tuple[CrossSamplePeakGroupHypothesis, ...]
         | ImmutableSequence[CrossSamplePeakGroupHypothesis]
     ) = field(default=(), repr=False, compare=False)
-    initial_edges: (
-        tuple[CrossSampleNeighborhoodEdge, ...]
-        | ImmutableSequence[CrossSampleNeighborhoodEdge]
-    ) = field(default=(), repr=False, compare=False)
     discovery_physical_records: (
         tuple[DiscoveryPhysicalFactRecord, ...]
         | ImmutableSequence[DiscoveryPhysicalFactRecord]
@@ -122,7 +117,6 @@ class CompletedUntargetBatchWorkflowResult:
             sample_rt_frame=sample_rt_frame,
             method_assessments=store.sequence("method_assessments"),
             initial_groups=store.sequence("initial_groups"),
-            initial_edges=store.sequence("initial_edges"),
             capture_evidence=store.sequence("capture_evidence"),
             _resources=_CompletedResultResources(store, retain_partition_spool),
         )

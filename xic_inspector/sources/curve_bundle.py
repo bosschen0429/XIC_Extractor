@@ -764,7 +764,6 @@ class CurveBundleSource:
                         == "cid_nl_differential"
                         else None
                     ),
-                    "relationship_availability": "unavailable",
                     "samples": samples,
                     "witnesses": [
                         {**asdict(w), "role": roles[w.candidate_id]}

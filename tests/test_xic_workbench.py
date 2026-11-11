@@ -157,12 +157,12 @@ def test_review_overview_does_not_retain_decoded_cells_for_the_population(
 
     sample_count = 32
     report, _ = create_review_batch(tmp_path, sample_count=sample_count)
-    summary = alignment_explanation.read_explanation_metadata(report).summary
+    summary = alignment_explanation.read_explanation_summary(report)
 
     def forbidden(*args, **kwargs):
         raise AssertionError("overview decoded cold scientific details")
 
-    monkeypatch.setattr(alignment_explanation._Evidence, "cells", forbidden)
+    monkeypatch.setattr(alignment_explanation._Report, "cells", forbidden)
     overview, rows = review_overview(report, summary)
 
     assert overview["matrix_count"] == 3

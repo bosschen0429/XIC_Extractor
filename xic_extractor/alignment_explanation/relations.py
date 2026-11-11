@@ -1,7 +1,7 @@
 """How stored records relate to Discovery candidates, derived when a report is read.
 
-The report stores each fact once; which candidates explain a group, a curve or
-an initial edge follows from those facts:
+The report stores each fact once; which candidates explain a group or a curve
+follows from those facts:
 
 - a member relates the candidates whose terminal hypothesis it is, and the
   candidates bound to one of its peaks;
@@ -81,11 +81,6 @@ _CURVE_CANDIDATES = """
     JOIN main.candidates c ON c.method_subject = cu.method_subject AND c.sample = s.id
     WHERE cu.candidate_id IS NULL AND cu.method_subject IS NOT NULL"""
 
-_EDGE_CANDIDATES = """
-    SELECT DISTINCT e.id AS edge, mc.candidate FROM main.initial_edges e
-    JOIN main.members m ON m.subject_id IN (e.left_subject_id, e.right_subject_id)
-    JOIN temp.member_candidates mc ON mc.member = m.id"""
-
 # name: (query, prerequisites, index columns)
 _RELATIONS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
     "peak_candidates": (_PEAK_CANDIDATES, (), ("peak",)),
@@ -104,11 +99,6 @@ _RELATIONS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
         _CURVE_CANDIDATES,
         ("peak_candidates",),
         ("payload_id", "candidate"),
-    ),
-    "edge_candidates": (
-        _EDGE_CANDIDATES,
-        ("member_candidates",),
-        ("edge", "candidate"),
     ),
 }
 

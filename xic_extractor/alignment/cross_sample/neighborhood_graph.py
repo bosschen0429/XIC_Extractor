@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.identity_models import (
@@ -24,11 +24,6 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.cross_sample.peak_groups import (
         CrossSamplePeakGroupHypothesis,
     )
-
-INITIAL_GROUPING_POLICY: Literal["feature-group-membership"] = (
-    "feature-group-membership"
-)
-UNLISTED_PAIR_DISPOSITION: Literal["not_evaluated"] = "not_evaluated"
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,8 +169,6 @@ __all__ = (
     "CrossSampleLineageEdge",
     "CrossSampleNeighborhoodEdge",
     "CrossSamplePartitionTransition",
-    "INITIAL_GROUPING_POLICY",
-    "UNLISTED_PAIR_DISPOSITION",
     "_expected_cross_sample_lineage",
     "_full_batch_weak_edge_is_eligible",
     "_targeted_istd_rt_disposition",

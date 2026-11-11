@@ -275,7 +275,9 @@ class ReviewWorkspace:
             "selected_count": page.selected_count,
             "offset": page.payload["selection"]["offset"],
             "limit": page.payload["selection"]["limit"],
-            "items": [self._item_summary(item) for item in page.payload["items"]],
+            "items": [
+                self._item_summary(item, page.source) for item in page.payload["items"]
+            ],
         }
         selection = page.payload["selection"]
         if selection.get("nearest_mz") is not None:
@@ -288,13 +290,14 @@ class ReviewWorkspace:
         return response
 
     @staticmethod
-    def _item_summary(item: dict[str, Any]) -> dict[str, Any]:
+    def _item_summary(item: dict[str, Any], source: object) -> dict[str, Any]:
         # Translate source-owned identifiers and coordinates; never infer a group.
-        source = item.get("details", {}).get("source", {})
-        group_id = source.get("feature_id")
-        candidate_id = (
-            source.get("candidate_id") if item["kind"] == "candidate" else None
+        # An Alignment evidence item's ref ends with its row or candidate ID.
+        identifier = (
+            json.loads(item["id"])[-1] if isinstance(source, EvidenceLocator) else None
         )
+        group_id = identifier if item["kind"] == "row" else None
+        candidate_id = identifier if item["kind"] == "candidate" else None
         observed = sorted(
             {
                 witness["sample_key"]
@@ -366,7 +369,10 @@ class ReviewWorkspace:
             prepared = replace(self._page, payload=payload, selected_count=1)
             view_id = uuid.uuid4().hex
             self._store_view(view_id, prepared)
-            self._detail = {"view_id": view_id, "item": self._item_summary(item)}
+            self._detail = {
+                "view_id": view_id,
+                "item": self._item_summary(item, self._page.source),
+            }
             self._job = None
             return copy.deepcopy(self._detail)
 
@@ -384,7 +390,8 @@ class ReviewWorkspace:
             if self.analysis.jobs.busy:
                 raise WorkspaceBusy("分析仍在執行；請完成或停止後再讀取診斷曲線。")
             item = self._item(values.get("item_id"))
-            description = self._item_summary(item)
+            assert self._page is not None
+            description = self._item_summary(item, self._page.source)
             if not any(
                 description[k] for k in ("group_id", "candidate_id", "target_id")
             ):

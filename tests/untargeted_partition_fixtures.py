@@ -154,7 +154,6 @@ def complete_dense_partition(
         application_result=application_result,
         method_assessments=partition.method_assessments,
         initial_groups=partition.initial_groups,
-        initial_edges=partition.initial_edges,
         capture_evidence=partition.capture_evidence,
     ).bind_publication_inputs(
         peaks_by_sample=context.peaks_by_sample,

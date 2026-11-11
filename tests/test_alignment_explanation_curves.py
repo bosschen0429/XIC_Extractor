@@ -21,7 +21,7 @@ from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
-    read_explanation_metadata,
+    read_review_evidence,
 )
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
@@ -162,11 +162,9 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
     )
     completed.close()
     actual = {
-        (record["candidate_id"], record["sample_key"]): record["observations"]
-        for record in read_explanation_metadata(report)
-        .records["terminal_subjects"]
-        .values()
-        if record.get("hypothesis_id")
+        key: candidate.terminal["observations"]
+        for key, candidate in read_review_evidence(report).candidates.items()
+        if candidate.terminal is not None and candidate.terminal.get("hypothesis_id")
     }
     assert actual == expected
 

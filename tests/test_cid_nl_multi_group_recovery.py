@@ -1422,9 +1422,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
 
 
 def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
-    from xic_extractor.alignment_explanation.reader import (
-        read_explanation_metadata,
-    )
+    from xic_extractor.alignment_explanation.reader import read_review_evidence
     from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_alignment_explanation,
     )
@@ -1443,7 +1441,11 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
         matrix_path=matrix,
         alignment_config=config,
     )
-    cells = read_explanation_metadata(report).records["cell_decisions"].values()
+    cells = [
+        cell
+        for group in read_review_evidence(report).groups.values()
+        for cell in group.cells.values()
+    ]
     accepted = [
         cell
         for cell in cells

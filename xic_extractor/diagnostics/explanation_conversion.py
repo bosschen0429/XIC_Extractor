@@ -76,11 +76,12 @@ def compact_explanation(
         temporary.unlink(missing_ok=True)
     with open_readonly(destination) as db:
         compact = read_completed_summary(db)
+        cell_count = db.execute("SELECT COUNT(*) FROM cells").fetchone()[0]
     return {
         "source_bytes": source.stat().st_size,
         "review_bytes": destination.stat().st_size,
         "candidate_count": compact["candidate_count"],
-        "cell_count": compact["record_counts"].get("cell_decisions", 0),
+        "cell_count": cell_count,
         "elapsed_seconds": round(perf_counter() - started, 3),
         "output": str(destination.resolve()),
     }

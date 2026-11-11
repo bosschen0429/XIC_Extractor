@@ -27,7 +27,7 @@ def __getattr__(name):
     raise AttributeError(name)
 
 
-def open_source(path, *, query_only=False):
+def open_source(path):
     """Select a source adapter without interpreting its schema here."""
     if path.suffix.lower() == ".xlsx":
         from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
@@ -49,7 +49,7 @@ def open_source(path, *, query_only=False):
     summary = read_summary(path)
     if summary["retention"] == "review":
         return IndexedCidNlSource(path, summary)
-    return CidNlSource(path, query_only=query_only)
+    return CidNlSource(path)
 
 
 __all__ = [

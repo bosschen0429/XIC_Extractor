@@ -26,7 +26,7 @@ from xic_extractor.alignment_explanation.errors import (
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
-    read_explanation_metadata,
+    read_review_evidence,
 )
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
@@ -111,16 +111,6 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     )
     summary = read_alignment_explanation(report)
     assert summary["diagnostic_only"] is True
-    assert summary["initial_edge_coverage"] == {
-        "policy": "feature-group-membership",
-        "unlisted_pairs": "not_evaluated",
-        "rt_pruning": True,
-        "retained_pair_record_count": len(completed.initial_edges),
-        "compressed_group_count": len(completed.initial_groups),
-        "compressed_member_count": sum(
-            len(group.member_subjects) for group in completed.initial_groups
-        ),
-    }
     assert summary["matrix_sha256"] == hashlib.sha256(matrix.read_bytes()).hexdigest()
     with matrix.open(encoding="utf-8-sig", newline="") as matrix_handle:
         assert summary["matrix_row_count"] == sum(
@@ -129,13 +119,12 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     assert summary["candidate_count"] == sum(map(len, candidates.values()))
     candidate_id = candidates["S1"][0].peak_id
     detail = read_alignment_explanation(report, candidate_id=candidate_id)
-    records = detail["records"]
     assessment = next(
         item
         for item in completed.method_assessments
         if item.sample_key == detail["candidates"][0]["sample_key"]
     )
-    retained = records["method_assessments"][0]
+    retained = detail["method_assessments"][0]
     assert retained["reason_codes"] == list(assessment.reason_codes)
     assert retained["method_result"] == assessment.method_result
     assert retained["evaluation_receipt"] == json.loads(
@@ -149,19 +138,18 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             for item in completed.application_result.excluded_candidates
             if item.candidate_id == candidate_id
         )
-        assert records["exclusions"][0]["reason_code"] == excluded.reason_code
-        assert "terminal_subjects" not in records
-        assert "rows" not in records
+        assert detail["candidates"][0]["exclusion_reason"] == excluded.reason_code
+        assert detail["candidates"][0]["terminal"] is None
+        assert not any("destination" in group for group in detail["groups"])
         assert retained["method_result"] == "HOLD"
     else:
-        terminal = records["terminal_subjects"][0]
-        assert terminal["physical_peak_keys"]
-        assert "initial_edges" not in records
+        terminal = detail["candidates"][0]["terminal"]
+        assert terminal["peak"]["physical_peak_key"]
         source_groups = {
             tuple(member.subject_id for member in group.member_subjects): group
             for group in completed.initial_groups
         }
-        for retained_group in records["initial_groups"]:
+        for retained_group in detail["initial_groups"]:
             source_group = source_groups[
                 tuple(
                     member["subject_id"] for member in retained_group["member_subjects"]
@@ -191,7 +179,8 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             )
         if scenario == "review_only":
             assert retained["method_result"] == "SUPPORT"
-            assert records["rows"][0]["route"]["destination"] == "archive"
+            row = next(group for group in detail["groups"] if "destination" in group)
+            assert row["destination"] == "archive"
     # A fresh query process can neither acquire RAW nor import the scientific stack.
     script = (
         "import sys,runpy\n"
@@ -236,9 +225,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             alignment_config=config,
         )
     if scenario == "positive":
-        missing_audit = replace(
-            completed, method_assessments=(), initial_groups=(), initial_edges=()
-        )
+        missing_audit = replace(completed, method_assessments=(), initial_groups=())
         missing_audit_report = write_alignment_explanation(
             tmp_path / "missing_audit.sqlite",
             full_audit=True,
@@ -253,7 +240,6 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         ] == {
             "method_assessments": "unavailable",
             "initial_groups": "unavailable",
-            "initial_edges": "unavailable",
         }
 
 
@@ -351,9 +337,20 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
     )
     heartbeat = json.loads(live.read_text())["heartbeat"]
     assert heartbeat["stage"] == "alignment.explanation.finalizing"
-    assert heartbeat["records_written"] == sum(
-        read_alignment_explanation(report)["record_counts"].values()
-    )
+    with sqlite3.connect(report) as connection:
+        stored = sum(
+            connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in (
+                "method_subjects",
+                "method_assessments",
+                "exclusions",
+                "groups",
+                "initial_groups",
+                "curves",
+                "cells",
+            )
+        )
+    assert heartbeat["records_written"] == stored
     for values in candidates.values():
         for candidate in values:
             assert read_alignment_explanation(
@@ -473,15 +470,16 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
         writer.add_exclusion("a", "s", "held")
         writer.finalize(summary)
     detail = read_alignment_explanation(report, candidate_id="a")
-    assert detail["records"]["exclusions"] == [
-        {
-            "candidate_id": "a",
-            "method_subject_id": "M1",
-            "peak_status": "detected",
-            "reason_code": "held",
-            "sample_key": "s",
-        }
-    ]
+    assert [
+        (
+            candidate["candidate_id"],
+            candidate["sample_key"],
+            candidate["method_subject_id"],
+            candidate["peak_status"],
+            candidate["exclusion_reason"],
+        )
+        for candidate in detail["candidates"]
+    ] == [("a", "s", "M1", "detected", "held")]
     failed = tmp_path / "conflict.sqlite"
     with pytest.raises(ValueError, match="conflicting candidate exclusion"):
         with ExplanationReportWriter(failed) as writer:
@@ -541,14 +539,13 @@ def test_related_set_links_preserve_union_of_repeated_records(tmp_path):
         assert len(ids) == 1
         writer.finalize(explanation_summary({"neutral_loss_by_tag": {"dR": 116.0}}))
 
-    expected = {
-        (candidate_id, "S1", "capture_evidence", "1")
-        for candidate_id in ("C1", "C2", "C3")
-    }
-    links = read_explanation_metadata(report).links
-    assert {link for link in links if link[2] == "capture_evidence"} == expected
+    evidence = read_review_evidence(report)
+    assert {
+        key for key, candidate in evidence.candidates.items() if candidate.curves
+    } == {(candidate_id, "S1") for candidate_id in ("C1", "C2", "C3")}
+    assert {candidate.curves for candidate in evidence.candidates.values()} == {("1",)}
     details = [
-        read_alignment_explanation(report, candidate_id=candidate_id)["records"][
+        read_alignment_explanation(report, candidate_id=candidate_id)[
             "capture_evidence"
         ]
         for candidate_id in ("C1", "C2", "C3")
@@ -636,10 +633,9 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
     assert read_alignment_explanation(report)["candidate_count"] == 4
     detail = read_alignment_explanation(report, candidate_id="a")
     assert sorted(
-        group["inference_basis"]["basis"]
-        for group in detail["records"]["initial_groups"]
+        group["inference_basis"]["basis"] for group in detail["initial_groups"]
     ) == ["second", "shared"]
-    assert len(detail["records"]["final_groups"]) == 1
+    assert len(detail["groups"]) == 1
     with pytest.raises(ExplanationError, match="malformed"):
         read_alignment_explanation(report, candidate_id="b")
 

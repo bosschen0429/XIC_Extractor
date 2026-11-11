@@ -82,7 +82,9 @@ def test_normalized_links_preserve_candidate_query_and_inspector_scope(tmp_path)
     item = read_report_payload(output)["items"][0]
     assert json.loads(item["id"])[-1] == "G1"
     assert item["details"]["readable_records"]
-    assert {"rows", "final_groups", "cell_decisions"}.issubset(detail["records"])
+    assert [group["feature_id"] for group in detail["groups"]] == ["G1"]
+    assert "destination" in detail["groups"][0]
+    assert detail["groups"][0]["cells"]
 
 
 def test_generate_report_sample_strategy_success() -> None:
@@ -591,9 +593,9 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
     item = read_report_payload(scoped)["items"][0]
     assert item["stratum"] == "rest"
     assert item["samples"][0]["quantitative_value"] == 1000.0
+    assert [sample["sample_id"] for sample in item["samples"]] == ["S1"]
     assert all(
-        c.get("sample_key", c.get("sample_id")) == "S1"
-        for c in item["details"]["cells"]
+        ref[1] == "S1" for sample in item["samples"] for ref in sample["decision_refs"]
     )
 
 
@@ -762,8 +764,7 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
     generate_report(report, SelectionRequest(), output)
     item = read_report_payload(output)["items"][0]
 
-    assert item["details"]["review_summary"]["origin_kinds"] == [expected_kind]
-    assert item["review_summary"] == item["details"]["review_summary"]
+    assert item["review_summary"]["origin_kinds"] == [expected_kind]
     assert item["samples"][0]["support_origin"] == {
         "kind": expected_kind,
         "label": expected_label,
@@ -828,310 +829,6 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         "Backfill（回填）支持",
         ["obs-01"],
     )
-
-
-@pytest.mark.parametrize("sparse_coverage", [False, True])
-def test_initial_edge_adds_one_exact_peer_without_expanding_selection(
-    tmp_path,
-    sparse_coverage,
-):
-    coverage = (
-        {
-            "policy": "hard-gate-candidates-v1",
-            "unlisted_pairs": "excluded",
-            "rt_pruning": False,
-        }
-        if sparse_coverage
-        else {}
-    )
-
-    def provisional_peers(writer):
-        for candidate_id, group_id, observation_id in (
-            ("C2", "G2", "obs-02"),
-            ("C3", "G3", "obs-03"),
-        ):
-            writer.add_peak("S1", observation_id, (None, 1.0, None))
-            writer.add_candidate(
-                candidate_id, "S1", precursor_mz=501.0, **discovery(candidate_id)
-            )
-            writer.add_terminal(
-                candidate_id,
-                "S1",
-                variant="observed",
-                hypothesis_id=f"hyp-{candidate_id}",
-                physical_peak_key=observation_id,
-            )
-            writer.add_final_group(
-                group_id,
-                feature_id=group_id,
-                disposition="provisional",
-                members=[witness_member("S1", f"hyp-{candidate_id}", observation_id)],
-            )
-            writer.add_curve_payload(
-                "S1",
-                "initial_capture",
-                observation_id,
-                inspector_curve_payload("S1", candidate_id, observation_id),
-            )
-        writer.add_initial_edge(
-            {
-                "left_subject_id": "hyp-C1",
-                "right_subject_id": "hyp-C2",
-                "disposition": "excluded",
-                "initial_evidence": {"decision": "blocked_edge"},
-            }
-        )
-
-    report, _, _ = create_inspector_report(
-        tmp_path,
-        hypothesis_id="hyp-C1",
-        extend=provisional_peers,
-        summary={"initial_edge_coverage": coverage},
-    )
-
-    output = tmp_path / "peer.html"
-    result = generate_report(
-        report,
-        SelectionRequest(strategy="query", limit=1, candidate_ids=("C1",)),
-        output,
-    )
-    data = read_report_payload(output)
-
-    assert result.selected_count == 1
-    assert len(data["items"]) == 1
-    item = data["items"][0]
-    assert item["details"]["initial_edge_coverage"] == coverage
-    assert item["review_summary"]["related_group_count"] == 1
-    assert len(item["related_groups"]) == 1
-    peer = item["related_groups"][0]
-    assert peer["group_id"] == "G2"
-    assert peer["edge_refs"] == ['["hyp-C1","hyp-C2"]']
-    assert len(peer["curves"]) == 1
-    assert peer["curves"][0]["candidate_ids"] == ["C2"]
-
-
-@pytest.mark.parametrize(
-    "availability", [None, "unavailable", "not_retained", "recorded"]
-)
-def test_report_preserves_relationship_availability_without_edges(
-    tmp_path,
-    availability,
-):
-    report, _, _ = create_inspector_report(
-        tmp_path,
-        summary=None
-        if availability is None
-        else {"audit_availability": {"initial_edges": availability}},
-    )
-    output = tmp_path / "relationship-availability.html"
-    generate_report(report, SelectionRequest(), output)
-    item = read_report_payload(output)["items"][0]
-    assert item["relationship_availability"] == (availability or "unavailable")
-    assert not item.get("internal_pair_support")
-    assert item["samples"][0]["quantitative_value"] == 1000.0
-
-
-def test_internal_pair_support_preserves_edge_identity_and_disposition(tmp_path):
-    # Each member is its candidate's terminal hypothesis; member-1 also holds
-    # C1's terminal peak.
-    def candidates(writer):
-        for candidate_id, sample_id, member in (
-            ("C1-duplicate", "S1", "member-1"),
-            ("C2", "S2", "member-2"),
-            ("C3", "S3", "member-3"),
-        ):
-            peak = f"obs-{candidate_id}"
-            writer.add_peak(sample_id, peak, (None, 1.0, None))
-            writer.add_candidate(
-                candidate_id, sample_id, precursor_mz=500.0, **discovery(candidate_id)
-            )
-            writer.add_terminal(
-                candidate_id,
-                sample_id,
-                variant="observed",
-                hypothesis_id=member,
-                physical_peak_key=peak,
-            )
-            writer.add_curve_payload(
-                sample_id,
-                "initial_capture",
-                peak,
-                inspector_curve_payload(sample_id, candidate_id, peak),
-            )
-
-    def external_group_and_edges(writer):
-        writer.add_final_group(
-            "G2",
-            feature_id="G2",
-            disposition="completed",
-            members=[witness_member("S3", "member-3", "obs-C3")],
-        )
-        # One edge per ordered subject pair; the review edge is the reverse pair.
-        edges = (
-            (
-                "member-1",
-                "member-2",
-                "eligible",
-                {
-                    "decision": "strong_edge",
-                    "reason": "strong_edge: score=90",
-                    "score": 90,
-                    "rt_raw_delta_sec": 1.25,
-                    "rt_drift_corrected_delta_sec": 0.75,
-                },
-            ),
-            (
-                "member-2",
-                "member-1",
-                "review_only",
-                {
-                    "decision": "weak_edge",
-                    "reason": "weak_edge: score unavailable",
-                },
-            ),
-            (
-                "member-1",
-                "member-3",
-                "excluded",
-                {
-                    "decision": "blocked_edge",
-                    "reason": "blocked: identity_conflict",
-                    "score": 0,
-                },
-            ),
-        )
-        for left_id, right_id, disposition, evidence in edges:
-            writer.add_initial_edge(
-                {
-                    "left_subject_id": left_id,
-                    "right_subject_id": right_id,
-                    "disposition": disposition,
-                    "initial_evidence": evidence,
-                }
-            )
-
-    report, _, _ = create_inspector_report(
-        tmp_path,
-        samples=[
-            {"sample_stem": "sample one", "sample_key": "S1"},
-            {"sample_stem": "sample two", "sample_key": "S2"},
-            {"sample_stem": "sample three", "sample_key": "S3"},
-        ],
-        prepare=candidates,
-        group={
-            "members": [
-                witness_member("S1", "member-1", "obs-01", "obs-C1-duplicate"),
-                witness_member("S2", "member-2", "obs-C2"),
-            ],
-        },
-        extend=external_group_and_edges,
-    )
-
-    output = tmp_path / "internal-pair-support.html"
-    generate_report(
-        report,
-        SelectionRequest(strategy="query", limit=1, candidate_ids=("C1",)),
-        output,
-    )
-    item = read_report_payload(output)["items"][0]
-
-    assert item["relationship_availability"] == "recorded"
-    assert item["internal_pair_support"] == [
-        {
-            "edge_ref": '["member-1","member-2"]',
-            "left_subject_id": "member-1",
-            "right_subject_id": "member-2",
-            "left_sample_label": "sample one",
-            "right_sample_label": "sample two",
-            "support_kind": "direct",
-            "disposition": "eligible",
-            "decision": "strong_edge",
-            "reason": "strong_edge: score=90",
-            "score": 90,
-            "rt_raw_delta_sec": 1.25,
-            "rt_drift_corrected_delta_sec": 0.75,
-            "rt_basis": None,
-        },
-        {
-            "edge_ref": '["member-2","member-1"]',
-            "left_subject_id": "member-2",
-            "right_subject_id": "member-1",
-            "left_sample_label": "sample two",
-            "right_sample_label": "sample one",
-            "support_kind": "review_only",
-            "disposition": "review_only",
-            "decision": "weak_edge",
-            "reason": "weak_edge: score unavailable",
-            "score": None,
-            "rt_raw_delta_sec": None,
-            "rt_drift_corrected_delta_sec": None,
-            "rt_basis": None,
-        },
-    ]
-    assert item["review_summary"]["related_group_count"] == 1
-    assert item["related_groups"][0]["edge_refs"] == ['["member-1","member-3"]']
-
-
-def test_initial_edge_peer_join_preserves_shared_candidate_multirow_identity(tmp_path):
-    def shared_candidate_rows_and_edge(writer):
-        writer.add_peak("S1", "obs-02", (None, 1.0, None))
-        writer.add_candidate("C2", "S1", precursor_mz=501.0, **discovery("C2"))
-        writer.add_terminal(
-            "C2",
-            "S1",
-            variant="observed",
-            hypothesis_id="hyp-C2",
-            physical_peak_key="obs-02",
-        )
-        writer.add_curve_payload(
-            "S1",
-            "initial_capture",
-            "obs-02",
-            inspector_curve_payload("S1", "C2", "obs-02"),
-        )
-        writer.add_final_group(
-            "G2",
-            feature_id="G2",
-            disposition="completed",
-            members=[witness_member("S1", "hyp-C2", "obs-02")],
-        )
-        # G4 shares C1 through a member holding C1's terminal peak.
-        writer.add_final_group(
-            "G4",
-            feature_id="G4",
-            disposition="completed",
-            members=[witness_member("S1", "G4-member", "obs-01")],
-        )
-        writer.add_initial_edge(
-            {
-                "left_subject_id": "hyp-C1",
-                "right_subject_id": "hyp-C2",
-                "disposition": "excluded",
-                "initial_evidence": {"decision": "split_edge"},
-            }
-        )
-
-    report, _, _ = create_inspector_report(
-        tmp_path, hypothesis_id="hyp-C1", extend=shared_candidate_rows_and_edge
-    )
-
-    output = tmp_path / "shared-multirow-peer.html"
-    result = generate_report(
-        report,
-        SelectionRequest(strategy="query", limit=10, candidate_ids=("C1",)),
-        output,
-    )
-    items = read_report_payload(output)["items"]
-
-    assert result.selected_count == 2
-    assert {item["details"]["source"]["feature_id"] for item in items} == {
-        "G1",
-        "G4",
-    }
-    for item in items:
-        assert item["review_summary"]["related_group_count"] == 1
-        assert [peer["group_id"] for peer in item["related_groups"]] == ["G2"]
-        assert item["related_groups"][0]["edge_refs"] == ['["hyp-C1","hyp-C2"]']
 
 
 def test_curve_replays_final_rt_estimate_including_boundary_shift(tmp_path):
@@ -1199,16 +896,11 @@ def test_readable_evidence_preserves_exact_record_curve_and_decision_bindings(
     generate_report(report, SelectionRequest(), output)
 
     item = read_report_payload(output)["items"][0]
-    records = item["details"]["records"]
-    facts = next(r for r in records if r["ref"] == ["G1", "S1"])["facts"]
-    assert (facts["feature_id"], facts["sample_key"], facts["value"]) == (
-        "G1",
-        "S1",
-        1000.0,
-    )
-
     readable = _readable(item)
     decision = readable["G1", "S1"]
+    technical = {ref["label"]: ref["value"] for ref in decision["technical_refs"]}
+    assert (technical["分組 ID"], technical["樣本 ID"]) == ("G1", "S1")
+    assert {"label": "正式定量值", "value": "1,000"} in decision["fields"]
     assert decision["sample_ids"] == ["S1"]
     # A cell is read with its row and sample, not linked to candidates.
     assert decision["candidate_ids"] == []
@@ -1308,8 +1000,8 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
     ] == "0"
 
 
-def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_path):
-    def sample_methods_and_edges(writer):
+def test_decision_and_curve_link_only_exact_sample_and_method_records(tmp_path):
+    def sample_methods(writer):
         for sample_id, reason_code in (
             ("S1", "unique_support_within_declared_candidate_universe"),
             ("S2", "another_recorded_reason"),
@@ -1323,20 +1015,6 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
                     "technical_state": "evaluated",
                 },
                 candidate_physical_peak_keys=(),
-            )
-        for left, right in (("hyp-C1", "hyp-C2"), ("hyp-C2", "hyp-C2b")):
-            writer.add_initial_edge(
-                {
-                    "left_subject_id": left,
-                    "right_subject_id": right,
-                    "disposition": "excluded",
-                    "initial_evidence": {
-                        "decision": "blocked_edge",
-                        "failure_reason": "product_mz_out_of_tolerance",
-                        "reason": "blocked: product_mz_out_of_tolerance",
-                        "score": 0,
-                    },
-                }
             )
         # C2's observation keeps its curve; numbered after the assessments.
         writer.add_curve_payload(
@@ -1373,11 +1051,10 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
             {"sample_key": "S1", "variant": "numeric", "value": 1000.0},
             {"sample_key": "S2", "variant": "numeric", "value": 700.0},
         ],
-        extend=sample_methods_and_edges,
+        extend=sample_methods,
     )
     # G1 is record 1 and its curve 2; the two assessments follow.
     method_s1, method_s2 = "3", "4"
-    edge_shared, edge_s2_only = '["hyp-C1","hyp-C2"]', '["hyp-C2","hyp-C2b"]'
 
     output = tmp_path / "related-records.html"
     generate_report(report, SelectionRequest(), output)
@@ -1392,15 +1069,12 @@ def test_decision_and_curve_link_only_exact_sample_method_and_edge_records(tmp_p
 
     curve_ref = item["curves"][0]["evidence_ref"]
     curve_links = {link["ref"] for link in readable[curve_ref]["links"]}
-    assert {method_s1, edge_shared} <= curve_links
-    assert {method_s2, edge_s2_only}.isdisjoint(curve_links)
+    assert method_s1 in curve_links
+    assert method_s2 not in curve_links
 
     assert "SUPPORT" in readable[method_s1]["summary"]
     assert "在已宣告候選範圍內具有唯一支持" in readable[method_s1]["summary"]
     assert "不代表正式定量採用" in readable[method_s1]["summary"]
-    assert "產品離子 m/z 超出容許範圍" in readable[edge_shared]["summary"]
-    assert "score 0" in readable[edge_shared]["summary"]
-    assert "不代表正式定量採用" in readable[edge_shared]["summary"]
 
 
 def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
@@ -1487,11 +1161,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
     assert "17.262" in curve_values
     assert "28,578.9251" in curve_values
 
-    method_record = next(
-        record for record in item["details"]["records"] if record["ref"] == "M1"
-    )
-    assert method_record["facts"]["precursor_mz"] == precursor_mz
-    assert item["details"]["cells"][0]["quantitative_value"] == area
+    assert item["samples"][0]["quantitative_value"] == area
     assert curve["apex_rt"] == apex_rt
     assert curve["area"] == area
     assert curve["integration"]["area_raw_counts_seconds"] == area
@@ -1666,7 +1336,7 @@ def test_nearest_mz_ranks_unrounded_display_mz_not_closest_witness(tmp_path):
         ),
     )
     items = prepared.payload["items"]
-    assert [i["details"]["source"]["feature_id"] for i in items] == [
+    assert [json.loads(i["id"])[-1] for i in items] == [
         "round-b",
         "round-a",
         "near",
@@ -1724,7 +1394,7 @@ def test_nearest_mz_sorts_full_population_before_stable_pagination(
     tmp_path, monkeypatch
 ):
     from xic_inspector.api import prepare_report
-    from xic_inspector.sources import cid_nl
+    from xic_inspector.sources import cid_nl_query
 
     coordinates = {f"item-{i:02}": 200 + (30 - i) / 100 for i in range(31)}
     coordinates.update({"tie-z": 201, "tie-a": 201})
@@ -1734,13 +1404,13 @@ def test_nearest_mz_sorts_full_population_before_stable_pagination(
     )
     expected = sorted(coordinates, key=lambda key: (abs(coordinates[key] - 200), key))
     restored_rows = []
-    read_selection = cid_nl.read_explanation_selection
+    read_selection = cid_nl_query.read_review_evidence
 
     def read_page(*args, **kwargs):
         restored_rows.append(len(kwargs["row_ids"]))
         return read_selection(*args, **kwargs)
 
-    monkeypatch.setattr(cid_nl, "read_explanation_selection", read_page)
+    monkeypatch.setattr(cid_nl_query, "read_review_evidence", read_page)
     pages = []
     for offset in (0, 25):
         prepared = prepare_report(
@@ -1754,9 +1424,7 @@ def test_nearest_mz_sorts_full_population_before_stable_pagination(
             ),
         )
         assert prepared.matched_count == 33
-        pages.extend(
-            i["details"]["source"]["feature_id"] for i in prepared.payload["items"]
-        )
+        pages.extend(json.loads(i["id"])[-1] for i in prepared.payload["items"])
     assert pages == expected
     assert len(set(pages)) == 33
     assert pages[0] == "item-30"
@@ -1782,7 +1450,7 @@ def test_nearest_mz_excludes_invalid_display_mz_and_respects_matrix_scope(tmp_pa
         report,
         SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=123.4),
     )
-    assert [i["details"]["source"]["feature_id"] for i in matrix.payload["items"]] == [
+    assert [json.loads(i["id"])[-1] for i in matrix.payload["items"]] == [
         "resolved",
         "valid",
     ]

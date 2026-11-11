@@ -15,32 +15,6 @@ STRATA_ORDER: tuple[StratumKey, ...] = (
 )
 
 
-def is_attention_predicate(
-    *,
-    edge_failures: tuple[str, ...] = (),
-    edge_dispositions: tuple[str, ...] = (),
-    method_verdicts: tuple[str, ...] = (),
-    group_statuses: tuple[str, ...] = (),
-    cell_decision_unresolved_null: bool = False,
-) -> bool:
-    """Evaluate whether any scoped owner predicate matches the attention condition."""
-    for failure in edge_failures:
-        if failure in ("ambiguous_owner", "identity_conflict"):
-            return True
-    for disp in edge_dispositions:
-        if disp == "review_only":
-            return True
-    for verdict in method_verdicts:
-        if verdict == "HOLD":
-            return True
-    for status in group_statuses:
-        if status in ("provisional", "unresolved"):
-            return True
-    if cell_decision_unresolved_null:
-        return True
-    return False
-
-
 def classify_scoped_stratum(
     *,
     is_attention: bool,

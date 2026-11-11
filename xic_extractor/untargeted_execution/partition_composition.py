@@ -21,7 +21,6 @@ from xic_extractor.alignment.completion import (
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleNeighborhoodEdge,
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
@@ -164,7 +163,6 @@ class UntargetedPartitionComposition:
     capture_bindings: tuple[CaptureCandidateBinding, ...]
     method_assessments: tuple[CidNlMethodAssessment, ...]
     initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
-    initial_edges: tuple[CrossSampleNeighborhoodEdge, ...]
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = ()
 
 
@@ -344,7 +342,6 @@ def compose_and_persist_untargeted_partition(
         capture_bindings=(),
         method_assessments=inputs.method_assessments,
         initial_groups=inputs.initial_groups,
-        initial_edges=inputs.initial_edges,
         capture_evidence=inputs.capture_evidence,
     )
     sealed = store.append_children(
@@ -372,7 +369,6 @@ class _ProductionCompositionInputs:
     ]
     method_assessments: tuple[CidNlMethodAssessment, ...]
     initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
-    initial_edges: tuple[CrossSampleNeighborhoodEdge, ...]
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = ()
 
 
@@ -398,7 +394,6 @@ def compose_untargeted_partition(
         capture_bindings=inputs.request.scope.capture_bindings,
         method_assessments=inputs.method_assessments,
         initial_groups=inputs.initial_groups,
-        initial_edges=inputs.initial_edges,
         capture_evidence=inputs.capture_evidence,
     )
 
@@ -944,7 +939,6 @@ def _build_production_composition_inputs(
             for workset in prepared.worksets
             for group in workset.grouping_scope.groups
         ),
-        initial_edges=(),
         capture_evidence=tuple(
             evidence
             for result in sample_results

@@ -2,9 +2,9 @@
 
 Each concept has one table: a run summary, samples, peaks, method subjects,
 Discovery candidates (with their terminal observation), final groups, initial
-groups, group members, cells, method assessments and exclusions. Initial edges
-and curves have tables only in runs that retain them. Rows refer to each other
-by integer row ids; a list of references is a JSON array of row ids.
+groups, group members, cells, method assessments and exclusions. Curves have a
+table only in runs that retain them. Rows refer to each other by integer row
+ids; a list of references is a JSON array of row ids.
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from .review import SUPPORT_ORIGINS
 
 EXPLANATION_ARTIFACT_NAME = "alignment_explanation.sqlite"
 SCHEMA_VERSION = "alignment_evidence"
-RecordKey = str | tuple[str, str]
 
 # Summary keys written by the producer; counts are derived when read.
 STORED_SUMMARY_KEYS = frozenset(
@@ -45,7 +44,6 @@ STORED_SUMMARY_KEYS = frozenset(
         "selection_evidence_capability",
         "curve_retention",
         "curve_mz_ranges",
-        "initial_edge_coverage",
         "audit_availability",
         "sample_rt_calibration",
         "injection_order",
@@ -137,15 +135,6 @@ TABLES: dict[str, tuple[str, ...]] = {
     "exclusions": ("candidate", "reason_code"),
 }
 OPTIONAL_TABLES: dict[str, tuple[str, ...]] = {
-    "initial_edges": (
-        "id",
-        "left_subject_id",
-        "right_subject_id",
-        "disposition",
-        "initial_evidence",
-        "initial_context",
-        "alignment_config",
-    ),
     "curves": (
         "payload_id",
         "sample_id",
@@ -216,13 +205,6 @@ _DDL = {
     "exclusions": (
         "CREATE TABLE exclusions (candidate INTEGER PRIMARY KEY, "
         "reason_code TEXT NOT NULL)"
-    ),
-    "initial_edges": (
-        "CREATE TABLE initial_edges (id INTEGER PRIMARY KEY, "
-        "left_subject_id TEXT NOT NULL, right_subject_id TEXT NOT NULL, "
-        "disposition TEXT, initial_evidence TEXT, initial_context TEXT, "
-        "alignment_config TEXT, "
-        "UNIQUE(left_subject_id, right_subject_id))"
     ),
     "curves": (
         "CREATE TABLE curves (payload_id INTEGER PRIMARY KEY, "
@@ -322,7 +304,7 @@ def read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
         raise ExplanationError(
             "檢閱資料含有目前版本不再產生的支持來源；請重新執行 Alignment。"
         )
-    summary = {**stored, **_derived_counts(connection, tables)}
+    summary = {**stored, **_derived_counts(connection)}
     summary = {key: summary[key] for key in sorted(summary)}
     summary["samples"] = [
         {"sample_key": key, "sample_stem": stem}
@@ -333,63 +315,25 @@ def read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
     return summary
 
 
-def _derived_counts(connection: sqlite3.Connection, tables: set[str]) -> dict[str, Any]:
+def _derived_counts(connection: sqlite3.Connection) -> dict[str, Any]:
     """Counts of stored facts, computed instead of stored a second time."""
-
-    def count(sql: str) -> int:
-        return int(connection.execute(sql).fetchone()[0])
-
-    counts = {
-        "cell_decisions": count("SELECT COUNT(*) FROM cells"),
-        "exclusions": count("SELECT COUNT(*) FROM exclusions"),
-        "final_groups": count("SELECT COUNT(*) FROM groups"),
-        "initial_groups": count("SELECT COUNT(*) FROM initial_groups"),
-        "method_assessments": count("SELECT COUNT(*) FROM method_assessments"),
-        "method_subjects": count("SELECT COUNT(*) FROM method_subjects"),
-        "rows": count("SELECT COUNT(*) FROM groups WHERE feature_id IS NOT NULL"),
-        "terminal_subjects": count(
-            "SELECT COUNT(*) FROM candidates WHERE terminal_variant IS NOT NULL"
-        ),
-    }
-    if "curves" in tables:
-        counts["capture_evidence"] = count("SELECT COUNT(*) FROM curves")
-    if "initial_edges" in tables:
-        counts["initial_edges"] = count("SELECT COUNT(*) FROM initial_edges")
     reasons: dict[str, int] = {}
-
-    def add(reason: Any, number: int = 1) -> None:
-        if isinstance(reason, str):
-            reasons[reason] = reasons.get(reason, 0) + number
-
-    for code, number in connection.execute(
+    for query in (
         "SELECT j.value, COUNT(*) FROM method_assessments, json_each(reason_codes) j "
-        "GROUP BY j.value"
-    ):
-        add(code, number)
-    for reason, number in connection.execute(
-        "SELECT reason_code, COUNT(*) FROM exclusions GROUP BY reason_code"
-    ):
-        add(reason, number)
-    for reason, number in connection.execute(
+        "GROUP BY j.value",
+        "SELECT reason_code, COUNT(*) FROM exclusions GROUP BY reason_code",
         "SELECT disposition, COUNT(*) FROM groups "
-        "WHERE feature_id IS NOT NULL GROUP BY disposition"
+        "WHERE feature_id IS NOT NULL GROUP BY disposition",
     ):
-        add(reason, number)
-    if "initial_edges" in tables:
-        for (evidence,) in connection.execute(
-            "SELECT initial_evidence FROM initial_edges"
-        ):
-            add((decode_json(evidence) or {}).get("reason"))
+        for reason, number in connection.execute(query):
+            if isinstance(reason, str):
+                reasons[reason] = reasons.get(reason, 0) + number
     return {
-        "candidate_count": count("SELECT COUNT(*) FROM candidates"),
+        "candidate_count": int(
+            connection.execute("SELECT COUNT(*) FROM candidates").fetchone()[0]
+        ),
         "reason_counts": dict(sorted(reasons.items())),
-        "record_counts": {key: counts[key] for key in sorted(counts) if counts[key]},
     }
-
-
-def selection_mask_width(sample_count: int) -> int:
-    """Bytes of one per-sample bit mask in review selection facts."""
-    return max(1, (sample_count + 7) // 8)
 
 
 @contextmanager

@@ -62,7 +62,7 @@ def test_duplicate_quantification_reads_published_output_levels(
         raise AssertionError("scalar cell reading decoded cold scientific details")
 
     monkeypatch.setattr(
-        "xic_extractor.alignment_explanation.reader._Evidence.cells", forbidden
+        "xic_extractor.alignment_explanation.reader._Report.cells", forbidden
     )
     cells = read_published_cells(directory)
 

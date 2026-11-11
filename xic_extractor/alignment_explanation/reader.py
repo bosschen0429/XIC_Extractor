@@ -1,9 +1,10 @@
 """Read completed Alignment facts without importing publication or execution.
 
-Readers receive each stored concept in the record shapes they display: a group
-is read as its final-group, result-row and initial-group records, a candidate
-with its terminal observation, and links relate records to candidates through
-the stored references.
+Each stored concept is read as one object: a Discovery candidate with its
+method subject, assessments, exclusion and terminal observation; a final group
+with its members, cells and result row; an initial group; a retained curve.
+Which candidates a group, an initial group or a curve relates to follows from
+the stored references (see ``relations``) and is read with that object.
 """
 
 from __future__ import annotations
@@ -11,8 +12,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import defaultdict
-from collections.abc import Callable, Container, Iterable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Container, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -25,7 +25,6 @@ from xic_extractor.alignment_explanation.errors import (
 from .relations import relation
 from .review import validate_membership_risks
 from .storage import (
-    RecordKey,
     decode_json,
     encode_object,
     open_readonly,
@@ -34,31 +33,65 @@ from .storage import (
 )
 
 CandidateKey = tuple[str, str]
-Link = tuple[str, str, str, str]
 
 _GROUPS = "SELECT id,feature_id,disposition,destination,center_mz,ppm FROM groups"
-_SCALAR_KINDS = ("rows", "final_groups", "terminal_subjects", "initial_edges")
 
 
 @dataclass(frozen=True, slots=True)
-class ExplanationMetadata:
-    """Completed review facts and exact links, without curve payloads."""
+class CandidateEvidence:
+    """One Discovery candidate and the facts recorded about it.
+
+    ``groups``, ``initial_groups`` and ``curves`` are the references of the
+    read groups and curves this candidate relates to.
+    """
+
+    fields: dict[str, Any]
+    method_subject_id: str
+    method_subject: dict[str, Any]
+    assessments: tuple[tuple[str, dict[str, Any]], ...]
+    exclusion: dict[str, Any] | None
+    terminal: dict[str, Any] | None
+    groups: tuple[str, ...]
+    initial_groups: tuple[str, ...]
+    curves: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class GroupEvidence:
+    """One final group: its record, its result row and its cells by sample."""
+
+    feature_id: str | None
+    record: dict[str, Any]
+    row: dict[str, Any] | None
+    candidates: frozenset[CandidateKey]
+    cells: dict[str, dict[str, Any]]
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewEvidence:
+    """Completed facts for the read candidates and groups, without curve arrays."""
 
     summary: dict[str, Any]
-    candidates: dict[tuple[str, str], dict[str, Any]]
-    records: dict[str, dict[RecordKey, dict[str, Any]]]
-    links: tuple[tuple[str, str, str, str], ...]
-
-
-def _key(*parts: str) -> str:
-    return json.dumps(parts, separators=(",", ":"))
+    candidates: dict[CandidateKey, CandidateEvidence]
+    groups: dict[str, GroupEvidence]
+    initial_groups: dict[str, dict[str, Any]]
+    curves: dict[str, dict[str, Any]]
 
 
 def _sorted(value: dict[str, Any]) -> dict[str, Any]:
     return {key: value[key] for key in sorted(value)}
 
 
-class _Evidence:
+def _chunks(values: Sequence[Any], size: int = 900) -> Iterator[Sequence[Any]]:
+    for start in range(0, len(values), size):
+        yield values[start : start + size]
+
+
+def _in(column: str, chunk: Sequence[Any]) -> str:
+    return f"{column} IN ({','.join('?' for _ in chunk)})"
+
+
+class _Report:
     """Request-local lookups over one completed report."""
 
     def __init__(self, db: sqlite3.Connection, summary: Mapping[str, Any]):
@@ -94,63 +127,30 @@ class _Evidence:
             (row[1], self.samples[row[2]]): row_id
             for row_id, row in self.candidate_rows.items()
         }
-        self._by_subject_sample: dict[tuple[int, int], list[CandidateKey]] | None = None
 
     def key(self, candidate_row_id: int) -> CandidateKey:
         row = self.candidate_rows[candidate_row_id]
         return row[1], self.samples[row[2]]
 
-    def related(self, view: str, column: str, ids: Iterable[Any]) -> dict[Any, list]:
-        """Candidate keys each record relates to, through a relation view."""
-        result: dict[Any, list[CandidateKey]] = defaultdict(list)
-        view = relation(self.db, view)
-        for chunk in _chunks(sorted(set(ids))):
-            for record, candidate in self.db.execute(
-                f"SELECT {column},candidate FROM {view} "
-                f"WHERE {column} IN ({','.join('?' for _ in chunk)}) "
-                f"ORDER BY {column},candidate",
+    def related(
+        self, view: str, column: str, candidates: Sequence[int]
+    ) -> dict[int, list[Any]]:
+        """Records of a relation view each given candidate relates to."""
+        result: dict[int, list[Any]] = defaultdict(list)
+        table = relation(self.db, view)
+        for chunk in _chunks(candidates):
+            for candidate, record in self.db.execute(
+                f"SELECT candidate,{column} FROM {table} "
+                f"WHERE {_in('candidate', chunk)} ORDER BY candidate,{column}",
                 chunk,
             ):
-                result[record].append(self.key(candidate))
+                result[candidate].append(record)
         return result
-
-    def linked(self, view: str, column: str, selected: set[int]) -> set[Any]:
-        """Records of a relation view that relate a selected candidate."""
-        found: set[Any] = set()
-        view = relation(self.db, view)
-        for chunk in _chunks(sorted(selected)):
-            found.update(
-                row[0]
-                for row in self.db.execute(
-                    f"SELECT DISTINCT {column} FROM {view} "
-                    f"WHERE candidate IN ({','.join('?' for _ in chunk)})",
-                    chunk,
-                )
-            )
-        return found
 
     def peak_keys(self, encoded: str) -> list[str]:
         return [self.peaks[peak_id][0] for peak_id in json.loads(encoded)]
 
-    def subject_candidates(
-        self, subject: int, sample: int | None
-    ) -> list[CandidateKey]:
-        if self._by_subject_sample is None:
-            index: dict[tuple[int, int], list[CandidateKey]] = defaultdict(list)
-            for row_id, row in self.candidate_rows.items():
-                if row[7] is not None:
-                    index[row[7], row[2]].append(self.key(row_id))
-            self._by_subject_sample = index
-        if sample is not None:
-            return self._by_subject_sample.get((subject, sample), [])
-        return [
-            key
-            for (subject_id, _), keys in self._by_subject_sample.items()
-            if subject_id == subject
-            for key in keys
-        ]
-
-    # Records ----------------------------------------------------------
+    # Candidates --------------------------------------------------------
 
     def candidate(self, row_id: int) -> dict[str, Any]:
         row = self.candidate_rows[row_id]
@@ -166,8 +166,11 @@ class _Evidence:
             "ms1_apex_mz": row[4],
         }
 
-    def terminal(self, row_id: int) -> dict[str, Any]:
+    def terminal(self, row_id: int) -> dict[str, Any] | None:
+        """The terminal observation, as the Inspector's evidence card shows it."""
         row = self.candidate_rows[row_id]
+        if row[8] is None:
+            return None
         cid, sid = row[1], self.samples[row[2]]
         record = {
             "candidate_id": cid,
@@ -227,13 +230,61 @@ class _Evidence:
             "sample_key": self.samples[row[2]],
         }
 
+    def candidates(
+        self,
+        row_ids: Sequence[int],
+        groups: Mapping[int, list[Any]],
+        initial_groups: Mapping[int, list[Any]],
+        curves: Mapping[int, list[Any]],
+    ) -> dict[CandidateKey, CandidateEvidence]:
+        assessments: dict[tuple[int, int], list[tuple[str, dict[str, Any]]]] = (
+            defaultdict(list)
+        )
+        pairs = sorted(
+            {(self.candidate_rows[i][7], self.candidate_rows[i][2]) for i in row_ids}
+        )
+        for subject, sample in pairs:
+            for row in self.db.execute(
+                "SELECT * FROM method_assessments WHERE method_subject=? AND sample=? "
+                "ORDER BY id",
+                (subject, sample),
+            ):
+                assessments[subject, sample].append((str(row[0]), self.assessment(row)))
+        exclusions: dict[int, str] = {}
+        for chunk in _chunks(list(row_ids)):
+            exclusions.update(
+                self.db.execute(
+                    "SELECT candidate,reason_code FROM exclusions "
+                    f"WHERE {_in('candidate', chunk)}",
+                    chunk,
+                )
+            )
+        result = {}
+        for row_id in row_ids:
+            row = self.candidate_rows[row_id]
+            reason = exclusions.get(row_id)
+            result[self.key(row_id)] = CandidateEvidence(
+                fields=self.candidate(row_id),
+                method_subject_id=self.subjects[row[7]][0],
+                method_subject=self.method_subject(row[7]),
+                assessments=tuple(assessments.get((row[7], row[2]), ())),
+                exclusion=None if reason is None else self.exclusion(row_id, reason),
+                terminal=self.terminal(row_id),
+                groups=tuple(groups.get(row_id, ())),
+                initial_groups=tuple(initial_groups.get(row_id, ())),
+                curves=tuple(curves.get(row_id, ())),
+            )
+        return result
+
+    # Groups ------------------------------------------------------------
+
     def members(self, column: str, group_ids: Iterable[int]) -> dict[int, list[Any]]:
         ids = sorted(set(group_ids))
         result: dict[int, list[Any]] = defaultdict(list)
         for chunk in _chunks(ids):
             for group, subject, sample, kind, peaks in self.db.execute(
                 f"SELECT {column},subject_id,sample,subject_kind,peaks FROM members "
-                f"WHERE {column} IN ({','.join('?' for _ in chunk)})",
+                f"WHERE {_in(column, chunk)}",
                 chunk,
             ):
                 result[group].append((sample, subject, kind, peaks))
@@ -250,27 +301,28 @@ class _Evidence:
             for group, rows in result.items()
         }
 
-    def group_records(
-        self, rows: Sequence[tuple[Any, ...]]
-    ) -> Iterator[tuple[str, str, dict[str, Any], list[CandidateKey]]]:
-        """Each group as its final-group record and, with a feature id, its row."""
+    def groups(
+        self,
+        rows: Sequence[tuple[Any, ...]],
+        candidates: Mapping[int, set[CandidateKey]],
+        cells: Mapping[str, dict[str, dict[str, Any]]],
+    ) -> dict[str, GroupEvidence]:
+        """Each group with its final-group record and, with a feature id, its row."""
         members = self.members("final_group", (row[0] for row in rows))
-        cells: dict[int, list[Any]] = defaultdict(list)
+        positions: dict[int, list[Any]] = defaultdict(list)
         ids = [row[0] for row in rows]
         for chunk in _chunks(ids):
             for group, sample, peaks, position in self.db.execute(
                 "SELECT group_id,sample,peaks,position_rt_min FROM cells "
-                f"WHERE group_id IN ({','.join('?' for _ in chunk)}) "
-                "ORDER BY group_id,sample",
+                f"WHERE {_in('group_id', chunk)} ORDER BY group_id,sample",
                 chunk,
             ):
-                cells[group].append((sample, peaks, position))
+                positions[group].append((sample, peaks, position))
         flags = self._row_risk_flags([row[0] for row in rows if row[1] is not None])
-        relations = self.related("group_candidates", "group_id", ids)
+        result = {}
         for group_id, feature_id, disposition, destination, center, ppm in rows:
-            rid = feature_id if feature_id is not None else str(group_id)
             extractions = []
-            for sample, peaks, position in cells.get(group_id, ()):
+            for sample, peaks, position in positions.get(group_id, ()):
                 sid = self.samples[sample]
                 peak_ids = json.loads(peaks)
                 for peak_id in peak_ids:
@@ -295,25 +347,27 @@ class _Evidence:
                             "sample_key": sid,
                         }
                     )
-            group = {
-                "disposition": disposition,
-                **({} if feature_id is None else {"feature_id": feature_id}),
-                "member_subjects": members.get(group_id, []),
-                "xic_extractions": extractions,
-            }
-            related = relations.get(group_id, [])
-            yield "final_groups", rid, group, related
-            if feature_id is not None:
-                yield (
-                    "rows",
-                    feature_id,
-                    {
+            result[feature_id if feature_id is not None else str(group_id)] = (
+                GroupEvidence(
+                    feature_id=feature_id,
+                    record={
+                        "disposition": disposition,
+                        **({} if feature_id is None else {"feature_id": feature_id}),
+                        "member_subjects": members.get(group_id, []),
+                        "xic_extractions": extractions,
+                    },
+                    row=None
+                    if feature_id is None
+                    else {
                         "feature_id": feature_id,
                         "membership_risk_flags": flags.get(group_id, []),
                         "route": {"destination": destination, "reason": disposition},
                     },
-                    related,
+                    candidates=frozenset(candidates.get(group_id, ())),
+                    cells=cells.get(feature_id, {}) if feature_id is not None else {},
                 )
+            )
+        return result
 
     def _member_risks(
         self, column: str, group_ids: Iterable[int]
@@ -326,7 +380,7 @@ class _Evidence:
         for chunk in _chunks(sorted(set(group_ids))):
             for group, sample, subject, risk, flags in self.db.execute(
                 f"SELECT {column},sample,subject_id,accepted_risk,risk_flags "
-                f"FROM members WHERE {column} IN ({','.join('?' for _ in chunk)}) "
+                f"FROM members WHERE {_in(column, chunk)} "
                 "AND accepted_risk IS NOT NULL ORDER BY sample,subject_id",
                 chunk,
             ):
@@ -335,41 +389,37 @@ class _Evidence:
                 result[group, sample].append((subject, value))
         return result
 
-    @staticmethod
-    def _validated(risks: list[Any]) -> list[Any]:
-        try:
-            validate_membership_risks(risks)
-        except ValueError as exc:
-            raise ExplanationError(f"malformed explanation: {exc}") from exc
-        return risks
-
     def _row_risk_flags(self, group_ids: Sequence[int]) -> dict[int, list[str]]:
         flags: dict[int, set[str]] = defaultdict(set)
         for chunk in _chunks(sorted(set(group_ids))):
-            marks = ",".join("?" for _ in chunk)
             for group, values in self.db.execute(
                 "SELECT final_group,risk_flags FROM members "
-                f"WHERE final_group IN ({marks}) AND risk_flags IS NOT NULL",
+                f"WHERE {_in('final_group', chunk)} AND risk_flags IS NOT NULL",
                 chunk,
             ):
                 flags[group].update(json.loads(values))
             for group, risks in self.db.execute(
                 "SELECT group_id,risks FROM cells "
-                f"WHERE group_id IN ({marks}) AND risks IS NOT NULL",
+                f"WHERE {_in('group_id', chunk)} AND risks IS NOT NULL",
                 chunk,
             ):
                 for risk in decode_json(risks):
                     flags[group].update(risk["risk_flags"])
         return {group: sorted(values) for group, values in flags.items()}
 
-    def initial_group_records(
-        self, rows: Sequence[tuple[Any, ...]]
-    ) -> Iterator[tuple[str, str, dict[str, Any], list[CandidateKey]]]:
-        members = self.members("initial_group", (row[0] for row in rows))
-        owner_risks = self._member_risks("initial_group", (row[0] for row in rows))
-        relations = self.related(
-            "initial_group_candidates", "group_id", (row[0] for row in rows)
-        )
+    def initial_groups(self, group_ids: Iterable[int]) -> dict[str, dict[str, Any]]:
+        ids = sorted(set(group_ids))
+        rows: list[tuple[Any, ...]] = []
+        for chunk in _chunks(ids):
+            rows.extend(
+                self.db.execute(
+                    f"SELECT * FROM initial_groups WHERE {_in('id', chunk)}", chunk
+                )
+            )
+        rows.sort(key=lambda row: row[0])
+        members = self.members("initial_group", ids)
+        owner_risks = self._member_risks("initial_group", ids)
+        result = {}
         for group_id, disposition, basis, decisions in rows:
             record: dict[str, Any] = {
                 "disposition": disposition,
@@ -393,110 +443,33 @@ class _Evidence:
                     for decision in decode_json(decisions)
                 ]
             # The written record keeps every field in sorted order.
-            record = json.loads(encode_object(record))
-            yield "initial_groups", str(group_id), record, relations.get(group_id, [])
+            result[str(group_id)] = json.loads(encode_object(record))
+        return result
 
-    def edge_record(
-        self, row: tuple[Any, ...]
-    ) -> tuple[str, dict[str, Any], list[Any]]:
-        edge, left, right, disposition, evidence, context, config = row
-        return (
-            _key(left, right),
-            {
-                "alignment_config": decode_json(config),
-                "disposition": disposition,
-                "initial_context": decode_json(context),
-                "initial_evidence": decode_json(evidence),
-                "left_subject_id": left,
-                "right_subject_id": right,
-            },
-            self.related("edge_candidates", "edge", (edge,)).get(edge, []),
-        )
-
-    def curve_record(
-        self, row: tuple[Any, ...]
-    ) -> tuple[str, dict[str, Any], list[Any]]:
-        payload_id, sample_id, kind, record_id, cid, peak = row
-        return (
-            str(payload_id),
-            {
-                "candidate_id": cid,
-                "kind": kind,
-                "payload_id": payload_id,
-                "physical_peak_key": peak,
-                "record_id": record_id,
-                "sample_id": sample_id,
-            },
-            self.related("curve_candidates", "payload_id", (payload_id,)).get(
-                payload_id, []
-            ),
-        )
-
-    # Whole-report and selected reads ----------------------------------
-
-    def records(
-        self, kinds: Container[str]
-    ) -> tuple[dict[str, dict[RecordKey, dict[str, Any]]], list[Link]]:
-        records: dict[str, dict[RecordKey, dict[str, Any]]] = {}
-        links: list[Link] = []
-
-        def add(kind: str, rid: str, record: dict[str, Any], related: Iterable) -> None:
-            records.setdefault(kind, {})[rid] = record
-            links.extend((cid, sid, kind, rid) for cid, sid in related)
-
-        if "method_subjects" in kinds:
-            for subject in self.subjects:
-                related = self.subject_candidates(subject, None)
-                add(
-                    "method_subjects",
-                    self.subjects[subject][0],
-                    self.method_subject(subject),
-                    related,
-                )
-        if "method_assessments" in kinds:
-            for row in self.db.execute("SELECT * FROM method_assessments ORDER BY id"):
-                add(
-                    "method_assessments",
-                    str(row[0]),
-                    self.assessment(row),
-                    self.subject_candidates(row[2], row[1]),
-                )
-        if "exclusions" in kinds:
-            for candidate, reason in self.db.execute(
-                "SELECT candidate,reason_code FROM exclusions ORDER BY candidate"
-            ):
-                key = self.key(candidate)
-                add("exclusions", _key(*key), self.exclusion(candidate, reason), (key,))
-        if "terminal_subjects" in kinds:
-            for row_id, row in self.candidate_rows.items():
-                if row[8] is not None:
-                    key = self.key(row_id)
-                    add("terminal_subjects", _key(*key), self.terminal(row_id), (key,))
-        if "final_groups" in kinds or "rows" in kinds:
-            for kind, rid, record, related in self.group_records(
-                list(self.db.execute(_GROUPS + " ORDER BY id"))
-            ):
-                if kind in kinds:
-                    add(kind, rid, record, related)
-        if "initial_groups" in kinds:
-            for kind, rid, record, related in self.initial_group_records(
-                list(self.db.execute("SELECT * FROM initial_groups ORDER BY id"))
-            ):
-                add(kind, rid, record, related)
-        if "initial_edges" in kinds and "initial_edges" in self.tables:
-            for row in self.db.execute("SELECT * FROM initial_edges ORDER BY id"):
-                add("initial_edges", *self.edge_record(row))
-        if "capture_evidence" in kinds and "curves" in self.tables:
-            for row in self.db.execute(
+    def curves(self, payload_ids: Iterable[int]) -> dict[str, dict[str, Any]]:
+        ids = sorted(set(payload_ids))
+        result = {}
+        for chunk in _chunks(ids):
+            for payload_id, sample_id, kind, record_id, cid, peak in self.db.execute(
                 "SELECT payload_id,sample_id,kind,record_id,candidate_id,"
-                "physical_peak_key FROM curves ORDER BY payload_id"
+                f"physical_peak_key FROM curves WHERE {_in('payload_id', chunk)} "
+                "ORDER BY payload_id",
+                chunk,
             ):
-                add("capture_evidence", *self.curve_record(row))
-        return records, links
+                result[str(payload_id)] = {
+                    "candidate_id": cid,
+                    "kind": kind,
+                    "payload_id": payload_id,
+                    "physical_peak_key": peak,
+                    "record_id": record_id,
+                    "sample_id": sample_id,
+                }
+        return result
 
     def cells(
-        self, feature_ids: Sequence[str] | None = None
-    ) -> dict[tuple[str, str], dict[str, Any]]:
+        self, feature_ids: Sequence[str] | None
+    ) -> dict[str, dict[str, dict[str, Any]]]:
+        """Cells of the given rows (or of every row) by feature and sample."""
         query = (
             "SELECT g.feature_id,c.sample,c.variant,c.value,c.apex_rt_min,c.source,"
             "c.support_origin,c.peaks,c.evidence_states,c.reason_codes,"
@@ -516,7 +489,7 @@ class _Evidence:
             )
         rows = list(rows)
         member_risks = self._member_risks("final_group", (row[12] for row in rows))
-        result = {}
+        result: dict[str, dict[str, dict[str, Any]]] = {}
         for (
             feature_id,
             sample,
@@ -533,14 +506,16 @@ class _Evidence:
             group,
             stored_risks,
         ) in rows:
-            risks = self._validated(
-                [
-                    *(risk for _, risk in member_risks.get((group, sample), ())),
-                    *(decode_json(stored_risks) or ()),
-                ]
-            )
+            risks = [
+                *(risk for _, risk in member_risks.get((group, sample), ())),
+                *(decode_json(stored_risks) or ()),
+            ]
+            try:
+                validate_membership_risks(risks)
+            except ValueError as exc:
+                raise ExplanationError(f"malformed explanation: {exc}") from exc
             sid = self.samples[sample]
-            result[feature_id, sid] = {
+            result.setdefault(feature_id, {})[sid] = {
                 "feature_id": feature_id,
                 "sample_key": sid,
                 "variant": variant,
@@ -567,143 +542,93 @@ class _Evidence:
             }
         return result
 
-    def selection(
-        self, candidate_keys: Sequence[CandidateKey], row_ids: Sequence[str]
-    ) -> tuple[dict[str, dict[RecordKey, dict[str, Any]]], list[Link]]:
-        """Records linked to the selected candidates and rows, nothing else."""
-        records: dict[str, dict[RecordKey, dict[str, Any]]] = {}
-        links: set[Link] = set()
-        selected = {
-            self.candidate_ids[key]
-            for key in candidate_keys
-            if key in self.candidate_ids
+    def evidence(
+        self, candidate_keys: Iterable[CandidateKey] | None, row_ids: Sequence[str]
+    ) -> ReviewEvidence:
+        """Facts of the given candidates (or all) and the groups they relate to.
+
+        A group lists only the read candidates it relates to. Rows in
+        ``row_ids`` are read with their cells even when no read candidate
+        relates to them.
+        """
+        if candidate_keys is None:
+            selected = list(self.candidate_rows)
+        else:
+            selected = sorted(
+                {
+                    self.candidate_ids[key]
+                    for key in candidate_keys
+                    if key in self.candidate_ids
+                }
+            )
+        groups = self.related("group_candidates", "group_id", selected)
+        initial = self.related("initial_group_candidates", "group_id", selected)
+        curves = (
+            self.related("curve_candidates", "payload_id", selected)
+            if "curves" in self.tables
+            else {}
+        )
+        group_candidates: dict[int, set[CandidateKey]] = defaultdict(set)
+        for candidate, ids in groups.items():
+            for group in ids:
+                group_candidates[group].add(self.key(candidate))
+        if candidate_keys is None:
+            group_rows = list(self.db.execute(_GROUPS + " ORDER BY id"))
+            cells = self.cells(None)
+        else:
+            group_rows = [
+                row
+                for row in self.db.execute(_GROUPS + " ORDER BY id")
+                if row[0] in group_candidates or row[1] in row_ids
+            ]
+            cells = self.cells(row_ids)
+        read_groups = self.groups(group_rows, group_candidates, cells)
+        group_refs = {
+            row[0]: row[1] if row[1] is not None else str(row[0]) for row in group_rows
         }
-
-        def add(kind: str, rid: str, record: dict[str, Any], related: Iterable) -> None:
-            linked = [(cid, sid) for cid, sid in related]
-            if not any(self.candidate_ids.get(key) in selected for key in linked):
-                if not (kind == "rows" and rid in row_ids):
-                    return
-            records.setdefault(kind, {})[rid] = record
-            links.update(
-                (cid, sid, kind, rid)
-                for cid, sid in linked
-                if self.candidate_ids.get((cid, sid)) in selected
-            )
-
-        rows = [self.candidate_rows[row_id] for row_id in sorted(selected)]
-        subjects = {row[7] for row in rows if row[7] is not None}
-        for subject in sorted(subjects):
-            add(
-                "method_subjects",
-                self.subjects[subject][0],
-                self.method_subject(subject),
-                self.subject_candidates(subject, None),
-            )
-        pairs = sorted({(row[7], row[2]) for row in rows if row[7] is not None})
-        for subject, sample in pairs:
-            for row in self.db.execute(
-                "SELECT * FROM method_assessments WHERE method_subject=? AND sample=? "
-                "ORDER BY id",
-                (subject, sample),
-            ):
-                add(
-                    "method_assessments",
-                    str(row[0]),
-                    self.assessment(row),
-                    self.subject_candidates(subject, sample),
-                )
-        for row_id in sorted(selected):
-            reason = self.db.execute(
-                "SELECT reason_code FROM exclusions WHERE candidate=?", (row_id,)
-            ).fetchone()
-            key = self.key(row_id)
-            if reason is not None:
-                add("exclusions", _key(*key), self.exclusion(row_id, reason[0]), (key,))
-            if self.candidate_rows[row_id][8] is not None:
-                add("terminal_subjects", _key(*key), self.terminal(row_id), (key,))
-        group_ids = self.linked("group_candidates", "group_id", selected)
-        group_rows = [
-            row
-            for row in self.db.execute(_GROUPS + " ORDER BY id")
-            if row[0] in group_ids or row[1] in row_ids
-        ]
-        for kind, rid, record, related in self.group_records(group_rows):
-            add(kind, rid, record, related)
-        initial_ids = self.linked("initial_group_candidates", "group_id", selected)
-        initial_rows = self._rows("initial_groups", "id", initial_ids)
-        for kind, rid, record, related in self.initial_group_records(initial_rows):
-            add(kind, rid, record, related)
-        if "initial_edges" in self.tables:
-            edges = self.linked("edge_candidates", "edge", selected)
-            for row in self._rows("initial_edges", "id", edges):
-                add("initial_edges", *self.edge_record(row))
-        if "curves" in self.tables:
-            curves = self.linked("curve_candidates", "payload_id", selected)
-            for row in self._rows(
-                "curves",
-                "payload_id",
-                curves,
-                columns="payload_id,sample_id,kind,record_id,candidate_id,"
-                "physical_peak_key",
-            ):
-                add("capture_evidence", *self.curve_record(row))
-        return records, sorted(links)
-
-    def _rows(
-        self, table: str, key: str, ids: set[Any], *, columns: str = "*"
-    ) -> list[tuple[Any, ...]]:
-        rows: list[tuple[Any, ...]] = []
-        for chunk in _chunks(sorted(ids)):
-            rows.extend(
-                self.db.execute(
-                    f"SELECT {columns} FROM {table} "
-                    f"WHERE {key} IN ({','.join('?' for _ in chunk)})",
-                    chunk,
-                )
-            )
-        return sorted(rows, key=lambda row: row[0])
+        return ReviewEvidence(
+            summary=dict(self.summary),
+            candidates=self.candidates(
+                selected,
+                {
+                    candidate: [group_refs[group] for group in ids]
+                    for candidate, ids in groups.items()
+                },
+                {
+                    candidate: [str(group) for group in ids]
+                    for candidate, ids in initial.items()
+                },
+                {
+                    candidate: [str(payload) for payload in ids]
+                    for candidate, ids in curves.items()
+                },
+            ),
+            groups=read_groups,
+            initial_groups=self.initial_groups(
+                group for ids in initial.values() for group in ids
+            ),
+            curves=self.curves(payload for ids in curves.values() for payload in ids),
+        )
 
 
-def _chunks(values: Sequence[Any], size: int = 900) -> Iterator[Sequence[Any]]:
-    for start in range(0, len(values), size):
-        yield values[start : start + size]
+def read_review_evidence(
+    path: str | Path,
+    *,
+    candidate_keys: Iterable[CandidateKey] | None = None,
+    row_ids: Sequence[str] = (),
+    summary: Mapping[str, Any] | None = None,
+) -> ReviewEvidence:
+    """Read the given candidates and rows, or every one, without curve arrays.
 
-
-def read_review_cells(
-    connection: sqlite3.Connection,
-    summary: Mapping[str, Any],
-    row_ids: Sequence[str] | None = None,
-) -> dict[tuple[str, str], dict[str, Any]]:
-    """Hydrate only selected rows; scalar readers never call this detail decoder."""
-    return _Evidence(connection, summary).cells(row_ids)
-
-
-@contextmanager
-def open_review_cells(
-    path: Path,
-    summary: Mapping[str, Any],
-) -> Iterator[Callable[[str], dict[tuple[str, str], dict[str, Any]]]]:
-    """Keep a read-only row lookup open during bounded population selection."""
+    A caller that already admitted this report's summary passes it on.
+    """
     with open_readonly(path) as connection:
-        evidence = _Evidence(connection, summary)
-        yield lambda row_id: evidence.cells((row_id,))
-
-
-def read_review_row_samples(path: Path) -> dict[str, frozenset[str]]:
-    """Read actual cell presence without decoding scientific detail payloads."""
-    rows: dict[str, set[str]] = {}
-    with open_readonly(path) as db:
-        for rid, sid in db.execute(
-            "SELECT g.feature_id,s.sample_key FROM cells c "
-            "JOIN groups g ON g.id=c.group_id JOIN samples s ON s.id=c.sample"
-        ):
-            rows.setdefault(rid, set()).add(sid)
-    return {rid: frozenset(samples) for rid, samples in rows.items()}
+        summary = dict(summary) if summary else read_completed_summary(connection)
+        return _Report(connection, summary).evidence(candidate_keys, row_ids)
 
 
 def read_explanation_summary(path: Path) -> dict[str, Any]:
-    """Read only the validated completion summary, without records or cells."""
+    """Read only the validated completion summary, without facts or cells."""
     with open_readonly(path) as connection:
         return read_completed_summary(connection)
 
@@ -738,126 +663,86 @@ def read_row_cell_values(
                 yield feature_id, sample, value, origin, apex
 
 
-def read_explanation_metadata(
-    path: str | Path,
-    *,
-    selection_only: bool = False,
-    query_only: bool = False,
-) -> ExplanationMetadata:
-    """Read the review population through the storage owner, without curves."""
-    with open_readonly(path) as connection:
-        summary = read_completed_summary(connection)
-        evidence = _Evidence(connection, summary)
-        compact_selection = selection_only and summary["retention"] == "review"
-        kinds: Container[str]
-        if compact_selection and query_only:
-            kinds = _SCALAR_KINDS
-        elif compact_selection:
-            kinds = (
-                "method_subjects",
-                "method_assessments",
-                "exclusions",
-                "terminal_subjects",
-                "final_groups",
-                "rows",
-                "initial_edges",
-            )
-        else:
-            kinds = (
-                "method_subjects",
-                "method_assessments",
-                "exclusions",
-                "terminal_subjects",
-                "final_groups",
-                "rows",
-                "initial_groups",
-                "initial_edges",
-                "capture_evidence",
-            )
-        records, links = evidence.records(kinds)
-        candidates = {
-            evidence.key(row_id): evidence.candidate(row_id)
-            for row_id in evidence.candidate_rows
-        }
-        if not compact_selection:
-            cells = evidence.cells()
-            if cells:
-                records.setdefault("cell_decisions", {}).update(cells.items())
-        return ExplanationMetadata(summary, candidates, records, tuple(links))
-
-
-def read_explanation_selection(
-    path: Path,
-    *,
-    candidate_keys: Sequence[tuple[str, str]],
-    row_ids: Sequence[str],
-    summary: Mapping[str, Any] | None = None,
-) -> ExplanationMetadata:
-    """Restore detailed review records only for the selected witnesses and rows.
-
-    A caller that already admitted this report's summary passes it on.
-    """
-    with open_readonly(path) as connection:
-        summary = dict(summary) if summary else read_completed_summary(connection)
-        evidence = _Evidence(connection, summary)
-        candidates = {
-            key: evidence.candidate(evidence.candidate_ids[key])
-            for key in candidate_keys
-            if key in evidence.candidate_ids
-        }
-        records, links = evidence.selection(candidate_keys, row_ids)
-        for payload in list(records.get("rows", {}).values()):
-            gid = payload.get("feature_id")
-            if gid is None or gid in records.get("final_groups", {}):
-                continue
-            rows = list(
-                connection.execute(
-                    _GROUPS + " WHERE feature_id=?",
-                    (gid,),
-                )
-            )
-            for kind, rid, record, _ in evidence.group_records(rows):
-                if kind == "final_groups":
-                    records.setdefault(kind, {})[rid] = record
-        cells = evidence.cells(row_ids)
-        if cells:
-            records.setdefault("cell_decisions", {}).update(cells.items())
-        return ExplanationMetadata(summary, candidates, records, tuple(links))
-
-
 def read_alignment_explanation(
     path: str | Path, *, candidate_id: str | None = None
 ) -> dict[str, Any]:
-    """Read a compact summary or only records linked to one exact candidate ID."""
+    """Read a compact summary, or the facts of one exact candidate ID.
+
+    A candidate is read with its terminal peak, method evidence and exclusion;
+    the groups it relates to are read with their result rows and cells.
+    """
     with open_readonly(path) as connection:
         summary = read_completed_summary(connection)
         if candidate_id is None:
             return summary
-        evidence = _Evidence(connection, summary)
+        report = _Report(connection, summary)
         keys = sorted(
-            (key for key in evidence.candidate_ids if key[0] == candidate_id),
+            (key for key in report.candidate_ids if key[0] == candidate_id),
             key=lambda key: key[1],
         )
         if not keys:
             raise CandidateNotFoundError(f"candidate not found: {candidate_id}")
-        candidates = [evidence.candidate(evidence.candidate_ids[key]) for key in keys]
-        selected, _ = evidence.selection(keys, ())
-        records: dict[str, list[dict[str, Any]]] = {}
-        for kind in sorted(selected):
-            for rid in sorted(selected[kind], key=str):
-                records.setdefault(kind, []).append(selected[kind][rid])
-        row_ids = [row["feature_id"] for row in records.get("rows", [])]
-        if row_ids:
-            records.setdefault("cell_decisions", []).extend(
-                evidence.cells(row_ids).values()
+        evidence = report.evidence(keys, ())
+        cells = report.cells(
+            sorted(
+                group.feature_id
+                for group in evidence.groups.values()
+                if group.feature_id is not None
             )
+        )
+        candidates = []
+        subjects: dict[str, dict[str, Any]] = {}
+        assessments: dict[str, dict[str, Any]] = {}
+        for key in keys:
+            candidate = evidence.candidates[key]
+            terminal = candidate.terminal
+            observations = (terminal or {}).get("observations", [])
+            candidates.append(
+                {
+                    **candidate.fields,
+                    "terminal": None
+                    if terminal is None
+                    else {
+                        "variant": terminal["variant"],
+                        "hypothesis_id": terminal.get("hypothesis_id"),
+                        "peak": observations[0] if observations else None,
+                    },
+                    "exclusion_reason": None
+                    if candidate.exclusion is None
+                    else candidate.exclusion["reason_code"],
+                }
+            )
+            subjects[candidate.method_subject_id] = candidate.method_subject
+            assessments.update(candidate.assessments)
         return {
             "schema_version": summary["schema_version"],
             "diagnostic_only": True,
             "completion": summary["completion"],
             "candidate_id": candidate_id,
             "candidates": candidates,
-            "records": records,
+            "method_subjects": [subjects[key] for key in sorted(subjects)],
+            "method_assessments": [assessments[ref] for ref in sorted(assessments)],
+            "groups": [
+                {
+                    **group.record,
+                    **(
+                        {}
+                        if group.row is None
+                        else {
+                            "destination": group.row["route"]["destination"],
+                            "membership_risk_flags": group.row["membership_risk_flags"],
+                            "cells": list(cells.get(ref, {}).values()),
+                        }
+                    ),
+                }
+                for ref, group in sorted(evidence.groups.items())
+            ],
+            "initial_groups": [
+                evidence.initial_groups[ref] for ref in sorted(evidence.initial_groups)
+            ],
+            "capture_evidence": [
+                evidence.curves[ref] for ref in sorted(evidence.curves)
+            ],
         }
 
 
@@ -928,9 +813,9 @@ def read_candidate_examples(path: Path) -> list[dict[str, Any]]:
     """The diagnostic CLI's small preview, queried rather than copied into metadata."""
     with open_readonly(path) as db:
         summary = read_completed_summary(db)
-        evidence = _Evidence(db, summary)
-        keys = sorted(evidence.candidate_ids)[:5]
-        return [evidence.candidate(evidence.candidate_ids[key]) for key in keys]
+        report = _Report(db, summary)
+        keys = sorted(report.candidate_ids)[:5]
+        return [report.candidate(report.candidate_ids[key]) for key in keys]
 
 
 def read_review_row_counts(
@@ -939,7 +824,7 @@ def read_review_row_counts(
     """Overview facts from named cell columns, without reasons, risks or curves."""
     samples = [s["sample_key"] for s in summary["samples"]]
     with open_readonly(path) as db:
-        evidence = _Evidence(db, summary)
+        report = _Report(db, summary)
         rows = list(db.execute(_GROUPS + " WHERE feature_id IS NOT NULL ORDER BY id"))
         counts = {
             group: (numeric, unresolved)
@@ -949,13 +834,12 @@ def read_review_row_counts(
                 "sum(variant='unresolved') FROM cells GROUP BY group_id"
             )
         }
-        for kind, _, record, _ in evidence.group_records(rows):
-            if kind != "rows":
-                continue
-            group = next(row[0] for row in rows if row[1] == record["feature_id"])
-            numeric, unresolved = counts.get(group, (None, 0))
+        for (group_id, *_), group in zip(
+            rows, report.groups(rows, {}, {}).values(), strict=True
+        ):
+            numeric, unresolved = counts.get(group_id, (None, 0))
             yield {
-                "row": record,
+                "row": group.row,
                 "numeric_samples": [samples[int(i)] for i in numeric.split(",")]
                 if numeric
                 else [],

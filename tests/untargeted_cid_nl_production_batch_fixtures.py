@@ -158,9 +158,6 @@ def _assert_partition_composition_parity(
     assert tuple(
         group.group_hypothesis_id for part in parts for group in part.initial_groups
     ) == tuple(group.group_hypothesis_id for group in completed.initial_groups)
-    assert tuple(edge for part in parts for edge in part.initial_edges) == (
-        completed.initial_edges
-    )
     assert {
         binding.candidate_id for part in parts for binding in part.capture_bindings
     } == {binding.candidate_id for binding in original.scope.capture_bindings}
@@ -364,7 +361,7 @@ links = {
     candidate: [
         record['payload_id'] for record in read_alignment_explanation(
             sys.argv[1], candidate_id=candidate
-        )['records'].get('capture_evidence', [])
+        )['capture_evidence']
     ]
     for candidate in json.loads(sys.argv[2])
 }
@@ -797,7 +794,6 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
     retained_contexts = []
     completed_contexts = []
     bootstrap_contexts = []
-    retained_initial_edges = []
     consumed_contexts = []
     retained_captures = []
     consumed_captures = []
@@ -1044,7 +1040,6 @@ def profile_replay(tmp_path, monkeypatch, request, replay_indexed_input):
                 retained_captures=retained_captures,
                 retained_cell_batches=retained_cell_batches,
                 retained_contexts=retained_contexts,
-                retained_initial_edges=retained_initial_edges,
                 runtime_fingerprints=runtime_fingerprints,
                 runtime_results=runtime_results,
             ),

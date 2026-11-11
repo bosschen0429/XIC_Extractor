@@ -19,7 +19,7 @@ from typing import Any, Literal
 
 from xic_extractor.alignment_explanation.relations import relation
 from xic_extractor.alignment_explanation.review import (
-    ORIGIN_FLAGS,
+    RECORDED_ORIGINS,
     attention_reason,
     cell_attention,
     group_attention,
@@ -27,20 +27,7 @@ from xic_extractor.alignment_explanation.review import (
 from xic_extractor.alignment_explanation.storage import (
     decode_json,
     open_readonly,
-    present_tables,
 )
-
-
-def recorded_observations(candidate, linked_records, records, member_ids):
-    """Resolve the recorded observations used by both selection and display."""
-    observations = [
-        observation
-        for kind, rid in linked_records
-        if kind == "terminal_subjects"
-        for observation in records[kind][rid].get("observations", [])
-        if not member_ids or observation.get("physical_peak_key") in member_ids
-    ]
-    return observations or [{"rt_apex_min": candidate.get("rt_apex_min")}]
 
 
 @dataclass(frozen=True)
@@ -81,7 +68,7 @@ class _Item:
     attention: bool
 
 
-def _query_views(db: sqlite3.Connection, *, edges: bool) -> None:
+def _query_views(db: sqlite3.Connection) -> None:
     groups = relation(db, "group_candidates")
     # Positive handles are group row IDs; negative handles are ungrouped
     # candidate row IDs. Neither is displayed or persisted as an item ref.
@@ -135,23 +122,6 @@ def _query_views(db: sqlite3.Connection, *, edges: bool) -> None:
         lambda risks: any(risk.get("risk_flags") for risk in decode_json(risks) or ()),
         deterministic=True,
     )
-    if edges:
-        relation(db, "edge_candidates")
-        db.create_function(
-            "edge_attention",
-            2,
-            lambda disposition, evidence: (
-                attention_reason(
-                    "initial_edges",
-                    {
-                        "disposition": disposition,
-                        "initial_evidence": decode_json(evidence) or {},
-                    },
-                )
-                is not None
-            ),
-            deterministic=True,
-        )
 
 
 @contextmanager
@@ -166,12 +136,11 @@ class ReviewQuery:
 
     def __init__(self, db: sqlite3.Connection, summary: Mapping[str, Any]):
         self._db = db
-        self._edges = "initial_edges" in present_tables(db)
         self._samples = {
             sample["sample_key"]: index
             for index, sample in enumerate(summary["samples"])
         }
-        _query_views(db, edges=self._edges)
+        _query_views(db)
         self._items: dict[int, _Item] = {}
         for group, feature, disposition in db.execute(
             "SELECT id,feature_id,disposition FROM groups "
@@ -347,18 +316,11 @@ class ReviewQuery:
                 ",MAX(observed) AS observed,MAX(excluded) AS excluded,"
                 "MAX(nulls) AS nulls,MAX(zeros) AS zeros,MAX(origin) AS origin"
             )
-            origins = ",".join(f"MAX(origin='{origin}')" for origin in ORIGIN_FLAGS)
+            origins = ",".join(f"MAX(origin='{origin}')" for origin in RECORDED_ORIGINS)
             item_fields = (
                 "SUM(observed),MAX(attention),MAX(excluded),MAX(nulls),MAX(zeros),"
                 + origins
             )
-        edge_attention = (
-            """EXISTS (SELECT 1 FROM edge_candidates ec
-                JOIN initial_edges e ON e.id=ec.edge WHERE ec.candidate=c.id
-                AND edge_attention(e.disposition,e.initial_evidence))"""
-            if self._edges
-            else "0"
-        )
         # Scope before aggregation: an outer predicate on an aggregate view does
         # not necessarily stop SQLite from evaluating every sample's rules.
         rows = self._db.execute(
@@ -376,7 +338,7 @@ class ReviewQuery:
             facts AS (
                 SELECT ic.item,c.sample,
                     c.terminal_peak IS NOT NULL OR COALESCE(m.observed,0) AS observed,
-                    h.sample IS NOT NULL OR {edge_attention} AS attention,
+                    h.sample IS NOT NULL AS attention,
                     e.candidate IS NOT NULL AS excluded,
                     0 AS nulls,0 AS zeros,'' AS origin
                 FROM review_item_candidates ic JOIN candidates c ON c.id=ic.candidate
@@ -432,7 +394,7 @@ class ReviewQuery:
                 bool(zeros),
                 tuple(
                     name
-                    for name, flag in zip(ORIGIN_FLAGS, origin_flags, strict=True)
+                    for name, flag in zip(RECORDED_ORIGINS, origin_flags, strict=True)
                     if flag
                 ),
             )
@@ -480,41 +442,3 @@ class ReviewQuery:
             item.sample_id,
             tuple(witnesses),
         )
-
-    def related_item(self, item_id: int) -> tuple[int, tuple[str, ...]] | None:
-        if not self._edges:
-            return None
-        rows = self._db.execute(
-            """SELECT DISTINCT peer.item,e.left_subject_id,
-                e.right_subject_id,e.initial_evidence
-            FROM review_item_candidates own
-            JOIN edge_candidates ec ON ec.candidate=own.candidate
-            JOIN initial_edges e ON e.id=ec.edge
-            JOIN edge_candidates other ON other.edge=ec.edge
-            JOIN review_item_candidates peer ON peer.candidate=other.candidate
-            WHERE own.item=? AND peer.item!=own.item AND NOT EXISTS (
-                SELECT 1 FROM review_item_candidates mine
-                WHERE mine.item=own.item AND mine.candidate=peer.candidate)""",
-            (item_id,),
-        )
-        best: dict[int, tuple[int, str]] = {}
-        refs: dict[int, set[str]] = defaultdict(set)
-        for peer, left, right, evidence in rows:
-            priority = (
-                0
-                if (decode_json(evidence) or {}).get("decision")
-                in {"blocked_edge", "split_edge", "split"}
-                else 1
-            )
-            ref = json.dumps((left, right), separators=(",", ":"))
-            refs[peer].add(ref)
-            current = best.get(peer)
-            best[peer] = (
-                (priority, ref)
-                if current is None
-                else (min(current[0], priority), min(current[1], ref))
-            )
-        if not best:
-            return None
-        peer = min(best, key=lambda key: (*best[key], self._items[key].sort_key))
-        return peer, tuple(sorted(refs[peer]))

@@ -12,14 +12,10 @@ if TYPE_CHECKING:
         FinalGroupCellObservation,
     )
 
-# Per-sample retained review facts. These bits summarize recorded decisions;
-# they do not choose peaks, assign groups, or authorize Matrix values.
-OBSERVED, ATTENTION, EXCLUDED, NULL_CELL, ZERO_CELL = 1, 2, 4, 8, 16
-ORIGIN_FLAGS = {
-    "backfill_support": 32,
-    "discovery_support": 128,
-}
-SUPPORT_ORIGINS = frozenset((*ORIGIN_FLAGS, "unavailable"))
+# Recorded support origins of a cell, in review order. They summarize recorded
+# decisions; they do not choose peaks, assign groups, or authorize Matrix values.
+RECORDED_ORIGINS = ("backfill_support", "discovery_support")
+SUPPORT_ORIGINS = frozenset((*RECORDED_ORIGINS, "unavailable"))
 
 
 def validate_membership_risks(risks: object) -> None:
@@ -153,63 +149,7 @@ def attention_reason(kind: str, fact: dict[str, Any]) -> str | None:
         )
     elif kind == "method_assessments" and fact.get("method_result") == "HOLD":
         return "HOLD"
-    elif kind == "initial_edges":
-        evidence = fact.get("initial_evidence", {})
-        failure = evidence.get("failure", evidence.get("reason"))
-        if failure in ("ambiguous_owner", "identity_conflict"):
-            return failure
-        if fact.get("disposition") == "review_only":
-            return "review_only"
     return None
-
-
-def selection_sample_facts(
-    kind, identifier, gid, keys, candidates, records, links, cells, observed
-):
-    """Reduce recorded facts once, preserving sample attribution for later scopes."""
-    group = records.get("final_groups", {}).get(gid, {})
-    initial = ATTENTION if group_attention(group.get("disposition")) else 0
-    flags = {sid: initial for _, sid in keys}
-    for cid, sid in keys:
-        for record_kind, rid in links.get((cid, sid), ()):
-            if record_kind not in ("method_assessments", "initial_edges", "exclusions"):
-                continue
-            fact = records.get(record_kind, {}).get(rid, {})
-            if fact.get("sample_key", fact.get("sample_id")) not in (
-                None,
-                sid,
-            ):
-                continue
-            if fact.get("feature_id") not in (None, gid):
-                continue
-            if kind == "row" and fact.get("feature_id") not in (None, identifier):
-                continue
-            if attention_reason(record_kind, fact) is not None:
-                flags[sid] |= ATTENTION
-            if record_kind == "exclusions":
-                flags[sid] |= EXCLUDED
-    for cell in cells:
-        sid = cell["sample_key"]
-        flag = flags.setdefault(sid, initial)
-        value = cell.get("value")
-        flag |= NULL_CELL if value is None else ZERO_CELL if value == 0 else 0
-        if attention_reason("cell_decisions", cell) is not None:
-            flag |= ATTENTION
-        if cell.get("observation_ids"):
-            flag |= OBSERVED
-        flag = (flag & ~sum(ORIGIN_FLAGS.values())) | ORIGIN_FLAGS.get(
-            cell.get("support_origin"), 0
-        )
-        flags[sid] = flag
-    observed = set(observed)
-    observed.update(
-        member["sample_key"]
-        for member in group.get("member_subjects", [])
-        if member.get("physical_peak_keys")
-    )
-    for sid in observed & flags.keys():
-        flags[sid] |= OBSERVED
-    return flags
 
 
 def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:

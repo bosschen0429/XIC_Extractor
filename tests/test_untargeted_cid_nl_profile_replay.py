@@ -283,7 +283,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert child.scientific_core.final_population == context.final_population
         assert child.scientific_core.lineage == ()
         assert child.scientific_core.grouping_result == context
-    assert tuple(completed.initial_edges) == tuple(trace.retained_initial_edges)
     children = completed.application_result.children
     # Completed owner answers flow through projection, spool and writer once.
     assert len(trace.projection_builds) == len(children)

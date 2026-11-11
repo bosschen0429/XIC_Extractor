@@ -19,7 +19,6 @@ def explanation_summary(values, *, review_only=False):
         "selection_evidence_capability": "recorded_decisions",
         "curve_retention": "none",
         "curve_mz_ranges": [],
-        "initial_edge_coverage": {},
         "audit_availability": {},
         "sample_rt_calibration": None,
         "injection_order": {},
