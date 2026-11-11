@@ -118,8 +118,8 @@ def export_explanation_curves(
     for cid in candidate_ids:
         detail = read_alignment_explanation(report, candidate_id=cid)
         if group_id is not None:
-            for group in detail["records"].get("final_groups", []):
-                if group["feature_id"] != group_id:
+            for group in detail["groups"]:
+                if group.get("feature_id") != group_id:
                     continue
                 for observation in group["xic_extractions"]:
                     sid = observation["sample_key"]
@@ -127,16 +127,11 @@ def export_explanation_curves(
                     selected[sid, oid] = _saved_xic_query(observation, None)
             continue
         for candidate in detail["candidates"]:
-            sid = candidate["sample_key"]
-            terminals = [
-                terminal
-                for terminal in detail["records"].get("terminal_subjects", [])
-                if terminal["sample_key"] == sid and terminal["candidate_id"] == cid
-            ]
-            for terminal in terminals:
-                for observation in terminal.get("observations", []):
-                    oid = observation["physical_peak_key"]
-                    selected[sid, oid] = _saved_xic_query(observation, cid)
+            peak = (candidate["terminal"] or {}).get("peak")
+            if peak is not None:
+                selected[candidate["sample_key"], peak["physical_peak_key"]] = (
+                    _saved_xic_query(peak, cid)
+                )
 
     observed_samples = {sid for sid, _ in selected}
     unobserved_samples = requested_samples - observed_samples

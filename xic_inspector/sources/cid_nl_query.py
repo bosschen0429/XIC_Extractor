@@ -9,7 +9,7 @@ from xic_extractor.alignment_explanation.query import (
     ScopedReviewFacts,
     open_review_query,
 )
-from xic_extractor.alignment_explanation.reader import ExplanationMetadata
+from xic_extractor.alignment_explanation.reader import read_review_evidence
 from xic_inspector.selection.canonical import (
     CanonicalItem,
     Witness,
@@ -23,7 +23,7 @@ from xic_inspector.selection.sampler import (
     sampling_rank,
 )
 from xic_inspector.selection.strata import classify_scoped_stratum
-from xic_inspector.sources.cid_nl import CidNlSource
+from xic_inspector.sources.cid_nl import CidNlSource, build_item_evidence
 from xic_inspector.sources.untargeted_overview import (
     ordered_review_items,
     review_overview,
@@ -43,13 +43,61 @@ def _review_order(kind: str, facts: ScopedReviewFacts) -> tuple[int, bool, bool]
 
 
 class IndexedCidNlSource(CidNlSource):
-    """Use stored selection coordinates and the existing bounded renderer."""
+    """Select in SQL, then read and render only the selected items."""
 
     def __init__(self, path, summary):
-        super().__init__(path, metadata=ExplanationMetadata(summary, {}, {}, ()))
-        self._compact_selection = True
+        self.path = path
+        self._bind(summary)
         self.missing_mz_count = 0
         self.mz_distances = {}
+
+    def load_render_items(self, items, *, capability, check_cancel):
+        items = list(items)
+        check_cancel()
+        evidence = read_review_evidence(
+            self.path,
+            candidate_keys=sorted(
+                {
+                    (w.candidate_id, w.sample_key)
+                    for item in items
+                    for w in item.witnesses
+                }
+            ),
+            row_ids=sorted({item.identifier for item in items if item.kind == "row"}),
+            summary=self.summary,
+        )
+        scope = {sid for item in items for sid in item.sample_ids}
+        views = []
+        for item in items:
+            if item.kind == "candidate":
+                key = (item.identifier, json.loads(item.serialized_ref)[2])
+                view = build_item_evidence(
+                    evidence,
+                    self.attempt_id,
+                    item.kind,
+                    item.identifier,
+                    None,
+                    (key,),
+                    scope,
+                )
+            else:
+                group = evidence.groups[item.identifier]
+                view = build_item_evidence(
+                    evidence,
+                    self.attempt_id,
+                    item.kind,
+                    item.identifier,
+                    item.identifier,
+                    group.candidates,
+                    scope,
+                )
+            views.append(
+                replace(
+                    view,
+                    item=replace(view.item, matched_witnesses=item.matched_witnesses),
+                )
+            )
+        return self._render(views, capability=capability, check_cancel=check_cancel)
 
     def select_items(self, scope, request):
         criteria = dict(
@@ -110,11 +158,8 @@ class IndexedCidNlSource(CidNlSource):
                     attention_only=request.strategy == "attention",
                     limit=request.limit,
                 )
-            cache: dict[int, CanonicalItem] = {}
 
             def item(item_id):
-                if item_id in cache:
-                    return cache[item_id]
                 stored = query.item(item_id, scope)
                 _, ref = build_canonical_ref(
                     stored.kind,
@@ -122,7 +167,7 @@ class IndexedCidNlSource(CidNlSource):
                     stored.identifier,
                     sample_id=stored.candidate_sample_id,
                 )
-                result = CanonicalItem(
+                return CanonicalItem(
                     stored.kind,
                     self.attempt_id,
                     stored.identifier,
@@ -142,10 +187,7 @@ class IndexedCidNlSource(CidNlSource):
                         for sid, cid, mz, rt, oid, stem in stored.witnesses
                     ),
                     "unclassified",
-                    details={"review_summary": {}},
                 )
-                cache[item_id] = result
-                return result
 
             selected = []
             for item_id in ids:
@@ -159,10 +201,6 @@ class IndexedCidNlSource(CidNlSource):
                 selected.append(primary)
                 if request.nearest_mz is not None:
                     self.mz_distances[primary.serialized_ref] = distances[item_id]
-                peer = query.related_item(item_id)
-                if peer:
-                    peer_id, refs = peer
-                    self.related_items[primary.serialized_ref] = [(item(peer_id), refs)]
             return (
                 selected
                 if request.review_scope != "all"

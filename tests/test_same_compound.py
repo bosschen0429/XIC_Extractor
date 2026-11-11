@@ -9,7 +9,7 @@ from tests.matrix_review_fixtures import current_matrix_review_row
 from xic_extractor.matrix_curation.istd import (
     IstdWindow,
     istd_window,
-    windows_from_explanation,
+    windows_from_target_snapshot,
 )
 from xic_extractor.matrix_curation.same_compound import (
     CONFIRMED_MH,
@@ -862,23 +862,21 @@ def test_istd_window_uses_range_or_expected_rt():
         "rt_max": 12.0,
         "expected_rt_min": 12.0,
     }
-    summary = {
-        "known_istd_reference": {
-            "target_snapshot": json.dumps(
+    snapshot = json.dumps(
+        {
+            "definitions": [
+                {"target_label": "d3", "target": {**target, "is_istd": True}},
                 {
-                    "definitions": [
-                        {"target_label": "d3", "target": {**target, "is_istd": True}},
-                        {
-                            "target_label": "analyte",
-                            "target": {**target, "label": "analyte", "is_istd": False},
-                        },
-                    ]
-                }
-            )
+                    "target_label": "analyte",
+                    "target": {**target, "label": "analyte", "is_istd": False},
+                },
+            ]
         }
-    }
-    assert windows_from_explanation(summary) == (IstdWindow("d3", 245.0, 11.25, 12.75),)
-    assert windows_from_explanation({"known_istd_reference": None}) == ()
+    )
+    assert windows_from_target_snapshot(snapshot) == (
+        IstdWindow("d3", 245.0, 11.25, 12.75),
+    )
+    assert windows_from_target_snapshot(None) == ()
 
 
 # Export: the step with Feature Quality, internal standards and real folders.

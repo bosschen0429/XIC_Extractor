@@ -12,9 +12,8 @@ def review_overview(path, summary):
     coverage: Counter[str] = Counter()
     sample_count = len(summary["samples"])
     for record in read_review_row_counts(path, summary):
-        row, numeric = record["row"], record["numeric_samples"]
-        destination = row["route"]["destination"]
-        rows[row["feature_id"]] = {
+        numeric, destination = record["numeric_samples"], record["destination"]
+        rows[record["feature_id"]] = {
             "destination": destination,
             "numeric_count": len(numeric),
             "unresolved_count": record["unresolved_count"],
@@ -54,11 +53,11 @@ def ordered_review_items(headers, rows, scope):
             and facts["unresolved_count"]
         ):
             selected.append((item, facts))
+    # Stable ties preserve the source's order; local query handles are not ranks.
     selected.sort(
         key=lambda value: (
             -value[1].get("unresolved_count", 0),
             -value[1].get("numeric_count", 0),
-            value[0],
         )
     )
     return [item for item, _ in selected]

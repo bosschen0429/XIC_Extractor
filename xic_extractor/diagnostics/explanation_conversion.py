@@ -3,25 +3,21 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
+import sqlite3
 from collections.abc import Callable
+from contextlib import closing
 from pathlib import Path
 from time import perf_counter
 from typing import Any
 
 from xic_extractor.alignment_explanation.errors import ExplanationError
-from xic_extractor.alignment_explanation.reader import read_review_cells
-from xic_extractor.alignment_explanation.review import (
-    REVIEW_SCHEMA_VERSION,
-    review_record,
-)
 from xic_extractor.alignment_explanation.storage import (
-    CANDIDATE_SELECT,
-    decode_candidate,
-    decode_object,
+    encode_object,
     open_readonly,
     read_completed_summary,
 )
-from xic_extractor.alignment_explanation.writer import ExplanationReportWriter
 
 
 def compact_explanation(
@@ -31,12 +27,14 @@ def compact_explanation(
     started = perf_counter()
     if source.resolve() == destination.resolve():
         raise ExplanationError("Compact output must differ from the source")
+    if destination.exists():
+        raise FileExistsError(f"explanation artifact already exists: {destination}")
     destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + ".tmp")
     with open_readonly(source) as db:
         summary = read_completed_summary(db)
-        if summary["schema_version"] == REVIEW_SCHEMA_VERSION:
+        if summary["retention"] == "review":
             raise ExplanationError("Source is already a compact review")
-        samples = {s["sample_key"]: i for i, s in enumerate(summary["samples"])}
         matrix = Path(summary["matrix_path"])
         if not matrix.is_file():
             matrix = source.parent / matrix.name
@@ -48,56 +46,42 @@ def compact_explanation(
                 != summary["matrix_sha256"]
             ):
                 raise ExplanationError("The bound Matrix hash differs from the report")
-        with ExplanationReportWriter(destination, review_only=True) as writer:
-            if progress:
-                progress("Copying candidate and group review facts")
-            for row in db.execute(CANDIDATE_SELECT):
-                _, candidate = decode_candidate(row)
-                writer.add_candidate(
-                    candidate["candidate_id"], candidate["sample_key"], candidate
-                )
-            links = iter(
-                db.execute(
-                    "SELECT kind,record_id,candidate_id,sample_id FROM links "
-                    "WHERE kind!='capture_evidence' ORDER BY kind,record_id"
-                )
+        if progress:
+            progress("Copying candidate and group review facts")
+        temporary.unlink(missing_ok=True)
+        db.execute("VACUUM INTO ?", (str(temporary),))
+    try:
+        with closing(sqlite3.connect(temporary)) as out:
+            out.execute("DROP TABLE IF EXISTS curves")
+            out.execute(
+                "UPDATE method_assessments "
+                "SET acquisition_source_id=NULL, evaluation_receipt=NULL"
             )
-            linked = next(links, None)
-            for kind, rid, payload in db.execute(
-                "SELECT kind,record_id,payload FROM records "
-                "WHERE kind!='capture_evidence' ORDER BY kind,record_id"
-            ):
-                related = []
-                while linked is not None and linked[:2] < (kind, rid):
-                    linked = next(links, None)
-                while linked is not None and linked[:2] == (kind, rid):
-                    related.append((linked[2], linked[3]))
-                    linked = next(links, None)
-                writer.add_record(
-                    kind, rid, review_record(kind, decode_object(payload)), related
-                )
             if progress:
                 progress("Copying cell values and review evidence")
-            for (row_id,) in db.execute(
-                "SELECT record_id FROM records WHERE kind='rows'"
-            ):
-                cells = list(read_review_cells(db, summary, (row_id,)).values())
-                for cell in cells:
-                    cell.pop("observation", None)
-                writer.add_row_cells(row_id, cells, samples)
-            summary.update(
+            out.execute("UPDATE cells SET observation=NULL")
+            stored = json.loads(out.execute("SELECT payload FROM run").fetchone()[0])
+            stored.update(
                 matrix_path=str(matrix.resolve()),
                 retention="review",
                 curve_retention="none",
                 curve_mz_ranges=[],
-                record_counts=dict(writer.record_counts),
+                plot_evidence_capability="metadata_only",
             )
-            writer.finalize(summary)
-        return {
-            "source_bytes": source.stat().st_size,
-            "review_bytes": destination.stat().st_size,
-            "candidate_count": summary["candidate_count"],
-            "cell_count": writer.record_counts.get("cell_decisions", 0),
-            "elapsed_seconds": round(perf_counter() - started, 3),
-            "output": str(destination.resolve()),
-        }
+            out.execute("UPDATE run SET payload=?", (encode_object(stored),))
+            out.commit()
+            out.execute("VACUUM")
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    with open_readonly(destination) as db:
+        compact = read_completed_summary(db)
+        cell_count = db.execute("SELECT COUNT(*) FROM cells").fetchone()[0]
+    return {
+        "source_bytes": source.stat().st_size,
+        "review_bytes": destination.stat().st_size,
+        "candidate_count": compact["candidate_count"],
+        "cell_count": cell_count,
+        "elapsed_seconds": round(perf_counter() - started, 3),
+        "output": str(destination.resolve()),
+    }

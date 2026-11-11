@@ -153,39 +153,19 @@ def test_report_exposes_offline_review_workbench_for_generic_payload() -> None:
     assert "https://" not in report
 
 
-def test_report_exposes_pair_support_distinctions_and_candidate_record_scope() -> None:
+def test_report_offers_sample_lanes_without_a_pair_graph() -> None:
     payload = {
         "items": [
             {
                 "id": "group-1",
                 "samples": [],
-                "internal_pair_support": [
-                    {
-                        "edge_ref": "edge-direct",
-                        "left_subject_id": "member-a",
-                        "right_subject_id": "member-b",
-                        "left_sample_label": "Sample A",
-                        "right_sample_label": "Sample B",
-                        "support_kind": "direct",
-                        "reason": "eligible edge",
-                    },
-                    {
-                        "edge_ref": "edge-review",
-                        "left_subject_id": "member-a",
-                        "right_subject_id": "member-c",
-                        "left_sample_label": "Sample A",
-                        "right_sample_label": "Sample C",
-                        "support_kind": "review_only",
-                        "reason": "retained for review",
-                    },
-                ],
-                "details": {"readable_records": [{"ref": "edge-direct"}]},
+                "details": {"readable_records": [{"ref": "record-1"}]},
             }
         ],
         "samples": [],
     }
     report = build_report_html(
-        title="Pair support report",
+        title="Sample lanes report",
         evidence_capability="metadata_only",
         strategy="sample",
         run_total=1,
@@ -202,13 +182,9 @@ def test_report_exposes_pair_support_distinctions_and_candidate_record_scope() -
     )
     assert inline is not None
     assert json.loads(inline[1]) == payload
-    for label in (
-        "relationship-network",
-        "data-relation-node",
-        "data-relation-pair",
-        "data-lane-capture",
-    ):
-        assert label in report
+    assert "data-lane-capture" in report
+    for label in ("relationship-network", "data-relation-node", "data-relation-pair"):
+        assert label not in report
 
 
 def test_record_scope_does_not_become_a_candidate_adoption_claim() -> None:
@@ -320,40 +296,22 @@ def _relationship_render(payload, expression):
     return _evaluate_report_functions(report, payload, expression)
 
 
-@pytest.mark.parametrize(
-    ("availability", "explicit_empty", "expected"),
-    [
-        (None, False, "來源未提供樣本關係資料"),
-        (None, True, "來源未提供樣本關係資料"),
-        ("unavailable", False, "來源未提供樣本關係資料"),
-        ("not_retained", True, "來源未保存樣本配對圖"),
-        ("recorded", True, "本群組沒有保存的配對紀錄"),
-    ],
-)
-def test_missing_relationships_do_not_become_zero_support(
+def test_sample_relationships_show_saved_curves_without_pair_claims(
     origin_curve_payload,
-    availability,
-    explicit_empty,
-    expected,
 ):
-    item = origin_curve_payload["items"][0]
-    if availability is not None:
-        item["relationship_availability"] = availability
-    if explicit_empty:
-        item["internal_pair_support"] = []
-    for row in item["samples"]:
-        row["support_origin"] = {"kind": "unavailable"}
     rendered = _relationship_render(
         origin_curve_payload,
-        "return JSON.stringify({panel:internalPairSupportPanel(items[0]),"
-        "plot:plot(items[0],'raw')});",
+        "const panel=sampleRelationshipPanel(items[0]);"
+        "const plotted=plot(items[0],'raw');items[0].curves=[];"
+        "return JSON.stringify({panel,plot:plotted,"
+        "empty:sampleRelationshipPanel(items[0])});",
     )
-    assert expected in rendered["panel"]
-    assert "不能據此判定沒有配對支持" in rendered["panel"]
-    assert "0 對直接支持" not in rendered["panel"]
-    assert "relationship-network" not in rendered["panel"]
+    assert rendered["panel"].count("data-lane-member=") == 3
+    assert rendered["panel"].count('class="lane-raw"') == 3
+    assert "配對" not in rendered["panel"]
     assert "來源未提供此樣本的精確支持曲線" not in rendered["panel"]
     assert rendered["plot"].count("data-curve-ref=") == 3
+    assert rendered["empty"] == ""
 
 
 def test_unrecorded_origins_and_missing_alignment_keep_curves_readable(
@@ -380,9 +338,8 @@ def test_unrecorded_origins_and_missing_alignment_keep_curves_readable(
     assert "{" not in rendered["field"]
 
 
-def test_recorded_relationships_keep_pair_and_exact_capture_scope(origin_curve_payload):
+def test_member_lanes_keep_exact_capture_scope(origin_curve_payload):
     item = origin_curve_payload["items"][0]
-    item["relationship_availability"] = "recorded"
     item["relationship_members"] = [
         {
             "subject_id": f"M{i}",
@@ -391,37 +348,13 @@ def test_recorded_relationships_keep_pair_and_exact_capture_scope(origin_curve_p
         }
         for i in range(3)
     ]
-    item["internal_pair_support"] = [
-        {
-            "edge_ref": "edge-01",
-            "left_subject_id": "M0",
-            "right_subject_id": "M1",
-            "support_kind": "direct",
-        }
-    ]
     item["curves"].append({**item["curves"][0], "evidence_ref": "unbound-curve"})
     rendered = _relationship_render(
         origin_curve_payload,
         "const model=relationshipModel(items[0]);"
-        "const overview=internalPairSupportPanel(items[0]);rel.pair='edge-01';"
-        "return JSON.stringify({overview,lanes:relationshipLanes(items[0],model),"
-        "refs:model.byId.get('M0').curves.map(c=>c.evidence_ref)});",
+        "return JSON.stringify({lanes:relationshipLanes(items[0],model),"
+        "refs:model.nodes.find(n=>n.id==='M0').curves.map(c=>c.evidence_ref)});",
     )
-    assert "1 對直接支持，0 對僅供檢閱" in rendered["overview"]
-    assert 'data-relation-pair="edge-01"' in rendered["overview"]
-    assert 'data-lane-member="M0"' in rendered["lanes"]
-    assert 'data-lane-member="M1"' in rendered["lanes"]
-    assert 'data-lane-member="M2"' not in rendered["lanes"]
+    for member in ("M0", "M1", "M2"):
+        assert f'data-lane-member="{member}"' in rendered["lanes"]
     assert rendered["refs"] == ["curve-0"]
-
-
-def test_unretained_pair_graph_keeps_saved_support_curves(origin_curve_payload):
-    origin_curve_payload["items"][0]["relationship_availability"] = "not_retained"
-    panel = _relationship_render(
-        origin_curve_payload,
-        "return JSON.stringify(internalPairSupportPanel(items[0]));",
-    )
-    assert "來源未保存樣本配對圖" in panel
-    assert "0 對直接支持" not in panel
-    assert panel.count("data-lane-member=") == 3
-    assert panel.count('class="lane-raw"') == 3

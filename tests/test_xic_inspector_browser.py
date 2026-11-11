@@ -158,18 +158,9 @@ def test_inspector_reads_injection_order_from_final_calibration_summary(review_p
         "injection_order": {"Sample 0": 8, "Sample 1": 3, "Sample 2": 6},
     }
     item = payload["items"][0]
-    item["relationship_availability"] = "recorded"
     item["relationship_members"] = [
         {"subject_id": f"M{i}", "sample_id": f"S{i}", "sample_label": f"Sample {i}"}
         for i in range(3)
-    ]
-    item["internal_pair_support"] = [
-        {
-            "edge_ref": "edge-01",
-            "left_subject_id": "M0",
-            "right_subject_id": "M1",
-            "support_kind": "direct",
-        }
     ]
     page = review_page
     page.set_content('<div id="host"></div>')
@@ -189,7 +180,9 @@ def test_inspector_reads_injection_order_from_final_calibration_summary(review_p
         "6",
         "8",
     ]
-    expect(page.locator("#host .relation-number")).to_have_text(["03", "06", "08"])
+    expect(page.locator("#host .relationship-lane .injection-order")).to_have_text(
+        ["03", "06", "08"]
+    )
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])

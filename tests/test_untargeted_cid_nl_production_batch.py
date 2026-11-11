@@ -228,7 +228,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         )
         missing_queries = [
             query
-            for group in detail["records"]["final_groups"]
+            for group in detail["groups"]
             for query in group["xic_extractions"]
             if query["sample_key"] == missing.sample_key
         ]
@@ -396,7 +396,6 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
     result.close()
     assert result.publication_inputs.peaks_by_sample == {"S1": candidates}
     assert result.publication_inputs.alignment_config == AlignmentConfig()
-    assert result.publication_inputs.known_istd_reference is None
     assert [name for name, _kwargs in calls] == ["build", "execute"]
     build_kwargs = calls[0][1]
     assert isinstance(build_kwargs, dict)
@@ -853,7 +852,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     initial_contexts = []
-    initial_edges = []
     cell_contexts = []
     build_context = production.build_initial_cid_nl_cross_sample_groups
     compose_cells = cid_nl_completion_owner.compose_cid_nl_predecessor_cells
@@ -907,7 +905,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         and group.inference_basis.reason
         == "both_finite_directional_passes_support_the_same_membership"
     )
-    assert initial_edges == []
     assert cell_contexts
     for cell_context in cell_contexts:
         assert cell_context.sample_universe == frozenset(stems)
@@ -1532,7 +1529,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     assert cell_rows["NoPeak"]["source_candidate_id"] == ""
 
     from xic_extractor.alignment_explanation.published_cells import read_published_cells
-    from xic_extractor.alignment_explanation.reader import read_explanation_metadata
+    from xic_extractor.alignment_explanation.reader import read_review_evidence
     from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_alignment_explanation,
     )
@@ -1575,14 +1572,15 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     }
     assert summarize_duplicate_quantification(cells)["valued_cells"] == 4
     assert published_outputs.matrix_tsv.read_bytes() == outputs.matrix_tsv.read_bytes()
-    metadata = read_explanation_metadata(published / "alignment_explanation.sqlite")
+    evidence = read_review_evidence(published / "alignment_explanation.sqlite")
     stems_by_key = {
         sample["sample_key"]: sample["sample_stem"]
-        for sample in metadata.summary["samples"]
+        for sample in evidence.summary["samples"]
     }
     assert {
         stems_by_key[sample_key]: fact["apex_rt_min"]
-        for (_, sample_key), fact in metadata.records["cell_decisions"].items()
+        for group in evidence.groups.values()
+        for sample_key, fact in group.cells.items()
     } == {
         "Support1": 7.97,
         "Support2": 7.99,

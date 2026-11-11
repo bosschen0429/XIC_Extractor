@@ -18,6 +18,7 @@ from tests.alignment_explanation_fixtures import (
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_explanation,
 )
+from xic_extractor.alignment_explanation.storage import SCHEMA_VERSION
 from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
 )
@@ -65,7 +66,8 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
 
     # Re-read new DB
     summary = read_alignment_explanation(report_path)
-    assert summary["schema_version"] == "alignment_explanation"
+    assert summary["schema_version"] == SCHEMA_VERSION
+    assert summary["retention"] == "full_audit"
     assert summary["plot_evidence_capability"] == "retained_curves"
     assert summary["matrix_sha256"] == hashlib.sha256(matrix.read_bytes()).hexdigest()
 
@@ -286,7 +288,6 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
             peaks_by_sample=kwargs["peaks_by_sample"],
             **explanation_discovery_facts(completed),
             alignment_config=kwargs["alignment_config"],
-            known_istd_reference=kwargs["known_istd_reference"],
         ),
     )
     outputs = application.run_untargeted_application(

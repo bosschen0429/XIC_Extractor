@@ -1,7 +1,8 @@
-"""Persisted coordinates for indexed selection of completed review evidence.
+"""Select completed review evidence before assembling the selected witnesses.
 
-This projection contains identities and recorded coordinates, never new scientific
-decisions. Publication builds it once; readers fetch only a requested page.
+SQL filters coordinates and reduces scoped sample facts; Inspector owns ranking
+and presentation. Only selected items are expanded into witnesses. Derived
+relations live on the request's read-only connection, never in the report.
 """
 
 from __future__ import annotations
@@ -16,250 +17,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from xic_extractor.alignment_explanation.errors import ExplanationError
-from xic_extractor.alignment_explanation.reader import read_review_cells
+from xic_extractor.alignment_explanation.relations import relation
 from xic_extractor.alignment_explanation.review import (
-    ORIGIN_FLAGS,
-    SELECTION_FLAGS,
-    selection_sample_facts,
+    RECORDED_ORIGINS,
+    assessment_attention,
+    cell_attention,
+    group_attention,
 )
 from xic_extractor.alignment_explanation.storage import (
-    CANDIDATE_SELECT,
-    decode_candidate,
-    decode_object,
+    decode_json,
     open_readonly,
-    selection_mask_width,
 )
-
-
-def recorded_observations(candidate, linked_records, records, member_ids):
-    """Resolve the recorded observations used by both selection and display."""
-    observations = [
-        observation
-        for kind, rid in linked_records
-        if kind == "terminal_subjects"
-        for observation in records[kind][rid].get("observations", [])
-        if not member_ids or observation.get("physical_peak_key") in member_ids
-    ]
-    return observations or [{"rt_apex_min": candidate.get("rt_apex_min")}]
-
-
-def build_query_index(db: sqlite3.Connection, summary: dict[str, Any]) -> None:
-    """Build the review query projection inside the publication transaction."""
-    samples = {sample["sample_key"]: i for i, sample in enumerate(summary["samples"])}
-    stored_candidates = [decode_candidate(row) for row in db.execute(CANDIDATE_SELECT)]
-    candidates = {(c["candidate_id"], c["sample_key"]): c for _, c in stored_candidates}
-    candidate_ids = {
-        (c["candidate_id"], c["sample_key"]): cid for cid, c in stored_candidates
-    }
-    records: dict[str, dict[str, Any]] = {}
-    kinds = (
-        "('rows','final_groups','terminal_subjects','initial_edges',"
-        "'method_assessments','exclusions')"
-    )
-    for kind, rid, payload in db.execute(
-        "SELECT kind, record_id, payload FROM records WHERE kind IN " + kinds
-    ):
-        records.setdefault(kind, {})[rid] = decode_object(payload)
-    links = defaultdict(set)
-    record_keys = defaultdict(set)
-    for cid, sid, kind, rid in db.execute("SELECT * FROM links WHERE kind IN " + kinds):
-        links[cid, sid].add((kind, rid))
-        record_keys[kind, rid].add((cid, sid))
-    definitions = []
-    grouped = set()
-    row_groups = set()
-    for rid, row in records.get("rows", {}).items():
-        gid = row.get("feature_id")
-        row_groups.add(gid)
-        keys = record_keys["rows", rid]
-        grouped.update(keys)
-        definitions.append(("row", rid, gid, keys))
-    for gid in records.get("final_groups", {}):
-        keys = record_keys["final_groups", gid]
-        grouped.update(keys)
-        if gid not in row_groups:
-            definitions.append(("group", gid, gid, keys))
-    definitions.extend(
-        ("candidate", key[0], None, {key}) for key in candidates if key not in grouped
-    )
-    mask_width = selection_mask_width(len(samples))
-    items_by_key = defaultdict(set)
-    item_keys = {}
-    for item_id, (kind, identifier, gid, keys) in enumerate(definitions):
-        # The request and attempt are constant within this report. Omitting them
-        # preserves the canonical JSON UTF-8 order, including escaped IDs.
-        ref = (
-            [kind, next(iter(keys))[1], identifier]
-            if kind == "candidate"
-            else [kind, identifier]
-        )
-        sort_key = json.dumps(ref, ensure_ascii=False, separators=(",", ":")).encode(
-            "utf-8"
-        )
-        db.execute(
-            "INSERT INTO query_items VALUES (?,?,?,?,?,?)",
-            (item_id, kind, identifier, gid, sort_key, b""),
-        )
-        item_keys[item_id] = keys
-        members = defaultdict(set)
-        for member in (
-            records.get("final_groups", {}).get(gid, {}).get("member_subjects", [])
-        ):
-            members[member.get("sample_key")].update(
-                member.get("physical_peak_keys", [])
-            )
-        ordinal = 0
-        observed = set()
-        for key in sorted(keys):
-            items_by_key[key].add(item_id)
-            for observation in recorded_observations(
-                candidates[key], links[key], records, members[key[1]]
-            ):
-                if observation.get("physical_peak_key"):
-                    observed.add(key[1])
-                db.execute(
-                    "INSERT INTO query_witnesses VALUES (?,?,?,?,?)",
-                    (
-                        item_id,
-                        ordinal,
-                        candidate_ids[key],
-                        observation.get("rt_apex_min"),
-                        observation.get("physical_peak_key"),
-                    ),
-                )
-                ordinal += 1
-        cells = (
-            read_review_cells(db, summary, (identifier,)).values()
-            if kind == "row"
-            else ()
-        )
-        flags = selection_sample_facts(
-            kind,
-            identifier,
-            gid,
-            keys,
-            candidates,
-            records,
-            links,
-            cells,
-            observed,
-        )
-        db.executemany(
-            "INSERT INTO query_scope VALUES (?,?)",
-            ((samples[sid], item_id) for sid in flags),
-        )
-        # One bit per sample for presence and each scalar fact; no cell payload
-        # needs decoding again when a caller changes its selected sample scope.
-        masks = [sum(1 << samples[sid] for sid in flags)]
-        masks.extend(
-            sum(1 << samples[sid] for sid, value in flags.items() if value & bit)
-            for bit in SELECTION_FLAGS
-        )
-        db.execute(
-            "UPDATE query_items SET sample_facts=? WHERE id=?",
-            (b"".join(mask.to_bytes(mask_width, "little") for mask in masks), item_id),
-        )
-    for edge_ref, edge in records.get("initial_edges", {}).items():
-        keys = record_keys["initial_edges", edge_ref]
-        participants = {item for key in keys for item in items_by_key[key]}
-        priority = (
-            0
-            if edge.get("initial_evidence", {}).get("decision")
-            in {"blocked_edge", "split_edge", "split"}
-            else 1
-        )
-        for item in participants:
-            peers = {
-                peer
-                for key in keys - item_keys[item]
-                for peer in items_by_key[key]
-                if peer != item
-            }
-            db.executemany(
-                "INSERT INTO query_peers VALUES (?,?,?,?)",
-                ((item, peer, priority, edge_ref) for peer in peers),
-            )
-    db.execute("ANALYZE")
-
-
-def query_page(
-    db,
-    scope,
-    *,
-    candidate_ids=(),
-    group_ids=(),
-    mz_min=None,
-    mz_max=None,
-    rt_min=None,
-    rt_max=None,
-    offset=0,
-    limit=30,
-    ordered_item_ids=None,
-):
-    """Return population counts and item IDs, filtering each witness as one row."""
-    params: list[Any] = []
-    predicates = []
-    order = "i.sort_key"
-    if ordered_item_ids is not None:
-        db.execute(
-            "CREATE TEMP TABLE review_order "
-            "(item INTEGER PRIMARY KEY, priority INTEGER)"
-        )
-        db.executemany(
-            "INSERT INTO review_order VALUES (?,?)",
-            ((item, priority) for priority, item in enumerate(ordered_item_ids)),
-        )
-        predicates.append("i.id IN (SELECT item FROM review_order)")
-        order = "(SELECT priority FROM review_order WHERE item=i.id),i.sort_key"
-    for column, values in (
-        ("s.sample_key", scope),
-        ("c.candidate_id", candidate_ids),
-        ("i.group_id", group_ids),
-    ):
-        if values or column == "s.sample_key":
-            predicates.append(f"{column} IN ({','.join('?' for _ in values)})")
-            params.extend(values)
-    for column, operator, value in (
-        ("c.precursor_mz", ">=", mz_min),
-        ("c.precursor_mz", "<=", mz_max),
-    ):
-        if value is not None:
-            predicates.append(f"{column}{operator}?")
-            params.append(value)
-    base = (
-        " FROM query_witnesses w JOIN candidates c ON c.id=w.candidate "
-        "JOIN samples s ON s.id=c.sample JOIN query_items i ON i.id=w.item WHERE "
-        + " AND ".join(predicates)
-    )
-    missing = 0
-    if rt_min is not None or rt_max is not None:
-        missing = db.execute(
-            "SELECT COUNT(*) FROM (SELECT w.item"
-            + base
-            + " GROUP BY w.item HAVING COUNT(w.rt)=0)",
-            params,
-        ).fetchone()[0]
-    for operator, value in ((">=", rt_min), ("<=", rt_max)):
-        if value is not None:
-            base += f" AND w.rt{operator}?"
-            params.append(value)
-    matches = "SELECT DISTINCT w.item" + base
-    matched = db.execute("SELECT COUNT(*) FROM (" + matches + ")", params).fetchone()[0]
-    page = [
-        row[0]
-        for row in db.execute(
-            matches + f" ORDER BY {order} LIMIT ? OFFSET ?", [*params, limit, offset]
-        )
-    ]
-    run_total = db.execute("SELECT COUNT(*) FROM query_items").fetchone()[0]
-    eligible = db.execute(
-        "SELECT COUNT(DISTINCT q.item) FROM query_scope q JOIN "
-        "samples s ON s.id=q.sample "
-        f"WHERE s.sample_key IN ({','.join('?' for _ in scope)})",
-        tuple(scope),
-    ).fetchone()[0]
-    return page, run_total, eligible, matched, missing
 
 
 @dataclass(frozen=True)
@@ -288,77 +56,235 @@ class IndexedItem:
     witnesses: tuple[tuple[str, str, float | None, float | None, str | None, str], ...]
 
 
+@dataclass(frozen=True)
+class _Item:
+    """Only the identity and group disposition needed to order an item."""
+
+    kind: Literal["row", "group", "candidate"]
+    identifier: str
+    group_id: str | None
+    sample_id: str | None
+    sort_key: bytes
+    attention: bool
+
+
+def _query_views(db: sqlite3.Connection) -> None:
+    groups = relation(db, "group_candidates")
+    # Positive handles are group row IDs; negative handles are ungrouped
+    # candidate row IDs. Neither is displayed or persisted as an item ref.
+    db.execute(f"""CREATE TEMP VIEW review_item_candidates AS
+        SELECT group_id AS item, candidate FROM {groups}
+        UNION ALL
+        SELECT -c.id, c.id FROM main.candidates c
+        WHERE NOT EXISTS (SELECT 1 FROM {groups} g WHERE g.candidate=c.id)""")
+    db.execute("""CREATE TEMP VIEW review_members AS
+        SELECT m.final_group AS item, m.sample, j.value AS peak
+        FROM main.members m, json_each(m.peaks) j
+        WHERE m.final_group IS NOT NULL""")
+    db.execute("""CREATE TEMP VIEW review_samples AS
+        SELECT ic.item,c.sample FROM review_item_candidates ic
+        JOIN main.candidates c ON c.id=ic.candidate
+        UNION SELECT group_id,sample FROM main.cells""")
+    observed = """(NOT EXISTS (
+        SELECT 1 FROM review_members m WHERE m.item=ic.item AND m.sample=c.sample)
+        OR EXISTS (SELECT 1 FROM review_members m
+                   WHERE m.item=ic.item AND m.sample=c.sample
+                     AND m.peak=c.terminal_peak))"""
+    db.execute(f"""CREATE TEMP VIEW review_witnesses AS
+        SELECT ic.item, c.sample, s.sample_key, c.candidate_id, c.precursor_mz AS mz,
+            CASE WHEN {observed} THEN p.rt_apex_min END AS rt,
+            CASE WHEN {observed} THEN p.physical_peak_key END AS peak,
+            s.sample_stem
+        FROM review_item_candidates ic
+        JOIN main.candidates c ON c.id=ic.candidate
+        JOIN main.samples s ON s.id=c.sample
+        LEFT JOIN main.peaks p ON p.id=c.terminal_peak""")
+    db.create_function(
+        "cell_attention",
+        3,
+        lambda variant, value, risky: (
+            cell_attention(variant, value, bool(risky)) is not None
+        ),
+        deterministic=True,
+    )
+    db.create_function(
+        "assessment_attention",
+        1,
+        lambda result: assessment_attention(result) is not None,
+        deterministic=True,
+    )
+    db.create_function(
+        "risks_flagged",
+        1,
+        lambda risks: any(risk.get("risk_flags") for risk in decode_json(risks) or ()),
+        deterministic=True,
+    )
+
+
 @contextmanager
 def open_review_query(path: Path, summary: Mapping[str, Any]) -> Iterator[ReviewQuery]:
-    """One request-local index session; the caller supplies an admitted summary."""
+    """One request-local selection session, with no cross-request cache."""
     with open_readonly(path) as db:
         yield ReviewQuery(db, summary)
 
 
 class ReviewQuery:
-    """Own SQL and packed coordinates; presentation owns review ordering policy."""
+    """Query stored facts; expand coordinates only for the selected page."""
 
     def __init__(self, db: sqlite3.Connection, summary: Mapping[str, Any]):
         self._db = db
-        self._summary = summary
+        self._samples = {
+            sample["sample_key"]: index
+            for index, sample in enumerate(summary["samples"])
+        }
+        _query_views(db)
+        self._items: dict[int, _Item] = {}
+        for group, feature, disposition in db.execute(
+            "SELECT id,feature_id,disposition FROM groups "
+            "ORDER BY feature_id IS NULL,id"
+        ):
+            kind: Literal["row", "group", "candidate"] = (
+                "row" if feature is not None else "group"
+            )
+            identifier = feature if feature is not None else str(group)
+            self._items[group] = _Item(
+                kind,
+                identifier,
+                identifier,
+                None,
+                json.dumps(
+                    [kind, identifier], ensure_ascii=False, separators=(",", ":")
+                ).encode(),
+                group_attention(disposition),
+            )
+        for item, cid, sid in db.execute("""SELECT ic.item,c.candidate_id,s.sample_key
+            FROM review_item_candidates ic JOIN candidates c ON c.id=ic.candidate
+            JOIN samples s ON s.id=c.sample WHERE ic.item<0 ORDER BY c.id"""):
+            self._items[item] = _Item(
+                "candidate",
+                cid,
+                None,
+                sid,
+                json.dumps(
+                    ["candidate", sid, cid], ensure_ascii=False, separators=(",", ":")
+                ).encode(),
+                False,
+            )
 
     def item_headers(self) -> list[tuple[int, str, str]]:
-        return list(self._db.execute("SELECT id,kind,identifier FROM query_items"))
+        return [(key, item.kind, item.identifier) for key, item in self._items.items()]
 
-    def page(self, scope, **criteria):
-        return query_page(self._db, tuple(sorted(scope)), **criteria)
+    def _scope(self, scope: Sequence[str]) -> str:
+        return json.dumps([self._samples[sid] for sid in scope if sid in self._samples])
+
+    def _eligible(self, scope: Sequence[str], within=None) -> int:
+        query = (
+            "SELECT COUNT(DISTINCT item) FROM review_samples "
+            "WHERE sample IN (SELECT value FROM json_each(?))"
+        )
+        parameters = [self._scope(scope)]
+        if within is not None:
+            query += " AND item IN (SELECT value FROM json_each(?))"
+            parameters.append(json.dumps(list(within)))
+        return self._db.execute(query, parameters).fetchone()[0]
+
+    def page(
+        self,
+        scope,
+        *,
+        candidate_ids=(),
+        group_ids=(),
+        mz_min=None,
+        mz_max=None,
+        rt_min=None,
+        rt_max=None,
+        offset=0,
+        limit=30,
+        ordered_item_ids=None,
+    ):
+        """Filter each witness as one row, returning only matching item handles."""
+        where = ["sample IN (SELECT value FROM json_each(?))"]
+        parameters: list[Any] = [self._scope(scope)]
+        priority = (
+            None
+            if ordered_item_ids is None
+            else {item: index for index, item in enumerate(ordered_item_ids)}
+        )
+        allowed = None if priority is None else set(priority)
+        if group_ids:
+            groups = {
+                key for key, item in self._items.items() if item.group_id in group_ids
+            }
+            allowed = groups if allowed is None else allowed & groups
+        if allowed is not None:
+            where.append("item IN (SELECT value FROM json_each(?))")
+            parameters.append(json.dumps(sorted(allowed)))
+        if candidate_ids:
+            where.append("candidate_id IN (SELECT value FROM json_each(?))")
+            parameters.append(json.dumps(list(candidate_ids)))
+        for bound, operator in ((mz_min, ">="), (mz_max, "<=")):
+            if bound is not None:
+                where.append(f"mz {operator} ?")
+                parameters.append(bound)
+        matched, missing = [], 0
+        predicate = " AND ".join(where)
+        if rt_min is not None or rt_max is not None:
+            # Missing RT is counted after non-RT filters, before the range.
+            rows = self._db.execute(
+                "SELECT item,MAX(rt IS NOT NULL),"
+                "MAX(rt IS NOT NULL AND (? IS NULL OR rt>=?) "
+                "AND (? IS NULL OR rt<=?)) "
+                f"FROM review_witnesses WHERE {predicate} GROUP BY item",
+                [rt_min, rt_min, rt_max, rt_max, *parameters],
+            )
+            for key, has_rt, rt_match in rows:
+                missing += not has_rt
+                if rt_match:
+                    matched.append(key)
+        else:
+            # No RT predicate needs the peak/member joins used to resolve RT.
+            matched = [
+                row[0]
+                for row in self._db.execute(
+                    f"SELECT DISTINCT item FROM review_witnesses WHERE {predicate}",
+                    parameters,
+                )
+            ]
+        matched.sort(
+            key=lambda key: (
+                priority[key] if priority is not None else 0,
+                self._items[key].sort_key,
+            )
+        )
+        page = matched[offset:] if limit < 0 else matched[offset : offset + limit]
+        return page, len(self._items), self._eligible(scope), len(matched), missing
 
     def nearest_page(
         self, scope, *, mz, offset, limit, ordered_item_ids=None, **criteria
     ):
-        """Rank the same first scoped witness the display uses, not any nearest one."""
-        db = self._db
-        scope = tuple(sorted(scope))
+        """Rank the first scoped witness, as display does, not the nearest one."""
         ids, run_total, eligible, _, missing_rt = self.page(
             scope, **criteria, ordered_item_ids=ordered_item_ids, limit=-1
         )
-        db.execute("CREATE TEMP TABLE nearest_eligible (item INTEGER PRIMARY KEY)")
-        db.executemany(
-            "INSERT INTO nearest_eligible VALUES (?)", ((item,) for item in ids)
+        rows = self._db.execute(
+            """SELECT item,mz FROM (
+            SELECT item,mz,ROW_NUMBER() OVER (
+                PARTITION BY item ORDER BY candidate_id,sample_key) AS witness_order
+            FROM review_witnesses WHERE sample IN (SELECT value FROM json_each(?))
+              AND item IN (SELECT value FROM json_each(?))) WHERE witness_order=1""",
+            (self._scope(scope), json.dumps(ids)),
         )
-        ranked = []
-        for item_id, sort_key, witness_mz in db.execute(
-            "SELECT item,sort_key,mz FROM ("
-            "SELECT w.item,i.sort_key,c.precursor_mz AS mz,ROW_NUMBER() OVER "
-            "(PARTITION BY w.item ORDER BY w.ordinal) AS position "
-            "FROM query_witnesses w JOIN nearest_eligible e ON e.item=w.item "
-            "JOIN query_items i ON i.id=w.item "
-            "JOIN candidates c ON c.id=w.candidate "
-            "JOIN samples s ON s.id=c.sample "
-            f"WHERE s.sample_key IN ({','.join('?' for _ in scope)})) WHERE position=1",
-            scope,
-        ):
-            if (
-                isinstance(witness_mz, (int, float))
-                and math.isfinite(witness_mz)
-                and witness_mz > 0
-            ):
-                ranked.append((abs(witness_mz - mz), sort_key, item_id))
-        population_count = len(ids)
+        ranked = [
+            (abs(value - mz), self._items[key].sort_key, key)
+            for key, value in rows
+            if value is not None and math.isfinite(value) and value > 0
+        ]
+        population = len(ids)
         if criteria.get("rt_min") is None and criteria.get("rt_max") is None:
-            # Scalar-only cells remain in the missing-coordinate disclosure.
-            order_filter = (
-                "JOIN review_order r ON r.item=q.item "
-                if ordered_item_ids is not None
-                else ""
-            )
-            population_count = db.execute(
-                "SELECT COUNT(DISTINCT q.item) FROM query_scope q "
-                "JOIN samples s ON s.id=q.sample "
-                + order_filter
-                + f"WHERE s.sample_key IN ({','.join('?' for _ in scope)})",
-                scope,
-            ).fetchone()[0]
-        missing_mz = population_count - len(ranked)
+            population = self._eligible(scope, ordered_item_ids)
         ranked.sort()
         distances = {
-            item_id: distance
-            for distance, _, item_id in ranked[offset : offset + limit]
+            key: distance for distance, _, key in ranked[offset : offset + limit]
         }
         return (
             list(distances),
@@ -366,7 +292,7 @@ class ReviewQuery:
             eligible,
             len(ranked),
             missing_rt,
-            missing_mz,
+            population - len(ranked),
             distances,
         )
 
@@ -379,145 +305,137 @@ class ReviewQuery:
         attention_only: bool,
         limit: int,
     ):
-        """Apply caller (bucket, attention, deferred) policy before hydration."""
-        db = self._db
-        run_total = db.execute("SELECT COUNT(*) FROM query_items").fetchone()[0]
-        if not scope:
-            return [], run_total, 0, 0, 0
-        scope_mask = sum(
-            1 << i
-            for i, sample in enumerate(self._summary["samples"])
-            if sample["sample_key"] in scope
+        """Rank scoped per-item summaries; no witness or display payload is read."""
+        sample_fields = "MAX(attention) AS attention"
+        item_fields = "MAX(attention)"
+        if not attention_only:
+            sample_fields += (
+                ",MAX(observed) AS observed,MAX(excluded) AS excluded,"
+                "MAX(nulls) AS nulls,MAX(zeros) AS zeros,MAX(origin) AS origin"
+            )
+            origins = ",".join(f"MAX(origin='{origin}')" for origin in RECORDED_ORIGINS)
+            item_fields = (
+                "SUM(observed),MAX(attention),MAX(excluded),MAX(nulls),MAX(zeros),"
+                + origins
+            )
+        # Scope before aggregation: an outer predicate on an aggregate view does
+        # not necessarily stop SQLite from evaluating every sample's rules.
+        rows = self._db.execute(
+            f"""WITH member_samples AS MATERIALIZED (
+                SELECT final_group AS item,sample,MAX(peaks!='[]') AS observed,
+                    MAX(risk_flags IS NOT NULL AND risk_flags!='[]') AS risky
+                FROM members WHERE final_group IS NOT NULL
+                    AND sample IN (SELECT value FROM json_each(:scope))
+                GROUP BY final_group,sample),
+            held AS MATERIALIZED (
+                SELECT method_subject,sample FROM method_assessments
+                WHERE sample IN (SELECT value FROM json_each(:scope))
+                    AND assessment_attention(method_result)
+                GROUP BY method_subject,sample),
+            facts AS (
+                SELECT ic.item,c.sample,
+                    c.terminal_peak IS NOT NULL OR COALESCE(m.observed,0) AS observed,
+                    h.sample IS NOT NULL AS attention,
+                    e.candidate IS NOT NULL AS excluded,
+                    0 AS nulls,0 AS zeros,'' AS origin
+                FROM review_item_candidates ic JOIN candidates c ON c.id=ic.candidate
+                LEFT JOIN member_samples m ON m.item=ic.item AND m.sample=c.sample
+                LEFT JOIN held h
+                    ON h.method_subject=c.method_subject AND h.sample=c.sample
+                LEFT JOIN exclusions e ON e.candidate=c.id
+                WHERE c.sample IN (SELECT value FROM json_each(:scope))
+                UNION ALL
+                SELECT c.group_id,c.sample,c.peaks!='[]' OR COALESCE(m.observed,0),
+                    cell_attention(c.variant,c.value,COALESCE(m.risky,0)
+                        OR CASE WHEN c.risks IS NOT NULL THEN risks_flagged(c.risks)
+                           ELSE 0 END),
+                    0,c.value IS NULL,c.value=0,c.support_origin
+                FROM cells c LEFT JOIN member_samples m
+                    ON m.item=c.group_id AND m.sample=c.sample
+                WHERE c.sample IN (SELECT value FROM json_each(:scope))),
+            sample_facts AS (
+                SELECT item,sample,{sample_fields} FROM facts GROUP BY item,sample)
+            SELECT item,COUNT(*),{item_fields}
+            FROM sample_facts GROUP BY item""",
+            {"scope": self._scope(scope)},
         )
-
-        width = selection_mask_width(len(self._summary["samples"]))
-
-        def classify_packed(kind, packed):
-            if len(packed) != width * (len(SELECTION_FLAGS) + 1):
-                raise ExplanationError("malformed review selection facts")
-            masks = [
-                int.from_bytes(packed[i : i + width], "little") & scope_mask
-                for i in range(0, len(packed), width)
-            ]
-            present, observed, attention, excluded, nulls, zeros, *origins = masks
-            if not present:
-                return None
-            return classify(
-                kind,
-                ScopedReviewFacts(
-                    present.bit_count(),
-                    observed.bit_count(),
-                    bool(attention),
-                    bool(excluded),
-                    bool(nulls),
-                    bool(zeros),
-                    tuple(
-                        name
-                        for name, mask in zip(ORIGIN_FLAGS, origins, strict=True)
-                        if mask
-                    ),
+        if attention_only:
+            # Attention has no coverage/origin ranking. Select by the same
+            # recorded attention rules without calculating sampling strata.
+            eligible = 0
+            chosen = []
+            for key, _, attention in rows:
+                eligible += 1
+                if self._items[key].attention or attention:
+                    chosen.append(key)
+            chosen.sort(key=lambda key: self._items[key].sort_key)
+            return chosen[:limit], len(self._items), eligible, len(chosen), 0
+        cases = []
+        for (
+            key,
+            present,
+            observed,
+            attention,
+            excluded,
+            nulls,
+            zeros,
+            *origin_flags,
+        ) in rows:
+            item = self._items[key]
+            facts = ScopedReviewFacts(
+                present,
+                observed,
+                item.attention or bool(attention),
+                bool(excluded),
+                bool(nulls),
+                bool(zeros),
+                tuple(
+                    name
+                    for name, flag in zip(RECORDED_ORIGINS, origin_flags, strict=True)
+                    if flag
                 ),
             )
-
-        db.execute(
-            "CREATE TEMP TABLE selection_cases "
-            "(item INTEGER PRIMARY KEY,sort_key BLOB,case_id INTEGER,"
-            "attention INTEGER,deferred INTEGER)"
+            case_id, attention, deferred = classify(item.kind, facts)
+            cases.append((key, item.sort_key, case_id, attention, deferred))
+        by_case: dict[int, list[tuple[Any, ...]]] = defaultdict(list)
+        for case in cases:
+            by_case[case[2]].append(case)
+        ordered: list[tuple[bool, int, int, int]] = []
+        for case_id, members in by_case.items():
+            members.sort(key=lambda case: (rank(case[1]), case[1]))
+            ordered.extend(
+                (bool(case[4]), slot, case_id, case[0])
+                for slot, case in enumerate(members, start=1)
+            )
+        ordered.sort()
+        return (
+            [entry[3] for entry in ordered[:limit]],
+            len(self._items),
+            len(cases),
+            len(cases),
+            0,
         )
-        db.executemany(
-            "INSERT INTO selection_cases VALUES (?,?,?,?,?)",
-            (
-                (item, sort_key, *classification)
-                for item, sort_key, kind, packed in db.execute(
-                    "SELECT i.id,i.sort_key,i.kind,i.sample_facts FROM query_items i"
-                )
-                if (classification := classify_packed(kind, packed)) is not None
-            ),
-        )
-        eligible = db.execute("SELECT COUNT(*) FROM selection_cases").fetchone()[0]
-        if attention_only:
-            matched = db.execute(
-                "SELECT COUNT(*) FROM selection_cases WHERE attention=1"
-            ).fetchone()[0]
-            ids = [
-                row[0]
-                for row in db.execute(
-                    "SELECT item FROM selection_cases WHERE attention=1 "
-                    "ORDER BY sort_key LIMIT ?",
-                    (limit,),
-                )
-            ]
-        else:
-            db.create_function("sample_rank", 1, rank, deterministic=True)
-            ids = [
-                row[0]
-                for row in db.execute(
-                    "WITH ranked AS (SELECT item,case_id,deferred,ROW_NUMBER() OVER "
-                    "(PARTITION BY case_id ORDER BY sample_rank(sort_key),sort_key) "
-                    "AS slot FROM selection_cases) "
-                    "SELECT item FROM ranked "
-                    "ORDER BY deferred,slot,case_id LIMIT ?",
-                    (limit,),
-                )
-            ]
-            matched = eligible
-        return ids, run_total, eligible, matched, 0
 
     def item(self, item_id: int, scope: Sequence[str]) -> IndexedItem:
-        db = self._db
-        kind, identifier, gid = db.execute(
-            "SELECT kind,identifier,group_id FROM query_items WHERE id=?", (item_id,)
-        ).fetchone()
-        witnesses = tuple(
-            row
-            for row in db.execute(
-                "SELECT s.sample_key,c.candidate_id,c.precursor_mz,w.rt,"
-                "w.observation_id,s.sample_stem "
-                "FROM query_witnesses w JOIN candidates c ON c.id=w.candidate "
-                "JOIN samples s ON s.id=c.sample "
-                "WHERE w.item=? ORDER BY w.ordinal",
-                (item_id,),
-            )
-            if row[0] in scope
+        item = self._items[item_id]
+        samples = self._db.execute(
+            """SELECT s.sample_key FROM review_samples r
+            JOIN samples s ON s.id=r.sample WHERE item=?
+              AND sample IN (SELECT value FROM json_each(?)) ORDER BY s.sample_key""",
+            (item_id, self._scope(scope)),
         )
-        samples = tuple(
-            sorted(
-                sid
-                for (sid,) in db.execute(
-                    "SELECT s.sample_key FROM query_scope q "
-                    "JOIN samples s ON s.id=q.sample WHERE q.item=?",
-                    (item_id,),
-                )
-                if sid in scope
-            )
+        witnesses = self._db.execute(
+            """SELECT sample_key,candidate_id,mz,rt,peak,sample_stem
+            FROM review_witnesses WHERE item=?
+              AND sample IN (SELECT value FROM json_each(?))
+            ORDER BY candidate_id,sample_key""",
+            (item_id, self._scope(scope)),
         )
-        # Candidate identity is independent of the requested sample scope.
-        sid = db.execute(
-            "SELECT s.sample_key FROM query_witnesses w JOIN "
-            "candidates c ON c.id=w.candidate "
-            "JOIN samples s ON s.id=c.sample WHERE w.item=? ORDER BY w.ordinal LIMIT 1",
-            (item_id,),
-        ).fetchone()
         return IndexedItem(
-            kind, identifier, gid, samples, sid[0] if sid else None, witnesses
+            item.kind,
+            item.identifier,
+            item.group_id,
+            tuple(row[0] for row in samples),
+            item.sample_id,
+            tuple(witnesses),
         )
-
-    def related_item(self, item_id: int) -> tuple[int, tuple[str, ...]] | None:
-        db = self._db
-        peer = db.execute(
-            "SELECT p.peer FROM query_peers p JOIN query_items i ON i.id=p.peer "
-            "WHERE p.item=? GROUP BY p.peer "
-            "ORDER BY MIN(p.priority),MIN(p.edge_ref),i.sort_key LIMIT 1",
-            (item_id,),
-        ).fetchone()
-        if peer is None:
-            return None
-        refs = tuple(
-            row[0]
-            for row in db.execute(
-                "SELECT edge_ref FROM query_peers "
-                "WHERE item=? AND peer=? ORDER BY edge_ref",
-                (item_id, peer[0]),
-            )
-        )
-        return peer[0], refs

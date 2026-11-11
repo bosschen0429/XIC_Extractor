@@ -81,7 +81,6 @@ class _GroupingPartition:
     excluded_candidates: tuple[()] = ()
     method_assessments: tuple[()] = ()
     initial_groups: tuple[()] = ()
-    initial_edges: tuple[()] = ()
     capture_evidence: tuple[()] = ()
 
 

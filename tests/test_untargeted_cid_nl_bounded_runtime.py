@@ -912,9 +912,9 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         assert connection.execute("SELECT COUNT(*) FROM candidates").fetchone()[
             0
         ] == len(candidate_by_id)
-        assert connection.execute(
-            "SELECT COUNT(*) FROM records WHERE kind = 'method_assessments'"
-        ).fetchone()[0] == len(result.method_assessments)
+        assert connection.execute("SELECT COUNT(*) FROM method_assessments").fetchone()[
+            0
+        ] == len(result.method_assessments)
 
 
 @pytest.mark.parametrize("subjects_per_partition", [1, 2])
@@ -1089,7 +1089,7 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
     )
 
     candidate_id = plan.subject_batch.candidate_memberships[0][0]
-    records = []
+    details = []
     for name, completed in (("eager", eager), ("bounded", bounded)):
         matrix = tmp_path / f"{name}.tsv"
         render("matrix", matrix, completed.application_result)
@@ -1101,9 +1101,8 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
             matrix_path=matrix,
             alignment_config=config,
         )
-        detail = read_alignment_explanation(report, candidate_id=candidate_id)
-        records.append(detail["records"])
-    assert records[0] == records[1]
+        details.append(read_alignment_explanation(report, candidate_id=candidate_id))
+    assert details[0] == details[1]
 
 
 @pytest.mark.parametrize("failure_seam", ["later_partition", "later_spool"])
@@ -2103,7 +2102,6 @@ def test_sparse_recovery_partition_matches_dense_composition(
         }
     assert dense_composition.children == sparse_composition.children
     assert dense_composition.initial_groups == sparse_composition.initial_groups
-    assert dense_composition.initial_edges == sparse_composition.initial_edges
     assert (
         dense_composition.excluded_candidates == sparse_composition.excluded_candidates
     )

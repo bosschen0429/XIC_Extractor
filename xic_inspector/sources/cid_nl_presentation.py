@@ -1,7 +1,7 @@
 """Stateless CID-NL labels and presentation for already-selected evidence.
 
-The source owns loading, sample scope and evidence relationships. These functions
-consume its records, explicit scope and projected curves without accessing the
+The source owns loading, sample scope and evidence cards. These functions
+consume its cards, explicit scope and projected curves without accessing the
 source, reading payloads or validating scientific evidence.
 """
 
@@ -14,9 +14,8 @@ from typing import TYPE_CHECKING, Any
 from xic_inspector.selection.canonical import CanonicalItem
 
 if TYPE_CHECKING:
-    from xic_extractor.alignment_explanation.storage import (
-        RecordKey,
-    )
+    from xic_extractor.alignment_explanation.reader import GroupEvidence
+    from xic_inspector.sources.cid_nl import Card, CardRef, ItemEvidence
 
 _RECORD_TITLES = {
     "rows": "結果列與輸出去向",
@@ -25,7 +24,6 @@ _RECORD_TITLES = {
     "terminal_subjects": "終端觀察紀錄",
     "method_subjects": "方法條件",
     "method_assessments": "方法評估紀錄",
-    "initial_edges": "初始關聯紀錄",
     "exclusions": "候選排除紀錄",
     "capture_evidence": "曲線擷取關係",
 }
@@ -42,9 +40,6 @@ _FIELD_LABELS = {
     "method_result": "方法結果",
     "reason_codes": "方法判定理由",
     "technical_state": "技術狀態",
-    "decision": "初始判定",
-    "failure_reason": "未建立關聯理由",
-    "score": "初始關聯分數",
     "neutral_loss_da": "中性丟失 (Da)",
     "precursor_mz": "前驅離子 m/z",
     "rt_apex_min": "峰頂 RT (min)",
@@ -101,26 +96,24 @@ _RESULT_VARIANT_LABELS = {
 }
 
 
-def related_group(
-    item: CanonicalItem,
-    edge_refs: tuple[str, ...],
-    curves: list[dict[str, Any]],
-) -> dict[str, Any]:
-    source = item.details["source"]
-    group_id = source.get("feature_id")
-    route = source.get("route", {})
-    reason = route.get(
-        "reason", source.get("reason", source.get("disposition", "unavailable"))
-    )
+def group_facts(group: GroupEvidence) -> dict[str, Any]:
+    """A final group as its evidence card shows it."""
     return {
-        "id": item.serialized_ref,
-        "label": f"相關分組 {group_id or item.identifier}",
-        "group_id": group_id or item.identifier,
-        "edge_refs": list(edge_refs),
-        "reason": reason,
-        "sample_ids": list(item.sample_ids),
-        "witnesses": [asdict(witness) for witness in item.witnesses],
-        "curves": curves,
+        "disposition": group.disposition,
+        **({} if group.feature_id is None else {"feature_id": group.feature_id}),
+        "member_subjects": group.members,
+        "xic_extractions": group.xic_extractions,
+    }
+
+
+def row_facts(group: GroupEvidence) -> dict[str, Any] | None:
+    """A published row and its output destination, as its card shows it."""
+    if group.feature_id is None:
+        return None
+    return {
+        "feature_id": group.feature_id,
+        "membership_risk_flags": group.risk_flags,
+        "route": {"destination": group.destination, "reason": group.disposition},
     }
 
 
@@ -149,18 +142,18 @@ def _decision_reason(cells: list[dict[str, Any]]) -> str:
 
 def readable_record(
     item: CanonicalItem,
-    record: dict[str, Any],
-    available_refs: set[RecordKey],
+    card: Card,
+    available_refs: set[Any],
     *,
     scope: tuple[list[str], list[str]],
     sample_labels: dict[str, str],
 ) -> dict[str, Any]:
-    kind = record["kind"]
-    facts = record["facts"]
+    kind = card.kind
+    facts = card.facts
     sample_ids, candidate_ids = scope
     title = _RECORD_TITLES.get(kind, f"{kind} 來源紀錄")
     return {
-        "ref": record["ref"],
+        "ref": card.ref,
         "title": title,
         "summary": _record_summary(
             item, kind, facts, sample_ids, candidate_ids, title, sample_labels
@@ -168,10 +161,10 @@ def readable_record(
         "sample_ids": sample_ids,
         "candidate_ids": candidate_ids,
         "fields": _record_fields(facts),
-        "links": _record_links(facts, record["ref"], available_refs),
+        "links": _card_links(facts, card.ref, available_refs),
         "technical_refs": _technical_refs(
             facts,
-            first={"label": "來源紀錄 ID", "value": record["ref"]},
+            first={"label": "來源紀錄 ID", "value": card.ref},
         ),
     }
 
@@ -266,31 +259,6 @@ def _record_summary(
             f"；理由：{readable_reasons}" if readable_reasons else "；未記錄理由"
         )
         return f"{result_text}{reason_text}。此相關方法判定不代表正式定量採用。"
-    if kind == "initial_edges":
-        evidence = facts.get("initial_evidence")
-        evidence = evidence if isinstance(evidence, dict) else {}
-        disposition = facts.get("disposition")
-        decision = evidence.get("decision")
-        failure = evidence.get(
-            "failure_reason", evidence.get("failure", evidence.get("reason"))
-        )
-        score = evidence.get("score")
-        parts = []
-        if disposition not in (None, ""):
-            parts.append(f"記錄狀態為「{disposition}」")
-        if decision not in (None, ""):
-            parts.append(f"初始判定為「{decision}」")
-        if failure not in (None, ""):
-            readable_failure = (
-                _REASON_LABELS.get(failure, failure)
-                if isinstance(failure, str)
-                else str(failure)
-            )
-            parts.append(f"理由：{readable_failure}")
-        if score is not None:
-            parts.append(f"score {_format_measurement(score)}")
-        detail = "；".join(parts) if parts else "來源未記錄初始配對判定"
-        return f"{detail}。此相關初始配對不代表正式定量採用。"
     if kind == "exclusions":
         state = facts.get("peak_status")
         reason = facts.get("reason_code")
@@ -501,25 +469,6 @@ def _record_fields(facts: dict[str, Any]) -> list[dict[str, Any]]:
                             "value": _format_fixed(apex, 3),
                         }
                     )
-    initial = facts.get("initial_evidence")
-    if isinstance(initial, dict):
-        add("decision", initial.get("decision"))
-        failure = initial.get(
-            "failure_reason", initial.get("failure", initial.get("reason"))
-        )
-        if failure not in (None, ""):
-            readable_failure = (
-                _REASON_LABELS.get(failure, failure)
-                if isinstance(failure, str)
-                else str(failure)
-            )
-            fields.append(
-                {
-                    "label": _FIELD_LABELS["failure_reason"],
-                    "value": readable_failure,
-                }
-            )
-        add("score", initial.get("score"))
     return dedupe_entries(fields)
 
 
@@ -555,8 +504,8 @@ def _format_measurement(value: Any) -> Any:
     return f"{value:,.4f}".rstrip("0").rstrip(".")
 
 
-def _record_links(
-    facts: dict[str, Any], current_ref: RecordKey, available_refs: set[RecordKey]
+def _card_links(
+    facts: dict[str, Any], current_ref: CardRef, available_refs: set[Any]
 ) -> list[dict[str, str]]:
     links = []
     for key, label in (
@@ -640,7 +589,7 @@ def dedupe_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def readable_curve(
     item: CanonicalItem,
     curve: dict[str, Any],
-    available_refs: set[RecordKey],
+    available_refs: set[Any],
 ) -> dict[str, Any]:
     ref = curve["evidence_ref"]
     sample_ids = [curve["sample_id"]] if curve.get("sample_id") else []
@@ -712,7 +661,7 @@ def readable_curve(
         "sample_ids": sample_ids,
         "candidate_ids": candidate_ids,
         "fields": dedupe_entries(fields),
-        "links": _record_links(facts, ref, available_refs),
+        "links": _card_links(facts, ref, available_refs),
         "technical_refs": _technical_refs(
             facts,
             first={"label": "曲線 evidence ref", "value": ref},
@@ -728,13 +677,7 @@ def _decision_label(cells):
     cell = cells[0]
     value = cell["quantitative_value"]
     if value is None:
-        variant = cell.get("variant")
-        variant_label = {
-            "not_searched": "未搜尋",
-            "rejected_observation": "觀察未採用",
-            "unavailable": "無可用觀察",
-            "unresolved": "決策未解決",
-        }.get(variant)
+        variant_label = _RESULT_VARIANT_LABELS.get(cell.get("variant"))
         if variant_label:
             return variant_label
         return "記錄為空值"
@@ -745,13 +688,10 @@ def _decision_label(cells):
     return "已保留數值"
 
 
-def _item_labels(item, samples, route):
+def _item_labels(view: ItemEvidence, samples, route):
     """Describe recorded outcomes without promoting them to scientific claims."""
-    group: dict[str, Any] = next(
-        (r["facts"] for r in item.details["records"] if r["kind"] == "final_groups"),
-        {},
-    )
-    state = group.get("disposition", route.get("reason"))
+    item = view.item
+    state = view.state
     title, outcome = {
         "established": ("已建立分組", "本次已建立分組"),
         "provisional": ("暫定分組", "本次分組仍為暫定"),
@@ -815,14 +755,7 @@ def _item_labels(item, samples, route):
         "matrix": "結果去向為定量矩陣",
         "archive": "結果留存於封存紀錄，未列入定量矩陣",
     }.get(destination, "未記錄輸出去向")
-    losses = sorted(
-        {
-            record["facts"]["neutral_loss_da"]
-            for record in item.details["records"]
-            if record["kind"] == "method_subjects"
-            and isinstance(record["facts"].get("neutral_loss_da"), (int, float))
-        }
-    )
+    losses = view.losses
     reason_label = f"{outcome}，{population}；{route_outcome}。"
     attention = _attention_reason_label(item, samples)
     if attention:
@@ -851,43 +784,39 @@ def _attention_reason_label(item, samples) -> str:
     entries = []
     for trigger in item.details.get("attention_triggers", []):
         reason_codes = trigger.get("reason_codes") or [trigger.get("reason")]
-        reasons = []
-        for code in reason_codes:
-            if not isinstance(code, str) or not code:
-                continue
-            label = _REASON_LABELS.get(code)
-            reasons.append(f"{label}（{code}）" if label else code)
-        if not reasons:
+        codes = tuple(code for code in reason_codes if isinstance(code, str) and code)
+        if not codes:
             continue
-        affected = [
-            sample_labels.get(sample_id, sample_id)
-            for sample_id in trigger.get("sample_ids", [])
-            if isinstance(sample_id, str)
+        reasons = [
+            f"{_REASON_LABELS[code]}（{code}）" if code in _REASON_LABELS else code
+            for code in codes
         ]
+        sample_ids = tuple(
+            sorted(sid for sid in trigger.get("sample_ids", []) if isinstance(sid, str))
+        )
+        affected = [sample_labels.get(sample_id, sample_id) for sample_id in sample_ids]
         subject = "、".join(affected) if affected else "本項目"
         prefix = "相關方法評估為 HOLD：" if trigger.get("reason") == "HOLD" else ""
-        entries.append(f"{subject}：{prefix}{'、'.join(reasons)}")
+        entries.append((sample_ids, codes, f"{subject}：{prefix}{'、'.join(reasons)}"))
     if not entries:
         return ""
-    return (
-        "需留意原因（不代表正式定量採用）：" + "；".join(dict.fromkeys(entries)) + "。"
-    )
+    # The same facts read the same way after record renumbering: order by the
+    # affected samples and reason codes, not the storage refs of their evidence.
+    ordered = dict.fromkeys(text for _, _, text in sorted(entries))
+    return "需留意原因（不代表正式定量採用）：" + "；".join(ordered) + "。"
 
 
 def build_sample(
-    item: CanonicalItem,
+    view: ItemEvidence,
     sid: str,
     *,
     fallback_sample_label: str,
-    decision_refs: list[RecordKey],
+    decision_refs: list[CardRef],
     projected_curves: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Present one already-scoped sample and its exact decision references."""
-    cells = [
-        c
-        for c in item.details["cells"]
-        if c.get("sample_key", c.get("sample_id")) == sid
-    ]
+    item = view.item
+    cells = [c for c in view.cells if c["sample_key"] == sid]
     values = [c["quantitative_value"] for c in cells]
     return {
         "sample_id": sid,
@@ -899,15 +828,15 @@ def build_sample(
             ),
             fallback_sample_label,
         ),
-        "status_kind": item.details["sample_status"][sid],
-        "support_origin": item.details["support_origins"][sid],
+        "status_kind": view.sample_status[sid],
+        "support_origin": view.support_origins[sid],
         "status_label": {
             "attention": "需留意",
             "excluded": "已排除",
             "null": "空值",
             "zero": "真實零值",
             "rest": "有定量值" if len(values) == 1 else "有結果紀錄",
-        }.get(item.details["sample_status"][sid], "未提供定量決策"),
+        }.get(view.sample_status[sid], "未提供定量決策"),
         **({"quantitative_value": values[0]} if len(values) == 1 else {}),
         "decision_reason": _decision_reason(cells),
         "signal_quality": [
@@ -929,23 +858,18 @@ def build_sample(
 
 
 def build_render_item(
-    item: CanonicalItem,
+    view: ItemEvidence,
     *,
     samples: list[dict[str, Any]],
     projected_curves: list[dict[str, Any]],
     readable_records: list[dict[str, Any]],
     measured_mz_by_candidate: Mapping[tuple[str, str], float | None],
     relationship_members: list[dict[str, Any]],
-    internal_pair_support: list[dict[str, Any]],
-    relationship_availability: str,
-    related_groups: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Assemble presentation from selected evidence; never select or reload it."""
-    source = item.details["source"]
-    route = source.get("route", {})
-    reason = route.get(
-        "reason", source.get("reason", source.get("disposition", "unavailable"))
-    )
+    item = view.item
+    route = view.route
+    reason = view.reason
     return {
         "id": item.serialized_ref,
         "kind": item.kind,
@@ -955,7 +879,7 @@ def build_render_item(
         "rt_apex_min": item.witnesses[0].rt_apex_min if item.witnesses else None,
         "reason": reason,
         "route": route,
-        **_item_labels(item, samples, route),
+        **_item_labels(view, samples, route),
         "samples": samples,
         "witnesses": [
             {
@@ -969,29 +893,17 @@ def build_render_item(
         ],
         "matched_refs": [asdict(w) for w in item.matched_witnesses],
         "details": {
-            **item.details,
+            "attention_triggers": item.details["attention_triggers"],
             "readable_records": readable_records,
         },
-        "review_summary": item.details["review_summary"],
+        "review_summary": view.review_summary,
         "relationship_members": relationship_members,
-        "relationship_availability": relationship_availability,
-        **(
-            {"internal_pair_support": internal_pair_support}
-            if internal_pair_support
-            else {}
-        ),
-        "related_groups": related_groups,
         "curves": projected_curves,
     }
 
 
-def related_record_link(kind: str, ref: str) -> dict[str, str]:
-    label = (
-        "查看相關方法判定（不代表正式定量採用）"
-        if kind == "method_assessments"
-        else "查看相關初始配對（不代表正式定量採用）"
-    )
-    return {"ref": ref, "label": label}
+def related_assessment_link(ref: CardRef) -> dict[str, Any]:
+    return {"ref": ref, "label": "查看相關方法判定（不代表正式定量採用）"}
 
 
 def curve_stage_label(kind: Any) -> str:

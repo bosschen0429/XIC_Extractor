@@ -1,50 +1,43 @@
 """Load and scope retained CID-NL evidence for the shared Inspector.
 
-The scientific reader owns payload validation. This adapter owns record kinds,
-scoped status interpretation and curve projection; cid_nl_relationships derives
-evidence relationships, while cid_nl_presentation assembles labels and readable
-records.
+The scientific reader owns payload validation and reads each concept once. This
+adapter scopes an item to its candidates, builds the item's evidence cards from
+the concepts those candidates relate to, and projects curves;
+cid_nl_presentation assembles labels and readable cards.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import replace
+import json
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
-    ExplanationMetadata,
-    open_review_cells,
+    CandidateKey,
+    GroupEvidence,
+    ReviewEvidence,
     read_alignment_curves,
     read_alignment_explanation,
-    read_explanation_metadata,
-    read_explanation_selection,
-    read_review_row_samples,
+    read_review_evidence,
 )
 from xic_extractor.alignment_explanation.review import (
-    ATTENTION,
-    EXCLUDED,
-    NULL_CELL,
-    OBSERVED,
-    ORIGIN_FLAGS,
-    REVIEW_SCHEMA_VERSION,
-    ZERO_CELL,
-    selection_sample_facts,
+    assessment_attention,
+    cell_attention,
+    group_attention,
 )
-from xic_extractor.alignment_explanation.review import (
-    attention_reason as _attention_reason,
-)
-from xic_extractor.alignment_explanation.storage import RecordKey
 from xic_inspector.selection.canonical import (
     CanonicalItem,
+    Witness,
     build_canonical_ref,
 )
 from xic_inspector.selection.strata import classify_scoped_stratum
 from xic_inspector.sources import cid_nl_presentation as presentation
-from xic_inspector.sources import cid_nl_relationships as relationships
 from xic_inspector.sources.rt_replay import align_curve, read_calibration
+
+CardRef = str | tuple[str, str]
 
 
 def read_summary(path: str | Path) -> dict[str, Any]:
@@ -52,562 +45,475 @@ def read_summary(path: str | Path) -> dict[str, Any]:
     return read_alignment_explanation(path)
 
 
-class CidNlSource:
-    """One report's metadata projection and selected evidence retrieval."""
+@dataclass(frozen=True, slots=True)
+class Card:
+    """One evidence card as presented: a recorded fact, and which of the item's
+    samples and candidates it concerns."""
 
-    def __init__(
-        self,
-        path: Path,
-        *,
-        metadata: ExplanationMetadata | None = None,
-        query_only: bool = False,
-    ) -> None:
-        self.path = path
-        from_selection = metadata is not None
-        metadata = metadata or read_explanation_metadata(
-            path, selection_only=True, query_only=query_only
-        )
-        self.summary = metadata.summary
-        self._compact_selection = (
-            not from_selection
-            and self.summary["schema_version"] == REVIEW_SCHEMA_VERSION
-        )
-        self._query_only = self._compact_selection and query_only
-        self._row_samples = read_review_row_samples(path) if self._query_only else {}
-        self._selection_cells: (
-            Callable[[str], dict[tuple[str, str], dict[str, Any]]] | None
-        ) = None
-        self.attempt_id = self.summary.get("processing_attempt_id", "")
-        self.records = metadata.records
-        self.candidates = metadata.candidates
-        self.links, self.record_links = relationships.index_record_links(metadata.links)
-        self.initial_edge_refs_by_member = relationships.index_member_edges(
-            self.records
-        )
-        self.sample_labels: dict[str, str] = {}
-        self.row_cell_decisions: dict[
-            tuple[str, str], dict[RecordKey, dict[str, Any]]
-        ] = {}
-        self.related_items: dict[str, list[tuple[CanonicalItem, tuple[str, ...]]]] = {}
+    kind: str
+    ref: CardRef
+    facts: dict[str, Any]
+    keys: frozenset[CandidateKey]
+    samples: frozenset[str]
 
-        for sample in self.summary.get("samples", []):
-            sid = sample.get("sample_key")
-            sample_stem = sample.get("sample_stem")
-            if isinstance(sid, str) and isinstance(sample_stem, str):
-                self.sample_labels[sid] = sample_stem
-        self.rt_calibration = read_calibration(self.summary["sample_rt_calibration"])
-        for (_, sid), candidate in self.candidates.items():
-            sample_stem = candidate.get("sample_stem")
-            if isinstance(sample_stem, str) and sample_stem:
-                self.sample_labels.setdefault(sid, sample_stem)
-        for rid, fact in self.records.get("cell_decisions", {}).items():
-            group_id = fact.get("feature_id")
-            row_key_id = fact.get("feature_id")
-            if isinstance(group_id, str) and isinstance(row_key_id, str):
-                self.row_cell_decisions.setdefault((group_id, row_key_id), {})[rid] = (
-                    fact
-                )
 
-    def load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
-        if self._compact_selection and not self._query_only:
-            with open_review_cells(self.path, self.summary) as read_cells:
-                self._selection_cells = read_cells
-                try:
-                    return self._load_items(sample_ids)
-                finally:
-                    self._selection_cells = None
-        return self._load_items(sample_ids)
+@dataclass(frozen=True, slots=True)
+class ItemEvidence:
+    """One scoped review item: its state, computed from the evidence, and the
+    cards it is presented with."""
 
-    def _load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
-        items = []
-        build_item = (
-            self._selection_item if self._compact_selection else self._presentation_item
-        )
-        item_keys: dict[str, set[tuple[str, str]]] = {}
-        row_groups = set()
-        grouped = set()
-        # Construct the run population before applying sample scope.
-        for rid, payload in self.records.get("rows", {}).items():
-            gid = payload.get("feature_id")
-            row_groups.add(gid)
-            keys = relationships.linked_candidates(self.record_links, "rows", rid)
-            grouped.update(keys)
-            item = build_item("row", rid, gid, keys, sample_ids, payload)
-            items.append(item)
-            item_keys[item.serialized_ref] = keys
-        for gid, payload in self.records.get("final_groups", {}).items():
-            keys = relationships.linked_candidates(
-                self.record_links, "final_groups", gid
-            )
-            grouped.update(keys)
-            if gid not in row_groups:
-                item = build_item("group", gid, gid, keys, sample_ids, payload)
-                items.append(item)
-                item_keys[item.serialized_ref] = keys
-        for key, payload in self.candidates.items():
-            if key not in grouped:
-                item = build_item("candidate", key[0], None, {key}, sample_ids, payload)
-                items.append(item)
-                item_keys[item.serialized_ref] = {key}
-        self.related_items.update(
-            relationships.related_items(
-                self.records, self.record_links, items, item_keys
-            )
-        )
-        for item in items:
-            item.details["review_summary"]["related_group_count"] = len(
-                self.related_items[item.serialized_ref]
-            )
-        return sorted(items, key=lambda item: item.sort_key)
+    item: CanonicalItem
+    cards: tuple[Card, ...]
+    route: dict[str, Any]
+    reason: Any
+    state: Any
+    losses: tuple[float, ...]
+    cells: tuple[dict[str, Any], ...]
+    sample_status: dict[str, str]
+    support_origins: dict[str, dict[str, Any]]
+    review_summary: dict[str, Any]
+    members: tuple[dict[str, Any], ...]
+    measured_mz: dict[CandidateKey, float | None]
 
-    def _selection_item(
-        self, kind, identifier, gid, keys, scope, payload
-    ) -> CanonicalItem:
-        """Reduce scoped facts once; never construct per-sample presentation."""
-        scoped = sorted(key for key in keys if key[1] in scope)
-        sample_ids = {sid for _, sid in scoped}
-        witnesses = relationships.witnesses(
-            self.records, self.candidates, self.links, kind, identifier, gid, scoped
-        )
-        if self._query_only:
-            sample_ids.update(self._row_samples.get(identifier, set()) & scope)
-            _, ref = build_canonical_ref(
-                kind,
-                self.attempt_id,
-                identifier,
-                sample_id=next(iter(keys))[1] if kind == "candidate" else None,
-            )
-            return CanonicalItem(
-                kind=kind,
-                attempt_id=self.attempt_id,
-                identifier=identifier,
-                serialized_ref=ref,
-                sample_ids=tuple(sorted(sample_ids)),
-                witnesses=tuple(witnesses),
-                stratum="unclassified",
-                details={"review_summary": {}},
-            )
-        cells: tuple[dict[str, Any], ...] = ()
-        if kind == "row":
-            assert self._selection_cells is not None
-            cells = tuple(
-                cell
-                for cell in self._selection_cells(identifier).values()
-                if cell["sample_key"] in scope
-            )
-        flags = selection_sample_facts(
-            kind,
-            identifier,
-            gid,
-            scoped,
-            self.candidates,
-            self.records,
-            self.links,
-            cells,
-            {w.sample_key for w in witnesses if w.observation_id},
-        )
-        sample_ids = set(flags)
-        observed = {sid for sid, flag in flags.items() if flag & OBSERVED}
-        group = self.records.get("final_groups", {}).get(gid, {})
-        attention = group.get("disposition") in ("provisional", "unresolved") or any(
-            flag & ATTENTION for flag in flags.values()
-        )
-        excluded = any(flag & EXCLUDED for flag in flags.values())
-        has_null = any(flag & NULL_CELL for flag in flags.values())
-        has_zero = any(flag & ZERO_CELL for flag in flags.values())
-        origins = {
-            sid: next(
-                (origin for origin, bit in ORIGIN_FLAGS.items() if flag & bit),
-                "unavailable",
-            )
-            for sid, flag in flags.items()
-        }
-        members = group.get("member_subjects", [])
-        _, ref = build_canonical_ref(
-            kind,
-            self.attempt_id,
-            identifier,
-            sample_id=next(iter(keys))[1] if kind == "candidate" else None,
-        )
-        return CanonicalItem(
-            kind=kind,
-            attempt_id=self.attempt_id,
-            identifier=identifier,
-            serialized_ref=ref,
-            sample_ids=tuple(sorted(sample_ids)),
-            witnesses=tuple(witnesses),
-            stratum=classify_scoped_stratum(
-                is_attention=attention,
-                is_excluded=excluded,
-                has_null_cell=has_null,
-                has_zero_cell=has_zero,
-            ),
-            is_attention=attention,
-            details={
-                "review_summary": {
-                    "observed_sample_count": len(observed & sample_ids),
-                    "scope_sample_count": len(sample_ids),
-                    "origin_kinds": sorted(
-                        {origins.get(sid, "unavailable") for sid in sample_ids}
-                    ),
-                    "initial_member_count": len(keys),
-                    "final_member_count": len(members)
-                    if "member_subjects" in group
-                    else len(keys),
-                    "related_group_count": 0,
-                }
-            },
-        )
 
-    def _presentation_item(
-        self, kind, identifier, gid, keys, scope, payload
-    ) -> CanonicalItem:
-        scoped = sorted(key for key in keys if key[1] in scope)
-        facts: dict[tuple[str, RecordKey], dict[str, Any]] = {}
-        fact_samples: dict[tuple[str, RecordKey], set[str]] = {}
-        cell_bound_samples: set[str] = set()
-        rid: RecordKey
-        witnesses = relationships.witnesses(
-            self.records, self.candidates, self.links, kind, identifier, gid, scoped
+def _candidate_ref(key: CandidateKey) -> str:
+    return json.dumps(key, separators=(",", ":"))
+
+
+Linked = dict[str, tuple[dict[str, Any], set[CandidateKey]]]
+
+
+def build_item_evidence(
+    evidence: ReviewEvidence,
+    attempt_id: str,
+    kind: str,
+    identifier: str,
+    gid: str | None,
+    keys: Iterable[CandidateKey],
+    scope: set[str],
+) -> ItemEvidence:
+    """Scope one item to its candidates, compute its state from their facts and
+    the group's cells, then build its cards for presentation."""
+    keys = set(keys)
+    scoped = sorted(key for key in keys if key[1] in scope)
+    group = evidence.groups.get(gid) if gid is not None else None
+    subjects: Linked = {}
+    assessments: Linked = {}
+    initial: Linked = {}
+    curves: Linked = {}
+    groups: dict[str, set[CandidateKey]] = {}
+
+    def link(found: Linked, ref: str, facts: dict[str, Any], key) -> None:
+        found.setdefault(ref, (facts, set()))[1].add(key)
+
+    for key in scoped:
+        candidate = evidence.candidates[key]
+        link(subjects, candidate.method_subject_id, candidate.method_subject, key)
+        for ref, assessment in candidate.assessments:
+            link(assessments, ref, assessment, key)
+        for ref in candidate.groups:
+            # A candidate's other recorded rows belong to their own items.
+            if evidence.groups[ref].feature_id in (None, gid):
+                groups.setdefault(ref, set()).add(key)
+        for ref in candidate.initial_groups:
+            link(initial, ref, evidence.initial_groups[ref], key)
+        for ref in candidate.curves:
+            if evidence.curves[ref]["sample_id"] == key[1]:
+                link(curves, ref, evidence.curves[ref], key)
+    excluded_keys = [key for key in scoped if evidence.candidates[key].exclusion]
+    cells = [
+        {**cell, "quantitative_value": cell["value"]}
+        for sid, cell in sorted(group.cells.items() if kind == "row" and group else ())
+        if sid in scope
+    ]
+    cells_by_sample = {cell["sample_key"]: cell for cell in cells}
+    witnesses = _witnesses(evidence, kind, identifier, gid, group, scoped)
+
+    triggers: list[dict[str, Any]] = []
+    if group is not None and group_attention(group.disposition):
+        triggers.append({"scope": "group", "ref": gid, "reason": group.disposition})
+    for sid, cell in cells_by_sample.items():
+        reason = cell_attention(
+            cell["variant"],
+            cell["value"],
+            any(risk.get("risk_flags") for risk in cell["membership_risks"]),
         )
-        for cid, sid in scoped:
-            linked = self.links.get((cid, sid), set())
-            for record_kind, rid in linked:
-                fact = self.records.get(record_kind, {}).get(rid, {})
-                fact_sid = fact.get("sample_key", fact.get("sample_id"))
-                if fact_sid is not None and fact_sid != sid:
-                    continue
-                if fact.get("feature_id") not in (None, gid):
-                    continue
-                if kind == "row" and fact.get("feature_id") not in (None, identifier):
-                    continue
-                facts[record_kind, rid] = fact
-                fact_samples.setdefault((record_kind, rid), set()).add(sid)
-        if kind == "row" and isinstance(gid, str):
-            indexed_cells = self.row_cell_decisions.get((gid, identifier), {})
-            for rid, fact in sorted(indexed_cells.items()):
-                sid = fact.get("sample_key", fact.get("sample_id"))
-                if not isinstance(sid, str) or sid not in scope:
-                    continue
-                facts["cell_decisions", rid] = fact
-                fact_samples.setdefault(("cell_decisions", rid), set()).add(sid)
-                cell_bound_samples.add(sid)
-                observation_id = fact.get("cell_observation_id")
-                if not isinstance(observation_id, str):
-                    continue
-                observation = self.records.get("cell_observations", {}).get(
-                    observation_id
-                )
-                if not isinstance(observation, dict):
-                    continue
-                observation_sid = observation.get(
-                    "sample_key", observation.get("sample_id")
-                )
-                if (
-                    observation.get("feature_id") != gid
-                    or observation_sid != sid
-                    or observation.get("feature_id") not in (None, identifier)
-                ):
-                    continue
-                facts["cell_observations", observation_id] = observation
-                fact_samples.setdefault(
-                    ("cell_observations", observation_id), set()
-                ).add(sid)
-        triggers = []
-        group = self.records.get("final_groups", {}).get(gid, {})
-        if group.get("disposition") in ("provisional", "unresolved"):
+        if reason:
             triggers.append(
-                {"scope": "group", "ref": gid, "reason": group["disposition"]}
+                _trigger((identifier, sid), reason, {sid}, cell["reason_codes"])
             )
-        cells = []
-        excluded = False
-        for (record_kind, rid), fact in sorted(facts.items()):
-            reason = _attention_reason(record_kind, fact)
-            if record_kind == "cell_decisions":
-                value = fact.get("value", fact.get("quantitative_value"))
-                cells.append({**fact, "quantitative_value": value})
-            elif record_kind == "exclusions":
-                excluded = True
-            if reason:
-                trigger = {
-                    "scope": "sample",
-                    "ref": rid,
-                    "reason": reason,
-                    "sample_ids": sorted(fact_samples[record_kind, rid]),
-                }
-                reason_codes = fact.get("reason_codes")
-                if isinstance(reason_codes, list):
-                    trigger["reason_codes"] = [
-                        code for code in reason_codes if isinstance(code, str)
-                    ]
-                triggers.append(trigger)
-        stratum = classify_scoped_stratum(
-            is_attention=bool(triggers),
-            is_excluded=excluded,
-            has_null_cell=any(c["quantitative_value"] is None for c in cells),
-            has_zero_cell=any(c["quantitative_value"] == 0 for c in cells),
-        )
-        sample_status = {}
-        item_sample_ids = {sid for _, sid in scoped} | cell_bound_samples
-        for sid in sorted(item_sample_ids):
-            local_cells = [
-                c for c in cells if c.get("sample_key", c.get("sample_id")) == sid
-            ]
-            local_attention = any(
-                sid in trigger.get("sample_ids", ()) for trigger in triggers
-            )
-            local_excluded = any(
-                kind == "exclusions" and sid in fact_samples[kind, rid]
-                for kind, rid in facts
-            )
-            sample_status[sid] = (
-                classify_scoped_stratum(
-                    is_attention=local_attention,
-                    is_excluded=local_excluded,
-                    has_null_cell=any(
-                        c["quantitative_value"] is None for c in local_cells
-                    ),
-                    has_zero_cell=any(
-                        c["quantitative_value"] == 0 for c in local_cells
-                    ),
+    for ref, (assessment, linked) in sorted(assessments.items()):
+        reason = assessment_attention(assessment["method_result"])
+        if reason:
+            triggers.append(
+                _trigger(
+                    ref,
+                    reason,
+                    {sid for _, sid in linked},
+                    assessment["reason_codes"],
                 )
-                if local_cells or local_attention or local_excluded
-                else "unavailable"
             )
-        _, ref = build_canonical_ref(
-            kind,
-            self.attempt_id,
-            identifier,
-            sample_id=next(iter(keys))[1] if kind == "candidate" else None,
-        )
-        support_observations = {
-            sid: self._support_observation_refs(sid, gid, group, witnesses, facts)
-            for sid in sorted(item_sample_ids)
-        }
-        origins = {
-            sid: self._support_origin(sid, support_observations[sid], facts)
-            for sid in sorted(item_sample_ids)
-        }
-        initial_member_ids = {
-            member.get("subject_id")
-            for initial_ref, fact in self.records.get("initial_groups", {}).items()
-            if any(
-                ("initial_groups", initial_ref) in self.links.get(key, set())
-                for key in scoped
+    excluded = {sid for _, sid in excluded_keys}
+    stratum = classify_scoped_stratum(
+        is_attention=bool(triggers),
+        is_excluded=bool(excluded),
+        has_null_cell=any(c["quantitative_value"] is None for c in cells),
+        has_zero_cell=any(c["quantitative_value"] == 0 for c in cells),
+    )
+    sample_ids = sorted({sid for _, sid in scoped} | set(cells_by_sample))
+    sample_status: dict[str, str] = {}
+    for sid in sample_ids:
+        local = cells_by_sample.get(sid)
+        local_attention = any(sid in t.get("sample_ids", ()) for t in triggers)
+        sample_status[sid] = (
+            classify_scoped_stratum(
+                is_attention=local_attention,
+                is_excluded=sid in excluded,
+                has_null_cell=local is not None and local["value"] is None,
+                has_zero_cell=local is not None and local["value"] == 0,
             )
-            for member in fact.get("member_subjects", [])
-            if isinstance(member, dict) and isinstance(member.get("subject_id"), str)
-        }
-        final_members = group.get("member_subjects")
-        review_summary = {
-            "observed_sample_count": len(
-                {sid for sid, refs in support_observations.items() if refs}
-            ),
-            "scope_sample_count": len(item_sample_ids),
-            "origin_kinds": sorted({origin["kind"] for origin in origins.values()}),
-            "initial_member_count": (
-                len(initial_member_ids) if initial_member_ids else len(keys)
-            ),
-            "final_member_count": len(final_members)
-            if isinstance(final_members, list)
-            else len(keys),
-            "related_group_count": 0,
-        }
-        return CanonicalItem(
-            kind=kind,
-            attempt_id=self.attempt_id,
-            identifier=identifier,
-            serialized_ref=ref,
-            sample_ids=tuple(sorted(item_sample_ids)),
-            witnesses=tuple(witnesses),
-            stratum=stratum,
-            is_attention=bool(triggers),
-            details={
-                "source": payload,
-                "cells": cells,
-                "attention_triggers": triggers,
-                "sample_status": sample_status,
-                "support_origins": origins,
-                "review_summary": review_summary,
-                "initial_edge_coverage": self.summary["initial_edge_coverage"],
-                "records": [
-                    {"kind": k, "ref": r, "facts": f}
-                    for (k, r), f in sorted(facts.items())
-                ],
-            },
+            if local is not None or local_attention or sid in excluded
+            else "unavailable"
         )
-
-    @staticmethod
-    def _support_observation_refs(sample_id, group_id, group, witnesses, facts):
-        observation_refs = {
-            witness.observation_id
-            for witness in witnesses
-            if witness.sample_key == sample_id and witness.observation_id
-        }
-        observation_refs.update(
-            observation_id
-            for member in group.get("member_subjects", [])
-            if member.get("sample_key") == sample_id
-            for observation_id in member.get("physical_peak_keys", [])
-            if isinstance(observation_id, str)
+    _, ref = build_canonical_ref(
+        kind,  # type: ignore[arg-type]
+        attempt_id,
+        identifier,
+        sample_id=next(iter(keys))[1] if kind == "candidate" else None,
+    )
+    members = tuple(group.members) if group is not None else ()
+    support_observations = {
+        sid: _support_observation_refs(
+            sid, members, witnesses, cells_by_sample.get(sid)
         )
-        for (record_kind, _), fact in facts.items():
-            if record_kind == "cell_decisions" and fact.get("sample_key") == sample_id:
-                observation_refs.update(fact.get("observation_ids", ()))
-            if record_kind != "cell_observations":
-                continue
-            for predecessor in fact.get("predecessor_cells", []):
-                content = predecessor.get("content", {})
-                if (
-                    content.get("sample_key") == sample_id
-                    and content.get("feature_id") == group_id
-                    and isinstance(content.get("physical_peak_key"), str)
-                ):
-                    observation_refs.add(content["physical_peak_key"])
-        return sorted(observation_refs)
-
-    @staticmethod
-    def _support_origin(sample_id, observation_refs, facts):
-        recorded = {
-            fact["support_origin"]
-            for (kind, _), fact in facts.items()
-            if kind == "cell_decisions"
-            and fact.get("sample_key") == sample_id
-            and "support_origin" in fact
-        }
-        if recorded:
-            kind = next(
-                (
-                    value
-                    for value in (
-                        "backfill_support",
-                        "discovery_support",
-                    )
-                    if value in recorded
-                ),
-                "unavailable",
+        for sid in sample_ids
+    }
+    origins = {
+        sid: _support_origin(
+            sid,
+            support_observations[sid],
+            cells_by_sample.get(sid),
+            curves,
+            assessments,
+        )
+        for sid in sample_ids
+    }
+    initial_member_ids = {
+        member["subject_id"]
+        for record, _ in initial.values()
+        for member in record.get("member_subjects", [])
+    }
+    review_summary = {
+        "observed_sample_count": len(
+            {sid for sid, refs in support_observations.items() if refs}
+        ),
+        "scope_sample_count": len(sample_ids),
+        "origin_kinds": sorted({origin["kind"] for origin in origins.values()}),
+        "initial_member_count": (
+            len(initial_member_ids) if initial_member_ids else len(keys)
+        ),
+        "final_member_count": len(members) if group is not None else len(keys),
+    }
+    item = CanonicalItem(
+        kind=kind,  # type: ignore[arg-type]
+        attempt_id=attempt_id,
+        identifier=identifier,
+        serialized_ref=ref,
+        sample_ids=tuple(sample_ids),
+        witnesses=tuple(witnesses),
+        stratum=stratum,
+        is_attention=bool(triggers),
+        # Selection reads the review facts; rendering presents the triggers.
+        details={"attention_triggers": triggers, "review_summary": review_summary},
+    )
+    row = group if kind == "row" else None
+    route = {"destination": row.destination, "reason": row.disposition} if row else {}
+    cards = [
+        *(
+            Card(card_kind, card_ref, facts, frozenset(linked), _samples(linked))
+            for card_kind, found in (
+                ("method_subjects", subjects),
+                ("method_assessments", assessments),
+                ("initial_groups", initial),
+                ("capture_evidence", curves),
             )
-            return {
-                "kind": kind,
-                "label": presentation.support_origin_label(kind),
-                "method_refs": [],
-                "capture_refs": [],
-                "observation_refs": observation_refs,
-            }
-        observation_set = set(observation_refs)
-        captures = []
-        methods = []
-        for (record_kind, ref), fact in facts.items():
-            fact_sid = fact.get("sample_key", fact.get("sample_id"))
-            if fact_sid != sample_id:
-                continue
-            if (
-                record_kind == "capture_evidence"
-                and fact.get("physical_peak_key") in observation_set
-            ):
-                captures.append((ref, fact))
-            elif (
-                record_kind == "method_assessments"
-                and fact.get("method_result") == "SUPPORT"
-            ):
-                peak_ids = fact.get("candidate_physical_peak_keys", [])
-                if isinstance(peak_ids, list) and observation_set.intersection(
-                    peak_ids
-                ):
-                    methods.append((ref, fact))
+            for card_ref, (facts, linked) in found.items()
+        ),
+        *(
+            Card(
+                card_kind,
+                _candidate_ref(key),
+                facts,
+                frozenset((key,)),
+                frozenset((key[1],)),
+            )
+            for key in scoped
+            for card_kind, facts in (
+                ("exclusions", evidence.candidates[key].exclusion),
+                ("terminal_subjects", evidence.candidates[key].terminal),
+            )
+            if facts is not None
+        ),
+        *(
+            Card(card_kind, group_ref, facts, frozenset(linked), _samples(linked))
+            for group_ref, linked in groups.items()
+            for card_kind, facts in (
+                ("final_groups", presentation.group_facts(evidence.groups[group_ref])),
+                ("rows", presentation.row_facts(evidence.groups[group_ref])),
+            )
+            if facts is not None
+        ),
+        *(
+            Card(
+                "cell_decisions",
+                (identifier, cell["sample_key"]),
+                {
+                    key: value
+                    for key, value in cell.items()
+                    if key != "quantitative_value"
+                },
+                frozenset(),
+                frozenset((cell["sample_key"],)),
+            )
+            for cell in cells
+        ),
+    ]
+    cards.sort(key=lambda card: (card.kind, card.ref))
+    return ItemEvidence(
+        item=item,
+        cards=tuple(cards),
+        route=route,
+        reason=group.disposition if group is not None else "unavailable",
+        # The labels name the first related group's recorded disposition.
+        state=evidence.groups[min(groups)].disposition
+        if groups
+        else route.get("reason"),
+        losses=tuple(
+            sorted(
+                {
+                    facts["neutral_loss_da"]
+                    for facts, _ in subjects.values()
+                    if isinstance(facts["neutral_loss_da"], (int, float))
+                }
+            )
+        ),
+        cells=tuple(cells),
+        sample_status=sample_status,
+        support_origins=origins,
+        review_summary=review_summary,
+        # A featureless group or a candidate names no published row.
+        members=members if kind == "row" else (),
+        measured_mz={
+            key: evidence.candidates[key].fields["ms1_apex_mz"] for key in scoped
+        },
+    )
 
-        capture_kinds = {fact.get("kind") for _, fact in captures}
-        invocations = {fact.get("detector_invocation_id") for _, fact in methods}
-        if (
-            "backfill_observation" in capture_kinds
-            and "untargeted-cid-nl-backfill" in invocations
-        ):
-            kind = "backfill_support"
-        elif "initial_capture" in capture_kinds and any(
-            isinstance(value, str) and value.startswith("untargeted-cid-nl-real-data:")
-            for value in invocations
-        ):
-            kind = "discovery_support"
-        else:
-            kind = "unavailable"
+
+def _samples(keys: Iterable[CandidateKey]) -> frozenset[str]:
+    return frozenset(sid for _, sid in keys)
+
+
+def _trigger(ref, reason, samples, reason_codes) -> dict[str, Any]:
+    return {
+        "scope": "sample",
+        "ref": ref,
+        "reason": reason,
+        "sample_ids": sorted(samples),
+        "reason_codes": [code for code in reason_codes if isinstance(code, str)],
+    }
+
+
+def _witnesses(
+    evidence: ReviewEvidence,
+    kind: str,
+    identifier: str,
+    gid: str | None,
+    group: GroupEvidence | None,
+    scoped: list[CandidateKey],
+) -> list[Witness]:
+    """Each scoped candidate's terminal observation that the group kept."""
+    members_by_sample: dict[str, set[str]] = {}
+    for member in group.members if group is not None else ():
+        members_by_sample.setdefault(member["sample_key"], set()).update(
+            member["physical_peak_keys"]
+        )
+    witnesses: list[Witness] = []
+    for cid, sid in scoped:
+        candidate = evidence.candidates[cid, sid]
+        member_peaks = members_by_sample.get(sid)
+        observations = [
+            observation
+            for observation in (candidate.terminal or {}).get("observations", [])
+            if not member_peaks or observation["physical_peak_key"] in member_peaks
+        ] or [{}]
+        witnesses.extend(
+            Witness(
+                sample_key=sid,
+                candidate_id=cid,
+                group_hypothesis_id=gid,
+                row_key_id=identifier if kind == "row" else None,
+                precursor_mz=candidate.fields["precursor_mz"],
+                rt_apex_min=observation.get("rt_apex_min"),
+                observation_id=observation.get("physical_peak_key"),
+                sample_stem=candidate.fields["sample_stem"],
+            )
+            for observation in observations
+        )
+    return witnesses
+
+
+def _support_observation_refs(sample_id, members, witnesses, cell):
+    refs = {
+        witness.observation_id
+        for witness in witnesses
+        if witness.sample_key == sample_id and witness.observation_id
+    }
+    refs.update(
+        peak
+        for member in members
+        if member["sample_key"] == sample_id
+        for peak in member["physical_peak_keys"]
+    )
+    refs.update(cell["observation_ids"] if cell is not None else ())
+    return sorted(refs)
+
+
+def _support_origin(sample_id, observation_refs, cell, curves, assessments):
+    """The cell's recorded origin; without a cell, derive it from the sample's
+    retained captures and supporting method assessments of its observations."""
+    if cell is not None:
+        kind = cell["support_origin"]
         return {
-            "kind": kind,
-            "label": presentation.support_origin_label(kind),
-            "method_refs": sorted(ref for ref, _ in methods),
-            "capture_refs": sorted(ref for ref, _ in captures),
+            "kind": kind
+            if kind in ("backfill_support", "discovery_support")
+            else "unavailable",
+            "label": presentation.support_origin_label(
+                kind
+                if kind in ("backfill_support", "discovery_support")
+                else "unavailable"
+            ),
+            "method_refs": [],
+            "capture_refs": [],
             "observation_refs": observation_refs,
         }
+    observation_set = set(observation_refs)
+    captures = [
+        (ref, facts)
+        for ref, (facts, _) in curves.items()
+        if facts["sample_id"] == sample_id
+        and facts["physical_peak_key"] in observation_set
+    ]
+    methods = [
+        (ref, facts)
+        for ref, (facts, _) in assessments.items()
+        if facts["sample_key"] == sample_id
+        and facts["method_result"] == "SUPPORT"
+        and observation_set.intersection(facts["candidate_physical_peak_keys"])
+    ]
+    capture_kinds = {facts["kind"] for _, facts in captures}
+    invocations = {facts["detector_invocation_id"] for _, facts in methods}
+    if (
+        "backfill_observation" in capture_kinds
+        and "untargeted-cid-nl-backfill" in invocations
+    ):
+        kind = "backfill_support"
+    elif "initial_capture" in capture_kinds and any(
+        isinstance(value, str) and value.startswith("untargeted-cid-nl-real-data:")
+        for value in invocations
+    ):
+        kind = "discovery_support"
+    else:
+        kind = "unavailable"
+    return {
+        "kind": kind,
+        "label": presentation.support_origin_label(kind),
+        "method_refs": sorted(ref for ref, _ in methods),
+        "capture_refs": sorted(ref for ref, _ in captures),
+        "observation_refs": observation_refs,
+    }
+
+
+class CidNlSource:
+    """A full-audit report: every item is built in memory for selection."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.evidence = read_review_evidence(path)
+        self._bind(self.evidence.summary)
+        self._items: dict[str, ItemEvidence] = {}
+
+    def _bind(self, summary: dict[str, Any]) -> None:
+        self.summary = summary
+        self.attempt_id = summary.get("processing_attempt_id", "")
+        self.sample_labels = {
+            sample["sample_key"]: sample["sample_stem"]
+            for sample in summary.get("samples", [])
+        }
+        self.rt_calibration = read_calibration(summary["sample_rt_calibration"])
+
+    def load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
+        evidence = self.evidence
+        grouped = {
+            key for group in evidence.groups.values() for key in group.candidates
+        }
+        built = [
+            build_item_evidence(
+                evidence,
+                self.attempt_id,
+                "row" if group.feature_id is not None else "group",
+                ref,
+                ref,
+                group.candidates,
+                sample_ids,
+            )
+            for ref, group in evidence.groups.items()
+        ]
+        built.extend(
+            build_item_evidence(
+                evidence,
+                self.attempt_id,
+                "candidate",
+                key[0],
+                None,
+                (key,),
+                sample_ids,
+            )
+            for key, candidate in evidence.candidates.items()
+            if key not in grouped
+        )
+        self._items.update((view.item.serialized_ref, view) for view in built)
+        return sorted((view.item for view in built), key=lambda item: item.sort_key)
 
     def load_render_items(
         self, items, *, capability: str, check_cancel: Callable[[], None]
     ):
-        primary_items = list(items)
-        if self._compact_selection:
-            expanded = [
-                *primary_items,
-                *(
-                    peer
-                    for item in primary_items
-                    for peer, _ in self.related_items.get(item.serialized_ref, [])[:1]
-                ),
-            ]
-            check_cancel()
-            metadata = read_explanation_selection(
-                self.path,
-                candidate_keys=tuple(
-                    sorted(
-                        {
-                            (w.candidate_id, w.sample_key)
-                            for item in expanded
-                            for w in item.witnesses
-                        }
-                    )
-                ),
-                row_ids=tuple(
-                    sorted({item.identifier for item in expanded if item.kind == "row"})
-                ),
-            )
-            selected_source = CidNlSource(self.path, metadata=metadata)
-            restored = {
-                item.serialized_ref: item
-                for item in selected_source.load_items(
-                    {sid for item in expanded for sid in item.sample_ids}
-                )
-            }
-            selected = [
+        return self._render(
+            [
                 replace(
-                    restored[item.serialized_ref],
-                    matched_witnesses=item.matched_witnesses,
+                    self._items[item.serialized_ref],
+                    item=replace(
+                        self._items[item.serialized_ref].item,
+                        matched_witnesses=item.matched_witnesses,
+                    ),
                 )
-                for item in primary_items
-            ]
-            return selected_source.load_render_items(
-                selected, capability=capability, check_cancel=check_cancel
-            )
-        chosen_peers = {
-            item.serialized_ref: self.related_items.get(item.serialized_ref, [])[:1]
-            for item in primary_items
-        }
-        expanded = list(primary_items)
-        expanded_refs = {item.serialized_ref for item in expanded}
-        for peers in chosen_peers.values():
-            for peer, _edge_refs in peers:
-                if peer.serialized_ref not in expanded_refs:
-                    expanded.append(peer)
-                    expanded_refs.add(peer.serialized_ref)
-        items = expanded
+                for item in items
+            ],
+            capability=capability,
+            check_cancel=check_cancel,
+        )
+
+    def _render(self, views: list[ItemEvidence], *, capability, check_cancel):
         # Read each sample's selected exact references once. This avoids the
         # candidate-ID/sample cross product when IDs are shared across samples.
         refs_by_sample: dict[str, set[str]] = {}
         captures_by_item = {
-            item.serialized_ref: [
-                record["facts"]
-                for record in item.details["records"]
-                if record["kind"] == "capture_evidence"
+            view.item.serialized_ref: [
+                card.facts for card in view.cards if card.kind == "capture_evidence"
             ]
-            for item in items
+            for view in views
         }
-        for item in items:
+        for view in views:
+            item = view.item
             for capture in captures_by_item[item.serialized_ref]:
                 refs_by_sample.setdefault(capture["sample_id"], set()).add(
                     capture["record_id"]
@@ -635,8 +541,8 @@ class CidNlSource:
             }
             promised = {
                 (w.sample_key, w.observation_id)
-                for item in items
-                for w in item.witnesses
+                for view in views
+                for w in view.item.witnesses
                 if w.observation_id
             }
             missing = promised - present
@@ -665,59 +571,38 @@ class CidNlSource:
                     if name in provenance and provenance[name] != expected:
                         raise ExplanationError(f"Selected curve crosses {name} binding")
         rendered = []
-        for item in primary_items:
+        for view in views:
             check_cancel()
+            item = view.item
             projected_curves = self._project_curves(
                 item, raw_curves, captures_by_item[item.serialized_ref]
             )
             samples = [
                 presentation.build_sample(
-                    item,
+                    view,
                     sid,
                     fallback_sample_label=self.sample_labels.get(sid, sid),
-                    decision_refs=self._decision_refs(item, sid),
+                    decision_refs=_decision_refs(view, sid),
                     projected_curves=projected_curves,
                 )
                 for sid in item.sample_ids
             ]
-            pair_support = relationships.internal_pair_support(
-                self.records, self.initial_edge_refs_by_member, self.sample_labels, item
-            )
-            relationship_availability = (
-                "recorded"
-                if pair_support
-                else self.summary.get("audit_availability", {}).get(
-                    "initial_edges", "unavailable"
-                )
-            )
             rendered.append(
                 presentation.build_render_item(
-                    item,
+                    view,
                     samples=samples,
                     projected_curves=projected_curves,
-                    readable_records=self._readable_records(item, projected_curves),
-                    measured_mz_by_candidate={
-                        (w.candidate_id, w.sample_key): self.candidates[
-                            w.candidate_id, w.sample_key
-                        ].get("ms1_apex_mz")
-                        for w in item.witnesses
-                    },
-                    relationship_members=relationships.relationship_members(
-                        self.records, self.sample_labels, item
-                    ),
-                    internal_pair_support=pair_support,
-                    relationship_availability=relationship_availability,
-                    related_groups=[
-                        presentation.related_group(
-                            peer,
-                            edge_refs,
-                            self._project_curves(
-                                peer,
-                                raw_curves,
-                                captures_by_item[peer.serialized_ref],
-                            )[:1],
-                        )
-                        for peer, edge_refs in chosen_peers[item.serialized_ref]
+                    readable_records=self._readable_records(view, projected_curves),
+                    measured_mz_by_candidate=view.measured_mz,
+                    relationship_members=[
+                        {
+                            "subject_id": member["subject_id"],
+                            "sample_id": member["sample_key"],
+                            "sample_label": self.sample_labels.get(
+                                member["sample_key"], member["sample_key"]
+                            ),
+                        }
+                        for member in view.members
                     ],
                 )
             )
@@ -747,65 +632,21 @@ class CidNlSource:
             projected = self._curve(curve)
             projected["candidate_ids"] = sorted(
                 {
-                    cid
-                    for cid, sid in keys
-                    if sid == curve.get("sample_id")
-                    and (
-                        ("capture_evidence", curve.get("payload_id"))
-                        in self.links.get((cid, sid), set())
-                        or any(
-                            witness.candidate_id == cid
-                            and witness.sample_key == sid
-                            and witness.observation_id == curve.get("physical_peak_key")
-                            for witness in item.witnesses
-                            if witness.observation_id
-                        )
-                    )
+                    witness.candidate_id
+                    for witness in item.witnesses
+                    if witness.sample_key == curve.get("sample_id")
+                    and witness.observation_id
+                    and witness.observation_id == curve.get("physical_peak_key")
                 }
             )
             projected_curves.append(projected)
         return projected_curves
 
-    def _decision_refs(self, item: CanonicalItem, sample_id: str) -> list[RecordKey]:
-        item_keys = {
-            (witness.candidate_id, witness.sample_key) for witness in item.witnesses
-        }
-        refs = []
-        for record in item.details["records"]:
-            if record["kind"] == "exclusions":
-                if item.kind != "candidate" or item.stratum != "excluded":
-                    continue
-                applies = any(
-                    sid == sample_id
-                    for _candidate_id, sid in relationships.record_link_keys(
-                        self.links, item, record
-                    )
-                )
-                if applies:
-                    refs.append(record["ref"])
-                continue
-            if record["kind"] != "cell_decisions":
-                continue
-            facts = record["facts"]
-            recorded_sample = facts.get("sample_key", facts.get("sample_id"))
-            if recorded_sample is not None:
-                applies = recorded_sample == sample_id
-            else:
-                applies = any(
-                    sid == sample_id
-                    and (cid, sid) in item_keys
-                    and (record["kind"], record["ref"])
-                    in self.links.get((cid, sid), set())
-                    for cid, sid in item_keys
-                )
-            if applies:
-                refs.append(record["ref"])
-        return sorted(set(refs))
-
     def _readable_records(
-        self, item: CanonicalItem, curves: list[dict[str, Any]]
+        self, view: ItemEvidence, curves: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        available_refs = {record["ref"] for record in item.details["records"]} | {
+        item = view.item
+        available_refs = {card.ref for card in view.cards} | {
             curve["evidence_ref"]
             for curve in curves
             if curve.get("evidence_ref") is not None
@@ -813,12 +654,12 @@ class CidNlSource:
         readable = [
             presentation.readable_record(
                 item,
-                record,
+                card,
                 available_refs,
-                scope=relationships.record_scope(self.links, item, record),
+                scope=_card_scope(item, card),
                 sample_labels=self.sample_labels,
             )
-            for record in item.details["records"]
+            for card in view.cards
         ]
         positions = {record["ref"]: index for index, record in enumerate(readable)}
         for curve in curves:
@@ -846,16 +687,14 @@ class CidNlSource:
                 existing["technical_refs"] + curve_record["technical_refs"]
             )
             readable[index] = curve_record
-        related_refs = relationships.related_record_refs(
-            self.links, item, curves, (record["ref"] for record in readable)
-        )
+        related = _related_assessments(view, curves, [r["ref"] for r in readable])
         for record in readable:
-            if record["ref"] in related_refs:
+            if record["ref"] in related:
                 record["links"] = presentation.dedupe_entries(
                     record["links"]
                     + [
-                        presentation.related_record_link(kind, ref)
-                        for kind, ref in related_refs[record["ref"]]
+                        presentation.related_assessment_link(ref)
+                        for ref in related[record["ref"]]
                     ]
                 )
         return readable
@@ -891,3 +730,58 @@ class CidNlSource:
             self.rt_calibration,
         )
         return result
+
+
+def _decision_refs(view: ItemEvidence, sample_id: str) -> list[CardRef]:
+    item = view.item
+    refs = []
+    for card in view.cards:
+        if card.kind == "exclusions":
+            if item.kind == "candidate" and item.stratum == "excluded":
+                if sample_id in card.samples:
+                    refs.append(card.ref)
+        elif card.kind == "cell_decisions" and sample_id in card.samples:
+            refs.append(card.ref)
+    return sorted(set(refs))
+
+
+def _card_scope(item: CanonicalItem, card: Card) -> tuple[list[str], list[str]]:
+    """The item samples and candidates a card shows it concerns."""
+    recorded_sample = card.facts.get("sample_key", card.facts.get("sample_id"))
+    if recorded_sample is not None:
+        sample_ids = [recorded_sample] if recorded_sample in item.sample_ids else []
+    else:
+        sample_ids = sorted(card.samples)
+    candidate_ids = {cid for cid, _ in card.keys}
+    recorded_candidate = card.facts.get("candidate_id")
+    if recorded_candidate is not None and any(
+        witness.candidate_id == recorded_candidate
+        and (recorded_sample is None or witness.sample_key == recorded_sample)
+        for witness in item.witnesses
+    ):
+        candidate_ids.add(recorded_candidate)
+    return sample_ids, sorted(candidate_ids)
+
+
+def _related_assessments(
+    view: ItemEvidence, curves: list[dict[str, Any]], readable_refs: list[CardRef]
+) -> dict[Any, list[CardRef]]:
+    """Link each curve to the method assessments of the candidates it shows."""
+    assessments = [card for card in view.cards if card.kind == "method_assessments"]
+    curves_by_ref = {
+        curve["evidence_ref"]: curve
+        for curve in curves
+        if curve.get("evidence_ref") is not None
+    }
+    related: dict[Any, list[CardRef]] = {}
+    for ref in readable_refs:
+        if ref not in curves_by_ref:
+            continue
+        curve = curves_by_ref[ref]
+        keys = {
+            (candidate_id, curve["sample_id"])
+            for candidate_id in curve.get("candidate_ids", [])
+            if curve.get("sample_id") is not None
+        }
+        related[ref] = [card.ref for card in assessments if keys & card.keys]
+    return related

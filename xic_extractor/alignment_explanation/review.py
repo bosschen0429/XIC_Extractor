@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import math
-import zlib
-from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any, cast
 
@@ -15,24 +12,10 @@ if TYPE_CHECKING:
         FinalGroupCellObservation,
     )
 
-REVIEW_SCHEMA_VERSION = "alignment_explanation_review"
-
-# Per-sample retained review facts. These bits summarize recorded decisions;
-# they do not choose peaks, assign groups, or authorize Matrix values.
-OBSERVED, ATTENTION, EXCLUDED, NULL_CELL, ZERO_CELL = 1, 2, 4, 8, 16
-ORIGIN_FLAGS = {
-    "backfill_support": 32,
-    "discovery_support": 128,
-}
-SUPPORT_ORIGINS = frozenset((*ORIGIN_FLAGS, "unavailable"))
-SELECTION_FLAGS = (
-    OBSERVED,
-    ATTENTION,
-    EXCLUDED,
-    NULL_CELL,
-    ZERO_CELL,
-    *ORIGIN_FLAGS.values(),
-)
+# Recorded support origins of a cell, in review order. They summarize recorded
+# decisions; they do not choose peaks, assign groups, or authorize Matrix values.
+RECORDED_ORIGINS = ("backfill_support", "discovery_support")
+SUPPORT_ORIGINS = frozenset((*RECORDED_ORIGINS, "unavailable"))
 
 
 def validate_membership_risks(risks: object) -> None:
@@ -142,144 +125,23 @@ def validate_membership_risks(risks: object) -> None:
             raise ValueError("malformed membership risk fields")
 
 
-def attention_reason(kind: str, fact: dict[str, Any]) -> str | None:
-    """One recorded-fact predicate for selection and its displayed explanation."""
-    if kind == "cell_decisions":
-        if any(risk.get("risk_flags") for risk in fact.get("membership_risks", [])):
-            return "accepted_membership_risk"
-        if (
-            fact.get("variant") == "unresolved"
-            and fact.get("value", fact.get("quantitative_value")) is None
-        ):
-            return "unresolved"
-    elif kind == "method_assessments" and fact.get("method_result") == "HOLD":
-        return "HOLD"
-    elif kind == "initial_edges":
-        evidence = fact.get("initial_evidence", {})
-        failure = evidence.get("failure", evidence.get("reason"))
-        if failure in ("ambiguous_owner", "identity_conflict"):
-            return failure
-        if fact.get("disposition") == "review_only":
-            return "review_only"
+def group_attention(disposition: Any) -> bool:
+    """A group whose recorded disposition is not settled needs attention."""
+    return disposition in ("provisional", "unresolved")
+
+
+def cell_attention(variant: Any, value: Any, risk_flagged: bool) -> str | None:
+    """Why a recorded cell needs attention, from its variant, value and risks."""
+    if risk_flagged:
+        return "accepted_membership_risk"
+    if variant == "unresolved" and value is None:
+        return "unresolved"
     return None
 
 
-def selection_sample_facts(
-    kind, identifier, gid, keys, candidates, records, links, cells, observed
-):
-    """Reduce recorded facts once, preserving sample attribution for later scopes."""
-    group = records.get("final_groups", {}).get(gid, {})
-    initial = (
-        ATTENTION if group.get("disposition") in ("provisional", "unresolved") else 0
-    )
-    flags = {sid: initial for _, sid in keys}
-    for cid, sid in keys:
-        for record_kind, rid in links.get((cid, sid), ()):
-            if record_kind not in ("method_assessments", "initial_edges", "exclusions"):
-                continue
-            fact = records.get(record_kind, {}).get(rid, {})
-            if fact.get("sample_key", fact.get("sample_id")) not in (
-                None,
-                sid,
-            ):
-                continue
-            if fact.get("feature_id") not in (None, gid):
-                continue
-            if kind == "row" and fact.get("feature_id") not in (None, identifier):
-                continue
-            if attention_reason(record_kind, fact) is not None:
-                flags[sid] |= ATTENTION
-            if record_kind == "exclusions":
-                flags[sid] |= EXCLUDED
-    for cell in cells:
-        sid = cell["sample_key"]
-        flag = flags.setdefault(sid, initial)
-        value = cell.get("value")
-        flag |= NULL_CELL if value is None else ZERO_CELL if value == 0 else 0
-        if attention_reason("cell_decisions", cell) is not None:
-            flag |= ATTENTION
-        if cell.get("observation_ids"):
-            flag |= OBSERVED
-        flag = (flag & ~sum(ORIGIN_FLAGS.values())) | ORIGIN_FLAGS.get(
-            cell.get("support_origin"), 0
-        )
-        flags[sid] = flag
-    observed = set(observed)
-    observed.update(
-        member["sample_key"]
-        for member in group.get("member_subjects", [])
-        if member.get("physical_peak_keys")
-    )
-    for sid in observed & flags.keys():
-        flags[sid] |= OBSERVED
-    return flags
-
-
-def encode_row_evidence(
-    cells: Sequence[Mapping[str, Any]], samples: Mapping[str, int]
-) -> bytes:
-    """Keep cold scientific details together; scalar values live only in cells."""
-    scalar = {
-        "feature_id",
-        "sample_key",
-        "variant",
-        "value",
-        "apex_rt_min",
-        "source",
-        "support_origin",
-        "observation_ids",
-    }
-    details = [
-        {
-            "sample": samples[cell["sample_key"]],
-            "evidence_states": [],
-            "reason_codes": [],
-            "signal_quality": [],
-            "membership_risks": [],
-            **{key: value for key, value in cell.items() if key not in scalar},
-        }
-        for cell in cells
-    ]
-    return zlib.compress(
-        json.dumps(details, separators=(",", ":"), allow_nan=False).encode(), 1
-    )
-
-
-def decode_row_evidence(
-    payload: bytes, *, sample_count: int
-) -> dict[int, dict[str, Any]]:
-    """Decode a selected row's details at the persisted evidence boundary."""
-    details = json.loads(zlib.decompress(payload))
-    if not isinstance(details, list):
-        raise ValueError("row evidence must be an array; rerun Alignment")
-    result = {}
-    for fact in details:
-        if not isinstance(fact, dict):
-            raise ValueError("row evidence must contain objects; rerun Alignment")
-        if (
-            not {
-                "evidence_states",
-                "reason_codes",
-                "signal_quality",
-                "membership_risks",
-            }
-            <= fact.keys()
-        ):
-            raise ValueError("row evidence is missing required fields; rerun Alignment")
-        sample = fact.pop("sample", None)
-        if (
-            isinstance(sample, bool)
-            or not isinstance(sample, int)
-            or not 0 <= sample < sample_count
-        ):
-            raise ValueError("row evidence has an invalid sample ordinal")
-        if sample in result:
-            raise ValueError(
-                "duplicate review cell for group and sample; rerun Alignment"
-            )
-        validate_membership_risks(fact.get("membership_risks", []))
-        result[sample] = fact
-    return result
+def assessment_attention(method_result: Any) -> str | None:
+    """Why a recorded method assessment needs attention."""
+    return "HOLD" if method_result == "HOLD" else None
 
 
 def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
@@ -333,22 +195,3 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
             }
         ),
     }
-
-
-def review_record(kind: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-    """The retained review facts also define conversion of existing full reports."""
-    if kind == "method_assessments":
-        names = (
-            "sample_key",
-            "provider_id",
-            "method_id",
-            "method_version",
-            "detector_invocation_id",
-            "technical_state",
-            "method_result",
-            "reason_codes",
-            "candidate_physical_peak_keys",
-            "method_subject_id",
-        )
-        return {name: payload[name] for name in names if name in payload}
-    return dict(payload)

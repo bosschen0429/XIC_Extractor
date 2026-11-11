@@ -57,7 +57,6 @@ def _bind_mock_publication_inputs(completed, kwargs):
     completed.processing_attempt_id = "attempt-test"
     completed.initial_groups = ()
     candidates = kwargs["peaks_by_sample"]
-    reference = kwargs.get("known_istd_reference")
     completed.publication_inputs = SimpleNamespace(
         peaks_by_sample=candidates.feature_view(),
         ms1_apex_mz_by_candidate=candidates.ms1_apex_mz_by_candidate,
@@ -67,9 +66,6 @@ def _bind_mock_publication_inputs(completed, kwargs):
         },
         neutral_loss_by_tag=kwargs["settings"].neutral_loss_by_tag,
         alignment_config=kwargs["alignment_config"],
-        known_istd_reference_provenance=(
-            None if reference is None else reference.explanation_provenance
-        ),
     )
     return completed
 
@@ -112,16 +108,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
         "workbook_sha256": "a" * 64,
         "target_snapshot": '{"definitions": []}',
     }
-    reference = SimpleNamespace(
-        provenance=reference_provenance,
-        explanation_provenance={
-            **reference_provenance,
-            "calibration": {
-                "schema_version": "known_istd_calibration",
-                "samples": [],
-            },
-        },
-    )
+    reference = SimpleNamespace(provenance=reference_provenance)
     monkeypatch.setattr(
         application_module,
         "read_known_istd_reference",
@@ -152,11 +139,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     @contextmanager
     def prepare_explanation(path: Path, **kwargs: object):
         assert kwargs["completed"] is completed
-        assert kwargs["known_istd_reference_provenance"] == (
-            reference.explanation_provenance
-            if with_reference and not writer_fails
-            else None
-        )
+        assert "known_istd_reference_provenance" not in kwargs
 
         def finalize(matrix_path: Path) -> Path:
             assert matrix_path.read_text(encoding="utf-8") == "Mz\tRT\tS1\n"
@@ -528,15 +511,15 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
 
     def rows(path):
         with sqlite3.connect(path) as connection:
+            tables = [
+                name
+                for (name,) in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            ]
             return {
                 table: sorted(connection.execute(f"SELECT * FROM {table}").fetchall())
-                for table in (
-                    "metadata",
-                    "candidates",
-                    "records",
-                    "links",
-                    "curve_payloads",
-                )
+                for table in tables
             }
 
     if failure is None:
@@ -787,53 +770,6 @@ def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
     assert not output_dir.exists()
 
 
-def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatch):
-    from tests.alignment_drift_evidence_fixtures import _known_reference_workbook
-    from tests.alignment_explanation_fixtures import run_alignment_fixture
-    from xic_extractor.alignment_explanation.reader import (
-        read_alignment_explanation,
-    )
-    from xic_extractor.applications.untargeted.istd_reference import (
-        read_known_istd_reference,
-    )
-    from xic_extractor.diagnostics.alignment_explanation_projection import (
-        write_alignment_explanation,
-    )
-
-    completed, candidates, matrix, config = run_alignment_fixture(
-        tmp_path, monkeypatch, "positive"
-    )
-    arguments = dict(
-        completed=completed,
-        **explanation_discovery_facts(completed),
-        peaks_by_sample=candidates,
-        matrix_path=matrix,
-        alignment_config=config,
-    )
-    plain = write_alignment_explanation(tmp_path / "plain.sqlite", **arguments)
-    plain_summary = read_alignment_explanation(plain)
-    assert plain_summary["known_istd_reference"] is None
-    matrix_bytes = matrix.read_bytes()
-    reference_path = tmp_path / "reference.xlsx"
-    _known_reference_workbook(reference_path)
-    provenance = read_known_istd_reference(reference_path).provenance
-    assert "definitions" in json.loads(provenance["target_snapshot"])
-    report = write_alignment_explanation(
-        tmp_path / "reference.sqlite",
-        **arguments,
-        known_istd_reference_provenance=provenance,
-    )
-    assert read_alignment_explanation(report) == {
-        **plain_summary,
-        "known_istd_reference": provenance,
-    }
-    candidate_id = candidates["S1"][0].peak_id
-    assert read_alignment_explanation(report, candidate_id=candidate_id) == (
-        read_alignment_explanation(plain, candidate_id=candidate_id)
-    )
-    assert matrix.read_bytes() == matrix_bytes
-
-
 def test_pure_cid_nl_targets_csv_integration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -853,16 +789,7 @@ def test_pure_cid_nl_targets_csv_integration(
         application_result=SimpleNamespace(children=()),
         close=lambda: closed.append(True),
     )
-    fake_ref = SimpleNamespace(
-        provenance={"workbook_sha256": "b" * 64},
-        explanation_provenance={
-            "workbook_sha256": "b" * 64,
-            "calibration": {
-                "schema_version": "known_istd_calibration",
-                "samples": [],
-            },
-        },
-    )
+    fake_ref = SimpleNamespace(provenance={"workbook_sha256": "b" * 64})
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(

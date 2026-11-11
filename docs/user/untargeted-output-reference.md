@@ -235,9 +235,14 @@ Its cell table retains `apex_rt_min` directly from the owner's selected
 integration, including MS1-only Backfill. Downstream cell readers do not infer
 this apex from observation order or optional TSV ledgers; cells with no
 selected integration retain null.
-The SQLite explanation uses `alignment_explanation` (full audit) or
-`alignment_explanation_review` (compact review), with `curve_payload`
-for retained curves. Curve provenance records query and selection context,
+The SQLite explanation (`schema_version` `alignment_evidence`) stores each
+concept once: samples, peaks, method subjects, candidates with their terminal
+observation, final groups (one per result row), initial groups, group members
+(with their accepted membership risk), cells, method assessments and
+exclusions; initial edges and curves have tables only when the run retains
+them. The summary's `retention` (`review` or `full_audit`) says which detail is
+kept. Counts are derived when read. The known ISTD reference is recorded once,
+in the run metadata `known_istd_reference_*` keys. Curve provenance records query and selection context,
 not full-trace or selection-trace SHA-256 values. Scientific values and
 curve arrays are unchanged. Artifact and curve identifiers are internal links
 within the generated output and must be regenerated together.

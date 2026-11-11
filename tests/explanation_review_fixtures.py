@@ -8,6 +8,7 @@ import numpy as np
 from tests.alignment_explanation_fixtures import (
     explanation_summary,
 )
+from tests.inspector_fixtures import NEUTRAL_LOSS_BY_TAG, discovery
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
 )
@@ -63,106 +64,65 @@ def _group_with_missing_apex_review(tmp_path, *, extraction_by_sample=None):
         "S2": (501.0, 20.0),
         "S3": (500.0, 20.0),
     }
+    samples = [{"sample_key": sid, "sample_stem": sid} for sid in ("S1", "S2", "S3")]
     with ExplanationReportWriter(report, review_only=True) as writer:
+        writer.declare_samples(samples)
         for (cid, sid), mz, rt in zip(keys, (499.0, 501.0), (7.9, 8.1), strict=True):
-            writer.add_candidate(
-                cid,
-                sid,
-                {
-                    "candidate_id": cid,
-                    "sample_key": sid,
-                    "precursor_mz": mz,
-                    "rt_apex_min": rt,
-                },
+            writer.add_peak(sid, cid, (extraction[sid][0], rt, extraction[sid][1]))
+            writer.add_candidate(cid, sid, precursor_mz=mz, **discovery(cid))
+            writer.add_terminal(
+                cid, sid, variant="observed", hypothesis_id=cid, physical_peak_key=cid
             )
-            writer.add_record(
-                "terminal_subjects",
-                cid,
+        writer.add_final_group(
+            "G1",
+            feature_id="G1",
+            disposition="saved",
+            members=[
                 {
-                    "candidate_id": cid,
                     "sample_key": sid,
-                    "observations": [
-                        {
-                            "physical_peak_key": cid,
-                            "rt_apex_min": rt,
-                            "mz": extraction[sid][0],
-                            "ppm": extraction[sid][1],
-                        },
-                        {
-                            "physical_peak_key": "other-group",
-                            "rt_apex_min": 99,
-                            "mz": extraction[sid][0],
-                            "ppm": extraction[sid][1],
-                        },
-                    ],
-                },
-                [(cid, sid)],
+                    "subject_id": cid,
+                    "subject_kind": "peak_hypothesis",
+                    "physical_peak_keys": [cid],
+                }
+                for cid, sid in keys
+            ],
+            center_mz=extraction["S3"][0],
+            ppm=extraction["S3"][1],
+        )
+        writer.set_row_destination("G1", "matrix")
+        if extraction_by_sample:
+            writer.add_peak(
+                "S3",
+                "backfilled-peak",
+                (extraction["S3"][0], 8.0, extraction["S3"][1]),
             )
-        writer.add_record(
-            "final_groups",
-            "G1",
-            {
-                "feature_id": "G1",
-                "member_subjects": [
-                    {"sample_key": sid, "physical_peak_keys": [cid]}
-                    for cid, sid in keys
-                ],
-                "xic_extractions": [
-                    {
-                        "sample_key": sid,
-                        "physical_peak_key": cid,
-                        "rt_apex_min": rt,
-                        "mz": extraction[sid][0],
-                        "ppm": extraction[sid][1],
-                    }
-                    for (cid, sid), mz, rt in zip(
-                        keys, (499.0, 501.0), (7.9, 8.1), strict=True
-                    )
-                ]
-                + [
-                    {
-                        "sample_key": "S3",
-                        "physical_peak_key": "backfilled-peak"
-                        if extraction_by_sample
-                        else None,
-                        "rt_apex_min": 8.0,
-                        "mz": extraction["S3"][0],
-                        "ppm": extraction["S3"][1],
-                        "group_position": not bool(extraction_by_sample),
-                    }
-                ],
-            },
-            keys,
-        )
-        writer.add_record(
-            "rows",
-            "G1",
-            {
-                "feature_id": "G1",
-                "route": {"destination": "matrix", "reason": "saved"},
-            },
-            keys,
-        )
-        writer.add_row_cells(
+        writer.add_cells(
             "G1",
             [
                 {
                     "sample_key": sid,
                     "variant": "numeric" if value else "unavailable",
                     "value": value,
+                    "observation_ids": observations,
                 }
-                for sid, value in (
-                    ("S1", 100),
-                    ("S2", 200),
-                    ("S3", 300 if extraction_by_sample else None),
+                for sid, value, observations in (
+                    ("S1", 100, ["C1"]),
+                    ("S2", 200, ["C2"]),
+                    (
+                        "S3",
+                        300 if extraction_by_sample else None,
+                        ["backfilled-peak"] if extraction_by_sample else [],
+                    ),
                 )
             ],
-            {"S1": 0, "S2": 1, "S3": 2},
         )
+        if not extraction_by_sample:
+            writer.set_cell_position("G1", "S3", 8.0)
         writer.finalize(
             explanation_summary(
                 {
-                    "samples": [{"sample_key": sid} for sid in ("S1", "S2", "S3")],
+                    "samples": samples,
+                    "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                     "acquisition_sources": sources,
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
@@ -216,39 +176,74 @@ def _quality_review_report(
             selected_integration=observation.integration,
         )
         cells.append(review_cell(decision))
-        if membership_risks is not None:
-            cells[-1]["membership_risks"] = membership_risks.get(sid, [])
+        # Backfill admissions have no owning member; their risks stay on the cell.
+        cells[-1]["membership_risks"] = [
+            risk
+            for risk in (membership_risks or {}).get(sid, [])
+            if risk["phase"] == "backfill"
+        ]
+    # A grouping risk is accepted by the member that owns the peak.
+    member_risks = {
+        sid: risk
+        for sid, risks in (membership_risks or {}).items()
+        for risk in risks
+        if risk["phase"] != "backfill"
+    }
+    members = [
+        {
+            "sample_key": sid,
+            "subject_id": f"member-{sid}",
+            "subject_kind": "peak_hypothesis",
+            "physical_peak_keys": [f"obs-{sid}"],
+        }
+        for sid in ("S1", "S2")
+    ]
+    samples = [{"sample_stem": sid, "sample_key": sid} for sid in ("S1", "S2")]
     with ExplanationReportWriter(report, review_only=True) as writer:
+        writer.declare_samples(samples)
         keys = [("C1", "S1"), ("C2", "S2")]
+        # Each candidate's terminal is its member's hypothesis and peak.
         for cid, sid in keys:
+            writer.add_peak(sid, f"obs-{sid}", (None, 1.0, None))
             writer.add_candidate(
                 cid,
                 sid,
-                {
-                    "candidate_id": cid,
-                    "sample_key": sid,
-                    "precursor_mz": 500.0,
-                    "ms1_apex_mz": (measured_mz_by_sample or {}).get(sid),
-                    "rt_apex_min": 1.0,
-                },
+                precursor_mz=500.0,
+                ms1_apex_mz=(measured_mz_by_sample or {}).get(sid),
+                **discovery(cid),
             )
-        writer.add_record(
-            "final_groups",
+            writer.add_terminal(
+                cid,
+                sid,
+                variant="observed",
+                hypothesis_id=f"member-{sid}",
+                physical_peak_key=f"obs-{sid}",
+            )
+        writer.add_final_group(
             "G1",
-            {"feature_id": "G1", "disposition": "completed"},
-            keys,
+            feature_id="G1",
+            disposition="completed",
+            members=members,
         )
-        writer.add_record("rows", "G1", {"feature_id": "G1"}, keys)
-        writer.add_row_cells("G1", cells, {"S1": 0, "S2": 1})
+        if member_risks:
+            writer.add_initial_group(
+                disposition="completed",
+                members=members,
+                inference_basis={},
+                inference_decisions=[
+                    {"owner_id": f"member-{sid}", "accepted_risk": risk}
+                    for sid, risk in member_risks.items()
+                ],
+            )
+        writer.add_cells("G1", cells)
         writer.finalize(
             explanation_summary(
                 {
                     "processing_attempt_id": "quality-attempt",
+                    "neutral_loss_by_tag": NEUTRAL_LOSS_BY_TAG,
                     "matrix_path": str(matrix),
                     "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
-                    "samples": [
-                        {"sample_stem": sid, "sample_key": sid} for sid in ("S1", "S2")
-                    ],
+                    "samples": samples,
                 },
                 review_only=writer.review_only,
             )

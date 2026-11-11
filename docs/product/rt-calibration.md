@@ -125,8 +125,9 @@ same-target fallback retain their existing meaning.
 
 Explanation summaries retain the final frozen batch `sample_rt_calibration`,
 including fitted knots and distinct qualified observation positions with their
-`estimate_support`. The bootstrap `known_istd_reference` retains measured identity
-provenance and target snapshots, not a second display calibration. Inspector and
+`estimate_support`. The bootstrap ISTD reference's measured identity provenance
+and target snapshot are recorded once, in the run metadata
+`known_istd_reference_*` keys, not as a second display calibration. Inspector and
 Workbench replay the same estimate owner without refitting: `loess` within the
 fit, continuous endpoint `boundary_shift` outside it, and qualified
 `median_shift` for samples without a curve. Only samples with no estimate fall

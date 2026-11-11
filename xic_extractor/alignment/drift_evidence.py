@@ -28,19 +28,6 @@ DriftPriorSource = Literal[
 
 
 @dataclass(frozen=True)
-class IstdReferencePeakSelection:
-    """Observed reference peak and its independent cross-sample support."""
-
-    label: str
-    sample_stem: str
-    selected_rt_min: float
-    initial_rt_min: float | None
-    nl_observed: bool
-    basis: str
-    supporting_samples: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
 class KnownIstdReference:
     """Declared ISTD definitions and measured reference coordinates, never areas."""
 
@@ -50,7 +37,6 @@ class KnownIstdReference:
     workbook_sha256: str
     anchor: TargetedIstdIdentityAnchor
     coordinates: tuple[tuple[str, str, float, float], ...]
-    peak_selections: tuple[IstdReferencePeakSelection, ...] = ()
     _batch_context: tuple[tuple[str, ...], tuple[tuple[str, int], ...]] | None = field(
         default=None, repr=False
     )
@@ -76,52 +62,6 @@ class KnownIstdReference:
             "observed_labels": json.dumps(self.anchor.observed_labels),
             "policy": "measured_istd_shared_rt_fit_same_target_fallback",
         }
-
-    @property
-    def explanation_provenance(self) -> dict[str, object]:
-        """Project measured identity inputs and their bootstrap-only RT fit."""
-        result: dict[str, object] = dict(self.provenance)
-        if self.peak_selections:
-            from dataclasses import asdict
-
-            result["peak_selections"] = [asdict(item) for item in self.peak_selections]
-        prepared = self if self._batch_context is not None else self._prepared_batch
-        if prepared is None or prepared._batch_context is None:
-            return result
-        samples, orders = prepared._batch_context
-        knots_by_sample = prepared._knots_by_sample
-        result["calibration"] = {
-            "schema_version": "known_istd_calibration",
-            "role": "bootstrap_identity_reference",
-            "fit": "sample_rt_calibration_robust_local_linear",
-            "missing_measurements": "not_imputed",
-            "rt_unit": "minute",
-            "interpolation": "piecewise_linear",
-            "extrapolation": "unavailable",
-            "sample_universe": list(samples),
-            "injection_order": dict(orders),
-            "measurements": [
-                {"label": label, "sample_stem": sample, "observed_rt_min": rt}
-                for label, sample, rt, _delta in prepared.coordinates
-                if sample in samples
-            ],
-            "samples": [
-                {
-                    "sample_stem": sample,
-                    "knots": [list(knot) for knot in knots_by_sample.get(sample, ())],
-                    "domain_rt_min": (
-                        [knots_by_sample[sample][0][0], knots_by_sample[sample][-1][0]]
-                        if sample in knots_by_sample
-                        else None
-                    ),
-                    "status": (
-                        "available" if sample in knots_by_sample else "unavailable"
-                    ),
-                }
-                for sample in samples
-            ],
-        }
-        return result
 
     def prepare_batch(
         self,
@@ -291,7 +231,6 @@ def mint_known_istd_reference_from_measurements(
     *,
     source_identifier: str = "<in-memory>",
     source_sha256: str = "",
-    peak_selections: tuple[IstdReferencePeakSelection, ...] = (),
 ) -> KnownIstdReference:
     """Mint a KnownIstdReference from declared targets and measured apex RT.
 
@@ -331,7 +270,6 @@ def mint_known_istd_reference_from_measurements(
         workbook_sha256=source_sha256,
         anchor=build_targeted_istd_identity_anchor(snapshot, observed_labels=labels),
         coordinates=coords,
-        peak_selections=peak_selections,
     )
 
 
