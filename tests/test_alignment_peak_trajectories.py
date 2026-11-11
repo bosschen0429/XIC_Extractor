@@ -1182,7 +1182,7 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=tuple(orders),
-        sample_roles={sample: "study_sample" for sample in orders},
+        sample_roles={sample: "sample" for sample in orders},
     )
     owners, retained = [], []
     for original_owner in original:

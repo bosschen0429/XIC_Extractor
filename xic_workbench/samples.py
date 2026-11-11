@@ -11,7 +11,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.analysis_set import discover_raw_files
+from xic_extractor.analysis_set import AnalysisKind, discover_raw_files
 from xic_extractor.raw_sequence import read_analysis_set
 from xic_extractor.sample_groups import (
     sample_group_key,
@@ -21,31 +21,19 @@ from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_SCHEMA_VERSION,
     SAMPLE_ROLES,
     SampleMetadata,
+    infer_sample_role,
     load_and_match_sample_metadata,
     load_sample_metadata,
     parse_sample_metadata,
 )
 
-ROLE_CHOICES = (
-    "study_sample",
-    "qc",
-    "pooled_qc",
-    "blank",
-    "calibrator",
-    "solvent",
-    "system_suitability",
-    "unknown",
-)
 # Mirrors the role labels of the Workbench sample editor.
 ROLE_LABELS = {
-    "study_sample": "研究樣本",
+    "sample": "Sample",
     "qc": "QC",
-    "pooled_qc": "Pooled QC",
+    "std": "STD",
     "blank": "Blank",
-    "calibrator": "校正品",
-    "solvent": "溶劑",
-    "system_suitability": "系統適用性",
-    "unknown": "未指定",
+    "other": "Other",
 }
 _SAMPLE_FIELDS = tuple(SAMPLE_METADATA_COLUMNS[1:])
 # Kept in the shared sample-metadata format so Targeted, Untargeted and the CLI
@@ -75,6 +63,7 @@ def review_sample_groups(
     roles = {
         row.raw_stem.casefold(): ROLE_LABELS[row.sample_role]
         for row in load_sample_metadata(path)
+        if row.sample_role is not None
     }
     labels = {}
     for sample in source_samples:
@@ -95,8 +84,11 @@ def read_batch_samples(
     progress: Callable[[int, int, str], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
-    """Read RAW samples with the folder's confirmed annotations.
+    """List every RAW below the folder with the folder's confirmed annotations.
 
+    With ``read_headers`` the RAW headers give each sample its name, order and
+    unspecified roles; without them, roles come from the file names. Listing
+    decides no analysis membership, so an unreadable RAW is listed, not fatal.
     Once a folder has confirmed annotations they are its sample-metadata
     source. Importing a sequence list re-reads that list, keeps confirmed
     groups and exclusions it does not supply, and confirms the merged rows.
@@ -216,29 +208,34 @@ def load_samples(
     dll_dir: Path | None = None,
     sequence_source: Path | None = None,
     read_headers: bool = True,
+    analysis: AnalysisKind | None = None,
     include_context: bool = True,
     progress: Callable[[int, int, str], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
-    """Preview annotations without RAW I/O, or resolve acquired sample facts."""
+    """Preview annotations without RAW I/O, or resolve acquired sample facts.
+
+    ``analysis`` applies that flow's membership rules; ``None`` only lists.
+    """
 
     if should_cancel is not None and should_cancel():
         raise InterruptedError("樣本資訊讀取已停止。")
     if read_headers:
         if dll_dir is None:
             raise ValueError("讀取 RAW 樣本需要 RawFileReader DLL 資料夾。")
-        analysis = read_analysis_set(
+        resolved = read_analysis_set(
             Path(raw_dir),
             Path(dll_dir),
+            analysis=analysis,
             sequence_source=Path(sequence_source) if sequence_source else None,
             include_context=include_context,
             progress=progress,
             should_cancel=should_cancel,
         )
-        rows = analysis.sample_metadata
-        report = analysis.sequence
-        unreadable = [path.name for path in analysis.unreadable]
-        unopened = [path.name for path in analysis.unopened_context]
+        rows = resolved.sample_metadata
+        report = resolved.sequence
+        unreadable = [path.name for path in resolved.unreadable]
+        unopened = [path.name for path in resolved.unopened_context]
     else:
         if progress is not None:
             progress(0, 0, "列出 RAW 檔名（不開啟 RAW）")
@@ -271,9 +268,8 @@ def load_samples(
                 sample_name=row.raw_stem,
                 injection_order=None,
                 batch_id=row.batch_id or Path(raw_dir).name,
-                sample_role=row.sample_role
-                if row.raw_stem in matched_stems
-                else "unknown",
+                sample_role=(row.sample_role if row.raw_stem in matched_stems else None)
+                or infer_sample_role(None, sample_name=row.raw_stem),
             )
             for row in preview_rows
         )
@@ -304,7 +300,7 @@ def load_samples(
 
     summary["role_counts"] = {
         role: sum(row.sample_role == role for row in rows)
-        for role in ROLE_CHOICES
+        for role in SAMPLE_ROLES
         if any(row.sample_role == role for row in rows)
     }
     return {"samples": [asdict(row) for row in rows], "summary": summary}
@@ -317,8 +313,10 @@ def apply_raw_chronology(
     dll_dir: Path,
 ) -> list[dict[str, Any]]:
     """Keep the workbench annotations; order and names come from the RAW."""
-    analysis = read_analysis_set(Path(raw_dir), Path(dll_dir), from_payload(rows))
-    return [asdict(row) for row in analysis.sample_metadata]
+    resolved = read_analysis_set(
+        Path(raw_dir), Path(dll_dir), from_payload(rows), analysis="untargeted"
+    )
+    return [asdict(row) for row in resolved.sample_metadata]
 
 
 def from_payload(value: object) -> tuple[SampleMetadata, ...] | None:

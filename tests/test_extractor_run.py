@@ -430,7 +430,7 @@ def test_acquire_orders_by_raw_even_with_a_sample_metadata_source(
                 "SampleA",
                 "RawA",
                 "7",
-                "study_sample",
+                "sample",
                 "",
                 "",
                 "",

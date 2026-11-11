@@ -124,7 +124,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
                 sample_name=p.stem,
                 raw_stem=p.stem,
                 injection_order=i + 1,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for i, p in enumerate(paths)
         ),

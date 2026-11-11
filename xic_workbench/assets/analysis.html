@@ -291,47 +291,24 @@
     <span class="step-no" data-part="step-no"></span>
     <div>
       <h2>樣本角色</h2>
-      <p class="subtle" data-part="samples-count">尚未讀取樣本</p>
+      <p class="subtle" data-part="role-summary">尚未讀取樣本</p>
     </div>
     <div class="button-row step-action">
       <button type="button" data-part="samples-edit" class="ghost" data-analysis-idle>
-        <svg class="icon"><use href="#i-list" /></svg>樣本明細</button
+        <svg class="icon"><use href="#i-list" /></svg>調整</button
       >
     </div>
   </div>
   <div class="step-body">
-    <div class="sample-summary">
-      <div data-part="role-summary" class="chip-row"></div>
+    <div class="sequence-line">
+      <span>上機資訊</span>
+      <span data-part="sequence-name" class="mono"></span>
+      <input data-part="sequence-source" hidden />
+      <button type="button" data-part="sequence-browse" data-kind="metadata" class="text-button" data-analysis-idle>
+        更換
+      </button>
     </div>
-    <p data-part="samples-source" class="subtle"></p>
-    <p data-part="samples-summary" class="subtle"></p>
     <ul data-part="samples-conflicts" class="sequence-conflicts" hidden></ul>
-    <details data-part="sample-tools" class="setup-tools">
-      <summary>上機資訊與樣本檔案（選用）</summary>
-      <div class="button-row">
-        <button type="button" data-part="samples-refresh" data-analysis-idle>
-          <svg class="icon"><use href="#i-vial" /></svg>列出樣本檔名
-        </button>
-      </div>
-      <div class="import-line">
-        <label data-part="sequence-label">上機資訊</label
-        ><input
-          data-part="sequence-source"
-          class="path"
-          placeholder="Word、Excel、CSV 或 TSV（選用）"
-          data-analysis-idle
-        /><button type="button" data-part="sequence-browse" data-kind="metadata" data-analysis-idle>
-          瀏覽</button
-        ><button type="button" data-part="samples-import" data-analysis-idle>
-          匯入上機資訊
-        </button>
-      </div>
-      <div class="sample-tools">
-        <button type="button" data-part="samples-export" class="text-button" data-analysis-idle>
-          匯出樣本資料
-        </button>
-      </div>
-    </details>
   </div>
 </template>
 
@@ -411,7 +388,7 @@
 <dialog id="sample-editor" class="wide-dialog">
   <div class="dialog-head">
     <div>
-      <h2>樣本明細</h2>
+      <h2>調整樣本</h2>
       <p class="subtle" id="sample-editor-count"></p>
     </div>
     <button
@@ -428,31 +405,19 @@
       <input
         id="sample-filter"
         type="search"
-        placeholder="搜尋 RAW 檔名或樣本名稱"
+        placeholder="搜尋 RAW 檔名或樣品名稱"
       />
-      <span class="toolbar-group"
-        ><select id="sample-bulk-role" aria-label="批次角色"></select
-        ><button id="sample-apply-role" type="button">套用角色</button></span
-      ><span class="toolbar-group"
-        ><button id="sample-exclude" type="button">排除</button
-        ><button id="sample-include" type="button">取消排除</button></span
+      <span class="toolbar-group" id="sample-actions"
+        ><span id="sample-selection" class="subtle">先框選或搜尋</span></span
       >
     </div>
-    <div class="table-scroll editor-table">
+    <div class="table-scroll editor-table" id="sample-table" tabindex="-1">
       <table>
         <thead>
           <tr>
-            <th>
-              <input
-                id="sample-select-all"
-                type="checkbox"
-                aria-label="全選目前顯示的樣本"
-              />
-            </th>
             <th>RAW 檔名</th>
             <th>樣品名稱</th>
             <th>角色</th>
-            <th>排除</th>
           </tr>
         </thead>
         <tbody id="sample-rows"></tbody>
@@ -460,6 +425,10 @@
     </div>
   </div>
   <div class="dialog-foot">
+    <button id="sample-export" type="button" class="text-button" data-analysis-idle>
+      匯出樣本資料
+    </button>
+    <span class="subtle spacer">拖曳框選 · Ctrl 加選 · Shift 連選 · 鍵盤 1–5 設角色</span>
     <button type="button" class="primary" data-close="sample-editor">完成</button>
   </div>
 </dialog>

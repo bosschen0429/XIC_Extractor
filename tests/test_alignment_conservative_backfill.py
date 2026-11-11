@@ -59,11 +59,11 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
     tmp_path: Path,
 ) -> None:
     roles: dict[str, SampleRole] = {
-        "study": "study_sample",
+        "study": "sample",
         "qc": "qc",
-        "pooled": "pooled_qc",
+        "pooled": "qc",
         "blank": "blank",
-        "MixSTD": "calibrator",
+        "MixSTD": "std",
     }
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path,
@@ -671,7 +671,7 @@ def _study_fixture(
     return build_processing_identity_no_raw_fixture(
         tmp_path,
         sample_stems=sample_stems,
-        sample_roles={stem: "study_sample" for stem in sample_stems},
+        sample_roles={stem: "sample" for stem in sample_stems},
     )
 
 

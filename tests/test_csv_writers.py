@@ -518,9 +518,9 @@ def test_long_csv_reports_file_processing_error() -> None:
     [
         ("Control", "qc", "Control"),
         ("", "qc", "QC"),
-        ("other", "pooled_qc", "QC"),
+        ("other", "qc", "QC"),
         # Ungrouped study samples and blanks stay distinguishable by role.
-        ("", "study_sample", "Sample"),
+        ("", "sample", "Sample"),
         ("", "blank", "Blank"),
     ],
 )

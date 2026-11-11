@@ -19,7 +19,7 @@ def test_parse_sample_metadata_validates_roles_and_injection_order() -> None:
                 sample_name="TumorBC001_DNA",
                 raw_stem="TumorBC001_DNA",
                 injection_order="1",
-                sample_role="study_sample",
+                sample_role="sample",
                 batch_id="batch-a",
                 matrix_type="DNA",
                 group="tumor",
@@ -28,13 +28,36 @@ def test_parse_sample_metadata_validates_roles_and_injection_order() -> None:
                 sample_name="QC1",
                 raw_stem="Breast_Cancer_Tissue_pooled_QC1",
                 injection_order="2",
-                sample_role="pooled_qc",
+                sample_role="qc",
             ),
         ]
     )
 
-    assert rows[0].sample_role == "study_sample"
+    assert rows[0].sample_role == "sample"
     assert rows[0].injection_order == 1
+
+
+@pytest.mark.parametrize(
+    ("written", "read"),
+    [
+        ("study_sample", "sample"),
+        ("pooled_qc", "qc"),
+        ("calibrator", "std"),
+        ("solvent", "other"),
+        ("system_suitability", "other"),
+        ("QC", "qc"),
+        ("unknown", None),
+        ("", None),
+    ],
+)
+def test_earlier_role_names_are_read_as_current_roles(written, read) -> None:
+    (row,) = parse_sample_metadata([_row(sample_name="S1", sample_role=written)])
+    assert row.sample_role == read
+
+
+def test_sample_metadata_rejects_an_unknown_role_word() -> None:
+    with pytest.raises(SampleMetadataError, match="unsupported sample_role"):
+        parse_sample_metadata([_row(sample_name="S1", sample_role="wash")])
 
 
 def test_sample_metadata_rejects_duplicate_raw_stem() -> None:
@@ -69,7 +92,7 @@ def test_sample_metadata_rejects_raw_stem_sample_name_alias_collision() -> None:
 
 def test_sample_metadata_allows_exclusion_without_a_reason() -> None:
     rows = parse_sample_metadata(
-        [_row(sample_name="S1", sample_role="study_sample", excluded="TRUE")]
+        [_row(sample_name="S1", sample_role="sample", excluded="TRUE")]
     )
     assert rows[0].excluded is True
     assert rows[0].exclusion_reason == ""
@@ -83,7 +106,7 @@ def test_load_sample_metadata_rejects_wrong_schema_version(tmp_path: Path) -> No
             _row(
                 schema_version="legacy",
                 sample_name="S1",
-                sample_role="study_sample",
+                sample_role="sample",
             )
         ],
     )

@@ -1072,7 +1072,7 @@ def _source_verification_inputs(tmp_path: Path):
                     sample_name="S1",
                     raw_stem="S1",
                     injection_order=1,
-                    sample_role="study_sample",
+                    sample_role="sample",
                 ),
             ),
             settings=settings,

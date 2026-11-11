@@ -86,8 +86,8 @@ def test_persisted_metadata_binds_only_exact_raw_stems(tmp_path: Path):
         )
         writer.writeheader()
         for name, stem, role, group, excluded, reason in [
-            ("First", "Sample_A", "study_sample", "Case", "false", ""),
-            ("Second", "samplea", "study_sample", "Control", "true", "bad injection"),
+            ("First", "Sample_A", "sample", "Case", "false", ""),
+            ("Second", "samplea", "sample", "Control", "true", "bad injection"),
             ("QC_1", "QC", "qc", "", "true", "not the numbered RAW"),
         ]:
             writer.writerow(

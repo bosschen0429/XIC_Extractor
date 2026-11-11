@@ -57,11 +57,11 @@ def sample_rows() -> list[dict[str, str]]:
             "schema_version": "sample_metadata",
             "sample_name": f"sample_{sample}",
             "raw_stem": sample,
-            "sample_role": "pooled_qc"
+            "sample_role": "qc"
             if sample == "QC"
             else "blank"
             if sample == "Blank"
-            else "study_sample",
+            else "sample",
             "excluded": "TRUE" if sample == "Excluded" else "FALSE",
             "exclusion_reason": "operator exclusion" if sample == "Excluded" else "",
         }

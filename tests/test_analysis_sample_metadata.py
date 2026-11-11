@@ -17,7 +17,7 @@ const locations = {
   untargeted: {raw_dir: '/batch', dll_dir: '/dll', sequence_source: ''},
 };
 const inputs = page => ({...locations[page]});
-function result(role = 'study_sample', page = 'targeted') {
+function result(role = 'sample', page = 'targeted') {
   return {
     page, input_paths: inputs(page),
     samples: [
@@ -49,7 +49,7 @@ retained.samples[0].sample_role = 'blank';
 retained.overview.excluded.push({raw_stem: 'A', reason: ''});
 for (const page of ['targeted', 'untargeted']) {
   assert.deepEqual(metadata.forPage(page).rows.map(row => row.sample_role),
-    ['study_sample', 'qc']);
+    ['sample', 'qc']);
   assert.deepEqual(metadata.forPage(page).overview.excluded, []);
   assert.throws(() => {
     metadata.forPage(page).rows[0].sample_role = 'blank';
@@ -111,7 +111,7 @@ const metadata = createSampleMetadata({
   }, inputs,
 });
 metadata.restore(initial(result()));
-const old = result('study_sample', 'untargeted');
+const old = result('sample', 'untargeted');
 const preview = metadata.preview('untargeted');
 await flush();
 const edit = metadata.edit('targeted', ['A'], {excluded: true});
@@ -211,7 +211,7 @@ await metadata.preview('untargeted');
 const old = result();
 const preview = metadata.preview('targeted');
 await flush();
-confirmed = result('pooled_qc');
+confirmed = result('qc');
 confirmed.samples[0].excluded = true;
 confirmed.overview = {excluded: [{raw_stem: 'A', reason: ''}]};
 await metadata.exclude({raw_dir: '/batch', raw_stem: 'A'});
@@ -219,7 +219,7 @@ confirmed.samples[0].excluded = false;
 late.resolve(old);
 assert.equal(await preview, false);
 assert.equal(metadata.forPage('targeted').rows[0].excluded, true);
-assert.equal(metadata.forPage('targeted').rows[0].sample_role, 'pooled_qc');
+assert.equal(metadata.forPage('targeted').rows[0].sample_role, 'qc');
 assert.equal(metadata.forPage('untargeted').rows[0].sample_role, 'blank');
 assert.deepEqual(metadata.forPage('untargeted').overview.excluded, []);
 """

@@ -1773,7 +1773,7 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
                 sample_name="S2",
                 raw_stem="S2",
                 injection_order=1,
-                sample_role="study_sample",
+                sample_role="sample",
                 batch_id="batch_B",
                 prep_batch_id="prep_B",
                 matrix_type="plasma",
@@ -1783,7 +1783,7 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
                 sample_name="S1",
                 raw_stem="S1",
                 injection_order=2,
-                sample_role="pooled_qc",
+                sample_role="qc",
                 batch_id="batch_A",
                 prep_batch_id="prep_A",
                 matrix_type="tissue",
@@ -1814,7 +1814,7 @@ def test_run_alignment_cli_rejects_invalid_sample_metadata_before_application(
     if invalid_kind != "missing":
         row = (
             "sample_metadata\tS1\tS1\t1\t"
-            f"{'invalid' if invalid_kind == 'role' else 'study_sample'}"
+            f"{'invalid' if invalid_kind == 'role' else 'sample'}"
             "\tbatch_A\t\t\t\tfalse\t\n"
         )
         metadata.write_text(

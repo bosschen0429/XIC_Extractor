@@ -179,7 +179,7 @@ def test_review_rows_never_become_alignment_roots(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=i + 1,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for i, stem in enumerate(stems)
         ),

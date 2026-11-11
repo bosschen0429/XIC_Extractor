@@ -148,16 +148,16 @@ def test_queued_targeted_metadata_membership_is_frozen(tmp_path, monkeypatch):
                         "sample_name": "A",
                         "raw_stem": "A",
                         "injection_order": "9" if changed else "1",
-                        "sample_role": "blank" if changed else "study_sample",
-                        "excluded": "false",
+                        "sample_role": "sample",
+                        "excluded": "true" if changed else "false",
                     },
                     {
                         "schema_version": "sample_metadata",
                         "sample_name": "B",
                         "raw_stem": "B",
                         "injection_order": "8" if changed else "2",
-                        "sample_role": "study_sample" if changed else "blank",
-                        "excluded": "false",
+                        "sample_role": "blank",
+                        "excluded": "false" if changed else "true",
                     },
                 ]
             )

@@ -392,13 +392,21 @@ def test_sequence_manifest_writes_sample_metadata_for_actual_raw_rows(
                 ["4", "SDOLEK-pretest", "20260105 SDOLEK", "50 ppb", "2"],
                 ["5", "SDOLEK-missing", "20260105 SDOLEK", "50 ppb", "2"],
                 ["6", "Blank_3", "20260105 SB Check", "DIW", "20"],
+                ["7", "TumorBC001_DNA", "20260105 DNA", "tumor", "2"],
+                ["8", "ColumnWash", "20260105 DNA", "ACN", "2"],
             ],
         ],
         source_doc="method.docx",
     )
     rows = build_sequence_manifest_from_entries(
         entries,
-        raw_stems=("SDOLEK-pretest", "SDOLEK-pretest-1", "Blank_3"),
+        raw_stems=(
+            "SDOLEK-pretest",
+            "SDOLEK-pretest-1",
+            "Blank_3",
+            "TumorBC001_DNA",
+            "ColumnWash",
+        ),
     )
 
     sample_metadata_tsv = tmp_path / "instrument_qc_sample_metadata.tsv"
@@ -413,16 +421,26 @@ def test_sequence_manifest_writes_sample_metadata_for_actual_raw_rows(
         sequence_manifest_writers.SAMPLE_METADATA_OUTPUT_COLUMNS
     )
     by_sample = {row["sample_name"]: row for row in metadata_rows}
-    assert set(by_sample) == {"SDOLEK-pretest", "SDOLEK-pretest-1", "Blank_3"}
+    assert set(by_sample) == {
+        "SDOLEK-pretest",
+        "SDOLEK-pretest-1",
+        "Blank_3",
+        "TumorBC001_DNA",
+        "ColumnWash",
+    }
     assert by_sample["SDOLEK-pretest"]["schema_version"] == (
         SAMPLE_METADATA_SCHEMA_VERSION
     )
     assert by_sample["SDOLEK-pretest"]["injection_order"] == "4"
-    assert by_sample["SDOLEK-pretest"]["sample_role"] == "system_suitability"
+    assert by_sample["SDOLEK-pretest"]["sample_role"] == "other"
     assert by_sample["SDOLEK-pretest"]["matrix_type"] == "instrument_qc"
     assert by_sample["SDOLEK-pretest"]["group"] == "SDOLEK"
     assert by_sample["SDOLEK-pretest-1"]["injection_order"] == ""
     assert by_sample["Blank_3"]["sample_role"] == "blank"
+    # Rows without an instrument-QC class are told apart by name, never "unknown":
+    # an ordinary sample stays in Untargeted, a wash does not.
+    assert by_sample["TumorBC001_DNA"]["sample_role"] == "sample"
+    assert by_sample["ColumnWash"]["sample_role"] == "other"
     assert "SDOLEK-missing" not in by_sample
 
 

@@ -294,7 +294,7 @@ class AnalysisJobs:
                 if values.get("sequence_source")
                 else None,
                 import_sequence=bool(values.get("import_sequence")),
-                read_headers=False,
+                read_headers=bool(values.get("dll_dir")),
                 progress=self._progress,
                 should_cancel=self._cancel.is_set,
             )

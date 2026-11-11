@@ -11,15 +11,16 @@ from xic_extractor.sample_metadata import SampleMetadata, parse_sample_metadata
 @pytest.mark.parametrize(
     ("group", "role", "expected"),
     [
-        (" Case   A ", "pooled_qc", "Case A"),
-        ("QC", "study_sample", "QC"),
+        (" Case   A ", "qc", "Case A"),
+        ("QC", "sample", "QC"),
         ("Other", "qc", "QC"),
-        (" other ", "pooled_qc", "QC"),
+        (" other ", "qc", "QC"),
         ("", "qc", "QC"),
-        ("", "study_sample", "Sample"),
+        ("", "sample", "Sample"),
         ("", "blank", "Blank"),
-        ("Other", "solvent", "Solvent"),
-        ("", "unknown", "Other"),
+        ("Other", "other", "Other"),
+        ("", "std", "STD"),
+        ("", None, "Other"),
     ],
 )
 def test_group_uses_explicit_annotation_then_role(group, role, expected):
@@ -29,7 +30,7 @@ def test_group_uses_explicit_annotation_then_role(group, role, expected):
 
 def test_missing_metadata_uses_supplied_role_not_name():
     assert resolve_sample_group() == "Other"
-    assert resolve_sample_group(sample_role="pooled_qc") == "QC"
+    assert resolve_sample_group(sample_role="qc") == "QC"
 
 
 def test_group_key_and_first_display_spelling_are_shared():

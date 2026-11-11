@@ -26,10 +26,10 @@ divided by the number of eligible samples. Numeric zero and finite backfilled
 values count as available; blank and nonfinite cells do not. This is numeric
 availability, not a detection rate. Cell states are not inferred from numbers.
 
-Eligible samples have `sample_role=study_sample` and `excluded=FALSE` in the
+Eligible samples have `sample_role=sample` and `excluded=FALSE` in the
 sample data (see [Inputs](#inputs)). Sample names and raw-stem aliases must
 match the Matrix columns exactly, including the writer's formula escaping. The
-step itself assigns no roles; it uses the roles its sample data carries. QC, blank, unknown-role and excluded samples do not enter the
+step itself assigns no roles; it uses the roles its sample data carries. QC, STD, blank, other, unspecified-role and excluded samples do not enter the
 denominator, but their Matrix columns remain in the delivered tables. The step
 is unavailable when sample data is missing, does not cover every Matrix column,
 or has no eligible study sample.

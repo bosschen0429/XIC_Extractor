@@ -121,7 +121,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=index,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for index, stem in enumerate(stems, start=1)
         ),
@@ -261,7 +261,7 @@ def test_sample_job_builder_binds_shared_inputs_to_each_subject(
                 sample_name="S1",
                 raw_stem="S1",
                 injection_order=1,
-                sample_role="study_sample",
+                sample_role="sample",
             ),
         ),
         settings=settings,
@@ -484,7 +484,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
                 sample_name="S1",
                 raw_stem="S1",
                 injection_order=1,
-                sample_role="study_sample",
+                sample_role="sample",
             ),
         ),
         settings=settings,
@@ -730,7 +730,7 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=index,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for index, stem in enumerate(stems, start=1)
         ),
@@ -832,7 +832,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=index,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for index, stem in enumerate(stems, start=1)
         ),
@@ -968,7 +968,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
                 sample_name=p.stem,
                 raw_stem=p.stem,
                 injection_order=i + 1,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for i, p in enumerate(paths)
         ),
@@ -1143,7 +1143,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=index,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for index, stem in enumerate(sample_stems, start=1)
         ),
@@ -1423,7 +1423,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=index,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for index, stem in enumerate(sample_stems, start=1)
         ),

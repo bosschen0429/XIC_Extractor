@@ -189,7 +189,7 @@ def test_production_batch_preserves_bounded_subject_membership(
                 sample_name="S1",
                 raw_stem="S1",
                 injection_order=1,
-                sample_role="study_sample",
+                sample_role="sample",
             ),
         ),
         settings=settings,
