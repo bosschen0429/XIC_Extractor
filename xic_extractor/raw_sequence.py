@@ -150,7 +150,7 @@ def read_analysis_set(
             sequence_source,
             (
                 *(injection.raw_stem for injection in timeline),
-                *(Path(path).stem for path in unopened),
+                *(Path(path).stem for path in (*unopened, *unread)),
             ),
         )
         if sequence_source is not None

@@ -257,6 +257,48 @@ def test_an_exclusion_without_reason_is_saved_and_reused(tmp_path, monkeypatch) 
     assert reread[1]["exclusion_reason"] == ""
 
 
+def test_confirmed_annotations_reach_raw_whose_header_cannot_be_read(
+    tmp_path, monkeypatch
+) -> None:
+    from xic_extractor.raw_reader_errors import RawReaderError
+    from xic_extractor.raw_sequence import read_analysis_set
+
+    config = tmp_path / "config"
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    for stem in ("S1", "Broken"):
+        (raw_dir / f"{stem}.raw").write_bytes(b"")
+
+    def sample_header(path: Path):
+        if path.stem == "Broken":
+            raise RawReaderError("no MS controller")
+        return SimpleNamespace(
+            sample_name=path.stem,
+            sample_type="Unknown",
+            comment="",
+            instrument_method="",
+        )
+
+    install_raw_sample_headers(monkeypatch, sample_header, lambda path: 0)
+    rows = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
+    broken = next(row for row in rows if row["raw_stem"] == "Broken")
+    broken["sample_role"] = "blank"
+    broken["excluded"] = True
+    save_batch_samples(config, raw_dir, rows)
+
+    reread = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
+    broken = next(row for row in reread if row["raw_stem"] == "Broken")
+    assert (broken["sample_role"], broken["excluded"]) == ("blank", True)
+    # The confirmed exclusion keeps the unreadable RAW out of a Targeted run.
+    targeted = read_analysis_set(
+        raw_dir,
+        tmp_path,
+        analysis="targeted",
+        sequence_source=sample_annotations_path(config, raw_dir),
+    )
+    assert [entry.raw_stem for entry in targeted.analyzed] == ["S1"]
+
+
 def test_filename_preview_gives_every_raw_a_role_that_is_saved(tmp_path, monkeypatch):
     config = tmp_path / "config"
     raw_dir = _raw_batch(tmp_path, monkeypatch, ("S1", "QC_1", "Wash"))
