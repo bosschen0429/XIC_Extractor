@@ -9,7 +9,10 @@ import numpy as np
 
 from tests.cid_nl_raw_fixture import fake_acquisition_source
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
-from xic_extractor.configuration.mass_recalibration import MassRecalibrationResult
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibration,
+    MassRecalibrationResult,
+)
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery import pipeline as _pipeline
 from xic_extractor.discovery.models import DiscoveryRunOutputs
@@ -119,7 +122,12 @@ class _OwnerBoundFakeRawHandle:
         return None
 
     raw_open_receipt = None
-    mass_recalibration_result = MassRecalibrationResult("none")
+    # What the default easy_ic_restore reader reports without lock-mass trailers.
+    mass_recalibration_result = MassRecalibrationResult(
+        "unavailable",
+        reason="missing_lock_mass_trailers",
+        policy=MassRecalibration.EASY_IC_RESTORE,
+    )
 
     def read_ms1_mass_windows(self, requests):
         """This fake records no parent-MS1 centroids."""

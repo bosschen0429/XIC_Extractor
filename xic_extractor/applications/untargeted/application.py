@@ -27,6 +27,7 @@ from xic_extractor.diagnostics.grouping_experiment_io import (
     read_grouping_inputs,
     write_grouping_inputs,
 )
+from xic_extractor.discovery.batch_contract import DiscoveryPeakUniverseReceipt
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
     read_discovery_batch_index,
@@ -41,8 +42,10 @@ from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
     alignment_metadata,
 )
+from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 from xic_extractor.raw_mass_recalibration_batch import prepare_batch_mass_recalibration
+from xic_extractor.raw_source_binding import bind_expected_path_identity
 from xic_extractor.untargeted_execution.alignment import (
     complete_untargeted_alignment,
     execute_prepared_alignment,
@@ -190,17 +193,24 @@ def _prepare_mass_recalibration(
     recorder: TimingRecorder,
     context: UntargetedExecutionContext,
 ) -> dict[str, PreparedRawMassRecalibration]:
+    from xic_extractor.acquisition.raw_paths import existing_raw_paths
+
     policy = request.discovery_settings.mass_recalibration
-    if (
-        policy is MassRecalibration.NONE
-        and request.known_istd_reference is None
-        and request.targets_csv is not None
-    ):
+    if policy is not MassRecalibration.NONE:
+        # Discovery already computed each RAW's result; bind it to the path.
+        return {
+            stem: _bind_discovery_mass_recalibration(path, batch.peak_receipts[stem])
+            for stem, path in existing_raw_paths(
+                sample_order=batch.sample_order,
+                raw_files=batch.raw_files,
+                raw_dir=request.raw_dir,
+            ).items()
+        }
+    if request.known_istd_reference is None and request.targets_csv is not None:
+        # Only the ISTD reference needs Targeted calibration; Discovery has none.
         policy = request.peak_config.mass_recalibration
     if policy is MassRecalibration.NONE:
         return {}
-    from xic_extractor.acquisition.raw_paths import existing_raw_paths
-
     paths = existing_raw_paths(
         sample_order=batch.sample_order,
         raw_files=batch.raw_files,
@@ -220,6 +230,18 @@ def _prepare_mass_recalibration(
         )
         stage.metrics["raw_file_count"] = len(results)
         return results
+
+
+def _bind_discovery_mass_recalibration(
+    path: Path, receipt: DiscoveryPeakUniverseReceipt
+) -> PreparedRawMassRecalibration:
+    source = receipt.acquisition_source
+    assert source.local_file_revision is not None
+    binding = bind_expected_path_identity(path, source, source.local_file_revision)
+    return PreparedRawMassRecalibration(
+        AcquisitionSourceExpectation(source, binding.path_identity),
+        receipt.mass_recalibration_result,
+    )
 
 
 def _resolve_known_istd_reference(

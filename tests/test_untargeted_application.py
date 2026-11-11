@@ -38,6 +38,11 @@ from xic_extractor.applications.untargeted.request import (
     UntargetedRequest,
 )
 from xic_extractor.configuration.execution_profile import UntargetedExecutionPolicy
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibration,
+    MassRecalibrationResult,
+    serialize_mass_recalibration_result,
+)
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
@@ -834,13 +839,79 @@ def test_pure_cid_nl_targets_csv_integration(
             output_dir=tmp_path / "out",
             alignment_config=AlignmentConfig(),
             peak_config=_peak_config(),
-            discovery_settings=_settings(),
+            discovery_settings=replace(
+                _settings(), mass_recalibration=MassRecalibration.NONE
+            ),
             targets_csv=targets_csv,
         )
     )
 
     assert captured["known_istd_reference"] is fake_ref
     assert closed == [True]
+
+
+def test_alignment_applies_discovery_mass_result_without_reopening_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("S1",))
+    raw_path = batch_index.parent / "S1" / "owner_closed_acquisition.raw"
+    discovery_result = MassRecalibrationResult(
+        "applied",
+        policy=MassRecalibration.EASY_IC_RESTORE,
+        baseline_lm=1.25,
+        n_anchor=7,
+    )
+    with batch_index.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        columns = reader.fieldnames
+        rows = list(reader)
+    rows[0]["raw_file"] = str(raw_path)
+    rows[0]["mass_recalibration"] = serialize_mass_recalibration_result(
+        discovery_result
+    )
+    with batch_index.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, columns)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    def fail_if_recomputed(*_args, **_kwargs):
+        pytest.fail("Alignment recomputed mass recalibration from RAW")
+
+    captured: dict[str, object] = {}
+
+    def stop_after_capture(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("captured")
+
+    monkeypatch.setattr(
+        application_module, "prepare_batch_mass_recalibration", fail_if_recomputed
+    )
+    monkeypatch.setattr(
+        application_module, "complete_untargeted_alignment", stop_after_capture
+    )
+
+    with pytest.raises(AlignmentProcessExecutionError, match="captured"):
+        application_module.run_untargeted_application(
+            UntargetedRequest(
+                discovery_batch_index=batch_index,
+                raw_dir=raw_path.parent,
+                dll_dir=tmp_path / "dll",
+                output_dir=tmp_path / "out",
+                alignment_config=AlignmentConfig(),
+                peak_config=_peak_config(),
+                discovery_settings=_settings(),
+            )
+        )
+
+    prepared = captured["mass_recalibration_by_sample"]["S1"]
+    receipt = read_discovery_batch_index(batch_index).peak_receipts["S1"]
+    assert prepared.result == discovery_result
+    assert prepared.acquisition.source == receipt.acquisition_source
+    assert (
+        prepared.acquisition.path_identity
+        == receipt.acquisition_source.local_file_revision
+    )
 
 
 @pytest.mark.parametrize("backfill_enabled", (True, False))
