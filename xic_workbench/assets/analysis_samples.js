@@ -10,7 +10,6 @@ import {
   el,
   isBusy,
   lock,
-  pathTail,
   requestPath,
 } from "./analysis_ui.js";
 
@@ -123,7 +122,7 @@ export function mountSampleSteps() {
 function renderSequenceLine(page) {
   const path = $(samplePages[page].sequence).value.trim();
   $(sampleId(page, "sequence-name")).textContent = path
-    ? pathTail(path, 1)
+    ? path.split(/[\\/]/).pop()
     : "未使用";
   $(sampleId(page, "sequence-name")).title = path;
   $(sampleId(page, "sequence-browse")).textContent = path ? "更換" : "選擇";
@@ -199,6 +198,10 @@ function visibleRows() {
 function clearSelection() {
   selection.stems = new Set();
   selection.anchor = null;
+}
+// Job state changes outside this module call this through lock().
+export function renderSampleActions() {
+  if ($("sample-editor")?.open) renderSelection();
 }
 function renderSelection() {
   const count = selection.stems.size;

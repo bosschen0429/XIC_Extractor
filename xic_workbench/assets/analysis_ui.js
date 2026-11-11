@@ -1,7 +1,11 @@
 import { curation } from "./analysis_curation.js";
 // Transport and reusable DOM/form controls shared by analysis views.
 import { analysis } from "./analysis_jobs.js";
-import { listSamples, sampleMetadata } from "./analysis_samples.js";
+import {
+  listSamples,
+  renderSampleActions,
+  sampleMetadata,
+} from "./analysis_samples.js";
 import { checklist } from "./analysis_setup.js";
 import { state } from "./analysis_state.js";
 
@@ -87,6 +91,7 @@ export function lock() {
     );
   if ($("curation-export"))
     $("curation-export").disabled = isBusy() || !curation?.snapshot.canExport;
+  renderSampleActions();
 }
 export const isTemplatePath = (value) =>
   value.startsWith("<") || /[\\/]your[\\/]/i.test(value);
