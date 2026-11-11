@@ -1041,10 +1041,13 @@ def test_untargeted_delta_mass_method_edits_with_shared_terms(workbench, tmp_pat
     advanced.get_by_label("最低峰形 r").fill("0.85")
     expect(advanced).to_have_attribute("open", "")
     page.locator("#method-cid-on").check()
-    expect(page.locator("#method-combine-field")).to_be_visible()
-    expect(page.locator("#method-combine option[value='any']")).to_have_attribute(
-        "disabled", ""
-    )
+    # The engine combines Delta Mass only with dR, and only when both match.
+    expect(page.locator("#method-combine-field")).to_be_hidden()
+    expect(page.locator("#method-combine-fixed")).to_have_text("組合：兩者都要符合")
+    expect(
+        dialog.get_by_role("spinbutton", name="中性丟失 Da（第 1 列）")
+    ).to_be_disabled()
+    expect(page.locator("#method-cid-body")).to_contain_text("目前引擎只支援這個組合")
     expect(advanced).to_have_attribute("open", "")
     # Untargeted Δm/z is measured up from the lightest ion.
     dialog.get_by_role("button", name="＋ 伴隨離子").click()
@@ -1074,7 +1077,12 @@ def test_untargeted_delta_mass_method_edits_with_shared_terms(workbench, tmp_pat
         page.locator("#u-preset").select_option("pt_pattern_cid_nl_dr")
     page.locator("#method-edit").click()
     expect(dialog.locator("details.method-advanced")).not_to_have_attribute("open", "")
-    expect(page.locator("#method-combine")).to_have_value("all")
+    expect(page.locator("#method-combine-fixed")).to_be_visible()
+    # CID-NL alone keeps the choice between all and any.
+    page.locator("#method-dm-on").uncheck()
+    dialog.get_by_role("button", name="＋ 中性丟失").click()
+    expect(page.locator("#method-combine-field")).to_be_visible()
+    page.locator("#method-combine").select_option("any")
 
 
 def test_new_untargeted_delta_mass_method_restores_easy_ic(workbench, tmp_path):

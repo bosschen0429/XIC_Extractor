@@ -379,17 +379,18 @@ function editorError(editor) {
   }
   return "";
 }
+// Delta Mass Discovery combines only with the dR loss, and only when both match.
+const DELTA_MASS_LOSS = { name: "DNA_dR", neutral_loss_da: 116.0474 };
+const bothEvidence = () => methodDraft.dmOn && methodDraft.cidOn;
 function renderCombine() {
-  const evidence =
-    (methodDraft.cidOn ? methodDraft.losses.length : 0) +
-    (methodDraft.dmOn ? 1 : 0);
-  $("method-combine-field").hidden = evidence < 2;
-  $("method-combine").value = methodDraft.combine;
-  // The Delta Mass engine combines with CID-NL only when both match.
-  const any = $("method-combine").querySelector('option[value="any"]');
-  any.disabled = methodDraft.dmOn && methodDraft.cidOn;
-  any.textContent = any.disabled ? "任一符合（Delta Mass 尚未支援）" : "任一符合";
-  if (any.disabled) methodDraft.combine = "all";
+  const both = bothEvidence();
+  if (both) {
+    methodDraft.combine = "all";
+    methodDraft.losses = [{ ...DELTA_MASS_LOSS }];
+  }
+  $("method-combine-field").hidden =
+    both || !(methodDraft.cidOn && methodDraft.losses.length > 1);
+  $("method-combine-fixed").hidden = !both;
   $("method-combine").value = methodDraft.combine;
 }
 function renderCidCard() {
@@ -405,13 +406,16 @@ function renderCidCard() {
   ])
     head.append(el("th", text, cls));
   table.append(head);
+  const locked = bothEvidence();
   methodDraft.losses.forEach((loss, index) => {
     const row = el("tr");
     const name = el("input");
+    name.disabled = locked;
     name.value = loss.name;
     name.setAttribute("aria-label", `中性丟失名稱（第 ${index + 1} 列）`);
     name.oninput = () => (loss.name = name.value);
     const value = el("input");
+    value.disabled = locked;
     value.type = "number";
     value.step = "any";
     value.value = loss.neutral_loss_da ?? "";
@@ -428,6 +432,7 @@ function renderCidCard() {
       "x",
     );
     remove.setAttribute("aria-label", `移除第 ${index + 1} 個中性丟失`);
+    remove.hidden = locked;
     for (const [node, cls] of [
       [name, ""],
       [value, "num"],
@@ -443,7 +448,16 @@ function renderCidCard() {
     methodDraft.losses.push({ name: "", neutral_loss_da: null });
     renderMethodEditor();
   });
-  body.replaceChildren(table, add);
+  body.replaceChildren(
+    table,
+    locked
+      ? el(
+          "p",
+          "搭配 Delta Mass 時固定為 DNA_dR 116.0474 Da：目前引擎只支援這個組合。",
+          "subtle",
+        )
+      : add,
+  );
 }
 function renderDeltaCard() {
   const body = $("method-dm-body");

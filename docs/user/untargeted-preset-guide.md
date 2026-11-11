@@ -19,9 +19,10 @@ In **Untargeted Discovery → 分析方法**:
    thresholds; defaults come from the selected preset. Ion names follow their
    Δm/z with four decimals (for example `+4.0052`) unless the preset already
    named them.
-4. With two or more pieces of evidence, choose **全部符合** or **任一符合**.
-   Delta Mass with CID-NL supports **全部符合** only. The method summary updates
-   as you edit; it describes the configuration, not a predicted analytical result.
+4. With two or more CID-NL losses, choose **全部符合** or **任一符合**. Delta Mass
+   with CID-NL is fixed to **兩者都要符合** with DNA_dR 116.0474 Da, the only
+   combination the engine supports. The method summary updates as you edit; it
+   describes the configuration, not a predicted analytical result.
 5. Apply to use the edited method for the current batch. **另存方法檔…** writes a
    reusable TOML; built-in methods are never overwritten. A new Delta Mass
    method writes `mass_recalibration = "easy_ic_restore"`. Cancel leaves the

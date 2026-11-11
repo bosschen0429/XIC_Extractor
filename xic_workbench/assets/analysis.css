@@ -841,6 +841,11 @@
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: 12px;
 }
+.method-combine-fixed {
+  align-self: end;
+  margin: 0 0 10px;
+  color: var(--muted);
+}
 .evidence-card {
   display: grid;
   gap: 10px;
