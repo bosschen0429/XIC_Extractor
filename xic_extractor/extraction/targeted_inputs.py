@@ -52,6 +52,7 @@ def _analysis_set(config: ExtractionConfig) -> AnalysisSet:
     return read_analysis_set(
         config.data_dir,
         config.dll_dir,
+        analysis="targeted",
         sequence_source=config.injection_order_source,
         include_context=False,
     )

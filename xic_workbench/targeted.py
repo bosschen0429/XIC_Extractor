@@ -90,6 +90,7 @@ class TargetedRun:
             config.data_dir,
             dll_dir=config.dll_dir,
             sequence_source=config.injection_order_source,
+            analysis="targeted",
             include_context=False,
             progress=self._progress,
             should_cancel=self._should_cancel,

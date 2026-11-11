@@ -64,12 +64,12 @@ def test_parse_docx_sequence(tmp_path: Path, index_header: str) -> None:
     # Row 2: Pooled QC
     assert rows[1].injection_order == 2
     assert rows[1].raw_stem == "QC_Pool_1"
-    assert rows[1].sample_role == "pooled_qc"
+    assert rows[1].sample_role == "qc"
 
     # Row 3: Tumor
     assert rows[2].injection_order == 3
     assert rows[2].raw_stem == "Tumor tissue BC001_DNA"
-    assert rows[2].sample_role == "study_sample"
+    assert rows[2].sample_role == "sample"
     assert rows[2].group == ""
 
     # Row 4: Normal
@@ -132,13 +132,13 @@ def test_parse_xlsx_sequence(tmp_path: Path) -> None:
     assert len(rows) == 3
 
     assert rows[0].injection_order == 1
-    assert rows[0].sample_role == "pooled_qc"
+    assert rows[0].sample_role == "qc"
     assert rows[0].batch_id == "BatchA"
 
     assert rows[1].injection_order == 2
     assert rows[1].sample_name == "Patient_01_DNA"
     assert rows[1].raw_stem == "P01_DNA"
-    assert rows[1].sample_role == "study_sample"
+    assert rows[1].sample_role == "sample"
 
 
 def test_sequence_disagreements_are_reported_as_written(tmp_path: Path) -> None:
@@ -178,7 +178,7 @@ def test_parse_generic_csv_sequence(tmp_path: Path) -> None:
     assert rows[0].raw_stem == "Blank_A"
     assert rows[0].sample_role == "blank"
     assert rows[1].injection_order == 2
-    assert rows[1].sample_role == "study_sample"
+    assert rows[1].sample_role == "sample"
 
 
 @pytest.mark.parametrize("suffix", [".csv", ".tsv", ".xlsx"])

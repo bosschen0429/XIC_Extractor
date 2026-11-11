@@ -406,6 +406,7 @@ class UntargetedRun:
             raw_dir,
             self.request.dll_dir,
             self.request.sample_metadata,
+            analysis="untargeted",
         )
         self.samples = analysis_set.sample_metadata
         sample_path = self.output_dir / "sample_metadata.tsv"

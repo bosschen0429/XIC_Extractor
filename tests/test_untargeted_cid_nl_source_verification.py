@@ -155,7 +155,7 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
                 sample_name=stem,
                 raw_stem=stem,
                 injection_order=index,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for index, stem in enumerate(stems, 1)
         ),

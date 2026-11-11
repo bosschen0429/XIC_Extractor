@@ -311,7 +311,7 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
         assert metadata is not None
         # The RAW names and orders the sample; the sequence adds its role.
         assert [(row.sample_name, row.sample_role) for row in metadata] == [
-            ("Header Alpha", "pooled_qc")
+            ("Header Alpha", "qc")
         ]
         assert metadata[0].injection_order == 1
     finally:

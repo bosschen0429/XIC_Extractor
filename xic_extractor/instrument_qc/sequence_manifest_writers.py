@@ -11,6 +11,8 @@ from xic_extractor.instrument_qc.sequence_manifest import (
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
+    SampleRole,
+    infer_sample_role,
 )
 from xic_extractor.tabular_io import (
     format_spreadsheet_value,
@@ -188,16 +190,19 @@ def _sample_metadata_row_to_dict(row: SequenceManifestRow) -> dict[str, object]:
     }
 
 
-def _sample_role(row: SequenceManifestRow) -> str:
+def _sample_role(row: SequenceManifestRow) -> SampleRole:
     if row.instrument_qc_class.value == "SDOLEK":
-        return "system_suitability"
+        return "other"
     if row.instrument_qc_class.value == "MIX_STDS":
-        return "calibrator"
+        return "std"
     if row.instrument_qc_class.value == "BLANK":
         return "blank"
     if row.instrument_qc_class.value == "POOLED_QC":
-        return "pooled_qc"
-    return "unknown"
+        return "qc"
+    # Other rows are told apart the same way RAW without a written role are.
+    return infer_sample_role(
+        None, sample_name=row.raw_stem, comment=row.instrument_method
+    )
 
 
 def _format_tabular_value(value: object) -> str:

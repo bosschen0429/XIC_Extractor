@@ -81,16 +81,21 @@
 #untargeted-paths > .path-line:first-child {
   margin-top: 0;
 }
-.import-line {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 8px;
-}
-.import-line > label {
+.sequence-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
   color: var(--muted);
   font-size: 13px;
-  font-weight: 550;
+}
+.sequence-line .mono {
+  overflow-wrap: anywhere;
+}
+.sequence-line .text-button {
+  min-height: 0;
+  padding: 2px 0;
+  font-size: 13px;
 }
 .method-section {
   padding-top: 2px;
@@ -224,34 +229,27 @@
 }
 
 /* Samples */
-.sample-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 14px;
-  margin-top: 8px;
-  color: var(--subtle);
-  font-size: 12px;
-}
-.sample-tools .text-button {
-  min-height: 0;
-  padding: 2px 0;
-  font-size: 12px;
-}
-#sample-editor:has(#sample-rows .sample-empty) .toolbar,
-#sample-editor:has(#sample-rows .sample-empty) .toolbar + .subtle {
+#sample-editor:has(#sample-rows .sample-empty) .toolbar {
   display: none;
 }
-.sample-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+#sample-table {
+  position: relative;
+  user-select: none;
 }
-[data-part="samples-summary"]:empty,
-[data-part="samples-source"]:empty,
-.sample-summary:has(.chip-row:empty),
+#sample-table:focus {
+  outline: none;
+}
+#sample-rows tr[data-stem] {
+  cursor: default;
+}
+.select-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  pointer-events: none;
+}
 #istd-import-status:empty {
   display: none;
 }
@@ -627,12 +625,6 @@
   .step-head {
     flex-wrap: wrap;
   }
-  .import-line {
-    grid-template-columns: 1fr auto auto;
-  }
-  .import-line > label {
-    grid-column: 1 / -1;
-  }
 }
 
 .settings-notice, .settings-warning {
@@ -693,13 +685,16 @@
 #target-import-status.error { color: var(--danger); }
 #target-import-preview .table-scroll { max-height: 45vh; overflow: auto; }
 
-/* Excluded injections stay listed but read as set aside. */
-#sample-rows tr.excluded td {
-  color: var(--subtle);
+/* A role nothing identified asks for a look; exclusion reads as set aside. */
+#sample-rows tr.other td {
   background: var(--warn-soft);
 }
-#sample-rows tr.excluded td.mono {
+#sample-rows tr.excluded td {
+  color: var(--subtle);
   text-decoration: line-through;
+}
+#sample-rows tr.selected td {
+  background: var(--accent-soft);
 }
 
 .analysis-page .actions {
@@ -721,9 +716,6 @@
 #sample-rows .sample-empty td {
   padding: 18px 12px;
   color: var(--subtle);
-}
-#sample-rows .sample-empty button {
-  margin-left: 12px;
 }
 .curation-step {
   display: grid;

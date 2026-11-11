@@ -102,7 +102,7 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
                 sample_name=p.stem,
                 raw_stem=p.stem,
                 injection_order=i + 1,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for i, p in enumerate(paths)
         ),

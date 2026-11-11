@@ -64,7 +64,7 @@ def test_workbook_retains_nonempty_decision_inputs_without_sidecars(tmp_path):
 
     context = tmp_path / "sample.csv"
     context.write_text(
-        "sample_name,sample_role,injection_order\nSampleA,study_sample,2\nSampleB,qc,1\n",
+        "sample_name,sample_role,injection_order\nSampleA,sample,2\nSampleB,qc,1\n",
         encoding="utf-8",
     )
     config = replace(
@@ -83,7 +83,7 @@ def test_workbook_retains_nonempty_decision_inputs_without_sidecars(tmp_path):
     wb = load_workbook(path)
     assert list(wb["Sample Context"].values) == [
         ("sample_name", "sample_role", "injection_order"),
-        ("SampleA", "study_sample", "2"),
+        ("SampleA", "sample", "2"),
         ("SampleB", "qc", "1"),
     ]
     assert wb["Sample Context"].sheet_state == "hidden"

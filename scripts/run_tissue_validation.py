@@ -157,7 +157,7 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         else _DATASET_SAMPLE_METADATA.get(dataset)
     )
     raw_paths = read_analysis_set(
-        raw_dir, dll_dir, sequence_source=sample_metadata
+        raw_dir, dll_dir, analysis="untargeted", sequence_source=sample_metadata
     ).raw_paths
     if len(raw_paths) != dataset:
         raise ValueError(

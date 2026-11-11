@@ -87,7 +87,7 @@ def test_samples_take_annotations_from_metadata_but_names_and_order_from_raw(
                     "Alpha",
                     "Sample-A",
                     "2",
-                    "pooled_qc",
+                    "qc",
                     "B1",
                     "P1",
                     "plasma",
@@ -123,7 +123,7 @@ def test_samples_take_annotations_from_metadata_but_names_and_order_from_raw(
         "sample_name": "Header Sample-A",
         "raw_stem": "Sample-A",
         "injection_order": 1,
-        "sample_role": "pooled_qc",
+        "sample_role": "qc",
         "batch_id": "B1",
         "prep_batch_id": "P1",
         "matrix_type": "plasma",
@@ -215,7 +215,7 @@ def test_sample_payload_and_export_preserve_owner_schema(tmp_path) -> None:
             "sample_name": "Alpha",
             "raw_stem": "Sample-A",
             "injection_order": 2,
-            "sample_role": "study_sample",
+            "sample_role": "sample",
             "batch_id": "B1",
             "prep_batch_id": "P1",
             "matrix_type": "plasma",
@@ -520,7 +520,7 @@ def test_parse_request_preserves_sample_metadata_and_rejects_bad_method(
             "sample_name": "Alpha",
             "raw_stem": "Sample-A",
             "injection_order": 2,
-            "sample_role": "study_sample",
+            "sample_role": "sample",
             "batch_id": "B1",
             "prep_batch_id": "P1",
             "matrix_type": "plasma",
@@ -572,10 +572,10 @@ def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
     monkeypatch.setattr(
         module,
         "read_analysis_set",
-        lambda *_args: SimpleNamespace(
+        lambda *_args, **_kwargs: SimpleNamespace(
             raw_paths=(raw,),
             sample_metadata=(
-                SampleMetadata("A", "A", sample_role="study_sample", group="case"),
+                SampleMetadata("A", "A", sample_role="sample", group="case"),
             ),
         ),
     )
@@ -617,7 +617,7 @@ def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
     assert (0, 0, "跨樣本特徵分組 · 2/4") in progress
     saved = load_sample_metadata(output / "sample_metadata.tsv")
     assert [(s.raw_stem, s.sample_role, s.group) for s in saved] == [
-        ("A", "study_sample", "case")
+        ("A", "sample", "case")
     ]
     assert summary["samples"][0]["group"] == "case"
     assert summary["published_paths"] == [
@@ -649,7 +649,7 @@ def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
     monkeypatch.setattr(
         module,
         "read_analysis_set",
-        lambda *_args: SimpleNamespace(
+        lambda *_args, **_kwargs: SimpleNamespace(
             raw_paths=(raw,), sample_metadata=(SampleMetadata("A", "A"),)
         ),
     )
@@ -728,8 +728,8 @@ def test_raw_sample_refresh_preserves_filename_and_method_roles(tmp_path, monkey
     rows = load_samples(raw_dir, dll_dir=tmp_path)["samples"]
     assert {r["raw_stem"]: r["sample_role"] for r in rows} == {
         "Blank_01": "blank",
-        "Sample001": "solvent",
-        "Sample002": "study_sample",
+        "Sample001": "other",
+        "Sample002": "sample",
     }
 
 

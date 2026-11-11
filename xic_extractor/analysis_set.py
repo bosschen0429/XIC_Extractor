@@ -1,4 +1,4 @@
-"""Role-owned analysis set over the full injection timeline, independent of folders."""
+"""Analysis set over the full injection timeline, independent of folders."""
 
 from __future__ import annotations
 
@@ -9,15 +9,22 @@ from typing import Literal
 
 from xic_extractor.injection_timeline import Injection
 from xic_extractor.sample_metadata import (
+    SAMPLE_ROLES,
     SampleMetadata,
     SampleRole,
     SequenceMatchReport,
 )
 
-ANALYSIS_SAMPLE_ROLES: frozenset[str] = frozenset({"study_sample", "qc", "pooled_qc"})
+AnalysisKind = Literal["targeted", "untargeted"]
+# Exclusion is the only user control over analysis; roles only label, except
+# that Untargeted builds its feature matrix from samples and QC.
+ANALYZED_ROLES: Mapping[AnalysisKind, frozenset[SampleRole]] = {
+    "targeted": frozenset(SAMPLE_ROLES),
+    "untargeted": frozenset({"sample", "qc"}),
+}
 
 RoleSource = Literal["sample_metadata", "raw_header"]
-ContextReason = Literal["role", "excluded"]
+ContextReason = Literal["role", "excluded", "unreadable"]
 
 
 @dataclass(frozen=True)
@@ -41,6 +48,7 @@ class AnalysisSetEntry:
 
     @property
     def sample_role(self) -> SampleRole:
+        assert self.metadata.sample_role is not None
         return self.metadata.sample_role
 
     @property
@@ -50,14 +58,24 @@ class AnalysisSetEntry:
 
 @dataclass(frozen=True)
 class AnalysisSet:
-    """Acquired chronology and annotations; only analyzed entries are processed."""
+    """Acquired chronology and annotations; only analyzed entries are processed.
+
+    Entries without injection order are RAW whose header was not read: excluded
+    files left unopened, and unreadable files that would not be analyzed.
+    """
 
     entries: tuple[AnalysisSetEntry, ...]
     sequence: SequenceMatchReport | None = None
-    # Unreadable RAW that would not be analyzed; reported, not ordered.
-    unreadable: tuple[Path, ...] = ()
     # Explicit non-analysis inputs whose acquisition facts were not requested.
     unopened_context: tuple[Path, ...] = ()
+
+    @property
+    def unreadable(self) -> tuple[Path, ...]:
+        return tuple(
+            entry.raw_path
+            for entry in self.entries
+            if entry.context_reason == "unreadable"
+        )
 
     @property
     def sample_metadata(self) -> tuple[SampleMetadata, ...]:
@@ -86,6 +104,7 @@ def select_analysis_set(
     header_rows: Mapping[str, SampleMetadata],
     overrides: Sequence[SampleMetadata] = (),
     *,
+    analysis: AnalysisKind | None,
     unreadable: Mapping[str, SampleMetadata] | None = None,
     sequence: SequenceMatchReport | None = None,
     unopened_context: Mapping[str, SampleMetadata] | None = None,
@@ -100,28 +119,50 @@ def select_analysis_set(
     preparation, matrix, and exclusion fields fill in. They never rename a
     sample or change its order.
 
+    ``analysis`` names whose membership rules apply; ``None`` lists the RAW
+    without deciding membership, so nothing is analyzed and nothing blocks.
+
     ``unreadable`` holds RAW without a readable header, keyed by path, with a
     filename role. One that would be analyzed stops resolution because its
-    order is unknown; any other is left out and listed in ``unreadable``.
+    order is unknown; any other stays an unordered ``unreadable`` entry.
     """
+    analyzed_roles = ANALYZED_ROLES[analysis] if analysis is not None else frozenset()
     rows = _metadata_by_stem(overrides)
     blocking: list[str] = []
-    skipped: list[Path] = []
+    skipped: list[AnalysisSetEntry] = []
     for path, fallback in (unreadable or {}).items():
         row = rows.get(fallback.raw_stem.casefold())
         fallback_role = (
-            row.sample_role
-            if row is not None and row.sample_role != "unknown"
-            else fallback.sample_role
-        )
+            row.sample_role if row is not None else None
+        ) or fallback.sample_role
         excluded = row is not None and row.excluded
-        if fallback_role in ANALYSIS_SAMPLE_ROLES and not excluded:
+        if fallback_role in analyzed_roles and not excluded:
             read_error = (unreadable_errors or {}).get(path, "")
             blocking.append(
                 PureWindowsPath(path).name + (f" ({read_error})" if read_error else "")
             )
-        else:
-            skipped.append(Path(path))
+            continue
+        annotation = row or fallback
+        skipped.append(
+            AnalysisSetEntry(
+                raw_path=Path(path),
+                copy_paths=(Path(path),),
+                metadata=replace(
+                    fallback,
+                    sample_role=fallback_role,
+                    batch_id=annotation.batch_id or fallback.batch_id,
+                    prep_batch_id=annotation.prep_batch_id,
+                    matrix_type=annotation.matrix_type,
+                    group=annotation.group,
+                    excluded=excluded,
+                    exclusion_reason=row.exclusion_reason if row is not None else "",
+                ),
+                role_source="sample_metadata"
+                if row is not None and row.sample_role is not None
+                else "raw_header",
+                context_reason="unreadable",
+            )
+        )
     if blocking:
         shown = "、".join(blocking[:5]) + (" 等" if len(blocking) > 5 else "")
         raise ValueError(
@@ -140,17 +181,18 @@ def select_analysis_set(
         header = header_rows[copy_path]
         name = _sample_name(header.sample_name, raw_stem, names, raw_aliases)
         row = rows.get(raw_stem.casefold())
-        if row is not None and row.sample_role != "unknown":
+        if row is not None and row.sample_role is not None:
             role: SampleRole = row.sample_role
             source: RoleSource = "sample_metadata"
         else:
+            assert header.sample_role is not None
             role = header.sample_role
             source = "raw_header"
         reason: ContextReason | None = (
             "excluded"
             if row is not None and row.excluded
             else None
-            if role in ANALYSIS_SAMPLE_ROLES
+            if role in analyzed_roles
             else "role"
         )
         if reason is None:
@@ -189,9 +231,8 @@ def select_analysis_set(
             )
         )
     return AnalysisSet(
-        tuple(entries),
+        (*entries, *skipped),
         sequence,
-        tuple(skipped),
         tuple(Path(path) for path in unopened_context or ()),
     )
 

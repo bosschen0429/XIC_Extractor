@@ -70,7 +70,7 @@ def _untarget_projection_inputs(
     scope_path.mkdir()
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         scope_path,
-        sample_roles={"sample-b": "qc", "sample-c": "study_sample"},
+        sample_roles={"sample-b": "qc", "sample-c": "sample"},
     )
     # CID-NL composition leaves unsearched samples out of the spine; their
     # coverage positions carry no discovery input.

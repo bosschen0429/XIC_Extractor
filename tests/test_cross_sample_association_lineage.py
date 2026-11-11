@@ -311,7 +311,7 @@ def _coverage_context(
             sample_name=sample,
             raw_stem=sample,
             injection_order=index,
-            sample_role="study_sample",
+            sample_role="sample",
         )
         for index, sample in enumerate(sample_order, start=1)
     )

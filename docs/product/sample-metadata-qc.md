@@ -24,12 +24,19 @@ interpretation, and future activation gates.
   suffixes are never stripped to collapse them into one specimen.
 - Sample metadata can act as an injection-order and sample-identity projection
   surface when sample metadata preserves existing output values.
-- `AnalysisSet` uses role and explicit exclusion to choose analysis members;
-  other injections remain context rather than analysis inputs.
-- Conservative Backfill uses study/QC roles and exclusion to derive its
+- `sample_role` is one of `sample`, `qc`, `std`, `blank` or `other`; a role
+  is a label. Exclusion is the only "do not analyze" control and keeps the role.
+  Targeted analyzes every non-excluded RAW; Untargeted analyzes non-excluded
+  `sample` and `qc`. Other injections remain context rather than analysis inputs.
+- A blank or `unknown` role in a file means "not specified": the RAW header and
+  file name decide it (`infer_sample_role`), so an ordinary sample becomes
+  `sample` and only a RAW nothing identifies becomes `other`. Earlier role names
+  are read as `study_sample`→`sample`, `pooled_qc`→`qc`, `calibrator`→`std`,
+  `solvent` and `system_suitability`→`other`. Writers emit only the five roles.
+- Conservative Backfill uses `sample`/`qc` roles and exclusion to derive its
   eligible support population. The RT frame uses batch membership as cohort
   context.
-- Matrix curation's finite-value fraction uses explicit study-sample and
+- Matrix curation's finite-value fraction uses explicit `sample` role and
   exclusion metadata for its denominator and writes a new folder. It does not
   mutate the source Matrix.
 - Role-based blank subtraction, QC weighting, response correction and
@@ -111,15 +118,15 @@ Word, Excel, CSV, and TSV sequence inputs supply role, group, batch, and exclusi
 annotations; they do not rename samples or replace acquisition order. Partial
 coverage is allowed. Matching reports unmatched entries in both directions,
 duplicate printed sequence numbers, and contradictory sample codes. Unreadable
-RAWs that would be analyzed fail with a file list; unreadable excluded or blank
-files are omitted with a warning. The workbench displays these conflicts and
+RAWs that would be analyzed fail with a file list; other unreadable RAWs stay
+listed, without injection order, with a warning. The workbench displays these conflicts and
 omissions. Targeted reports the frozen input's sample checks before extraction
 and retains them with the result. Reloading the workbench restores these checks
 and the last loaded Untargeted sample summary. Queued Targeted work retains its
 frozen sequence and membership.
 
-Targeted resolves explicit roles and exclusions before opening RAW files. Known
-non-analysis files remain listed as unopened context, without pretending to have
+Targeted resolves explicit exclusions before opening RAW files. Excluded
+files remain listed as unopened context, without pretending to have
 acquired their sample names or injection order. Its analyzed population is ordered
 by the acquired timestamps of the included injections. Consumers that need the
 full injection timeline continue to request context headers. A selected file
@@ -128,10 +135,9 @@ explicitly excluded file does not need to open successfully.
 
 ### Sample groups and exclusions
 
-- An explicit metadata `group` wins. Otherwise the role decides: `study_sample`
-  displays `Sample`, `qc` and `pooled_qc` display `QC`, `blank` displays
-  `Blank`, other known roles display their role name, and `unknown` displays
-  `Other`. Sample names never assign groups.
+- An explicit metadata `group` wins. Otherwise the role decides: `sample`,
+  `qc`, `std`, `blank` and `other` display `Sample`, `QC`, `STD`, `Blank` and
+  `Other`; no role displays `Other`. Sample names never assign groups.
 - Group comparison is case-insensitive after whitespace normalization. Blank
   and `Other` mean unassigned.
 - Sequence documents and ordinary delimited tables are matched by normalized
@@ -152,10 +158,14 @@ explicitly excluded file does not need to open successfully.
 Targeted and Untargeted share one confirmed `sample_metadata` TSV per RAW
 folder under the workbench config directory. Both flows read and write it, and
 once it exists it is that folder's metadata source. Edits are validated by
-`parse_sample_metadata` before writing. Previewing samples or importing a
-sequence reads no RAW and leaves unmatched roles unknown rather than overriding
-a later RAW-header role; real identities and chronology are resolved before
-analysis. A failed or cancelled import keeps the previous confirmed file.
+`parse_sample_metadata` before writing. Choosing a RAW folder, or another
+上機資訊, lists every RAW below the folder in the background and reads each
+header for sample name, injection order and role; confirmed roles and
+exclusions win over the header. Listing decides no membership, so an unreadable
+RAW is listed with a warning. Opening the sample editor compares file names and
+rereads headers only when RAW were added or removed. Without a RawFileReader
+folder, roles come from file names. A failed or cancelled import keeps the
+previous confirmed file.
 
 This input preparation can change resolved order relative to file modification
 time or document ordering. Such a change needs a real-data expected-diff

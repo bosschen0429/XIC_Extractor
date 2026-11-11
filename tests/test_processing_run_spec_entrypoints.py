@@ -99,7 +99,7 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
     monkeypatch.setattr(
         workbench_module,
         "read_analysis_set",
-        lambda *_args: SimpleNamespace(
+        lambda *_args, **_kwargs: SimpleNamespace(
             raw_paths=(raw_dir / "A.raw", raw_dir / "B.raw"),
             sample_metadata=(),
         ),

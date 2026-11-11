@@ -35,7 +35,7 @@ function fakeClock() {
   };
 }
 const samples = [
-  {raw_stem: 'S1', sample_role: 'study_sample', excluded: false},
+  {raw_stem: 'S1', sample_role: 'sample', excluded: false},
   {raw_stem: 'QC', sample_role: 'qc', excluded: false},
 ];
 const detection = source => ({source_dir: source, steps: [{
@@ -90,7 +90,7 @@ assert.throws(() => {
 const expected = {
   source_dir: '/run', sample_metadata_path: '', istd_path: '',
   samples: [
-    {raw_stem: 'S1', sample_role: 'study_sample', excluded: false},
+    {raw_stem: 'S1', sample_role: 'sample', excluded: false},
     {raw_stem: 'QC', sample_role: 'qc', excluded: false},
   ],
   steps: {finite_fraction: {min_finite_fraction: 0.6}},

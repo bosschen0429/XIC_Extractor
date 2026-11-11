@@ -151,7 +151,7 @@ def test_cli_rejects_unbound_samples_and_no_eligible_samples(tmp_path):
     write_tsv(samples, metadata, header)
     result = _run(source, samples, output)
     assert result.returncode == 2
-    assert "study_sample" in result.stderr
+    assert "sample_role=sample" in result.stderr
     assert not output.exists()
 
 
@@ -177,7 +177,7 @@ def test_sample_data_prefers_file_then_run_then_confirmed_then_raw_headers(
     source = alignment_output(tmp_path / "alignment", raw_dir=raw_dir)
     header_reads = []
 
-    def read_analysis_set(root, dll_dir):
+    def read_analysis_set(root, dll_dir, **_kwargs):
         header_reads.append((root, dll_dir))
         return SimpleNamespace(sample_metadata=from_payload(sample_payload()))
 

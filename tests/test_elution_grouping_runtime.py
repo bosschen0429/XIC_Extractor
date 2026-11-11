@@ -40,7 +40,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
 ):
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
-        sample_roles={f"S{i}": "study_sample" for i in range(4)},
+        sample_roles={f"S{i}": "sample" for i in range(4)},
         thermo_raw_sources=True,
     )
     settings = replace(
@@ -101,7 +101,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
                 sample_name=path.stem,
                 raw_stem=path.stem,
                 injection_order=index + 1,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for index, path in enumerate(paths)
         ),
@@ -267,7 +267,7 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
     samples = tuple(f"S{i}" for i in range(7))
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
-        sample_roles={sample: "study_sample" for sample in samples},
+        sample_roles={sample: "sample" for sample in samples},
         thermo_raw_sources=True,
     )
     settings = replace(
@@ -324,7 +324,7 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
                 sample_name=path.stem,
                 raw_stem=path.stem,
                 injection_order=index + 1,
-                sample_role="study_sample",
+                sample_role="sample",
             )
             for index, path in enumerate(paths)
         ),

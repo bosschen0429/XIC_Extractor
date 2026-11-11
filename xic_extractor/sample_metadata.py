@@ -24,28 +24,16 @@ SAMPLE_METADATA_COLUMNS: tuple[str, ...] = (
     "excluded",
     "exclusion_reason",
 )
-SampleRole = Literal[
-    "study_sample",
-    "qc",
-    "pooled_qc",
-    "blank",
-    "calibrator",
-    "solvent",
-    "system_suitability",
-    "unknown",
-]
-SAMPLE_ROLES: frozenset[str] = frozenset(
-    {
-        "study_sample",
-        "qc",
-        "pooled_qc",
-        "blank",
-        "calibrator",
-        "solvent",
-        "system_suitability",
-        "unknown",
-    }
-)
+SampleRole = Literal["sample", "qc", "std", "blank", "other"]
+SAMPLE_ROLES: tuple[SampleRole, ...] = ("sample", "qc", "std", "blank", "other")
+# Earlier files used finer roles; they are read as these, never written.
+_LEGACY_ROLES: Mapping[str, SampleRole] = {
+    "study_sample": "sample",
+    "pooled_qc": "qc",
+    "calibrator": "std",
+    "solvent": "other",
+    "system_suitability": "other",
+}
 _SEQUENCE_HEADER_ALIASES: Mapping[str, frozenset[str]] = {
     "order": frozenset(
         {"id", "no", "index", "order", "injection order", "序號", "編號", "項次"}
@@ -81,7 +69,8 @@ class SampleMetadata:
     sample_name: str
     raw_stem: str
     injection_order: int | None = None
-    sample_role: SampleRole = "unknown"
+    # None means not specified: the RAW header and file name decide the role.
+    sample_role: SampleRole | None = None
     batch_id: str = ""
     prep_batch_id: str = ""
     matrix_type: str = ""
@@ -127,44 +116,57 @@ class SequenceMatchReport:
         return len(self.matched_raw_stems)
 
 
+def parse_sample_role(text: str | None) -> SampleRole | None:
+    """A written role, mapping earlier role names; blank or unknown is unspecified.
+
+    Raises ``ValueError`` for any other text.
+    """
+    value = (text or "").strip().lower()
+    if value in {"", "unknown"}:
+        return None
+    for role in SAMPLE_ROLES:
+        if value == role:
+            return role
+    if value in _LEGACY_ROLES:
+        return _LEGACY_ROLES[value]
+    raise ValueError(f"unsupported sample_role {text!r}")
+
+
 def infer_sample_role(
     sample_type: str | None,
     sample_name: str | None = None,
     comment: str | None = None,
 ) -> SampleRole:
-    """Infer canonical SampleRole from Thermo SampleType and text metadata."""
+    """Infer SampleRole from Thermo SampleType and text metadata; else other."""
     combined = f"{sample_name or ''} {comment or ''}".upper()
-    if re.search(r"(?:^|[\W_])(?:POOLED|POOL)[_\s]?QC\d*(?:[\W_]|$)", combined):
-        return "pooled_qc"
-    if re.search(r"(?:^|[\W_])QC\d*(?:[\W_]|$)", combined):
+    if re.search(r"(?:^|[\W_])(?:(?:POOLED|POOL)[_\s]?)?QC\d*(?:[\W_]|$)", combined):
         return "qc"
     if re.search(r"(?:^|[\W_])(?:BLANK|BLK)\d*(?:[\W_]|$)", combined):
         return "blank"
     if re.search(
-        r"(?:^|[\W_])(?:SDOLEK|SDO(?:[_-]LEK)?|SST|SUITABILITY)(?:[\W_]|$)", combined
+        r"(?:^|[\W_])(?:SDOLEK|SDO(?:[_-]LEK)?|SST|SUITABILITY"
+        r"|SOLVENT|WASH|STOPFLOW|COLUMNWASH)(?:[\W_]|$)",
+        combined,
     ):
-        return "system_suitability"
-    if re.search(
-        r"(?:^|[\W_])(?:SOLVENT|WASH|STOPFLOW|COLUMNWASH)(?:[\W_]|$)", combined
-    ):
-        return "solvent"
+        return "other"
     if re.search(
         r"(?:^|[\W_])(?:CAL|CALIBRATOR|STD|STANDARD|MIX[_\s]?STDS)\d*(?:[\W_]|$)",
         combined,
     ):
-        return "calibrator"
+        return "std"
 
     st = (sample_type or "").strip().lower()
     if st in {"unknown", "sample"}:
-        return "study_sample"
-    if st in SAMPLE_ROLES:
-        return st  # type: ignore[return-value]
+        return "sample"
     if st in {"standard", "calibrator"}:
-        return "calibrator"
-
-    if sample_name:
-        return "study_sample"
-    return "unknown"
+        return "std"
+    try:
+        written = parse_sample_role(st)
+    except ValueError:
+        written = None
+    if written is not None:
+        return written
+    return "sample" if sample_name else "other"
 
 
 def normalize_for_matching(s: str) -> str:
@@ -844,17 +846,16 @@ def _parse_sample_metadata_row(
         source,
         row_number,
     )
-    sample_role = row["sample_role"] or "unknown"
-    if sample_role not in SAMPLE_ROLES:
-        raise SampleMetadataError(
-            f"{source}:{row_number}: unsupported sample_role {sample_role!r}"
-        )
+    try:
+        sample_role = parse_sample_role(row["sample_role"])
+    except ValueError as exc:
+        raise SampleMetadataError(f"{source}:{row_number}: {exc}") from exc
     excluded = _parse_bool(row["excluded"], "excluded", source, row_number)
     return SampleMetadata(
         sample_name=sample_name,
         raw_stem=raw_stem,
         injection_order=injection_order,
-        sample_role=sample_role,  # type: ignore[arg-type]
+        sample_role=sample_role,
         batch_id=row["batch_id"],
         prep_batch_id=row["prep_batch_id"],
         matrix_type=row["matrix_type"],
