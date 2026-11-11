@@ -827,7 +827,14 @@ def test_targeted_bulk_specificity_selects_like_samples(
     # Nothing selected: the toolbar is idle.
     expect(page.locator("#target-bulk-apply")).to_be_disabled()
     handles = page.locator("#target-rows td.target-handle")
-    # Drag a band over the row numbers.
+    # Drag a band over the row numbers. Keep the gesture away from the scroll
+    # box's edges, where a held drag deliberately keeps scrolling.
+    # Measure only after the dialog has stopped moving.
+    page.locator("#target-editor").evaluate(
+        "dialog => Promise.all(dialog.getAnimations({subtree: true})"
+        ".map(animation => animation.finished))"
+    )
+    page.locator("#target-table").evaluate("box => { box.scrollTop = 0; }")
     start = handles.nth(0).bounding_box()
     end = handles.nth(2).bounding_box()
     page.mouse.move(start["x"] + 5, start["y"] + 5)

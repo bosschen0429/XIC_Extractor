@@ -318,7 +318,8 @@ function renderTargetPreview() {
 // numbers, Ctrl adds, Shift extends, and a search selects what it finds.
 const selection = { rows: new Set(), anchor: null };
 let drag = null;
-let suppressClickUntil = 0;
+// A drag ends with a click on its last row; only that click is not a selection.
+let suppressedClick = { row: null, until: 0 };
 let expandedRow = null;
 function visibleTargets() {
   const filter = $("target-filter").value.trim().toLowerCase();
@@ -416,7 +417,7 @@ function endDrag(event) {
   ended.band?.remove();
   if (ended.moved) {
     if (ended.last !== null) selection.anchor = ended.last;
-    suppressClickUntil = event.timeStamp + 80;
+    suppressedClick = { row: ended.last, until: event.timeStamp + 80 };
   }
 }
 
@@ -723,9 +724,10 @@ export function bindTargeted() {
   document.addEventListener("pointerup", endDrag);
   $("target-rows").addEventListener("click", (event) => {
     const handle = event.target.closest("td.target-handle");
-    if (!handle || event.timeStamp < suppressClickUntil) return;
-    const tr = handle.closest("tr[data-target]");
-    clickHandle(state.targets[Number(tr.dataset.target)], event);
+    if (!handle) return;
+    const row = state.targets[Number(handle.closest("tr[data-target]").dataset.target)];
+    if (row === suppressedClick.row && event.timeStamp < suppressedClick.until) return;
+    clickHandle(row, event);
   });
   $("target-bulk-apply").onclick = () => act(() => applyBulk(false));
   $("target-bulk-ms1").onclick = () => act(() => applyBulk(true));
