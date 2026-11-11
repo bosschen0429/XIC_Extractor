@@ -58,8 +58,10 @@ or a user-defined identification method. Reading converts them: tags become thei
 loss values; a named method becomes its CID-NL value and Delta Mass ions (names,
 ratios and shape comparison carried over; its quantitation ion becomes `base`).
 A method the parameter columns cannot express is rejected with the affected
-targets: any-of combination, more than one condition of a kind, or tolerance and
-co-elution settings that differ from the shared values. Writing always uses the
+targets: a method with only a CID-NL condition (it required the loss, while
+the CID-NL column alone ranks peaks), any-of combination, more than one
+condition of a kind, or tolerance and co-elution settings that differ from the
+shared values. Writing always uses the
 new columns.
 
 Delta Mass ions use signed offsets relative to the Target's quantitation

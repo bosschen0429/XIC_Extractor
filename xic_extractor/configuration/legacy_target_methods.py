@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.targeted_identification import (
     DEFAULT_DELTA_MASS_SETTINGS,
@@ -144,8 +143,13 @@ def _convert(method: Mapping) -> tuple[float | None, tuple, DeltaMassSettings]:
                 if key in condition
             },
         )
-    if not ions and ppm != DEFAULT_CID_NL_MASS_POLICY.precursor_mz_tolerance_ppm:
-        raise ValueError("方法的 m/z 容差和清單共用值不同")
+    if not ions:
+        # A named CID-NL-only method required the loss; the CID-NL column alone
+        # only ranks peaks, so converting it would silently admit more peaks.
+        raise ValueError(
+            "只有 CID-NL 條件的方法是必要條件，新的 CID-NL 欄只用於排序；"
+            "請改用 CID-NL 欄並確認選峰，或加入 Delta Mass"
+        )
     return loss, ions, settings
 
 

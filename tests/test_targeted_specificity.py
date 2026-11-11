@@ -232,13 +232,14 @@ def test_earlier_workbook_with_named_methods_reads_as_parameter_columns(tmp_path
                 {
                     "Method": "Pair",
                     "Combine": "all",
-                    "m/z Tolerance ppm": 10,
+                    "m/z Tolerance ppm": 20,
                     "Condition": 1,
                     "Kind": "cid_nl",
                     "CID-NL Tag": "dR",
                 }
             ],
-            "容差",
+            # A required CID-NL condition must not become ranking-only support.
+            "必要條件",
         ),
     ],
 )

@@ -112,8 +112,9 @@ A `method` (or `cid_nl_tag`) column is converted when read: `dR`, `R` and `MeR`
 become their losses; a named method from an `Identification Methods` worksheet
 becomes its CID-NL loss and Delta Mass ions (names, ratios and shape comparison
 kept). A method the new columns cannot express is rejected with the affected
-targets: any-of combination, two conditions of one kind, or tolerance and
-co-elution settings that differ between methods. Saving writes the new format.
+targets: a method with only a CID-NL condition (it required the loss; the
+CID-NL column alone only ranks peaks), any-of combination, two conditions of
+one kind, or tolerance and co-elution settings that differ between methods. Saving writes the new format.
 
 Drag a file into the target-list import area or use **選擇檔案**. XLSX content
 automatically distinguishes a method from a target table; CSV/TSV are target tables.
