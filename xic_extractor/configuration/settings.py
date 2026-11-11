@@ -71,9 +71,9 @@ def build_extraction_config(
     settings_path: Path,
     output_dir: Path,
 ) -> ExtractionConfig:
-    from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
+    from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 
-    policy = targeted_tag_profile("dR")
+    policy = DEFAULT_CID_NL_MASS_POLICY
     for key in ("data_dir", "dll_dir"):
         _parse_existing_dir(settings_path, key, settings[key])
     return ExtractionConfig(

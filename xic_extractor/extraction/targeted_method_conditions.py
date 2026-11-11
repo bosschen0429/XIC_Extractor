@@ -7,7 +7,7 @@ from xic_extractor.configuration.targeted_identification import (
     DELTA_MASS_LABEL,
     CidNlCondition,
 )
-from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
+from xic_extractor.configuration.targeted_strategy import targeted_loss_profile
 from xic_extractor.evidence.targeted_identification import (
     IdentificationConditionEvidence,
     MethodCandidateEvidence,
@@ -19,21 +19,19 @@ from xic_extractor.extraction.targeted_peak_selection import (
 from xic_extractor.peak_detection.models import PeakCandidate
 
 
-def assess_targeted_method_conditions(raw, assessment, window, seeds_by_tag):
-    method = assessment.target.identification_method
+def assess_targeted_method_conditions(raw, assessment, window, seeds_by_loss):
+    method = assessment.target.identification
     assert method is not None
     by_candidate: dict[PeakCandidate, list[IdentificationConditionEvidence]] = {
         candidate: [] for candidate in assessment.candidate_evaluations
     }
     for index, condition in enumerate(method.conditions):
         if isinstance(condition, CidNlCondition):
-            profile = targeted_tag_profile(condition.tag)
+            profile = targeted_loss_profile(condition.neutral_loss_da)
             cid_target = replace(
                 assessment.target,
-                identification_method=None,
-                method_name="",
-                cid_nl_tag=condition.tag,
-                neutral_loss_da=profile.neutral_loss_profiles[0].neutral_loss_da,
+                identification=None,
+                neutral_loss_da=condition.neutral_loss_da,
                 nl_ppm_warn=profile.nl_tolerance_ppm,
                 nl_ppm_max=profile.nl_tolerance_ppm,
             )
@@ -47,7 +45,7 @@ def assess_targeted_method_conditions(raw, assessment, window, seeds_by_tag):
                 preferred_rt=assessment.preferred_rt,
                 strict_preferred_rt=assessment.strict_preferred_rt,
                 method_window=window,
-                method_seeds=seeds_by_tag[condition.tag],
+                method_seeds=seeds_by_loss[condition.neutral_loss_da],
             )
             for candidate, answers in by_candidate.items():
                 evidence = cid_assessment.candidate_ms2_evidence[candidate]
@@ -60,13 +58,11 @@ def assess_targeted_method_conditions(raw, assessment, window, seeds_by_tag):
                 )
                 answers.append(
                     IdentificationConditionEvidence(
-                        index, condition.kind, f"CID-NL · {condition.tag}", status
+                        index, condition.kind, condition.label, status
                     )
                 )
         else:
-            settings = condition.pattern_settings(
-                method.mz_tolerance_ppm, method.name, index
-            )
+            settings = condition.pattern_settings(f"{assessment.target.label}:{index}")
             hypotheses = assess_targeted_delta_mass(
                 raw, assessment, settings, condition.quant_position
             )

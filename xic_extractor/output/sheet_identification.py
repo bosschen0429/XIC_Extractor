@@ -2,11 +2,16 @@
 
 from openpyxl.utils import get_column_letter
 
-from xic_extractor.configuration.identification_method_table import (
-    METHOD_TABLE_HEADERS,
-    METHOD_TABLE_SHEET,
-    identification_method_rows,
+from xic_extractor.configuration.delta_mass_table import (
+    DELTA_MASS_HEADERS,
+    DELTA_MASS_SHEET,
+    delta_mass_rows,
 )
+from xic_extractor.configuration.targeted_identification import (
+    BASE_POSITION,
+    target_specificity,
+)
+from xic_extractor.configuration.targets import targets_delta_mass_payload
 from xic_extractor.output.workbook_styles import (
     _add_table,
     _fit_columns,
@@ -19,8 +24,7 @@ from xic_extractor.output.workbook_values import _excel_text
 METHOD_HEADERS = (
     "SampleName",
     "Target",
-    "Method",
-    "Combine",
+    "Specificity",
     "Candidate",
     "Candidate RT",
     "RT Start",
@@ -33,10 +37,18 @@ METHOD_HEADERS = (
     "Status",
     "Reason",
 )
+# Definitions repeat the list-shared Delta Mass settings on each ion row.
+_SETTING_HEADERS = (
+    ("m/z Tolerance ppm", "mz_tolerance_ppm"),
+    ("Apex Floor sec", "apex_floor_sec"),
+    ("Scan Interval Multiplier", "scan_interval_multiplier"),
+    ("Shape Window sec", "shape_window_sec"),
+    ("Min Shape r", "min_shape_r"),
+)
+DEFINITION_HEADERS = (*DELTA_MASS_HEADERS, *(header for header, _ in _SETTING_HEADERS))
 _DEFINITION_NUMERIC = frozenset(
     {
         "m/z Tolerance ppm",
-        "Condition",
         "Delta m/z",
         "Ratio Min",
         "Ratio Max",
@@ -46,10 +58,10 @@ _DEFINITION_NUMERIC = frozenset(
         "Min Shape r",
     }
 )
-DELTA_MASS_HEADERS = (
+DELTA_MASS_EVIDENCE_HEADERS = (
     "SampleName",
     "Target",
-    "Method",
+    "Specificity",
     "Condition",
     "Candidate",
     "Candidate RT",
@@ -87,20 +99,19 @@ def identification_evidence_rows(run_output, targets):
     conditions, positions = [], []
     for file in run_output.file_results:
         for target in targets:
-            method = target.identification_method
+            method = target.identification
             if method is None:
                 continue
             result = file.results.get(target.label)
             common = {
                 "SampleName": file.sample_name,
                 "Target": target.label,
-                "Method": method.name,
+                "Specificity": target_specificity(target),
             }
             if result is None or not result.method_candidate_evidence:
                 conditions.append(
                     {
                         **common,
-                        "Combine": method.combine_mode,
                         "Status": "not_evaluated",
                         "Method Accepted": "FALSE",
                         "Reason": file.error or "未找到可評估的定量峰",
@@ -121,7 +132,6 @@ def identification_evidence_rows(run_output, targets):
                     **peak,
                     "RT Start": candidate.rt_start_min,
                     "RT End": candidate.rt_end_min,
-                    "Combine": method.combine_mode,
                     "Method Accepted": "TRUE" if candidate.accepted else "FALSE",
                 }
                 for condition in candidate.conditions:
@@ -134,13 +144,12 @@ def identification_evidence_rows(run_output, targets):
                             "Status": condition.status,
                         }
                     )
-                    definition = method.conditions[condition.condition_index]
                     for match in condition.delta_mass_candidates:
                         quant_apex = next(
                             (
                                 p.apex_rt_min
                                 for p in match.positions
-                                if p.position_label == definition.quant_position
+                                if p.position_label == BASE_POSITION
                             ),
                             None,
                         )
@@ -153,7 +162,7 @@ def identification_evidence_rows(run_output, targets):
                                     if match.status == "candidate"
                                     else "fail",
                                     "Reason": match.reject_reason,
-                                    "Reference Position": definition.quant_position,
+                                    "Reference Position": BASE_POSITION,
                                     "Position": position.position_label,
                                     "Expected m/z": position.expected_mz,
                                     "Apex RT": position.apex_rt_min,
@@ -171,28 +180,22 @@ def identification_evidence_rows(run_output, targets):
 
 
 def build_identification_sheets(workbook, targets, evidence_rows):
-    methods = {
-        t.method_name: t.identification_method
-        for t in targets
-        if t.identification_method is not None
-    }
-    if not methods:
+    details = targets_delta_mass_payload(targets)
+    if details is None:
         return
+    shared = {header: details["settings"][key] for header, key in _SETTING_HEADERS}
     _evidence_sheet(
         workbook,
-        METHOD_TABLE_SHEET,
-        "IdentificationDefinitions",
-        METHOD_TABLE_HEADERS,
+        DELTA_MASS_SHEET,
+        "DeltaMassDefinitions",
+        DEFINITION_HEADERS,
         [
             {
                 **row,
-                **(
-                    {"Compare Shape": "TRUE" if row["Compare Shape"] else "FALSE"}
-                    if "Compare Shape" in row
-                    else {}
-                ),
+                "Compare Shape": "TRUE" if row["Compare Shape"] else "FALSE",
+                **shared,
             }
-            for row in identification_method_rows(methods)
+            for row in delta_mass_rows(details)
         ],
         _DEFINITION_NUMERIC,
     )
@@ -204,16 +207,13 @@ def build_identification_sheets(workbook, targets, evidence_rows):
         METHOD_HEADERS,
         evidence_rows["conditions"],
     )
-    if any(
-        c.kind == "delta_mass" for method in methods.values() for c in method.conditions
-    ):
-        _evidence_sheet(
-            workbook,
-            "Delta Mass Evidence",
-            "DeltaMassEvidence",
-            DELTA_MASS_HEADERS,
-            evidence_rows["positions"],
-        )
+    _evidence_sheet(
+        workbook,
+        "Delta Mass Evidence",
+        "DeltaMassEvidence",
+        DELTA_MASS_EVIDENCE_HEADERS,
+        evidence_rows["positions"],
+    )
 
 
 def _evidence_sheet(workbook, name, table_name, headers, rows, numeric=_NUMERIC):

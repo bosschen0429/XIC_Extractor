@@ -40,7 +40,7 @@ def config_dir(tmp_path):
                 "label": "Browser target",
                 "mz": "500",
                 "expected_rt_min": "1.5",
-                "method": "dR",
+                "cid_nl_loss_da": "116.0474",
                 "role": "istd",
                 "istd_pair": "",
             }

@@ -7,9 +7,17 @@ from pathlib import Path
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.parsing import _require_columns
 
-TARGET_FIELDS = ("label", "mz", "expected_rt_min", "method", "role", "istd_pair")
-# Earlier target tables named the method column after its only choices.
-LEGACY_METHOD_FIELD = "cid_nl_tag"
+TARGET_FIELDS = (
+    "label",
+    "mz",
+    "expected_rt_min",
+    "role",
+    "istd_pair",
+    "cid_nl_loss_da",
+    "delta_mass_mz",
+)
+# Blank specificity columns mean MS1 only; tables may omit them.
+REQUIRED_TARGET_FIELDS = TARGET_FIELDS[:5]
 LEGACY_TARGET_FIELDS = (
     "rt_min",
     "rt_max",
@@ -23,21 +31,6 @@ LEGACY_TARGET_FIELDS = (
 )
 _REQUIRED_SETTING_FIELDS = ("key", "value")
 _TARGET_DRAFT_IDENTITY_FIELDS = ("label", "mz")
-
-
-def normalize_target_header(fields: Sequence[str]) -> list[str]:
-    """Read a legacy ``cid_nl_tag`` column as ``method``; its values carry over."""
-    if LEGACY_METHOD_FIELD not in fields:
-        return list(fields)
-    if "method" in fields:
-        raise ConfigError(
-            "target table has both method and cid_nl_tag columns; keep only method"
-        )
-    return ["method" if field == LEGACY_METHOD_FIELD else field for field in fields]
-
-
-def normalize_target_row(row: Mapping[str, str]) -> dict[str, str]:
-    return dict(zip(normalize_target_header(list(row)), row.values(), strict=True))
 
 
 def read_settings(path: Path) -> dict[str, str]:
@@ -67,7 +60,9 @@ def _parse_settings_csv_bytes(payload: bytes, path: Path) -> dict[str, str]:
 
 def _read_target_rows(path: Path) -> list[tuple[int, dict[str, str]]]:
     delimiter = "\t" if path.suffix.lower() == ".tsv" else ","
-    return _read_target_file_rows(path, delimiter=delimiter, required=TARGET_FIELDS)
+    return _read_target_file_rows(
+        path, delimiter=delimiter, required=REQUIRED_TARGET_FIELDS
+    )
 
 
 def read_target_draft_rows(path: Path) -> list[dict[str, str]]:
@@ -113,7 +108,7 @@ def _read_target_file_rows(
             raise ConfigError(
                 f"{path}: duplicate target header {duplicates[0]!r} is not allowed"
             )
-        _require_columns(path, normalize_target_header(fieldnames), required)
+        _require_columns(path, fieldnames, required)
 
         result: list[tuple[int, dict[str, str]]] = []
         for row_number, row in enumerate(rows, start=2):
@@ -125,7 +120,7 @@ def _read_target_file_rows(
                     f"{path} row {row_number}: fewer values than columns; "
                     f"missing {missing_fields[0]!r}"
                 )
-            result.append((row_number, normalize_target_row(row)))
+            result.append((row_number, dict(row)))
         return result
 
 

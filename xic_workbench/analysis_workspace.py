@@ -155,9 +155,7 @@ class AnalysisWorkspace:
             "review_source": self.defaults.get("source", ""),
             "settings": settings,
             "targets": read_targets(config_dir=self.config_dir),
-            "identification_methods": read_workspace(self.config_dir).get(
-                "identification_methods", {}
-            ),
+            "delta_mass": read_workspace(self.config_dir).get("delta_mass"),
             "targeted_form": {"settings": setting_fields()},
             "targeted_method": {
                 **method_summary(settings),
@@ -258,20 +256,6 @@ class AnalysisWorkspace:
     def action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
         if action == "paths/validate":
             return _validate_path(str(values.get("path", "")), values.get("kind"))
-        if action == "targeted/method/validate":
-            from xic_extractor.configuration.targeted_identification import (
-                identification_methods_payload,
-                parse_identification_methods,
-            )
-
-            try:
-                methods = parse_identification_methods(values["identification_methods"])
-            except ValueError as exc:
-                return {"valid": False, "error": str(exc)}
-            return {
-                "valid": True,
-                "identification_methods": identification_methods_payload(methods),
-            }
         if action == "targeted/method/save":
             from xic_extractor.configuration.targeted_method_files import (
                 create_targeted_method,
@@ -303,7 +287,7 @@ class AnalysisWorkspace:
             method = create_targeted_method(
                 values["settings"],
                 values["targets"],
-                identification_methods=values.get("identification_methods", {}),
+                delta_mass=values.get("delta_mass"),
             )
             save_targeted_method(method, path)
             return {
@@ -312,9 +296,6 @@ class AnalysisWorkspace:
                 "message": f"已儲存方法：{name}",
             }
         if action == "targeted/method/load":
-            from xic_extractor.configuration.targeted_identification import (
-                identification_methods_payload,
-            )
             from xic_extractor.configuration.targeted_method_files import (
                 apply_targeted_method,
                 load_targeted_method,
@@ -326,9 +307,7 @@ class AnalysisWorkspace:
             return {
                 "settings": settings,
                 "targets": [dict(row) for row in method.target_rows],
-                "identification_methods": identification_methods_payload(
-                    method.identification_methods
-                ),
+                "delta_mass": method.delta_mass,
                 "summary": method_summary(settings),
             }
         if action == "preferences":
@@ -346,7 +325,7 @@ class AnalysisWorkspace:
                 values["settings"],
                 values["targets"],
                 config_dir=self.config_dir,
-                identification_methods=values.get("identification_methods"),
+                delta_mass=values.get("delta_mass"),
             )
             if values.get("output_dir"):
                 write_preferences(
@@ -380,11 +359,9 @@ class AnalysisWorkspace:
             )
 
             path = Path(values["path"])
-            if values.get("identification_methods"):
+            if values.get("delta_mass"):
                 method = create_targeted_method(
-                    {},
-                    values["targets"],
-                    identification_methods=values["identification_methods"],
+                    {}, values["targets"], delta_mass=values["delta_mass"]
                 )
                 save_targeted_method(method, path)
             else:

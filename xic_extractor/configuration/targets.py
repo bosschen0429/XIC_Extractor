@@ -11,38 +11,58 @@ from xic_extractor.configuration.csv_io import (
     LEGACY_TARGET_FIELDS,
     TARGET_FIELDS,
     _read_target_rows,
-    normalize_target_row,
 )
-from xic_extractor.configuration.models import Target
+from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.configuration.parsing import (
     _config_error,
     _parse_float,
 )
 from xic_extractor.configuration.targeted_identification import (
-    CID_NL_TAGS,
+    CidNlCondition,
     DeltaMassCondition,
-    IdentificationMethod,
+    DeltaMassSettings,
+    QuantRelativeIon,
+    TargetIdentification,
+    delta_mass_payload,
+    format_offset,
+    ion_name,
+    parse_delta_mass_payload,
+    target_cid_nl_loss,
 )
 
 LOGGER = logging.getLogger(__name__)
 
 
-def _read_targets(path: Path, *, identification_methods=None) -> list[Target]:
-    return _parse_target_rows(path, _read_target_rows(path), identification_methods)
+def _read_targets(path: Path, *, delta_mass: Mapping | None = None) -> list[Target]:
+    from xic_extractor.configuration.legacy_target_methods import (
+        upgrade_target_table,
+    )
+
+    numbered = _read_target_rows(path)
+    rows, legacy_details = upgrade_target_table([row for _, row in numbered])
+    return _parse_target_rows(
+        path,
+        [(number, row) for (number, _), row in zip(numbered, rows, strict=True)],
+        delta_mass if delta_mass is not None else legacy_details,
+    )
 
 
 def parse_target_rows(
     rows: Sequence[Mapping[str, str]],
     path: Path = Path("targets.csv"),
     *,
-    identification_methods: Mapping[str, IdentificationMethod] | None = None,
+    delta_mass: Mapping | None = None,
 ) -> tuple[Target, ...]:
-    """Validate an in-memory table with the same target and ISTD rules as CSV intake."""
+    """Validate an in-memory table with the same target and ISTD rules as CSV intake.
+
+    ``delta_mass`` is the Delta Mass details payload: list-shared settings and
+    each target's ion ratio ranges, shape comparison and names.
+    """
     return tuple(
         _parse_target_rows(
             path,
             [(number, dict(row)) for number, row in enumerate(rows, 2)],
-            identification_methods,
+            delta_mass,
         )
     )
 
@@ -50,13 +70,23 @@ def parse_target_rows(
 def _parse_target_rows(
     path: Path,
     rows: list[tuple[int, dict[str, str]]],
-    identification_methods=None,
+    delta_mass: Mapping | None,
 ) -> list[Target]:
+    try:
+        settings, details = parse_delta_mass_payload(delta_mass)
+    except (TypeError, ValueError, KeyError) as exc:
+        raise ConfigError(f"{path}: Delta Mass 細節不正確：{exc}") from exc
     targets: list[Target] = []
     seen: set[str] = set()
 
     for row_number, row in rows:
-        target = _parse_target_row(path, row_number, row, identification_methods)
+        target = _parse_target_row(
+            path,
+            row_number,
+            row,
+            settings,
+            details.get(str(row.get("label", "")).strip()),
+        )
         if target.label in seen:
             raise _config_error(
                 path, row_number, "label", target.label, "must be unique"
@@ -65,6 +95,8 @@ def _parse_target_rows(
         targets.append(target)
     if not targets:
         raise _config_error(path, 2, "label", "", "at least one target row is required")
+    if unknown := sorted(set(details) - seen):
+        raise ConfigError(f"{path}: Delta Mass 細節指向不存在的目標：{unknown[0]}")
 
     _validate_target_relationships(path, targets)
     return targets
@@ -94,25 +126,33 @@ def _validate_target_relationships(path: Path, targets: list[Target]) -> None:
             )
 
 
+def parse_delta_mass_offsets(text: str) -> tuple[float, ...]:
+    """Read a comma-separated Δm/z cell, for example ``+1.0021, -2.0157``."""
+    return tuple(
+        float(part.strip())
+        for part in text.replace("，", ",").split(",")
+        if part.strip()
+    )
+
+
 def _parse_target_row(
     path: Path,
     row_number: int,
     row: dict[str, str],
-    identification_methods=None,
+    settings: DeltaMassSettings,
+    details: tuple[QuantRelativeIon, ...] | None,
 ) -> Target:
-    from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
-
-    row = normalize_target_row(row)
-    retired = sorted(set(row) & set(LEGACY_TARGET_FIELDS))
+    retired = sorted(set(row) & {*LEGACY_TARGET_FIELDS, "method", "cid_nl_tag"})
     if retired:
         raise _config_error(
             path,
             row_number,
             retired[0],
             row[retired[0]],
-            "unsupported target schema; use expected_rt_min, method and role",
+            "unsupported target schema; use expected_rt_min, role, "
+            "cid_nl_loss_da and delta_mass_mz",
         )
-    values = {field: str(row.get(field, "")).strip() for field in TARGET_FIELDS}
+    values = {field: str(row.get(field, "") or "").strip() for field in TARGET_FIELDS}
     label = values["label"]
     if not label:
         raise _config_error(path, row_number, "label", label, "must not be empty")
@@ -132,60 +172,140 @@ def _parse_target_row(
         raise _config_error(
             path, row_number, "role", values["role"], "must be analyte or istd"
         )
-    # Blank is MS1 only; dR/R/MeR are built-in CID-NL; anything else is a
-    # user-defined identification method.
-    chosen = values["method"]
-    method = (identification_methods or {}).get(chosen)
-    if chosen and chosen not in CID_NL_TAGS and method is None:
+    loss = None
+    if values["cid_nl_loss_da"]:
+        loss = _parse_float(
+            path, row_number, "cid_nl_loss_da", values["cid_nl_loss_da"]
+        )
+        if not 0 < loss < mz:
+            raise _config_error(
+                path,
+                row_number,
+                "cid_nl_loss_da",
+                values["cid_nl_loss_da"],
+                "CID-NL 中性丟失必須大於 0 且小於目標 m/z",
+            )
+    try:
+        offsets = parse_delta_mass_offsets(values["delta_mass_mz"])
+    except ValueError:
         raise _config_error(
             path,
             row_number,
-            "method",
-            chosen,
-            "must be blank (MS1 only), dR, R, MeR or a defined identification method",
-        )
-    tag = chosen if chosen in CID_NL_TAGS else ""
-    if method is not None:
-        for condition in method.conditions:
-            if not isinstance(condition, DeltaMassCondition):
-                continue
-            masses = sorted(mz + p.offset_mz for p in condition.positions)
-            if masses[0] <= 0 or any(
-                right - left <= (left + right) * method.mz_tolerance_ppm * 1e-6
-                for left, right in zip(masses, masses[1:], strict=False)
-            ):
-                raise _config_error(
-                    path,
-                    row_number,
-                    "method",
-                    chosen,
-                    "positions require positive m/z and non-overlapping XIC windows",
-                )
-    tag_profile = targeted_tag_profile(tag) if tag else None
-    policy = tag_profile or DEFAULT_CID_NL_MASS_POLICY
-    loss = tag_profile.neutral_loss_profiles[0].neutral_loss_da if tag_profile else None
-    if loss is not None and loss >= mz:
+            "delta_mass_mz",
+            values["delta_mass_mz"],
+            "must be comma-separated Δm/z numbers",
+        ) from None
+    if not offsets and details:
         raise _config_error(
-            path, row_number, "mz", values["mz"], "must exceed the selected CID-NL mass"
+            path, row_number, "delta_mass_mz", "", "Delta Mass 細節需要對應的 Δm/z"
         )
+    identification = (
+        _identification(
+            path, row_number, values, mz, loss, offsets, settings, details or ()
+        )
+        if offsets
+        else None
+    )
+    policy = DEFAULT_CID_NL_MASS_POLICY
+    # CID-NL alone ranks candidates; with Delta Mass it is a required condition.
+    plain_loss = loss if identification is None else None
     # Existing in-memory consumers retain a center pair, not a search window.
     return Target(
         label=label,
         mz=mz,
         rt_min=expected_rt,
         rt_max=expected_rt,
-        ppm_tol=method.mz_tolerance_ppm
-        if method
+        ppm_tol=settings.mz_tolerance_ppm
+        if identification is not None
         else policy.precursor_mz_tolerance_ppm,
-        neutral_loss_da=loss,
-        nl_ppm_warn=policy.nl_tolerance_ppm if tag else None,
-        nl_ppm_max=policy.nl_tolerance_ppm if tag else None,
+        neutral_loss_da=plain_loss,
+        nl_ppm_warn=policy.nl_tolerance_ppm if plain_loss is not None else None,
+        nl_ppm_max=policy.nl_tolerance_ppm if plain_loss is not None else None,
         is_istd=values["role"] == "istd",
         istd_pair=values["istd_pair"],
         expected_rt_min=expected_rt,
-        cid_nl_tag=tag,
-        method_name=chosen if method else "",
-        identification_method=method,
+        identification=identification,
+    )
+
+
+def _identification(
+    path: Path,
+    row_number: int,
+    values: dict[str, str],
+    mz: float,
+    loss: float | None,
+    offsets: tuple[float, ...],
+    settings: DeltaMassSettings,
+    details: tuple[QuantRelativeIon, ...],
+) -> TargetIdentification:
+    def fail(reason: str) -> ConfigError:
+        return _config_error(
+            path, row_number, "delta_mass_mz", values["delta_mass_mz"], reason
+        )
+
+    if len(set(offsets)) != len(offsets) or 0 in offsets:
+        raise fail("Δm/z 不可重複，也不可為 0")
+    by_offset = {ion.offset_mz: ion for ion in details}
+    if len(by_offset) != len(details) or not set(by_offset) <= set(offsets):
+        raise fail("Delta Mass 細節的 Δm/z 必須和目標列一致")
+    ions = tuple(
+        by_offset.get(offset) or QuantRelativeIon(ion_name(offset), offset)
+        for offset in offsets
+    )
+    names = [ion.label for ion in ions]
+    if len(set(names)) != len(names) or "base" in names:
+        raise fail("Δm/z 太接近：伴隨離子名稱相同")
+    masses = sorted([mz, *(mz + offset for offset in offsets)])
+    if masses[0] <= 0 or any(
+        right - left <= (left + right) * settings.mz_tolerance_ppm * 1e-6
+        for left, right in zip(masses, masses[1:], strict=False)
+    ):
+        raise fail("ions require positive m/z and non-overlapping XIC windows")
+    condition = DeltaMassCondition(ions, settings)
+    try:
+        condition.pattern_settings(values["label"])
+    except ValueError as exc:
+        raise fail(str(exc)) from None
+    return TargetIdentification(
+        (*((CidNlCondition(loss),) if loss is not None else ()), condition)
+    )
+
+
+def target_definition_row(target: Target) -> dict[str, str]:
+    """The target-table row that admits to ``target``."""
+    loss = target_cid_nl_loss(target)
+    ions = target.identification.delta_mass.ions if target.identification else ()
+    return {
+        "label": target.label,
+        "mz": str(target.mz),
+        "expected_rt_min": str(target.expected_rt_min),
+        "role": "istd" if target.is_istd else "analyte",
+        "istd_pair": target.istd_pair,
+        "cid_nl_loss_da": "" if loss is None else str(loss),
+        "delta_mass_mz": ", ".join(format_offset(ion.offset_mz) for ion in ions),
+    }
+
+
+def reparse_target(target: Target, path: Path) -> Target:
+    """Admit target's own definition alone, without list relationships."""
+    settings, details = parse_delta_mass_payload(targets_delta_mass_payload([target]))
+    return _parse_target_row(
+        path, 2, target_definition_row(target), settings, details.get(target.label)
+    )
+
+
+def targets_delta_mass_payload(targets: Sequence[Target]) -> dict | None:
+    """Delta Mass details of admitted targets, or None when none use it."""
+    conditions = {
+        target.label: target.identification.delta_mass
+        for target in targets
+        if target.identification is not None
+    }
+    if not conditions:
+        return None
+    settings = next(iter(conditions.values())).settings
+    return delta_mass_payload(
+        settings, {label: condition.ions for label, condition in conditions.items()}
     )
 
 

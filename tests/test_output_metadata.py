@@ -69,7 +69,7 @@ def test_build_metadata_rows_returns_contract_keys_in_order() -> None:
     assert strategy["cid_nl_identity_precursor_reference"] == "recorded_precursor"
     assert strategy["cid_nl_evidence_scope"] == "target_mass_and_physical_peak"
     assert strategy["cid_nl_ranking_priority"] == "positive_support_only"
-    assert set(strategy["cid_nl_recipes"]) == {"dR", "R", "MeR"}
+    assert strategy["cid_nl_mass_policy"]["precursor_mz_tolerance_ppm"] == 20
     assert values["signal_processing_method"] == "gaussian"
     assert values["signal_processing_window_points"] == 21
     assert values["nl_min_intensity_ratio"] == 0.02

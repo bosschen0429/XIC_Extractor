@@ -433,7 +433,7 @@ def _write_cli_config(config_dir: Path, *, data_dir: Path, dll_dir: Path) -> Non
                 label="Analyte",
                 mz="258.1085",
                 expected_rt_min="9.0",
-                cid_nl_tag="dR",
+                cid_nl_loss_da="116.0474",
                 role="istd",
                 istd_pair="",
             )
@@ -462,7 +462,7 @@ def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
             label="MethodTarget",
             mz="258.1085",
             expected_rt_min="9.0",
-            cid_nl_tag="dR",
+            cid_nl_loss_da="116.0474",
             role="istd",
             istd_pair="",
         )

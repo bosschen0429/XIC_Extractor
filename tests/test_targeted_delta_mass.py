@@ -1,14 +1,11 @@
-"""Targeted custom patterns: portable intent and peak-local method qualification."""
+"""Targeted Delta Mass ions: portable target parameters and peak-local qualification."""
 
 import json
 
 import numpy as np
 import pytest
 
-from tests.targeted_delta_mass_fixtures import (
-    PatternRaw,
-    pattern,
-)
+from tests.targeted_delta_mass_fixtures import PatternRaw
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.targeted_method_files import (
     create_targeted_method,
@@ -33,52 +30,86 @@ def target_row(**changes):
         "expected_rt_min": "2",
         "role": "analyte",
         "istd_pair": "",
-        "method": "my pair",
+        "cid_nl_loss_da": "",
+        "delta_mass_mz": "-2.0",
         **changes,
     }
 
 
-def test_delta_mass_method_round_trip_binds_quantitation_position(tmp_path):
-    method = create_targeted_method(
-        {}, [target_row()], identification_methods={"my pair": pattern()}
-    )
+def details(*ions, label="custom target", **settings):
+    return {
+        "settings": {"mz_tolerance_ppm": 12, "apex_floor_sec": 2, **settings},
+        "ions": {
+            label: list(ions)
+            or [
+                {
+                    "label": "light",
+                    "offset_mz": -2.0,
+                    "ratio_min": 0.1,
+                    "ratio_max": 10,
+                    "compare_shape": True,
+                }
+            ]
+        },
+    }
+
+
+def test_delta_mass_round_trip_keeps_target_as_the_quantitation_ion(tmp_path):
+    method = create_targeted_method({}, [target_row()], delta_mass=details())
     path = tmp_path / "custom.xlsx"
     save_targeted_method(method, path)
     loaded = load_targeted_method(path)
     assert loaded.targets == method.targets
+    assert loaded.delta_mass == method.delta_mass
     target = loaded.targets[0]
-    assert target.method_name == "my pair"
-    assert target.identification_method.conditions[0].quant_position == "heavy"
+    condition = target.identification.delta_mass
+    assert condition.quant_position == "base"
+    assert [(ion.label, ion.offset_mz) for ion in condition.ions] == [("light", -2.0)]
     assert target.ppm_tol == 12.0
-    assert target.identification_method.conditions[0].positions[0].offset_mz == -2.0
     assert target.neutral_loss_da is None
-    assert loaded.identification_methods == method.identification_methods
 
 
-@pytest.mark.parametrize("changes", [{"method": "absent"}, {"mz": "1"}])
-def test_invalid_pattern_binding_is_not_silently_ms1_only(changes):
-    with pytest.raises(ConfigError):
+def test_new_ions_are_named_by_offset_and_default_to_record_only_ratios():
+    target = create_targeted_method(
+        {}, [target_row(delta_mass_mz="+4.005213, -2.0157")]
+    ).targets[0]
+    ions = target.identification.delta_mass.ions
+    assert [ion.label for ion in ions] == ["+4.0052", "-2.0157"]
+    # Stored offsets keep full precision; only the name is rounded.
+    assert ions[0].offset_mz == 4.005213
+    assert all(
+        (ion.ratio_min, ion.ratio_max, ion.compare_shape) == (0.1, 10.0, True)
+        for ion in ions
+    )
+
+
+@pytest.mark.parametrize(
+    "changes,message",
+    [
+        ({"mz": "1"}, "positive m/z"),
+        ({"delta_mass_mz": "-0.001"}, "overlapping"),
+        ({"delta_mass_mz": "+1.00001, +1.00002"}, "太接近"),
+        ({"delta_mass_mz": "0"}, "不可為 0"),
+        ({"delta_mass_mz": "abc"}, "Δm/z numbers"),
+    ],
+)
+def test_invalid_delta_mass_is_not_silently_ms1_only(changes, message):
+    with pytest.raises(ConfigError, match=message):
+        create_targeted_method({}, [target_row(**changes)])
+
+
+def test_details_must_name_declared_ions_and_targets():
+    stray = {"label": "x", "offset_mz": 3.0}
+    with pytest.raises(ConfigError, match="一致"):
+        create_targeted_method({}, [target_row()], delta_mass=details(stray))
+    with pytest.raises(ConfigError, match="不存在的目標"):
         create_targeted_method(
-            {}, [target_row(**changes)], identification_methods={"my pair": pattern()}
-        )
-
-
-def test_missing_pattern_definition_is_rejected():
-    with pytest.raises(ConfigError, match="my pair"):
-        create_targeted_method({}, [target_row()])
-
-
-def test_overlapping_query_windows_cannot_count_one_ion_as_two_positions():
-    method = pattern()
-    method["conditions"][0]["positions"][0]["offset_mz"] = -0.001
-    with pytest.raises(ConfigError, match="overlap"):
-        create_targeted_method(
-            {}, [target_row()], identification_methods={"my pair": method}
+            {}, [target_row()], delta_mass=details(label="someone else")
         )
 
 
 @pytest.mark.parametrize("use_method_file", [False, True])
-def test_workspace_and_run_receipts_keep_custom_method(tmp_path, use_method_file):
+def test_workspace_and_run_receipts_keep_delta_mass_details(tmp_path, use_method_file):
     from xic_extractor.configuration.loader import (
         load_config_snapshot,
         prepare_targeted_config,
@@ -91,20 +122,15 @@ def test_workspace_and_run_receipts_keep_custom_method(tmp_path, use_method_file
         config_dir,
         settings={"data_dir": str(tmp_path), "dll_dir": str(tmp_path)},
         targets=[row],
-        identification_methods={"my pair": pattern()},
+        delta_mass=details(),
     )
     saved = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
-    assert saved["identification_methods"]["my pair"]["mz_tolerance_ppm"] == 12.0
+    assert saved["delta_mass"]["settings"]["mz_tolerance_ppm"] == 12
     method_path = None
     if use_method_file:
         method_path = tmp_path / "portable.xlsx"
         save_targeted_method(
-            create_targeted_method(
-                {},
-                [row],
-                identification_methods={"my pair": pattern()},
-            ),
-            method_path,
+            create_targeted_method({}, [row], delta_mass=details()), method_path
         )
     prepared = prepare_targeted_config(
         config_dir, method_path=method_path, output_dir=tmp_path / "results"
@@ -114,12 +140,12 @@ def test_workspace_and_run_receipts_keep_custom_method(tmp_path, use_method_file
             prepared.input_config_dir, output_dir=tmp_path / "replay"
         )
         assert replayed == list(prepared.targets)
-        assert replayed[0].identification_method.conditions[0].quant_position == "heavy"
+        assert replayed[0].identification.delta_mass.ions[0].label == "light"
     finally:
         prepared.cleanup()
 
 
-def test_workbench_export_import_carries_method_without_mutating_preview_state(
+def test_workbench_export_import_carries_details_without_mutating_preview_state(
     tmp_path,
 ):
     import base64
@@ -131,7 +157,7 @@ def test_workbench_export_import_carries_method_without_mutating_preview_state(
     values = {
         "settings": {"data_dir": str(tmp_path), "dll_dir": str(tmp_path)},
         "targets": [target_row()],
-        "identification_methods": {"my pair": pattern()},
+        "delta_mass": details(),
     }
     workspace.action("targeted/save", values)
     original = (workspace.config_dir / "workspace.json").read_bytes()
@@ -141,13 +167,8 @@ def test_workbench_export_import_carries_method_without_mutating_preview_state(
         path.name, base64.b64encode(path.read_bytes()).decode(), {}
     )
     assert preview["kind"] == "method"
-    assert preview["targets"][0]["method"] == "my pair"
-    assert (
-        preview["identification_methods"]["my pair"]["conditions"][0]["positions"][0][
-            "offset_mz"
-        ]
-        == -2.0
-    )
+    assert preview["targets"][0]["delta_mass_mz"] == "-2.0"
+    assert preview["delta_mass"]["ions"]["custom target"][0]["offset_mz"] == -2.0
     assert (workspace.config_dir / "workspace.json").read_bytes() == original
     workspace.action("targeted/method/save", {**values, "name": "Reusable"})
     loaded = workspace.action(
@@ -157,19 +178,17 @@ def test_workbench_export_import_carries_method_without_mutating_preview_state(
             "settings": values["settings"],
         },
     )
-    assert loaded["identification_methods"] == preview["identification_methods"]
+    assert loaded["delta_mass"] == preview["delta_mass"]
 
 
 def extract_pattern(
-    tmp_path, raw, *, methods=None, row=None, defer=False, sample="sample"
+    tmp_path, raw, *, delta_mass=None, row=None, defer=False, sample="sample"
 ):
     from tests.targeted_peak_selection_fixtures import _config
     from xic_extractor.extraction.target_extraction import extract_one_target
 
     target = create_targeted_method(
-        {},
-        [row or target_row()],
-        identification_methods=methods or {"my pair": pattern()},
+        {}, [row or target_row()], delta_mass=delta_mass or details()
     ).targets[0]
     results = {}
     extract_one_target(
@@ -219,13 +238,14 @@ def test_unmatched_pattern_never_falls_back_to_ms1_only(tmp_path, raw):
 
 
 def test_pattern_ratio_outlier_remains_evidence_not_a_veto(tmp_path):
-    method = pattern()
-    method["conditions"][0]["positions"][0]["ratio_min"] = 8.0
-    method["conditions"][0]["positions"][0]["ratio_max"] = 9.0
-    _, result = extract_pattern(tmp_path, PatternRaw(), methods={"my pair": method})
+    ion = {"label": "light", "offset_mz": -2.0, "ratio_min": 8.0, "ratio_max": 9.0}
+    _, result = extract_pattern(tmp_path, PatternRaw(), delta_mass=details(ion))
     assert result.selected_method_supported
     assert result.targeted_product_projection.counted_detection
-    assert pattern_matches(result)[0].positions[0].ratio_status == "below_range"
+    light = next(
+        p for p in pattern_matches(result)[0].positions if p.position_label == "light"
+    )
+    assert light.ratio_status == "below_range"
 
 
 def test_coeluting_partner_with_incompatible_shape_is_not_counted(tmp_path):
@@ -261,7 +281,7 @@ def test_batch_completion_preserves_sample_specific_delta_mass_areas(tmp_path):
     )
 
 
-def test_custom_pattern_reaches_finalized_workbook_and_readonly_inspector(
+def test_delta_mass_reaches_finalized_workbook_and_readonly_inspector(
     tmp_path, monkeypatch
 ):
     from contextlib import nullcontext
@@ -297,9 +317,7 @@ def test_custom_pattern_reaches_finalized_workbook_and_readonly_inspector(
         "xic_extractor.extraction.target_extraction.open_raw",
         lambda path, *_args, **_kwargs: nullcontext(raws[path.stem]),
     )
-    target = create_targeted_method(
-        {}, [target_row()], identification_methods={"my pair": pattern()}
-    ).targets[0]
+    target = create_targeted_method({}, [target_row()], delta_mass=details()).targets[0]
     path = tmp_path / "results.xlsx"
     execution = TargetedApplicationService(pipeline.run_pipeline).execute_application(
         build_targeted_application_request(
@@ -331,20 +349,21 @@ def test_custom_pattern_reaches_finalized_workbook_and_readonly_inspector(
             ("one", "pass"),
             ("two", "pass"),
         }
+        assert {r["Specificity"] for r in evidence} == {"Delta Mass -2.0000"}
+        targets = list(book["Targets"].values)
+        assert dict(zip(targets[0], targets[1], strict=True))["Specificity"] == (
+            "Delta Mass -2.0000"
+        )
         results = list(book["XIC Results"].values)
         reasons = [
             dict(zip(results[0], row, strict=True))["Reason"] for row in results[1:]
         ]
-        assert any("辨認方法" in reason for reason in reasons)
+        assert any("特異性條件" in reason for reason in reasons)
     finally:
         book.close()
     source = TargetedWorkbookSource(path)
-    assert (
-        source.identification_methods["my pair"]["conditions"][0]["positions"][0][
-            "offset_mz"
-        ]
-        == -2.0
-    )
+    (ion,) = source.delta_mass_ions["custom target"]
+    assert (ion["Position"], float(ion["Delta m/z"])) == ("light", -2.0)
     assert {row["SampleName"] for row in source.method_evidence} == set(raws)
 
 
@@ -373,23 +392,15 @@ def test_coelution_is_measured_from_the_quantitation_ion(tmp_path, heavy_sec, co
     # The light ion (lowest m/z) elutes 0.75 s after the quantitation ion; the
     # heavy ion must still be within the 1 s tolerance of the quantitation ion,
     # not merely of the light ion.
-    method = {
-        "conditions": [
-            {
-                "kind": "delta_mass",
-                "apex_floor_sec": 1,
-                "positions": [
-                    {"label": "light", "offset_mz": -2.0},
-                    {"label": "quant", "offset_mz": 0.0},
-                    {"label": "heavy", "offset_mz": 2.0},
-                ],
-            }
-        ]
-    }
+    ions = (
+        {"label": "light", "offset_mz": -2.0, "compare_shape": False},
+        {"label": "heavy", "offset_mz": 2.0, "compare_shape": False},
+    )
     _, result = extract_pattern(
         tmp_path,
         ThreeIonRaw(light_sec=0.75, heavy_sec=heavy_sec),
-        methods={"my pair": method},
+        row=target_row(delta_mass_mz="-2.0, +2.0"),
+        delta_mass=details(*ions, apex_floor_sec=1),
     )
     assert result.targeted_product_projection.counted_detection is counted
     assert (result.reported_peak_area is not None) is counted

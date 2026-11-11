@@ -6,8 +6,8 @@ from pathlib import Path
 
 from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.configuration.targets import (
-    _parse_target_row,
     _validate_target_relationships,
+    reparse_target,
 )
 
 TARGET_LIST_SCHEMA_VERSION = "target_list_snapshot"
@@ -299,21 +299,8 @@ def _validate_target(target: Target) -> None:
         ):
             raise TargetIdentityError("invalid geometric target definition")
         return
-    row = {
-        "label": target.label,
-        "mz": str(target.mz),
-        "expected_rt_min": str(target.expected_rt_min),
-        "method": target.method_name or target.cid_nl_tag,
-        "role": "istd" if target.is_istd else "analyte",
-        "istd_pair": target.istd_pair,
-    }
     try:
-        parsed = _parse_target_row(
-            Path("<immutable-target-definition>"),
-            2,
-            row,
-            {target.method_name: target.identification_method},
-        )
+        parsed = reparse_target(target, Path("<immutable-target-definition>"))
     except ConfigError as exc:
         raise TargetIdentityError(
             "target must satisfy the normalized Target configuration contract"
@@ -343,17 +330,8 @@ def _target_list_content(
 
 def _target_payload(target: Target) -> dict:
     payload = asdict(target)
-    if target.identification_method is None:
-        for key in ("method_name", "identification_method"):
-            del payload[key]
-    else:
-        from xic_extractor.configuration.targeted_identification import (
-            identification_methods_payload,
-        )
-
-        payload["identification_method"] = identification_methods_payload(
-            {target.method_name: target.identification_method}
-        )[target.method_name]
+    if target.identification is None:
+        del payload["identification"]
     return payload
 
 

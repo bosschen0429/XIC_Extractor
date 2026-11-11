@@ -110,7 +110,7 @@ class AnalysisJobs:
                     values["settings"],
                     values["targets"],
                     config_dir=self.config_dir,
-                    identification_methods=values.get("identification_methods"),
+                    delta_mass=values.get("delta_mass"),
                 )
                 output_root = str(values.get("output_dir") or "").strip()
                 if output_root:

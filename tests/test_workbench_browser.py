@@ -2427,12 +2427,12 @@ def test_targeted_overview_opens_and_leaves_single_target_review(workbench, tmp_
 
 def test_saved_method_and_delta_evidence_is_visible_and_readonly(workbench, tmp_path):
     from openpyxl import Workbook
-
-    from tests.targeted_delta_mass_fixtures import pattern
     from xic_extractor.configuration.identification_method_table import (
         METHOD_TABLE_HEADERS,
         identification_method_rows,
     )
+
+    from tests.targeted_delta_mass_fixtures import pattern
     from xic_extractor.configuration.targeted_identification import (
         parse_identification_methods,
     )
@@ -3016,7 +3016,9 @@ def test_untargeted_istd_applicability_tracks_method_not_nd(workbench, tmp_path)
 
     page = workbench
     targets = targeted_rows()
-    targets.append({**targets[0], "label": "RNA standard", "method": "R"})
+    targets.append(
+        {**targets[0], "label": "RNA standard", "cid_nl_loss_da": "132.0423"}
+    )
     path = tmp_path / "method-standards.xlsx"
     save_target_table(targets, path)
     _view(page, "untargeted")

@@ -838,16 +838,13 @@ def test_strict_nl_analyte_does_not_treat_rt_prior_as_review() -> None:
 @pytest.mark.parametrize(
     "sample_name", ["EC013_2", "U00001ZBEE", "QC1", "Tumor_DNA", "Tumor_RNA"]
 )
-@pytest.mark.parametrize(
-    "cid_nl_tag,neutral_loss_da", [("dR", 116.0474), ("R", 132.0423), ("MeR", 146.0579)]
-)
+@pytest.mark.parametrize("neutral_loss_da", [116.0474, 132.0423, 146.0579, 162.0528])
 def test_targeted_configured_targets_ignore_sample_name(
-    sample_name, cid_nl_tag, neutral_loss_da
+    sample_name, neutral_loss_da
 ) -> None:
     result = _result_with_targeted_projection_semantics(
         target=replace(
             _target(),
-            cid_nl_tag=cid_nl_tag,
             neutral_loss_da=neutral_loss_da,
         ),
         sample_name=sample_name,

@@ -1,23 +1,20 @@
 """Target intent over shared read-only chemistry and mass policy."""
 
-import tomllib
 from dataclasses import asdict, dataclass
 from functools import lru_cache
-from importlib.resources import files
 
 from xic_extractor.configuration.cid_nl_profile import (
+    DEFAULT_CID_NL_MASS_POLICY,
     CidNlMassPolicy,
     NeutralLossProfile,
     PrecursorReferenceRequirement,
 )
-from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     LOCALIZED_VALLEY_MIN_DROP_FRACTION,
 )
 from xic_extractor.settings_schema import TARGETED_STRATEGY
 
-TAG_PRESETS = {"dR": "dna_dr", "R": "rna_ribose", "MeR": "rna_mer"}
 TARGETED_PRECURSOR_REFERENCE: PrecursorReferenceRequirement = "recorded_precursor"
 
 
@@ -26,20 +23,13 @@ class TargetedTagProfile(CidNlMassPolicy):
     neutral_loss_profiles: tuple[NeutralLossProfile, ...] = ()
 
 
-@lru_cache(maxsize=3)
-def targeted_tag_profile(tag: str) -> TargetedTagProfile:
-    if tag not in TAG_PRESETS:
-        raise ConfigError(
-            f"cid_nl_tag must be one of {', '.join(TAG_PRESETS)}; got {tag!r}"
-        )
-    # Read the same packaged chemistry data without importing orchestration facades.
-    path = files("xic_extractor").joinpath(
-        "presets", "data", TAG_PRESETS[tag] + ".toml"
-    )
-    payload = tomllib.loads(path.read_text(encoding="utf-8"))
-    profile = payload["tag"][0]
+@lru_cache(maxsize=64)
+def targeted_loss_profile(neutral_loss_da: float) -> TargetedTagProfile:
+    """The shared CID-NL mass policy applied to one target's neutral loss."""
     return TargetedTagProfile(
-        neutral_loss_profiles=(NeutralLossProfile(profile["name"], profile["value"]),)
+        neutral_loss_profiles=(
+            NeutralLossProfile(f"NL:{neutral_loss_da:.4f}", neutral_loss_da),
+        )
     )
 
 
@@ -67,7 +57,5 @@ def strategy_receipt() -> dict:
             "qualified_identity_and_coelution_rejection"
         ),
         "signal_processing": asdict(DEFAULT_SIGNAL_PROCESSING_PROFILE),
-        "cid_nl_recipes": {
-            tag: asdict(targeted_tag_profile(tag)) for tag in TAG_PRESETS
-        },
+        "cid_nl_mass_policy": asdict(DEFAULT_CID_NL_MASS_POLICY),
     }

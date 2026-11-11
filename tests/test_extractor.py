@@ -43,7 +43,6 @@ def test_duplicate_samples_preserve_reference_supported_body(
     (config.data_dir / "A.raw").write_bytes(b"A")
     target = replace(
         _target("Main", neutral_loss_da=neutral_loss, rt_min=10, rt_max=10),
-        cid_nl_tag="dR" if neutral_loss is not None else "",
         expected_rt_min=10,
         nl_ppm_max=20 if neutral_loss is not None else None,
     )
@@ -103,7 +102,6 @@ def test_same_ion_valleys_remain_separate_under_supported_sample_drift(
             ),
             mz=mz,
             expected_rt_min=reference,
-            cid_nl_tag="dR" if mz == 500 and neutral_loss is not None else "",
             nl_ppm_max=20 if mz == 500 and neutral_loss is not None else None,
         )
         for label, mz, reference in (
@@ -453,9 +451,11 @@ def test_peer_alternate_band_cannot_replace_unquantifiable_target(
                     label=label,
                     mz=str(mz),
                     expected_rt_min=str(reference),
-                    cid_nl_tag="dR" if label == "Main" and neutral_loss else "",
                     role="analyte",
                     istd_pair="",
+                    cid_nl_loss_da=str(neutral_loss)
+                    if label == "Main" and neutral_loss
+                    else "",
                 )
                 for label, mz, reference in (
                     ("Main", 258.1085, 10.2),
@@ -614,7 +614,7 @@ def test_batch_context_uses_supported_bodies_and_retention_uncertainty(
                     "label": label,
                     "mz": str(mz),
                     "expected_rt_min": str(reference),
-                    "cid_nl_tag": "dR"
+                    "cid_nl_loss_da": "116.0474"
                     if label == "Main" and neutral_loss is not None
                     else "",
                     "role": "analyte",
@@ -2315,7 +2315,6 @@ def _target(
         rt_max=rt_max,
         ppm_tol=20.0,
         neutral_loss_da=neutral_loss_da,
-        cid_nl_tag="dR",
         nl_ppm_warn=20.0 if neutral_loss_da is not None else None,
         nl_ppm_max=50.0 if neutral_loss_da is not None else None,
         is_istd=is_istd,

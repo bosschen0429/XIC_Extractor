@@ -145,7 +145,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
                         "label": label,
                         "mz": str(mz),
                         "expected_rt_min": str(rt),
-                        "cid_nl_tag": "dR",
+                        "cid_nl_loss_da": "116.0474",
                         "role": "istd",
                         "istd_pair": "",
                     }

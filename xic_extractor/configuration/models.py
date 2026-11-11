@@ -10,7 +10,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     resolve_signal_processing_profile,
 )
-from xic_extractor.configuration.targeted_identification import IdentificationMethod
+from xic_extractor.configuration.targeted_identification import TargetIdentification
 from xic_extractor.settings_schema import (
     CANONICAL_RESOLVER_MODE,
 )
@@ -78,9 +78,9 @@ class Target:
     is_istd: bool
     istd_pair: str
     expected_rt_min: float | None = None
-    cid_nl_tag: str = ""
-    method_name: str = ""
-    identification_method: IdentificationMethod | None = None
+    # Present only for Delta Mass targets; its conditions then carry CID-NL too,
+    # and ``neutral_loss_da`` stays None (CID-NL alone is ranking support).
+    identification: TargetIdentification | None = None
 
 
 class ConfigError(Exception):

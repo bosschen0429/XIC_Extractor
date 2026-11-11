@@ -11,25 +11,30 @@ from types import MappingProxyType
 from zipfile import BadZipFile
 
 from xic_extractor.configuration.csv_io import (
+    REQUIRED_TARGET_FIELDS,
     TARGET_FIELDS,
-    normalize_target_header,
-    normalize_target_row,
 )
-from xic_extractor.configuration.identification_method_table import (
-    METHOD_TABLE_HEADERS,
-    METHOD_TABLE_SHEET,
-    identification_method_rows,
-    parse_identification_method_rows,
+from xic_extractor.configuration.delta_mass_table import (
+    DELTA_MASS_HEADERS,
+    DELTA_MASS_SETTING_KEYS,
+    DELTA_MASS_SHEET,
+    delta_mass_rows,
+    delta_mass_setting_rows,
+    parse_delta_mass_rows,
+)
+from xic_extractor.configuration.legacy_target_methods import (
+    LEGACY_METHOD_SHEET,
+    legacy_method_sheet_payload,
+    upgrade_target_table,
 )
 from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.configuration.settings import (
     resolve_settings,
 )
-from xic_extractor.configuration.targeted_identification import (
-    IdentificationMethod,
-    parse_identification_methods,
+from xic_extractor.configuration.targets import (
+    parse_target_rows,
+    targets_delta_mass_payload,
 )
-from xic_extractor.configuration.targets import parse_target_rows
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
     METHOD_KEYS,
@@ -44,18 +49,22 @@ class TargetedMethod:
     settings: Mapping[str, str]
     targets: tuple[Target, ...]
     target_rows: tuple[Mapping[str, str], ...]
-    identification_methods: Mapping[str, IdentificationMethod] = field(
-        default_factory=dict
-    )
+    # Delta Mass details payload; None when no target uses Delta Mass.
+    delta_mass: Mapping | None = field(default=None)
 
 
 def create_targeted_method(
     settings: Mapping[str, str],
     target_rows: Sequence[Mapping[str, str]],
     *,
-    identification_methods: Mapping | None = None,
+    delta_mass: Mapping | None = None,
+    legacy_methods: Mapping | None = None,
 ) -> TargetedMethod:
-    """Admit an editable method without reading files."""
+    """Admit an editable method without reading files.
+
+    Rows in the earlier ``method``-column format are converted using
+    ``legacy_methods`` (the earlier identification method definitions).
+    """
     unknown = sorted(
         set(settings) - set(CANONICAL_SETTINGS_DEFAULTS) - set(METHOD_KEYS)
     )
@@ -64,23 +73,16 @@ def create_targeted_method(
     strategy = settings.get("strategy", TARGETED_STRATEGY)
     if strategy != TARGETED_STRATEGY:
         raise ConfigError(f"Unsupported Targeted strategy: {strategy}")
-    rows = tuple(MappingProxyType(normalize_target_row(row)) for row in target_rows)
-    if isinstance(identification_methods, Mapping) and all(
-        isinstance(method, IdentificationMethod)
-        for method in identification_methods.values()
-    ):
-        methods = dict(identification_methods)
-    else:
-        try:
-            methods = parse_identification_methods(identification_methods or {})
-        except ValueError as exc:
-            raise ConfigError(str(exc)) from exc
-    targets = parse_target_rows(rows, identification_methods=methods)
+    upgraded, legacy_details = upgrade_target_table(target_rows, legacy_methods)
+    targets = parse_target_rows(
+        upgraded,
+        delta_mass=delta_mass if delta_mass is not None else legacy_details,
+    )
     return TargetedMethod(
         MappingProxyType({"strategy": strategy}),
         targets,
-        rows,
-        MappingProxyType(methods),
+        tuple(MappingProxyType(row) for row in upgraded),
+        targets_delta_mass_payload(targets),
     )
 
 
@@ -97,35 +99,49 @@ def apply_targeted_method(
 
 
 def load_targeted_method(path: Path) -> TargetedMethod:
-    """Read the Method + Targets (+ Identification Methods) workbook contract."""
+    """Read the Method + Targets (+ Delta Mass) workbook contract."""
     tables = _read_workbook(
-        path, {"Method", "Targets"}, optional_sheets={METHOD_TABLE_SHEET}
+        path,
+        {"Method", "Targets"},
+        optional_sheets={DELTA_MASS_SHEET, LEGACY_METHOD_SHEET},
     )
     settings = {}
+    delta_settings = {}
     for row in tables["Method"]:
         key = row.get("key", "")
-        if key in settings:
+        if key in settings or key in delta_settings:
             raise ConfigError(f"{path}: duplicate method setting {key!r}")
-        settings[key] = row.get("value", "")
+        if key in DELTA_MASS_SETTING_KEYS:
+            delta_settings[key] = row.get("value", "")
+        else:
+            settings[key] = row.get("value", "")
     missing = set(METHOD_KEYS) - settings.keys()
     extra = settings.keys() - set(METHOD_KEYS)
     if missing or extra:
         raise ConfigError(
             f"{path}: 方法設定缺少 {sorted(missing)}；額外 {sorted(extra)}"
         )
-    try:
-        methods = parse_identification_method_rows(tables.get(METHOD_TABLE_SHEET, []))
-    except ValueError as exc:
-        raise ConfigError(f"{path}/{METHOD_TABLE_SHEET}: {exc}") from exc
-    return create_targeted_method(
-        settings, tables["Targets"], identification_methods=methods
+    legacy = (
+        legacy_method_sheet_payload(tables[LEGACY_METHOD_SHEET])
+        if LEGACY_METHOD_SHEET in tables
+        else None
     )
+    details = (
+        parse_delta_mass_rows(tables.get(DELTA_MASS_SHEET, []), delta_settings)
+        if DELTA_MASS_SHEET in tables or delta_settings
+        else None
+    )
+    try:
+        return create_targeted_method(
+            settings, tables["Targets"], delta_mass=details, legacy_methods=legacy
+        )
+    except ConfigError as exc:
+        raise ConfigError(f"{path}: {exc}") from exc
 
 
 def load_target_table(path: Path) -> list[dict[str, str]]:
     rows = _read_workbook(path, {"Targets"})["Targets"]
-    parse_target_rows(rows, Path(path))
-    return rows
+    return [dict(row) for row in create_targeted_method({}, rows).target_rows]
 
 
 def load_workbook_targets(path: Path) -> tuple[Target, ...]:
@@ -134,13 +150,15 @@ def load_workbook_targets(path: Path) -> tuple[Target, ...]:
 
     book = openpyxl.load_workbook(path, read_only=True)
     try:
-        has_definitions = METHOD_TABLE_SHEET in book.sheetnames
+        has_definitions = bool(
+            {DELTA_MASS_SHEET, LEGACY_METHOD_SHEET} & set(book.sheetnames)
+        )
     finally:
         book.close()
     if has_definitions:
         return load_targeted_method(path).targets
     rows = _read_workbook(path, {"Targets"}, optional_sheets={"Method"})["Targets"]
-    return parse_target_rows(rows, Path(path))
+    return create_targeted_method({}, rows).targets
 
 
 def _read_workbook(
@@ -160,7 +178,11 @@ def _read_workbook(
         if not sheets <= actual or actual - sheets - (optional_sheets or set()):
             raise ConfigError(f"{path}: 工作表必須為 {sorted(sheets)}")
         tables = {}
-        definitions = actual & (optional_sheets or set()) & {METHOD_TABLE_SHEET}
+        definitions = (
+            actual
+            & (optional_sheets or set())
+            & {DELTA_MASS_SHEET, LEGACY_METHOD_SHEET}
+        )
         for name in sorted(sheets | definitions):
             data = []
             for cells in book[name].iter_rows():
@@ -184,12 +206,11 @@ def _read_workbook(
                 or any(not h for h in data[0])
             ):
                 raise ConfigError(f"{path}/{name}: 欄位名稱不可空白或重複。")
-            if name == "Targets":
-                data[0] = normalize_target_header(data[0])
             required = {
                 "Method": {"key", "value"},
-                "Targets": set(TARGET_FIELDS),
-                METHOD_TABLE_SHEET: {"Method", "Condition", "Kind"},
+                "Targets": set(REQUIRED_TARGET_FIELDS),
+                DELTA_MASS_SHEET: {"Target", "Delta m/z"},
+                LEGACY_METHOD_SHEET: {"Method", "Condition", "Kind"},
             }[name]
             if not required <= set(data[0]):
                 raise ConfigError(
@@ -210,27 +231,34 @@ def save_targeted_method(method: TargetedMethod, path: Path) -> TargetedMethod:
         "Method": (
             ("key", "value", "description"),
             [
-                {
-                    "key": key,
-                    "value": method.settings[key],
-                    "description": "Shared Targeted strategy",
-                }
-                for key in METHOD_KEYS
+                *(
+                    {
+                        "key": key,
+                        "value": method.settings[key],
+                        "description": "Shared Targeted strategy",
+                    }
+                    for key in METHOD_KEYS
+                ),
+                *(
+                    delta_mass_setting_rows(method.delta_mass)
+                    if method.delta_mass
+                    else ()
+                ),
             ],
         ),
         "Targets": (_target_fields(method.target_rows), method.target_rows),
     }
-    if method.identification_methods:
-        tables[METHOD_TABLE_SHEET] = (
-            METHOD_TABLE_HEADERS,
-            identification_method_rows(method.identification_methods),
+    if method.delta_mass:
+        tables[DELTA_MASS_SHEET] = (
+            DELTA_MASS_HEADERS,
+            delta_mass_rows(method.delta_mass),
         )
     _save_workbook(path, tables, load_targeted_method)
     return method
 
 
 def save_target_table(rows: Sequence[Mapping[str, str]], path: Path) -> None:
-    parse_target_rows(rows, Path(path))
+    rows = create_targeted_method({}, rows).target_rows
     _save_workbook(path, {"Targets": (_target_fields(rows), rows)}, load_target_table)
 
 

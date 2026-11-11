@@ -40,7 +40,7 @@ def test_targeted_dispatch_freezes_inputs_until_completion(tmp_path, monkeypatch
             label=label,
             mz=mz,
             expected_rt_min=2,
-            cid_nl_tag="dR",
+            cid_nl_loss_da="116.0474",
             role="istd",
             istd_pair="",
         )
@@ -118,7 +118,7 @@ def _snapshot_workspace(tmp_path, *, order_source=None):
             label="Target",
             mz=250,
             expected_rt_min=2,
-            cid_nl_tag="dR",
+            cid_nl_loss_da="116.0474",
             role="istd",
             istd_pair="",
         )

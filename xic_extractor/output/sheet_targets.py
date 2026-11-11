@@ -3,6 +3,7 @@ from __future__ import annotations
 from openpyxl.utils import get_column_letter
 
 from xic_extractor.configuration.models import Target
+from xic_extractor.configuration.targeted_identification import target_specificity
 from xic_extractor.output.workbook_styles import (
     _add_table,
     _fit_columns,
@@ -24,8 +25,9 @@ TARGETS_HEADERS = (
     "Expected product m/z",
     "NL ppm warn",
     "NL ppm max",
+    "Specificity",
 )
-_TEXT = frozenset({"Label", "Role", "ISTD Pair"})
+_TEXT = frozenset({"Label", "Role", "ISTD Pair", "Specificity"})
 _FORMATS = {
     "m/z": "0.0000",
     "Expected product m/z": "0.0000",
@@ -36,10 +38,7 @@ _FORMATS = {
 
 
 def _build_targets_sheet(ws, targets: list[Target]) -> None:
-    method_headers = (
-        ("Method",) if any(t.identification_method for t in targets) else ()
-    )
-    headers = (*TARGETS_HEADERS, *method_headers)
+    headers = TARGETS_HEADERS
     numeric = frozenset(TARGETS_HEADERS) - _TEXT
     _prepare_sheet(ws, repeat_rows="1:1")
     _write_header(ws, 1, headers, numeric)
@@ -61,10 +60,7 @@ def _build_targets_sheet(ws, targets: list[Target]) -> None:
             expected_product,
             target.nl_ppm_warn,
             target.nl_ppm_max,
-        ) + (
-            tuple(_excel_text(value) for value in (target.method_name,))
-            if method_headers
-            else ()
+            target_specificity(target),
         )
         for column, (header, value) in enumerate(
             zip(headers, values, strict=True), start=1

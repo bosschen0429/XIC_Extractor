@@ -32,16 +32,16 @@ def test_shipped_examples_use_current_method_defaults_and_shared_targets(tmp_pat
     assert [path.read_bytes() for path in (method_path, targets_path)] == originals
 
 
-@pytest.mark.parametrize("tag", ["dR", ""])
+@pytest.mark.parametrize("loss", ["116.0474", ""])
 def test_complete_method_roundtrip_without_batch_machine_or_resource_state(
-    tmp_path, tag
+    tmp_path, loss
 ):
     settings = {
         **CANONICAL_SETTINGS_DEFAULTS,
         "data_dir": "missing-batch",
         "dll_dir": "missing-dll",
     }
-    target_rows = [dict(row, method=tag) for row in targeted_rows()]
+    target_rows = [dict(row, cid_nl_loss_da=loss) for row in targeted_rows()]
     method = files.create_targeted_method(settings, target_rows)
     folder = tmp_path / "method-a.xlsx"
     saved = files.save_targeted_method(method, folder)
@@ -50,8 +50,8 @@ def test_complete_method_roundtrip_without_batch_machine_or_resource_state(
     assert loaded.targets == method.targets
     assert loaded.targets[1].istd_pair == "standard"
     assert loaded.target_rows[1]["note"] == "方法 A"
-    assert loaded.target_rows[1]["method"] == tag
-    assert (loaded.targets[1].neutral_loss_da is None) == (tag == "")
+    assert loaded.target_rows[1]["cid_nl_loss_da"] == loss
+    assert (loaded.targets[1].neutral_loss_da is None) == (loss == "")
     assert folder.is_file()
     with pytest.raises(TypeError):
         loaded.settings["dirty_matrix_mode"] = "true"

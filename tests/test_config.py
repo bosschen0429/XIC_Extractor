@@ -2,12 +2,12 @@ import csv
 
 import pytest
 
+from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 from xic_extractor.configuration.csv_io import TARGET_FIELDS
 from xic_extractor.configuration.hashing import compute_target_config_hash
 from xic_extractor.configuration.loader import load_config_snapshot
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.settings import fill_setting_defaults, resolve_settings
-from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
 from xic_extractor.configuration.targets import (
     parse_target_rows,
     read_istd_targets,
@@ -21,7 +21,7 @@ def _target_row(**overrides):
         "label": "ISTD",
         "mz": "258.1085",
         "expected_rt_min": "9",
-        "method": "dR",
+        "cid_nl_loss_da": "116.0474",
         "role": "istd",
         "istd_pair": "",
         **overrides,
@@ -58,7 +58,7 @@ def test_load_config_snapshot_freezes_intent_hashes_and_fixed_strategy(tmp_path)
         tmp_path / "config/targets.csv"
     )
     assert targets[0].expected_rt_min == 9
-    assert targets[0].cid_nl_tag == "dR"
+    assert targets[0].neutral_loss_da == 116.0474
 
 
 def test_snapshot_never_falls_back_to_examples(tmp_path):
@@ -148,18 +148,39 @@ def test_targeted_rejects_invalid_worker_budget(workers):
         resolve_settings({"parallel_workers": workers})
 
 
-@pytest.mark.parametrize("tag", ["dR", "R", "MeR"])
-def test_target_chemistry_resolves_from_shared_recipe(tag):
-    target = parse_target_rows([_target_row(method=tag)])[0]
-    policy = targeted_tag_profile(tag)
-    assert target.neutral_loss_da == policy.neutral_loss_profiles[0].neutral_loss_da
+@pytest.mark.parametrize("loss", ["116.0474", "132.0423", "146.0579", "162.0528"])
+def test_target_cid_nl_loss_is_a_number_under_the_shared_policy(loss):
+    target = parse_target_rows([_target_row(cid_nl_loss_da=loss)])[0]
+    policy = DEFAULT_CID_NL_MASS_POLICY
+    assert target.neutral_loss_da == float(loss)
     assert target.ppm_tol == policy.precursor_mz_tolerance_ppm
     assert target.nl_ppm_max == policy.nl_tolerance_ppm
 
 
+@pytest.mark.parametrize("loss", ["0", "-1", "258.1085", "300"])
+def test_target_cid_nl_loss_must_be_below_the_target_mz(loss):
+    with pytest.raises(ConfigError, match="中性丟失"):
+        parse_target_rows([_target_row(cid_nl_loss_da=loss)])
+
+
+@pytest.mark.parametrize(
+    "tag,loss", [("dR", 116.0474), ("R", 132.0423), ("MeR", 146.0579)]
+)
+def test_legacy_method_column_reads_as_its_loss(tmp_path, tag, loss):
+    path = tmp_path / "targets.csv"
+    path.write_text(
+        "label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\n"
+        f"ISTD,258.1085,9,{tag},istd,\n",
+        encoding="utf-8",
+    )
+    assert read_targets(path)[0].neutral_loss_da == loss
+
+
 def test_blank_tag_admits_ms1_only_without_imposing_a_neutral_loss_mass():
-    target = parse_target_rows([_target_row(mz="100", method=" ", role="analyte")])[0]
-    assert target.cid_nl_tag == ""
+    target = parse_target_rows(
+        [_target_row(mz="100", cid_nl_loss_da=" ", role="analyte")]
+    )[0]
+    assert target.identification is None
     assert target.neutral_loss_da is None
     assert target.nl_ppm_warn is None and target.nl_ppm_max is None
     assert target.ppm_tol == 20.0
@@ -238,15 +259,15 @@ def test_templates_and_untargeted_istd_projection_share_new_format(name):
 
 
 @pytest.mark.parametrize(
-    "losses,expected_tags,count",
+    "losses,expected_losses,count",
     [
-        ((116.0474,), {"dR"}, 6),
-        ((132.0423,), {"R"}, 1),
-        ((116.0474, 132.0423), {"dR", "R"}, 7),
+        ((116.0474,), {116.0474}, 6),
+        ((132.0423,), {132.0423}, 1),
+        ((116.0474, 132.0423), {116.0474, 132.0423}, 7),
         ((146.0579,), set(), 0),
     ],
 )
-def test_istd_selection_respects_method_chemistry(losses, expected_tags, count):
+def test_istd_selection_respects_method_chemistry(losses, expected_losses, count):
     from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
     from xic_extractor.configuration.paths import targets_template_path
 
@@ -256,7 +277,7 @@ def test_istd_selection_respects_method_chemistry(losses, expected_tags, count):
     )
     assert len(shared.targets) == 7
     assert len(selected.targets) == count
-    assert {t.cid_nl_tag for t in selected.targets} == expected_tags
+    assert {t.neutral_loss_da for t in selected.targets} == expected_losses
     assert len(selected.method_skipped) == 7 - count
     assert selected.skipped_count == 7
     assert all(t.is_istd for t in selected.method_skipped)

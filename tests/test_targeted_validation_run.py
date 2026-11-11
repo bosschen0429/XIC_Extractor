@@ -175,7 +175,7 @@ def _write_validation_targets(config_dir: Path) -> None:
                 label="ISTD",
                 mz="258.1085",
                 expected_rt_min="9",
-                cid_nl_tag="dR",
+                cid_nl_loss_da="116.0474",
                 role="istd",
                 istd_pair="",
             )

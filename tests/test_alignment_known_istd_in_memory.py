@@ -111,7 +111,7 @@ def test_untargeted_istd_uses_targeted_selection_for_multiple_supported_peaks(
                 "label": "ISTD",
                 "mz": "300",
                 "expected_rt_min": "8.3",
-                "cid_nl_tag": "dR",
+                "cid_nl_loss_da": "116.0474",
                 "role": "istd",
                 "istd_pair": "",
             }
@@ -332,7 +332,7 @@ def test_istd_reference_recovers_cross_sample_peak_without_local_nl(
                 label=f"I{i}",
                 mz=str(mz),
                 expected_rt_min=str(rt),
-                cid_nl_tag="dR",
+                cid_nl_loss_da="116.0474",
                 role="istd",
                 istd_pair="",
             )
