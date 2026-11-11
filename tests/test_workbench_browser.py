@@ -808,6 +808,14 @@ def test_targeted_bulk_specificity_selects_like_samples(
     # Nothing selected: the toolbar is idle.
     expect(page.locator("#target-bulk-apply")).to_be_disabled()
     handles = page.locator("#target-rows td.target-handle")
+    # Drag a band over the row numbers.
+    start = handles.nth(0).bounding_box()
+    end = handles.nth(2).bounding_box()
+    page.mouse.move(start["x"] + 5, start["y"] + 5)
+    page.mouse.down()
+    page.mouse.move(end["x"] + 5, end["y"] + end["height"] / 2, steps=8)
+    page.mouse.up()
+    expect(page.locator("#target-selection")).to_have_text("已選 3 個目標")
     handles.nth(1).click()
     handles.nth(3).click(modifiers=["Shift"])
     expect(page.locator("#target-selection")).to_have_text("已選 3 個目標")
@@ -902,6 +910,39 @@ def test_target_delta_mass_editor_names_ions_and_previews_actual_mz(
     page.reload()
     page.locator("#target-edit").click()
     expect(page.locator("#target-delta-advanced")).not_to_have_attribute("open", "")
+
+
+def test_target_ions_follow_their_row_not_a_label_typed_through(
+    workbench, config_dir, tmp_path
+):
+    table = tmp_path / "targets.csv"
+    table.write_text(
+        "label,mz,expected_rt_min,role,istd_pair,cid_nl_loss_da,delta_mass_mz\n"
+        "Pt,500,2,analyte,,,+1.0021\n",
+        encoding="utf-8",
+    )
+    page = workbench
+    page.locator("#target-import-file").set_input_files(table)
+    page.locator("#target-import-confirm").click()
+    page.locator("#target-edit").click()
+    # A plain table lists Δm/z only; its ions take the defaults.
+    page.get_by_role(
+        "button", name="編輯 Delta Mass Δm/z（第 1 列）", exact=True
+    ).click()
+    editor = page.locator(".target-delta-row .delta-editor")
+    expect(editor.get_by_role("textbox", name="Δm/z（第 1 個伴隨離子）")).to_have_value(
+        "+1.0021"
+    )
+    page.locator("#target-add").click()
+    name = page.get_by_role("textbox", name="名稱（第 2 列）", exact=True)
+    name.press_sequentially("Pt-2")
+    _fill_target(page, 2, "Pt-2", "600")
+    page.locator("#target-editor-save").click()
+    expect(page.locator("#target-editor")).not_to_be_visible()
+    state = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
+    assert set(state["delta_mass"]["ions"]) == {"Pt"}
+    assert state["delta_mass"]["ions"]["Pt"][0]["label"] == "+1.0021"
+    assert [row["delta_mass_mz"] for row in state["targets"]] == ["+1.0021", ""]
 
 
 def test_imported_earlier_method_keeps_ion_names_until_their_offset_changes(
@@ -1063,6 +1104,17 @@ def test_new_untargeted_delta_mass_method_restores_easy_ic(workbench, tmp_path):
     assert overrides["mass_recalibration"] == "easy_ic_restore"
     assert [p["label"] for p in overrides["positions"]] == ["base", "+1.0034"]
     assert overrides["anchor_positions"] == ["base"]
+    # Applied and saved, the Delta Mass method survives a reload.
+    page.locator("#method-apply").click()
+    expect(page.locator("#method-editor")).not_to_be_visible()
+    page.locator("#untargeted-save").click()
+    expect(page.locator("#untargeted-dirty")).to_be_empty()
+    page.reload()
+    expect(page.locator("body")).not_to_have_class("booting")
+    _view(page, "untargeted")
+    expect(page.locator("#method-preview")).to_contain_text(
+        "Delta Mass · 基準＋1 個伴隨離子"
+    )
 
 
 def test_untargeted_method_apply_is_draft_until_saved(workbench, config_dir, tmp_path):

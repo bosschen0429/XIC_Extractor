@@ -3,8 +3,8 @@
 export const state = {
   config: null,
   targets: [],
-  // Delta Mass details: list-shared settings and each target's ions by label.
-  deltaMass: { settings: {}, ions: {} },
+  // Delta Mass details: list-shared settings and each target row's ions.
+  deltaMass: { settings: {}, ions: new Map() },
   method: null,
   importing: false,
   view: "targeted",
@@ -48,13 +48,20 @@ export function removeTarget(index) {
 export function addTarget(row) {
   state.targets.push(row);
 }
+// Saved details name targets by label; the editor keys them by row, because a
+// label changes one keystroke at a time and may pass through another's name.
 export function setDeltaMass(payload) {
+  const byLabel = payload?.ions || {};
   state.deltaMass = {
     settings: {
       ...state.config.targeted_specificity.delta_mass_settings,
       ...(payload?.settings || {}),
     },
-    ions: structuredClone(payload?.ions || {}),
+    ions: new Map(
+      state.targets
+        .filter((row) => Object.hasOwn(byLabel, row.label))
+        .map((row) => [row, structuredClone(byLabel[row.label])]),
+    ),
   };
 }
 export function markClosed() {

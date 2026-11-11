@@ -90,7 +90,7 @@ class TargetedWorkbookSource:
                 _table(
                     book,
                     "Method Evidence",
-                    {"SampleName", "Target", "Specificity", "Status"},
+                    {"SampleName", "Target", "Status"},
                 )
                 if "Method Evidence" in book.sheetnames
                 else []
@@ -99,7 +99,7 @@ class TargetedWorkbookSource:
                 _table(
                     book,
                     "Delta Mass Evidence",
-                    {"SampleName", "Target", "Specificity", "Pattern Status"},
+                    {"SampleName", "Target", "Pattern Status"},
                 )
                 if "Delta Mass Evidence" in book.sheetnames
                 else []

@@ -296,9 +296,11 @@ function editorDraft(editor) {
         .filter((key) => source.overrides?.[key] !== undefined)
         .map((key) => [key, source.overrides[key]]),
     );
+    const hadDeltaMass = source.tags.some((tag) => tag.strategy === "delta_mass");
     overrides = {
-      // A new Delta Mass method restores Easy-IC masses like CID-NL methods.
-      mass_recalibration: "easy_ic_restore",
+      // New Delta Mass evidence restores Easy-IC masses like CID-NL methods;
+      // an existing Delta Mass method keeps its policy, including omitted (none).
+      ...(hadDeltaMass ? {} : { mass_recalibration: "easy_ic_restore" }),
       ...kept,
       positions: [
         {

@@ -71,7 +71,13 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
     ("Targets", "m/z", "目標前驅離子質荷比。", "m/z"),
     ("Targets", "ppm tol", "擷取 XIC 的質量容許誤差。", "ppm"),
     ("Targets", "RT min / RT max", "RT 定位提示範圍，不是身分確認的硬界線。", "min"),
-    ("Targets", "NL (Da)", "設定的中性丟失質量；空白＝未設定，不是測得零。", "Da"),
+    (
+        "Targets",
+        "NL (Da)",
+        "只用 CID-NL 時的中性丟失質量；空白＝未設定，不是測得零。"
+        "與 Delta Mass 並用時見 Specificity 與 Method Evidence。",
+        "Da",
+    ),
     (
         "Targets",
         "Expected product m/z",

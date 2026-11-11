@@ -114,7 +114,7 @@ export function renderSettings(values) {
   lock();
 }
 function applyTargetedDraft(result) {
-  setDeltaMass(result.delta_mass);
+  loadDeltaMass(result.delta_mass);
   updateConfig({ settings: result.settings });
   renderSettings(result.settings);
   setMethodState(result.summary);
@@ -208,12 +208,25 @@ export async function saveTargeted(quiet = false) {
 const isIstd = (row) => row.role === "istd";
 // Delta Mass details of one target; the row's Δm/z cell follows from them.
 function targetIons(row) {
-  return state.deltaMass.ions[row.label] || [];
+  return state.deltaMass.ions.get(row) || [];
 }
 function setTargetIons(row, ions) {
-  if (ions.length) state.deltaMass.ions[row.label] = ions;
-  else delete state.deltaMass.ions[row.label];
+  if (ions.length) state.deltaMass.ions.set(row, ions);
+  else state.deltaMass.ions.delete(row);
   updateTarget(row, { delta_mass_mz: formatOffsets(ions) });
+}
+// A table without saved details still lists its Δm/z; those ions take defaults.
+export function loadDeltaMass(payload) {
+  setDeltaMass(payload);
+  for (const row of state.targets) {
+    if (state.deltaMass.ions.has(row) || !String(row.delta_mass_mz || "").trim())
+      continue;
+    try {
+      state.deltaMass.ions.set(row, ionsForOffsets(parseOffsets(row.delta_mass_mz)));
+    } catch {
+      // An unreadable cell stays as typed; saving reports it.
+    }
+  }
 }
 // Δm/z as shown: four decimals, like the ion names; the cell keeps full precision.
 function deltaText(row) {
@@ -233,11 +246,10 @@ export function specificityLabel(row) {
 }
 // The payload the server admits with the rows: shared settings and ions.
 function deltaMassPayload() {
-  const labels = new Set(state.targets.map((row) => row.label));
   const ions = Object.fromEntries(
-    Object.entries(state.deltaMass.ions).filter(
-      ([label, list]) => labels.has(label) && list.length,
-    ),
+    state.targets
+      .filter((row) => targetIons(row).length)
+      .map((row) => [row.label, targetIons(row)]),
   );
   return { settings: state.deltaMass.settings, ions };
 }
@@ -462,8 +474,9 @@ function renderTargets() {
           input.placeholder = "—";
         }
         input.addEventListener("input", () => {
-          if (key === "label") renameTarget(row, input.value);
-          else updateTarget(row, { [key]: input.value.trim() });
+          updateTarget(row, {
+            [key]: key === "label" ? input.value : input.value.trim(),
+          });
           tr.querySelector(".target-specificity").textContent =
             specificityLabel(row);
           if (key === "mz" && expandedRow === row) renderExpanded(tr, row);
@@ -496,12 +509,6 @@ function renderTargets() {
   }
   renderSelection();
   targetCount();
-}
-function renameTarget(row, label) {
-  const ions = state.deltaMass.ions[row.label];
-  delete state.deltaMass.ions[row.label];
-  updateTarget(row, { label });
-  if (ions) state.deltaMass.ions[label] = ions;
 }
 function pairingSelect(row, where) {
   const input = el("select");
@@ -539,7 +546,8 @@ function pairingSelect(row, where) {
 function renderExpanded(tr, row) {
   tr.nextElementSibling?.classList.contains("target-delta-row") &&
     tr.nextElementSibling.remove();
-  const ions = (state.deltaMass.ions[row.label] ||= []);
+  if (!state.deltaMass.ions.has(row)) state.deltaMass.ions.set(row, []);
+  const ions = state.deltaMass.ions.get(row);
   const detail = el("tr", undefined, "target-delta-row");
   const td = el("td");
   td.colSpan = targetColumns.length + 2;
@@ -769,7 +777,7 @@ export function bindTargeted() {
     pendingTargetImport = null;
     setTargets(result.targets);
     if (result.kind === "method") applyTargetedDraft(result);
-    else setDeltaMass(null);
+    else loadDeltaMass(null);
     $("target-method-select").value = "";
     targetCount();
     dirty("targeted");
