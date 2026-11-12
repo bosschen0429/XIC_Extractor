@@ -258,6 +258,13 @@ model.
 - **Owner Backfill scan-index variants:** `ms1-index-hybrid` slowed Owner
   Backfill 14.6 to 64.9 s; other index variants changed outputs. Super-window
   span factor 1 raised RAW calls 72 to 17,910.
+- **Per-handle MS1 scan list for EASY-IC XIC reads** (2026-11-12, `924f28ff`):
+  `GetScanEvents` or `GetFilteredScanEnumerator("ms")` returns the same MS1
+  scans as per-scan `GetFilterForScanNumber` on 237 RAW, but costs 0.13–0.44 s
+  per open handle, about the 0.39–0.52 s that a task's windowed filter reads
+  cost. Oil 8-RAW Alignment 155.6/143.3 s base versus 144.1/148.1 s candidate;
+  summed partition acquisition rose 171 to 174/182 s. Only sharing one list
+  per RAW across handles could remove the cost.
 - **Standard Peak `--best-shift-only` in the one-shot preset:** faster in no-RAW
   replay, no gain in the full 8RAW stage.
 
