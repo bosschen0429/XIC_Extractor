@@ -164,7 +164,6 @@ window.XicUi = (() => {
     detail: null,
     curveView: null,
     curveCache: new Map(),
-    curveRequestKey: null,
     curveOpener: null,
     busy: false,
     restoring: false,
@@ -438,6 +437,7 @@ window.XicUi = (() => {
       pollAbort = null;
     }
     state.job = job;
+    $("job-progress").hidden = !job;
   }
   async function action(work, message) {
     if (locked()) return;
@@ -1091,17 +1091,19 @@ window.XicUi = (() => {
       ...(rawSourceSet() ? {raw_dir: $("raw-dir").value, dll_dir: $("dll-dir").value} : {}),
     };
     const key = JSON.stringify([state.detail.view_id, request]);
-    state.curveRequestKey = key;
+    const previousJob = state.job;
+    setCurveJob(null);
     if (state.curveCache.has(key)) {
+      // A cache hit sends no new /curves request to replace the server's read.
+      if (previousJob) await api(`/api/jobs/${previousJob.id}/cancel`, {});
       showCurveView({...state.curveCache.get(key)});
       return;
     }
     curveMessage(targeted || needsRaw() ? "正在讀取所選樣本的 RAW；不會重跑整批分析。"
       : "正在顯示保存的曲線…");
     clearReview("xic-review");
-    const view = state.curveView = {id: null};
+    const view = state.curveView = {id: null, key};
     const detail = state.detail;
-    setCurveJob(null);
     try {
       const job = await api("/api/curves", request);
       if (state.detail !== detail || state.curveView !== view) return;
@@ -1117,10 +1119,11 @@ window.XicUi = (() => {
     }
   }
   function finishCurves(job, view) {
+    if (state.curveView !== view) return;
     if (job.status === "succeeded") {
       view.id = job.view_id;
       view.unusable = job.unusable_samples || [];
-      state.curveCache.set(state.curveRequestKey, {...view});
+      if (view.key) state.curveCache.set(view.key, {...view});
       if (state.curveCache.size > 8) state.curveCache.delete(state.curveCache.keys().next().value);
       showCurveView(view);
     } else {
@@ -1307,6 +1310,15 @@ window.XicUi = (() => {
     action(openBatch, "正在讀取分析結果…");
   });
   document.addEventListener("xic:analysis-busy", controls);
+  document.addEventListener("xic:analysis-started", () => {
+    // The accepted analysis replaces the server's curve job, including a
+    // /curves response that has not reached this tab yet.
+    if (state.job || (state.curveView && !state.curveView.id)) {
+      setCurveJob(null);
+      curveMessage("已停止曲線載入，分析工作已開始。", false, "");
+      controls();
+    }
+  });
   window.XicReview = {
     session: api("/api/session"),
   };

@@ -2257,6 +2257,56 @@ def test_raw_curve_read_never_locks_review_and_a_new_action_replaces_it(
     assert len(cancelled) == 3
 
 
+def test_starting_analysis_ends_the_curve_job_and_its_poll(
+    workbench, tmp_path, monkeypatch, fake_runs
+):
+    from tests.inspector_fixtures import create_review_batch
+    from xic_workbench import review_curves
+
+    entered = threading.Event()
+
+    def blocked(*args, is_cancelled, **kwargs):
+        entered.set()
+        deadline = time.monotonic() + HANDSHAKE_TIMEOUT_S
+        while not is_cancelled() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        raise review_curves.CurveAcquisitionCancelled()
+
+    monkeypatch.setattr(review_curves, "review_curve_bundle", blocked)
+    report, _ = create_review_batch(tmp_path, sample_count=3)
+    page = workbench
+    _open_results(page)
+    page.locator("#source").fill(str(report))
+    page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="瀏覽矩陣群組").click()
+    page.locator("#item-list button").first.click()
+    _configure_curve_sources(page, tmp_path, tmp_path)
+    page.locator("#load-curves").click()
+    assert entered.wait(HANDSHAKE_TIMEOUT_S)
+    expect(page.locator("#cancel")).to_be_visible()
+    # Exercise the normal analysis client, with isolated settings/fake analysis.
+    page.evaluate(
+        """async output => {
+          const {analysis} = await import('/assets/analysis_jobs.js');
+          const {state} = await import('/assets/analysis_state.js');
+          await analysis.start('targeted', {
+            settings: state.config.settings, targets: state.config.targets,
+            output_dir: output,
+          });
+        }""",
+        str(tmp_path / "run"),
+    )
+    expect(page.locator("#cancel")).to_be_hidden()
+    expect(page.locator("#job-progress")).to_be_hidden()
+    expect(page.locator("#inline-curve-status")).to_contain_text("已停止")
+    review = page.evaluate(
+        """async () => (await fetch('/api/review', {
+          headers: {'X-XIC-Client': 'workbench'},
+        })).json()"""
+    )
+    assert review["job"] is None
+
+
 def test_saved_curves_show_without_raw_and_unsaved_items_wait_for_load(
     workbench, tmp_path
 ):
@@ -2742,6 +2792,73 @@ def test_delayed_cached_curve_cannot_replace_current_sample_feedback(
         for route in pending:
             route.continue_()
         page.unroute(old_url)
+
+
+def test_cached_sample_replaces_a_pending_raw_read(workbench, tmp_path, monkeypatch):
+    from contextlib import contextmanager
+
+    from tests.xic_inspector_targeted_workbook_fixtures import (
+        install_targeted_raws,
+        write_rare_detection_workbook,
+    )
+    from xic_workbench import targeted_curves
+
+    page = workbench
+    raw_dir = tmp_path / "raw"
+    install_targeted_raws(
+        monkeypatch, raw_dir, {"S3": 1000, "S4": 300}, pair_scale=1000
+    )
+    entered, release = threading.Event(), threading.Event()
+    open_raw = targeted_curves.open_raw
+
+    @contextmanager
+    def held_raw(path, *args, **kwargs):
+        if path.stem == "S4":
+            entered.set()
+            assert release.wait(HANDSHAKE_TIMEOUT_S)
+        with open_raw(path, *args, **kwargs) as raw:
+            yield raw
+
+    monkeypatch.setattr(targeted_curves, "open_raw", held_raw)
+    workbook = write_rare_detection_workbook(tmp_path / "paired.xlsx")
+    _open_results(page)
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    _configure_curve_sources(page, raw_dir, tmp_path)
+    page.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True).click()
+    review = _wait_for_curve_report(page)
+    expect(review.locator(".tx-sample-name")).to_have_text("S3")
+    cached_view = review.get_attribute("data-view-id")
+    try:
+        with page.expect_response("**/api/curves") as started:
+            page.locator("#xic-next").click()
+        job = started.value.json()
+        assert entered.wait(HANDSHAKE_TIMEOUT_S)
+        page.locator("#xic-sample").select_option("S3")
+        expect(review).to_have_attribute("data-view-id", cached_view)
+        release.set()
+        completed = page.evaluate(
+            """async ([id, timeout]) => {
+              const deadline = performance.now() + timeout;
+              while (performance.now() < deadline) {
+                const job = await (await fetch('/api/jobs/' + id, {
+                  headers: {'X-XIC-Client': 'workbench'},
+                })).json();
+                if (!['running', 'cancelling'].includes(job.status)) return job;
+                await new Promise(resolve => setTimeout(resolve, 20));
+              }
+              throw new Error('Curve job did not finish');
+            }""",
+            [job["id"], BACKGROUND_JOB_TIMEOUT_MS],
+        )
+        assert completed["status"] == "cancelled"
+        expect(page.locator("#xic-sample")).to_have_value("S3")
+        expect(review.locator(".tx-sample-name")).to_have_text("S3")
+        expect(review).to_have_attribute("data-view-id", cached_view)
+        expect(page.locator("#job-progress")).to_be_hidden()
+    finally:
+        release.set()
 
 
 def test_targeted_overview_opens_and_leaves_single_target_review(workbench, tmp_path):

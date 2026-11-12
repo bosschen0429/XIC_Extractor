@@ -60,6 +60,7 @@ function prepareStart(kind, values) {
 }
 
 async function acceptedStart(kind, values, job, acceptSampleRead) {
+  document.dispatchEvent(new CustomEvent("xic:analysis-started"));
   if (kind === "untargeted") {
     updateConfig({ untargeted: values });
     dirty("untargeted", false);
