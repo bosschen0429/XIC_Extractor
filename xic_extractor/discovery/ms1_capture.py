@@ -38,7 +38,7 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.peak_binding import DiscoveryPeakPhysicalBinding
 from xic_extractor.discovery.same_ion_peaks import group_same_ion_peaks
 from xic_extractor.discovery.settings import DiscoverySettings
-from xic_extractor.mass_accuracy import weighted_ion_mz, within_ppm
+from xic_extractor.mass_accuracy import mz_tolerance_da, weighted_ion_mz, within_ppm
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
     PhysicalSegment,
@@ -658,7 +658,7 @@ def _apex_ion_mz(
     if len(rt) == 0:
         return None, []
     apex = int(np.argmin(np.abs(rt - facts.apex_rt_min)))
-    half_width = request.mz * request.ppm_tol * 1e-6
+    half_width = mz_tolerance_da(request.mz, request.ppm_tol)
     readings = []
     ion_reads = []
     for index in range(
@@ -682,7 +682,7 @@ def _reads_doubly_charged_isotope(
     ms1_centroid: MS1Centroid,
 ) -> bool:
     isotope_mz = apex_mz + _DOUBLY_CHARGED_ISOTOPE_SPACING_MZ
-    half_width = isotope_mz * _APEX_ION_SPREAD_PPM * 1e-6
+    half_width = mz_tolerance_da(isotope_mz, _APEX_ION_SPREAD_PPM)
     isotope_reads = 0
     for rt, ion_intensity in ion_reads:
         isotope = ms1_centroid(rt, isotope_mz - half_width, isotope_mz + half_width)

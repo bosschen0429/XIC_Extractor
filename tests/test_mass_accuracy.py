@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from xic_extractor.mass_accuracy import (
@@ -8,8 +9,12 @@ from xic_extractor.mass_accuracy import (
     mz_tolerance_da,
     mz_window,
     neutral_loss_match,
+    ppm_scale_factor,
+    reference_mz_window,
     signed_ppm_error,
+    signed_ppm_errors,
     weighted_ion_mz,
+    within_both_mz_tolerances,
     within_ppm,
 )
 
@@ -46,6 +51,42 @@ def test_signed_ppm_error_uses_reference_mz_denominator() -> None:
 
     assert signed_ppm_error(observed_mz, reference_mz) == pytest.approx(10.0)
     assert absolute_ppm_error(observed_mz, reference_mz) == pytest.approx(10.0)
+
+
+def test_signed_ppm_error_accepts_any_finite_observed_mass() -> None:
+    # An observed neutral loss can fall below zero; only the reference divides.
+    assert signed_ppm_error(-1.0, 100.0) == pytest.approx(-1.01e6)
+    with pytest.raises(ValueError, match="observed_mz"):
+        signed_ppm_error(float("nan"), 100.0)
+
+
+def test_signed_ppm_errors_match_the_scalar_error_per_element() -> None:
+    observed = np.array([99.999, 100.0, 100.002])
+
+    errors = signed_ppm_errors(observed, 100.0)
+
+    assert errors.tolist() == [signed_ppm_error(mz, 100.0) for mz in observed]
+
+
+def test_ppm_scale_factor_applies_a_ppm_shift_multiplicatively() -> None:
+    assert 500.0 * ppm_scale_factor(4.0) == pytest.approx(500.002)
+    assert ppm_scale_factor(0.0) == 1.0
+
+
+def test_reference_mz_window_holds_references_whose_window_holds_observed() -> None:
+    low, high = reference_mz_window(500.0, 20.0)
+
+    # Each bound is a reference whose own 20 ppm window just reaches 500.
+    assert absolute_ppm_error(500.0, low) == pytest.approx(20.0)
+    assert absolute_ppm_error(500.0, high) == pytest.approx(20.0)
+    assert 500.0 - low < high - 500.0
+
+
+def test_within_both_mz_tolerances_uses_the_narrower_window() -> None:
+    # 0.006 Da apart: inside the 20 ppm window of 500, outside the 5 ppm one.
+    assert within_both_mz_tolerances(500.0, 20.0, 500.006, 20.0) is True
+    assert within_both_mz_tolerances(500.0, 20.0, 500.006, 5.0) is False
+    assert within_both_mz_tolerances(500.0, 5.0, 500.006, 20.0) is False
 
 
 def test_mz_window_uses_ppm_scaled_da_width() -> None:

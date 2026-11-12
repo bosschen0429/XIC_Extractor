@@ -18,6 +18,7 @@ from xic_extractor.extraction.scoring_factory import build_scoring_context_facto
 from xic_extractor.extraction.targeted_product_projection import (
     build_targeted_product_projection,
 )
+from xic_extractor.mass_accuracy import within_both_mz_tolerances
 from xic_extractor.output.messages import build_diagnostic_records
 from xic_extractor.output.targeted_product_model import TargetedProductContext
 from xic_extractor.peak_detection.targeted_context import (
@@ -249,12 +250,12 @@ def complete_targeted_candidate_batch(
                     other_assessment := assessments.get((file.sample_name, other_label))
                 )
                 is not None
-                and abs(target.mz - other_assessment.target.mz)
-                <= min(
-                    target.mz * target.ppm_tol,
-                    other_assessment.target.mz * other_assessment.target.ppm_tol,
+                and within_both_mz_tolerances(
+                    target.mz,
+                    target.ppm_tol,
+                    other_assessment.target.mz,
+                    other_assessment.target.ppm_tol,
                 )
-                / 1e6
                 and _overlapping_measured_regions(result, other)
             )
             if shared_with:

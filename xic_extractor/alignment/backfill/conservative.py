@@ -26,6 +26,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation
+from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
 )
@@ -709,7 +710,7 @@ def _candidate_group_mismatch_reason(
     query_rt = group_rt if location is None else location.location.query_rt
     if not provenance.query_rt_min <= query_rt <= provenance.query_rt_max:
         return "like_to_like_rt_mz_mismatch"
-    ppm_delta = abs(observation.mz - group_mz) / group_mz * 1_000_000.0
+    ppm_delta = absolute_ppm_error(observation.mz, group_mz)
     if ppm_delta > provenance.query_ppm_tol:
         return "like_to_like_rt_mz_mismatch"
     return None

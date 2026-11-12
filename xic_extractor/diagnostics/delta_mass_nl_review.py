@@ -15,6 +15,7 @@ from xic_extractor.diagnostics.delta_mass_review_data import (
 from xic_extractor.discovery.detected_features import DetectedFeature
 from xic_extractor.discovery.models import DiscoveryEvent
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.mass_accuracy import mz_tolerance_da
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlCandidateInterval,
     CidNlEventQuery,
@@ -37,7 +38,9 @@ def assess_review_neutral_losses(
     results = []
     spectra = {s.scan_number: s for s in candidate.spectra}
     for position in candidate.positions:
-        tolerance = position.query_mz * settings.precursor_mz_tolerance_ppm * 1e-6
+        tolerance = mz_tolerance_da(
+            position.query_mz, settings.precursor_mz_tolerance_ppm
+        )
         scope = PrecursorMassScope.around(
             ((position.query_mz, tolerance),),
             maximum_inference_radius_da=settings.ms2_precursor_tol_da,

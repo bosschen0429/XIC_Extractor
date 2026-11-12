@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from xic_extractor.mass_accuracy import absolute_ppm_error, mz_window, signed_ppm_error
 from xic_extractor.raw_reader import open_raw
 
 if TYPE_CHECKING:
@@ -73,9 +74,7 @@ class BlankBackgroundLibrary:
         if not self.ions or target_mz <= 0.0:
             return []
 
-        tol_da = target_mz * ppm_tol / 1e6
-        min_mz = target_mz - tol_da
-        max_mz = target_mz + tol_da
+        min_mz, max_mz = mz_window(target_mz, ppm_tol)
 
         # Binary search for mass window
         ion_mzs = [ion.mz for ion in self.ions]
@@ -85,7 +84,7 @@ class BlankBackgroundLibrary:
         matches: list[tuple[BlankBackgroundIon, float]] = []
         for i in range(left, right):
             ion = self.ions[i]
-            delta_ppm = (target_mz - ion.mz) / ion.mz * 1e6
+            delta_ppm = signed_ppm_error(target_mz, ion.mz)
             if abs(delta_ppm) <= ppm_tol:
                 matches.append((ion, float(delta_ppm)))
 
@@ -242,7 +241,7 @@ def extract_blank_background_library(
             curr_cluster.append(item)
         else:
             cluster_median_mz = float(np.median([x[0] for x in curr_cluster]))
-            ppm_diff = abs(m - cluster_median_mz) / cluster_median_mz * 1e6
+            ppm_diff = absolute_ppm_error(m, cluster_median_mz)
             if ppm_diff <= ppm_cluster:
                 curr_cluster.append(item)
             else:

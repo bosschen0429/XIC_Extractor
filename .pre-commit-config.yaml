@@ -4,10 +4,10 @@ repos:
   - repo: local
     hooks:
       - id: internal-defense-growth
-        name: Block new internal-defense machinery
+        name: Block new internal-defense machinery and handwritten ppm arithmetic
         entry: uv run --cache-dir .uv-cache python scripts/check_architecture_census.py --internal-defense-base HEAD --staged
         language: system
-        files: ^(xic_extractor/.*\.py|scripts/check_architecture_census\.py|\.pre-commit-config\.yaml)$
+        files: ^((xic_extractor|scripts|tools|xic_inspector|xic_workbench)/.*\.py|\.pre-commit-config\.yaml)$
         pass_filenames: false
 
       - id: ruff-format-staged-python

@@ -6,10 +6,7 @@ from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import DriftPriorSource
-from xic_extractor.alignment.grouping_evidence import (
-    pair_ppm,
-    peak_correspondence_conflict,
-)
+from xic_extractor.alignment.grouping_evidence import peak_correspondence_conflict
 from xic_extractor.alignment.grouping_rules import (
     DuplicateContext,
     MethodPairEvidence,
@@ -17,6 +14,7 @@ from xic_extractor.alignment.grouping_rules import (
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.rt_frame import RtFrame
+from xic_extractor.mass_accuracy import absolute_ppm_error
 
 EdgeDecision = Literal["strong_edge", "weak_edge", "blocked_edge"]
 HardGateFailureReason = str
@@ -149,7 +147,7 @@ def _hard_gate_failure(
         return "same_sample", False
     if method_evidence.identity_failure:
         return method_evidence.identity_failure, False
-    if pair_ppm(left.peak.mz, right.peak.mz) > config.max_ppm:
+    if absolute_ppm_error(right.peak.mz, left.peak.mz) > config.max_ppm:
         return "precursor_mz_out_of_tolerance", False
     if (
         peak_correspondence_conflict(

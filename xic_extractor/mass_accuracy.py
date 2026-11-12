@@ -8,14 +8,32 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
+    import numpy.typing as npt
 
 PPM_BOUNDARY_EPSILON = 1e-9
 
 
 def signed_ppm_error(observed_mz: float, reference_mz: float) -> float:
-    """Return signed ppm error using ``reference_mz`` as denominator."""
+    """Return signed ppm error using ``reference_mz`` as denominator.
 
-    _require_finite_mz("observed_mz", observed_mz)
+    ``observed_mz`` may be any finite mass, such as an observed neutral loss.
+    """
+
+    if not math.isfinite(observed_mz):
+        raise ValueError("observed_mz must be finite")
+    _require_finite_mz("reference_mz", reference_mz)
+    return (observed_mz - reference_mz) / reference_mz * 1e6
+
+
+def signed_ppm_errors(
+    observed_mz: npt.NDArray[np.floating], reference_mz: float
+) -> npt.NDArray[np.floating]:
+    """Return element-wise signed ppm errors of an array against one reference."""
+
     _require_finite_mz("reference_mz", reference_mz)
     return (observed_mz - reference_mz) / reference_mz * 1e6
 
@@ -66,6 +84,12 @@ def neutral_loss_match(
     return error_da, window_da, error_da <= window_da
 
 
+def ppm_scale_factor(shift_ppm: float) -> float:
+    """Return the multiplicative m/z scale of a ``shift_ppm`` mass shift."""
+
+    return 1.0 + shift_ppm * 1e-6
+
+
 def mz_window(
     reference_mz: float,
     tolerance_ppm: float,
@@ -80,6 +104,34 @@ def mz_window(
         minimum_da=minimum_da,
     )
     return reference_mz - tolerance_da, reference_mz + tolerance_da
+
+
+def reference_mz_window(
+    observed_mz: float, tolerance_ppm: float
+) -> tuple[float, float]:
+    """Return bounds of the reference m/z values whose ppm window holds ``observed_mz``.
+
+    Ppm is relative to the unknown reference, so the interval is asymmetric.
+    """
+
+    _require_finite_mz("observed_mz", observed_mz)
+    _require_positive_finite("tolerance_ppm", tolerance_ppm)
+    fraction = tolerance_ppm / 1e6
+    return observed_mz / (1.0 + fraction), observed_mz / (1.0 - fraction)
+
+
+def within_both_mz_tolerances(
+    left_mz: float,
+    left_tolerance_ppm: float,
+    right_mz: float,
+    right_tolerance_ppm: float,
+) -> bool:
+    """Return whether two m/z values lie within the narrower of their own windows."""
+
+    return abs(left_mz - right_mz) <= min(
+        mz_tolerance_da(left_mz, left_tolerance_ppm),
+        mz_tolerance_da(right_mz, right_tolerance_ppm),
+    )
 
 
 def is_within_mz_tolerance(

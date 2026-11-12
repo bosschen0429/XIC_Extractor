@@ -20,7 +20,7 @@ from xic_extractor.configuration.target_identity import (
     mint_target_list_snapshot,
     target_list_snapshot_payload,
 )
-from xic_extractor.mass_accuracy import neutral_loss_match
+from xic_extractor.mass_accuracy import mz_tolerance_da, neutral_loss_match
 
 DriftPriorSource = Literal[
     "targeted_istd_trend", "batch_istd_trend", "batch_anchor_calibration", "none"
@@ -162,7 +162,8 @@ class KnownIstdReference:
                 )[2]
                 # The measured coordinate above identifies the physical peak;
                 # expected RT must not clip a shifted, already measured ISTD.
-                and abs(owner.peak.mz - target.mz) <= target.mz * target.ppm_tol / 1e6
+                and abs(owner.peak.mz - target.mz)
+                <= mz_tolerance_da(target.mz, target.ppm_tol)
             )
             for owner in matches:
                 counts[owner.owner_id] = counts.get(owner.owner_id, 0) + 1

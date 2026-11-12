@@ -9,7 +9,11 @@ import numpy as np
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.discovery.models import DiscoveryEvent, PrecursorMzBasis
 from xic_extractor.discovery.settings import DiscoverySettings
-from xic_extractor.mass_accuracy import neutral_loss_match
+from xic_extractor.mass_accuracy import (
+    absolute_ppm_error,
+    neutral_loss_match,
+    signed_ppm_errors,
+)
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.precursor_evidence import (
     precursor_inference_bounds,
@@ -123,8 +127,8 @@ def _events_from_scan_profile(
         for index in np.flatnonzero(direct_mask & finite_signal_mask):
             product_mz = float(masses[int(index)])
             observed_loss_da = precursor_mz - product_mz
-            observed_loss_error_ppm = (
-                abs(observed_loss_da - neutral_loss_da) / neutral_loss_da * 1_000_000.0
+            observed_loss_error_ppm = absolute_ppm_error(
+                observed_loss_da, neutral_loss_da
             )
             _, _, matches = neutral_loss_match(
                 precursor_mz,
@@ -212,9 +216,7 @@ def _direct_product_mask(
         settings.product_search_ppm,
         2.0 * precursor_mz * settings.nl_tolerance_ppm / expected_product,
     )
-    product_window_ppm = (
-        np.abs(masses - expected_product) / expected_product * 1_000_000.0
-    )
+    product_window_ppm = np.abs(signed_ppm_errors(masses, expected_product))
     return (
         (product_window_ppm <= effective_product_search_ppm)
         & (intensities >= intensity_floor)

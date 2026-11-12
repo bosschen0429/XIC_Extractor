@@ -10,7 +10,11 @@ from xic_extractor.configuration.cid_nl_profile import (
     DEFAULT_CID_NL_MASS_POLICY,
     PrecursorReferenceRequirement,
 )
-from xic_extractor.mass_accuracy import neutral_loss_match
+from xic_extractor.mass_accuracy import (
+    absolute_ppm_error,
+    mz_tolerance_da,
+    neutral_loss_match,
+)
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan
 
 RecordedPrecursorMzBasis = Literal["scan_precursor", "scan_monoisotopic"]
@@ -113,9 +117,7 @@ def assess_precursor_loss(
         precursor_mz = ms1_observation.centroid_mzs[0]
         reference_source = "parent_ms1"
         observed_loss_da = precursor_mz - product_mz
-        observed_loss_error_ppm = (
-            abs(observed_loss_da - neutral_loss_da) / neutral_loss_da * 1e6
-        )
+        observed_loss_error_ppm = absolute_ppm_error(observed_loss_da, neutral_loss_da)
     membership = precursor_isolation_membership(precursor_mz, selected_mz, metadata)
     if membership == "outside_nominal" and not _isolated_vendor_isotope(
         basis, precursor_mz, selected_mz, metadata
@@ -155,7 +157,9 @@ def recorded_precursor_references(
         "scan_precursor",
     )
     mono = metadata.monoisotopic_mz if metadata is not None else None
-    if mono is None or abs(mono - scan.precursor_mz) <= mono * tolerance_ppm / 1e6:
+    if mono is None or abs(mono - scan.precursor_mz) <= mz_tolerance_da(
+        mono, tolerance_ppm
+    ):
         return (selected,)
     return (selected, (mono, "scan_monoisotopic"))
 
@@ -231,8 +235,9 @@ def _isolated_vendor_isotope(
     if isotope_number < 1:
         return False
     expected_mz = precursor_mz + isotope_number * _CARBON_ISOTOPE_SPACING_DA
-    tolerance = DEFAULT_CID_NL_MASS_POLICY.precursor_mz_tolerance_ppm / 1e6
-    return abs(selected_mz - expected_mz) <= expected_mz * tolerance
+    return abs(selected_mz - expected_mz) <= mz_tolerance_da(
+        expected_mz, DEFAULT_CID_NL_MASS_POLICY.precursor_mz_tolerance_ppm
+    )
 
 
 @dataclass(frozen=True, slots=True)

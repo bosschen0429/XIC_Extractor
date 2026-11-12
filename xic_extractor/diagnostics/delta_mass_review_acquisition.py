@@ -31,6 +31,7 @@ from xic_extractor.discovery.models import DiscoveryEvent
 from xic_extractor.discovery.ms2_events import discovery_events_from_scan
 from xic_extractor.discovery.strict_event_receipts import read_parent_ms1_observations
 from xic_extractor.evidence.pt_envelope import EnvelopeTrace, compare_pt_envelope
+from xic_extractor.mass_accuracy import mz_tolerance_da
 from xic_extractor.precursor_evidence import PrecursorMassScope
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
@@ -138,7 +139,10 @@ def acquire_delta_mass_review(
         candidates = bounded_candidates
         targets = (
             tuple(
-                (p.query_mz, p.query_mz * nl_settings.precursor_mz_tolerance_ppm * 1e-6)
+                (
+                    p.query_mz,
+                    mz_tolerance_da(p.query_mz, nl_settings.precursor_mz_tolerance_ppm),
+                )
                 for c in candidates
                 for p in c.positions
             )
