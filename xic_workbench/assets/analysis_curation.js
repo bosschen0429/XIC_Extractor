@@ -1,6 +1,6 @@
 // Matrix curation presentation and intention adapters; Session owns the draft.
 import { createCurationSession } from "./analysis_curation_session.js";
-import { analysis } from "./analysis_jobs.js";
+import { analysis, renderJob } from "./analysis_jobs.js";
 import { showCurationResult } from "./analysis_results.js";
 import { showResult } from "./analysis_setup.js";
 import { state, updateConfig } from "./analysis_state.js";
@@ -248,6 +248,8 @@ export function bindCuration() {
     showCurationResult();
     lock();
   });
+  // Opening the panel can reveal the result card that replaces a finished job.
+  $("result-curation").addEventListener("toggle", renderJob);
   $("curation-form").onsubmit = (event) => {
     event.preventDefault();
     act(() => curation.export());
