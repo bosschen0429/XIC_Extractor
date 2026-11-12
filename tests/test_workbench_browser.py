@@ -4633,8 +4633,11 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     existing = alignment_output(tmp_path / "existing")
     page.locator("#curation-source_dir").fill(str(existing))
     page.locator("#curation-source_dir").press("Tab")
-    # The earlier curated matrix belongs to the run folder, not this one.
+    # The earlier curated matrix belongs to the run folder, not this one, so
+    # its finished job reports itself instead.
     expect(page.locator("#curation-result")).to_be_hidden()
+    expect(page.locator("#analysis-job-title")).to_contain_text("矩陣整理 · 已完成")
+    expect(page.locator("#analysis-job")).to_be_visible()
     expect(step).to_be_disabled()
     expect(page.locator("#curation-steps")).to_contain_text("找不到本次分析的樣本資訊")
     samples = tmp_path / "samples.tsv"

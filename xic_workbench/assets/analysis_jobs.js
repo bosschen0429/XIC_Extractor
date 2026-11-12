@@ -96,6 +96,11 @@ function renderActivity() {
   );
   pill.onclick = () => selectView(page);
 }
+const curationResultShown = () =>
+  showingResult() &&
+  !$("result-curation").hidden &&
+  $("result-curation").open &&
+  !$("curation-result").hidden;
 export function renderJob() {
   const snapshot = analysis.snapshot;
   const job = snapshot.job;
@@ -113,10 +118,12 @@ export function renderJob() {
     `[data-job-slot="${onResult ? "curation" : state.view}"]`,
   );
   if (slot && card.parentElement !== slot) slot.append(card);
-  // A completed analysis or curation is summarized by its result card, so the
-  // job card does not repeat it as a finished job.
+  // A completed analysis is summarized by its result card at the top of the
+  // setup page; a completed curation only while its card is on screen.
   const summarizedByResult =
-    job?.status === "succeeded" && job.kind in resultIds;
+    job?.status === "succeeded" &&
+    job.kind in resultIds &&
+    (!onResult || job.kind !== "curation" || curationResultShown());
   card.hidden =
     !job ||
     summarizedByResult ||
@@ -183,8 +190,9 @@ function completeJob(snapshot, job) {
         done(`已讀取 ${result.samples.length} 個樣本。`);
       }
     } else if (job.kind === "curation") {
-      // On the result page the curation result card is the notice.
-      if (!showingResult())
+      // A visible curation result card is the notice.
+      renderResults();
+      if (!curationResultShown())
         done(`矩陣整理完成：${snapshot.results.curation.output_dir}`);
     }
     else if (job.kind === "inspector") {
@@ -212,6 +220,7 @@ function completeJob(snapshot, job) {
       job.status === "failed",
     );
   renderResults();
+  renderJob();
 }
 function confirmCancel(job) {
   return ui.confirm({
