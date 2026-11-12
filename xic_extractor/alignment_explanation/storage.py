@@ -2,17 +2,21 @@
 
 Each concept has one table: a run summary, samples, peaks, method subjects,
 Discovery candidates (with their terminal observation), final groups, initial
-groups, group members, cells, method assessments and exclusions. Curves have a
-table only in runs that retain them. Rows refer to each other by integer row
-ids; a list of references is a JSON array of row ids.
+groups, group members, cells, method assessments and exclusions. A cell with a
+value keeps the measured curve of the peak that gave it in ``cell_curves``.
+Membership comparisons share their recorded owner facts and ordered peer groups
+without dropping any alternative or score. Full audit curves have a table only in
+runs that retain them. Rows refer to each other by integer row ids; a list of
+references is a JSON array of row ids.
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
+import struct
 import zlib
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any
@@ -133,6 +137,9 @@ TABLES: dict[str, tuple[str, ...]] = {
         "evaluation_receipt",
     ),
     "exclusions": ("candidate", "reason_code"),
+    "membership_owners": ("id", "facts"),
+    "membership_owner_groups": ("id", "owners"),
+    "cell_curves": ("group_id", "sample", "curve"),
 }
 OPTIONAL_TABLES: dict[str, tuple[str, ...]] = {
     "curves": (
@@ -192,8 +199,7 @@ _DDL = {
         "support_origin TEXT NOT NULL, peaks TEXT NOT NULL, position_rt_min REAL, "
         "evidence_states TEXT NOT NULL, reason_codes TEXT NOT NULL, "
         "signal_quality TEXT NOT NULL, risks BLOB, observation BLOB, "
-        "PRIMARY KEY(group_id, sample)) "
-        "WITHOUT ROWID"
+        "PRIMARY KEY(group_id, sample))"
     ),
     "method_assessments": (
         "CREATE TABLE method_assessments (id INTEGER PRIMARY KEY, "
@@ -205,6 +211,18 @@ _DDL = {
     "exclusions": (
         "CREATE TABLE exclusions (candidate INTEGER PRIMARY KEY, "
         "reason_code TEXT NOT NULL)"
+    ),
+    "cell_curves": (
+        "CREATE TABLE cell_curves (group_id INTEGER NOT NULL, "
+        "sample INTEGER NOT NULL, curve BLOB NOT NULL, "
+        "PRIMARY KEY(group_id, sample))"
+    ),
+    "membership_owner_groups": (
+        "CREATE TABLE membership_owner_groups "
+        "(id INTEGER PRIMARY KEY, owners BLOB NOT NULL)"
+    ),
+    "membership_owners": (
+        "CREATE TABLE membership_owners (id INTEGER PRIMARY KEY, facts TEXT NOT NULL)"
     ),
     "curves": (
         "CREATE TABLE curves (payload_id INTEGER PRIMARY KEY, "
@@ -222,6 +240,8 @@ _INDEXES = (
     "CREATE INDEX candidates_hypothesis ON candidates(sample, hypothesis_id)",
     "CREATE INDEX candidates_terminal ON candidates(terminal_peak)",
     "CREATE INDEX candidates_id ON candidates(candidate_id)",
+    "CREATE INDEX cells_sample_apex ON cells(sample, apex_rt_min) "
+    "WHERE apex_rt_min IS NOT NULL",
 )
 
 
@@ -241,6 +261,37 @@ def decode_json(payload: str | bytes | None) -> Any:
     if isinstance(payload, bytes):
         payload = zlib.decompress(payload).decode("utf-8")
     return json.loads(payload)
+
+
+# A self-describing BLOB: byte-shuffled little-endian float64, then zlib.
+# Each plane holds the same byte of every value (all RTs, then intensities).
+_REVIEW_CURVE_FLOAT64 = b"XICF64\x01"
+
+
+def encode_review_curve(rt: Iterable[float], raw: Iterable[float]) -> bytes:
+    """Store both series bit-for-bit, without decimal conversion or rounding."""
+    times, intensities = tuple(rt), tuple(raw)
+    packed = struct.pack(f"<{2 * len(times)}d", *times, *intensities)
+    shuffled = b"".join(packed[byte::8] for byte in range(8))
+    return _REVIEW_CURVE_FLOAT64 + zlib.compress(shuffled, 6)
+
+
+def decode_review_curve(
+    payload: bytes,
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Read the current lossless binary curve format."""
+    if not payload.startswith(_REVIEW_CURVE_FLOAT64):
+        raise ExplanationError("unsupported review curve format; rerun Alignment")
+    shuffled = zlib.decompress(payload[len(_REVIEW_CURVE_FLOAT64) :])
+    if len(shuffled) % 16:
+        raise ExplanationError("malformed review curve: unequal float64 series")
+    value_count = len(shuffled) // 8
+    packed = bytearray(len(shuffled))
+    for byte in range(8):
+        packed[byte::8] = shuffled[byte * value_count : (byte + 1) * value_count]
+    values = struct.unpack(f"<{value_count}d", packed)
+    midpoint = value_count // 2
+    return values[:midpoint], values[midpoint:]
 
 
 def create_schema(db: sqlite3.Connection) -> None:

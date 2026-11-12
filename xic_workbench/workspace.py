@@ -1,4 +1,8 @@
-"""One local review session and its bounded, cancellable curve acquisitions."""
+"""One local review session and its curve views.
+
+Saved curves are shown at once; a RAW read runs as one cancellable job, and any
+new review action cancels it.
+"""
 
 from __future__ import annotations
 
@@ -16,11 +20,16 @@ from xic_extractor.alignment_explanation.errors import (
     ExplanationError,
     ExplanationUnavailableError,
 )
+from xic_extractor.alignment_explanation.reader import (
+    ReviewCurves,
+    read_review_curves,
+)
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (
     InspectorCancelled,
     PreparedReport,
     SelectionRequest,
+    prepare_curve_view,
     prepare_report,
     read_evidence_summary,
     resolve_source,
@@ -61,8 +70,11 @@ class ReviewWorkspace:
         )
         self._cancel = threading.Event()
         self._report: Path | None = None
-        self._verified_raws: dict[Path, Any] = {}
+        # Targeted RAW preparation is reused while one workbook stays open.
+        self._targeted_raws: dict[Path, Any] = {}
         self._page: PreparedReport | None = None
+        # Curve locations of the opened detail item, read once per selection.
+        self._curves: ReviewCurves | None = None
         self._job: dict[str, Any] | None = None
         self._detail: dict[str, Any] | None = None
         self._views: dict[str, Path] = {}
@@ -78,11 +90,14 @@ class ReviewWorkspace:
                 }
             )
 
-    def _require_idle(self) -> None:
+    def _require_open(self) -> None:
         if self._closing:
             raise WorkspaceBusy("工作區正在結束，請重新開啟。")
-        if self._job and self._job["status"] in {"running", "cancelling"}:
-            raise WorkspaceBusy("曲線仍在載入；請等待完成或先取消。")
+
+    def _replace_job(self) -> None:
+        """A new review action replaces the curve job; a running read stops."""
+        self._cancel.set()
+        self._job = None
 
     @property
     def closing(self) -> bool:
@@ -106,8 +121,10 @@ class ReviewWorkspace:
 
     def start_analysis(self, kind: str, values: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
-            self._require_idle()
-            return self.analysis.jobs.start(kind, values)
+            self._require_open()
+            started = self.analysis.jobs.start(kind, values)
+            self._replace_job()
+            return started
 
     def analysis_action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
@@ -138,7 +155,7 @@ class ReviewWorkspace:
             Path(_text(source, "結果資料夾、Targeted XLSX 或 SQLite 檔案"))
         ).resolve()
         with self._lock:
-            self._require_idle()
+            self._require_open()
             try:
                 summary = read_evidence_summary(path)
             except ExplanationUnavailableError:
@@ -166,9 +183,12 @@ class ReviewWorkspace:
             )
             # Failed opens never displace the previously usable batch.
             self._report, self._page = path, page
-            # RAW content checks are reused only while this batch stays open.
-            self._verified_raws = {}
-            self._detail, self._job = None, None
+            self._targeted_raws = {}
+            self._replace_job()
+            self._detail, self._curves = None, None
+            if isinstance(page.source, EvidenceLocator):
+                # Load the curve preparation code before the first selection.
+                self._executor.submit(_load_review_curves)
             return self._page_response()
 
     def query(self, values: dict[str, Any]) -> dict[str, Any]:
@@ -190,7 +210,7 @@ class ReviewWorkspace:
         if set(values) - allowed:
             raise ValueError("查詢包含不支援的欄位。")
         with self._lock:
-            self._require_idle()
+            self._require_open()
             if self._report is None or self._page is None:
                 raise ValueError("請先開啟一個批次。")
             group_id = values.get("group_id", "")
@@ -242,7 +262,8 @@ class ReviewWorkspace:
                     "overview"
                 ]
             self._page = page
-            self._detail, self._job = None, None
+            self._replace_job()
+            self._detail, self._curves = None, None
             return self._page_response()
 
     def _page_response(self) -> dict[str, Any]:
@@ -364,20 +385,37 @@ class ReviewWorkspace:
 
     def detail(self, item_id: Any) -> dict[str, Any]:
         with self._lock:
-            self._require_idle()
+            self._require_open()
             item = self._item(item_id)
-            assert self._page is not None
+            assert self._page is not None and self._report is not None
+            self._replace_job()
             payload = copy.deepcopy(self._page.payload)
             payload["items"] = [copy.deepcopy(item)]
             payload["selection"]["limit"] = 1
             prepared = replace(self._page, payload=payload, selected_count=1)
             view_id = uuid.uuid4().hex
             self._store_view(view_id, prepared)
-            self._detail = {
-                "view_id": view_id,
-                "item": self._item_summary(item, self._page.source),
-            }
-            self._job = None
+            summary = self._item_summary(item, self._page.source)
+            self._curves = None
+            if summary["group_id"] or summary["candidate_id"]:
+                curves = read_review_curves(
+                    self._report,
+                    feature_id=summary["group_id"],
+                    candidate_id=summary["candidate_id"],
+                )
+                self._curves = curves
+                # Samples with a location can be read; saved ones show at once.
+                summary["curve_sample_ids"] = sorted(
+                    {location.sample_key for location in curves.locations}
+                )
+                summary["saved_curve_sample_ids"] = sorted(
+                    {
+                        location.sample_key
+                        for location in curves.locations
+                        if location.curve is not None
+                    }
+                )
+            self._detail = {"view_id": view_id, "item": summary}
             return copy.deepcopy(self._detail)
 
     def start_curves(self, values: dict[str, Any]) -> dict[str, Any]:
@@ -385,141 +423,141 @@ class ReviewWorkspace:
         if set(values) - allowed:
             raise ValueError("曲線要求包含不支援的欄位。")
         samples = _ids(values.get("sample_ids"))
-        raw_dir = Path(_text(values.get("raw_dir"), "RAW 資料夾"))
-        dll_dir = Path(_text(values.get("dll_dir"), "RawFileReader DLL 資料夾"))
-        if not raw_dir.is_dir() or not dll_dir.is_dir():
-            raise ValueError("RAW 或 DLL 資料夾不存在，請重新選擇來源位置。")
         with self._lock:
-            self._require_idle()
-            if self.analysis.jobs.busy:
-                raise WorkspaceBusy("分析仍在執行；請完成或停止後再讀取診斷曲線。")
-            item = self._item(values.get("item_id"))
-            assert self._page is not None
-            description = self._item_summary(item, self._page.source)
+            self._require_open()
+            if self._detail is None or self._detail["item"]["id"] != values.get(
+                "item_id"
+            ):
+                self.detail(values.get("item_id"))
+            assert self._detail is not None and self._report is not None
+            description = self._detail["item"]
             if not any(
                 description[k] for k in ("group_id", "candidate_id", "target_id")
             ):
                 raise ValueError("此項目沒有可供擷取的分組或候選身份。")
-            unsupported = set(samples) - set(description["curve_sample_ids"])
-            if unsupported:
+            if set(samples) - set(description["curve_sample_ids"]):
                 raise ValueError("所選樣本缺少已記錄的擷取座標，無法自動取得此組曲線。")
-            assert self._report is not None and self._page is not None
-            if self._detail is None or self._detail["item"]["id"] != item["id"]:
-                self.detail(item["id"])
-            source, expected_source = self._report, self._page.source
+            self._replace_job()
+            curves = self._curves
+            raw_needed = curves is None or curves.needs_raw(samples)
+            raw_dir = dll_dir = None
+            if raw_needed:
+                raw_dir = Path(_text(values.get("raw_dir"), "RAW 資料夾"))
+                dll_dir = Path(_text(values.get("dll_dir"), "RawFileReader DLL 資料夾"))
+                if not raw_dir.is_dir() or not dll_dir.is_dir():
+                    raise ValueError("RAW 或 DLL 資料夾不存在，請重新選擇來源位置。")
+                if self.analysis.jobs.busy:
+                    raise WorkspaceBusy("分析仍在執行；請完成或停止後再讀取 RAW 曲線。")
             job_id = uuid.uuid4().hex
-            self._cancel = threading.Event()
+            self._cancel = cancel = threading.Event()
             self._job = {
                 "id": job_id,
-                "item_id": item["id"],
+                "item_id": description["id"],
                 "status": "running",
-                "phase": "確認來源",
+                "phase": "讀取 RAW" if raw_needed else "準備曲線",
                 "completed": 0,
                 "total": None,
                 "sample_ids": list(samples),
-                "message": "正在確認來源並準備擷取。",
+                "message": "正在讀取所選樣本的 RAW。"
+                if raw_needed
+                else "正在顯示保存的曲線。",
             }
             request = {
+                "report": self._report,
+                "source": self._page.source if self._page is not None else None,
+                "description": description,
+                "curves": curves,
+                "samples": samples,
                 "raw_dir": raw_dir,
                 "dll_dir": dll_dir,
-                "group_id": description["group_id"],
-                "candidate_id": description["candidate_id"],
-                "sample_ids": samples,
                 "padding_min": values.get("padding_min", 0.5),
             }
-            if description["target_id"]:
-                request.pop("group_id")
-                request.pop("candidate_id")
-                request["target_id"] = description["target_id"]
-            self._executor.submit(
-                self._acquire_curves,
-                job_id,
-                source,
-                expected_source,
-                request,
-                self._cancel,
-            )
-            return dict(self._job)
+        if raw_needed:
+            self._executor.submit(self._read_curves, job_id, request, cancel)
+        else:
+            # Saved curves need no RAW: show them within this request.
+            self._read_curves(job_id, request, cancel)
+        return self.job(job_id)
 
-    def _acquire_curves(self, job_id, source, expected_source, request, cancel) -> None:
-        def update(**values):
+    def _read_curves(
+        self, job_id: str, request: dict[str, Any], cancel: threading.Event
+    ) -> None:
+        def update(**values: Any) -> None:
             with self._lock:
-                assert self._job is not None
-                self._job.update(values)
+                # A replaced job's worker no longer reports.
+                if self._job is not None and self._job["id"] == job_id:
+                    self._job.update(values)
+
+        def progress(completed: int, total: int, sample: str) -> None:
+            update(phase="讀取 RAW", completed=completed, total=total, sample_id=sample)
 
         try:
-            from xic_workbench.acquisition import (
-                CurveAcquisitionCancelled,
-                export_explanation_curves,
-            )
+            from xic_workbench.review_curves import CurveAcquisitionCancelled
         except ImportError as exc:
             update(status="failed", phase="未完成", message=str(exc))
             return
-
-        def acquired(completed, total, sample_id):
-            update(
-                phase="讀取 RAW", completed=completed, total=total, sample_id=sample_id
-            )
-
-        def rendered(progress):
-            update(
-                phase="準備檢閱頁", completed=progress.completed, total=progress.total
-            )
-
-        bundle_path = self._folder / f"{job_id}.json"
+        description = request["description"]
         try:
-            # Confirm the opened result still owns this request.
-            source_samples = prepare_report(
-                source,
-                SelectionRequest(
-                    strategy="query",
-                    limit=1,
-                    sample_ids=request["sample_ids"],
-                    target_ids=(request["target_id"],)
-                    if request.get("target_id")
-                    else (),
-                    group_ids=(request["group_id"],) if request.get("group_id") else (),
-                    candidate_ids=(request["candidate_id"],)
-                    if request.get("candidate_id")
-                    else (),
-                ),
-                expected_source=expected_source,
-                is_cancelled=cancel.is_set,
-            ).payload["summary"]["samples"]
-            if request.get("target_id"):
+            unusable: list[str] = []
+            sample_groups: dict[str, str] = {}
+            if description["target_id"]:
                 from xic_workbench.targeted_curves import export_targeted_curves
 
-                receipt = export_targeted_curves(
-                    source,
+                bundle_path = self._folder / f"{job_id}.json"
+                export_targeted_curves(
+                    request["report"],
                     bundle_path,
-                    **request,
-                    expected_source=expected_source,
+                    raw_dir=request["raw_dir"],
+                    dll_dir=request["dll_dir"],
+                    target_id=description["target_id"],
+                    sample_ids=request["samples"],
+                    padding_min=request["padding_min"],
+                    expected_source=request["source"],
                     is_cancelled=cancel.is_set,
-                    on_progress=acquired,
-                    verified_raws=self._verified_raws,
+                    on_progress=progress,
+                    verified_raws=self._targeted_raws,
+                )
+                prepared = prepare_report(
+                    bundle_path,
+                    SelectionRequest(sample_ids=request["samples"]),
+                    is_cancelled=cancel.is_set,
                 )
             else:
-                receipt = export_explanation_curves(
-                    source,
-                    bundle_path,
-                    **request,
-                    is_cancelled=cancel.is_set,
-                    on_progress=acquired,
-                    verified_raws=self._verified_raws,
+                from xic_workbench.review_curves import (
+                    RunSettings,
+                    review_curve_bundle,
                 )
-            prepared = prepare_report(
-                bundle_path,
-                SelectionRequest(sample_ids=request["sample_ids"]),
-                on_progress=rendered,
-                is_cancelled=cancel.is_set,
-            )
-            sample_groups = {}
-            if not request.get("target_id"):
                 from xic_workbench.samples import review_sample_groups
 
-                sample_groups = review_sample_groups(
-                    self.analysis.config_dir, request["raw_dir"], source_samples
+                curves = request["curves"]
+                bundle, unusable = review_curve_bundle(
+                    request["report"],
+                    curves,
+                    key=description["group_id"] or description["candidate_id"],
+                    sample_ids=request["samples"],
+                    raw_dir=request["raw_dir"],
+                    dll_dir=request["dll_dir"],
+                    padding_min=request["padding_min"],
+                    is_cancelled=cancel.is_set,
+                    on_progress=progress,
                 )
+                prepared = prepare_curve_view(
+                    bundle, request["samples"], is_cancelled=cancel.is_set
+                )
+                # Sample roles are confirmed per RAW folder.
+                folder = request["raw_dir"] or RunSettings(request["report"]).raw_dir
+                if folder is not None:
+                    sample_groups = review_sample_groups(
+                        self.analysis.config_dir,
+                        folder,
+                        [
+                            {
+                                "sample_key": location.sample_key,
+                                "sample_stem": location.sample_stem,
+                            }
+                            for location in curves.locations
+                        ],
+                    )
             with self._lock:
                 if cancel.is_set():
                     raise CurveAcquisitionCancelled("已取消曲線載入。")
@@ -528,8 +566,8 @@ class ReviewWorkspace:
                     status="succeeded",
                     phase="完成",
                     view_id=job_id,
-                    message="診斷曲線已載入；當次分析紀錄與量值保持原樣。",
-                    receipt=receipt,
+                    message="曲線已載入；分析結果與量值保持原樣。",
+                    unusable_samples=unusable,
                 )
         except CurveAcquisitionCancelled, InspectorCancelled:
             update(
@@ -543,7 +581,7 @@ class ReviewWorkspace:
             update(
                 status="failed",
                 phase="未完成",
-                message="讀取 RAW 時發生錯誤。",
+                message="讀取曲線時發生錯誤。",
                 detail=f"{type(exc).__name__}: {exc}",
             )
 
@@ -559,7 +597,7 @@ class ReviewWorkspace:
             assert self._job is not None
             if self._job["status"] == "running":
                 self._cancel.set()
-                self._job.update(status="cancelling", message="等待目前讀取結束後停止…")
+                self._job.update(status="cancelling", message="正在停止讀取…")
             return dict(self._job)
 
     def _store_view(
@@ -616,6 +654,10 @@ class ReviewWorkspace:
         self._cancel.set()
         self._executor.shutdown(wait=True, cancel_futures=True)
         self._temporary.cleanup()
+
+
+def _load_review_curves() -> None:
+    import xic_workbench.review_curves  # noqa: F401
 
 
 def _curatable(folder: Path) -> bool:

@@ -42,7 +42,7 @@ def open_source(path):
             and loaded[0].get("schema_version") == REVIEW_SCHEMA
         ):
             return DeltaMassReviewSource(path, loaded)
-        return CurveBundleSource(path, loaded=loaded)
+        return CurveBundleSource.read(path, loaded=loaded)
     from xic_inspector.sources.cid_nl import CidNlSource, read_summary
     from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
 

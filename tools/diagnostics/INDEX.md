@@ -101,8 +101,8 @@ compact summary or exact candidate details without reading RAW.
 **Owner**: [Retained evidence](../../docs/product/workbench.md#retained-evidence-and-diagnostics); arguments in `--help`.
 **Input**: `alignment_explanation.sqlite`, optionally an exact candidate ID.
 **Output**: Readable text or JSON; `--compact-to` writes compact review from an
-existing full report; `--curve-bundle` acquires only explicitly selected windows
-for Inspector.
+existing full report; `--curve-bundle` writes one candidate's or group's review
+curves for Inspector, saved where the run kept them and read from RAW otherwise.
 **Status**: Maintained diagnostic workflow. Retains owner assessment, initial
 CrossSample and final disposition facts; does not recalculate decisions or grant
 Matrix authority. Existing `alignment_health_packet.py` summarizes machine-level

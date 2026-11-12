@@ -307,7 +307,7 @@ def test_targeted_curve_failure_does_not_publish_or_modify_results(
     failure,
 ):
     from xic_extractor.alignment_explanation.errors import ExplanationError
-    from xic_workbench.acquisition import CurveAcquisitionCancelled
+    from xic_workbench.review_curves import CurveAcquisitionCancelled
     from xic_workbench.targeted_curves import export_targeted_curves
 
     before = workbook.read_bytes()

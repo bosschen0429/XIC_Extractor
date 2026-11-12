@@ -40,7 +40,6 @@ import {
   api,
   el,
   isBusy,
-  lock,
   pathField,
   pathFields,
   status,
@@ -202,7 +201,6 @@ function bindShell() {
 
   $("about-workspace").onclick = () => $("about-dialog").showModal();
   $("shutdown-workspace").onclick = () => act(shutdown);
-  document.addEventListener("xic:review-busy", lock);
   document.addEventListener("keydown", (event) => {
     if (
       !(event.ctrlKey || event.metaKey) ||

@@ -26,6 +26,7 @@ from .relations import relation
 from .review import validate_membership_risks
 from .storage import (
     decode_json,
+    decode_review_curve,
     encode_object,
     open_readonly,
     present_tables,
@@ -106,6 +107,8 @@ class _Report:
         self.summary = summary
         self.full = summary["retention"] == "full_audit"
         self.tables = present_tables(db)
+        self._risk_owners: dict[int, list[Any]] = {}
+        self._risk_owner_groups: dict[int, list[Any]] = {}
         self.samples = [sample["sample_key"] for sample in summary["samples"]]
         self.stems = [sample["sample_stem"] for sample in summary["samples"]]
         self.peaks: dict[int, tuple[str, float | None, float | None, float | None]] = {
@@ -383,10 +386,55 @@ class _Report:
                 "AND accepted_risk IS NOT NULL ORDER BY sample,subject_id",
                 chunk,
             ):
-                value = decode_json(risk)
+                value = self._risk(decode_json(risk))
                 value["risk_flags"] = json.loads(flags)
                 result[group, sample].append((subject, value))
         return result
+
+    def _risk(self, risk: dict[str, Any]) -> dict[str, Any]:
+        """Restore the exact compared groups a risk refers to."""
+
+        def owner_group(group_id: int) -> list[Any]:
+            if group_id not in self._risk_owner_groups:
+                row = self.db.execute(
+                    "SELECT owners FROM membership_owner_groups WHERE id=?",
+                    (group_id,),
+                ).fetchone()
+                if row is None:
+                    raise ExplanationError("membership risk refers to a missing group")
+                owner_ids = decode_json(row[0])
+                missing = sorted(set(owner_ids) - self._risk_owners.keys())
+                for chunk in _chunks(missing):
+                    self._risk_owners.update(
+                        (owner_id, decode_json(facts))
+                        for owner_id, facts in self.db.execute(
+                            "SELECT id,facts FROM membership_owners "
+                            f"WHERE {_in('id', chunk)}",
+                            chunk,
+                        )
+                    )
+                try:
+                    self._risk_owner_groups[group_id] = [
+                        self._risk_owners[owner_id] for owner_id in owner_ids
+                    ]
+                except KeyError as exc:
+                    raise ExplanationError(
+                        "membership risk refers to a missing owner"
+                    ) from exc
+            return self._risk_owner_groups[group_id]
+
+        alternative = risk["alternative_partition"]
+        return {
+            **risk,
+            "selected_owners": owner_group(risk["selected_owners"]),
+            "alternative_partition": None
+            if alternative is None
+            else [owner_group(group) for group in alternative],
+            "equivalent_alternatives": [
+                [owner_group(group) for group in partition]
+                for partition in risk["equivalent_alternatives"]
+            ],
+        }
 
     def _row_risk_flags(self, group_ids: Sequence[int]) -> dict[int, list[str]]:
         flags: dict[int, set[str]] = defaultdict(set)
@@ -507,7 +555,7 @@ class _Report:
         ) in rows:
             risks = [
                 *(risk for _, risk in member_risks.get((group, sample), ())),
-                *(decode_json(stored_risks) or ()),
+                *(self._risk(risk) for risk in (decode_json(stored_risks) or ())),
             ]
             try:
                 validate_membership_risks(risks)
@@ -632,20 +680,99 @@ def read_explanation_summary(path: Path) -> dict[str, Any]:
         return read_completed_summary(connection)
 
 
-def read_group_candidate_ids(path: Path, group_id: str) -> list[str]:
-    """Candidate locators for a saved group, without loading its curve payloads."""
+@dataclass(frozen=True, slots=True)
+class ReviewCurveLocation:
+    """Where one sample's review curve of a group or candidate is read.
+
+    A peak's location is its measured apex; ``physical_peak_key`` is None at the
+    recorded group position of an empty cell. ``curve`` is the saved RT and raw
+    intensity of the peak that gave a cell its value, when the run kept it.
+    """
+
+    sample_key: str
+    sample_stem: str
+    physical_peak_key: str | None
+    mz: float
+    ppm: float
+    rt_apex_min: float
+    curve: tuple[tuple[float, ...], tuple[float, ...]] | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewCurves:
+    """The locations of one item and the run facts that place them in time."""
+
+    locations: tuple[ReviewCurveLocation, ...]
+    sample_rt_calibration: dict[str, Any] | None
+    injection_order: dict[str, int]
+
+    def needs_raw(self, sample_ids: Iterable[str]) -> bool:
+        """Whether a requested sample has a location without a saved curve."""
+        requested = set(sample_ids)
+        return any(
+            location.curve is None
+            for location in self.locations
+            if location.sample_key in requested
+        )
+
+
+# The saved curve of the cell whose value a peak gave: the cell's value has
+# that peak's apex.
+_SAVED_CURVE = (
+    "(SELECT cc.curve FROM cells v, json_each(v.peaks) vp "
+    "JOIN cell_curves cc ON cc.group_id=v.group_id AND cc.sample=v.sample "
+    "WHERE v.sample=p.sample AND v.apex_rt_min=p.rt_apex_min "
+    "AND vp.value=p.id{scope})"
+)
+_GROUP_LOCATIONS = (
+    "SELECT s.sample_key,s.sample_stem,p.physical_peak_key,"
+    "CASE WHEN p.id IS NULL THEN g.center_mz ELSE p.mz END,"
+    "CASE WHEN p.id IS NULL THEN g.ppm ELSE p.ppm END,"
+    "CASE WHEN p.id IS NULL THEN c.position_rt_min ELSE p.rt_apex_min END,{curve} "
+    "FROM groups g JOIN cells c ON c.group_id=g.id JOIN samples s ON s.id=c.sample "
+    "LEFT JOIN json_each(c.peaks) j LEFT JOIN peaks p ON p.id=j.value "
+    "WHERE g.feature_id=? AND (p.id IS NOT NULL OR c.position_rt_min IS NOT NULL) "
+    "ORDER BY c.sample,p.id"
+)
+_CANDIDATE_LOCATIONS = (
+    "SELECT s.sample_key,s.sample_stem,p.physical_peak_key,p.mz,p.ppm,"
+    "p.rt_apex_min,{curve} "
+    "FROM candidates k JOIN samples s ON s.id=k.sample "
+    "JOIN peaks p ON p.id=k.terminal_peak WHERE k.candidate_id=? ORDER BY k.sample"
+)
+
+
+def read_review_curves(
+    path: Path, *, feature_id: str | None = None, candidate_id: str | None = None
+) -> ReviewCurves:
+    """Read one result row's or candidate's curve locations and saved curves."""
     with open_readonly(path) as db:
-        groups = relation(db, "group_candidates")
-        return [
-            candidate_id
-            for (candidate_id,) in db.execute(
-                f"SELECT DISTINCT c.candidate_id FROM {groups} r "
-                "JOIN groups g ON g.id=r.group_id "
-                "JOIN candidates c ON c.id=r.candidate "
-                "WHERE g.feature_id=? ORDER BY c.candidate_id",
-                (group_id,),
+        if feature_id is not None:
+            curve = _SAVED_CURVE.format(scope=" AND v.group_id=g.id")
+            query, key = _GROUP_LOCATIONS, feature_id
+        else:
+            curve = _SAVED_CURVE.format(scope=" LIMIT 1")
+            query, key = _CANDIDATE_LOCATIONS, str(candidate_id)
+        rows = db.execute(query.format(curve=curve), (key,)).fetchall()
+        run = decode_json(db.execute("SELECT payload FROM run").fetchone()[0])
+    locations = []
+    for sample_key, stem, peak_key, mz, ppm, rt, payload in rows:
+        locations.append(
+            ReviewCurveLocation(
+                sample_key,
+                stem,
+                peak_key,
+                mz,
+                ppm,
+                rt,
+                None if payload is None else decode_review_curve(payload),
             )
-        ]
+        )
+    return ReviewCurves(
+        tuple(locations),
+        run["sample_rt_calibration"],
+        run["injection_order"],
+    )
 
 
 def read_row_cell_values(

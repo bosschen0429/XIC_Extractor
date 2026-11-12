@@ -164,7 +164,6 @@ window.XicUi = (() => {
     detail: null,
     curveView: null,
     curveCache: new Map(),
-    curveRequestKey: null,
     curveOpener: null,
     busy: false,
     restoring: false,
@@ -213,8 +212,9 @@ window.XicUi = (() => {
     if (statusOwner === "curves" || !$("status").classList.contains("error"))
       status(message, kind, "curves");
   }
-  async function api(path, values) {
+  async function api(path, values, signal) {
     const response = await fetch(path, {
+      signal,
       method: values === undefined ? "GET" : "POST",
       headers: {
         "X-XIC-Client": "workbench",
@@ -306,6 +306,8 @@ window.XicUi = (() => {
   function requestPage(path, values) {
     // The server owns one active query. A history restore must run after any
     // earlier query, even when navigation discarded that query's UI response.
+    // A new page ends the running curve read on the server.
+    setCurveJob(null);
     const request = pageRequest.then(() => api(path, values)).then(page => {
       serverPage = page;
       return page;
@@ -320,7 +322,7 @@ window.XicUi = (() => {
     try {
       await pageRequest;
       if (!page || state.page !== page || revision !== navigation.revision ||
-          serverPage === page || state.job) return;
+          serverPage === page) return;
       status("正在還原結果查詢…", "working");
       await requestPage("/api/query", {
         ...filters, review_scope: page.review_scope, offset: page.offset, limit: page.limit,
@@ -341,7 +343,7 @@ window.XicUi = (() => {
     }
   }
   function locked() {
-    return state.busy || state.restoring || !!state.job;
+    return state.busy || state.restoring;
   }
   function supportsNearestSearch() {
     return state.page?.source_kind !== "targeted_workbook" &&
@@ -426,11 +428,16 @@ window.XicUi = (() => {
     $("xic-retry").disabled = busy || analysisBusy;
     syncQueryMode();
   }
+  // A request that replaces the server's curve job first ends the poll of the
+  // old one, so the poll never asks for a job the server no longer has.
+  let pollAbort = null;
   function setCurveJob(job) {
-    const wasBusy = !!state.job;
+    if (state.job?.id !== job?.id) {
+      pollAbort?.abort();
+      pollAbort = null;
+    }
     state.job = job;
-    if (wasBusy !== !!job)
-      document.dispatchEvent(new CustomEvent("xic:review-busy"));
+    $("job-progress").hidden = !job;
   }
   async function action(work, message) {
     if (locked()) return;
@@ -447,6 +454,7 @@ window.XicUi = (() => {
     }
   }
   function clearSelection() {
+    setCurveJob(null);
     $("inline-curves").hidden = true;
     $("curve-source-status").textContent = "";
     clearReview("inline-curve-review");
@@ -465,7 +473,7 @@ window.XicUi = (() => {
     if (state.page?.matched_count === 0) {
       selectionEmpty("沒有符合的結果", emptyResultGuidance());
     } else {
-      selectionEmpty("", "");
+      selectionEmpty("從清單選一筆查看", "");
     }
   }
   function selectionEmpty(title, description) {
@@ -825,16 +833,28 @@ window.XicUi = (() => {
   }
   async function selectItem(item) {
     const revision = navigation.revision;
+    // The server ends the previous item's curve read with this selection.
+    setCurveJob(null);
     const detail = await api("/api/detail", { item_id: item.id });
     if (revision === navigation.revision) {
       restoreDetail(detail);
       if (state.page.source_kind !== "targeted_workbook") {
         $("inline-curves").hidden = false;
-        if (!state.samples.size) $("inline-curve-status").textContent = "沒有觀測座標，無法取得 XIC。";
-        else if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) $("inline-curve-status").textContent = "尚未讀取 RAW 曲線；需要時展開「RAW 曲線設定」。";
+        const status = $("inline-curve-status");
+        // Saved curves show at once; RAW is read only for samples the user loads.
+        if (!state.item.curve_sample_ids.length) status.textContent = "沒有觀測座標，無法取得 XIC。";
+        else if (!state.samples.size) status.textContent = "此項目沒有保存的曲線；勾選樣本後按「載入 XIC」從 RAW 讀取。";
         else await startCurves();
       }
     }
+  }
+  // Samples without a saved curve are read from RAW.
+  function needsRaw() {
+    const saved = new Set(state.detail?.item.saved_curve_sample_ids || []);
+    return [...state.samples].some(id => !saved.has(id));
+  }
+  function rawSourceSet() {
+    return Boolean($("raw-dir").value.trim() && $("dll-dir").value.trim());
   }
   function restoreDetail(detail) {
     clearReview("inline-curve-review");
@@ -862,10 +882,11 @@ window.XicUi = (() => {
         ),
       );
     const available = new Set(detail.item.curve_sample_ids);
+    const saved = new Set(detail.item.saved_curve_sample_ids || []);
     state.samples = targeted ? new Set(
       [...state.samples].filter((id) => available.has(id)),
-    ) : new Set(available);
-    if (!state.samples.size)
+    ) : saved;
+    if (targeted && !state.samples.size)
       state.samples = new Set(
         state.page.samples
           .filter((sample) => available.has(sample.id))
@@ -892,9 +913,11 @@ window.XicUi = (() => {
       });
       const text = document.createElement("span");
       text.textContent = sample.label;
-      if (!supported) {
+      const noteText = !supported ? "無觀測座標"
+        : !targeted && !saved.has(sample.id) ? "讀 RAW" : "";
+      if (noteText) {
         const note = document.createElement("small");
-        note.textContent = "無觀測座標";
+        note.textContent = noteText;
         text.append(note);
       }
       label.append(checkbox, text);
@@ -971,7 +994,7 @@ window.XicUi = (() => {
     renderPage(page);
     $("source-settings").open = false;
     if (page.overview) showTargetedOverview();
-    else if (page.items.length) await selectItem(page.items[0]);
+    else if (page.matched_count === 1) await selectItem(page.items[0]);
     document.dispatchEvent(new CustomEvent("xic:result-opened", {detail: page}));
   }
   function queryFields() {
@@ -991,7 +1014,9 @@ window.XicUi = (() => {
       if ($(id).value.trim()) filters[key] = Number($(id).value);
     return filters;
   }
-  async function query(offset, filters = state.filters, selectLast = false) {
+  // A list opens no item unless it has exactly one result; stepping across a
+  // page boundary opens the first or last item.
+  async function query(offset, filters = state.filters, select = null) {
     const revision = navigation.revision;
     if (!$("selection-empty").hidden)
       selectionEmpty("正在查詢結果…", "正在依目前條件查詢；尚未取得結果。");
@@ -1007,7 +1032,8 @@ window.XicUi = (() => {
     if (revision !== navigation.revision) return false;
     state.filters = filters;
     renderPage(page);
-    if (page.items.length) await selectItem(page.items[selectLast ? page.items.length - 1 : 0]);
+    if (page.items.length && (select || page.matched_count === 1))
+      await selectItem(page.items[select === "last" ? page.items.length - 1 : 0]);
     return revision === navigation.revision;
   }
   // Reading continues across page boundaries of the same filtered list.
@@ -1026,10 +1052,11 @@ window.XicUi = (() => {
     }
     const offset = page.offset + step * page.limit;
     if (offset < 0 || offset >= page.matched_count) return;
-    await query(offset, state.filters, step < 0);
+    await query(offset, state.filters, step < 0 ? "last" : "first");
   }
   async function startCurves() {
-    if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) {
+    const targeted = state.page.source_kind === "targeted_workbook";
+    if ((targeted || needsRaw()) && !rawSourceSet()) {
       $("curve-settings").open = true;
       const rawMissing = !$("raw-dir").value.trim();
       const missing = $(rawMissing ? "raw-dir" : "dll-dir");
@@ -1044,13 +1071,8 @@ window.XicUi = (() => {
       return;
     }
     $("curve-source-status").textContent = "";
-    const targeted = state.page.source_kind === "targeted_workbook";
     $("xic-title").textContent = targeted ? state.item.title : `XIC · m/z ${fmt(state.item.precursor_mz, 4)}`;
     $("xic-navigation").hidden = !targeted;
-    // The legend names the shaded bounds; only the RAW binding limit needs words.
-    $("xic-source-note").textContent = targeted
-      ? ""
-      : "RAW 已核對批次內容；樣本依檔名對應，未保存獨立綁定。";
     if (targeted) {
       $("xic-sample").value = [...state.samples][0];
       const index = state.item.curve_sample_ids.indexOf($("xic-sample").value);
@@ -1063,27 +1085,47 @@ window.XicUi = (() => {
     const request = {
       item_id: state.item.id,
       sample_ids: [...state.samples],
-      raw_dir: $("raw-dir").value,
-      dll_dir: $("dll-dir").value,
       padding_min: Number($("padding").value),
+      ...(rawSourceSet() ? {raw_dir: $("raw-dir").value, dll_dir: $("dll-dir").value} : {}),
     };
     const key = JSON.stringify([state.detail.view_id, request]);
-    state.curveRequestKey = key;
+    const previousJob = state.job;
+    setCurveJob(null);
     if (state.curveCache.has(key)) {
+      // A cache hit sends no new /curves request to replace the server's read.
+      if (previousJob) await api(`/api/jobs/${previousJob.id}/cancel`, {});
       showCurveView({...state.curveCache.get(key)});
       return;
     }
-    curveMessage("正在讀取所選樣本的 RAW；不會重跑整批分析。 ");
+    curveMessage(targeted || needsRaw() ? "正在讀取所選樣本的 RAW；不會重跑整批分析。"
+      : "正在顯示保存的曲線…");
     clearReview("xic-review");
-    const view = state.curveView = {id: null};
+    const view = state.curveView = {id: null, key};
+    const detail = state.detail;
     try {
-      setCurveJob(await api("/api/curves", request));
-      $("job-progress").hidden = false;
-      updateProgress(state.job);
-      controls();
-      setTimeout(() => pollJob(view), 100);
+      const job = await api("/api/curves", request);
+      if (state.detail !== detail || state.curveView !== view) return;
+      if (job.status === "running") {
+        setCurveJob(job);
+        $("job-progress").hidden = false;
+        updateProgress(job);
+        controls();
+        setTimeout(() => pollJob(job.id, view), 100);
+      } else finishCurves(job, view);
     } catch (error) {
-      curveMessage(error.message, true);
+      if (state.curveView === view) curveMessage(error.message, true);
+    }
+  }
+  function finishCurves(job, view) {
+    if (state.curveView !== view) return;
+    if (job.status === "succeeded") {
+      view.id = job.view_id;
+      view.unusable = job.unusable_samples || [];
+      if (view.key) state.curveCache.set(view.key, {...view});
+      if (state.curveCache.size > 8) state.curveCache.delete(state.curveCache.keys().next().value);
+      showCurveView(view);
+    } else {
+      curveMessage(job.message, true, job.status === "failed" ? "error" : "", job.detail);
     }
   }
   function updateProgress(job) {
@@ -1096,32 +1138,29 @@ window.XicUi = (() => {
       `${job.phase}${job.total ? ` · ${job.completed}/${job.total}` : ""} · ${job.message}`;
     curveStatus(job.message, job.status === "failed" ? "error" : "working");
   }
-  async function pollJob(view) {
-    if (!state.job) return;
+  // A poll follows one job; a newer action that replaced it ends the poll.
+  async function pollJob(jobId, view) {
+    if (state.job?.id !== jobId) return;
     try {
-      const job = await api(`/api/jobs/${state.job.id}`);
+      pollAbort = new AbortController();
+      const job = await api(`/api/jobs/${jobId}`, undefined, pollAbort.signal);
+      if (state.job?.id !== jobId) return;
       setCurveJob(job);
       updateProgress(job);
       if (["running", "cancelling"].includes(job.status)) {
         controls();
-        setTimeout(() => pollJob(view), 150);
+        setTimeout(() => pollJob(jobId, view), 150);
         return;
       }
-      if (job.status === "succeeded") {
-        view.id = job.view_id;
-        view.unusable = job.receipt?.unusable_samples || [];
-        state.curveCache.set(state.curveRequestKey, {...view});
-        if (state.curveCache.size > 8) state.curveCache.delete(state.curveCache.keys().next().value);
-        showCurveView(view);
-      } else {
-        curveMessage(job.message, true, job.status === "failed" ? "error" : "", job.detail);
-      }
+      $("job-progress").hidden = true;
       setCurveJob(null);
+      finishCurves(job, view);
       if (!state.restoring && serverPage !== state.page) restoreQuery(state.page, state.filters);
       else controls();
     } catch (error) {
+      if (state.job?.id !== jobId) return;
       curveStatus(`無法讀取工作進度：${error.message}。正在重新連線…`, "error");
-      setTimeout(() => pollJob(view), 2000);
+      setTimeout(() => pollJob(jobId, view), 2000);
     }
   }
 
@@ -1269,9 +1308,17 @@ window.XicUi = (() => {
     action(openBatch, "正在讀取分析結果…");
   });
   document.addEventListener("xic:analysis-busy", controls);
+  document.addEventListener("xic:analysis-started", () => {
+    // The accepted analysis replaces the server's curve job, including a
+    // /curves response that has not reached this tab yet.
+    if (state.job || (state.curveView && !state.curveView.id)) {
+      setCurveJob(null);
+      curveMessage("已停止曲線載入，分析工作已開始。", false, "");
+      controls();
+    }
+  });
   window.XicReview = {
     session: api("/api/session"),
-    get busy() { return !!state.job; },
   };
   // One initial read is shared with the setup page, regardless of load order.
   window.XicReview.ready = action(async () => {
@@ -1290,7 +1337,7 @@ window.XicUi = (() => {
         setCurveJob(review.job);
         state.curveView = {id: null};
         $("job-progress").hidden = false;
-        pollJob(state.curveView);
+        pollJob(review.job.id, state.curveView);
       }
     } else if ($("source").value) await openBatch();
     else status("");

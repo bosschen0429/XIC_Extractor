@@ -55,37 +55,49 @@ remain bound to their RAW folder, not carried into another folder.
   Targeted XLSX or Untargeted Matrix from Inspector data.
 - An opened Targeted workbook is bound by its SHA-256. An external edit
   requires reopening the file.
-- Inspector does not read RAW files, rerun scientific preparation or smooth
-  data again. It displays the series its source saved. Scientific packages do
-  not import Inspector.
+- Inspector does not read RAW files or rerun scientific preparation. It
+  displays the series it is given; for a saved Untargeted curve the workbench
+  recomputes smoothing and baseline from the saved raw curve with the run's
+  signal-processing settings. Scientific packages do not import Inspector.
 - Missing evidence stays visibly unavailable. Inspector never synthesizes a
   replacement value, and a missing curve is not zero signal.
 
-## Diagnostic curves are not measurements
+## Review curves are not new measurements
 
-The workbench can read new XIC curves from RAW beside saved results. These
-curves are diagnostic views, not product measurements.
+An Untargeted sample with a Matrix value shows the curve its run saved: the RT
+and raw intensity of the extraction window that gave the value, with the run's
+mass recalibration already applied. Selecting a feature shows these samples at
+once, without RAW or DLL. Smoothing and baseline are recomputed for display;
+they reproduce the run's processed signal and change no value.
 
-Opening a saved result asks only for its result location. RAW and DLL sources
-belong to the selected result's **RAW 曲線設定（選用）**, not the result opener.
-Targeted curves still start from the sample row; Untargeted retains its group
-sample selection and acquisition-range controls.
+RAW is read only for a sample without a saved curve that the user checks and
+loads: an empty cell, or a candidate outside the Matrix. These reads are new
+diagnostic views, not product measurements. RAW and DLL sources belong to the selected result's
+**RAW 曲線設定（選用）**, not the result opener. Targeted curves always read
+RAW and start from the sample row.
 
+- A sample is read from the RAW file of the same name with the run's saved mass
+  recalibration. The file is not checked against the analysed acquisition; a
+  curve is a review view and changes no result.
 - An Untargeted group member without its own retained apex is read at the median
   m/z and apex RT of the group's observed samples. That group-position curve is
   drawn dashed and labelled as such, so a missed peak can be seen. It neither
   selects nor integrates a peak, and the saved empty value stays empty.
 - Targeted curves use the workbook's extraction tolerance and signal-processing
   settings over the full acquisition trace. Saved peak bounds are overlays, not
-  new integrations.
-- Workbook sample names and report sample stems locate RAW files; they do not
-  certify the original acquisition. The view and exported HTML state that the
-  sample-to-RAW binding is unverified.
+  new integrations. The Targeted view states that the workbook keeps no RAW
+  fingerprint.
 - Support checks for an uncounted target with a counted paired ISTD reuse the
   physical candidate gate. Their result is explained beside the plot and does
   not change ND or write values.
 - A sample whose window yields no usable signal is named beside the curves.
   The request fails only when no selected sample yields a curve.
+
+Reading never locks review. A list from a search, filter, page, reset, the
+overview or an opened result shows its items and opens one only when it has
+exactly one; **上一筆／下一筆** and the arrow keys in the list open the next item.
+Any new selection, search or page cancels a running RAW read and proceeds;
+**取消** stops a read within seconds.
 
 ## Result states stay distinct
 
@@ -133,9 +145,13 @@ evidence file. Its content is `diagnostic_only`: it records request/attempt
 provenance, effective configuration, retained candidate/group/cell facts and
 the published Matrix hash. It cannot authorize a writer or prove readiness.
 
-- The default compact report keeps values, membership and review reasons and
-  omits curve payloads; full audit retains every curve. These are retention
-  choices, not separate scientific authorities.
+- The default compact report keeps values, membership and review reasons, and
+  the saved raw curve of each cell with a value; full audit retains every curve
+  with its processed series. These are retention choices, not separate
+  scientific authorities.
+- Repeated membership owner facts and compared peer groups are stored once.
+  Readers restore every selected group, alternative partition, score and reason;
+  this is lossless storage, not a reduction in review evidence.
 - Readers reject obsolete layouts instead of upgrading them. Rerun Alignment to
   produce a current report.
 - Explanation publication follows successful Matrix writing. If explanation IO
@@ -150,8 +166,9 @@ the published Matrix hash. It cannot authorize a writer or prove readiness.
 - `ms1_apex_mz` is the measured MS1 apex m/z for that candidate and sample.
   Missing measurements stay null; they are never replaced by the row center or
   precursor m/z.
-- A curve bundle produced by `explain_cid_nl_run --curve-bundle` is a labelled
-  new diagnostic extraction. It does not rerun Backfill, choose peaks or replace
+- A curve bundle produced by `explain_cid_nl_run --curve-bundle` holds the same
+  review curves: saved curves where the run kept them and labelled RAW reads
+  for the other samples. It does not rerun Backfill, choose peaks or replace
   recorded quantification.
 
 ## Packaging
@@ -165,6 +182,7 @@ release is verified only by its artifact build and smoke run.
 | Contract | Focused checks |
 | --- | --- |
 | Launch, routes, review and on-demand curves | `tests/test_xic_workbench.py`, `tests/test_workbench_analysis.py`, `tests/test_workbench_browser.py` |
+| Saved review curves and RAW reads for the rest | `tests/test_review_curves.py` |
 | Targeted and Untargeted workbench adapters | `tests/test_workbench_config.py`, `tests/test_workbench_targeted.py`, `tests/test_workbench_untargeted.py` |
 | Offline report layout and interaction | `tests/test_xic_inspector_html.py`, `tests/test_xic_inspector_curve_bundle.py` |
 | Inspector reads no RAW and is not imported by scientific packages | `tests/test_xic_inspector_import_boundary.py` |

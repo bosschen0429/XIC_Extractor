@@ -462,17 +462,17 @@ def write_curve_bundle(bundle: CurveBundle, path: str | Path) -> int:
 
 
 class CurveBundleSource:
-    """Project portable transition curves into the shared Inspector selection model."""
+    """Project transition curves into the shared Inspector selection model.
 
-    def __init__(self, path: Path, *, loaded: tuple[object, str] | None = None) -> None:
-        self.path = path
-        body, source_sha256 = loaded if loaded is not None else read_review_json(path)
-        self.bundle = _decode_bundle(body)
-        self.locator = CurveBundleLocator(
-            bundle_path=path,
-            bundle_sha256=source_sha256,
-            schema_version=self.bundle.schema_version,
-        )
+    A bundle read from a file carries its locator; a bundle prepared in this
+    process has none.
+    """
+
+    def __init__(
+        self, bundle: CurveBundle, locator: CurveBundleLocator | None = None
+    ) -> None:
+        self.bundle = bundle
+        self.locator = locator
         labels: dict[str, str] = {}
         for transition in self.bundle.transitions:
             for trace in transition.traces:
@@ -491,12 +491,29 @@ class CurveBundleSource:
             "injection_order": self.bundle.injection_order,
             "schema_version": self.bundle.schema_version,
             "plot_evidence_capability": "retained_curves",
-            "processing_attempt_id": str(path.resolve()),
+            "processing_attempt_id": str(locator.bundle_path.resolve())
+            if locator is not None
+            else bundle.transitions[0].key,
             "samples": [
                 {"sample_key": sid, "sample_stem": label}
                 for sid, label in sorted(labels.items())
             ],
         }
+
+    @classmethod
+    def read(
+        cls, path: Path, *, loaded: tuple[object, str] | None = None
+    ) -> CurveBundleSource:
+        body, source_sha256 = loaded if loaded is not None else read_review_json(path)
+        bundle = _decode_bundle(body)
+        return cls(
+            bundle,
+            CurveBundleLocator(
+                bundle_path=path,
+                bundle_sha256=source_sha256,
+                schema_version=bundle.schema_version,
+            ),
+        )
 
     def load_items(self, sample_ids: set[str]) -> list[CanonicalItem]:
         items = []

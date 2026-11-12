@@ -15,9 +15,14 @@ from xic_extractor.alignment_explanation.writer import (
 
 
 def _install_distinct_curve_raws(monkeypatch, opened, cancelled=None, empty=()):
+    """RAW files of the same name whose S1 and S2 peaks differ in height."""
+
     class Raw:
         def __init__(self, stem):
             self.stem = stem
+
+        def use_mass_recalibration_result(self, result):
+            pass
 
         def extract_xic(self, mz, lower, upper, ppm):
             if self.stem in empty:
@@ -30,11 +35,11 @@ def _install_distinct_curve_raws(monkeypatch, opened, cancelled=None, empty=()):
             return result
 
     @contextmanager
-    def raw(path, dll, *, expected_acquisition_source, mass_recalibration, **_kwargs):
-        opened.append((path.name, expected_acquisition_source.acquisition_source_id))
+    def raw(path, dll, **_kwargs):
+        opened.append(path.name)
         yield Raw(path.stem)
 
-    monkeypatch.setattr("xic_workbench.acquisition.open_raw", raw)
+    monkeypatch.setattr("xic_workbench.review_curves.open_raw", raw)
 
 
 def _group_with_missing_apex_review(tmp_path, *, extraction_by_sample=None):

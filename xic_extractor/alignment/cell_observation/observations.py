@@ -128,15 +128,16 @@ class FinalGroupCellObservation:
         )
 
     @property
+    def value_peaks(self) -> tuple[PeakObservation, ...]:
+        """The peaks whose integrations can give this cell its value."""
+        return (
+            *(hypothesis.peak for hypothesis in self.direct_hypotheses),
+            *self.ms1_only_backfill_observations,
+        )
+
+    @property
     def integrations(self) -> tuple[IntegrationResult, ...]:
-        direct = tuple(
-            hypothesis.peak.integration for hypothesis in self.direct_hypotheses
-        )
-        ms1_only = tuple(
-            observation.integration
-            for observation in self.ms1_only_backfill_observations
-        )
-        return direct + ms1_only
+        return tuple(peak.integration for peak in self.value_peaks)
 
     @property
     def ms1_only_backfill_observations(self) -> tuple[PeakObservation, ...]:
