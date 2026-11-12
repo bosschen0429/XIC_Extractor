@@ -7,6 +7,7 @@ import json
 import os
 import re
 import threading
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -1799,6 +1800,8 @@ def test_saved_result_needs_no_curve_source_until_requested(workbench, tmp_path)
     page.locator("#open-form button[type=submit]").click()
     expect(page.locator("#result-download")).to_be_visible()
     page.get_by_role("button", name="瀏覽矩陣群組").click()
+    expect(page.locator("#selection-empty h2")).to_have_text("從清單選一筆查看")
+    page.locator("#item-list button").first.click()
     expect(page.locator("#recorded-review")).to_be_visible()
     expect(page.locator("#raw-dir")).not_to_be_visible()
     page.locator(".acquisition-panel > summary").click()
@@ -2064,8 +2067,9 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     expect(overview.get_by_role("button", name="瀏覽矩陣群組")).to_have_class("primary")
     expect(page.locator("#review")).to_be_hidden()
     overview.get_by_role("button", name="1 部分樣本多峰留空").click()
+    # A one-item list opens its item; this result kept no curves.
     expect(page.locator("#item-list button")).to_have_count(1)
-    expect(page.locator("#inline-curve-status")).to_contain_text("尚未讀取 RAW 曲線")
+    expect(page.locator("#inline-curve-status")).to_contain_text("沒有保存曲線")
     saved = page.locator("#recorded-review")
     expect(saved.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
     expect(saved.locator(".sample-table tbody tr").first).to_contain_text("4.000e+2")
@@ -2091,8 +2095,8 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     from dataclasses import replace
 
     from tests.xic_inspector_curve_bundle_fixtures import _fixture_bundle
-    from xic_inspector.sources.curve_bundle import CurveBundle, write_curve_bundle
-    from xic_workbench import acquisition
+    from xic_inspector.sources.curve_bundle import CurveBundle
+    from xic_workbench import review_curves
 
     calls = []
     detail_entered, release_detail = threading.Event(), threading.Event()
@@ -2107,22 +2111,25 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
 
     monkeypatch.setattr(ReviewWorkspace, "detail", held_detail)
 
-    def acquire(report, output, *, sample_ids, **kwargs):
+    def acquire(report, curves, *, sample_ids, **kwargs):
         calls.append(sample_ids)
         transition = _fixture_bundle().transitions[0]
         traces = tuple(
             replace(transition.traces[0], trace_id=sid, sample_id=sid, sample_label=sid)
             for sid in sample_ids
         )
-        write_curve_bundle(CurveBundle((replace(transition, traces=traces),)), output)
-        return {"curve_count": len(traces)}
+        return CurveBundle((replace(transition, traces=traces),)), []
 
-    monkeypatch.setattr(acquisition, "export_explanation_curves", acquire)
+    monkeypatch.setattr(review_curves, "review_curve_bundle", acquire)
     page = workbench
     from tests.inspector_fixtures import create_review_batch
 
     db = (
-        create_inspector_report(tmp_path, samples=[{"sample_key": "S1"}])[0]
+        create_inspector_report(
+            tmp_path,
+            samples=[{"sample_key": "S1"}],
+            base_cell={"observation_ids": ["obs-01"]},
+        )[0]
         if sample_count == 1
         else create_review_batch(tmp_path, sample_count=sample_count)[0]
     )
@@ -2132,14 +2139,16 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     selected_view = None
     if sample_count > 1:
         page.get_by_role("button", name="瀏覽矩陣群組").click()
+        page.locator("#item-list button").first.click()
         _configure_curve_sources(page, tmp_path, tmp_path)
         page.locator("#load-curves").click()
         _wait_for_curve_report(page, inline=True)
+        # The first group has one sample with a value, its default curve.
         expect(
             page.locator("#inline-curve-review").locator(
                 "[data-inspector-id='svg-raw'] polyline"
             )
-        ).to_have_count(sample_count)
+        ).to_have_count(1)
         previous_view = page.locator("#recorded-review").get_attribute("data-view-id")
         try:
             with page.expect_response("**/api/detail") as selected:
@@ -2195,6 +2204,59 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     expect(review.locator("[data-inspector-id='zoom-dialog']")).to_be_hidden()
 
 
+def test_raw_curve_read_never_locks_review_and_a_new_action_replaces_it(
+    workbench, tmp_path, monkeypatch
+):
+    from tests.inspector_fixtures import create_review_batch
+    from xic_workbench import review_curves
+
+    started, cancelled = threading.Semaphore(0), []
+
+    def blocked(report, curves, *, sample_ids, is_cancelled, **kwargs):
+        started.release()
+        deadline = time.monotonic() + HANDSHAKE_TIMEOUT_S
+        while not is_cancelled() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        cancelled.append(tuple(sample_ids))
+        raise review_curves.CurveAcquisitionCancelled()
+
+    monkeypatch.setattr(review_curves, "review_curve_bundle", blocked)
+    report, _ = create_review_batch(tmp_path, sample_count=3)
+    page = workbench
+    _open_results(page)
+    page.locator("#source").fill(str(report))
+    page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="瀏覽矩陣群組").click()
+    # Enter lists the matches without opening one.
+    page.locator("#untargeted-search-mode").select_option("exact")
+    page.locator("#group-filter > summary").click()
+    page.locator("#group-id").press("Enter")
+    expect(page.locator("#item-list button")).to_have_count(3)
+    expect(page.locator("#selection-empty h2")).to_have_text("從清單選一筆查看")
+    page.locator("#item-list button").first.click()
+    _configure_curve_sources(page, tmp_path, tmp_path)
+    # This result kept no curves: choosing an item reads its RAW.
+    page.locator("#item-list button").filter(has_text="3 / 3").click()
+    assert started.acquire(timeout=HANDSHAKE_TIMEOUT_S)
+    expect(page.locator("#cancel")).to_be_visible()
+    # Choosing another item during the read cancels it and reads the new one.
+    page.locator("#item-list button").filter(has_text="1 / 3").first.click()
+    assert started.acquire(timeout=HANDSHAKE_TIMEOUT_S)
+    expect(page.locator("#item-title")).to_be_visible()
+    assert cancelled[0] == ("S1", "S2", "S3")
+    # Searching during the read is answered; the list waits for a choice.
+    page.locator("#group-id").fill("a-complete")
+    page.locator("#group-id").press("Enter")
+    expect(page.locator("#item-list button")).to_have_count(1)
+    assert started.acquire(timeout=HANDSHAKE_TIMEOUT_S)
+    assert len(cancelled) == 2
+    # Cancel stops the read within seconds.
+    page.locator("#cancel").click()
+    expect(page.locator("#cancel")).to_be_hidden()
+    expect(page.locator("#inline-curve-status")).to_contain_text("已取消")
+    assert len(cancelled) == 3
+
+
 def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged(
     workbench, config_dir, tmp_path, monkeypatch
 ):
@@ -2226,6 +2288,9 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     page.locator("#open-form button[type=submit]").click()
     page.get_by_role("button", name="瀏覽矩陣群組").click()
     _configure_curve_sources(page, tmp_path, tmp_path)
+    sample_s3 = page.locator('#sample-list input[value="S3"]')
+    expect(sample_s3).not_to_be_checked()
+    sample_s3.check()
     page.locator("#load-curves").click()
     review = _wait_for_curve_report(page, inline=True)
     curves = review.locator("[data-inspector-id='svg-raw'] polyline")
@@ -2249,7 +2314,7 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     expect(saved.filter(has_text="S1")).to_contain_text("1.000e+2")
     expect(saved.filter(has_text="S2")).to_contain_text("2.000e+2")
     expect(saved.filter(has_text="S3")).to_contain_text("空值")
-    assert [name for name, _ in opened] == ["S1.raw", "S2.raw", "S3.raw"]
+    assert opened == ["S1.raw", "S2.raw", "S3.raw"]
     assert [path.read_bytes() for path in (report, matrix)] == originals
     # A loaded view keeps the confirmed display context it was prepared with.
     view_id = review.get_attribute("data-view-id")
@@ -2994,7 +3059,11 @@ def test_read_first_opens_on_minority_rows_and_clearing_lists_all(workbench, tmp
         ["全部（5）", "需先看（1）"]
     )
     # A filter change applies at once; no separate search press is needed.
+    # The wider list opens nothing until the target is chosen again.
+    target = page.locator(".item[aria-current=true] .item-top strong").inner_text()
     page.locator("#target-attention").uncheck()
+    expect(page.locator("#selection-empty h2")).to_have_text("從清單選一筆查看")
+    page.locator(".item").filter(has_text=target).first.click()
     expect(rows).to_have_count(5)
 
 
@@ -3689,7 +3758,7 @@ def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
         page.locator("#review-range-filters summary").click()
     page.locator("#rt-min").fill("")
     page.locator("#query-form button[type=submit]").click()
-    expect(empty).to_be_hidden()
+    expect(empty.locator("h2")).to_have_text("從清單選一筆查看")
     expect(page.locator("#untargeted-search-mode")).to_have_value(mode)
     titles = page.locator("#item-list .item-top strong")
     if mode == "nearest":

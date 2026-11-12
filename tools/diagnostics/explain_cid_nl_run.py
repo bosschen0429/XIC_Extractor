@@ -33,7 +33,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--curve-bundle",
         type=Path,
-        help="Acquire selected candidate/group XIC windows into an Inspector bundle",
+        help=(
+            "Write a candidate's or group's curves into an Inspector bundle: "
+            "saved curves where the run kept them, RAW reads for the rest"
+        ),
     )
     parser.add_argument(
         "--group-id", help="Exact group ID for selected curve acquisition"
@@ -57,25 +60,49 @@ def main(argv: list[str] | None = None) -> int:
                     "--curve-bundle needs --raw-dir and --dll-dir "
                     "and cannot accompany --compact-to"
                 )
-            from xic_workbench.acquisition import (
-                export_explanation_curves,
+            from xic_extractor.alignment_explanation.reader import (
+                read_review_curves,
             )
+            from xic_inspector.sources.curve_bundle import write_curve_bundle
+            from xic_workbench.review_curves import review_curve_bundle
 
-            result = export_explanation_curves(
+            if (args.candidate_id is None) == (args.group_id is None):
+                parser.error(
+                    "--curve-bundle needs exactly one of --candidate-id or --group-id"
+                )
+            curves = read_review_curves(
                 Path(args.report),
-                args.curve_bundle,
+                feature_id=args.group_id,
+                candidate_id=args.candidate_id,
+            )
+            samples = sorted({location.sample_key for location in curves.locations})
+            bundle, unusable = review_curve_bundle(
+                Path(args.report),
+                curves,
+                key=args.group_id or args.candidate_id,
+                sample_ids=samples,
                 raw_dir=args.raw_dir,
                 dll_dir=args.dll_dir,
-                candidate_id=args.candidate_id,
-                group_id=args.group_id,
                 padding_min=args.curve_padding_min,
             )
-            print(json.dumps(result, indent=2))
-            if result["unusable_samples"]:
+            size = write_curve_bundle(bundle, args.curve_bundle)
+            print(
+                json.dumps(
+                    {
+                        "output": str(args.curve_bundle.resolve()),
+                        "sample_count": len(samples),
+                        "curve_count": len(bundle.transitions[0].traces),
+                        "unusable_samples": unusable,
+                        "bytes": size,
+                    },
+                    indent=2,
+                )
+            )
+            if unusable:
                 # The bundle omits these samples; say so beside the receipt.
                 print(
-                    "No usable signal near the retained apex, omitted: "
-                    + ", ".join(result["unusable_samples"]),
+                    "No usable signal in the curve window, omitted: "
+                    + ", ".join(unusable),
                     file=sys.stderr,
                 )
             return 0

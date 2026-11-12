@@ -2,9 +2,11 @@
 
 Each concept has one table: a run summary, samples, peaks, method subjects,
 Discovery candidates (with their terminal observation), final groups, initial
-groups, group members, cells, method assessments and exclusions. Curves have a
-table only in runs that retain them. Rows refer to each other by integer row
-ids; a list of references is a JSON array of row ids.
+groups, group members, cells, method assessments and exclusions. A cell with a
+value keeps the measured curve of the peak that gave it in ``cell_curves``; full
+audit curves have a table only in runs that retain them. Both optional tables
+are absent from results written before they existed. Rows refer to each other by
+integer row ids; a list of references is a JSON array of row ids.
 """
 
 from __future__ import annotations
@@ -135,6 +137,7 @@ TABLES: dict[str, tuple[str, ...]] = {
     "exclusions": ("candidate", "reason_code"),
 }
 OPTIONAL_TABLES: dict[str, tuple[str, ...]] = {
+    "cell_curves": ("group_id", "sample", "curve"),
     "curves": (
         "payload_id",
         "sample_id",
@@ -205,6 +208,11 @@ _DDL = {
     "exclusions": (
         "CREATE TABLE exclusions (candidate INTEGER PRIMARY KEY, "
         "reason_code TEXT NOT NULL)"
+    ),
+    "cell_curves": (
+        "CREATE TABLE cell_curves (group_id INTEGER NOT NULL, "
+        "sample INTEGER NOT NULL, curve BLOB NOT NULL, "
+        "PRIMARY KEY(group_id, sample)) WITHOUT ROWID"
     ),
     "curves": (
         "CREATE TABLE curves (payload_id INTEGER PRIMARY KEY, "

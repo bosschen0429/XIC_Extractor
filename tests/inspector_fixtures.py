@@ -40,6 +40,9 @@ def create_review_batch(tmp_path, sample_count=2):
                 rid, feature_id=rid, disposition="recorded", members=members
             )
             writer.set_row_destination(rid, route)
+            peaks = {
+                member["sample_key"]: member["physical_peak_keys"] for member in members
+            }
             writer.add_cells(
                 rid,
                 [
@@ -47,6 +50,7 @@ def create_review_batch(tmp_path, sample_count=2):
                         "sample_key": sid,
                         "variant": "numeric" if isinstance(value, int) else value,
                         "value": value if isinstance(value, int) else None,
+                        "observation_ids": peaks.get(sid, []),
                     }
                     for sid, value in zip(sample_ids, values, strict=True)
                 ],

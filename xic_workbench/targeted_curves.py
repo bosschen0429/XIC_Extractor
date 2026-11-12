@@ -44,7 +44,7 @@ from xic_inspector.sources.targeted_workbook import (
     TargetedWorkbookLocator,
     TargetedWorkbookSource,
 )
-from xic_workbench.acquisition import CurveAcquisitionCancelled
+from xic_workbench.review_curves import CurveAcquisitionCancelled
 
 
 def _number(value: object) -> float | None:

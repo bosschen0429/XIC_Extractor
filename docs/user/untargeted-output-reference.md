@@ -241,8 +241,10 @@ The SQLite explanation (`schema_version` `alignment_evidence`) stores each
 concept once: samples, peaks, method subjects, candidates with their terminal
 observation, final groups (one per result row), initial groups, group members
 (with their accepted membership risk), cells, method assessments and
-exclusions; initial edges and curves have tables only when the run retains
-them. The summary's `retention` (`review` or `full_audit`) says which detail is
+exclusions. A cell with a value keeps the RT and raw intensity of the
+extraction window that gave it (`cell_curves`, full precision); results
+written before this have no such table. Initial edges and full-audit curves
+have tables only when the run retains them. The summary's `retention` (`review` or `full_audit`) says which detail is
 kept. Counts are derived when read. The known ISTD reference is recorded once,
 in the run metadata `known_istd_reference_*` keys. Curve provenance records query and selection context,
 not full-trace or selection-trace SHA-256 values. Scientific values and

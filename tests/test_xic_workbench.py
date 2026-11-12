@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import replace
 from http.server import ThreadingHTTPServer
 
 import pytest
@@ -728,26 +729,41 @@ def test_opened_results_download_original_bytes_and_switch_with_source(tmp_path)
         assert request("/files/../../workspace.json")[0] == 404
 
 
-def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypatch):
-    from xic_workbench import acquisition
+def test_http_curve_reads_never_block_review_and_leave_results_readable(
+    tmp_path, monkeypatch
+):
+    from xic_workbench import review_curves
 
-    db, _, _ = create_inspector_report(tmp_path)
+    db, _, _ = create_inspector_report(
+        tmp_path, base_cell={"observation_ids": ["obs-01"]}
+    )
     entered = threading.Event()
 
-    def blocked_export(*args, is_cancelled, **kwargs):
+    def blocked_read(*args, is_cancelled, **kwargs):
         entered.set()
         deadline = time.monotonic() + 5
         while not is_cancelled() and time.monotonic() < deadline:
             time.sleep(0.01)
-        raise acquisition.CurveAcquisitionCancelled()
+        raise review_curves.CurveAcquisitionCancelled()
 
-    monkeypatch.setattr(acquisition, "export_explanation_curves", blocked_export)
+    def wait_for(job_id, status):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            _, result, _ = request(f"/api/jobs/{job_id}")
+            if result["status"] == status:
+                return result
+            time.sleep(0.01)
+        raise AssertionError(f"job did not reach {status}: {result}")
+
+    monkeypatch.setattr(review_curves, "review_curve_bundle", blocked_read)
     with workbench_client(
         review_workspace(), read_user_guide=read_user_guide
     ) as request:
         _, page, _ = request("/api/open", {"source": str(db)})
         item_id = page["items"][0]["id"]
         _, detail, _ = request("/api/detail", {"item_id": item_id})
+        # This result kept no curves; the sample is read from RAW.
+        assert detail["item"]["saved_curve_sample_ids"] == []
         report_url = f"/reports/{detail['view_id']}.html"
         view_url = f"/api/views/{detail['view_id']}"
         original_payload = request(view_url)[1]
@@ -758,80 +774,95 @@ def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypat
             "raw_dir": str(tmp_path),
             "dll_dir": str(tmp_path),
         }
-        status, job, _ = request("/api/curves", parameters)
-        assert status == 202
+        status, first, _ = request("/api/curves", parameters)
+        assert status == 202 and first["status"] == "running"
         assert entered.wait(timeout=5)
-        assert request("/api/curves", parameters)[0] == 409
-        assert request("/api/query", {})[0] == 409
-        code, restored, _ = request("/api/review")
-        assert code == 200
-        assert restored["job"]["id"] == job["id"]
-        assert restored["page"]["source"] == str(db.resolve())
-        assert restored["detail"] == detail
-        request(f"/api/jobs/{restored['job']['id']}/cancel", {})
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            _, result, _ = request(f"/api/jobs/{job['id']}")
-            if result["status"] == "cancelled":
-                break
-            time.sleep(0.01)
-        assert result["status"] == "cancelled"
-        assert "view_id" not in result
+        # A new request replaces the running read; the old one is gone.
+        status, second, _ = request("/api/curves", parameters)
+        assert status == 202 and second["id"] != first["id"]
+        assert request(f"/api/jobs/{first['id']}")[0] == 400
+        # Searching during a read is answered and ends the read.
+        assert request("/api/query", {})[0] == 200
+        assert request("/api/review")[1]["job"] is None
+
+        request("/api/detail", {"item_id": item_id})
+        entered.clear()
+        _, job, _ = request("/api/curves", parameters)
+        assert entered.wait(timeout=5)
+        request(f"/api/jobs/{job['id']}/cancel", {})
+        assert "view_id" not in wait_for(job["id"], "cancelled")
         assert request(report_url)[1] == original
         assert request(view_url)[1] == original_payload
 
-        def failed_export(*args, **kwargs):
+        def failed_read(*args, **kwargs):
             raise FileNotFoundError("selected RAW is missing")
 
-        monkeypatch.setattr(acquisition, "export_explanation_curves", failed_export)
+        monkeypatch.setattr(review_curves, "review_curve_bundle", failed_read)
         _, job, _ = request("/api/curves", parameters)
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            _, result, _ = request(f"/api/jobs/{job['id']}")
-            if result["status"] == "failed":
-                break
-            time.sleep(0.01)
-        assert result["status"] == "failed"
-        assert result["message"] == "讀取 RAW 時發生錯誤。"
+        result = wait_for(job["id"], "failed")
+        assert result["message"] == "讀取曲線時發生錯誤。"
         assert "selected RAW is missing" in result["detail"]
         assert request(report_url)[1] == original
-        assert request(view_url)[1] == original_payload
 
-        monkeypatch.setattr(
-            acquisition, "export_explanation_curves", lambda *a, **k: {}
+        from tests.xic_inspector_curve_bundle_fixtures import _fixture_bundle
+
+        transition = _fixture_bundle().transitions[0]
+        bundle = replace(
+            _fixture_bundle(),
+            transitions=(
+                replace(
+                    transition,
+                    traces=tuple(
+                        replace(trace, sample_id="S1")
+                        for trace in transition.traces
+                        if trace.sample_id == "sample-1"
+                    ),
+                ),
+            ),
         )
-
-        from xic_inspector.api import SelectionRequest, prepare_report
-
-        prepared_fixture = prepare_report(db, SelectionRequest(sample_ids=("S1",)))
-
-        def render_fixture(source, selection, **kwargs):
-            return prepared_fixture
-
-        def unexpected_html(prepared):
-            raise AssertionError("Interactive curves must not render offline HTML")
-
-        monkeypatch.setattr(type(prepared_fixture), "to_html", unexpected_html)
-        monkeypatch.setattr("xic_workbench.workspace.prepare_report", render_fixture)
+        monkeypatch.setattr(
+            review_curves, "review_curve_bundle", lambda *a, **k: (bundle, [])
+        )
         _, job, _ = request("/api/curves", parameters)
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            _, restored, _ = request("/api/review")
-            if restored["job"]["status"] == "succeeded":
-                break
-            time.sleep(0.01)
-        assert restored["job"]["status"] == "succeeded"
-        assert restored["detail"] == detail
-        view_id = restored["job"]["view_id"]
-        _, payload, _ = request(f"/api/views/{view_id}")
-        assert payload == json.loads(json.dumps(prepared_fixture.payload))
-        assert request(f"/reports/{view_id}.html")[0] == 200
+        result = wait_for(job["id"], "succeeded")
+        _, payload, _ = request(f"/api/views/{result['view_id']}")
+        assert [c["sample_id"] for c in payload["items"][0]["curves"]] == [
+            t.sample_id for t in bundle.transitions[0].traces
+        ]
+        assert request(f"/reports/{result['view_id']}.html")[0] == 200
 
-        monkeypatch.setattr("xic_workbench.workspace.prepare_report", prepare_report)
-        request("/api/query", {})
-        _, restored, _ = request("/api/review")
-        assert restored["job"] is None
-        assert restored["detail"] is None
+
+def test_http_saved_curves_answer_in_the_same_request_without_raw(tmp_path):
+    rt = [0.8 + 0.01 * i for i in range(41)]
+    raw = [1000.0 * 2.718 ** (-(((x - 1.0) / 0.05) ** 2)) for x in rt]
+    db, _, _ = create_inspector_report(
+        tmp_path,
+        review_only=True,
+        curve=False,
+        base_cell={"observation_ids": ["obs-01"], "apex_rt_min": 1.0},
+        prepare=lambda writer: writer.add_peak("S1", "obs-01", (500.0, 1.0, 5.0)),
+        extend=lambda writer: (
+            writer.set_row_destination("G1", "matrix"),
+            writer.set_cell_curve("G1", "S1", rt, raw),
+        ),
+    )
+    with workbench_client(
+        review_workspace(config_dir=tmp_path / "config"),
+        read_user_guide=read_user_guide,
+    ) as request:
+        _, page, _ = request("/api/open", {"source": str(db)})
+        item_id = page["items"][0]["id"]
+        _, detail, _ = request("/api/detail", {"item_id": item_id})
+        assert detail["item"]["saved_curve_sample_ids"] == ["S1"]
+        status, job, _ = request(
+            "/api/curves", {"item_id": item_id, "sample_ids": ["S1"]}
+        )
+        assert status == 202 and job["status"] == "succeeded"
+        _, payload, _ = request(f"/api/views/{job['view_id']}")
+        (curve,) = payload["items"][0]["curves"]
+        assert curve["sample_id"] == "S1"
+        assert list(curve["raw_rts"]) == rt
+        assert list(curve["raw_intensities"]) == raw
 
 
 def test_two_servers_keep_independent_sessions_with_shared_browser_cookies(tmp_path):

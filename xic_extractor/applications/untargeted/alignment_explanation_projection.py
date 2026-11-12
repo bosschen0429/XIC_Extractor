@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from statistics import median
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
@@ -23,6 +23,9 @@ from xic_extractor.alignment_explanation.writer import (
 from xic_extractor.rt_calibration_codec import rt_calibration_payload
 
 if TYPE_CHECKING:
+    from xic_extractor.alignment.cell_observation.observations import (
+        FinalGroupCellObservation,
+    )
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
@@ -629,6 +632,22 @@ def prepare_alignment_explanation(
                             decision.evidence
                         )
                 sink.add_cells(group_id, cells)
+                for decision in group_cells:
+                    if decision.value is None:
+                        continue
+                    # The extraction window of the peak that gave the value.
+                    evidence = cast("FinalGroupCellObservation", decision.evidence)
+                    trace = next(
+                        peak.source_trace
+                        for peak in evidence.value_peaks
+                        if peak.integration == decision.selected_integration
+                    )
+                    sink.set_cell_curve(
+                        group_id,
+                        decision.subject.canonical_sample.sample_name,
+                        trace.rt,
+                        trace.intensity,
+                    )
                 for cell in cells:
                     cell_position = positions.get((group_id, cell["sample_key"]))
                     if cell_position is not None:

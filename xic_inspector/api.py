@@ -34,6 +34,7 @@ from xic_inspector.sources import (
     ExplanationUnavailableError,
     open_source,
 )
+from xic_inspector.sources.curve_bundle import CurveBundle
 from xic_inspector.sources.delta_mass import (
     DeltaMassReviewLocator,
     DeltaMassReviewSource,
@@ -284,6 +285,7 @@ class ReportResult:
         | CurveBundleLocator
         | TargetedWorkbookLocator
         | DeltaMassReviewLocator
+        | None
     )
     evidence_capability: CapabilityKind
     run_total: int
@@ -296,13 +298,17 @@ class ReportResult:
 
 @dataclass(frozen=True, slots=True)
 class PreparedReport:
-    """Selected owner facts shared by interactive and offline presentation."""
+    """Selected owner facts shared by interactive and offline presentation.
+
+    ``source`` is None for curves prepared in this process, which have no file.
+    """
 
     source: (
         EvidenceLocator
         | CurveBundleLocator
         | TargetedWorkbookLocator
         | DeltaMassReviewLocator
+        | None
     )
     source_name: str
     evidence_capability: CapabilityKind
@@ -406,6 +412,7 @@ def prepare_report(
             | CurveBundleLocator
             | TargetedWorkbookLocator
             | DeltaMassReviewLocator
+            | None
         ) = source.locator
         if expected_source is not None and expected_source != source_locator:
             raise InspectorError(4, "Source does not match expected_source contract")
@@ -449,6 +456,58 @@ def prepare_report(
         ):
             raise InspectorError(4, "Source does not match expected_source contract")
 
+    return _prepare_selection(
+        source,
+        summary,
+        source_locator,
+        report_path.name,
+        selection,
+        on_progress=on_progress,
+        check_cancel=_check_cancel,
+    )
+
+
+def prepare_curve_view(
+    bundle: CurveBundle,
+    sample_ids: tuple[str, ...],
+    *,
+    is_cancelled: Callable[[], bool] | None = None,
+) -> PreparedReport:
+    """Select curves prepared in this process for interactive review, unwritten."""
+    selection = SelectionRequest(sample_ids=sample_ids)
+    selection.validate()
+
+    def _check_cancel() -> None:
+        if is_cancelled and is_cancelled():
+            raise InspectorCancelled()
+
+    source = CurveBundleSource(bundle)
+    return _prepare_selection(
+        source,
+        source.summary,
+        None,
+        bundle.transitions[0].key,
+        selection,
+        on_progress=None,
+        check_cancel=_check_cancel,
+    )
+
+
+def _prepare_selection(
+    source: Any,
+    summary: dict[str, Any],
+    source_locator: EvidenceLocator
+    | CurveBundleLocator
+    | TargetedWorkbookLocator
+    | DeltaMassReviewLocator
+    | None,
+    source_name: str,
+    selection: SelectionRequest,
+    *,
+    on_progress: Callable[[ReportProgress], None] | None,
+    check_cancel: Callable[[], None],
+) -> PreparedReport:
+    _check_cancel = check_cancel
     capability: CapabilityKind = summary.get(
         "plot_evidence_capability", "metadata_only"
     )
@@ -639,7 +698,7 @@ def prepare_report(
 
     return PreparedReport(
         source=source_locator,
-        source_name=report_path.name,
+        source_name=source_name,
         evidence_capability=capability,
         run_total=run_total,
         eligible_count=eligible_count,

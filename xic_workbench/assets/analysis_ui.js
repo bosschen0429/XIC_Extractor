@@ -72,7 +72,6 @@ export function pathTail(path, parts = 2) {
 export function isBusy() {
   return (
     state.importing ||
-    window.XicReview.busy ||
     Boolean(analysis?.snapshot.busy) ||
     sampleMetadata.saving
   );

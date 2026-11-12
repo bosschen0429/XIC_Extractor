@@ -88,6 +88,7 @@ class ExplanationReportWriter:
         self._exclusions: dict[CandidateKey, str] = {}
         self._last_record_id = 0
         self._curves: dict[tuple[Any, ...], list[Any]] = {}
+        self._cell_curves: dict[tuple[str, str], bytes] = {}
 
     def _record_id(self) -> int:
         """Records without a natural key share one numbering, in emission order,
@@ -430,6 +431,23 @@ class ExplanationReportWriter:
         """The recorded group position used to inspect an empty cell."""
         self._cells[group_id, sample_key][6] = rt_min
 
+    def set_cell_curve(
+        self,
+        group_id: str,
+        sample_key: str,
+        rt: Iterable[float],
+        raw: Iterable[float],
+    ) -> None:
+        """The measured RT and raw intensity of the extraction window that gave
+        a cell its value, at full precision; readers recompute processed signals.
+        """
+        self._cell_curves[group_id, sample_key] = zlib.compress(
+            _ordered_json(
+                {"rt": [float(x) for x in rt], "raw": [float(y) for y in raw]}
+            ).encode("utf-8"),
+            9,
+        )
+
     # Curves -------------------------------------------------------------
 
     def add_curve_payload(
@@ -566,6 +584,15 @@ class ExplanationReportWriter:
                 for key, reason in self._exclusions.items()
             ),
         )
+        if self._cell_curves:
+            create_optional_table(db, "cell_curves")
+            db.executemany(
+                "INSERT INTO cell_curves VALUES (?,?,?)",
+                (
+                    (self._groups[group_id][0], self._samples[sample], curve)
+                    for (group_id, sample), curve in self._cell_curves.items()
+                ),
+            )
         if self._curves:
             create_optional_table(db, "curves")
             db.executemany(
