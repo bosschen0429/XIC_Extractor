@@ -756,9 +756,13 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         raise AssertionError(f"job did not reach {status}: {result}")
 
     monkeypatch.setattr(review_curves, "review_curve_bundle", blocked_read)
-    with workbench_client(
-        review_workspace(), read_user_guide=read_user_guide
-    ) as request:
+    workspace = review_workspace()
+
+    def rejected_analysis(*args, **kwargs):
+        raise ValueError("RAW folder is missing")
+
+    monkeypatch.setattr(workspace.analysis.jobs, "start", rejected_analysis)
+    with workbench_client(workspace, read_user_guide=read_user_guide) as request:
         _, page, _ = request("/api/open", {"source": str(db)})
         item_id = page["items"][0]["id"]
         _, detail, _ = request("/api/detail", {"item_id": item_id})
@@ -777,6 +781,13 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         status, first, _ = request("/api/curves", parameters)
         assert status == 202 and first["status"] == "running"
         assert entered.wait(timeout=5)
+        # Input validation rejects the new analysis before it starts. A usable
+        # curve job remains current; its client must not poll a deleted job.
+        assert (
+            request("/api/analysis/start", {"kind": "targeted", "values": {}})[0] == 400
+        )
+        status, current, _ = request(f"/api/jobs/{first['id']}")
+        assert status == 200 and current["status"] == "running"
         # A new request replaces the running read; the old one is gone.
         status, second, _ = request("/api/curves", parameters)
         assert status == 202 and second["id"] != first["id"]

@@ -122,8 +122,9 @@ class ReviewWorkspace:
     def start_analysis(self, kind: str, values: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             self._require_open()
+            started = self.analysis.jobs.start(kind, values)
             self._replace_job()
-            return self.analysis.jobs.start(kind, values)
+            return started
 
     def analysis_action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
