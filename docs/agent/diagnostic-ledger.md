@@ -228,6 +228,7 @@ percentages.
 | Change | Measured gain | Rerun when |
 | --- | --- | --- |
 | One mass-recalibration probe per RAW (#931, `bd77a760`) | probe calls 136 to 8, probe time 110.5 to 8.0 s; end-to-end ratio inconclusive | probe logic, source binding, worker transport or applied correction changes |
+| Process workers read the shared owner bootstrap from shared memory, not initargs | workers started about 4 s apart (initargs block spawn until each child re-imports the main module), now together; initial phase 8RAW 35.4/36.4 to 28.7/32.4 s, oil 62.6/64.1 to 55.7/58.4 s; runtime −4 to −8 s | worker transport or start method changes |
 | No per-entry fsync in the recomputable fact cache (#699, `332f19f4`) | 8RAW median 104.1 to 80.2 s | cache persistence or recovery semantics change |
 | Final membership replay reuses group costs (#913, `a51d0473f`) | `replay_grouping` 240 to 178 s on 44 samples | membership costs, search or snapshot change |
 | Injection ordering prepared once per grouping population | grouping 0.156 to 0.115 s on the m/z 396 snapshot | neighbor semantics or grouping population change |

@@ -974,9 +974,12 @@ def test_worker_admission_pool_process_shares_owner_once_and_restores_identity(
     created = []
     process_executor = workers.ProcessPoolExecutor
 
+    initargs: list[tuple[object, ...]] = []
+
     def create_executor(**kwargs):
         executor = process_executor(**kwargs)
         created.append(executor)
+        initargs.append(kwargs["initargs"])
         return executor
 
     monkeypatch.setattr(workers, "ProcessPoolExecutor", create_executor)
@@ -1020,6 +1023,9 @@ def test_worker_admission_pool_process_shares_owner_once_and_restores_identity(
     assert metrics is not None
     assert metrics.shared_bootstrap_bytes == first_metrics.shared_bootstrap_bytes
     assert metrics.shared_bootstrap_bytes >= 2_000_000
+    # A spawned worker reads its initargs only after re-importing the main
+    # module, so a large payload there would start the workers one at a time.
+    assert len(pickle.dumps(initargs[0])) < 4096
     assert metrics.task_request_bytes < 10_000
     assert metrics.task_response_bytes < 10_000
     assert metrics.worker_pids == tuple(
