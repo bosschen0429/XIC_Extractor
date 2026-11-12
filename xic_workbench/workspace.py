@@ -408,7 +408,6 @@ class ReviewWorkspace:
                 summary["curve_sample_ids"] = sorted(
                     {location.sample_key for location in curves.locations}
                 )
-                summary["keeps_curves"] = curves.keeps_curves
                 summary["saved_curve_sample_ids"] = sorted(
                     {
                         location.sample_key

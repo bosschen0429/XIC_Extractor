@@ -392,9 +392,7 @@ class _Report:
         return result
 
     def _risk(self, risk: dict[str, Any]) -> dict[str, Any]:
-        """Restore exact compared groups; older reports keep them inline."""
-        if type(risk["selected_owners"]) is not int:
-            return risk
+        """Restore the exact compared groups a risk refers to."""
 
         def owner_group(group_id: int) -> list[Any]:
             if group_id not in self._risk_owner_groups:
@@ -702,16 +700,11 @@ class ReviewCurveLocation:
 
 @dataclass(frozen=True, slots=True)
 class ReviewCurves:
-    """The locations of one item and the run facts that place them in time.
-
-    ``keeps_curves`` says whether the result saves the curves of cells with
-    values; results written before it did have none.
-    """
+    """The locations of one item and the run facts that place them in time."""
 
     locations: tuple[ReviewCurveLocation, ...]
     sample_rt_calibration: dict[str, Any] | None
     injection_order: dict[str, int]
-    keeps_curves: bool
 
     def needs_raw(self, sample_ids: Iterable[str]) -> bool:
         """Whether a requested sample has a location without a saved curve."""
@@ -752,21 +745,15 @@ _CANDIDATE_LOCATIONS = (
 def read_review_curves(
     path: Path, *, feature_id: str | None = None, candidate_id: str | None = None
 ) -> ReviewCurves:
-    """Read one result row's or candidate's curve locations and saved curves.
-
-    Results written before cells kept their curves have no saved curve.
-    """
+    """Read one result row's or candidate's curve locations and saved curves."""
     with open_readonly(path) as db:
-        saved = "cell_curves" in present_tables(db)
         if feature_id is not None:
             curve = _SAVED_CURVE.format(scope=" AND v.group_id=g.id")
             query, key = _GROUP_LOCATIONS, feature_id
         else:
             curve = _SAVED_CURVE.format(scope=" LIMIT 1")
             query, key = _CANDIDATE_LOCATIONS, str(candidate_id)
-        rows = db.execute(
-            query.format(curve=curve if saved else "NULL"), (key,)
-        ).fetchall()
+        rows = db.execute(query.format(curve=curve), (key,)).fetchall()
         run = decode_json(db.execute("SELECT payload FROM run").fetchone()[0])
     locations = []
     for sample_key, stem, peak_key, mz, ppm, rt, payload in rows:
@@ -785,7 +772,6 @@ def read_review_curves(
         tuple(locations),
         run["sample_rt_calibration"],
         run["injection_order"],
-        saved,
     )
 
 

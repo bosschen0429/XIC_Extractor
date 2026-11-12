@@ -3,11 +3,11 @@
 Each concept has one table: a run summary, samples, peaks, method subjects,
 Discovery candidates (with their terminal observation), final groups, initial
 groups, group members, cells, method assessments and exclusions. A cell with a
-value keeps the measured curve of the peak that gave it in ``cell_curves``; full
-audit curves have a table only in runs that retain them. Membership comparisons
-share their recorded owner facts and ordered peer groups without dropping any
-alternative or score. Optional tables are absent from older results. Rows refer
-to each other by integer row ids; a list of references is a JSON array of row ids.
+value keeps the measured curve of the peak that gave it in ``cell_curves``.
+Membership comparisons share their recorded owner facts and ordered peer groups
+without dropping any alternative or score. Full audit curves have a table only in
+runs that retain them. Rows refer to each other by integer row ids; a list of
+references is a JSON array of row ids.
 """
 
 from __future__ import annotations
@@ -137,11 +137,11 @@ TABLES: dict[str, tuple[str, ...]] = {
         "evaluation_receipt",
     ),
     "exclusions": ("candidate", "reason_code"),
-}
-OPTIONAL_TABLES: dict[str, tuple[str, ...]] = {
     "membership_owners": ("id", "facts"),
     "membership_owner_groups": ("id", "owners"),
     "cell_curves": ("group_id", "sample", "curve"),
+}
+OPTIONAL_TABLES: dict[str, tuple[str, ...]] = {
     "curves": (
         "payload_id",
         "sample_id",

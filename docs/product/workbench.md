@@ -70,10 +70,9 @@ mass recalibration already applied. Selecting a feature shows these samples at
 once, without RAW or DLL. Smoothing and baseline are recomputed for display;
 they reproduce the run's processed signal and change no value.
 
-Only two cases read RAW: a sample without a saved curve that the user checks
-and loads (an empty cell, or a candidate outside the Matrix), and a result
-written before cells kept their curves. These reads are new diagnostic views,
-not product measurements. RAW and DLL sources belong to the selected result's
+RAW is read only for a sample without a saved curve that the user checks and
+loads: an empty cell, or a candidate outside the Matrix. These reads are new
+diagnostic views, not product measurements. RAW and DLL sources belong to the selected result's
 **RAW 曲線設定（選用）**, not the result opener. Targeted curves always read
 RAW and start from the sample row.
 
@@ -152,9 +151,7 @@ the published Matrix hash. It cannot authorize a writer or prove readiness.
   scientific authorities.
 - Repeated membership owner facts and compared peer groups are stored once.
   Readers restore every selected group, alternative partition, score and reason;
-  this is lossless storage, not a reduction in review evidence. New results need
-  the updated reader; it also reads earlier inline membership evidence. Results
-  without saved curves keep their RAW review path.
+  this is lossless storage, not a reduction in review evidence.
 - Readers reject obsolete layouts instead of upgrading them. Rerun Alignment to
   produce a current report.
 - Explanation publication follows successful Matrix writing. If explanation IO

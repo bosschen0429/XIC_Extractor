@@ -620,26 +620,20 @@ class ExplanationReportWriter:
                 for key, reason in self._exclusions.items()
             ),
         )
-        if self._risk_owner_groups:
-            create_optional_table(db, "membership_owners")
-            db.executemany(
-                "INSERT INTO membership_owners VALUES (?,?)",
-                self._risk_owners.values(),
-            )
-            create_optional_table(db, "membership_owner_groups")
-            db.executemany(
-                "INSERT INTO membership_owner_groups VALUES (?,?)",
-                self._risk_owner_groups.values(),
-            )
-        if self._cell_curves:
-            create_optional_table(db, "cell_curves")
-            db.executemany(
-                "INSERT INTO cell_curves VALUES (?,?,?)",
-                (
-                    (self._groups[group_id][0], self._samples[sample], curve)
-                    for (group_id, sample), curve in self._cell_curves.items()
-                ),
-            )
+        db.executemany(
+            "INSERT INTO membership_owners VALUES (?,?)", self._risk_owners.values()
+        )
+        db.executemany(
+            "INSERT INTO membership_owner_groups VALUES (?,?)",
+            self._risk_owner_groups.values(),
+        )
+        db.executemany(
+            "INSERT INTO cell_curves VALUES (?,?,?)",
+            (
+                (self._groups[group_id][0], self._samples[sample], curve)
+                for (group_id, sample), curve in self._cell_curves.items()
+            ),
+        )
         if self._curves:
             create_optional_table(db, "curves")
             db.executemany(

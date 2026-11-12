@@ -244,11 +244,9 @@ observation, final groups (one per result row), initial groups, group members
 exclusions. Membership risks share recorded owner coordinates
 (`membership_owners`) and ordered peer groups (`membership_owner_groups`);
 readers restore the same complete comparison evidence, including all alternatives.
-New files require the updated reader; earlier files with inline risks remain
-readable. A cell with a value keeps the RT and raw intensity of the
-extraction window that gave it (`cell_curves`, losslessly compressed float64,
-without rounding or resampling); results
-written before this have no such table. Initial edges and full-audit curves
+A cell with a value keeps the RT and raw intensity of the extraction window that
+gave it (`cell_curves`, losslessly compressed float64, without rounding or
+resampling). Initial edges and full-audit curves
 have tables only when the run retains them. The summary's `retention` (`review` or `full_audit`) says which detail is
 kept. Counts are derived when read. The known ISTD reference is recorded once,
 in the run metadata `known_istd_reference_*` keys. Curve provenance records query and selection context,
