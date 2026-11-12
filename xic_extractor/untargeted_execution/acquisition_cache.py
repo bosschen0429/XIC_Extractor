@@ -336,8 +336,8 @@ class _FactCache:
         path.parent.mkdir(parents=True, exist_ok=True)
         envelope = self._envelope(key, payload)
         content = _canonical_json(envelope)
-        # An entry for another key at this name was rejected by read; replace it.
-        existing = self.read(kind, key) if path.exists() else None
+        # read rejects an entry for another key or namespace; this write replaces it.
+        existing = self.read(kind, key)
         if existing is not None:
             if existing != payload:
                 raise UntargetedAcquisitionCacheError(
