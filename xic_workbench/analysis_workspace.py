@@ -167,8 +167,14 @@ class AnalysisWorkspace:
             if (self.config_dir / "workspace.json").exists()
             else "defaults"
         )
+        from xic_extractor.analysis_set import ANALYZED_ROLES
+
         return {
             "config_dir": str(self.config_dir),
+            # The setup separates samples each flow analyzes from the rest.
+            "analyzed_roles": {
+                kind: sorted(roles) for kind, roles in ANALYZED_ROLES.items()
+            },
             "targets_example": str(targets_template_path()),
             "review_source": self.defaults.get("source", ""),
             "settings": settings,

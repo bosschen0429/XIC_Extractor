@@ -48,6 +48,30 @@ def test_workbench_startup_skips_heavy_branch_imports(tmp_path):
     assert completed.returncode == 0, completed.stderr
 
 
+def test_result_curation_probe_leaves_curation_computation_unloaded(tmp_path):
+    """Opening completed evidence asks only whether curation can run."""
+    from tests.matrix_curation_fixtures import alignment_output
+
+    folder = alignment_output(tmp_path / "run")
+    script = (
+        "import sys; from pathlib import Path; "
+        "from xic_workbench.workspace import _curatable; "
+        f"assert _curatable(Path({str(folder)!r})); "
+        f"assert not _curatable(Path({str(tmp_path)!r})); "
+        "loaded = {'xic_extractor.matrix_curation.export', "
+        "'xic_extractor.matrix_curation.same_compound'} & set(sys.modules); "
+        "assert not loaded, loaded"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
 def test_help_serves_user_guides_and_templates_without_exposing_repository(tmp_path):
     workspace = review_workspace(config_dir=tmp_path / "config")
     with workbench_client(workspace, read_user_guide=read_user_guide) as request:

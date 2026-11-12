@@ -21,7 +21,6 @@ import {
   $,
   act,
   api,
-  button,
   done,
   el,
   isBusy,
@@ -97,6 +96,11 @@ function renderActivity() {
   );
   pill.onclick = () => selectView(page);
 }
+const curationResultShown = () =>
+  showingResult() &&
+  !$("result-curation").hidden &&
+  $("result-curation").open &&
+  !$("curation-result").hidden;
 export function renderJob() {
   const snapshot = analysis.snapshot;
   const job = snapshot.job;
@@ -115,9 +119,11 @@ export function renderJob() {
   );
   if (slot && card.parentElement !== slot) slot.append(card);
   // A completed analysis is summarized by its result card at the top of the
-  // page, so a setup page does not repeat it as a finished job.
+  // setup page; a completed curation only while its card is on screen.
   const summarizedByResult =
-    !onResult && job?.status === "succeeded" && job.kind in resultIds;
+    job?.status === "succeeded" &&
+    job.kind in resultIds &&
+    (!onResult || job.kind !== "curation" || curationResultShown());
   card.hidden =
     !job ||
     summarizedByResult ||
@@ -150,8 +156,7 @@ export function renderJob() {
   const progressText = job.total ? `${job.completed} / ${job.total} · ` : "";
   $("analysis-job-time").textContent =
     `${progressText}${snapshot.running ? "已經過" : "耗時"} ${ui.formatDuration(job.elapsed_seconds)}`;
-  const analysisDone = job.status === "succeeded" && job.kind in resultIds;
-  $("analysis-job-output").hidden = !job.output_dir || analysisDone;
+  $("analysis-job-output").hidden = !job.output_dir;
   $("analysis-job-output").textContent = job.output_dir || "";
   if (job.total > 0) {
     $("analysis-progress").max = job.total;
@@ -161,28 +166,13 @@ export function renderJob() {
   $("analysis-stop").disabled = !snapshot.canCancel;
   const filesOpen = $("analysis-job-outputs").querySelector("details")?.open;
   $("analysis-job-outputs").replaceChildren();
-  if (analysisDone)
-    $("analysis-job-outputs").append(
-      button(
-        "查看結果",
-        () =>
-          $(resultIds[job.kind]).scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          }),
-        "",
-        "chevron-right",
-      ),
-    );
-  else {
-    const artifacts = (job.available_outputs || []).flatMap((item) =>
-      item.artifact ? [item.artifact] : [],
-    );
-    if (artifacts.length) {
-      const files = artifactDetails(artifacts, job.output_dir);
-      files.open = Boolean(filesOpen);
-      $("analysis-job-outputs").append(files);
-    }
+  const artifacts = (job.available_outputs || []).flatMap((item) =>
+    item.artifact ? [item.artifact] : [],
+  );
+  if (artifacts.length) {
+    const files = artifactDetails(artifacts, job.output_dir);
+    files.open = Boolean(filesOpen);
+    $("analysis-job-outputs").append(files);
   }
 }
 
@@ -199,8 +189,12 @@ function completeJob(snapshot, job) {
         if (page === "untargeted") dirty("untargeted");
         done(`已讀取 ${result.samples.length} 個樣本。`);
       }
-    } else if (job.kind === "curation")
-      done(`矩陣整理完成：${snapshot.results.curation.output_dir}`);
+    } else if (job.kind === "curation") {
+      // A visible curation result card is the notice.
+      renderResults();
+      if (!curationResultShown())
+        done(`矩陣整理完成：${snapshot.results.curation.output_dir}`);
+    }
     else if (job.kind === "inspector") {
       done(`Inspector 匯出完成：${snapshot.results.inspector.output}`);
       const artifact = snapshot.results.inspector.artifacts?.[0];
@@ -226,6 +220,7 @@ function completeJob(snapshot, job) {
       job.status === "failed",
     );
   renderResults();
+  renderJob();
 }
 function confirmCancel(job) {
   return ui.confirm({

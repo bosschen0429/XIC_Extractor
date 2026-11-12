@@ -3,6 +3,7 @@ import { analysis } from "./analysis_jobs.js";
 import { checklist } from "./analysis_setup.js";
 import { createRowSelection } from "./analysis_row_selection.js";
 import { createSampleMetadata } from "./analysis_sample_metadata.js";
+import { state } from "./analysis_state.js";
 import {
   $,
   act,
@@ -128,18 +129,28 @@ function renderSequenceLine(page) {
   $(sampleId(page, "sequence-name")).title = path;
   $(sampleId(page, "sequence-browse")).textContent = path ? "更換" : "選擇";
 }
+// Roles this flow does not analyze are listed apart, so nobody excludes them by hand.
+function roleSummary(page, rows) {
+  const counts = new Map();
+  for (const sample of rows.filter((row) => !row.excluded))
+    counts.set(sample.sample_role, (counts.get(sample.sample_role) || 0) + 1);
+  const analyzed = new Set(state.config.analyzed_roles[page]);
+  const counted = (keep) =>
+    roles
+      .filter((role) => counts.has(role) && keep(analyzed.has(role)))
+      .map((role) => `${roleLabels[role]} ${counts.get(role)}`);
+  const used = counted((yes) => yes);
+  const skipped = counted((yes) => !yes);
+  const excluded = rows.filter((row) => row.excluded).length;
+  if (!skipped.length)
+    return [...used, ...(excluded ? [`排除 ${excluded}`] : [])].join(" · ");
+  if (excluded) skipped.push(`排除 ${excluded}`);
+  return `分析：${used.join(" · ") || "無"}；不分析：${skipped.join(" · ")}`;
+}
 export function renderRoleSummary(page) {
   const set = sampleMetadata.forPage(page);
-  const counts = new Map();
-  for (const sample of set.rows.filter((row) => !row.excluded))
-    counts.set(sample.sample_role, (counts.get(sample.sample_role) || 0) + 1);
-  const excluded = set.rows.filter((row) => row.excluded).length;
-  const parts = roles
-    .filter((role) => counts.has(role))
-    .map((role) => `${roleLabels[role]} ${counts.get(role)}`);
-  if (excluded) parts.push(`排除 ${excluded}`);
   $(sampleId(page, "role-summary")).textContent = set.rows.length
-    ? parts.join(" · ")
+    ? roleSummary(page, set.rows)
     : "尚未讀取樣本";
   renderSequenceLine(page);
   checklist(page);

@@ -20,11 +20,14 @@ input to downstream analysis, not a normalized or batch-corrected result.
    or custom NL tags and their combination. **套用至批次設定** updates the draft;
    **方法檔案工具** contains import and new-method actions. Parameters without a
    GUI control are retained.
-5. Check sample roles and exclusions in **樣本明細**; statistical groups are
-   not inputs to this analysis. Roles and exclusions are shared with Targeted
-   and matrix curation. **上機資訊與樣本檔案（選用）** contains optional acquisition
-   information import and sample export. Alphabetical file order is not
-   injection order. Exclusion is a direct toggle and does not require a reason.
+5. Check **樣本角色**. Its summary separates the samples this analysis uses
+   (Sample and QC) from those it does not (Blank, STD, Other, and excluded
+   samples). Press **調整** to change roles or exclude a Sample or QC; the same
+   window has **匯出樣本資料**. The **上機資訊** line imports an optional
+   acquisition-information file. Statistical groups are not inputs to this
+   analysis. Roles and exclusions are shared with Targeted and matrix curation.
+   Alphabetical file order is not injection order. Exclusion is a direct toggle
+   and does not require a reason.
 6. Check the **內標** applicability summary below the samples. Choose or drop an
    XLSX, CSV or TSV file; **內標明細與檔案工具** contains the full table and shared
    XLSX example. Only `role=istd` rows are used;
@@ -35,10 +38,11 @@ input to downstream analysis, not a normalized or batch-corrected result.
 7. Press **開始 Untargeted 分析**. The finished run opens its result; **返回設定**
    goes back to the setup of the next analysis.
 
-Use **檢閱結果** to inspect quantitation, then **整理矩陣** to prepare a
-separate analysis matrix. The result card presents one main matrix download;
-**分析紀錄與其他檔案（進階）** holds trace files grouped by sample and the
-optional Inspector export. Candidate and physical-fact files are not ordinary
+Use **檢閱結果** to inspect quantitation. **整理矩陣** below the result is
+open, so **產生新矩陣** prepares a separate analysis matrix and its
+**下載整理後矩陣** appears beside the button. The result card presents one main
+matrix download; **其他檔案** holds trace files grouped by sample and
+**自訂 Inspector 匯出**. Candidate and physical-fact files are not ordinary
 workflow choices.
 
 **保存批次設定** saves the setup for reopening; starting analysis also saves it.
@@ -78,7 +82,7 @@ error; clearing the field runs without an internal-standard list.
 
 GUI Alignment writes `alignment_matrix.tsv` with its bound identity and the
 review/provenance tables from the `machine` output level. The identity supports
-the results panel's **篩選匯出…** action.
+the result's **自訂 Inspector 匯出** action.
 
 Successful retained CID-NL publication also saves `alignment_explanation.sqlite`
 alongside its runtime marker for Inspector evidence.
@@ -93,7 +97,7 @@ Start with the file that matches your review question:
 | `alignment_matrix.tsv` | Samples as columns, aligned features as rows, area values in cells | Default cross-sample quantitative output |
 | `alignment_review.tsv` | Group identity, detection/quantification summaries, warnings, and bound Matrix row references | Investigate a group or trace a Matrix row |
 | `alignment_explanation.sqlite` | Completed CID-NL decisions and retained curve evidence | Source for XIC Inspector export |
-| `xic_inspector.html` | Offline chromatogram review | Open with **開啟 Inspector** once ready |
+| `xic_inspector.html` | Offline chromatogram review | Open from **其他檔案** in the result |
 
 ## Read And Use The Matrix
 
@@ -108,9 +112,9 @@ Start with the file that matches your review question:
    Backfill revisits local evidence, not an interpolation of other samples'
    areas. Use the [processing story](processing-guide.html#backfill) when you
    need to understand that distinction.
-4. If you need a curated Matrix, choose **整理矩陣** in the completed results.
-   On **矩陣整理**, check the source folder and sample data, choose enabled
-   steps and any required thresholds, then start curation. An unavailable step
+4. If you need a curated Matrix, use **整理矩陣** below the completed result.
+   Check **資料來源**, choose enabled **整理步驟** and any required thresholds,
+   then press **產生新矩陣**. An unavailable step
    reports its missing input; it does not silently establish a decision.
 5. Read the curation summary and `feature_decisions.tsv` before using the kept
    Matrix downstream. Curation writes a new `matrix_curation_<time>` folder;
@@ -134,6 +138,6 @@ than guessing its meaning from a number.
 | --- | --- |
 | Run button says settings are incomplete | Fill every visible path field and verify the files/folders exist |
 | DLL load failure | Follow the reader setup notice; use RawFileReader 8.0.42 with .NET 8 or later, then restart the workbench |
-| Inspector is unavailable | Check the Inspector status below the output buttons; a completed run needs a published evidence source |
+| Inspector is unavailable | **自訂 Inspector 匯出** appears under **其他檔案** only when the completed run published an evidence source |
 | Matrix selection is disabled | The result needs its bound identity; rerun Alignment for older Matrix-only outputs |
 | Results look unexpected | Verify RAW inputs and method settings; use the supported RawFileReader version rather than matching Xcalibur |

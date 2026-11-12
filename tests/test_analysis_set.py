@@ -435,6 +435,33 @@ def test_selected_analysis_does_not_open_explicit_context(tmp_path, monkeypatch)
     assert contexts[-1].metadata.exclusion_reason == "replaced"
 
 
+@pytest.mark.parametrize("last", ["readable", "unreadable", "unopened"])
+def test_header_progress_ends_at_every_listed_raw(tmp_path, monkeypatch, last):
+    from xic_extractor import raw_sequence
+
+    paths = [tmp_path / f"{stem}.raw" for stem in ("S1", "S2", "Z")]
+    for path in paths:
+        path.write_bytes(b"")
+
+    def read_header(path, dll_dir):
+        if path.stem == "Z" and last == "unreadable":
+            raise raw_reader_errors.RawReaderError("no MS controller")
+        order = {"S1": 0, "S2": 1, "Z": 2}[path.stem]
+        return header(str(path.resolve()), order), "sample", path.stem
+
+    monkeypatch.setattr(raw_sequence, "_analysis_header", read_header)
+    reports = []
+    raw_sequence.read_analysis_set(
+        tmp_path,
+        tmp_path,
+        (SampleMetadata("Z", "Z", sample_role="blank"),),
+        include_context=last != "unopened",
+        analysis="untargeted",
+        progress=lambda done, total, _message: reports.append((done, total)),
+    )
+    assert reports[-1] == (3, 3)
+
+
 def test_selected_unreadable_header_reports_the_file_and_original_reason(
     tmp_path, monkeypatch
 ):

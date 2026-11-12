@@ -219,10 +219,8 @@ def test_sample_data_prefers_file_then_run_then_confirmed_then_raw_headers(
 
 
 def test_saved_run_samples_are_reused_without_raw_or_current_batch_settings(tmp_path):
-    from xic_extractor.matrix_curation.export import (
-        locate_curation_source,
-        read_run_samples,
-    )
+    from xic_extractor.matrix_curation.export import read_run_samples
+    from xic_extractor.matrix_curation.source import locate_curation_source
     from xic_workbench.matrix_curation import describe_source, resolve_samples
 
     folder = alignment_output(tmp_path / "alignment")
@@ -290,11 +288,11 @@ def test_workbench_job_matches_cli_and_writes_inside_the_source(tmp_path):
 def test_preview_matches_export_without_writing_or_changing_inputs(tmp_path, protected):
     from xic_extractor.matrix_curation.export import (
         export_matrix_curation,
-        locate_curation_source,
         prepare_matrix_curation,
         read_sample_metadata_file,
     )
     from xic_extractor.matrix_curation.istd import IstdWindow
+    from xic_extractor.matrix_curation.source import locate_curation_source
 
     folder, samples = _inputs(tmp_path)
     before = {str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}

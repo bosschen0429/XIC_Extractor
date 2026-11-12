@@ -249,13 +249,17 @@ class ReviewWorkspace:
         assert self._page is not None and self._report is not None
         page = self._page
         artifact = None
+        curatable = False
         if isinstance(page.source, TargetedWorkbookLocator):
             artifact = self.analysis.register_artifact(page.source.workbook_path)
         elif isinstance(page.source, EvidenceLocator):
             artifact = self.analysis.register_artifact(page.source.matrix_path)
+            curatable = _curatable(page.source.matrix_path.parent)
         response = {
             "source": str(self._report),
             "result_artifact": artifact,
+            # The result page opens matrix curation only where it can run.
+            "curatable": curatable,
             "source_kind": page.payload["summary"].get("source_kind", "evidence"),
             "target_names": page.payload["summary"].get("target_names", []),
             "target_role": page.payload["selection"].get("target_role"),
@@ -612,3 +616,13 @@ class ReviewWorkspace:
         self._cancel.set()
         self._executor.shutdown(wait=True, cancel_futures=True)
         self._temporary.cleanup()
+
+
+def _curatable(folder: Path) -> bool:
+    from xic_extractor.matrix_curation.source import locate_curation_source
+
+    try:
+        locate_curation_source(folder)
+    except ValueError:
+        return False
+    return True

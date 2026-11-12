@@ -144,6 +144,9 @@ def read_analysis_set(
             # Cancellation waits only for open handles, never all queued files.
             for _index, _path, future in pending:
                 future.cancel()
+    # Each report above names the file being read, so it counts the ones before.
+    if progress is not None and paths:
+        progress(len(paths), len(paths), "RAW 檔頭讀取完成")
     timeline = build_injection_timeline(headers, PerturbationPolicy())
     sequence = (
         load_and_match_sample_metadata(

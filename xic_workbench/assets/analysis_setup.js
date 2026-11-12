@@ -1,4 +1,4 @@
-// Setup/result navigation, readiness checklists and unsaved-setting feedback.
+// Setup/result navigation, readiness checklists and unsaved-setting state.
 import { curation, loadCurationSource } from "./analysis_curation.js";
 import { analysis, renderJob } from "./analysis_jobs.js";
 import { sampleId, sampleMetadata, samplePages } from "./analysis_samples.js";
@@ -17,13 +17,10 @@ import {
 } from "./analysis_ui.js";
 
 let methodTimer;
+// Starting an analysis saves the setup, so only leaving the page can lose it;
+// the page asks before unloading then.
 export function dirty(kind, value = true) {
   setDirty(kind, value);
-  const note = $(`${kind === "targeted" ? "target" : "untargeted"}-dirty`);
-  note.textContent = value
-    ? "批次設定尚未保存；按「保存批次設定」或開始分析才會留下變更。"
-    : "";
-  note.className = `dirty-note${value ? " unsaved" : ""}`;
   if (kind === "targeted") {
     clearTimeout(methodTimer);
     methodTimer = setTimeout(
@@ -90,17 +87,21 @@ export function showMode(mode) {
       ),
     );
 }
+// An Untargeted result opens with curation ready, so producing a curated
+// matrix takes only its own button.
 export function prepareResult(page) {
-  $("result-curation").open = false;
-  $("result-curation").hidden = page.overview?.kind !== "untargeted";
-  $("result-curation").ontoggle = () => {
-    if (!$("result-curation").open) return;
+  const panel = $("result-curation");
+  const load = () => {
     const folder = page.source.replace(/[\\/][^\\/]+$/, "");
     if (curation.snapshot.runSource !== folder) {
       const run = analysis.snapshot.results.untargeted;
       act(() => loadCurationSource(folder, run?.output_dir === folder ? run.samples : null));
     }
   };
+  panel.hidden = page.overview?.kind !== "untargeted";
+  panel.open = Boolean(page.curatable);
+  panel.ontoggle = () => panel.open && load();
+  if (page.curatable) load();
 }
 export function showResult() {
   if (!showingResult()) window.XicUi.navigation.push();

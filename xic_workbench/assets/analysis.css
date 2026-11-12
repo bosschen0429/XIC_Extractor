@@ -333,20 +333,6 @@
 .checklist .todo small {
   color: var(--warn);
 }
-.dirty-note {
-  min-height: 0;
-  color: var(--subtle);
-  font-size: 12px;
-}
-.dirty-note:empty {
-  display: none;
-}
-.dirty-note.unsaved {
-  padding: 7px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--warn-soft);
-  color: var(--warn);
-}
 .hint {
   color: var(--subtle);
   font-size: 11px;
