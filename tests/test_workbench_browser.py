@@ -2257,6 +2257,43 @@ def test_raw_curve_read_never_locks_review_and_a_new_action_replaces_it(
     assert len(cancelled) == 3
 
 
+def test_saved_curves_show_without_raw_and_unsaved_items_wait_for_load(
+    workbench, tmp_path
+):
+    from tests.inspector_fixtures import create_review_batch
+
+    report, _ = create_review_batch(tmp_path, sample_count=3, keep_curves=True)
+    page = workbench
+    curve_requests = []
+    page.on(
+        "request",
+        lambda request: (
+            curve_requests.append(request.url)
+            if request.url.endswith("/api/curves")
+            else None
+        ),
+    )
+    _open_results(page)
+    page.locator("#source").fill(str(report))
+    page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="瀏覽矩陣群組").click()
+    # A group with values shows its saved curves without RAW or DLL.
+    page.locator("#item-list button").filter(has_text="3 / 3").click()
+    review = _wait_for_curve_report(page, inline=True)
+    expect(review.locator("[data-inspector-id='svg-raw'] polyline")).to_have_count(3)
+    assert len(curve_requests) == 1
+    # With a RAW source set, an item without saved curves still reads nothing
+    # until samples are checked and loaded.
+    _configure_curve_sources(page, tmp_path, tmp_path)
+    page.locator("#back-to-overview").click()
+    overview = page.locator("#targeted-overview")
+    overview.locator("summary").click()
+    overview.get_by_role("button", name="1 筆未分組候選").click()
+    expect(page.locator("#inline-curve-status")).to_contain_text("勾選樣本後按")
+    expect(page.locator("#load-curves")).to_be_disabled()
+    assert len(curve_requests) == 1
+
+
 def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged(
     workbench, config_dir, tmp_path, monkeypatch
 ):

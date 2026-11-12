@@ -840,8 +840,11 @@ window.XicUi = (() => {
       restoreDetail(detail);
       if (state.page.source_kind !== "targeted_workbook") {
         $("inline-curves").hidden = false;
-        if (!state.samples.size) $("inline-curve-status").textContent = "沒有觀測座標，無法取得 XIC。";
-        else if (needsRaw() && !rawSourceSet()) $("inline-curve-status").textContent = "這份結果沒有保存曲線；需要時展開「RAW 曲線設定」讀取 RAW。";
+        const status = $("inline-curve-status");
+        // A result that saves curves reads RAW only for samples the user loads.
+        if (!state.item.curve_sample_ids.length) status.textContent = "沒有觀測座標，無法取得 XIC。";
+        else if (!state.samples.size) status.textContent = "此項目沒有保存的曲線；勾選樣本後按「載入 XIC」從 RAW 讀取。";
+        else if (needsRaw() && !rawSourceSet()) status.textContent = "這份結果沒有保存曲線；需要時展開「RAW 曲線設定」讀取 RAW。";
         else await startCurves();
       }
     }
@@ -883,9 +886,9 @@ window.XicUi = (() => {
     const saved = new Set(detail.item.saved_curve_sample_ids || []);
     state.samples = targeted ? new Set(
       [...state.samples].filter((id) => available.has(id)),
-    ) : new Set(saved.size ? saved
+    ) : new Set(detail.item.keeps_curves ? saved
       : detail.item.numeric_sample_ids.filter(id => available.has(id)));
-    if (!state.samples.size)
+    if (targeted && !state.samples.size)
       state.samples = new Set(
         state.page.samples
           .filter((sample) => available.has(sample.id))
@@ -913,7 +916,7 @@ window.XicUi = (() => {
       const text = document.createElement("span");
       text.textContent = sample.label;
       const noteText = !supported ? "無觀測座標"
-        : saved.size && !saved.has(sample.id) ? "讀 RAW" : "";
+        : detail.item.keeps_curves && !saved.has(sample.id) ? "讀 RAW" : "";
       if (noteText) {
         const note = document.createElement("small");
         note.textContent = noteText;

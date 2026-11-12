@@ -13,7 +13,8 @@ from typing import Any
 from tests.alignment_explanation_fixtures import curve_provenance, explanation_summary
 
 
-def create_review_batch(tmp_path, sample_count=2):
+def create_review_batch(tmp_path, sample_count=2, *, keep_curves=False):
+    """Saved review rows; ``keep_curves`` saves each value's curve as Alignment does."""
     from xic_extractor.alignment_explanation.writer import (
         ExplanationReportWriter,
     )
@@ -51,10 +52,17 @@ def create_review_batch(tmp_path, sample_count=2):
                         "variant": "numeric" if isinstance(value, int) else value,
                         "value": value if isinstance(value, int) else None,
                         "observation_ids": peaks.get(sid, []),
+                        "apex_rt_min": 1 if isinstance(value, int) else None,
                     }
                     for sid, value in zip(sample_ids, values, strict=True)
                 ],
             )
+            if keep_curves:
+                for sid, value in zip(sample_ids, values, strict=True):
+                    if isinstance(value, int):
+                        rt = [0.5 + 0.02 * i for i in range(51)]
+                        raw = [value * 2.718 ** (-(((x - 1) / 0.1) ** 2)) for x in rt]
+                        writer.set_cell_curve(rid, sid, rt, raw)
         add_witness(writer, "orphan", "S1", rt=1, precursor_mz=600)
         writer.finalize(
             explanation_summary(

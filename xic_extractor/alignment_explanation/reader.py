@@ -652,11 +652,16 @@ class ReviewCurveLocation:
 
 @dataclass(frozen=True, slots=True)
 class ReviewCurves:
-    """The locations of one item and the run facts that place them in time."""
+    """The locations of one item and the run facts that place them in time.
+
+    ``keeps_curves`` says whether the result saves the curves of cells with
+    values; results written before it did have none.
+    """
 
     locations: tuple[ReviewCurveLocation, ...]
     sample_rt_calibration: dict[str, Any] | None
     injection_order: dict[str, int]
+    keeps_curves: bool
 
     def needs_raw(self, sample_ids: Iterable[str]) -> bool:
         """Whether a requested sample has a location without a saved curve."""
@@ -727,7 +732,10 @@ def read_review_curves(
             )
         )
     return ReviewCurves(
-        tuple(locations), run["sample_rt_calibration"], run["injection_order"]
+        tuple(locations),
+        run["sample_rt_calibration"],
+        run["injection_order"],
+        saved,
     )
 
 
