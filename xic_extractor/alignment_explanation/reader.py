@@ -26,6 +26,7 @@ from .relations import relation
 from .review import validate_membership_risks
 from .storage import (
     decode_json,
+    decode_review_curve,
     encode_object,
     open_readonly,
     present_tables,
@@ -678,7 +679,8 @@ class ReviewCurves:
 _SAVED_CURVE = (
     "(SELECT cc.curve FROM cells v, json_each(v.peaks) vp "
     "JOIN cell_curves cc ON cc.group_id=v.group_id AND cc.sample=v.sample "
-    "WHERE vp.value=p.id AND v.apex_rt_min=p.rt_apex_min{scope})"
+    "WHERE v.sample=p.sample AND v.apex_rt_min=p.rt_apex_min "
+    "AND vp.value=p.id{scope})"
 )
 _GROUP_LOCATIONS = (
     "SELECT s.sample_key,s.sample_stem,p.physical_peak_key,"
@@ -719,7 +721,6 @@ def read_review_curves(
         run = decode_json(db.execute("SELECT payload FROM run").fetchone()[0])
     locations = []
     for sample_key, stem, peak_key, mz, ppm, rt, payload in rows:
-        values = decode_json(payload)
         locations.append(
             ReviewCurveLocation(
                 sample_key,
@@ -728,7 +729,7 @@ def read_review_curves(
                 mz,
                 ppm,
                 rt,
-                None if values is None else (tuple(values["rt"]), tuple(values["raw"])),
+                None if payload is None else decode_review_curve(payload),
             )
         )
     return ReviewCurves(

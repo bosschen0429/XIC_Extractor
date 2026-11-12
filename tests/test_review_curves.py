@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+import struct
 import zlib
 from contextlib import contextmanager
 
@@ -21,6 +22,10 @@ from xic_extractor.alignment_explanation.reader import (
     read_alignment_explanation,
     read_review_curves,
 )
+from xic_extractor.alignment_explanation.storage import (
+    decode_review_curve,
+    encode_review_curve,
+)
 from xic_extractor.applications.untargeted.alignment_explanation_projection import (
     write_alignment_explanation,
 )
@@ -32,6 +37,20 @@ from xic_workbench.review_curves import (
     CurveAcquisitionCancelled,
     review_curve_bundle,
 )
+
+
+@pytest.mark.parametrize("prior_json", [False, True])
+def test_review_curve_codec_keeps_float64_bits(prior_json):
+    rt = (0.0, 0.1, float(np.nextafter(0.1, 1.0)), 59.99999999999999)
+    raw = (-0.0, 1.23456789012345, 16777217.0, 1000000000.000001)
+    # JSON curves are actual persisted inputs from runs before binary storage.
+    payload = (
+        zlib.compress(json.dumps({"rt": rt, "raw": raw}).encode())
+        if prior_json
+        else encode_review_curve(rt, raw)
+    )
+    times, intensities = decode_review_curve(payload)
+    assert struct.pack("<8d", *times, *intensities) == struct.pack("<8d", *rt, *raw)
 
 
 def _full_audit_curves(report):

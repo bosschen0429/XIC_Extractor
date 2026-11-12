@@ -242,7 +242,8 @@ concept once: samples, peaks, method subjects, candidates with their terminal
 observation, final groups (one per result row), initial groups, group members
 (with their accepted membership risk), cells, method assessments and
 exclusions. A cell with a value keeps the RT and raw intensity of the
-extraction window that gave it (`cell_curves`, full precision); results
+extraction window that gave it (`cell_curves`, losslessly compressed float64,
+without rounding or resampling; readers also accept saved JSON curves); results
 written before this have no such table. Initial edges and full-audit curves
 have tables only when the run retains them. The summary's `retention` (`review` or `full_audit`) says which detail is
 kept. Counts are derived when read. The known ISTD reference is recorded once,

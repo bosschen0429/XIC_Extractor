@@ -22,6 +22,7 @@ from .storage import (
     create_optional_table,
     create_schema,
     encode_object,
+    encode_review_curve,
 )
 
 CandidateKey = tuple[str, str]
@@ -441,12 +442,7 @@ class ExplanationReportWriter:
         """The measured RT and raw intensity of the extraction window that gave
         a cell its value, at full precision; readers recompute processed signals.
         """
-        self._cell_curves[group_id, sample_key] = zlib.compress(
-            _ordered_json(
-                {"rt": [float(x) for x in rt], "raw": [float(y) for y in raw]}
-            ).encode("utf-8"),
-            9,
-        )
+        self._cell_curves[group_id, sample_key] = encode_review_curve(rt, raw)
 
     # Curves -------------------------------------------------------------
 
