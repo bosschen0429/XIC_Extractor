@@ -21,7 +21,6 @@ import {
   $,
   act,
   api,
-  button,
   done,
   el,
   isBusy,
@@ -114,10 +113,10 @@ export function renderJob() {
     `[data-job-slot="${onResult ? "curation" : state.view}"]`,
   );
   if (slot && card.parentElement !== slot) slot.append(card);
-  // A completed analysis is summarized by its result card at the top of the
-  // page, so a setup page does not repeat it as a finished job.
+  // A completed analysis or curation is summarized by its result card, so the
+  // job card does not repeat it as a finished job.
   const summarizedByResult =
-    !onResult && job?.status === "succeeded" && job.kind in resultIds;
+    job?.status === "succeeded" && job.kind in resultIds;
   card.hidden =
     !job ||
     summarizedByResult ||
@@ -150,8 +149,7 @@ export function renderJob() {
   const progressText = job.total ? `${job.completed} / ${job.total} · ` : "";
   $("analysis-job-time").textContent =
     `${progressText}${snapshot.running ? "已經過" : "耗時"} ${ui.formatDuration(job.elapsed_seconds)}`;
-  const analysisDone = job.status === "succeeded" && job.kind in resultIds;
-  $("analysis-job-output").hidden = !job.output_dir || analysisDone;
+  $("analysis-job-output").hidden = !job.output_dir;
   $("analysis-job-output").textContent = job.output_dir || "";
   if (job.total > 0) {
     $("analysis-progress").max = job.total;
@@ -161,28 +159,13 @@ export function renderJob() {
   $("analysis-stop").disabled = !snapshot.canCancel;
   const filesOpen = $("analysis-job-outputs").querySelector("details")?.open;
   $("analysis-job-outputs").replaceChildren();
-  if (analysisDone)
-    $("analysis-job-outputs").append(
-      button(
-        "查看結果",
-        () =>
-          $(resultIds[job.kind]).scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          }),
-        "",
-        "chevron-right",
-      ),
-    );
-  else {
-    const artifacts = (job.available_outputs || []).flatMap((item) =>
-      item.artifact ? [item.artifact] : [],
-    );
-    if (artifacts.length) {
-      const files = artifactDetails(artifacts, job.output_dir);
-      files.open = Boolean(filesOpen);
-      $("analysis-job-outputs").append(files);
-    }
+  const artifacts = (job.available_outputs || []).flatMap((item) =>
+    item.artifact ? [item.artifact] : [],
+  );
+  if (artifacts.length) {
+    const files = artifactDetails(artifacts, job.output_dir);
+    files.open = Boolean(filesOpen);
+    $("analysis-job-outputs").append(files);
   }
 }
 
@@ -199,8 +182,11 @@ function completeJob(snapshot, job) {
         if (page === "untargeted") dirty("untargeted");
         done(`已讀取 ${result.samples.length} 個樣本。`);
       }
-    } else if (job.kind === "curation")
-      done(`矩陣整理完成：${snapshot.results.curation.output_dir}`);
+    } else if (job.kind === "curation") {
+      // On the result page the curation result card is the notice.
+      if (!showingResult())
+        done(`矩陣整理完成：${snapshot.results.curation.output_dir}`);
+    }
     else if (job.kind === "inspector") {
       done(`Inspector 匯出完成：${snapshot.results.inspector.output}`);
       const artifact = snapshot.results.inspector.artifacts?.[0];

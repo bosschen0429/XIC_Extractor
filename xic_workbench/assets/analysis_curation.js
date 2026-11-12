@@ -1,6 +1,7 @@
 // Matrix curation presentation and intention adapters; Session owns the draft.
 import { createCurationSession } from "./analysis_curation_session.js";
 import { analysis } from "./analysis_jobs.js";
+import { showCurationResult } from "./analysis_results.js";
 import { showResult } from "./analysis_setup.js";
 import { state, updateConfig } from "./analysis_state.js";
 import {
@@ -244,6 +245,7 @@ export function bindCuration() {
       renderCuration(snapshot);
     }
     renderPreview(snapshot);
+    showCurationResult();
     lock();
   });
   $("curation-form").onsubmit = (event) => {

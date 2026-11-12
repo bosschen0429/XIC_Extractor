@@ -40,6 +40,14 @@ BACKGROUND_JOB_TIMEOUT_MS = 30_000 * DEADLINE_SCALE
 HANDSHAKE_TIMEOUT_S = 10 * DEADLINE_SCALE
 
 
+def _unsaved(page, kind: str) -> bool:
+    """The setup state the page asks about before unloading."""
+    return page.evaluate(
+        "async (kind) => (await import('/assets/analysis_state.js')).state.dirty[kind]",
+        kind,
+    )
+
+
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_help_opens_task_guide_without_changing_the_analysis(workbench, theme):
     page = workbench
@@ -1202,7 +1210,8 @@ def test_new_untargeted_delta_mass_method_restores_easy_ic(workbench, tmp_path):
     page.locator("#method-apply").click()
     expect(page.locator("#method-editor")).not_to_be_visible()
     page.locator("#untargeted-save").click()
-    expect(page.locator("#untargeted-dirty")).to_be_empty()
+    expect(page.locator("#toasts")).to_contain_text("Untargeted 批次設定已儲存")
+    assert not _unsaved(page, "untargeted")
     page.reload()
     expect(page.locator("body")).not_to_have_class("booting")
     _view(page, "untargeted")
@@ -1223,7 +1232,8 @@ def test_untargeted_method_apply_is_draft_until_saved(workbench, config_dir, tmp
     expect(page.locator("#method-editor")).not_to_be_visible()
     assert not current.exists(), "Applying a draft must not save it"
     page.locator("#untargeted-save").click()
-    expect(page.locator("#untargeted-dirty")).to_be_empty()
+    expect(page.locator("#toasts")).to_contain_text("Untargeted 批次設定已儲存")
+    assert not _unsaved(page, "untargeted")
     assert load_preset(current).name == "Saved method"
     saved_bytes = current.read_bytes()
 
@@ -1243,7 +1253,7 @@ def test_untargeted_method_apply_is_draft_until_saved(workbench, config_dir, tmp
     assert current.read_bytes() == saved_bytes
     page.reload()
     expect(page.locator("#u-preset option:checked")).to_have_text("Saved method")
-    expect(page.locator("#untargeted-dirty")).to_be_empty()
+    assert not _unsaved(page, "untargeted")
 
 
 def test_switching_method_discards_the_unsaved_applied_choice(workbench):
@@ -1260,7 +1270,8 @@ def test_switching_method_discards_the_unsaved_applied_choice(workbench):
         0
     )
     page.locator("#untargeted-save").click()
-    expect(page.locator("#untargeted-dirty")).to_be_empty()
+    expect(page.locator("#toasts")).to_contain_text("Untargeted 批次設定已儲存")
+    assert not _unsaved(page, "untargeted")
     page.reload()
     expect(page.locator("#u-preset")).to_have_value("rna_ribose")
     expect(page.locator("#method-preview")).to_contain_text("RNA_ribose")
@@ -1385,9 +1396,12 @@ def test_new_batch_preserves_method_but_uses_the_new_folders_samples(
     expect(page.locator(f"#{sequence}")).to_have_value("")
     expect(page.locator(f"#{prefix}role-summary")).to_have_text("尚未讀取樣本")
     page.locator(f"#{save}").click()
-    expect(
-        page.locator(f"#{'target' if kind == 'targeted' else kind}-dirty")
-    ).to_be_empty()
+    expect(page.locator("#toasts")).to_contain_text(
+        "Targeted 設定與目標已儲存"
+        if kind == "targeted"
+        else "Untargeted 批次設定已儲存"
+    )
+    assert not _unsaved(page, kind)
     page.reload()
     expect(page.locator(f"#{raw}")).to_have_value("")
     expect(page.locator(f"#{sequence}")).to_have_value("")
@@ -3010,7 +3024,7 @@ def test_sample_restore_is_bound_to_current_inputs(
     page.locator("#u-raw_dir").fill(str(old))
     page.locator("#u-raw_dir").press("Tab")
     expect(page.locator("#role-summary")).to_have_text(
-        "Blank 1", timeout=BACKGROUND_JOB_TIMEOUT_MS
+        "分析：無；不分析：Blank 1", timeout=BACKGROUND_JOB_TIMEOUT_MS
     )
     _wait_for_analysis_status(page, "已完成")
     with page.expect_response(lambda r: r.url.endswith("/api/untargeted/save")):
@@ -3265,7 +3279,8 @@ def test_untargeted_istd_shared_upload_and_persistence(
     expect(page.locator("#u-targets_csv")).to_have_value(retained)
     expect(page.locator("#istd-preview")).to_contain_text("standard")
     page.locator("#untargeted-save").click()
-    expect(page.locator("#untargeted-dirty")).to_be_empty()
+    expect(page.locator("#toasts")).to_contain_text("Untargeted 批次設定已儲存")
+    assert not _unsaved(page, "untargeted")
     assert (
         json.loads((config_dir / "discovery_gui.json").read_text(encoding="utf-8"))[
             "targets_csv"
@@ -4113,12 +4128,14 @@ def test_both_flows_share_roles_and_exclusions_without_statistical_groups(
         True,
     )
 
-    # Untargeted on the same folder reads the same confirmed metadata.
+    # Untargeted on the same folder reads the same confirmed metadata and
+    # names the role it does not analyze apart from the user's exclusion.
     _view(page, "untargeted")
     page.locator("#u-raw_dir").fill(str(batch))
     page.locator("#u-raw_dir").press("Tab")
     expect(page.locator("#role-summary")).to_have_text(
-        "Sample 1 · QC 1 · Blank 1 · 排除 1", timeout=BACKGROUND_JOB_TIMEOUT_MS
+        "分析：Sample 1 · QC 1；不分析：Blank 1 · 排除 1",
+        timeout=BACKGROUND_JOB_TIMEOUT_MS,
     )
     _wait_for_analysis_status(page, "已完成")
     page.locator("#samples-edit").click()
@@ -4596,12 +4613,13 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     expect(page.locator("#curation-preview")).to_contain_text("本次沒有 ISTD 保護")
     page.locator("button[form=curation-form][type=submit]").click()
     _wait_for_analysis_status(page, "已完成")
-    # Curation runs from the result page, so its job feedback is shown there.
-    expect(page.locator("#analysis-result #analysis-job")).to_be_visible()
+    # Beside the button, the result card is the only completion notice.
     result = page.locator("#curation-result")
     expect(result).to_contain_text("2保留 feature")
     expect(result).to_contain_text("4原始 feature")
-    expect(result.get_by_role("link", name="下載整理後矩陣")).to_be_visible()
+    expect(result.get_by_role("link", name="下載整理後矩陣")).to_be_in_viewport()
+    expect(page.locator("#analysis-job")).to_be_hidden()
+    expect(page.locator("#toasts")).not_to_contain_text("矩陣整理完成")
     (curated,) = run_output.glob("matrix_curation_*")
     _, kept = read_tsv_with_header(curated / "analysis_matrix.tsv")
     assert [row["Mz"] for row in kept] == ["101.0000", "103.0000"]
@@ -4615,6 +4633,8 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     existing = alignment_output(tmp_path / "existing")
     page.locator("#curation-source_dir").fill(str(existing))
     page.locator("#curation-source_dir").press("Tab")
+    # The earlier curated matrix belongs to the run folder, not this one.
+    expect(page.locator("#curation-result")).to_be_hidden()
     expect(step).to_be_disabled()
     expect(page.locator("#curation-steps")).to_contain_text("找不到本次分析的樣本資訊")
     samples = tmp_path / "samples.tsv"
@@ -4679,7 +4699,9 @@ def test_results_stay_in_analysis_page_without_raw(
         source = artifact = write_rare_detection_workbook(tmp_path / "saved.xlsx")
         fake_runs.targeted_workbook = source
     else:
-        source, artifact = create_review_batch(tmp_path)
+        from tests.matrix_curation_fixtures import alignment_output
+
+        source, artifact = create_review_batch(alignment_output(tmp_path / "run"))
         fake_runs.result = {
             "evidence": {"report_path": str(source)},
             "matrix_tsv": str(artifact),
@@ -4708,8 +4730,9 @@ def test_results_stay_in_analysis_page_without_raw(
     assert len(fake_runs.requests) == started
     if kind == "untargeted":
         expect(page.locator("#targeted-overview")).not_to_contain_text("HIGH")
-        expect(page.locator("#result-curation")).to_be_visible()
-        expect(page.locator("#result-curation")).not_to_have_attribute("open", "")
+        # Curation opens with the result, its source already loaded.
+        expect(page.locator("#result-curation")).to_have_attribute("open", "")
+        expect(page.locator("#curation-source_dir")).to_have_value(str(source.parent))
     else:
         expect(page.locator("#result-curation")).not_to_be_visible()
     before = page.locator("#targeted-overview").text_content()

@@ -15,10 +15,11 @@ Excel workbook, read from batch summary to the individual results needing attent
 3. Set the RAW folder and result location. The local DLL setting is retained.
 4. Select a saved target list and press **載入清單**, import a list, or choose
    **檢視與編輯** to open the full-height target table.
-   **返回批次設定** (`Alt+Left`) preserves edits and returns to the batch summary.
-5. Check sample roles and exclusions in **樣本明細**. Statistical groups are
-   not required or edited here. **上機資訊與樣本檔案（選用）** contains optional
-   acquisition-information import and sample export. Confirmed roles and
+   **完成** keeps edits and returns to the batch summary; **儲存目標** also saves them.
+5. Check **樣本角色**; press **調整** to change roles or exclusions, or for
+   **匯出樣本資料**. The **上機資訊** line imports an optional
+   acquisition-information file. Statistical groups are not required or edited
+   here. Confirmed roles and
    exclusions are shared by both analysis workflows and matrix curation. Exclusion
    is a direct toggle and does not require a reason.
 6. Press **開始 Targeted 分析** in the run panel.
@@ -33,7 +34,7 @@ settings it ran with.
 
 The workbench saves the current setup locally. A fresh workspace has no selected targets. Download the method or
 target-table XLSX example from the target-list card and save a copy. Drag the file
-onto the import area or click **選擇檔案** (no pasted path). Workbench detects the
+onto **匯入檔案** or click its **瀏覽** (no pasted path). Workbench detects the
 file type and previews targets and ISTD pairs; **確認匯入並取代** applies the list,
 while **取消** leaves current work unchanged. **保存批次設定** saves the current
 setup for reopening; starting analysis also saves it. **另存清單** creates a
