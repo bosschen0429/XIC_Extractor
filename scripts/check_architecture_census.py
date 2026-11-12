@@ -155,7 +155,69 @@ def validate_architecture_census(
             problems.append(f"architecture census owner does not resolve: {owner_ref}")
     problems.extend(validate_semantic_identifiers(repo_root))
     problems.extend(validate_documented_code_names(repo_root))
+    problems.extend(validate_ppm_arithmetic(repo_root))
     return problems
+
+
+PPM_ARITHMETIC_OWNER = "xic_extractor/mass_accuracy.py"
+_PPM_SCALES = (1e6, 1e-6)
+
+
+def validate_ppm_arithmetic(
+    repo_root: Path,
+    paths: Sequence[Path] | None = None,
+) -> list[str]:
+    """Reject ppm conversions written outside the mass-accuracy owner.
+
+    Multiplying or dividing by 1e6 or 1e-6 is a ppm conversion, except as the
+    direct argument of ``round()``, which quantizes m/z into an integer key.
+    """
+    if paths is None:
+        paths = tuple(
+            path
+            for path in repository_python_paths(repo_root)
+            if path.parts[0] in REPOSITORY_ROOTS
+        )
+    problems: list[str] = []
+    for relative_path in paths:
+        path_key = relative_path.as_posix()
+        if path_key == PPM_ARITHMETIC_OWNER:
+            continue
+        source = (repo_root / relative_path).read_text(encoding="utf-8")
+        tree = ast.parse(source, path_key)
+        rounded = {
+            id(argument)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "round"
+            for argument in node.args[:1]
+        }
+        for node in ast.walk(tree):
+            operands: tuple[ast.expr, ...]
+            if isinstance(node, ast.BinOp):
+                operands = (node.left, node.right)
+            elif isinstance(node, ast.AugAssign):
+                operands = (node.value,)
+            else:
+                continue
+            if (
+                isinstance(node.op, (ast.Mult, ast.Div))
+                and id(node) not in rounded
+                and any(_is_ppm_scale(operand) for operand in operands)
+            ):
+                problems.append(
+                    f"{path_key}:{node.lineno}: ppm arithmetic outside "
+                    f"{PPM_ARITHMETIC_OWNER}; call its functions"
+                )
+    return problems
+
+
+def _is_ppm_scale(node: ast.expr) -> bool:
+    if not isinstance(node, ast.Constant) or type(node.value) not in (int, float):
+        return False
+    assert isinstance(node.value, (int, float))
+    return abs(node.value) in _PPM_SCALES
 
 
 DOCUMENTED_CODE_NAME = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`")
@@ -672,10 +734,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         except (OSError, subprocess.CalledProcessError, SyntaxError, ValueError) as exc:
             problems = [str(exc)]
+        problems.extend(validate_ppm_arithmetic(ROOT))
         for problem in problems:
             print(problem, file=sys.stderr)
         if not problems:
-            print("Internal-defense growth gate passed.")
+            print("Internal-defense growth and ppm arithmetic gates passed.")
         return int(bool(problems))
     census = build_architecture_census(ROOT)
     problems = validate_architecture_census(ROOT, census)

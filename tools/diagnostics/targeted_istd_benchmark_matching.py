@@ -11,6 +11,7 @@ from tools.diagnostics.targeted_istd_benchmark_models import (
     TargetedPoint,
 )
 from tools.diagnostics.targeted_istd_benchmark_stats import _mean
+from xic_extractor.mass_accuracy import signed_ppm_error
 
 
 def _match_target_to_alignment(
@@ -60,12 +61,11 @@ def _match_target_to_alignment_with_shift(
     match_type = "exact" if mass_shift_da == 0.0 else "isotope_shift"
     matches: list[CandidateMatch] = []
     for feature in features:
-        mz_delta_ppm = _ppm_delta(shifted_mz, feature.group_center_mz)
+        mz_delta_ppm = signed_ppm_error(feature.group_center_mz, shifted_mz)
         if abs(mz_delta_ppm) > target.ppm_tol:
             continue
-        product_delta_ppm = _ppm_delta(
-            shifted_product_mz,
-            feature.group_product_mz,
+        product_delta_ppm = signed_ppm_error(
+            feature.group_product_mz, shifted_product_mz
         )
         if abs(product_delta_ppm) > target.ppm_tol:
             continue
@@ -138,11 +138,6 @@ def _target_rt_delta_sec(
     if rt < target.rt_min:
         return (rt - target.rt_min) * 60.0
     return (rt - target.rt_max) * 60.0
-
-
-def _ppm_delta(reference: float, observed: float) -> float:
-    denominator = max(abs(reference), 1e-12)
-    return (observed - reference) / denominator * 1_000_000.0
 
 
 def _match_sort_key(match: CandidateMatch) -> tuple[object, ...]:

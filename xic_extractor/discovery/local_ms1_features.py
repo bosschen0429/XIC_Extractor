@@ -17,6 +17,7 @@ from xic_extractor.discovery.detected_features import (
     LOCAL_MS1_FEATURE_TRACE_QUALITY_WEAK_SUPPORT,
     DetectedFeature,
 )
+from xic_extractor.mass_accuracy import mz_window, signed_ppm_errors
 from xic_extractor.ms1_scan_index import MS1Scan, validate_ms1_scan_index
 from xic_extractor.peak_detection.ms1_morphology import (
     DEFAULT_GAUSSIAN15_WINDOW_POINTS,
@@ -787,9 +788,7 @@ def _seed_range(
     range_lowers: Sequence[float],
     settings: LocalMs1FeatureSettings,
 ) -> tuple[float, float, int]:
-    tolerance = mz * settings.feature_link_ppm * 1e-6
-    lower_mz = mz - tolerance
-    upper_mz = mz + tolerance
+    lower_mz, upper_mz = mz_window(mz, settings.feature_link_ppm)
     insert_at = bisect_left(range_lowers, lower_mz)
     if insert_at > 0 and ranges[insert_at - 1].upper_mz > lower_mz:
         lower_mz = ranges[insert_at - 1].upper_mz
@@ -903,7 +902,7 @@ def _mz_ppm_std(mzs: np.ndarray) -> float:
     mean_mz = float(np.mean(mzs))
     if mean_mz <= 0:
         return math.inf
-    return float(np.std((mzs - mean_mz) / mean_mz * 1e6))
+    return float(np.std(signed_ppm_errors(mzs, mean_mz)))
 
 
 def _diagnostic_from_trace(

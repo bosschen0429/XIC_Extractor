@@ -17,6 +17,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.mass_accuracy import mz_window
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlComposition,
     CidNlMethodSubject,
@@ -168,10 +169,7 @@ def _known_istd_comparison_intervals(
     if reference is None:
         return ()
     return tuple(
-        (
-            target.mz * (1 - target.ppm_tol / 1_000_000),
-            target.mz * (1 + target.ppm_tol / 1_000_000),
-        )
+        mz_window(target.mz, target.ppm_tol)
         for target in reference.anchor.targets
         if target.neutral_loss_da is not None
         and target.label in reference.anchor.observed_labels

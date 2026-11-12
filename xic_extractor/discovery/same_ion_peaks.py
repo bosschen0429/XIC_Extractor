@@ -32,6 +32,7 @@ from collections.abc import Collection, Sequence
 import numpy as np
 
 from xic_extractor.acquisition.physical_capture import CapturedPhysicalPeak
+from xic_extractor.mass_accuracy import mz_window
 
 SAME_ION_MIN_EQUAL_POINTS = 3
 
@@ -154,5 +155,4 @@ def _identity_key(member: CapturedPhysicalPeak) -> tuple[float, float, float, fl
 
 def _window(member: CapturedPhysicalPeak) -> tuple[float, float]:
     request = member.search.request
-    half_width = request.mz * request.ppm_tol * 1e-6
-    return request.mz - half_width, request.mz + half_width
+    return mz_window(request.mz, request.ppm_tol)

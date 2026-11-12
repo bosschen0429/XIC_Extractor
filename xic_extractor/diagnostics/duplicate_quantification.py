@@ -12,6 +12,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from xic_extractor.alignment_explanation.published_cells import PublishedCell
+from xic_extractor.mass_accuracy import signed_ppm_error
 
 
 def summarize_duplicate_quantification(
@@ -79,7 +80,7 @@ def _duplicate_pairs(
         ordered = sorted(sample_cells, key=lambda cell: (cell.row_mz, cell.row))
         for index, left in enumerate(ordered):
             for right in ordered[index + 1 :]:
-                if (right.row_mz - left.row_mz) / left.row_mz * 1e6 > max_ppm:
+                if signed_ppm_error(right.row_mz, left.row_mz) > max_ppm:
                     break
                 if (
                     left.row != right.row

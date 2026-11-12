@@ -28,6 +28,7 @@ from xic_extractor.extraction.targeted_peak_evidence import (
 from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
+from xic_extractor.mass_accuracy import absolute_ppm_error, mz_tolerance_da
 from xic_extractor.ms2_scan_models import Ms2Window
 from xic_extractor.peak_detection.baseline import BaselineMethod
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -368,7 +369,9 @@ def assess_targeted_candidate_population(
         else:
             products = retained_method_products
         policy = DdaCidNlPeakSupportPolicy(
-            precursor_tolerance_da=max(target.mz * target.ppm_tol / 1_000_000, 1e-9),
+            precursor_tolerance_da=mz_tolerance_da(
+                target.mz, target.ppm_tol, minimum_da=1e-9
+            ),
             neutral_loss_tolerance_ppm=target.nl_ppm_max or 20.0,
             precursor_reference_requirement=TARGETED_PRECURSOR_REFERENCE,
         )
@@ -626,7 +629,7 @@ def targeted_ms2_precursor_scope(targets: list[Target]) -> PrecursorMassScope | 
         tuple(
             (
                 target.mz,
-                max(target.mz * target.ppm_tol / 1_000_000, 1e-9)
+                mz_tolerance_da(target.mz, target.ppm_tol, minimum_da=1e-9)
                 + _PRECURSOR_SCOPE_ROUNDOFF_DA,
             )
             for target in nl_targets
@@ -683,7 +686,7 @@ def _discovery_method_products(
         for event in window.events
         if event.scan is not None
     }
-    tolerance_da = target.mz * target.ppm_tol / 1e6
+    tolerance_da = mz_tolerance_da(target.mz, target.ppm_tol)
     # Resolve only within this target's mass question. A scan can carry distinct
     # valid recorded references for different targets of the same chemistry.
     seeds = resolve_discovery_scan_events(
@@ -702,9 +705,7 @@ def _discovery_method_products(
             product_mz=seed.product_mz,
             product_intensity=seed.product_intensity,
             product_base_ratio=seed.product_intensity / base_by_scan[seed.scan_number],
-            target_product_ppm=abs(seed.product_mz - expected_product)
-            / expected_product
-            * 1e6,
+            target_product_ppm=absolute_ppm_error(seed.product_mz, expected_product),
             observed_loss_da=seed.observed_neutral_loss_da,
             observed_loss_error_ppm=seed.observed_loss_error_ppm,
             scan_number=seed.scan_number,

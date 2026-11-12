@@ -12,10 +12,7 @@ from dataclasses import dataclass, replace
 from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.grouping_evidence import (
-    envelope_fraction,
-    pair_ppm,
-)
+from xic_extractor.alignment.grouping_evidence import envelope_fraction
 from xic_extractor.alignment.grouping_rules import (
     DuplicateContext,
     GroupingRules,
@@ -54,10 +51,15 @@ def cid_nl_pair_failures(
     if first is None or composite:
         return None, None
     assert second is not None
-    if pair_ppm(first.product_mz, second.product_mz) > config.product_mz_tolerance_ppm:
+    if (
+        absolute_ppm_error(second.product_mz, first.product_mz)
+        > config.product_mz_tolerance_ppm
+    ):
         return None, "product_mz_out_of_tolerance"
     if (
-        pair_ppm(first.observed_neutral_loss_da, second.observed_neutral_loss_da)
+        absolute_ppm_error(
+            second.observed_neutral_loss_da, first.observed_neutral_loss_da
+        )
         > config.observed_loss_tolerance_ppm
     ):
         return None, "observed_loss_out_of_tolerance"

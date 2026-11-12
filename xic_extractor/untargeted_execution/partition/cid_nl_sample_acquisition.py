@@ -29,6 +29,7 @@ from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import (
     resolve_discovery_scan_events,
 )
+from xic_extractor.mass_accuracy import mz_tolerance_da
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelation,
@@ -367,11 +368,10 @@ def adapt_current_discovery_sample_subject(
     if {peak.peak_id for peak in bounded} & {peak.peak_id for peak in support_bounded}:
         raise CidNlAcquisitionError("support peaks must be distinct from feature peaks")
     support_policy = DdaCidNlPeakSupportPolicy(
-        precursor_tolerance_da=max(
-            method_subject.precursor_mz
-            * method_subject.precursor_tolerance_ppm
-            / 1_000_000.0,
-            _WRITER_ROUNDING_ABS_TOL,
+        precursor_tolerance_da=mz_tolerance_da(
+            method_subject.precursor_mz,
+            method_subject.precursor_tolerance_ppm,
+            minimum_da=_WRITER_ROUNDING_ABS_TOL,
         ),
         neutral_loss_tolerance_ppm=settings.nl_tolerance_ppm,
     )

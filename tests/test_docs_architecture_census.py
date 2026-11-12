@@ -250,6 +250,61 @@ def test_internal_defense_cli_blocks_growth_and_missing_base(
     assert "baseline" in capsys.readouterr().err
 
 
+def test_internal_defense_cli_also_blocks_handwritten_ppm_arithmetic(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = _defense_gate_repo(tmp_path, "")
+    monkeypatch.setattr(census, "ROOT", tmp_path)
+    path.write_text("def f(x, ppm):\n    return x * ppm / 1e6\n", encoding="utf-8")
+    assert census.main(["--internal-defense-base", "HEAD"]) == 1
+    assert "xic_extractor/example.py:2: ppm arithmetic" in capsys.readouterr().err
+    path.write_text("", encoding="utf-8")
+    assert census.main(["--internal-defense-base", "HEAD"]) == 0
+
+
+@pytest.mark.parametrize(
+    "line",
+    (
+        "x * ppm / 1e6",
+        "x * ppm * 1e-6",
+        "ppm / 1_000_000",
+        "(a - b) / b * 1_000_000.0",
+        "1e6 * (a - b) / b",
+        "min(a * p, b * q) / 1e6",
+    ),
+)
+def test_ppm_arithmetic_gate_rejects_conversions_outside_the_owner(
+    tmp_path: Path, line: str
+) -> None:
+    source = Path("tools/example.py")
+    (tmp_path / source).parent.mkdir()
+    (tmp_path / source).write_text(f"value = {line}\n", encoding="utf-8")
+
+    assert census.validate_ppm_arithmetic(tmp_path, (source,)) == [
+        "tools/example.py:1: ppm arithmetic outside xic_extractor/mass_accuracy.py; "
+        "call its functions"
+    ]
+
+
+def test_ppm_arithmetic_gate_accepts_other_uses_and_the_owner(tmp_path: Path) -> None:
+    other = Path("xic_extractor/example.py")
+    owner = Path(census.PPM_ARITHMETIC_OWNER)
+    (tmp_path / other).parent.mkdir()
+    (tmp_path / other).write_text(
+        "key = round(mz * 1_000_000)\n"
+        "same = math.isclose(a, b, rel_tol=1e-6)\n"
+        "COST = 1_000_000.0\n"
+        "sigma = max(width / 6.0, 1e-6)\n"
+        "total = area * 1e3\n",
+        encoding="utf-8",
+    )
+    (tmp_path / owner).write_text("tolerance = mz * ppm * 1e-6\n", encoding="utf-8")
+
+    assert census.validate_ppm_arithmetic(tmp_path, (other, owner)) == []
+
+
 ROOT = Path(__file__).resolve().parents[1]
 
 

@@ -31,6 +31,7 @@ from xic_extractor.discovery.local_ms1_features import (
 from xic_extractor.discovery.sample_process_execution import (
     raise_if_discovery_cancelled,
 )
+from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.raw_reader import open_raw
 from xic_extractor.tabular_io import read_delimited_rows
 
@@ -365,7 +366,7 @@ def _optional_finite_float(
 
 
 def _ppm_error(candidate: DeltaMassCandidate, peak_mz: float) -> float:
-    return abs((peak_mz - candidate.base_mz) / candidate.base_mz * 1e6)
+    return absolute_ppm_error(peak_mz, candidate.base_mz)
 
 
 def _mz_matches(candidate: DeltaMassCandidate, row: _CidNlPeakRow) -> bool:

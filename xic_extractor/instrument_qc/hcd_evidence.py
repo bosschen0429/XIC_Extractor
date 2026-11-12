@@ -16,6 +16,7 @@ from xic_extractor.instrument_qc.models import (
     HCDProductIon,
     SDOLEKTrendRow,
 )
+from xic_extractor.mass_accuracy import signed_ppm_error
 from xic_extractor.ms2_scan_models import Ms2Scan
 
 DEFAULT_HCD_RT_WINDOW_MIN = 0.20
@@ -248,7 +249,7 @@ def _product_matches_for_scan(
     for product in products:
         index = int(np.argmin(np.abs(scan.masses - product.product_mz)))
         observed_mz = float(scan.masses[index])
-        ppm = (observed_mz - product.product_mz) / product.product_mz * 1_000_000.0
+        ppm = signed_ppm_error(observed_mz, product.product_mz)
         if abs(ppm) > diagnostic_ppm_max:
             continue
         intensity = float(scan.intensities[index])

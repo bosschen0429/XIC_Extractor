@@ -14,6 +14,7 @@ from statistics import median
 
 import numpy as np
 
+from xic_extractor.mass_accuracy import within_both_mz_tolerances
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalSegment,
     PreparedSignal,
@@ -189,10 +190,7 @@ def _noncontained_regions(
 def _same_ion(
     left: TargetedPopulationContext, right: TargetedPopulationContext
 ) -> bool:
-    return (
-        abs(left.mz - right.mz)
-        <= min(left.mz * left.ppm_tol, right.mz * right.ppm_tol) / 1e6
-    )
+    return within_both_mz_tolerances(left.mz, left.ppm_tol, right.mz, right.ppm_tol)
 
 
 def _overlaps(left: tuple[float, float], right: tuple[float, float]) -> bool:

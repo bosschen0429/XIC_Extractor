@@ -15,6 +15,7 @@ from collections import Counter, defaultdict
 from collections.abc import Callable, Container, Mapping, Sequence
 from dataclasses import dataclass, replace
 
+from xic_extractor.mass_accuracy import mz_window, signed_ppm_error
 from xic_extractor.matrix_curation.steps import (
     CellEvidence,
     CurationInputs,
@@ -695,14 +696,13 @@ def _find_ion_families(
     """Joint neutral-mass hypotheses, not a transitive co-elution component."""
     order = sorted(range(len(mz)), key=lambda index: mz[index])
     ordered = [mz[index] for index in order]
-    tolerance = MZ_PPM * 1e-6
 
     def matching(predicted: float, seed: int) -> list[int]:
+        low, high = mz_window(predicted, MZ_PPM)
         return [
             order[position]
             for position in range(
-                bisect_left(ordered, predicted * (1 - tolerance)),
-                bisect_right(ordered, predicted * (1 + tolerance)),
+                bisect_left(ordered, low), bisect_right(ordered, high)
             )
             if coelutes(seed, order[position])
         ]
@@ -782,19 +782,17 @@ def _mass_matches(
     order = sorted(range(len(mz)), key=lambda index: mz[index])
     ordered = [mz[index] for index in order]
     matches: dict[tuple[int, int], dict[str, float]] = defaultdict(dict)
-    tolerance = MZ_PPM * 1e-6
     for light, light_mz in enumerate(mz):
         for relation in relations:
             predicted = relation.predict(light_mz)
-            low = predicted * (1 - 2 * tolerance)
-            high = predicted * (1 + 2 * tolerance)
+            low, high = mz_window(predicted, 2 * MZ_PPM)
             for position in range(
                 bisect_left(ordered, low), bisect_right(ordered, high)
             ):
                 heavy = order[position]
                 if heavy == light or mz[heavy] <= light_mz:
                     continue
-                error = (mz[heavy] - predicted) / predicted * 1e6
+                error = signed_ppm_error(mz[heavy], predicted)
                 if abs(error) <= MZ_PPM:
                     matches[(light, heavy)][relation.key] = error
     return dict(matches)
@@ -998,9 +996,9 @@ def _recurring_differences(
         if support < MIN_SUPPORT_SAMPLES:
             continue
         light, heavy = sorted((first, second), key=lambda index: (mz[index], index))
-        if (light, heavy) in matches or (mz[heavy] - mz[light]) / mz[
-            light
-        ] * 1e6 <= MZ_PPM:
+        if (light, heavy) in matches or signed_ppm_error(
+            mz[heavy], mz[light]
+        ) <= MZ_PPM:
             continue
         both_direct = (direct_mask[light] & direct_mask[heavy]).bit_count()
         if support < MIN_SUPPORT_FRACTION * both_direct:

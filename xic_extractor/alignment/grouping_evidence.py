@@ -21,11 +21,6 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.rt_frame import RtFrame
 
 
-def pair_ppm(left: float, right: float) -> float:
-    """Pair gate convention: the left endpoint is the reference."""
-    return abs(left - right) / max(abs(left), 1e-12) * 1_000_000.0
-
-
 def envelope_fraction(
     current_min: float, current_max: float, value: float, tolerance_ppm: float
 ) -> float:

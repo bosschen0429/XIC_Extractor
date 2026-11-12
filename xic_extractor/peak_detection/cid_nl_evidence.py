@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from xic_extractor.mass_accuracy import absolute_ppm_error
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.precursor_evidence import (
     Ms1PrecursorObservation,
@@ -235,10 +236,8 @@ class CidNlEvidenceObservation:
             raise CidNlEvidenceContractError(
                 "observed_neutral_loss_da must equal precursor_mz - product_mz"
             )
-        expected_error_ppm = (
-            abs(precursor_product_loss - self.configured_neutral_loss_da)
-            / self.configured_neutral_loss_da
-            * 1_000_000.0
+        expected_error_ppm = absolute_ppm_error(
+            precursor_product_loss, self.configured_neutral_loss_da
         )
         if self.observed_loss_error_ppm is not None and not math.isclose(
             self.observed_loss_error_ppm,

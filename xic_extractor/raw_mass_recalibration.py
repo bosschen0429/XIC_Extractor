@@ -10,6 +10,7 @@ from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
 )
+from xic_extractor.mass_accuracy import mz_tolerance_da, ppm_scale_factor
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader_errors import RawReaderError
@@ -66,7 +67,7 @@ def mass_restoration_scale(
     else:
         assert result.a is not None and result.b is not None
         shift_ppm = result.a + result.b * correction_ppm
-    return 1.0 + shift_ppm * 1e-6
+    return ppm_scale_factor(shift_ppm)
 
 
 def is_recorded_precursor(
@@ -137,7 +138,7 @@ def restored_xic(
     spectra: Sequence[tuple[float, np.ndarray, np.ndarray]], request: XICRequest
 ) -> XICTrace:
     """Sum restored centroids in the requested inclusive mass window."""
-    tolerance = request.mz * request.ppm_tol / 1e6
+    tolerance = mz_tolerance_da(request.mz, request.ppm_tol)
     rts: list[float] = []
     values: list[float] = []
     for rt, masses, intensities in spectra:

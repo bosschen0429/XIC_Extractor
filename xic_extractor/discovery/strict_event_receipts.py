@@ -7,6 +7,7 @@ from dataclasses import replace
 from xic_extractor.configuration.cid_nl_profile import PrecursorReferenceRequirement
 from xic_extractor.discovery.models import DiscoveryEvent
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.mass_accuracy import mz_tolerance_da
 from xic_extractor.precursor_evidence import (
     MS1MassWindowSource,
 )
@@ -28,7 +29,7 @@ def read_parent_ms1_observations(
             or metadata.master_scan_number is None
         ):
             continue
-        radius = event.precursor_mz * tolerance_ppm * 1e-6
+        radius = mz_tolerance_da(event.precursor_mz, tolerance_ppm)
         windows[index] = (
             metadata.master_scan_number,
             event.precursor_mz - radius,

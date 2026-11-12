@@ -14,6 +14,7 @@ from scipy.optimize import isotonic_regression
 from scipy.signal import find_peaks
 
 from xic_extractor.configuration.models import Target
+from xic_extractor.mass_accuracy import mz_tolerance_da
 from xic_extractor.xic_models import XICTrace
 
 
@@ -133,7 +134,9 @@ def trace_clusters(
 
 
 def _same_target(left: Target, right: Target) -> bool:
-    return abs(left.mz - right.mz) <= min(left.ppm_tol, right.ppm_tol) * left.mz / 1e6
+    return abs(left.mz - right.mz) <= mz_tolerance_da(
+        left.mz, min(left.ppm_tol, right.ppm_tol)
+    )
 
 
 def _mapping_prediction(

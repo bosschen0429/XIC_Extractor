@@ -25,6 +25,7 @@ from xic_extractor.configuration.mass_recalibration import (
 from xic_extractor.injection_timeline import (
     InjectionHeader,
 )
+from xic_extractor.mass_accuracy import mz_window
 from xic_extractor.ms1_scan_index import MS1Scan, build_ms1_scan_index
 from xic_extractor.ms2_scan_models import (
     Ms2PrecursorMetadata,
@@ -660,11 +661,8 @@ class RawFileHandle:
         )
 
     def _build_chromatogram_settings(self, mz: float, ppm_tol: float) -> Any:
-        tolerance = mz * ppm_tol / 1e6
         settings = self._create_mass_range_trace_settings()
-        settings.MassRanges = [
-            self._thermo.mass_range_factory(mz - tolerance, mz + tolerance)
-        ]
+        settings.MassRanges = [self._thermo.mass_range_factory(*mz_window(mz, ppm_tol))]
         settings.Filter = "ms"
         if hasattr(settings, "TraceType"):
             settings.TraceType = self._thermo.mass_range_trace_type

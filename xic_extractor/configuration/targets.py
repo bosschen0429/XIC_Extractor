@@ -29,6 +29,7 @@ from xic_extractor.configuration.targeted_identification import (
     parse_delta_mass_payload,
     target_cid_nl_loss,
 )
+from xic_extractor.mass_accuracy import mz_tolerance_da
 
 LOGGER = logging.getLogger(__name__)
 
@@ -257,7 +258,9 @@ def _identification(
         raise fail("Δm/z 太接近：伴隨離子名稱相同")
     masses = sorted([mz, *(mz + offset for offset in offsets)])
     if masses[0] <= 0 or any(
-        right - left <= (left + right) * settings.mz_tolerance_ppm * 1e-6
+        right - left
+        <= mz_tolerance_da(left, settings.mz_tolerance_ppm)
+        + mz_tolerance_da(right, settings.mz_tolerance_ppm)
         for left, right in zip(masses, masses[1:], strict=False)
     ):
         raise fail("ions require positive m/z and non-overlapping XIC windows")

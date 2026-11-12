@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
+from xic_extractor.mass_accuracy import absolute_ppm_error, reference_mz_window
 
 SCHEMA_VERSION = "cid_nl_method_subject"
 BATCH_SCHEMA_VERSION = "cid_nl_method_subject_batch"
@@ -260,8 +261,7 @@ def mint_cid_nl_subject_membership(
         precursor_mz = precursor_by_id[candidate]
         if (
             key is None
-            or abs(precursor_mz - key[0]) / key[0] * 1_000_000.0
-            > precursor_tolerance_ppm
+            or absolute_ppm_error(precursor_mz, key[0]) > precursor_tolerance_ppm
         ):
             key = (precursor_mz, requirement)
             key_by_requirement[requirement] = key
@@ -299,11 +299,7 @@ def cid_nl_method_subject_resolver_interval(
         raise CidNlMethodSubjectContractError(
             "resolver interval requires an exact CID-NL method subject"
         )
-    fraction = subject.precursor_tolerance_ppm / 1_000_000.0
-    return (
-        subject.precursor_mz / (1.0 + fraction),
-        subject.precursor_mz / (1.0 - fraction),
-    )
+    return reference_mz_window(subject.precursor_mz, subject.precursor_tolerance_ppm)
 
 
 def validate_cid_nl_alignment_subject_compatibility(

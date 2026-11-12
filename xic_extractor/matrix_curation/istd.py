@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.mass_accuracy import absolute_ppm_error
+
 ISTD_MZ_PPM = 10.0
 # Half-width around expected_rt_min when a standard declares no RT range.
 ISTD_EXPECTED_RT_HALF_WIDTH_MIN = 0.75
@@ -106,7 +108,7 @@ def match_istd(mz: float, rt_min: float, windows: Sequence[IstdWindow]) -> str:
         {
             window.label
             for window in windows
-            if abs(mz - window.mz) / window.mz * 1e6 <= ISTD_MZ_PPM
+            if absolute_ppm_error(mz, window.mz) <= ISTD_MZ_PPM
             and window.rt_low_min <= rt_min <= window.rt_high_min
         }
     )
