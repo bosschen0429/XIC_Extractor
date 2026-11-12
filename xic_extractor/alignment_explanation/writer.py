@@ -58,7 +58,7 @@ def _ordered_json(value: Any) -> str:
 
 
 def _compressed(value: Any) -> bytes:
-    return zlib.compress(_ordered_json(value).encode("utf-8"), 1)
+    return zlib.compress(_ordered_json(value).encode("utf-8"), 6)
 
 
 class ExplanationReportWriter:
@@ -90,6 +90,10 @@ class ExplanationReportWriter:
         self._last_record_id = 0
         self._curves: dict[tuple[Any, ...], list[Any]] = {}
         self._cell_curves: dict[tuple[str, str], bytes] = {}
+        # Compared peer groups recur across members and Backfill decisions.
+        # OwnerFacts and ordered groups each have one persisted representation.
+        self._risk_owners: dict[tuple[Any, ...], tuple[int, str]] = {}
+        self._risk_owner_groups: dict[tuple[int, ...], tuple[int, bytes]] = {}
 
     def _record_id(self) -> int:
         """Records without a natural key share one numbering, in emission order,
@@ -373,7 +377,9 @@ class ExplanationReportWriter:
                 # An accepted risk belongs to its member; cells read it there.
                 # Its flags are a column so selection reads them undecoded.
                 row = self._members[owners[owner], owner]
-                row[5] = _compressed({**risk, "risk_flags": None})
+                row[5] = _compressed(
+                    self._risk_references({**risk, "risk_flags": None})
+                )
                 row[6] = json.dumps(list(risk["risk_flags"]), ensure_ascii=False)
                 decision = {**decision, "accepted_risk": None}
             decisions.append(decision)
@@ -422,7 +428,9 @@ class ExplanationReportWriter:
                 _ordered_json(list(cell.get("evidence_states", ()))),
                 _ordered_json(list(cell.get("reason_codes", ()))),
                 _ordered_json(signal_quality),
-                _compressed(list(risks)) if risks else None,
+                _compressed([self._risk_references(risk) for risk in risks])
+                if risks
+                else None,
                 None
                 if cell.get("observation") is None
                 else _compressed(cell["observation"]),
@@ -431,6 +439,38 @@ class ExplanationReportWriter:
     def set_cell_position(self, group_id: str, sample_key: str, rt_min: float) -> None:
         """The recorded group position used to inspect an empty cell."""
         self._cells[group_id, sample_key][6] = rt_min
+
+    def _risk_references(self, risk: Mapping[str, Any]) -> dict[str, Any]:
+        """Keep each compared owner group once; a risk retains its own costs."""
+
+        def owner_group(owners: Iterable[Sequence[Any]]) -> int:
+            ids = []
+            for owner in owners:
+                facts = tuple(owner)
+                recorded = self._risk_owners.get(facts)
+                if recorded is None:
+                    recorded = len(self._risk_owners) + 1, _ordered_json(facts)
+                    self._risk_owners[facts] = recorded
+                ids.append(recorded[0])
+            key = tuple(ids)
+            stored = self._risk_owner_groups.get(key)
+            if stored is None:
+                stored = len(self._risk_owner_groups) + 1, _compressed(key)
+                self._risk_owner_groups[key] = stored
+            return stored[0]
+
+        alternative = risk["alternative_partition"]
+        return {
+            **risk,
+            "selected_owners": owner_group(risk["selected_owners"]),
+            "alternative_partition": None
+            if alternative is None
+            else [owner_group(group) for group in alternative],
+            "equivalent_alternatives": [
+                [owner_group(group) for group in partition]
+                for partition in risk["equivalent_alternatives"]
+            ],
+        }
 
     def set_cell_curve(
         self,
@@ -580,6 +620,17 @@ class ExplanationReportWriter:
                 for key, reason in self._exclusions.items()
             ),
         )
+        if self._risk_owner_groups:
+            create_optional_table(db, "membership_owners")
+            db.executemany(
+                "INSERT INTO membership_owners VALUES (?,?)",
+                self._risk_owners.values(),
+            )
+            create_optional_table(db, "membership_owner_groups")
+            db.executemany(
+                "INSERT INTO membership_owner_groups VALUES (?,?)",
+                self._risk_owner_groups.values(),
+            )
         if self._cell_curves:
             create_optional_table(db, "cell_curves")
             db.executemany(

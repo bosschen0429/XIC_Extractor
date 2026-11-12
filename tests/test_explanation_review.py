@@ -285,6 +285,7 @@ def test_default_review_keeps_values_and_query_without_curves(
     assert (tmp_path / "review.html").is_file()
     # Missing required columns cannot be supplied by compatibility reading.
     with sqlite3.connect(report) as db:
+        db.execute("DROP INDEX cells_sample_apex")
         db.execute(f"ALTER TABLE cells DROP COLUMN {missing_cell_column}")
     with pytest.raises(ExplanationError, match="rerun"):
         CidNlSource(report)

@@ -107,6 +107,8 @@ class _Report:
         self.summary = summary
         self.full = summary["retention"] == "full_audit"
         self.tables = present_tables(db)
+        self._risk_owners: dict[int, list[Any]] = {}
+        self._risk_owner_groups: dict[int, list[Any]] = {}
         self.samples = [sample["sample_key"] for sample in summary["samples"]]
         self.stems = [sample["sample_stem"] for sample in summary["samples"]]
         self.peaks: dict[int, tuple[str, float | None, float | None, float | None]] = {
@@ -384,10 +386,57 @@ class _Report:
                 "AND accepted_risk IS NOT NULL ORDER BY sample,subject_id",
                 chunk,
             ):
-                value = decode_json(risk)
+                value = self._risk(decode_json(risk))
                 value["risk_flags"] = json.loads(flags)
                 result[group, sample].append((subject, value))
         return result
+
+    def _risk(self, risk: dict[str, Any]) -> dict[str, Any]:
+        """Restore exact compared groups; older reports keep them inline."""
+        if type(risk["selected_owners"]) is not int:
+            return risk
+
+        def owner_group(group_id: int) -> list[Any]:
+            if group_id not in self._risk_owner_groups:
+                row = self.db.execute(
+                    "SELECT owners FROM membership_owner_groups WHERE id=?",
+                    (group_id,),
+                ).fetchone()
+                if row is None:
+                    raise ExplanationError("membership risk refers to a missing group")
+                owner_ids = decode_json(row[0])
+                missing = sorted(set(owner_ids) - self._risk_owners.keys())
+                for chunk in _chunks(missing):
+                    self._risk_owners.update(
+                        (owner_id, decode_json(facts))
+                        for owner_id, facts in self.db.execute(
+                            "SELECT id,facts FROM membership_owners "
+                            f"WHERE {_in('id', chunk)}",
+                            chunk,
+                        )
+                    )
+                try:
+                    self._risk_owner_groups[group_id] = [
+                        self._risk_owners[owner_id] for owner_id in owner_ids
+                    ]
+                except KeyError as exc:
+                    raise ExplanationError(
+                        "membership risk refers to a missing owner"
+                    ) from exc
+            return self._risk_owner_groups[group_id]
+
+        alternative = risk["alternative_partition"]
+        return {
+            **risk,
+            "selected_owners": owner_group(risk["selected_owners"]),
+            "alternative_partition": None
+            if alternative is None
+            else [owner_group(group) for group in alternative],
+            "equivalent_alternatives": [
+                [owner_group(group) for group in partition]
+                for partition in risk["equivalent_alternatives"]
+            ],
+        }
 
     def _row_risk_flags(self, group_ids: Sequence[int]) -> dict[int, list[str]]:
         flags: dict[int, set[str]] = defaultdict(set)
@@ -508,7 +557,7 @@ class _Report:
         ) in rows:
             risks = [
                 *(risk for _, risk in member_risks.get((group, sample), ())),
-                *(decode_json(stored_risks) or ()),
+                *(self._risk(risk) for risk in (decode_json(stored_risks) or ())),
             ]
             try:
                 validate_membership_risks(risks)

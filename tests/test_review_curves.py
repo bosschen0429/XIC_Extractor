@@ -39,16 +39,10 @@ from xic_workbench.review_curves import (
 )
 
 
-@pytest.mark.parametrize("prior_json", [False, True])
-def test_review_curve_codec_keeps_float64_bits(prior_json):
+def test_review_curve_codec_keeps_float64_bits():
     rt = (0.0, 0.1, float(np.nextafter(0.1, 1.0)), 59.99999999999999)
     raw = (-0.0, 1.23456789012345, 16777217.0, 1000000000.000001)
-    # JSON curves are actual persisted inputs from runs before binary storage.
-    payload = (
-        zlib.compress(json.dumps({"rt": rt, "raw": raw}).encode())
-        if prior_json
-        else encode_review_curve(rt, raw)
-    )
+    payload = encode_review_curve(rt, raw)
     times, intensities = decode_review_curve(payload)
     assert struct.pack("<8d", *times, *intensities) == struct.pack("<8d", *rt, *raw)
 

@@ -150,6 +150,11 @@ the published Matrix hash. It cannot authorize a writer or prove readiness.
   the saved raw curve of each cell with a value; full audit retains every curve
   with its processed series. These are retention choices, not separate
   scientific authorities.
+- Repeated membership owner facts and compared peer groups are stored once.
+  Readers restore every selected group, alternative partition, score and reason;
+  this is lossless storage, not a reduction in review evidence. New results need
+  the updated reader; it also reads earlier inline membership evidence. Results
+  without saved curves keep their RAW review path.
 - Readers reject obsolete layouts instead of upgrading them. Rerun Alignment to
   produce a current report.
 - Explanation publication follows successful Matrix writing. If explanation IO

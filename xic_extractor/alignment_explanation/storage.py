@@ -4,9 +4,10 @@ Each concept has one table: a run summary, samples, peaks, method subjects,
 Discovery candidates (with their terminal observation), final groups, initial
 groups, group members, cells, method assessments and exclusions. A cell with a
 value keeps the measured curve of the peak that gave it in ``cell_curves``; full
-audit curves have a table only in runs that retain them. Both optional tables
-are absent from results written before they existed. Rows refer to each other by
-integer row ids; a list of references is a JSON array of row ids.
+audit curves have a table only in runs that retain them. Membership comparisons
+share their recorded owner facts and ordered peer groups without dropping any
+alternative or score. Optional tables are absent from older results. Rows refer
+to each other by integer row ids; a list of references is a JSON array of row ids.
 """
 
 from __future__ import annotations
@@ -138,6 +139,8 @@ TABLES: dict[str, tuple[str, ...]] = {
     "exclusions": ("candidate", "reason_code"),
 }
 OPTIONAL_TABLES: dict[str, tuple[str, ...]] = {
+    "membership_owners": ("id", "facts"),
+    "membership_owner_groups": ("id", "owners"),
     "cell_curves": ("group_id", "sample", "curve"),
     "curves": (
         "payload_id",
@@ -196,8 +199,7 @@ _DDL = {
         "support_origin TEXT NOT NULL, peaks TEXT NOT NULL, position_rt_min REAL, "
         "evidence_states TEXT NOT NULL, reason_codes TEXT NOT NULL, "
         "signal_quality TEXT NOT NULL, risks BLOB, observation BLOB, "
-        "PRIMARY KEY(group_id, sample)) "
-        "WITHOUT ROWID"
+        "PRIMARY KEY(group_id, sample))"
     ),
     "method_assessments": (
         "CREATE TABLE method_assessments (id INTEGER PRIMARY KEY, "
@@ -215,6 +217,13 @@ _DDL = {
         "sample INTEGER NOT NULL, curve BLOB NOT NULL, "
         "PRIMARY KEY(group_id, sample))"
     ),
+    "membership_owner_groups": (
+        "CREATE TABLE membership_owner_groups "
+        "(id INTEGER PRIMARY KEY, owners BLOB NOT NULL)"
+    ),
+    "membership_owners": (
+        "CREATE TABLE membership_owners (id INTEGER PRIMARY KEY, facts TEXT NOT NULL)"
+    ),
     "curves": (
         "CREATE TABLE curves (payload_id INTEGER PRIMARY KEY, "
         "sample_id TEXT NOT NULL, kind TEXT NOT NULL, record_id TEXT NOT NULL, "
@@ -231,7 +240,8 @@ _INDEXES = (
     "CREATE INDEX candidates_hypothesis ON candidates(sample, hypothesis_id)",
     "CREATE INDEX candidates_terminal ON candidates(terminal_peak)",
     "CREATE INDEX candidates_id ON candidates(candidate_id)",
-    "CREATE INDEX cells_sample_apex ON cells(sample, apex_rt_min)",
+    "CREATE INDEX cells_sample_apex ON cells(sample, apex_rt_min) "
+    "WHERE apex_rt_min IS NOT NULL",
 )
 
 
@@ -269,10 +279,9 @@ def encode_review_curve(rt: Iterable[float], raw: Iterable[float]) -> bytes:
 def decode_review_curve(
     payload: bytes,
 ) -> tuple[tuple[float, ...], tuple[float, ...]]:
-    """Read the lossless binary codec or a previously saved JSON curve."""
+    """Read the current lossless binary curve format."""
     if not payload.startswith(_REVIEW_CURVE_FLOAT64):
-        values = decode_json(payload)
-        return tuple(values["rt"]), tuple(values["raw"])
+        raise ExplanationError("unsupported review curve format; rerun Alignment")
     shuffled = zlib.decompress(payload[len(_REVIEW_CURVE_FLOAT64) :])
     if len(shuffled) % 16:
         raise ExplanationError("malformed review curve: unequal float64 series")
