@@ -187,6 +187,20 @@ def test_fact_cache_paths_fit_under_windows_max_path(
     assert max(lengths.values()) <= _CACHE_ROOT_RELATIVE_PATH_LIMIT, lengths
 
 
+def test_fact_cache_name_collision_replaces_the_other_entry(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from xic_extractor.untargeted_execution import acquisition_cache as cache_owner
+
+    monkeypatch.setattr(cache_owner, "_short_name", lambda _value: "0" * 16)
+    cache = cache_owner._FactCache(tmp_path, "source")
+    cache.write("xic", b"first-query", b"first facts")
+    cache.write("xic", b"second-query", b"second facts")
+
+    assert cache.read("xic", b"second-query") == b"second facts"
+    assert cache.read("xic", b"first-query") is None
+
+
 def test_fact_cache_rejects_an_entry_from_another_namespace_at_its_path(
     tmp_path: Path,
 ) -> None:
