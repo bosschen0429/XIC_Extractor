@@ -4,8 +4,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import cast
 
-import numpy as np
-
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -219,30 +217,9 @@ def _capture_physical_peak(
         raise SampleLocalCaptureError(
             "physical capture requires its closed owner question"
         )
-    if (
-        binding.physical_evaluation_mz is not None
-        and binding.physical_evaluation_mz != trace.mz
-    ):
-        raise SampleLocalCaptureError(
-            "physical capture m/z differs from the retained owner query"
-        )
-    retained = expected.retained_prepared_signal
-    matches_trace = np.array_equal(trace.rt, expected.prepared.rt) and np.array_equal(
-        trace.intensity, expected.prepared.raw
-    )
-    if not matches_trace:
-        raise SampleLocalCaptureError(
-            "physical capture data differs from the retained owner trace"
-        )
-    if expected.state == "available" and (
-        retained is None or retained.projection != expected.prepared
-    ):
-        raise SampleLocalCaptureError(
-            "physical capture lost the retained prepared signal"
-        )
     prepared = PreparedSignalResult(
         projection=expected.prepared,
-        prepared=retained,
+        prepared=expected.retained_prepared_signal,
         operations=expected.operations,
         trace_context_rt_start_min=expected.question.context_rt_start_min,
         trace_context_rt_end_min=expected.question.context_rt_end_min,

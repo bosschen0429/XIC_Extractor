@@ -45,10 +45,9 @@ def _current_candidates(
     *,
     raw_file: Path,
     settings: DiscoverySettings,
-    physical_records=None,
     attachments=None,
 ):
-    """Produce canonical Discovery peaks and optionally retain their facts."""
+    """Produce canonical Discovery peaks and optionally their event attachments."""
     seeds = collect_strict_nl_events(raw, raw_file=raw_file, settings=settings)
     seeds = read_parent_ms1_observations(
         raw, seeds, tolerance_ppm=settings.precursor_mz_tolerance_ppm
@@ -73,10 +72,6 @@ def _current_candidates(
         signal_processing_profile=TEST_PROFILE,
         ms1_centroid=lambda *_: None,
     )
-    if physical_records is not None:
-        physical_records.update(
-            (record.peak_id, record) for record in discovery.physical_evaluations
-        )
     if attachments is not None:
         attachments.extend(discovery.attachments)
     return discovery.peaks

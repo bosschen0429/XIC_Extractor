@@ -222,18 +222,17 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
     )
 
     def peak(precursor_mz: float, height: float) -> _Binding:
-        # Qualification reads the peak and its representative precursor only.
+        # Qualification reads the peak height and its representative precursor.
         return _Binding(
             peak=_peak(
                 sample_stem="test",
                 peak_mz=precursor_mz,
-                ms1_height=height,
-                ms1_area=height,
                 attached_event_count=2,
             ),
-            physical_fact_record=SimpleNamespace(
-                work_item=SimpleNamespace(precursor_mz=precursor_mz)
+            physical_evaluation=SimpleNamespace(
+                facts=SimpleNamespace(height=height, area_counts_seconds=height)
             ),
+            representative_event=SimpleNamespace(precursor_mz=precursor_mz),
         )
 
     # FC = 80000 / 100000 = 0.8 < 3.0: system background.
@@ -543,4 +542,5 @@ def test_run_discovery_explicit_disable_skips_blank_directory(
 @dataclass(frozen=True)
 class _Binding:
     peak: object
-    physical_fact_record: object
+    physical_evaluation: object
+    representative_event: object

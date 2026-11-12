@@ -6,7 +6,10 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 
-from tests.cid_nl_runtime_fixtures import prepare_persisted_discovery_plan
+from tests.cid_nl_runtime_fixtures import (
+    prepare_persisted_discovery_plan,
+    representative_precursors,
+)
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
 )
@@ -20,7 +23,6 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.models import DiscoveryPeak
-from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
@@ -60,7 +62,6 @@ def build_dense_partition(
     peaks_by_sample: Mapping[str, tuple[DiscoveryPeak, ...]],
     dll_dir: Path,
     signal_processing_profile: SignalProcessingProfile,
-    physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord],
 ) -> UntargetedPartitionInputs:
     """Prepare one dense partition from a persisted Discovery batch."""
 
@@ -70,7 +71,6 @@ def build_dense_partition(
         settings=settings,
         peak_config=peak_config,
         peaks_by_sample=peaks_by_sample,
-        physical_records_by_peak=physical_records_by_peak,
         dll_dir=dll_dir,
         signal_processing_profile=signal_processing_profile,
         root=raw_paths[0].parent / "persisted",
@@ -151,10 +151,7 @@ def complete_dense_partition(
         capture_evidence=partition.capture_evidence,
     ).bind_publication_inputs(
         peaks_by_sample=context.peaks_by_sample,
-        precursor_mz_by_candidate={
-            cid: record.work_item.precursor_mz
-            for cid, record in context.physical_records_by_peak.items()
-        },
+        precursor_mz_by_candidate=representative_precursors(context.peaks_by_sample),
         neutral_loss_by_tag=context.settings.neutral_loss_by_tag,
         alignment_config=alignment_config,
     )

@@ -38,7 +38,6 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.discovery.batch_contract import DiscoveryPeakUniverseReceipt
 from xic_extractor.discovery.models import DiscoveryPeak
-from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
@@ -112,7 +111,6 @@ class UntargetedPartitionJob:
     acquisition_source_expectation: AcquisitionSourceExpectation = field(compare=False)
     subject_partition: UntargetedCidNlMethodSubjectBatch | None = None
     support_candidates: tuple[DiscoveryPeak, ...] = ()
-    physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = ()
     acquisition_cache_dir: Path | None = field(default=None, compare=False)
     prepared_mass_recalibration: PreparedRawMassRecalibration | None = field(
         default=None, compare=False
@@ -123,9 +121,6 @@ class UntargetedPartitionJob:
     _request_candidates_by_subject: Mapping[str, tuple[DiscoveryPeak, ...]] = field(
         init=False, repr=False, compare=False
     )
-    _request_physical_records_by_subject: Mapping[
-        str, tuple[DiscoveryPhysicalFactRecord, ...]
-    ] = field(init=False, repr=False, compare=False)
     _candidate_order: Mapping[str, int] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -187,13 +182,6 @@ class UntargetedPartitionJob:
             "_request_candidates_by_subject",
             _index_request_subject_candidates(self._request_subjects, self.candidates),
         )
-        object.__setattr__(
-            self,
-            "_request_physical_records_by_subject",
-            _index_request_subject_physical_records(
-                self._request_subjects, self.physical_records
-            ),
-        )
 
 
 def build_sample_jobs(
@@ -210,7 +198,6 @@ def build_sample_jobs(
     dll_dir: Path,
     signal_processing_profile: SignalProcessingProfile,
     acquisition_source_expectation: AcquisitionSourceExpectation,
-    physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
     subject_partition: UntargetedCidNlMethodSubjectBatch | None = None,
     support_candidates: tuple[DiscoveryPeak, ...] = (),
     acquisition_cache_dir: Path | None = None,
@@ -251,7 +238,6 @@ def build_sample_jobs(
         subject_partition=subject_partition,
         support_candidates=support_candidates,
         signal_processing_profile=signal_processing_profile,
-        physical_records=physical_records,
         acquisition_source_expectation=acquisition_source_expectation,
         acquisition_cache_dir=acquisition_cache_dir,
         prepared_mass_recalibration=prepared_mass_recalibration,
@@ -480,32 +466,6 @@ def _request_subject_candidates(
             settings=job.settings,
         )
     return job._request_candidates_by_subject.get(
-        job.method_subject.method_subject_id, ()
-    )
-
-
-def _index_request_subject_physical_records(
-    pinned: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
-    records: tuple[DiscoveryPhysicalFactRecord, ...],
-) -> Mapping[str, tuple[DiscoveryPhysicalFactRecord, ...]]:
-    grouped: dict[str, list[DiscoveryPhysicalFactRecord]] = {}
-    if isinstance(pinned, UntargetedCidNlMethodSubjectBatch):
-        subject_by_candidate = dict(pinned.candidate_memberships)
-        for record in records:
-            subject_id = subject_by_candidate.get(record.peak_id)
-            if subject_id is not None:
-                grouped.setdefault(subject_id, []).append(record)
-    return MappingProxyType(
-        {subject_id: tuple(values) for subject_id, values in grouped.items()}
-    )
-
-
-def _request_subject_physical_records(
-    job: UntargetedPartitionJob,
-) -> tuple[DiscoveryPhysicalFactRecord, ...]:
-    if not isinstance(job._request_subjects, UntargetedCidNlMethodSubjectBatch):
-        return job.physical_records
-    return job._request_physical_records_by_subject.get(
         job.method_subject.method_subject_id, ()
     )
 

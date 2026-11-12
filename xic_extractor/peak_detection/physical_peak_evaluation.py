@@ -29,7 +29,6 @@ from xic_extractor.peak_detection.ms1_morphology import (
     canonical_gaussian_signal_traces,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
-    _PHYSICAL_PEAK_OPERATION_ORDER,
     _PHYSICAL_PEAK_SELECTION_POLICIES,
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_BACKFILL_POLICY,
@@ -61,12 +60,6 @@ from xic_extractor.peak_detection.signal_quality import (
     measure_signal_quality,
     short_scale_noise_sigma,
 )
-
-
-def _physical_text(value: object, *, field: str) -> str:
-    if not isinstance(value, str):
-        raise TypeError(f"{field} must be text")
-    return value
 
 
 def prepare_physical_signal(
@@ -1166,97 +1159,6 @@ def validate_physical_peak_answer(answer: PhysicalPeakAnswer) -> None:
         raise ValueError("physical peak answer selects outside admissible segments")
 
 
-def validate_bounded_physical_peak_evaluation(
-    evaluation: PhysicalPeakEvaluation,
-) -> None:
-    if not isinstance(evaluation, PhysicalPeakEvaluation):
-        raise TypeError("evaluation must be a PhysicalPeakEvaluation")
-    qualified_policy = (
-        evaluation.question.selection_policy_version
-        == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
-    )
-    operation_order = tuple(
-        operation
-        for operation in _PHYSICAL_PEAK_OPERATION_ORDER
-        if qualified_policy or operation != "background_qualification"
-    )
-    terminal_prefix_length = 5 if qualified_policy else 4
-    allowed_operation_sequences = tuple(
-        operation_order[:count]
-        for count in (
-            1,
-            2,
-            3,
-            4,
-            terminal_prefix_length,
-            len(operation_order) - 1,
-            len(operation_order),
-        )
-    )
-    if evaluation.operations not in allowed_operation_sequences:
-        raise ValueError("physical evaluation operations are not canonical")
-    validate_prepared_signal(evaluation.prepared)
-    validate_physical_segment_universe(evaluation.segment_universe)
-    validate_physical_peak_question(evaluation.question)
-    validate_physical_peak_answer(evaluation.answer)
-    if evaluation.prepared != evaluation.segment_universe.prepared:
-        raise ValueError("physical evaluation crosses prepared signal")
-    if evaluation.question.universe != evaluation.segment_universe:
-        raise ValueError("physical evaluation crosses segment universe")
-    if evaluation.answer.question != evaluation.question:
-        raise ValueError("physical evaluation crosses question")
-    if (
-        evaluation.state != evaluation.answer.state
-        or evaluation.reason != evaluation.answer.reason
-    ):
-        raise ValueError("bounded physical evaluation crosses terminal state")
-    if evaluation.state == "available":
-        if (
-            evaluation.facts is None
-            or evaluation.integration is None
-            or evaluation.answer.selected_segment is None
-        ):
-            raise ValueError("available physical evaluation requires complete facts")
-        facts = evaluation.facts
-        integration = evaluation.integration
-        if not isinstance(integration, IntegrationResult):
-            raise ValueError("available physical evaluation has invalid integration")
-        if evaluation.operations not in {
-            operation_order[:-1],
-            operation_order,
-        }:
-            raise ValueError("available physical evaluation lacks completed operations")
-        if facts.schema_version != "physical_peak_facts":
-            raise ValueError("unsupported physical peak facts schema")
-        segment = evaluation.answer.selected_segment
-        if (
-            facts.apex_rt_min != segment.apex_rt_min
-            or facts.left_rt_min != segment.left_rt_min
-            or facts.right_rt_min != segment.right_rt_min
-            or facts.height != segment.height
-            or facts.scan_support_count != segment.scan_support_count
-            or facts.area_counts_seconds != segment.area_counts_seconds
-        ):
-            raise ValueError("physical facts cross selected segment")
-        if (
-            integration.rt_left_min != facts.left_rt_min
-            or integration.rt_apex_min != facts.apex_rt_min
-            or integration.rt_right_min != facts.right_rt_min
-            or integration.area_baseline_corrected != facts.area_counts_seconds
-            or integration.area_ms1_morphology != facts.area_counts_seconds
-            or integration.raw_scan_indices
-        ):
-            raise ValueError("bounded raw descriptor crosses physical facts")
-    elif (
-        evaluation.facts is not None
-        or evaluation.integration is not None
-        or evaluation.answer.selected_segment is not None
-    ):
-        raise ValueError("non-available physical evaluation cannot carry facts")
-    elif len(evaluation.operations) > terminal_prefix_length:
-        raise ValueError("non-available physical evaluation claims fact operations")
-
-
 def _physical_segment_from_chrom(segment: Any) -> PhysicalSegment:
     return PhysicalSegment(
         start_index=segment.interval.start_index,
@@ -1342,17 +1244,3 @@ def _physical_owner_context(
             "request context is required when trace context cannot be derived"
         )
     return request_context
-
-
-def _physical_state(value: object, *, field: str) -> PhysicalPeakState:
-    text = _physical_text(value, field=field)
-    if text not in {"available", "unavailable", "failed"}:
-        raise ValueError(f"{field} is not a physical terminal state")
-    return text  # type: ignore[return-value]
-
-
-def _physical_operation(value: object) -> PhysicalPeakOperation:
-    text = _physical_text(value, field="physical operation")
-    if text not in _PHYSICAL_PEAK_OPERATION_ORDER:
-        raise ValueError("unsupported physical operation")
-    return text

@@ -49,7 +49,6 @@ from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionJob,
     UntargetedPreparedGrouping,
     _request_subject_candidates,
-    _request_subject_physical_records,
 )
 
 
@@ -195,7 +194,6 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
                 peak_config=job.peak_config,
                 raw=None,
                 signal_processing_profile=job.signal_processing_profile,
-                physical_records=_request_subject_physical_records(job),
             )
     except Exception as exc:
         state.error = exc
@@ -235,12 +233,6 @@ def _execute_initial_assessment_batch(
                 sample=job.sample,
                 acquisition_source=job.acquisition_source_expectation.source,
                 peaks=candidates,
-                physical_records={
-                    record.peak_id: record
-                    for state in states
-                    if state.error is None
-                    for record in _request_subject_physical_records(state.job)
-                },
                 settings=job.settings,
                 raw=raw,
                 signal_processing_profile=job.signal_processing_profile,
@@ -260,7 +252,6 @@ def _execute_initial_assessment_batch(
                 raw=raw,
                 _preacquired_traces=trace_batch,
                 signal_processing_profile=state.job.signal_processing_profile,
-                physical_records=_request_subject_physical_records(state.job),
             )
     except Exception as exc:
         for state in states:

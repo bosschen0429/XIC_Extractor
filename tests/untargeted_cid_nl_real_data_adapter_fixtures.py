@@ -52,7 +52,6 @@ class SampleAdapterScenario:
     fixture: UntargetedCidNlNoRawFixture
     settings: DiscoverySettings
     peak_config: ExtractionConfig
-    physical_records: dict = field(default_factory=dict)
     attachments: list = field(default_factory=list)
 
     def discover(self, source_raw):
@@ -60,7 +59,6 @@ class SampleAdapterScenario:
             source_raw,
             raw_file=self.fixture.source_paths["S1"],
             settings=self.settings,
-            physical_records=self.physical_records,
             attachments=self.attachments,
         )
 
@@ -94,9 +92,6 @@ class SampleAdapterScenario:
             peak_config=self.peak_config,
             raw=raw,
             signal_processing_profile=TEST_PROFILE,
-            physical_records=tuple(
-                self.physical_records[c.peak_id] for c in candidates
-            ),
         )
         return adapt_current_discovery_sample_subject(**(inputs | overrides))
 

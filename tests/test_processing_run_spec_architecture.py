@@ -96,10 +96,7 @@ def test_run_spec_runtime_local_imports_keep_forbidden_modules_absent() -> None:
             spec = owner.compile_processing_run_spec(
                 (acquisition,), discovery_settings=settings
             )
-            restored = owner.deserialize_processing_run_spec(
-                owner.serialize_processing_run_spec(spec)
-            )
-            assert restored == spec
+            assert owner.canonical_processing_run_spec_bytes(spec)
             assert prohibited.isdisjoint(sys.modules), sorted(
                 prohibited.intersection(sys.modules)
             )

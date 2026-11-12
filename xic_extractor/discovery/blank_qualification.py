@@ -13,7 +13,7 @@ import numpy as np
 from xic_extractor.raw_reader import open_raw
 
 if TYPE_CHECKING:
-    from xic_extractor.discovery.physical_fact_record import (
+    from xic_extractor.discovery.peak_binding import (
         DiscoveryPeakPhysicalBinding,
     )
 
@@ -351,7 +351,7 @@ def apply_blank_qualification_to_peaks(
     for binding in bindings:
         candidate = binding.peak
         matches = library.match(
-            binding.physical_fact_record.work_item.precursor_mz, ppm_tol=ppm_tol
+            binding.representative_event.precursor_mz, ppm_tol=ppm_tol
         )
         if not matches:
             updated.append(binding)
@@ -359,7 +359,10 @@ def apply_blank_qualification_to_peaks(
 
         best_ion, _delta_ppm = matches[0]
         blank_int = best_ion.max_intensity
-        tissue_height = float(candidate.ms1_height)
+        facts = binding.physical_evaluation.facts
+        if facts is None:
+            raise ValueError(f"{candidate.peak_id}: a Discovery peak lacks its height")
+        tissue_height = float(facts.height)
         fc = (tissue_height / blank_int) if blank_int > 0 else 0.0
 
         if fc < fold_change_threshold:

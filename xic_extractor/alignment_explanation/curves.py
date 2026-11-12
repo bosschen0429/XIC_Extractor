@@ -16,7 +16,6 @@ from xic_extractor.peak_detection.signal_quality import SignalQuality
 
 VALID_CURVE_KINDS = frozenset(
     {
-        "discovery_physical",
         "initial_capture",
         "backfill_observation",
     }
@@ -66,7 +65,7 @@ def validate_curve_payload(
 ) -> None:
     """Validate the selected persisted envelope once at its storage boundary."""
     if kind not in VALID_CURVE_KINDS:
-        raise ExplanationError(f"undeclared curve kind: {kind}")
+        raise ExplanationError(f"undeclared curve kind: {kind}; rerun Alignment")
     if not isinstance(payload, Mapping):
         raise ExplanationError("curve payload must be an object")
     extra = set(payload) - ALLOWED_CURVE_PAYLOAD_KEYS

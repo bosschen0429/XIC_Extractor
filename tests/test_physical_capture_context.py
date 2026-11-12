@@ -37,9 +37,11 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
         "measure": 0,
         "descriptor": 0,
     }
-    prepare = physical_capture.prepare_physical_signal
     # This is the unchanged physical owner, not a substitute peak detector.
     from xic_extractor.peak_detection import physical_peak_evaluation as owner
+    from xic_extractor.peak_detection import physical_peak_population as population
+
+    prepare = population.prepare_physical_signal
 
     enumerate_segments = owner.enumerate_physical_segment_universe
     raw_split = physical_capture.discovery_raw_peak_components
@@ -61,6 +63,7 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
     monkeypatch.setattr(
         physical_capture, "discovery_raw_peak_components", counted_raw_split
     )
+    monkeypatch.setattr(population, "discovery_raw_peak_components", counted_raw_split)
     monkeypatch.setattr(owner, "measure_chrom_peak_component", counted_measure)
     monkeypatch.setattr(
         owner, "_physical_raw_descriptor_projection", counted_descriptor
@@ -74,10 +77,10 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
         counts["enumerate"] += 1
         return enumerate_segments(*args, **kwargs)
 
-    monkeypatch.setattr(physical_capture, "prepare_physical_signal", counted_prepare)
+    monkeypatch.setattr(population, "prepare_physical_signal", counted_prepare)
     monkeypatch.setattr(owner, "enumerate_physical_segment_universe", counted_enumerate)
     monkeypatch.setattr(
-        physical_capture, "enumerate_physical_segment_universe", counted_enumerate
+        population, "enumerate_physical_segment_universe", counted_enumerate
     )
     capture = PhysicalPeakCapture(
         RawSuperWindowSource(raw),
@@ -239,16 +242,8 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
             ms1_centroid=lambda *_: None,
         )
         measured = list(result.peaks)
-        assert len(result.physical_evaluations) == 2
-        assert (
-            len(
-                {
-                    b.physical_fact_record.work_item.work_ordinal
-                    for b in result.physical_bindings
-                }
-            )
-            == 2
-        )
+        assert len(result.physical_bindings) == 2
+        assert {b.final_ordinal for b in result.physical_bindings} == {0, 1}
         assert sorted(c.ms1_apex_rt for c in measured) == pytest.approx([5.0, 5.15])
         # The analytic second Gaussian remains one raw basin past its 10%
         # quantitative return; its tail event is not an orphan component.
@@ -257,13 +252,12 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
         snapshot = sorted(
             (
                 located_scan_ids(c),
-                c.ms1_apex_rt,
-                c.ms1_area,
-                c.ms1_peak_rt_start,
-                c.ms1_peak_rt_end,
-                c.status,
+                b.peak.ms1_apex_rt,
+                b.physical_evaluation.facts,
+                b.peak.status,
             )
-            for c in result.peaks
+            for b in result.physical_bindings
+            for c in (b.peak,)
         )
         if previous is not None:
             assert snapshot == previous

@@ -25,14 +25,9 @@ from xic_extractor.discovery import output_publication
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
     DiscoveryPeak,
-    DiscoveryPhysicalWorkItem,
     EventAttachment,
 )
 from xic_extractor.discovery.ms1_capture import _DiscoveryMs1Measurements
-from xic_extractor.discovery.physical_fact_record import (
-    DiscoveryPeakPhysicalBinding,
-    DiscoveryPhysicalFactRecord,
-)
 from xic_extractor.discovery.processing_run_spec_adapter import (
     processing_run_input_for_path,
 )
@@ -131,15 +126,6 @@ class DiscoveredSample(Protocol):
 
     @property
     def raw_open_receipt(self) -> RawAcquisitionSessionReceipt | None: ...
-
-    @property
-    def physical_work_manifest(self) -> tuple[DiscoveryPhysicalWorkItem, ...]: ...
-
-    @property
-    def physical_evaluations(self) -> tuple[DiscoveryPhysicalFactRecord, ...]: ...
-
-    @property
-    def physical_bindings(self) -> tuple[DiscoveryPeakPhysicalBinding, ...]: ...
 
     @property
     def mass_recalibration_result(self) -> MassRecalibrationResult: ...
@@ -423,10 +409,6 @@ def run_discovery_sample_process_job(
             output_dir=job.output_dir,
             acquisition_source=job.acquisition_source,
             timing_recorder=recorder,
-            run_spec=job.run_spec,
-            acquisition_input=job.acquisition_input,
-            physical_evaluations=discovery_result.physical_evaluations,
-            physical_bindings=discovery_result.physical_bindings,
             mass_recalibration_result=discovery_result.mass_recalibration_result,
         )
         return DiscoverySampleProcessResult(

@@ -16,6 +16,7 @@ from tests.cid_nl_raw_fixture import (
 from tests.cid_nl_runtime_fixtures import (
     install_runtime_raws,
     prepare_persisted_discovery_plan,
+    representative_precursors,
 )
 from tests.untargeted_cid_nl_batch_runtime_fixtures import _nearby_subject_candidates
 from xic_extractor.applications.untargeted.istd_reference import (
@@ -27,7 +28,6 @@ from xic_extractor.sample_metadata import SampleMetadata
 def _plan(
     tmp_path, monkeypatch, *, scenario="positive", opened_sink=None, sample_count=4
 ):
-    physical_records = {}
     paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(sample_count))
     settings = replace(
         _settings(),
@@ -46,7 +46,6 @@ def _plan(
             path,
             settings=settings,
             peak_config=peak_config,
-            physical_records=physical_records,
         )
         third_raw = _FakeRaw(
             (7.98,), scan_precursor_mz=500.008, neutral_loss_das=(116.0474,)
@@ -65,7 +64,6 @@ def _plan(
             third_raw,
             raw_file=path,
             settings=settings,
-            physical_records=physical_records,
         )
         sample_candidates = tuple(
             sorted(
@@ -80,7 +78,6 @@ def _plan(
                 raw,
                 raw_file=path,
                 settings=settings,
-                physical_records=physical_records,
             )
         raws[path] = raw
         if scenario == "recovery" and path == paths[-1]:
@@ -99,7 +96,8 @@ def _plan(
                 tuple(
                     c
                     for c in sample_candidates
-                    if physical_records[c.peak_id].work_item.precursor_mz == precursor
+                    if representative_precursors({path.stem: (c,)})[c.peak_id]
+                    == precursor
                 )
                 if path in paths[:2]
                 else ()
@@ -125,11 +123,6 @@ def _plan(
         root=tmp_path / "persisted",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     opened = install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     if opened_sink is not None:

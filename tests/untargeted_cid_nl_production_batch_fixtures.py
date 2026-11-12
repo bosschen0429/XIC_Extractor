@@ -52,7 +52,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.untargeted_execution.partition import models as partition_models
 from xic_extractor.untargeted_execution.partition import workers as partition_workers
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionJob,
@@ -193,13 +192,6 @@ def _assert_jobs_match_direct_construction(batch) -> None:
             acquisition_source_expectation=context.acquisition_sources_by_sample[
                 sample.raw_stem
             ],
-            physical_records=tuple(
-                record
-                for _candidate_id, record in sorted(
-                    context.physical_records_by_peak.items()
-                )
-                if record.work_item.sample_stem == sample.raw_stem
-            ),
             acquisition_cache_dir=batch.jobs[0].acquisition_cache_dir,
         )
         for sample in context.samples
@@ -211,17 +203,6 @@ def _assert_jobs_match_direct_construction(batch) -> None:
     assert tuple(job._request_subjects for job in batch.jobs) == tuple(
         job._request_subjects for job in expected
     )
-    memberships = dict(batch.subject_batch.candidate_memberships)
-    for job, direct_job in zip(batch.jobs, expected, strict=True):
-        records = tuple(
-            record
-            for record in job.physical_records
-            if memberships.get(record.peak_id) == job.method_subject.method_subject_id
-        )
-        selected = partition_models._request_subject_physical_records(job)
-        assert selected == records
-        assert all(left is right for left, right in zip(selected, records, strict=True))
-        assert partition_models._request_subject_physical_records(direct_job) == records
 
 
 def _assert_composite_no_input_exclusion_coverage(
@@ -403,6 +384,7 @@ def profile_replay(tmp_path, monkeypatch, request):
         if hasattr(request, "param")
         else ((2,), "single", False, False, 0.0)
     )
+
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
@@ -417,9 +399,6 @@ def profile_replay(tmp_path, monkeypatch, request):
         capture_ms1_peaks,
     )
     from xic_extractor.discovery.ms2_events import collect_strict_nl_events
-    from xic_extractor.discovery.physical_fact_persistence import (
-        write_discovery_physical_fact_sidecar,
-    )
     from xic_extractor.discovery.processing_run_spec_adapter import (
         compile_discovery_processing_run_spec,
     )
@@ -559,13 +538,6 @@ def profile_replay(tmp_path, monkeypatch, request):
         folder = tmp_path / path.stem
         folder.mkdir()
         persisted_candidates = discovery.peaks
-        write_discovery_physical_fact_sidecar(
-            folder / "discovery_physical_facts.json",
-            run_spec=spec,
-            acquisition_input=source,
-            work_manifest=discovery.physical_work_manifest,
-            records=discovery.physical_evaluations,
-        )
         receipts.update(
             build_discovery_receipts(folder, (path,), {path.stem: persisted_candidates})
         )
@@ -580,12 +552,12 @@ def profile_replay(tmp_path, monkeypatch, request):
             )
         )
         source_evidence.update(
-            (record.peak_id, record) for record in discovery.physical_evaluations
+            (record.peak.peak_id, record) for record in discovery.physical_bindings
         )
         source_records.update(
-            (record.peak_id, record)
-            for record in discovery.physical_evaluations
-            if record.peak_id in {c.peak_id for c in candidates[path.stem]}
+            (record.peak.peak_id, record)
+            for record in discovery.physical_bindings
+            if record.peak.peak_id in {c.peak_id for c in candidates[path.stem]}
         )
         if family_context:
             # Identical mass queries now share the complete peak population in
@@ -594,19 +566,19 @@ def profile_replay(tmp_path, monkeypatch, request):
             assert all(True for candidate in candidates[path.stem])
             if not family_precursor_delta:
                 # Both NL receipts identify one measured peak, not two records.
-                (record,) = discovery.physical_evaluations
-                assert record.work_item.xic_rt_min <= min(query_rts)
-                assert record.work_item.xic_rt_max >= max(query_rts)
+                (record,) = discovery.physical_bindings
+                assert record.peak.ms1_search_rt_min <= min(query_rts)
+                assert record.peak.ms1_search_rt_max >= max(query_rts)
                 (candidate,) = discovery.peaks
                 # The physical raw apex must not replace the retained NL time.
                 observed_nl_rts = tuple(seed.rt for seed in seeds)
                 assert representative_event_rt(candidate) in observed_nl_rts
-                assert record.work_item.query_rt_min not in observed_nl_rts
+                assert record.peak.query_rt_min not in observed_nl_rts
             rt_min = min(
-                record.work_item.xic_rt_min for record in discovery.physical_evaluations
+                record.peak.ms1_search_rt_min for record in discovery.physical_bindings
             )
             rt_max = max(
-                record.work_item.xic_rt_max for record in discovery.physical_evaluations
+                record.peak.ms1_search_rt_max for record in discovery.physical_bindings
             )
             # The vendor boundary includes the end scan returned for the request,
             # which may lie just beyond the requested RT upper bound.
@@ -616,38 +588,39 @@ def profile_replay(tmp_path, monkeypatch, request):
             prepared = prepare_physical_signal(
                 raw.rt[start:end], raw.intensity[start:end], profile=profile
             )
-            for record in discovery.physical_evaluations:
-                family_evaluations[record.peak_id] = evaluate_physical_peak(
+            for record in discovery.physical_bindings:
+                family_evaluations[record.peak.peak_id] = evaluate_physical_peak(
                     prepared,
-                    query_rt_min=record.evaluation.question.query_rt_min,
+                    query_rt_min=record.physical_evaluation.question.query_rt_min,
                     request_context_rt_start_min=rt_min,
                     request_context_rt_end_min=rt_max,
                 )
             assert (
                 len(
                     {
-                        family_evaluations[record.peak_id].answer.selected_segment
-                        for record in discovery.physical_evaluations
-                        if family_evaluations[record.peak_id].facts is not None
+                        family_evaluations[record.peak.peak_id].answer.selected_segment
+                        for record in discovery.physical_bindings
+                        if family_evaluations[record.peak.peak_id].facts is not None
                     }
                 )
                 == 1
             )
             assert all(
-                family_evaluations[record.peak_id].facts is not None
-                for record in discovery.physical_evaluations
+                family_evaluations[record.peak.peak_id].facts is not None
+                for record in discovery.physical_bindings
             )
             continue
-        (record,) = discovery.physical_evaluations
-        assert record.evaluation.facts is not None
+        (record,) = discovery.physical_bindings
+        assert record.physical_evaluation.facts is not None
         assert (
-            record.evaluation.question.context_rt_start_min
-            != record.work_item.xic_rt_min
+            record.physical_evaluation.question.context_rt_start_min
+            != record.peak.ms1_search_rt_min
         )
         assert (
-            record.evaluation.question.context_rt_end_min != record.work_item.xic_rt_max
+            record.physical_evaluation.question.context_rt_end_min
+            != record.peak.ms1_search_rt_max
         )
-        physical_facts[path.stem] = record.evaluation.facts
+        physical_facts[path.stem] = record.physical_evaluation.facts
     discovery_batch = DiscoveryBatchInput(
         sample_order=sample_stems,
         peak_csvs=csvs,
@@ -886,10 +859,6 @@ def profile_replay(tmp_path, monkeypatch, request):
                 assert (
                     set(adapter.source_candidate_ids) == expected_source_candidate_ids
                 )
-                assert (
-                    captured_batches[0].context.physical_records_by_peak
-                    == source_records
-                )
                 expected_capture_candidate_ids = {
                     candidate.peak_id
                     for candidate in candidates[stem]
@@ -935,12 +904,11 @@ def profile_replay(tmp_path, monkeypatch, request):
                             == expected.facts.apex_rt_min
                         )
                     else:
-                        # Discovery already resolved this shared context, so
-                        # runtime reuses its exact question rather than minting
-                        # a comparison-window question with a different ID.
+                        # Alignment measures the peak in Discovery's shared
+                        # context with its query RT and gets its measurement.
                         assert (
                             capture.physical_evaluation
-                            == source_records[capture.candidate_id].evaluation
+                            == source_records[capture.candidate_id].physical_evaluation
                         )
         return result
 
@@ -1039,7 +1007,6 @@ def profile_replay(tmp_path, monkeypatch, request):
 
 
 def _source_verification_inputs(tmp_path: Path):
-    physical_records = {}
     path = tmp_path / "S1.synthetic"
     path.write_bytes(b"source-verification:S1")
     settings = replace(
@@ -1050,7 +1017,6 @@ def _source_verification_inputs(tmp_path: Path):
         path,
         settings=settings,
         peak_config=peak_config,
-        physical_records=physical_records,
     )
     return (
         path,
@@ -1070,7 +1036,6 @@ def _source_verification_inputs(tmp_path: Path):
             peaks_by_sample={"S1": candidates},
             dll_dir=tmp_path,
             signal_processing_profile=TEST_PROFILE,
-            physical_records_by_peak=physical_records,
         ),
     )
 

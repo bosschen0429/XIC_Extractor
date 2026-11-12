@@ -63,8 +63,6 @@ class CaptureCandidateBinding:
     retained_selected_integration: IntegrationResult | None = None
     selection_policy: CaptureSelectionPolicy = "capture_default"
     physical_evaluation: PhysicalPeakEvaluation | None = None
-    # The evaluated XIC center; omission means the active query_mz.
-    physical_evaluation_mz: float | None = None
     acquired_trace_provenance: PeakObservationGenerationProvenance | None = None
 
 

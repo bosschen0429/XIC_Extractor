@@ -55,7 +55,6 @@ def test_run_discovery_cli_passes_single_raw_settings(
         return DiscoveryRunOutputs(
             peaks_csv=candidates_csv,
             events_csv=review_csv,
-            physical_facts_json=tmp_path / "discovery_physical_facts.json",
         )
 
     monkeypatch.setattr(run_discovery, "run_discovery", _fake_run_discovery)
@@ -172,7 +171,6 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
         sample_outputs = DiscoveryRunOutputs(
             peaks_csv=output_dir / "A" / "discovery_peaks.csv",
             events_csv=output_dir / "A" / "discovery_events.csv",
-            physical_facts_json=tmp_path / "discovery_physical_facts.json",
         )
         output_path.write_text("sample_stem\n", encoding="utf-8")
         return DiscoveryBatchOutputs(

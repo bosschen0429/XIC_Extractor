@@ -71,7 +71,6 @@ def _phase_partitions(adapter, store, *, reverse_initial=False):
 def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity(
     tmp_path, monkeypatch
 ):
-    physical_records = {}
     import numpy as np
 
     from xic_extractor.execution.result_store import StreamedResultStore
@@ -101,7 +100,6 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
             raw,
             raw_file=path,
             settings=settings,
-            physical_records=physical_records,
         )
         assert len(candidates[path.stem]) == 12
     plan = prepare_persisted_discovery_plan(
@@ -121,11 +119,6 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
         root=tmp_path / "persisted",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
 
@@ -208,7 +201,6 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
 def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
     tmp_path, monkeypatch
 ):
-    physical_records = {}
     import numpy as np
 
     from xic_extractor.execution.result_store import StreamedResultStore
@@ -240,7 +232,6 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
             raw,
             raw_file=path,
             settings=settings,
-            physical_records=physical_records,
         )
         assert len(candidates[path.stem]) == 2
         if index >= 20:
@@ -270,11 +261,6 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
         root=tmp_path / "persisted",
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
-        physical_records_by_peak={
-            c.peak_id: physical_records[c.peak_id]
-            for values in (candidates).values()
-            for c in values
-        },
     )
     install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
 
@@ -830,7 +816,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     subject_batch = plan.subject_batch
     candidate_by_id = {
         candidate.peak_id: candidate
-        for candidates in load_plan_inputs(plan)[0].values()
+        for candidates in load_plan_inputs(plan).values()
         for candidate in candidates
     }
     eligible_subject_ids = {
@@ -904,7 +890,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         tmp_path / "eligibility.sqlite",
         completed=result,
         **plan_discovery_facts(plan),
-        peaks_by_sample=load_plan_inputs(plan)[0],
+        peaks_by_sample=load_plan_inputs(plan),
         matrix_path=matrix_path,
         alignment_config=config,
     )
@@ -1097,7 +1083,7 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
             tmp_path / f"{name}.sqlite",
             completed=completed,
             **plan_discovery_facts(plan),
-            peaks_by_sample=load_plan_inputs(plan)[0],
+            peaks_by_sample=load_plan_inputs(plan),
             matrix_path=matrix,
             alignment_config=config,
         )
@@ -1600,7 +1586,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         expected_initial_sample_ids = {
             sample.sample_name
             for sample in plan.context.samples
-            if load_plan_inputs(plan)[0].get(sample.raw_stem)
+            if load_plan_inputs(plan).get(sample.raw_stem)
         }
         assert {
             job.sample.sample_name for job in batch.jobs
@@ -1674,7 +1660,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     )
     assert type(result) is CompletedUntargetBatchWorkflowResult
     initial_sample_count = sum(
-        bool(load_plan_inputs(plan)[0].get(sample.raw_stem))
+        bool(load_plan_inputs(plan).get(sample.raw_stem))
         for sample in plan.context.samples
     )
     assert job_counts == [initial_sample_count * 2, initial_sample_count]
@@ -2422,10 +2408,7 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
 
 
 @pytest.mark.parametrize("retain", (False, True))
-def test_result_store_close_failure_still_releases_adopted_discovery_inputs(
-    tmp_path, monkeypatch, retain
-):
-    from contextlib import ExitStack
+def test_result_store_close_failure_is_reported_once(tmp_path, monkeypatch, retain):
 
     from xic_extractor.execution.result_store import StreamedResultStore
     from xic_extractor.untargeted_execution.execution import execute_untargeted_plan
@@ -2438,19 +2421,6 @@ def test_result_store_close_failure_still_releases_adopted_discovery_inputs(
         max_partition_jobs=len(plan.context.samples),
         retain_partition_spool=retain,
     )
-    marker = tmp_path / "discovery-resource"
-    marker.write_text("owned", encoding="utf-8")
-
-    class DiscoveryInputs:
-        def retained_physical_records(self):
-            return ()
-
-        def take_result_resources(self):
-            resources = ExitStack()
-            resources.callback(marker.unlink)
-            return resources
-
-    result = result.with_discovery_inputs(DiscoveryInputs())
     alias = replace(result)
     operation = "preserve_results" if retain else "cleanup"
     original_close = getattr(StreamedResultStore, operation)
@@ -2464,7 +2434,6 @@ def test_result_store_close_failure_still_releases_adopted_discovery_inputs(
     try:
         with pytest.raises(OSError, match="result store close failed"):
             result.close()
-        assert not marker.exists()
         alias.close()
         result.close()
         assert len(calls) == 1

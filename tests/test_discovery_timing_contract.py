@@ -9,20 +9,18 @@ from tests.discovery_ms1_capture_fixtures import (
     _multi_tag_settings,
     _seed,
 )
-from tests.discovery_physical_fact_integration_fixtures import _OwnerBoundBatchRaw
+from tests.discovery_physical_measurement_fixtures import _OwnerBoundBatchRaw
 from tests.discovery_pipeline_fixtures import _settings
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
+from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 from xic_extractor.discovery.ion_grouping import build_discovery_ions
 from xic_extractor.discovery.ms1_capture import (
     capture_ms1_peaks,
 )
 from xic_extractor.discovery.output_publication import (
     publish_discovery_batch_sample,
-)
-from xic_extractor.discovery.physical_fact_persistence import (
-    read_discovery_physical_fact_records,
 )
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
@@ -31,11 +29,9 @@ from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.execution.timing import TimingRecorder
 
 
-def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_rework(
-    tmp_path: Path,
-) -> None:
+def test_publication_timing_covers_the_published_tables(tmp_path: Path) -> None:
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
-    raw_path.write_bytes(b"timed sidecar")
+    raw_path.write_bytes(b"timed publication")
     settings = DiscoverySettings(
         selected_tag_names=("dR", "R"),
         tag_combine_mode="union",
@@ -76,37 +72,21 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
         sample_output_dir=tmp_path / "out",
         acquisition_source=source,
         timing_recorder=recorder,
-        run_spec=spec,
-        acquisition_input=spec.acquisition_inputs[0],
-        physical_evaluations=result.physical_evaluations,
-        physical_bindings=result.physical_bindings,
     ).outputs
 
-    assert outputs.physical_facts_json is not None
-    persisted = read_discovery_physical_fact_records(
-        outputs.physical_facts_json,
-        expected_run_spec=spec,
-        expected_acquisition_input=spec.acquisition_inputs[0],
-    )
     # Both NL events reference one measured peak; publication retains it once.
-    assert len(persisted) == 1
+    assert len(read_discovery_peaks_csv(outputs.peaks_csv)) == 1
     by_stage = {record.stage: record for record in recorder.records}
-    assert by_stage["discover.write_physical_facts_sidecar"].metrics == {
-        "work_count": 1,
-        "record_count": 1,
-        "byte_size": outputs.physical_facts_json.stat().st_size,
-    }
+    assert by_stage["discover.write_peaks_csv"].metrics == {"row_count": 1}
     assert by_stage["discover.publish_outputs"].metrics == {
-        "artifact_count": 3,
+        "artifact_count": 2,
         "replaced_existing_count": 0,
     }
 
 
-@pytest.mark.parametrize("failure", ["sidecar", "publish"])
 def test_discovery_output_timing_records_failure_boundary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    failure: str,
 ) -> None:
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"timed failure")
@@ -114,30 +94,21 @@ def test_discovery_output_timing_records_failure_boundary(
         (raw_path,),
         discovery_settings=_settings(),
     )
-    recorder = TimingRecorder("discovery", run_id=f"timed-{failure}")
+    recorder = TimingRecorder("discovery", run_id="timed-publish")
     output_dir = tmp_path / "out"
-    if failure == "sidecar":
-        monkeypatch.setattr(
-            "xic_extractor.discovery.output_publication."
-            "write_discovery_physical_fact_sidecar",
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(
-                OSError("timed sidecar failure")
-            ),
-        )
-    else:
-        real_replace = Path.replace
+    real_replace = Path.replace
 
-        def fail_publish(source: Path, target: Path) -> Path:
-            target = Path(target)
-            if source.name == "discovery_peaks.csv.tmp" and target.name == (
-                "discovery_peaks.csv"
-            ):
-                raise OSError("timed publish failure")
-            return real_replace(source, target)
+    def fail_publish(source: Path, target: Path) -> Path:
+        target = Path(target)
+        if source.name == "discovery_peaks.csv.tmp" and target.name == (
+            "discovery_peaks.csv"
+        ):
+            raise OSError("timed publish failure")
+        return real_replace(source, target)
 
-        monkeypatch.setattr(Path, "replace", fail_publish)
+    monkeypatch.setattr(Path, "replace", fail_publish)
 
-    with pytest.raises(OSError, match=f"timed {failure} failure"):
+    with pytest.raises(OSError, match="timed publish failure"):
         publish_discovery_batch_sample(
             raw_path,
             (),
@@ -146,13 +117,11 @@ def test_discovery_output_timing_records_failure_boundary(
             sample_output_dir=output_dir,
             acquisition_source=spec.acquisition_inputs[0].acquisition_source,
             timing_recorder=recorder,
-            run_spec=spec,
-            acquisition_input=spec.acquisition_inputs[0],
         )
 
     stages = [record.stage for record in recorder.records]
-    assert "discover.write_physical_facts_sidecar" in stages
-    assert ("discover.publish_outputs" in stages) is (failure == "publish")
+    assert "discover.write_events_csv" in stages
+    assert "discover.publish_outputs" in stages
     assert not [
         path for path in output_dir.iterdir() if path.name.endswith((".tmp", ".bak"))
     ]

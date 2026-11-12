@@ -5,7 +5,6 @@ import pytest
 
 from tests.alignment_pipeline_helpers import (
     _owner_closed_receipt_fields,
-    physical_facts_fingerprint_beside,
 )
 from xic_extractor.discovery.batch_contract import DISCOVERY_BATCH_INDEX_COLUMNS
 from xic_extractor.discovery.models import DISCOVERY_PEAK_COLUMNS
@@ -170,10 +169,9 @@ def test_read_discovery_candidates_csv_parses_full_candidate_row(
     assert candidate.admitted
     assert candidate.attached_event_count == 3
     assert candidate.ms1_apex_rt == pytest.approx(8.48)
-    assert candidate.ms1_area == pytest.approx(123456.7)
-    assert candidate.ms1_height == pytest.approx(2222.2)
-    assert candidate.ms1_peak_rt_start == pytest.approx(8.40)
-    assert candidate.ms1_peak_rt_end == pytest.approx(8.60)
+    assert candidate.ms1_search_rt_min == pytest.approx(7.88)
+    assert candidate.ms1_search_rt_max == pytest.approx(9.08)
+    assert candidate.query_rt_min == pytest.approx(8.47)
     assert candidate.ms1_apex_mz is None
     assert candidate.sample_stem == "Sample_1"
     assert candidate.best_ms2_scan_id == 6095
@@ -226,7 +224,7 @@ def test_readers_reject_missing_required_columns(tmp_path: Path) -> None:
     candidates_path = tmp_path / "discovery_peaks.csv"
     _write_csv(
         candidates_path,
-        tuple(column for column in DISCOVERY_PEAK_COLUMNS if column != "ms1_height"),
+        tuple(column for column in DISCOVERY_PEAK_COLUMNS if column != "query_rt_min"),
         [],
     )
 
@@ -281,7 +279,7 @@ def test_read_discovery_candidates_csv_rejects_invalid_basis_enum(
     ("column", "value"),
     [
         ("evidence_score", "not-int"),
-        ("ms1_area", "not-float"),
+        ("query_rt_min", "not-float"),
         ("status", "maybe"),
         ("best_ms2_scan_id", "two"),
     ],
@@ -461,7 +459,6 @@ def _discovery_input_batch(
             sample_stem=stem,
             acquisition_source=source,
             peak_csv=path,
-            physical_facts=physical_facts_fingerprint_beside(path),
             peaks=candidates,
         )
     order = tuple(rows_by_sample)
@@ -520,10 +517,9 @@ def _candidate_row(**overrides: str) -> dict[str, str]:
         "precursor_mz_basis": "scan_precursor",
         "ms1_apex_mz": "",
         "ms1_apex_rt": "8.48",
-        "ms1_peak_rt_start": "8.40",
-        "ms1_peak_rt_end": "8.60",
-        "ms1_area": "123456.7",
-        "ms1_height": "2222.2",
+        "ms1_search_rt_min": "7.88",
+        "ms1_search_rt_max": "9.08",
+        "query_rt_min": "8.47",
         "best_ms2_scan_id": "6095",
         "neutral_loss_tag": "DNA_dR",
         "matched_tag_names": "DNA_dR",

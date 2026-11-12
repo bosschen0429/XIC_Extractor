@@ -1,5 +1,4 @@
 import csv
-import hashlib
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -48,21 +47,8 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.processing_identity import (
-    FileContentFingerprint,
     build_local_acquisition_source_identity,
-    fingerprint_file_content,
 )
-
-
-def physical_facts_fingerprint_beside(candidates_csv: Path) -> FileContentFingerprint:
-    """Fingerprint the sample's physical-facts sidecar, or empty bytes if absent."""
-
-    path = candidates_csv.with_name("discovery_physical_facts.json")
-    if path.exists():
-        return fingerprint_file_content(path)
-    return FileContentFingerprint(
-        content_sha256=hashlib.sha256(b"").hexdigest(), byte_size=0
-    )
 
 
 def resolved_elution_context(
@@ -136,7 +122,6 @@ def _owner_closed_receipt_fields(
         sample_stem=sample_stem,
         acquisition_source=acquisition_source,
         peak_csv=candidates_csv,
-        physical_facts=physical_facts_fingerprint_beside(candidates_csv),
         peaks=candidates,
     )
     return {
@@ -172,10 +157,9 @@ def candidate_row(sample_stem: str) -> dict[str, str]:
         "precursor_mz_basis": "scan_precursor",
         "ms1_apex_mz": "",
         "ms1_apex_rt": "8.5",
-        "ms1_peak_rt_start": "8.4",
-        "ms1_peak_rt_end": "8.6",
-        "ms1_area": "1000.0",
-        "ms1_height": "100.0",
+        "ms1_search_rt_min": "7.9",
+        "ms1_search_rt_max": "9.1",
+        "query_rt_min": "8.5",
         "best_ms2_scan_id": "1",
         "neutral_loss_tag": "DNA_dR",
         "matched_tag_names": "DNA_dR",

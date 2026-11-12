@@ -7,8 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.discovery_physical_fact_persistence_fixtures import _population, _spec
-from tests.physical_peak_evaluation_persistence_fixtures import (
+from tests.physical_peak_evaluation_fixtures import (
     _context_sensitive_trace,
     _overlapping_triplet_trace,
     _short_peak_with_separate_noise_hits,
@@ -16,20 +15,12 @@ from tests.physical_peak_evaluation_persistence_fixtures import (
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.discovery.physical_fact_persistence import (
-    read_discovery_physical_fact_sidecar,
-    write_discovery_physical_fact_sidecar,
-)
 from xic_extractor.peak_detection.background_shape import (
     is_provisional_peak_shape,
 )
 from xic_extractor.peak_detection.models import PeakCandidatesResult
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
     physical_candidates_result,
-)
-from xic_extractor.peak_detection.physical_peak_codec import (
-    physical_evaluation_from_payload,
-    physical_evaluation_payload,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     enumerate_physical_segment_universe,
@@ -45,20 +36,8 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_REFERENCE_POLICY,
     PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
-    PhysicalPeakEvaluation,
 )
 from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
-
-
-def _stored(evaluation: PhysicalPeakEvaluation) -> PhysicalPeakEvaluation:
-    """Decode an evaluation from its persisted sidecar form, as a reader does."""
-    prepared = evaluation.prepared
-    return physical_evaluation_from_payload(
-        json.loads(json.dumps(physical_evaluation_payload(evaluation))),
-        profile=prepared.profile,
-        rt=tuple(float(value) for value in prepared.rt),
-        raw=tuple(float(value) for value in prepared.raw),
-    )
 
 
 @pytest.mark.parametrize(
@@ -103,7 +82,6 @@ def test_background_contrast_rejects_weak_peak_for_capture_and_backfill(
         assert backfill.facts is None
     else:
         assert backfill.facts.area_counts_seconds == detected.facts.area_counts_seconds
-    assert _stored(backfill) == backfill
 
 
 @pytest.mark.parametrize("query_rt", [0.8, 1.2])
@@ -147,7 +125,6 @@ def test_backfill_recovers_the_complete_peak_containing_the_query(
     assert backfill.facts.area_counts_seconds == centered.facts.area_counts_seconds
     assert backfill.facts.left_rt_min == centered.facts.left_rt_min
     assert backfill.facts.right_rt_min == centered.facts.right_rt_min
-    assert _stored(backfill) == backfill
 
 
 def test_backfill_window_does_not_take_a_neighbor_outside_the_expected_rt() -> None:
@@ -253,8 +230,6 @@ def test_unreliable_location_evaluates_unique_acquired_peak() -> None:
     assert result.state == "available"
     assert result.facts is not None
     assert result.facts.apex_rt_min == pytest.approx(0.4)
-    restored = _stored(result)
-    assert restored == result
 
 
 def test_unavailable_prepared_signal_keeps_live_asls_intermediate(monkeypatch) -> None:
@@ -298,8 +273,6 @@ def test_supported_short_peak_survives_noise_hits_and_persistence(
     candidates = physical_candidates_result(prepared, result.segment_universe)
     assert any(c.peak.rt == result.facts.apex_rt_min for c in candidates.candidates)
     assert "near_detection_limit" not in result.integration.boundary_sources
-    restored = _stored(result)
-    assert restored == result
 
 
 def test_exterior_context_change_keeps_observed_near_baseline_peak_available() -> None:
@@ -383,7 +356,6 @@ def test_search_window_keeps_complete_peak_and_round_trips() -> None:
     assert result.question.search_rt_window == (2.8, 3.2)
     assert result.question.context_rt_start_min == 0.0
     assert result.question.context_rt_end_min == 6.0
-    assert _stored(result) == result
 
 
 def test_search_window_does_not_resolve_two_eligible_peaks_by_strength() -> None:
@@ -524,8 +496,6 @@ def test_heavily_interrupted_peak_without_contrast_persists_unavailable(
     assert fresh.state == "unavailable"
     assert fresh.reason == "insufficient_local_peak_contrast"
     assert fresh.facts is None and fresh.integration is None
-    restored_fresh = _stored(fresh)
-    assert restored_fresh == fresh
 
 
 @pytest.mark.parametrize(
@@ -585,8 +555,6 @@ def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
     assert other.state == result.state
     assert other.answer.selected_segment == result.answer.selected_segment
     assert other.integration == result.integration
-    restored = _stored(result)
-    assert restored == result
 
 
 @pytest.mark.parametrize(
@@ -711,7 +679,6 @@ def test_compact_continuous_doublet_keeps_component_areas(
             expected_area,
             rel=0.03,
         )
-        assert _stored(result) == result
         selected.append(facts)
     assert selected[0].right_rt_min <= selected[1].left_rt_min
 
@@ -752,8 +719,6 @@ def test_continuous_peak_with_isolated_dropouts_keeps_morphology_area(
         )
         * 60.0
     )
-    restored = _stored(result)
-    assert restored == result
 
 
 def test_tail_dropout_neither_splits_nor_merges_a_resolved_doublet() -> None:
@@ -1001,9 +966,6 @@ def test_overlapping_components_keep_one_envelope_and_review(
     assert discovery.facts.right_rt_min > 7.0
     assert discovery.integration == targeted.integration
     assert discovery.requires_overlap_review
-    restored = _stored(discovery)
-    assert restored == discovery
-    assert restored.requires_overlap_review
 
 
 @pytest.mark.parametrize("scale,background", [(1.0, 0.0), (1000.0, 100000.0)])
@@ -1181,8 +1143,6 @@ def test_current_discovery_qualification_persists_exactly(
             # The whole background contour reaches the acquired edge. Neither
             # workflow may turn one local fluctuation into a measured peak.
             assert answer.reason == "incomplete_peak_context"
-        restored = _stored(answer)
-        assert restored == answer
 
 
 def test_is_provisional_peak_shape() -> None:
@@ -1609,75 +1569,6 @@ def test_no_selection_policy_roundtrip_preserves_physical_context(
     else:
         assert evaluation.reason == ordinary.reason == "no_signal_above_baseline"
 
-    assert _stored(evaluation) == evaluation
-
-
-@pytest.mark.parametrize("terminal", ["available", "unavailable", "failed"])
-def test_physical_evaluation_persistence_decodes_terminal_owner_state(
-    terminal: str,
-) -> None:
-    profile = SignalProcessingProfile(window_points=3)
-    if terminal == "available":
-        rt = np.linspace(0.0, 3.0, 31)
-        raw = np.full(31, 10.0)
-        raw += 100.0 * np.exp(-0.5 * ((rt - 0.8) / 0.2) ** 2)
-        query_rt = 0.8
-        context = (0.0, 3.0)
-    elif terminal == "unavailable":
-        rt = np.asarray([1.0])
-        raw = np.asarray([10.0])
-        query_rt = 1.0
-        context = (1.0, 1.0)
-    else:
-        rt = np.asarray([float("nan"), 1.0, 2.0])
-        raw = np.asarray([1.0, 2.0, 1.0])
-        query_rt = 1.5
-        context = (1.0, 2.0)
-    prepared = prepare_physical_signal(rt, raw, profile=profile)
-    evaluation = evaluate_physical_peak(
-        prepared,
-        query_rt_min=query_rt,
-        request_context_rt_start_min=context[0],
-        request_context_rt_end_min=context[1],
-    )
-
-    restored = _stored(evaluation)
-
-    if terminal == "failed":
-        np.testing.assert_array_equal(restored.prepared.rt, rt)
-        np.testing.assert_array_equal(restored.prepared.raw, raw)
-        assert restored.reason == evaluation.reason
-        assert restored.segment_universe.segments == ()
-        assert restored.facts is None
-    else:
-        assert restored == evaluation
-    assert restored.state == terminal
-
-
-def test_sidecar_read_returns_the_recorded_evaluations(tmp_path: Path) -> None:
-    _, spec, acquisition_input = _spec(tmp_path)
-    manifest, records = _population(spec, acquisition_input)
-    path = tmp_path / "facts.json"
-
-    write_discovery_physical_fact_sidecar(
-        path,
-        run_spec=spec,
-        acquisition_input=acquisition_input,
-        work_manifest=manifest,
-        records=records,
-    )
-
-    restored = read_discovery_physical_fact_sidecar(
-        path,
-        expected_run_spec=spec,
-        expected_acquisition_input=acquisition_input,
-        expected_work_manifest=manifest,
-    )
-    assert len(restored) == len(records)
-    assert tuple(record.evaluation for record in restored) == tuple(
-        record.evaluation for record in records
-    )
-
 
 @pytest.mark.parametrize("point_count", [1501, 3001])
 def test_middle_query_selects_the_unresolved_envelope_not_a_component(
@@ -1744,27 +1635,3 @@ def test_brief_apex_dropout_does_not_create_two_quantitative_components(
     observed_mass = float(np.trapezoid(prepared.prepared.positive_signal, rt)) * 60.0
     assert 0.96 * observed_mass < answer.facts.area_counts_seconds < observed_mass
     assert prepared.prepared.raw[middle - 1 : middle + 2] == (0.0, 0.0, 0.0)
-
-
-def test_optional_quality_round_trip_and_old_payload_decoding():
-    from dataclasses import replace
-
-    rt = np.linspace(0.0, 2.0, 101)
-    raw = 10.0 + 200.0 * np.exp(-0.5 * ((rt - 1.0) / 0.1) ** 2)
-    raw += np.random.default_rng(916).normal(0.0, 0.5, len(rt))
-    profile = SignalProcessingProfile()
-    current = evaluate_physical_peak(
-        prepare_physical_signal(rt, raw, profile=profile),
-        query_rt_min=1.0,
-    )
-    assert current.integration is not None
-    assert current.integration.signal_quality.status == "available"
-    assert _stored(current) == current
-    old = replace(
-        current, integration=replace(current.integration, signal_quality=None)
-    )
-    assert "signal_quality" not in json.dumps(physical_evaluation_payload(old))
-    restored = _stored(old)
-    assert restored.integration.signal_quality is None
-    assert old.facts == current.facts
-    assert old.answer == current.answer

@@ -35,15 +35,37 @@ def select_representative_event(
         events,
         key=lambda event: (
             tag_rank(event.neutral_loss_tag, settings=settings),
-            -event.product_intensity,
-            abs(event.observed_loss_error_ppm)
-            if event.observed_loss_error_ppm is not None
-            else float("inf"),
-            event.rt,
-            event.scan_number,
-            event.neutral_loss_tag,
-            event.product_mz,
+            *representative_order_within_tag(
+                product_intensity=event.product_intensity,
+                observed_loss_error_ppm=event.observed_loss_error_ppm,
+                rt=event.rt,
+                scan_number=event.scan_number,
+                neutral_loss_tag=event.neutral_loss_tag,
+                product_mz=event.product_mz,
+            ),
         ),
+    )
+
+
+def representative_order_within_tag(
+    *,
+    product_intensity: float,
+    observed_loss_error_ppm: float | None,
+    rt: float,
+    scan_number: int,
+    neutral_loss_tag: str,
+    product_mz: float,
+) -> tuple[float, float, float, int, str, float]:
+    """The representative event's order among events of one tag."""
+    return (
+        -product_intensity,
+        abs(observed_loss_error_ppm)
+        if observed_loss_error_ppm is not None
+        else float("inf"),
+        rt,
+        scan_number,
+        neutral_loss_tag,
+        product_mz,
     )
 
 

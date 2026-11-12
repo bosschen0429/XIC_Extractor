@@ -18,6 +18,7 @@ from xic_extractor.discovery.csv_reader import (
     parse_discovery_event_row,
     require_current_discovery_columns,
 )
+from xic_extractor.discovery.event_evidence import representative_order_within_tag
 from xic_extractor.discovery.models import (
     DISCOVERY_EVENT_COLUMNS,
     DISCOVERY_PEAK_COLUMNS,
@@ -79,6 +80,8 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
         self._feature_ids: dict[str, tuple[str, ...]] = {}
         # Discovery's apex MS1 readings; they only set the reported row m/z.
         self.ms1_apex_mz_by_candidate: dict[str, float] = {}
+        # The representative event's precursor, from its event-table row.
+        self.precursor_mz_by_candidate: dict[str, float] = {}
         for stem in batch.sample_order:
             path = batch.peak_csvs[stem]
             receipt = batch.peak_receipts[stem]
@@ -144,6 +147,10 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
 
     def _index_event_rows(self, stem: str, path: Path) -> None:
         before = self._stat(path)
+        attached_ids: set[str] = set()
+        representative_rows: dict[
+            str, list[tuple[bool, tuple[object, ...], dict[str, str]]]
+        ] = {}
         with path.open("rb") as stream:
             reader = csv.DictReader(_CsvLines(stream))
             header = tuple(reader.fieldnames or ())
@@ -167,9 +174,23 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
                     self._event_rows.setdefault(peak_id, []).append(
                         _EventRowLocation(offset, stream.tell() - offset, row_number)
                     )
+                    attached = not row["unattached_reason"]
+                    if attached:
+                        attached_ids.add(peak_id)
+                    if row["neutral_loss_tag"] == location.neutral_loss_tag:
+                        representative_rows.setdefault(peak_id, []).append(
+                            (attached, _representative_order(row), row)
+                        )
                 row_number += 1
         if self._stat(path) != before:
             raise ValueError("Discovery event table changed while indexing")
+        # Discovery chooses the representative among the attached events when
+        # any attaches, else among all located events; its tag names the peak.
+        for peak_id, rows in representative_rows.items():
+            pool = [item for item in rows if item[0] or peak_id not in attached_ids]
+            if pool:
+                _, _, chosen = min(pool, key=lambda item: item[1])
+                self.precursor_mz_by_candidate[peak_id] = float(chosen["precursor_mz"])
         self._event_headers[stem] = header
         self._event_stats[stem] = before
 
@@ -264,6 +285,18 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
 
     def feature_view(self) -> Mapping[str, tuple[DiscoveryPeak, ...]]:
         return _FeatureCandidateView(self)
+
+
+def _representative_order(row: Mapping[str, str]) -> tuple[object, ...]:
+    error = row["neutral_loss_mass_error_ppm"]
+    return representative_order_within_tag(
+        product_intensity=float(row["product_intensity"]),
+        observed_loss_error_ppm=float(error) if error else None,
+        rt=float(row["ms2_rt"]),
+        scan_number=int(row["ms2_scan_number"]),
+        neutral_loss_tag=row["neutral_loss_tag"],
+        product_mz=float(row["product_mz"]),
+    )
 
 
 class _FeatureCandidateView(Mapping[str, tuple[DiscoveryPeak, ...]]):

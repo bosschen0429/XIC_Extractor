@@ -27,22 +27,16 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
 from xic_extractor.peak_detection.physical_peak_evaluation import (
-    answer_physical_peak_question,
     discovery_raw_peak_components,
-    earliest_physical_segment_at_rt,
-    enumerate_physical_segment_universe,
-    mint_physical_peak_question,
-    prepare_physical_signal,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
-    DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-    PhysicalPeakAnswer,
     PhysicalPeakEvaluation,
-    PhysicalPeakOperation,
-    PhysicalPeakQuestion,
     PhysicalSegment,
-    PhysicalSegmentUniverse,
     RawPeakComponent,
+)
+from xic_extractor.peak_detection.physical_peak_population import (
+    PhysicalPeakPopulation,
+    measure_physical_peak_population,
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.xic_models import XICRequest
@@ -95,7 +89,7 @@ class PhysicalPeakCapture:
             XICRequest,
             tuple[
                 AcquiredTrace,
-                PhysicalSegmentUniverse,
+                PhysicalPeakPopulation,
                 dict[PhysicalSegment, tuple[int, PhysicalPeakEvaluation]],
             ],
         ] = {}
@@ -233,40 +227,22 @@ class PhysicalPeakCapture:
         acquired: AcquiredTrace,
         components: tuple[RawPeakComponent, ...] | None,
     ) -> None:
-        prepared = prepare_physical_signal(
-            acquired.trace.rt, acquired.trace.intensity, profile=self._profile
-        )
-        if components is None:
-            components = discovery_raw_peak_components(
-                acquired.trace.rt, acquired.trace.intensity, self._profile
-            )
-        universe = enumerate_physical_segment_universe(
-            prepared,
-            request_context_rt_start_min=request.rt_min,
-            request_context_rt_end_min=request.rt_max,
-            selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-            discovery_components=components,
+        population = measure_physical_peak_population(
+            acquired.trace.rt,
+            acquired.trace.intensity,
+            context_rt_start_min=request.rt_min,
+            context_rt_end_min=request.rt_max,
+            profile=self._profile,
+            components=components,
         )
         measurements = {}
-        for segment in universe.segments:
-            component = segment.raw_component
-            query_rt = (
-                prepared.projection.rt[component.apex_index]
-                if component is not None
-                else segment.apex_rt_min
+        for segment in population.universe.segments:
+            measurements[segment] = (
+                self._next_work_ordinal,
+                population.measure_segment(segment),
             )
-            query_rt = min(max(query_rt, request.rt_min), request.rt_max)
-            question = PhysicalPeakQuestion(
-                "physical_peak_question",
-                universe,
-                query_rt,
-                (segment,),
-                DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-            )
-            evaluation = answer_physical_peak_question(prepared, universe, question)
-            measurements[segment] = self._next_work_ordinal, evaluation
             self._next_work_ordinal += 1
-        self._populations[request] = acquired, universe, measurements
+        self._populations[request] = acquired, population, measurements
 
     def reselect(
         self,
@@ -285,51 +261,14 @@ class PhysicalPeakCapture:
         )
 
     def _lookup(self, search: PhysicalPeakSearch) -> CapturedPhysicalPeak:
-        acquired, universe, measurements = self._populations[search.request]
-        segment = earliest_physical_segment_at_rt(
-            universe,
-            search.query_rt_min,
-            selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-        )
+        acquired, population, measurements = self._populations[search.request]
+        segment = population.segment_at(search.query_rt_min)
         if segment is not None:
             ordinal, evaluation = measurements[segment]
         else:
             # Unassigned queries retain an explicit no-selection answer. There
             # is no measurement to repeat and no prepared-signal evaluation.
-            question = mint_physical_peak_question(
-                universe.prepared,
-                universe,
-                query_rt_min=search.query_rt_min,
-                selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
-            )
-            state = universe.state if universe.state != "available" else "unavailable"
-            reason = universe.reason or (
-                "ambiguous_segment_candidates"
-                if question.admissible_segments
-                else "no_selection"
-            )
-            answer = PhysicalPeakAnswer(
-                "physical_peak_answer", state, reason, question, None
-            )
-            operations: tuple[PhysicalPeakOperation, ...] = (
-                "trace_evaluation",
-                "asls_baseline",
-                "gaussian_smoothing",
-                "segment_enumeration",
-            )
-            if universe.prepared.state != "available":
-                operations = ("trace_evaluation",)
-            evaluation = PhysicalPeakEvaluation(
-                state,
-                reason,
-                universe.prepared,
-                universe,
-                question,
-                answer,
-                None,
-                None,
-                operations,
-            )
+            evaluation = population.unselected(search.query_rt_min)
             ordinal = self._next_work_ordinal
             self._next_work_ordinal += 1
         if ordinal not in self._trace_qualities:

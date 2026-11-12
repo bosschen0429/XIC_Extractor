@@ -30,7 +30,8 @@ from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 
 
 def test_peak_table_writes_each_peak_fact_once() -> None:
-    # Event values live in the event table; measured traces in the sidecar.
+    # Event values live in the event table; the peak's measurement is
+    # Alignment's, from these capture conditions.
     assert DISCOVERY_PEAK_COLUMNS == (
         "status",
         "evidence_score",
@@ -41,10 +42,9 @@ def test_peak_table_writes_each_peak_fact_once() -> None:
         "precursor_mz_basis",
         "ms1_apex_mz",
         "ms1_apex_rt",
-        "ms1_peak_rt_start",
-        "ms1_peak_rt_end",
-        "ms1_area",
-        "ms1_height",
+        "ms1_search_rt_min",
+        "ms1_search_rt_max",
+        "query_rt_min",
         "best_ms2_scan_id",
         "neutral_loss_tag",
         "matched_tag_names",
@@ -114,7 +114,9 @@ def test_peak_rows_follow_the_review_queue() -> None:
                 located_events=(event,),
             ),
             physical_evaluation=SimpleNamespace(
-                state="available", requires_overlap_review=shoulder
+                state="available",
+                requires_overlap_review=shoulder,
+                facts=SimpleNamespace(area_counts_seconds=1000.0),
             ),
             final_ordinal=0,
         )

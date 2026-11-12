@@ -1,4 +1,4 @@
-"""Helpers shared by test_discovery_physical_fact_integration and other test modules."""
+"""Helpers shared by test_discovery_physical_measurement and other test modules."""
 
 from __future__ import annotations
 

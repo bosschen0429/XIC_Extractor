@@ -25,9 +25,8 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,
+    canonical_processing_run_spec_bytes,
     compile_processing_run_spec,
-    deserialize_processing_run_spec,
-    serialize_processing_run_spec,
 )
 
 
@@ -46,14 +45,11 @@ def _peak_config() -> ExtractionConfig:
     )
 
 
-def test_run_spec_roundtrip_closes_content_hash_profile_and_order(
+def test_run_spec_identity_closes_input_order(
     tmp_path: Path,
 ) -> None:
     raw_paths = _raws(tmp_path)
     spec = _compile_paths(raw_paths)
-    payload = serialize_processing_run_spec(spec)
-
-    assert deserialize_processing_run_spec(payload) == spec
     reversed_spec = _compile_paths(tuple(reversed(raw_paths)))
     assert reversed_spec != spec
 
@@ -67,13 +63,12 @@ def test_run_spec_preserves_auto_or_explicit_crop_intent(
     paths = _raws(tmp_path)
     settings = replace(_settings(), rt_min=rt_min, rt_max=rt_max)
     spec = _compile_paths(paths, settings=settings)
-    payload = serialize_processing_run_spec(spec)
-    saved_settings = json.loads(payload)["content"]["discovery_method"]["settings"]
+    saved_settings = json.loads(canonical_processing_run_spec_bytes(spec))[
+        "discovery_method"
+    ]["settings"]
     for field, value in (("rt_min", rt_min), ("rt_max", rt_max)):
         assert saved_settings[field] == (None if value is None else value.hex())
-    assert (
-        deserialize_processing_run_spec(payload).discovery_method.settings == settings
-    )
+    assert spec.discovery_method.settings == settings
     if rt_min is not None or rt_max is not None:
         assert spec.discovery_method != _compile_paths(paths).discovery_method
 
@@ -164,51 +159,6 @@ def test_parallel_fingerprints_reject_source_changed_during_read(
         )
 
 
-@pytest.mark.parametrize(
-    "mutation",
-    [
-        lambda value: value.update({"unknown": True}),
-        lambda value: value.pop("content"),
-        lambda value: value["content"]["discovery_method"].__setitem__("unknown", True),
-        lambda value: value["content"]["signal_processing_profile"].__setitem__(
-            "window_points", 8
-        ),
-    ],
-)
-def test_run_spec_rejects_unknown_partial_tampered_and_cross_content(
-    tmp_path: Path,
-    mutation,
-) -> None:
-    spec = _compile_paths(_raws(tmp_path))
-    value = json.loads(serialize_processing_run_spec(spec))
-    mutation(value)
-
-    with pytest.raises((TypeError, ValueError)):
-        deserialize_processing_run_spec(
-            json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-        )
-
-
-def test_run_spec_with_changed_source_revision_no_longer_equals_original(
-    tmp_path: Path,
-) -> None:
-    spec = _compile_paths(_raws(tmp_path))
-    value = json.loads(serialize_processing_run_spec(spec))
-    revision = value["content"]["acquisition_inputs"][0]["acquisition_source"][
-        "local_file_revision"
-    ]
-    revision[3] += 1
-
-    changed = deserialize_processing_run_spec(
-        json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-    )
-
-    assert changed.acquisition_inputs[
-        0
-    ].acquisition_source.local_file_revision == tuple(revision)
-    assert changed != spec
-
-
 def test_discovery_preparation_binds_local_revision_without_reading_raw(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -227,39 +177,6 @@ def test_discovery_preparation_binds_local_revision_without_reading_raw(
         and item.acquisition_source.local_file_revision is not None
         for item in spec.acquisition_inputs
     )
-    assert deserialize_processing_run_spec(serialize_processing_run_spec(spec)) == spec
-
-
-def test_old_discovery_run_spec_requires_regeneration(tmp_path: Path) -> None:
-    value = json.loads(serialize_processing_run_spec(_compile_paths(_raws(tmp_path))))
-    value["content"]["schema_version"] = "processing_run_spec"
-    with pytest.raises(ValueError, match="regenerate Discovery"):
-        deserialize_processing_run_spec(json.dumps(value))
-
-
-def test_run_spec_rejects_duplicate_and_reordered_json_fields(tmp_path: Path) -> None:
-    spec = _compile_paths(_raws(tmp_path))
-    payload = serialize_processing_run_spec(spec).decode("utf-8")
-    duplicate = payload.replace(
-        '{"schema_version":"processing_run_spec_envelope",',
-        '{"schema_version":"processing_run_spec_envelope",'
-        '"schema_version":"processing_run_spec_envelope",',
-        1,
-    )
-    value = json.loads(payload)
-    reordered = json.dumps(
-        {
-            "content": value["content"],
-            "schema_version": value["schema_version"],
-        },
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-
-    with pytest.raises(ValueError, match="duplicate"):
-        deserialize_processing_run_spec(duplicate)
-    with pytest.raises(ValueError, match="fields must be exactly"):
-        deserialize_processing_run_spec(reordered)
 
 
 def test_run_spec_call_rejects_conflicts_before_runtime(tmp_path: Path) -> None:
@@ -528,7 +445,7 @@ def test_signal_profile_changes_run_identity_not_legacy_vendor_method(
     )
 
     assert spec.discovery_method.settings.ms2_precursor_tol_da == 0.8
-    saved_settings = json.loads(serialize_processing_run_spec(spec))["content"][
+    saved_settings = json.loads(canonical_processing_run_spec_bytes(spec))[
         "discovery_method"
     ]["settings"]
     assert "mass_recalibration" not in saved_settings
@@ -537,7 +454,7 @@ def test_signal_profile_changes_run_identity_not_legacy_vendor_method(
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_processing_run_spec_preserves_custom_blank_settings_roundtrip(
+def test_processing_run_spec_binds_custom_blank_settings(
     tmp_path: Path,
     enabled: bool,
 ) -> None:
@@ -558,15 +475,11 @@ def test_processing_run_spec_preserves_custom_blank_settings_roundtrip(
         raws,
         discovery_settings=custom_settings,
     )
-    serialized = serialize_processing_run_spec(spec)
-    deserialized = deserialize_processing_run_spec(serialized)
-
-    deserialized_settings = deserialized.discovery_method.settings
-    assert deserialized_settings.enable_blank_qualification is enabled
-    assert deserialized_settings.blank_library_path == str(library_path)
-    assert deserialized_settings.blank_ppm_tol == 12.5
-    assert deserialized_settings.blank_fold_change_threshold == 4.5
-    assert deserialized == spec
+    bound_settings = spec.discovery_method.settings
+    assert bound_settings.enable_blank_qualification is enabled
+    assert bound_settings.blank_library_path == str(library_path)
+    assert bound_settings.blank_ppm_tol == 12.5
+    assert bound_settings.blank_fold_change_threshold == 4.5
 
 
 def _write_bound_library(path: Path, intensity: float) -> None:

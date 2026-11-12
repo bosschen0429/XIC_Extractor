@@ -23,7 +23,6 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
-    FileContentFingerprint,
     IdentityContractError,
     fingerprint_file_content,
 )
@@ -40,8 +39,6 @@ DISCOVERY_BATCH_RECEIPT_COLUMNS = (
     "peak_csv_schema_version",
     "peak_csv_sha256",
     "peak_csv_byte_size",
-    "physical_facts_sha256",
-    "physical_facts_byte_size",
     "acquisition_local_file_revision",
     "acquisition_byte_size",
     "acquisition_format",
@@ -71,8 +68,6 @@ class DiscoveryPeakUniverseReceipt:
     peak_csv_schema_version: str
     peak_csv_sha256: str
     peak_csv_byte_size: int
-    physical_facts_sha256: str
-    physical_facts_byte_size: int
     mass_recalibration_result: MassRecalibrationResult = MassRecalibrationResult("none")
 
     def __post_init__(self) -> None:
@@ -101,18 +96,6 @@ class DiscoveryPeakUniverseReceipt:
             raise IdentityContractError(
                 "peak_csv_byte_size must be a non-negative integer"
             )
-        _validate_digest(
-            self.physical_facts_sha256,
-            field="physical_facts_sha256",
-        )
-        if (
-            isinstance(self.physical_facts_byte_size, bool)
-            or not isinstance(self.physical_facts_byte_size, int)
-            or self.physical_facts_byte_size < 0
-        ):
-            raise IdentityContractError(
-                "physical_facts_byte_size must be a non-negative integer"
-            )
 
 
 def mint_discovery_peak_universe_receipt(
@@ -121,17 +104,11 @@ def mint_discovery_peak_universe_receipt(
     acquisition_source: AcquisitionSourceIdentity,
     peak_csv: Path,
     peaks: Sequence[DiscoveryPeak],
-    physical_facts: FileContentFingerprint | None,
     mass_recalibration_result: MassRecalibrationResult = (
         VENDOR_MASS_RECALIBRATION_RESULT
     ),
 ) -> DiscoveryPeakUniverseReceipt:
     """Mint a receipt after the Discovery writers have committed bytes."""
-
-    if not isinstance(physical_facts, FileContentFingerprint):
-        raise IdentityContractError(
-            "Discovery receipt requires the published physical-facts fingerprint"
-        )
 
     stem = _required_text(sample_stem, field="sample_stem")
     if not isinstance(acquisition_source, AcquisitionSourceIdentity):
@@ -147,8 +124,6 @@ def mint_discovery_peak_universe_receipt(
         peak_csv_schema_version=(DISCOVERY_PEAK_CSV_SCHEMA_VERSION),
         peak_csv_sha256=artifact.content_sha256,
         peak_csv_byte_size=artifact.byte_size,
-        physical_facts_sha256=physical_facts.content_sha256,
-        physical_facts_byte_size=physical_facts.byte_size,
         mass_recalibration_result=mass_recalibration_result,
     )
 
@@ -166,23 +141,6 @@ def validate_discovery_peak_artifact(
         or fingerprint.byte_size != receipt.peak_csv_byte_size
     ):
         raise IdentityContractError("peak CSV bytes do not match the Discovery receipt")
-
-
-def validate_discovery_physical_facts_artifact(
-    receipt: DiscoveryPeakUniverseReceipt,
-    physical_facts_json: Path,
-) -> None:
-    """Reject physical-facts bytes that do not match the Discovery receipt."""
-
-    _require_receipt(receipt)
-    fingerprint = fingerprint_file_content(physical_facts_json)
-    if (
-        fingerprint.content_sha256 != receipt.physical_facts_sha256
-        or fingerprint.byte_size != receipt.physical_facts_byte_size
-    ):
-        raise IdentityContractError(
-            "physical-facts bytes do not match the Discovery receipt"
-        )
 
 
 def validate_discovery_peak_universe(
@@ -220,8 +178,6 @@ def discovery_receipt_index_fields(
         "peak_csv_schema_version": (receipt.peak_csv_schema_version),
         "peak_csv_sha256": receipt.peak_csv_sha256,
         "peak_csv_byte_size": str(receipt.peak_csv_byte_size),
-        "physical_facts_sha256": receipt.physical_facts_sha256,
-        "physical_facts_byte_size": str(receipt.physical_facts_byte_size),
         "acquisition_local_file_revision": json.dumps(
             source.local_file_revision, separators=(",", ":")
         ),
@@ -273,11 +229,6 @@ def discovery_receipt_from_index_fields(
             peak_csv_byte_size=_nonnegative_int(
                 row["peak_csv_byte_size"],
                 field="peak_csv_byte_size",
-            ),
-            physical_facts_sha256=row["physical_facts_sha256"],
-            physical_facts_byte_size=_nonnegative_int(
-                row["physical_facts_byte_size"],
-                field="physical_facts_byte_size",
             ),
             mass_recalibration_result=deserialize_mass_recalibration_result(
                 row.get("mass_recalibration", "")
@@ -374,7 +325,6 @@ __all__ = (
     "discovery_receipt_index_fields",
     "mint_discovery_peak_universe_receipt",
     "validate_discovery_peak_artifact",
-    "validate_discovery_physical_facts_artifact",
     "canonical_sample_stems",
     "validate_discovery_peak_universe",
 )

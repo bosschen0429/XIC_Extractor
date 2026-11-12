@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -25,7 +24,6 @@ from tests.untargeted_cid_nl_production_batch_fixtures import (
     _assert_fresh_process_curve_parity,
     _assert_jobs_match_direct_construction,
     _expected_capture_curve,
-    _expected_retained_curve,
 )
 from tests.untargeted_cid_nl_production_batch_fixtures import (
     profile_replay as profile_replay,
@@ -118,18 +116,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         for cell in cells
         for support in cell.group_context.supports
     )
-    # Owner-produced arrays survive both sidecar and runtime partition handoff.
-    retained_discovery = tuple(completed.discovery_physical_records)
-    # Indexed input exposes published candidate bindings lazily.
-    assert {item.peak_id for item in retained_discovery} == set(inputs.source_records)
-    for retained in retained_discovery:
-        source = inputs.source_evidence[retained.peak_id]
-        assert (
-            retained.evaluation.retained_prepared_signal
-            == source.evaluation.retained_prepared_signal
-        )
-        assert retained.rt == source.rt
-        assert retained.raw == source.raw
+    # Owner-produced arrays survive the runtime partition handoff.
     persisted_capture_evidence = tuple(completed.capture_evidence)
     runtime_captures = tuple(
         evidence
@@ -168,31 +155,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
 
     expected_curves = []
     expected_curve_links = {}
-    application = completed.application_result
-    samples_by_stem = {
-        sample.raw_stem: sample for sample in application.canonical_samples
-    }
-    for record in retained_discovery:
-        work = record.work_item
-        source_trace = SimpleNamespace(
-            rt=record.rt,
-            intensity=record.raw,
-            mz=work.xic_mz,
-            rt_min=work.xic_rt_min,
-            rt_max=work.xic_rt_max,
-            ppm_tol=work.xic_ppm_tol,
-            acquisition_source_id=work.acquisition_source_id,
-        )
-        expected = _expected_retained_curve(
-            kind="discovery_physical",
-            candidate_id=record.peak_id,
-            sample_id=samples_by_stem[work.sample_stem].sample_name,
-            trace=source_trace,
-            evaluation=record.evaluation,
-            attempt_id=application.processing_attempt_id,
-        )
-        expected_curves.append(expected)
-        expected_curve_links.setdefault(record.peak_id, []).append(expected)
     for evidence in persisted_capture_evidence:
         expected = _expected_capture_curve(evidence)
         expected_curves.append(expected)
@@ -369,16 +331,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         for result in trace.runtime_results[0].sample_results:
             stem = result.job.sample.raw_stem
             (candidate,) = batch.context.peaks_by_sample[stem]
-            record = batch.context.physical_records_by_peak[candidate.peak_id]
-            assert (
-                record.work_item.precursor_mz
-                == representative_event(candidate).precursor_mz
-            )
-            assert (
-                record.acquired_trace.coordinate.request.mz
-                == representative_event(candidate).precursor_mz
-            )
-            assert record.evaluation.facts == inputs.physical_facts[stem]
+            assert candidate.peak_mz == representative_event(candidate).precursor_mz
+            # Alignment measures the peak again and gets Discovery's facts.
+            (capture,) = result.adapter_result.captures
+            assert capture.trace.mz == candidate.peak_mz
+            assert capture.physical_evaluation.facts == inputs.physical_facts[stem]
             assert fixture_assessment(result).method_result == (
                 "HOLD" if case.method_mode == "intersection" else "SUPPORT"
             )

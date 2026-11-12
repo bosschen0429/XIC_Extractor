@@ -314,7 +314,7 @@ def snapshot_untargeted_grouping(
     snapshot = request.output_dir / GROUPING_SNAPSHOT_NAME
     if snapshot.exists():
         raise ValueError(f"grouping snapshot already exists: {snapshot}")
-    prepared = prepare_untargeted_alignment_inputs(
+    plan = prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
         peaks_by_sample=peaks_by_sample,
         raw_dir=request.raw_dir,
@@ -337,52 +337,47 @@ def snapshot_untargeted_grouping(
             else None
         ),
     )
-    try:
-        with recorder.stage("alignment.grouping_snapshot") as stage:
-            grouping = cast(
-                PreparedGroupingExperiment,
-                execute_prepared_alignment(
-                    prepared.plan,
-                    output_dir=request.output_dir,
-                    alignment_config=request.alignment_config,
-                    known_istd_reference=known_istd_reference,
-                    timing_recorder=recorder,
-                    acquisition_cache_dir=request.execution.acquisition_cache_dir,
-                    retain_acquisition_cache=request.execution.retain_acquisition_cache,
-                    raw_workers=request.execution.raw_workers,
-                    raw_worker_backend=request.execution.raw_worker_backend,
-                    max_partition_jobs=request.execution.max_partition_jobs,
-                    should_cancel=context.should_cancel,
-                    grouping_only=True,
-                    mass_recalibration_by_sample=(
-                        mass_recalibration_by_sample
-                        if request.discovery_settings.mass_recalibration
-                        is not MassRecalibration.NONE
-                        else None
-                    ),
+    with recorder.stage("alignment.grouping_snapshot") as stage:
+        grouping = cast(
+            PreparedGroupingExperiment,
+            execute_prepared_alignment(
+                plan,
+                output_dir=request.output_dir,
+                alignment_config=request.alignment_config,
+                known_istd_reference=known_istd_reference,
+                timing_recorder=recorder,
+                acquisition_cache_dir=request.execution.acquisition_cache_dir,
+                retain_acquisition_cache=request.execution.retain_acquisition_cache,
+                raw_workers=request.execution.raw_workers,
+                raw_worker_backend=request.execution.raw_worker_backend,
+                max_partition_jobs=request.execution.max_partition_jobs,
+                should_cancel=context.should_cancel,
+                grouping_only=True,
+                mass_recalibration_by_sample=(
+                    mass_recalibration_by_sample
+                    if request.discovery_settings.mass_recalibration
+                    is not MassRecalibration.NONE
+                    else None
                 ),
-            )
-            write_grouping_inputs(
-                snapshot,
-                grouping.inputs,
-                provenance={
-                    "discovery_batch_index": str(
-                        request.discovery_batch_index.resolve()
-                    ),
-                    "partition_count": grouping.total_partition_count,
-                    "initial_job_count": grouping.initial_job_count,
-                },
-            )
-            stage.metrics["partition_count"] = grouping.total_partition_count
-            stage.metrics["group_count"] = len(grouping.groups)
-        with recorder.stage("alignment.grouping_snapshot.verify"):
-            restored, _ = read_grouping_inputs(snapshot)
-            if group_signature(replay_grouping(restored)) != group_signature(
-                grouping.groups
-            ):
-                raise ValueError("Snapshot replay differs from formal initial grouping")
-    finally:
-        prepared.close()
+            ),
+        )
+        write_grouping_inputs(
+            snapshot,
+            grouping.inputs,
+            provenance={
+                "discovery_batch_index": str(request.discovery_batch_index.resolve()),
+                "partition_count": grouping.total_partition_count,
+                "initial_job_count": grouping.initial_job_count,
+            },
+        )
+        stage.metrics["partition_count"] = grouping.total_partition_count
+        stage.metrics["group_count"] = len(grouping.groups)
+    with recorder.stage("alignment.grouping_snapshot.verify"):
+        restored, _ = read_grouping_inputs(snapshot)
+        if group_signature(replay_grouping(restored)) != group_signature(
+            grouping.groups
+        ):
+            raise ValueError("Snapshot replay differs from formal initial grouping")
     return snapshot
 
 

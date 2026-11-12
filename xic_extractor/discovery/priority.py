@@ -3,7 +3,7 @@
 from dataclasses import replace
 
 from xic_extractor.discovery.models import representative_event_rt
-from xic_extractor.discovery.physical_fact_record import DiscoveryPeakPhysicalBinding
+from xic_extractor.discovery.peak_binding import DiscoveryPeakPhysicalBinding
 from xic_extractor.discovery.settings import DiscoverySettings
 
 _RT_DELTA_EPSILON_MIN = 1e-9
@@ -40,10 +40,17 @@ def _output_sort_key(
         -peak.evidence_score,
         -peak.attached_event_count,
         -max(event.product_intensity for event in peak.located_events),
-        -peak.ms1_area,
+        -_area(binding),
         best_event_rt,
         peak.peak_id,
     )
+
+
+def _area(binding: DiscoveryPeakPhysicalBinding) -> float:
+    facts = binding.physical_evaluation.facts
+    if facts is None:
+        raise ValueError(f"{binding.peak.peak_id}: a Discovery peak lacks its area")
+    return facts.area_counts_seconds
 
 
 def _review_rank(

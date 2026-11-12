@@ -18,10 +18,6 @@ from xic_extractor.discovery.batch_contract import (
     validate_discovery_peak_universe,
 )
 from xic_extractor.discovery.models import DiscoveryPeak
-from xic_extractor.discovery.physical_fact_record import (
-    DiscoveryPhysicalFactRecord,
-    validate_discovery_physical_fact_record,
-)
 from xic_extractor.discovery.settings import (
     DiscoverySettings,
 )
@@ -61,9 +57,6 @@ class UntargetedPartitionContext:
         DiscoveryPeakUniverseReceipt,
     ]
     signal_processing_profile: SignalProcessingProfile
-    physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord] = field(
-        default_factory=dict
-    )
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation] = field(
         default_factory=dict, repr=False, compare=False
     )
@@ -101,7 +94,6 @@ def build_partition_context(
         DiscoveryPeakUniverseReceipt,
     ],
     signal_processing_profile: SignalProcessingProfile,
-    physical_records_by_peak: Mapping[str, DiscoveryPhysicalFactRecord] | None = None,
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
     | None = None,
     feature_candidate_ids: tuple[str, ...] | None = None,
@@ -215,36 +207,12 @@ def build_partition_context(
         sources_by_stem=sources_by_stem,
         peaks_by_stem=peak_map,
     )
-    physical_records = dict(physical_records_by_peak or {})
-    peak_by_id = {peak.peak_id: peak for peaks in peak_map.values() for peak in peaks}
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
-        raise IdentityContractError("physical replay profile must be owner-resolved")
-    if physical_records.keys() != peak_by_id.keys():
-        raise IdentityContractError(
-            "physical replay must cover every measured Discovery peak"
-        )
-    for candidate_id, record in physical_records.items():
-        validate_discovery_physical_fact_record(record)
-        peak = peak_by_id[candidate_id]
-        work = record.work_item
-        if (
-            record.peak_id != candidate_id
-            or work.sample_stem != peak.sample_stem
-            or work.acquisition_source_id
-            != sources_by_stem[peak.sample_stem].acquisition_source_id
-            or work.best_ms2_scan_id != peak.best_ms2_scan_id
-            or record.evaluation.prepared.profile != signal_processing_profile
-        ):
-            raise IdentityContractError(
-                "physical replay crossed peak, acquisition, or profile"
-            )
+        raise IdentityContractError("physical profile must be owner-resolved")
     if admitted is not None:
         peak_map = {
             stem: tuple(c for c in values if c.peak_id in admitted)
             for stem, values in peak_map.items()
-        }
-        physical_records = {
-            cid: record for cid, record in physical_records.items() if cid in admitted
         }
     return compose_partition_context(
         method_subject=method_subject,
@@ -255,7 +223,6 @@ def build_partition_context(
         source_expectations=source_expectations,
         peak_map=peak_map,
         receipt_map=receipt_map,
-        physical_records=physical_records,
         signal_processing_profile=signal_processing_profile,
     )
 
@@ -270,7 +237,6 @@ def compose_partition_context(
     source_expectations: dict[str, AcquisitionSourceExpectation],
     peak_map: Mapping[str, tuple[DiscoveryPeak, ...]],
     receipt_map: Mapping[str, DiscoveryPeakUniverseReceipt],
-    physical_records: dict[str, DiscoveryPhysicalFactRecord],
     signal_processing_profile: SignalProcessingProfile,
 ) -> UntargetedPartitionContext:
     """Compose one run from input-owner verified facts, samples in injection order."""
@@ -296,7 +262,6 @@ def compose_partition_context(
         peaks_by_sample=dict(peak_map),
         discovery_receipts_by_sample=dict(receipt_map),
         signal_processing_profile=signal_processing_profile,
-        physical_records_by_peak=physical_records,
         acquisition_sources_by_sample=source_expectations,
     )
 

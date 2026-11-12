@@ -458,7 +458,7 @@ def prepare_untargeted_partition_grouping(
             candidate_id,
         )
         for candidate_id, method_subject_id in batch.subject_batch.candidate_memberships
-        if peak_by_id[candidate_id].is_clean_peak
+        if candidate_id in capture_by_candidate
         and method_subject_id not in unsupported_subjects
     )
     exclusions = tuple(
@@ -494,7 +494,10 @@ def prepare_untargeted_partition_grouping(
         for candidate_id, method_subject_id in (
             batch.subject_batch.candidate_memberships
         )
-        if not peak_by_id[candidate_id].is_clean_peak
+        # A peak is searched only when Alignment captured it: Discovery held
+        # it, or Alignment's own measurement of it is not available or needs
+        # overlap review.
+        if candidate_id not in capture_by_candidate
         or method_subject_id in unsupported_subjects
     )
     # Partitioning changes execution ownership. Scientific composition keeps
@@ -971,6 +974,7 @@ def _runtime_captures_by_candidate(
         for peak in peaks
         if peak.peak_id in partition_ids and peak.is_clean_peak
     }
-    if set(captures) != expected:
-        raise RuntimeError("runtime capture does not close capture-eligible peaks")
+    # Alignment's own measurement may drop a peak; it never adds one.
+    if not set(captures) <= expected:
+        raise RuntimeError("runtime capture crossed capture-eligible peaks")
     return captures

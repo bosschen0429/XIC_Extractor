@@ -12,7 +12,6 @@ import pytest
 from scripts import run_alignment
 from tests.alignment_pipeline_helpers import (
     _owner_closed_receipt_fields,
-    physical_facts_fingerprint_beside,
     write_csv,
 )
 from xic_extractor.applications.untargeted.application import (
@@ -1146,7 +1145,6 @@ def _write_owner_closed_preflight_batch(
             sample_stem=sample_stem,
             acquisition_source=acquisition_source,
             peak_csv=candidate_csv,
-            physical_facts=physical_facts_fingerprint_beside(candidate_csv),
             peaks=(),
         )
         rows.append(

@@ -105,8 +105,11 @@ def test_capture_runs_physical_peak_detection() -> None:
         settings=_settings(ms1_search_padding_min=0.30),
     )[0]
     assert candidate.ms1_apex_rt == pytest.approx(9.02)
-    assert candidate.ms1_height is not None and 900.0 < candidate.ms1_height < 1000.0
-    assert candidate.ms1_area is not None
+    assert (
+        candidate.ms1_search_rt_min
+        <= candidate.query_rt_min
+        <= candidate.ms1_search_rt_max
+    )
     assert candidate.ms1_apex_rt - representative_event_rt(candidate) == (
         pytest.approx(0.02)
     )
@@ -168,10 +171,10 @@ def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
     assert len(batches) == 1 and len(batches[0]) == 1
     assert candidate.status == state
     assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
-    assert candidate.ms1_area == baseline.ms1_area
     assert candidate.ms1_apex_rt == baseline.ms1_apex_rt
-    assert candidate.ms1_peak_rt_start == baseline.ms1_peak_rt_start
-    assert candidate.ms1_peak_rt_end == baseline.ms1_peak_rt_end
+    assert candidate.ms1_search_rt_min == baseline.ms1_search_rt_min
+    assert candidate.ms1_search_rt_max == baseline.ms1_search_rt_max
+    assert candidate.query_rt_min == baseline.query_rt_min
     assert [event.scan_number for event in candidate.located_events] == [10, 11]
     for event in candidate.located_events:
         assert event.assess_precursor_loss(settings.nl_tolerance_ppm).status == status
@@ -314,12 +317,11 @@ def test_ms1_peak_fields_are_filled_from_physical_facts(scans_target: int) -> No
         ms1_centroid=lambda *_: None,
     )
     (candidate,) = result.peaks
-    (record,) = result.physical_evaluations
-    facts = record.evaluation.facts
+    (binding,) = result.physical_bindings
+    facts = binding.physical_evaluation.facts
     assert facts is not None
     assert candidate.ms1_apex_rt == pytest.approx(7.91)
-    assert candidate.ms1_height == facts.height
-    assert candidate.ms1_area == facts.area_counts_seconds
+    assert candidate.ms1_apex_rt == facts.apex_rt_min
     assert candidate.evidence_score == score_discovery_evidence(
         attached_event_count=2,
         ms1_event_delta_min=candidate.ms1_apex_rt - 7.90,
@@ -332,8 +334,6 @@ def test_ms1_peak_fields_are_filled_from_physical_facts(scans_target: int) -> No
         assert facts.scan_support_count >= scans_target
     else:
         assert 0 < facts.scan_support_count < scans_target
-    assert candidate.ms1_peak_rt_start == facts.left_rt_min
-    assert candidate.ms1_peak_rt_end == facts.right_rt_min
     assert candidate.ms1_apex_rt - representative_event_rt(candidate) == (
         pytest.approx(0.01)
     )
@@ -409,7 +409,6 @@ def test_single_raw_basin_keeps_events_outside_quantitative_return(
     # both events locate the one peak, attached or outside its bounds.
     (peak,) = result.peaks
     assert peak.ms1_apex_rt - representative_event_rt(peak) == pytest.approx(0.26)
-    assert peak.ms1_area > 0
     events = {event.ms2_scan_number: event for event in result.attachments}
     assert events[20].peak_id == peak.peak_id
     assert events[10].peak_id == peak.peak_id or (
@@ -436,7 +435,6 @@ def test_capture_merges_candidates_inside_same_ms1_peak_boundary() -> None:
     assert [event.rt for event in candidate.located_events] == pytest.approx(
         [7.80, 8.04]
     )
-    assert candidate.ms1_area is not None and candidate.ms1_area > 0
 
 
 @pytest.mark.parametrize("dominant_tag", ["dR", "R"])

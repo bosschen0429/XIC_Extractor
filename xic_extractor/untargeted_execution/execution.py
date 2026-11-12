@@ -115,14 +115,10 @@ def materialize_untargeted_partition(
     if subject_batch.candidate_memberships != expected_batch.candidate_memberships:
         raise ValueError("CID-NL partition crossed prepared candidate memberships")
 
-    candidates, records, support = plan.partition_input_loader(
+    candidates, support = plan.partition_input_loader(
         tuple(cid for cid, _ in subject_batch.candidate_memberships)
     )
-    context = replace(
-        plan.context,
-        peaks_by_sample=candidates,
-        physical_records_by_peak=records,
-    )
+    context = replace(plan.context, peaks_by_sample=candidates)
     templates: list[UntargetedPartitionJob] = []
     for sample in context.samples:
         stem = sample.raw_stem
@@ -145,9 +141,6 @@ def materialize_untargeted_partition(
                 raw_path=context.raw_paths_by_sample[stem],
                 dll_dir=plan.dll_dir,
                 signal_processing_profile=context.signal_processing_profile,
-                physical_records=tuple(
-                    records[item.peak_id] for item in candidates[stem]
-                ),
                 acquisition_source_expectation=context.acquisition_sources_by_sample[
                     stem
                 ],

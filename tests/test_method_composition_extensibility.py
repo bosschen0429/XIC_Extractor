@@ -27,8 +27,6 @@ from xic_extractor.processing_run_spec import (
     GenericDiscoveryMethodSpec,
     GenericMethodSettings,
     compile_processing_run_spec,
-    deserialize_processing_run_spec,
-    serialize_processing_run_spec,
 )
 from xic_extractor.untargeted_execution.input_planning import (
     is_supported_alignment_discovery,
@@ -68,16 +66,11 @@ def test_compile_processing_run_spec_with_custom_discovery_method(tmp_path: Path
 
     assert run_spec.discovery_method.method == "delta_mass"
 
-    # Serialization and deserialization roundtrip preserves spec equality
-    # and attribute access
-    serialized = serialize_processing_run_spec(run_spec)
-    deserialized = deserialize_processing_run_spec(serialized)
-    assert deserialized.discovery_method.method == "delta_mass"
-    assert deserialized == run_spec
-    assert isinstance(deserialized.discovery_method.settings, GenericMethodSettings)
-    assert deserialized.discovery_method.settings.pattern_id == "pt"
-    assert deserialized.discovery_method.settings["pattern_id"] == "pt"
-    assert deserialized.discovery_method.settings == MockDeltaMassDiscoverySettings()
+    settings = run_spec.discovery_method.settings
+    assert isinstance(settings, GenericMethodSettings)
+    assert settings.pattern_id == "pt"
+    assert settings["pattern_id"] == "pt"
+    assert settings == MockDeltaMassDiscoverySettings()
 
 
 def test_is_supported_alignment_discovery_accepts_single_and_multi_tag_settings():
@@ -139,37 +132,3 @@ def test_sqlite_diagnostic_roundtrip(tmp_path: Path):
     assert rows_generic == rows_cid_nl
     assert rows_generic["diagnostic_only"] is True
     assert rows_generic["processing_algorithm_version"] == "discovery"
-
-
-def test_sidecar_roundtrip_with_generic_discovery_method_spec(tmp_path: Path):
-    from tests.discovery_physical_fact_persistence_fixtures import _population, _spec
-    from xic_extractor.discovery.physical_fact_persistence import (
-        read_discovery_physical_fact_sidecar,
-        write_discovery_physical_fact_sidecar,
-    )
-
-    _, base_spec, acquisition_input = _spec(tmp_path)
-    custom_method = GenericDiscoveryMethodSpec(
-        settings=MockDeltaMassDiscoverySettings(),
-        method="delta_mass",
-        schema_version="1.0.0",
-    )
-    spec = replace(base_spec, discovery_method=custom_method)
-    manifest, records = _population(spec, acquisition_input)
-    sidecar_path = tmp_path / "out" / "custom_physical_facts.json"
-
-    write_discovery_physical_fact_sidecar(
-        sidecar_path,
-        run_spec=spec,
-        acquisition_input=acquisition_input,
-        work_manifest=manifest,
-        records=records,
-    )
-
-    rehydrated = read_discovery_physical_fact_sidecar(
-        sidecar_path,
-        expected_run_spec=spec,
-        expected_acquisition_input=acquisition_input,
-        expected_work_manifest=manifest,
-    )
-    assert len(rehydrated) == len(records)

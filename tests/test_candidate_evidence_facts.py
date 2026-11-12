@@ -29,7 +29,6 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     mint_physical_peak_question,
     prepare_physical_signal,
-    validate_bounded_physical_peak_evaluation,
 )
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.signal_quality import SignalQuality
@@ -229,7 +228,6 @@ def test_physical_owner_mints_closed_unique_admissible_bounded_facts() -> None:
         "raw_descriptor_projection",
     )
     assert not hasattr(evaluation, "rt")
-    validate_bounded_physical_peak_evaluation(evaluation)
 
 
 def test_physical_owner_excludes_noncontaining_segments_from_admissibility() -> None:

@@ -5,7 +5,6 @@ from dataclasses import replace
 
 import pytest
 
-from tests.alignment_pipeline_helpers import physical_facts_fingerprint_beside
 from xic_extractor.configuration.mass_recalibration import MassRecalibration
 from xic_extractor.presets import apply_to_discovery, load_preset
 from xic_extractor.presets.serialization import save_preset
@@ -72,7 +71,6 @@ def test_receipt_roundtrip_preserves_each_raw_result_and_legacy_none(tmp_path, o
                 raw, acquisition_format="thermo_raw", observation_namespace="test"
             ),
             peak_csv=csv,
-            physical_facts=physical_facts_fingerprint_beside(csv),
             peaks=(),
             mass_recalibration_result=result,
         )
@@ -90,13 +88,12 @@ def test_receipt_roundtrip_preserves_each_raw_result_and_legacy_none(tmp_path, o
 
 
 @pytest.mark.parametrize("policy", tuple(MassRecalibration))
-def test_method_spec_roundtrip_and_rejects_explicit_none(tmp_path, policy):
+def test_method_spec_records_none_by_omission(tmp_path, policy):
     from xic_extractor.discovery.processing_run_spec_adapter import (
         compile_discovery_processing_run_spec,
     )
     from xic_extractor.processing_run_spec import (
-        deserialize_processing_run_spec,
-        serialize_processing_run_spec,
+        canonical_processing_run_spec_bytes,
     )
 
     raw = tmp_path / "A.raw"
@@ -105,15 +102,12 @@ def test_method_spec_roundtrip_and_rejects_explicit_none(tmp_path, policy):
         apply_to_discovery(load_preset("dna_dr")), mass_recalibration=policy
     )
     spec = compile_discovery_processing_run_spec((raw,), discovery_settings=settings)
-    payload = serialize_processing_run_spec(spec)
-    assert deserialize_processing_run_spec(payload) == spec
-    if policy is MassRecalibration.NONE:
-        content = json.loads(payload)
-        content["content"]["discovery_method"]["settings"]["mass_recalibration"] = (
-            "none"
-        )
-        with pytest.raises(ValueError, match="none is recorded by omission"):
-            deserialize_processing_run_spec(json.dumps(content))
+    settings_content = json.loads(canonical_processing_run_spec_bytes(spec))[
+        "discovery_method"
+    ]["settings"]
+    assert ("mass_recalibration" in settings_content) is (
+        policy is not MassRecalibration.NONE
+    )
 
 
 def test_fact_cache_policy_namespace_separates_numeric_facts(tmp_path):

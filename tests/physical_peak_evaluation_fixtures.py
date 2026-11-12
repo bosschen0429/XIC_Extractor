@@ -1,4 +1,4 @@
-"""Helpers shared by test_physical_peak_evaluation_persistence and others."""
+"""Helpers shared by test_physical_peak_evaluation_behavior and others."""
 
 from __future__ import annotations
 
