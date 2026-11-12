@@ -35,7 +35,9 @@ none of these entries grants readiness or writer authority.
 `e00c8d17`. Re-encoding the same completed 45-sample CSMU evidence reduced
 SQLite from 529,510,400 to 230,318,080 bytes (56.5%); the 8RAW file went from
 15,376,384 to 11,022,336 bytes (28.3%). This was persisted-data replay, not a
-new Discovery/Alignment run.
+new Discovery/Alignment run. A real 8RAW Alignment run with the final writer
+wrote 11,223,040 bytes; its Matrix and Review were byte-identical to `bae07217`,
+and all 3,243 saved curves and recomputed processed signals matched full audit.
 
 The largest waste was repeated membership comparison context, not the curves:
 member and cell risk BLOBs occupied 224.6 MB before layout overhead. Store
@@ -54,9 +56,8 @@ whole-analysis speedups. Actual Workbench click-to-paint was 223–284 ms for
 RAW/DLL inputs.
 
 The owner accepted that new files require the updated reader. There is no
-migration command or automatic rewrite, and no compatibility adapter for the
-branch's temporary JSON curve format. Earlier formal results without saved
-curves keep their RAW review path.
+migration command, automatic rewrite or compatibility reader: results without
+the curve and membership tables are rejected with a request to rerun Alignment.
 
 Rerun when curve precision, membership evidence, lookup keys, serialization or
 the interactive delivery path changes. Evidence is under
