@@ -7,12 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.matrix_curation.export import (
-    RUN_METADATA_NAME,
-    CurationSource,
     default_output_dir,
     describe_steps,
     export_matrix_curation,
-    locate_curation_source,
     prepare_matrix_curation,
     read_run_istd,
     read_run_samples,
@@ -20,6 +17,11 @@ from xic_extractor.matrix_curation.export import (
 )
 from xic_extractor.matrix_curation.istd import IstdWindow, read_istd_file
 from xic_extractor.matrix_curation.same_compound import RELATIONS_NAME, REVIEW_NAME
+from xic_extractor.matrix_curation.source import (
+    RUN_METADATA_NAME,
+    CurationSource,
+    locate_curation_source,
+)
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_workbench.samples import from_payload, sample_annotations_path
 

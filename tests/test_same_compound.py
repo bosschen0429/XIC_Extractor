@@ -953,10 +953,8 @@ def synthetic_cells(monkeypatch):
 
 
 def _export(tmp_path, name, steps, istd=None):
-    from xic_extractor.matrix_curation.export import (
-        export_matrix_curation,
-        locate_curation_source,
-    )
+    from xic_extractor.matrix_curation.export import export_matrix_curation
+    from xic_extractor.matrix_curation.source import locate_curation_source
 
     source = locate_curation_source(tmp_path / "alignment")
     output = tmp_path / name

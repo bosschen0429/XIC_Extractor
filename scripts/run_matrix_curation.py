@@ -15,16 +15,18 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from xic_extractor.matrix_curation.export import (
-    RUN_METADATA_NAME,
     STEPS,
     default_output_dir,
     export_matrix_curation,
-    locate_curation_source,
     read_run_istd,
     read_run_samples,
     read_sample_metadata_file,
 )
 from xic_extractor.matrix_curation.istd import IstdWindow, read_istd_file
+from xic_extractor.matrix_curation.source import (
+    RUN_METADATA_NAME,
+    locate_curation_source,
+)
 from xic_extractor.sample_metadata import SampleMetadata
 
 

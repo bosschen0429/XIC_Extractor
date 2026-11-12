@@ -619,7 +619,7 @@ class ReviewWorkspace:
 
 
 def _curatable(folder: Path) -> bool:
-    from xic_extractor.matrix_curation.export import locate_curation_source
+    from xic_extractor.matrix_curation.source import locate_curation_source
 
     try:
         locate_curation_source(folder)
