@@ -1372,7 +1372,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
 
 def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
     from xic_extractor.alignment_explanation.reader import read_review_evidence
-    from xic_extractor.diagnostics.alignment_explanation_projection import (
+    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
         write_alignment_explanation,
     )
     from xic_inspector.api import SelectionRequest, prepare_report

@@ -31,7 +31,7 @@ from xic_extractor.alignment_explanation.reader import (
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
 )
-from xic_extractor.diagnostics.alignment_explanation_projection import (
+from xic_extractor.applications.untargeted.alignment_explanation_projection import (
     write_alignment_explanation,
 )
 from xic_extractor.execution.result_store import StreamedResultStore

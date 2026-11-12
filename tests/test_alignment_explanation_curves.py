@@ -129,7 +129,7 @@ def test_rejects_undeclared_curve_kind_and_keys() -> None:
 
 def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeypatch):
     from tests.alignment_explanation_fixtures import run_alignment_fixture
-    from xic_extractor.diagnostics.alignment_explanation_projection import (
+    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
         write_alignment_explanation,
     )
 

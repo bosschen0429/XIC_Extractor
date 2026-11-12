@@ -4,7 +4,7 @@ from tests.alignment_explanation_fixtures import (
     explanation_discovery_facts,
     run_alignment_fixture,
 )
-from xic_extractor.diagnostics.alignment_explanation_projection import (
+from xic_extractor.applications.untargeted.alignment_explanation_projection import (
     write_alignment_explanation,
 )
 from xic_extractor.execution.timing import TimingRecorder

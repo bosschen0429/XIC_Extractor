@@ -19,14 +19,14 @@ from xic_extractor.alignment_explanation.reader import (
     read_alignment_explanation,
 )
 from xic_extractor.alignment_explanation.storage import SCHEMA_VERSION
+from xic_extractor.applications.untargeted.alignment_explanation_projection import (
+    write_alignment_explanation,
+)
 from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
 )
 from xic_extractor.applications.untargeted.request import (
     UntargetedRequest,
-)
-from xic_extractor.diagnostics.alignment_explanation_projection import (
-    write_alignment_explanation,
 )
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (

@@ -1,4 +1,4 @@
-"""Project existing CID-NL owners into diagnostic facts without deciding science."""
+"""Project completed Untargeted CID-NL owners into the published explanation report."""
 
 from __future__ import annotations
 
@@ -698,6 +698,3 @@ def prepare_alignment_explanation(
             return sink.finalize(summary)
 
         yield PreparedAlignmentExplanation(consume_child, finalize)
-
-
-write_alignment_explanation = write_alignment_explanation

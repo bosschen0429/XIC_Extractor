@@ -242,7 +242,7 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         persist_discovery_batch,
         representative_precursors,
     )
-    from xic_extractor.diagnostics.alignment_explanation_projection import (
+    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
         write_alignment_explanation,
     )
 
