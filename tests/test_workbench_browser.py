@@ -3847,24 +3847,23 @@ def test_sample_editor_selects_by_drag_search_and_shift_and_marks_other_rows(
     )
     page.locator("#sample-filter").fill("")
 
-    # Dragging across a range selects it; keys 1-5 apply a role.
+    # Dragging across a range of the name-ordered rows selects it; keys 1-5
+    # apply a role.
     first = _sample_row(page, "Tumor_1").bounding_box()
     last = _sample_row(page, "Tumor_2").bounding_box()
     page.mouse.move(first["x"] + 20, first["y"] + first["height"] / 2)
     page.mouse.down()
     page.mouse.move(last["x"] + 20, last["y"] + last["height"] / 2, steps=6)
     page.mouse.up()
-    expect(page.locator("#sample-selection")).to_have_text("選取的 3 個 設為")
+    expect(page.locator("#sample-selection")).to_have_text("選取的 2 個 設為")
     with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
         page.keyboard.press("4")
-    expect(page.locator("#sample-rows tr[data-stem] td:last-child").first).to_have_text(
-        "Blank"
-    )
+    expect(_sample_row(page, "Tumor_2").locator("td").last).to_have_text("Blank")
 
     # Shift extends from the last clicked row; Ctrl adds or removes one row.
     _sample_row(page, "Tumor_2").click()
     _sample_row(page, "Tumor_3").click(modifiers=["Shift"])
-    _sample_row(page, "QC_2").click(modifiers=["Control"])
+    _sample_row(page, "Run_17").click(modifiers=["Control"])
     expect(page.locator("#sample-selection")).to_have_text("選取的 3 個 設為")
     expect(_sample_action(page, "排除")).to_be_enabled()
     with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
@@ -3878,12 +3877,75 @@ def test_sample_editor_selects_by_drag_search_and_shift_and_marks_other_rows(
     }
     assert {stem: (row.sample_role, row.excluded) for stem, row in saved.items()} == {
         "Tumor_1": ("blank", False),
-        "QC_1": ("blank", False),
+        "QC_1": ("std", False),
         "Tumor_2": ("blank", True),
         "QC_2": ("std", False),
         "Run_17": ("other", True),
         "Tumor_3": ("sample", True),
     }
+
+
+def test_sample_editor_lists_raw_names_in_file_explorer_order(
+    workbench, config_dir, tmp_path, monkeypatch
+):
+    page = workbench
+    install_fake_raw_headers(monkeypatch)
+    batch = tmp_path / "raw"
+    # Injection order interleaves the names an exclusion targets.
+    injected = (
+        "Blank_10",
+        "SDOL_2",
+        "Blank_2",
+        "Tumor_1",
+        "blank_1",
+        "SDOL_1",
+        "Blank-waste",
+    )
+    _placeholder_batch(batch, injected)
+    _relist_samples(page)
+    expect(page.locator("#t-role-summary")).not_to_have_text(
+        "尚未讀取樣本", timeout=BACKGROUND_JOB_TIMEOUT_MS
+    )
+    _wait_for_analysis_status(page, "已完成")
+    page.locator("#t-samples-edit").click()
+    rows = page.locator("#sample-rows tr[data-stem] td:first-child")
+    # Case-insensitive; digit runs compare by value, so Blank_2 precedes Blank_10.
+    expect(rows).to_have_text(
+        [
+            "blank_1",
+            "Blank_2",
+            "Blank_10",
+            "Blank-waste",
+            "SDOL_1",
+            "SDOL_2",
+            "Tumor_1",
+        ]
+    )
+    # Each role button shows the key that applies it.
+    expect(page.locator("#sample-actions kbd")).to_have_text(["1", "2", "3", "4", "5"])
+    for name in ("Sample", "QC", "STD", "Blank", "Other"):
+        expect(_sample_action(page, name)).to_be_visible()
+
+    # Shift selects a contiguous run of similar names.
+    _sample_row(page, "blank_1").click()
+    _sample_row(page, "Blank-waste").click(modifiers=["Shift"])
+    expect(page.locator("#sample-selection")).to_have_text("選取的 4 個 設為")
+    page.locator("#sample-filter").fill("SDOL")
+    expect(rows).to_have_text(["SDOL_1", "SDOL_2"])
+    expect(page.locator("#sample-selection")).to_have_text("選取的 2 個 設為")
+    with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
+        _sample_action(page, "排除").click()
+    page.locator("#sample-filter").fill("blank")
+    expect(rows).to_have_text(["blank_1", "Blank_2", "Blank_10", "Blank-waste"])
+    with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
+        _sample_action(page, "排除").click()
+    page.locator("#sample-filter").fill("")
+    expect(page.locator("#sample-rows tr.excluded")).to_have_count(6)
+
+    # Saved rows keep injection order; only the editor display is sorted.
+    saved = load_sample_metadata(sample_annotations_path(config_dir, batch))
+    assert [row.raw_stem for row in saved] == list(injected)
+    assert [row.raw_stem for row in saved if not row.excluded] == ["Tumor_1"]
 
 
 def test_sample_click_right_after_a_drag_selects_that_row(
