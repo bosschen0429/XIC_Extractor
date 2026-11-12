@@ -30,20 +30,18 @@ from xic_extractor.applications.untargeted.publication import (
 from xic_extractor.applications.untargeted.request import (
     UntargetedExecutionContext,
     UntargetedRequest,
+    untargeted_peak_config,
     validate_retained_processing_profile,
 )
-from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 from xic_extractor.configuration.execution_profile import (
     DEFAULT_ALIGNMENT_WORKER_BACKEND,
     UntargetedExecutionPolicy,
     load_execution_profile,
 )
-from xic_extractor.configuration.mass_recalibration import MassRecalibration
-from xic_extractor.configuration.models import ConfigError, ExtractionConfig
+from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.paths import targets_template_path
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
-    SignalProcessingProfile,
     resolve_signal_processing_profile,
 )
 from xic_extractor.discovery.csv_reader import (
@@ -110,10 +108,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     signal_processing_profile = resolve_signal_processing_profile(
         signal_processing_method=args.signal_processing_method,
         signal_processing_window_points=args.signal_processing_window_points,
-    )
-    peak_config_resolver_mode = recipe.discovery_settings.resolver_mode
-    peak_config_nl_min_intensity_ratio = (
-        recipe.discovery_settings.nl_min_intensity_ratio
     )
     try:
         execution = UntargetedExecutionPolicy(
@@ -218,15 +212,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             alignment_config=replace(
                 recipe.alignment_config, backfill_enabled=args.backfill
             ),
-            peak_config=_peak_config(
-                raw_dir,
-                dll_dir,
-                output_dir,
-                peak_config_resolver_mode,
+            peak_config=untargeted_peak_config(
+                raw_dir=raw_dir,
+                dll_dir=dll_dir,
+                output_dir=output_dir,
+                discovery_settings=recipe.discovery_settings,
                 baseline_integration_method=_baseline_integration_method(args),
                 signal_processing_profile=signal_processing_profile,
-                nl_min_intensity_ratio=peak_config_nl_min_intensity_ratio,
-                mass_recalibration=recipe.discovery_settings.mass_recalibration,
             ),
             discovery_settings=recipe.discovery_settings,
             signal_processing_profile=signal_processing_profile,
@@ -853,42 +845,6 @@ def _baseline_integration_method(args: argparse.Namespace) -> str:
     if env_method == "linear_edge":
         raise ValueError("linear_edge baseline integration is retired; use asls")
     raise ValueError("BASELINE_INTEGRATION_METHOD must be asls")
-
-
-def _peak_config(
-    raw_dir: Path,
-    dll_dir: Path,
-    output_dir: Path,
-    resolver_mode: str,
-    baseline_integration_method: str = "asls",
-    signal_processing_profile: SignalProcessingProfile | None = None,
-    nl_min_intensity_ratio: float | None = None,
-    mass_recalibration: MassRecalibration = MassRecalibration.NONE,
-) -> ExtractionConfig:
-    profile = signal_processing_profile or resolve_signal_processing_profile()
-    return ExtractionConfig(
-        data_dir=raw_dir,
-        dll_dir=dll_dir,
-        output_csv=output_dir / "xic_results.csv",
-        diagnostics_csv=output_dir / "xic_diagnostics.csv",
-        smooth_window=15,
-        smooth_polyorder=3,
-        signal_processing_method=profile.method,
-        signal_processing_window_points=profile.window_points,
-        ms1_morphology_smoothing_window_points=profile.window_points,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=DEFAULT_CID_NL_MASS_POLICY.ms2_precursor_tol_da,
-        nl_min_intensity_ratio=(
-            DEFAULT_CID_NL_MASS_POLICY.nl_min_intensity_ratio
-            if nl_min_intensity_ratio is None
-            else nl_min_intensity_ratio
-        ),
-        resolver_mode=resolver_mode,
-        baseline_integration_method=baseline_integration_method,
-        mass_recalibration=mass_recalibration,
-        parallel_mode="process",
-    )
 
 
 if __name__ == "__main__":

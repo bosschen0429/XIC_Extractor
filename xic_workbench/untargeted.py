@@ -16,16 +16,12 @@ from xic_extractor.applications.untargeted.publication import (
 from xic_extractor.applications.untargeted.request import (
     UntargetedExecutionContext,
     UntargetedRequest,
+    untargeted_peak_config,
 )
-from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 from xic_extractor.configuration.execution_profile import (
     DEFAULT_ALIGNMENT_WORKER_BACKEND,
     ExecutionProfile,
     UntargetedExecutionPolicy,
-)
-from xic_extractor.configuration.models import ExtractionConfig
-from xic_extractor.configuration.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.discovery.delta_mass_pipeline import run_delta_mass_discovery
 from xic_extractor.discovery.models import DiscoveryBatchOutputs
@@ -304,7 +300,12 @@ class UntargetedRun:
                 dll_dir=request.dll_dir,
                 output_dir=request.output_dir,
                 alignment_config=recipe.alignment_config,
-                peak_config=self._alignment_peak_config(recipe.discovery_settings),
+                peak_config=untargeted_peak_config(
+                    raw_dir=request.raw_dir or request.output_dir,
+                    dll_dir=request.dll_dir,
+                    output_dir=request.output_dir,
+                    discovery_settings=recipe.discovery_settings,
+                ),
                 discovery_settings=recipe.discovery_settings,
                 sample_metadata=request.sample_metadata,
                 targets_csv=request.targets_csv,
@@ -375,33 +376,6 @@ class UntargetedRun:
 
     def _build_settings(self) -> DiscoverySettings:
         return self._alignment_runtime().discovery_settings
-
-    def _alignment_peak_config(self, settings: DiscoverySettings) -> ExtractionConfig:
-        return self._peak_config(
-            self.request.raw_dir or self.request.output_dir,
-            settings,
-        )
-
-    def _peak_config(
-        self, data_dir: Path, settings: DiscoverySettings
-    ) -> ExtractionConfig:
-        return ExtractionConfig(
-            data_dir=data_dir,
-            dll_dir=self.request.dll_dir,
-            output_csv=self.request.output_dir / "xic_results.csv",
-            diagnostics_csv=self.request.output_dir / "xic_diagnostics.csv",
-            smooth_window=15,
-            smooth_polyorder=3,
-            ms1_morphology_smoothing_window_points=(
-                DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
-            ),
-            peak_rel_height=0.95,
-            peak_min_prominence_ratio=0.10,
-            ms2_precursor_tol_da=DEFAULT_CID_NL_MASS_POLICY.ms2_precursor_tol_da,
-            nl_min_intensity_ratio=settings.nl_min_intensity_ratio,
-            resolver_mode=settings.resolver_mode,
-            mass_recalibration=settings.mass_recalibration,
-        )
 
     def _prepare_samples(self, raw_dir: Path | None) -> tuple[Path, ...]:
         if raw_dir is None or not raw_dir.is_dir():

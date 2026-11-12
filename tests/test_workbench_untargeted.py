@@ -610,6 +610,12 @@ def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
     assert captured["request"].publication.emit_alignment_explanation is True
     assert captured["request"].alignment_config.backfill_enabled is True
     assert captured["request"].publication.explanation_full_audit is False
+    peak_config = captured["request"].peak_config
+    assert peak_config.parallel_mode == "process"
+    assert (
+        peak_config.mass_recalibration
+        is captured["request"].discovery_settings.mass_recalibration
+    )
     assert summary["overview"]["matrix_count"] == 3
     assert summary["overview"]["complete_count"] == 1
     assert summary["overview"]["unresolved_count"] == 1
@@ -811,36 +817,6 @@ def test_untargeted_missing_targets_rejects_before_queue_or_active_save(
         assert jobs.state()["job"] is None
     finally:
         jobs.close()
-
-
-@pytest.mark.parametrize("policy", ("none", "easy_ic_probe", "easy_ic_restore"))
-def test_alignment_istd_config_uses_recipe_mass_policy(tmp_path, policy):
-    from dataclasses import replace
-
-    from xic_extractor.configuration.mass_recalibration import (
-        resolve_mass_recalibration,
-    )
-    from xic_extractor.presets import apply_to_discovery
-
-    request = parse_request(
-        dict(
-            raw_dir=str(tmp_path),
-            dll_dir=str(tmp_path),
-            output_dir=str(tmp_path / "out"),
-            preset="dna_dr",
-        )
-    )
-    run = UntargetedRun(
-        request, progress=lambda *args: None, should_cancel=lambda: False
-    )
-    settings = replace(
-        apply_to_discovery(load_preset("dna_dr")),
-        mass_recalibration=resolve_mass_recalibration(policy),
-    )
-    assert (
-        run._alignment_peak_config(settings).mass_recalibration
-        is settings.mass_recalibration
-    )
 
 
 def test_delta_mass_discovery_stops_on_cancel_before_reading_raw(tmp_path):
