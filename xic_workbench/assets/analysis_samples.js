@@ -192,6 +192,9 @@ const selection = createRowSelection({
   order: () => visibleRows().map((row) => row.raw_stem),
   onChange: () => renderSelection(),
 });
+// File Explorer order: case-insensitive, digit runs by value (Blank_2 < Blank_10).
+// Display only; committed rows keep injection order.
+const byRawName = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 function visibleRows() {
   const filter = $("sample-filter").value.trim().toLowerCase();
   return sampleMetadata
@@ -200,7 +203,8 @@ function visibleRows() {
       (row) =>
         !filter ||
         [row.raw_stem, row.sample_name].join(" ").toLowerCase().includes(filter),
-    );
+    )
+    .sort((a, b) => byRawName.compare(a.raw_stem, b.raw_stem));
 }
 function clearSelection() {
   selection.clear();
@@ -311,7 +315,9 @@ export function bindSamples() {
   for (const [index, role] of roles.entries()) {
     const node = el("button", roleLabels[role]);
     node.type = "button";
-    node.title = `鍵盤 ${index + 1}`;
+    const key = el("kbd", String(index + 1));
+    key.setAttribute("aria-hidden", "true");
+    node.prepend(key, " ");
     node.onclick = () => apply({ sample_role: role });
     $("sample-actions").append(node);
   }
