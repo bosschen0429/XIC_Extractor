@@ -880,7 +880,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
             for assessment in eager.method_assessments
             if assessment.method_subject.method_subject_id in eligible_subject_ids
         }
-    from xic_extractor.diagnostics.alignment_explanation_projection import (
+    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
         write_alignment_explanation,
     )
 
@@ -1070,7 +1070,7 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
     from xic_extractor.alignment_explanation.reader import (
         read_alignment_explanation,
     )
-    from xic_extractor.diagnostics.alignment_explanation_projection import (
+    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
         write_alignment_explanation,
     )
 

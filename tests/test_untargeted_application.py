@@ -475,7 +475,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     from xic_extractor.alignment_explanation.reader import (
         read_alignment_explanation,
     )
-    from xic_extractor.diagnostics.alignment_explanation_projection import (
+    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
         write_alignment_explanation,
     )
     from xic_extractor.execution.result_store import StreamedResultStore

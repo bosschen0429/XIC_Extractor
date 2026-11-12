@@ -230,7 +230,7 @@ this section states the shape and does not restate the contracts.
 | --- | --- | --- |
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
 | `applications/targeted/` | Targeted composition, request/result interface, input binding and publication | peak selection, cell decisions, RAW acquisition or workbook formatting |
-| `applications/untargeted/` | Untargeted composition from Discovery to published Matrix, run lifetime and cancellation | grouping, cell decisions, a second runtime owner or writer algorithm |
+| `applications/untargeted/` | Untargeted composition from Discovery to published Matrix, assembly of the published explanation report, run lifetime and cancellation | grouping, cell decisions, a second runtime owner or writer algorithm |
 | `discovery/` | candidate discovery, seed generation, workflow-neutral discovery facts and receipt-bound candidate reading | matrix decisions or target-list policy |
 | `execution/` | generic attempt lifecycle, scheduling, workers, cancellation, cleanup, result storage and runtime metrics | method-specific science, subject splitting, or writer authority |
 | `extraction/` | Targeted acquisition, result models, product projection, input binding and capture population | application composition, UI, or Alignment decisions |
@@ -239,7 +239,7 @@ this section states the shape and does not restate the contracts.
 | `alignment/` | cross-sample grouping, repair composition, Backfill and Alignment adapters | a second runtime owner, transport authority, or reading Targeted acquisition results |
 | `output/` | schema rendering and the Targeted product result model; `output/alignment/` writes Matrix artifacts | evidence recomputation, application store lifetime or RAW access |
 | `alignment_explanation/` | shared SQLite format, retention codecs, atomic publication and completed-evidence queries | scientific decisions, RAW acquisition, or Inspector presentation policy |
-| `diagnostics/` | reusable diagnostics and method-specific projections of completed facts | CLI parsing, production mutation, or domain recomputation |
+| `diagnostics/` | reusable diagnostics and method-specific projections of completed facts | published product artifacts, CLI parsing, production mutation, or domain recomputation |
 | `xic_inspector/` | read-only review API/CLI, source adapters, selection and offline HTML rendering | RAW acquisition, scientific recomputation, identity/Matrix decisions, or write authority |
 | `xic_workbench/` and `scripts/` | HTML interaction, local transport, and thin orchestration | reusable domain behavior or scientific authority |
 | root facades | current public compatibility and thin orchestration | new implementation detail |

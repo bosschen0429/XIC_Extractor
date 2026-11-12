@@ -179,7 +179,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     render("matrix", matrix_path, writer)
     with matrix_path.open(encoding="utf-8", newline="") as handle:
         matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
-    from xic_extractor.diagnostics.alignment_explanation_projection import (
+    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
         write_alignment_explanation,
     )
 
@@ -622,7 +622,7 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
     from xic_extractor.alignment_explanation.writer import (
         ExplanationReportWriter,
     )
-    from xic_extractor.diagnostics.alignment_explanation_projection import (
+    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
         _emit_curve_payload,
     )
 

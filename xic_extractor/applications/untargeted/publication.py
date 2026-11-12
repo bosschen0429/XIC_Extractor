@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from xic_extractor.diagnostics.alignment_explanation_projection import (
+from xic_extractor.applications.untargeted.alignment_explanation_projection import (
     PreparedAlignmentExplanation,
     prepare_alignment_explanation,
 )

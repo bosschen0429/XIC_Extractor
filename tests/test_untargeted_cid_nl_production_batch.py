@@ -200,11 +200,11 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         from xic_extractor.alignment_explanation.reader import (
             read_alignment_explanation,
         )
-        from xic_extractor.diagnostics.alignment_explanation_projection import (
-            write_alignment_explanation,
+        from xic_extractor.applications.untargeted import (
+            alignment_explanation_projection as projection,
         )
 
-        report = write_alignment_explanation(
+        report = projection.write_alignment_explanation(
             tmp_path / "no-input-review.sqlite",
             completed=completed,
             **explanation_discovery_facts(completed),
@@ -1378,7 +1378,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
 
     from xic_extractor.alignment_explanation.published_cells import read_published_cells
     from xic_extractor.alignment_explanation.reader import read_review_evidence
-    from xic_extractor.diagnostics.alignment_explanation_projection import (
+    from xic_extractor.applications.untargeted.alignment_explanation_projection import (
         write_alignment_explanation,
     )
     from xic_extractor.diagnostics.duplicate_quantification import (
