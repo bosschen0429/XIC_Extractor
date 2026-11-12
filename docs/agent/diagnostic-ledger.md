@@ -282,6 +282,7 @@ outputs.
 | Early precursor rejection in candidate merge (#699) | MS1 Backfill 17.8 to 14.2 s on one RAW | merge eligibility or order changes |
 | Precursor-mass index in candidate merge | MS1 Backfill 17.5 to 14.1 s on one RAW | merge eligibility or order changes |
 | MS2 precursor metadata uses file-local trailer indices | seed stage 5.76 to 4.52 s on one RAW | trailer decoding changes |
+| MS1 mass channels track the oldest live channel instead of rescanning all | EASY-IC oil 8 RAW wall 104.7/102.8 to 73.7/70.9 s; 8RAW 37.2 to 31.4 s; `within_ppm` calls 23.1M to linear on the 22,091-event RAW | channel membership rule or search order changes |
 
 Keep the formatted trailer API; the typed API changes numeric precision.
 

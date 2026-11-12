@@ -305,3 +305,69 @@ def test_identical_narrow_probes_do_not_substitute_final_mass_windows():
     )
     assert first.evaluation.facts is not None
     assert second.evaluation.facts is not None
+
+
+def test_mass_channels_take_the_first_channel_whose_every_member_is_within_ppm():
+    """A search joins the oldest channel it fits wholly, else opens a channel."""
+    from xic_extractor.mass_accuracy import within_ppm
+
+    rng = np.random.default_rng(1089)
+    searches = tuple(
+        PhysicalPeakSearch(
+            f"s{index}",
+            5.0,
+            # Unique, mutually overlapping RT windows: a context's RT span then
+            # names exactly one mass channel.
+            XICRequest(
+                float(500.0 + rng.integers(0, 120) * 0.0015),
+                index * 1e-3,
+                10.0 + index * 1e-3,
+                float(rng.choice((10.0, 20.0))),
+            ),
+            True,
+        )
+        for index in range(400)
+    )
+    expected: list[list[PhysicalPeakSearch]] = []
+    for search in sorted(
+        searches,
+        key=lambda s: (
+            s.request.ppm_tol,
+            s.request.mz,
+            s.request.rt_min,
+            s.query_rt_min,
+            s.selection_subject_id,
+        ),
+    ):
+        for members in expected:
+            if members[0].request.ppm_tol == search.request.ppm_tol and all(
+                within_ppm(search.request.mz, m.request.mz, search.request.ppm_tol)
+                for m in members
+            ):
+                members.append(search)
+                break
+        else:
+            expected.append([search])
+
+    by_span: dict[tuple[float, float, float], set[str]] = {}
+    for request, members in physical_capture._shared_contexts(searches).items():
+        by_span.setdefault(
+            (request.ppm_tol, request.rt_min, request.rt_max), set()
+        ).update(m.selection_subject_id for m in members)
+    assert sorted(map(sorted, by_span.values())) == sorted(
+        sorted(s.selection_subject_id for s in members) for members in expected
+    )
+    # The input must exercise non-transitive chains: neighbours within ppm of
+    # each other that still belong to different channels.
+    channel_of = {
+        search.selection_subject_id: index
+        for index, members in enumerate(expected)
+        for search in members
+    }
+    ordered = sorted(searches, key=lambda s: (s.request.ppm_tol, s.request.mz))
+    assert any(
+        a.request.ppm_tol == b.request.ppm_tol
+        and within_ppm(b.request.mz, a.request.mz, a.request.ppm_tol)
+        and channel_of[a.selection_subject_id] != channel_of[b.selection_subject_id]
+        for a, b in zip(ordered, ordered[1:], strict=False)
+    )
