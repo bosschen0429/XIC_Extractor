@@ -13,7 +13,7 @@ import tempfile
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 
@@ -38,6 +38,12 @@ from xic_extractor.xic_models import XICRequest
 
 _CACHE_SCHEMA = "untargeted_raw_fact_cache"
 _MS2_SCHEMA = "untargeted_ms2_precursor_facts"
+# Each kind is one directory under a source namespace; the names stay short so
+# the deepest entry fits Windows MAX_PATH below a run output directory.
+_FactKind = Literal["metadata", "ms2", "xic"]
+# Path names only spread entries. The envelope carries the full namespace and
+# key digest, so a name collision is a rejected entry, never a wrong fact.
+_NAME_HEX_DIGITS = 16
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -267,23 +273,13 @@ class _FactCache:
             if mass_recalibration is MassRecalibration.NONE
             else f"{source_id}|mass_recalibration={mass_recalibration.value}"
         )
-        self._root = root / hashlib.sha256(namespace.encode("utf-8")).hexdigest()
-        self._source_id = source_id
-        # Calibrated MS2 recognizes parent centroids even without mono metadata.
-        # Keep XICs and vendor-mass facts reusable without admitting older MS2
-        # entries whose fragments and selected precursor may use different scales.
-        self._ms2_kind = (
-            "ms2"
-            if mass_recalibration is MassRecalibration.NONE
-            else "ms2_parent_centroid_optional_mono"
-        )
+        self._namespace = namespace
+        self._root = root / _short_name(namespace.encode("utf-8"))
 
-    def _path(self, kind: str, key: bytes) -> Path:
-        if kind == "ms2":
-            kind = self._ms2_kind
-        return self._root / kind / f"{hashlib.sha256(key).hexdigest()}.json"
+    def _path(self, kind: _FactKind, key: bytes) -> Path:
+        return self._root / kind / f"{_short_name(key)}.json"
 
-    def read(self, kind: str, key: bytes) -> bytes | None:
+    def read(self, kind: _FactKind, key: bytes) -> bytes | None:
         path = self._path(kind, key)
         try:
             payload = path.read_bytes()
@@ -293,7 +289,7 @@ class _FactCache:
             envelope = json.loads(payload, object_pairs_hook=_unique_mapping)
             if not isinstance(envelope, dict) or set(envelope) != {
                 "schema_version",
-                "source_id",
+                "namespace",
                 "key_sha256",
                 "payload_sha256",
                 "payload_base64",
@@ -303,7 +299,7 @@ class _FactCache:
                 )
             if (
                 envelope["schema_version"] != _CACHE_SCHEMA
-                or envelope["source_id"] != self._source_id
+                or envelope["namespace"] != self._namespace
                 or envelope["key_sha256"] != hashlib.sha256(key).hexdigest()
             ):
                 raise UntargetedAcquisitionCacheError(
@@ -335,21 +331,20 @@ class _FactCache:
             self.reject(kind, key, exc)
             return None
 
-    def write(self, kind: str, key: bytes, payload: bytes) -> None:
+    def write(self, kind: _FactKind, key: bytes, payload: bytes) -> None:
         path = self._path(kind, key)
         path.parent.mkdir(parents=True, exist_ok=True)
         envelope = self._envelope(key, payload)
         content = _canonical_json(envelope)
-        if path.exists():
-            existing = self.read(kind, key)
+        # read rejects an entry for another key or namespace; this write replaces it.
+        existing = self.read(kind, key)
+        if existing is not None:
             if existing != payload:
                 raise UntargetedAcquisitionCacheError(
                     "acquisition cache key has conflicting numeric facts"
                 )
             return
-        descriptor, name = tempfile.mkstemp(
-            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
-        )
+        descriptor, name = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
         temporary = Path(name)
         try:
             with os.fdopen(descriptor, "wb") as stream:
@@ -373,7 +368,7 @@ class _FactCache:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def reject(self, kind: str, key: bytes, error: Exception) -> None:
+    def reject(self, kind: _FactKind, key: bytes, error: Exception) -> None:
         path = self._path(kind, key)
         _LOGGER.warning(
             "rejecting unusable acquisition cache entry %s: %s", path, error
@@ -383,11 +378,15 @@ class _FactCache:
     def _envelope(self, key: bytes, payload: bytes) -> dict[str, str]:
         return {
             "schema_version": _CACHE_SCHEMA,
-            "source_id": self._source_id,
+            "namespace": self._namespace,
             "key_sha256": hashlib.sha256(key).hexdigest(),
             "payload_sha256": hashlib.sha256(payload).hexdigest(),
             "payload_base64": base64.b64encode(payload).decode("ascii"),
         }
+
+
+def _short_name(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()[:_NAME_HEX_DIGITS]
 
 
 def _trace_key(capability: TraceAcquisitionCapability, request: XICRequest) -> bytes:

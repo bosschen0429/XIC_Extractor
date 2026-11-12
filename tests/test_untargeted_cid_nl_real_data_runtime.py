@@ -35,6 +35,7 @@ from xic_extractor.acquisition_contract import (
     serialize_acquired_trace,
 )
 from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
+from xic_extractor.configuration.mass_recalibration import MassRecalibration
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
@@ -130,7 +131,7 @@ def test_fact_cache_rejects_wrong_identity_and_invalid_base64(tmp_path: Path) ->
 
     mutations = {
         "schema_version": "wrong-schema",
-        "source_id": "wrong-source",
+        "namespace": "wrong-source",
         "key_sha256": "0" * 64,
         "payload_sha256": "1" * 64,
         "payload_base64": "not-base64!",
@@ -146,6 +147,80 @@ def test_fact_cache_rejects_wrong_identity_and_invalid_base64(tmp_path: Path) ->
         path.write_text(json.dumps(envelope), encoding="utf-8")
         assert cache.read("ms2", key) is None
         assert not path.exists()
+
+
+# Windows without long-path support stops at 259 characters. The failing report
+# had 141 characters above the cache root (install folder, output, the run
+# folder named after the batch, .cid_nl_acquisition_cache), so a 48-character
+# cap leaves 70 characters for deeper install folders and longer batch names.
+_CACHE_ROOT_RELATIVE_PATH_LIMIT = 48
+
+
+@pytest.mark.parametrize("policy", tuple(MassRecalibration))
+def test_fact_cache_paths_fit_under_windows_max_path(
+    tmp_path: Path, monkeypatch, policy: MassRecalibration
+) -> None:
+    from typing import get_args
+
+    from xic_extractor.untargeted_execution import acquisition_cache as cache_owner
+
+    temporaries: list[Path] = []
+    publish = cache_owner.os.replace
+
+    def record_temporary(temporary, destination):
+        temporaries.append(Path(temporary))
+        publish(temporary, destination)
+
+    monkeypatch.setattr(cache_owner.os, "replace", record_temporary)
+    source_id = "local:" + ":".join(str(2**63 - 1) for _ in range(5))
+    cache = cache_owner._FactCache(tmp_path, source_id, policy)
+    kinds = get_args(cache_owner._FactKind)
+    for kind in kinds:
+        cache.write(kind, f"{kind}-key".encode(), b"facts")
+
+    entries = [path for path in tmp_path.rglob("*") if path.is_file()]
+    assert len(entries) == len(temporaries) == len(kinds)
+    lengths = {
+        str(path.relative_to(tmp_path)): len(str(path.relative_to(tmp_path)))
+        for path in (*entries, *temporaries)
+    }
+    assert max(lengths.values()) <= _CACHE_ROOT_RELATIVE_PATH_LIMIT, lengths
+
+
+def test_fact_cache_name_collision_replaces_the_other_entry(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from xic_extractor.untargeted_execution import acquisition_cache as cache_owner
+
+    monkeypatch.setattr(cache_owner, "_short_name", lambda _value: "0" * 16)
+    cache = cache_owner._FactCache(tmp_path, "source")
+    cache.write("xic", b"first-query", b"first facts")
+    cache.write("xic", b"second-query", b"second facts")
+
+    assert cache.read("xic", b"second-query") == b"second facts"
+    assert cache.read("xic", b"first-query") is None
+
+
+def test_fact_cache_rejects_an_entry_from_another_namespace_at_its_path(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.untargeted_execution import acquisition_cache as cache_owner
+
+    vendor = cache_owner._FactCache(tmp_path, "source")
+    restored = cache_owner._FactCache(
+        tmp_path, "source", MassRecalibration.EASY_IC_RESTORE
+    )
+    key = b"same-query"
+    vendor.write("xic", key, b"vendor masses")
+    # Shortened directory names can collide; the envelope must still tell the
+    # namespaces apart instead of serving facts measured on another mass scale.
+    collided = restored._path("xic", key)
+    collided.parent.mkdir(parents=True)
+    collided.write_bytes(vendor._path("xic", key).read_bytes())
+
+    assert restored.read("xic", key) is None
+    assert not collided.exists()
+    assert vendor.read("xic", key) == b"vendor masses"
 
 
 def test_acquisition_cache_replays_xic_and_ms2_and_reacquires_only_rejected_query(
