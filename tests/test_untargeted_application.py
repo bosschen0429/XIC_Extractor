@@ -1038,7 +1038,9 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
         ),
     )
     monkeypatch.setattr(
-        cli, "_peak_config", lambda *_args, **_kwargs: _discovery_peak_config(tmp_path)
+        cli,
+        "untargeted_peak_config",
+        lambda *_args, **_kwargs: _discovery_peak_config(tmp_path),
     )
     cli_output = tmp_path / "cli-alignment"
     assert (

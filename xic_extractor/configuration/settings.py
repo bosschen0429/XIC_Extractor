@@ -1,9 +1,10 @@
 """Admit batch/machine inputs; scientific policy is not a settings surface."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from xic_extractor.configuration.execution_profile import resolve_execution_profile
+from xic_extractor.configuration.extraction_defaults import default_extraction_config
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
 from xic_extractor.configuration.parsing import (
     _parse_existing_dir,
@@ -71,23 +72,12 @@ def build_extraction_config(
     settings_path: Path,
     output_dir: Path,
 ) -> ExtractionConfig:
-    from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
-
-    policy = DEFAULT_CID_NL_MASS_POLICY
     for key in ("data_dir", "dll_dir"):
         _parse_existing_dir(settings_path, key, settings[key])
-    return ExtractionConfig(
-        data_dir=parsed.data_dir,
-        dll_dir=parsed.dll_dir,
-        output_csv=output_dir / "xic_results.csv",
-        diagnostics_csv=output_dir / "xic_diagnostics.csv",
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=policy.ms2_precursor_tol_da,
-        nl_min_intensity_ratio=policy.nl_min_intensity_ratio,
+    return replace(
+        default_extraction_config(
+            data_dir=parsed.data_dir, dll_dir=parsed.dll_dir, output_dir=output_dir
+        ),
         injection_order_source=parsed.injection_order_source,
-        parallel_mode="process",
         parallel_workers=parsed.parallel_workers,
     )

@@ -292,13 +292,32 @@ def test_istd_reference_runs_raw_files_through_targeted_process_backend(
     }
 
 
-def test_alignment_peak_config_runs_istd_extraction_in_process_mode(tmp_path):
-    from scripts.run_alignment import _peak_config
+@pytest.mark.parametrize("policy", ("none", "easy_ic_probe", "easy_ic_restore"))
+def test_untargeted_peak_config_follows_recipe_and_runs_istd_in_process_mode(
+    tmp_path, policy
+):
+    from dataclasses import replace
 
-    assert (
-        _peak_config(tmp_path, tmp_path, tmp_path, "local_minimum").parallel_mode
-        == "process"
+    from xic_extractor.applications.untargeted.request import untargeted_peak_config
+    from xic_extractor.configuration.mass_recalibration import (
+        resolve_mass_recalibration,
     )
+    from xic_extractor.presets import apply_to_discovery, load_preset
+
+    settings = replace(
+        apply_to_discovery(load_preset("dna_dr")),
+        mass_recalibration=resolve_mass_recalibration(policy),
+    )
+    config = untargeted_peak_config(
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path,
+        discovery_settings=settings,
+    )
+    assert config.parallel_mode == "process"
+    assert config.mass_recalibration is settings.mass_recalibration
+    assert config.resolver_mode == settings.resolver_mode
+    assert config.nl_min_intensity_ratio == settings.nl_min_intensity_ratio
 
 
 def test_istd_file_failure_is_not_an_empty_reference(tmp_path, monkeypatch):
