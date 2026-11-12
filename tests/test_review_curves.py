@@ -395,3 +395,33 @@ def test_raw_reads_replay_each_samples_saved_mass_result(tmp_path, monkeypatch, 
     assert max(traces["S2"].raw.intensity) == pytest.approx(2000)
     # A saved result is replayed; the RAW is not probed again.
     assert replayed == ({"S1": saved_outcome, "S2": "none"} if saved else {})
+
+
+@pytest.mark.parametrize("target", ["report", "other"])
+def test_curve_bundle_command_never_replaces_an_existing_file(
+    tmp_path, monkeypatch, target
+):
+    from tools.diagnostics import explain_cid_nl_run
+
+    report, _ = _group_with_missing_apex_review(tmp_path)
+    _install_distinct_curve_raws(monkeypatch, [])
+    output = report if target == "report" else tmp_path / "earlier.json"
+    if target == "other":
+        output.write_text("an earlier bundle", encoding="utf-8")
+    before = output.read_bytes()
+    with pytest.raises(SystemExit):
+        explain_cid_nl_run.main(
+            [
+                "--report",
+                str(report),
+                "--group-id",
+                "G1",
+                "--curve-bundle",
+                str(output),
+                "--raw-dir",
+                str(tmp_path),
+                "--dll-dir",
+                str(tmp_path),
+            ]
+        )
+    assert output.read_bytes() == before

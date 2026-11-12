@@ -49,6 +49,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("Choose only one of --compact-to or --curve-bundle")
     if args.group_id is not None and args.curve_bundle is None:
         parser.error("--group-id requires --curve-bundle")
+    # A bundle never replaces a file, the analysed report included.
+    if args.curve_bundle is not None and args.curve_bundle.exists():
+        parser.error(f"--curve-bundle must name a new file: {args.curve_bundle}")
     try:
         if args.curve_bundle is not None:
             if (
