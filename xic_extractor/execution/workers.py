@@ -21,7 +21,7 @@ from concurrent.futures import (
     wait,
 )
 from dataclasses import dataclass
-from multiprocessing import get_context
+from multiprocessing import get_context, shared_memory
 from multiprocessing.context import BaseContext
 from typing import (
     Any,
@@ -54,11 +54,17 @@ class _OwnerProcessResult:
 
 
 def _initialize_owner_worker(
-    bootstrap_payload: bytes,
+    bootstrap_name: str,
+    bootstrap_size: int,
     initializer: Callable[[], None] | None,
 ) -> None:
     global _PROCESS_SHARED_OBJECTS
-    shared = owner_pickle_loads(bootstrap_payload, ())
+    segment = shared_memory.SharedMemory(name=bootstrap_name, track=False)
+    try:
+        payload = bytes(cast(memoryview, segment.buf)[:bootstrap_size])
+    finally:
+        segment.close()
+    shared = owner_pickle_loads(payload, ())
     if type(shared) is not tuple:
         raise TypeError("worker shared owner bootstrap must be a tuple")
     _PROCESS_SHARED_OBJECTS = shared
@@ -104,6 +110,7 @@ class WorkerAdmissionPool:
         self._mp_context = mp_context
         self._shared_objects = shared_objects
         self._executor: ThreadPoolExecutor | ProcessPoolExecutor | None = None
+        self._bootstrap_segment: shared_memory.SharedMemory | None = None
         self._executor_lock = threading.Lock()
         self._metrics_lock = threading.Lock()
         self._stopped = threading.Event()
@@ -186,11 +193,19 @@ class WorkerAdmissionPool:
                         self._shared_bootstrap_bytes = (
                             len(bootstrap) * effective_workers
                         )
+                    # Spawn writes initargs to the child, which reads them only
+                    # after re-importing the main module; large initargs would
+                    # start the workers one at a time. Pass a shared-memory name.
+                    segment = shared_memory.SharedMemory(
+                        create=True, size=max(1, len(bootstrap))
+                    )
+                    cast(memoryview, segment.buf)[: len(bootstrap)] = bootstrap
+                    self._bootstrap_segment = segment
                     self._executor = ProcessPoolExecutor(
                         max_workers=effective_workers,
                         mp_context=self._mp_context or get_context("spawn"),
                         initializer=_initialize_owner_worker,
-                        initargs=(bootstrap, self._initializer),
+                        initargs=(segment.name, len(bootstrap), self._initializer),
                     )
                 else:
                     self._executor = ProcessPoolExecutor(
@@ -334,8 +349,13 @@ class WorkerAdmissionPool:
             self._closed = True
             executor = self._executor
             self._executor = None
+            segment = self._bootstrap_segment
+            self._bootstrap_segment = None
         if executor is not None:
             executor.shutdown(wait=True)
+        if segment is not None:
+            segment.close()
+            segment.unlink()
 
     def __enter__(self) -> WorkerAdmissionPool:
         return self

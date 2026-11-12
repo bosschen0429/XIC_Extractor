@@ -228,6 +228,7 @@ percentages.
 | Change | Measured gain | Rerun when |
 | --- | --- | --- |
 | One mass-recalibration probe per RAW (#931, `bd77a760`) | probe calls 136 to 8, probe time 110.5 to 8.0 s; end-to-end ratio inconclusive | probe logic, source binding, worker transport or applied correction changes |
+| Process workers read the shared owner bootstrap from shared memory, not initargs | workers started about 4 s apart (initargs block spawn until each child re-imports the main module), now together; initial phase 8RAW 35.4/36.4 to 28.7/32.4 s, oil 62.6/64.1 to 55.7/58.4 s; runtime −4 to −8 s | worker transport or start method changes |
 | No per-entry fsync in the recomputable fact cache (#699, `332f19f4`) | 8RAW median 104.1 to 80.2 s | cache persistence or recovery semantics change |
 | Final membership replay reuses group costs (#913, `a51d0473f`) | `replay_grouping` 240 to 178 s on 44 samples | membership costs, search or snapshot change |
 | Injection ordering prepared once per grouping population | grouping 0.156 to 0.115 s on the m/z 396 snapshot | neighbor semantics or grouping population change |
@@ -258,6 +259,13 @@ model.
 - **Owner Backfill scan-index variants:** `ms1-index-hybrid` slowed Owner
   Backfill 14.6 to 64.9 s; other index variants changed outputs. Super-window
   span factor 1 raised RAW calls 72 to 17,910.
+- **Per-handle MS1 scan list for EASY-IC XIC reads** (2026-11-12, `924f28ff`):
+  `GetScanEvents` or `GetFilteredScanEnumerator("ms")` returns the same MS1
+  scans as per-scan `GetFilterForScanNumber` on 237 RAW, but costs 0.13–0.44 s
+  per open handle, about the 0.39–0.52 s that a task's windowed filter reads
+  cost. Oil 8-RAW Alignment 155.6/143.3 s base versus 144.1/148.1 s candidate;
+  summed partition acquisition rose 171 to 174/182 s. Only sharing one list
+  per RAW across handles could remove the cost.
 - **Standard Peak `--best-shift-only` in the one-shot preset:** faster in no-RAW
   replay, no gain in the full 8RAW stage.
 
@@ -282,6 +290,7 @@ outputs.
 | Early precursor rejection in candidate merge (#699) | MS1 Backfill 17.8 to 14.2 s on one RAW | merge eligibility or order changes |
 | Precursor-mass index in candidate merge | MS1 Backfill 17.5 to 14.1 s on one RAW | merge eligibility or order changes |
 | MS2 precursor metadata uses file-local trailer indices | seed stage 5.76 to 4.52 s on one RAW | trailer decoding changes |
+| MS1 mass channels track the oldest live channel instead of rescanning all | EASY-IC oil 8 RAW wall 104.7/102.8 to 73.7/70.9 s; 8RAW 37.2 to 31.4 s; `within_ppm` calls 23.1M to linear on the 22,091-event RAW | channel membership rule or search order changes |
 
 Keep the formatted trailer API; the typed API changes numeric precision.
 

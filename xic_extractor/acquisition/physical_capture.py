@@ -293,9 +293,14 @@ def _shared_contexts(
     searches: Sequence[PhysicalPeakSearch],
 ) -> dict[XICRequest, tuple[PhysicalPeakSearch, ...]]:
     """Share RT planning, retaining every distinct mass window's read semantics."""
-    channels: dict[tuple[float, float], list[PhysicalPeakSearch]] = {}
+    channels: list[list[PhysicalPeakSearch]] = []
     # Discovery's existing mass grouping requires every member within ppm of
     # every other member. No transitive mass chaining or isotope merging.
+    # Searches arrive in ascending (ppm, m/z), so each channel's first member is
+    # its lowest and farthest m/z: the search is within ppm of every member iff
+    # it is within ppm of the first. A channel that fails stays failed for every
+    # later search, so only the oldest live channel can accept the next one.
+    live = 0
     for search in sorted(
         searches,
         key=lambda s: (
@@ -306,17 +311,20 @@ def _shared_contexts(
             s.selection_subject_id,
         ),
     ):
-        for channel, channel_members in channels.items():
-            if channel[1] == search.request.ppm_tol and all(
-                within_ppm(search.request.mz, m.request.mz, channel[1])
-                for m in channel_members
+        request = search.request
+        while live < len(channels):
+            first = channels[live][0].request
+            if first.ppm_tol == request.ppm_tol and within_ppm(
+                request.mz, first.mz, request.ppm_tol
             ):
-                channel_members.append(search)
                 break
+            live += 1
+        if live < len(channels):
+            channels[live].append(search)
         else:
-            channels[search.request.mz, search.request.ppm_tol] = [search]
+            channels.append([search])
     contexts: dict[XICRequest, tuple[PhysicalPeakSearch, ...]] = {}
-    for channel_members in channels.values():
+    for channel_members in channels:
         clusters: list[list[PhysicalPeakSearch]] = []
         upper = -math.inf
         for search in sorted(
