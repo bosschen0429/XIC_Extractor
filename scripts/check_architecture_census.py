@@ -214,10 +214,12 @@ def validate_ppm_arithmetic(
 
 
 def _is_ppm_scale(node: ast.expr) -> bool:
-    if not isinstance(node, ast.Constant) or type(node.value) not in (int, float):
-        return False
-    assert isinstance(node.value, (int, float))
-    return abs(node.value) in _PPM_SCALES
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, (int, float))
+        and not isinstance(node.value, bool)
+        and abs(node.value) in _PPM_SCALES
+    )
 
 
 DOCUMENTED_CODE_NAME = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`")
