@@ -81,7 +81,7 @@ RAW and start from the sample row.
   curve is a review view and changes no result.
 - An Untargeted group member without its own retained apex is read at the median
   m/z and apex RT of the group's observed samples. That group-position curve is
-  drawn dashed and labelled as such, so a missed peak can be seen. It neither
+  drawn as a thin grey line for the empty sample, so a missed peak can be seen. It neither
   selects nor integrates a peak, and the saved empty value stays empty.
 - Targeted curves use the workbook's extraction tolerance and signal-processing
   settings over the full acquisition trace. Saved peak bounds are overlays, not
@@ -105,12 +105,23 @@ Any new selection, search or page cancels a running RAW read and proceeds;
   evidence remain distinct in every table, legend and export.
 - An explicit `not_searched` cell remains NULL with its recorded explanation.
   It does not create a candidate or query witness.
-- Line style marks support origin: solid for Discovery, dotted for Backfill. A
-  physical direct-observation cell is not by itself evidence of Discovery
-  support.
-- Recorded review conditions, such as a related method HOLD, are explanations.
-  They are not the final cell decision, and the absence of a review condition is
-  not scientific acceptance.
+- Line style marks the extraction stage of the peak providing the Matrix value:
+  sample-coloured solid lines for detect, sample-coloured dashed lines for
+  backfill, and thin grey lines for loaded empty samples. A one-line legend
+  explains these styles. MS2 support does not determine extraction stage.
+- The result table and curves show counts of detect, backfill and empty cells.
+  A cell's evidence panel answers where the value came from, why it is empty,
+  and which recorded risks need attention, with an entry to its sample curve.
+  Competition names the compared groups by their samples and native apex RTs;
+  an unselected alternative is not assigned a published feature ID.
+- Ordinary MS1-only backfill and a related method HOLD are not by themselves
+  risks. Low SNR, weak RT support and recorded pairing competition remain
+  visible. Internal records stay in SQLite rather than the evidence panel.
+  No recorded risk is not a claim of scientific acceptance.
+- Older current-format results remain readable with their saved origins;
+  values with no recorded origin use dotted lines, not detect's solid lines.
+  Rerun Alignment to correct missing backfill origins. Review never rewrites
+  them or infers the extraction stage from method evidence.
 
 ## Reading order
 

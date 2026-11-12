@@ -2,6 +2,11 @@
 .xic-inspector, .xic-group-palette { --curve-1:#176b87;--curve-2:#25855f;--curve-3:#7856a8;--curve-4:#b2692d;--curve-5:#a34e67;--curve-6:#537788;--curve-7:#298c84;--curve-8:#c85b46;--group-qc:#4b5563;--group-other:#9aa3a0; }
 :is([data-theme="dark"] .xic-inspector, .xic-inspector[data-theme="dark"], [data-theme="dark"] .xic-group-palette) { --curve-1:#8ab8e6;--curve-2:#8ccbaa;--curve-3:#c2a5e1;--curve-4:#deb278;--curve-5:#dc9eb6;--curve-6:#a1bccb;--curve-7:#82c9c0;--curve-8:#e6a28e;--group-qc:#c4cad3;--group-other:#7d8784; }
 .xic-inspector * { box-sizing:border-box;margin:0;padding:0; }
+.xic-inspector .group-summary { margin:8px 0;font-weight:600;font-variant-numeric:tabular-nums; }
+.xic-inspector .origin-legend { display:flex;flex-wrap:wrap;gap:6px 18px;margin:8px 0;color:var(--muted);font-size:12px; }
+.xic-inspector .origin-legend span { display:inline-flex;align-items:center;gap:6px; }
+.xic-inspector .origin-legend svg { width:26px;height:8px; }
+.xic-inspector .competition-note { margin-top:6px;color:var(--warn); }
 .xic-inspector { max-width:1540px;margin:auto;padding:20px 24px 40px;background:var(--bg);color:var(--ink);font:14px/1.55 Aptos,"Segoe UI Variable","Segoe UI","Microsoft JhengHei UI",system-ui,sans-serif; }
 .xic-inspector button, .xic-inspector input, .xic-inspector select { font:inherit; }
 .xic-inspector button, .xic-inspector select, .xic-inspector input[type="text"], .xic-inspector input[type="number"] { border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--ink); }

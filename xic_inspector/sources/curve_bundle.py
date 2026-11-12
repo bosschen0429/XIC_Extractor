@@ -60,6 +60,7 @@ class SampleQuantification:
     sample_id: str
     value: float | None
     unit: str
+    support_origin: str = "unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,7 +208,13 @@ def _quantifications(
     seen = set()
     for index, entry in enumerate(value):
         loc = f"{where}[{index}]"
-        obj = _mapping(entry, loc, {"sample_id", "value", "unit"})
+        fields = {"sample_id", "value", "unit"}
+        if isinstance(entry, dict) and "support_origin" in entry:
+            fields.add("support_origin")
+        obj = _mapping(entry, loc, fields)
+        origin = obj.get("support_origin", "unavailable")
+        if origin not in ("discovery_support", "backfill_support", "unavailable"):
+            raise _fail(loc, "unknown support origin")
         sid = _text(obj.get("sample_id"), f"{loc}.sample_id")
         if sid not in sample_ids or sid in seen:
             raise _fail(loc, "quantification requires a unique represented sample")
@@ -220,6 +227,7 @@ def _quantifications(
                 sid,
                 None if number is None else _number(number, f"{loc}.value"),
                 _text(obj.get("unit"), f"{loc}.unit"),
+                origin,
             )
         )
     return tuple(result)
@@ -730,7 +738,11 @@ class CurveBundleSource:
                     "status_label": "曲線可用"
                     if any(t.sample_id == sid and t.raw is not None for t in traces)
                     else "RAW 未提供",
-                    "support_origin": {"kind": "unavailable"},
+                    "support_origin": {
+                        "kind": quantifications[sid].support_origin
+                        if sid in quantifications
+                        else "unavailable"
+                    },
                     "decision_refs": [flag_ref]
                     + (
                         [f"quantity:{transition.key}:{sid}"]

@@ -2400,11 +2400,27 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     review = _wait_for_curve_report(page, inline=True)
     curves = review.locator("[data-inspector-id='svg-raw'] polyline")
     expect(curves).to_have_count(3)
-    expect(review.locator('polyline[data-sample-id="S3"]')).to_have_attribute(
+    expect(review.locator(".group-summary")).to_have_text(
+        "3 個樣本：1 detect · 1 backfill · 1 空值"
+    )
+    expect(review.get_by_label("曲線線型圖例")).to_be_visible()
+    expect(review.locator('polyline[data-sample-id="S1"]')).to_have_attribute(
+        "stroke-dasharray", ""
+    )
+    expect(review.locator('polyline[data-sample-id="S2"]')).to_have_attribute(
         "stroke-dasharray", "6 4"
     )
+    expect(review.locator('polyline[data-sample-id="S3"]')).to_have_attribute(
+        "stroke-dasharray", ""
+    )
+    expect(review.locator('polyline[data-sample-id="S3"]')).to_have_attribute(
+        "stroke", "var(--subtle)"
+    )
+    expect(review.locator('polyline[data-sample-id="S3"]')).to_have_attribute(
+        "stroke-width", "1"
+    )
     review.get_by_role("button", name="聚焦 S3", exact=True).hover()
-    expect(review.get_by_role("tooltip")).to_contain_text("依群組位置擷取")
+    expect(review.get_by_role("tooltip")).to_contain_text("空值樣本的檢閱曲線")
     # Curves group by confirmed role, without another RAW read.
     review.get_by_role("checkbox", name="顯示 Sample 整組", exact=True).uncheck()
     expect(curves).to_have_count(1)
@@ -2449,6 +2465,31 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     assert "sample_groups" not in exported
     assert exported["items"] == captured["items"]
     assert exported["samples"] == captured["samples"]
+    assert len(exported["items"][0]["details"]["readable_records"]) == 3
+    offline = page.context.new_page()
+    offline.goto(page.url.split("#")[0].rstrip("/") + f"/reports/{view_id}.html")
+    offline.locator('[data-sample-row="S1"]').get_by_role(
+        "button", name="查看定量依據"
+    ).click()
+    offline.get_by_role("button", name="看這個樣本的曲線").click()
+    expect(offline.locator('[data-inspector-id="inspection-title"]')).to_have_text(
+        "S1 · 目前查看"
+    )
+    expect(
+        offline.locator('[data-inspector-id="svg-raw"] polyline[data-sample-id="S1"]')
+    ).to_have_count(1)
+    offline.close()
+    # The evidence action must reach the host, not merely render a button.
+    saved.filter(has_text="S3").get_by_role("button", name="查看依據").click()
+    panel = page.locator("#recorded-review .evidence-panel")
+    expect(panel.locator("dt")).to_have_text(
+        ["值從哪裡來", "空值為什麼是空的", "需不需要擔心"]
+    )
+    expect(panel.locator("details")).to_have_count(0)
+    panel.get_by_role("button", name="看這個樣本的曲線").click()
+    review = _wait_for_curve_report(page, inline=True)
+    expect(review.locator("polyline")).to_have_count(1)
+    expect(review.locator("polyline")).to_have_attribute("data-sample-id", "S3")
 
 
 def test_targeted_nd_row_opens_its_paired_curves_without_changing_results(

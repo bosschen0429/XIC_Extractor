@@ -235,6 +235,9 @@ def test_unsaved_samples_read_raw_at_their_recorded_coordinates(tmp_path, monkey
 def test_empty_cell_reads_the_group_position_and_leaves_results_unchanged(
     tmp_path, monkeypatch, sample_ids
 ):
+    from xic_inspector.api import SelectionRequest, prepare_report
+    from xic_inspector.sources.curve_bundle import write_curve_bundle
+
     review, matrix = _group_with_missing_apex_review(tmp_path)
     originals = [path.read_bytes() for path in (review, matrix)]
     opened = []
@@ -251,6 +254,24 @@ def test_empty_cell_reads_the_group_position_and_leaves_results_unchanged(
 
     traces = {trace.sample_id: trace for trace in bundle.transitions[0].traces}
     assert set(traces) == set(sample_ids)
+    bundle_path = tmp_path / "review-curves.json"
+    write_curve_bundle(bundle, bundle_path)
+    rendered = prepare_report(bundle_path, SelectionRequest()).payload["items"][0]
+    assert {
+        sample["sample_id"]: (
+            sample["quantitative_value"],
+            sample["support_origin"]["kind"],
+        )
+        for sample in rendered["samples"]
+    } == {
+        sid: value
+        for sid, value in {
+            "S1": (100, "discovery_support"),
+            "S2": (200, "backfill_support"),
+            "S3": (None, "unavailable"),
+        }.items()
+        if sid in sample_ids
+    }
     assert opened == [f"{sid}.raw" for sid in sample_ids]
     fallback = traces["S3"]
     assert fallback.mz == 500.0

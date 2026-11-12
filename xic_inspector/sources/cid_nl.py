@@ -231,12 +231,7 @@ def build_item_evidence(
     cards = [
         *(
             Card(card_kind, card_ref, facts, frozenset(linked), _samples(linked))
-            for card_kind, found in (
-                ("method_subjects", subjects),
-                ("method_assessments", assessments),
-                ("initial_groups", initial),
-                ("capture_evidence", curves),
-            )
+            for card_kind, found in (("capture_evidence", curves),)
             for card_ref, (facts, linked) in found.items()
         ),
         *(
@@ -250,16 +245,6 @@ def build_item_evidence(
             for key in scoped
             for card_kind, facts in (
                 ("exclusions", evidence.candidates[key].exclusion),
-                ("terminal_subjects", evidence.candidates[key].terminal),
-            )
-            if facts is not None
-        ),
-        *(
-            Card(card_kind, group_ref, facts, frozenset(linked), _samples(linked))
-            for group_ref, linked in groups.items()
-            for card_kind, facts in (
-                ("final_groups", presentation.group_facts(evidence.groups[group_ref])),
-                ("rows", presentation.row_facts(evidence.groups[group_ref])),
             )
             if facts is not None
         ),
@@ -592,7 +577,7 @@ class CidNlSource:
                     view,
                     samples=samples,
                     projected_curves=projected_curves,
-                    readable_records=self._readable_records(view, projected_curves),
+                    readable_records=self._readable_records(view),
                     measured_mz_by_candidate=view.measured_mz,
                     relationship_members=[
                         {
@@ -642,61 +627,17 @@ class CidNlSource:
             projected_curves.append(projected)
         return projected_curves
 
-    def _readable_records(
-        self, view: ItemEvidence, curves: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _readable_records(self, view: ItemEvidence) -> list[dict[str, Any]]:
         item = view.item
-        available_refs = {card.ref for card in view.cards} | {
-            curve["evidence_ref"]
-            for curve in curves
-            if curve.get("evidence_ref") is not None
-        }
         readable = [
             presentation.readable_record(
-                item,
                 card,
-                available_refs,
                 scope=_card_scope(item, card),
                 sample_labels=self.sample_labels,
             )
             for card in view.cards
+            if card.kind in {"cell_decisions", "exclusions"}
         ]
-        positions = {record["ref"]: index for index, record in enumerate(readable)}
-        for curve in curves:
-            curve_record = presentation.readable_curve(item, curve, available_refs)
-            ref = curve_record["ref"]
-            if ref not in positions:
-                positions[ref] = len(readable)
-                readable.append(curve_record)
-                continue
-            index = positions[ref]
-            existing = readable[index]
-            curve_record["sample_ids"] = sorted(
-                set(existing["sample_ids"]) | set(curve_record["sample_ids"])
-            )
-            curve_record["candidate_ids"] = sorted(
-                set(existing["candidate_ids"]) | set(curve_record["candidate_ids"])
-            )
-            curve_record["fields"] = presentation.dedupe_entries(
-                existing["fields"] + curve_record["fields"]
-            )
-            curve_record["links"] = presentation.dedupe_entries(
-                existing["links"] + curve_record["links"]
-            )
-            curve_record["technical_refs"] = presentation.dedupe_entries(
-                existing["technical_refs"] + curve_record["technical_refs"]
-            )
-            readable[index] = curve_record
-        related = _related_assessments(view, curves, [r["ref"] for r in readable])
-        for record in readable:
-            if record["ref"] in related:
-                record["links"] = presentation.dedupe_entries(
-                    record["links"]
-                    + [
-                        presentation.related_assessment_link(ref)
-                        for ref in related[record["ref"]]
-                    ]
-                )
         return readable
 
     def _curve(self, payload):
@@ -761,27 +702,3 @@ def _card_scope(item: CanonicalItem, card: Card) -> tuple[list[str], list[str]]:
     ):
         candidate_ids.add(recorded_candidate)
     return sample_ids, sorted(candidate_ids)
-
-
-def _related_assessments(
-    view: ItemEvidence, curves: list[dict[str, Any]], readable_refs: list[CardRef]
-) -> dict[Any, list[CardRef]]:
-    """Link each curve to the method assessments of the candidates it shows."""
-    assessments = [card for card in view.cards if card.kind == "method_assessments"]
-    curves_by_ref = {
-        curve["evidence_ref"]: curve
-        for curve in curves
-        if curve.get("evidence_ref") is not None
-    }
-    related: dict[Any, list[CardRef]] = {}
-    for ref in readable_refs:
-        if ref not in curves_by_ref:
-            continue
-        curve = curves_by_ref[ref]
-        keys = {
-            (candidate_id, curve["sample_id"])
-            for candidate_id in curve.get("candidate_ids", [])
-            if curve.get("sample_id") is not None
-        }
-        related[ref] = [card.ref for card in assessments if keys & card.keys]
-    return related

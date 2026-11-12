@@ -953,6 +953,7 @@ window.XicUi = (() => {
     const mounted = await mountReview(targeted ? "xic-review" : "inline-curve-review", view.id, "curves");
     if (!mounted || state.curveView !== view) return;
     if (!targeted) {
+      $("download").href = `/reports/${view.id}.html?download=1`;
       // The plotted curves are their own receipt beside the saved values;
       // only samples left out of the plot need words.
       const labels = (view.unusable || []).join("、");
@@ -1165,11 +1166,14 @@ window.XicUi = (() => {
   }
 
   function requestCurves({item_id, sample_id, opener}) {
-    if (state.page?.source_kind !== "targeted_workbook" ||
-        item_id !== state.item?.id ||
+    if (item_id !== state.item?.id ||
         !state.item.curve_sample_ids.includes(sample_id)) return;
     state.curveOpener = opener;
-    action(() => selectCurveSample(sample_id));
+    action(async () => {
+      await selectCurveSample(sample_id);
+      if (state.page.source_kind !== "targeted_workbook" && !needsRaw())
+        $("inline-curves").scrollIntoView({block: "start"});
+    });
   }
   const closeCurves = () => navigation.back(() => $("xic-dialog").close());
   $("xic-close").addEventListener("click", closeCurves);

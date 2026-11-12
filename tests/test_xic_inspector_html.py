@@ -53,10 +53,12 @@ def test_support_origin_styles_fixture_curves_in_both_views(
         for line in chart.findall("{http://www.w3.org/2000/svg}polyline")
     }
     assert len(plotted) == 3
+    assert plotted["curve-2"].attrib["stroke"] == "var(--subtle)"
+    assert plotted["curve-2"].attrib["stroke-width"] == "1"
     for i, (origin, dash) in enumerate(
         zip(
             ("discovery_support", "backfill_support", "unavailable"),
-            ("", "2 4", "1 5"),
+            ("", "6 4", ""),
             strict=True,
         )
     ):
@@ -147,7 +149,6 @@ def test_report_exposes_offline_review_workbench_for_generic_payload() -> None:
     ):
         assert f'data-inspector-id="{required_id}"' in markup
         assert f'id="xic-inspector-1-{required_id}"' in markup
-    assert "本報告未提供可讀來源紀錄" in report
     assert "對齊時間圖不可用" in report
     assert "counts·s" in report
     assert "https://" not in report
@@ -330,7 +331,9 @@ def test_unrecorded_origins_and_missing_alignment_keep_curves_readable(
         line.attrib["stroke-dasharray"]
         for line in chart.findall("{http://www.w3.org/2000/svg}polyline")
     ]
-    assert dashes == ["", "", ""]
+    # Old numeric cells with no recorded origin must not masquerade as detect;
+    # the explicitly empty sample still uses its thin solid line.
+    assert dashes == ["1 5", "1 5", ""]
     assert 'id="plot-aligned"' in rendered["aligned"]
     assert "對齊時間圖不可用" in rendered["aligned"]
     assert "<svg" not in rendered["aligned"]
