@@ -153,8 +153,8 @@ curation folder itself keeps that curation and reads evidence and curves from
 the result its summary records. The overview counts, coverage, Matrix list and
 download then cover only the kept features. Removed features are under
 **整理時移除**, beside the unadopted groups, each with one line built from
-its `feature_decisions.tsv` row. A result without curation is reviewed as
-published.
+its `feature_decisions.tsv` row. A result without curation, and full-audit
+evidence (which has no Matrix scopes), is reviewed as published.
 
 ## Retained evidence and diagnostics
 
