@@ -165,8 +165,10 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
             if row["peak_id"] == candidate.peak_id
         } == {"100", "101"}
         assert candidate.ms1_apex_rt == pytest.approx(apex)
-        assert candidate.ms1_search_rt_min == pytest.approx(apex - 0.7)
-        assert candidate.ms1_search_rt_max == pytest.approx(apex + 0.71)
+        # The published window is centred on the peak's raw apex.
+        assert (candidate.ms1_search_rt_min + candidate.ms1_search_rt_max) / 2 == (
+            pytest.approx(candidate.query_rt_min)
+        )
         assert not (output_dir / "discovery_physical_facts.json").exists()
         assert candidate.status == "admitted"
         events = _read_csv(output_dir / "discovery_events.csv")
@@ -1100,10 +1102,11 @@ def test_discovery_capture_failure_preserves_owner_acquisition_measurements(
         for row in recorder.measurement_observations
         if row["scope"] == "sample"
     }
-    assert rows["logical_xic_request_count"]["value"] == 1
-    assert rows["xic_batch_count"]["value"] == 1
-    assert rows["adapter_chromatogram_call_count"]["value"] == 1
-    assert rows["trace_point_count"]["value"] == len(_peak_trace(7.8)[0])
+    # The search read and the peak-centred read were both acquired.
+    assert rows["logical_xic_request_count"]["value"] == 2
+    assert rows["xic_batch_count"]["value"] == 2
+    assert rows["adapter_chromatogram_call_count"]["value"] == 2
+    assert rows["trace_point_count"]["value"] == 2 * len(_peak_trace(7.8)[0])
     assert raw.closed
 
 
@@ -1643,12 +1646,14 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
     assert rows["raw_open_count"]["reason"]
     assert rows["discovery_ms1_input_channel_count"]["value"] == 1
     assert rows["discovery_ms1_input_event_count"]["value"] == 1
-    assert rows["logical_xic_request_count"]["value"] == 1
-    assert rows["xic_batch_count"]["value"] == 1
-    assert rows["adapter_chromatogram_call_count"]["value"] == 1
-    assert rows["trace_point_count"]["value"] == len(_peak_trace(7.8)[0])
-    assert rows["discovery_ms1_exact_scan_window_count"]["value"] == 1
-    assert rows["discovery_ms1_predicted_chunked_call_count"]["value"] == 1
+    # One search read locates the peak; one peak-centred read measures it.
+    assert rows["logical_xic_request_count"]["value"] == 2
+    assert rows["xic_batch_count"]["value"] == 2
+    assert rows["adapter_chromatogram_call_count"]["value"] == 2
+    assert rows["trace_point_count"]["value"] == 2 * len(_peak_trace(7.8)[0])
+    assert rows["discovery_ms1_reacquisition_request_count"]["value"] == 1
+    assert rows["discovery_ms1_exact_scan_window_count"]["value"] == 2
+    assert rows["discovery_ms1_predicted_chunked_call_count"]["value"] == 2
     assert rows["discovery_ms1_batch_max_requests"]["value"] == 256
     assert rows["discovery_ms1_predicted_call_reduction_pct"]["value"] == 0.0
     for metric in ("worker_peak_rss_bytes", "process_tree_peak_rss_bytes"):

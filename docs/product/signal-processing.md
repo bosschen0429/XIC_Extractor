@@ -22,7 +22,8 @@ positive_signal = max(smoothed - baseline, 0)
 The physical baseline cannot be negative: extrapolated negative background
 must not create positive peak signal. A selected interval reaching an acquired
 trace edge lacks observed boundary context and has no numeric physical answer
-(`incomplete_peak_context`); Discovery's bounded reacquisition can recover it.
+(`incomplete_peak_context`). Discovery measures each located peak in a window
+centred on its raw apex, which usually holds both returns.
 
 ### Edge-reaching intervals
 

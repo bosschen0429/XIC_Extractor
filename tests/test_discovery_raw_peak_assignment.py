@@ -4,7 +4,6 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE
-from tests.discovery_csv_fixtures import representative_event
 from tests.discovery_ms1_capture_fixtures import (
     _BoundedRaw,
     _gaussian,
@@ -41,7 +40,7 @@ def test_discovery_tail_event_selects_its_raw_peak_beyond_quantitative_return():
     assert result.facts.area_counts_seconds == pytest.approx(analytic_area, rel=0.15)
 
 
-def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl():
+def test_far_tail_event_reframes_its_peak_once_without_chasing_the_apex():
     rt = np.linspace(1.0, 10.0, 901)
     raw_values = _gaussian(rt, center=5.0, sigma=0.5, height=1000.0)
     raw = _BoundedRaw(rt=rt, intensity=raw_values)
@@ -55,15 +54,15 @@ def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl(
         signal_processing_profile=TEST_PROFILE,
         ms1_centroid=lambda *_: None,
     )
-    assert len(result.peaks) == 1
-    candidate = result.peaks[0]
-    assert candidate.ms1_apex_rt == pytest.approx(5.0, abs=0.03)
-    # The NL event sits beyond the peak's right bound plus the attachment
-    # tolerance, so the measured peak is kept without NL support.
-    facts = result.physical_bindings[0].physical_evaluation.facts
-    assert facts.right_rt_min + 0.1 < representative_event(candidate).rt
-    assert candidate.status == "no_nl_event"
-    assert result.measurements.reacquisition_request_count == 1
+    # The search window holds only the far tail, so the located apex is its
+    # edge. The window centred there still clips the peak; it is not widened
+    # again, and the event records why no peak is measured.
+    (search, centred) = (request[1:3] for request in raw.requests)
+    assert search == pytest.approx((5.7, 6.9))
+    assert centred == pytest.approx((5.0, 6.4))
+    assert result.peaks == ()
+    (attachment,) = result.attachments
+    assert attachment.unattached_reason == "incomplete_peak_context"
 
 
 def test_raw_zero_valley_keeps_a_smaller_nl_peak_separate_from_bigger_neighbor():

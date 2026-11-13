@@ -25,76 +25,30 @@ from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest
 
 
-def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch):
+def _capture(raw, namespace: str) -> PhysicalPeakCapture:
+    return PhysicalPeakCapture(
+        RawSuperWindowSource(raw),
+        acquisition_source=raw.acquisition_source,
+        adapter_namespace=namespace,
+        profile=TEST_PROFILE,
+        context_half_width_peak_widths=2.0,
+    )
+
+
+def test_each_located_peak_is_measured_once_in_its_own_centred_window():
     rt = np.linspace(4.0, 6.0, 801)
     intensity = _gaussian(rt, center=4.8, sigma=0.04, height=1000.0)
     intensity += _gaussian(rt, center=5.25, sigma=0.05, height=2000.0)
     raw = _BoundedRaw(rt=rt, intensity=intensity)
-    counts = {
-        "prepare": 0,
-        "enumerate": 0,
-        "raw_split": 0,
-        "measure": 0,
-        "descriptor": 0,
-    }
-    # This is the unchanged physical owner, not a substitute peak detector.
-    from xic_extractor.peak_detection import physical_peak_evaluation as owner
-    from xic_extractor.peak_detection import physical_peak_population as population
-
-    prepare = population.prepare_physical_signal
-
-    enumerate_segments = owner.enumerate_physical_segment_universe
-    raw_split = physical_capture.discovery_raw_peak_components
-    measure = owner.measure_chrom_peak_component
-    descriptor = owner._physical_raw_descriptor_projection
-
-    def counted_raw_split(*args, **kwargs):
-        counts["raw_split"] += 1
-        return raw_split(*args, **kwargs)
-
-    def counted_measure(*args, **kwargs):
-        counts["measure"] += 1
-        return measure(*args, **kwargs)
-
-    def counted_descriptor(*args, **kwargs):
-        counts["descriptor"] += 1
-        return descriptor(*args, **kwargs)
-
-    monkeypatch.setattr(
-        physical_capture, "discovery_raw_peak_components", counted_raw_split
-    )
-    monkeypatch.setattr(population, "discovery_raw_peak_components", counted_raw_split)
-    monkeypatch.setattr(owner, "measure_chrom_peak_component", counted_measure)
-    monkeypatch.setattr(
-        owner, "_physical_raw_descriptor_projection", counted_descriptor
-    )
-
-    def counted_prepare(*args, **kwargs):
-        counts["prepare"] += 1
-        return prepare(*args, **kwargs)
-
-    def counted_enumerate(*args, **kwargs):
-        counts["enumerate"] += 1
-        return enumerate_segments(*args, **kwargs)
-
-    monkeypatch.setattr(population, "prepare_physical_signal", counted_prepare)
-    monkeypatch.setattr(owner, "enumerate_physical_segment_universe", counted_enumerate)
-    monkeypatch.setattr(
-        population, "enumerate_physical_segment_universe", counted_enumerate
-    )
-    capture = PhysicalPeakCapture(
-        RawSuperWindowSource(raw),
-        acquisition_source=raw.acquisition_source,
-        adapter_namespace="tests.shared_context",
-        profile=TEST_PROFILE,
-    )
+    capture = _capture(raw, "tests.centred_context")
     searches = (
-        PhysicalPeakSearch("left", 4.8, XICRequest(500.0, 4.2, 5.4, 20.0), True),
-        PhysicalPeakSearch("right", 5.25, XICRequest(500.0, 4.65, 5.85, 20.0), True),
+        PhysicalPeakSearch("left", 4.8, XICRequest(500.0, 4.2, 5.4, 20.0)),
+        PhysicalPeakSearch("right", 5.25, XICRequest(500.0, 4.65, 5.85, 20.0)),
+        # Another query on the left peak's flank locates the same apex.
+        PhysicalPeakSearch("left-flank", 4.84, XICRequest(500.0, 4.24, 5.44, 20.0)),
     )
-    left, right, repeated = capture.capture((*searches, searches[0]))
+    left, right, flank, repeated = capture.capture((*searches, searches[0]))
 
-    assert left.evaluation.state == right.evaluation.state == "available"
     assert left.evaluation.facts.apex_rt_min == pytest.approx(4.8)
     assert right.evaluation.facts.apex_rt_min == pytest.approx(5.25)
     assert left.evaluation.facts.area_counts_seconds == pytest.approx(
@@ -103,65 +57,62 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
     assert right.evaluation.facts.area_counts_seconds == pytest.approx(
         2000 * 0.05 * np.sqrt(2 * np.pi) * 60, rel=0.06
     )
-    assert left.evaluation.answer.selected_segment != (
-        right.evaluation.answer.selected_segment
-    )
-    assert left.evaluation.segment_universe == right.evaluation.segment_universe
-    assert (
-        left.search.request
-        == right.search.request
-        == XICRequest(500.0, 4.2, 5.85, 20.0)
-    )
+    # The overlapping search windows are read once, only to locate the peaks.
     assert capture.initial_request_count == 1
-    assert repeated.work_ordinal == left.work_ordinal
-    replay = capture.reselect(left, selection_subject_id="left-copy", query_rt_min=4.8)
-    assert (
-        replay.evaluation.answer.selected_segment
-        == left.evaluation.answer.selected_segment
-    )
-    assert (
-        replay.evaluation.facts.area_counts_seconds
-        == left.evaluation.facts.area_counts_seconds
-    )
-    # Two physical peaks are measured once each, regardless of NL duplicates
-    # or a later query for the same raw basin.
-    assert counts == {
-        "prepare": 1,
-        "enumerate": 1,
-        "raw_split": 1,
-        "measure": 2,
-        "descriptor": 2,
-    }
+    # Each peak is read once more, centred on its own raw apex.
+    assert capture.reacquisition_request_count == 2
+    for captured in (left, right):
+        request = captured.search.request
+        apex = captured.evaluation.question.query_rt_min
+        assert request.rt_max - apex == pytest.approx(apex - request.rt_min)
+    assert left.search.request != right.search.request
+    assert flank.search.request == left.search.request
+    assert flank.work_ordinal == repeated.work_ordinal == left.work_ordinal
+    assert flank.search.query_rt_min == 4.84
 
 
-def test_sparse_extension_reunites_contexts_without_repeating_extension():
-    rt = np.linspace(3.0, 7.0, 81)
-    intensity = _gaussian(rt, center=4.8, sigma=0.07, height=1000.0)
-    intensity += _gaussian(rt, center=6.0, sigma=0.07, height=2000.0)
+def test_measured_context_never_exceeds_the_peak_widths_of_its_located_peak():
+    """Each measurement window is the located raw apex +/- 2 search-window widths."""
+    from xic_extractor.peak_detection.physical_peak_population import (
+        measure_physical_peak_population,
+    )
+
+    rt = np.linspace(0.0, 30.0, 6001)
+    intensity = 50.0 + _gaussian(rt, center=10.0, sigma=0.05, height=1000.0)
+    intensity += _gaussian(rt, center=10.4, sigma=0.08, height=3000.0)
+    intensity += _gaussian(rt, center=20.0, sigma=0.2, height=800.0)
     raw = _BoundedRaw(rt=rt, intensity=intensity)
-    capture = PhysicalPeakCapture(
-        RawSuperWindowSource(raw),
-        acquisition_source=raw.acquisition_source,
-        adapter_namespace="tests.extended_context",
-        profile=TEST_PROFILE,
+    capture = _capture(raw, "tests.bounded_context")
+    searches = tuple(
+        PhysicalPeakSearch(str(t), t, XICRequest(500.0, t - 0.6, t + 0.6, 20.0))
+        for t in (9.95, 10.4, 10.45, 19.9, 20.3)
     )
-    left, right = capture.capture(
-        (
-            PhysicalPeakSearch("left", 4.8, XICRequest(500.0, 4.75, 4.85, 20.0), True),
-            PhysicalPeakSearch("right", 6.0, XICRequest(500.0, 5.0, 6.5, 20.0), True),
+    captured = capture.capture(searches)
+    # Without the merged search windows, chained events would stretch the
+    # context; the located peak's own width bounds it instead.
+    merged = {
+        5.0: (9.35, 11.05),
+        20.0: (19.3, 20.9),
+    }
+    for item in captured:
+        facts = item.evaluation.facts
+        assert facts is not None
+        lower, upper = merged[5.0 if facts.apex_rt_min < 15 else 20.0]
+        window = raw.intensity[(rt >= lower) & (rt <= upper)]
+        population = measure_physical_peak_population(
+            rt[(rt >= lower) & (rt <= upper)],
+            window,
+            context_rt_start_min=lower,
+            context_rt_end_min=upper,
+            profile=TEST_PROFILE,
         )
-    )
-    assert capture.initial_request_count == 2
-    assert capture.reacquisition_request_count == 1
-    assert left.search.request == right.search.request
-    assert left.search.request.rt_min < 4.75
-    assert left.search.request.rt_max == 6.5
-    assert left.evaluation.segment_universe == right.evaluation.segment_universe
-    assert right.evaluation.facts.apex_rt_min == pytest.approx(6.0)
-    # One bounded extension does not override the owner's remaining uncertainty
-    # or keep enlarging the population until an acceptable answer is obtained.
-    assert left.evaluation.reason == "incomplete_peak_context"
-    assert left.evaluation.facts is None
+        located = population.segment_at(item.search.query_rt_min)
+        width = located.right_rt_min - located.left_rt_min
+        request = item.search.request
+        assert request.rt_max - request.rt_min <= 4.0 * width + 1e-9
+        assert (request.rt_min + request.rt_max) / 2 == pytest.approx(
+            population.raw_apex_rt(located)
+        )
 
 
 def test_mass_channel_uses_existing_ppm_rule_without_isotope_or_ppm_merging():
@@ -174,8 +125,9 @@ def test_mass_channel_uses_existing_ppm_rule_without_isotope_or_ppm_merging():
         acquisition_source=raw.acquisition_source,
         adapter_namespace="tests.distinct_channels",
         profile=TEST_PROFILE,
+        context_half_width_peak_widths=2.0,
     )
-    first = PhysicalPeakSearch("a", 5.0, XICRequest(500.0, 4.4, 5.6, 20.0), True)
+    first = PhysicalPeakSearch("a", 5.0, XICRequest(500.0, 4.4, 5.6, 20.0))
     searches = (
         first,
         replace(
@@ -205,6 +157,7 @@ def test_mass_channel_uses_existing_ppm_rule_without_isotope_or_ppm_merging():
         acquisition_source=raw.acquisition_source,
         adapter_namespace="tests.isotope_channels",
         profile=TEST_PROFILE,
+        context_half_width_peak_widths=2.0,
     )
     separated = isotope_capture.capture((first, isotope))
     assert separated[0].search.request.mz != separated[1].search.request.mz
@@ -264,11 +217,13 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
         previous = snapshot
 
 
-def test_identical_narrow_probes_do_not_substitute_final_mass_windows():
+def test_identical_search_windows_do_not_substitute_centred_mass_windows():
     rt = np.linspace(1.0, 8.0, 1401)
-    common = _gaussian(rt, center=5.0, sigma=0.3, height=1000.0)
-    extra = _gaussian(rt, center=4.0, sigma=0.1, height=1500.0)
-    extra[rt >= 5.5] = 0.0
+    common = _gaussian(rt, center=6.2, sigma=0.1, height=1000.0)
+    # Only the wider mass window reads another ion, outside both search windows
+    # but inside the peak-centred windows.
+    extra = _gaussian(rt, center=6.95, sigma=0.03, height=1500.0)
+    extra[rt <= 6.85] = 0.0
 
     class MassResolvedRaw(_BoundedRaw):
         def extract_xic_many(self, requests):
@@ -290,9 +245,10 @@ def test_identical_narrow_probes_do_not_substitute_final_mass_windows():
         acquisition_source=raw.acquisition_source,
         adapter_namespace="tests.final_mass_windows",
         profile=TEST_PROFILE,
+        context_half_width_peak_widths=2.0,
     )
     searches = tuple(
-        PhysicalPeakSearch(str(i), 6.2, XICRequest(mz, 5.6, 6.8, 20.0), True)
+        PhysicalPeakSearch(str(i), 6.2, XICRequest(mz, 5.6, 6.8, 20.0))
         for i, mz in enumerate((500.0, 500.001))
     )
     first, second = capture.capture(searches)
@@ -324,7 +280,6 @@ def test_mass_channels_take_the_first_channel_whose_every_member_is_within_ppm()
                 10.0 + index * 1e-3,
                 float(rng.choice((10.0, 20.0))),
             ),
-            True,
         )
         for index in range(400)
     )
@@ -371,3 +326,79 @@ def test_mass_channels_take_the_first_channel_whose_every_member_is_within_ppm()
         and channel_of[a.selection_subject_id] != channel_of[b.selection_subject_id]
         for a, b in zip(ordered, ordered[1:], strict=False)
     )
+
+
+def _measured_peaks(seeds, intensity, rt):
+    """Each measured peak's facts, bounds, status and NL membership by event RT."""
+    settings = _settings()
+    raw = _BoundedRaw(rt=rt, intensity=intensity)
+    result = capture_ms1_peaks(
+        raw,
+        build_discovery_ions(seeds, settings=settings),
+        acquisition_source=raw.acquisition_source,
+        settings=settings,
+        signal_processing_profile=TEST_PROFILE,
+        ms1_centroid=lambda *_: None,
+    )
+    return {
+        tuple(sorted(event.rt for event in binding.peak.located_events)): (
+            binding.physical_evaluation.facts,
+            binding.peak.status,
+            binding.peak.attached_event_count,
+            binding.peak.ms1_search_rt_min,
+            binding.peak.ms1_search_rt_max,
+            binding.peak.query_rt_min,
+        )
+        for binding in result.physical_bindings
+    }
+
+
+@pytest.mark.parametrize(
+    ("unrelated_rt", "shares_search_window"),
+    [(5.7, True), (8.0, False)],
+)
+def test_unrelated_event_order_and_ids_do_not_change_a_peaks_measurement(
+    unrelated_rt, shares_search_window
+):
+    rt = np.linspace(2.0, 12.0, 4001)
+    # A sloping background makes the measurement depend on the window it is
+    # prepared in, as RAW traces do.
+    intensity = 300.0 + 40.0 * (rt - 2.0)
+    intensity += _gaussian(rt, center=5.0, sigma=0.05, height=4000.0)
+    intensity += _gaussian(rt, center=5.8, sigma=0.06, height=9000.0)
+    intensity += _gaussian(rt, center=8.0, sigma=0.06, height=7000.0)
+    peak = (_seed(scan_number=10, rt=5.0), _seed(scan_number=11, rt=5.03))
+    unrelated = _seed(scan_number=20, rt=unrelated_rt)
+
+    alone = _measured_peaks(peak, intensity, rt)
+    assert set(alone) == {(5.0, 5.03)}
+    variants = (
+        peak + (unrelated,),
+        (unrelated,) + tuple(reversed(peak)),
+        # The same events under other scan numbers, which name them.
+        (
+            _seed(scan_number=90, rt=5.03),
+            _seed(scan_number=91, rt=unrelated_rt),
+            _seed(scan_number=92, rt=5.0),
+        ),
+    )
+    for seeds in variants:
+        measured = _measured_peaks(seeds, intensity, rt)
+        assert set(measured) == {(5.0, 5.03), (unrelated_rt,)}
+        if not shares_search_window:
+            assert measured[(5.0, 5.03)] == alone[(5.0, 5.03)]
+            continue
+        # A longer shared search window can move the located peak's width by a
+        # scan, so its centred window by two; bounds and status stay put.
+        facts, *rest = measured[(5.0, 5.03)]
+        alone_facts, *alone_rest = alone[(5.0, 5.03)]
+        assert rest[:2] == alone_rest[:2]
+        assert rest[-1] == alone_rest[-1]
+        assert (facts.apex_rt_min, facts.left_rt_min, facts.right_rt_min) == (
+            alone_facts.apex_rt_min,
+            alone_facts.left_rt_min,
+            alone_facts.right_rt_min,
+        )
+        assert facts.area_counts_seconds == pytest.approx(
+            alone_facts.area_counts_seconds, rel=1e-3
+        )

@@ -37,7 +37,10 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.discovery.peak_binding import DiscoveryPeakPhysicalBinding
 from xic_extractor.discovery.same_ion_peaks import group_same_ion_peaks
-from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.discovery.settings import (
+    MEASUREMENT_CONTEXT_HALF_WIDTH_PEAK_WIDTHS,
+    DiscoverySettings,
+)
 from xic_extractor.mass_accuracy import mz_tolerance_da, weighted_ion_mz, within_ppm
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
@@ -115,10 +118,6 @@ class _DiscoveryMs1Measurements:
         )
         if self.initial_request_count > self.input_event_count:
             raise ValueError("Discovery MS1 acquisition request population is invalid")
-        if self.reacquisition_request_count > self.initial_request_count:
-            raise ValueError(
-                "Discovery MS1 reacquisition exceeds its initial population"
-            )
         if logical_request_count != (
             self.initial_request_count
             + self.reacquisition_request_count
@@ -155,9 +154,6 @@ def capture_ms1_peaks(
     padding_min = max(settings.ms1_search_padding_min, PHYSICAL_CONTEXT_HALF_WINDOW_MIN)
     questions: list[tuple[DiscoveryIon, DiscoveryEvent, PhysicalPeakSearch]] = []
     for ion in ion_tuple:
-        sparse = _sparse_reacquisition_by_event(
-            ion, padding_min=padding_min, settings=settings
-        )
         for event in ion.events:
             questions.append(
                 (
@@ -172,7 +168,6 @@ def capture_ms1_peaks(
                             rt_max=event.rt + padding_min,
                             ppm_tol=settings.precursor_mz_tolerance_ppm,
                         ),
-                        allow_sparse_reacquisition=sparse[event],
                     ),
                 )
             )
@@ -181,9 +176,10 @@ def capture_ms1_peaks(
         acquisition_source=acquisition_source,
         adapter_namespace=DISCOVERY_TRACE_ADAPTER_NAMESPACE,
         profile=signal_processing_profile,
+        context_half_width_peak_widths=MEASUREMENT_CONTEXT_HALF_WIDTH_PEAK_WIDTHS,
     )
-    # Every event may expose an incomplete edge, so context is resolved for the
-    # whole population before any event is attached.
+    # Events only locate peaks; each peak is measured centred on its own apex
+    # before any event is attached against it.
     captures = physical_capture.capture(tuple(search for _, _, search in questions))
 
     attachments: list[EventAttachment] = []
@@ -539,42 +535,6 @@ def _seed_subject_id(event: DiscoveryEvent) -> str:
         f"{event.sample_stem}:{event.scan_number}:"
         f"{float(event.precursor_mz).hex()}:{float(event.product_mz).hex()}"
     )
-
-
-def _sparse_reacquisition_by_event(
-    ion: DiscoveryIon,
-    *,
-    padding_min: float,
-    settings: DiscoverySettings,
-) -> dict[DiscoveryEvent, bool]:
-    """Whether sparse reacquisition may widen each event's trace context.
-
-    The judgement covers the ion's events whose search windows chain into
-    one RT region. Events with a recorded precursor allow it; an all-inferred
-    region needs two attachments and a high-intensity product.
-    """
-    allowed: dict[DiscoveryEvent, bool] = {}
-    region: list[DiscoveryEvent] = []
-    upper = -float("inf")
-    for event in (*sorted(ion.events, key=lambda event: event.rt), None):
-        if event is not None and (not region or event.rt - padding_min <= upper):
-            region.append(event)
-            upper = max(upper, event.rt + padding_min)
-            continue
-        if region:
-            if events_precursor_mz_basis(region) == "product_plus_neutral_loss":
-                value = (
-                    len(region) >= 2
-                    and max(item.product_intensity for item in region)
-                    >= settings.evidence_profile.thresholds.product_intensity_high_min
-                )
-            else:
-                value = True
-            allowed.update((item, value) for item in region)
-        if event is not None:
-            region = [event]
-            upper = event.rt + padding_min
-    return allowed
 
 
 def _measurements(

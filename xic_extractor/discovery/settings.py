@@ -16,6 +16,12 @@ from xic_extractor.discovery.evidence_config import (
     DiscoveryEvidenceProfile,
 )
 
+# NL events only locate a peak. Each peak is measured, and its events attached,
+# in the RAW window centred on its raw apex, reaching this many peak widths to
+# each side; the width is the peak's boundary width in the events' search
+# window. One method value for every batch, so no preset or CLI sets it.
+MEASUREMENT_CONTEXT_HALF_WIDTH_PEAK_WIDTHS = 2.0
+
 
 @dataclass(frozen=True)
 class DiscoverySettings:

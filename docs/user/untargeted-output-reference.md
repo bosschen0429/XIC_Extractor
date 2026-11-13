@@ -33,7 +33,7 @@ conditions and the run's settings, and that measurement is the published one.
 | precursor_mz_basis | string | Precursor source basis over the located events: `scan_precursor`, `scan_monoisotopic`, `product_plus_neutral_loss`, or `mixed` |
 | ms1_apex_mz | float | MS1 ion m/z read at the peak apex when all of the peak's events are inferred (blank for a recorded precursor, two ions, or no reading) |
 | ms1_apex_rt | float | Apex RT (min) Discovery judged the peak at; Delta Mass pairs its candidates with CID-NL peaks by it |
-| ms1_search_rt_min | float | Start of the XIC RT window the peak was measured in (min) |
+| ms1_search_rt_min | float | Start of the XIC RT window the peak was measured in, centred on its raw apex (min) |
 | ms1_search_rt_max | float | End of that XIC RT window (min) |
 | query_rt_min | float | RT (min) that selects the peak within that window: the raw apex of its peak |
 | best_ms2_scan_id | int | MS2 scan of the representative event in `discovery_events.csv` |

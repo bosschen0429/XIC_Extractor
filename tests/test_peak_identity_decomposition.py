@@ -163,7 +163,8 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> N
         ms1_centroid=lambda *_: None,
     ).peaks[0]
 
-    assert raw.requests == [
+    # Each seed's search window, each followed by its peak-centred window.
+    assert raw.requests[0::2] == [
         (500.0, pytest.approx(7.30), pytest.approx(8.50), 20.0),
         (500.0, pytest.approx(7.50), pytest.approx(8.70), 20.0),
     ]

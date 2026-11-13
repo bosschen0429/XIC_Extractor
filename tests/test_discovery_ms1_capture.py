@@ -68,18 +68,19 @@ def test_physical_capture_accepts_search_coordinates_without_method_evidence() -
         acquisition_source=raw.acquisition_source,
         adapter_namespace="tests.physical_capture",
         profile=TEST_PROFILE,
+        context_half_width_peak_widths=2.0,
     )
     search = PhysicalPeakSearch(
         selection_subject_id="feature:sample-a:500",
         query_rt_min=9.0,
         request=XICRequest(mz=500.0, rt_min=8.4, rt_max=9.6, ppm_tol=20.0),
-        allow_sparse_reacquisition=True,
     )
     first, repeated = capture.capture((search, search))
 
     assert first.work_ordinal == repeated.work_ordinal
     assert first.evaluation == repeated.evaluation
-    assert len(raw.requests) == 1
+    # One search window locates the peak; one centred window measures it.
+    assert len(raw.requests) == 2
     facts = first.evaluation.facts
     assert facts is not None
     assert facts.apex_rt_min == pytest.approx(9.02)
@@ -261,14 +262,14 @@ def test_capture_extracts_group_precursor_xic_with_padded_rt_window_and_ppm(
         ),
     )
     expected_padding = max(0.60, padding)
-    assert raw.requests == [
-        (
-            group.mz,
-            pytest.approx(7.80 - expected_padding),
-            pytest.approx(7.90 + expected_padding),
-            12.0,
-        )
-    ]
+    # The padded search window locates the peak; the peak is then read centred.
+    assert raw.requests[0] == (
+        group.mz,
+        pytest.approx(7.80 - expected_padding),
+        pytest.approx(7.90 + expected_padding),
+        12.0,
+    )
+    assert len(raw.requests) == 2
     assert len(candidates) == 1
 
 

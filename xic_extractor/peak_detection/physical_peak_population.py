@@ -51,21 +51,36 @@ class PhysicalPeakPopulation:
             selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
         )
 
-    def measure_segment(self, segment: PhysicalSegment) -> PhysicalPeakEvaluation:
-        """Measure one segment, queried at its raw apex inside the window."""
+    def raw_apex_rt(self, segment: PhysicalSegment) -> float:
+        """The segment's raw apex inside the window; its measurement's query RT."""
         component = segment.raw_component
         query_rt = (
             self.prepared.projection.rt[component.apex_index]
             if component is not None
             else segment.apex_rt_min
         )
-        query_rt = min(
-            max(query_rt, self.context_rt_start_min), self.context_rt_end_min
+        return min(max(query_rt, self.context_rt_start_min), self.context_rt_end_min)
+
+    def peak_centred_context(
+        self, segment: PhysicalSegment, *, half_width_peak_widths: float
+    ) -> tuple[float, float, float]:
+        """Raw apex and the context of ``half_width_peak_widths`` peak widths.
+
+        The peak width is the segment's measured boundary width in this window.
+        RT never starts before zero.
+        """
+        apex_rt = self.raw_apex_rt(segment)
+        half_width = half_width_peak_widths * (
+            segment.right_rt_min - segment.left_rt_min
         )
+        return apex_rt, max(0.0, apex_rt - half_width), apex_rt + half_width
+
+    def measure_segment(self, segment: PhysicalSegment) -> PhysicalPeakEvaluation:
+        """Measure one segment, queried at its raw apex inside the window."""
         question = PhysicalPeakQuestion(
             "physical_peak_question",
             self.universe,
-            query_rt,
+            self.raw_apex_rt(segment),
             (segment,),
             DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
         )

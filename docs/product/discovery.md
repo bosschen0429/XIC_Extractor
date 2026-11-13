@@ -233,15 +233,29 @@ once per peak, after same-ion grouping. Its bounds,
 area and reason remain visible; it cannot reach Alignment or a Matrix value. A
 separate singly charged ion keeps its own admission.
 
-### Trace context
+### Measurement context
 
-Physical trace context and precursor-identity confidence are separate. A
-`product_mz + neutral_loss` group starts with the configured RT context. When
-that trace is too short for the signal profile, Discovery reacquires context
-only when at least two MS2 seeds agree and their maximum product intensity
-reaches the profile's high-intensity threshold. Reacquisition keeps the
-original query m/z and tolerance. It answers the physical peak question; it
-does not upgrade precursor identity or grant Matrix authority.
+NL events only locate a peak; they do not set the RT context it is measured
+in. Each event searches the ion's XIC within `ms1_search_padding_min` (at
+least 0.6 min) of its RT; overlapping search windows of one mass channel are
+read and prepared together. The segment holding the event is its peak, located
+at that segment's raw apex and boundary width.
+
+Each located peak is then read again from its raw apex out to 2 peak widths on
+each side (`MEASUREMENT_CONTEXT_HALF_WIDTH_PEAK_WIDTHS`, one method value for
+every batch) and measured there once; events locating the same apex share that
+measurement. The peak measured is the segment of that window holding the
+located apex, chosen once: when its own apex lies elsewhere, that measurement
+stands, and a window holding no segment there leaves the events unattached with
+the physical reason. Search windows are never widened, so an event whose search
+window holds only a peak's far tail can leave it `incomplete_peak_context`.
+
+Events then attach against the bounds and neighbouring peaks of that
+measurement window. Other events on the same ion change a peak's measurement
+only through its search window: a longer shared search window can move the
+located boundary width by a scan, which moves the measurement window. Trace
+context and precursor-identity confidence stay separate; neither window
+upgrades precursor identity or grants Matrix authority.
 
 ### Shared measurements
 
@@ -250,8 +264,8 @@ does not upgrade precursor identity or grant Matrix authority.
 - One ion's XIC can contain several physical peaks. Events are partitioned by the
   physical owner's peak selection. Events outside or between peaks stay in the
   event table with their reason and do not support another peak.
-- The physical owner prepares each retained trace population once and measures
-  each raw peak once; NL events share that measurement, not competing areas.
+- The physical owner prepares each measurement window once and measures each
+  raw peak once; NL events share that measurement, not competing areas.
   Different m/z windows share a population only after acquisition: they use the
   same ppm tolerance, their m/z values are compatible with every member, and
   their complete acquired RT and raw-intensity arrays are exactly equal with
