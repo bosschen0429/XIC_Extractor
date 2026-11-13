@@ -344,9 +344,10 @@ def test_same_compound_reasons_name_the_representative_and_source_rows(tmp_path)
     from tests.matrix_curation_fixtures import published_curation
     from xic_extractor.matrix_curation.published import read_published_curation
 
-    def removed(feature_id, representative, relation, via):
+    def removed(feature_id, reason, representative, relation, via):
         return {
             "feature_id": feature_id,
+            "same_compound_reason": reason,
             "same_compound_representative_feature_id": representative,
             "same_compound_relation": relation,
             "same_compound_via_feature_ids": via,
@@ -359,9 +360,24 @@ def test_same_compound_reasons_name_the_representative_and_source_rows(tmp_path)
         tmp_path,
         [
             {"feature_id": "F1", "decision": "keep"},
-            removed("F2", "F1", "13C_M+1|[M+Na]+", "F4;F56"),
-            removed("F3", "", "[M+Mg+HCOO]+|[M+Na]+", "F20;F181"),
-            removed("F5", "F72", "ion_family:[3M-H+Mg]+", "F822"),
+            removed("F2", "derived_through_group", "F1", "13C_M+1|[M+Na]+", "F4;F56"),
+            removed(
+                "F3",
+                "derived_representative_undetermined",
+                "",
+                "[M+Mg+HCOO]+|[M+Na]+",
+                "F20;F181",
+            ),
+            removed(
+                "F5",
+                "non_protonated_ion_family",
+                "F72",
+                "ion_family:[3M-H+Mg]+",
+                "F822",
+            ),
+            removed(
+                "F6", "non_protonated_ion_family", "", "ion_family:[M+Na]+", "F181;F225"
+            ),
         ],
     )
 
@@ -369,4 +385,5 @@ def test_same_compound_reasons_name_the_representative_and_source_rows(tmp_path)
         "F2": "F1 的 13C 同位素、[M+Na]+（來自 F4、F56）",
         "F3": "[M+Mg+HCOO]+、[M+Na]+，代表特徵未定（來自 F20、F181）",
         "F5": "F72 的 [3M-H+Mg]+（來自 F822）",
+        "F6": "[M+Na]+，沒有保留的 [M+H]+（來自 F181、F225）",
     }

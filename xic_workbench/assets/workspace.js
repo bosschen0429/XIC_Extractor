@@ -999,6 +999,11 @@ window.XicUi = (() => {
     return startCurves();
   }
   async function openBatch() {
+    const page = await loadBatch();
+    document.dispatchEvent(new CustomEvent("xic:result-opened", {detail: page}));
+  }
+  // Loads the source into the review without switching the visible page.
+  async function loadBatch() {
     state.runFolder = state.runFolders.get($("source").value) || null;
     const page = await requestPage("/api/open", { source: $("source").value });
     $("query-form").reset();
@@ -1008,7 +1013,7 @@ window.XicUi = (() => {
     $("source-settings").open = false;
     if (page.overview) showTargetedOverview();
     else if (page.matched_count === 1) await selectItem(page.items[0]);
-    document.dispatchEvent(new CustomEvent("xic:result-opened", {detail: page}));
+    return page;
   }
   function queryFields() {
     const nearest = nearestSearchMode();
@@ -1341,7 +1346,7 @@ window.XicUi = (() => {
       if (state.runFolder) state.runFolders.set(result, state.runFolder);
       $("source").value = result;
     }
-    action(openBatch, "正在套用新的矩陣整理…");
+    action(loadBatch, "正在套用新的矩陣整理…");
   });
   document.addEventListener("xic:analysis-busy", controls);
   document.addEventListener("xic:analysis-started", () => {

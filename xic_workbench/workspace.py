@@ -187,15 +187,16 @@ class ReviewWorkspace:
             sample_ids = tuple(sample["sample_key"] for sample in summary["samples"])
             if not sample_ids:
                 raise ValueError("這份結果沒有可檢閱的樣本。")
+            reviewed = summary.get("retention") == "review"
+            # A full audit is browsed as published, without Matrix scopes.
+            curation = curation if reviewed else None
             page = prepare_report(
                 path,
                 SelectionRequest(
                     strategy="query",
                     sample_ids=sample_ids,
                     limit=25,
-                    review_scope="matrix"
-                    if summary.get("retention") == "review" or curation
-                    else "all",
+                    review_scope="matrix" if reviewed else "all",
                     curation_removed_ids=_removed_ids(curation),
                 ),
             )
@@ -428,7 +429,7 @@ class ReviewWorkspace:
             prepared = replace(self._page, payload=payload, selected_count=1)
             view_id = uuid.uuid4().hex
             self._store_view(view_id, prepared)
-            summary = self._item_summary(item, self._page.source, self._curation)
+            summary = self._item_summary(item, self._page.source, None)
             self._curves = None
             if summary["group_id"] or summary["candidate_id"]:
                 curves = read_review_curves(

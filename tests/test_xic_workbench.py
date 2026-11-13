@@ -342,6 +342,37 @@ def test_review_follows_the_latest_curation_unless_one_is_opened(tmp_path):
         workspace.close()
 
 
+def test_full_audit_result_is_browsed_as_published_beside_a_curation(tmp_path):
+    """A full audit has no Matrix scopes, so no curation label sits over it."""
+    from tests.matrix_curation_fixtures import published_curation
+
+    create_inspector_report(
+        tmp_path, extend=lambda writer: writer.set_row_destination("G1", "matrix")
+    )
+    published_curation(
+        tmp_path / "matrix_curation_20261101_090000",
+        tmp_path,
+        [
+            {
+                "feature_id": "G1",
+                "finite_count": "0",
+                "eligible_sample_count": "1",
+                "decision": "drop",
+                "decision_reason": "dropped_by:finite_fraction",
+            }
+        ],
+        min_finite_fraction=0.5,
+    )
+    workspace = review_workspace(config_dir=tmp_path / "config")
+    try:
+        page = workspace.open(str(tmp_path))
+        assert page["curation"] is None
+        assert page["result_artifact"]["name"] == "alignment_matrix.tsv"
+        assert [item["group_id"] for item in page["items"]] == ["G1"]
+    finally:
+        workspace.close()
+
+
 def test_example_downloads_are_fixed_public_resources_not_local_files(tmp_path):
     from xic_extractor.configuration.paths import targets_template_path
 

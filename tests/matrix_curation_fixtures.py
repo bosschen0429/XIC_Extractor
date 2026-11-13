@@ -123,6 +123,7 @@ def published_curation(
     columns = (
         "source_matrix_row_index",
         "feature_id",
+        "same_compound_reason",
         "same_compound_representative_feature_id",
         "same_compound_relation",
         "same_compound_via_feature_ids",
