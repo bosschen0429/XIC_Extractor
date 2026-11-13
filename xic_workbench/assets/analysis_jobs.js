@@ -193,6 +193,11 @@ function completeJob(snapshot, job) {
     } else if (job.kind === "curation") {
       // A visible curation result card is the notice.
       renderResults();
+      document.dispatchEvent(
+        new CustomEvent("xic:curation-published", {
+          detail: snapshot.results.curation,
+        }),
+      );
       if (!curationResultShown())
         done(`矩陣整理完成：${snapshot.results.curation.output_dir}`);
     }

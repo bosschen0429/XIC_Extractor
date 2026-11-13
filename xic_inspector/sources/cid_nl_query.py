@@ -112,7 +112,9 @@ class IndexedCidNlSource(CidNlSource):
             if request.strategy == "query":
                 ordered = None
                 if request.review_scope != "all":
-                    overview, rows = review_overview(self.path, self.summary)
+                    overview, rows = review_overview(
+                        self.path, self.summary, request.curation_removed_ids
+                    )
                     headers = query.item_headers()
                     overview["candidate_count"] = sum(
                         kind == "candidate" for _, kind, _ in headers

@@ -25,6 +25,12 @@ from xic_extractor.alignment_explanation.reader import (
     read_review_curves,
 )
 from xic_extractor.evidence_artifacts import EvidenceLocator
+from xic_extractor.matrix_curation.published import (
+    PublishedCuration,
+    is_curation,
+    latest_curation,
+    read_published_curation,
+)
 from xic_inspector.api import (
     InspectorCancelled,
     PreparedReport,
@@ -73,6 +79,8 @@ class ReviewWorkspace:
         # Targeted RAW preparation is reused while one workbook stays open.
         self._targeted_raws: dict[Path, Any] = {}
         self._page: PreparedReport | None = None
+        # The curation the open Untargeted result follows, fixed at open.
+        self._curation: PublishedCuration | None = None
         # Curve locations of the opened detail item, read once per selection.
         self._curves: ReviewCurves | None = None
         self._job: dict[str, Any] | None = None
@@ -151,9 +159,18 @@ class ReviewWorkspace:
         return self.analysis.curation.preview_curation(self.analysis.config_dir, values)
 
     def open(self, source: Any) -> dict[str, Any]:
-        path = resolve_source(
-            Path(_text(source, "結果資料夾、Targeted XLSX 或 SQLite 檔案"))
-        ).resolve()
+        given = Path(_text(source, "結果資料夾、Targeted XLSX 或 SQLite 檔案"))
+        curation = None
+        if given.is_dir() and is_curation(given):
+            # An opened curation keeps its own original result and decisions.
+            curation = read_published_curation(given)
+            if not curation.source_dir.is_dir():
+                raise ValueError(f"找不到這次整理的原始結果：{curation.source_dir}")
+            given = curation.source_dir
+        path = resolve_source(given).resolve()
+        if curation is None and path.suffix.lower() == ".sqlite":
+            folder = latest_curation(path.parent)
+            curation = read_published_curation(folder) if folder else None
         with self._lock:
             self._require_open()
             try:
@@ -170,19 +187,21 @@ class ReviewWorkspace:
             sample_ids = tuple(sample["sample_key"] for sample in summary["samples"])
             if not sample_ids:
                 raise ValueError("這份結果沒有可檢閱的樣本。")
+            reviewed = summary.get("retention") == "review"
+            # A full audit is browsed as published, without Matrix scopes.
+            curation = curation if reviewed else None
             page = prepare_report(
                 path,
                 SelectionRequest(
                     strategy="query",
                     sample_ids=sample_ids,
                     limit=25,
-                    review_scope="matrix"
-                    if summary.get("retention") == "review"
-                    else "all",
+                    review_scope="matrix" if reviewed else "all",
+                    curation_removed_ids=_removed_ids(curation),
                 ),
             )
             # Failed opens never displace the previously usable batch.
-            self._report, self._page = path, page
+            self._report, self._page, self._curation = path, page, curation
             self._targeted_raws = {}
             self._replace_job()
             self._detail, self._curves = None, None
@@ -237,6 +256,7 @@ class ReviewWorkspace:
                 target_role=None
                 if values.get("target_role") == ""
                 else values.get("target_role"),
+                curation_removed_ids=_removed_ids(self._curation),
                 **{
                     key: value
                     for key, value in values.items()
@@ -274,10 +294,20 @@ class ReviewWorkspace:
         if isinstance(page.source, TargetedWorkbookLocator):
             artifact = self.analysis.register_artifact(page.source.workbook_path)
         elif isinstance(page.source, EvidenceLocator):
-            artifact = self.analysis.register_artifact(page.source.matrix_path)
+            artifact = self.analysis.register_artifact(
+                self._curation.matrix_path
+                if self._curation
+                else page.source.matrix_path
+            )
             curatable = _curatable(page.source.matrix_path.parent)
         response = {
             "source": str(self._report),
+            "curation": {
+                "name": self._curation.folder.name,
+                "path": str(self._curation.folder),
+            }
+            if self._curation
+            else None,
             "result_artifact": artifact,
             # The result page opens matrix curation only where it can run.
             "curatable": curatable,
@@ -301,7 +331,8 @@ class ReviewWorkspace:
             "offset": page.payload["selection"]["offset"],
             "limit": page.payload["selection"]["limit"],
             "items": [
-                self._item_summary(item, page.source) for item in page.payload["items"]
+                self._item_summary(item, page.source, self._curation)
+                for item in page.payload["items"]
             ],
         }
         selection = page.payload["selection"]
@@ -315,7 +346,11 @@ class ReviewWorkspace:
         return response
 
     @staticmethod
-    def _item_summary(item: dict[str, Any], source: object) -> dict[str, Any]:
+    def _item_summary(
+        item: dict[str, Any],
+        source: object,
+        curation: PublishedCuration | None,
+    ) -> dict[str, Any]:
         # Translate source-owned identifiers and coordinates; never infer a group.
         # An Alignment evidence item's ref ends with its row or candidate ID.
         identifier = (
@@ -371,6 +406,8 @@ class ReviewWorkspace:
         }
         if "mz_distance" in item:
             summary["mz_distance"] = item["mz_distance"]
+        if curation and group_id in curation.removed:
+            summary["curation_reason"] = curation.removed[group_id]
         return summary
 
     def _item(self, item_id: Any) -> dict[str, Any]:
@@ -392,7 +429,7 @@ class ReviewWorkspace:
             prepared = replace(self._page, payload=payload, selected_count=1)
             view_id = uuid.uuid4().hex
             self._store_view(view_id, prepared)
-            summary = self._item_summary(item, self._page.source)
+            summary = self._item_summary(item, self._page.source, None)
             self._curves = None
             if summary["group_id"] or summary["candidate_id"]:
                 curves = read_review_curves(
@@ -669,6 +706,10 @@ class ReviewWorkspace:
         self._cancel.set()
         self._executor.shutdown(wait=True, cancel_futures=True)
         self._temporary.cleanup()
+
+
+def _removed_ids(curation: PublishedCuration | None) -> tuple[str, ...]:
+    return tuple(sorted(curation.removed)) if curation else ()
 
 
 def _load_review_curves() -> None:

@@ -107,6 +107,8 @@ class SelectionRequest:
     review_scope: str = "all"
     nearest_mz: float | None = None
     target_role: str | None = None
+    # Matrix features a matrix curation removed; they leave the matrix scopes.
+    curation_removed_ids: tuple[str, ...] = ()
 
     def validate(self) -> None:
         """Validate request invariants per Issue #398 Section 4."""
@@ -116,6 +118,7 @@ class SelectionRequest:
             "unresolved",
             "archive",
             "candidates",
+            "curation_removed",
         }:
             raise InspectorError(2, "Invalid review scope")
         if self.review_scope != "all" and self.strategy != "query":

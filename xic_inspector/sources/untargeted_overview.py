@@ -7,12 +7,15 @@ from xic_extractor.alignment_explanation.reader import (
 )
 
 
-def review_overview(path, summary):
+def review_overview(path, summary, curation_removed_ids=()):
+    removed = set(curation_removed_ids)
     rows = {}
     coverage: Counter[str] = Counter()
     sample_count = len(summary["samples"])
     for record in read_review_row_counts(path, summary):
         numeric, destination = record["numeric_samples"], record["destination"]
+        if destination == "matrix" and record["feature_id"] in removed:
+            destination = "curation_removed"
         rows[record["feature_id"]] = {
             "destination": destination,
             "numeric_count": len(numeric),
@@ -27,6 +30,9 @@ def review_overview(path, summary):
         "unresolved_count": sum(r["unresolved_count"] > 0 for r in matrix),
         "complete_count": sum(r["numeric_count"] == sample_count for r in matrix),
         "archive_count": sum(r["destination"] == "archive" for r in rows.values()),
+        "curation_removed_count": sum(
+            r["destination"] == "curation_removed" for r in rows.values()
+        ),
         "samples": [
             {
                 "id": s["sample_key"],

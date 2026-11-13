@@ -16,6 +16,10 @@ from xic_extractor.matrix_curation.export import (
     read_sample_metadata_file,
 )
 from xic_extractor.matrix_curation.istd import IstdWindow, read_istd_file
+from xic_extractor.matrix_curation.published import (
+    CURATED_MATRIX_NAME,
+    DECISIONS_NAME,
+)
 from xic_extractor.matrix_curation.same_compound import RELATIONS_NAME, REVIEW_NAME
 from xic_extractor.matrix_curation.source import (
     RUN_METADATA_NAME,
@@ -139,14 +143,14 @@ def run_curation(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
         "output_dir": str(output_dir),
         "source_dir": str(source.source_dir),
         "summary_path": str(summary),
-        "matrix_tsv": str(output_dir / "analysis_matrix.tsv"),
+        "matrix_tsv": str(output_dir / CURATED_MATRIX_NAME),
         "feature_count": counts["feature_count"],
         "kept_feature_count": counts["kept_feature_count"],
         "published_paths": [
             str(path)
             for path in (
-                output_dir / "analysis_matrix.tsv",
-                output_dir / "feature_decisions.tsv",
+                output_dir / CURATED_MATRIX_NAME,
+                output_dir / DECISIONS_NAME,
                 output_dir / RELATIONS_NAME,
                 output_dir / REVIEW_NAME,
                 output_dir / "sample_metadata.tsv",

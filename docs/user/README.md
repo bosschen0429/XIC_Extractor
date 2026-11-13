@@ -48,6 +48,8 @@ Untargeted 可從 dR、R、MeR 方法開始，再依樣本與分析目的調整�
   查看保存的結果不會重新選峰或改寫原始定量。
 - **整理 Matrix：**在完成的 Untargeted 結果選 **整理矩陣**，確認步驟與輸入。
   整理會產生另一份結果，原始 Matrix 保留；它不代替 normalization 或下游統計。
+  結果有整理時，檢閱畫面跟著最新一次整理後的矩陣，並在標題旁標出整理資料夾；
+  被移除的 feature 在 **整理時移除**，附移除原因。要看另一次整理，直接開啟那個整理資料夾。
 
 不確定數字代表什麼時，先讀[峰、偵測、面積與缺格的處理原理](processing-guide.html)。
 需要方法情境時再看[DNA adduct CID-NL 解說案例](raw-to-final-matrix-product-story.html)；
