@@ -511,7 +511,7 @@
   const itemTitle=item=>item.title||'已記錄的結果';
   // Long identifiers wrap after their separators instead of inside a word.
   const breakable=text=>esc(text).replace(/([|_\/])/g,'$1<wbr>');
-  const reviewReason=(item,compact=false)=>item.delta_mass ? window.XicInspectorDeltaMass.summary(item.delta_mass,compact) : item.reason_label;
+  const reviewReason=(item,compact=false)=>item.delta_mass ? window.XicInspectorDeltaMass.summary(item.delta_mass,compact) : item.group_summary||item.reason_label;
   const badge=item=>item.badge_label||({attention:'需留意',excluded:'已排除',rest:'已記錄'}[item.stratum]||'既有結果');
   const result=row=>!has(row,'quantitative_value')?'<span class="result-missing">無單一結果</span>':row.quantitative_value===null?'<span class="result-null">空值</span>':`<span class="${row.quantitative_value===0?'result-zero':'result-number'}">${num(row.quantitative_value)}</span>${row.quantity_unit?` <span class="result-unit">${esc(row.quantity_unit)}</span>`:''}`;
   const isCollapsedExcluded=item=>item.kind==='candidate'&&item.stratum==='excluded', queryReport=data.selection?.strategy==='query'||$('report-info-source')?.dataset.strategy==='query';
@@ -578,13 +578,8 @@
   }
   const emptySample=(item,sid)=>itemRows(item).some(r=>r.sample_id===sid&&has(r,'quantitative_value')&&r.quantitative_value===null);
   const curveColor=(item,sid)=>emptySample(item,sid)?'var(--subtle)':color(sid);
-  function groupSummary(item){
-    if(item.group_summary)return `<p class="group-summary">${esc(item.group_summary)}</p>`;
-    if(!itemRows(item).some(r=>has(r,'quantitative_value')))return '';
-    const counts={discovery_support:0,backfill_support:0,unavailable:0,empty:0,missing:0};
-    itemRows(item).forEach(r=>counts[!has(r,'quantitative_value')?'missing':r.quantitative_value===null?'empty':originClass(r.support_origin)]++);
-    return `<p class="group-summary">${itemRows(item).length} 個樣本：${counts.discovery_support} detect · ${counts.backfill_support} backfill · ${counts.empty} 空值${counts.unavailable?` · ${counts.unavailable} 有值但來源未提供`:''}${counts.missing?` · ${counts.missing} 未提供結果`:''}</p>`;
-  }
+  // The source counts samples once; the view only places that summary.
+  const groupSummary=item=>item.group_summary?`<p class="group-summary">${esc(item.group_summary)}</p>`:'';
   function originLegend(item){
     if(!itemRows(item).some(r=>has(r,'quantitative_value')))return '';
     const unknown=itemRows(item).some(r=>r.quantitative_value!=null&&originClass(r.support_origin)==='unavailable');
@@ -1073,7 +1068,7 @@
     const sid=record.sample_ids?.[0];
     const title=record.cell_review?`${sampleName(sid)} · ${record.value===null?'空值':num(record.value)}`:record.title;
     const groups=record.competition_groups||[];
-    const competition=groups.length?`<p class="competition-note">有競爭候選；本次已選邊。競爭對象：${groups.map(group=>`候選群組（${group.map(([sampleId,mass,apex])=>`${esc(sampleName(sampleId))}，m/z ${mz(mass)}，RT ${drt(apex)} min`).join('；')}）`).join('、')}。</p>`:'';
+    const competition=groups.length?`<p class="competition-note">有競爭候選；本次已選邊。競爭對象：${groups.map(group=>group.length?`改與候選群組（${group.map(([sampleId,mass,apex])=>`${esc(sampleName(sampleId))}，m/z ${mz(mass)}，RT ${drt(apex)} min`).join('；')}）同組`:'這個峰不併入本組').join('、')}。</p>`:'';
     const curveAvailable=(item.curves||[]).some(c=>c.sample_id===sid&&c.raw_rts?.length);
     const action=sid?`<button type="button" data-review-curve="${esc(sid)}" ${!onRequestCurves&&!curveAvailable?'disabled title="離線報告未保存這個樣本的曲線"':''}>看這個樣本的曲線</button>`:'';
     return `<aside class="evidence-panel" id="evidence-panel" tabindex="-1" aria-live="polite"><div class="evidence-header"><h3>${esc(title)}</h3><button type="button" class="evidence-close" id="close-evidence">關閉依據</button></div><dl class="evidence-fields">${(record.fields||[]).map(f=>`<div><dt>${esc(f.label)}</dt><dd>${groups.length&&f.label==='需不需要擔心'&&f.value==='未記錄需留意的風險。'?'有競爭候選，見下方對象。':fieldValue(f.value)}${f.label==='需不需要擔心'?competition:''}</dd></div>`).join('')}</dl>${action}</aside>`;
@@ -1141,7 +1136,7 @@
       return;
     }
     const aligned=alignedAvailable(item);
-    setHTML($('workspace-content'),`<div class="detail-top"><div><p class="detail-eyebrow">${itemName(item)}${item.method_label?` · ${esc(item.method_label)}`:''}</p><h2>${breakable(itemTitle(item))}</h2>${item.kind==='row'?'':`<p class="detail-reason">${esc(item.reason_label||'未記錄項目判定說明。')}</p>`}</div><span class="badge badge-${item.badge_label==='已記錄'?'rest':esc(item.stratum)}">${esc(badge(item))}</span></div>${summary(item)}${groupSummary(item)}${originLegend(item)}${evidencePanel(item)}<section class="advanced-inspection" aria-label="候選與積分"><section class="inspection-section" id="inspection-workspace"><div class="inspection-heading"><div class="inspection-title"><h3 id="inspection-title" tabindex="-1">${esc(graph)}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><span class="focus-status">${state.sample?'候選與擷取':'曲線與積分'}</span></div><div class="selection-controls">${state.sample?`<div class="control-group"><span class="control-label">${channelRoles(item,state.sample)?'曲線通道':'候選峰'}</span>${candidateControl(item)}</div><div class="control-group"><span class="control-label">擷取階段</span>${captureControl(item)}</div>`:''}${overlayControl(item)}</div><div class="chart-toolbar"><div class="sample-legend" aria-label="樣本曲線顯示">${legend(item)}</div>${channelKey(item)}<label><input id="chk-bounds" type="checkbox" ${state.bounds?'checked':''}> 顯示積分範圍與峰頂</label></div><div class="analysis-layout ${state.evidence?'with-evidence':''}"><div class="chart-column"><div class="charts-grid ${aligned?'':'single'}">${plotCard(item,'raw',signalLabel,!aligned)}${aligned?plotCard(item,'aligned',signalLabel):''}</div>${aligned?'':plotCard(item,'aligned',signalLabel)}<section class="integration-card" id="integration-readout">${readout(item)}</section></div></div></section></section>${sampleRelationshipPanel(item)}<section class="sample-section" aria-label="所有樣本的正式結果與支持紀錄"><div class="section-heading"><h3>所有樣本的正式結果與支持紀錄</h3></div>${groupSummary(item)}${sampleTable(item)}</section>`);
+    setHTML($('workspace-content'),`<div class="detail-top"><div><p class="detail-eyebrow">${itemName(item)}${item.method_label?` · ${esc(item.method_label)}`:''}</p><h2>${breakable(itemTitle(item))}</h2>${item.group_summary?'':`<p class="detail-reason">${esc(item.reason_label||'未記錄項目判定說明。')}</p>`}</div><span class="badge badge-${item.badge_label==='已記錄'?'rest':esc(item.stratum)}">${esc(badge(item))}</span></div>${summary(item)}${groupSummary(item)}${originLegend(item)}${evidencePanel(item)}<section class="advanced-inspection" aria-label="候選與積分"><section class="inspection-section" id="inspection-workspace"><div class="inspection-heading"><div class="inspection-title"><h3 id="inspection-title" tabindex="-1">${esc(graph)}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><span class="focus-status">${state.sample?'候選與擷取':'曲線與積分'}</span></div><div class="selection-controls">${state.sample?`<div class="control-group"><span class="control-label">${channelRoles(item,state.sample)?'曲線通道':'候選峰'}</span>${candidateControl(item)}</div><div class="control-group"><span class="control-label">擷取階段</span>${captureControl(item)}</div>`:''}${overlayControl(item)}</div><div class="chart-toolbar"><div class="sample-legend" aria-label="樣本曲線顯示">${legend(item)}</div>${channelKey(item)}<label><input id="chk-bounds" type="checkbox" ${state.bounds?'checked':''}> 顯示積分範圍與峰頂</label></div><div class="analysis-layout ${state.evidence?'with-evidence':''}"><div class="chart-column"><div class="charts-grid ${aligned?'':'single'}">${plotCard(item,'raw',signalLabel,!aligned)}${aligned?plotCard(item,'aligned',signalLabel):''}</div>${aligned?'':plotCard(item,'aligned',signalLabel)}<section class="integration-card" id="integration-readout">${readout(item)}</section></div></div></section></section>${sampleRelationshipPanel(item)}<section class="sample-section" aria-label="所有樣本的正式結果與支持紀錄"><div class="section-heading"><h3>所有樣本的正式結果與支持紀錄</h3></div>${groupSummary(item)}${sampleTable(item)}</section>`);
   }
   function reset(){state.plotWindow=null;rel.captures={};state.sample=null;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;}
   function clearFilters(){for(const id of ['search','mz-min','mz-max','rt-min','rt-max'])$(id).value='';list();}

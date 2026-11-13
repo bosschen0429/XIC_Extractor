@@ -179,7 +179,7 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     assert {curve["sample_id"] for curve in item["curves"]} == {"S1"}
 
     assert (
-        item["reason_label"]
+        item["group_summary"]
         == "2 個樣本：0 detect · 0 backfill · 1 空值 · 1 有值但來源未提供"
     )
     assert item["badge_label"] == "已記錄"
@@ -227,10 +227,10 @@ def test_unrelated_hold_does_not_become_a_cell_risk_after_record_renumbering(
         tmp_path, extend=assessments, review_only=review_only
     )
     selection = SelectionRequest(strategy="query", group_ids=("G1",))
-    before = prepare_report(report, selection).payload["items"][0]["reason_label"]
+    before = prepare_report(report, selection).payload["items"][0]["group_summary"]
     with sqlite3.connect(report) as db:
         db.execute("UPDATE method_assessments SET id=100000-id")
-    after = prepare_report(report, selection).payload["items"][0]["reason_label"]
+    after = prepare_report(report, selection).payload["items"][0]["group_summary"]
     assert before == after
     assert "HOLD" not in before
     assert "insufficient_method_evidence" not in before
@@ -938,7 +938,7 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
     )
     assert samples["S2"]["decision_reason"] == "不是空值。"
     assert (
-        item["reason_label"]
+        item["group_summary"]
         == "2 個樣本：0 detect · 0 backfill · 1 空值 · 1 有值但來源未提供"
     )
     readable = _readable(item)
@@ -1070,14 +1070,14 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
     assert ("定量矩陣" if destination == "matrix" else "封存紀錄") in item[
         "route_label"
     ]
-    assert f"{sample_count} 有值但來源未提供" in item["reason_label"]
+    assert f"{sample_count} 有值但來源未提供" in item["group_summary"]
     assert item["method_label"] == "NL 116.0474"
     assert all(
         s["status_label"] == "有定量值" and "梯形積分面積" in s["decision_label"]
         for s in item["samples"]
     )
     assert item["curves"][0]["stage_label"] == "detect 曲線"
-    labels = item["title"] + item["reason_label"] + item["route_label"]
+    labels = item["title"] + item["group_summary"] + item["route_label"]
     assert not any(
         token in labels
         for token in ("G1", "G1", "一致", "成功", "有效", "信心", "原始理由")

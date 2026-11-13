@@ -51,7 +51,7 @@ def test_three_cell_questions_keep_origins_values_and_real_risks(tmp_path):
     item = prepare_report(
         report, SelectionRequest(strategy="query", group_ids=("G1",))
     ).payload["items"][0]
-    assert item["reason_label"] == "3 個樣本：1 detect · 1 backfill · 1 空值"
+    assert item["group_summary"] == "3 個樣本：1 detect · 1 backfill · 1 空值"
     cards = {r["sample_ids"][0]: r for r in item["details"]["readable_records"]}
     assert set(cards) == {"S1", "S2", "S3"}
     assert cards["S1"]["fields"][0]["value"] == "detect"
@@ -107,3 +107,48 @@ def test_competition_names_the_other_group_by_sample_and_measured_rt(tmp_path):
     assert record["competition_groups"] == [[["S3", 500.0, 1.2]]]
     assert "低 SNR" in record["fields"][2]["value"]
     assert "cost_gap" not in str(record)
+
+
+def _competition(selected, alternative, equivalents=()):
+    return {
+        "risk_flags": ["accepted_competition"],
+        "selected_owners": selected,
+        "alternative_partition": alternative,
+        "equivalent_alternatives": list(equivalents),
+    }
+
+
+S1, S2, S2_OTHER, S3 = (
+    ["S1", 500.0, 1.0],
+    ["S2", 500.0, 1.1],
+    ["S2", 500.0, 3.4],
+    ["S3", 500.0, 1.2],
+)
+
+
+@pytest.mark.parametrize(
+    ("risks", "expected"),
+    [
+        # The alternative moves this peak to another group: name its peers.
+        ([_competition([S1, S2], [[S1], [S2, S3]])], [[S3]]),
+        # The alternative leaves the peak out; the selected peer is not a rival.
+        ([_competition([S1, S2], [[S1], [S2]])], [[]]),
+        # Another peak of the same sample sits in an unchanged group.
+        ([_competition([S1, S2], [[S1], [S2], [S2_OTHER, S3]])], [[]]),
+        # Each risk is read on its own.
+        (
+            [
+                _competition([S1, S2], [[S1], [S2, S3]]),
+                _competition([S1, S2], [[S1], [S2]]),
+            ],
+            [[S3], []],
+        ),
+        # No recorded alternative names nothing.
+        ([_competition([S1, S2], None)], []),
+    ],
+)
+def test_competition_names_what_the_alternative_does_with_this_peak(risks, expected):
+    from xic_inspector.sources.cid_nl_presentation import competition_groups
+
+    cell = {"sample_key": "S2", "membership_risks": risks}
+    assert competition_groups(cell) == expected

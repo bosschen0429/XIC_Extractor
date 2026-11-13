@@ -78,12 +78,15 @@ def cell_risks(cell: dict[str, Any]) -> list[str]:
 
 
 def competition_groups(cell: dict[str, Any]) -> list[list[list[Any]]]:
-    """Other groups considered with this sample's peak, by measured locations.
+    """The peers each recorded alternative would give this cell's peak.
 
-    These are the compared alternatives, not necessarily published features.
-    Never invent a final feature ID for an alternative that was not selected.
+    The peak is its full owner key (sample, measured m/z, native apex RT), so
+    another peak of the same sample is not mistaken for it. An empty entry
+    means the alternative leaves the peak out of this group. Alternatives are
+    compared configurations, not published features: never invent a feature
+    ID for one that was not selected.
     """
-    groups = []
+    groups: list[list[list[Any]]] = []
     sid = cell["sample_key"]
     for risk in cell.get("membership_risks", ()):
         if not {"accepted_competition", "backfill_competition"}.intersection(
@@ -91,20 +94,20 @@ def competition_groups(cell: dict[str, Any]) -> list[list[list[Any]]]:
         ):
             continue
         selected = risk["selected_owners"]
+        own = [owner for owner in selected if owner[0] == sid]
+        if len(own) != 1:
+            continue
+        peak = own[0]
+        alternative = risk.get("alternative_partition")
         for partition in [
-            risk.get("alternative_partition") or [],
+            *([alternative] if alternative is not None else []),
             *risk.get("equivalent_alternatives", []),
         ]:
-            for group in partition:
-                if any(owner[0] == sid for owner in group) and group != selected:
-                    peers = [owner for owner in group if owner[0] != sid]
-                    if peers and peers not in groups:
-                        groups.append(peers)
-        # A split alternative leaves this peak alone: the selected peers are
-        # still the competing group whose association was accepted.
-        if not groups:
-            peers = [owner for owner in selected if owner[0] != sid]
-            if peers:
+            group = next((group for group in partition if peak in group), [peak])
+            if sorted(group) == sorted(selected):
+                continue
+            peers = [owner for owner in group if owner != peak]
+            if peers not in groups:
                 groups.append(peers)
     return groups
 
@@ -203,25 +206,6 @@ def _item_labels(view: ItemEvidence, samples, route):
     }.get(view.state, "分組紀錄")
     if view.item.kind == "candidate":
         title = "已排除候選" if view.item.stratum == "excluded" else "未分組候選"
-    counts = {
-        "discovery_support": 0,
-        "backfill_support": 0,
-        "unavailable": 0,
-        "empty": 0,
-    }
-    for sample in samples:
-        key = (
-            "empty"
-            if sample.get("quantitative_value") is None
-            else sample["support_origin"]["kind"]
-        )
-        counts[key] += 1
-    summary = (
-        f"{len(samples)} 個樣本：{counts['discovery_support']} detect · "
-        f"{counts['backfill_support']} backfill · {counts['empty']} 空值"
-    )
-    if counts["unavailable"]:
-        summary += f" · {counts['unavailable']} 有值但來源未提供"
     labels = {
         "title": title,
         "badge_label": "需留意"
@@ -229,7 +213,6 @@ def _item_labels(view: ItemEvidence, samples, route):
         else "已排除"
         if view.item.stratum == "excluded"
         else "已記錄",
-        "reason_label": summary,
         "route_label": {
             "matrix": "去向：定量矩陣",
             "archive": "去向：封存紀錄（未列入定量矩陣）",
@@ -239,9 +222,35 @@ def _item_labels(view: ItemEvidence, samples, route):
         labels["method_label"] = "NL " + "、".join(
             f"{loss:.4f}" for loss in view.losses
         )
-    if view.item.kind != "row":
+    if view.item.kind == "row":
+        labels["group_summary"] = _group_summary(samples)
+    else:
         labels["reason_label"] = f"{title}；沒有矩陣格子的正式定量決策。"
     return labels
+
+
+def _group_summary(samples: list[dict[str, Any]]) -> str:
+    """Count each sample by the extraction stage of its value, or why it has none."""
+    counts = dict.fromkeys(
+        ("discovery_support", "backfill_support", "unavailable", "empty", "missing"),
+        0,
+    )
+    for sample in samples:
+        if "quantitative_value" not in sample:
+            counts["missing"] += 1
+        elif sample["quantitative_value"] is None:
+            counts["empty"] += 1
+        else:
+            counts[sample["support_origin"]["kind"]] += 1
+    summary = (
+        f"{len(samples)} 個樣本：{counts['discovery_support']} detect · "
+        f"{counts['backfill_support']} backfill · {counts['empty']} 空值"
+    )
+    if counts["unavailable"]:
+        summary += f" · {counts['unavailable']} 有值但來源未提供"
+    if counts["missing"]:
+        summary += f" · {counts['missing']} 未提供結果"
+    return summary
 
 
 def build_sample(
