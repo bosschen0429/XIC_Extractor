@@ -734,10 +734,6 @@ class CurveBundleSource:
                     "sample_stem": next(
                         t.sample_label for t in traces if t.sample_id == sid
                     ),
-                    "status_kind": "rest",
-                    "status_label": "曲線可用"
-                    if any(t.sample_id == sid and t.raw is not None for t in traces)
-                    else "RAW 未提供",
                     "support_origin": {
                         "kind": quantifications[sid].support_origin
                         if sid in quantifications
@@ -750,16 +746,10 @@ class CurveBundleSource:
                         else []
                     ),
                     **(
-                        {
-                            "quantitative_value": quantifications[sid].value,
-                            "quantity_unit": quantifications[sid].unit,
-                        }
+                        {"quantitative_value": quantifications[sid].value}
                         if sid in quantifications
                         else {}
                     ),
-                    "evidence_status": "available"
-                    if any(t.sample_id == sid and t.raw is not None for t in traces)
-                    else "unavailable",
                 }
                 for sid in item.sample_ids
             ]

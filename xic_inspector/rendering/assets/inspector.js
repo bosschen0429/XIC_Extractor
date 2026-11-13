@@ -559,6 +559,8 @@
   const countsText=item=>{const [total,...rest]=countParts(item).map(([text])=>text);return `${total}：${rest.join(' · ')}`;};
   // One line answers the group and doubles as the line-style legend.
   const summaryLine=item=>item.group_counts?`<p class="summary-line">${countParts(item).map(([text,style])=>`<span>${style?swatch(...style):''}${esc(text)}</span>`).join('')}</p>`:'';
+  // Groups and candidates are named by where they are; the kind is secondary.
+  const identified=item=>!item.delta_mass&&['row','candidate'].includes(item.kind);
   const hasCurve=(item,sid)=>(item.curves||[]).some(c=>c.sample_id===sid&&c.raw_rts?.length);
   const anyCurve=item=>(item.curves||[]).some(c=>c.raw_rts?.length);
   const areaText=row=>!has(row,'quantitative_value')?'<span class="area-missing">—</span>':row.quantitative_value===null?'<span class="area-empty">空值</span>':row.quantitative_value===0?'0':finite(row.quantitative_value)?row.quantitative_value.toExponential(3):esc(row.quantitative_value);
@@ -694,7 +696,7 @@
     $('list-count').textContent=deltaReview
       ? `${filtered.length === items.length ? items.length : `${filtered.length} / ${items.length}`} 筆${Number(fields.RUN_TOTAL) !== items.length ? `（全批 ${fields.RUN_TOTAL}）` : ''}`
       : `${filtered.length} / ${items.length} 筆`;
-    const recordButton=item=>{const dm=item.delta_mass,reason=reviewReason(item,true);return `<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${breakable(itemTitle(item))}</span>${dm||item.badge_label==='已記錄'?'':`<span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span>`}</div><div class="record-meta">${dm?'':`${itemName(item)} · `}m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}</div>${reason||!dm?`<div class="record-reason">${esc(reason||'未記錄判定說明')}</div>`:''}</button>`;};
+    const recordButton=item=>{const dm=item.delta_mass,reason=reviewReason(item,true);return `<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${identified(item)?`m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}`:breakable(itemTitle(item))}</span>${dm||item.badge_label==='已記錄'?'':`<span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span>`}</div><div class="record-meta">${identified(item)?esc(itemTitle(item)):`${dm?'':`${itemName(item)} · `}m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}`}</div>${reason?`<div class="record-reason">${esc(reason)}</div>`:''}</button>`;};
     const excludedGroup=excluded.length?`<section class="excluded-group"><button type="button" class="excluded-toggle" data-excluded-toggle aria-expanded="${showExcluded}" ${localFilterActive?'disabled title="篩選結果會保持展開"':''}><span>已排除候選</span><span>${excluded.length} 筆 ${showExcluded?'▾':'▸'}</span></button>${showExcluded?`<div class="excluded-items">${excluded.map(recordButton).join('')}</div>`:''}</section>`:'';
     setHTML($('record-list'),regular.map(recordButton).join('')+excludedGroup||'<p class="empty-state">這份報告沒有符合的項目。請清除篩選條件。</p>');
     filterStatus();detail();
@@ -717,13 +719,13 @@
   // The sample table answers each cell; offline it also picks the plotted curves.
   function cellTable(item){
     const offline=mode!=='result',plotted=offline&&anyCurve(item);
-    const head=`<tr>${plotted?'<th><span class="sr-only">顯示</span></th>':''}<th>樣本</th><th class="num">Area</th><th>來源</th><th><span class="sr-only">說明</span></th><th><span class="sr-only">操作</span></th></tr>`;
+    const head=`<tr>${plotted?'<th><span class="sr-only">顯示</span></th>':''}<th>樣本</th><th class="num">Area</th><th>來源</th><th><span class="sr-only">操作</span></th></tr>`;
     const body=itemRows(item).map(r=>{
       const sid=r.sample_id,current=sid===state.sample,notes=[...(r.note?[r.note]:[]),...(offline?sampleLimits(item,r):[])],risks=r.risk_labels||[];
       const action=offline
         ?`${hasCurve(item,sid)||candidates(item,sid).length?`<button type="button" class="row-action" data-focus="${esc(sid)}" ${current?'aria-current="true"':''}>${current?'查看中':'查看'}</button>`:''}${evidenceButtons(r.decision_refs,`${sampleName(sid)} 的排除依據`,'排除依據')}`
         :onRequestCurves?`<button type="button" class="row-action" data-review-curve="${esc(sid)}">曲線</button>`:'';
-      return `<tr class="${current?'focused-row':''}" data-sample-row="${esc(sid)}">${plotted?`<td><input type="checkbox" data-sample-visible="${esc(sid)}" aria-label="在圖中顯示 ${esc(sampleName(sid))}" ${state.visible.has(sid)?'checked':''} ${hasCurve(item,sid)?'':'disabled'}></td>`:''}<td class="cell-sample">${esc(sampleName(sid))}</td><td class="num">${areaText(r)}</td><td class="cell-origin">${originCell(item,r)}</td><td class="cell-explain">${notes.length?`<span class="cell-note">${esc(notes.join('；'))}</span>`:''}${risks.length?`<span class="cell-risk">${esc(risks.join('；'))}</span>`:''}</td><td class="cell-action">${action}</td></tr>`;
+      return `<tr class="${current?'focused-row':''}" data-sample-row="${esc(sid)}">${plotted?`<td><input type="checkbox" data-sample-visible="${esc(sid)}" aria-label="在圖中顯示 ${esc(sampleName(sid))}" ${state.visible.has(sid)?'checked':''} ${hasCurve(item,sid)?'':'disabled'}></td>`:''}<td class="cell-sample">${esc(sampleName(sid))}${notes.length||risks.length?`<div class="cell-explain">${notes.length?`<span class="cell-note">${esc(notes.join('；'))}</span>`:''}${risks.length?`<span class="cell-risk">${esc(risks.join('；'))}</span>`:''}</div>`:''}</td><td class="num">${areaText(r)}</td><td class="cell-origin">${originCell(item,r)}</td><td class="cell-action">${action}</td></tr>`;
     }).join('');
     return `<div class="cell-table-wrap"><table class="cell-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
   }
@@ -1125,8 +1127,8 @@
       return;
     }
     // A group reads answer first: who it is, how its samples split, each sample, then curves.
-    const head=item.kind==='row'
-      ?`<div class="detail-top"><div><p class="detail-eyebrow">${esc([itemTitle(item),item.method_label].filter(Boolean).join(' · '))}</p><h2>m/z ${mz(item.precursor_mz)} · RT ${rt(item.rt_apex_min)} min</h2></div>${item.badge_label==='需留意'?'<span class="badge badge-attention">需留意</span>':''}</div>${summaryLine(item)}`
+    const head=identified(item)
+      ?`<div class="detail-top"><div><p class="detail-eyebrow">${esc([itemTitle(item),item.method_label].filter(Boolean).join(' · '))}</p><h2>m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}</h2></div>${item.badge_label==='需留意'?'<span class="badge badge-attention">需留意</span>':''}</div>${summaryLine(item)}`
       :`<div class="detail-top"><div><p class="detail-eyebrow">${itemName(item)}${item.method_label?` · ${esc(item.method_label)}`:''}</p><h2>${breakable(itemTitle(item))}</h2><p class="detail-reason">${esc(item.reason_label||'未記錄項目判定說明。')}</p></div><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div>${summary(item)}`;
     const focus=state.sample?`<div class="inspection-heading"><h3 id="inspection-title" tabindex="-1">${esc(sampleName(state.sample))}</h3><button type="button" class="return-all" id="btn-unfocus">← 所有樣本</button></div><div class="selection-controls"><div class="control-group"><span class="control-label">${channelRoles(item,state.sample)?'曲線通道':'候選峰'}</span>${candidateControl(item)}</div><div class="control-group"><span class="control-label">擷取階段</span>${captureControl(item)}</div></div>`:'<h3 id="inspection-title" class="sr-only" tabindex="-1">曲線</h3>';
     const curvesShown=anyCurve(item);

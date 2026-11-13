@@ -2393,10 +2393,18 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     page.get_by_role("button", name="瀏覽矩陣群組").click()
     _configure_curve_sources(page, tmp_path, tmp_path)
     expect(page.locator('#sample-list input[value="S3"]')).not_to_be_checked()
-    _check_curve_samples(page)
-    page.locator("#load-curves").click()
+    # A row's curve action reads an unloaded sample from RAW, alone.
+    page.locator("#recorded-review .cell-table tbody tr").filter(
+        has_text="S3"
+    ).get_by_role("button", name="曲線").click()
     review = _wait_for_curve_report(page, inline=True)
     curves = review.locator("[data-inspector-id='svg-raw'] polyline")
+    expect(curves).to_have_count(1)
+    expect(curves).to_have_attribute("data-sample-id", "S3")
+    assert opened == ["S3.raw"]
+    opened.clear()
+    _check_curve_samples(page)
+    page.locator("#load-curves").click()
     expect(curves).to_have_count(3)
     # The saved result above the curves states the split once, as the legend.
     expect(page.locator("#recorded-review .summary-line")).to_have_text(
@@ -2472,10 +2480,11 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     ).to_have_count(1)
     offline.close()
     # A row's curve action focuses an already loaded curve without reading RAW.
-    saved.filter(has_text="S3").get_by_role("button", name="曲線").click()
-    expect(review.get_by_role("button", name="聚焦 S3", exact=True)).to_have_attribute(
-        "aria-pressed", "true"
-    )
+    focus = review.get_by_role("button", name="聚焦 S3", exact=True)
+    for _ in range(2):
+        # Asking again keeps the focus instead of toggling it off.
+        saved.filter(has_text="S3").get_by_role("button", name="曲線").click()
+        expect(focus).to_have_attribute("aria-pressed", "true")
     expect(curves).to_have_count(3)
     assert opened == ["S1.raw", "S2.raw", "S3.raw"]
 

@@ -186,8 +186,6 @@ def _item_labels(view: ItemEvidence, samples, route):
                 }
             ),
         }
-    else:
-        labels["reason_label"] = f"{title}；沒有矩陣格子的正式定量決策。"
     return labels
 
 

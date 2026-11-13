@@ -1174,7 +1174,7 @@ window.XicUi = (() => {
       $("inline-curve-review").querySelector(`[data-curve-focus="${CSS.escape(sample_id)}"]:not(:disabled)`);
     if (loaded) {
       // A loaded curve is focused in place rather than read from RAW again.
-      loaded.click();
+      if (loaded.getAttribute("aria-pressed") !== "true") loaded.click();
       $("inline-curves").scrollIntoView({block: "start"});
       return;
     }
