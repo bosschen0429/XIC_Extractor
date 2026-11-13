@@ -21,6 +21,7 @@ from xic_extractor.configuration.targeted_identification import (
 
 LEGACY_METHOD_FIELD = "method"
 LEGACY_TAG_FIELD = "cid_nl_tag"
+# The earlier workbook sheet of named methods; such workbooks are no longer read.
 LEGACY_METHOD_SHEET = "Identification Methods"
 _SETTING_FIELDS = (
     "apex_floor_sec",
@@ -151,65 +152,3 @@ def _convert(method: Mapping) -> tuple[float | None, tuple, DeltaMassSettings]:
             "請改用 CID-NL 欄並確認選峰，或加入 Delta Mass"
         )
     return loss, ions, settings
-
-
-def legacy_method_sheet_payload(rows: Sequence[Mapping[str, object]]) -> dict:
-    """Earlier ``Identification Methods`` worksheet rows as method definitions."""
-    payload: dict[str, dict] = {}
-    for number, row in enumerate(rows, start=2):
-        name = _text(row.get("Method"))
-        if not name:
-            raise ConfigError(f"{LEGACY_METHOD_SHEET} row {number}: Method is required")
-        method = payload.setdefault(
-            name,
-            {
-                "combine_mode": _text(row.get("Combine")) or "all",
-                "mz_tolerance_ppm": _number(row.get("m/z Tolerance ppm"), 20.0),
-                "conditions": {},
-            },
-        )
-        index = int(_number(row.get("Condition"), 1))
-        kind = _text(row.get("Kind"))
-        condition = method["conditions"].setdefault(index, {"kind": kind})
-        if kind == "cid_nl":
-            condition["tag"] = _text(row.get("CID-NL Tag"))
-            continue
-        for column, key in (
-            ("Apex Floor sec", "apex_floor_sec"),
-            ("Scan Interval Multiplier", "scan_interval_multiplier"),
-            ("Shape Window sec", "shape_window_sec"),
-            ("Min Shape r", "min_shape_r"),
-        ):
-            if _text(row.get(column)):
-                condition[key] = _number(row.get(column), 0.0)
-        position = {
-            "label": _text(row.get("Position")),
-            "offset_mz": _number(row.get("Delta m/z"), 0.0),
-        }
-        for column, key in (("Ratio Min", "ratio_min"), ("Ratio Max", "ratio_max")):
-            if _text(row.get(column)):
-                position[key] = _number(row.get(column), 0.0)
-        if _text(row.get("Compare Shape")):
-            position["compare_shape"] = (
-                _text(row.get("Compare Shape")).lower() == "true"
-            )
-        condition.setdefault("positions", []).append(position)
-    for method in payload.values():
-        method["conditions"] = [
-            method["conditions"][key] for key in sorted(method["conditions"])
-        ]
-    return payload
-
-
-def _text(value: object) -> str:
-    return "" if value is None else str(value).strip()
-
-
-def _number(value: object, default: float) -> float:
-    text = _text(value)
-    if not text:
-        return default
-    try:
-        return float(text)
-    except ValueError:
-        raise ConfigError(f"{LEGACY_METHOD_SHEET}: {text!r} is not a number") from None

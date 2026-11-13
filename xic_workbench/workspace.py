@@ -140,7 +140,7 @@ class ReviewWorkspace:
                 "open-local",
                 "preferences",
                 "method",
-                "targeted/method",
+                "targeted/settings",
                 "istd",
                 "targets/import",
                 "thermo-reader/status",

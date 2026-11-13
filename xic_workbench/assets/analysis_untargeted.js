@@ -67,7 +67,7 @@ export async function saveUntargeted(quiet = false) {
   await api("/api/untargeted/save", values);
   updateConfig({ untargeted: values });
   dirty("untargeted", false);
-  if (!quiet) done("Untargeted 批次設定已儲存。");
+  if (!quiet) done("批次設定已保存。");
 }
 export async function loadMethod(preset, overrides = {}) {
   let data;

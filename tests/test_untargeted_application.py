@@ -1150,9 +1150,7 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
         )
 
 
-@pytest.mark.parametrize(
-    "filename", ["targets.csv", "targets.xlsx", "targeted-method.xlsx"]
-)
+@pytest.mark.parametrize("filename", ["targets.csv", "targets.xlsx"])
 @pytest.mark.parametrize(
     "method,loss,count",
     [("dna_dr", 116.0474, 6), ("rna_ribose", 132.0423, 1), ("rna_mer", 146.0579, 0)],

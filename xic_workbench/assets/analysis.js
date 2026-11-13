@@ -30,7 +30,6 @@ import {
   loadDeltaMass,
   renderCidSuggestions,
   renderSettings,
-  renderTargetedMethods,
   saveTargeted,
   targetCount,
 } from "./analysis_targeted.js";
@@ -112,7 +111,6 @@ try {
   applyThemeButton();
   renderReaderSetup(state.config.thermo_reader);
   renderSettings(state.config.settings);
-  renderTargetedMethods(state.config.targeted_methods || []);
   for (const [key, label, kind, help] of pathFields)
     pathField(
       $("untargeted-paths"),

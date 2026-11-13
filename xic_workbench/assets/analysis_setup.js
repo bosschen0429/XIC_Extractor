@@ -16,44 +16,31 @@ import {
   ui,
 } from "./analysis_ui.js";
 
-let methodTimer;
+let settingsTimer;
 // Starting an analysis saves the setup, so only leaving the page can lose it;
 // the page asks before unloading then.
 export function dirty(kind, value = true) {
   setDirty(kind, value);
   if (kind === "targeted") {
-    clearTimeout(methodTimer);
-    methodTimer = setTimeout(
+    clearTimeout(settingsTimer);
+    settingsTimer = setTimeout(
       () =>
         act(async () => {
-          const summary = await api("/api/targeted/method", {
+          const { warnings } = await api("/api/targeted/settings", {
             settings: settingsValues(),
           });
-          setMethodState(summary);
+          showSettingsWarnings(warnings);
         }),
       250,
     );
   }
   checklist(kind);
 }
-export function setMethodState(summary) {
-  const label = summary?.label || "共用 Targeted 策略";
-  const custom = new Set(summary?.custom_keys || []);
-  const chip = $("target-method-state");
-  chip.textContent = label;
-  chip.className = custom.size ? "settings-warning" : "";
-  const notes = $("target-method-note");
-  notes.replaceChildren();
-  notes.append(
-    el(
-      "p",
-      `設定檔：${state.config.settings_source || "workspace.json"}`,
-      "settings-source",
-    ),
+// Settings problems stay in view beside the paths they concern.
+export function showSettingsWarnings(warnings) {
+  $("targeted-warnings").replaceChildren(
+    ...(warnings || []).map((warning) => el("p", warning, "settings-warning")),
   );
-  for (const warning of summary?.warnings || []) {
-    notes.append(el("p", warning, "settings-warning"));
-  }
   checklist("targeted");
 }
 // The page shows either the next analysis's setup or one opened result,

@@ -15,10 +15,9 @@ from xic_extractor.configuration.settings import (
     build_extraction_config,
     resolve_settings,
 )
-from xic_extractor.configuration.targeted_method_files import (
-    apply_targeted_method,
-    create_targeted_method,
-    load_targeted_method,
+from xic_extractor.configuration.target_list_files import (
+    create_target_list,
+    load_target_list,
 )
 from xic_extractor.configuration.targets import _read_targets
 from xic_extractor.configuration.workspace_state import (
@@ -55,11 +54,11 @@ def default_output_dir(config_dir: Path) -> Path:
 def prepare_targeted_config(
     config_dir: Path,
     *,
-    method_path: Path | None = None,
+    target_list_path: Path | None = None,
     settings_overrides: Mapping[str, str] | None = None,
     output_dir: Path | None = None,
 ) -> PreparedTargetedConfig:
-    """Freeze actual Targeted execution inputs, optionally binding a portable method.
+    """Freeze actual Targeted execution inputs, optionally from a target-list XLSX.
 
     The caller owns the returned workspace until execution finishes or is cancelled.
     Resource-bound portable cases are rejected rather than silently downgraded.
@@ -79,20 +78,16 @@ def prepare_targeted_config(
             "更換 RAW 批次不能沿用原注射順序；請以 --injection-order-source "
             "明確提供本批次的順序資料，或清空本批次設定中的 injection_order_source。"
         )
-    method = load_targeted_method(method_path) if method_path is not None else None
-    values = (
-        apply_targeted_method(raw, method, overrides=overrides)
-        if method is not None
-        else {**raw, **overrides}
+    values = {**raw, **overrides}
+    target_list = (
+        load_target_list(target_list_path)
+        if target_list_path is not None
+        else create_target_list(state["targets"], delta_mass=state.get("delta_mass"))
     )
-    if method is None:
-        method = create_targeted_method(
-            {}, state["targets"], delta_mass=state.get("delta_mass")
-        )
     target_rows, targets, delta_mass = (
-        method.target_rows,
-        method.targets,
-        method.delta_mass,
+        target_list.target_rows,
+        target_list.targets,
+        target_list.delta_mass,
     )
     order_source = values.get("injection_order_source", "").strip()
     output_dir = (

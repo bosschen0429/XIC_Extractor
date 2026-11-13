@@ -10,7 +10,7 @@ import {
   parseOffsets,
 } from "./analysis_delta_mass.js";
 import { createRowSelection } from "./analysis_row_selection.js";
-import { checklist, dirty, setMethodState } from "./analysis_setup.js";
+import { checklist, dirty, showSettingsWarnings } from "./analysis_setup.js";
 import {
   addTarget,
   removeTarget,
@@ -59,20 +59,9 @@ export function settingsValues() {
 }
 export function renderSettings(values) {
   const data = $("targeted-data");
-  const method = $("targeted-settings");
   const outputDir =
     $("t-output_dir")?.value ?? state.config.targeted_output_dir;
-  for (const panel of [data, method]) panel.replaceChildren();
-  const note = el("div", undefined, "method-note");
-  note.id = "target-method-note";
-  method.append(
-    el(
-      "p",
-      "目標清單決定名稱、m/z、預期 RT、特異性與 ISTD 配對；其餘沿用平台共用策略。",
-      "settings-notice",
-    ),
-    note,
-  );
+  data.replaceChildren();
   // Paths use the same rows as Untargeted: RAW, run inputs, output, machine.
   for (const spec of state.config.targeted_form.settings) {
     if (
@@ -110,34 +99,12 @@ export function renderSettings(values) {
       spec.help,
     );
   }
-  setMethodState(state.config.targeted_method);
+  const warnings = el("div", undefined, "settings-warnings");
+  warnings.id = "targeted-warnings";
+  data.append(warnings);
+  showSettingsWarnings(state.config.targeted_warnings);
   $("t-data_dir").dataset.batchPath = values.data_dir || "";
   lock();
-}
-function applyTargetedDraft(result) {
-  loadDeltaMass(result.delta_mass);
-  updateConfig({ settings: result.settings });
-  renderSettings(result.settings);
-  setMethodState(result.summary);
-  dirty("targeted");
-}
-export function renderTargetedMethods(methods, selected = "") {
-  const select = $("target-method-select");
-  select.replaceChildren(new Option("目前工作區設定", ""));
-  for (const method of methods)
-    select.add(new Option(method.name, method.path));
-  select.value = selected;
-}
-async function loadTargetedMethod(path) {
-  if (!path) throw new Error("請先選擇清單。");
-  const result = await api("/api/targeted/method/load", {
-    path,
-    settings: settingsValues(),
-  });
-  setTargets(result.targets);
-  applyTargetedDraft(result);
-  targetCount();
-  done("已載入目標清單；批次及本機設定保持不變。儲存或開始分析後套用。");
 }
 async function previewTargetFiles(files) {
   if (isBusy()) return;
@@ -150,16 +117,16 @@ async function previewTargetFiles(files) {
     lock();
     message.textContent = "正在讀取檔案…";
     const upload = await readListFile(files);
-    const result = await api("/api/targets/upload", {
-      ...upload,
-      settings: settingsValues(),
-    });
+    const result = await api("/api/targets/upload", upload);
     pendingTargetImport = result;
     const istdCount = result.targets.filter(
       (row) => row.role === "istd",
     ).length;
     $("target-import-summary").textContent =
-      `${upload.name} · ${result.kind === "method" ? "方法檔（Method + Targets）" : "目標表"} · ${result.targets.length} 個目標（ISTD ${istdCount} 個）`;
+      `${upload.name} · ${result.targets.length} 個目標（ISTD ${istdCount} 個）`;
+    $("target-import-confirm").textContent = state.targets.length
+      ? "取代目前清單"
+      : "匯入";
     const body = $("target-import-rows");
     body.replaceChildren();
     for (const row of result.targets) {
@@ -178,7 +145,7 @@ async function previewTargetFiles(files) {
       }
       body.append(tr);
     }
-    message.textContent = "已辨識檔案，請確認預覽；取消不會變更目前清單。";
+    message.textContent = "";
     $("target-import-preview").showModal();
   } catch (error) {
     message.textContent = error.message;
@@ -196,15 +163,9 @@ export async function saveTargeted(quiet = false) {
     ...targetedListValues(),
     output_dir,
   });
-  updateConfig({
-    settings,
-    targeted_output_dir: output_dir,
-    settings_source: "workspace.json",
-    targeted_method: receipt.summary,
-  });
-  setMethodState(receipt.summary);
+  updateConfig({ settings: receipt.settings, targeted_output_dir: output_dir });
   dirty("targeted", false);
-  if (!quiet) done("Targeted 設定與目標已儲存。");
+  if (!quiet) done(receipt.message);
 }
 const isIstd = (row) => row.role === "istd";
 // Delta Mass details of one target; the row's Δm/z cell follows from them.
@@ -262,6 +223,10 @@ export function targetCount() {
   $("target-count").textContent = state.targets.length
     ? `${state.targets.length} 個目標 · ${istd} 個 ISTD`
     : "尚未載入目標";
+  $("target-start").hidden = Boolean(state.targets.length);
+  $("target-edit-label").textContent = state.targets.length
+    ? "檢視與編輯"
+    : "新增目標";
   renderTargetPreview();
   checklist("targeted");
 }
@@ -342,9 +307,8 @@ function renderSelection() {
   const count = selection.keys.size;
   $("target-selection").textContent = count
     ? `已選 ${count} 個目標`
-    : "先框選或搜尋";
-  for (const node of $("target-bulk").querySelectorAll("input, button"))
-    node.disabled = !count;
+    : "框選列號或搜尋，可一次設定多個目標";
+  $("target-bulk").hidden = !count;
   for (const tr of $("target-rows").querySelectorAll("tr[data-target]"))
     tr.classList.toggle(
       "selected",
@@ -356,7 +320,6 @@ const targetColumns = [
   ["pairing", "角色／ISTD 配對"],
   ["mz", "m/z"],
   ["expected_rt_min", "預期 RT（min）"],
-  ["specificity", "特異性"],
   ["cid_nl_loss_da", "CID-NL 中性丟失（Da）"],
   ["delta_mass_mz", "Delta Mass Δm/z"],
 ];
@@ -378,10 +341,7 @@ function renderTargets() {
     for (const [key, label] of targetColumns) {
       const td = el("td");
       const where = `${label}（第 ${index + 1} 列）`;
-      if (key === "specificity") {
-        td.textContent = specificityLabel(row);
-        td.className = "target-specificity";
-      } else if (key === "delta_mass_mz") {
+      if (key === "delta_mass_mz") {
         const open = button(
           deltaText(row) || "—",
           () => {
@@ -408,8 +368,6 @@ function renderTargets() {
           updateTarget(row, {
             [key]: key === "label" ? input.value : input.value.trim(),
           });
-          tr.querySelector(".target-specificity").textContent =
-            specificityLabel(row);
           if (key === "mz" && expandedRow === row) renderExpanded(tr, row);
           dirty("targeted");
           targetCount();
@@ -495,8 +453,6 @@ function renderExpanded(tr, row) {
         updateTarget(row, { delta_mass_mz: formatOffsets(valid) });
         const cell = tr.querySelector(".target-delta-cell");
         cell.lastChild.textContent = deltaText(row) || "—";
-        tr.querySelector(".target-specificity").textContent =
-          specificityLabel(row);
         dirty("targeted");
         targetCount();
       },
@@ -595,28 +551,6 @@ export function bindTargeted() {
   });
 
   $("target-save").onclick = () => act(() => saveTargeted());
-  $("target-method-load").onclick = () =>
-    act(() => loadTargetedMethod($("target-method-select").value));
-  $("target-method-save").onclick = () =>
-    act(async () => {
-      const name = await requestPath(
-        "另存目標清單",
-        "",
-        "清單名稱（不含 .xlsx）",
-      );
-      if (!name) return;
-      const result = await api("/api/targeted/method/save", {
-        name,
-        settings: settingsValues(),
-        ...targetedListValues(),
-      });
-      updateConfig({ targeted_methods: result.methods });
-      renderTargetedMethods(
-        result.methods,
-        result.methods.find((method) => method.name === result.name)?.path,
-      );
-      done(`已另存目標清單：${result.name}`);
-    });
 
   $("target-new").onclick = () => {
     $("t-data_dir").value = "";
@@ -627,7 +561,7 @@ export function bindTargeted() {
     dirty("targeted");
     focusField("t-data_dir");
     done(
-      "已開始新批次：保留目標清單、方法與結果存放位置，請選擇新的 RAW 資料夾。",
+      "已開始新批次：保留目標清單與結果存放位置，請選擇新的 RAW 資料夾。",
     );
   };
   $("targeted-data").addEventListener("input", (event) => {
@@ -635,6 +569,9 @@ export function bindTargeted() {
       event.target.id === "t-data_dir" &&
       event.target.value !== event.target.dataset.batchPath
     ) {
+      // 上機資訊 describes one RAW folder; a new folder never inherits it.
+      if ($("t-injection_order_source").value)
+        done("已清空上機資訊：它屬於前一個 RAW 資料夾。");
       $("t-injection_order_source").value = "";
       event.target.dataset.batchPath = event.target.value;
       sampleMetadata.clear("targeted");
@@ -666,15 +603,12 @@ export function bindTargeted() {
       .querySelector("tr[data-target]:last-of-type input")
       ?.focus();
   };
-  $("target-editor-save").onclick = () =>
-    act(async () => {
-      const problem = targetListError();
-      $("target-editor-error").textContent = problem;
-      $("target-editor-error").hidden = !problem;
-      if (problem) return;
-      await saveTargeted();
-      $("target-editor").close();
-    });
+  $("target-editor-done").onclick = () => {
+    const problem = targetListError();
+    $("target-editor-error").textContent = problem;
+    $("target-editor-error").hidden = !problem;
+    if (!problem) $("target-editor").close();
+  };
   $("target-export").onclick = () =>
     act(async () => {
       const path = await requestPath("匯出目標清單（.xlsx）");
@@ -686,6 +620,23 @@ export function bindTargeted() {
       done(result.message);
     });
   bindListUpload("target", previewTargetFiles);
+  // The bundled example becomes the current list, ready to edit; nothing to download.
+  $("target-from-example").onclick = () =>
+    act(async () => {
+      const blob = await fetch("/examples/targets.xlsx").then((response) => {
+        if (!response.ok) throw new Error("無法讀取範例清單。");
+        return response.blob();
+      });
+      const upload = await readListFile([new File([blob], "targets.xlsx")]);
+      const result = await api("/api/targets/upload", upload);
+      setTargets(result.targets);
+      loadDeltaMass(result.delta_mass);
+      targetCount();
+      dirty("targeted");
+      $("target-import-status").textContent =
+        "已放入範例清單：請改成你的目標，再保存批次設定。";
+      openTargetEditor();
+    });
 
   $("target-import-preview").addEventListener("close", () => {
     if (pendingTargetImport)
@@ -697,13 +648,11 @@ export function bindTargeted() {
     const result = pendingTargetImport;
     pendingTargetImport = null;
     setTargets(result.targets);
-    if (result.kind === "method") applyTargetedDraft(result);
-    else loadDeltaMass(null);
-    $("target-method-select").value = "";
+    loadDeltaMass(result.delta_mass);
     targetCount();
     dirty("targeted");
     $("target-import-preview").close();
     $("target-import-status").textContent =
-      `已匯入 ${state.targets.length} 個目標；儲存或開始分析後套用。`;
+      `已匯入 ${state.targets.length} 個目標。`;
   };
 }

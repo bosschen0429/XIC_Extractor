@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import http.client
 import json
 import sys
@@ -75,14 +76,16 @@ def run_smoke(report_path: Path) -> int:
                 raise RuntimeError(f"Empty user-guide resource: {resource}")
         report["user_guide"] = True
         from xic_extractor.configuration.paths import targets_template_path
-        from xic_extractor.configuration.targeted_method_files import load_target_table
+        from xic_extractor.configuration.target_list_files import load_target_list
 
-        for name in ("targeted-method.xlsx", "targets.xlsx"):
-            if not request(f"/examples/{name}"):
-                raise RuntimeError(f"Empty example: {name}")
-        config["targets"] = load_target_table(
-            targets_template_path().with_name("targets.xlsx")
-        )
+        if not request("/examples/targets.xlsx"):
+            raise RuntimeError("Empty example: targets.xlsx")
+        config["targets"] = [
+            dict(row)
+            for row in load_target_list(
+                targets_template_path().with_name("targets.xlsx")
+            ).target_rows
+        ]
         if not config["settings"] or not config["targets"]:
             raise RuntimeError("Bundled settings or targets are empty")
         report["server_started"] = True
@@ -106,31 +109,23 @@ def run_smoke(report_path: Path) -> int:
         actual = bind_cid_nl_recipe(load_preset(destination), "full")
         if expected.discovery_settings != actual.discovery_settings:
             raise RuntimeError("Saved HTML method changed its bound settings")
-        report["stage"] = "targeted_method_roundtrip"
-        saved = json.loads(
-            request(
-                "/api/targeted/method/save",
-                {
-                    "name": f"smoke-{uuid.uuid4().hex[:8]}",
-                    "settings": config["settings"],
-                    "targets": config["targets"],
-                },
-            )
-        )
-        method_path = next(
-            item["path"] for item in saved["methods"] if item["name"] == saved["name"]
+        report["stage"] = "target_list_roundtrip"
+        exported = report_path.parent / f"smoke-targets-{uuid.uuid4().hex[:8]}.xlsx"
+        request(
+            "/api/targets/export",
+            {"path": str(exported), "targets": config["targets"]},
         )
         restored = json.loads(
             request(
-                "/api/targeted/method/load",
-                {"path": method_path, "settings": config["settings"]},
+                "/api/targets/upload",
+                {
+                    "name": exported.name,
+                    "content": base64.b64encode(exported.read_bytes()).decode(),
+                },
             )
         )
-        if (
-            restored["settings"] != config["settings"]
-            or restored["targets"] != config["targets"]
-        ):
-            raise RuntimeError("Saved Targeted method changed settings or targets")
+        if restored["targets"] != config["targets"]:
+            raise RuntimeError("Exported target list changed its targets")
         if any(name == "PyQt6" or name.startswith("PyQt6.") for name in sys.modules):
             raise RuntimeError("HTML application imported Qt")
         report.update(
@@ -138,7 +133,7 @@ def run_smoke(report_path: Path) -> int:
             stage="complete",
             preset_roundtrip=True,
             preset_path=str(destination),
-            targeted_method_roundtrip=True,
+            target_list_roundtrip=True,
         )
     except Exception as exc:
         report["reason"] = str(exc)

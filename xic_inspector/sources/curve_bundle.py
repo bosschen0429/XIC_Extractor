@@ -624,8 +624,12 @@ class CurveBundleSource:
                         "bound_left_rt": trace.peak_bounds.start
                         if trace.peak_bounds
                         else None,
+                        # A curve without saved bounds still marks the apex of
+                        # the value it gave.
                         "apex_rt": trace.peak_bounds.apex
                         if trace.peak_bounds
+                        else trace.integration.raw_apex_rt_min
+                        if trace.integration
                         else None,
                         "bound_right_rt": trace.peak_bounds.end
                         if trace.peak_bounds

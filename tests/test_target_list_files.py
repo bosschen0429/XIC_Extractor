@@ -3,116 +3,134 @@ from pathlib import Path
 import pytest
 
 from tests.targeted_fixtures import targeted_rows
-from xic_extractor.configuration import targeted_method_files as files
+from xic_extractor.configuration import target_list_files as files
 from xic_extractor.configuration.models import ConfigError
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS, METHOD_KEYS
+from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
 
-def test_shipped_examples_use_current_method_defaults_and_shared_targets(tmp_path):
+def test_shipped_example_matches_the_bundled_template(tmp_path):
     from xic_extractor.configuration.csv_io import read_target_draft_rows
     from xic_extractor.configuration.paths import targets_template_path
 
-    resources = targets_template_path().parent
-    method_path = resources / "targeted-method.xlsx"
-    targets_path = resources / "targets.xlsx"
-    originals = [path.read_bytes() for path in (method_path, targets_path)]
-    method = files.load_targeted_method(method_path)
-    target_rows = files.load_target_table(targets_path)
-    assert dict(method.settings) == {key: "cid-nl" for key in METHOD_KEYS}
-    assert (
-        list(method.target_rows)
-        == target_rows
-        == read_target_draft_rows(targets_template_path())
-    )
-    target_rows[0]["expected_rt_min"] = "9.25"
-    changed = files.create_targeted_method(method.settings, target_rows)
-    copy = tmp_path / "my-method.xlsx"
-    files.save_targeted_method(changed, copy)
-    assert files.load_targeted_method(copy).target_rows[0]["expected_rt_min"] == "9.25"
-    assert [path.read_bytes() for path in (method_path, targets_path)] == originals
+    example = targets_template_path().with_name("targets.xlsx")
+    original = example.read_bytes()
+    target_list = files.load_target_list(example)
+    rows = [dict(row) for row in target_list.target_rows]
+    assert rows == read_target_draft_rows(targets_template_path())
+    rows[0]["expected_rt_min"] = "9.25"
+    copy = tmp_path / "my-list.xlsx"
+    files.save_target_list(files.create_target_list(rows), copy)
+    assert files.load_target_list(copy).target_rows[0]["expected_rt_min"] == "9.25"
+    assert example.read_bytes() == original
 
 
 @pytest.mark.parametrize("loss", ["116.0474", ""])
-def test_complete_method_roundtrip_without_batch_machine_or_resource_state(
-    tmp_path, loss
-):
-    settings = {
-        **CANONICAL_SETTINGS_DEFAULTS,
-        "data_dir": "missing-batch",
-        "dll_dir": "missing-dll",
-    }
+def test_list_roundtrip_keeps_targets_and_extra_columns(tmp_path, loss):
     target_rows = [dict(row, cid_nl_loss_da=loss) for row in targeted_rows()]
-    method = files.create_targeted_method(settings, target_rows)
-    folder = tmp_path / "method-a.xlsx"
-    saved = files.save_targeted_method(method, folder)
-    loaded = files.load_targeted_method(folder)
-    assert dict(loaded.settings) == dict(saved.settings) == {"strategy": "cid-nl"}
-    assert loaded.targets == method.targets
+    target_list = files.create_target_list(target_rows)
+    path = tmp_path / "list-a.xlsx"
+    files.save_target_list(target_list, path)
+    loaded = files.load_target_list(path)
+    assert loaded.targets == target_list.targets
     assert loaded.targets[1].istd_pair == "standard"
     assert loaded.target_rows[1]["note"] == "方法 A"
     assert loaded.target_rows[1]["cid_nl_loss_da"] == loss
     assert (loaded.targets[1].neutral_loss_da is None) == (loss == "")
-    assert folder.is_file()
+    assert loaded.delta_mass is None
     with pytest.raises(TypeError):
-        loaded.settings["dirty_matrix_mode"] = "true"
+        loaded.target_rows[0]["mz"] = "1"
 
 
-def test_new_method_replaces_every_method_value_and_targets(tmp_path):
-    folder = tmp_path / "method.xlsx"
-    a = files.create_targeted_method({}, targeted_rows())
-    files.save_targeted_method(a, folder)
+def test_saving_replaces_the_whole_list(tmp_path):
+    path = tmp_path / "list.xlsx"
+    files.save_target_list(files.create_target_list(targeted_rows()), path)
     b_rows = [dict(targeted_rows()[0], label="other-standard")]
-    b = files.create_targeted_method({}, b_rows)
-    files.save_targeted_method(b, folder)
-    loaded = files.load_targeted_method(folder)
-    assert loaded.settings["strategy"] == "cid-nl"
+    files.save_target_list(files.create_target_list(b_rows), path)
+    loaded = files.load_target_list(path)
     assert [target.label for target in loaded.targets] == ["other-standard"]
 
 
-@pytest.mark.parametrize(
-    "resource",
-    [
-        "model_selection_expected_diff_approval_registry",
-        "targeted_ms1_shape_identity_support_tsv",
-    ],
-)
-def test_portable_method_rejects_resources_instead_of_dropping_them(resource):
-    settings = {resource: "reference.tsv"}
-    with pytest.raises(ConfigError, match=resource):
-        files.create_targeted_method(settings, targeted_rows())
-    assert settings == {resource: "reference.tsv"}
+def _sheet(path, name, rows):
+    import openpyxl
+
+    book = openpyxl.load_workbook(path)
+    sheet = book.create_sheet(name)
+    for row in rows:
+        sheet.append(row)
+    book.save(path)
+    book.close()
+
+
+@pytest.mark.parametrize("retired", ["Method", "Identification Methods"])
+def test_earlier_method_workbook_is_rejected_with_the_fix(tmp_path, retired):
+    path = tmp_path / "old.xlsx"
+    files.save_target_list(files.create_target_list(targeted_rows()), path)
+    _sheet(path, retired, [["key", "value"], ["strategy", "cid-nl"]])
+    with pytest.raises(ConfigError, match=f"舊格式.*{retired}.*刪除") as error:
+        files.load_target_list(path)
+    assert "Delta Mass Settings" in str(error.value)
+
+
+def test_unknown_sheet_is_rejected(tmp_path):
+    path = tmp_path / "list.xlsx"
+    files.save_target_list(files.create_target_list(targeted_rows()), path)
+    _sheet(path, "Notes", [["anything"]])
+    with pytest.raises(ConfigError, match="Targets"):
+        files.load_target_list(path)
+
+
+def test_shared_delta_mass_settings_roundtrip_in_their_own_sheet(tmp_path):
+    import openpyxl
+
+    rows = targeted_rows()
+    rows[0]["delta_mass_mz"] = "+1.0034"
+    payload = {
+        "settings": {"mz_tolerance_ppm": 7.5},
+        "ions": {
+            rows[0]["label"]: [
+                {
+                    "label": "M+1",
+                    "offset_mz": 1.0034,
+                    "ratio_min": 0.2,
+                    "ratio_max": 5.0,
+                    "compare_shape": True,
+                }
+            ]
+        },
+    }
+    path = tmp_path / "delta.xlsx"
+    files.save_target_list(files.create_target_list(rows, delta_mass=payload), path)
+    book = openpyxl.load_workbook(path, read_only=True)
+    try:
+        assert book.sheetnames == ["Targets", "Delta Mass", "Delta Mass Settings"]
+    finally:
+        book.close()
+    loaded = files.load_target_list(path)
+    assert loaded.delta_mass["settings"]["mz_tolerance_ppm"] == 7.5
+    assert loaded.delta_mass["ions"][rows[0]["label"]][0]["label"] == "M+1"
+
+
+def test_unknown_delta_mass_setting_is_rejected(tmp_path):
+    path = tmp_path / "list.xlsx"
+    files.save_target_list(files.create_target_list(targeted_rows()), path)
+    _sheet(path, "Delta Mass Settings", [["key", "value"], ["strategy", "cid-nl"]])
+    with pytest.raises(ConfigError, match="不支援的設定 'strategy'"):
+        files.load_target_list(path)
 
 
 def test_invalid_istd_relation_uses_existing_owner():
     invalid = targeted_rows()
     invalid[1]["istd_pair"] = "missing"
     with pytest.raises(ConfigError, match="must reference"):
-        files.create_targeted_method({}, invalid)
+        files.create_target_list(invalid)
 
 
-def test_incomplete_or_non_method_settings_are_not_accepted(tmp_path):
-    folder = tmp_path / "method.xlsx"
-    files.save_targeted_method(
-        files.create_targeted_method({}, targeted_rows()), folder
-    )
-    import openpyxl
-
-    book = openpyxl.load_workbook(folder)
-    book["Method"].delete_rows(2)
-    book.save(folder)
-    book.close()
-    with pytest.raises(ConfigError, match="缺少"):
-        files.load_targeted_method(folder)
-    with pytest.raises(ConfigError, match="unknown"):
-        files.create_targeted_method({"new_science_policy": "on"}, targeted_rows())
-
-
-def test_failed_whole_method_replacement_restores_original(tmp_path, monkeypatch):
-    folder = tmp_path / "method.xlsx"
-    original = files.create_targeted_method({}, targeted_rows())
-    files.save_targeted_method(original, folder)
+def test_failed_replacement_restores_original(tmp_path, monkeypatch):
+    folder = tmp_path / "list.xlsx"
+    original = files.create_target_list(targeted_rows())
+    files.save_target_list(original, folder)
     before = folder.read_bytes()
-    replacement = files.create_targeted_method({}, targeted_rows())
+    replacement = files.create_target_list(targeted_rows())
     real_replace = files.os.replace
 
     def fail_publish(source, destination):
@@ -122,9 +140,9 @@ def test_failed_whole_method_replacement_restores_original(tmp_path, monkeypatch
 
     monkeypatch.setattr(files.os, "replace", fail_publish)
     with pytest.raises(OSError, match="publish failed"):
-        files.save_targeted_method(replacement, folder)
+        files.save_target_list(replacement, folder)
     assert folder.read_bytes() == before
-    assert files.load_targeted_method(folder).targets == original.targets
+    assert files.load_target_list(folder).targets == original.targets
     assert list(tmp_path.iterdir()) == [folder]
 
 
@@ -134,18 +152,16 @@ def test_saving_cannot_destroy_an_existing_workspace(tmp_path):
     unrelated = folder / "batch.csv"
     unrelated.write_text("keep", encoding="utf-8")
     with pytest.raises(ConfigError, match="僅可寫入"):
-        files.save_targeted_method(
-            files.create_targeted_method({}, targeted_rows()), folder
-        )
+        files.save_target_list(files.create_target_list(targeted_rows()), folder)
     assert unrelated.read_text(encoding="utf-8") == "keep"
 
 
-def test_failed_workbook_write_leaves_existing_method_unchanged(tmp_path, monkeypatch):
+def test_failed_workbook_write_leaves_existing_list_unchanged(tmp_path, monkeypatch):
     import openpyxl
 
-    path = tmp_path / "method.xlsx"
-    method = files.create_targeted_method({}, targeted_rows())
-    files.save_targeted_method(method, path)
+    path = tmp_path / "list.xlsx"
+    target_list = files.create_target_list(targeted_rows())
+    files.save_target_list(target_list, path)
     before = path.read_bytes()
 
     def fail_save(*args):
@@ -153,7 +169,7 @@ def test_failed_workbook_write_leaves_existing_method_unchanged(tmp_path, monkey
 
     monkeypatch.setattr(openpyxl.Workbook, "save", fail_save)
     with pytest.raises(OSError, match="write failed"):
-        files.save_targeted_method(method, path)
+        files.save_target_list(target_list, path)
     assert path.read_bytes() == before
     assert list(tmp_path.iterdir()) == [path]
 
@@ -177,22 +193,22 @@ def _workspace(tmp_path, *, settings=None):
     return config_dir
 
 
-def test_prepared_method_receipt_survives_source_edits(tmp_path):
+def test_prepared_list_receipt_survives_source_edits(tmp_path):
     from xic_extractor.configuration.loader import (
         load_config_snapshot,
         prepare_targeted_config,
     )
 
     config_dir = _workspace(tmp_path, settings={})
-    method_dir = tmp_path / "method.xlsx"
-    method = files.create_targeted_method({}, targeted_rows())
-    files.save_targeted_method(method, method_dir)
-    prepared = prepare_targeted_config(config_dir, method_path=method_dir)
+    list_path = tmp_path / "list.xlsx"
+    target_list = files.create_target_list(targeted_rows())
+    files.save_target_list(target_list, list_path)
+    prepared = prepare_targeted_config(config_dir, target_list_path=list_path)
     receipt = prepared.input_config_dir
     assert prepared.config.signal_processing_method == "gaussian"
     assert prepared.config.data_dir == tmp_path / "raw"
     assert prepared.config.dll_dir == tmp_path / "dll"
-    method_dir.write_text("changed", encoding="utf-8")
+    list_path.write_text("changed", encoding="utf-8")
     (config_dir / "workspace.json").write_text("changed", encoding="utf-8")
     output_dir = prepared.config.output_csv.parent
     reloaded, targets = load_config_snapshot(receipt, output_dir=output_dir)
@@ -212,16 +228,14 @@ def test_new_batch_does_not_inherit_injection_order_and_explicit_order_is_frozen
     config_dir = _workspace(
         tmp_path, settings={"injection_order_source": str(old_order)}
     )
-    method_dir = tmp_path / "method.xlsx"
-    files.save_targeted_method(
-        files.create_targeted_method({}, targeted_rows()), method_dir
-    )
+    list_path = tmp_path / "list.xlsx"
+    files.save_target_list(files.create_target_list(targeted_rows()), list_path)
     batch_two = tmp_path / "batch-two"
     batch_two.mkdir()
     with pytest.raises(ConfigError, match="不能沿用原注射順序"):
         prepare_targeted_config(
             config_dir,
-            method_path=method_dir,
+            target_list_path=list_path,
             settings_overrides={"data_dir": str(batch_two)},
         )
     assert not (tmp_path / "output").exists()
@@ -230,7 +244,7 @@ def test_new_batch_does_not_inherit_injection_order_and_explicit_order_is_frozen
     new_order.write_bytes(original)
     prepared = prepare_targeted_config(
         config_dir,
-        method_path=method_dir,
+        target_list_path=list_path,
         settings_overrides={
             "data_dir": str(batch_two),
             "injection_order_source": str(new_order),
@@ -246,8 +260,8 @@ def test_new_batch_does_not_inherit_injection_order_and_explicit_order_is_frozen
 def test_workbook_rejects_lossy_or_invalid_input(tmp_path, damage):
     import openpyxl
 
-    path = tmp_path / "method.xlsx"
-    files.save_targeted_method(files.create_targeted_method({}, targeted_rows()), path)
+    path = tmp_path / "list.xlsx"
+    files.save_target_list(files.create_target_list(targeted_rows()), path)
     book = openpyxl.load_workbook(path)
     sheet = book["Targets"]
     headers = [cell.value for cell in sheet[1]]
@@ -262,7 +276,7 @@ def test_workbook_rejects_lossy_or_invalid_input(tmp_path, damage):
     book.save(path)
     book.close()
     with pytest.raises(ConfigError):
-        files.load_targeted_method(path)
+        files.load_target_list(path)
 
 
 def test_target_table_preserves_precision_text_and_metadata(tmp_path):
@@ -270,20 +284,11 @@ def test_target_table_preserves_precision_text_and_metadata(tmp_path):
     table[0]["mz"] = "250.1234567890123456789"
     table[0]["note"] = "=not a formula"
     path = tmp_path / "targets.xlsx"
-    files.save_target_table(table, path)
-    loaded = files.load_target_table(path)
+    files.save_target_list(files.create_target_list(table), path)
+    loaded = files.load_target_list(path).target_rows
     assert loaded[0]["mz"] == table[0]["mz"]
     assert loaded[0]["note"] == "=not a formula"
     assert loaded[1]["paired_rt_relation"] == table[1]["paired_rt_relation"]
-
-
-@pytest.mark.parametrize(
-    "setting",
-    [{"count_no_ms2_as_detected": "true"}, {"signal_processing_method": "savgol"}],
-)
-def test_fixed_policy_cannot_be_silently_dropped_on_method_save(setting):
-    with pytest.raises(ConfigError, match="Retired or unknown"):
-        files.create_targeted_method(setting, targeted_rows())
 
 
 @pytest.mark.parametrize(
@@ -301,30 +306,12 @@ def test_fixed_policy_cannot_be_silently_dropped_on_method_save(setting):
 def test_workbook_rejects_retired_target_fields(tmp_path, field):
     import openpyxl
 
-    path = tmp_path / "method.xlsx"
-    files.save_targeted_method(files.create_targeted_method({}, targeted_rows()), path)
+    path = tmp_path / "list.xlsx"
+    files.save_target_list(files.create_target_list(targeted_rows()), path)
     book = openpyxl.load_workbook(path)
     sheet = book["Targets"]
     sheet.cell(1, sheet.max_column + 1, field)
     book.save(path)
     book.close()
     with pytest.raises(ConfigError, match=field):
-        files.load_targeted_method(path)
-
-
-@pytest.mark.parametrize(
-    "key,value",
-    [("strategy", "legacy"), ("ms2_precursor_tol_da", "0.75"), ("dll_dir", "local")],
-)
-def test_method_sheet_rejects_retired_or_nonmethod_settings(tmp_path, key, value):
-    import openpyxl
-
-    path = tmp_path / "method.xlsx"
-    files.save_targeted_method(files.create_targeted_method({}, targeted_rows()), path)
-    book = openpyxl.load_workbook(path)
-    book["Method"]["A2"] = key
-    book["Method"]["B2"] = value
-    book.save(path)
-    book.close()
-    with pytest.raises(ConfigError):
-        files.load_targeted_method(path)
+        files.load_target_list(path)

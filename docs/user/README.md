@@ -30,12 +30,11 @@ RAW 分析需要 **.NET 8 或更新版本**與 **Thermo RawFileReader 8.0.42**�
 
 | 我想完成的工作 | 需要準備 | 從這裡開始 |
 | --- | --- | --- |
-| 已知目標清單的定量 | RAW 資料夾、目標表或已保存的 XLSX 方法 | [Targeted 操作指南](targeted-extraction.html) |
+| 已知目標清單的定量 | RAW 資料夾、目標清單（XLSX、CSV 或 TSV） | [Targeted 操作指南](targeted-extraction.html) |
 | 探索並比較樣本中的 features | RAW 資料夾、CID-NL 方法、樣本角色及適用內標 | [Untargeted 操作指南](untargeted-discovery.html) |
 
-Targeted 範本可直接從工作區的目標清單卡下載，也可複製本包的
-[方法範本](../../xic_extractor/configuration/data/targeted-method.xlsx)或
-[目標表](../../xic_extractor/configuration/data/targets.xlsx)後編輯。
+Targeted 的清單空白時，可在工作區按「從範例開始」直接編輯範例，也可複製本包的
+[範例清單](../../xic_extractor/configuration/data/targets.xlsx)在 Excel 修改後匯入。
 Untargeted 可從 dR、R、MeR 方法開始，再依樣本與分析目的調整。
 
 ## 判讀與重開結果
@@ -70,7 +69,7 @@ Untargeted 可從 dR、R、MeR 方法開始，再依樣本與分析目的調整�
 
 只有需要查細節時才讀這些參考；不必選擇另一套文件入口。
 
-- Targeted：[逐步操作](targeted-extraction.md)、[方法與目標表欄位](targeted-config-reference.md)、[輸出欄位](targeted-output-reference.md)。
+- Targeted：[逐步操作](targeted-extraction.md)、[目標清單欄位](targeted-config-reference.md)、[輸出欄位](targeted-output-reference.md)。
 - Untargeted：[逐步操作與 Matrix 使用](untargeted-discovery.md)、[方法設定](untargeted-preset-guide.md)、[輸出欄位](untargeted-output-reference.md)。
 
 ## 檔案與更新

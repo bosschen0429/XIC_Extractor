@@ -13,7 +13,6 @@ import { createAnalysisSession } from "./analysis_session.js";
 import {
   dirty,
   selectView,
-  setMethodState,
   showingResult,
 } from "./analysis_setup.js";
 import { state, updateConfig } from "./analysis_state.js";
@@ -55,7 +54,7 @@ export const pageOf = (job) => job?.page || jobPage[job?.kind] || "untargeted";
 function prepareStart(kind, values) {
   if (isBusy()) throw new Error("請等待目前工作完成或先停止。");
   if (kind === "targeted" && !values.targets.length)
-    throw new Error("目標清單是空的：按「檢視與編輯」新增，或匯入目標清單。");
+    throw new Error("目標清單是空的：匯入清單、從範例開始，或按「新增目標」。");
   return kind === "samples" ? sampleMetadata.prepareJob(values) : null;
 }
 
@@ -68,12 +67,14 @@ async function acceptedStart(kind, values, job, acceptSampleRead) {
   if (acceptSampleRead) acceptSampleRead(job);
   if (kind === "targeted") {
     updateConfig({ settings: { ...values.settings } });
-    updateConfig({ targeted_method: await api("/api/targeted/method", {}) });
-    setMethodState(state.config.targeted_method);
     dirty("targeted", false);
   }
-  status("工作已開始。關閉分頁不會停止分析。");
+  // Reading samples reports once, when it finishes.
+  if (kind !== "samples") status("分析已開始。關閉分頁不會停止分析。");
 }
+// Every file is processed, but the job is still writing its results.
+const publishing = (snapshot, job) =>
+  snapshot.running && job.total > 0 && job.completed >= job.total;
 
 function renderActivity() {
   const snapshot = analysis.snapshot;
@@ -87,7 +88,9 @@ function renderActivity() {
   pill.hidden = !visible;
   if (!visible) return;
   const percent =
-    job.total > 0 ? ` ${Math.round((job.completed / job.total) * 100)}%` : "";
+    job.total > 0 && !publishing(snapshot, job)
+      ? ` ${Math.round((job.completed / job.total) * 100)}%`
+      : "";
   pill.className = `activity-pill${job.status === "succeeded" ? " done" : job.status === "failed" ? " failed" : ""}`;
   pill.replaceChildren(
     snapshot.running
@@ -123,8 +126,9 @@ export function renderJob() {
   // setup page; a completed curation only while its card is on screen.
   const summarizedByResult =
     job?.status === "succeeded" &&
-    job.kind in resultIds &&
-    (!onResult || job.kind !== "curation" || curationResultShown());
+    (job.kind === "samples" ||
+      (job.kind in resultIds &&
+        (!onResult || job.kind !== "curation" || curationResultShown())));
   card.hidden =
     !job ||
     summarizedByResult ||
@@ -146,7 +150,9 @@ export function renderJob() {
   );
   $("analysis-job-title").textContent =
     `${jobNames[job.kind]} · ${jobLabels[job.status]}`;
-  $("analysis-job-message").textContent = snapshot.running
+  $("analysis-job-message").textContent = publishing(snapshot, job)
+    ? "檔案已處理完，正在寫出結果。"
+    : snapshot.running
     ? [job.stage, job.message].filter(Boolean).join(" · ")
     : job.error ||
       {
@@ -159,7 +165,7 @@ export function renderJob() {
     `${progressText}${snapshot.running ? "已經過" : "耗時"} ${ui.formatDuration(job.elapsed_seconds)}`;
   $("analysis-job-output").hidden = !job.output_dir;
   $("analysis-job-output").textContent = job.output_dir || "";
-  if (job.total > 0) {
+  if (job.total > 0 && !publishing(snapshot, job)) {
     $("analysis-progress").max = job.total;
     $("analysis-progress").value = job.completed;
   } else $("analysis-progress").removeAttribute("value");

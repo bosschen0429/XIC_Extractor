@@ -383,7 +383,7 @@ def test_example_downloads_are_fixed_public_resources_not_local_files(tmp_path):
     with workbench_client(
         review_workspace(config_dir=config), read_user_guide=read_user_guide
     ) as request:
-        for name in ("targeted-method.xlsx", "targets.xlsx"):
+        for name in ("targets.xlsx",):
             status, payload, headers = request(f"/examples/{name}")
             assert status == 200
             assert headers["Content-Disposition"] == f'attachment; filename="{name}"'

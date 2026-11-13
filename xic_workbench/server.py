@@ -88,7 +88,7 @@ _ASSETS = {
     ),
     "/assets/analysis.css": ("analysis.css", "text/css; charset=utf-8"),
 }
-_EXAMPLES = {"/examples/targeted-method.xlsx", "/examples/targets.xlsx"}
+_EXAMPLES = {"/examples/targets.xlsx"}
 _INSPECTOR_ASSETS = {
     "/assets/inspector.js": ("inspector.js", "text/javascript; charset=utf-8"),
     "/assets/delta_mass.js": ("delta_mass.js", "text/javascript; charset=utf-8"),
@@ -410,10 +410,7 @@ def create_server(
                 "preferences",
                 "paths/validate",
                 "targeted/save",
-                "targeted/method",
-                "targeted/method/save",
-                "targeted/method/load",
-                "targeted/method/validate",
+                "targeted/settings",
                 "targets/import",
                 "targets/upload",
                 "targets/export",

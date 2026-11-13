@@ -245,9 +245,7 @@ def test_target_relationships_and_metadata():
         parse_target_rows([standard, standard])
 
 
-@pytest.mark.parametrize(
-    "name", ["targets.csv", "targets.xlsx", "targeted-method.xlsx"]
-)
+@pytest.mark.parametrize("name", ["targets.csv", "targets.xlsx"])
 def test_templates_and_untargeted_istd_projection_share_new_format(name):
     from xic_extractor.configuration.paths import targets_template_path
 

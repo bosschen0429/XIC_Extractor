@@ -30,7 +30,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         settings_overrides = _settings_overrides(args)
         prepared = prepare_targeted_config(
             config_dir,
-            method_path=args.method.resolve() if args.method else None,
+            target_list_path=args.targets.resolve() if args.targets else None,
             settings_overrides=settings_overrides,
             output_dir=base_dir / "output",
         )
@@ -88,11 +88,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="Project/base directory containing config/ and output/.",
     )
     parser.add_argument(
-        "--method",
+        "--targets",
         type=Path,
         default=None,
         help=(
-            "Select a Targeted XLSX (Method + Targets). "
+            "Target-list XLSX (Targets, plus Delta Mass sheets when used). "
             "Batch/machine settings come from --base-dir/config/workspace.json."
         ),
     )

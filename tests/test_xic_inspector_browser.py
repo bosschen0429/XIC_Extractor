@@ -151,6 +151,70 @@ def test_workbench_curve_plot_uses_saved_aligned_coordinates_and_labels_raw_fall
     expect(chart).to_have_attribute("data-domain-end", "14")
 
 
+def test_workbench_curves_open_on_the_counted_peaks_not_the_saved_window(
+    review_page,
+):
+    """A saved window can hold a taller neighbour; the view opens on the apexes."""
+    page = review_page
+    rts = [index / 10 for index in range(101)]
+
+    def curve(sample_id, apex):
+        # A tall neighbour at 2 min and the counted peak near 6 min.
+        intensity = [
+            1000 * max(0.0, 1 - abs(rt - 2) * 4)
+            + 100 * max(0.0, 1 - abs(rt - apex) * 4)
+            for rt in rts
+        ]
+        return {
+            "sample_id": sample_id,
+            "raw_rts": rts,
+            "raw_intensities": intensity,
+            "processed_curves": [
+                {"kind": "smoothed", "rts": rts, "intensities": intensity}
+            ],
+            "apex_rt": apex,
+            "quality_flags": {},
+        }
+
+    samples = [{"id": "A", "label": "A"}, {"id": "B", "label": "B"}]
+    payload = {
+        "samples": samples,
+        "items": [
+            {
+                "id": "feature",
+                "kind": "group",
+                "title": "saved group",
+                "samples": [
+                    {"sample_id": "A", "quantitative_value": 1},
+                    {"sample_id": "B", "quantitative_value": 2},
+                ],
+                "curves": [curve("A", 6.0), curve("B", 6.2)],
+                "review_rt_window": [0, 10],
+            }
+        ],
+    }
+    page.set_content('<div id="host"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        """({payload,catalog})=>XicInspector.mount(
+        document.getElementById('host'),payload,{mode:'curves',samples:catalog})""",
+        {"payload": payload, "catalog": samples},
+    )
+    root = page.locator("#host")
+    chart = _control(root, "svg-raw").locator("svg")
+    expect(chart).to_have_attribute("data-domain-start", "5.5")
+    expect(chart).to_have_attribute("data-domain-end", "6.7")
+    # The neighbour outside the view no longer sets the scale.
+    assert float(chart.get_attribute("data-signal-high")) < 200
+    apexes = chart.locator('line[data-marker="value-apex"]')
+    expect(apexes).to_have_count(2)
+    expect(apexes.first.locator("title")).to_have_text("A 計入峰頂 6.000 min")
+    root.get_by_role("button", name="完整已載入範圍").click()
+    chart = _control(root, "svg-raw").locator("svg")
+    expect(chart).to_have_attribute("data-domain-start", "0")
+    expect(chart).to_have_attribute("data-domain-end", "10")
+
+
 def test_inspector_reads_injection_order_from_final_calibration_summary(review_page):
     payload = build_origin_curve_payload()
     payload["summary"] = {

@@ -34,7 +34,7 @@
           <div class="step-head">
             <span class="step-no">1</span>
             <div>
-              <h2 title="更換 RAW 資料夾時，會清空上機資訊。">資料與輸出</h2>
+              <h2>資料與輸出</h2>
             </div>
           </div>
           <div id="targeted-data" class="step-body"></div>
@@ -52,32 +52,25 @@
               class="step-action"
               data-analysis-idle
             >
-              <svg class="icon"><use href="#i-edit" /></svg>檢視與編輯
+              <svg class="icon"><use href="#i-edit" /></svg><span id="target-edit-label">檢視與編輯</span>
             </button>
           </div>
           <div class="step-body">
             <div id="target-preview" class="target-preview"></div>
             <!-- Lists use the same label | field | action rows as every path. -->
             <div id="target-dropzone" class="path-line drop-line target-method-row">
-              <label for="target-import">匯入檔案</label>
-              <span class="drop-target">拖曳目標清單或目標表到這裡 · XLSX、CSV、TSV</span>
+              <label for="target-import">匯入清單</label>
+              <span class="drop-target">拖曳目標清單到這裡 · XLSX、CSV、TSV</span>
               <input id="target-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
               <button id="target-import" type="button" data-analysis-idle>瀏覽</button>
             </div>
+            <!-- An empty list names every way to start: import, the example, or blank. -->
+            <p id="target-start" class="target-start">
+              還沒有清單？<button id="target-from-example" type="button" class="text-button" data-analysis-idle>從範例開始</button>
+              或按「新增目標」從空白建立。
+            </p>
             <p id="target-import-status" role="status" aria-live="polite"></p>
-            <div class="path-line target-method-row">
-              <label for="target-method-select">已儲存的清單</label>
-              <select id="target-method-select" data-analysis-idle><option value="">目前工作區設定</option></select>
-              <button id="target-method-load" type="button" title="取代目前清單；RAW 資料夾、上機資訊和本機設定不變。" data-analysis-idle>載入清單</button>
-            </div>
-            <div class="actions list-actions">
-              <button id="target-method-save" type="button" data-analysis-idle>另存清單</button>
-              <button id="target-export" type="button" data-analysis-idle>匯出目標表 XLSX</button>
-              <a href="/examples/targeted-method.xlsx" download>下載目標清單範例 XLSX</a>
-              <a href="/examples/targets.xlsx" download>下載目標表範例 XLSX</a>
-            </div>
           </div>
-          <details class="step-body subtle"><summary>處理策略與設定來源</summary><p>平台統一管理處理策略：<span id="target-method-state">共用 Targeted 策略</span></p><div id="targeted-settings"></div></details>
         </section>
         <section class="card step" id="t-sample-section" data-sample-step="targeted"></section>
       </form>
@@ -189,7 +182,7 @@
                 ><button type="button" id="istd-open" data-analysis-idle>
                   <svg class="icon"><use href="#i-external" /></svg>開啟清單
                 </button
-                ><a href="/examples/targets.xlsx" download>下載共用清單範例 XLSX</a>
+                ><a href="/examples/targets.xlsx" download>下載範例清單 XLSX</a>
               </div>
             </details>
           </div>
@@ -309,10 +302,10 @@
   <div class="dialog-head"><h2 id="target-import-title">確認匯入</h2></div>
   <div class="dialog-body">
     <p id="target-import-summary"></p>
-    <p class="subtle">確認後取代目前目標清單；RAW 資料夾、上機資訊與本機設定不變。儲存或開始分析後才會保存。</p>
+    <p class="subtle">RAW 資料夾與上機資訊不變。</p>
     <div class="table-scroll"><table><thead><tr><th>目標</th><th>m/z</th><th>預期 RT</th><th>角色</th><th>ISTD 配對</th><th>特異性</th></tr></thead><tbody id="target-import-rows"></tbody></table></div>
   </div>
-  <div class="dialog-foot"><button type="button" data-close="target-import-preview">取消</button><button id="target-import-confirm" type="button">確認匯入並取代</button></div>
+  <div class="dialog-foot"><button type="button" data-close="target-import-preview">取消</button><button id="target-import-confirm" type="button" class="primary">匯入</button></div>
 </dialog>
 
 <dialog id="target-editor" class="wide-dialog">
@@ -332,8 +325,8 @@
   <div class="dialog-body">
     <div class="target-toolbar">
       <input id="target-filter" type="search" placeholder="搜尋目標" aria-label="搜尋目標；符合的目標會被選取" />
-      <span id="target-selection" class="target-selection" aria-live="polite">先框選或搜尋</span>
-      <div id="target-bulk" class="target-bulk">
+      <span id="target-selection" class="target-selection" aria-live="polite">框選列號或搜尋，可一次設定多個目標</span>
+      <div id="target-bulk" class="target-bulk" hidden>
         <label>CID-NL 中性丟失（Da）<input id="target-bulk-cid" list="cid-nl-losses" inputmode="decimal" placeholder="例如 116.0474" /></label>
         <label>Delta Mass Δm/z<input id="target-bulk-delta" placeholder="例如 +1.0021, +4.0052" /></label>
         <button id="target-bulk-apply" type="button">套用</button>
@@ -341,7 +334,7 @@
       </div>
     </div>
     <datalist id="cid-nl-losses"></datalist>
-    <p class="subtle">特異性由兩個參數欄決定：都空白是 MS1 only；兩欄都填時，兩個條件都要符合。點 Delta Mass 欄可編輯伴隨離子。</p>
+    <p class="subtle">CID-NL 與 Delta Mass 都空白是 MS1 only；都填時兩個條件都要符合。</p>
     <div id="target-table" class="table-scroll editor-table" tabindex="-1">
       <table>
         <thead id="target-head"></thead>
@@ -358,10 +351,8 @@
   <div class="dialog-foot">
     <button id="target-add" type="button" class="spacer">
       <svg class="icon"><use href="#i-plus" /></svg>新增目標</button
-    ><button type="button" data-close="target-editor">完成</button
-    ><button id="target-editor-save" type="button" class="primary">
-      <svg class="icon"><use href="#i-save" /></svg>儲存目標
-    </button>
+    ><button id="target-export" type="button" data-analysis-idle>匯出清單 XLSX</button
+    ><button id="target-editor-done" type="button" class="primary">完成</button>
   </div>
 </dialog>
 

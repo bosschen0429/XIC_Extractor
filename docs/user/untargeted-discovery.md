@@ -73,8 +73,7 @@ windows, not acquisition bounds.
 
 The target list uses the same format as Targeted. Save a copy of the bundled
 example, edit it in Excel, then choose or drop it in the GUI. Keep the `Targets`
-sheet headers and `role=istd` for standards. A Targeted method XLSX is also accepted;
-its method settings do not change the Untargeted method. There is no separate
+sheet headers and `role=istd` for standards. There is no separate
 Untargeted list to maintain. A supplied file with no internal standards shows an
 error; clearing the field runs without an internal-standard list.
 

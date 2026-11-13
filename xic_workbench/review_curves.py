@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -36,12 +37,15 @@ from xic_inspector.sources.curve_bundle import (
     ChromatogramCurve,
     CurveBundle,
     CurveBundleTrace,
+    CurveIntegration,
     SampleQuantification,
     TransitionCurves,
 )
 
 RUN_METADATA_NAME = "alignment_run_metadata.json"
 SAVED_ROLE = "分析時保存的曲線"
+# The Matrix value of the cell, as recorded by the run.
+PUBLISHED_VALUE_METHOD = "published_matrix_value"
 
 
 class CurveAcquisitionCancelled(Exception):
@@ -113,12 +117,39 @@ def review_curve_bundle(
         traces += read
         unusable |= missing
     represented = {trace.sample_id for trace in traces}
+    cells = [
+        (sid, value, origin, apex)
+        for _, sid, value, origin, apex in read_row_cell_values(report, {key})
+        if sid in represented
+    ]
     quantities = tuple(
         SampleQuantification(sid, value, "counts·s", origin)
-        for _, sid, value, origin, _ in read_row_cell_values(report, {key})
-        if sid in represented
+        for sid, value, origin, _ in cells
     )
+    traces = _with_published_values(traces, cells)
     return _curve_bundle(key, curves, traces, quantities), sorted(unusable)
+
+
+def _with_published_values(
+    traces: list[CurveBundleTrace],
+    cells: Iterable[tuple[str, float | None, str, float | None]],
+) -> list[CurveBundleTrace]:
+    """Attach each value's saved area and apex to the curve that gave it.
+
+    The saved curve of a cell is the window of the peak that gave its value, so
+    the reviewer can see which peak was counted. Nothing is integrated here.
+    """
+    published = {
+        sid: CurveIntegration(value, apex, PUBLISHED_VALUE_METHOD)
+        for sid, value, _, apex in cells
+        if value is not None and apex is not None
+    }
+    return [
+        replace(trace, integration=published[trace.sample_id])
+        if trace.role == SAVED_ROLE and trace.sample_id in published
+        else trace
+        for trace in traces
+    ]
 
 
 def _saved_traces(

@@ -265,7 +265,7 @@
       const text = n && {
         minority_counted: `${rest} / ${focus.decided} 筆未計入；標「與多數不同」的 ${n} 筆計入，確認是否抓錯峰。`,
         minority_not_counted: `${rest} / ${focus.decided} 筆計入；標「與多數不同」的 ${n} 筆未計入，確認是否漏抓。`,
-        mixed: `沒有明顯多數；先看 ${n} 筆有檢閱註記的結果。`,
+        mixed: `沒有明顯多數；標「需先看」的 ${n} 筆有檢閱註記。`,
       }[focus.kind];
       return text ? element('p', text, 'tgt-focus-banner') : null;
     };
@@ -340,7 +340,7 @@
         if (grouped && 'group' in grouped) sampleCell.append(element('span', grouped.group || 'Other', 'sample-group'));
         if (focusSet.has(record.SampleName)) {
           row.classList.add('focus');
-          sampleCell.append(element('span', '與多數不同', 'tgt-badge attention'));
+          sampleCell.append(element('span', focus.kind === 'mixed' ? '需先看' : '與多數不同', 'tgt-badge attention'));
         }
         row.append(sampleCell, element('td', value(record.RT), 'tgt-number'), element('td', scientific(record.Area), 'tgt-number'), element('td', counted(record['Counted Detection']), 'tgt-counted'));
         if (paired) {
@@ -355,7 +355,12 @@
           if (canLoadCurves) {
             const view = element('button', '看 XIC', 'tgt-xic');
             view.type = 'button';view.setAttribute('aria-label', `看 ${record.SampleName} 的 ${item.title} XIC`);
-            view.addEventListener('click', () => onRequestCurves({item_id: item.id, sample_id: record.SampleName, opener: view}));
+            // The drawer steps through the rows being read, with their notes.
+            view.addEventListener('click', () => {
+              const shown = rows.filter(entry => !entry.row.hidden).map(entry => entry.record.SampleName);
+              onRequestCurves({item_id: item.id, sample_id: record.SampleName, opener: view, sample_ids: shown,
+                notes: Object.fromEntries(shown.map(name => [name, reviews.has(name) ? reviewWhy(reviews.get(name)) : '']))});
+            });
             cell.append(view);
           }
           if (canExclude) {
@@ -827,7 +832,7 @@
     return (focused?(id===focused?1:.15):.92)*(overlay?.7:1);
   }
   function applyCurveEmphasis(){
-    for(const line of root.querySelectorAll('svg[data-curve-chart] polyline[data-sample-id]')){
+    for(const line of root.querySelectorAll('svg[data-curve-chart] polyline[data-sample-id],svg[data-curve-chart] line[data-marker="value-apex"]')){
       line.style.opacity=String(curveLineOpacity(line.dataset.sampleId,line.dataset.curveOverlay==='true'));
     }
     for(const row of root.querySelectorAll('.curve-sample-row')){
@@ -876,6 +881,13 @@
     applyCurveEmphasis();
   }
   function curveWorkspaceAxis(){return data.summary?.sample_rt_calibration?'aligned':'raw';}
+  // Open on the peaks that gave the values, with the margin a RAW read of an
+  // empty sample uses; the whole saved window stays one click away (全部).
+  const VALUE_APEX_MARGIN_MIN=0.5;
+  function valueApexWindow(item,axis){
+    const apexes=(item.curves||[]).map(c=>axis==='aligned'?c.aligned_apex_rt:c.apex_rt).filter(finite);
+    return apexes.length?[Math.min(...apexes)-VALUE_APEX_MARGIN_MIN,Math.max(...apexes)+VALUE_APEX_MARGIN_MIN]:null;
+  }
   function renderCurveWorkspace(item){
     const model=curveSidebarModel(item);
     hideCurveTooltip();$('curve-tooltip')?.remove();
@@ -1000,7 +1012,8 @@
     const extra=drawable.length?[...display.overlays].filter(k=>overlays(item).includes(k)).flatMap(kind=>shown.flatMap(curve=>seriesList(curve,axis,kind).map(series=>({curve,series})))):[];
     if(!drawable.length&&presentation.emptyMessage)return `<div class="empty-state">${esc(presentation.emptyMessage)}</div>`;
     if(!drawable.length){const [chosen,other]=signal==='raw'?['原始訊號','平滑訊號']:['平滑訊號','原始訊號'];return `<div class="empty-state"><strong>${axis==='aligned'?'所選資料未提供對齊座標':shown.length?`所選來源未保存${chosen}`:'目前沒有可顯示的曲線'}</strong><p>${axis==='aligned'?'請切回原始時間；不會以原始座標代替。':shown.length?`不以${other}代替；可在上方切換訊號。`:'請確認樣本顯示勾選，或來源是否保存曲線。'}</p></div>`;}
-    const reviewWindow=axis==='raw'?(state.plotWindow||(Array.isArray(item.review_rt_window)?item.review_rt_window:null)):mode==='curves'?state.plotWindow:null;
+    const savedWindow=axis==='raw'&&Array.isArray(item.review_rt_window)?item.review_rt_window:null;
+    const reviewWindow=mode==='curves'?state.plotWindow||valueApexWindow(item,axis)||savedWindow:axis==='raw'?(state.plotWindow||savedWindow):null;
     let lo=reviewWindow?.[0]??Infinity,hi=reviewWindow?.[1]??-Infinity,lowY=0,highY=0;
     [...drawable,...extra].forEach(({series:s})=>s.rts.forEach((v,i)=>{const y=s.intensities[i];if(finite(v)&&finite(y)&&(!reviewWindow||v>=lo&&v<=hi)){if(!reviewWindow){lo=Math.min(lo,v);hi=Math.max(hi,v);}lowY=Math.min(lowY,y);highY=Math.max(highY,y);}}));
     if(!finite(lo)||!finite(hi))return '<div class="empty-state">未提供成對的時間與訊號數值。</div>';if(lo===hi){lo-=.5;hi+=.5;}if(lowY===highY)highY=lowY+1;
@@ -1024,6 +1037,8 @@
       if(presentation.pointLimit>0 && s.rts.filter(v=>v>=lo&&v<=hi).length<=presentation.pointLimit){
         s.rts.forEach((v,i)=>{if(v>=lo&&v<=hi)svg+=`<circle cx="${x(v)}" cy="${y(s.intensities[i])}" r="4" fill="${stroke}" stroke="var(--card)" stroke-width="2"/>`;});
       }
+      const valueApex=mode==='curves'&&!overlay?(axis==='aligned'?curve.aligned_apex_rt:curve.apex_rt):null;
+      if(finite(valueApex)&&valueApex>=lo&&valueApex<=hi)svg+=`<line data-marker="value-apex" data-sample-id="${esc(curve.sample_id)}" x1="${x(valueApex)}" x2="${x(valueApex)}" y1="${T}" y2="${T+IH}" stroke="${stroke}" stroke-dasharray="2 3" opacity="${opacity}"><title>${esc(sampleName(curve.sample_id))} 計入峰頂 ${drt(valueApex)} min</title></line>`;
       if(overlay||curve!==active||!state.bounds)return;
       const marks=axis==='aligned'?[['bound','左峰界',curve.aligned_bound_left_rt],['bound','右峰界',curve.aligned_bound_right_rt],['apex','積分峰頂',curve.aligned_apex_rt]]:[['bound','左峰界',curve.bound_left_rt],['bound','右峰界',curve.bound_right_rt],['apex','積分峰頂',curve.apex_rt],...(finite(curve.integration?.raw_apex_rt_min)&&(!finite(curve.apex_rt)||Math.abs(curve.integration.raw_apex_rt_min-curve.apex_rt)>1e-7)?[['raw-apex','原始訊號峰頂',curve.integration.raw_apex_rt_min]]:[])];
       marks.forEach(([kind,label,v])=>{if(finite(v))svg+=`<line data-marker="${kind}" x1="${x(v)}" x2="${x(v)}" y1="${T}" y2="${T+IH}" stroke="${color(curve.sample_id)}" stroke-dasharray="${kind==='bound'?'5 4':kind==='raw-apex'?'2 4':'1 3'}"><title>${label} ${drt(v)} min</title></line>`;});
@@ -1045,7 +1060,7 @@
       for(const curve of item.curves||[])for(const value of curve.aligned_rts||[])if(finite(value)){lower=Math.min(lower,value);upper=Math.max(upper,value);}
       if(finite(lower)&&finite(upper))alignedWindow=[lower,upper];
     }
-    const window = state.plotWindow || alignedWindow || item.review_rt_window;
+    const window = state.plotWindow || (mode==='curves'&&valueApexWindow(item,curveWorkspaceAxis())) || alignedWindow || item.review_rt_window;
     return `<div class="rt-range"><span aria-hidden="true">RT</span><input id="plot-rt-start" type="number" step="any" value="${drt(window[0])}" aria-label="顯示 RT 起點"><span aria-hidden="true">–</span><input id="plot-rt-end" type="number" step="any" value="${drt(window[1])}" aria-label="顯示 RT 終點"><button type="button" data-rt-view="apply" aria-label="套用範圍">套用</button><button type="button" class="text-action" data-rt-view="full" aria-label="完整已載入範圍">全部</button></div>`;
   }
   function fieldValue(value){

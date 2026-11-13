@@ -181,7 +181,7 @@ def test_launch_dll_override_is_transient_and_both_workflows_share_it(tmp_path):
         bootstrap = workspace.bootstrap()
         assert bootstrap["settings"]["dll_dir"] == "launch-dll"
         assert bootstrap["untargeted"]["dll_dir"] == "launch-dll"
-        assert any("dll_dir" in w for w in bootstrap["targeted_method"]["warnings"])
+        assert any("dll_dir" in w for w in bootstrap["targeted_warnings"])
         assert (tmp_path / "workspace.json").read_bytes() == before
         assert (
             config_io.read_settings(config_dir=tmp_path)["dll_dir"] == "persisted-dll"

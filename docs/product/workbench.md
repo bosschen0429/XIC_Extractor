@@ -18,9 +18,12 @@ behavior. The GUI runs complete Untargeted analysis with Backfill enabled;
 single-RAW Discovery, Alignment-only and disabling Backfill remain CLI uses.
 Worker counts come from the shared execution profile, not saved GUI settings.
 
-Setup presents data, method/targets, then samples and internal standards. Import
-and file tools are collapsible; sample conflicts, exclusions and method-specific
-internal-standard applicability remain visible. The sample step is one line of
+Setup presents data, method/targets, then samples and internal standards. The
+target list is one import line with its example; its export sits in the target
+editor, and Untargeted method file tools are collapsible. A target list has one
+XLSX format (`Targets`, plus Delta Mass sheets when used). Sample conflicts,
+exclusions, settings warnings and method-specific internal-standard
+applicability remain visible. The sample step is one line of
 role and exclusion counts plus the 上機資訊 file; **調整** opens the sample
 editor. It lists RAW names in File Explorer order (digits by value) without
 changing the saved injection order; the user selects rows (drag, Ctrl, Shift,
@@ -67,14 +70,18 @@ remain bound to their RAW folder, not carried into another folder.
 An Untargeted sample with a Matrix value shows the curve its run saved: the RT
 and raw intensity of the extraction window that gave the value, with the run's
 mass recalibration already applied. Selecting a feature shows these samples at
-once, without RAW or DLL. Smoothing and baseline are recomputed for display;
-they reproduce the run's processed signal and change no value.
+once, without RAW or DLL. The view opens on the apexes of the values, half a
+minute either side, and marks each value's apex, so the counted peak stays
+distinct from neighbouring peaks in the same window; **全部** shows the whole
+saved windows. Smoothing and baseline are recomputed for display; they reproduce
+the run's processed signal and change no value.
 
 RAW is read only for a sample without a saved curve that the user checks and
 loads: an empty cell, or a candidate outside the Matrix. These reads are new
 diagnostic views, not product measurements. RAW and DLL sources belong to the selected result's
 **RAW 曲線**, not the result opener. Targeted curves always read
-RAW and start from the sample row.
+RAW and start from the sample row; the XIC view steps through the rows the
+target list shows (all, or 需先看) and repeats each row's review note.
 
 - A sample is read from the RAW file of the same name with the run's saved mass
   recalibration. The file is not checked against the analysed acquisition; a

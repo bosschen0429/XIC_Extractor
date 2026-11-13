@@ -74,18 +74,14 @@ if config_io.CONFIG_DIR.resolve().is_relative_to(target):
     raise RuntimeError("installed workbench would write settings into site-packages")
 if not targets_template_path().resolve().is_relative_to(target / "xic_extractor"):
     raise RuntimeError("template is not owned by the installed package")
-from xic_extractor.configuration.targeted_method_files import (
-    load_targeted_method, load_target_table,
-)
+from xic_extractor.configuration.target_list_files import load_target_list
 examples = targets_template_path().parent
 from xic_workbench.user_guide import read_user_guide
 guide = read_user_guide("")
 if guide is None or "XIC Extractor 使用說明" not in guide[0].decode("utf-8"):
     raise RuntimeError("installed workbench is missing its offline guide")
-method = load_targeted_method(examples / "targeted-method.xlsx")
-target_rows = load_target_table(examples / "targets.xlsx")
-if not method.targets or list(method.target_rows) != target_rows:
-    raise RuntimeError("installed XLSX examples are missing or inconsistent")
+if not load_target_list(examples / "targets.xlsx").targets:
+    raise RuntimeError("installed XLSX example is missing or empty")
 installed_distribution = next(
     distribution for distribution in distributions(path=[str(target)])
     if distribution.metadata["Name"] == "xic-extractor"
@@ -732,7 +728,7 @@ def test_final_pyinstaller_archive_runs_html_workbench_smoke(
     )
     assert not list(final_output.rglob("settings.example.csv"))
     assert not list(final_output.rglob("targets.example.csv"))
-    for name in ("targeted-method.xlsx", "targets.xlsx"):
+    for name in ("targets.xlsx",):
         examples = list(
             final_output.glob(f"**/xic_extractor/configuration/data/{name}")
         )

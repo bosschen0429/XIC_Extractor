@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import sys
 import uuid
@@ -126,7 +125,7 @@ class AnalysisWorkspace:
             read_targets,
         )
         from xic_workbench.methods import list_methods
-        from xic_workbench.targeted_config import method_summary, setting_fields
+        from xic_workbench.targeted_config import setting_fields
         from xic_workbench.untargeted_config import read_untargeted_config
 
         raw = read_settings(config_dir=self.config_dir)
@@ -162,11 +161,6 @@ class AnalysisWorkspace:
         discovery["dll_dir"] = settings.get("dll_dir", "")
         if self.defaults.get("raw_dir") and not discovery.get("raw_dir"):
             discovery["raw_dir"] = self.defaults["raw_dir"]
-        source = (
-            "workspace.json"
-            if (self.config_dir / "workspace.json").exists()
-            else "defaults"
-        )
         from xic_extractor.analysis_set import ANALYZED_ROLES
 
         return {
@@ -182,16 +176,11 @@ class AnalysisWorkspace:
             "delta_mass": read_workspace(self.config_dir).get("delta_mass"),
             "targeted_specificity": targeted_specificity_choices(),
             "targeted_form": {"settings": setting_fields()},
-            "targeted_method": {
-                **method_summary(settings),
-                "warnings": warnings,
-            },
-            "settings_source": source,
+            "targeted_warnings": warnings,
             "targeted_output_dir": self.preferences().get("targeted_output_dir")
             or str(default_output_dir(self.config_dir)),
             "untargeted": discovery,
             "methods": list_methods(),
-            "targeted_methods": self.targeted_methods(),
             "preferences": self.preferences(),
             "analysis": self.state(),
             "thermo_reader": reader,
@@ -228,16 +217,6 @@ class AnalysisWorkspace:
             "license_url": THERMO_LICENSE_URL,
             "version": THERMO_READER_VERSION,
         }
-
-    def targeted_methods(self) -> list[dict[str, str]]:
-        root = self.config_dir / "methods"
-        if not root.exists():
-            return []
-        return [
-            {"name": path.stem, "path": str(path.absolute())}
-            for path in sorted(root.iterdir())
-            if path.is_file() and path.suffix.lower() == ".xlsx"
-        ]
 
     def preferences(self) -> dict[str, str]:
         from xic_workbench.config_io import read_preferences
@@ -281,60 +260,6 @@ class AnalysisWorkspace:
     def action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
         if action == "paths/validate":
             return _validate_path(str(values.get("path", "")), values.get("kind"))
-        if action == "targeted/method/save":
-            from xic_extractor.configuration.targeted_method_files import (
-                create_targeted_method,
-                save_targeted_method,
-            )
-
-            name = str(values["name"]).strip()
-            if (
-                not name
-                or name in {".", ".."}
-                or re.search(r'[<>:"/\\|?*\x00-\x1f]', name)
-                or name.endswith((".", " "))
-                or name.split(".")[0].upper()
-                in {
-                    "CON",
-                    "PRN",
-                    "AUX",
-                    "NUL",
-                    *(f"COM{i}" for i in range(1, 10)),
-                    *(f"LPT{i}" for i in range(1, 10)),
-                }
-            ):
-                raise ValueError("請輸入有效的方法名稱，不可使用路徑或系統保留名稱。")
-            path = self.config_dir / "methods" / f"{name}.xlsx"
-            if path.exists():
-                raise ValueError(
-                    "方法名稱已存在；請使用新名稱另存版本，原方法不會被覆寫。"
-                )
-            method = create_targeted_method(
-                values["settings"],
-                values["targets"],
-                delta_mass=values.get("delta_mass"),
-            )
-            save_targeted_method(method, path)
-            return {
-                "name": name,
-                "methods": self.targeted_methods(),
-                "message": f"已儲存方法：{name}",
-            }
-        if action == "targeted/method/load":
-            from xic_extractor.configuration.targeted_method_files import (
-                apply_targeted_method,
-                load_targeted_method,
-            )
-            from xic_workbench.targeted_config import method_summary
-
-            method = load_targeted_method(Path(values["path"]))
-            settings = apply_targeted_method(values["settings"], method)
-            return {
-                "settings": settings,
-                "targets": [dict(row) for row in method.target_rows],
-                "delta_mass": method.delta_mass,
-                "summary": method_summary(settings),
-            }
         if action == "preferences":
             from xic_workbench.config_io import write_preferences
 
@@ -344,7 +269,6 @@ class AnalysisWorkspace:
                 write_preferences,
                 write_work,
             )
-            from xic_workbench.targeted_config import method_summary
 
             settings = write_work(
                 values["settings"],
@@ -357,47 +281,30 @@ class AnalysisWorkspace:
                     {"targeted_output_dir": values["output_dir"]},
                     config_dir=self.config_dir,
                 )
-            return {
-                "message": "設定與目標已儲存。",
-                "summary": method_summary(settings),
-            }
-        if action == "targeted/method":
-            from xic_extractor.configuration.settings import (
-                resolve_settings,
-            )
-            from xic_workbench.config_io import read_settings
-            from xic_workbench.targeted_config import method_summary
+            return {"message": "批次設定已保存。", "settings": settings}
+        if action == "targeted/settings":
+            from xic_extractor.configuration.settings import resolve_settings
 
-            raw = (
-                values["settings"]
-                if "settings" in values
-                else read_settings(config_dir=self.config_dir)
-            )
-            settings, _parsed, warnings = resolve_settings(raw)
-            summary = {**method_summary(settings), "warnings": warnings}
-            return summary
+            _settings, _parsed, warnings = resolve_settings(values["settings"])
+            return {"warnings": warnings}
         if action == "targets/export":
-            from xic_extractor.configuration.targeted_method_files import (
-                create_targeted_method,
-                save_target_table,
-                save_targeted_method,
+            from xic_extractor.configuration.target_list_files import (
+                create_target_list,
+                save_target_list,
             )
 
             path = Path(values["path"])
-            if values.get("delta_mass"):
-                method = create_targeted_method(
-                    {}, values["targets"], delta_mass=values["delta_mass"]
-                )
-                save_targeted_method(method, path)
-            else:
-                save_target_table(values["targets"], path)
-            return {"message": f"已匯出目標表：{path}", "path": str(path)}
+            save_target_list(
+                create_target_list(
+                    values["targets"], delta_mass=values.get("delta_mass")
+                ),
+                path,
+            )
+            return {"message": f"已匯出目標清單：{path}", "path": str(path)}
         if action == "targets/upload":
             from xic_workbench.target_import import preview_target_upload
 
-            return preview_target_upload(
-                values.get("name"), values.get("content"), values.get("settings", {})
-            )
+            return preview_target_upload(values.get("name"), values.get("content"))
         if action == "targets/import":
             from xic_workbench.target_import import import_targets
 

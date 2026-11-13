@@ -2,9 +2,9 @@
 
 from typing import Any
 
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS, METHOD_KEYS
+from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
-# Labels and controls are presentation only; METHOD_KEYS owns method membership.
+# Labels and controls are presentation only.
 _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
     ("data_dir", "RAW 資料夾", "folder", {}),
     (
@@ -26,9 +26,7 @@ def setting_fields() -> list[dict[str, Any]]:
     fields = []
     for key, label, kind, options in _SETTING_FIELDS:
         scope = (
-            "method"
-            if key in METHOD_KEYS
-            else "batch"
+            "batch"
             if key in {"data_dir", "injection_order_source"}
             else "environment"
             if key == "dll_dir"
@@ -47,7 +45,3 @@ def setting_fields() -> list[dict[str, Any]]:
             )
         )
     return fields
-
-
-def method_summary(settings: dict[str, str]) -> dict[str, Any]:
-    return {"label": "共用 Targeted 策略", "custom_keys": [], "differences": []}
