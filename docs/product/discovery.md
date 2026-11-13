@@ -247,7 +247,9 @@ every batch) and measured there once; events locating the same apex share that
 measurement. The peak measured is the segment of that window holding the
 located apex, chosen once: when its own apex lies elsewhere, that measurement
 stands, and a window holding no segment there leaves the events unattached with
-the physical reason. Search windows are never widened, so an event whose search
+the physical reason. Located apexes whose windows select one peak with the same
+raw apex share one measurement of it: the window centred on that apex when one
+was read, else the widest, then earliest, such window. Search windows are never widened, so an event whose search
 window holds only a peak's far tail can leave it `incomplete_peak_context`.
 
 Events then attach against the bounds and neighbouring peaks of that

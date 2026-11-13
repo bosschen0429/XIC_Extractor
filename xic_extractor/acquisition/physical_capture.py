@@ -185,6 +185,34 @@ class PhysicalPeakCapture:
                 traces[request],
                 self._prepare(request, traces[request]),
             )
+        # Two located apexes can select one peak whose own apex lies elsewhere.
+        # That peak is measured once: in the window centred on its own apex
+        # when one was read, else in the widest, then earliest, such window.
+        measured_by: dict[
+            tuple[float, float, float], list[tuple[float, float, float]]
+        ] = {}
+        for peak, request in requests.items():
+            population = self._populations[signal_owners[request]][1]
+            segment = population.segment_at(peak[2])
+            if segment is not None:
+                measured_by.setdefault(
+                    (peak[0], peak[1], population.raw_apex_rt(segment)), []
+                ).append(peak)
+        canonical = {
+            peak: min(
+                peaks,
+                key=lambda p: (
+                    p[2] != apex[2],
+                    -(requests[p].rt_max - requests[p].rt_min),
+                    requests[p].rt_min,
+                ),
+            )
+            for apex, peaks in measured_by.items()
+            for peak in peaks
+        }
+        located = {
+            search: canonical.get(peak, peak) for search, peak in located.items()
+        }
         return tuple(
             self._lookup(
                 replace(search, request=signal_owners[requests[located[search]]]),

@@ -402,3 +402,60 @@ def test_unrelated_event_order_and_ids_do_not_change_a_peaks_measurement(
         assert facts.area_counts_seconds == pytest.approx(
             alone_facts.area_counts_seconds, rel=1e-3
         )
+
+
+def test_apexes_reframed_onto_one_peak_share_its_single_measurement():
+    """Two search windows locate different apexes whose centred windows both
+    hold one peak with another raw apex; that peak is measured once."""
+    import json
+    from pathlib import Path
+
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+
+    fixture = json.loads(
+        (
+            Path(__file__).parent / "fixtures" / "discovery_reframed_shared_apex.json"
+        ).read_text(encoding="utf-8")
+    )
+    rt = np.asarray([float.fromhex(v) for v in fixture["trace"]["rt"]])
+    intensity = np.asarray([float.fromhex(v) for v in fixture["trace"]["intensity"]])
+    mz = fixture["precursor_mz"]
+    seeds = tuple(
+        replace(
+            _seed(
+                scan_number=scan,
+                rt=event_rt,
+                precursor_mz=mz,
+                product_mz=mz - 116.0474,
+            ),
+            precursor_mz_basis="product_plus_neutral_loss",
+        )
+        for scan, event_rt in zip(
+            fixture["seed_scans"], fixture["seed_rt"], strict=True
+        )
+    )
+    settings = _settings()
+    raw = _BoundedRaw(rt=rt, intensity=intensity)
+    result = capture_ms1_peaks(
+        raw,
+        build_discovery_ions(seeds, settings=settings),
+        acquisition_source=raw.acquisition_source,
+        settings=settings,
+        signal_processing_profile=SignalProcessingProfile(),
+        ms1_centroid=lambda *_: None,
+    )
+
+    query_rts = [peak.query_rt_min for peak in result.peaks]
+    assert len(query_rts) == len(set(query_rts))
+    (shared,) = (
+        peak
+        for peak in result.peaks
+        if peak.query_rt_min == pytest.approx(23.349, abs=1e-3)
+    )
+    # The window centred on the peak's own apex measures it.
+    assert (shared.ms1_search_rt_min + shared.ms1_search_rt_max) / 2 == (
+        pytest.approx(shared.query_rt_min)
+    )
+    assert {round(event.rt, 3) for event in shared.located_events} >= {22.535, 24.531}
