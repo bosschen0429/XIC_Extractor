@@ -3260,25 +3260,47 @@ def test_curated_result_names_its_curation_and_lists_removed_rows(workbench, tmp
         ["b-missing 的 13C 同位素"]
     )
 
-    # A curation finished while setup is shown updates the result in place.
-    published_curation(
-        tmp_path / "matrix_curation_20261102_090000",
-        tmp_path,
-        [
-            {"feature_id": "a-complete", "decision": "keep"},
-            {"feature_id": "b-missing", "decision": "keep"},
-            {"feature_id": "z-priority", "decision": "keep"},
-        ],
-    )
-    page.locator("#result-back").click()
-    expect(page.locator("#analysis-result")).to_be_hidden()
-    page.evaluate(
-        """source_dir => document.dispatchEvent(new CustomEvent(
-            "xic:curation-published", {detail: {source_dir}}))""",
-        str(tmp_path),
-    )
+    def publish(name):
+        published_curation(
+            tmp_path / name,
+            tmp_path,
+            [
+                {"feature_id": "a-complete", "decision": "keep"},
+                {"feature_id": "b-missing", "decision": "keep"},
+                {"feature_id": "z-priority", "decision": "keep"},
+            ],
+        )
+        page.evaluate(
+            """source_dir => document.dispatchEvent(new CustomEvent(
+                "xic:curation-published", {detail: {source_dir}}))""",
+            str(tmp_path),
+        )
+
+    # Completion arrives once: a review query in flight defers it, not drops it.
+    pending = []
+    page.route("**/api/query", lambda route: pending.append(route))
+    try:
+        with page.expect_request("**/api/query"):
+            page.locator("#query-form button[type=submit]").click()
+        publish("matrix_curation_20261102_090000")
+        expect(page.locator("#batch-curation")).to_have_text(
+            "依矩陣整理 matrix_curation_20261101_090000"
+        )
+        pending.pop().continue_()
+    finally:
+        for route in pending:
+            route.continue_()
+        page.unroute("**/api/query")
     expect(page.locator("#batch-curation")).to_have_text(
         "依矩陣整理 matrix_curation_20261102_090000"
+    )
+
+    # A curation finished while setup is shown updates the result in place.
+    page.locator("#result-back").click()
+    expect(page.locator("#analysis-result")).to_be_hidden()
+    publish("matrix_curation_20261103_090000")
+    expect(page.locator("#batch-curation")).to_have_text(
+        "依矩陣整理 matrix_curation_20261103_090000"
     )
     expect(page.locator("#analysis-result")).to_be_hidden()
 

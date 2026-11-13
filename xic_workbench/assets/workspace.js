@@ -382,7 +382,20 @@ window.XicUi = (() => {
     if (nearest) $("review-range-filters").open = true;
     validateNearestMz();
   }
+  function applyPublishedCuration() {
+    const result = state.publishedCuration;
+    if (!result || locked()) return;
+    state.publishedCuration = null;
+    const key = (path) => (path || "").replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
+    if (!state.page || key(state.page.source.replace(/[\\/][^\\/]+$/, "")) !== key(result)) return;
+    if (state.page.curation && key($("source").value) === key(state.page.curation.path)) {
+      if (state.runFolder) state.runFolders.set(result, state.runFolder);
+      $("source").value = result;
+    }
+    action(loadBatch, "正在套用新的矩陣整理…");
+  }
   function controls() {
+    applyPublishedCuration();
     const busy = locked(), analysisBusy = window.XicAnalysis?.busy || false;
     document
       .querySelectorAll("[data-idle]")
@@ -1338,15 +1351,10 @@ window.XicUi = (() => {
     action(openBatch, "正在讀取分析結果…");
   });
   // A new curation of the open result replaces the one the page follows.
+  // Completion arrives once; a busy review applies it when it unlocks.
   document.addEventListener("xic:curation-published", (event) => {
-    const key = (path) => (path || "").replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
-    const result = event.detail.source_dir;
-    if (!state.page || key(state.page.source.replace(/[\\/][^\\/]+$/, "")) !== key(result)) return;
-    if (state.page.curation && key($("source").value) === key(state.page.curation.path)) {
-      if (state.runFolder) state.runFolders.set(result, state.runFolder);
-      $("source").value = result;
-    }
-    action(loadBatch, "正在套用新的矩陣整理…");
+    state.publishedCuration = event.detail.source_dir;
+    applyPublishedCuration();
   });
   document.addEventListener("xic:analysis-busy", controls);
   document.addEventListener("xic:analysis-started", () => {
