@@ -305,7 +305,7 @@ def test_curve_sidebar_focus_names_and_colours_stay_bound_to_each_sample(review_
     }""")
     page.mouse.move(point["x"], point["y"])
     expect(root.get_by_role("tooltip")).to_contain_text(catalog[4]["label"])
-    expect(root.get_by_role("tooltip")).to_contain_text("依群組位置擷取")
+    expect(root.get_by_role("tooltip")).to_contain_text("空值樣本的檢閱曲線")
     expect(line).to_have_css("opacity", "0.15")
     page.mouse.click(point["x"], point["y"])
     page.mouse.move(5, 5)
@@ -756,7 +756,6 @@ def test_offline_signal_choice_applies_to_every_item_and_view(review_page, tmp_p
     expect(raw).to_have_attribute("aria-pressed", "true")
     assert _drawn_kinds(root) == {"raw"}
     expect(lanes.first).to_have_attribute("data-kind", "raw")
-    expect(root.locator(".plot-card h4").first).to_contain_text("原始訊號")
     root.get_by_role("checkbox", name="疊加基線").check()
     assert _drawn_kinds(root) == {"raw", "baseline"}
 
@@ -1016,9 +1015,9 @@ def test_low_snr_hint_is_sample_scoped_and_does_not_replace_matrix_value(
     strong = page.locator('[data-sample-row="S1"]')
     weak = page.locator('[data-sample-row="S2"]')
     expect(strong).not_to_contain_text("低 SNR")
-    expect(weak).to_contain_text("低 SNR（非 LOQ 判定）")
-    expect(strong).to_contain_text("1,000")
-    expect(weak).to_contain_text("2,000")
+    expect(weak).to_contain_text("低 SNR")
+    expect(strong).to_contain_text("1.000e+3")
+    expect(weak).to_contain_text("2.000e+3")
     assert matrix.read_bytes() == before
 
 
@@ -1078,23 +1077,18 @@ def test_accepted_competition_is_visible_only_on_its_sample(
         payload,
     )
     root = page.locator("#risk-view")
-    _control(root, "search").fill(flag)
+    # The visible risk wording is what a reviewer searches for.
+    _control(root, "search").fill("同組")
     expect(_control(root, "record-list").locator(".record-button")).to_have_count(1)
-    _control(root, "search").fill("not_a_membership_flag")
-    expect(_control(root, "record-list").locator(".record-button")).to_have_count(0)
     _control(root, "search").fill(flag)
+    expect(_control(root, "record-list").locator(".record-button")).to_have_count(0)
+    _control(root, "search").fill("")
     strong = page.locator('[data-sample-row="S1"]')
     competing = page.locator('[data-sample-row="S2"]')
-    expect(strong).not_to_contain_text("已配對，有其他合理候選")
-    expect(competing).to_contain_text("已配對，有其他合理候選")
-    expect(strong).to_contain_text("1,000")
-    expect(competing).to_contain_text("2,000")
-    competing.get_by_role("button", name="查看定量依據").click()
-    page.get_by_text("完整紀錄與引用", exact=True).click()
-    expect(
-        page.get_by_text("同分決勝：平均配合成本（越低越好）", exact=True)
-    ).to_be_visible()
-    expect(page.get_by_text("替代的平均配合成本", exact=True)).to_be_visible()
-    expect(page.get_by_text("中位數平移（較弱估計）", exact=True)).to_be_visible()
-    expect(page.get_by_text("最近對照距離（分鐘）", exact=True)).to_be_visible()
+    expect(strong).not_to_contain_text("同組")
+    expect(competing.locator(".cell-risk")).to_contain_text("可能改與 S3 1.20 min 同組")
+    expect(strong).to_contain_text("1.000e+3")
+    expect(competing).to_contain_text("2.000e+3")
+    expect(root.locator(".evidence-panel")).to_have_count(0)
+    expect(root).not_to_contain_text("成本")
     assert matrix.read_bytes() == before

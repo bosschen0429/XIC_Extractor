@@ -367,10 +367,7 @@ class ReviewWorkspace:
             "review_summary": item.get("review_summary", {}),
             "numeric_count": len(numeric_samples),
             "numeric_sample_ids": numeric_samples,
-            "unresolved_count": sum(
-                any(c.get("variant") == "unresolved" for c in s.get("refs", []))
-                for s in item.get("samples", [])
-            ),
+            "unresolved_count": item.get("group_counts", {}).get("unresolved", 0),
         }
         if "mz_distance" in item:
             summary["mz_distance"] = item["mz_distance"]
@@ -429,7 +426,11 @@ class ReviewWorkspace:
                 "item_id"
             ):
                 self.detail(values.get("item_id"))
-            assert self._detail is not None and self._report is not None
+            assert (
+                self._detail is not None
+                and self._report is not None
+                and self._page is not None
+            )
             description = self._detail["item"]
             if not any(
                 description[k] for k in ("group_id", "candidate_id", "target_id")
@@ -464,8 +465,10 @@ class ReviewWorkspace:
             }
             request = {
                 "report": self._report,
-                "source": self._page.source if self._page is not None else None,
+                "source": self._page.source,
                 "description": description,
+                "review_item": copy.deepcopy(self._item(description["id"])),
+                "sample_catalog": copy.deepcopy(self._page.payload["samples"]),
                 "curves": curves,
                 "samples": samples,
                 "raw_dir": raw_dir,
@@ -544,6 +547,18 @@ class ReviewWorkspace:
                 prepared = prepare_curve_view(
                     bundle, request["samples"], is_cancelled=cancel.is_set
                 )
+                # Curves and the saved result are one review, including in the
+                # offline export. Loading fewer curves does not shrink its cells.
+                curve_item = prepared.payload["items"][0]
+                prepared.payload["items"] = [
+                    {
+                        **request["review_item"],
+                        "curves": curve_item["curves"],
+                        "witnesses": curve_item["witnesses"],
+                        "review_rt_window": curve_item["review_rt_window"],
+                    }
+                ]
+                prepared.payload["samples"] = request["sample_catalog"]
                 # Sample roles are confirmed per RAW folder.
                 folder = request["raw_dir"] or RunSettings(request["report"]).raw_dir
                 if folder is not None:

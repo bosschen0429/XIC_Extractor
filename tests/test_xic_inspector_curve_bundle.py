@@ -317,16 +317,16 @@ def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_v
         payload,
         "state.sample='sample-1';normalize(items[0],true);"
         "return JSON.stringify({readout:readout(items[0]),"
-        "table:sampleTable(items[0])});",
+        "table:cellTable(items[0])});",
     )
-    assert 'data-readout="area">120.5' in rendered["readout"]
+    # Areas read in one format wherever they appear.
+    assert 'data-readout="area">1.205e+2 <span>counts·s' in rendered["readout"]
     assert 'data-readout="raw-apex">6.100' in rendered["readout"]
-    assert 'result-number">17.25' in rendered["readout"]
-    assert 'result-unit">counts·s' in rendered["readout"]
+    assert 'data-readout="quantity">1.725e+1' in rendered["readout"]
     expected = (
-        'result-null">空值'
+        'area-empty">空值'
         if second_value is None
-        else ('result-zero">0' if second_value == 0 else 'result-number">42.125')
+        else ('class="num">0<' if second_value == 0 else 'class="num">4.213e+1<')
     )
     assert expected in rendered["table"]
 
@@ -402,13 +402,10 @@ def test_distinct_trace_roles_read_as_channels_of_one_sample(tmp_path):
         content,
         payload,
         "const item=items[0];"
-        "return JSON.stringify({notices:Object.fromEntries(item.samples.map(r=>"
-        "[r.sample_id,sampleNotices(item,r).map(n=>n.kind)])),"
+        "return JSON.stringify({"
         "summary:summary(item),plot:plot(item,'raw'),key:channelKey(item),"
         "labels:candidates(item,'sample-1').map(candidateLabel)});",
     )
-    assert "candidates" not in rendered["notices"]["sample-1"]
-    assert "candidates" in rendered["notices"]["sample-2"]
     assert "<dt>多個候選</dt><dd>1<small>個樣本</small>" in rendered["summary"]
     assert 'title="sample-two"' in rendered["summary"]
     dashes = dict(

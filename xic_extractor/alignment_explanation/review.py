@@ -12,8 +12,8 @@ if TYPE_CHECKING:
         FinalGroupCellObservation,
     )
 
-# Recorded support origins of a cell, in review order. They summarize recorded
-# decisions; they do not choose peaks, assign groups, or authorize Matrix values.
+# Extraction stages of the peaks providing cell values. The persisted names
+# are retained; an origin does not imply method support or authorize a value.
 RECORDED_ORIGINS = ("backfill_support", "discovery_support")
 SUPPORT_ORIGINS = frozenset((*RECORDED_ORIGINS, "unavailable"))
 
@@ -152,7 +152,9 @@ def review_cell(decision: ProductionCellDecision) -> dict[str, Any]:
     stages = {
         cell.peak_observation.capture_stage
         for cell in cells
-        if cell.peak_observation is not None and cell.method_result == "SUPPORT"
+        if decision.value is not None
+        and cell.peak_observation is not None
+        and cell.peak_observation.integration is decision.selected_integration
     }
     origin = (
         "backfill_support"

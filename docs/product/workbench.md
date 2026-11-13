@@ -73,7 +73,7 @@ they reproduce the run's processed signal and change no value.
 RAW is read only for a sample without a saved curve that the user checks and
 loads: an empty cell, or a candidate outside the Matrix. These reads are new
 diagnostic views, not product measurements. RAW and DLL sources belong to the selected result's
-**RAW 曲線設定（選用）**, not the result opener. Targeted curves always read
+**RAW 曲線**, not the result opener. Targeted curves always read
 RAW and start from the sample row.
 
 - A sample is read from the RAW file of the same name with the run's saved mass
@@ -81,7 +81,7 @@ RAW and start from the sample row.
   curve is a review view and changes no result.
 - An Untargeted group member without its own retained apex is read at the median
   m/z and apex RT of the group's observed samples. That group-position curve is
-  drawn dashed and labelled as such, so a missed peak can be seen. It neither
+  drawn as a thin grey line for the empty sample, so a missed peak can be seen. It neither
   selects nor integrates a peak, and the saved empty value stays empty.
 - Targeted curves use the workbook's extraction tolerance and signal-processing
   settings over the full acquisition trace. Saved peak bounds are overlays, not
@@ -105,12 +105,27 @@ Any new selection, search or page cancels a running RAW read and proceeds;
   evidence remain distinct in every table, legend and export.
 - An explicit `not_searched` cell remains NULL with its recorded explanation.
   It does not create a candidate or query witness.
-- Line style marks support origin: solid for Discovery, dotted for Backfill. A
-  physical direct-observation cell is not by itself evidence of Discovery
-  support.
-- Recorded review conditions, such as a related method HOLD, are explanations.
-  They are not the final cell decision, and the absence of a review condition is
-  not scientific acceptance.
+- Line style marks the extraction stage of the peak providing the Matrix value:
+  sample-coloured solid lines for detect, sample-coloured dashed lines for
+  backfill, and thin grey lines for loaded empty samples. MS2 support does not
+  determine extraction stage.
+- A group opens on one summary line of detect, backfill and empty counts, drawn
+  with those line styles so it is also the legend. The sample table follows,
+  then the curves. Each row gives the Area, its origin swatch, and only what
+  needs reading: why an empty cell is empty, a limitation of that sample's
+  curves, or a recorded risk. Left-empty cells with several possible peaks are
+  named 多峰留空 everywhere and take no warning tone.
+- Ordinary MS1-only backfill and a related method HOLD are not by themselves
+  risks. Low SNR, weak RT support and recorded pairing competition stay on the
+  row. Competition names what the alternative would do with this peak: the
+  samples and native apex RTs it would join, or leaving this group. An
+  unselected alternative is not assigned a published feature ID. Internal
+  records stay in SQLite. No recorded risk is not a claim of scientific
+  acceptance.
+- Older current-format results remain readable with their saved origins;
+  values with no recorded origin use dotted lines, not detect's solid lines.
+  Rerun Alignment to correct missing backfill origins. Review never rewrites
+  them or infers the extraction stage from method evidence.
 
 ## Reading order
 

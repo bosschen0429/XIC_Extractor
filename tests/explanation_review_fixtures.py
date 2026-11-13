@@ -109,6 +109,10 @@ def _group_with_missing_apex_review(tmp_path, *, extraction_by_sample=None):
                     "variant": "numeric" if value else "unavailable",
                     "value": value,
                     "observation_ids": observations,
+                    "support_origin": {
+                        "S1": "discovery_support",
+                        "S2": "backfill_support",
+                    }.get(sid, "unavailable"),
                 }
                 for sid, value, observations in (
                     ("S1", 100, ["C1"]),

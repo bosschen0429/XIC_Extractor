@@ -16,6 +16,7 @@ from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     ReviewCurveLocation,
     ReviewCurves,
+    read_row_cell_values,
 )
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
@@ -35,6 +36,7 @@ from xic_inspector.sources.curve_bundle import (
     ChromatogramCurve,
     CurveBundle,
     CurveBundleTrace,
+    SampleQuantification,
     TransitionCurves,
 )
 
@@ -110,7 +112,13 @@ def review_curve_bundle(
         )
         traces += read
         unusable |= missing
-    return _curve_bundle(key, curves, traces), sorted(unusable)
+    represented = {trace.sample_id for trace in traces}
+    quantities = tuple(
+        SampleQuantification(sid, value, "counts·s", origin)
+        for _, sid, value, origin, _ in read_row_cell_values(report, {key})
+        if sid in represented
+    )
+    return _curve_bundle(key, curves, traces, quantities), sorted(unusable)
 
 
 def _saved_traces(
@@ -191,7 +199,10 @@ def _raw_traces(
 
 
 def _curve_bundle(
-    key: str, curves: ReviewCurves, traces: list[CurveBundleTrace]
+    key: str,
+    curves: ReviewCurves,
+    traces: list[CurveBundleTrace],
+    quantities: tuple[SampleQuantification, ...],
 ) -> CurveBundle:
     if not traces:
         raise ExplanationError("所選樣本在擷取範圍內都沒有可用訊號。")
@@ -211,6 +222,7 @@ def _curve_bundle(
                 if read_from_raw
                 else {},
                 traces=tuple(sorted(traces, key=lambda trace: trace.trace_id)),
+                quantifications=quantities,
             ),
         ),
         sample_rt_calibration=curves.sample_rt_calibration,
