@@ -146,6 +146,16 @@ coverage; it is not a scientific score. The approximate m/z search ranks by
 distance and applies no implicit mass tolerance, so a match does not confirm
 compound identity.
 
+When the result folder holds completed matrix curations, the review follows
+the latest one by folder name and names it beside the result title; producing a
+new curation from the result switches the open review to it. Opening a
+curation folder itself keeps that curation and reads evidence and curves from
+the result its summary records. The overview counts, coverage, Matrix list and
+download then cover only the kept features. Removed features are under
+**整理時移除**, beside the unadopted groups, each with one line built from
+its `feature_decisions.tsv` row. A result without curation is reviewed as
+published.
+
 ## Retained evidence and diagnostics
 
 Delta Mass Discovery has a separate sample-local review source, not an Alignment

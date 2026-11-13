@@ -260,6 +260,88 @@ def test_review_overview_separates_matrix_priority_and_internal_evidence(tmp_pat
     assert [p.read_bytes() for p in (report, matrix)] == before
 
 
+def test_review_follows_the_latest_curation_unless_one_is_opened(tmp_path):
+    """Counts and lists follow the curated Matrix; removed rows say why."""
+    from tests.matrix_curation_fixtures import published_curation
+
+    report, _ = create_review_batch(tmp_path, keep_curves=True)
+    report = report.rename(tmp_path / "alignment_explanation.sqlite")
+    older = published_curation(
+        tmp_path / "matrix_curation_20261101_090000",
+        tmp_path,
+        [
+            {"feature_id": "a-complete", "decision": "keep"},
+            {
+                "feature_id": "b-missing",
+                "finite_count": "1",
+                "eligible_sample_count": "2",
+                "decision": "drop",
+                "decision_reason": "dropped_by:finite_fraction",
+            },
+            {"feature_id": "z-priority", "decision": "keep"},
+        ],
+        min_finite_fraction=0.75,
+    )
+    newer = published_curation(
+        tmp_path / "matrix_curation_20261102_090000",
+        tmp_path,
+        [
+            {"feature_id": "a-complete", "decision": "keep"},
+            {"feature_id": "b-missing", "decision": "keep"},
+            {
+                "feature_id": "z-priority",
+                "same_compound_representative_feature_id": "b-missing",
+                "same_compound_relation": "13C_M+1",
+                "decision": "drop",
+                "decision_reason": "dropped_by:same_compound",
+            },
+        ],
+    )
+    # An export still being written has no summary yet.
+    (tmp_path / "matrix_curation_20261103_090000").mkdir()
+
+    def counts(page):
+        overview = page["overview"]
+        return (
+            overview["matrix_count"],
+            overview["unresolved_count"],
+            overview["complete_count"],
+            overview["archive_count"],
+            overview["curation_removed_count"],
+            [s["numeric_count"] for s in overview["samples"]],
+        )
+
+    def removed(workspace):
+        page = workspace.query({"review_scope": "curation_removed"})
+        return [(i["group_id"], i["curation_reason"]) for i in page["items"]]
+
+    workspace = review_workspace(config_dir=tmp_path / "config")
+    try:
+        page = workspace.open(str(tmp_path))
+        assert page["curation"]["name"] == newer.name
+        assert page["result_artifact"]["path"] == str(newer / "analysis_matrix.tsv")
+        assert counts(page) == (2, 0, 1, 1, 1, [2, 1])
+        assert [i["group_id"] for i in page["items"]] == ["a-complete", "b-missing"]
+        assert removed(workspace) == [("z-priority", "b-missing 的 13C 同位素")]
+
+        page = workspace.open(str(older))
+        assert page["source"] == str(report)
+        assert page["curation"]["name"] == older.name
+        assert counts(page) == (2, 1, 1, 1, 1, [2, 1])
+        assert [i["group_id"] for i in page["items"]] == ["z-priority", "a-complete"]
+        # Paging stays on the opened curation although a newer one exists.
+        page = workspace.query({"review_scope": "matrix", "offset": 1, "limit": 1})
+        assert page["curation"]["name"] == older.name
+        assert [i["group_id"] for i in page["items"]] == ["a-complete"]
+        assert removed(workspace) == [("b-missing", "有效值比例 1/2，低於門檻 0.75")]
+        page = workspace.query({"review_scope": "matrix"})
+        detail = workspace.detail(page["items"][0]["id"])
+        assert detail["item"]["group_id"] == "z-priority"
+        assert detail["item"]["saved_curve_sample_ids"] == ["S1"]
+    finally:
+        workspace.close()
+
+
 def test_example_downloads_are_fixed_public_resources_not_local_files(tmp_path):
     from xic_extractor.configuration.paths import targets_template_path
 

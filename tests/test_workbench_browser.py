@@ -3223,6 +3223,44 @@ def test_review_overview_button_skips_workspace_tab_history(workbench, tmp_path)
     expect(page.locator("#item-title")).to_contain_text("Analyte")
 
 
+def test_curated_result_names_its_curation_and_lists_removed_rows(workbench, tmp_path):
+    from tests.inspector_fixtures import create_review_batch
+    from tests.matrix_curation_fixtures import published_curation
+
+    page = workbench
+    report, _ = create_review_batch(tmp_path)
+    report.rename(tmp_path / "alignment_explanation.sqlite")
+    published_curation(
+        tmp_path / "matrix_curation_20261101_090000",
+        tmp_path,
+        [
+            {"feature_id": "a-complete", "decision": "keep"},
+            {"feature_id": "b-missing", "decision": "keep"},
+            {
+                "feature_id": "z-priority",
+                "same_compound_representative_feature_id": "b-missing",
+                "same_compound_relation": "13C_M+1",
+                "decision": "drop",
+                "decision_reason": "dropped_by:same_compound",
+            },
+        ],
+    )
+    _open_results(page)
+    page.locator("#source").fill(str(tmp_path))
+    page.locator("#open-form button[type=submit]").click()
+    expect(page.locator("#batch-curation")).to_have_text(
+        "依矩陣整理 matrix_curation_20261101_090000"
+    )
+    expect(page.locator("#result-download")).to_contain_text("下載整理後矩陣")
+    expect(page.locator("#targeted-overview h2")).to_have_text("2 組進入矩陣")
+    page.locator("#targeted-overview .overview-more > summary").click()
+    page.locator("#targeted-overview button", has_text="1 組整理時移除").click()
+    expect(page.locator("#list-summary")).to_contain_text("整理時移除")
+    expect(page.locator("#item-list .item-reason")).to_have_text(
+        ["b-missing 的 13C 同位素"]
+    )
+
+
 def test_targeted_row_xic_without_raw_points_at_the_missing_folder(workbench, tmp_path):
     from tests.xic_inspector_targeted_workbook_fixtures import (
         write_rare_detection_workbook,

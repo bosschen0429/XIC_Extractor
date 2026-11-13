@@ -342,6 +342,9 @@ window.XicUi = (() => {
       }
     }
   }
+  // Two curations of one result share its evidence file but not their items.
+  const sameResult = (a, b) => Boolean(a && b) && a.source === b.source &&
+    (a.curation?.path || "") === (b.curation?.path || "");
   function locked() {
     return state.busy || state.restoring;
   }
@@ -480,7 +483,7 @@ window.XicUi = (() => {
     $("selection-empty-title").textContent = title;
     $("selection-empty-description").textContent = description;
   }
-  const reviewScopes = {matrix: "矩陣群組", unresolved: "多峰留空的群組", archive: "未採用群組", candidates: "未分組候選"};
+  const reviewScopes = {matrix: "矩陣群組", unresolved: "多峰留空的群組", archive: "未採用群組", curation_removed: "整理時移除", candidates: "未分組候選"};
   function emptyResultGuidance() {
     const filters = state.filters, parts = [];
     if (state.page.source_kind !== "targeted_workbook") {
@@ -517,7 +520,7 @@ window.XicUi = (() => {
     }),
     restore(saved) {
       // A newly opened batch supersedes old result links in this tab.
-      if (saved.page && saved.page.source === state.page?.source) {
+      if (saved.page && sameResult(saved.page, state.page)) {
         if (!saved.overview && (state.page !== saved.page || state.detail !== saved.detail)) {
           for (const [id, value, checked] of saved.fields) {
             $(id).value = value;
@@ -537,7 +540,7 @@ window.XicUi = (() => {
           if (!state.detail) renderSelectionEmpty();
         }
       }
-      if (saved.curves && saved.page?.source === state.page?.source) {
+      if (saved.curves && sameResult(saved.page, state.page)) {
         $("xic-sample").value = saved.sample;
         if (!$("xic-dialog").open) $("xic-dialog").showModal();
         // History retains the reading's receipt even if filters replace its mount.
@@ -703,6 +706,8 @@ window.XicUi = (() => {
     const more = node("details", undefined, "overview-more"); more.append(node("summary", "未進入矩陣的紀錄"));
     const archived = node("div", undefined, "overview-actions");
     openScope(`${count(summary.archive_count)} 組未採用`, "archive", archived);
+    if (summary.curation_removed_count)
+      openScope(`${count(summary.curation_removed_count)} 組整理時移除`, "curation_removed", archived);
     openScope(`${count(summary.candidate_count)} 筆未分組候選`, "candidates", archived);
     more.append(archived);
     host.append(more);
@@ -753,13 +758,18 @@ window.XicUi = (() => {
     $("batch-description").hidden = false;
     $("batch-description").className = "mono";
     $("batch-description").title = page.source;
+    // A curated result names the curation whose Matrix the page follows.
+    $("batch-curation").hidden = !page.curation;
+    $("batch-curation").textContent = page.curation ? `依矩陣整理 ${page.curation.name}` : "";
+    $("batch-curation").title = page.curation?.path || "";
     const download = $("result-download");
     download.hidden = !page.result_artifact;
     if (page.result_artifact) {
       download.href = page.result_artifact.url;
       download.download = page.result_artifact.name;
       download.title = page.result_artifact.name;
-      download.querySelector("span").textContent = targeted ? "下載結果 Excel" : "下載 Alignment 矩陣";
+      download.querySelector("span").textContent = targeted ? "下載結果 Excel"
+        : page.curation ? "下載整理後矩陣" : "下載 Alignment 矩陣";
     } else {
       download.removeAttribute("href");
       download.removeAttribute("download");
@@ -815,6 +825,7 @@ window.XicUi = (() => {
         button.append(node("span", `Δ ${ppm(item.mz_distance, page.nearest_mz)} ppm`, "item-distance"));
       }
       button.append(bottom);
+      if (item.curation_reason) button.append(node("span", item.curation_reason, "item-reason"));
       button.addEventListener("click", () =>
         action(() => selectItem(item), "正在準備檢閱內容…"),
       );
@@ -1320,6 +1331,17 @@ window.XicUi = (() => {
       $("raw-dir").value = "";
     }
     action(openBatch, "正在讀取分析結果…");
+  });
+  // A new curation of the open result replaces the one the page follows.
+  document.addEventListener("xic:curation-published", (event) => {
+    const key = (path) => (path || "").replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
+    const result = event.detail.source_dir;
+    if (!state.page || key(state.page.source.replace(/[\\/][^\\/]+$/, "")) !== key(result)) return;
+    if (state.page.curation && key($("source").value) === key(state.page.curation.path)) {
+      if (state.runFolder) state.runFolders.set(result, state.runFolder);
+      $("source").value = result;
+    }
+    action(openBatch, "正在套用新的矩陣整理…");
   });
   document.addEventListener("xic:analysis-busy", controls);
   document.addEventListener("xic:analysis-started", () => {

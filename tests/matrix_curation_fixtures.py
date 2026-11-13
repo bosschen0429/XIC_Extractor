@@ -109,3 +109,56 @@ def _run(
         capture_output=True,
         check=False,
     )
+
+
+def published_curation(
+    folder: Path,
+    source_dir: Path,
+    decisions: list[dict[str, str]],
+    *,
+    min_finite_fraction: float | None = None,
+) -> Path:
+    """A completed curation folder in its published layout, written by hand."""
+    folder.mkdir()
+    columns = (
+        "source_matrix_row_index",
+        "feature_id",
+        "same_compound_representative_feature_id",
+        "same_compound_relation",
+        "same_compound_via_feature_ids",
+        "finite_count",
+        "eligible_sample_count",
+        "decision",
+        "decision_reason",
+    )
+    write_tsv(
+        folder / "feature_decisions.tsv",
+        [
+            {column: str(index) if column == columns[0] else "" for column in columns}
+            | row
+            for index, row in enumerate(decisions, start=1)
+        ],
+        columns,
+    )
+    kept = sum(row["decision"] == "keep" for row in decisions)
+    write_tsv(folder / "analysis_matrix.tsv", [{"Mz": "1"}] * kept, ("Mz",))
+    steps = [{"key": "same_compound", "parameters": {}}]
+    if min_finite_fraction is not None:
+        steps.append(
+            {
+                "key": "finite_fraction",
+                "parameters": {"min_finite_fraction": min_finite_fraction},
+            }
+        )
+    (folder / "matrix_curation_summary.json").write_text(
+        json.dumps(
+            {
+                "steps": steps,
+                "inputs": {"source_dir": str(source_dir)},
+                "feature_count": len(decisions),
+                "kept_feature_count": kept,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return folder

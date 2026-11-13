@@ -1737,6 +1737,7 @@ kbd {
 #untargeted-search .subtle { margin-top: 8px; }
 .query-error { margin: 8px 0; color: var(--danger); font-size: 12px; }
 .nearest-results-note { margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.item-reason { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .item-distance { display: block; margin-top: 5px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 /* Sample choice is a quiet line until opened. */
 .acquisition-panel:not([open]) {

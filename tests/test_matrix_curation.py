@@ -320,3 +320,53 @@ def test_preview_matches_export_without_writing_or_changing_inputs(tmp_path, pro
     assert [row["Mz"] for row in rows] == (
         ["101.0000", "103.0000", "104.0000"] if protected else ["101.0000", "103.0000"]
     )
+
+
+def test_published_curation_reads_the_export_and_says_why_each_row_left(tmp_path):
+    from xic_extractor.matrix_curation.published import read_published_curation
+
+    source, samples = _inputs(tmp_path)
+    output = tmp_path / "curated"
+    assert _run(source, samples, output, threshold="0.5").returncode == 0
+
+    curation = read_published_curation(output)
+
+    assert curation.source_dir == source.resolve()
+    assert curation.matrix_path == output / "analysis_matrix.tsv"
+    # Eligible S1-S3: F000002 has one finite value, F000004 none.
+    assert curation.removed == {
+        "F000002": "有效值比例 1/3，低於門檻 0.5",
+        "F000004": "有效值比例 0/3，低於門檻 0.5",
+    }
+
+
+def test_same_compound_reasons_name_the_representative_and_source_rows(tmp_path):
+    from tests.matrix_curation_fixtures import published_curation
+    from xic_extractor.matrix_curation.published import read_published_curation
+
+    def removed(feature_id, representative, relation, via):
+        return {
+            "feature_id": feature_id,
+            "same_compound_representative_feature_id": representative,
+            "same_compound_relation": relation,
+            "same_compound_via_feature_ids": via,
+            "decision": "drop",
+            "decision_reason": "dropped_by:same_compound",
+        }
+
+    folder = published_curation(
+        tmp_path / "curated",
+        tmp_path,
+        [
+            {"feature_id": "F1", "decision": "keep"},
+            removed("F2", "F1", "13C_M+1|[M+Na]+", "F4;F56"),
+            removed("F3", "", "[M+Mg+HCOO]+|[M+Na]+", "F20;F181"),
+            removed("F5", "F72", "ion_family:[3M-H+Mg]+", "F822"),
+        ],
+    )
+
+    assert read_published_curation(folder).removed == {
+        "F2": "F1 的 13C 同位素、[M+Na]+（來自 F4、F56）",
+        "F3": "[M+Mg+HCOO]+、[M+Na]+，代表特徵未定（來自 F20、F181）",
+        "F5": "F72 的 [3M-H+Mg]+（來自 F822）",
+    }

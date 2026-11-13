@@ -20,6 +20,12 @@ from xic_extractor.matrix_curation.istd import (
     match_istd,
     windows_from_target_snapshot,
 )
+from xic_extractor.matrix_curation.published import (
+    CURATED_MATRIX_NAME,
+    DECISIONS_NAME,
+    FOLDER_PREFIX,
+    SUMMARY_NAME,
+)
 from xic_extractor.matrix_curation.same_compound import (
     REVIEW_NAME as SAME_COMPOUND_REVIEW_NAME,
 )
@@ -57,7 +63,6 @@ from xic_extractor.tabular_io import (
 
 # A later step joins by adding itself here; the page and outputs follow.
 STEPS: tuple[CurationStep, ...] = (SAME_COMPOUND_STEP, FINITE_FRACTION_STEP)
-SUMMARY_NAME = "matrix_curation_summary.json"
 DECISION_KEY_COLUMNS = (
     "source_matrix_row_index",
     "feature_id",
@@ -122,7 +127,7 @@ def load_cell_evidence(
 
 def default_output_dir(source: CurationSource) -> Path:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return source.source_dir / f"matrix_curation_{stamp}"
+    return source.source_dir / f"{FOLDER_PREFIX}{stamp}"
 
 
 def read_sample_metadata_file(path: Path) -> tuple[SampleMetadata, ...]:
@@ -419,10 +424,8 @@ def prepare_matrix_curation(
             kept_rows.append(row)
 
     export_tables = {
-        "analysis_matrix.tsv": StepTable(tuple(header), tuple(kept_rows)),
-        "feature_decisions.tsv": StepTable(
-            tuple(decision_columns), tuple(decision_rows)
-        ),
+        CURATED_MATRIX_NAME: StepTable(tuple(header), tuple(kept_rows)),
+        DECISIONS_NAME: StepTable(tuple(decision_columns), tuple(decision_rows)),
         **tables,
     }
     if binding.samples is not None:
