@@ -262,14 +262,18 @@ def test_capture_extracts_group_precursor_xic_with_padded_rt_window_and_ppm(
         ),
     )
     expected_padding = max(0.60, padding)
-    # The padded search window locates the peak; the peak is then read centred.
-    assert raw.requests[0] == (
-        group.mz,
-        pytest.approx(7.80 - expected_padding),
-        pytest.approx(7.90 + expected_padding),
-        12.0,
-    )
-    assert len(raw.requests) == 2
+    # Each event's padded search window locates the peak; the peak is then
+    # read centred.
+    assert raw.requests[:2] == [
+        (
+            group.mz,
+            pytest.approx(rt - expected_padding),
+            pytest.approx(rt + expected_padding),
+            12.0,
+        )
+        for rt in (7.80, 7.90)
+    ]
+    assert len(raw.requests) == 3
     assert len(candidates) == 1
 
 

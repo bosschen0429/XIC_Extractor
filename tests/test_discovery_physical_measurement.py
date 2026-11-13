@@ -216,8 +216,8 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
         for row in _read_csv(outputs.events_csv)
         if row["peak_id"] in peak_ids
     ) == [100, 200]
-    # One read locates both events; each located peak is read once, centred.
-    assert raw.raw_chromatogram_call_count == 1 + len(expected_apices)
+    # Each event's search window is read; each located peak once, centred.
+    assert raw.raw_chromatogram_call_count == 2 + len(expected_apices)
 
 
 @pytest.mark.parametrize(
@@ -800,10 +800,11 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
     assert len(result.measurements.acquisition_batches) == 2
     assert result.measurements.reacquisition_request_count == 1
     initial, centred = result.measurements.acquisition_batches
-    assert initial.traces[0].coordinate.trace_point_count >= profile.window_points
-    initial_request = initial.traces[0].coordinate.request
-    assert initial_request.rt_min == pytest.approx(11.463)
-    assert initial_request.rt_max == pytest.approx(12.700)
+    # Each seed searches its own window; overlapping windows are not merged.
+    assert [
+        (trace.coordinate.request.rt_min, trace.coordinate.request.rt_max)
+        for trace in initial.traces
+    ] == [pytest.approx((11.463, 12.663)), pytest.approx((11.5, 12.7))]
     candidate = result.peaks[0]
     # Measurement localization uses the acquired raw apex, not an NL query.
     assert candidate.query_rt_min == pytest.approx(12.15, abs=0.04)

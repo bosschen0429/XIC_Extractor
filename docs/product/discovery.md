@@ -237,9 +237,10 @@ separate singly charged ion keeps its own admission.
 
 NL events only locate a peak; they do not set the RT context it is measured
 in. Each event searches the ion's XIC within `ms1_search_padding_min` (at
-least 0.6 min) of its RT; overlapping search windows of one mass channel are
-read and prepared together. The segment holding the event is its peak, located
-at that segment's raw apex and boundary width.
+least 0.6 min) of its RT in its own search window; overlapping search windows
+are not merged, so other events never change where or how wide a peak is
+located. The segment holding the event is its peak, located at that segment's
+raw apex and boundary width.
 
 Each located peak is then read again from its raw apex out to 2 peak widths on
 each side (`MEASUREMENT_CONTEXT_HALF_WIDTH_PEAK_WIDTHS`, one method value for
@@ -253,11 +254,12 @@ was read, else the widest, then earliest, such window. Search windows are never 
 window holds only a peak's far tail can leave it `incomplete_peak_context`.
 
 Events then attach against the bounds and neighbouring peaks of that
-measurement window. Other events on the same ion change a peak's measurement
-only through its search window: a longer shared search window can move the
-located boundary width by a scan, which moves the measurement window. Trace
-context and precursor-identity confidence stay separate; neither window
-upgrades precursor identity or grants Matrix authority.
+measurement window. Adding or removing an unrelated event on the same ion leaves
+a peak's measurement and membership unchanged. A peak wider than one search
+window is located at the width its search window holds, so its measurement
+window stays within 4 search-window widths. Trace context and
+precursor-identity confidence stay separate; neither window upgrades precursor
+identity or grants Matrix authority.
 
 ### Shared measurements
 

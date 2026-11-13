@@ -1,11 +1,11 @@
 """Locate physical peaks in search windows, then measure each centred on itself.
 
 The method supplies an opaque selection subject, search coordinates and a query
-RT. Search windows only locate the peak a query falls in. Each located peak is
-read again in the window centred on its raw apex and measured there, so other
-queries on the same mass channel cannot change its measurement. This adapter
-owns batching and signal reuse; the pure physical peak owner still owns
-preparation, selection and integration.
+RT. Each query's own search window only locates the peak it falls in; search
+windows are never merged. Each located peak is read again in the window centred
+on its raw apex and measured there, so other queries on the same mass channel
+cannot change its measurement. This adapter owns batching and signal reuse; the
+pure physical peak owner still owns preparation, selection and integration.
 """
 
 from __future__ import annotations
@@ -114,17 +114,18 @@ class PhysicalPeakCapture:
     ) -> tuple[CapturedPhysicalPeak, ...]:
         """Locate each query's peak, then measure every peak centred on itself.
 
-        Overlapping search windows of one mass channel are read and prepared
-        together, only to find the segment holding each query, its raw apex and
-        boundary width. Each located peak is read once more, from its raw apex
-        out to the configured number of peak widths on each side, and measured
+        Each query's own search window is read and prepared, only to find the
+        segment holding the query, its raw apex and boundary width; identical
+        windows share that work, overlapping ones do not. Each located peak is
+        read once more, from its raw apex out to the configured number of peak
+        widths on each side, and measured
         there once; queries locating the same apex share that measurement. The
         peak measured is the segment of that window holding the located apex,
         chosen once even when its own apex lies elsewhere. A query no segment
         holds keeps its search window's no-selection answer.
         """
         unique = tuple(dict.fromkeys(searches))
-        contexts = _shared_contexts(unique)
+        contexts = _search_windows(unique)
         self.initial_request_count = len(contexts)
         searched: dict[PhysicalPeakSearch, XICRequest] = {}
         located: dict[PhysicalPeakSearch, tuple[float, float, float]] = {}
@@ -307,64 +308,24 @@ class PhysicalPeakCapture:
         return tuple(traces)
 
 
-def _shared_contexts(
+def _search_windows(
     searches: Sequence[PhysicalPeakSearch],
 ) -> dict[XICRequest, tuple[PhysicalPeakSearch, ...]]:
-    """Share RT planning, retaining every distinct mass window's read semantics."""
-    channels: list[list[PhysicalPeakSearch]] = []
-    # Discovery's existing mass grouping requires every member within ppm of
-    # every other member. No transitive mass chaining or isotope merging.
-    # Searches arrive in ascending (ppm, m/z), so each channel's first member is
-    # its lowest and farthest m/z: the search is within ppm of every member iff
-    # it is within ppm of the first. A channel that fails stays failed for every
-    # later search, so only the oldest live channel can accept the next one.
-    live = 0
+    """Each distinct search window, read once in an order independent of input."""
+    windows: dict[XICRequest, list[PhysicalPeakSearch]] = {}
     for search in sorted(
         searches,
         key=lambda s: (
             s.request.ppm_tol,
             s.request.mz,
             s.request.rt_min,
+            s.request.rt_max,
             s.query_rt_min,
             s.selection_subject_id,
         ),
     ):
-        request = search.request
-        while live < len(channels):
-            first = channels[live][0].request
-            if first.ppm_tol == request.ppm_tol and within_ppm(
-                request.mz, first.mz, request.ppm_tol
-            ):
-                break
-            live += 1
-        if live < len(channels):
-            channels[live].append(search)
-        else:
-            channels.append([search])
-    contexts: dict[XICRequest, tuple[PhysicalPeakSearch, ...]] = {}
-    for channel_members in channels:
-        clusters: list[list[PhysicalPeakSearch]] = []
-        upper = -math.inf
-        for search in sorted(
-            channel_members, key=lambda s: (s.request.rt_min, s.request.rt_max)
-        ):
-            if not clusters or search.request.rt_min > upper:
-                clusters.append([])
-                upper = search.request.rt_max
-            clusters[-1].append(search)
-            upper = max(upper, search.request.rt_max)
-        for cluster in clusters:
-            lower = min(s.request.rt_min for s in cluster)
-            upper = max(s.request.rt_max for s in cluster)
-            by_mass: dict[tuple[float, float], list[PhysicalPeakSearch]] = {}
-            for search in cluster:
-                by_mass.setdefault(
-                    (search.request.mz, search.request.ppm_tol), []
-                ).append(search)
-            for members in by_mass.values():
-                request = replace(members[0].request, rt_min=lower, rt_max=upper)
-                contexts[request] = tuple(members)
-    return contexts
+        windows.setdefault(search.request, []).append(search)
+    return {request: tuple(members) for request, members in windows.items()}
 
 
 def _same_acquired_signal(left: AcquiredTrace, right: AcquiredTrace) -> bool:

@@ -14,7 +14,6 @@ from tests.discovery_ms1_capture_fixtures import (
     _seed,
     _settings,
 )
-from xic_extractor.acquisition import physical_capture
 from xic_extractor.acquisition.physical_capture import (
     PhysicalPeakCapture,
     PhysicalPeakSearch,
@@ -57,8 +56,9 @@ def test_each_located_peak_is_measured_once_in_its_own_centred_window():
     assert right.evaluation.facts.area_counts_seconds == pytest.approx(
         2000 * 0.05 * np.sqrt(2 * np.pi) * 60, rel=0.06
     )
-    # The overlapping search windows are read once, only to locate the peaks.
-    assert capture.initial_request_count == 1
+    # Each search window is read on its own, only to locate its peak; the
+    # repeated search shares its identical window.
+    assert capture.initial_request_count == 3
     # Each peak is read once more, centred on its own raw apex.
     assert capture.reacquisition_request_count == 2
     for captured in (left, right):
@@ -72,7 +72,7 @@ def test_each_located_peak_is_measured_once_in_its_own_centred_window():
 
 
 def test_measured_context_never_exceeds_the_peak_widths_of_its_located_peak():
-    """Each measurement window is the located raw apex +/- 2 search-window widths."""
+    """Each measurement window is the located raw apex +/- 2 located widths."""
     from xic_extractor.peak_detection.physical_peak_population import (
         measure_physical_peak_population,
     )
@@ -88,31 +88,32 @@ def test_measured_context_never_exceeds_the_peak_widths_of_its_located_peak():
         for t in (9.95, 10.4, 10.45, 19.9, 20.3)
     )
     captured = capture.capture(searches)
-    # Without the merged search windows, chained events would stretch the
-    # context; the located peak's own width bounds it instead.
-    merged = {
-        5.0: (9.35, 11.05),
-        20.0: (19.3, 20.9),
-    }
-    for item in captured:
-        facts = item.evaluation.facts
-        assert facts is not None
-        lower, upper = merged[5.0 if facts.apex_rt_min < 15 else 20.0]
-        window = raw.intensity[(rt >= lower) & (rt <= upper)]
+    # Chained events never stretch a search window: each event locates its peak
+    # in its own window, and the widest width located for an apex sets W.
+    widest: dict[float, float] = {}
+    for search in searches:
+        request = search.request
+        inside = (rt >= request.rt_min) & (rt <= request.rt_max)
         population = measure_physical_peak_population(
-            rt[(rt >= lower) & (rt <= upper)],
-            window,
-            context_rt_start_min=lower,
-            context_rt_end_min=upper,
+            rt[inside],
+            raw.intensity[inside],
+            context_rt_start_min=request.rt_min,
+            context_rt_end_min=request.rt_max,
             profile=TEST_PROFILE,
         )
-        located = population.segment_at(item.search.query_rt_min)
+        located = population.segment_at(search.query_rt_min)
+        apex = population.raw_apex_rt(located)
         width = located.right_rt_min - located.left_rt_min
+        widest[apex] = max(width, widest.get(apex, 0.0))
+    for item in captured:
+        assert item.evaluation.facts is not None
         request = item.search.request
-        assert request.rt_max - request.rt_min <= 4.0 * width + 1e-9
-        assert (request.rt_min + request.rt_max) / 2 == pytest.approx(
-            population.raw_apex_rt(located)
+        apex = (request.rt_min + request.rt_max) / 2
+        (located_apex,) = (a for a in widest if a == pytest.approx(apex))
+        assert request.rt_max - request.rt_min == pytest.approx(
+            4.0 * widest[located_apex]
         )
+        assert request.rt_max - request.rt_min <= 4.0 * 1.2 + 1e-9
 
 
 def test_mass_channel_uses_existing_ppm_rule_without_isotope_or_ppm_merging():
@@ -201,7 +202,8 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
         # The analytic second Gaussian remains one raw basin past its 10%
         # quantitative return; its tail event is not an orphan component.
         assert {located_scan_ids(c) for c in measured} == {(10,), (11, 12)}
-        assert result.measurements.initial_request_count == 1
+        # Each event's own search window; duplicates share theirs.
+        assert result.measurements.initial_request_count == 3
         snapshot = sorted(
             (
                 located_scan_ids(c),
@@ -263,71 +265,6 @@ def test_identical_search_windows_do_not_substitute_centred_mass_windows():
     assert second.evaluation.facts is not None
 
 
-def test_mass_channels_take_the_first_channel_whose_every_member_is_within_ppm():
-    """A search joins the oldest channel it fits wholly, else opens a channel."""
-    from xic_extractor.mass_accuracy import within_ppm
-
-    rng = np.random.default_rng(1089)
-    searches = tuple(
-        PhysicalPeakSearch(
-            f"s{index}",
-            5.0,
-            # Unique, mutually overlapping RT windows: a context's RT span then
-            # names exactly one mass channel.
-            XICRequest(
-                float(500.0 + rng.integers(0, 120) * 0.0015),
-                index * 1e-3,
-                10.0 + index * 1e-3,
-                float(rng.choice((10.0, 20.0))),
-            ),
-        )
-        for index in range(400)
-    )
-    expected: list[list[PhysicalPeakSearch]] = []
-    for search in sorted(
-        searches,
-        key=lambda s: (
-            s.request.ppm_tol,
-            s.request.mz,
-            s.request.rt_min,
-            s.query_rt_min,
-            s.selection_subject_id,
-        ),
-    ):
-        for members in expected:
-            if members[0].request.ppm_tol == search.request.ppm_tol and all(
-                within_ppm(search.request.mz, m.request.mz, search.request.ppm_tol)
-                for m in members
-            ):
-                members.append(search)
-                break
-        else:
-            expected.append([search])
-
-    by_span: dict[tuple[float, float, float], set[str]] = {}
-    for request, members in physical_capture._shared_contexts(searches).items():
-        by_span.setdefault(
-            (request.ppm_tol, request.rt_min, request.rt_max), set()
-        ).update(m.selection_subject_id for m in members)
-    assert sorted(map(sorted, by_span.values())) == sorted(
-        sorted(s.selection_subject_id for s in members) for members in expected
-    )
-    # The input must exercise non-transitive chains: neighbours within ppm of
-    # each other that still belong to different channels.
-    channel_of = {
-        search.selection_subject_id: index
-        for index, members in enumerate(expected)
-        for search in members
-    }
-    ordered = sorted(searches, key=lambda s: (s.request.ppm_tol, s.request.mz))
-    assert any(
-        a.request.ppm_tol == b.request.ppm_tol
-        and within_ppm(b.request.mz, a.request.mz, a.request.ppm_tol)
-        and channel_of[a.selection_subject_id] != channel_of[b.selection_subject_id]
-        for a, b in zip(ordered, ordered[1:], strict=False)
-    )
-
-
 def _measured_peaks(seeds, intensity, rt):
     """Each measured peak's facts, bounds, status and NL membership by event RT."""
     settings = _settings()
@@ -354,11 +291,16 @@ def _measured_peaks(seeds, intensity, rt):
 
 
 @pytest.mark.parametrize(
-    ("unrelated_rt", "shares_search_window"),
-    [(5.7, True), (8.0, False)],
+    "unrelated_rt",
+    [
+        # Its search window overlaps the peak's search windows.
+        5.7,
+        # Its search window stays apart on the same ion.
+        8.0,
+    ],
 )
 def test_unrelated_event_order_and_ids_do_not_change_a_peaks_measurement(
-    unrelated_rt, shares_search_window
+    unrelated_rt,
 ):
     rt = np.linspace(2.0, 12.0, 4001)
     # A sloping background makes the measurement depend on the window it is
@@ -385,23 +327,7 @@ def test_unrelated_event_order_and_ids_do_not_change_a_peaks_measurement(
     for seeds in variants:
         measured = _measured_peaks(seeds, intensity, rt)
         assert set(measured) == {(5.0, 5.03), (unrelated_rt,)}
-        if not shares_search_window:
-            assert measured[(5.0, 5.03)] == alone[(5.0, 5.03)]
-            continue
-        # A longer shared search window can move the located peak's width by a
-        # scan, so its centred window by two; bounds and status stay put.
-        facts, *rest = measured[(5.0, 5.03)]
-        alone_facts, *alone_rest = alone[(5.0, 5.03)]
-        assert rest[:2] == alone_rest[:2]
-        assert rest[-1] == alone_rest[-1]
-        assert (facts.apex_rt_min, facts.left_rt_min, facts.right_rt_min) == (
-            alone_facts.apex_rt_min,
-            alone_facts.left_rt_min,
-            alone_facts.right_rt_min,
-        )
-        assert facts.area_counts_seconds == pytest.approx(
-            alone_facts.area_counts_seconds, rel=1e-3
-        )
+        assert measured[(5.0, 5.03)] == alone[(5.0, 5.03)]
 
 
 def test_apexes_reframed_onto_one_peak_share_its_single_measurement():
