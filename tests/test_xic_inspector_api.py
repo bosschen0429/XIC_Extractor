@@ -81,7 +81,7 @@ def test_normalized_links_preserve_candidate_query_and_inspector_scope(tmp_path)
     assert result.selected_count == 1
     item = read_report_payload(output)["items"][0]
     assert json.loads(item["id"])[-1] == "G1"
-    assert item["details"]["readable_records"]
+    assert item["group_counts"]["unrecorded"] == len(item["samples"])
     assert [group["feature_id"] for group in detail["groups"]] == ["G1"]
     assert "destination" in detail["groups"][0]
     assert detail["groups"][0]["cells"]
@@ -166,22 +166,19 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     assert set(samples) == {"S1", "S2"}
     assert samples["S2"]["sample_stem"] == "s2"
     assert samples["S2"]["quantitative_value"] is None
-    assert samples["S2"]["decision_refs"] == [["G1", "S2"]]
-    assert samples["S2"]["status_kind"] == "null"
-    assert samples["S2"]["decision_label"] == "本次未在這個群組位置搜尋。"
-    assert samples["S2"]["decision_reason"] == "本次未在這個群組位置搜尋。"
-
-    readable = _readable(item)
-    assert readable["G1", "S2"]["sample_ids"] == ["S2"]
-    assert readable["G1", "S2"]["candidate_ids"] == []
-    assert ("G2", "S2") not in readable
+    assert samples["S2"]["note"] == "未在此位置搜尋"
+    assert samples["S2"]["risk_labels"] == []
     assert {witness["sample_key"] for witness in item["witnesses"]} == {"S1"}
     assert {curve["sample_id"] for curve in item["curves"]} == {"S1"}
 
-    assert (
-        item["group_summary"]
-        == "2 個樣本：0 detect · 0 backfill · 1 空值 · 1 有值但來源未提供"
-    )
+    assert item["group_counts"] == {
+        "detect": 0,
+        "backfill": 0,
+        "unrecorded": 1,
+        "empty": 1,
+        "missing": 0,
+        "unresolved": 0,
+    }
     assert item["badge_label"] == "已記錄"
     trigger = next(
         trigger
@@ -202,7 +199,6 @@ def test_group_query_keeps_unlinked_stored_cells_scoped_and_readable(tmp_path):
     )
     scoped_item = read_report_payload(scoped_output)["items"][0]
     assert [sample["sample_id"] for sample in scoped_item["samples"]] == ["S1"]
-    assert ("G1", "S2") not in _readable(scoped_item)
 
 
 @pytest.mark.parametrize("review_only", (False, True))
@@ -227,13 +223,15 @@ def test_unrelated_hold_does_not_become_a_cell_risk_after_record_renumbering(
         tmp_path, extend=assessments, review_only=review_only
     )
     selection = SelectionRequest(strategy="query", group_ids=("G1",))
-    before = prepare_report(report, selection).payload["items"][0]["group_summary"]
+
+    def answers():
+        item = prepare_report(report, selection).payload["items"][0]
+        return item["badge_label"], [s["risk_labels"] for s in item["samples"]]
+
+    before = answers()
     with sqlite3.connect(report) as db:
         db.execute("UPDATE method_assessments SET id=100000-id")
-    after = prepare_report(report, selection).payload["items"][0]["group_summary"]
-    assert before == after
-    assert "HOLD" not in before
-    assert "insufficient_method_evidence" not in before
+    assert answers() == before == ("已記錄", [[]])
 
 
 def test_review_candidate_scope_paginates_in_recorded_order(tmp_path):
@@ -588,17 +586,14 @@ def test_source_strata_use_only_selected_samples_actual_cells(tmp_path):
     full_samples = {
         s["sample_id"]: s for s in read_report_payload(full)["items"][0]["samples"]
     }
-    assert full_samples["S1"]["status_kind"] == "rest"
-    assert full_samples["S2"]["status_kind"] == "null"
+    assert full_samples["S1"]["quantitative_value"] == 1000.0
+    assert full_samples["S2"]["quantitative_value"] is None
     scoped = tmp_path / "scope.html"
     generate_report(report, SelectionRequest(sample_ids=("S1",)), scoped)
     item = read_report_payload(scoped)["items"][0]
     assert item["stratum"] == "rest"
     assert item["samples"][0]["quantitative_value"] == 1000.0
     assert [sample["sample_id"] for sample in item["samples"]] == ["S1"]
-    assert all(
-        ref[1] == "S1" for sample in item["samples"] for ref in sample["decision_refs"]
-    )
 
 
 @pytest.mark.parametrize("failure", ["missing", "attempt"])
@@ -646,7 +641,6 @@ def test_legitimate_candidate_without_observation_remains_available_as_metadata(
     assert result.selected_count == 1
     item = read_report_payload(output)["items"][0]
     assert item["curves"] == []
-    assert item["samples"][0]["evidence_status"] == "unavailable"
     assert item["samples"][0]["decision_refs"] == []
 
 
@@ -669,7 +663,7 @@ def test_candidate_presentation_ids_preserve_sample_identity(tmp_path):
         ("S2", "shared-id"),
     }
     assert all("quantitative_value" not in i["samples"][0] for i in items)
-    assert all(i["samples"][0]["status_kind"] == "unavailable" for i in items)
+    assert all("note" not in i["samples"][0] for i in items)
 
 
 def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
@@ -890,30 +884,22 @@ def test_obsolete_istd_display_calibration_requires_rerun_alignment(tmp_path):
     assert caught.value.code == 4
 
 
-def test_readable_cell_keeps_value_and_curve_but_removes_internal_records(tmp_path):
+def test_saved_cell_is_answered_on_its_sample_without_internal_records(tmp_path):
     report, _, _ = create_inspector_report(tmp_path)
     output = tmp_path / "readable.html"
     generate_report(report, SelectionRequest(), output)
     item = read_report_payload(output)["items"][0]
-    readable = _readable(item)
-    assert set(readable) == {("G1", "S1")}
-    decision = readable["G1", "S1"]
-    assert decision["sample_ids"] == ["S1"]
-    assert decision["candidate_ids"] == []
-    assert decision["title"] == "s1 · 1,000"
-    assert [f["label"] for f in decision["fields"]] == [
-        "值從哪裡來",
-        "空值為什麼是空的",
-        "需不需要擔心",
-    ]
-    assert "technical_refs" not in decision and "links" not in decision
+    assert item["details"]["readable_records"] == []
+    sample = item["samples"][0]
+    assert sample["quantitative_value"] == 1000.0
+    assert "note" not in sample and sample["risk_labels"] == []
+    assert sample["decision_refs"] == []
     curve = item["curves"][0]
     assert curve["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
     assert curve["integration"]["area_raw_counts_seconds"] == 2500.0
-    assert item["samples"][0]["decision_refs"] == [["G1", "S1"]]
 
 
-def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
+def test_sample_answers_keep_null_zero_and_unknown_distinct(
     tmp_path,
 ):
     report, _, _ = create_inspector_report(
@@ -930,22 +916,16 @@ def test_fact_summary_and_readable_records_keep_null_zero_and_unknown_distinct(
     samples = {sample["sample_id"]: sample for sample in item["samples"]}
     assert samples["S1"]["quantitative_value"] is None
     assert samples["S2"]["quantitative_value"] == 0
-    assert samples["S1"]["decision_refs"] == [["G1", "S1"]]
-    assert samples["S2"]["decision_refs"] == [["G1", "S2"]]
-    assert (
-        samples["S1"]["decision_reason"]
-        == "沒有可用的觀察；保存的資料未提供更具體原因。"
-    )
-    assert samples["S2"]["decision_reason"] == "不是空值。"
-    assert (
-        item["group_summary"]
-        == "2 個樣本：0 detect · 0 backfill · 1 空值 · 1 有值但來源未提供"
-    )
-    readable = _readable(item)
-    assert readable["G1", "S1"]["sample_ids"] == ["S1"]
-    assert readable["G1", "S2"]["sample_ids"] == ["S2"]
-    assert readable["G1", "S1"]["title"] == "s1 · 空值"
-    assert readable["G1", "S2"]["title"] == "s2 · 0"
+    assert samples["S1"]["note"] == "未記錄原因"
+    assert "note" not in samples["S2"]
+    assert item["group_counts"] == {
+        "detect": 0,
+        "backfill": 0,
+        "unrecorded": 1,
+        "empty": 1,
+        "missing": 0,
+        "unresolved": 0,
+    }
 
 
 def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
@@ -982,7 +962,6 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
         expected_ref = json.dumps([candidate_id, "S2"], separators=(",", ":"))
         assert item["stratum"] == "excluded"
         assert item["curves"] == []
-        assert sample["evidence_status"] == "unavailable"
         assert "quantitative_value" not in sample
         assert sample["decision_refs"] == [expected_ref]
         other_ref = json.dumps([other_id, "S2"], separators=(",", ":"))
@@ -995,7 +974,7 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
         ]
 
     quantitative_item = next(item for item in items if item["kind"] == "row")
-    assert quantitative_item["samples"][0]["decision_refs"] == [["G1", "S1"]]
+    assert quantitative_item["samples"][0]["decision_refs"] == []
 
 
 def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path):
@@ -1020,8 +999,6 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
     output = tmp_path / "formatted-values.html"
     generate_report(report, SelectionRequest(), output)
     item = read_report_payload(output)["items"][0]
-    readable = _readable(item)
-    assert readable["G1", "S1"]["title"] == "s1 · 28,578.9251"
     curve = item["curves"][0]
     assert item["samples"][0]["quantitative_value"] == area
     assert curve["apex_rt"] == apex_rt
@@ -1070,24 +1047,20 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
     assert ("定量矩陣" if destination == "matrix" else "封存紀錄") in item[
         "route_label"
     ]
-    assert f"{sample_count} 有值但來源未提供" in item["group_summary"]
+    assert item["group_counts"]["unrecorded"] == sample_count
     assert item["method_label"] == "NL 116.0474"
-    assert all(
-        s["status_label"] == "有定量值" and "梯形積分面積" in s["decision_label"]
-        for s in item["samples"]
-    )
+    assert all("note" not in s for s in item["samples"])
     assert item["curves"][0]["stage_label"] == "detect 曲線"
-    labels = item["title"] + item["group_summary"] + item["route_label"]
+    labels = item["title"] + item["route_label"]
     assert not any(
         token in labels
         for token in ("G1", "G1", "一致", "成功", "有效", "信心", "原始理由")
     )
     assert item["reason"] == state and item["route"] == row["route"]
-    assert item["samples"][0]["decision_reason"] == "不是空值。"
-    for record in _readable(item).values():
+    for sample in item["samples"]:
         # Old stored unavailable stays unknown, even with MS1 backfill evidence.
-        assert record["fields"][0]["value"] == "來源未提供"
-        assert record["fields"][2]["value"] == "未記錄需留意的風險。"
+        assert sample["support_origin"]["label"] == "來源未記錄"
+        assert sample["risk_labels"] == []
     assert item["curves"][0]["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
 
 
@@ -1447,19 +1420,20 @@ def test_old_explanation_requires_rerun(tmp_path: Path, old_schema: str) -> None
     assert not (tmp_path / "review.html").exists()
 
 
-def test_decision_names_a_sample_without_witness_by_its_report_label():
+def test_exclusion_names_its_sample_by_the_report_label():
     from xic_inspector.sources import cid_nl_presentation as presentation
     from xic_inspector.sources.cid_nl import Card
 
-    record = presentation.readable_record(
+    record = presentation.exclusion_record(
         Card(
-            "cell_decisions",
-            ("G1", "canonical-sample-id"),
-            {"value": None, "sample_key": "canonical-sample-id"},
+            "exclusions",
+            '["C1","canonical-sample-id"]',
+            {"reason_code": "product_mz_out_of_tolerance"},
             frozenset(),
             frozenset(),
         ),
-        scope=(["canonical-sample-id"], []),
+        scope=(["canonical-sample-id"], ["C1"]),
         sample_labels={"canonical-sample-id": "BenignfatBC1055_DNA"},
     )
-    assert record["title"] == "BenignfatBC1055_DNA · 空值"
+    assert record["title"] == "BenignfatBC1055_DNA · 已排除候選"
+    assert record["fields"][0]["value"] == "碎片離子 m/z 超出容許範圍"

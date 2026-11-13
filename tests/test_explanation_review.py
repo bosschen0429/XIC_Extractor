@@ -380,11 +380,13 @@ def test_signal_quality_survives_review_storage_without_changing_results(tmp_pat
     rows = {
         row["sample_id"]: row for item in payload["items"] for row in item["samples"]
     }
-    assert rows["S1"]["signal_quality"][0]["low_signal_to_noise"] is False
-    assert rows["S2"]["signal_quality"][0]["low_signal_to_noise"] is True
+    stored = _cells(report)
+    assert stored["G1", "S1"]["signal_quality"][0]["low_signal_to_noise"] is False
+    assert stored["G1", "S2"]["signal_quality"][0]["low_signal_to_noise"] is True
+    assert rows["S1"]["risk_labels"] == []
+    assert rows["S2"]["risk_labels"] == ["低 SNR"]
     assert rows["S1"]["quantitative_value"] == 1000.0
     assert rows["S2"]["quantitative_value"] == 2000.0
-    assert rows["S1"]["status_kind"] == rows["S2"]["status_kind"] == "rest"
     assert matrix.read_bytes() == original
 
 
@@ -399,14 +401,17 @@ def test_accepted_competition_roundtrip_keeps_sample_attribution_and_values(tmp_
     rows = {
         row["sample_id"]: row for item in payload["items"] for row in item["samples"]
     }
-    assert rows["S1"]["membership_risks"] == []
-    risk = rows["S2"]["membership_risks"][0]
+    stored = _cells(report)
+    assert stored["G1", "S1"]["membership_risks"] == []
+    risk = stored["G1", "S2"]["membership_risks"][0]
     assert risk["cost_gap"] == 0.03
     assert risk["alternative_partition"] == [
         [["S1", 500.0, 1.0]],
         [["S2", 500.0, 1.1], ["S3", 500.0, 1.2]],
     ]
     assert risk["rt_estimate"]["method"] == "median_shift"
+    assert rows["S1"]["risk_labels"] == []
+    assert "可能改與 S3 1.20 min 同組" in rows["S2"]["risk_labels"]
     assert rows["S1"]["quantitative_value"] == 1000.0
     assert rows["S2"]["quantitative_value"] == 2000.0
     assert matrix.read_bytes() == original

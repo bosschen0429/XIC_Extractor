@@ -367,10 +367,7 @@ class ReviewWorkspace:
             "review_summary": item.get("review_summary", {}),
             "numeric_count": len(numeric_samples),
             "numeric_sample_ids": numeric_samples,
-            "unresolved_count": sum(
-                any(c.get("variant") == "unresolved" for c in s.get("refs", []))
-                for s in item.get("samples", [])
-            ),
+            "unresolved_count": item.get("group_counts", {}).get("unresolved", 0),
         }
         if "mz_distance" in item:
             summary["mz_distance"] = item["mz_distance"]

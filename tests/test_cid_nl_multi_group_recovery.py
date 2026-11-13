@@ -1410,14 +1410,14 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
         report,
         SelectionRequest(strategy="query", group_ids=(accepted[0]["feature_id"],)),
     ).payload
-    samples = [sample for item in payload["items"] for sample in item["samples"]]
-    observed = [
-        r
-        for sample in samples
-        for r in sample["membership_risks"]
-        if r["phase"] == "backfill"
-    ]
-    assert observed == [risk]
+    labels = {
+        sample["sample_id"]: sample["risk_labels"]
+        for item in payload["items"]
+        for sample in item["samples"]
+    }
+    # The stored competition reaches its own sample's row, and no other.
+    flagged = {sid for sid, names in labels.items() if any("可能" in n for n in names)}
+    assert flagged == {accepted[0]["sample_key"]}
     assert matrix.read_bytes() == original
 
 

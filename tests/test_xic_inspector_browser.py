@@ -756,7 +756,6 @@ def test_offline_signal_choice_applies_to_every_item_and_view(review_page, tmp_p
     expect(raw).to_have_attribute("aria-pressed", "true")
     assert _drawn_kinds(root) == {"raw"}
     expect(lanes.first).to_have_attribute("data-kind", "raw")
-    expect(root.locator(".plot-card h4").first).to_contain_text("原始訊號")
     root.get_by_role("checkbox", name="疊加基線").check()
     assert _drawn_kinds(root) == {"raw", "baseline"}
 
@@ -1016,9 +1015,9 @@ def test_low_snr_hint_is_sample_scoped_and_does_not_replace_matrix_value(
     strong = page.locator('[data-sample-row="S1"]')
     weak = page.locator('[data-sample-row="S2"]')
     expect(strong).not_to_contain_text("低 SNR")
-    expect(weak).to_contain_text("低 SNR（非 LOQ 判定）")
-    expect(strong).to_contain_text("1,000")
-    expect(weak).to_contain_text("2,000")
+    expect(weak).to_contain_text("低 SNR")
+    expect(strong).to_contain_text("1.000e+3")
+    expect(weak).to_contain_text("2.000e+3")
     assert matrix.read_bytes() == before
 
 
@@ -1078,24 +1077,18 @@ def test_accepted_competition_is_visible_only_on_its_sample(
         payload,
     )
     root = page.locator("#risk-view")
-    _control(root, "search").fill(flag)
+    # The visible risk wording is what a reviewer searches for.
+    _control(root, "search").fill("同組")
     expect(_control(root, "record-list").locator(".record-button")).to_have_count(1)
-    _control(root, "search").fill("not_a_membership_flag")
-    expect(_control(root, "record-list").locator(".record-button")).to_have_count(0)
     _control(root, "search").fill(flag)
+    expect(_control(root, "record-list").locator(".record-button")).to_have_count(0)
+    _control(root, "search").fill("")
     strong = page.locator('[data-sample-row="S1"]')
     competing = page.locator('[data-sample-row="S2"]')
-    expect(strong).not_to_contain_text("有競爭候選")
-    expect(competing).to_contain_text("有競爭候選")
-    expect(strong).to_contain_text("1,000")
-    expect(competing).to_contain_text("2,000")
-    competing.get_by_role("button", name="查看定量依據").click()
-    panel = root.locator(".evidence-panel")
-    expect(panel).to_contain_text("本次已選邊")
-    expect(panel).to_contain_text("S3，m/z 500.0000，RT 1.200 min")
-    expect(panel.locator("dt")).to_have_text(
-        ["值從哪裡來", "空值為什麼是空的", "需不需要擔心"]
-    )
-    expect(panel.locator("details")).to_have_count(0)
-    expect(panel).not_to_contain_text("成本")
+    expect(strong).not_to_contain_text("同組")
+    expect(competing.locator(".cell-risk")).to_contain_text("可能改與 S3 1.20 min 同組")
+    expect(strong).to_contain_text("1.000e+3")
+    expect(competing).to_contain_text("2.000e+3")
+    expect(root.locator(".evidence-panel")).to_have_count(0)
+    expect(root).not_to_contain_text("成本")
     assert matrix.read_bytes() == before

@@ -44,7 +44,7 @@ def test_support_origin_styles_fixture_curves_in_both_views(
         report,
         origin_curve_payload,
         "return JSON.stringify({plot:plot(items[0],'raw'),"
-        "legend:legend(items[0]),lanes:relationshipLanes(items[0],relationshipModel(items[0]))});",
+        "table:cellTable(items[0]),lanes:relationshipLanes(items[0],relationshipModel(items[0]))});",
     )
 
     chart = ET.fromstring(rendered["plot"])
@@ -53,7 +53,7 @@ def test_support_origin_styles_fixture_curves_in_both_views(
         for line in chart.findall("{http://www.w3.org/2000/svg}polyline")
     }
     assert len(plotted) == 3
-    assert plotted["curve-2"].attrib["stroke"] == "var(--subtle)"
+    assert plotted["curve-2"].attrib["stroke"] == "var(--curve-empty)"
     assert plotted["curve-2"].attrib["stroke-width"] == "1"
     for i, (origin, dash) in enumerate(
         zip(
@@ -66,7 +66,9 @@ def test_support_origin_styles_fixture_curves_in_both_views(
         assert line.attrib["data-support-origin"] == origin
         assert line.attrib["stroke-dasharray"] == dash
         assert len(line.attrib["points"].split()) == 3
-        assert f"Sample {i} · " in rendered["legend"]
+        # The table's origin swatch is the plotted line's legend.
+        assert f">Sample {i}<" in rendered["table"]
+        assert f'stroke-dasharray="{dash}"' in rendered["table"]
         assert f'data-support-origin="{origin}"' in rendered["lanes"]
         assert f'stroke-dasharray="{dash}"' in rendered["lanes"]
 
@@ -149,7 +151,7 @@ def test_report_exposes_offline_review_workbench_for_generic_payload() -> None:
     ):
         assert f'data-inspector-id="{required_id}"' in markup
         assert f'id="xic-inspector-1-{required_id}"' in markup
-    assert "對齊時間圖不可用" in report
+    assert "無對齊座標" in report
     assert "counts·s" in report
     assert "https://" not in report
 
@@ -323,7 +325,7 @@ def test_unrecorded_origins_and_missing_alignment_keep_curves_readable(
     rendered = _relationship_render(
         origin_curve_payload,
         "return JSON.stringify({plot:plot(items[0],'raw'),"
-        "aligned:plotCard(items[0],'aligned','平滑訊號'),"
+        "card:plotCard(items[0]),"
         'field:fieldValue(\'{"gate":"accepted","ratio":0.5}\')});',
     )
     chart = ET.fromstring(rendered["plot"])
@@ -334,9 +336,10 @@ def test_unrecorded_origins_and_missing_alignment_keep_curves_readable(
     # Old numeric cells with no recorded origin must not masquerade as detect;
     # the explicitly empty sample still uses its thin solid line.
     assert dashes == ["1 5", "1 5", ""]
-    assert 'id="plot-aligned"' in rendered["aligned"]
-    assert "對齊時間圖不可用" in rendered["aligned"]
-    assert "<svg" not in rendered["aligned"]
+    # Without alignment the one plot stays on raw RT and says so at its axis.
+    assert 'id="plot-raw"' in rendered["card"]
+    assert "原始 RT · 無對齊座標" in rendered["card"]
+    assert "data-time-axis" not in rendered["card"]
     assert "<dt>gate</dt><dd>accepted</dd>" in rendered["field"]
     assert "{" not in rendered["field"]
 

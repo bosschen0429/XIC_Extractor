@@ -21,38 +21,41 @@ _STAGE_LABELS = {
 _SUPPORT_ORIGIN_LABELS = {
     "backfill_support": "backfill",
     "discovery_support": "detect",
-    "unavailable": "來源未提供",
+    "unavailable": "來源未記錄",
 }
 _REASON_LABELS = {
-    "insufficient_method_evidence": "找過，沒有可用的 MS1 峰或符合條件的 MS2 支持",
+    "insufficient_method_evidence": "找過，沒有 MS1 峰也沒有 MS2 支持",
     "no_unique_qualifying_relation": "沒有可唯一確認的 MS2 與峰的對應",
     "discovery_candidate_not_search_eligible": "初始候選未符合後續搜尋條件",
     "product_mz_out_of_tolerance": "碎片離子 m/z 超出容許範圍",
 }
 
 
-def blank_reason(cell: dict[str, Any]) -> str:
-    """Describe only the recorded empty decision, not absence of raw signal."""
+def blank_reason(cell: dict[str, Any]) -> str | None:
+    """Why a recorded cell is empty; None when it has a value.
+
+    This names the recorded decision, not absence of raw signal.
+    """
     if cell.get("value", cell.get("quantitative_value")) is not None:
-        return "不是空值。"
+        return None
     variant = cell.get("variant")
     states = set(cell.get("evidence_states", ()))
     reasons = set(cell.get("reason_codes", ()))
     if variant == "not_searched":
-        return "本次未在這個群組位置搜尋。"
+        return "未在此位置搜尋"
     if variant == "unresolved" or "unresolved" in states:
-        return "有可能的峰，但無法唯一決定採用哪一個。"
+        return "多峰留空"
     if variant == "searched_no_observation" or "searched_no_observation" in states:
-        return "在搜尋範圍內找過，沒有可用的峰。"
+        return "找過，沒有可用的峰"
     if "insufficient_method_evidence" in reasons:
         # _method_result emits this only after evaluation, with no candidate
         # peaks and no qualifying CID-NL relation. It does not mean zero signal.
-        return _REASON_LABELS["insufficient_method_evidence"] + "。"
+        return _REASON_LABELS["insufficient_method_evidence"]
     if variant == "not_quantifiable":
-        return "有峰，但這次積分無法提供可定量的值。"
+        return "有峰，但無法定量"
     if variant == "rejected_observation":
-        return "找到的觀察未符合採用條件。"
-    return "沒有可用的觀察；保存的資料未提供更具體原因。"
+        return "找到的峰未符合採用條件"
+    return "未記錄原因"
 
 
 def cell_risks(cell: dict[str, Any]) -> list[str]:
@@ -62,18 +65,18 @@ def cell_risks(cell: dict[str, Any]) -> list[str]:
     }
     labels = []
     if flags & {"low_rt_support", "backfill_low_localization_confidence"}:
-        labels.append("RT 支持較弱")
+        labels.append("RT 支持弱")
     for flag, label in (
-        ("accepted_contradiction", "採用的配對仍有矛盾證據"),
-        ("weak_identity", "身分證據較弱"),
-        ("direction_disagreement", "不同方向的配對結果不一致"),
+        ("accepted_contradiction", "配對有矛盾證據"),
+        ("weak_identity", "身分證據弱"),
+        ("direction_disagreement", "配對方向不一致"),
     ):
         if flag in flags:
             labels.append(label)
     if any(
         q.get("low_signal_to_noise") is True for q in cell.get("signal_quality", ())
     ):
-        labels.append("低 SNR（非 LOQ 判定）")
+        labels.append("低 SNR")
     return labels
 
 
@@ -112,54 +115,29 @@ def competition_groups(cell: dict[str, Any]) -> list[list[list[Any]]]:
     return groups
 
 
-def _decision_reason(cells: list[dict[str, Any]]) -> str:
-    if len(cells) != 1:
-        return "沒有單一正式定量決策。"
-    return blank_reason(cells[0])
+def competition_label(peers: list[list[Any]], sample_labels: Mapping[str, str]) -> str:
+    """Name what one recorded alternative would do with this cell's peak."""
+    if not peers:
+        return "可能不併入本組"
+    names = "、".join(
+        f"{sample_labels.get(owner[0], owner[0])} {owner[2]:.2f} min" for owner in peers
+    )
+    return f"可能改與 {names} 同組"
 
 
-def readable_record(
+def exclusion_record(
     card: Card,
     *,
     scope: tuple[list[str], list[str]],
-    sample_labels: dict[str, str],
+    sample_labels: Mapping[str, str],
 ) -> dict[str, Any]:
-    """The three user questions, with no internal-record drill-down."""
-    facts = card.facts
+    """Why an excluded candidate was not used."""
     sample_ids, candidate_ids = scope
     sid = sample_ids[0] if sample_ids else ""
-    value = facts.get("value")
-    label = sample_labels.get(sid, sid)
-    if card.kind == "cell_decisions":
-        origin = facts.get("support_origin", "unavailable")
-        risks = cell_risks(facts)
-        return {
-            "ref": card.ref,
-            "title": f"{label} · "
-            + ("空值" if value is None else _format_measurement(value)),
-            "sample_ids": sample_ids,
-            "candidate_ids": candidate_ids,
-            "cell_review": True,
-            "value": value,
-            "fields": [
-                {
-                    "label": "值從哪裡來",
-                    "value": support_origin_label(origin)
-                    if value is not None
-                    else "空值，沒有提供矩陣值的峰。",
-                },
-                {"label": "空值為什麼是空的", "value": blank_reason(facts)},
-                {
-                    "label": "需不需要擔心",
-                    "value": "；".join(risks) if risks else "未記錄需留意的風險。",
-                },
-            ],
-            "competition_groups": competition_groups(facts),
-        }
-    reason = facts.get("reason_code", "")
+    reason = card.facts.get("reason_code", "")
     return {
         "ref": card.ref,
-        "title": f"{label} · 已排除候選",
+        "title": f"{sample_labels.get(sid, sid)} · 已排除候選",
         "compact_review": True,
         "sample_ids": sample_ids,
         "candidate_ids": candidate_ids,
@@ -172,32 +150,6 @@ def readable_record(
     }
 
 
-def _format_measurement(value: Any) -> Any:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return value
-    if value == 0:
-        return "0"
-    if abs(value) < 0.00005:
-        return f"{value:.4g}"
-    return f"{value:,.4f}".rstrip("0").rstrip(".")
-
-
-def _decision_label(cells):
-    if not cells:
-        return "沒有定量決策紀錄"
-    if len(cells) != 1:
-        return f"{len(cells)} 筆定量決策，未合併"
-    cell = cells[0]
-    value = cell["quantitative_value"]
-    if value is None:
-        return blank_reason(cell)
-    if value == 0:
-        return "記錄為零"
-    if cell.get("source") == "trapezoid_counts_seconds_on_canonical_signal":
-        return "梯形積分面積"
-    return "已保留數值"
-
-
 def _item_labels(view: ItemEvidence, samples, route):
     title = {
         "established": "已建立分組",
@@ -206,10 +158,10 @@ def _item_labels(view: ItemEvidence, samples, route):
     }.get(view.state, "分組紀錄")
     if view.item.kind == "candidate":
         title = "已排除候選" if view.item.stratum == "excluded" else "未分組候選"
-    labels = {
+    labels: dict[str, Any] = {
         "title": title,
         "badge_label": "需留意"
-        if any(s["risk_labels"] or s["competition_groups"] for s in samples)
+        if any(s["risk_labels"] for s in samples)
         else "已排除"
         if view.item.stratum == "excluded"
         else "已記錄",
@@ -223,84 +175,64 @@ def _item_labels(view: ItemEvidence, samples, route):
             f"{loss:.4f}" for loss in view.losses
         )
     if view.item.kind == "row":
-        labels["group_summary"] = _group_summary(samples)
+        labels["group_counts"] = {
+            **_group_counts(samples),
+            # Left-empty with several possible peaks: context for the overview.
+            "unresolved": len(
+                {
+                    c["sample_key"]
+                    for c in view.cells
+                    if c.get("variant") == "unresolved"
+                }
+            ),
+        }
     else:
         labels["reason_label"] = f"{title}；沒有矩陣格子的正式定量決策。"
     return labels
 
 
-def _group_summary(samples: list[dict[str, Any]]) -> str:
-    """Count each sample by the extraction stage of its value, or why it has none."""
-    counts = dict.fromkeys(
-        ("discovery_support", "backfill_support", "unavailable", "empty", "missing"),
-        0,
-    )
+def _group_counts(samples: list[dict[str, Any]]) -> dict[str, int]:
+    """Count samples by the extraction stage of their value, or why there is none."""
+    counts = dict.fromkeys(("detect", "backfill", "unrecorded", "empty", "missing"), 0)
+    stage = {"discovery_support": "detect", "backfill_support": "backfill"}
     for sample in samples:
         if "quantitative_value" not in sample:
             counts["missing"] += 1
         elif sample["quantitative_value"] is None:
             counts["empty"] += 1
         else:
-            counts[sample["support_origin"]["kind"]] += 1
-    summary = (
-        f"{len(samples)} 個樣本：{counts['discovery_support']} detect · "
-        f"{counts['backfill_support']} backfill · {counts['empty']} 空值"
-    )
-    if counts["unavailable"]:
-        summary += f" · {counts['unavailable']} 有值但來源未提供"
-    if counts["missing"]:
-        summary += f" · {counts['missing']} 未提供結果"
-    return summary
+            counts[stage.get(sample["support_origin"]["kind"], "unrecorded")] += 1
+    return counts
 
 
 def build_sample(
     view: ItemEvidence,
     sid: str,
     *,
-    fallback_sample_label: str,
+    sample_labels: Mapping[str, str],
     decision_refs: list[CardRef],
-    projected_curves: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Present one already-scoped sample and its exact decision references."""
+    """One sample's saved value and what to read beside it."""
     cells = [c for c in view.cells if c["sample_key"] == sid]
     values = [c["quantitative_value"] for c in cells]
+    note = None
+    if view.item.kind == "row":
+        note = "沒有單一定量結果" if len(cells) != 1 else blank_reason(cells[0])
     return {
         "sample_id": sid,
-        "sample_stem": fallback_sample_label,
-        "risk_labels": [label for cell in cells for label in cell_risks(cell)],
-        "competition_groups": [
-            group for cell in cells for group in competition_groups(cell)
-        ],
-        "status_kind": view.sample_status[sid],
+        "sample_stem": sample_labels.get(sid, sid),
         "support_origin": view.support_origins[sid],
-        "status_label": {
-            "attention": "沒有正式定量決策"
-            if len(values) != 1
-            else "有定量值"
-            if values[0] is not None
-            else "空值",
-            "excluded": "已排除",
-            "null": "空值",
-            "zero": "真實零值",
-            "rest": "有定量值" if len(values) == 1 else "有結果紀錄",
-        }.get(view.sample_status[sid], "未提供定量決策"),
         **({"quantitative_value": values[0]} if len(values) == 1 else {}),
-        "decision_reason": _decision_reason(cells),
-        "signal_quality": [
-            quality for cell in cells for quality in cell.get("signal_quality", [])
+        **({"note": note} if note else {}),
+        "risk_labels": [
+            *(label for cell in cells for label in cell_risks(cell)),
+            *(
+                competition_label(peers, sample_labels)
+                for cell in cells
+                for peers in competition_groups(cell)
+            ),
         ],
-        "membership_risks": [
-            risk for cell in cells for risk in cell.get("membership_risks", [])
-        ],
-        "decision_label": _decision_label(cells),
         "decision_refs": decision_refs,
-        "evidence_status": "available"
-        if any(
-            curve.get("sample_id") == sid and curve.get("raw_rts")
-            for curve in projected_curves
-        )
-        else "unavailable",
-        "refs": cells,
     }
 
 

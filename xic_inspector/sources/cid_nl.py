@@ -69,7 +69,6 @@ class ItemEvidence:
     state: Any
     losses: tuple[float, ...]
     cells: tuple[dict[str, Any], ...]
-    sample_status: dict[str, str]
     support_origins: dict[str, dict[str, Any]]
     review_summary: dict[str, Any]
     members: tuple[dict[str, Any], ...]
@@ -161,20 +160,6 @@ def build_item_evidence(
         has_zero_cell=any(c["quantitative_value"] == 0 for c in cells),
     )
     sample_ids = sorted({sid for _, sid in scoped} | set(cells_by_sample))
-    sample_status: dict[str, str] = {}
-    for sid in sample_ids:
-        local = cells_by_sample.get(sid)
-        local_attention = any(sid in t.get("sample_ids", ()) for t in triggers)
-        sample_status[sid] = (
-            classify_scoped_stratum(
-                is_attention=local_attention,
-                is_excluded=sid in excluded,
-                has_null_cell=local is not None and local["value"] is None,
-                has_zero_cell=local is not None and local["value"] == 0,
-            )
-            if local is not None or local_attention or sid in excluded
-            else "unavailable"
-        )
     _, ref = build_canonical_ref(
         kind,  # type: ignore[arg-type]
         attempt_id,
@@ -248,20 +233,6 @@ def build_item_evidence(
             )
             if facts is not None
         ),
-        *(
-            Card(
-                "cell_decisions",
-                (identifier, cell["sample_key"]),
-                {
-                    key: value
-                    for key, value in cell.items()
-                    if key != "quantitative_value"
-                },
-                frozenset(),
-                frozenset((cell["sample_key"],)),
-            )
-            for cell in cells
-        ),
     ]
     cards.sort(key=lambda card: (card.kind, card.ref))
     return ItemEvidence(
@@ -283,7 +254,6 @@ def build_item_evidence(
             )
         ),
         cells=tuple(cells),
-        sample_status=sample_status,
         support_origins=origins,
         review_summary=review_summary,
         # A featureless group or a candidate names no published row.
@@ -566,9 +536,8 @@ class CidNlSource:
                 presentation.build_sample(
                     view,
                     sid,
-                    fallback_sample_label=self.sample_labels.get(sid, sid),
+                    sample_labels=self.sample_labels,
                     decision_refs=_decision_refs(view, sid),
-                    projected_curves=projected_curves,
                 )
                 for sid in item.sample_ids
             ]
@@ -629,16 +598,15 @@ class CidNlSource:
 
     def _readable_records(self, view: ItemEvidence) -> list[dict[str, Any]]:
         item = view.item
-        readable = [
-            presentation.readable_record(
+        return [
+            presentation.exclusion_record(
                 card,
                 scope=_card_scope(item, card),
                 sample_labels=self.sample_labels,
             )
             for card in view.cards
-            if card.kind in {"cell_decisions", "exclusions"}
+            if card.kind == "exclusions"
         ]
-        return readable
 
     def _curve(self, payload):
         curves = payload.get("curves", {})
@@ -674,16 +642,17 @@ class CidNlSource:
 
 
 def _decision_refs(view: ItemEvidence, sample_id: str) -> list[CardRef]:
+    """The exclusion records of an excluded candidate's sample."""
     item = view.item
-    refs = []
-    for card in view.cards:
-        if card.kind == "exclusions":
-            if item.kind == "candidate" and item.stratum == "excluded":
-                if sample_id in card.samples:
-                    refs.append(card.ref)
-        elif card.kind == "cell_decisions" and sample_id in card.samples:
-            refs.append(card.ref)
-    return sorted(set(refs))
+    if item.kind != "candidate" or item.stratum != "excluded":
+        return []
+    return sorted(
+        {
+            card.ref
+            for card in view.cards
+            if card.kind == "exclusions" and sample_id in card.samples
+        }
+    )
 
 
 def _card_scope(item: CanonicalItem, card: Card) -> tuple[list[str], list[str]]:

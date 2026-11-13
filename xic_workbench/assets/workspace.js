@@ -807,8 +807,9 @@ window.XicUi = (() => {
       else bottom.append(meter(item.numeric_count, page.samples.length, "有值樣本"));
       const label = targeted
         ? item.badge_label && item.badge_label !== "已記錄" ? item.badge_label : ""
-        : item.unresolved_count ? `${item.unresolved_count} 未解決` : "";
-      if (label) bottom.append(node("span", label, `chip ${badgeTone[label] || "warn"}`));
+        : item.unresolved_count ? `${item.unresolved_count} 多峰留空` : "";
+      // Left-empty cells are context, not a review step: they take no warning tone.
+      if (label) bottom.append(node("span", label, targeted ? `chip ${badgeTone[label] || "warn"}` : "chip"));
       button.append(top);
       if (nearest) {
         button.append(node("span", `Δ ${ppm(item.mz_distance, page.nearest_mz)} ppm`, "item-distance"));
@@ -1168,6 +1169,15 @@ window.XicUi = (() => {
   function requestCurves({item_id, sample_id, opener}) {
     if (item_id !== state.item?.id ||
         !state.item.curve_sample_ids.includes(sample_id)) return;
+    const loaded = state.page.source_kind !== "targeted_workbook" &&
+      !$("inline-curve-review").hidden &&
+      $("inline-curve-review").querySelector(`[data-curve-focus="${CSS.escape(sample_id)}"]:not(:disabled)`);
+    if (loaded) {
+      // A loaded curve is focused in place rather than read from RAW again.
+      loaded.click();
+      $("inline-curves").scrollIntoView({block: "start"});
+      return;
+    }
     state.curveOpener = opener;
     action(async () => {
       await selectCurveSample(sample_id);

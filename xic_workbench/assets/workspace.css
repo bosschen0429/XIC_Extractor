@@ -1559,7 +1559,6 @@ th.num {
 #recorded-review {
   display: block;
   width: 100%;
-  min-height: 480px;
   border: 0;
   background: transparent;
 }
