@@ -36,7 +36,6 @@ from xic_extractor.acquisition_contract import (
 )
 from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
 from xic_extractor.configuration.mass_recalibration import MassRecalibration
-from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
@@ -536,14 +535,6 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    capture_variants: list[str] = []
-    real_capture = capture_owner.capture_peak_hypotheses
-
-    def _trace_capture(**kwargs):
-        capture_variants.append(kwargs["scope"].variant)
-        return real_capture(**kwargs)
-
-    monkeypatch.setattr(capture_owner, "capture_peak_hypotheses", _trace_capture)
     raw_paths = (tmp_path / "S1.synthetic", tmp_path / "S2.synthetic")
     for path in raw_paths:
         path.write_bytes(f"real-data-runtime:{path.stem}".encode())
@@ -631,8 +622,14 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     )
 
     assert result.succeeded is True, result.failure
-    assert capture_variants == ["untargeted"]
     assert len(result.sample_results) == 2
+    assert (
+        sum(
+            len(item.adapter_result.candidate_observations)
+            for item in result.sample_results
+        )
+        == 1
+    )
     by_stem = {item.job.sample.raw_stem: item for item in result.sample_results}
     s1_assessment = by_stem["S1"].adapter_result.assessment_input.assessment
     s2_assessment = by_stem["S2"].adapter_result.assessment_input.assessment

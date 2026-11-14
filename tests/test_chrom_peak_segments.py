@@ -338,7 +338,7 @@ def test_rt_envelope_preserves_canonical_clear_valley_between_supported_peaks(
             {
                 evaluation.answer.selected_segment
                 for evaluation in evaluations
-                if evaluation.facts is not None
+                if evaluation.answer.selected_segment is not None
             }
         )
         == 2
@@ -389,8 +389,8 @@ def test_clear_split_survives_asymmetric_envelope_apex_shift(reverse: bool) -> N
     )
 
     assert answer.state == "available"
-    assert answer.facts is not None
-    assert answer.facts.apex_rt_min == pytest.approx(query, abs=0.002)
+    assert answer.answer.selected_segment is not None
+    assert answer.answer.selected_segment.apex_rt_min == pytest.approx(query, abs=0.002)
     assert len(answer.segment_universe.segments) == 2
     assert not answer.requires_overlap_review
 

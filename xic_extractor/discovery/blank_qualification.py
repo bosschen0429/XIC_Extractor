@@ -358,10 +358,10 @@ def apply_blank_qualification_to_peaks(
 
         best_ion, _delta_ppm = matches[0]
         blank_int = best_ion.max_intensity
-        facts = binding.physical_evaluation.facts
-        if facts is None:
+        segment = binding.physical_evaluation.answer.selected_segment
+        if segment is None:
             raise ValueError(f"{candidate.peak_id}: a Discovery peak lacks its height")
-        tissue_height = float(facts.height)
+        tissue_height = float(segment.height)
         fc = (tissue_height / blank_int) if blank_int > 0 else 0.0
 
         if fc < fold_change_threshold:

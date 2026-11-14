@@ -33,9 +33,9 @@
           "end_line": 104
         },
         {
-          "path": "xic_extractor/peak_detection/capture.py",
-          "line": 126,
-          "end_line": 215
+          "path": "xic_extractor/peak_detection/physical_peak_evaluation.py",
+          "line": 882,
+          "end_line": 1050
         }
       ]
     },

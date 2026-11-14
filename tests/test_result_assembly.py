@@ -280,11 +280,14 @@ def test_selected_physical_shoulder_adds_review_without_changing_values() -> Non
     assert projection.product_state == "detected_flagged"
     assert "physical_shoulder_overlap" in projection.review_reasons
     assert "physical_shoulder_overlap" in projection.projection_reason
-    assert evaluation.facts is not None
-    assert result.reported_rt == evaluation.facts.apex_rt_min
-    assert result.reported_peak_start == evaluation.facts.left_rt_min
-    assert result.reported_peak_end == evaluation.facts.right_rt_min
-    assert result.reported_peak_area == evaluation.facts.area_counts_seconds
+    assert evaluation.answer.selected_segment is not None
+    assert result.reported_rt == evaluation.answer.selected_segment.apex_rt_min
+    assert result.reported_peak_start == evaluation.answer.selected_segment.left_rt_min
+    assert result.reported_peak_end == evaluation.answer.selected_segment.right_rt_min
+    assert (
+        result.reported_peak_area
+        == evaluation.answer.selected_segment.area_counts_seconds
+    )
 
 
 def test_unselected_physical_shoulder_does_not_flag_clean_projection() -> None:

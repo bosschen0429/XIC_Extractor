@@ -1,11 +1,10 @@
 """Closed capture population of one Targeted Target over its sample cohort.
 
-The population turns retained acquisition results into owner-bound captures:
-each sample with a retained physical evaluation is captured once, its selected
-and alternative peaks are minted as observations, and the selected peak is bound
-to the hypothesis that carries it into completion. A CID-NL Target binds after
-its per-sample assessments exist; an MS1-only Target binds while capturing. A
-Backfill recovery observation rebinds the affected samples and captures again.
+Each sample with a retained physical evaluation becomes one search candidate:
+its selected and alternative peaks are observations, and the selected peak
+carries the hypothesis that completion reports. A CID-NL Target takes that
+hypothesis from its per-sample assessment; an MS1-only Target composes it from
+the observation. A Backfill recovery observation replaces a sample's hypothesis.
 """
 
 from __future__ import annotations
@@ -13,9 +12,13 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
-from xic_extractor.alignment.completion import CaptureWorkflowArguments
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
+)
+from xic_extractor.alignment.result.scientific_alignment import (
+    ObservedSearchSubject,
+    SearchedNoObservationSubject,
+    TerminalSearchObservation,
 )
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
@@ -27,12 +30,6 @@ from xic_extractor.configuration.target_identity import (
 )
 from xic_extractor.extraction.result_assembly import TARGETED_ACQUISITION_TRACE_SOURCE
 from xic_extractor.extraction.result_models import ExtractionResult, FileResult
-from xic_extractor.peak_detection.capture import (
-    SampleLocalCapture,
-    bind_owner_backed_capture_hypothesis,
-    capture_peak_hypotheses,
-    mint_captured_peak_observation,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
 )
@@ -53,7 +50,6 @@ from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvalua
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
     CaptureCandidateBinding,
-    CaptureMethodConstraints,
     EvidenceProviderBinding,
     TargetSearchScope,
     target_ms1_subject_id,
@@ -70,44 +66,40 @@ ResultsBySample = tuple[
 
 @dataclass(frozen=True, slots=True)
 class TargetedSampleCapture:
-    """One sample's retained result and, when it has a candidate, its capture."""
+    """One sample's retained result and, when it has a candidate, its peaks."""
 
     sample: SampleMetadata
     file_result: FileResult
     result: ExtractionResult
     candidate_id: str | None
-    captured: SampleLocalCapture | None
     selected_observation: PeakObservation | None
     observation_universe: tuple[PeakObservation, ...]
     owner_hypothesis: MeasuredPeakHypothesis | None = None
 
     @property
-    def capture_input(self) -> CaptureWorkflowArguments | None:
-        captured = self.captured
-        if captured is None:
+    def terminal_subject(self) -> TerminalSearchObservation | None:
+        if self.candidate_id is None:
             return None
         if self.owner_hypothesis is None:
-            return CaptureWorkflowArguments(
-                candidate_id=captured.candidate_id,
-                trace=captured.trace,
+            return SearchedNoObservationSubject(
+                candidate_id=self.candidate_id,
+                sample_key=self.sample.sample_name,
             )
-        return CaptureWorkflowArguments(
-            candidate_id=captured.candidate_id,
-            trace=captured.trace,
-            owner_observation=self.selected_observation,
-            owner_hypothesis=self.owner_hypothesis,
+        return ObservedSearchSubject(
+            candidate_id=self.candidate_id,
+            sample_key=self.sample.sample_name,
+            hypothesis=self.owner_hypothesis,
         )
 
 
 @dataclass(frozen=True, slots=True)
 class TargetedCapturePopulation:
-    """Every sample of one Target, with its scope and owner-bound captures."""
+    """Every sample of one Target, with its scope and selected hypotheses."""
 
     target: ResolvedTargetDefinition
     acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
     samples: tuple[SampleMetadata, ...]
     scope: TargetSearchScope
-    method_subject_id: str
     entries: tuple[TargetedSampleCapture, ...]
 
     @property
@@ -115,24 +107,18 @@ class TargetedCapturePopulation:
         return self.target.definition.target.neutral_loss_da is None
 
     @property
-    def capture_inputs(self) -> tuple[CaptureWorkflowArguments, ...]:
+    def terminal_subjects(self) -> tuple[TerminalSearchObservation, ...]:
         return tuple(
             item
-            for item in (entry.capture_input for entry in self.entries)
+            for item in (entry.terminal_subject for entry in self.entries)
             if item is not None
-        )
-
-    @property
-    def captures(self) -> tuple[SampleLocalCapture, ...]:
-        return tuple(
-            entry.captured for entry in self.entries if entry.captured is not None
         )
 
     def bind_assessments(
         self,
         assessments: Sequence[tuple[SampleMetadata, CidNlMethodAssessment]],
     ) -> TargetedCapturePopulation:
-        """Bind each selected observation to its assessment-universe hypothesis."""
+        """Take each selected observation's hypothesis from its assessment."""
 
         assessment_by_sample = {
             sample.sample_name: assessment for sample, assessment in assessments
@@ -140,11 +126,7 @@ class TargetedCapturePopulation:
         bound_entries = []
         for entry in self.entries:
             selected = entry.selected_observation
-            if (
-                entry.captured is None
-                or selected is None
-                or entry.owner_hypothesis is not None
-            ):
+            if selected is None or entry.owner_hypothesis is not None:
                 bound_entries.append(entry)
                 continue
             hypotheses = compose_peak_hypotheses_from_assessment_universe(
@@ -155,27 +137,17 @@ class TargetedCapturePopulation:
                 hypothesis for hypothesis in hypotheses if hypothesis.peak == selected
             )
             if len(matches) != 1:
-                raise RuntimeError("Targeted assessment lost its captured observation")
-            bound_entries.append(
-                replace(
-                    entry,
-                    captured=bind_owner_backed_capture_hypothesis(
-                        entry.captured,
-                        observation=selected,
-                        hypothesis=matches[0],
-                    ),
-                    owner_hypothesis=matches[0],
-                )
-            )
+                raise RuntimeError("Targeted assessment lost its selected observation")
+            bound_entries.append(replace(entry, owner_hypothesis=matches[0]))
         return replace(self, entries=tuple(bound_entries))
 
-    def rebind_to_recovery(
+    def with_recovered_peaks(
         self,
         recovery_observations: Mapping[str, PeakObservation],
     ) -> TargetedCapturePopulation:
-        """Capture again after Backfill replaced a sample's selected peak."""
+        """Report the Backfill peak where it replaced a sample's selected peak."""
 
-        replacements: dict[str, CaptureCandidateBinding] = {}
+        entries = []
         for entry in self.entries:
             recovery = recovery_observations.get(entry.sample.sample_name)
             if (
@@ -183,74 +155,18 @@ class TargetedCapturePopulation:
                 or recovery is None
                 or recovery.physical_evaluation is entry.result.physical_evaluation
             ):
+                entries.append(entry)
                 continue
-            index = next(
-                i
-                for i, evaluation in enumerate(
-                    entry.result.candidate_physical_evaluations
-                )
-                if evaluation is recovery.physical_evaluation
-            )
-            replacements[entry.candidate_id] = _capture_binding(
-                self.acquisition_sources[entry.sample.raw_stem],
-                self.target,
-                entry.sample,
-                replace(entry.result, physical_evaluation=recovery.physical_evaluation),
-                f"{entry.candidate_id}:universe:{index}",
-                method_subject_id=self.method_subject_id,
-            )
-        if not replacements:
-            return self
-        bindings = tuple(
-            replacements.get(binding.candidate_id, binding)
-            for binding in self.scope.capture_bindings
-        )
-        scope = replace(
-            self.scope,
-            capture_bindings=bindings,
-            declared_candidate_ids=tuple(binding.candidate_id for binding in bindings),
-        )
-        rebound_entries = []
-        for entry in self.entries:
-            if entry.captured is None:
-                rebound_entries.append(entry)
-                continue
-            binding = replacements.get(entry.captured.candidate_id)
-            candidate_id = (
-                entry.captured.candidate_id if binding is None else binding.candidate_id
-            )
-            captured = capture_peak_hypotheses(
-                scope=scope, candidate_id=candidate_id, trace=entry.captured.trace
-            )
-            result = entry.result
-            observation = entry.selected_observation
-            hypothesis = entry.owner_hypothesis
-            if binding is not None:
-                recovery = recovery_observations[binding.sample_key]
-                result = replace(
-                    result, physical_evaluation=recovery.physical_evaluation
-                )
-                observation = recovery
-                hypothesis = compose_ms1_observation_peak_hypothesis(
-                    peak_observation=observation,
-                )
-            if observation is not None and hypothesis is not None:
-                captured = bind_owner_backed_capture_hypothesis(
-                    captured,
-                    observation=observation,
-                    hypothesis=hypothesis,
-                )
-            rebound_entries.append(
+            entries.append(
                 replace(
                     entry,
-                    result=result,
-                    candidate_id=candidate_id,
-                    captured=captured,
-                    selected_observation=observation,
-                    owner_hypothesis=hypothesis,
+                    selected_observation=recovery,
+                    owner_hypothesis=compose_ms1_observation_peak_hypothesis(
+                        peak_observation=recovery,
+                    ),
                 )
             )
-        return replace(self, scope=scope, entries=tuple(rebound_entries))
+        return replace(self, entries=tuple(entries))
 
 
 def build_targeted_capture_population(
@@ -261,7 +177,7 @@ def build_targeted_capture_population(
     results_by_sample: ResultsBySample,
     config: ExtractionConfig,
 ) -> TargetedCapturePopulation:
-    """Capture every sample that retained a physical evaluation for ``target``."""
+    """Observe every sample that retained a physical evaluation for ``target``."""
 
     profile = targeted_signal_processing_profile(config)
     label = target.definition.target.label
@@ -298,24 +214,16 @@ def build_targeted_capture_population(
                 (sample, extraction, targeted_capture_candidate_id(target, sample))
             )
     bindings = tuple(
-        _capture_binding(
-            acquisition_sources[sample.raw_stem],
-            target,
-            sample,
-            result,
-            candidate_id,
+        CaptureCandidateBinding(
+            candidate_id=candidate_id,
             method_subject_id=method_subject_id,
+            sample_key=sample.sample_name,
         )
-        for sample, result, candidate_id in candidates
+        for sample, _result, candidate_id in candidates
     )
     scope = TargetSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
         samples=samples,
-        method_constraints=CaptureMethodConstraints(
-            boundary_policy="resolver_interval",
-            peak_config=config,
-            signal_processing_profile=profile,
-        ),
         evidence_providers=(
             ()
             if method_subject is None
@@ -350,7 +258,6 @@ def build_targeted_capture_population(
                     file_result=file_result,
                     result=result,
                     candidate_id=None,
-                    captured=None,
                     selected_observation=None,
                     observation_universe=(),
                 )
@@ -363,15 +270,16 @@ def build_targeted_capture_population(
             result,
             target.definition.target,
         )
-        captured = capture_peak_hypotheses(
-            scope=scope, candidate_id=candidate_id, trace=trace
-        )
+        evaluation = result.physical_evaluation
         selected_observation = (
-            mint_captured_peak_observation(
-                captured,
-                sample=sample,
+            mint_candidate_peak_observation(
+                sample,
+                trace,
+                evaluation,
+                config=config,
+                acquired_trace_provenance=result.acquisition_observation_provenance,
             )
-            if captured.selected_hypothesis is not None
+            if evaluation is not None and evaluation.state == "available"
             else None
         )
         if ms1_only:
@@ -382,19 +290,12 @@ def build_targeted_capture_population(
                     peak_observation=selected_observation,
                 )
             )
-            if owner_hypothesis is not None and selected_observation is not None:
-                captured = bind_owner_backed_capture_hypothesis(
-                    captured,
-                    observation=selected_observation,
-                    hypothesis=owner_hypothesis,
-                )
             entries.append(
                 TargetedSampleCapture(
                     sample=sample,
                     file_result=file_result,
                     result=result,
                     candidate_id=candidate_id,
-                    captured=captured,
                     selected_observation=selected_observation,
                     observation_universe=(
                         () if selected_observation is None else (selected_observation,)
@@ -444,7 +345,6 @@ def build_targeted_capture_population(
                 file_result=file_result,
                 result=result,
                 candidate_id=candidate_id,
-                captured=captured,
                 selected_observation=selected_observation,
                 observation_universe=universe,
             )
@@ -454,7 +354,6 @@ def build_targeted_capture_population(
         acquisition_sources=acquisition_sources,
         samples=samples,
         scope=scope,
-        method_subject_id=method_subject_id,
         entries=tuple(entries),
     )
 
@@ -523,42 +422,6 @@ def mint_candidate_peak_observation(
         signal_processing_profile=targeted_signal_processing_profile(config),
         acquired_trace_provenance=acquired_trace_provenance,
     )[0]
-
-
-def _capture_binding(
-    source: AcquisitionSourceIdentity,
-    target: ResolvedTargetDefinition,
-    sample: SampleMetadata,
-    result: ExtractionResult,
-    candidate_id: str,
-    *,
-    method_subject_id: str,
-) -> CaptureCandidateBinding:
-    trace = _target_capture_trace(
-        source,
-        sample,
-        result,
-        target.definition.target,
-    )
-    physical_evaluation = result.physical_evaluation
-    if physical_evaluation is None:
-        raise RuntimeError("Targeted capture lost its acquisition physical evaluation")
-    preferred_rt = physical_evaluation.question.query_rt_min
-    return CaptureCandidateBinding(
-        candidate_id=candidate_id,
-        method_subject_id=method_subject_id,
-        sample_key=sample.sample_name,
-        acquisition_source_id=source.acquisition_source_id,
-        query_mz=trace.mz,
-        query_rt_min=trace.rt_min,
-        query_rt_max=trace.rt_max,
-        query_ppm_tol=trace.ppm_tol,
-        preferred_rt=preferred_rt,
-        retained_selected_integration=None,
-        selection_policy="capture_default",
-        physical_evaluation=physical_evaluation,
-        acquired_trace_provenance=result.acquisition_observation_provenance,
-    )
 
 
 def _target_capture_trace(

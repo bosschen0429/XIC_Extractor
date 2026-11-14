@@ -47,9 +47,12 @@ from xic_extractor.alignment.peak_trajectories import (
     PeakTrajectories,
     resolve_peak_trajectories,
 )
+from xic_extractor.alignment.result.scientific_alignment import (
+    ObservedSearchSubject,
+    TerminalSearchObservation,
+)
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.mass_accuracy import within_ppm
-from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
     is_ms1_only_cid_nl_backfill_assessment,
@@ -77,12 +80,12 @@ from xic_extractor.sample_metadata import SampleMetadata
 def build_targeted_cross_sample_groups(
     *,
     samples: tuple[SampleMetadata, ...],
-    captures: Sequence[SampleLocalCapture],
+    terminal_subjects: Sequence[TerminalSearchObservation],
     sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...],
     alignment_config: AlignmentConfig,
     rt_frame: SampleRtFrame,
 ) -> CrossSampleGroupingResult:
-    """Close Targeted membership from the exact selected capture in each cell."""
+    """Close Targeted membership from the selected hypothesis in each cell."""
 
     sample_by_id = {sample.sample_name: sample for sample in samples}
     assessment_by_id = {
@@ -90,10 +93,10 @@ def build_targeted_cross_sample_groups(
     }
     owners: list[SampleLocalMS1Owner] = []
     selected_by_id: dict[str, MeasuredPeakHypothesis] = {}
-    for capture in captures:
-        selected = capture.measured_hypothesis
-        if selected is None:
+    for terminal in terminal_subjects:
+        if not isinstance(terminal, ObservedSearchSubject):
             continue
+        selected = terminal.hypothesis
         observation = selected.peak
         sample_id = observation.sample_key
         sample = sample_by_id.get(sample_id)
@@ -159,7 +162,6 @@ def build_targeted_cross_sample_groups(
 def build_initial_cid_nl_cross_sample_groups(
     *,
     samples: tuple[SampleMetadata, ...],
-    captures: Sequence[SampleLocalCapture],
     sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...],
     alignment_config: AlignmentConfig,
     elution_contexts: Sequence[SampleElutionContext] = (),

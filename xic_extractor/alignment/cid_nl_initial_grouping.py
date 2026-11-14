@@ -7,10 +7,7 @@ from dataclasses import dataclass, replace
 
 from xic_extractor.alignment.cid_nl_completion import CidNlWorksetGrouping
 from xic_extractor.alignment.cid_nl_grouping import alignment_subject_worksets
-from xic_extractor.alignment.completion import (
-    CaptureWorkflowArguments,
-    UntargetWorkflowCompositionRequest,
-)
+from xic_extractor.alignment.completion import UntargetWorkflowCompositionRequest
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.feature_membership_inference import (
@@ -30,15 +27,10 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.result.application_result import (
     UntargetedCandidateExclusion,
 )
+from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.discovery.models import DiscoveryPeak
-from xic_extractor.peak_detection.capture import (
-    SampleLocalCapture,
-    bind_owner_backed_capture_hypothesis,
-    mint_captured_peak_observation,
-    rebind_untargeted_capture_scope,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
     is_unsearched_cid_nl_discovery_assessment,
@@ -48,13 +40,12 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     UntargetedCidNlMethodSubjectBatch,
 )
 from xic_extractor.peak_detection.elution_context import SampleElutionContext
+from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
     CaptureCandidateBinding,
-    CaptureMethodConstraints,
     EvidenceProviderBinding,
     UntargetedSearchScope,
-    require_capture_binding,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 
@@ -138,9 +129,8 @@ def prepare_cid_nl_grouping(
     request_subjects: UntargetedCidNlMethodSubjectBatch,
     samples: tuple[SampleMetadata, ...],
     candidates: Sequence[DiscoveryPeak],
-    capture_by_candidate: Mapping[str, SampleLocalCapture],
+    observation_by_candidate: Mapping[str, PeakObservation],
     sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...],
-    method_constraints: CaptureMethodConstraints,
     alignment_config: AlignmentConfig,
     rt_frame: SampleRtFrame,
     elution_contexts: Sequence[SampleElutionContext] = (),
@@ -150,7 +140,7 @@ def prepare_cid_nl_grouping(
 
     A subject is unsupported only after a completed negative assessment and no
     supported or otherwise unevaluated answer. An unsearched sample alone cannot
-    reject it. Missing captures are excluded independently of method support.
+    reject it. Unmeasured candidates are excluded independently of method support.
     The returned exclusions and bindings are the answer consumed by completion;
     neither acquisition mode nor later Backfill reopens this initial decision.
     """
@@ -187,12 +177,13 @@ def prepare_cid_nl_grouping(
         ):
             unsupported_subjects[subject.method_subject_id] = subject_assessments
     bindings = tuple(
-        require_capture_binding(
-            capture_by_candidate[candidate_id].scope,
-            candidate_id,
+        CaptureCandidateBinding(
+            candidate_id=candidate_id,
+            method_subject_id=method_subject_id,
+            sample_key=observation_by_candidate[candidate_id].sample_key,
         )
         for candidate_id, method_subject_id in subject_batch.candidate_memberships
-        if candidate_id in capture_by_candidate
+        if candidate_id in observation_by_candidate
         and method_subject_id not in unsupported_subjects
     )
     exclusions = tuple(
@@ -224,9 +215,9 @@ def prepare_cid_nl_grouping(
             ),
         )
         for candidate_id, method_subject_id in (subject_batch.candidate_memberships)
-        # A missing capture cannot seed grouping: Discovery held the peak, or
-        # Alignment could not measure a usable, overlap-free peak.
-        if candidate_id not in capture_by_candidate
+        # An unmeasured candidate cannot seed grouping: Discovery held the peak,
+        # or Alignment could not measure a usable, overlap-free peak.
+        if candidate_id not in observation_by_candidate
         or method_subject_id in unsupported_subjects
     )
     # Keep the global request scope while closing only these compatible subjects.
@@ -234,7 +225,6 @@ def prepare_cid_nl_grouping(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
         method_subjects=request_subjects,
         samples=samples,
-        method_constraints=method_constraints,
         evidence_providers=tuple(
             EvidenceProviderBinding(
                 provider_id=CID_NL_PROVIDER_ID,
@@ -290,7 +280,6 @@ def prepare_cid_nl_grouping(
             schema_version=scope.schema_version,
             method_subjects=scope.method_subjects,
             samples=scope.samples,
-            method_constraints=scope.method_constraints,
             evidence_providers=tuple(
                 EvidenceProviderBinding(
                     provider_id=CID_NL_PROVIDER_ID,
@@ -314,8 +303,6 @@ def prepare_cid_nl_grouping(
             )
         )
         assessments = tuple(sorted(assessments, key=lambda pair: pair[0].sample_name))
-        capture_inputs_list = []
-        captures_list = []
         assessment_by_sample_subject = {
             (
                 sample.sample_name,
@@ -340,26 +327,9 @@ def prepare_cid_nl_grouping(
             assessment_by_sample_subject[key]: hypotheses
             for key, hypotheses in hypotheses_by_sample_subject.items()
         }
+        terminal_subjects = []
         for binding in child_bindings:
-            sample = sample_by_id[binding.sample_key]
-            trace = capture_by_candidate[binding.candidate_id].trace
-            captured = rebind_untargeted_capture_scope(
-                capture_by_candidate[binding.candidate_id],
-                scope=child_scope,
-            )
-            if captured.selected_hypothesis is None:
-                captures_list.append(captured)
-                capture_inputs_list.append(
-                    CaptureWorkflowArguments(
-                        candidate_id=binding.candidate_id,
-                        trace=trace,
-                    )
-                )
-                continue
-            observation = mint_captured_peak_observation(
-                captured,
-                sample=sample,
-            )
+            observation = observation_by_candidate[binding.candidate_id]
             hypotheses = hypotheses_by_sample_subject[
                 (binding.sample_key, binding.method_subject_id)
             ]
@@ -369,25 +339,14 @@ def prepare_cid_nl_grouping(
                 if hypothesis.peak == observation
             )
             if len(matches) != 1:
-                raise RuntimeError(
-                    "CID-NL assessment lost its exact captured observation"
-                )
-            owner_capture = bind_owner_backed_capture_hypothesis(
-                captured,
-                observation=observation,
-                hypothesis=matches[0],
-            )
-            captures_list.append(owner_capture)
-            capture_inputs_list.append(
-                CaptureWorkflowArguments(
+                raise RuntimeError("CID-NL assessment lost its measured observation")
+            terminal_subjects.append(
+                ObservedSearchSubject(
                     candidate_id=binding.candidate_id,
-                    trace=trace,
-                    owner_observation=observation,
-                    owner_hypothesis=matches[0],
+                    sample_key=binding.sample_key,
+                    hypothesis=matches[0],
                 )
             )
-        captures = tuple(captures_list)
-        capture_inputs = tuple(capture_inputs_list)
         operation_counts: list[FeatureInferenceOperationCounts] = []
         (
             grouping_scope,
@@ -395,7 +354,6 @@ def prepare_cid_nl_grouping(
             retained_candidates,
         ) = build_initial_cid_nl_cross_sample_groups(
             samples=samples,
-            captures=captures,
             sample_assessments=assessments,
             alignment_config=alignment_config,
             elution_contexts=elution_contexts,
@@ -407,8 +365,7 @@ def prepare_cid_nl_grouping(
             CidNlWorksetGrouping(
                 subjects=subject_workset,
                 scope=child_scope,
-                captures=captures,
-                capture_inputs=capture_inputs,
+                terminal_subjects=tuple(terminal_subjects),
                 grouping_scope=grouping_scope,
                 grouping_result=grouping_result,
                 retained_candidates=retained_candidates,

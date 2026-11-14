@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
@@ -24,7 +25,6 @@ from xic_extractor.discovery.models import DiscoveryEvent
 from xic_extractor.discovery.ms2_events import discovery_events_from_scan
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import resolve_discovery_scan_events
-from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelation,
 )
@@ -51,9 +51,18 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
     RetainedCaptureEvidence,
+    mint_physical_peak_observations,
 )
-from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
-from xic_extractor.peak_detection.traces import trace_from_xic_request
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    evaluate_physical_peak,
+    prepare_physical_signal,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_PEAK_BACKFILL_POLICY,
+    PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
+    PhysicalPeakEvaluation,
+)
+from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.acquisition_cache import (
@@ -270,6 +279,44 @@ def _backfill_xic_request(
         rt_max=float(query_rt) + context_half_window,
         ppm_tol=ppm_tol,
     )
+
+
+def physical_backfill_observation(
+    *,
+    sample: SampleMetadata,
+    trace: Trace,
+    query_rt_min: float,
+    profile: SignalProcessingProfile,
+    resolver_mode: str,
+    search_rt_window: tuple[float, float] | None = None,
+    location_reliable: bool = True,
+    evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
+) -> PeakObservation | None:
+    """Measure one backfill trace; only a clean selected peak is observed."""
+    evaluation = evaluate_physical_peak(
+        prepare_physical_signal(trace.rt, trace.intensity, profile=profile),
+        query_rt_min=query_rt_min,
+        request_context_rt_start_min=trace.rt_min,
+        request_context_rt_end_min=trace.rt_max,
+        selection_policy_version=(
+            PHYSICAL_PEAK_BACKFILL_POLICY
+            if location_reliable
+            else PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
+        ),
+        search_rt_window=search_rt_window,
+    )
+    if evaluation_sink is not None:
+        evaluation_sink(evaluation)
+    if evaluation.state != "available" or evaluation.requires_overlap_review:
+        return None
+    return mint_physical_peak_observations(
+        sample=sample,
+        trace=trace,
+        evaluations=(evaluation,),
+        resolver_mode=resolver_mode,
+        signal_processing_profile=profile,
+        capture_stage="method_backfill",
+    )[0]
 
 
 def acquire_untargeted_cid_nl_backfill_trace_batch(
@@ -506,9 +553,8 @@ def backfill_untargeted_cid_nl_sample_subject(
             acquisition_source_id=source.acquisition_source_id,
         )
         physical_evaluations.clear()
-        observation = capture_owner.capture_physical_backfill_observation(
+        observation = physical_backfill_observation(
             sample=sample,
-            method_subject=method_subject,
             trace=trace,
             query_rt_min=float(query_rt),
             location_reliable=query_rt_reliable,
@@ -518,7 +564,6 @@ def backfill_untargeted_cid_nl_sample_subject(
                 if capture_request is context_request
                 else None
             ),
-            physical_mz=float(physical_mz),
             profile=signal_processing_profile,
             resolver_mode=peak_config.resolver_mode,
             evaluation_sink=physical_evaluations.append,
@@ -733,4 +778,5 @@ __all__ = [
     "UntargetedCidNlBackfillTraceBatch",
     "acquire_untargeted_cid_nl_backfill_trace_batch",
     "backfill_untargeted_cid_nl_sample_subject",
+    "physical_backfill_observation",
 ]

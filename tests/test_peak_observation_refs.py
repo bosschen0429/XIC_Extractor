@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import xic_extractor.peak_detection.observations as observation_owner
+from tests.owner_peak_fixtures import trace_peak
 from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
@@ -19,7 +20,6 @@ from xic_extractor.peak_detection.models import (
 )
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
-    mint_peak_observation,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -54,14 +54,14 @@ def test_query_provenance_does_not_change_selected_physical_content(
         acquisition_source_id=_source_id(identity.source),
     )
 
-    narrow = mint_peak_observation(
+    narrow = trace_peak(
         sample=identity.sample,
         trace=narrow_trace,
         integration=_integration(raw_scan_indices=(1, 2, 3)),
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
-    wide = mint_peak_observation(
+    wide = trace_peak(
         sample=identity.sample,
         trace=wide_trace,
         integration=_integration(raw_scan_indices=(2, 3, 4)),
@@ -91,7 +91,7 @@ def test_selected_signal_mutation_changes_content(
         acquisition_source_id=_source_id(identity.source),
     )
 
-    mutated = mint_peak_observation(
+    mutated = trace_peak(
         sample=identity.sample,
         trace=mutated_trace,
         integration=_integration(
@@ -114,7 +114,7 @@ def test_integration_fact_mutation_changes_content_identity(tmp_path: Path) -> N
         integration_method="alternate_integration",
     )
 
-    changed = mint_peak_observation(
+    changed = trace_peak(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=changed_integration,
@@ -139,14 +139,14 @@ def test_equivalent_numeric_integration_inputs_have_one_content_identity(
         area_raw_counts_seconds=3300,
     )
 
-    float_ref = mint_peak_observation(
+    float_ref = trace_peak(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=float_integration,
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
-    integer_ref = mint_peak_observation(
+    integer_ref = trace_peak(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=integer_integration,
@@ -190,14 +190,14 @@ def test_signed_zero_trace_values_have_one_observation_identity(
         intensity=signed_zero_intensity,
     )
 
-    positive = mint_peak_observation(
+    positive = trace_peak(
         sample=identity.sample,
         trace=positive_trace,
         integration=integration,
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
-    negative = mint_peak_observation(
+    negative = trace_peak(
         sample=identity.sample,
         trace=signed_zero_trace,
         integration=integration,
@@ -251,7 +251,7 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
         intensity=trace.intensity,
     )[0].integration
 
-    reference = mint_peak_observation(
+    reference = trace_peak(
         sample=identity.sample,
         trace=trace,
         integration=integration,
@@ -268,14 +268,14 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
 def test_proposal_source_reorder_is_canonicalized(tmp_path: Path) -> None:
     identity = _identity_fixture(tmp_path)
 
-    forward = mint_peak_observation(
+    forward = trace_peak(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
         resolver_mode="consensus",
         proposal_sources=("boundary_resolver", "local_minimum"),
     )
-    reversed_order = mint_peak_observation(
+    reversed_order = trace_peak(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
@@ -292,7 +292,7 @@ def test_resolver_change_preserves_content_but_changes_generation_provenance(
     identity = _identity_fixture(tmp_path)
 
     local_minimum = _mint_standard_reference(identity.source, identity.sample)
-    arbitrated = mint_peak_observation(
+    arbitrated = trace_peak(
         sample=identity.sample,
         trace=_standard_trace(identity.source),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
@@ -337,7 +337,7 @@ def _mint_standard_reference(
     source: AcquisitionSourceIdentity,
     sample: SampleMetadata,
 ) -> PeakObservation:
-    return mint_peak_observation(
+    return trace_peak(
         sample=sample,
         trace=_standard_trace(source),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
@@ -451,7 +451,7 @@ def test_retained_candidate_batch_preserves_observation_values(
         for query in (1.3, 1.7)
     )
     expected = tuple(
-        mint_peak_observation(
+        trace_peak(
             sample=identity.sample,
             trace=trace,
             integration=observation_owner.physical_peak_observation_integration(
@@ -486,9 +486,31 @@ def test_retained_candidate_batch_preserves_observation_values(
         acquired_trace_provenance=acquired_provenance,
     )
     assert len(actual) == 2
-    for reference, projected in zip(expected, actual, strict=True):
+    assert prepared.prepared is not None
+    for reference, projected, evaluation in zip(
+        expected, actual, evaluations, strict=True
+    ):
         assert reference == projected
         assert reference.generation_provenance == projected.generation_provenance
+        segment = evaluation.answer.selected_segment
+        assert segment is not None and evaluation.integration is not None
+        # The evaluation keeps the smoothed-trace apex; the observation reports
+        # the selected segment's baseline-positive height. They differ here.
+        assert (
+            evaluation.integration.height_smoothed
+            == (prepared.prepared.smoothed[segment.apex_index])
+        )
+        assert projected.integration.height_smoothed == segment.height
+        assert segment.height != evaluation.integration.height_smoothed
+        # Provenance addresses the acquired trace; the integration addresses
+        # the selected subtrace.
+        assert projected.generation_provenance.selected_trace_indices == tuple(
+            range(segment.start_index, segment.end_index)
+        )
+        assert projected.integration.raw_scan_indices == tuple(
+            range(segment.end_index - segment.start_index)
+        )
+        assert segment.start_index > 0
     assert (
         actual[0].integration.area_ms1_morphology
         > actual[1].integration.area_ms1_morphology

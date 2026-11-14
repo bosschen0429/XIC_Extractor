@@ -266,8 +266,8 @@ prose either. Use them only in the senses in this table or in the preserved
 spellings below.
 
 The surviving `owner` senses are the sample-local MS1 peak to which candidates
-are attributed (`SampleLocalMS1Owner` and its `peak`), processing authority
-(`capture_owner`), and module responsibility.
+are attributed (`SampleLocalMS1Owner` and its `peak`), processing authority,
+and module responsibility.
 
 `physical` means the MS1-measured ion or chromatographic peak itself, as opposed
 to CID-NL/MS2 evidence about it. It never implies chemical identity or CID-NL

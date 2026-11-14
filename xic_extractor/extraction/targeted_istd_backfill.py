@@ -21,6 +21,7 @@ from xic_extractor.alignment.backfill.istd_anchored import (
 from xic_extractor.alignment.cell_observation.observations import CidNlCellGroupSupport
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.peak_trajectories import PeakTrajectory
+from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import FileResult
@@ -158,14 +159,13 @@ def resolve_targeted_istd_backfill(
     sample_by_id = {sample.sample_name: sample for sample in population.samples}
     direct_supports = tuple(
         CidNlCellGroupSupport(
-            sample=sample_by_id[item.owner_observation.sample_key],
-            assessment=assessment_by_sample[item.owner_observation.sample_key],
-            hypothesis=item.owner_hypothesis,
+            sample=sample_by_id[item.sample_key],
+            assessment=assessment_by_sample[item.sample_key],
+            hypothesis=item.hypothesis,
         )
-        for item in population.capture_inputs
-        if item.owner_hypothesis is not None
-        and item.owner_observation is not None
-        and item.owner_hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL
+        for item in population.terminal_subjects
+        if isinstance(item, ObservedSearchSubject)
+        and item.hypothesis.method == HYPOTHESIS_METHOD_DDA_CID_NL
     )
     return resolve_istd_anchored_backfill(
         sample_population=population.samples,

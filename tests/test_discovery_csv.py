@@ -116,7 +116,9 @@ def test_peak_rows_follow_the_review_queue() -> None:
             physical_evaluation=SimpleNamespace(
                 state="available",
                 requires_overlap_review=shoulder,
-                facts=SimpleNamespace(area_counts_seconds=1000.0),
+                answer=SimpleNamespace(
+                    selected_segment=SimpleNamespace(area_counts_seconds=1000.0)
+                ),
             ),
             final_ordinal=0,
         )

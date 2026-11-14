@@ -75,12 +75,12 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         acquire_peaks = cid_nl_sample_acquisition._adopt_peak_observations
 
         def capture_without_peak(**kwargs):
-            acquisition, observations, captures = acquire_peaks(**kwargs)
+            acquisition, observations = acquire_peaks(**kwargs)
             if kwargs["sample"].raw_stem == "Missing":
-                # Physical capture may reject every peak after acquiring the XIC.
+                # Measurement may reject every peak after acquiring the XIC.
                 # Exercise that runtime boundary with the real acquisition retained.
-                return acquisition, (), captures
-            return acquisition, observations, captures
+                return acquisition, ()
+            return acquisition, observations
 
         monkeypatch.setattr(
             cid_nl_sample_acquisition,

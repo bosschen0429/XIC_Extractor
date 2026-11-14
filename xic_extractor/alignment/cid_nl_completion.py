@@ -27,7 +27,6 @@ from xic_extractor.alignment.cid_nl_predecessor_cells import (
     compose_cid_nl_predecessor_cells,
 )
 from xic_extractor.alignment.completion import (
-    CaptureWorkflowArguments,
     UntargetWorkflowAdapter,
     UntargetWorkflowCompositionRequest,
     compose_untarget_subject,
@@ -46,7 +45,9 @@ from xic_extractor.alignment.grouping_workflow import (
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
 )
-from xic_extractor.peak_detection.capture import SampleLocalCapture
+from xic_extractor.alignment.result.scientific_alignment import (
+    TerminalSearchObservation,
+)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
 )
@@ -63,12 +64,11 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 @dataclass(frozen=True, slots=True)
 class CidNlWorksetGrouping:
-    """The existing grouping owner's answer and its exact capture inputs."""
+    """The existing grouping owner's answer and each candidate's terminal."""
 
     subjects: tuple[CidNlMethodSubject, ...]
     scope: UntargetedSearchScope
-    captures: tuple[SampleLocalCapture, ...]
-    capture_inputs: tuple[CaptureWorkflowArguments, ...]
+    terminal_subjects: tuple[TerminalSearchObservation, ...]
     grouping_scope: InitialGroupingScope
     grouping_result: CrossSampleGroupingResult
     retained_candidates: tuple[RetainedGroupingCandidate, ...]
@@ -103,8 +103,7 @@ class CidNlWorksetCompletion:
     """Prepared science; runtime supplies only the requested completion receipts."""
 
     _scope: UntargetedSearchScope
-    _capture_inputs: tuple[CaptureWorkflowArguments, ...]
-    _captures: tuple[SampleLocalCapture, ...]
+    _terminal_subjects: tuple[TerminalSearchObservation, ...]
     _sample_assessments: tuple[tuple[SampleMetadata, CidNlMethodAssessment], ...]
     _grouping_result: CrossSampleGroupingResult
     _predecessor_cells: tuple[CellObservation, ...]
@@ -135,7 +134,7 @@ class CidNlWorksetCompletion:
         return compose_untarget_subject(
             UntargetWorkflowCompositionRequest(scope=self._scope),
             UntargetWorkflowAdapter(
-                capture_inputs=self._capture_inputs,
+                terminal_subjects=self._terminal_subjects,
                 rt_frame=self._grouping_result.rt_frame,
                 completed_grouping=self._grouping_result,
                 sample_assessments=self._sample_assessments,
@@ -143,7 +142,6 @@ class CidNlWorksetCompletion:
                 predecessor_cell_observations=self._predecessor_cells,
                 backfill_cell_observations=self._backfill_cells,
             ),
-            completed_captures=self._captures,
         )
 
 
@@ -168,8 +166,7 @@ def prepare_cid_nl_workset(
     )
     return CidNlWorksetCompletion(
         _scope=grouping.scope,
-        _capture_inputs=grouping.capture_inputs,
-        _captures=grouping.captures,
+        _terminal_subjects=grouping.terminal_subjects,
         _sample_assessments=evidence.sample_assessments,
         _grouping_result=grouping_result,
         _predecessor_cells=predecessor_cells,

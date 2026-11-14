@@ -593,8 +593,7 @@ def _same_physical_peak(
     return (
         captured is not None
         and reported is not None
-        and captured.facts is not None
-        and reported.facts is not None
+        and captured.answer.selected_segment is not None
         and captured.prepared == reported.prepared
         and captured.answer.selected_segment == reported.answer.selected_segment
     )
@@ -888,23 +887,21 @@ def _execute_target(
         alignment_config=alignment_config,
         rt_frame=context.rt_frame,
     )
-    population = population.rebind_to_recovery(backfill.recovery_observations)
+    population = population.with_recovered_peaks(backfill.recovery_observations)
     assessment_tuple = tuple(
         sorted(
             assessments,
             key=lambda item: item[0].sample_name,
         )
     )
-    capture_inputs = population.capture_inputs
     return _complete_retained_target(
         TargetWorkflowRequest(scope=population.scope),
         TargetWorkflowAdapter(
-            capture_inputs=capture_inputs,
+            terminal_subjects=population.terminal_subjects,
             rt_frame=context.rt_frame,
             sample_assessments=assessment_tuple,
             alignment_config=alignment_config,
             predecessor_cell_observations=(),
-            completed_capture_handoff=population.captures,
             targeted_backfill_decisions=backfill.decisions,
         ),
     )

@@ -166,25 +166,6 @@ class UntargetedCidNlMethodSubjectBatch:
         return BATCH_SCHEMA_VERSION
 
 
-def cid_nl_method_subject_by_id(
-    subjects: CidNlMethodSubject | UntargetedCidNlMethodSubjectBatch,
-    method_subject_id: str,
-) -> CidNlMethodSubject:
-    """Return the configured subject with this natural key."""
-
-    members = (
-        subjects.subjects
-        if isinstance(subjects, UntargetedCidNlMethodSubjectBatch)
-        else (subjects,)
-    )
-    for subject in members:
-        if subject.method_subject_id == method_subject_id:
-            return subject
-    raise CidNlMethodSubjectContractError(
-        "CID-NL method subject is not configured for this run"
-    )
-
-
 def cid_nl_method_subject_from_target(
     target: ResolvedTargetDefinition,
 ) -> CidNlMethodSubject:
@@ -523,7 +504,6 @@ __all__ = [
     "SCHEMA_VERSION",
     "UntargetedCidNlMethodSubjectBatch",
     "cid_nl_alignment_subject_worksets",
-    "cid_nl_method_subject_by_id",
     "cid_nl_method_subject_from_target",
     "cid_nl_method_subject_resolver_interval",
     "mint_untargeted_cid_nl_method_subject",

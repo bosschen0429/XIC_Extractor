@@ -8,7 +8,6 @@ import pytest
 
 import xic_extractor.alignment.completion as workflow_owner
 from xic_extractor.alignment.completion import (
-    CaptureWorkflowArguments,
     TargetWorkflowAdapter,
     TargetWorkflowRequest,
     UntargetWorkflowAdapter,
@@ -47,10 +46,9 @@ def test_workflow_forwards_exact_owner_objects_once(
         else UntargetWorkflowCompositionRequest,
         scope=SimpleNamespace(samples=()),
     )
+    terminals = (object(),)
     adapter_fields = {
-        "capture_inputs": (
-            CaptureWorkflowArguments(candidate_id="candidate:a", trace=object()),
-        ),
+        "terminal_subjects": terminals,
         "predecessor_cell_observations": (),
         "backfill_cell_observations": (),
         "rt_frame": object(),
@@ -66,7 +64,6 @@ def test_workflow_forwards_exact_owner_objects_once(
     closed_coverage = SimpleNamespace()
     if variant != "target":
         object.__setattr__(adapter, "closed_cell_coverage", closed_coverage)
-    capture = object()
     context = _exact_uninitialized(CrossSampleGroupingResult)
     if variant != "target":
         object.__setattr__(adapter, "completed_grouping", context)
@@ -76,11 +73,6 @@ def test_workflow_forwards_exact_owner_objects_once(
     decisions = object()
     projection = (
         _exact_uninitialized(TargetPostCellProjection) if variant == "target" else ()
-    )
-    monkeypatch.setattr(
-        workflow_owner,
-        "capture_peak_hypotheses",
-        lambda **kwargs: calls.append(("capture", kwargs)) or capture,
     )
     monkeypatch.setattr(
         workflow_owner,
@@ -130,12 +122,14 @@ def test_workflow_forwards_exact_owner_objects_once(
         if variant == "target"
         else application_result.group_cells
     ) is projection
-    expected_calls = ["capture"]
-    expected_calls.append("target_grouping" if variant == "target" else "association")
-    expected_calls.append("scientific")
+    expected_calls = [
+        "target_grouping" if variant == "target" else "association",
+        "scientific",
+    ]
     assert [item[0] for item in calls] == expected_calls
     scientific_kwargs = next(item[1] for item in calls if item[0] == "scientific")
     assert scientific_kwargs["grouping_result"] is final_receipt
+    assert scientific_kwargs["terminal_subjects"] is terminals
     assert scientific_kwargs["predecessor_cell_observations"] == ()
     if variant == "target":
         assert scientific_kwargs["cell_observation_handoff"] is None

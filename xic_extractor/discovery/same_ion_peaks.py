@@ -47,7 +47,7 @@ def group_same_ion_peaks(
     ``recorded_ordinals`` names the measurements a recorded precursor located.
     """
     items = tuple(measurements)
-    if any(item.evaluation.facts is None for item in items):
+    if any(item.evaluation.answer.selected_segment is None for item in items):
         raise ValueError("same-ion grouping requires measured peaks")
     parent = list(range(len(items)))
 
@@ -81,17 +81,17 @@ def _same_ion_peak(left: CapturedPhysicalPeak, right: CapturedPhysicalPeak) -> b
     right_low, right_high = _window(right)
     if max(left_low, right_low) > min(left_high, right_high):
         return False
-    left_facts = left.evaluation.facts
-    right_facts = right.evaluation.facts
-    assert left_facts is not None and right_facts is not None
+    left_peak = left.evaluation.answer.selected_segment
+    right_peak = right.evaluation.answer.selected_segment
+    assert left_peak is not None and right_peak is not None
     if not (
-        right_facts.left_rt_min <= left_facts.apex_rt_min <= right_facts.right_rt_min
-        and left_facts.left_rt_min <= right_facts.apex_rt_min <= left_facts.right_rt_min
+        right_peak.left_rt_min <= left_peak.apex_rt_min <= right_peak.right_rt_min
+        and left_peak.left_rt_min <= right_peak.apex_rt_min <= left_peak.right_rt_min
     ):
         return False
     region = (
-        max(left_facts.left_rt_min, right_facts.left_rt_min),
-        min(left_facts.right_rt_min, right_facts.right_rt_min),
+        max(left_peak.left_rt_min, right_peak.left_rt_min),
+        min(left_peak.right_rt_min, right_peak.right_rt_min),
     )
     left_trace = left.acquired_trace.trace
     right_trace = right.acquired_trace.trace
@@ -115,15 +115,14 @@ def _ranked(
     *,
     recorded_ordinals: frozenset[int],
 ) -> tuple[CapturedPhysicalPeak, ...]:
-    facts = [member.evaluation.facts for member in members]
-    assert all(item is not None for item in facts)
+    peaks = [member.evaluation.answer.selected_segment for member in members]
     traces = [member.acquired_trace.trace for member in members]
     low = max(
-        min(item.left_rt_min for item in facts if item is not None),
+        min(item.left_rt_min for item in peaks if item is not None),
         max(float(np.min(trace.rt)) for trace in traces),
     )
     high = min(
-        max(item.right_rt_min for item in facts if item is not None),
+        max(item.right_rt_min for item in peaks if item is not None),
         min(float(np.max(trace.rt)) for trace in traces),
     )
 
@@ -148,9 +147,9 @@ def _ranked(
 
 def _identity_key(member: CapturedPhysicalPeak) -> tuple[float, float, float, float]:
     request = member.search.request
-    facts = member.evaluation.facts
-    assert facts is not None
-    return request.mz, request.rt_min, request.rt_max, facts.apex_rt_min
+    peak = member.evaluation.answer.selected_segment
+    assert peak is not None
+    return request.mz, request.rt_min, request.rt_max, peak.apex_rt_min
 
 
 def _window(member: CapturedPhysicalPeak) -> tuple[float, float]:

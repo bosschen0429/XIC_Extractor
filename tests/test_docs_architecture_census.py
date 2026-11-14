@@ -1062,9 +1062,6 @@ def test_production_entry_gate_preserves_required_boundaries(
         "xic_extractor/extraction/targeted_peak_hypotheses.py": (
             "from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses"
         ),
-        "xic_extractor/peak_detection/capture.py": (
-            "from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses"
-        ),
         # Internal callers and completed quality facts are not restricted.
         "xic_extractor/alignment/other.py": (
             "from xic_extractor.peak_detection.signal_quality import SignalQuality\n"

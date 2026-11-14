@@ -42,7 +42,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_SEGMENT_UNIVERSE_SCHEMA,
     PhysicalPeakAnswer,
     PhysicalPeakEvaluation,
-    PhysicalPeakFacts,
     PhysicalPeakOperation,
     PhysicalPeakQuestion,
     PhysicalPeakState,
@@ -937,7 +936,6 @@ def answer_physical_peak_question(
         question=question,
         selected_segment=selected,
     )
-    facts: PhysicalPeakFacts | None = None
     integration: IntegrationResult | None = None
     operations = prepared_result.operations
     if prepared_result.projection.state == "available":
@@ -948,21 +946,7 @@ def answer_physical_peak_question(
         prepared = prepared_result.prepared
         if prepared is None:
             raise ValueError("available physical answer lacks worker-local signal")
-        facts = PhysicalPeakFacts(
-            schema_version="physical_peak_facts",
-            apex_rt_min=selected.apex_rt_min,
-            left_rt_min=selected.left_rt_min,
-            right_rt_min=selected.right_rt_min,
-            height=selected.height,
-            scan_support_count=selected.scan_support_count,
-            area_counts_seconds=selected.area_counts_seconds,
-            area_source=(
-                "trapezoid_counts_seconds_on_observed_censored_signal"
-                if "near_detection_limit" in selected.evidence_sources
-                else "trapezoid_counts_seconds_on_canonical_signal"
-            ),
-        )
-        integration = _physical_raw_descriptor_projection(prepared, selected, facts)
+        integration = _physical_raw_descriptor_projection(prepared, selected)
         operations = (
             *operations,
             "integration",
@@ -975,7 +959,6 @@ def answer_physical_peak_question(
         segment_universe=universe,
         question=question,
         answer=answer,
-        facts=facts,
         integration=integration,
         operations=operations,
         retained_prepared_signal=prepared_result.prepared,
@@ -1014,7 +997,6 @@ def evaluate_physical_peak(
 def _physical_raw_descriptor_projection(
     prepared: PreparedSignal,
     selected: PhysicalSegment,
-    facts: PhysicalPeakFacts,
 ) -> IntegrationResult:
     rt = np.asarray(
         prepared.rt[selected.start_index : selected.end_index],
@@ -1028,26 +1010,31 @@ def _physical_raw_descriptor_projection(
         raise ValueError("selected physical segment cannot mint a raw descriptor")
     raw_apex_offset = int(np.argmax(raw))
     raw_area_counts_seconds = float(np.trapezoid(raw, rt)) * 60.0
+    censored = "near_detection_limit" in selected.evidence_sources
     return IntegrationResult(
-        rt_left_min=facts.left_rt_min,
-        rt_apex_min=facts.apex_rt_min,
-        rt_right_min=facts.right_rt_min,
+        rt_left_min=selected.left_rt_min,
+        rt_apex_min=selected.apex_rt_min,
+        rt_right_min=selected.right_rt_min,
         raw_apex_rt_min=float(rt[raw_apex_offset]),
-        rt_width_min=facts.right_rt_min - facts.left_rt_min,
+        rt_width_min=selected.right_rt_min - selected.left_rt_min,
         height_raw=float(raw[raw_apex_offset]),
         height_smoothed=float(prepared.smoothed[selected.apex_index]),
         area_raw_counts_seconds=raw_area_counts_seconds,
         integration_method="canonical_physical_signal_trapezoid",
         boundary_sources=(
             ("canonical_physical_segment", "near_detection_limit")
-            if "near_detection_limit" in selected.evidence_sources
+            if censored
             else ("canonical_physical_segment",)
         ),
-        area_baseline_corrected=facts.area_counts_seconds,
+        area_baseline_corrected=selected.area_counts_seconds,
         baseline_type=prepared.profile.baseline_method,
         raw_scan_indices=(),
-        area_ms1_morphology=facts.area_counts_seconds,
-        ms1_morphology_area_source=facts.area_source,
+        area_ms1_morphology=selected.area_counts_seconds,
+        ms1_morphology_area_source=(
+            "trapezoid_counts_seconds_on_observed_censored_signal"
+            if censored
+            else "trapezoid_counts_seconds_on_canonical_signal"
+        ),
         ms1_morphology_trace_method=prepared.profile.method,
         ms1_morphology_trace_window_points=prepared.profile.window_points,
         ms1_morphology_trace_effective_points=prepared.profile.window_points,

@@ -439,7 +439,7 @@ def profile_replay(tmp_path, monkeypatch, request):
     csvs = {}
     candidates = {}
     event_csvs = {}
-    physical_facts = {}
+    physical_peaks = {}
     source_records = {}
     source_evidence = {}
     family_evaluations = {}
@@ -595,23 +595,15 @@ def profile_replay(tmp_path, monkeypatch, request):
                     request_context_rt_start_min=rt_min,
                     request_context_rt_end_min=rt_max,
                 )
-            assert (
-                len(
-                    {
-                        family_evaluations[record.peak.peak_id].answer.selected_segment
-                        for record in discovery.physical_bindings
-                        if family_evaluations[record.peak.peak_id].facts is not None
-                    }
-                )
-                == 1
-            )
-            assert all(
-                family_evaluations[record.peak.peak_id].facts is not None
+            family_peaks = {
+                family_evaluations[record.peak.peak_id].answer.selected_segment
                 for record in discovery.physical_bindings
-            )
+            }
+            assert len(family_peaks) == 1
+            assert None not in family_peaks
             continue
         (record,) = discovery.physical_bindings
-        assert record.physical_evaluation.facts is not None
+        assert record.physical_evaluation.answer.selected_segment is not None
         assert (
             record.physical_evaluation.question.context_rt_start_min
             != record.peak.ms1_search_rt_min
@@ -620,7 +612,7 @@ def profile_replay(tmp_path, monkeypatch, request):
             record.physical_evaluation.question.context_rt_end_min
             != record.peak.ms1_search_rt_max
         )
-        physical_facts[path.stem] = record.physical_evaluation.facts
+        physical_peaks[path.stem] = record.physical_evaluation.answer.selected_segment
     discovery_batch = DiscoveryBatchInput(
         sample_order=sample_stems,
         peak_csvs=csvs,
@@ -629,17 +621,6 @@ def profile_replay(tmp_path, monkeypatch, request):
         peak_receipts=receipts,
     )
     captured_batches = []
-    captured_peaks = []
-    from xic_extractor.peak_detection import capture as capture_owner
-
-    capture_peak = capture_owner.capture_peak_hypotheses
-
-    def retain_capture(**kwargs):
-        capture = capture_peak(**kwargs)
-        captured_peaks.append(capture)
-        return capture
-
-    monkeypatch.setattr(capture_owner, "capture_peak_hypotheses", retain_capture)
     from xic_extractor.untargeted_execution import execution as bounded_owner
 
     materialize_batch = bounded_owner.materialize_untargeted_partition
@@ -657,39 +638,6 @@ def profile_replay(tmp_path, monkeypatch, request):
     from xic_extractor.alignment import completion as workflow_owner
     from xic_extractor.alignment import grouping_bootstrap as bootstrap_owner
 
-    mint_captured = production.mint_captured_peak_observation
-    mint_rechecks = []
-    mint_args = []
-
-    def record_captured_mint(capture, *args, **kwargs):
-        counts = {"prepare": 0, "evaluate": 0}
-        real_capture_prepare = capture_owner.prepare_physical_signal
-        real_capture_evaluate = capture_owner.evaluate_physical_peak
-
-        def count_capture_prepare(*call_args, **call_kwargs):
-            counts["prepare"] += 1
-            return real_capture_prepare(*call_args, **call_kwargs)
-
-        def count_capture_evaluate(*call_args, **call_kwargs):
-            counts["evaluate"] += 1
-            return real_capture_evaluate(*call_args, **call_kwargs)
-
-        with monkeypatch.context() as mint_patch:
-            mint_patch.setattr(
-                capture_owner, "prepare_physical_signal", count_capture_prepare
-            )
-            mint_patch.setattr(
-                capture_owner, "evaluate_physical_peak", count_capture_evaluate
-            )
-            result = mint_captured(capture, *args, **kwargs)
-        mint_args.append((capture, args, kwargs))
-        mint_rechecks.append(counts)
-        return result
-
-    monkeypatch.setattr(
-        production, "mint_captured_peak_observation", record_captured_mint
-    )
-
     projection_builds = []
     project_matrix = workflow_owner.project_untarget_matrix
 
@@ -701,32 +649,6 @@ def profile_replay(tmp_path, monkeypatch, request):
     monkeypatch.setattr(
         workflow_owner, "project_untarget_matrix", record_matrix_projection
     )
-    bind_capture = capture_owner.bind_owner_backed_capture_hypothesis
-    evaluate_physical = capture_owner.evaluate_physical_peak
-    binding_rechecks = []
-    bound_captures = []
-
-    def record_binding(capture, **kwargs):
-        rechecks = []
-
-        def record_evaluation(*args, **evaluation_kwargs):
-            rechecks.append(True)
-            return evaluate_physical(*args, **evaluation_kwargs)
-
-        with monkeypatch.context() as binding_patch:
-            binding_patch.setattr(
-                capture_owner, "evaluate_physical_peak", record_evaluation
-            )
-            bound = bind_capture(capture, **kwargs)
-        binding_rechecks.append(len(rechecks))
-        bound_captures.append((capture, kwargs))
-        return bound
-
-    for owner in (production, workflow_owner):
-        monkeypatch.setattr(
-            owner, "bind_owner_backed_capture_hypothesis", record_binding
-        )
-
     hypothesis_universe_compositions = []
     compose_hypothesis_universe = (
         bootstrap_owner.compose_peak_hypotheses_from_assessment_universe
@@ -761,8 +683,8 @@ def profile_replay(tmp_path, monkeypatch, request):
     completed_contexts = []
     bootstrap_contexts = []
     consumed_contexts = []
-    retained_captures = []
-    consumed_captures = []
+    retained_terminals = []
+    consumed_terminals = []
     retained_candidate_batches = []
     retained_cell_batches = []
     build_initial_context = production.build_initial_cid_nl_cross_sample_groups
@@ -770,11 +692,11 @@ def profile_replay(tmp_path, monkeypatch, request):
     compose_predecessor_cells = cid_nl_completion_owner.compose_cid_nl_predecessor_cells
     admit_backfills = cid_nl_completion_owner.admit_cid_nl_group_backfills
     finalize_scientific = workflow_owner.finalize_scientific_alignment
+    workset_grouping = production.CidNlWorksetGrouping
 
     def retain_initial_context(**kwargs):
         grouping_scope, context, retained_candidates = build_initial_context(**kwargs)
         bootstrap_contexts.append(context)
-        retained_captures.extend(kwargs["captures"])
         retained_candidate_batches.append(retained_candidates)
         return grouping_scope, context, retained_candidates
 
@@ -793,9 +715,13 @@ def profile_replay(tmp_path, monkeypatch, request):
         completed_contexts.append(result[0])
         return result
 
-    def retain_scientific_captures(**kwargs):
+    def retain_workset_terminals(**kwargs):
+        retained_terminals.extend(kwargs["terminal_subjects"])
+        return workset_grouping(**kwargs)
+
+    def retain_scientific_terminals(**kwargs):
         consumed_contexts.append(kwargs["grouping_result"])
-        consumed_captures.extend(kwargs["captures"])
+        consumed_terminals.extend(kwargs["terminal_subjects"])
         return finalize_scientific(**kwargs)
 
     monkeypatch.setattr(
@@ -819,8 +745,9 @@ def profile_replay(tmp_path, monkeypatch, request):
         retain_completed_context,
     )
     monkeypatch.setattr(
-        workflow_owner, "finalize_scientific_alignment", retain_scientific_captures
+        workflow_owner, "finalize_scientific_alignment", retain_scientific_terminals
     )
+    monkeypatch.setattr(production, "CidNlWorksetGrouping", retain_workset_terminals)
 
     runtime_results = []
     runtime_execute = bounded_owner.execute_partition
@@ -891,24 +818,23 @@ def profile_replay(tmp_path, monkeypatch, request):
                     assessment=adapter.assessment_input.assessment,
                 )
                 assert len(hypotheses) == expected_trace_count
-                assert {capture.candidate_id for capture in adapter.captures} == set(
-                    expected_capture_candidate_ids
-                )
-                for capture in adapter.captures:
-                    expected = family_evaluations[capture.candidate_id]
+                observations = dict(adapter.candidate_observations)
+                assert set(observations) == expected_capture_candidate_ids
+                for candidate_id, observation in observations.items():
+                    expected = family_evaluations[candidate_id]
+                    measured = observation.physical_evaluation
                     if family_precursor_delta:
-                        assert capture.physical_evaluation.facts is not None
-                        assert expected.facts is not None
+                        assert measured.answer.selected_segment is not None
+                        assert expected.answer.selected_segment is not None
                         assert (
-                            capture.physical_evaluation.facts.apex_rt_min
-                            == expected.facts.apex_rt_min
+                            measured.answer.selected_segment.apex_rt_min
+                            == expected.answer.selected_segment.apex_rt_min
                         )
                     else:
                         # Alignment measures the peak in Discovery's shared
                         # context with its query RT and gets its measurement.
                         assert (
-                            capture.physical_evaluation
-                            == source_records[capture.candidate_id].physical_evaluation
+                            measured == source_records[candidate_id].physical_evaluation
                         )
         return result
 
@@ -978,24 +904,19 @@ def profile_replay(tmp_path, monkeypatch, request):
                 opened_raws=opened_raws,
                 source_evidence=source_evidence,
                 source_records=source_records,
-                physical_facts=physical_facts,
+                physical_peaks=physical_peaks,
             ),
             trace=SimpleNamespace(
                 captured_batches=captured_batches,
-                captured_peaks=captured_peaks,
-                bound_captures=bound_captures,
-                binding_rechecks=binding_rechecks,
                 completed_contexts=completed_contexts,
-                consumed_captures=consumed_captures,
+                consumed_terminals=consumed_terminals,
                 consumed_contexts=consumed_contexts,
                 hypothesis_universe_compositions=hypothesis_universe_compositions,
-                mint_args=mint_args,
-                mint_rechecks=mint_rechecks,
                 obsolete_marker=obsolete_marker,
                 preparation_fingerprints=preparation_fingerprints,
                 projection_builds=projection_builds,
                 retained_candidate_batches=retained_candidate_batches,
-                retained_captures=retained_captures,
+                retained_terminals=retained_terminals,
                 retained_cell_batches=retained_cell_batches,
                 retained_contexts=retained_contexts,
                 runtime_fingerprints=runtime_fingerprints,

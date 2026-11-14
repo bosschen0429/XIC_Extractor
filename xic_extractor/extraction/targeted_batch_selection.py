@@ -29,20 +29,22 @@ from xic_extractor.peak_detection.targeted_context import (
 def _overlapping_measured_regions(
     left: ExtractionResult, right: ExtractionResult
 ) -> bool:
-    left_facts = (
-        left.physical_evaluation.facts if left.physical_evaluation is not None else None
+    left_peak = (
+        left.physical_evaluation.answer.selected_segment
+        if left.physical_evaluation is not None
+        else None
     )
-    right_facts = (
-        right.physical_evaluation.facts
+    right_peak = (
+        right.physical_evaluation.answer.selected_segment
         if right.physical_evaluation is not None
         else None
     )
     return (
-        left_facts is not None
-        and right_facts is not None
+        left_peak is not None
+        and right_peak is not None
         and (
-            max(left_facts.left_rt_min, right_facts.left_rt_min)
-            < min(left_facts.right_rt_min, right_facts.right_rt_min)
+            max(left_peak.left_rt_min, right_peak.left_rt_min)
+            < min(left_peak.right_rt_min, right_peak.right_rt_min)
         )
     )
 

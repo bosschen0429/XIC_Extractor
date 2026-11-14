@@ -324,7 +324,6 @@ def writer_batch(sample_order: tuple[str, ...], *groups: WriterGroup) -> Any:
                     ObservedSearchSubject(
                         candidate_id=candidates[stem],
                         sample_key=stem,
-                        trace_group_id=f"trace:{ordinal}:{stem}",
                         hypothesis=hypothesis,  # type: ignore[arg-type]
                     )
                 )

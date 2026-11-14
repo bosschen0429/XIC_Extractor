@@ -80,7 +80,7 @@ def test_physical_capture_accepts_search_coordinates_without_method_evidence() -
     assert first.work_ordinal == repeated.work_ordinal
     assert first.evaluation == repeated.evaluation
     assert len(raw.requests) == 1
-    facts = first.evaluation.facts
+    facts = first.evaluation.answer.selected_segment
     assert facts is not None
     assert facts.apex_rt_min == pytest.approx(9.02)
     # Gaussian integral, converted from counts*minutes to counts*seconds.
@@ -318,7 +318,7 @@ def test_ms1_peak_fields_are_filled_from_physical_facts(scans_target: int) -> No
     )
     (candidate,) = result.peaks
     (binding,) = result.physical_bindings
-    facts = binding.physical_evaluation.facts
+    facts = binding.physical_evaluation.answer.selected_segment
     assert facts is not None
     assert candidate.ms1_apex_rt == pytest.approx(7.91)
     assert candidate.ms1_apex_rt == facts.apex_rt_min

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.owner_peak_fixtures import trace_peak
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     compose_cid_nl_chromatographic_support,
 )
@@ -21,7 +22,6 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
-    mint_peak_observation,
 )
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     MeasuredPeakHypothesis,
@@ -526,7 +526,7 @@ def _peak(
         boundary_sources=("candidate_interval",),
         raw_scan_indices=(1, 2, 3),
     )
-    return mint_peak_observation(
+    return trace_peak(
         sample=sample,
         trace=trace,
         integration=integration,

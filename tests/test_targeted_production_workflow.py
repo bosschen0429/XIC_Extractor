@@ -25,7 +25,6 @@ from xic_extractor.applications.targeted.production_workflow import (
 )
 from xic_extractor.extraction import pipeline as extraction_pipeline
 from xic_extractor.extraction import (
-    targeted_capture_population,
     targeted_cid_nl_assessment,
 )
 from xic_extractor.extraction.targeted_inputs import (
@@ -33,7 +32,6 @@ from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
-from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
@@ -284,31 +282,6 @@ def test_two_samples_reuse_exact_acquired_physical_evaluations(
         file_result.sample_name: file_result.results[target.label].physical_evaluation
         for file_result in output.file_results
     }
-    captured = {}
-    capture_peak_hypotheses = targeted_capture_population.capture_peak_hypotheses
-
-    def _capture(*, scope, candidate_id, trace):
-        binding = next(
-            item for item in scope.capture_bindings if item.candidate_id == candidate_id
-        )
-        captured[trace.sample_name] = binding.physical_evaluation
-        return capture_peak_hypotheses(
-            scope=scope,
-            candidate_id=candidate_id,
-            trace=trace,
-        )
-
-    monkeypatch.setattr(
-        targeted_capture_population, "capture_peak_hypotheses", _capture
-    )
-    monkeypatch.setattr(
-        capture_owner,
-        "prepare_physical_signal",
-        lambda *_args, **_kwargs: pytest.fail(
-            "retained Targeted capture must not prepare or reintegrate"
-        ),
-    )
-
     finalized = execute_targeted_production_workflow(
         build_targeted_application_request(
             config,
@@ -319,12 +292,18 @@ def test_two_samples_reuse_exact_acquired_physical_evaluations(
     )
 
     assert len(finalized) == 1
-    assert captured == acquired
     assert acquired["SampleA"] is not None and acquired["SampleB"] is not None
-    assert acquired["SampleA"].facts is not None
-    assert acquired["SampleB"].facts is not None
-    assert acquired["SampleB"].facts.area_counts_seconds == pytest.approx(
-        acquired["SampleA"].facts.area_counts_seconds * 2.0
+    assert acquired["SampleA"].answer.selected_segment is not None
+    assert acquired["SampleB"].answer.selected_segment is not None
+    sample_a = acquired["SampleA"].answer.selected_segment
+    sample_b = acquired["SampleB"].answer.selected_segment
+    assert sample_b.area_counts_seconds == pytest.approx(
+        sample_a.area_counts_seconds * 2.0
+    )
+    # The published values are the acquired measurements, not a second solve.
+    assert tuple(d.value for d in finalized[0].completed_projection.decisions) == (
+        sample_a.area_counts_seconds,
+        sample_b.area_counts_seconds,
     )
 
 
@@ -1051,11 +1030,15 @@ def _retained_completion_boundary(monkeypatch):
     )
 
     request = object.__new__(TargetWorkflowRequest)
-    object.__setattr__(request, "scope", object())
+    object.__setattr__(request, "scope", SimpleNamespace(samples=()))
     adapter = object.__new__(TargetWorkflowAdapter)
-    object.__setattr__(
-        adapter, "capture_inputs", (SimpleNamespace(candidate_id="c", trace=object()),)
-    )
+    for name, value in {
+        "terminal_subjects": (),
+        "sample_assessments": (),
+        "alignment_config": object(),
+        "rt_frame": object(),
+    }.items():
+        object.__setattr__(adapter, name, value)
 
     def run():
         return production_workflow._complete_retained_target(
@@ -1066,27 +1049,30 @@ def _retained_completion_boundary(monkeypatch):
     return run
 
 
-def test_retained_capture_failure_keeps_stage_type_and_message(monkeypatch):
+def test_retained_completion_failure_keeps_stage_type_and_message(monkeypatch):
 
     import xic_extractor.alignment.completion as completion_owner
 
     run = _retained_completion_boundary(monkeypatch)
 
-    class CaptureFailure(RuntimeError):
+    class GroupingFailure(RuntimeError):
         pass
 
-    error = CaptureFailure("capture broke")
+    error = GroupingFailure("grouping broke")
 
-    def fail_capture(**kwargs):
+    def fail_grouping(**kwargs):
         raise error
 
-    monkeypatch.setattr(completion_owner, "capture_peak_hypotheses", fail_capture)
+    monkeypatch.setattr(
+        completion_owner, "build_targeted_cross_sample_groups", fail_grouping
+    )
     with pytest.raises(
-        RuntimeError, match="stage=WorkflowStage.CAPTURE; reason=capture broke"
+        RuntimeError,
+        match="stage=WorkflowStage.CROSS_SAMPLE_GROUPING; reason=grouping broke",
     ) as failure:
         run()
     assert failure.value.__cause__ is error
-    assert type(failure.value.__cause__) is CaptureFailure
+    assert type(failure.value.__cause__) is GroupingFailure
 
 
 def test_acquired_target_inputs_complete_without_runtime(tmp_path, monkeypatch):
@@ -1110,10 +1096,6 @@ def test_acquired_target_inputs_complete_without_runtime(tmp_path, monkeypatch):
         output,
     )
     request, adapter = acquired_inputs[0]
-    # Completed selection/integration facts are snapshots, not a claim that
-    # the frozen Trace's ndarray payload is deeply immutable.
-    for item in adapter.capture_inputs:
-        item.trace.intensity.fill(0.0)
     result = complete(request, adapter)
     expected_values = tuple(
         file_result.results[target.label].reported_peak_area
@@ -1201,8 +1183,6 @@ def test_same_reported_peak_keeps_its_quality_reasons(tmp_path: Path) -> None:
 def test_finalization_projects_retained_candidate_answers_without_resolving_again(
     tmp_path, monkeypatch
 ):
-    from xic_extractor.peak_detection import capture
-
     config, target, output = production_case(
         tmp_path,
         sample_names=("SampleA", "SampleB"),
@@ -1217,11 +1197,6 @@ def test_finalization_projects_retained_candidate_answers_without_resolving_agai
         config, [target], injection_order={"SampleA": 1, "SampleB": 2}
     )
 
-    def unexpected_resolution(*args, **kwargs):
-        raise AssertionError("finalization recomputed an already-owned physical answer")
-
-    monkeypatch.setattr(capture, "prepare_physical_signal", unexpected_resolution)
-    monkeypatch.setattr(capture, "evaluate_physical_peak", unexpected_resolution)
     result = execute_targeted_production_workflow(request, output)[0]
     assert tuple(d.value for d in result.completed_projection.decisions) == tuple(
         file.results[target.label].reported_peak_area for file in output.file_results

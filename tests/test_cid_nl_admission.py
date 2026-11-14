@@ -29,7 +29,6 @@ from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
-from xic_extractor.peak_detection.capture import capture_physical_backfill_observation
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.alignment import (
@@ -38,6 +37,9 @@ from xic_extractor.untargeted_execution.alignment import (
 from xic_extractor.untargeted_execution.execution import (
     execute_untargeted_plan,
     materialize_untargeted_partition,
+)
+from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition import (
+    physical_backfill_observation,
 )
 
 
@@ -185,9 +187,8 @@ def test_review_rows_never_become_alignment_roots(
         sample = next(s for s in plan.context.samples if s.raw_stem == "Overlap")
         raw = raws[paths[1]]
         evaluations = []
-        observation = capture_physical_backfill_observation(
+        observation = physical_backfill_observation(
             sample=sample,
-            method_subject=plan.subject_batch.subjects[0],
             trace=Trace(
                 sample_name="Overlap",
                 mz=500.0,
@@ -201,7 +202,6 @@ def test_review_rows_never_become_alignment_roots(
                 ].acquisition_source.acquisition_source_id,
             ),
             query_rt_min=8.0,
-            physical_mz=500.0,
             profile=TEST_PROFILE,
             resolver_mode="local_minimum",
             evaluation_sink=evaluations.append,

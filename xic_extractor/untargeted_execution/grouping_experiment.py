@@ -15,6 +15,7 @@ from xic_extractor.alignment.grouping_experiment import (
     GroupingInputs,
     GroupingWorkset,
 )
+from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,10 +53,14 @@ def grouping_experiment_from_prepared(
                 for owner in owners.values()
             ):
                 raise ValueError("Grouping replay requires scalar CID-NL observations")
-            for capture in workset.captures:
-                hypothesis = capture.measured_hypothesis
-                if hypothesis is not None and hypothesis.hypothesis_id in owners:
-                    candidates[hypothesis.hypothesis_id].add(capture.candidate_id)
+            for terminal in workset.terminal_subjects:
+                if (
+                    isinstance(terminal, ObservedSearchSubject)
+                    and terminal.hypothesis.hypothesis_id in owners
+                ):
+                    candidates[terminal.hypothesis.hypothesis_id].add(
+                        terminal.candidate_id
+                    )
             bindings = tuple(
                 sorted(
                     (owner_id, group.inference_basis.known_identity_label)

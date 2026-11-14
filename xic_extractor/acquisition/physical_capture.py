@@ -433,7 +433,7 @@ def _trace_quality(
 ) -> str:
     if evaluation.state in {"unavailable", "failed"}:
         return f"physical_{evaluation.state}"
-    if evaluation.facts is None:
+    if evaluation.answer.selected_segment is None:
         return "missing"
     if evaluation.requires_overlap_review:
         return "physical_shoulder_overlap"

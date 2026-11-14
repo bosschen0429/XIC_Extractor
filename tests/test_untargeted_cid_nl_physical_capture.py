@@ -202,7 +202,7 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
     if not fresh_available:
         # Alignment's own measurement decides admission: a peak it cannot
         # measure does not enter Alignment, and nothing fails.
-        assert result.captures == ()
+        assert result.candidate_observations == ()
         assert assessment.candidate_peaks == ()
         return
     if not shifted_mass:
@@ -211,21 +211,19 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
     # Both candidates select the same MS1 peak, shifted traces included, so the
     # universe holds that peak once.
     assert len(assessment.candidate_peaks) == 1
-    (capture,) = result.captures
+    ((candidate_id, measured),) = result.candidate_observations
+    assert candidate_id == candidate.peak_id
     # Equal RAW, window, query RT and settings give Discovery's measurement.
-    assert capture.physical_evaluation == discovered.physical_evaluation
-    binding = next(
-        item
-        for item in capture.scope.capture_bindings
-        if item.candidate_id == candidate.peak_id
+    assert measured.physical_evaluation == discovered.physical_evaluation
+    assert measured.sample_key == fixture.sample("S1").sample_name
+    assert (
+        measured.generation_provenance.acquisition_source_id
+        == source.acquisition_source_id
     )
-    assert binding.physical_evaluation is capture.physical_evaluation
-    assert binding.acquisition_source_id == source.acquisition_source_id
-    assert binding.sample_key == fixture.sample("S1").sample_name
-    integration = physical_peak_observation_integration(capture.physical_evaluation)
+    integration = physical_peak_observation_integration(measured.physical_evaluation)
     # A candidate that selected an already retained peak supports it.
     (observed,) = assessment.candidate_peaks
-    assert capture.selected_hypothesis.integration == integration
+    assert observed == measured
     assert (
         observed.integration.area_baseline_corrected
         == integration.area_baseline_corrected
@@ -256,9 +254,7 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
     assert reused.acquisition is batch.acquisition
     assert tuple(vendor.chromatogram_request_counts) == acquisition_calls
     assert reused.assessment_input.assessment == assessment
-    assert [item.physical_evaluation for item in reused.captures] == [
-        item.physical_evaluation for item in result.captures
-    ]
+    assert reused.candidate_observations == result.candidate_observations
 
 
 @pytest.mark.parametrize(
@@ -358,9 +354,12 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
     assert candidate.peak_id == unread.peak_id
     assert "@mz500.016_" in candidate.peak_id
     assert candidate.peak_mz == pytest.approx(physical_mz)
-    assert discovered.physical_evaluation.facts.area_counts_seconds == pytest.approx(
-        unread_binding.physical_evaluation.facts.area_counts_seconds
-        / (1 + interference_abundance)
+    assert (
+        discovered.physical_evaluation.answer.selected_segment.area_counts_seconds
+        == pytest.approx(
+            unread_binding.physical_evaluation.answer.selected_segment.area_counts_seconds
+            / (1 + interference_abundance)
+        )
     )
     method_subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=subject_mz,
@@ -389,15 +388,14 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
         for e in assessment.evidence_observations
     )
     # Alignment measures that peak again in the same window and gets the same.
-    (capture,) = result.captures
-    assert capture.trace.mz == candidate.peak_mz
-    assert capture.trace.rt_min == candidate.ms1_search_rt_min
-    assert capture.trace.rt_max == candidate.ms1_search_rt_max
-    assert capture.physical_evaluation == discovered.physical_evaluation
-    assert capture.selected_hypothesis is not None
+    ((_, measured),) = result.candidate_observations
+    assert measured.source_trace.mz == candidate.peak_mz
+    assert measured.source_trace.rt_min == candidate.ms1_search_rt_min
+    assert measured.source_trace.rt_max == candidate.ms1_search_rt_max
+    assert measured.physical_evaluation == discovered.physical_evaluation
     assert (
-        capture.selected_hypothesis.integration.area_baseline_corrected
-        == discovered.physical_evaluation.facts.area_counts_seconds
+        measured.integration.area_baseline_corrected
+        == discovered.physical_evaluation.answer.selected_segment.area_counts_seconds
     )
     assert representative_event(candidate).precursor_mz == pytest.approx(500.016)
 

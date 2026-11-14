@@ -681,7 +681,7 @@ def test_auto_range_empty_subject_has_no_fabricated_query_and_needs_no_raw(
     assert assessment.technical_state == "not_evaluated"
     assert (receipt.query_rt_min, receipt.query_rt_max) == (None, None)
     assert receipt.search_completed is False
-    assert result.acquisition is None and not result.captures
+    assert result.acquisition is None and not result.candidate_observations
 
 
 def test_auto_range_evaluated_receipt_uses_current_raw_bounds(tmp_path: Path) -> None:
@@ -716,7 +716,9 @@ def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
     result = scenario.adapt((feature,), support_candidates=(support,), raw=raw)
 
     assert result.source_candidate_ids == (feature.peak_id,)
-    assert {capture.candidate_id for capture in result.captures} == {feature.peak_id}
+    assert {candidate_id for candidate_id, _ in result.candidate_observations} == {
+        feature.peak_id
+    }
     assert len(result.assessment_input.assessment.candidate_peaks) == 1
     assert result.strict_scan_count == 2
     assert len(result.assessment_input.assessment.evidence_observations) == 2
@@ -749,7 +751,7 @@ def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> No
 
     assert result.assessment_input.assessment.technical_state == ("not_evaluated")
     assert result.assessment_input.assessment.evidence_observations == ()
-    assert result.captures == ()
+    assert result.candidate_observations == ()
 
 
 @pytest.mark.parametrize("include_direct_candidate", [False, True])

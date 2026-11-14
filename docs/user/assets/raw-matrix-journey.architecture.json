@@ -85,9 +85,9 @@
           "end_line": 73
         },
         {
-          "path": "xic_extractor/peak_detection/capture.py",
-          "line": 126,
-          "end_line": 160
+          "path": "xic_extractor/peak_detection/observations.py",
+          "line": 143,
+          "end_line": 267
         }
       ]
     },
@@ -106,9 +106,9 @@
       ],
       "sources": [
         {
-          "path": "xic_extractor/peak_detection/capture.py",
-          "line": 164,
-          "end_line": 215
+          "path": "xic_extractor/peak_detection/physical_peak_evaluation.py",
+          "line": 882,
+          "end_line": 1050
         },
         {
           "path": "docs/product/shared-processing-kernel.md",
