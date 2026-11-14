@@ -2423,7 +2423,7 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     )
     review.get_by_role("button", name="原始 RT", exact=True).click()
     expect(curves).to_have_count(3)
-    # The saved result above the curves states the split once, as the legend.
+    # The saved result below the curves states the split once, as the legend.
     expect(page.locator("#recorded-review .summary-line")).to_have_text(
         "3 個樣本1 detect1 backfill1 空值"
     )

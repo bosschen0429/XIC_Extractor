@@ -1209,21 +1209,8 @@ window.XicUi = (() => {
         !state.item.curve_sample_ids.includes(sample_id)) return;
     state.curveSequence = (sample_ids || []).filter(id => state.item.curve_sample_ids.includes(id));
     state.curveNotes = notes || {};
-    const loaded = state.page.source_kind !== "targeted_workbook" &&
-      !$("inline-curve-review").hidden &&
-      $("inline-curve-review").querySelector(`[data-curve-focus="${CSS.escape(sample_id)}"]:not(:disabled)`);
-    if (loaded) {
-      // A loaded curve is focused in place rather than read from RAW again.
-      if (loaded.getAttribute("aria-pressed") !== "true") loaded.click();
-      $("inline-curves").scrollIntoView({block: "start"});
-      return;
-    }
     state.curveOpener = opener;
-    action(async () => {
-      await selectCurveSample(sample_id);
-      if (state.page.source_kind !== "targeted_workbook" && !needsRaw())
-        $("inline-curves").scrollIntoView({block: "start"});
-    });
+    action(() => selectCurveSample(sample_id));
   }
   const closeCurves = () => navigation.back(() => $("xic-dialog").close());
   $("xic-close").addEventListener("click", closeCurves);

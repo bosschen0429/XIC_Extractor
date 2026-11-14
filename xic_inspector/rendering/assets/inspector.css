@@ -496,7 +496,9 @@
    header repeats once per column by flowing in the same columns, one row tall. */
 .xic-inspector[data-mode="result"] .cell-table-wrap { --cell-name-w:calc(min(var(--cell-name,24ch) * .8,340px) + 20px);--cell-col:calc(var(--cell-name-w) + 200px);--cell-gap:28px; }
 .xic-inspector[data-mode="result"] .cell-table, .xic-inspector[data-mode="result"] .cell-table thead, .xic-inspector[data-mode="result"] .cell-table tbody { display:block; }
-.xic-inspector[data-mode="result"] .cell-table thead, .xic-inspector[data-mode="result"] .cell-table tbody { columns:var(--cell-col);column-gap:var(--cell-gap); }
+/* A short list stays a readable width instead of spreading three fields across the panel. */
+.xic-inspector[data-mode="result"] .cell-table { max-width:max(640px,calc(var(--cell-max,6) * (var(--cell-col) + var(--cell-gap)) * 1.4)); }
+.xic-inspector[data-mode="result"] .cell-table thead, .xic-inspector[data-mode="result"] .cell-table tbody { columns:var(--cell-col) var(--cell-max,6);column-gap:var(--cell-gap); }
 .xic-inspector[data-mode="result"] .cell-table thead { column-fill:auto;height:36px;overflow:hidden; }
 .xic-inspector[data-mode="result"] .cell-table thead tr { height:34px; }
 /* Spare width spreads across all three fields, never into one gap after the name. */

@@ -744,22 +744,22 @@
   // The sample table answers each cell; offline it also picks the plotted curves.
   function cellTable(item){
     const offline=mode!=='result',plotted=offline&&anyCurve(item);
-    // Result rows may flow into up to three columns; each column repeats the labels.
     // The host plot focuses curves itself, so result rows carry no action. Result
-    // rows flow into columns; spare header rows label each column (CSS clips the rest).
+    // rows flow into columns of at least eight rows; one header row per possible
+    // column labels it (CSS clips the ones past the columns that fit).
+    const rows=itemRows(item),nameChars=Math.max(0,...rows.map(r=>sampleName(r.sample_id).length)),maxColumns=Math.min(6,Math.max(1,Math.ceil(rows.length/8)));
     const labels='<th>樣本</th><th class="num">Area</th><th>來源</th>';
     const head=offline
       ?`<tr>${plotted?'<th><span class="sr-only">顯示</span></th>':''}${labels}<th><span class="sr-only">操作</span></th></tr>`
-      :`<tr>${labels}</tr>${`<tr aria-hidden="true">${labels}</tr>`.repeat(5)}`;
-    const nameChars=Math.max(0,...itemRows(item).map(r=>sampleName(r.sample_id).length));
-    const body=itemRows(item).map(r=>{
+      :`<tr>${labels}</tr>${`<tr aria-hidden="true">${labels}</tr>`.repeat(maxColumns-1)}`;
+    const body=rows.map(r=>{
       const sid=r.sample_id,current=sid===state.sample,notes=[...(r.note?[r.note]:[]),...(offline?sampleLimits(item,r):[])],risks=r.risk_labels||[];
       const action=offline
         ?`<td class="cell-action">${hasCurve(item,sid)||candidates(item,sid).length?`<button type="button" class="row-action" data-focus="${esc(sid)}" ${current?'aria-current="true"':''}>${current?'查看中':'查看'}</button>`:''}${evidenceButtons(r.decision_refs,`${sampleName(sid)} 的排除依據`,'排除依據')}</td>`
         :'';
       return `<tr class="${current?'focused-row':''}" data-sample-row="${esc(sid)}">${plotted?`<td><input type="checkbox" data-sample-visible="${esc(sid)}" aria-label="在圖中顯示 ${esc(sampleName(sid))}" ${state.visible.has(sid)?'checked':''} ${hasCurve(item,sid)?'':'disabled'}></td>`:''}<td class="cell-sample">${esc(sampleName(sid))}${notes.length||risks.length?`<div class="cell-explain">${notes.length?`<span class="cell-note">${esc(notes.join('；'))}</span>`:''}${risks.length?`<span class="cell-risk">${esc(risks.join('；'))}</span>`:''}</div>`:''}</td><td class="num">${areaText(r)}</td><td class="cell-origin">${originCell(item,r)}</td>${action}</tr>`;
     }).join('');
-    return `<div class="cell-table-wrap" style="--cell-name:${nameChars}ch"><table class="cell-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+    return `<div class="cell-table-wrap" style="--cell-name:${nameChars}ch;--cell-max:${maxColumns}"><table class="cell-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
   }
   function candidateControl(item){
     if(!state.sample)return '<p class="control-value">先從樣本表查看一個樣本。</p>';
