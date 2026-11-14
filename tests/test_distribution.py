@@ -1,5 +1,6 @@
 """User-visible contents of the Windows distribution, without rebuilding Python."""
 
+import re
 import shutil
 import zipfile
 from html.parser import HTMLParser
@@ -104,11 +105,16 @@ def test_distribution_has_offline_guides_examples_and_no_developer_tree(
                 if unquote(url.fragment) not in pages[target].ids:
                     failures.append(f"Missing anchor: {page.name}: {reference}")
     assert not failures, "\n".join(failures)
-    detailed = (app / "docs/user/targeted-extraction.guide.html").read_text("utf-8")
-    illustrated = (app / "docs/user/targeted-extraction.html").read_text("utf-8")
-    assert "<table>" in detailed and "Review The Batch" in detailed
-    assert "assets/targeted-workspace.png" in illustrated
-    assert not (app / "docs/user/README.md").exists()
+    # Every page shares one stylesheet and lists every page in reading order.
+    targeted = (app / "docs/user/targeted.html").read_text("utf-8")
+    assert "assets/guide.css" in targeted
+    assert "assets/targeted-workspace.png" in targeted
+    for page in pages:
+        nav = re.search(
+            r'<nav aria-label="使用說明">(.*?)</nav>', page.read_text("utf-8")
+        )
+        assert nav and nav.group(1).count("<a ") == len(pages)
+    assert not list((app / "docs").rglob("*.md"))
 
 
 @pytest.mark.parametrize(

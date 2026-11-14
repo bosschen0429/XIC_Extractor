@@ -326,6 +326,12 @@ td:first-child {
 }
 
 @media (max-width: 600px) {
+  .topbar {
+    position: static;
+  }
+  html {
+    scroll-padding-top: 0;
+  }
   .doc {
     padding-top: 28px;
   }

@@ -153,14 +153,14 @@
       ],
       "sources": [
         {
-          "path": "docs/user/targeted-extraction.md",
-          "line": 75,
-          "end_line": 101
+          "path": "docs/user/targeted.md",
+          "line": 41,
+          "end_line": 55
         },
         {
-          "path": "docs/user/untargeted-discovery.md",
-          "line": 80,
-          "end_line": 109
+          "path": "docs/user/untargeted.md",
+          "line": 28,
+          "end_line": 46
         }
       ]
     },

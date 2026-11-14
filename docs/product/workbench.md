@@ -4,8 +4,8 @@ The local HTML workbench is where users set up, run and review Targeted and
 Untargeted analyses. XIC Inspector supplies its read-only evidence selection
 and the shared review renderer, which also produces self-contained offline HTML
 reports. This page owns what review may and may not mean. The
-[Targeted guide](../user/targeted-extraction.md) and
-[Untargeted guide](../user/untargeted-discovery.md) own operation; `--help` on
+[Targeted guide](../user/targeted.md) and
+[Untargeted guide](../user/untargeted.md) own operation; `--help` on
 `xic-workbench`, `xic-inspector` and `tools.diagnostics.explain_cid_nl_run`
 owns command arguments.
 

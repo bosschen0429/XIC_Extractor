@@ -7,10 +7,10 @@
 | 項目 | 內容 |
 | --- | --- |
 | RAW 資料夾 | 同一批的 Thermo `.raw` 檔 |
-| 目標清單 | XLSX、CSV 或 TSV；沒有清單可從範例開始，欄位見[目標清單](targeted-config-reference.md) |
+| 目標清單 | XLSX、CSV 或 TSV；沒有清單可從範例開始，欄位見[目標清單](target-list.md) |
 | 上機資訊（選用） | 上機序列表（Word、Excel、CSV 或 TSV），用來核對樣本 |
 
-第一次使用要先備妥 RawFileReader，見[開始使用](README.md)。
+第一次使用要先備妥 RawFileReader，見[開始使用](README.md#第一次使用準備-rawfilereader)。
 
 ## 執行一批
 
@@ -31,12 +31,12 @@
 結果頁先列出最值得確認的結果：每個目標裡與多數不同的少數，例如多數計入時沒計入的那幾筆。
 
 1. 按 **先看這 N 筆 →**。
-2. 左側選目標，再選樣本，看面積、RT 與判斷理由。
-3. 要看峰形，按樣本列的 **看 XIC**。這一步需要原 RAW 檔與 RawFileReader。
+2. 左側選目標。右側列出各樣本的 RT、面積、是否計入與檢閱註記。
+3. 要看峰形，按該樣本列的 **看 XIC**。這一步需要原 RAW 檔與 RawFileReader。
 
 全部樣本按 **查看所有樣本結果 →**。Excel 按 **下載結果 Excel**。
 
-> 面積、計入偵測、需檢查是三個獨立的答案：有面積不一定計入，計入的也可能需要看。`ND` 與空白都不是 0。見[判讀原理](processing-guide.html#decisions)。
+> 面積、計入偵測、需檢查是三個獨立的答案：有面積不一定計入，計入的也可能需要看。`ND` 與空白都不是 0。見[判讀原理](concepts.md)。
 
 ## Excel 結果
 
@@ -52,7 +52,7 @@
 | `Run Metadata` | 本次的設定與版本 |
 | `欄位說明` | 每一欄的意義與單位 |
 
-各欄定義見[結果檔案](targeted-output-reference.md)。
+各欄定義見[結果檔案](results.md#targeted-excel)，Excel 的 `欄位說明` 工作表也有。
 
 ## 下一批與重開結果
 
@@ -68,5 +68,5 @@
 | --- | --- |
 | **開始 Targeted 分析** 不能按 | 看 **執行前確認** 哪一項沒打勾 |
 | 目標清單無法匯入 | 依訊息修正指出的列與欄 |
-| RAW 讀取環境未備妥 | 依畫面提示安裝 .NET 或 RawFileReader，見[開始使用](README.md) |
+| RAW 讀取環境未備妥 | 依畫面提示安裝 .NET 或 RawFileReader，見[開始使用](README.md#第一次使用準備-rawfilereader) |
 | 某個 RAW 檔讀取失敗 | 其他樣本照常完成；失敗的檔列在 `需檢查` |

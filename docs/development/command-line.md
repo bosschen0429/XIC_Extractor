@@ -46,7 +46,7 @@ Execution scheduling is automatic; actual workers are recorded in run metadata.
 
 ## Targeted Validation
 
-Result review is described [Targeted result review](../user/targeted-extraction.md#review-the-batch). Operator validation uses
+Result review is described [Targeted result review](../user/targeted.md#看結果). Operator validation uses
 `.venv\Scripts\python.exe tools\diagnostics\targeted_validation.py --help` for suite
 selection, dry-run and baseline comparison through the finalized Targeted
 application. Manual-2RAW calibration separately compares acquisition RT/area

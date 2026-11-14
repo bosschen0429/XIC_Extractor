@@ -3,7 +3,7 @@
 Untargeted analysis asks which sample-local observations can form comparable
 features across a batch, and which measurements can be delivered for those
 features. This page owns the method rationale and limits; the
-[user guide](../user/untargeted-discovery.md) owns running and reading a batch.
+[user guide](../user/untargeted.md) owns running and reading a batch.
 Discovery, Alignment and bounded Backfill contribute evidence, but a candidate,
 a cross-sample correspondence and a published numeric value remain distinct
 results. Published features are not, by themselves, identified compounds.

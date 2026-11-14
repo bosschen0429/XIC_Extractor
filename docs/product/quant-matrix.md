@@ -3,7 +3,7 @@
 The quant matrix delivers finalized feature × sample numeric values for
 downstream analysis. A published area, counted detection and chemical identity
 are different facts; a blank cell is not an inferred zero. For how to read and
-curate the result, use the [user guide](../user/untargeted-discovery.md#read-and-use-the-matrix).
+curate the result, use the [user guide](../user/untargeted.md#整理矩陣).
 This page owns Matrix content, cell-decision and publication rules.
 
 The type name `Matrix` is reserved for this finalized canonical shape. Owner

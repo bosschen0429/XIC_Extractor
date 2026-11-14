@@ -3,11 +3,11 @@
 Discovery answers which sample-local signals warrant further evaluation. It
 turns method-specific seed evidence and MS1 traces into reviewable candidates;
 a candidate does not establish cross-sample correspondence or a final value.
-The [processing story](../user/processing-guide.html#discovery) explains that
+The [interpretation guide](../user/concepts.md#從-raw-到矩陣) explains that
 distinction with an example. This page owns candidate generation and the method
 evidence behind it. The [Untargeted method](untargeted-method.md) page owns the
 literature basis and the Untargeted scope; the
-[Untargeted guide](../user/untargeted-discovery.md) owns commands and outputs.
+[Untargeted guide](../user/untargeted.md) owns commands and outputs.
 
 Discovery is provider-specific at its input. CID-NL, HCD-PI, Delta Mass and
 future providers consume different evidence and generate candidates

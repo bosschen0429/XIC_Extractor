@@ -748,8 +748,8 @@ def test_final_pyinstaller_archive_runs_html_workbench_smoke(
     smoke_report = extracted_root / "smoke.json"
     application = extracted_root / archive_path.stem
     assert (application / "開始使用.html").is_file()
-    assert (application / "docs/user/targeted-extraction.guide.html").is_file()
-    assert (application / "docs/user/untargeted-discovery.html").is_file()
+    assert (application / "docs/user/targeted.html").is_file()
+    assert (application / "docs/user/untargeted.html").is_file()
     assert not list(application.rglob("*.py"))
     assert not (application / "_internal/scripts").exists()
     executable = application / "XIC_Extractor.exe"

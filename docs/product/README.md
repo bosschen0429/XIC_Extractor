@@ -11,7 +11,7 @@ for task rules, [AGENTS.md](../../AGENTS.md). Terms are defined once in the
 ## Find The Rule Behind A Result
 
 Start with the analysis question, then open the page that owns the decision.
-The [A/B/C processing story](../user/processing-guide.html) supplies the
+The [interpretation guide](../user/concepts.md) supplies the
 conceptual journey.
 
 | Analysis question | Topic owners |

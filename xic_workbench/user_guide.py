@@ -18,28 +18,19 @@ from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
-USER_PAGES = (
-    "README.md",
-    "targeted-extraction.md",
-    "targeted-extraction.html",
-    "targeted-config-reference.md",
-    "targeted-output-reference.md",
-    "untargeted-discovery.md",
-    "untargeted-discovery.html",
-    "untargeted-preset-guide.md",
-    "untargeted-output-reference.md",
-    "processing-guide.html",
-    "raw-to-final-matrix-product-story.html",
-    "targeted.md",
-)
 START_PAGE = Path("開始使用.html")
 
 EXAMPLES = ("targets.xlsx",)
 
-# Every authored page, in reading order, with its navigation label.
+# Every authored Markdown page, in reading order, with its navigation label.
 GUIDE_PAGES = (
     ("README.md", "開始使用"),
     ("targeted.md", "Targeted 分析"),
+    ("target-list.md", "目標清單"),
+    ("untargeted.md", "Untargeted 分析"),
+    ("methods.md", "分析方法"),
+    ("results.md", "結果檔案"),
+    ("concepts.md", "判讀原理"),
 )
 THEME_SCRIPT = (
     "try{var t=localStorage.getItem('xic-theme')"
@@ -72,6 +63,8 @@ def _markdown_html(source: str, page: str) -> str:
         "</table>", "</table></div>"
     )
     title = next((t.content for t in tokens if t.type == "inline"), "XIC Extractor")
+    if "XIC Extractor" not in title:
+        title += " · XIC Extractor"
     names = [name for name, _ in GUIDE_PAGES]
     links = "".join(
         f'<a href="{name}"{' aria-current="page"' if name == page else ""}>'
@@ -94,7 +87,7 @@ def _markdown_html(source: str, page: str) -> str:
     return (
         '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{escape(title)} · XIC Extractor</title>"
+        f"<title>{escape(title)}</title>"
         '<link rel="stylesheet" href="assets/guide.css">'
         f"<script>{THEME_SCRIPT}</script></head><body>"
         '<header class="topbar"><a class="brand" href="README.md">'
@@ -197,15 +190,11 @@ class _GuideReferences(HTMLParser):
 def render_user_guides(source_root: Path) -> dict[Path, bytes]:
     """Render the selected user pages and their linked assets for publication."""
     destinations = {}
-    for name in USER_PAGES:
+    for name, _ in GUIDE_PAGES:
         source = Path("docs/user") / name
-        if name == "README.md":
-            destination = START_PAGE
-        elif source.suffix == ".md" and f"{source.stem}.html" in USER_PAGES:
-            destination = source.with_suffix(".guide.html")
-        else:
-            destination = source.with_suffix(".html")
-        destinations[source] = destination
+        destinations[source] = (
+            START_PAGE if name == "README.md" else source.with_suffix(".html")
+        )
     for name in EXAMPLES:
         destinations[Path("xic_extractor/configuration/data") / name] = (
             Path("examples") / name
@@ -216,22 +205,12 @@ def render_user_guides(source_root: Path) -> dict[Path, bytes]:
         if destination.parts[0] == "examples":
             continue
         text = (source_root / source).read_text(encoding="utf-8")
-        html = _markdown_html(text, source.name) if source.suffix == ".md" else text
+        html = _markdown_html(text, source.name)
         links = _OfflineLinks(source, destinations)
         links.feed(html)
         links.close()
         assets.update(links.assets)
         html = "".join(links.output)
-        if source.suffix == ".html":
-            home = quote(
-                os.path.relpath(START_PAGE, destination.parent).replace(os.sep, "/")
-            )
-            nav = (
-                '<nav style="padding:12px;border-bottom:1px solid #ccd4dc;'
-                'font:16px system-ui;background:#fff;color:#243342">'
-                f'<a href="{home}">使用說明首頁</a></nav>'
-            )
-            html = re.sub(r"(<body\b[^>]*>)", r"\g<1>" + nav, html, count=1)
         rendered[destination] = html.encode("utf-8")
     for source in assets | {
         Path("xic_extractor/configuration/data") / name for name in EXAMPLES

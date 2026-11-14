@@ -1,23 +1,25 @@
 # Guide Assets
 
-Maintenance reference for the diagrams embedded in the [user guides](../README.md).
+Files used by the [user guides](../README.md) and the developer maps.
 
-Implementation responsibility maps are linked from the
-[developer reading path](../../development/README.md); they are not separate
-product contracts and are not published in the application ZIP. User guides keep
-operational screenshots and scientific explanations. The single user entry is
-`../README.md`; publication renders it as `開始使用.html`. Edit its task links
-there, not in an Archify specification. The other guides embed static SVG maps.
+- `guide.css` styles every published user page; the page template is in
+  `xic_workbench/user_guide.py`.
+- `targeted-workspace.png` and `untargeted-workspace.png` are Workbench
+  screenshots embedded in the Targeted and Untargeted pages. Retake them when
+  the setup pages change, with local paths replaced by neutral example paths.
 
-| Guide | Diagram asset stem | Question |
-| --- | --- | --- |
-| User entry | Task links in `../README.md` | What should I do next? |
-| Core guide | `core-processing-map` | What processing and decisions are shared? |
-| Targeted | `targeted-workflow` | How do I prepare, run, and review a batch? |
-| Untargeted | `untargeted-modes` | Where does each run mode start and stop? |
-| Processing | `evidence-decisions` | How do peak evidence, membership, and numeric answers differ? |
-| System | `execution-boundaries` | Who coordinates, decides, publishes, and reads? |
-| RAW story | `raw-matrix-journey` | How does evidence reach Matrix, and where does a diagnostic branch stop? |
+The SVG maps below are implementation responsibility maps linked from the
+[developer reading path](../../development/README.md). They are not embedded
+in the user guides and are not published in the application ZIP.
+
+| Diagram asset stem | Question |
+| --- | --- |
+| `core-processing-map` | What processing and decisions are shared? |
+| `targeted-workflow` | How do I prepare, run, and review a batch? |
+| `untargeted-modes` | Where does each run mode start and stop? |
+| `evidence-decisions` | How do peak evidence, membership, and numeric answers differ? |
+| `execution-boundaries` | Who coordinates, decides, publishes, and reads? |
+| `raw-matrix-journey` | How does evidence reach Matrix, and where does a diagnostic branch stop? |
 
 Each `<stem>.svg` is a static, light-theme diagram derived from
 [Archify 3.1.0](https://github.com/tt-a1i/archify) and the adjacent
@@ -62,7 +64,6 @@ upgrading Archify.
 
 Commit the JSON and generated SVG together. Use a fresh `--out-dir` for a
 later candidate. Inspect the embedded and standalone SVG in a browser for
-colors, labels, arrows, and narrow-screen containment; check that the reading
-index nodes still open the corresponding HTML guides. Archify's HTML checks
+colors, labels, arrows, and narrow-screen containment. Archify's HTML checks
 do not validate the exported SVG. The guide text remains the detailed,
 accessible explanation, and the standalone SVG link allows browser zoom.
