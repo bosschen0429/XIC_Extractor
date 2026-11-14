@@ -196,8 +196,7 @@
 .xic-inspector .dialog-header { display:flex;align-items:center;justify-content:space-between;margin-bottom:12px; }
 .xic-inspector .dialog-header h3 { font-size:16px; }
 .xic-inspector .dialog-header button { border:0;background:none;font-size:22px;line-height:1; }
-.xic-inspector .zoom-container { height:70vh; }
-.xic-inspector .zoom-container svg { width:100%;height:100%; }
+.xic-inspector .zoom-container svg { width:100%;height:auto;max-height:70vh; }
 .xic-inspector .factlist { display:grid;grid-template-columns:140px 1fr;gap:8px 14px;font-size:14px; }
 .xic-inspector .factlist dt { color:var(--muted); }
 .xic-inspector .factlist dd { overflow-wrap:anywhere; }
@@ -431,7 +430,6 @@
 .xic-inspector .curve-missing { color:var(--subtle);font-size:12px; }
 .xic-inspector .curve-list-empty { padding:18px 4px;color:var(--muted);font-size:12px; }
 .xic-inspector .curve-main { min-width:0; }
-.xic-inspector .curve-axis-controls { display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-bottom:10px; }
 .xic-inspector .curve-plot-tools { display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-height:32px;margin-bottom:10px; }
 .xic-inspector .curve-plot-tools .rt-range { margin:0 auto 0 0; }
 .xic-inspector .curve-plot-tools .overlay-controls { margin:0;color:var(--muted); }

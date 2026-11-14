@@ -908,13 +908,19 @@
     const item=curveUi.model.item,axis=curveWorkspaceAxis();
     setHTML(element,plot(item,axis,false,true,width)+curveWindowNotes(item,axis));
     const window=state.plotWindow||curveViewWindow(item,axis);
-    if(window){$('plot-rt-start').value=drt(window[0]);$('plot-rt-end').value=drt(window[1]);}
+    if(window){$('plot-rt-start').value=windowValue(window[0],axis);$('plot-rt-end').value=windowValue(window[1],axis);}
     curveUi.geometry=new WeakMap();
     applyCurveEmphasis();
   }
-  function curveWorkspaceAxis(){return curveUi.axis;}
+  function curvesHaveAlignedRts(item){return (item?.curves||[]).some(c=>c.aligned_rts?.length);}
+  function curveWorkspaceAxis(){
+    const item=curveUi.model?.item;
+    return curveUi.axis==='aligned'&&item&&!curvesHaveAlignedRts(item)?'raw':curveUi.axis;
+  }
   function timeAxisTitle(axis){return axis==='centered'?'峰頂置中':axis==='aligned'?'對齊時間':'原始時間';}
-  function timeValue(value,axis){return `${drt(value)} ${axis==='centered'?'秒':'min'}`;}
+  // Centered offsets are seconds; one decimal matches the scan spacing.
+  function windowValue(value,axis){return axis==='centered'?fixed(value,1):drt(value);}
+  function timeValue(value,axis){return `${windowValue(value,axis)} ${axis==='centered'?'秒':'min'}`;}
   function curvePeakWindow(curve,axis){
     const left=curveTime(curve,axis,'bound_left_rt'),right=curveTime(curve,axis,'bound_right_rt');
     if(!finite(left)||!finite(right)||right<=left)return null;
@@ -960,15 +966,16 @@
     const model=curveSidebarModel(item);
     hideCurveTooltip();$('curve-tooltip')?.remove();
     curveUi.observer?.disconnect();
-    setHTML($('workspace-content'),`<section class="curve-section" id="curve-workspace"><div class="curve-group-controls"><div class="curve-group-options" role="group" aria-label="顯示組別">${model.groups.length>1?model.groups.map(group=>`<label class="curve-group-option"><input type="checkbox" data-curve-group="${esc(group.name)}" aria-label="顯示 ${esc(group.name)} 整組"><span>${esc(group.name)}</span></label>`).join(''):''}<div class="curve-bulk-actions"><button type="button" data-curve-all="true" aria-label="全部顯示">全選</button><button type="button" data-curve-all="false" aria-label="全部隱藏">清空</button></div></div>${signalSwitchMarkup}</div><div class="curve-sample-workspace"><aside class="curve-sidebar" aria-label="樣本曲線顯示"><div class="curve-list-tools"><input type="search" id="curve-search" aria-label="搜尋樣本名稱" placeholder="搜尋樣本" value="${esc(curveUi.query)}"><button type="button" id="curve-clear-focus" data-curve-clear aria-label="解除聚焦" title="解除聚焦" hidden>×</button></div><div class="curve-sample-list" id="curve-sample-list">${curveSampleList(model)}</div></aside><section class="curve-main" aria-label="層析圖">${curveAxisControls()}<div class="curve-plot-tools">${rtViewControls(item)}${overlayControl(item)}<button type="button" class="zoom-btn" data-zoom="${curveWorkspaceAxis()}" aria-label="放大層析圖">放大 ↗</button></div><div class="svg-container" id="svg-raw"></div></section></div><div class="curve-tooltip" id="curve-tooltip" role="tooltip" hidden></div></section>`);
+    setHTML($('workspace-content'),`<section class="curve-section" id="curve-workspace"><div class="curve-group-controls"><div class="curve-group-options" role="group" aria-label="顯示組別">${model.groups.length>1?model.groups.map(group=>`<label class="curve-group-option"><input type="checkbox" data-curve-group="${esc(group.name)}" aria-label="顯示 ${esc(group.name)} 整組"><span>${esc(group.name)}</span></label>`).join(''):''}<div class="curve-bulk-actions"><button type="button" data-curve-all="true" aria-label="全部顯示">全選</button><button type="button" data-curve-all="false" aria-label="全部隱藏">清空</button></div></div>${signalSwitchMarkup}</div><div class="curve-sample-workspace"><aside class="curve-sidebar" aria-label="樣本曲線顯示"><div class="curve-list-tools"><input type="search" id="curve-search" aria-label="搜尋樣本名稱" placeholder="搜尋樣本" value="${esc(curveUi.query)}"><button type="button" id="curve-clear-focus" data-curve-clear aria-label="解除聚焦" title="解除聚焦" hidden>×</button></div><div class="curve-sample-list" id="curve-sample-list">${curveSampleList(model)}</div></aside><section class="curve-main" aria-label="層析圖"><div class="curve-plot-tools">${curveAxisControls(item)}${rtViewControls(item)}${overlayControl(item)}<button type="button" class="zoom-btn" data-zoom="${curveWorkspaceAxis()}" aria-label="放大層析圖">放大 ↗</button></div><div class="svg-container" id="svg-raw"></div></section></div><div class="curve-tooltip" id="curve-tooltip" role="tooltip" hidden></div></section>`);
     syncSignalSwitch();syncCurveSelection();drawCurveWorkspacePlot();
     curveUi.observer=new ResizeObserver(()=>{
       if($('svg-raw')?.clientWidth!==curveUi.width)drawCurveWorkspacePlot();
     });
     curveUi.observer.observe($('svg-raw'));
   }
-  function curveAxisControls(){
-    return `<div class="curve-axis-controls"><div class="axis-switch" role="group" aria-label="時間視角">${[['raw','原始 RT'],['aligned','校正 RT'],['centered','峰頂置中']].map(([axis,label])=>`<button type="button" data-time-axis="${axis}" aria-pressed="${curveWorkspaceAxis()===axis}">${label}</button>`).join('')}</div><span class="reading-hint">${curveWorkspaceAxis()==='centered'?'峰形比較 · 保留實際強度；校正殘差請看「校正 RT」':'保留實際強度'}</span></div>`;
+  function curveAxisControls(item){
+    const axes=[['raw','原始 RT'],...(curvesHaveAlignedRts(item)?[['aligned','校正 RT']]:[]),['centered','峰頂置中']];
+    return `<div class="axis-switch" role="group" aria-label="時間視角">${axes.map(([axis,label])=>`<button type="button" data-time-axis="${axis}" aria-pressed="${curveWorkspaceAxis()===axis}">${label}</button>`).join('')}</div>`;
   }
   function changeCurveVisibility(update){
     hideCurveTooltip();update();syncCurveSelection();drawCurveWorkspacePlot();
@@ -1093,7 +1100,7 @@
     let svg=`<defs><clipPath id="${clipId}"><rect x="${L}" y="${T}" width="${IW}" height="${IH}"/></clipPath></defs><text x="8" y="14" font-size="13" fill="#48534f">訊號強度</text>`;
     for(let i=0;i<=4;i++){const v=lowY+(highY-lowY)*i/4;svg+=`<line x1="${L}" y1="${y(v)}" x2="${L+IW}" y2="${y(v)}" stroke="#e4e9ec"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end" font-size="13" fill="#48534f">${tickNum(v)}</text>`;}
     svg+=`<path d="M${L},${T}V${T+IH}H${L+IW}" fill="none" stroke="#91a0a8"/>`;
-    for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4;svg+=`<text x="${x(v)}" y="${H-32}" text-anchor="${width&&i===0?'start':width&&i===4?'end':'middle'}" font-size="13" fill="#48534f">${rt(v)}</text>`;}
+    for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4;svg+=`<text x="${x(v)}" y="${H-32}" text-anchor="${width&&i===0?'start':width&&i===4?'end':'middle'}" font-size="13" fill="#48534f">${axis==='centered'?fixed(v,hi-lo>=20?0:1):rt(v)}</text>`;}
     if(axis==='centered'&&lo<=0&&hi>=0)svg+=`<line data-marker="peak-center" x1="${x(0)}" x2="${x(0)}" y1="${T}" y2="${T+IH}" stroke="var(--muted)" stroke-dasharray="4 4"><title>置中參考 · 0 秒</title></line>`;
     const active=peer?null:activeCurve(item);
     if(active&&state.bounds){const left=curveTime(active,axis,'bound_left_rt'),right=curveTime(active,axis,'bound_right_rt');if(finite(left)&&finite(right)){const a=Math.max(lo,Math.min(left,right)),b=Math.min(hi,Math.max(left,right));if(b>=a)svg+=`<rect data-integration-range="true" x="${x(a)}" y="${T}" width="${Math.max(0,x(b)-x(a))}" height="${IH}" fill="${color(active.sample_id)}" opacity=".09"><title>積分範圍 ${timeValue(left,axis)}–${timeValue(right,axis)}</title></rect>`;}}
@@ -1132,7 +1139,7 @@
     const axis=mode==='curves'?curveWorkspaceAxis():'raw',centered=axis==='centered';
     const window=state.plotWindow||(mode==='curves'?curveViewWindow(item,axis):item.review_rt_window);
     if(!window&&mode!=='curves')return '';
-    return `<div class="rt-range"><span aria-hidden="true">${centered?'秒':'RT'}</span><input id="plot-rt-start" type="number" step="any" value="${window?drt(window[0]):''}" aria-label="${centered?'顯示距中心起點（秒）':'顯示 RT 起點'}"><span aria-hidden="true">–</span><input id="plot-rt-end" type="number" step="any" value="${window?drt(window[1]):''}" aria-label="${centered?'顯示距中心終點（秒）':'顯示 RT 終點'}"><button type="button" data-rt-view="apply" aria-label="套用範圍">套用</button><button type="button" class="text-action" data-rt-view="full" aria-label="完整已載入範圍">全部</button></div>`;
+    return `<div class="rt-range"><span aria-hidden="true">${centered?'秒':'RT'}</span><input id="plot-rt-start" type="number" step="any" value="${window?windowValue(window[0],axis):''}" aria-label="${centered?'顯示距中心起點（秒）':'顯示 RT 起點'}"><span aria-hidden="true">–</span><input id="plot-rt-end" type="number" step="any" value="${window?windowValue(window[1],axis):''}" aria-label="${centered?'顯示距中心終點（秒）':'顯示 RT 終點'}"><button type="button" data-rt-view="apply" aria-label="套用範圍">套用</button><button type="button" class="text-action" data-rt-view="full" aria-label="完整已載入範圍">全部</button></div>`;
   }
   function fieldValue(value){
     // Serialized objects/lists from source records read as key-value lines instead of raw JSON text.
