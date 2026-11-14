@@ -33,7 +33,7 @@ records the effective settings and resource allocation.
 | `role` | `analyte` or `istd` |
 | `istd_pair` | Optional ISTD label for an analyte; blank for an ISTD or an analyte without a paired ISTD |
 | `cid_nl_loss_da` | Optional CID-NL neutral loss in Da, below `mz`, for example `116.0474` (dR), `132.0423` (R) or `146.0579` (MeR); any value is used as written |
-| `delta_mass_mz` | Optional comma-separated Delta Mass Δm/z of companion ions, relative to `mz`, for example `+1.0021, +4.0052`; positive or negative |
+| `delta_mass_mz` | Optional comma-separated Delta Mass Δm/z of companion ions, for example `+1.0021, +4.0052`. The base is this row's `mz`; each value is a companion's exact mass difference from it (¹³C₆ is `+6.0201`, not `+6`), positive or negative. Blank means no Delta Mass |
 
 Both blank means MS1 only with the shared 20 ppm precursor tolerance. With both
 filled, both conditions must match the same peak. Older tables with a single

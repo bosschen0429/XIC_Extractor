@@ -717,6 +717,14 @@
 .delta-editor > .table-scroll {
   max-width: 100%;
 }
+.delta-editor > p {
+  max-width: 62ch;
+  margin: 0;
+  text-align: left;
+}
+.delta-empty {
+  font-weight: 600;
+}
 .delta-ion-table caption {
   padding: 0 0 6px;
   color: var(--muted);
