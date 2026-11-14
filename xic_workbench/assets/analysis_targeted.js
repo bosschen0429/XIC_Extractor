@@ -448,7 +448,7 @@ function renderExpanded(tr, row) {
       baseMz: Number.isFinite(mz) && mz > 0 ? mz : null,
       allowNegative: true,
       showShape: true,
-      empty: "尚未啟用（清單顯示「—」）：加第一個伴隨離子就啟用。基準就是這一列的 m/z，不用另外填。",
+      empty: "尚未啟用；加第一個伴隨離子即啟用，基準為本列 m/z。",
       onChange: () => {
         const valid = ions.filter((ion) => Number.isFinite(ion.offset_mz));
         updateTarget(row, { delta_mass_mz: formatOffsets(valid) });

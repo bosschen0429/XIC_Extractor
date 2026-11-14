@@ -22,6 +22,29 @@ def test_editing_a_copy_leaves_the_shipped_example_unchanged(tmp_path):
     assert example.read_bytes() == original
 
 
+def test_written_list_explains_its_own_columns_in_header_notes(tmp_path):
+    import openpyxl
+
+    from xic_extractor.configuration.csv_io import TARGET_FIELDS
+    from xic_extractor.configuration.delta_mass_table import DELTA_MASS_HEADERS
+    from xic_extractor.configuration.paths import targets_template_path
+
+    rows = [dict(row, delta_mass_mz="+1.0021") for row in targeted_rows()]
+    written = tmp_path / "with-delta.xlsx"
+    files.save_target_list(files.create_target_list(rows), written)
+    # The shipped example must be written by the same writer, notes included.
+    for path, sheets in [
+        (written, {"Targets": TARGET_FIELDS, "Delta Mass": DELTA_MASS_HEADERS}),
+        (targets_template_path(), {"Targets": TARGET_FIELDS}),
+    ]:
+        book = openpyxl.load_workbook(path)
+        for sheet, owned in sheets.items():
+            notes = {cell.value: cell.comment for cell in book[sheet][1]}
+            assert all(notes[name] for name in owned), (path, sheet)
+            # A user's own column is kept as written, without a note.
+            assert not any(notes[name] for name in set(notes) - set(owned))
+
+
 @pytest.mark.parametrize("loss", ["116.0474", ""])
 def test_list_roundtrip_keeps_targets_and_extra_columns(tmp_path, loss):
     target_rows = [dict(row, cid_nl_loss_da=loss) for row in targeted_rows()]

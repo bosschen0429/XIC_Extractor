@@ -47,6 +47,28 @@ _REQUIRED_COLUMNS = {
 }
 # Sheets of the earlier method workbook, which carried a fixed strategy row.
 _RETIRED_SHEETS = ("Method", LEGACY_METHOD_SHEET)
+# Header notes in a written workbook: what to fill, for someone editing in Excel.
+_HEADER_NOTES = {
+    TARGETS_SHEET: {
+        "label": "目標名稱，不可重複。",
+        "mz": "基準 m/z（定量離子）。",
+        "expected_rt_min": "預期 RT（分鐘）。",
+        "role": "analyte 或 istd。",
+        "istd_pair": "配對內標的 label；內標列留空。",
+        "cid_nl_loss_da": "選填。中性丟失（Da），如 116.0474。",
+        "delta_mass_mz": (
+            "選填。伴隨離子與 mz 的精確質量差，逗號分隔，如 +1.0021, +4.0052。"
+        ),
+    },
+    DELTA_MASS_SHEET: {
+        "Target": "Targets 的 label。",
+        "Position": "離子名稱，通常同 Δm/z。",
+        "Delta m/z": "精確質量差；須列在 delta_mass_mz。",
+        "Ratio Min": "強度比下限（伴隨 ÷ 基準），只記錄。",
+        "Ratio Max": "強度比上限（伴隨 ÷ 基準），只記錄。",
+        "Compare Shape": "TRUE＝比對峰形。",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -187,6 +209,7 @@ def _target_fields(rows: Sequence[Mapping[str, str]]) -> tuple[str, ...]:
 
 def _save_workbook(path: Path, tables: Mapping) -> None:
     import openpyxl
+    from openpyxl.comments import Comment
     from openpyxl.styles import Font, PatternFill
 
     path = Path(path).absolute()
@@ -212,7 +235,12 @@ def _save_workbook(path: Path, tables: Mapping) -> None:
                 for cell in cells:
                     cell.data_type = "s"
                     cell.number_format = "@"
+            notes = _HEADER_NOTES.get(name, {})
             for cell in sheet[1]:
+                if cell.value in notes:
+                    cell.comment = Comment(
+                        notes[cell.value], "XIC Extractor", width=260, height=70
+                    )
                 cell.font = Font(bold=True, color="FFFFFF")
                 cell.fill = PatternFill("solid", fgColor="24445C")
                 sheet.column_dimensions[cell.column_letter].width = (

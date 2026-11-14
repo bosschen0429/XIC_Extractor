@@ -93,7 +93,7 @@ export function deltaMassEditor(options) {
     const head = el("tr");
     for (const [text, cls] of [
       ["Δm/z（伴隨 − 基準）", "num"],
-      ["強度比（伴隨 ÷ 基準；只記錄，不淘汰）", "num"],
+      ["強度比（伴隨 ÷ 基準，只記錄）", "num"],
       ...(options.showShape ? [["比對峰形", "center"]] : []),
       ["", ""],
     ])
@@ -178,7 +178,7 @@ export function deltaMassEditor(options) {
     // What to fill, for someone who has never seen a companion ion.
     const hint = el(
       "p",
-      "伴隨離子：同一化合物在同一 RT 一起出現的其他 MS1 離子，例如同位素峰。Δm/z 填與基準的精確質量差（¹³C₆ 是 +6.0201，不是 +6），其他欄可留預設。",
+      "伴隨離子：同一 RT 一起出現的其他 MS1 離子。Δm/z 填精確質量差，如 +6.0201。",
       "subtle delta-hint",
     );
     const parts = [hint];
