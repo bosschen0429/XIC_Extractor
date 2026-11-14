@@ -92,7 +92,9 @@ def test_targeted_publication_keeps_metadata_group_and_sample_attribution(
         config, [target], excel_output_path=tmp_path / "results.xlsx"
     )
     completed = execute_targeted_production_workflow(request, acquired)
-    publication = publish_targeted_outputs(request, completed, acquired)
+    publication = publish_targeted_outputs(
+        completed, excel_output_path=request.excel_output_path
+    )
     assert [row.sample_metadata.group for row in publication.output.file_results] == [
         "Control",
         "Case A",
