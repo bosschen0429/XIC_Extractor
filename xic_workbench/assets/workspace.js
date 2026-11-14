@@ -892,6 +892,8 @@ window.XicUi = (() => {
     $("selection-empty").hidden = true;
     $("job-progress").hidden = true;
     const targeted = state.page.source_kind === "targeted_workbook";
+    // Untargeted leads with the group plot and its RAW source; Targeted with the table.
+    (targeted ? $("recorded-review") : $("inline-curves")).after($("curve-settings"));
     $("item-kind").textContent = targeted ? "" : item.title;
     $("item-title").textContent = targeted
       ? `${item.title} · m/z ${fmt(item.precursor_mz, 4)}`

@@ -398,6 +398,10 @@ input.path,
   gap: 10px;
   margin-top: 10px;
 }
+/* Buttons match the 36px path input they sit beside. */
+.path-line > button {
+  min-height: 36px;
+}
 .path-line > label {
   color: var(--muted);
   font-size: 13px;
@@ -1163,7 +1167,9 @@ th.num {
 .targeted-review-nav button { min-height: 30px; padding: 4px 10px; border-color: transparent; background: transparent; color: var(--accent); font-size: 13px; }
 .targeted-review-nav button:hover { background: var(--accent-soft); }
 /* Untargeted curves: counts in one quiet line, then the plot. */
-#inline-curves { padding: 0 22px; }
+#inline-curves { padding: 4px 22px 18px; }
+/* Hold the plot's place while it loads so the table below does not jump. */
+#inline-curves:has(#inline-curve-status.working) { min-height: 480px; }
 #inline-curve-status { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
 #inline-curve-status:empty { display: none; }
 
@@ -1630,7 +1636,7 @@ kbd {
     gap: 12px;
   }
   .detail-heading {
-    flex-direction: column;
+    flex-wrap: wrap;
   }
   .path-line {
     grid-template-columns: 140px minmax(0, 1fr) auto;
@@ -1734,7 +1740,6 @@ kbd {
 }
 
 /* Untargeted nearest-m/z search keeps applied ranking and candidate distance visible. */
-#untargeted-search .field { margin-top: 8px; }
 #untargeted-search .subtle { margin-top: 8px; }
 .query-error { margin: 8px 0; color: var(--danger); font-size: 12px; }
 .nearest-results-note { margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }

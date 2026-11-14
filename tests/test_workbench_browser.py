@@ -2403,10 +2403,11 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     page.get_by_role("button", name="瀏覽矩陣群組").click()
     _configure_curve_sources(page, tmp_path, tmp_path)
     expect(page.locator('#sample-list input[value="S3"]')).not_to_be_checked()
-    # A row's curve action reads an unloaded sample from RAW, alone.
-    page.locator("#recorded-review .cell-table tbody tr").filter(
-        has_text="S3"
-    ).get_by_role("button", name="曲線").click()
+    # The RAW panel reads one unloaded sample alone.
+    for box in page.locator("#sample-list input:checked").all():
+        box.uncheck()
+    page.locator('#sample-list input[value="S3"]').check()
+    page.locator("#load-curves").click()
     review = _wait_for_curve_report(page, inline=True)
     curves = review.locator("[data-inspector-id='svg-raw'] polyline")
     expect(review).to_contain_text("未記錄峰頂或完整峰界，無法置中")
@@ -2495,14 +2496,8 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
         offline.locator('[data-inspector-id="svg-raw"] polyline[data-sample-id="S1"]')
     ).to_have_count(1)
     offline.close()
-    # A row's curve action focuses an already loaded curve without reading RAW.
-    focus = review.get_by_role("button", name="聚焦 S3", exact=True)
-    for _ in range(2):
-        # Asking again keeps the focus instead of toggling it off.
-        saved.filter(has_text="S3").get_by_role("button", name="曲線").click()
-        expect(focus).to_have_attribute("aria-pressed", "true")
-    expect(curves).to_have_count(3)
-    assert opened == ["S1.raw", "S2.raw", "S3.raw"]
+    # The saved table leaves curve focus to the plot's own sample list.
+    expect(saved.get_by_role("button")).to_have_count(0)
 
 
 def test_targeted_nd_row_opens_its_paired_curves_without_changing_results(

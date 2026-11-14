@@ -337,7 +337,7 @@ def test_peak_centering_does_not_invent_apexes_or_missing_tails(review_page):
     root = page.locator("#host")
     expect(root).to_contain_text("峰界中點置中：No apex")
     expect(root).to_contain_text("未記錄峰頂或完整峰界，無法置中：No center")
-    expect(root).to_contain_text("已載入範圍不足：B")
+    expect(root).to_contain_text("曲線未涵蓋整個峰：B")
     chart = _control(root, "svg-raw")
     expect(chart.locator("polyline")).to_have_count(3)
     # The missing apex is not re-picked from the signal: midpoint is 10.15 min.
