@@ -81,10 +81,7 @@ def run_smoke(report_path: Path) -> int:
         if not request("/examples/targets.xlsx"):
             raise RuntimeError("Empty example: targets.xlsx")
         config["targets"] = [
-            dict(row)
-            for row in load_target_list(
-                targets_template_path().with_name("targets.xlsx")
-            ).target_rows
+            dict(row) for row in load_target_list(targets_template_path()).target_rows
         ]
         if not config["settings"] or not config["targets"]:
             raise RuntimeError("Bundled settings or targets are empty")

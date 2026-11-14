@@ -73,7 +73,7 @@ def test_distribution_has_offline_guides_examples_and_no_developer_tree(
     ).read_bytes()
     assert "PyInstaller" in (app / "licenses/Third-party.txt").read_text("utf-8")
     assert any((app / "licenses/numpy").rglob("LICENSE*"))
-    for name in ("targets.xlsx", "targets.csv"):
+    for name in ("targets.xlsx",):
         assert (app / "examples" / name).read_bytes() == (
             PROJECT_ROOT / "xic_extractor/configuration/data" / name
         ).read_bytes()

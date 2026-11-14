@@ -8,15 +8,13 @@ from xic_extractor.configuration.models import ConfigError
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
 
-def test_shipped_example_matches_the_bundled_template(tmp_path):
-    from xic_extractor.configuration.csv_io import read_target_draft_rows
+def test_editing_a_copy_leaves_the_shipped_example_unchanged(tmp_path):
     from xic_extractor.configuration.paths import targets_template_path
 
-    example = targets_template_path().with_name("targets.xlsx")
+    example = targets_template_path()
     original = example.read_bytes()
     target_list = files.load_target_list(example)
     rows = [dict(row) for row in target_list.target_rows]
-    assert rows == read_target_draft_rows(targets_template_path())
     rows[0]["expected_rt_min"] = "9.25"
     copy = tmp_path / "my-list.xlsx"
     files.save_target_list(files.create_target_list(rows), copy)

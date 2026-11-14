@@ -82,12 +82,8 @@ def test_mint_known_istd_reference_computes_centers_and_deltas() -> None:
     assert coord_map[("ISTD1", "S3")][1] == pytest.approx(0.2)
 
 
-def test_read_targets_from_csv() -> None:
-    csv_path = Path("xic_extractor/configuration/data/targets.csv")
-    if not csv_path.is_file():
-        pytest.skip("xic_extractor/configuration/data/targets.csv not found")
-
-    targets = read_targets(csv_path)
+def test_read_targets_from_bundled_example() -> None:
+    targets = read_targets(Path("xic_extractor/configuration/data/targets.xlsx"))
     assert len(targets) == 14
     istd_targets = [t for t in targets if t.is_istd]
     assert len(istd_targets) == 7

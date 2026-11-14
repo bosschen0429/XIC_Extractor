@@ -73,7 +73,7 @@ from a RAW directory, including Backfill; it has no mode selector.
 
 The Alignment CLI resolves ISTD input before RAW acquisition. An explicit
 targets CSV or reference workbook takes precedence; otherwise it uses the
-[bundled target template](../../xic_extractor/configuration/data/targets.csv) and prints the
+[bundled target template](../../xic_extractor/configuration/data/targets.xlsx) and prints the
 resolved source and ISTD count. Missing or invalid input fails before RAW work.
 An intentional uncorrected CLI run requires `--allow-uncorrected`, which cannot
 be combined with either ISTD input. The Python API retains its explicit optional

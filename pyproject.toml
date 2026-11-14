@@ -52,7 +52,7 @@ build_py = "tools.build_user_guides.BuildPy"
 "xic_workbench" = ["assets/*.html", "assets/*.js", "assets/*.css"]
 "xic_extractor.presets.data" = ["*.toml"]
 "xic_extractor.discovery" = ["data/*"]
-"xic_extractor.configuration" = ["data/*.csv", "data/*.json", "data/*.xlsx"]
+"xic_extractor.configuration" = ["data/*.json", "data/*.xlsx"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

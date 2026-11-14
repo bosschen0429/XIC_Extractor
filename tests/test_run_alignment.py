@@ -1249,7 +1249,7 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
             / "xic_extractor"
             / "configuration"
             / "data"
-            / "targets.csv"
+            / "targets.xlsx"
         )
         assert f"Targets CSV: {expected}" in stdout
         assert "7 ISTD loaded" in stdout
@@ -1634,7 +1634,7 @@ def test_run_alignment_cli_istd_input_is_explicit_or_validated_before_raw(
         / "xic_extractor"
         / "configuration"
         / "data"
-        / "targets.csv"
+        / "targets.xlsx"
     )
     monkeypatch.setattr(
         run_alignment,

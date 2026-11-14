@@ -107,10 +107,10 @@ def test_discovery_defaults_use_bundled_shared_targets(monkeypatch, tmp_path):
     monkeypatch.setattr(
         untargeted_config,
         "targets_template_path",
-        lambda: tmp_path / "bundle" / "targets.csv",
+        lambda: tmp_path / "bundle" / "targets.xlsx",
     )
     assert untargeted_config.read_untargeted_config()["targets_csv"] == str(
-        tmp_path / "bundle" / "targets.csv"
+        tmp_path / "bundle" / "targets.xlsx"
     )
     untargeted_config.write_untargeted_config({"targets_csv": ""})
     assert untargeted_config.read_untargeted_config()["targets_csv"] == ""

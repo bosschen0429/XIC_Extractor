@@ -89,15 +89,15 @@ def test_http_list_export_and_upload_keep_metadata_without_touching_batch(tmp_pa
         assert not (config_dir / "workspace.json").exists()
 
 
-@pytest.mark.parametrize("name", ["targets.csv", "targets.xlsx"])
-def test_istd_upload_uses_shared_target_files_without_changing_targeted(tmp_path, name):
+def test_istd_upload_uses_shared_target_files_without_changing_targeted(tmp_path):
     import base64
     from pathlib import Path
 
     from xic_extractor.configuration.paths import targets_template_path
     from xic_extractor.configuration.targets import read_istd_targets
 
-    source = targets_template_path().parent / name
+    source = targets_template_path()
+    name = source.name
     workspace = ConfigurationWorkspace(config_dir=tmp_path / "config")
     with workbench_client(workspace) as request:
         original = request("/api/config")[1]
@@ -160,7 +160,7 @@ def test_istd_http_preview_and_upload_share_method_applicability(
     from xic_extractor.configuration.paths import targets_template_path
     from xic_workbench.methods import method_details
 
-    source = targets_template_path().with_suffix(".xlsx")
+    source = targets_template_path()
     snapshot = method_details(method)["draft"]
     workspace = ConfigurationWorkspace(config_dir=tmp_path / "config")
     with workbench_client(workspace) as request:
