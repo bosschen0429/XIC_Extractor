@@ -12,7 +12,7 @@ from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
     mint_known_istd_reference_from_measurements,
 )
-from xic_extractor.configuration.models import ExtractionConfig, Target
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.configuration.targets import validate_target_settings
 from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 from xic_extractor.sample_metadata import SampleMetadata
@@ -156,7 +156,10 @@ def read_known_istd_reference(path: Path) -> KnownIstdReference:
             )
         if not targets or len({t.label for t in targets}) != len(targets):
             raise ValueError("known ISTD reference requires unique ISTD target labels")
-        validate_target_settings(tuple(targets))
+        try:
+            validate_target_settings(tuple(targets))
+        except ConfigError as exc:
+            raise ValueError(str(exc)) from exc
         labels = {target.label for target in targets}
         coordinates: dict[tuple[str, str], float] = {}
         seen: set[tuple[str, str]] = set()
