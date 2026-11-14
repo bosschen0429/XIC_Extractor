@@ -8,6 +8,66 @@ import shutil
 import subprocess
 
 
+def build_peak_comparison_payload() -> dict:
+    """Measured peaks with unequal heights, tails and nonlinear RT projections."""
+    curves = []
+    for sid, raw, aligned, intensity in (
+        (
+            "A",
+            [4, 4.5, 4.8, 5, 5.2, 5.7, 6],
+            [9, 9.4, 9.8, 10, 10.3, 10.9, 11.2],
+            [10, 15, 60, 100, 65, 20, 10],
+        ),
+        (
+            "B",
+            [6, 6.5, 6.8, 7, 7.4, 8, 8.4],
+            [9.1, 9.6, 10, 10.2, 10.8, 11.7, 12.1],
+            [30, 35, 95, 200, 110, 50, 30],
+        ),
+    ):
+        curves.append(
+            {
+                "sample_id": sid,
+                "raw_rts": raw,
+                "aligned_rts": aligned,
+                "raw_intensities": intensity,
+                "processed_curves": [
+                    {
+                        "kind": "smoothed",
+                        "rts": raw,
+                        "aligned_rts": aligned,
+                        "intensities": intensity,
+                    }
+                ],
+                "apex_rt": raw[3],
+                "bound_left_rt": raw[1],
+                "bound_right_rt": raw[5],
+                "aligned_apex_rt": aligned[3],
+                "aligned_bound_left_rt": aligned[1],
+                "aligned_bound_right_rt": aligned[5],
+                "rt_alignment_methods": ["loess"],
+                "rt_alignment_label": "校正 RT：loess",
+            }
+        )
+    return {
+        "summary": {"sample_rt_calibration": {"schema": "sample_rt_calibration"}},
+        "samples": [{"id": sid, "label": sid} for sid in ("A", "B")],
+        "items": [
+            {
+                "id": "feature",
+                "kind": "group",
+                "title": "Peak comparison",
+                "samples": [
+                    {"sample_id": "A", "quantitative_value": 123},
+                    {"sample_id": "B", "quantitative_value": 456},
+                ],
+                "curves": curves,
+                "review_rt_window": [4, 8.4],
+            }
+        ],
+    }
+
+
 def _evaluate_report_functions(report, payload, expression):
     """Exercise actual plot/evidence helpers before registering DOM interaction.
 
@@ -73,6 +133,7 @@ def build_origin_curve_payload() -> dict:
             "evidence_ref": f"curve-{i}",
             "raw_rts": [1.0, 1.1, 1.2],
             "raw_intensities": [0.0, 10.0 + i, 0.0],
+            "apex_rt": 1.1,
             "processed_curves": [
                 {"kind": "smoothed", "intensities": [0.0, 8.0 + i, 0.0]}
             ],

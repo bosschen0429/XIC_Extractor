@@ -522,7 +522,7 @@
   const primaryItems=items.filter(item=>['group','row'].includes(item.kind)&&!isCollapsedExcluded(item));
   const initialItem=envelopeReview?[...items].sort(compareEnvelope)[0]:nlReview?(items.find(item=>item.delta_mass.neutral_losses.some(n=>n.status==='supported'))||items[0]):queryReport?items[0]:primaryItems.reduce((best,item)=>(item.review_summary?.observed_sample_count??-1)>(best?.review_summary?.observed_sample_count??-1)?item:best,null)||items.find(item=>!isCollapsedExcluded(item));
   const state={id:initialItem?.id,sample:null,candidate:'',capture:'',visible:new Set(samples.map(s=>s.id)),bounds:true,evidence:'',evidenceContext:'',excludedOpen:queryReport};
-  const curveUi={model:null,query:'',collapsed:new Set(),pinned:null,hover:null,observer:null};
+  const curveUi={model:null,query:'',collapsed:new Set(),pinned:null,hover:null,observer:null,axis:'centered'};
   cleanups.push(()=>curveUi.observer?.disconnect());
   let filtered=items, listed=[], dialogOpener=null, evidenceOpener=null;
 
@@ -657,13 +657,33 @@
     else if(!curves.some(c=>curveKey(c,all.indexOf(c))===state.capture))state.capture=curves[0]?curveKey(curves[0],all.indexOf(curves[0])):'';
     // Keep the selected signal when absent; never substitute raw for smoothed.
   }
+  // Center the saved projection; never re-pick an apex or change signal values.
+  function curveTimeBasis(curve,axis){
+    return axis==='centered'?(curve.aligned_rts?.length?'aligned':'raw'):axis;
+  }
+  function curveCenter(curve,basis){
+    const prefix=basis==='aligned'?'aligned_':'',apex=curve[`${prefix}apex_rt`];
+    if(finite(apex))return apex;
+    const left=curve[`${prefix}bound_left_rt`],right=curve[`${prefix}bound_right_rt`];
+    return finite(left)&&finite(right)&&right>left?(left+right)/2:null;
+  }
+  function curveTime(curve,axis,name){
+    const basis=curveTimeBasis(curve,axis),value=curve[basis==='aligned'?`aligned_${name}`:name];
+    if(axis!=='centered')return value;
+    const center=curveCenter(curve,basis);
+    return finite(value)&&finite(center)?(value-center)*60:null;
+  }
   function seriesList(curve,axis,signal=display.signal){
-    const rts=axis==='aligned'?curve.aligned_rts:curve.raw_rts;
+    const basis=curveTimeBasis(curve,axis);
+    const center=curveCenter(curve,basis);
+    if(axis==='centered'&&!finite(center))return [];
+    const project=values=>axis==='centered'?values?.map(v=>finite(v)?(v-center)*60:null):values;
+    const rts=project(basis==='aligned'?curve.aligned_rts:curve.raw_rts);
     const raw=rts?.length&&curve.raw_intensities?.length?{kind:'raw',rts,intensities:curve.raw_intensities}:null;
     if(signal==='raw')return raw?[raw]:[];
     const found=(curve.processed_curves||[]).find(s=>s.kind===signal||(signal==='positive'&&s.kind==='positive_signal'));
     if(!found)return [];
-    const processedRts=axis==='aligned'?found.aligned_rts:(found.rts||curve.raw_rts);
+    const processedRts=project(basis==='aligned'?found.aligned_rts:(found.rts||curve.raw_rts));
     const processed=processedRts?.length&&found.intensities?.length?{...found,rts:processedRts}:null;
     return processed?[processed]:[];
   }
@@ -724,15 +744,22 @@
   // The sample table answers each cell; offline it also picks the plotted curves.
   function cellTable(item){
     const offline=mode!=='result',plotted=offline&&anyCurve(item);
-    const head=`<tr>${plotted?'<th><span class="sr-only">顯示</span></th>':''}<th>樣本</th><th class="num">Area</th><th>來源</th><th><span class="sr-only">操作</span></th></tr>`;
-    const body=itemRows(item).map(r=>{
+    // The host plot focuses curves itself, so result rows carry no action. Result
+    // rows flow into columns of at least eight rows; one header row per possible
+    // column labels it (CSS clips the ones past the columns that fit).
+    const rows=itemRows(item),nameChars=Math.max(0,...rows.map(r=>sampleName(r.sample_id).length)),maxColumns=Math.min(6,Math.max(1,Math.ceil(rows.length/8)));
+    const labels='<th>樣本</th><th class="num">Area</th><th>來源</th>';
+    const head=offline
+      ?`<tr>${plotted?'<th><span class="sr-only">顯示</span></th>':''}${labels}<th><span class="sr-only">操作</span></th></tr>`
+      :`<tr>${labels}</tr>${`<tr aria-hidden="true">${labels}</tr>`.repeat(maxColumns-1)}`;
+    const body=rows.map(r=>{
       const sid=r.sample_id,current=sid===state.sample,notes=[...(r.note?[r.note]:[]),...(offline?sampleLimits(item,r):[])],risks=r.risk_labels||[];
       const action=offline
-        ?`${hasCurve(item,sid)||candidates(item,sid).length?`<button type="button" class="row-action" data-focus="${esc(sid)}" ${current?'aria-current="true"':''}>${current?'查看中':'查看'}</button>`:''}${evidenceButtons(r.decision_refs,`${sampleName(sid)} 的排除依據`,'排除依據')}`
-        :onRequestCurves?`<button type="button" class="row-action" data-review-curve="${esc(sid)}">曲線</button>`:'';
-      return `<tr class="${current?'focused-row':''}" data-sample-row="${esc(sid)}">${plotted?`<td><input type="checkbox" data-sample-visible="${esc(sid)}" aria-label="在圖中顯示 ${esc(sampleName(sid))}" ${state.visible.has(sid)?'checked':''} ${hasCurve(item,sid)?'':'disabled'}></td>`:''}<td class="cell-sample">${esc(sampleName(sid))}${notes.length||risks.length?`<div class="cell-explain">${notes.length?`<span class="cell-note">${esc(notes.join('；'))}</span>`:''}${risks.length?`<span class="cell-risk">${esc(risks.join('；'))}</span>`:''}</div>`:''}</td><td class="num">${areaText(r)}</td><td class="cell-origin">${originCell(item,r)}</td><td class="cell-action">${action}</td></tr>`;
+        ?`<td class="cell-action">${hasCurve(item,sid)||candidates(item,sid).length?`<button type="button" class="row-action" data-focus="${esc(sid)}" ${current?'aria-current="true"':''}>${current?'查看中':'查看'}</button>`:''}${evidenceButtons(r.decision_refs,`${sampleName(sid)} 的排除依據`,'排除依據')}</td>`
+        :'';
+      return `<tr class="${current?'focused-row':''}" data-sample-row="${esc(sid)}">${plotted?`<td><input type="checkbox" data-sample-visible="${esc(sid)}" aria-label="在圖中顯示 ${esc(sampleName(sid))}" ${state.visible.has(sid)?'checked':''} ${hasCurve(item,sid)?'':'disabled'}></td>`:''}<td class="cell-sample">${esc(sampleName(sid))}${notes.length||risks.length?`<div class="cell-explain">${notes.length?`<span class="cell-note">${esc(notes.join('；'))}</span>`:''}${risks.length?`<span class="cell-risk">${esc(risks.join('；'))}</span>`:''}</div>`:''}</td><td class="num">${areaText(r)}</td><td class="cell-origin">${originCell(item,r)}</td>${action}</tr>`;
     }).join('');
-    return `<div class="cell-table-wrap"><table class="cell-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+    return `<div class="cell-table-wrap" style="--cell-name:${nameChars}ch;--cell-max:${maxColumns}"><table class="cell-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
   }
   function candidateControl(item){
     if(!state.sample)return '<p class="control-value">先從樣本表查看一個樣本。</p>';
@@ -835,6 +862,9 @@
     for(const line of root.querySelectorAll('svg[data-curve-chart] polyline[data-sample-id],svg[data-curve-chart] line[data-marker="value-apex"]')){
       line.style.opacity=String(curveLineOpacity(line.dataset.sampleId,line.dataset.curveOverlay==='true'));
     }
+    for(const bounds of root.querySelectorAll('[data-curve-bounds]')){
+      bounds.style.display=bounds.dataset.sampleId===(curveUi.hover||curveUi.pinned)?'':'none';
+    }
     for(const row of root.querySelectorAll('.curve-sample-row')){
       row.classList.toggle('is-hovered',row.dataset.sampleId===curveUi.hover);
       row.classList.toggle('is-pinned',row.dataset.sampleId===curveUi.pinned);
@@ -859,8 +889,16 @@
     const name=document.createElement('strong'),note=document.createElement('span');
     name.textContent=row.name;
     note.textContent=origin||(row.available?[...new Set(row.curves.map(curveAcquisitionLabel))].join(' / '):'無曲線');
-    if(curveWorkspaceAxis()==='aligned'&&row.available)note.textContent+=' · '+[...new Set(row.curves.map(c=>c.rt_alignment_label).filter(Boolean))].join(' / ');
+    if(curveWorkspaceAxis()!=='raw'&&row.available)note.textContent+=' · '+[...new Set(row.curves.map(c=>c.rt_alignment_label).filter(Boolean))].join(' / ');
     tip.replaceChildren(name,note);
+    if(row.available){
+      const evidence=document.createElement('span');
+      setHTML(evidence,[...new Set(row.curves.map(c=>`原始 RT ${finite(c.apex_rt)?timeValue(c.apex_rt,'raw'):'未記錄'} · 校正 RT ${finite(c.aligned_apex_rt)?timeValue(c.aligned_apex_rt,'aligned'):'未記錄'}`)),`正式面積：${areaText(itemRows(curveUi.model.item).find(r=>r.sample_id===id)||{})}`].join(' · '));
+      tip.append(evidence);
+      if(curveWorkspaceAxis()==='centered'&&row.curves.some(c=>!finite(curveTime(c,curveTimeBasis(c,'centered'),'apex_rt'))&&finite(curveCenter(c,curveTimeBasis(c,'centered'))))){
+        const basis=document.createElement('span');basis.textContent='峰界中點置中';tip.append(basis);
+      }
+    }
     if(detail){const value=document.createElement('span');value.textContent=detail;tip.append(value);}
     tip.hidden=false;
     curveUi.describedElement?.removeAttribute('aria-describedby');
@@ -875,29 +913,82 @@
     const width=Math.max(280,element.clientWidth);
     curveUi.width=width;
     const item=curveUi.model.item,axis=curveWorkspaceAxis();
-    const fallback=axis==='aligned'?[...new Set((item.curves||[]).filter(c=>state.visible.has(c.sample_id)&&c.rt_alignment_methods?.includes('raw_fallback')).map(c=>sampleName(c.sample_id)))]:[];
-    setHTML(element,plot(item,axis,false,true,width)+(fallback.length?`<p class="alignment-summary partial">無 RT 估計，顯示原始 RT：${fallback.map(esc).join('、')}</p>`:''));
+    setHTML(element,plot(item,axis,false,true,width)+curveWindowNotes(item,axis));
+    const window=state.plotWindow||curveViewWindow(item,axis);
+    if(window){$('plot-rt-start').value=windowValue(window[0],axis);$('plot-rt-end').value=windowValue(window[1],axis);}
     curveUi.geometry=new WeakMap();
     applyCurveEmphasis();
   }
-  function curveWorkspaceAxis(){return data.summary?.sample_rt_calibration?'aligned':'raw';}
-  // Open on the peaks that gave the values, with the margin a RAW read of an
-  // empty sample uses; the whole saved window stays one click away (全部).
-  const VALUE_APEX_MARGIN_MIN=0.5;
-  function valueApexWindow(item,axis){
-    const apexes=(item.curves||[]).map(c=>axis==='aligned'?c.aligned_apex_rt:c.apex_rt).filter(finite);
-    return apexes.length?[Math.min(...apexes)-VALUE_APEX_MARGIN_MIN,Math.max(...apexes)+VALUE_APEX_MARGIN_MIN]:null;
+  function curvesHaveAlignedRts(item){return (item?.curves||[]).some(c=>c.aligned_rts?.length);}
+  function curveWorkspaceAxis(){
+    const item=curveUi.model?.item;
+    return curveUi.axis==='aligned'&&item&&!curvesHaveAlignedRts(item)?'raw':curveUi.axis;
+  }
+  function timeAxisTitle(axis){return axis==='centered'?'峰頂置中':axis==='aligned'?'對齊時間':'原始時間';}
+  // Centered offsets are seconds; one decimal matches the scan spacing.
+  function windowValue(value,axis){return axis==='centered'?fixed(value,1):drt(value);}
+  function timeValue(value,axis){return `${windowValue(value,axis)} ${axis==='centered'?'秒':'min'}`;}
+  function curvePeakWindow(curve,axis){
+    const left=curveTime(curve,axis,'bound_left_rt'),right=curveTime(curve,axis,'bound_right_rt');
+    if(!finite(left)||!finite(right)||right<=left)return null;
+    const margin=Math.max((right-left)*.15,axis==='centered'?3:.05);
+    return [left-margin,right+margin];
+  }
+  function curveViewWindow(item,axis,full=false){
+    let lo=Infinity,hi=-Infinity;
+    for(const curve of curvesForPlot(item)){
+      const series=seriesList(curve,axis);
+      if(!series.length)continue;
+      const peak=full?null:curvePeakWindow(curve,axis);
+      if(peak){lo=Math.min(lo,peak[0]);hi=Math.max(hi,peak[1]);}
+      else for(const s of series)s.rts.forEach((v,i)=>{if(finite(v)&&finite(s.intensities[i])){lo=Math.min(lo,v);hi=Math.max(hi,v);}});
+    }
+    if(!finite(lo)||!finite(hi))return null;
+    if(axis==='centered'){const radius=Math.max(Math.abs(lo),Math.abs(hi),3);return [-radius,radius];}
+    return lo===hi?[lo-.05,hi+.05]:[lo,hi];
+  }
+  function curveWindowNotes(item,axis){
+    const notes=new Map();
+    const add=(message,curve)=>{if(!notes.has(message))notes.set(message,new Set());notes.get(message).add(sampleName(curve.sample_id));};
+    for(const curve of curvesForPlot(item)){
+      if(axis==='centered'){
+        const basis=curveTimeBasis(curve,axis);
+        if(!finite(curveCenter(curve,basis))){add('未記錄峰頂或完整峰界，無法置中',curve);continue;}
+        if(!finite(curveTime(curve,basis,'apex_rt')))add('峰界中點置中',curve);
+      }
+      const series=seriesList(curve,axis);
+      if(!series.length){if(axis==='aligned'&&seriesList(curve,'raw').length)add('未提供校正座標',curve);continue;}
+      if(axis!=='raw'&&(curve.rt_alignment_methods?.includes('raw_fallback')||!curve.aligned_rts?.length))add(axis==='centered'?'無 RT 估計，以原始時間置中':'無 RT 估計，顯示原始 RT',curve);
+      // Coverage is judged on the saved bounds; the view's padding only frames them.
+      // Without bounds the view falls back to the loaded range; that needs no note.
+      const left=curveTime(curve,axis,'bound_left_rt'),right=curveTime(curve,axis,'bound_right_rt');
+      if(!finite(left)||!finite(right)||right<=left)continue;
+      for(const s of series){
+        let lo=Infinity,hi=-Infinity;
+        s.rts.forEach((v,i)=>{if(finite(v)&&finite(s.intensities[i])){lo=Math.min(lo,v);hi=Math.max(hi,v);}});
+        if(lo>left+1e-9||hi<right-1e-9)add('曲線未涵蓋整個峰',curve);
+      }
+    }
+    // Past a few names a count reads faster; the full list stays on hover.
+    return [...notes].map(([message,names])=>{
+      const list=[...names],many=list.length>3;
+      return `<p class="alignment-summary partial"${many?` title="${esc(list.join('、'))}"`:''}>${message}：${many?`${list.length} 個樣本`:list.map(esc).join('、')}</p>`;
+    }).join('');
   }
   function renderCurveWorkspace(item){
     const model=curveSidebarModel(item);
     hideCurveTooltip();$('curve-tooltip')?.remove();
     curveUi.observer?.disconnect();
-    setHTML($('workspace-content'),`<section class="curve-section" id="curve-workspace"><div class="curve-group-controls"><div class="curve-group-options" role="group" aria-label="顯示組別">${model.groups.length>1?model.groups.map(group=>`<label class="curve-group-option"><input type="checkbox" data-curve-group="${esc(group.name)}" aria-label="顯示 ${esc(group.name)} 整組"><span>${esc(group.name)}</span></label>`).join(''):''}<div class="curve-bulk-actions"><button type="button" data-curve-all="true" aria-label="全部顯示">全選</button><button type="button" data-curve-all="false" aria-label="全部隱藏">清空</button></div></div>${signalSwitchMarkup}</div><div class="curve-sample-workspace"><aside class="curve-sidebar" aria-label="樣本曲線顯示"><div class="curve-list-tools"><input type="search" id="curve-search" aria-label="搜尋樣本名稱" placeholder="搜尋樣本" value="${esc(curveUi.query)}"><button type="button" id="curve-clear-focus" data-curve-clear aria-label="解除聚焦" title="解除聚焦" hidden>×</button></div><div class="curve-sample-list" id="curve-sample-list">${curveSampleList(model)}</div></aside><section class="curve-main" aria-label="層析圖"><div class="curve-plot-tools">${rtViewControls(item)}${overlayControl(item)}<button type="button" class="zoom-btn" data-zoom="${curveWorkspaceAxis()}" aria-label="放大層析圖">放大 ↗</button></div><div class="svg-container" id="svg-raw"></div></section></div><div class="curve-tooltip" id="curve-tooltip" role="tooltip" hidden></div></section>`);
+    setHTML($('workspace-content'),`<section class="curve-section" id="curve-workspace"><div class="curve-group-controls"><div class="curve-group-options" role="group" aria-label="顯示組別">${model.groups.length>1?model.groups.map(group=>`<label class="curve-group-option"><input type="checkbox" data-curve-group="${esc(group.name)}" aria-label="顯示 ${esc(group.name)} 整組"><span>${esc(group.name)}</span></label>`).join(''):''}<div class="curve-bulk-actions"><button type="button" data-curve-all="true" aria-label="全部顯示">全選</button><button type="button" data-curve-all="false" aria-label="全部隱藏">清空</button></div></div>${signalSwitchMarkup}</div><div class="curve-sample-workspace"><aside class="curve-sidebar" aria-label="樣本曲線顯示"><div class="curve-list-tools"><input type="search" id="curve-search" aria-label="搜尋樣本名稱" placeholder="搜尋樣本" value="${esc(curveUi.query)}"><button type="button" id="curve-clear-focus" data-curve-clear aria-label="解除聚焦" title="解除聚焦" hidden>×</button></div><div class="curve-sample-list" id="curve-sample-list">${curveSampleList(model)}</div></aside><section class="curve-main" aria-label="層析圖"><div class="curve-plot-tools">${curveAxisControls(item)}${rtViewControls(item)}<button type="button" class="zoom-btn" data-zoom="${curveWorkspaceAxis()}" aria-label="放大層析圖">放大 ↗</button>${overlayControl(item)}</div><div class="svg-container" id="svg-raw"></div></section></div><div class="curve-tooltip" id="curve-tooltip" role="tooltip" hidden></div></section>`);
     syncSignalSwitch();syncCurveSelection();drawCurveWorkspacePlot();
     curveUi.observer=new ResizeObserver(()=>{
       if($('svg-raw')?.clientWidth!==curveUi.width)drawCurveWorkspacePlot();
     });
     curveUi.observer.observe($('svg-raw'));
+  }
+  function curveAxisControls(item){
+    const axes=[['raw','原始 RT'],...(curvesHaveAlignedRts(item)?[['aligned','校正 RT']]:[]),['centered','峰頂置中']];
+    return `<div class="axis-switch" role="group" aria-label="時間視角">${axes.map(([axis,label])=>`<button type="button" data-time-axis="${axis}" aria-pressed="${curveWorkspaceAxis()===axis}">${label}</button>`).join('')}</div>`;
   }
   function changeCurveVisibility(update){
     hideCurveTooltip();update();syncCurveSelection();drawCurveWorkspacePlot();
@@ -991,7 +1082,7 @@
     root.addEventListener('pointermove',event=>{
       const svg=event.target.closest('svg[data-curve-chart]');if(!svg)return;
       const nearest=nearestCurve(svg,event);
-      if(nearest)showCurveTooltip(nearest.line.dataset.sampleId,event,svg,`RT ${rt(nearest.rt)} min · 訊號 ≈ ${num(nearest.signal)}`,nearest.line.dataset.curveOrigin);
+      if(nearest)showCurveTooltip(nearest.line.dataset.sampleId,event,svg,`${curveWorkspaceAxis()==='centered'?'距中心':'RT'} ${timeValue(nearest.rt,curveWorkspaceAxis())} · 訊號 ≈ ${num(nearest.signal)}`,nearest.line.dataset.curveOrigin);
       else hideCurveTooltip();
     });
     root.addEventListener('pointerout',event=>{
@@ -1011,9 +1102,9 @@
     const shown=curvesForPlot(item,peer),drawable=shown.flatMap(curve=>seriesList(curve,axis,signal).map(series=>({curve,series})));
     const extra=drawable.length?[...display.overlays].filter(k=>overlays(item).includes(k)).flatMap(kind=>shown.flatMap(curve=>seriesList(curve,axis,kind).map(series=>({curve,series})))):[];
     if(!drawable.length&&presentation.emptyMessage)return `<div class="empty-state">${esc(presentation.emptyMessage)}</div>`;
-    if(!drawable.length){const chosen=signal==='raw'?'原始訊號':'平滑訊號';return `<div class="empty-state"><strong>${axis==='aligned'?'所選資料未提供對齊座標':shown.length?`所選來源未保存${chosen}`:'目前沒有可顯示的曲線'}</strong><p>${axis==='aligned'?'請切回原始時間。':shown.length?'可在上方切換訊號。':'請勾選樣本，或確認來源有保存曲線。'}</p></div>`;}
+    if(!drawable.length){const chosen=signal==='raw'?'原始訊號':'平滑訊號',noCenter=axis==='centered'&&shown.some(c=>!finite(curveCenter(c,curveTimeBasis(c,axis))));return `<div class="empty-state"><strong>${noCenter?'未記錄峰頂或完整峰界，無法置中':axis==='aligned'?'所選資料未提供對齊座標':shown.length?`所選來源未保存${chosen}`:'目前沒有可顯示的曲線'}</strong><p>${noCenter||axis==='aligned'?'請切回原始時間。':shown.length?'可在上方切換訊號。':'請勾選樣本，或確認來源有保存曲線。'}</p></div>`;}
     const savedWindow=axis==='raw'&&Array.isArray(item.review_rt_window)?item.review_rt_window:null;
-    const reviewWindow=mode==='curves'?state.plotWindow||valueApexWindow(item,axis)||savedWindow:axis==='raw'?(state.plotWindow||savedWindow):null;
+    const reviewWindow=mode==='curves'?state.plotWindow||curveViewWindow(item,axis):axis==='raw'?(state.plotWindow||savedWindow):null;
     let lo=reviewWindow?.[0]??Infinity,hi=reviewWindow?.[1]??-Infinity,lowY=0,highY=0;
     [...drawable,...extra].forEach(({series:s})=>s.rts.forEach((v,i)=>{const y=s.intensities[i];if(finite(v)&&finite(y)&&(!reviewWindow||v>=lo&&v<=hi)){if(!reviewWindow){lo=Math.min(lo,v);hi=Math.max(hi,v);}lowY=Math.min(lowY,y);highY=Math.max(highY,y);}}));
     if(!finite(lo)||!finite(hi))return '<div class="empty-state">未提供成對的時間與訊號數值。</div>';if(lo===hi){lo-=.5;hi+=.5;}if(lowY===highY)highY=lowY+1;
@@ -1022,9 +1113,11 @@
     let svg=`<defs><clipPath id="${clipId}"><rect x="${L}" y="${T}" width="${IW}" height="${IH}"/></clipPath></defs><text x="8" y="14" font-size="13" fill="#48534f">訊號強度</text>`;
     for(let i=0;i<=4;i++){const v=lowY+(highY-lowY)*i/4;svg+=`<line x1="${L}" y1="${y(v)}" x2="${L+IW}" y2="${y(v)}" stroke="#e4e9ec"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end" font-size="13" fill="#48534f">${tickNum(v)}</text>`;}
     svg+=`<path d="M${L},${T}V${T+IH}H${L+IW}" fill="none" stroke="#91a0a8"/>`;
-    for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4;svg+=`<text x="${x(v)}" y="${H-32}" text-anchor="${width&&i===0?'start':width&&i===4?'end':'middle'}" font-size="13" fill="#48534f">${rt(v)}</text>`;}
+    const ticks=[0,1,2,3,4].map(i=>lo+(hi-lo)*i/4),wholeSeconds=ticks.every(v=>Math.abs(v-Math.round(v))<1e-6);
+    ticks.forEach((v,i)=>{svg+=`<text x="${x(v)}" y="${H-32}" text-anchor="${width&&i===0?'start':width&&i===4?'end':'middle'}" font-size="13" fill="#48534f">${axis==='centered'?fixed(Math.abs(v)<1e-9?0:v,wholeSeconds?0:1):rt(v)}</text>`;});
+    if(axis==='centered'&&lo<=0&&hi>=0)svg+=`<line data-marker="peak-center" x1="${x(0)}" x2="${x(0)}" y1="${T}" y2="${T+IH}" stroke="var(--muted)" stroke-dasharray="4 4"><title>置中參考 · 0 秒</title></line>`;
     const active=peer?null:activeCurve(item);
-    if(active&&state.bounds){const left=axis==='aligned'?active.aligned_bound_left_rt:active.bound_left_rt,right=axis==='aligned'?active.aligned_bound_right_rt:active.bound_right_rt;if(finite(left)&&finite(right)){const a=Math.max(lo,Math.min(left,right)),b=Math.min(hi,Math.max(left,right));if(b>=a)svg+=`<rect data-integration-range="true" x="${x(a)}" y="${T}" width="${Math.max(0,x(b)-x(a))}" height="${IH}" fill="${color(active.sample_id)}" opacity=".09"><title>積分範圍 ${drt(left)}–${drt(right)} min</title></rect>`;}}
+    if(active&&state.bounds){const left=curveTime(active,axis,'bound_left_rt'),right=curveTime(active,axis,'bound_right_rt');if(finite(left)&&finite(right)){const a=Math.max(lo,Math.min(left,right)),b=Math.min(hi,Math.max(left,right));if(b>=a)svg+=`<rect data-integration-range="true" x="${x(a)}" y="${T}" width="${Math.max(0,x(b)-x(a))}" height="${IH}" fill="${color(active.sample_id)}" opacity=".09"><title>積分範圍 ${timeValue(left,axis)}–${timeValue(right,axis)}</title></rect>`;}}
     const dash=lineDash(item);
     [...extra.map(d=>({...d,overlay:true})),...drawable].forEach(({curve,series:s,overlay})=>{
       const focused=peer||!state.sample||curve.sample_id===state.sample;
@@ -1037,14 +1130,18 @@
       if(presentation.pointLimit>0 && s.rts.filter(v=>v>=lo&&v<=hi).length<=presentation.pointLimit){
         s.rts.forEach((v,i)=>{if(v>=lo&&v<=hi)svg+=`<circle cx="${x(v)}" cy="${y(s.intensities[i])}" r="4" fill="${stroke}" stroke="var(--card)" stroke-width="2"/>`;});
       }
-      const valueApex=mode==='curves'&&!overlay?(axis==='aligned'?curve.aligned_apex_rt:curve.apex_rt):null;
-      if(finite(valueApex)&&valueApex>=lo&&valueApex<=hi)svg+=`<line data-marker="value-apex" data-sample-id="${esc(curve.sample_id)}" x1="${x(valueApex)}" x2="${x(valueApex)}" y1="${T}" y2="${T+IH}" stroke="${stroke}" stroke-dasharray="2 3" opacity="${opacity}"><title>${esc(sampleName(curve.sample_id))} 計入峰頂 ${drt(valueApex)} min</title></line>`;
+      const valueApex=mode==='curves'&&!overlay?curveTime(curve,axis,'apex_rt'):null;
+      if(finite(valueApex)&&valueApex>=lo&&valueApex<=hi&&axis!=='centered')svg+=`<line data-marker="value-apex" data-sample-id="${esc(curve.sample_id)}" x1="${x(valueApex)}" x2="${x(valueApex)}" y1="${T}" y2="${T+IH}" stroke="${stroke}" stroke-dasharray="2 3" opacity="${opacity}"><title>${esc(sampleName(curve.sample_id))} 計入峰頂 ${timeValue(valueApex,axis)}</title></line>`;
+      if(mode==='curves'&&!overlay){
+        const left=curveTime(curve,axis,'bound_left_rt'),right=curveTime(curve,axis,'bound_right_rt');
+        if(finite(left)&&finite(right))svg+=`<g data-curve-bounds data-sample-id="${esc(curve.sample_id)}" style="display:none" clip-path="url(#${clipId})"><rect x="${x(left)}" y="${T}" width="${Math.max(0,x(right)-x(left))}" height="${IH}" fill="${stroke}" opacity=".07"/>${[[left,'左峰界'],[right,'右峰界']].map(([v,label])=>`<line x1="${x(v)}" x2="${x(v)}" y1="${T}" y2="${T+IH}" stroke="${stroke}" stroke-dasharray="5 4"><title>${label} ${timeValue(v,axis)}</title></line>`).join('')}</g>`;
+      }
       if(overlay||curve!==active||!state.bounds)return;
       const marks=axis==='aligned'?[['bound','左峰界',curve.aligned_bound_left_rt],['bound','右峰界',curve.aligned_bound_right_rt],['apex','積分峰頂',curve.aligned_apex_rt]]:[['bound','左峰界',curve.bound_left_rt],['bound','右峰界',curve.bound_right_rt],['apex','積分峰頂',curve.apex_rt],...(finite(curve.integration?.raw_apex_rt_min)&&(!finite(curve.apex_rt)||Math.abs(curve.integration.raw_apex_rt_min-curve.apex_rt)>1e-7)?[['raw-apex','原始訊號峰頂',curve.integration.raw_apex_rt_min]]:[])];
       marks.forEach(([kind,label,v])=>{if(finite(v))svg+=`<line data-marker="${kind}" x1="${x(v)}" x2="${x(v)}" y1="${T}" y2="${T+IH}" stroke="${color(curve.sample_id)}" stroke-dasharray="${kind==='bound'?'5 4':kind==='raw-apex'?'2 4':'1 3'}"><title>${label} ${drt(v)} min</title></line>`;});
     });
     const hoverData=mode==='curves'||presentation.coordinateData?`data-curve-chart="true" data-domain-start="${lo}" data-domain-end="${hi}" data-signal-low="${lowY}" data-signal-high="${highY}" data-chart-left="${L}" data-chart-width="${IW}" data-chart-top="${T}" data-chart-height="${IH}"`:'';
-    return `<svg role="img" ${hoverData} aria-label="${axis==='raw'?'原始時間':'對齊時間'}層析圖" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}<text x="${L+IW/2}" y="${H-6}" text-anchor="middle" font-size="13" fill="#48534f">${axis==='raw'?'原始 RT':'對齊 RT'}（min）</text></svg>`;
+    return `<svg role="img" ${hoverData} aria-label="${timeAxisTitle(axis)}層析圖" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}<text x="${L+IW/2}" y="${H-6}" text-anchor="middle" font-size="13" fill="#48534f">${axis==='centered'?'距中心時間（秒）':`${axis==='raw'?'原始 RT':'對齊 RT'}（min）`}</text></svg>`;
   }
   function plotCard(item){
     const canAlign=alignedAvailable(item),axis=canAlign?rel.axis:'raw',coverage=alignmentCoverage(item),total=Math.max(coverage.total,coverage.available);
@@ -1053,15 +1150,10 @@
     return `<section class="plot-card" id="plot-${axis}"><div class="plot-header">${axes}${partial}<button type="button" data-zoom="${axis}">放大 ↗</button></div>${axis==='raw'?rtViewControls(item):''}<div class="svg-container" id="svg-${axis}">${plot(item,axis,false,true)}</div></section>`;
   }
   function rtViewControls(item) {
-    if (!Array.isArray(item.review_rt_window)) return '';
-    let alignedWindow=null;
-    if(mode==='curves'&&curveWorkspaceAxis()==='aligned'){
-      let lower=Infinity,upper=-Infinity;
-      for(const curve of item.curves||[])for(const value of curve.aligned_rts||[])if(finite(value)){lower=Math.min(lower,value);upper=Math.max(upper,value);}
-      if(finite(lower)&&finite(upper))alignedWindow=[lower,upper];
-    }
-    const window = state.plotWindow || (mode==='curves'&&valueApexWindow(item,curveWorkspaceAxis())) || alignedWindow || item.review_rt_window;
-    return `<div class="rt-range"><span aria-hidden="true">RT</span><input id="plot-rt-start" type="number" step="any" value="${drt(window[0])}" aria-label="顯示 RT 起點"><span aria-hidden="true">–</span><input id="plot-rt-end" type="number" step="any" value="${drt(window[1])}" aria-label="顯示 RT 終點"><button type="button" data-rt-view="apply" aria-label="套用範圍">套用</button><button type="button" class="text-action" data-rt-view="full" aria-label="完整已載入範圍">全部</button></div>`;
+    const axis=mode==='curves'?curveWorkspaceAxis():'raw',centered=axis==='centered';
+    const window=state.plotWindow||(mode==='curves'?curveViewWindow(item,axis):item.review_rt_window);
+    if(!window&&mode!=='curves')return '';
+    return `<div class="rt-range"><span aria-hidden="true">${centered?'秒':'RT'}</span><input id="plot-rt-start" type="number" step="any" value="${window?windowValue(window[0],axis):''}" aria-label="${centered?'顯示距中心起點（秒）':'顯示 RT 起點'}"><span aria-hidden="true">–</span><input id="plot-rt-end" type="number" step="any" value="${window?windowValue(window[1],axis):''}" aria-label="${centered?'顯示距中心終點（秒）':'顯示 RT 終點'}"><button type="button" data-rt-view="apply" aria-label="套用範圍">套用</button><button type="button" class="text-action" data-rt-view="full" aria-label="完整已載入範圍">全部</button></div>`;
   }
   function fieldValue(value){
     // Serialized objects/lists from source records read as key-value lines instead of raw JSON text.
@@ -1161,9 +1253,12 @@
     const start = $('plot-rt-start'), end = $('plot-rt-end');
     start.setCustomValidity('');
     if (button.dataset.rtView === 'full') {
+      if(mode==='curves'){
+        state.plotWindow=curveViewWindow(item,curveWorkspaceAxis(),true);detail();return;
+      }
       let lower = Infinity, upper = -Infinity;
       for (const curve of item.curves || []) {
-        const rt = mode==='curves'&&curveWorkspaceAxis()==='aligned'?curve.aligned_rts||[]:curve.raw_rts||[];
+        const rt = curve.raw_rts||[];
         if (rt.length) { lower = Math.min(lower, rt[0]); upper = Math.max(upper, rt[rt.length - 1]); }
       }
       if (!finite(lower) || !finite(upper) || lower >= upper) return;
@@ -1181,8 +1276,10 @@
     const item=items.find(i=>i.id===state.id);if(!item)return;
     const axis=event.target.closest('[data-time-axis]');
     if(!axis)return;event.stopImmediatePropagation();
-    rel.axis=axis.dataset.timeAxis;
+    if(mode==='curves'){curveUi.axis=axis.dataset.timeAxis;state.plotWindow=null;}
+    else rel.axis=axis.dataset.timeAxis;
     detail();
+    root.querySelector(`[data-time-axis="${axis.dataset.timeAxis}"]`)?.focus({preventScroll:true});
   });
   $('detail-panel').addEventListener('change',event=>{
     const el=event.target;
@@ -1190,7 +1287,7 @@
     else return;event.stopImmediatePropagation();detail();
   });
   $('detail-panel').addEventListener('change',event=>{const el=event.target,item=items.find(i=>i.id===state.id);if(!item)return;if(el.dataset.inspectorId==='plot-rt-start'||el.dataset.inspectorId==='plot-rt-end')return;if(el.dataset.inspectorId==='candidate-select'){state.candidate=el.value;state.capture='';state.evidence='';normalize(item);}if(el.dataset.inspectorId==='capture-select'){state.capture=el.value;state.evidence='';}if(el.dataset.overlay){if(el.checked)display.overlays.add(el.dataset.overlay);else display.overlays.delete(el.dataset.overlay);refreshViews();return;}if(el.dataset.inspectorId==='chk-bounds')state.bounds=el.checked;if(el.dataset.sampleVisible){if(el.checked)state.visible.add(el.dataset.sampleVisible);else state.visible.delete(el.dataset.sampleVisible);}detail();});
-  $('detail-panel').addEventListener('click',async event=>{const item=items.find(i=>i.id===state.id);if(!item)return;const curveButton=event.target.closest('[data-review-curve]');if(curveButton){const sid=curveButton.dataset.reviewCurve;if(onRequestCurves){onRequestCurves({item_id:item.id,sample_id:sid,opener:curveButton});return;}state.sample=sid;state.visible.add(sid);state.evidence='';state.candidate='';state.capture='';normalize(item,true);detail();afterPaint(()=>$('inspection-title')?.scrollIntoView({block:'start'}));return;}const focus=event.target.closest('[data-focus]');if(focus){state.sample=focus.dataset.focus;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;normalize(item,true);detail();afterPaint(()=>{const heading=$('inspection-title');heading?.focus({preventScroll:true});heading?.scrollIntoView({behavior:'smooth',block:'start'});});return;}if(event.target.closest('[data-inspector-id="btn-unfocus"]')){state.sample=null;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;normalize(item);detail();afterPaint(()=>{const heading=$('inspection-title');heading?.focus({preventScroll:true});heading?.scrollIntoView({behavior:'smooth',block:'start'});});return;}const evidence=event.target.closest('[data-evidence-ref]');if(evidence){evidenceOpener={ref:evidence.dataset.evidenceRef,context:evidence.dataset.evidenceContext||''};state.evidence=evidenceOpener.ref;state.evidenceContext=evidenceOpener.context;detail();afterPaint(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}const link=event.target.closest('[data-record-ref]');if(link){state.evidence=link.dataset.recordRef;detail();afterPaint(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}if(event.target.closest('[data-inspector-id="close-evidence"]')){state.evidence='';state.evidenceContext='';detail();afterPaint(()=>{const opener=[...root.querySelectorAll('[data-evidence-ref]')].find(el=>el.dataset.evidenceRef===evidenceOpener?.ref&&(el.dataset.evidenceContext||'')===evidenceOpener?.context);opener?.scrollIntoView({block:'nearest'});opener?.focus({preventScroll:true});evidenceOpener=null;});return;}const copy=event.target.closest('[data-copy]');if(copy){try{await navigator.clipboard.writeText(copy.dataset.copy||'');if(destroyed)return;const old=copy.textContent;copy.textContent='已複製';later(()=>copy.textContent=old,1200);}catch(_){copy.textContent='無法複製';}return;}const zoom=event.target.closest('[data-zoom]');if(zoom){dialogOpener=zoom;$('zoom-title').textContent=`${itemTitle(item)} · ${state.sample?sampleName(state.sample):'所有可見樣本'} · ${zoom.dataset.zoom==='raw'?'原始時間':'對齊時間'}`;setHTML($('zoom-container'),plot(item,zoom.dataset.zoom));$('zoom-dialog').showModal();}});
+  $('detail-panel').addEventListener('click',async event=>{const item=items.find(i=>i.id===state.id);if(!item)return;const focus=event.target.closest('[data-focus]');if(focus){state.sample=focus.dataset.focus;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;normalize(item,true);detail();afterPaint(()=>{const heading=$('inspection-title');heading?.focus({preventScroll:true});heading?.scrollIntoView({behavior:'smooth',block:'start'});});return;}if(event.target.closest('[data-inspector-id="btn-unfocus"]')){state.sample=null;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;normalize(item);detail();afterPaint(()=>{const heading=$('inspection-title');heading?.focus({preventScroll:true});heading?.scrollIntoView({behavior:'smooth',block:'start'});});return;}const evidence=event.target.closest('[data-evidence-ref]');if(evidence){evidenceOpener={ref:evidence.dataset.evidenceRef,context:evidence.dataset.evidenceContext||''};state.evidence=evidenceOpener.ref;state.evidenceContext=evidenceOpener.context;detail();afterPaint(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}const link=event.target.closest('[data-record-ref]');if(link){state.evidence=link.dataset.recordRef;detail();afterPaint(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}if(event.target.closest('[data-inspector-id="close-evidence"]')){state.evidence='';state.evidenceContext='';detail();afterPaint(()=>{const opener=[...root.querySelectorAll('[data-evidence-ref]')].find(el=>el.dataset.evidenceRef===evidenceOpener?.ref&&(el.dataset.evidenceContext||'')===evidenceOpener?.context);opener?.scrollIntoView({block:'nearest'});opener?.focus({preventScroll:true});evidenceOpener=null;});return;}const copy=event.target.closest('[data-copy]');if(copy){try{await navigator.clipboard.writeText(copy.dataset.copy||'');if(destroyed)return;const old=copy.textContent;copy.textContent='已複製';later(()=>copy.textContent=old,1200);}catch(_){copy.textContent='無法複製';}return;}const zoom=event.target.closest('[data-zoom]');if(zoom){dialogOpener=zoom;$('zoom-title').textContent=`${itemTitle(item)} · ${state.sample?sampleName(state.sample):'所有可見樣本'} · ${timeAxisTitle(zoom.dataset.zoom)}`;setHTML($('zoom-container'),plot(item,zoom.dataset.zoom)+(mode==='curves'?curveWindowNotes(item,zoom.dataset.zoom):''));$('zoom-dialog').showModal();if(mode==='curves')applyCurveEmphasis();}});
   if (mode === 'offline') {
   for(const id of ['search','mz-min','mz-max','rt-min','rt-max'])$(id).addEventListener('input',list);
   $('clear').addEventListener('click',clearFilters);$('active-filters').addEventListener('click',event=>{if(event.target.closest('[data-inspector-id="clear-inline"]'))clearFilters();});

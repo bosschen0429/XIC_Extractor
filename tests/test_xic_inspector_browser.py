@@ -13,7 +13,10 @@ from playwright.sync_api import expect
 
 from tests.browser_runtime import browser as browser
 from tests.xic_inspector_curve_bundle_fixtures import _fixture_bundle
-from tests.xic_inspector_html_fixtures import build_origin_curve_payload
+from tests.xic_inspector_html_fixtures import (
+    build_origin_curve_payload,
+    build_peak_comparison_payload,
+)
 from tests.xic_inspector_targeted_workbook_fixtures import write_rare_detection_workbook
 from xic_inspector.api import SelectionRequest, prepare_report
 from xic_inspector.rendering.html_builder import build_report_html
@@ -69,6 +72,9 @@ def _sample_sidebar_payload():
                 "sample_id": sid,
                 "raw_rts": [1, 1.25, 1.5, 1.75, 2],
                 "raw_intensities": [0, 10, 100 + 20 * index, 10, 0],
+                "apex_rt": 1.5,
+                "bound_left_rt": 1.25,
+                "bound_right_rt": 1.75,
                 "processed_curves": [
                     {
                         "kind": "smoothed",
@@ -107,6 +113,8 @@ def test_workbench_curve_plot_uses_saved_aligned_coordinates_and_labels_raw_fall
     for index, curve in enumerate(payload["items"][0]["curves"]):
         shift = index + 10 if index < 7 else 0
         curve["aligned_rts"] = [rt + shift for rt in curve["raw_rts"]]
+        for key in ("apex_rt", "bound_left_rt", "bound_right_rt"):
+            curve[f"aligned_{key}"] = curve[key] + shift
         curve["rt_alignment_methods"] = ["loess" if index < 7 else "raw_fallback"]
         curve["rt_alignment_label"] = (
             "校正 RT：loess" if index < 7 else "無 RT 估計；顯示原始 RT"
@@ -122,6 +130,7 @@ def test_workbench_curve_plot_uses_saved_aligned_coordinates_and_labels_raw_fall
     )
     root = page.locator("#host")
     chart = _control(root, "svg-raw").locator("svg")
+    root.get_by_role("button", name="校正 RT", exact=True).click()
     expect(chart).to_have_attribute("aria-label", "對齊時間層析圖")
     expect(root).to_contain_text(
         "無 RT 估計，顯示原始 RT：long_shared_sample_filename_7_QC7"
@@ -173,6 +182,8 @@ def test_workbench_curves_open_on_the_counted_peaks_not_the_saved_window(
                 {"kind": "smoothed", "rts": rts, "intensities": intensity}
             ],
             "apex_rt": apex,
+            "bound_left_rt": apex - 0.25,
+            "bound_right_rt": apex + 0.25,
             "quality_flags": {},
         }
 
@@ -202,10 +213,13 @@ def test_workbench_curves_open_on_the_counted_peaks_not_the_saved_window(
     )
     root = page.locator("#host")
     chart = _control(root, "svg-raw").locator("svg")
-    expect(chart).to_have_attribute("data-domain-start", "5.5")
-    expect(chart).to_have_attribute("data-domain-end", "6.7")
+    expect(chart).to_have_attribute("aria-label", "峰頂置中層析圖")
+    assert float(chart.get_attribute("data-domain-start")) == pytest.approx(-19.5)
+    assert float(chart.get_attribute("data-domain-end")) == pytest.approx(19.5)
     # The neighbour outside the view no longer sets the scale.
     assert float(chart.get_attribute("data-signal-high")) < 200
+    expect(chart.locator('line[data-marker="peak-center"]')).to_have_count(1)
+    root.get_by_role("button", name="原始 RT", exact=True).click()
     apexes = chart.locator('line[data-marker="value-apex"]')
     expect(apexes).to_have_count(2)
     expect(apexes.first.locator("title")).to_have_text("A 計入峰頂 6.000 min")
@@ -213,6 +227,146 @@ def test_workbench_curves_open_on_the_counted_peaks_not_the_saved_window(
     chart = _control(root, "svg-raw").locator("svg")
     expect(chart).to_have_attribute("data-domain-start", "0")
     expect(chart).to_have_attribute("data-domain-end", "10")
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_peak_centering_preserves_full_shape_intensity_and_rt_evidence(
+    review_page, theme
+):
+    page = review_page
+    payload = build_peak_comparison_payload()
+    page.set_content('<div id="host"></div>')
+    page.evaluate("theme=>document.documentElement.dataset.theme=theme", theme)
+    _load_view_assets(page)
+    page.evaluate(
+        """payload=>{
+          window.peakPayload=payload;
+          XicInspector.mount(document.getElementById('host'),payload,{mode:'curves'});
+        }""",
+        payload,
+    )
+    root = page.locator("#host")
+    chart = _control(root, "svg-raw").locator("svg")
+    expect(root.get_by_role("button", name="峰頂置中", exact=True)).to_have_attribute(
+        "aria-pressed", "true"
+    )
+    expect(chart).to_contain_text("距中心時間（秒）")
+
+    def coordinates():
+        return chart.evaluate("""svg=>Object.fromEntries(
+          [...svg.querySelectorAll('polyline')].map(line=>{
+            const d=svg.dataset;
+            return [line.dataset.sampleId,Array.from(line.points,p=>[
+              +d.domainStart+(p.x-d.chartLeft)/d.chartWidth*(d.domainEnd-d.domainStart),
+              +d.signalLow+(+d.chartTop+Number(d.chartHeight)-p.y)/d.chartHeight*(d.signalHigh-d.signalLow)
+            ])];
+          }))""")
+
+    points = coordinates()
+    for sid, expected_x, expected_y in (
+        ("A", [-60, -36, -12, 0, 18, 54, 72], [10, 15, 60, 100, 65, 20, 10]),
+        ("B", [-66, -36, -12, 0, 36, 90, 114], [30, 35, 95, 200, 110, 50, 30]),
+    ):
+        assert [p[0] for p in points[sid]] == pytest.approx(expected_x, abs=1e-4)
+        assert [p[1] for p in points[sid]] == pytest.approx(expected_y, abs=1e-4)
+    # The longer tail (90 s), not an apex +/- 30 s window, determines the view.
+    assert float(chart.get_attribute("data-domain-end")) > 90
+    assert float(chart.get_attribute("data-domain-start")) == pytest.approx(
+        -float(chart.get_attribute("data-domain-end"))
+    )
+    root.get_by_role("button", name="聚焦 B", exact=True).click()
+    expect(root.get_by_role("tooltip")).to_contain_text("原始 RT 7.000 min")
+    expect(root.get_by_role("tooltip")).to_contain_text("校正 RT 10.200 min")
+    expect(root.get_by_role("tooltip")).to_contain_text("正式面積：4.560e+2")
+    bounds = chart.locator('[data-curve-bounds][data-sample-id="B"] line')
+    expect(bounds).to_have_count(2)
+    assert bounds.evaluate_all("""lines=>lines.map(line=>{
+      const d=line.ownerSVGElement.dataset;
+      return +d.domainStart+(line.x1.baseVal.value-d.chartLeft)/d.chartWidth*
+        (d.domainEnd-d.domainStart);
+    })""") == pytest.approx([-36, 90])
+    expect(chart.locator('[data-curve-bounds][data-sample-id="B"]')).to_be_visible()
+    root.get_by_role("button", name="放大層析圖").click()
+    expect(_control(root, "zoom-container")).to_contain_text("距中心時間（秒）")
+    _control(root, "zoom-close").click()
+    root.get_by_label("顯示距中心起點（秒）").fill("-50")
+    root.get_by_label("顯示距中心終點（秒）").fill("100")
+    root.get_by_role("button", name="套用範圍").click()
+    expect(chart).to_have_attribute("data-domain-start", "-50")
+    root.get_by_role("button", name="校正 RT", exact=True).click()
+    assert [coordinates()[sid][3][0] for sid in ("A", "B")] == pytest.approx([10, 10.2])
+    root.get_by_role("button", name="原始 RT", exact=True).click()
+    assert [coordinates()[sid][3][0] for sid in ("A", "B")] == pytest.approx([5, 7])
+    root.get_by_role("button", name="峰頂置中", exact=True).click()
+    root.get_by_role("button", name="完整已載入範圍").click()
+    assert float(chart.get_attribute("data-domain-end")) == pytest.approx(114)
+    assert page.evaluate("window.peakPayload") == payload
+
+
+def test_peak_centering_does_not_invent_apexes_or_missing_tails(review_page):
+    from copy import deepcopy
+
+    payload = build_peak_comparison_payload()
+    item = payload["items"][0]
+    missing = deepcopy(item["curves"][0])
+    missing.update(sample_id="No apex", apex_rt=None, aligned_apex_rt=None)
+    item["curves"].append(missing)
+    item["samples"].append({"sample_id": "No apex", "quantitative_value": None})
+    payload["samples"].append({"id": "No apex", "label": "No apex"})
+    no_bounds = deepcopy(missing)
+    no_bounds.update(
+        sample_id="No center", bound_left_rt=None, aligned_bound_left_rt=None
+    )
+    item["curves"].append(no_bounds)
+    item["samples"].append({"sample_id": "No center", "quantitative_value": None})
+    payload["samples"].append({"id": "No center", "label": "No center"})
+    # Loaded exactly from the left to the right bound: the whole peak, no margin.
+    edge = deepcopy(item["curves"][0])
+    edge["sample_id"] = "Edge"
+    item["curves"].append(edge)
+    item["samples"].append({"sample_id": "Edge", "quantitative_value": 1})
+    payload["samples"].append({"id": "Edge", "label": "Edge"})
+    truncated = item["curves"][1]
+    for curve, start, stop in ((truncated, 2, 5), (edge, 1, 6)):
+        for key in ("raw_rts", "aligned_rts", "raw_intensities"):
+            curve[key] = curve[key][start:stop]
+        series = curve["processed_curves"][0]
+        for key in ("rts", "aligned_rts", "intensities"):
+            series[key] = series[key][start:stop]
+    page = review_page
+    page.set_content('<div id="host"></div>')
+    _load_view_assets(page)
+    page.evaluate(
+        "payload=>XicInspector.mount(document.getElementById('host'),payload,{mode:'curves'})",
+        payload,
+    )
+    root = page.locator("#host")
+    expect(root).to_contain_text("峰界中點置中：No apex")
+    expect(root).to_contain_text("未記錄峰頂或完整峰界，無法置中：No center")
+    # Coverage is judged against the saved bounds, not the padded view window.
+    expect(
+        root.locator(".alignment-summary", has_text="曲線未涵蓋整個峰")
+    ).to_have_text("曲線未涵蓋整個峰：B")
+    chart = _control(root, "svg-raw")
+    expect(chart.locator("polyline")).to_have_count(4)
+    # The missing apex is not re-picked from the signal: midpoint is 10.15 min.
+    assert chart.locator('polyline[data-sample-id="No apex"]').evaluate("""line=>{
+      const d=line.ownerSVGElement.dataset;
+      return +d.domainStart+(line.points[3].x-d.chartLeft)/d.chartWidth*
+        (d.domainEnd-d.domainStart);
+    }""") == pytest.approx(-9, abs=1e-4)
+    root.get_by_role("button", name="聚焦 No apex", exact=True).hover()
+    expect(root.get_by_role("tooltip")).to_contain_text("峰界中點置中")
+    expect(root.get_by_role("tooltip")).to_contain_text("正式面積：空值")
+    assert missing["apex_rt"] is None
+    assert (
+        chart.locator('polyline[data-sample-id="B"]').evaluate(
+            "line=>line.points.length"
+        )
+        == 3
+    )
+    root.get_by_role("button", name="原始 RT", exact=True).click()
+    expect(chart.locator("polyline")).to_have_count(5)
 
 
 def test_inspector_reads_injection_order_from_final_calibration_summary(review_page):
@@ -387,7 +541,7 @@ def test_curve_sidebar_focus_names_and_colours_stay_bound_to_each_sample(review_
     expect(root.get_by_role("button", name="解除聚焦", exact=True)).to_be_hidden()
     # Main and enlarged charts must not share a clip-path ID or clip width.
     button.click()
-    root.locator('[data-zoom="raw"]').click()
+    root.get_by_role("button", name="放大層析圖").click()
     enlarged = _control(root, "zoom-container").locator(
         'polyline[data-sample-id="sample-3"]'
     )
@@ -429,7 +583,7 @@ def test_enlarged_curves_pin_and_unpin_samples_without_hiding_other_curves(revie
         payload,
     )
     root = page.locator("#host")
-    root.locator('[data-zoom="raw"]').click()
+    root.get_by_role("button", name="放大層析圖").click()
     dialog = _control(root, "zoom-dialog")
     line = dialog.locator('polyline[data-sample-id="sample-3"]')
     point = line.evaluate("""line=>{
@@ -582,13 +736,13 @@ def test_multiple_views_keep_controls_theme_dialogs_and_lifetime_local(
             host.showModal();
         }"""
     )
-    left.locator('[data-zoom="raw"]').click()
+    left.get_by_role("button", name="放大層析圖").click()
     expect(_control(left, "zoom-dialog")).to_be_visible()
     expect(_control(right, "zoom-dialog")).to_be_hidden()
     page.keyboard.press("Escape")
     expect(_control(left, "zoom-dialog")).to_be_hidden()
     expect(page.locator("#host-dialog")).to_be_visible()
-    expect(left.locator('[data-zoom="raw"]')).to_be_focused()
+    expect(left.get_by_role("button", name="放大層析圖")).to_be_focused()
     assert page.evaluate("window.hostCloses") == 0
     page.evaluate("document.getElementById('host-dialog').close()")
 
@@ -760,6 +914,7 @@ def _signal_payload():
                     "evidence_ref": ref,
                     "raw_rts": [1.0, 1.1, 1.2],
                     "raw_intensities": [0.0, 10.0 + index, 0.0],
+                    "apex_rt": 1.1,
                     "processed_curves": processed,
                 }
             )

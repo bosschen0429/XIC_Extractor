@@ -70,10 +70,12 @@ remain bound to their RAW folder, not carried into another folder.
 An Untargeted sample with a Matrix value shows the curve its run saved: the RT
 and raw intensity of the extraction window that gave the value, with the run's
 mass recalibration already applied. Selecting a feature shows these samples at
-once, without RAW or DLL. The view opens on the apexes of the values, half a
-minute either side, and marks each value's apex, so the counted peak stays
-distinct from neighbouring peaks in the same window; **全部** shows the whole
-saved windows. Smoothing and baseline are recomputed for display; they reproduce
+once, without RAW or DLL. The view opens peak-centred: each curve shifts so its
+value's apex sits at 0 s (the midpoint of its saved bounds when no apex was
+kept), at its real intensity, and spans the saved peak bounds; a curve with
+neither is not centred and is named beside the plot. **原始 RT** and **校正 RT**
+show the same curves on their recorded times with each value's apex marked;
+**全部** shows the whole saved windows. Smoothing and baseline are recomputed for display; they reproduce
 the run's processed signal and change no value.
 
 RAW is read only for a sample without a saved curve that the user checks and
