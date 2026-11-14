@@ -29,8 +29,9 @@ input to downstream analysis, not a normalized or batch-corrected result.
    Alphabetical file order is not injection order. Exclusion is a direct toggle
    and does not require a reason.
 6. Check the **內標** applicability summary below the samples. Choose or drop an
-   XLSX, CSV or TSV file; **內標明細與檔案工具** contains the full table and shared
-   XLSX example. Only `role=istd` rows are used;
+   XLSX, CSV or TSV file; **內標明細與檔案工具** contains the full table and file
+   actions. The format is the target list; its example is under
+   **使用說明與快捷鍵**. Only `role=istd` rows are used;
    the preview shows method-compatible standards and skipped rows. A dR method
    uses dR standards, not R standards such as `[13C,15N2]-8-oxo-Guo`. Incompatible
    standards are marked not applicable, not ND; changing the method refreshes

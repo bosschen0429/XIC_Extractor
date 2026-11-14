@@ -33,8 +33,9 @@ RAW 分析需要 **.NET 8 或更新版本**與 **Thermo RawFileReader 8.0.42**�
 | 已知目標清單的定量 | RAW 資料夾、目標清單（XLSX、CSV 或 TSV） | [Targeted 操作指南](targeted-extraction.html) |
 | 探索並比較樣本中的 features | RAW 資料夾、CID-NL 方法、樣本角色及適用內標 | [Untargeted 操作指南](untargeted-discovery.html) |
 
-Targeted 的清單空白時，可在工作區按「從範例開始」直接編輯範例，也可複製本包的
-[範例清單](../../xic_extractor/configuration/data/targets.xlsx)在 Excel 修改後匯入。
+Targeted 的清單空白時，可在工作區按「從範例開始」直接編輯範例。要在 Excel 修改，
+從 **使用說明與快捷鍵** 下載目標清單範例；Untargeted 的內標清單也用這份格式，只讀
+`role=istd` 的列。
 Untargeted 可從 dR、R、MeR 方法開始，再依樣本與分析目的調整。
 
 ## 判讀與重開結果

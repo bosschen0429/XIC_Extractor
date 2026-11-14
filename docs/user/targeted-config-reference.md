@@ -69,8 +69,8 @@ worksheet is rejected: delete those sheets and move any `delta_mass_*` rows to
 `Delta Mass Settings`. Headers occupy the first row. Use actual values, not formulas or Excel error cells.
 Numeric text and descriptive metadata survive round trips without rounding.
 
-Download the [example list](../../xic_extractor/configuration/data/targets.xlsx),
-or press **從範例開始** while the list is empty to edit it in the workbench.
+Download the example list from **使用說明與快捷鍵** in the workbench, or press
+**從範例開始** while the list is empty to edit it there.
 Save a copy before editing a file. These are format
 examples, not evidence that the listed specificity suits your samples.
 

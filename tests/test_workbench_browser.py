@@ -50,13 +50,26 @@ def _unsaved(page, kind: str) -> bool:
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
-def test_help_opens_task_guide_without_changing_the_analysis(workbench, theme):
+def test_help_opens_task_guide_without_changing_the_analysis(
+    workbench, tmp_path, theme
+):
+    from xic_extractor.configuration.target_list_files import load_target_list
+    from xic_extractor.configuration.targets import read_istd_targets
+
     page = workbench
     if theme == "dark":
         page.get_by_role("button", name="切換深色模式").click()
     original_raw = page.locator("#t-data_dir").input_value()
     page.get_by_role("button", name="使用說明與快捷鍵").click()
     expect(page.get_by_role("heading", name="使用說明與快捷鍵")).to_be_visible()
+    # Both analyses read the one example list, offered only here.
+    expect(page.locator('a[href^="/examples/"]')).to_have_count(1)
+    with page.expect_download() as download:
+        page.get_by_role("link", name="下載目標清單範例 XLSX").click()
+    example = tmp_path / "example.xlsx"
+    download.value.save_as(example)
+    assert load_target_list(example).targets
+    assert read_istd_targets(example).targets
     with page.expect_popup() as opened:
         page.get_by_role("link", name="開啟使用說明").click()
     guide = opened.value
@@ -3564,7 +3577,6 @@ def test_untargeted_istd_shared_upload_and_persistence(
         create_target_list,
         save_target_list,
     )
-    from xic_extractor.configuration.targets import read_istd_targets
 
     page = workbench
     path = tmp_path / f"shared.{extension}"
@@ -3581,12 +3593,6 @@ def test_untargeted_istd_shared_upload_and_persistence(
             writer.writerows(targeted_rows())
     original_targets = page.locator("#target-preview").inner_text()
     page.get_by_role("button", name="Untargeted", exact=True).click()
-    _expand_section(page, "#istd-list-tools")
-    expect(page.get_by_role("link", name="下載範例清單 XLSX")).to_be_visible()
-    with page.expect_download() as download:
-        page.get_by_role("link", name="下載範例清單 XLSX").click()
-    download.value.save_as(tmp_path / "example.xlsx")
-    assert read_istd_targets(tmp_path / "example.xlsx").targets
     _expand_section(page, "#istd-list-tools")
     if drop:
         transfer = page.evaluate_handle(
