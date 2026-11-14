@@ -121,7 +121,6 @@ class _OwnerBoundFakeRawHandle:
     ) -> tuple[float, float] | None:
         return None
 
-    raw_open_receipt = None
     # What the default easy_ic_restore reader reports without lock-mass trailers.
     mass_recalibration_result = MassRecalibrationResult(
         "unavailable",
@@ -187,7 +186,6 @@ class _FakeRawHandle:
     ) -> tuple[float, float] | None:
         return None
 
-    raw_open_receipt = None
     mass_recalibration_result = MassRecalibrationResult("none")
 
     def read_ms1_mass_windows(self, requests):
@@ -241,3 +239,69 @@ class _FakeRawHandle:
 
     def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
         return 0, max(len(self._rt) - 1, 0)
+
+
+def vendor_fake_discovery_opener(job, recorder):
+    """Exercise open_raw with a controllable vendor; never load a real DLL."""
+    from types import SimpleNamespace
+
+    from tests.cid_nl_raw_fixture import _FakeRaw, _FakeThermoRaw, _working_imports
+    from xic_extractor.raw_reader import open_raw
+
+    mode = job.raw_path.read_text()
+    vendor = _FakeThermoRaw(_FakeRaw(()))
+    original_dispose = vendor.Dispose
+
+    def dispose():
+        original_dispose()
+        job.output_dir.mkdir(parents=True, exist_ok=True)
+        (job.output_dir / f"{job.raw_path.stem}.closed").write_text("disposed")
+
+    vendor.Dispose = dispose
+
+    def fail(*_args):
+        if mode == "cancel":
+            raise InterruptedError("cancelled after opening RAW")
+        raise RuntimeError(f"vendor {mode}")
+
+    if mode == "open_failure":
+        vendor.SelectInstrument = fail
+    elif mode in {"read_failure", "cancel"}:
+        vendor.ScanNumberFromRetentionTime = fail
+
+    def open_vendor(path, dll_dir):
+        if mode == "unobserved":
+            raw = _FakeRawHandle(events=[])
+            raw.acquisition_source = job.acquisition_source
+            return raw
+        return open_raw(
+            path,
+            dll_dir,
+            expected_acquisition_source=job.acquisition_source,
+            mass_recalibration=job.settings.mass_recalibration,
+            timing_recorder=recorder,
+            _import_module=_working_imports,
+            _thermo=SimpleNamespace(
+                raw_file_reader_adapter=SimpleNamespace(
+                    FileFactory=lambda _path: vendor
+                ),
+                device_ms="MS",
+                ms1_order="Ms1",
+                ms2_order="Ms2",
+            ),
+        )
+
+    return open_vendor
+
+
+def discover_vendor_fake_sample(job, *, timing_recorder, measurement_observer):
+    return _pipeline._discover_completed_sample(
+        job.raw_path,
+        settings=job.settings,
+        dll_dir=job.dll_dir,
+        raw_opener=vendor_fake_discovery_opener(job, timing_recorder),
+        timing_recorder=timing_recorder,
+        measurement_observer=measurement_observer,
+        run_spec=job.run_spec,
+        acquisition_input=job.acquisition_input,
+    )

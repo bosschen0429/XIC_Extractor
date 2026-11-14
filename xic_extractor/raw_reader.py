@@ -13,15 +13,12 @@ from typing import Any
 
 import numpy as np
 
-from xic_extractor.acquisition_contract import (
-    RawAcquisitionSessionReceipt,
-    _mint_raw_acquisition_session_receipt,
-)
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
     resolve_mass_recalibration,
 )
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.injection_timeline import (
     InjectionHeader,
 )
@@ -291,10 +288,6 @@ class RawFileHandle:
 
     @property
     def acquisition_source(self) -> AcquisitionSourceIdentity | None:
-        return None
-
-    @property
-    def raw_open_receipt(self) -> RawAcquisitionSessionReceipt | None:
         return None
 
     def extract_xic(
@@ -682,27 +675,21 @@ class RawFileHandle:
 class _SourceBoundRawFileHandle(RawFileHandle):
     """Native handle carrying the RAW source verified when it was opened."""
 
-    __slots__ = ("_bound_acquisition_source", "_raw_open_receipt")
+    __slots__ = ("_bound_acquisition_source",)
 
     def __init__(
         self,
         raw_file: Any,
         thermo: _ThermoApi,
         source: AcquisitionSourceIdentity,
-        raw_open_receipt: RawAcquisitionSessionReceipt | None,
         mass_recalibration: MassRecalibration,
     ) -> None:
         super().__init__(raw_file, thermo, mass_recalibration)
         self._bound_acquisition_source = source
-        self._raw_open_receipt = raw_open_receipt
 
     @property
     def acquisition_source(self) -> AcquisitionSourceIdentity:
         return self._bound_acquisition_source
-
-    @property
-    def raw_open_receipt(self) -> RawAcquisitionSessionReceipt | None:
-        return self._raw_open_receipt
 
 
 def open_raw(
@@ -712,6 +699,7 @@ def open_raw(
     mass_recalibration: MassRecalibration = MassRecalibration.NONE,
     prepared_mass_recalibration: PreparedRawMassRecalibration | None = None,
     expected_acquisition_source: AcquisitionSourceIdentity | None = None,
+    timing_recorder: TimingRecorder | None = None,
     _expected_path_identity: tuple[int, int, int, int, int] | None = None,
     _import_module: Callable[[str], Any] = importlib.import_module,
     _thermo: _ThermoApi | None = None,
@@ -780,24 +768,26 @@ def open_raw(
         raise RawReaderOpenError(str(exc), cleanup_failed=False) from exc
     if source_binding is None:
         return RawFileHandle(raw_file, thermo, mass_recalibration)
-    raw_open_receipt = (
-        None
-        if expected_acquisition_source is None
-        else _mint_raw_acquisition_session_receipt(expected_acquisition_source)
-    )
     handle = _SourceBoundRawFileHandle(
         raw_file,
         thermo,
         source_binding.source,
-        raw_open_receipt,
         mass_recalibration,
     )
-    if prepared_mass_recalibration is not None:
-        try:
+    try:
+        if timing_recorder is not None:
+            timing_recorder.observe(
+                "raw_open_count",
+                value=1,
+                scope=path.stem,
+                unit="opens",
+                source="xic_extractor.raw_reader.open_raw",
+            )
+        if prepared_mass_recalibration is not None:
             handle.use_mass_recalibration_result(prepared_mass_recalibration.result)
-        except BaseException:
-            handle.__exit__()
-            raise
+    except BaseException:
+        handle.__exit__()
+        raise
     return handle
 
 

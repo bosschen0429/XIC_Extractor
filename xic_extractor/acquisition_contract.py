@@ -28,20 +28,6 @@ class AcquisitionContractError(ValueError):
     """Raised when an adapter cannot truthfully satisfy its declared capability."""
 
 
-@dataclass(frozen=True, slots=True)
-class RawAcquisitionSessionReceipt:
-    """A successful vendor open, carried by its existing job/sample result."""
-
-    acquisition_source: AcquisitionSourceIdentity
-
-
-def _mint_raw_acquisition_session_receipt(
-    acquisition_source: AcquisitionSourceIdentity,
-) -> RawAcquisitionSessionReceipt:
-    """RAW-reader seam, called only after the vendor handle has opened."""
-    return RawAcquisitionSessionReceipt(acquisition_source=acquisition_source)
-
-
 class BatchXICAdapter(Protocol):
     @property
     def raw_chromatogram_call_count(self) -> int: ...
@@ -542,7 +528,6 @@ __all__ = [
     "AcquiredTrace",
     "AcquisitionContractError",
     "BatchXICAdapter",
-    "RawAcquisitionSessionReceipt",
     "TraceAcquisitionBatch",
     "TraceAcquisitionCapability",
     "TraceCoordinate",

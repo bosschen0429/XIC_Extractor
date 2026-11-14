@@ -7,9 +7,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from xic_extractor.acquisition_contract import (
-    RawAcquisitionSessionReceipt,
-)
 from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     MassRecalibrationResult,
@@ -41,7 +38,7 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
 from xic_extractor.discovery.runtime_measurements import (
     record_discovery_ms1_measurements,
     record_raw_measurements,
-    record_raw_open_metrics,
+    record_unavailable_raw_open,
 )
 from xic_extractor.discovery.sample_process_execution import (
     DiscoverySampleProcessJob,
@@ -65,9 +62,6 @@ class DiscoveryRawHandle(CidNlSearchSource, Protocol):
     def acquisition_source(self) -> AcquisitionSourceIdentity: ...
 
     @property
-    def raw_open_receipt(self) -> RawAcquisitionSessionReceipt | None: ...
-
-    @property
     def mass_recalibration_result(self) -> MassRecalibrationResult: ...
 
 
@@ -79,7 +73,6 @@ class _DiscoverySampleResult:
     peaks: tuple[DiscoveryPeak, ...]
     attachments: tuple[EventAttachment, ...]
     ms1_measurements: _DiscoveryMs1Measurements | None
-    raw_open_receipt: RawAcquisitionSessionReceipt | None
     physical_bindings: tuple[DiscoveryPeakPhysicalBinding, ...]
     mass_recalibration_result: MassRecalibrationResult = MassRecalibrationResult("none")
 
@@ -268,6 +261,7 @@ def _discover_sample(
         opener = _owner_bound_raw_opener(
             acquisition_source,
             settings.mass_recalibration,
+            timing_recorder,
         )
     else:
         opener = raw_opener
@@ -293,26 +287,8 @@ def _discover_completed_sample_with_runtime_projection(
     acquisition_input: ProcessingAcquisitionInput,
 ) -> _DiscoverySampleResult:
     """Return peaks ready for publication after projecting owner metrics."""
-    observed_receipt: RawAcquisitionSessionReceipt | None = None
-    receipt_observed = False
-    acquisition_projected = False
-
-    def _capture_receipt(receipt: RawAcquisitionSessionReceipt | None) -> None:
-        nonlocal observed_receipt, receipt_observed
-        if receipt_observed:
-            raise ValueError("Discovery RAW-open receipt was emitted twice")
-        receipt_observed = True
-        observed_receipt = receipt
 
     def _project_acquisition(result: _DiscoverySampleResult) -> None:
-        nonlocal acquisition_projected
-        acquisition_projected = True
-        record_raw_open_metrics(
-            timing_recorder,
-            acquisition_input.acquisition_source,
-            result.raw_open_receipt,
-            raw_path.stem,
-        )
         record_discovery_ms1_measurements(
             timing_recorder,
             result.ms1_measurements,
@@ -326,20 +302,12 @@ def _discover_completed_sample_with_runtime_projection(
             dll_dir=dll_dir,
             raw_opener=raw_opener,
             timing_recorder=timing_recorder,
-            raw_open_receipt_observer=_capture_receipt,
             acquisition_observer=_project_acquisition,
             run_spec=run_spec,
             acquisition_input=acquisition_input,
         )
-    except Exception:
-        if not acquisition_projected:
-            record_raw_open_metrics(
-                timing_recorder,
-                acquisition_input.acquisition_source,
-                observed_receipt,
-                raw_path.stem,
-            )
-        raise
+    finally:
+        record_unavailable_raw_open(timing_recorder, raw_path.stem)
     return result
 
 
@@ -351,9 +319,6 @@ def _discover_completed_sample(
     raw_opener: RawOpener,
     timing_recorder: TimingRecorder,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
-    raw_open_receipt_observer: (
-        Callable[[RawAcquisitionSessionReceipt | None], None] | None
-    ) = None,
     acquisition_observer: Callable[[_DiscoverySampleResult], None] | None = None,
     run_spec: ProcessingRunSpec,
     acquisition_input: ProcessingAcquisitionInput,
@@ -366,7 +331,6 @@ def _discover_completed_sample(
         raw_opener=raw_opener,
         timing_recorder=timing_recorder,
         measurement_observer=measurement_observer,
-        raw_open_receipt_observer=raw_open_receipt_observer,
         run_spec=run_spec,
         acquisition_input=acquisition_input,
     )
@@ -386,7 +350,6 @@ def _discover_completed_sample(
         peaks=tuple(binding.peak for binding in physical_bindings),
         attachments=acquired.attachments,
         ms1_measurements=acquired.ms1_measurements,
-        raw_open_receipt=acquired.raw_open_receipt,
         physical_bindings=physical_bindings,
         mass_recalibration_result=acquired.mass_recalibration_result,
     )
@@ -399,9 +362,6 @@ def _acquire_discovery_sample(
     raw_opener: RawOpener,
     timing_recorder: TimingRecorder,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
-    raw_open_receipt_observer: (
-        Callable[[RawAcquisitionSessionReceipt | None], None] | None
-    ) = None,
     run_spec: ProcessingRunSpec,
     acquisition_input: ProcessingAcquisitionInput,
 ) -> _DiscoverySampleResult:
@@ -421,9 +381,6 @@ def _acquire_discovery_sample(
             raise ValueError(
                 "spec-bound Discovery RAW handle crosses acquisition source"
             )
-        raw_open_receipt = _owner_bound_raw_open_receipt(raw)
-        if raw_open_receipt_observer is not None:
-            raw_open_receipt_observer(raw_open_receipt)
         completed = False
         acquired_measurements: _DiscoveryMs1Measurements | None = None
 
@@ -452,7 +409,6 @@ def _acquire_discovery_sample(
                 peaks=acquisition_result.peaks,
                 attachments=acquisition_result.attachments,
                 ms1_measurements=acquisition_result.measurements,
-                raw_open_receipt=raw_open_receipt,
                 physical_bindings=acquisition_result.physical_bindings,
                 mass_recalibration_result=raw.mass_recalibration_result,
             )
@@ -490,22 +446,12 @@ def _owner_bound_acquisition_source(
     return source
 
 
-def _owner_bound_raw_open_receipt(
-    raw: DiscoveryRawHandle,
-) -> RawAcquisitionSessionReceipt | None:
-    receipt = raw.raw_open_receipt
-    if receipt is None:
-        return None
-    if not isinstance(receipt, RawAcquisitionSessionReceipt):
-        raise ValueError("Discovery RAW handle exposed an invalid RAW-open receipt")
-    return receipt
-
-
 def _owner_bound_raw_opener(
     acquisition_source: AcquisitionSourceIdentity,
     mass_recalibration: MassRecalibration,
+    timing_recorder: TimingRecorder,
 ) -> RawOpener:
-    """Bind the production batch reader to the content identity it will receipt."""
+    """Bind the production reader to its RAW source and runtime observations."""
 
     def _open(
         raw_path: Path,
@@ -520,6 +466,7 @@ def _owner_bound_raw_opener(
                 dll_dir,
                 mass_recalibration=mass_recalibration,
                 expected_acquisition_source=acquisition_source,
+                timing_recorder=timing_recorder,
             ),
         )
 
@@ -531,7 +478,6 @@ def discover_sample_for_process_job(
     *,
     timing_recorder: TimingRecorder,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None],
-    raw_open_receipt_observer: Callable[[RawAcquisitionSessionReceipt | None], None],
 ) -> _DiscoverySampleResult:
     """Discover one process job's sample through the source-bound RAW opener."""
     return _discover_completed_sample(
@@ -541,10 +487,10 @@ def discover_sample_for_process_job(
         raw_opener=_owner_bound_raw_opener(
             job.acquisition_source,
             job.settings.mass_recalibration,
+            timing_recorder,
         ),
         timing_recorder=timing_recorder,
         measurement_observer=measurement_observer,
-        raw_open_receipt_observer=raw_open_receipt_observer,
         run_spec=job.run_spec,
         acquisition_input=job.acquisition_input,
     )

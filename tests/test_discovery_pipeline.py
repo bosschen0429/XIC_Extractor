@@ -1,7 +1,7 @@
 import concurrent.futures
 import csv
+import json
 import multiprocessing
-import pickle
 from concurrent.futures import Future
 from dataclasses import replace
 from pathlib import Path
@@ -19,9 +19,8 @@ from tests.discovery_pipeline_fixtures import (
     _scan_event,
     _settings,
     _spec_bound_opener,
-)
-from xic_extractor.acquisition_contract import (
-    _mint_raw_acquisition_session_receipt,
+    discover_vendor_fake_sample,
+    vendor_fake_discovery_opener,
 )
 from xic_extractor.discovery import pipeline as _pipeline
 from xic_extractor.discovery.batch_contract import DISCOVERY_BATCH_INDEX_COLUMNS
@@ -188,7 +187,7 @@ def test_cancelled_batch_retains_completed_samples_without_publishing_index(
 
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
-        lambda source, _mass_recalibration: (
+        lambda source, _mass_recalibration, _recorder: (
             lambda path, dll_dir: _with_source(opener(path, dll_dir), source)
         ),
     )
@@ -542,7 +541,7 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
     parallel_handles = _handles()
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
-        lambda acquisition_source, _mass_recalibration: (
+        lambda acquisition_source, _mass_recalibration, _recorder: (
             lambda path, dll_dir: _with_source(
                 parallel_handles[path], acquisition_source
             )
@@ -759,7 +758,7 @@ def test_parallel_batch_rejects_error_caller_authored_owner_counts(
                     message="RuntimeError: owner boom",
                     measurement_observations=(
                         {
-                            "metric": "raw_open_count",
+                            "metric": "logical_xic_request_count",
                             "scope": job.raw_path.stem,
                             "unit": "opens",
                             "aggregation": "sum",
@@ -808,9 +807,6 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
 
         def submit(self, worker, job):
             future = Future()
-            raw_open_receipt = _mint_raw_acquisition_session_receipt(
-                job.acquisition_source
-            )
             future.set_result(
                 DiscoverySampleProcessError(
                     sample_index=job.sample_index,
@@ -819,7 +815,18 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
                     **_job_identity(job),
                     message="RuntimeError: owner boom",
                     ms1_measurements=measurements,
-                    raw_open_receipt=raw_open_receipt,
+                    measurement_observations=(
+                        {
+                            "metric": "raw_open_count",
+                            "scope": job.raw_path.stem,
+                            "unit": "opens",
+                            "aggregation": "sum",
+                            "source": "xic_extractor.raw_reader.open_raw",
+                            "availability": "measured",
+                            "value": 1,
+                            "reason": "",
+                        },
+                    ),
                 )
             )
             return future
@@ -957,7 +964,7 @@ def test_discovery_worker_failure_carries_own_partial_diagnostics(
 
     def _fail_with_diagnostics(*args, timing_recorder, measurement_observer, **kwargs):
         timing_recorder.record("discover.partial", elapsed_sec=0.5)
-        timing_recorder.observe("raw_open_count", value=1, unit="opens")
+        timing_recorder.observe("raw_open_count", value=1, scope="sample", unit="opens")
         timing_recorder.observe("worker_retry_count", value=1, unit="retries")
         measurement_observer(measurements)
         raise RuntimeError("owner boom")
@@ -975,67 +982,22 @@ def test_discovery_worker_failure_carries_own_partial_diagnostics(
     assert isinstance(result, DiscoverySampleProcessError)
     assert [record.stage for record in result.timing_records] == ["discover.partial"]
     assert [row["metric"] for row in result.measurement_observations] == [
-        "worker_retry_count"
+        "raw_open_count",
+        "worker_retry_count",
     ]
     assert result.ms1_measurements == measurements
 
 
-def test_discovery_process_error_payload_survives_spawn_pickle_roundtrip(
-    tmp_path: Path,
-) -> None:
-    measurements = _DiscoveryMs1Measurements(
-        input_ion_count=0,
-        input_event_count=0,
-        exact_scan_window_count=0,
-        predicted_chunked_call_count=0,
-        batch_max_requests=256,
-        acquisition_batches=(),
-    )
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"spawn-receipt")
-    source = build_local_acquisition_source_identity(
-        raw_path,
-        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-    )
-    capability = source
-    error = DiscoverySampleProcessError(
-        sample_index=0,
-        sample_stem="sample",
-        raw_name="sample.raw",
-        message="RuntimeError: owner boom",
-        ms1_measurements=measurements,
-        raw_open_receipt=_mint_raw_acquisition_session_receipt(capability),
-    )
-
-    context = multiprocessing.get_context("spawn")
-    with concurrent.futures.ProcessPoolExecutor(
-        max_workers=1,
-        mp_context=context,
-    ) as executor:
-        restored = executor.submit(pickle.loads, pickle.dumps(error)).result(timeout=30)
-
-    assert restored == error
-
-
-def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
+def test_unobserved_adapter_failure_does_not_invent_raw_open(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"failure-receipt")
-    source = build_local_acquisition_source_identity(
-        raw_path,
-        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-    )
-    receipt = _mint_raw_acquisition_session_receipt(source)
+    raw_path.write_bytes(b"unobserved-read-failure")
     raw = _FakeRawHandle(events=[])
-    raw.raw_open_receipt = receipt
     spec = _compiled_run_spec((raw_path,), _settings())
     raw.acquisition_source = spec.acquisition_inputs[0].acquisition_source
     recorder = TimingRecorder("discovery")
-    observed_receipts = []
     monkeypatch.setattr(
         "xic_extractor.discovery.cid_nl_search.collect_strict_nl_events",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("scan failed")),
@@ -1047,13 +1009,11 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
             dll_dir=tmp_path / "dll",
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
-            raw_open_receipt_observer=observed_receipts.append,
             run_spec=spec,
             acquisition_input=spec.acquisition_inputs[0],
         )
 
     rows = recorder.measurement_observations
-    assert observed_receipts == [receipt]
     assert not any(row["metric"] == "raw_open_count" for row in rows)
     assert any(
         row["metric"] == "logical_xic_request_count"
@@ -1546,7 +1506,7 @@ def test_pipeline_uses_injected_raw_opener_with_dll_dir_and_closes_context(
     assert raw.closed is True
 
 
-def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
+def test_batch_pipeline_binds_production_open_to_raw_content_and_recorder(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1561,6 +1521,7 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
         *,
         expected_acquisition_source: object = None,
         mass_recalibration: object = None,
+        timing_recorder: object = None,
     ) -> _FakeRawHandle:
         calls.append(
             (
@@ -1569,10 +1530,8 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
                 expected_acquisition_source,
             )
         )
+        assert timing_recorder is recorder
         raw.acquisition_source = expected_acquisition_source
-        raw.raw_open_receipt = _mint_raw_acquisition_session_receipt(
-            expected_acquisition_source
-        )
         return raw
 
     monkeypatch.setattr("xic_extractor.raw_reader.open_raw", _open)
@@ -1601,8 +1560,8 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
         if row["metric"] == "raw_open_count" and row["scope"] == "Sample"
     ]
     assert len(raw_open_rows) == 1
-    assert raw_open_rows[0]["value"] == 1
-    assert raw_open_rows[0]["availability"] == "measured"
+    assert raw_open_rows[0]["value"] is None
+    assert raw_open_rows[0]["availability"] == "unavailable"
     assert raw.closed is True
 
 
@@ -1659,7 +1618,6 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
 @pytest.mark.parametrize(
     "metric",
     (
-        "raw_open_count",
         "logical_xic_request_count",
         "trace_point_count",
         "discovery_ms1_input_channel_count",
@@ -1753,3 +1711,140 @@ def _run_discovery_batch(
     return _pipeline.run_discovery_batch(
         raw_paths, run_spec=spec, raw_opener=opener, **kwargs
     )
+
+
+@pytest.mark.parametrize(
+    "mode",
+    (
+        "success",
+        "read_failure",
+        "open_failure",
+        "unobserved",
+        "cancel",
+        "publication_failure",
+    ),
+)
+def test_acquisition_open_observations_keep_sample_attribution_in_serial_and_spawn(
+    tmp_path: Path, mode: str
+) -> None:
+    from functools import partial
+
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+    from xic_extractor.discovery.sample_process_execution import (
+        run_discovery_batch_process,
+    )
+    from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
+    from xic_extractor.raw_reader_errors import RawReaderOpenError
+
+    paths = (tmp_path / "observed.raw", tmp_path / "case.raw")
+    for path, content in zip(paths, ("success", mode), strict=True):
+        path.write_text(content)
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    for name in EXPECTED_THERMO_DLLS:
+        (dll_dir / name).write_bytes(b"fake dll")
+    settings = _settings(
+        mass_recalibration=MassRecalibration.NONE, rt_min=7.5, rt_max=8.6
+    )
+    spec = _compiled_run_spec(paths, settings)
+    observed = []
+    for parallel in (False, True):
+        output_dir = tmp_path / ("spawn" if parallel else "serial")
+        output_dir.mkdir()
+        if mode == "publication_failure":
+            (output_dir / "case").write_text("blocks sample output directory")
+        recorder = TimingRecorder("discovery")
+
+        def open_sample(path, _dll, output_dir=output_dir, recorder=recorder):
+            item = next(
+                item
+                for item in spec.acquisition_inputs
+                if item.sample_stem == path.stem
+            )
+            job = DiscoverySampleProcessJob(
+                item.input_ordinal,
+                path,
+                output_dir,
+                settings,
+                dll_dir,
+                item.acquisition_source,
+                spec,
+                item,
+            )
+            return vendor_fake_discovery_opener(job, recorder)(path, dll_dir)
+
+        if parallel:
+            # One real spawn worker preserves the first completed sample before
+            # the second fails; pool parallelism itself is covered elsewhere.
+            run = partial(
+                run_discovery_batch_process,
+                paths,
+                output_dir=output_dir,
+                settings=settings,
+                dll_dir=dll_dir,
+                timing_recorder=recorder,
+                max_workers=1,
+                executor_factory=partial(
+                    concurrent.futures.ProcessPoolExecutor,
+                    mp_context=multiprocessing.get_context("spawn"),
+                ),
+                progress_callback=None,
+                run_spec=spec,
+                run_inputs=spec.acquisition_inputs,
+                should_cancel=None,
+                discover_sample=discover_vendor_fake_sample,
+            )
+        else:
+            run = partial(
+                _pipeline.run_discovery_batch,
+                paths,
+                output_dir=output_dir,
+                settings=settings,
+                dll_dir=dll_dir,
+                timing_recorder=recorder,
+                run_spec=spec,
+                raw_opener=open_sample,
+            )
+        if mode in {"success", "unobserved"}:
+            run()
+            assert (output_dir / "discovery_batch_index.csv").is_file()
+        else:
+            with pytest.raises((RuntimeError, OSError, RawReaderOpenError)) as caught:
+                run()
+            assert (
+                "case"
+                if mode == "publication_failure"
+                else "cancelled"
+                if mode == "cancel"
+                else "vendor"
+            ) in str(caught.value)
+            assert not (output_dir / "discovery_batch_index.csv").exists()
+        assert (output_dir / "observed" / "discovery_peaks.csv").is_file()
+        recorder.write_json(output_dir / "timing.json")
+        rows = [
+            row
+            for row in json.loads((output_dir / "timing.json").read_text())[
+                "measurement_observations"
+            ]
+            if row["metric"] == "raw_open_count"
+        ]
+        assert len(rows) == 2
+        by_sample = {row["scope"]: row for row in rows}
+        expected_values = {
+            "observed": 1,
+            "case": None if mode in {"open_failure", "unobserved"} else 1,
+        }
+        for stem, expected in expected_values.items():
+            row = by_sample[stem]
+            assert row["value"] == expected
+            assert row["availability"] == (
+                "unavailable" if expected is None else "measured"
+            )
+            assert row["unit"] == "opens"
+            assert row["aggregation"] == "sum"
+            if expected is None:
+                assert row["reason"]
+            if stem == "observed" or mode != "unobserved":
+                assert (output_dir / f"{stem}.closed").read_text() == "disposed"
+        observed.append(by_sample)
+    assert observed[0] == observed[1]

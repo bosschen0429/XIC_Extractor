@@ -14,9 +14,6 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from xic_extractor.acquisition_contract import (
-    RawAcquisitionSessionReceipt,
-)
 from xic_extractor.configuration.mass_recalibration import MassRecalibrationResult
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -34,7 +31,7 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
 from xic_extractor.discovery.runtime_measurements import (
     portable_worker_observations,
     record_discovery_ms1_measurements,
-    record_raw_open_metrics,
+    record_unavailable_raw_open,
     reject_caller_authored_discovery_ms1_measurement,
 )
 from xic_extractor.discovery.settings import DiscoverySettings
@@ -68,7 +65,6 @@ class DiscoverySampleProcessResult:
     timing_records: tuple[TimingRecord, ...]
     measurement_observations: tuple[dict[str, object], ...]
     ms1_measurements: _DiscoveryMs1Measurements | None = None
-    raw_open_receipt: RawAcquisitionSessionReceipt | None = None
     signal_processing_profile: SignalProcessingProfile | None = None
     acquisition_source_id: str = ""
 
@@ -82,7 +78,6 @@ class DiscoverySampleProcessError:
     timing_records: tuple[TimingRecord, ...] = ()
     measurement_observations: tuple[dict[str, object], ...] = ()
     ms1_measurements: _DiscoveryMs1Measurements | None = None
-    raw_open_receipt: RawAcquisitionSessionReceipt | None = None
     signal_processing_profile: SignalProcessingProfile | None = None
     acquisition_source_id: str = ""
 
@@ -125,9 +120,6 @@ class DiscoveredSample(Protocol):
     def ms1_measurements(self) -> _DiscoveryMs1Measurements | None: ...
 
     @property
-    def raw_open_receipt(self) -> RawAcquisitionSessionReceipt | None: ...
-
-    @property
     def mass_recalibration_result(self) -> MassRecalibrationResult: ...
 
 
@@ -140,9 +132,6 @@ class SampleDiscoverer(Protocol):
         *,
         timing_recorder: TimingRecorder,
         measurement_observer: Callable[[_DiscoveryMs1Measurements], None],
-        raw_open_receipt_observer: Callable[
-            [RawAcquisitionSessionReceipt | None], None
-        ],
     ) -> DiscoveredSample: ...
 
 
@@ -259,12 +248,7 @@ def run_discovery_batch_process(
                 availability=str(observation.get("availability", "measured")),
                 reason=str(observation.get("reason", "")),
             )
-        record_raw_open_metrics(
-            timing_recorder,
-            expected_job.acquisition_source,
-            observed.raw_open_receipt,
-            observed.sample_stem,
-        )
+        record_unavailable_raw_open(timing_recorder, observed.sample_stem)
         record_discovery_ms1_measurements(
             timing_recorder,
             observed.ms1_measurements,
@@ -373,8 +357,6 @@ def run_discovery_sample_process_job(
         else TimingRecorder.disabled("discovery-worker")
     )
     acquired_measurements: _DiscoveryMs1Measurements | None = None
-    raw_open_receipt: RawAcquisitionSessionReceipt | None = None
-    raw_open_receipt_observed = False
 
     def _capture_acquired_measurements(
         measurements: _DiscoveryMs1Measurements,
@@ -384,22 +366,12 @@ def run_discovery_sample_process_job(
             raise ValueError("Discovery MS1 measurements were emitted twice")
         acquired_measurements = measurements
 
-    def _capture_raw_open_receipt(
-        receipt: RawAcquisitionSessionReceipt | None,
-    ) -> None:
-        nonlocal raw_open_receipt, raw_open_receipt_observed
-        if raw_open_receipt_observed:
-            raise ValueError("Discovery RAW-open receipt was emitted twice")
-        raw_open_receipt_observed = True
-        raw_open_receipt = receipt
-
     try:
         _validate_discovery_process_job_binding(job)
         discovery_result = discover_sample(
             job,
             timing_recorder=recorder,
             measurement_observer=_capture_acquired_measurements,
-            raw_open_receipt_observer=_capture_raw_open_receipt,
         )
         sample_stem = job.raw_path.stem
         publication = output_publication.publish_discovery_batch_sample(
@@ -411,6 +383,7 @@ def run_discovery_sample_process_job(
             timing_recorder=recorder,
             mass_recalibration_result=discovery_result.mass_recalibration_result,
         )
+        record_unavailable_raw_open(recorder, sample_stem)
         return DiscoverySampleProcessResult(
             sample_index=job.sample_index,
             sample_stem=sample_stem,
@@ -418,18 +391,17 @@ def run_discovery_sample_process_job(
             timing_records=recorder.records,
             measurement_observations=portable_worker_observations(recorder),
             ms1_measurements=discovery_result.ms1_measurements,
-            raw_open_receipt=discovery_result.raw_open_receipt,
             signal_processing_profile=job.run_spec.signal_processing_profile,
             acquisition_source_id=job.acquisition_source.acquisition_source_id,
         )
     except Exception as exc:
+        record_unavailable_raw_open(recorder, job.raw_path.stem)
         return _discovery_process_error(
             job,
             exc,
             timing_records=recorder.records,
             measurement_observations=portable_worker_observations(recorder),
             ms1_measurements=acquired_measurements,
-            raw_open_receipt=raw_open_receipt,
         )
 
 
@@ -454,7 +426,6 @@ def _discovery_process_error(
     timing_records: tuple[TimingRecord, ...] = (),
     measurement_observations: tuple[dict[str, object], ...] = (),
     ms1_measurements: _DiscoveryMs1Measurements | None = None,
-    raw_open_receipt: RawAcquisitionSessionReceipt | None = None,
 ) -> DiscoverySampleProcessError:
     return DiscoverySampleProcessError(
         sample_index=job.sample_index,
@@ -464,7 +435,6 @@ def _discovery_process_error(
         timing_records=timing_records,
         measurement_observations=measurement_observations,
         ms1_measurements=ms1_measurements,
-        raw_open_receipt=raw_open_receipt,
         signal_processing_profile=job.run_spec.signal_processing_profile,
         acquisition_source_id=job.acquisition_source.acquisition_source_id,
     )

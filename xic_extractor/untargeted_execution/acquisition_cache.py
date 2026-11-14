@@ -89,10 +89,6 @@ class CachedUntargetedRaw:
         return self._source
 
     @property
-    def raw_open_receipt(self) -> object:
-        return None if self._handle is None else self._handle.raw_open_receipt
-
-    @property
     def raw_chromatogram_call_count(self) -> int:
         return 0 if self._handle is None else self._handle.raw_chromatogram_call_count
 

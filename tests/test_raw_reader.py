@@ -1,4 +1,5 @@
 import importlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -366,6 +367,7 @@ def test_open_raw_loads_only_expected_absolute_dll_paths(tmp_path: Path) -> None
 
 
 def test_open_raw_binds_only_the_verified_acquisition_source(tmp_path: Path) -> None:
+    from xic_extractor.execution.timing import TimingRecorder
     from xic_extractor.processing_identity import build_acquisition_source_identity
     from xic_extractor.raw_reader import open_raw
 
@@ -378,11 +380,13 @@ def test_open_raw_binds_only_the_verified_acquisition_source(tmp_path: Path) -> 
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
     raw = _FakeRaw()
+    recorder = TimingRecorder("discovery")
 
     handle = open_raw(
         raw_path,
         tmp_path,
         expected_acquisition_source=source,
+        timing_recorder=recorder,
         _import_module=_working_imports(),
         _thermo=_fake_thermo(raw),
     )
@@ -394,37 +398,32 @@ def test_open_raw_binds_only_the_verified_acquisition_source(tmp_path: Path) -> 
     )
     assert handle.acquisition_source == source
 
-
-def test_open_raw_mints_receipt_only_after_verified_vendor_open(tmp_path: Path) -> None:
-    from xic_extractor.processing_identity import build_acquisition_source_identity
-    from xic_extractor.raw_reader import open_raw
-
-    _write_expected_dlls(tmp_path)
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"sample-a")
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:1",
-    )
-
-    handle = open_raw(
-        raw_path,
-        tmp_path,
-        expected_acquisition_source=source,
-        _import_module=_working_imports(),
-        _thermo=_fake_thermo(_FakeRaw()),
-    )
-
-    assert handle.raw_open_receipt is not None
-    assert handle.raw_open_receipt.acquisition_source == source
+    with handle:
+        pass
+    assert raw.disposed
+    recorder.write_json(tmp_path / "timing.json")
+    rows = json.loads((tmp_path / "timing.json").read_text())[
+        "measurement_observations"
+    ]
+    assert rows == [
+        {
+            "metric": "raw_open_count",
+            "scope": "sample",
+            "value": 1,
+            "unit": "opens",
+            "aggregation": "sum",
+            "availability": "measured",
+            "source": "xic_extractor.raw_reader.open_raw",
+            "reason": "",
+        }
+    ]
 
 
-def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
+def test_open_raw_does_not_observe_success_when_vendor_open_fails(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import xic_extractor.raw_reader as raw_reader
+    from xic_extractor.execution.timing import TimingRecorder
     from xic_extractor.processing_identity import build_acquisition_source_identity
 
     class _SelectFailRaw(_FakeRaw):
@@ -439,18 +438,8 @@ def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
         acquisition_format="thermo_raw",
         observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
-    mint_calls: list[object] = []
-    original_mint = raw_reader._mint_raw_acquisition_session_receipt
-
-    def _record_mint(value):
-        mint_calls.append(value)
-        return original_mint(value)
-
-    monkeypatch.setattr(
-        raw_reader,
-        "_mint_raw_acquisition_session_receipt",
-        _record_mint,
-    )
+    recorder = TimingRecorder("discovery")
+    vendor = _SelectFailRaw()
 
     with pytest.raises(raw_reader_errors.RawReaderOpenError, match="select failed"):
         raw_reader.open_raw(
@@ -458,10 +447,12 @@ def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
             tmp_path,
             expected_acquisition_source=source,
             _import_module=_working_imports(),
-            _thermo=_fake_thermo(_SelectFailRaw()),
+            _thermo=_fake_thermo(vendor),
+            timing_recorder=recorder,
         )
 
-    assert mint_calls == []
+    assert recorder.measurement_observations == ()
+    assert vendor.disposed is True
 
 
 @pytest.mark.parametrize(
