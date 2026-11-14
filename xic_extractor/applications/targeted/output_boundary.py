@@ -12,11 +12,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
 
 from xic_extractor.applications.targeted.application import (
-    TargetedApplicationRequest,
     TargetedOutputBoundaryError,
     TargetedPublication,
 )
-from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 
 if TYPE_CHECKING:
@@ -38,42 +36,36 @@ _PUBLICATION_LOCK_NAME = ".xic-targeted-publish.lock"
 
 
 def publish_targeted_outputs(
-    request: TargetedApplicationRequest,
     completed_workflow: CompletedTargetedProductionWorkflow,
-    acquisition_evidence: RunOutput,
+    *,
+    excel_output_path: Path | None,
+    replace_existing: bool = False,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> TargetedPublication:
     """Stage and commit one complete render set after typed finalization."""
 
-    from xic_extractor.applications.targeted.production_workflow import (
-        CompletedTargetedProductionWorkflow,
-    )
-
-    if type(completed_workflow) is not CompletedTargetedProductionWorkflow:
-        raise TargetedOutputBoundaryError(
-            "publication requires an exact attempt-bound completed workflow"
-        )
-    render_view = completed_workflow.publication_output(request, acquisition_evidence)
-    output_dir = request.config.output_csv.parent
+    render_view = completed_workflow.publication_output
+    output_dir = completed_workflow.config.output_csv.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".xic-targeted-publish-", dir=output_dir))
     preserve_stage_root = False
     try:
         # Without a workbook destination the run is computed but not published.
         staged_to_final: dict[Path, Path] = {}
-        if request.excel_output_path is not None:
+        if excel_output_path is not None:
             stage_excel = stage_root / _STAGE_EXCEL_OUTPUT
             write_excel_from_run_output(
-                request.config,
-                list(request.targets),
+                completed_workflow.config,
+                list(completed_workflow.targets),
                 render_view,
                 output_path=stage_excel,
             )
-            staged_to_final[stage_excel] = request.excel_output_path
+            staged_to_final[stage_excel] = excel_output_path
         _reject_duplicate_destinations(staged_to_final)
         paths = _commit_staged_outputs(
             staged_to_final,
-            replace_existing=request.replace_existing_outputs,
-            should_cancel=request.should_stop,
+            replace_existing=replace_existing,
+            should_cancel=should_cancel,
         )
         return TargetedPublication(paths=paths, output=render_view)
     except _TargetedPublicationCancelled:

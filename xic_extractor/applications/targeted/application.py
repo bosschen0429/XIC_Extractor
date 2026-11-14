@@ -137,9 +137,10 @@ class TargetedApplicationService:
         )
 
         publication = publish_targeted_outputs(
-            resolved_request,
             completed_workflow,
-            active_output,
+            excel_output_path=resolved_request.excel_output_path,
+            replace_existing=resolved_request.replace_existing_outputs,
+            should_cancel=resolved_request.should_stop,
         )
         return TargetedApplicationExecution(
             active_output=publication.output,

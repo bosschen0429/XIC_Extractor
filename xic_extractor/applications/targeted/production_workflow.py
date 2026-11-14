@@ -116,7 +116,6 @@ class _PreparedTargetedProductionWorkflow:
     targets: tuple[Target, ...]
     results_by_sample: tuple[tuple[SampleMetadata, FileResult], ...]
     raw_stems: frozenset[str]
-    acquisition_file_ids: tuple[int, ...]
     acquisition_evidence: RunOutput
 
 
@@ -125,25 +124,9 @@ class CompletedTargetedProductionWorkflow:
     """Owner-completed science and a publication model consumed without mutation."""
 
     finalized_results: tuple[FinalizedTargetProductionResult, ...]
-    _acquisition_file_ids: tuple[int, ...]
-    _publication_output: RunOutput
-
-    def publication_output(
-        self,
-        request: TargetedApplicationRequest,
-        acquisition_evidence: RunOutput,
-    ) -> RunOutput:
-        """Bind a publication request and return its already-completed result view."""
-
-        acquisition_file_ids = tuple(
-            id(file_result) for file_result in acquisition_evidence.file_results
-        )
-        if acquisition_file_ids != self._acquisition_file_ids:
-            raise TargetedOutputBoundaryError(
-                "prepared Targeted workflow crossed the acquisition evidence"
-            )
-        _validate_target_population(request, self.finalized_results)
-        return self._publication_output
+    config: ExtractionConfig
+    targets: tuple[Target, ...]
+    publication_output: RunOutput
 
     def __len__(self) -> int:
         return len(self.finalized_results)
@@ -175,8 +158,9 @@ def execute_targeted_production_workflow(
     )
     return CompletedTargetedProductionWorkflow(
         finalized_results=finalized_results,
-        _acquisition_file_ids=prepared.acquisition_file_ids,
-        _publication_output=publication_output,
+        config=request.config,
+        targets=request.targets,
+        publication_output=publication_output,
     )
 
 
@@ -693,7 +677,6 @@ def _prepare_targeted_production_workflow(
     raw_paths = list(current_inputs.raw_paths)
     if len(raw_paths) != len(acquisition_evidence.file_results):
         raise RuntimeError("Targeted acquisition returned partial sample coverage")
-    acquisition_file_ids = tuple(id(item) for item in acquisition_evidence.file_results)
     results_by_raw_path = _bind_results_to_raw_paths(
         raw_paths,
         acquisition_evidence.file_results,
@@ -747,7 +730,6 @@ def _prepare_targeted_production_workflow(
             )
         ),
         raw_stems=frozenset(path.stem for path in raw_paths),
-        acquisition_file_ids=acquisition_file_ids,
         acquisition_evidence=acquisition_evidence,
     )
 

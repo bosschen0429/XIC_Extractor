@@ -304,7 +304,12 @@ def test_finalized_method_hold_cannot_inherit_an_acquisition_detection_claim(tmp
         excel_output_path=config.output_csv.with_suffix(".xlsx"),
     )
     completed = execute_targeted_production_workflow(request, output)
-    published = publish_targeted_outputs(request, completed, output)
+    published = publish_targeted_outputs(
+        completed,
+        excel_output_path=request.excel_output_path,
+        replace_existing=request.replace_existing_outputs,
+        should_cancel=request.should_stop,
+    )
     result = published.output.file_results[0].results[target.label]
     assert result.reported_peak_area == expected_area
     assert result.targeted_product_projection.counted_detection is False
@@ -327,7 +332,12 @@ def test_complete_finalized_population_publishes_only_workbook(
     )
     finalized = execute_targeted_production_workflow(request, output)
 
-    published = publish_targeted_outputs(request, finalized, output)
+    published = publish_targeted_outputs(
+        finalized,
+        excel_output_path=request.excel_output_path,
+        replace_existing=request.replace_existing_outputs,
+        should_cancel=request.should_stop,
+    )
 
     assert set(published.paths) == {
         excel_path,
@@ -349,7 +359,12 @@ def test_workbook_only_delivery_embeds_method_settings(
     )
     finalized = execute_targeted_production_workflow(request, output)
 
-    publish_targeted_outputs(request, finalized, output)
+    publish_targeted_outputs(
+        finalized,
+        excel_output_path=request.excel_output_path,
+        replace_existing=request.replace_existing_outputs,
+        should_cancel=request.should_stop,
+    )
 
     workbook = load_workbook(excel_path, read_only=True, data_only=True)
     metadata = {
@@ -394,8 +409,17 @@ def test_publication_returns_concrete_public_result_models(
         injection_order={"SampleA": 1, "SampleB": 2},
     )
     finalized = execute_targeted_production_workflow(request, output)
+    # Publication consumes completed values, never the acquisition containers.
+    output.file_results.reverse()
+    for file_result in output.file_results:
+        file_result.results.clear()
 
-    published = publish_targeted_outputs(request, finalized, output)
+    published = publish_targeted_outputs(
+        finalized,
+        excel_output_path=request.excel_output_path,
+        replace_existing=request.replace_existing_outputs,
+        should_cancel=request.should_stop,
+    )
 
     assert len(published.output.file_results) == 2
     by_sample = {fr.sample_name: fr for fr in published.output.file_results}
@@ -414,6 +438,19 @@ def test_publication_returns_concrete_public_result_models(
     assert ext_b.reported_peak_area == pytest.approx(
         ext_a.reported_peak_area * 2.5, rel=1e-2
     )
+
+    workbook = load_workbook(request.excel_output_path, read_only=True, data_only=True)
+    rows = list(workbook["XIC Results"].values)
+    workbook.close()
+    headers = rows[0]
+    records = [dict(zip(headers, row, strict=True)) for row in rows[1:]]
+    assert [row["SampleName"] for row in records] == ["SampleA", "SampleB"]
+    assert [row["Target"] for row in records] == [target.label, target.label]
+    assert [row["Area"] for row in records] == [
+        round(ext_a.reported_peak_area, 2),
+        round(ext_b.reported_peak_area, 2),
+    ]
+    assert [row["Counted Detection"] for row in records] == ["TRUE", "TRUE"]
 
 
 def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) -> None:
@@ -442,7 +479,12 @@ def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) ->
         ),
     )
 
-    published = publish_targeted_outputs(request, finalized, output)
+    published = publish_targeted_outputs(
+        finalized,
+        excel_output_path=request.excel_output_path,
+        replace_existing=request.replace_existing_outputs,
+        should_cancel=request.should_stop,
+    )
 
     rendered = published.output.file_results[0].results[target.label]
     finalized_hypothesis = (
@@ -737,7 +779,12 @@ def test_publication_retires_equal_area_legacy_selection_authority(
     )
     finalized = execute_targeted_production_workflow(request, output)
 
-    published = publish_targeted_outputs(request, finalized, output)
+    published = publish_targeted_outputs(
+        finalized,
+        excel_output_path=request.excel_output_path,
+        replace_existing=request.replace_existing_outputs,
+        should_cancel=request.should_stop,
+    )
 
     rendered = published.output.file_results[0].results[target.label]
     assert rendered.selected_hypothesis is None
@@ -764,7 +811,12 @@ def test_neutral_loss_disabled_target_publishes_ms1_backfill(
     )
 
     finalized = execute_targeted_production_workflow(request, output)
-    published = publish_targeted_outputs(request, finalized, output)
+    published = publish_targeted_outputs(
+        finalized,
+        excel_output_path=request.excel_output_path,
+        replace_existing=request.replace_existing_outputs,
+        should_cancel=request.should_stop,
+    )
 
     assert published.paths == (request.excel_output_path,)
     assert request.excel_output_path.is_file()
@@ -878,7 +930,12 @@ def test_collision_leaves_existing_output_and_publishes_nothing_else(
     request.excel_output_path.write_bytes(b"existing")
 
     with pytest.raises(TargetedOutputBoundaryError, match="already exists"):
-        publish_targeted_outputs(request, finalized, output)
+        publish_targeted_outputs(
+            finalized,
+            excel_output_path=request.excel_output_path,
+            replace_existing=request.replace_existing_outputs,
+            should_cancel=request.should_stop,
+        )
 
     assert request.excel_output_path.read_bytes() == b"existing"
     assert sorted(path.name for path in config.output_csv.parent.iterdir()) == [
@@ -914,7 +971,12 @@ def test_noncooperating_collision_after_precheck_is_not_replaced(
     )
 
     with pytest.raises(TargetedOutputBoundaryError, match="was rolled back"):
-        publish_targeted_outputs(request, completed, output)
+        publish_targeted_outputs(
+            completed,
+            excel_output_path=request.excel_output_path,
+            replace_existing=request.replace_existing_outputs,
+            should_cancel=request.should_stop,
+        )
 
     assert len(collided) == 1
     assert collided[0].read_bytes() == b"outside-writer"
@@ -961,7 +1023,15 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
         )
         completed = execute_targeted_production_workflow(request, evidence)
         try:
-            return ("success", publish_targeted_outputs(request, completed, evidence))
+            return (
+                "success",
+                publish_targeted_outputs(
+                    completed,
+                    excel_output_path=request.excel_output_path,
+                    replace_existing=request.replace_existing_outputs,
+                    should_cancel=request.should_stop,
+                ),
+            )
         except Exception as exc:  # noqa: BLE001 - assert the public failure below
             return ("error", exc)
 
@@ -1087,7 +1157,12 @@ def test_render_failure_publishes_no_final_output(
     )
 
     with pytest.raises(TargetedOutputBoundaryError, match="render failed"):
-        publish_targeted_outputs(request, finalized, output)
+        publish_targeted_outputs(
+            finalized,
+            excel_output_path=request.excel_output_path,
+            replace_existing=request.replace_existing_outputs,
+            should_cancel=request.should_stop,
+        )
 
     assert not any(config.output_csv.parent.iterdir())
 
@@ -1123,7 +1198,12 @@ def test_commit_failure_rolls_back_all_final_paths(
     )
 
     with pytest.raises(TargetedOutputBoundaryError, match="rolled back"):
-        publish_targeted_outputs(request, finalized, output)
+        publish_targeted_outputs(
+            finalized,
+            excel_output_path=request.excel_output_path,
+            replace_existing=request.replace_existing_outputs,
+            should_cancel=request.should_stop,
+        )
 
     assert not any(config.output_csv.parent.iterdir())
 
@@ -1155,7 +1235,12 @@ def test_commit_cancellation_after_first_move_rolls_back_all_final_paths(
         cancel_after_first_commit,
     )
 
-    publication = publish_targeted_outputs(request, finalized, output)
+    publication = publish_targeted_outputs(
+        finalized,
+        excel_output_path=request.excel_output_path,
+        replace_existing=request.replace_existing_outputs,
+        should_cancel=request.should_stop,
+    )
 
     assert publication.paths == ()
     assert not any(config.output_csv.parent.iterdir())
@@ -1219,11 +1304,21 @@ def test_replay_replaces_its_owned_output_set(tmp_path: Path) -> None:
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
-    original_paths = publish_targeted_outputs(request, finalized, output).paths
+    original_paths = publish_targeted_outputs(
+        finalized,
+        excel_output_path=request.excel_output_path,
+        replace_existing=request.replace_existing_outputs,
+        should_cancel=request.should_stop,
+    ).paths
     original_paths[0].write_bytes(b"stale replay output")
 
     replay_request = replace(request, replace_existing_outputs=True)
-    replay_paths = publish_targeted_outputs(replay_request, finalized, output).paths
+    replay_paths = publish_targeted_outputs(
+        finalized,
+        excel_output_path=replay_request.excel_output_path,
+        replace_existing=replay_request.replace_existing_outputs,
+        should_cancel=replay_request.should_stop,
+    ).paths
 
     assert replay_paths == original_paths
     assert all(path.is_file() for path in replay_paths)
@@ -1242,7 +1337,12 @@ def test_replay_commit_failure_restores_previous_output_set(
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
-    original_paths = publish_targeted_outputs(request, finalized, output).paths
+    original_paths = publish_targeted_outputs(
+        finalized,
+        excel_output_path=request.excel_output_path,
+        replace_existing=request.replace_existing_outputs,
+        should_cancel=request.should_stop,
+    ).paths
     original_bytes = {path: path.read_bytes() for path in original_paths}
     original_replace = Path.replace
     commit_count = 0
@@ -1259,9 +1359,14 @@ def test_replay_commit_failure_restores_previous_output_set(
 
     with pytest.raises(TargetedOutputBoundaryError, match="rolled back"):
         publish_targeted_outputs(
-            replace(request, replace_existing_outputs=True),
             finalized,
-            output,
+            excel_output_path=replace(
+                request, replace_existing_outputs=True
+            ).excel_output_path,
+            replace_existing=replace(
+                request, replace_existing_outputs=True
+            ).replace_existing_outputs,
+            should_cancel=replace(request, replace_existing_outputs=True).should_stop,
         )
 
     assert {path: path.read_bytes() for path in original_paths} == original_bytes
@@ -1279,7 +1384,12 @@ def test_failed_primary_restore_uses_fallback_to_restore_live_output_set(
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
-    original_paths = publish_targeted_outputs(request, finalized, output).paths
+    original_paths = publish_targeted_outputs(
+        finalized,
+        excel_output_path=request.excel_output_path,
+        replace_existing=request.replace_existing_outputs,
+        should_cancel=request.should_stop,
+    ).paths
     original_bytes = {path: path.read_bytes() for path in original_paths}
     original_replace = Path.replace
     commit_count = 0
@@ -1303,9 +1413,14 @@ def test_failed_primary_restore_uses_fallback_to_restore_live_output_set(
         match="was rolled back",
     ):
         publish_targeted_outputs(
-            replace(request, replace_existing_outputs=True),
             finalized,
-            output,
+            excel_output_path=replace(
+                request, replace_existing_outputs=True
+            ).excel_output_path,
+            replace_existing=replace(
+                request, replace_existing_outputs=True
+            ).replace_existing_outputs,
+            should_cancel=replace(request, replace_existing_outputs=True).should_stop,
         )
 
     assert {path: path.read_bytes() for path in original_paths} == original_bytes
@@ -1362,111 +1477,6 @@ def test_rollback_quarantines_new_output_when_unlink_is_denied(
     assert not final.exists()
     assert staged.read_bytes() == b"recoverable-staged-output"
     assert (tmp_path / ".staged.csv.published").read_bytes() == b"published-output"
-
-
-def test_publisher_rejects_finalized_results_from_another_acquisition(
-    tmp_path: Path,
-) -> None:
-    current_root = tmp_path / "current"
-    stale_root = tmp_path / "stale"
-    current_root.mkdir()
-    stale_root.mkdir()
-    current_config, current_target, current_output = production_case(current_root)
-    stale_config, stale_target, stale_output = production_case(stale_root)
-    stale_raw = stale_config.data_dir / "SampleA.raw"
-    stale_raw.write_bytes(b"stale acquisition")
-    stale_source = build_local_acquisition_source_identity(
-        stale_raw,
-        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-    )
-    stale_extraction = stale_output.file_results[0].results[stale_target.label]
-    stale_candidate = stale_extraction.candidate_ms2_evidence
-    assert stale_candidate is not None
-    stale_product = stale_candidate.best_product_evidence
-    assert stale_product is not None
-    stale_output.file_results[0].results[stale_target.label] = with_method_universe(
-        replace(
-            stale_extraction,
-            candidate_ms2_evidence=replace(
-                stale_candidate,
-                best_product_evidence=replace(
-                    stale_product,
-                    acquisition_source_id=stale_source.acquisition_source_id,
-                ),
-            ),
-        ),
-        stale_target,
-    )
-    stale_request = build_targeted_application_request(
-        stale_config,
-        [stale_target],
-        excel_output_path=stale_config.output_csv.with_suffix(".xlsx"),
-        injection_order={"SampleA": 1},
-    )
-    stale_finalized = execute_targeted_production_workflow(
-        stale_request,
-        stale_output,
-    )
-    current_request = build_targeted_application_request(
-        current_config,
-        [current_target],
-        excel_output_path=current_config.output_csv.with_suffix(".xlsx"),
-        injection_order={"SampleA": 1},
-    )
-    with pytest.raises(
-        TargetedOutputBoundaryError,
-        match="crossed the acquisition evidence",
-    ):
-        publish_targeted_outputs(
-            current_request,
-            stale_finalized,
-            current_output,
-        )
-
-
-def test_publisher_rejects_unsealed_finalized_result_tuple(tmp_path: Path) -> None:
-    config, target, output = production_case(tmp_path)
-    request = build_targeted_application_request(
-        config,
-        [target],
-        excel_output_path=config.output_csv.with_suffix(".xlsx"),
-        injection_order={"SampleA": 1},
-    )
-    completed = execute_targeted_production_workflow(request, output)
-
-    with pytest.raises(
-        TargetedOutputBoundaryError,
-        match="exact attempt-bound completed workflow",
-    ):
-        publish_targeted_outputs(
-            request,
-            completed.finalized_results,  # type: ignore[arg-type]
-            output,
-        )
-
-
-def test_publisher_rejects_reordered_acquisition_after_completion(
-    tmp_path: Path,
-) -> None:
-    config, target, output = production_case(
-        tmp_path,
-        sample_names=("SampleA", "SampleB"),
-    )
-    request = build_targeted_application_request(
-        config,
-        [target],
-        excel_output_path=config.output_csv.with_suffix(".xlsx"),
-        injection_order={"SampleA": 1, "SampleB": 2},
-    )
-    completed = execute_targeted_production_workflow(request, output)
-    output.file_results.reverse()
-
-    with pytest.raises(
-        TargetedOutputBoundaryError,
-        match="crossed the acquisition evidence",
-    ):
-        publish_targeted_outputs(request, completed, output)
 
 
 def test_service_accepts_raw_order_that_differs_from_canonical_order(
@@ -2074,7 +2084,12 @@ def test_publication_lists_samples_in_injection_order(tmp_path: Path) -> None:
     )
     finalized = execute_targeted_production_workflow(request, output)
 
-    published = publish_targeted_outputs(request, finalized, output)
+    published = publish_targeted_outputs(
+        finalized,
+        excel_output_path=request.excel_output_path,
+        replace_existing=request.replace_existing_outputs,
+        should_cancel=request.should_stop,
+    )
 
     # Readers follow the run as acquired, not the RAW file names.
     files = published.output.file_results

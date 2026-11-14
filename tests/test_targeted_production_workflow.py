@@ -254,7 +254,7 @@ def test_publication_uses_final_peak_evidence_not_stale_selected_summary(tmp_pat
         injection_order={"SampleA": 1, "SampleB": 2},
     )
     completed = execute_targeted_production_workflow(request, output)
-    published = completed.publication_output(request, output)
+    published = completed.publication_output
     first_final, second_final = [
         f.results[target.label] for f in published.file_results
     ]
