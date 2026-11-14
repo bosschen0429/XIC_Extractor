@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from xml.etree.ElementTree import ParseError
 from zipfile import BadZipFile
 
@@ -16,11 +17,24 @@ from xic_extractor.output.targeted_overview import summarize_targeted_results
 from xic_inspector.selection.canonical import CanonicalItem, build_canonical_ref
 from xic_inspector.selection.sampler import sample_cross_sample_sha256
 
+if TYPE_CHECKING:
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+
 
 @dataclass(frozen=True, slots=True)
 class TargetedWorkbookLocator:
     workbook_path: Path
     workbook_sha256: str
+
+
+def saved_number(value: object) -> float | None:
+    """A finite numeric workbook cell; ND and booleans are not measurements."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value) if math.isfinite(value) else None
+    return None
 
 
 def _table(book, name: str, required: set[str]) -> list[dict[str, Any]]:
@@ -54,7 +68,9 @@ def _table(book, name: str, required: set[str]) -> list[dict[str, Any]]:
 class TargetedWorkbookSource:
     """A self-contained saved-result source; labels are not RAW identities."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self, path: Path, *, expected_source: TargetedWorkbookLocator | None = None
+    ) -> None:
         # openpyxl is the largest workbench startup import; load it on first open.
         from openpyxl import load_workbook
         from openpyxl.utils.exceptions import InvalidFileException
@@ -63,6 +79,8 @@ class TargetedWorkbookSource:
         with path.open("rb") as handle:
             digest = hashlib.file_digest(handle, "sha256").hexdigest()
         self.locator = TargetedWorkbookLocator(path, digest)
+        if expected_source is not None and self.locator != expected_source:
+            raise ExplanationError("Targeted 結果已變更，請重新開啟。")
         try:
             # This adapter never saves the workbook.
             book = load_workbook(path, read_only=True, data_only=True)
@@ -211,6 +229,90 @@ class TargetedWorkbookSource:
             if isinstance(target["Role"], str)
             and target["Role"].strip().casefold() == role.casefold()
         ]
+
+    def curve_targets(
+        self, target_id: str, samples: tuple[str, ...], *, default_ppm: float
+    ) -> dict[str, tuple[float, float]]:
+        """Resolve a target and its paired ISTD to validated XIC coordinates."""
+        targets = {row["Label"]: row for row in self.targets}
+        if target_id not in targets:
+            raise ExplanationError("所選 Target 不在這份工作簿。")
+        selected = [targets[target_id]]
+        pair = selected[0].get("ISTD Pair")
+        if pair:
+            if pair not in targets:
+                raise ExplanationError("工作簿缺少配對 ISTD 的目標設定。")
+            selected.append(targets[pair])
+        if not samples or any(
+            (s, target_id) not in self._records_by_key for s in samples
+        ):
+            raise ExplanationError("所選樣本沒有此 Target 的結果紀錄。")
+        coordinates = {}
+        for spec in selected:
+            label = spec["Label"]
+            mz = saved_number(spec.get("m/z"))
+            ppm = saved_number(spec.get("ppm tol", default_ppm))
+            if mz is None or mz <= 0 or ppm is None or ppm <= 0:
+                raise ExplanationError(f"{label} 缺少有效的 m/z 或 ppm 設定。")
+            coordinates[label] = (mz, ppm)
+        return coordinates
+
+    def curve_record(self, sample: str, label: str | None) -> dict[str, Any]:
+        if label is None:
+            return {}
+        return self._records_by_key.get((sample, label), {})
+
+    def paired_reference_rt(self, sample: str, label: str) -> float | None:
+        target = next(t for t in self.targets if t["Label"] == label)
+        return saved_number(
+            self.curve_record(sample, target.get("ISTD Pair")).get("RT")
+        )
+
+    def support_reference_rts(
+        self, samples: tuple[str, ...], labels: tuple[str, ...]
+    ) -> dict[tuple[str, str], float]:
+        """New ND diagnostics use the saved ISTD RT, not the method RT offset."""
+        references = {}
+        targets = {row["Label"]: row for row in self.targets}
+        for sample in samples:
+            for label in labels:
+                record = self.curve_record(sample, label)
+                reference = self.curve_record(sample, targets[label].get("ISTD Pair"))
+                rt = saved_number(reference.get("RT"))
+                if (
+                    str(record.get("Counted Detection")).upper() == "FALSE"
+                    and str(reference.get("Counted Detection")).upper() == "TRUE"
+                    and rt is not None
+                ):
+                    references[sample, label] = rt
+        return references
+
+    def curve_processing_settings(
+        self,
+    ) -> tuple[MassRecalibration, SignalProcessingProfile]:
+        # Import processing settings only when requesting a new diagnostic XIC.
+        from xic_extractor.configuration.mass_recalibration import (
+            MassRecalibration,
+            resolve_mass_recalibration,
+        )
+        from xic_extractor.configuration.signal_processing_profile import (
+            resolve_signal_processing_profile,
+        )
+
+        metadata = dict(cast(list[tuple[str, Any]], self.summary["method_context"]))
+        return (
+            resolve_mass_recalibration(
+                metadata.get("mass_recalibration", MassRecalibration.NONE)
+            ),
+            resolve_signal_processing_profile(
+                signal_processing_method=metadata.get("signal_processing_method")
+                or "gaussian",
+                signal_processing_window_points=metadata.get(
+                    "signal_processing_window_points"
+                )
+                or 15,
+            ),
+        )
 
     def select_items(self, sample_ids: set[str], selection):
         items = []

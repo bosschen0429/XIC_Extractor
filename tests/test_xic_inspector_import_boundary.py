@@ -7,7 +7,13 @@ import pytest
 
 
 @pytest.mark.parametrize(
-    "module", ["xic_inspector.sources.cid_nl", "xic_inspector.api"]
+    "module",
+    [
+        "xic_inspector.sources.cid_nl",
+        "xic_inspector.sources.targeted_workbook",
+        "xic_inspector.targeted_curves",
+        "xic_inspector.api",
+    ],
 )
 def test_inspector_import_does_not_load_raw_reader(module: str) -> None:
     completed = subprocess.run(

@@ -12,7 +12,7 @@ def install_targeted_raws(
 
     import numpy as np
 
-    from xic_workbench import targeted_curves
+    from xic_extractor.acquisition import review_xics
 
     raw_dir.mkdir(exist_ok=True)
     for sample in scales:
@@ -46,7 +46,7 @@ def install_targeted_raws(
     def open_raw(path, dll_dir, **kwargs):
         yield Raw(path.stem)
 
-    monkeypatch.setattr(targeted_curves, "open_raw", open_raw)
+    monkeypatch.setattr(review_xics, "open_raw", open_raw)
     return reads
 
 
@@ -109,3 +109,42 @@ def write_rare_detection_workbook(path):
     book.save(path)
     book.close()
     return path
+
+
+def acquire_targeted_bundle(
+    workbook,
+    *,
+    raw_dir,
+    dll_dir,
+    target_id,
+    sample_ids,
+    verified_raws=None,
+    is_cancelled=None,
+):
+    """Exercise source interpretation, real processing and Inspector projection."""
+    from contextlib import closing
+
+    from xic_extractor.acquisition.review_xics import acquire_review_xics
+    from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
+    from xic_inspector.targeted_curves import targeted_curve_bundle
+
+    source = TargetedWorkbookSource(workbook)
+    samples = tuple(dict.fromkeys(sample_ids))
+    coordinates = source.curve_targets(target_id, samples, default_ppm=5)
+    mass_policy, profile = source.curve_processing_settings()
+    with closing(
+        acquire_review_xics(
+            raw_dir=raw_dir,
+            dll_dir=dll_dir,
+            sample_ids=samples,
+            coordinates=coordinates,
+            mass_policy=mass_policy,
+            profile=profile,
+            support_reference_rts=source.support_reference_rts(
+                samples, tuple(coordinates)
+            ),
+            verified_raws=verified_raws,
+            is_cancelled=is_cancelled,
+        )
+    ) as signals:
+        return targeted_curve_bundle(source, target_id, signals)

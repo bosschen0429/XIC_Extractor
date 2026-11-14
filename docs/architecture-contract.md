@@ -197,6 +197,13 @@ partition is never a feature boundary.
 - `raw_mass_recalibration` owns in-memory restoration decisions and arithmetic;
   `raw_mass_recalibration_batch` prepares source-bound results through the adapter
   and schedules workers. Neither responsibility is implemented by a facade.
+- Targeted review uses `xic_inspector.sources.targeted_workbook` for saved
+  facts/settings and `acquisition.review_xics` for RAW lifetime, recalibration,
+  full-trace preparation and near-ISTD signal diagnostics. Inspector's
+  `targeted_curves` projects those observations into `CurveBundle`; Workbench
+  passes it directly to `prepare_curve_view`. Offline export is user-requested,
+  not an interactive curve-file handoff. Diagnostic reference RT remains the
+  saved ISTD RT, separate from the formal method's reference-RT adjustment.
 
 ## Dependency Direction
 
