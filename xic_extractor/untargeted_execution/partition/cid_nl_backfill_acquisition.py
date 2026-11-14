@@ -12,7 +12,6 @@ from typing import cast
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
     TraceAcquisitionBatch,
-    TraceCoordinateKind,
     mint_trace_acquisition_capability,
 )
 from xic_extractor.alignment.backfill.cid_nl_planning import CidNlBackfillQuestion
@@ -384,7 +383,6 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
     capability = mint_trace_acquisition_capability(
         source,
         adapter_namespace=f"{_ADAPTER_NAMESPACE}.backfill_batch",
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     acquisition = _freeze_acquisition(
         acquire_untargeted_trace_batch(capability, tuple(unique), raw)
@@ -503,7 +501,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         capability = mint_trace_acquisition_capability(
             source,
             adapter_namespace=f"{_ADAPTER_NAMESPACE}.backfill",
-            coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
         )
         acquisition = _freeze_acquisition(
             acquire_untargeted_trace_batch(
@@ -547,9 +544,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             sample_name=sample.sample_name,
             request=capture_request,
             xic_trace=capture_acquired.trace,
-            source=(
-                f"{_ADAPTER_NAMESPACE}.backfill:{TraceCoordinateKind.NATIVE_SCAN.value}"
-            ),
+            source=(f"{_ADAPTER_NAMESPACE}.backfill:native_scan"),
             acquisition_source_id=source.acquisition_source_id,
         )
         physical_evaluations.clear()

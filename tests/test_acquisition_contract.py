@@ -7,7 +7,6 @@ import pytest
 
 from xic_extractor.acquisition_contract import (
     AcquisitionContractError,
-    TraceCoordinateKind,
     acquire_trace_batch,
     deserialize_acquired_trace,
     mint_trace_acquisition_capability,
@@ -58,7 +57,6 @@ def test_capability_aware_batch_trace_coordinates_are_executable_no_raw(
     capability = mint_trace_acquisition_capability(
         source,
         adapter_namespace="tests.no_raw_batch_adapter",
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     requests = (
         XICRequest(mz=258.1085, rt_min=8.0, rt_max=10.0, ppm_tol=20.0),
@@ -88,7 +86,6 @@ def test_acquired_trace_owner_roundtrip_closes_coordinate_request_and_content(
     capability = mint_trace_acquisition_capability(
         source,
         adapter_namespace="tests.acquired_trace_persistence",
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     request = XICRequest(mz=258.1085, rt_min=8.0, rt_max=10.0, ppm_tol=20.0)
     acquired = acquire_trace_batch(capability, (request,), _NoRawBatchAdapter()).traces[
@@ -135,7 +132,6 @@ def test_acquired_trace_owner_rejects_resealed_tamper(
     capability = mint_trace_acquisition_capability(
         source,
         adapter_namespace="tests.acquired_trace_tamper",
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     acquired = acquire_trace_batch(
         capability,
@@ -157,7 +153,6 @@ def test_runtime_owner_aggregates_only_typed_acquisition_receipts(
     capability = mint_trace_acquisition_capability(
         _source(tmp_path),
         adapter_namespace="tests.runtime_owner_aggregation",
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     adapter = _NoRawBatchAdapter()
     request = XICRequest(mz=258.1085, rt_min=8.0, rt_max=10.0, ppm_tol=20.0)
@@ -180,7 +175,6 @@ def test_batch_trace_contract_records_observed_backend_call_delta(
     capability = mint_trace_acquisition_capability(
         _source(tmp_path),
         adapter_namespace="tests.multi_window_batch_adapter",
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     requests = (
         XICRequest(mz=258.1085, rt_min=8.0, rt_max=10.0, ppm_tol=20.0),
@@ -204,7 +198,6 @@ def test_batch_trace_contract_requires_observed_backend_call_counter(
     capability = mint_trace_acquisition_capability(
         _source(tmp_path),
         adapter_namespace="tests.unobservable_batch_adapter",
-        coordinate_kind=TraceCoordinateKind.RT_ONLY,
     )
 
     class UnobservableAdapter:
@@ -236,7 +229,6 @@ def test_batch_trace_contract_rejects_rewound_backend_call_counter(
     capability = mint_trace_acquisition_capability(
         _source(tmp_path),
         adapter_namespace="tests.rewound_batch_adapter",
-        coordinate_kind=TraceCoordinateKind.RT_ONLY,
     )
 
     class RewoundAdapter(_NoRawBatchAdapter):
@@ -257,32 +249,10 @@ def test_batch_trace_contract_rejects_rewound_backend_call_counter(
         )
 
 
-def test_rt_only_capability_does_not_claim_or_query_scan_coordinates(
-    tmp_path: Path,
-) -> None:
-    capability = mint_trace_acquisition_capability(
-        _source(tmp_path),
-        adapter_namespace="tests.no_raw_batch_adapter",
-        coordinate_kind=TraceCoordinateKind.RT_ONLY,
-    )
-    adapter = _NoRawBatchAdapter()
-
-    batch = acquire_trace_batch(
-        capability,
-        (XICRequest(mz=258.1085, rt_min=8.0, rt_max=10.0, ppm_tol=20.0),),
-        adapter,
-    )
-
-    assert adapter.scan_calls == 0
-    assert batch.traces[0].coordinate.first_scan is None
-    assert batch.traces[0].coordinate.last_scan is None
-
-
 def test_batch_trace_contract_rejects_wrong_result_cardinality(tmp_path: Path) -> None:
     capability = mint_trace_acquisition_capability(
         _source(tmp_path),
         adapter_namespace="tests.invalid_batch_adapter",
-        coordinate_kind=TraceCoordinateKind.RT_ONLY,
     )
 
     class InvalidAdapter(_NoRawBatchAdapter):
@@ -301,7 +271,6 @@ def test_batch_trace_contract_rejects_empty_batch(tmp_path: Path) -> None:
     capability = mint_trace_acquisition_capability(
         _source(tmp_path),
         adapter_namespace="tests.no_raw_batch_adapter",
-        coordinate_kind=TraceCoordinateKind.RT_ONLY,
     )
 
     with pytest.raises(AcquisitionContractError, match="non-empty"):
@@ -312,7 +281,6 @@ def test_batch_trace_contract_rejects_nonfinite_trace_values(tmp_path: Path) -> 
     capability = mint_trace_acquisition_capability(
         _source(tmp_path),
         adapter_namespace="tests.invalid_batch_adapter",
-        coordinate_kind=TraceCoordinateKind.RT_ONLY,
     )
 
     class InvalidAdapter(_NoRawBatchAdapter):
@@ -341,7 +309,6 @@ def test_batch_trace_contract_rejects_mismatched_or_multidimensional_arrays(
     capability = mint_trace_acquisition_capability(
         _source(tmp_path),
         adapter_namespace="tests.invalid_shape_batch_adapter",
-        coordinate_kind=TraceCoordinateKind.RT_ONLY,
     )
 
     class InvalidAdapter(_NoRawBatchAdapter):

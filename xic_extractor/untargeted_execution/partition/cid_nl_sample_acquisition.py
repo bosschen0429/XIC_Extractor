@@ -9,7 +9,6 @@ from dataclasses import field as dataclass_field
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
     TraceAcquisitionBatch,
-    TraceCoordinateKind,
     mint_trace_acquisition_capability,
 )
 from xic_extractor.alignment.cid_nl_inputs import (
@@ -83,9 +82,7 @@ from xic_extractor.untargeted_execution.partition.cid_nl_raw_source import (
 )
 from xic_extractor.xic_models import XICRequest
 
-UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE = (
-    f"{_ADAPTER_NAMESPACE}:{TraceCoordinateKind.NATIVE_SCAN.value}"
-)
+UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE = f"{_ADAPTER_NAMESPACE}:native_scan"
 _WRITER_ROUNDING_REL_TOL = 5e-6
 _WRITER_ROUNDING_ABS_TOL = 5e-6
 
@@ -251,7 +248,6 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     capability = mint_trace_acquisition_capability(
         source,
         adapter_namespace=f"{_ADAPTER_NAMESPACE}.sample_batch",
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     requests, indices = _sample_capture_requests(
         peaks=capture_candidates, settings=settings
@@ -550,7 +546,6 @@ def _adopt_peak_observations(
         capability = mint_trace_acquisition_capability(
             source,
             adapter_namespace=_ADAPTER_NAMESPACE,
-            coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
         )
         acquisition = _freeze_acquisition(
             acquire_untargeted_trace_batch(capability, requests, raw)

@@ -185,8 +185,6 @@ class CachedUntargetedRaw:
                 if (
                     acquired.coordinate.capability != capability
                     or acquired.coordinate.request != request
-                    or acquired.coordinate.coordinate_kind
-                    is not capability.coordinate_kind
                 ):
                     raise UntargetedAcquisitionCacheError(
                         "cached XIC trace conflicts with its exact request key"
@@ -393,7 +391,7 @@ def _trace_key(capability: TraceAcquisitionCapability, request: XICRequest) -> b
     return _key_bytes(
         "xic",
         capability.adapter_namespace,
-        capability.coordinate_kind.value,
+        "native_scan",
         _float_text(request.mz),
         _float_text(request.rt_min),
         _float_text(request.rt_max),

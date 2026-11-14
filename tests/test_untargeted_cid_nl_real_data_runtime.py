@@ -29,7 +29,6 @@ from tests.processing_identity_no_raw_fixture import (
 )
 from tests.untargeted_cid_nl_real_data_adapter_fixtures import _without_ms1_peak
 from xic_extractor.acquisition_contract import (
-    TraceCoordinateKind,
     acquire_trace_batch,
     mint_trace_acquisition_capability,
     serialize_acquired_trace,
@@ -235,7 +234,6 @@ def test_acquisition_cache_replays_xic_and_ms2_and_reacquires_only_rejected_quer
     capability = mint_trace_acquisition_capability(
         source,
         adapter_namespace="untargeted-cache-test",
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     first_request = XICRequest(mz=500.0, rt_min=7.8, rt_max=8.2, ppm_tol=10.0)
     second_request = replace(first_request, mz=500.01)
@@ -352,7 +350,6 @@ def test_acquisition_cache_replays_xic_and_ms2_and_reacquires_only_rejected_quer
     second_capability = mint_trace_acquisition_capability(
         second_source,
         adapter_namespace="untargeted-cache-test",
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     second_handle, second_vendor = _open_bound_raw(
         fixture, "S2", source_raw, tmp_path=tmp_path
@@ -368,6 +365,117 @@ def test_acquisition_cache_replays_xic_and_ms2_and_reacquires_only_rejected_quer
     assert second_vendor.chromatogram_request_counts == [1]
 
 
+@pytest.mark.parametrize(
+    "invalid_entry", ("source", "request", "coordinate_kind", "scan", "truncated")
+)
+def test_native_disk_cache_preserves_sources_requests_and_empty_traces(
+    tmp_path: Path, invalid_entry: str
+) -> None:
+    from xic_extractor.untargeted_execution import acquisition_cache as cache_owner
+
+    fixture = build_targeted_processing_identity_raw_fixture(
+        tmp_path, sample_stems=("S1", "S2")
+    )
+    cache_dir = tmp_path / "native-cache"
+    requests = (
+        XICRequest(501.0, 8.1, 8.2, 10.0),
+        XICRequest(500.0, 7.8, 8.0, 20.0),
+        XICRequest(999.0, 8.3, 8.4, 10.0),
+    )
+    saved = {}
+    for sample_index, stem in enumerate(("S1", "S2")):
+        source = _source_for(fixture, stem)
+        capability = mint_trace_acquisition_capability(
+            source, adapter_namespace="native-cache-parity"
+        )
+        source_raw = _FakeRaw(())
+        # Independent oracle: native scan i carries sample_index*1000+i.
+        source_raw.intensity = (
+            np.arange(len(source_raw.rt), dtype=float) + sample_index * 1000
+        )
+        handle, vendor = _open_bound_raw(fixture, stem, source_raw, tmp_path=tmp_path)
+        original = vendor.GetChromatogramData
+
+        def read(settings, first, last, original=original):
+            data = original(settings, first, last)
+            for index, setting in enumerate(settings):
+                if setting.MassRanges[0][0] > 900:
+                    data.PositionsArray[index] = []
+                    data.IntensitiesArray[index] = []
+            return data
+
+        vendor.GetChromatogramData = read
+        with CachedUntargetedRaw(handle, source=source, cache_dir=cache_dir) as cold:
+            batch = acquire_untargeted_trace_batch(capability, requests, cold)
+        assert vendor.disposed
+        for request, trace in zip(requests, batch.traces, strict=True):
+            first, last = source_raw.scan_window_for_request(request)
+            assert trace.coordinate.request == request
+            assert trace.coordinate.capability.acquisition_source == source
+            assert (trace.coordinate.first_scan, trace.coordinate.last_scan) == (
+                first,
+                last,
+            )
+            if request.mz == 999:
+                assert trace.coordinate.trace_point_count == 0
+                assert len(trace.trace.rt) == len(trace.trace.intensity) == 0
+            else:
+                np.testing.assert_array_equal(
+                    trace.trace.rt, source_raw.rt[first - 1 : last]
+                )
+                np.testing.assert_array_equal(
+                    trace.trace.intensity,
+                    np.arange(first - 1, last) + sample_index * 1000,
+                )
+                assert trace.coordinate.trace_point_count == last - first + 1
+        payloads = tuple(map(serialize_acquired_trace, batch.traces))
+        assert all(
+            json.loads(payload)["coordinate"]["capability"]["coordinate_kind"]
+            == "native_scan"
+            for payload in payloads
+        )
+
+        def forbid_open():
+            raise AssertionError("warm replay must not open vendor")
+
+        with CachedUntargetedRaw(
+            forbid_open, source=source, cache_dir=cache_dir
+        ) as warm:
+            replay = acquire_untargeted_trace_batch(capability, requests, warm)
+        assert tuple(map(serialize_acquired_trace, replay.traces)) == payloads
+        assert replay.adapter_chromatogram_call_count == 0
+        saved[stem] = (source, capability, source_raw, payloads)
+
+    source, capability, source_raw, payloads = saved["S1"]
+    facts = cache_owner._FactCache(cache_dir, source.acquisition_source_id)
+    key = cache_owner._trace_key(capability, requests[0])
+    damaged = json.loads(payloads[0])
+    if invalid_entry == "source":
+        damaged["coordinate"]["capability"]["acquisition_source"] = json.loads(
+            saved["S2"][3][0]
+        )["coordinate"]["capability"]["acquisition_source"]
+    elif invalid_entry == "request":
+        damaged["coordinate"]["request"]["mz"] = float(700).hex()
+    elif invalid_entry == "coordinate_kind":
+        damaged["coordinate"]["capability"]["coordinate_kind"] = "rt_only"
+    elif invalid_entry == "scan":
+        damaged["coordinate"]["first_scan"] = None
+    payload = (
+        b"truncated"
+        if invalid_entry == "truncated"
+        else cache_owner._canonical_json(damaged)
+    )
+    facts._path("xic", key).write_bytes(
+        cache_owner._canonical_json(facts._envelope(key, payload))
+    )
+    handle, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    with CachedUntargetedRaw(handle, source=source, cache_dir=cache_dir) as repaired:
+        replay = acquire_untargeted_trace_batch(capability, requests, repaired)
+    assert tuple(map(serialize_acquired_trace, replay.traces)) == payloads
+    assert vendor.chromatogram_request_counts == [1]
+    assert facts.read("xic", key) == payloads[0]
+
+
 @pytest.mark.parametrize("use_cache", (False, True))
 def test_untargeted_acquisition_batches_overlapping_scan_windows_exactly(
     tmp_path: Path, use_cache: bool
@@ -380,7 +488,6 @@ def test_untargeted_acquisition_batches_overlapping_scan_windows_exactly(
     capability = mint_trace_acquisition_capability(
         source,
         adapter_namespace="untargeted-window-batch-test",
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     requests = (
         XICRequest(mz=502.0, rt_min=8.351, rt_max=8.421, ppm_tol=10.0),
@@ -433,7 +540,6 @@ def test_lazy_acquisition_cache_replay_skips_opener_and_opens_once_on_miss(
     capability = mint_trace_acquisition_capability(
         source,
         adapter_namespace="untargeted-cache-lazy-test",
-        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     first_request = XICRequest(mz=500.0, rt_min=7.8, rt_max=8.2, ppm_tol=10.0)
     third_request = replace(first_request, mz=500.02)
