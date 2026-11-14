@@ -6,7 +6,13 @@ from openpyxl import Workbook
 
 
 def install_targeted_raws(
-    monkeypatch, raw_dir, scales, *, pair_scale=1.0, impulse_samples=()
+    monkeypatch,
+    raw_dir,
+    scales,
+    *,
+    pair_scale=1.0,
+    impulse_samples=(),
+    expected_mass_policy=None,
 ):
     from contextlib import contextmanager
 
@@ -28,6 +34,7 @@ def install_targeted_raws(
 
         def __init__(self, name):
             self.name = name
+            self.coordinates_match = True
 
         def acquisition_rt_bounds(self):
             return 0.0, 12.0
@@ -35,7 +42,11 @@ def install_targeted_raws(
         def extract_xic(self, mz, lower, upper, ppm):
             reads.append((self.name, mz, lower, upper, ppm))
             rt = np.linspace(lower, upper, 1201)
-            scale = scales[self.name] * (pair_scale if mz > 260 else 1.0)
+            scale = (
+                scales[self.name]
+                * (pair_scale if mz > 260 else 1.0)
+                * self.coordinates_match
+            )
             if mz < 260 and self.name in impulse_samples:
                 intensity = np.zeros_like(rt)
                 intensity[np.argmin(abs(rt - 9.0))] = scale
@@ -44,7 +55,12 @@ def install_targeted_raws(
 
     @contextmanager
     def open_raw(path, dll_dir, **kwargs):
-        yield Raw(path.stem)
+        raw = Raw(path.stem)
+        raw.coordinates_match = (
+            expected_mass_policy is None
+            or kwargs["mass_recalibration"] == expected_mass_policy
+        )
+        yield raw
 
     monkeypatch.setattr(review_xics, "open_raw", open_raw)
     return reads
@@ -109,42 +125,3 @@ def write_rare_detection_workbook(path):
     book.save(path)
     book.close()
     return path
-
-
-def acquire_targeted_bundle(
-    workbook,
-    *,
-    raw_dir,
-    dll_dir,
-    target_id,
-    sample_ids,
-    verified_raws=None,
-    is_cancelled=None,
-):
-    """Exercise source interpretation, real processing and Inspector projection."""
-    from contextlib import closing
-
-    from xic_extractor.acquisition.review_xics import acquire_review_xics
-    from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
-    from xic_inspector.targeted_curves import targeted_curve_bundle
-
-    source = TargetedWorkbookSource(workbook)
-    samples = tuple(dict.fromkeys(sample_ids))
-    coordinates = source.curve_targets(target_id, samples)
-    mass_policy, profile = source.curve_processing_settings()
-    with closing(
-        acquire_review_xics(
-            raw_dir=raw_dir,
-            dll_dir=dll_dir,
-            sample_ids=samples,
-            coordinates=coordinates,
-            mass_policy=mass_policy,
-            profile=profile,
-            support_reference_rts=source.support_reference_rts(
-                samples, tuple(coordinates)
-            ),
-            verified_raws=verified_raws,
-            is_cancelled=is_cancelled,
-        )
-    ) as signals:
-        return targeted_curve_bundle(source, target_id, signals)

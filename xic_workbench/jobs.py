@@ -215,12 +215,15 @@ class AnalysisJobs:
                 )
 
     def _prepare_untargeted(self, values: dict[str, Any]) -> Any:
+        from xic_extractor.applications.untargeted.full_analysis import (
+            UntargetedAnalysis,
+        )
         from xic_workbench.samples import (
             apply_raw_chronology,
             read_batch_samples,
             sample_annotations_path,
         )
-        from xic_workbench.untargeted import UntargetedRun, parse_request
+        from xic_workbench.untargeted import parse_request
         from xic_workbench.untargeted_config import write_untargeted_config
 
         if values.get("raw_dir") and values.get("dll_dir"):
@@ -256,7 +259,7 @@ class AnalysisJobs:
             raise
         from xic_workbench.config_io import write_dll_dir
 
-        runner = UntargetedRun(
+        runner = UntargetedAnalysis(
             request, progress=self._progress, should_cancel=self._cancel.is_set
         )
         write_dll_dir(values["dll_dir"], config_dir=self.config_dir)
@@ -266,6 +269,10 @@ class AnalysisJobs:
     def _run(self, kind: str, values: dict[str, Any]) -> dict[str, Any]:
         if kind in {"targeted", "untargeted"}:
             result = self._runner.execute()
+            if kind == "untargeted":
+                from xic_workbench.untargeted import present_result
+
+                result = present_result(result)
             inputs = values["settings"] if kind == "targeted" else values
             # Bind review acquisition to this run, not the next editable batch.
             result["review_paths"] = {

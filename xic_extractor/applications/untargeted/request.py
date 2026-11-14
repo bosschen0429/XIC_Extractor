@@ -60,9 +60,9 @@ def untargeted_peak_config(
 
 @dataclass(frozen=True, slots=True)
 class UntargetedRequest:
-    """Complete Alignment intent; canonical configs retain their existing owners.
+    """Alignment intent from completed Discovery; not a full-analysis request.
 
-    The application entry resolves config dependencies once before discovery/RAW
+    The application entry resolves config dependencies once before index/RAW
     I/O. Policies own their accepted options; canonical configs are not copied.
     """
 

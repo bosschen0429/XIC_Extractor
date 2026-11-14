@@ -39,7 +39,7 @@ def _plan(
     peak_config = _peak_config(tmp_path)
     raws = {}
     candidates = {}
-    for path in paths:
+    for sample_index, path in enumerate(paths):
         if not path.exists():
             path.write_bytes(path.stem.encode())
         raw, sample_candidates = _nearby_subject_candidates(
@@ -50,6 +50,12 @@ def _plan(
         third_raw = _FakeRaw(
             (7.98,), scan_precursor_mz=500.008, neutral_loss_das=(116.0474,)
         )
+        if scenario == "positive":
+            raw.intensity *= sample_index + 1
+            third_raw.intensity *= sample_index + 1
+            sample_candidates = _current_candidates(
+                raw, raw_file=path, settings=settings
+            )
         third_scan_number = raw.scans[-1].scan_number + 1
         third_raw.scans = (
             replace(

@@ -243,7 +243,7 @@ def test_artifact_urls_serve_only_registered_published_files(tmp_path):
 def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
     tmp_path, monkeypatch
 ):
-    from xic_workbench import untargeted
+    from xic_extractor.applications.untargeted import full_analysis as untargeted
 
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
@@ -288,7 +288,7 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
         def execute(self):
             return {"published_paths": []}
 
-    monkeypatch.setattr(untargeted, "UntargetedRun", Run)
+    monkeypatch.setattr(untargeted, "UntargetedAnalysis", Run)
     jobs = AnalysisJobs(tmp_path / "config")
     try:
         jobs.start(
@@ -321,7 +321,7 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
 def test_untargeted_job_uses_shared_execution_profile_when_omitted(
     tmp_path, monkeypatch
 ):
-    from xic_workbench import untargeted
+    from xic_extractor.applications.untargeted import full_analysis as untargeted
     from xic_workbench.config_io import write_settings
 
     config_dir = tmp_path / "config"
@@ -339,7 +339,7 @@ def test_untargeted_job_uses_shared_execution_profile_when_omitted(
         def execute(self):
             return {"published_paths": []}
 
-    monkeypatch.setattr(untargeted, "UntargetedRun", Run)
+    monkeypatch.setattr(untargeted, "UntargetedAnalysis", Run)
     jobs = AnalysisJobs(config_dir)
     try:
         jobs.start(
@@ -373,7 +373,7 @@ def test_untargeted_job_uses_shared_execution_profile_when_omitted(
 def test_untargeted_job_takes_order_and_names_from_raw_and_keeps_annotations(
     tmp_path, monkeypatch
 ):
-    from xic_workbench import untargeted
+    from xic_extractor.applications.untargeted import full_analysis as untargeted
 
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
@@ -411,7 +411,7 @@ def test_untargeted_job_takes_order_and_names_from_raw_and_keeps_annotations(
         def execute(self):
             return {"published_paths": []}
 
-    monkeypatch.setattr(untargeted, "UntargetedRun", Run)
+    monkeypatch.setattr(untargeted, "UntargetedAnalysis", Run)
     samples = [
         {
             "sample_name": "Operator Alpha",
@@ -477,7 +477,7 @@ def test_untargeted_job_takes_order_and_names_from_raw_and_keeps_annotations(
 def test_untargeted_job_leaves_default_metadata_to_alignment_owner(
     tmp_path, monkeypatch
 ):
-    from xic_workbench import untargeted
+    from xic_extractor.applications.untargeted import full_analysis as untargeted
 
     captured = {}
 
@@ -492,7 +492,7 @@ def test_untargeted_job_leaves_default_metadata_to_alignment_owner(
         def execute(self):
             return {"published_paths": []}
 
-    monkeypatch.setattr(untargeted, "UntargetedRun", Run)
+    monkeypatch.setattr(untargeted, "UntargetedAnalysis", Run)
     monkeypatch.setattr(
         "xic_workbench.samples.read_analysis_set",
         lambda *_args, **_kwargs: pytest.fail(
@@ -673,7 +673,7 @@ def test_untargeted_run_reads_confirmed_metadata_over_stale_page_rows(
     tmp_path, monkeypatch
 ):
     from tests.raw_header_fakes import install_fake_raw_headers
-    from xic_workbench import untargeted
+    from xic_extractor.applications.untargeted import full_analysis as untargeted
     from xic_workbench.samples import read_batch_samples, save_batch_samples
 
     install_fake_raw_headers(monkeypatch)
@@ -699,7 +699,7 @@ def test_untargeted_run_reads_confirmed_metadata_over_stale_page_rows(
         def execute(self):
             return {"published_paths": []}
 
-    monkeypatch.setattr(untargeted, "UntargetedRun", Run)
+    monkeypatch.setattr(untargeted, "UntargetedAnalysis", Run)
     jobs = AnalysisJobs(config)
     try:
         # The page still holds the rows it read before another flow confirmed.

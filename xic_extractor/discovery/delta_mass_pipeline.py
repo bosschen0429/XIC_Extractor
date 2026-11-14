@@ -69,7 +69,8 @@ def run_delta_mass_discovery(
     dll_dir: Path,
     output_dir: Path,
     strategy: DeltaMassDiscoveryStrategy,
-    cid_nl_peaks_csv: Path | None = None,
+    cid_nl_peak_tables: Sequence[Path] = (),
+    cid_nl_export_csv: Path | None = None,
     raw_paths: Sequence[Path] | None = None,
     should_cancel: Callable[[], bool] | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
@@ -79,6 +80,9 @@ def run_delta_mass_discovery(
     ``raw_paths`` limits the run to selected samples of ``raw_dir``; omitted,
     every RAW in the folder is analyzed. A cancellation stops before the next
     RAW and before any output is written.
+
+    ``cid_nl_peak_tables`` is the only CID-NL calculation source. The caller
+    supplies ``cid_nl_export_csv`` separately for publication; it is never read.
     """
     raw_paths = sorted(
         raw_paths
@@ -89,13 +93,12 @@ def run_delta_mass_discovery(
     )
     if not raw_paths:
         raise ValueError(f"no RAW files in {raw_dir}")
-    if strategy.cid_nl_composite and cid_nl_peaks_csv is None:
-        raise ValueError("composite preset requires --cid-nl-peaks-csv")
-    cid_rows = (
-        _load_cid_nl_peak_rows(cid_nl_peaks_csv)
-        if cid_nl_peaks_csv is not None and strategy.cid_nl_composite
-        else ()
-    )
+    if strategy.cid_nl_composite:
+        if not cid_nl_peak_tables:
+            raise ValueError("composite preset requires --cid-nl-peaks-csv")
+        cid_rows = _load_cid_nl_peak_rows(cid_nl_peak_tables)
+    else:
+        cid_rows = ()
     candidates: list[DeltaMassCandidate] = []
     samples = []
     for done, raw_path in enumerate(raw_paths):
@@ -180,14 +183,18 @@ def run_delta_mass_discovery(
         "inputs": {
             "raw_dir": str(raw_dir),
             "raw_files": [p.name for p in raw_paths],
-            "cid_nl_peaks_csv": str(cid_nl_peaks_csv) if cid_nl_peaks_csv else None,
+            "cid_nl_peaks_csv": None,
         },
         "samples": samples,
         "status": "diagnostic_only",
     }
     raise_if_discovery_cancelled(should_cancel)
     return write_delta_mass_outputs(
-        output_dir, tuple(candidates), sidecar, strategy.settings
+        output_dir,
+        tuple(candidates),
+        sidecar,
+        strategy.settings,
+        cid_nl_export_csv=cid_nl_export_csv,
     )
 
 
@@ -256,7 +263,7 @@ class _CidNlPeakRow:
     evidence_score: float | None
 
 
-def _load_cid_nl_peak_rows(path: Path) -> tuple[_CidNlPeakRow, ...]:
+def _load_cid_nl_peak_rows(paths: Sequence[Path]) -> tuple[_CidNlPeakRow, ...]:
     """Load the measured CID-NL peaks a delta-mass base may join.
 
     Every row must carry ``peak_id``, ``sample_stem`` and ``status``.
@@ -265,14 +272,21 @@ def _load_cid_nl_peak_rows(path: Path) -> tuple[_CidNlPeakRow, ...]:
     event does not supply dR support.
     """
 
-    rows = read_delimited_rows(
-        path,
-        required_columns=_CID_NL_REQUIRED_COLUMNS,
-        delimiter=",",
-        encoding="utf-8",
+    rows = (
+        (path, row_index, row)
+        for path in paths
+        for row_index, row in enumerate(
+            read_delimited_rows(
+                path,
+                required_columns=_CID_NL_REQUIRED_COLUMNS,
+                delimiter=",",
+                encoding="utf-8",
+            )
+        )
     )
     parsed: list[_CidNlPeakRow] = []
-    for row_index, row in enumerate(rows):
+    seen: set[str] = set()
+    for path, row_index, row in rows:
         label = f"{path} row {row_index}"
         peak_id = _required_text(row.get("peak_id"), "peak_id", label)
         sample_stem = _required_text(row.get("sample_stem"), "sample_stem", label)
@@ -281,6 +295,9 @@ def _load_cid_nl_peak_rows(path: Path) -> tuple[_CidNlPeakRow, ...]:
                 identity, field=field, row_label=label
             )
         status = _required_text(row.get("status"), "status", label)
+        if peak_id in seen:
+            raise ValueError(f"{label}: duplicate CID-NL peak_id values: {peak_id}")
+        seen.add(peak_id)
         parsed.append(
             _CidNlPeakRow(
                 sample_stem=sample_stem,
@@ -299,16 +316,6 @@ def _load_cid_nl_peak_rows(path: Path) -> tuple[_CidNlPeakRow, ...]:
                     row.get("evidence_score"), "evidence_score", label
                 ),
             )
-        )
-    seen: set[str] = set()
-    duplicates: set[str] = set()
-    for parsed_row in parsed:
-        if parsed_row.peak_id in seen:
-            duplicates.add(parsed_row.peak_id)
-        seen.add(parsed_row.peak_id)
-    if duplicates:
-        raise ValueError(
-            f"{path}: duplicate CID-NL peak_id values: " + ", ".join(sorted(duplicates))
         )
     return tuple(parsed)
 

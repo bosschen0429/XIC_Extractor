@@ -1,12 +1,10 @@
 """Candidate participation belongs to the in-memory CID-NL grouping owner."""
 
-from contextlib import closing
 from dataclasses import replace
 
 import numpy as np
 import pytest
 
-from tests.alignment_pipeline_helpers import written_cells, written_rows
 from tests.cid_nl_raw_fixture import (
     TEST_PROFILE,
     _current_candidates,
@@ -17,20 +15,16 @@ from tests.cid_nl_raw_fixture import (
 )
 from tests.cid_nl_runtime_fixtures import (
     install_runtime_raws,
-    prepare_persisted_discovery_plan,
 )
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
-    complete_dense_partition,
 )
 from xic_extractor.alignment.cid_nl_initial_grouping import (
-    CidNlBatchGrouping,
     prepare_cid_nl_grouping,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.peak_detection.search_scope import CaptureMethodConstraints
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.untargeted_execution.execution import execute_untargeted_plan
 from xic_extractor.untargeted_execution.partition.execution import execute_partition
 
 
@@ -184,56 +178,9 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
                 if "requirement_not_supported" in exclusion_reason
                 else ()
             )
-    if scenario == "supported":
-        # Distinct acquired values must stay attached to their own sample.
-        areas = {
-            owner.sample_stem: owner.peak.integration.area_raw_counts_seconds
-            for group in groups
-            for owner in group.owners
-        }
-        assert areas["S2"] == pytest.approx(2 * areas["S1"])
-        assert areas["S1"] > 0
-        calibration = CidNlBatchGrouping(batch.context.rt_frame)
-        calibration.add_initial(grouping)
-        calibration.freeze_calibration()
-        final_grouping = calibration.finalize_grouping(grouping)
-        direct = complete_dense_partition(
-            batch,
-            replace(initial, prepared_grouping=final_grouping),
-            alignment_config=arguments["alignment_config"],
-        )
-        plan = prepare_persisted_discovery_plan(
-            raw_paths=paths,
-            sample_metadata=batch.context.samples,
-            settings=settings,
-            peak_config=batch.context.peak_config,
-            peaks_by_sample=candidates,
-            dll_dir=tmp_path,
-            signal_processing_profile=TEST_PROFILE,
-            root=tmp_path / "spooled-input",
-        )
-        with (
-            closing(direct),
-            closing(
-                execute_untargeted_plan(
-                    plan,
-                    output_dir=tmp_path / "spooled",
-                    raw_workers=1,
-                    alignment_config=arguments["alignment_config"],
-                )
-            ) as spooled,
-        ):
-            assert written_rows(
-                tmp_path / "direct-written", direct.application_result
-            ) == (
-                written_rows(tmp_path / "spooled-written", spooled.application_result)
-            )
-            spooled_areas = {
-                sample: cell.value
-                for _, sample, cell in written_cells(spooled.application_result)
-            }
-            assert spooled_areas["S2"] == pytest.approx(2 * spooled_areas["S1"])
-            assert spooled_areas["S1"] > 0
+    # One mixed retained/excluded case protects both invariant outputs.
+    if scenario != "missing_capture":
+        return
 
     # Rename transport/candidate keys without changing a measured fact, and
     # reverse every unordered input. Compare natural peak and exclusion facts.

@@ -29,7 +29,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             dll_dir=args.dll_dir,
             output_dir=args.output_dir,
             strategy=strategy,
-            cid_nl_peaks_csv=args.cid_nl_peaks_csv,
+            cid_nl_peak_tables=(args.cid_nl_peaks_csv,)
+            if args.cid_nl_peaks_csv
+            else (),
+            cid_nl_export_csv=args.cid_nl_peaks_csv,
         )
     except (OSError, ValueError, RawReaderError) as exc:
         print(f"delta_mass_discovery failed: {exc}", file=sys.stderr)

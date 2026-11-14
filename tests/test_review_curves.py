@@ -34,7 +34,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.output.alignment.pipeline_outputs import _write_metadata_json
 from xic_workbench.review_curves import (
-    CurveAcquisitionCancelled,
+    ReviewAcquisitionCancelled,
     review_curve_bundle,
 )
 
@@ -323,7 +323,7 @@ def test_raw_read_stops_when_cancelled(tmp_path, monkeypatch):
         "xic_workbench.review_curves.open_raw",
         lambda *_args, **_kwargs: pytest.fail("a cancelled read opens no RAW"),
     )
-    with pytest.raises(CurveAcquisitionCancelled):
+    with pytest.raises(ReviewAcquisitionCancelled):
         review_curve_bundle(
             review,
             curves,
@@ -336,7 +336,7 @@ def test_raw_read_stops_when_cancelled(tmp_path, monkeypatch):
 
     cancelled, opened = {"value": False}, []
     _install_distinct_curve_raws(monkeypatch, opened, cancelled)
-    with pytest.raises(CurveAcquisitionCancelled):
+    with pytest.raises(ReviewAcquisitionCancelled):
         review_curve_bundle(
             review,
             curves,

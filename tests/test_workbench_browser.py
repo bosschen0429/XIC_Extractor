@@ -374,7 +374,10 @@ def fake_runs(monkeypatch, tmp_path):
             }
 
     monkeypatch.setattr("xic_workbench.targeted.TargetedRun", FakeRun)
-    monkeypatch.setattr("xic_workbench.untargeted.UntargetedRun", FakeRun)
+    monkeypatch.setattr(
+        "xic_extractor.applications.untargeted.full_analysis.UntargetedAnalysis",
+        FakeRun,
+    )
     yield control
     control.release.set()
 
@@ -1649,6 +1652,50 @@ def test_analysis_submit_progress_and_download(fake_runs, workbench, tmp_path, k
     )
 
 
+@pytest.mark.parametrize("preset", ["dna_dr", "pt_pattern", "pt_pattern_cid_nl_dr"])
+def test_untargeted_browser_executes_application_owners_and_downloads(
+    workbench, tmp_path, monkeypatch, preset
+):
+    from tests.untargeted_full_flow_fixtures import install_full_flow_raws
+
+    raw_dir = tmp_path / "route-raw"
+    install_full_flow_raws(monkeypatch, raw_dir, delta_mass=preset != "dna_dr")
+    page = workbench
+    _view(page, "untargeted")
+    _set_reader_path(page, str(raw_dir))
+    page.locator("#u-raw_dir").fill(str(raw_dir))
+    page.locator("#u-raw_dir").press("Tab")
+    expect(page.locator("#role-summary")).to_contain_text("2")
+    page.locator("#u-preset").select_option(preset)
+    page.locator("#u-output_dir").fill(str(tmp_path / "route-results"))
+    page.locator("#u-targets_csv").fill("")
+    _start(page, "untargeted")
+    _wait_for_analysis_status(page, "已完成")
+    if preset == "dna_dr":
+        expect(page.locator("#targeted-overview")).to_be_visible()
+        with page.expect_download() as download:
+            page.locator("#result-download").click()
+        contents = Path(download.value.path()).read_text(encoding="utf-8")
+        assert "first\tsecond" in contents
+        assert "500.0000" in contents
+        return
+    result = page.locator("#untargeted-result")
+    expect(result).to_be_visible()
+    result.locator(".artifact-details > summary").click()
+    filename = "下載 Delta Mass 候選表"
+    with page.expect_download() as download:
+        result.get_by_role("link", name=filename, exact=True).click()
+    contents = Path(download.value.path()).read_text(encoding="utf-8")
+    assert "first" in contents and "second" in contents
+    expect(
+        result.get_by_role("link", name="alignment_matrix.tsv", exact=True)
+    ).to_have_count(0)
+    if preset == "pt_pattern_cid_nl_dr":
+        expect(
+            result.get_by_role("link", name="discovery_peaks.csv", exact=True)
+        ).to_have_count(3)
+
+
 def test_analysis_feedback_retains_results_and_requires_stop_confirmation(
     analysis_feedback,
 ):
@@ -2233,7 +2280,7 @@ def test_raw_curve_read_never_locks_review_and_a_new_action_replaces_it(
         while not is_cancelled() and time.monotonic() < deadline:
             time.sleep(0.01)
         cancelled.append(tuple(sample_ids))
-        raise review_curves.CurveAcquisitionCancelled()
+        raise review_curves.ReviewAcquisitionCancelled()
 
     def cancelled_reads(count):
         # The worker records its stop once it observes the cancellation.
@@ -2296,7 +2343,7 @@ def test_starting_analysis_ends_the_curve_job_and_its_poll(
         deadline = time.monotonic() + HANDSHAKE_TIMEOUT_S
         while not is_cancelled() and time.monotonic() < deadline:
             time.sleep(0.01)
-        raise review_curves.CurveAcquisitionCancelled()
+        raise review_curves.ReviewAcquisitionCancelled()
 
     monkeypatch.setattr(review_curves, "review_curve_bundle", blocked)
     report, _ = create_review_batch(tmp_path, sample_count=3)
@@ -5078,10 +5125,11 @@ def test_results_stay_in_analysis_page_without_raw(
         fake_runs.targeted_workbook = source
     else:
         from tests.matrix_curation_fixtures import alignment_output
+        from xic_extractor.evidence_artifacts import EvidenceLocator
 
         source, artifact = create_review_batch(alignment_output(tmp_path / "run"))
         fake_runs.result = {
-            "evidence": {"report_path": str(source)},
+            "evidence": EvidenceLocator(source, artifact, "browser-fixture"),
             "matrix_tsv": str(artifact),
         }
     expect(page.locator(".topbar [data-view]")).to_have_count(2)

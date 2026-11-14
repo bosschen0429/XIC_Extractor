@@ -12,7 +12,6 @@ from openpyxl import Workbook, load_workbook
 from tests.workbench_http import workbench_client
 from tests.workbench_review_fixtures import review_workspace
 from tests.xic_inspector_targeted_workbook_fixtures import (
-    acquire_targeted_bundle,
     install_targeted_raws,
     write_rare_detection_workbook,
 )
@@ -104,58 +103,8 @@ def _payload(html):
     )
 
 
-@pytest.mark.parametrize("nested", [False, True])
-def test_targeted_xic_reads_only_selected_raw_and_includes_pair_without_writes(
-    workbook,
-    tmp_path,
-    monkeypatch,
-    nested,
-):
-
-    before = workbook.read_bytes()
-    raw_dir = tmp_path / "raw"
-    reads = install_targeted_raws(
-        monkeypatch, raw_dir, {"Sample A": 100, "Sample B": 300}, pair_scale=0.5
-    )
-    if nested:
-        for sample in ("Sample A", "Sample B"):
-            batch = raw_dir / sample / "batch"
-            batch.mkdir(parents=True)
-            (raw_dir / f"{sample}.raw").rename(batch / f"{sample}.RAW")
-    bundle = acquire_targeted_bundle(
-        workbook,
-        raw_dir=raw_dir,
-        dll_dir=tmp_path,
-        target_id="Analyte",
-        sample_ids=("Sample A", "Sample B"),
-    )
-    traces = bundle.transitions[0].traces
-    assert len(traces) == 4
-    assert [(t.sample_id, t.quality_flags["target_label"]) for t in traces] == [
-        ("Sample A", "Analyte"),
-        ("Sample A", "ISTD"),
-        ("Sample B", "Analyte"),
-        ("Sample B", "ISTD"),
-    ]
-    assert all(read[2:4] == (0.0, 12.0) for read in reads)
-    assert max(traces[2].raw.intensity) == pytest.approx(
-        3 * max(traces[0].raw.intensity)
-    )
-    assert traces[0].peak_bounds is None  # ND is still inspectable.
-    assert traces[2].peak_bounds.apex == 9.1
-    assert (traces[2].peak_bounds.start, traces[2].peak_bounds.end) == (9.0, 9.2)
-    assert [t.quality_flags["saved_area"] for t in traces] == ["ND", 0, 123.456, None]
-    assert [max(t.raw.intensity) for t in traces] == pytest.approx([100, 50, 300, 150])
-    assert all(
-        t.quality_flags["source_binding_basis"] == "workbook_sample_name_unverified"
-        for t in traces
-    )
-    assert all(not t.quality_flags["original_acquisition_verified"] for t in traces)
-    assert workbook.read_bytes() == before
-
-
 def test_targeted_xic_reuses_raw_identity_while_the_file_is_unchanged(
-    workbook, tmp_path, monkeypatch
+    tmp_path, monkeypatch
 ):
     from xic_extractor.acquisition import review_xics
 
@@ -168,75 +117,47 @@ def test_targeted_xic_reuses_raw_identity_while_the_file_is_unchanged(
         "build_acquisition_source_identity",
         lambda path, **kwargs: identified.append(path.name) or real(path, **kwargs),
     )
-    verified = {}
-    for _ in range(2):
-        acquire_targeted_bundle(
-            workbook,
-            raw_dir=raw_dir,
-            dll_dir=tmp_path,
-            target_id="Analyte",
-            sample_ids=("Sample A",),
-            verified_raws=verified,
-        )
-    assert identified == ["Sample A.raw"]
-    (raw_dir / "Sample A.raw").write_bytes(b"replaced acquisition")
-    acquire_targeted_bundle(
-        workbook,
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+    from xic_extractor.configuration.signal_processing_profile import (
+        DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    inputs = dict(
         raw_dir=raw_dir,
         dll_dir=tmp_path,
-        target_id="Analyte",
         sample_ids=("Sample A",),
-        verified_raws=verified,
+        coordinates={"Analyte": (258.1085, 5.0)},
+        mass_policy=MassRecalibration.NONE,
+        profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        support_reference_rts={},
+        verified_raws={},
     )
+    for _ in range(2):
+        tuple(review_xics.acquire_review_xics(**inputs))
+    assert identified == ["Sample A.raw"]
+    (raw_dir / "Sample A.raw").write_bytes(b"replaced acquisition")
+    tuple(review_xics.acquire_review_xics(**inputs))
     assert identified == ["Sample A.raw", "Sample A.raw"]
 
 
-def test_nd_curve_acquisition_reports_new_support_without_changing_saved_values(
-    tmp_path, monkeypatch
-):
-
-    workbook = write_rare_detection_workbook(tmp_path / "nd.xlsx")
-    # A method RT difference must not be applied to this near-ISTD diagnostic.
-    book = load_workbook(workbook)
-    book["Targets"]["E2"], book["Targets"]["F2"] = 6, 8
-    book.save(workbook)
-    book.close()
-    original = workbook.read_bytes()
-    raw_dir = tmp_path / "raw"
-    install_targeted_raws(
-        monkeypatch, raw_dir, {"S1": 13000, "S2": 1000}, impulse_samples=("S1",)
-    )
-    bundle = acquire_targeted_bundle(
-        workbook,
-        raw_dir=raw_dir,
-        dll_dir=tmp_path,
-        target_id="Analyte",
-        sample_ids=("S1", "S2"),
-    )
-    traces = {
-        trace.sample_id: trace
-        for trace in bundle.transitions[0].traces
-        if trace.quality_flags["target_label"] == "Analyte"
-    }
-    assert sum(value != 0 for value in traces["S1"].raw.intensity) == 1
-    assert (
-        "insufficient_original_xic_support"
-        in traces["S1"].quality_flags["reference_support_failures"]
-    )
-    assert not traces["S2"].quality_flags["reference_support_failures"]
-    assert traces["S1"].quality_flags["saved_area"] == "ND"
-    assert traces["S1"].quality_flags["support_reference_rt"] == 9.0
-    assert traces["S2"].quality_flags["support_reference_rt"] == 9.1
-    assert workbook.read_bytes() == original
-
-
-def test_targeted_http_loads_nd_sample_curves_without_changing_workbook(
-    workbook,
-    tmp_path,
-    monkeypatch,
+@pytest.mark.parametrize(
+    ("policy", "nested"),
+    [
+        (None, False),
+        ("none", True),
+        ("easy_ic_probe", False),
+        ("easy_ic_restore", False),
+    ],
+)
+def test_targeted_http_loads_saved_values_and_diagnostic_pair_without_writes(
+    workbook, tmp_path, monkeypatch, policy, nested
 ):
     import time
+    from dataclasses import replace
 
+    from tests.output_metadata_fixtures import _config
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+    from xic_extractor.output.metadata import build_metadata_rows
     from xic_inspector.sources import curve_bundle
 
     def unexpected_file_handoff(*args, **kwargs):
@@ -244,23 +165,39 @@ def test_targeted_http_loads_nd_sample_curves_without_changing_workbook(
 
     monkeypatch.setattr(curve_bundle, "write_curve_bundle", unexpected_file_handoff)
     monkeypatch.setattr(curve_bundle, "read_curve_bundle", unexpected_file_handoff)
-
-    raw_dir = tmp_path / "raw"
-    reads = install_targeted_raws(monkeypatch, raw_dir, {"Sample A": 100})
-    batch = raw_dir / "batch"
-    batch.mkdir()
-    (raw_dir / "Sample A.raw").rename(batch / "Sample A.raw")
+    expected = MassRecalibration(policy or "none")
+    book = load_workbook(workbook)
+    if policy is not None:
+        metadata = dict(
+            build_metadata_rows(replace(_config(tmp_path), mass_recalibration=expected))
+        )
+        book["Run Metadata"].append(
+            ["mass_recalibration", metadata["mass_recalibration"]]
+        )
+    book.save(workbook)
+    book.close()
     before = workbook.read_bytes()
+    raw_dir = tmp_path / "raw"
+    reads = install_targeted_raws(
+        monkeypatch,
+        raw_dir,
+        {"Sample A": 100, "Sample B": 300, "Unselected": 99999},
+        pair_scale=0.5,
+        expected_mass_policy=expected,
+    )
+    if nested:
+        for sample in ("Sample A", "Sample B"):
+            batch = raw_dir / sample / "batch"
+            batch.mkdir(parents=True)
+            (raw_dir / f"{sample}.raw").rename(batch / f"{sample}.RAW")
     with workbench_client(review_workspace()) as request:
         _, page, _ = request("/api/open", {"source": str(workbook)})
         item = next(item for item in page["items"] if item["title"] == "Analyte")
-        assert item["observed_sample_ids"] == []
-        assert item["curve_sample_ids"] == ["Sample A", "Sample B"]
         status, job, _ = request(
             "/api/curves",
             {
                 "item_id": item["id"],
-                "sample_ids": ["Sample A"],
+                "sample_ids": ["Sample A", "Sample B"],
                 "raw_dir": str(raw_dir),
                 "dll_dir": str(tmp_path),
             },
@@ -273,18 +210,40 @@ def test_targeted_http_loads_nd_sample_curves_without_changing_workbook(
         assert job["status"] == "succeeded", job
         _, html, _ = request(f"/reports/{job['view_id']}.html")
         curves = _payload(html)["items"][0]["curves"]
-        assert {c["quality_flags"]["target_label"] for c in curves} == {
-            "Analyte",
-            "ISTD",
-        }
-        assert {c["sample_id"] for c in curves} == {"Sample A"}
-    assert len(reads) == 2
+    assert [(c["sample_id"], c["quality_flags"]["target_label"]) for c in curves] == [
+        ("Sample A", "Analyte"),
+        ("Sample A", "ISTD"),
+        ("Sample B", "Analyte"),
+        ("Sample B", "ISTD"),
+    ]
+    assert [max(c["raw_intensities"]) for c in curves] == pytest.approx(
+        [100, 50, 300, 150]
+    )
+    assert [c["quality_flags"]["saved_area"] for c in curves] == [
+        "ND",
+        0,
+        123.456,
+        None,
+    ]
+    assert curves[0]["bound_left_rt"] is None
+    assert (
+        curves[2]["bound_left_rt"],
+        curves[2]["apex_rt"],
+        curves[2]["bound_right_rt"],
+    ) == (9.0, 9.1, 9.2)
+    assert [
+        c["quality_flags"]["support_reference_rt"] for c in (curves[0], curves[2])
+    ] == [8.8, 9.0]
+    assert all(
+        c["quality_flags"]["source_binding_basis"] == "workbook_sample_name_unverified"
+        for c in curves
+    )
+    assert all(not c["quality_flags"]["original_acquisition_verified"] for c in curves)
+    assert len(reads) == 4 and all(read[2:4] == (0.0, 12.0) for read in reads)
     assert workbook.read_bytes() == before
 
 
-def test_targeted_curve_rejects_ambiguous_raw_before_acquisition(
-    workbook, tmp_path, monkeypatch
-):
+def test_targeted_curve_rejects_ambiguous_raw_before_acquisition(tmp_path, monkeypatch):
     from xic_extractor.alignment_explanation.errors import ExplanationError
 
     raw_dir = tmp_path / "raw"
@@ -294,38 +253,144 @@ def test_targeted_curve_rejects_ambiguous_raw_before_acquisition(
     batch = raw_dir / "other-batch"
     batch.mkdir()
     (batch / "Sample A.RAW").write_bytes(b"different injection with the same stem")
-    before = workbook.read_bytes()
+    from xic_extractor.acquisition.review_xics import acquire_review_xics
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+    from xic_extractor.configuration.signal_processing_profile import (
+        DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
     with pytest.raises(ExplanationError, match="Sample A.*多個 RAW"):
-        acquire_targeted_bundle(
-            workbook,
-            raw_dir=raw_dir,
-            dll_dir=tmp_path,
-            target_id="Analyte",
-            sample_ids=("Sample B", "Sample A"),
+        tuple(
+            acquire_review_xics(
+                raw_dir=raw_dir,
+                dll_dir=tmp_path,
+                sample_ids=("Sample B", "Sample A"),
+                coordinates={"Analyte": (258.1085, 5.0)},
+                mass_policy=MassRecalibration.NONE,
+                profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+                support_reference_rts={},
+            )
         )
     assert not reads
+
+
+def test_nd_support_uses_saved_istd_rt_through_http(tmp_path, monkeypatch):
+    import time
+
+    workbook = write_rare_detection_workbook(tmp_path / "nd.xlsx")
+    book = load_workbook(workbook)
+    book["Targets"]["E2"], book["Targets"]["F2"] = 6, 8
+    book.save(workbook)
+    book.close()
+    before = workbook.read_bytes()
+    raw_dir = tmp_path / "raw"
+    install_targeted_raws(
+        monkeypatch, raw_dir, {"S1": 13000, "S2": 1000}, impulse_samples=("S1",)
+    )
+    with workbench_client(review_workspace()) as request:
+        _, page, _ = request("/api/open", {"source": str(workbook)})
+        item = next(item for item in page["items"] if item["title"] == "Analyte")
+        _, job, _ = request(
+            "/api/curves",
+            {
+                "item_id": item["id"],
+                "sample_ids": ["S1", "S2"],
+                "raw_dir": str(raw_dir),
+                "dll_dir": str(tmp_path),
+            },
+        )
+        deadline = time.monotonic() + 10
+        while job["status"] == "running" and time.monotonic() < deadline:
+            time.sleep(0.02)
+            _, job, _ = request(f"/api/jobs/{job['id']}")
+        assert job["status"] == "succeeded", job
+        _, html, _ = request(f"/reports/{job['view_id']}.html")
+        curves = {
+            c["sample_id"]: c
+            for c in _payload(html)["items"][0]["curves"]
+            if c["quality_flags"]["target_label"] == "Analyte"
+        }
+    assert sum(value != 0 for value in curves["S1"]["raw_intensities"]) == 1
+    assert (
+        "insufficient_original_xic_support"
+        in curves["S1"]["quality_flags"]["reference_support_failures"]
+    )
+    assert not curves["S2"]["quality_flags"]["reference_support_failures"]
+    assert [
+        curves[s]["quality_flags"]["support_reference_rt"] for s in ("S1", "S2")
+    ] == [9.0, 9.1]
+    assert curves["S1"]["quality_flags"]["saved_area"] == "ND"
     assert workbook.read_bytes() == before
 
 
 @pytest.mark.parametrize("failure", ["missing_raw", "cancelled", "unknown_sample"])
 def test_targeted_curve_failure_does_not_publish_or_modify_results(
-    workbook,
-    tmp_path,
-    failure,
+    workbook, tmp_path, monkeypatch, failure
 ):
-    from xic_extractor.acquisition.review_xics import ReviewAcquisitionCancelled
-    from xic_extractor.alignment_explanation.errors import ExplanationError
+    import threading
+    import time
+    from contextlib import contextmanager
 
+    from xic_extractor.acquisition import review_xics
+
+    entered, release = threading.Event(), threading.Event()
+    closed = []
+    if failure == "cancelled":
+        install_targeted_raws(monkeypatch, tmp_path, {"Sample A": 100})
+        open_raw = review_xics.open_raw
+
+        @contextmanager
+        def blocked_raw(*args, **kwargs):
+            with open_raw(*args, **kwargs) as raw:
+                extract = raw.extract_xic
+
+                def blocked_extract(*args):
+                    entered.set()
+                    assert release.wait(10), "cancel handoff timed out"
+                    return extract(*args)
+
+                raw.extract_xic = blocked_extract
+                try:
+                    yield raw
+                finally:
+                    closed.append(True)
+
+        monkeypatch.setattr(review_xics, "open_raw", blocked_raw)
     before = workbook.read_bytes()
-    with pytest.raises((ExplanationError, ReviewAcquisitionCancelled)):
-        acquire_targeted_bundle(
-            workbook,
-            target_id="Analyte",
-            raw_dir=tmp_path,
-            dll_dir=tmp_path,
-            sample_ids=("Unknown" if failure == "unknown_sample" else "Sample A",),
-            is_cancelled=lambda: failure == "cancelled",
+    with workbench_client(review_workspace()) as request:
+        _, page, _ = request("/api/open", {"source": str(workbook)})
+        item = next(item for item in page["items"] if item["title"] == "Analyte")
+        status, job, _ = request(
+            "/api/curves",
+            {
+                "item_id": item["id"],
+                "sample_ids": [
+                    "Unknown" if failure == "unknown_sample" else "Sample A"
+                ],
+                "raw_dir": str(tmp_path),
+                "dll_dir": str(tmp_path),
+            },
         )
+        if failure == "unknown_sample":
+            assert status == 400
+        else:
+            assert status == 202
+            if failure == "cancelled":
+                try:
+                    assert entered.wait(10)
+                    request(f"/api/jobs/{job['id']}/cancel", {})
+                finally:
+                    release.set()
+            deadline = time.monotonic() + 10
+            while job["status"] == "running" and time.monotonic() < deadline:
+                time.sleep(0.02)
+                _, job, _ = request(f"/api/jobs/{job['id']}")
+            assert job["status"] == (
+                "cancelled" if failure == "cancelled" else "failed"
+            ), job
+            assert "view_id" not in job
+    if failure == "cancelled":
+        assert closed == [True]
     assert workbook.read_bytes() == before
 
 
@@ -689,63 +754,3 @@ def test_samples_carry_their_recorded_group_colour(workbook):
             "group_color": colors[""],
         }
     ]
-
-
-@pytest.mark.parametrize("policy", (None, "none", "easy_ic_probe", "easy_ic_restore"))
-def test_targeted_review_replays_saved_mass_policy(
-    workbook, tmp_path, monkeypatch, policy
-):
-    from contextlib import contextmanager
-    from dataclasses import replace
-
-    import numpy as np
-
-    from tests.output_metadata_fixtures import _config
-    from xic_extractor.configuration.mass_recalibration import (
-        MassRecalibration,
-        MassRecalibrationResult,
-    )
-    from xic_extractor.output.metadata import build_metadata_rows
-
-    expected = MassRecalibration(policy or "none")
-    if policy is not None:
-        book = load_workbook(workbook)
-        rows = dict(
-            build_metadata_rows(replace(_config(tmp_path), mass_recalibration=expected))
-        )
-        book["Run Metadata"].append(["mass_recalibration", rows["mass_recalibration"]])
-        book.save(workbook)
-        book.close()
-    for sample in ("Sample A", "Sample B"):
-        (tmp_path / f"{sample}.raw").write_bytes(sample.encode())
-
-    @contextmanager
-    def raw(path, dll, *, mass_recalibration=MassRecalibration.NONE, **kwargs):
-        class Raw:
-            mass_recalibration_result = MassRecalibrationResult(
-                "none", policy=mass_recalibration
-            )
-
-            def acquisition_rt_bounds(self):
-                return 0.0, 12.0
-
-            def extract_xic(self, mz, lower, upper, ppm):
-                rt = np.linspace(lower, upper, 1201)
-                amplitude = 100 if path.stem == "Sample A" else 300
-                # A mismatched coordinate system misses the ion in a 5 ppm window.
-                return rt, amplitude * (mass_recalibration == expected) * np.exp(
-                    -(((rt - 9) / 0.1) ** 2)
-                )
-
-        yield Raw()
-
-    monkeypatch.setattr("xic_extractor.acquisition.review_xics.open_raw", raw)
-    bundle = acquire_targeted_bundle(
-        workbook,
-        raw_dir=tmp_path,
-        dll_dir=tmp_path,
-        target_id="Analyte",
-        sample_ids=("Sample A", "Sample B"),
-    )
-    traces = bundle.transitions[0].traces
-    assert [max(t.raw.intensity) for t in traces] == pytest.approx([100, 100, 300, 300])
