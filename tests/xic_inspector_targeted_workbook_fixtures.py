@@ -130,7 +130,7 @@ def acquire_targeted_bundle(
 
     source = TargetedWorkbookSource(workbook)
     samples = tuple(dict.fromkeys(sample_ids))
-    coordinates = source.curve_targets(target_id, samples, default_ppm=5)
+    coordinates = source.curve_targets(target_id, samples)
     mass_policy, profile = source.curve_processing_settings()
     with closing(
         acquire_review_xics(

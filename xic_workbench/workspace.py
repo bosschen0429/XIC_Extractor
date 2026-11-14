@@ -555,7 +555,7 @@ class ReviewWorkspace:
                     expected_source=request["source"],
                 )
                 coordinates = source.curve_targets(
-                    description["target_id"], request["samples"], default_ppm=5.0
+                    description["target_id"], request["samples"]
                 )
                 mass_policy, profile = source.curve_processing_settings()
                 signals = acquire_review_xics(

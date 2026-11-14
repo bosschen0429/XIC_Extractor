@@ -231,7 +231,7 @@ class TargetedWorkbookSource:
         ]
 
     def curve_targets(
-        self, target_id: str, samples: tuple[str, ...], *, default_ppm: float
+        self, target_id: str, samples: tuple[str, ...]
     ) -> dict[str, tuple[float, float]]:
         """Resolve a target and its paired ISTD to validated XIC coordinates."""
         targets = {row["Label"]: row for row in self.targets}
@@ -251,7 +251,7 @@ class TargetedWorkbookSource:
         for spec in selected:
             label = spec["Label"]
             mz = saved_number(spec.get("m/z"))
-            ppm = saved_number(spec.get("ppm tol", default_ppm))
+            ppm = saved_number(spec.get("ppm tol", 5.0))
             if mz is None or mz <= 0 or ppm is None or ppm <= 0:
                 raise ExplanationError(f"{label} 缺少有效的 m/z 或 ppm 設定。")
             coordinates[label] = (mz, ppm)
