@@ -16,6 +16,10 @@ Implementation and review use these principles:
   the quantities and relationships needed for interpretation. A two-position
   comparison can say `Δm/z` without repeating both position names; a support
   label must still identify what evidence supports what result.
+- **Terse copy everywhere.** Every hint, status, note and error uses the
+  shortest wording that still says what to fill or what happened, in the same
+  register across the interface: no rationale, no restating nearby labels, one
+  example at most. Mixed lengths and tones read as clutter.
 - **Quiet routine results, visible limitations.** An overview need not repeat
   the same no-finding message for every item. Keep distinctions such as no
   matching evidence versus no acquired data available, and surface failures or
