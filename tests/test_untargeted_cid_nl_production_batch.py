@@ -698,7 +698,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     monkeypatch: pytest.MonkeyPatch,
     supported_samples: int,
 ) -> None:
-    from xic_extractor.untargeted_execution import partition_composition as production
+    from xic_extractor.alignment import cid_nl_initial_grouping as production
 
     stems = ("Early", "Middle", "Late")
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)

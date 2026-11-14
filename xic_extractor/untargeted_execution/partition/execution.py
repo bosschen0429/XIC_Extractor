@@ -6,6 +6,7 @@ import importlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from xic_extractor.alignment.cid_nl_initial_grouping import CidNlGrouping
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.execution.workers import WorkerAdmissionPool
@@ -15,7 +16,6 @@ from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionError,
     UntargetedPartitionJob,
     UntargetedPartitionResult,
-    UntargetedPreparedGrouping,
     UntargetedSampleResult,
     _request_subject_candidates,
 )
@@ -51,8 +51,7 @@ def execute_partition(
     initial_only: bool = False,
     initial_results: tuple[UntargetedInitialSampleResult, ...] | None = None,
     prepare_grouping: Callable[
-        [tuple[UntargetedInitialSampleResult, ...]],
-        UntargetedPreparedGrouping,
+        [tuple[UntargetedInitialSampleResult, ...]], CidNlGrouping
     ]
     | None = None,
 ) -> UntargetedPartitionResult:
@@ -110,7 +109,7 @@ def execute_partition(
 class _RuntimeWork:
     run: Callable[[], Exception | None]
     results: list[UntargetedSampleResult]
-    prepared_grouping: UntargetedPreparedGrouping | None = None
+    prepared_grouping: CidNlGrouping | None = None
 
 
 def _prepare_runtime_work(
@@ -127,8 +126,7 @@ def _prepare_runtime_work(
     initial_only: bool = False,
     initial_results: tuple[UntargetedInitialSampleResult, ...] | None = None,
     prepare_grouping: Callable[
-        [tuple[UntargetedInitialSampleResult, ...]],
-        UntargetedPreparedGrouping,
+        [tuple[UntargetedInitialSampleResult, ...]], CidNlGrouping
     ]
     | None = None,
 ) -> _RuntimeWork:

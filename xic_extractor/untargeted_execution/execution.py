@@ -13,6 +13,10 @@ from functools import partial
 from pathlib import Path
 from typing import cast
 
+from xic_extractor.alignment.cid_nl_initial_grouping import (
+    CidNlBatchGrouping,
+    CidNlGrouping,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
@@ -52,23 +56,21 @@ from xic_extractor.untargeted_execution.partition.models import (
     UntargetedInitialSampleResult,
     UntargetedPartitionJob,
     UntargetedPartitionResult,
-    UntargetedPreparedGrouping,
     build_sample_jobs,
 )
 from xic_extractor.untargeted_execution.partition_composition import (
     PersistedUntargetedPartition,
-    UntargetedBatchGroupingPreparation,
     UntargetedPartitionInputs,
     compose_and_persist_untargeted_partition,
     compose_untargeted_batch,
-    prepare_untargeted_partition_grouping,
+    group_acquired_partition,
 )
 
 
 @dataclass(frozen=True, slots=True)
 class _GroupingInputs:
     batch: UntargetedPartitionInputs
-    prepared: UntargetedPreparedGrouping
+    prepared: CidNlGrouping
 
 
 @dataclass(frozen=True, slots=True)
@@ -329,7 +331,7 @@ class UntargetedPartitionPipelineAdapter:
         self._initial_partitions: dict[int, SealedPartition] = {}
         self._final_groupings: dict[int, SealedPartition] = {}
         self._initial_job_count = 0
-        self._batch_preparation = UntargetedBatchGroupingPreparation(context)
+        self._batch_preparation = CidNlBatchGrouping(context.rt_frame)
         self._initial_store: StreamedResultStore | None = None
         self._partition_subject_batches = {
             partition.partition_key: self._prepared_worksets.subject_batch(
@@ -467,7 +469,7 @@ class UntargetedPartitionPipelineAdapter:
                 ),
             )
             prepared = self._batch_preparation.finalize_grouping(
-                initial.batch, initial.prepared, progress_callback=progress_callback
+                initial.prepared, progress_callback=progress_callback
             )
             check_cancellation()
             self._final_groupings[partition.index] = store.append(
@@ -499,12 +501,12 @@ class UntargetedPartitionPipelineAdapter:
         initial_only = self._is_bootstrap(partition)
         initial_results = None
         grouping_callback: Callable[
-            [tuple[UntargetedInitialSampleResult, ...]], UntargetedPreparedGrouping
+            [tuple[UntargetedInitialSampleResult, ...]], CidNlGrouping
         ]
         if initial_only:
             batch = self.materialize_partition(partition)
             grouping_callback = partial(
-                prepare_untargeted_partition_grouping,
+                group_acquired_partition,
                 batch,
                 alignment_config=self._alignment_config,
                 known_istd_reference=self._known_istd_reference,
@@ -536,7 +538,7 @@ class UntargetedPartitionPipelineAdapter:
 
             def final_grouping(
                 _: tuple[UntargetedInitialSampleResult, ...],
-            ) -> UntargetedPreparedGrouping:
+            ) -> CidNlGrouping:
                 return final_grouping_inputs.prepared
 
             grouping_callback = final_grouping

@@ -6,6 +6,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
+from xic_extractor.alignment.cid_nl_initial_grouping import CidNlGrouping
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
@@ -13,9 +14,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 from xic_extractor.alignment.grouping_experiment import (
     GroupingInputs,
     GroupingWorkset,
-)
-from xic_extractor.untargeted_execution.partition.models import (
-    UntargetedPreparedGrouping,
 )
 
 
@@ -29,7 +27,7 @@ class PreparedGroupingExperiment:
 
 
 def grouping_experiment_from_prepared(
-    prepared: Iterable[UntargetedPreparedGrouping],
+    prepared: Iterable[CidNlGrouping],
     *,
     sample_stems: tuple[str, ...],
     injection_order: Mapping[str, int],

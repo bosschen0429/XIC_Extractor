@@ -650,12 +650,12 @@ def profile_replay(tmp_path, monkeypatch, request):
         return batch
 
     monkeypatch.setattr(bounded_owner, "materialize_untargeted_partition", retain_batch)
+    from xic_extractor.alignment import cid_nl_initial_grouping as production
     from xic_extractor.alignment import (
         cid_nl_predecessor_cells as predecessor_cell_owner,
     )
     from xic_extractor.alignment import completion as workflow_owner
     from xic_extractor.alignment import grouping_bootstrap as bootstrap_owner
-    from xic_extractor.untargeted_execution import partition_composition as production
 
     mint_captured = production.mint_captured_peak_observation
     mint_rechecks = []

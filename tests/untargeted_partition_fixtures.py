@@ -49,7 +49,7 @@ from xic_extractor.untargeted_execution.partition.models import (
 from xic_extractor.untargeted_execution.partition_composition import (
     UntargetedPartitionInputs,
     compose_untargeted_partition,
-    prepare_untargeted_partition_grouping,
+    group_acquired_partition,
 )
 
 
@@ -92,7 +92,7 @@ def execute_dense_partition(
         partition_key="dense-fixture",
         progress_callback=progress_callback,
         alignment_config=alignment_config,
-        prepare_grouping=lambda results: prepare_untargeted_partition_grouping(
+        prepare_grouping=lambda results: group_acquired_partition(
             batch,
             results,
             alignment_config=alignment_config,

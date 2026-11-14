@@ -1445,7 +1445,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
     finalized = []
     admitted = []
     acquire = owner.UntargetedPartitionPipelineAdapter.execute_acquisition
-    finalize = owner.UntargetedBatchGroupingPreparation.finalize_grouping
+    finalize = owner.CidNlBatchGrouping.finalize_grouping
 
     def subject_ids(subjects):
         return frozenset(subject.method_subject_id for subject in subjects)
@@ -1456,11 +1456,15 @@ def test_final_grouping_failure_stops_before_any_backfill(
                 admitted.append(subject_ids(partition.payload))
         return acquire(adapter, partition, **kwargs)
 
-    def finalize_or_abort(preparation, batch, prepared, **kwargs):
-        subjects = subject_ids(batch.subject_batch.subjects)
+    def finalize_or_abort(preparation, prepared, **kwargs):
+        subjects = subject_ids(
+            tuple(
+                subject for workset in prepared.worksets for subject in workset.subjects
+            )
+        )
         with lock:
             admitted_first = subjects in admitted
-        result = finalize(preparation, batch, prepared, **kwargs)
+        result = finalize(preparation, prepared, **kwargs)
         with lock:
             finalized.append((subjects, admitted_first))
             count = len(finalized)
@@ -1480,7 +1484,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
         observed_acquire,
     )
     monkeypatch.setattr(
-        owner.UntargetedBatchGroupingPreparation, "finalize_grouping", finalize_or_abort
+        owner.CidNlBatchGrouping, "finalize_grouping", finalize_or_abort
     )
     monkeypatch.setattr(owner, "CompletedUntargetBatchWorkflowResult", forbid_completed)
     with pytest.raises(RuntimeError, match="failed before batch publication") as error:
@@ -2096,21 +2100,20 @@ def test_sparse_recovery_partition_matches_dense_composition(
 def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition(
     tmp_path, monkeypatch
 ):
+    import xic_extractor.alignment.cid_nl_initial_grouping as grouping_owner
     import xic_extractor.untargeted_execution.execution as bounded_owner
-    import xic_extractor.untargeted_execution.partition_composition as production_owner
     from xic_extractor.execution.result_store import StreamedResultStore
 
     plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
     calls = []
-    original_group_builder = production_owner.build_initial_cid_nl_cross_sample_groups
+    original_group_builder = grouping_owner.prepare_cid_nl_grouping
 
     def observe_group_build(*args, **kwargs):
         calls.append(1)
         return original_group_builder(*args, **kwargs)
 
     monkeypatch.setattr(
-        production_owner,
-        "build_initial_cid_nl_cross_sample_groups",
+        "xic_extractor.untargeted_execution.partition_composition.prepare_cid_nl_grouping",
         observe_group_build,
     )
     adapter = bounded_owner.UntargetedPartitionPipelineAdapter(
@@ -2136,7 +2139,7 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
     assert len(batch.jobs) == 2
     assert len({job.method_subject.method_subject_id for job in batch.jobs}) == 2
     assert len(leaf.sample_results) == 4
-    assert calls == [1] * len(prepared.worksets)
+    assert calls == [1]
     prepared_group_ids = {
         group.group_hypothesis_id
         for workset in prepared.worksets
