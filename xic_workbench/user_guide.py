@@ -30,22 +30,25 @@ USER_PAGES = (
     "untargeted-output-reference.md",
     "processing-guide.html",
     "raw-to-final-matrix-product-story.html",
+    "targeted.md",
 )
 START_PAGE = Path("開始使用.html")
 
 EXAMPLES = ("targets.xlsx",)
 
-PAGE_STYLE = """
-body { margin: 2rem auto; padding: 0 1.5rem; max-width: 76rem;
-  font: 17px/1.7 system-ui, 'Microsoft JhengHei', sans-serif; color: #243342; }
-a { color: #145b90; } pre { padding: 1rem; overflow: auto; background: #f2f5f7; }
-code { font-size: .9em; } table { border-collapse: collapse; width: 100%; }
-th, td { padding: .5rem; border: 1px solid #ccd4dc; text-align: left; }
-img, svg { max-width: 100%; height: auto; } h1, h2, h3 { line-height: 1.3; }
-"""
+# Every authored page, in reading order, with its navigation label.
+GUIDE_PAGES = (
+    ("README.md", "開始使用"),
+    ("targeted.md", "Targeted 分析"),
+)
+THEME_SCRIPT = (
+    "try{var t=localStorage.getItem('xic-theme')"
+    "||(location.protocol==='file:'?'':'light');"
+    "if(t)document.documentElement.dataset.theme=t}catch(e){}"
+)
 
 
-def _markdown_html(source: str) -> str:
+def _markdown_html(source: str, page: str) -> str:
     from markdown_it import MarkdownIt
 
     renderer = MarkdownIt("commonmark", {"html": True}).enable("table")
@@ -65,12 +68,40 @@ def _markdown_html(source: str) -> str:
         used_ids[slug] = occurrence + 1
         token.attrSet("id", f"{slug}-{occurrence}" if occurrence else slug)
     body = renderer.renderer.render(tokens, renderer.options, {})
+    body = body.replace("<table>", '<div class="table"><table>').replace(
+        "</table>", "</table></div>"
+    )
     title = next((t.content for t in tokens if t.type == "inline"), "XIC Extractor")
+    names = [name for name, _ in GUIDE_PAGES]
+    links = "".join(
+        f'<a href="{name}"{' aria-current="page"' if name == page else ""}>'
+        f"{escape(label)}</a>"
+        for name, label in GUIDE_PAGES
+    )
+    pager = ""
+    if page in names:
+        index = names.index(page)
+        if index > 0:
+            name, label = GUIDE_PAGES[index - 1]
+            pager += (
+                f'<a class="prev" href="{name}"><span>上一頁</span>{escape(label)}</a>'
+            )
+        if index + 1 < len(names):
+            name, label = GUIDE_PAGES[index + 1]
+            pager += (
+                f'<a class="next" href="{name}"><span>下一頁</span>{escape(label)}</a>'
+            )
     return (
         '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{escape(title)}</title><style>{PAGE_STYLE}</style></head>"
-        f"<body>{body}</body></html>"
+        f"<title>{escape(title)} · XIC Extractor</title>"
+        '<link rel="stylesheet" href="assets/guide.css">'
+        f"<script>{THEME_SCRIPT}</script></head><body>"
+        '<header class="topbar"><a class="brand" href="README.md">'
+        "<b>XIC Extractor</b><span>使用說明</span></a>"
+        f'<nav aria-label="使用說明">{links}</nav></header>'
+        f'<main class="doc">{body}</main>'
+        f'<footer class="pager">{pager}</footer></body></html>'
     )
 
 
@@ -170,10 +201,10 @@ def render_user_guides(source_root: Path) -> dict[Path, bytes]:
         source = Path("docs/user") / name
         if name == "README.md":
             destination = START_PAGE
+        elif source.suffix == ".md" and f"{source.stem}.html" in USER_PAGES:
+            destination = source.with_suffix(".guide.html")
         else:
-            destination = (
-                source.with_suffix(".guide.html") if source.suffix == ".md" else source
-            )
+            destination = source.with_suffix(".html")
         destinations[source] = destination
     for name in EXAMPLES:
         destinations[Path("xic_extractor/configuration/data") / name] = (
@@ -185,13 +216,13 @@ def render_user_guides(source_root: Path) -> dict[Path, bytes]:
         if destination.parts[0] == "examples":
             continue
         text = (source_root / source).read_text(encoding="utf-8")
-        html = _markdown_html(text) if source.suffix == ".md" else text
+        html = _markdown_html(text, source.name) if source.suffix == ".md" else text
         links = _OfflineLinks(source, destinations)
         links.feed(html)
         links.close()
         assets.update(links.assets)
         html = "".join(links.output)
-        if destination != START_PAGE:
+        if source.suffix == ".html":
             home = quote(
                 os.path.relpath(START_PAGE, destination.parent).replace(os.sep, "/")
             )
