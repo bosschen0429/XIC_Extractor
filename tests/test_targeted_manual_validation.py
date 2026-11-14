@@ -216,8 +216,42 @@ def test_write_validation_workbook_contains_required_sheets(tmp_path: Path) -> N
     write_validation_workbook(output, [score])
 
     wb = load_workbook(output, read_only=True, data_only=True)
-    assert wb.sheetnames == ["Summary", "PerTarget", "Failures", "RunConfig"]
+    assert wb.sheetnames == ["Summary", "PerTarget", "Deviations", "RunConfig"]
     assert wb["Summary"]["A1"].value == "Name"
+
+
+def _identity_check_status(tmp_path: Path, peaks: list[ProgramPeakRow]) -> str:
+    truth = [
+        ManualTruthRow("DNA", "SampleA", "ISTD", 10.0, 1000.0, 10000.0, 0.8, "正常"),
+        ManualTruthRow("DNA", "SampleA", "Analyte", 11.0, 2000.0, 20000.0, 1.0, "拖尾"),
+    ]
+    score = score_manual_validation(
+        "canonical_targeted", {}, truth, peaks, istd_targets={"ISTD"}
+    )
+    output = tmp_path / "summary.xlsx"
+    write_validation_workbook(output, [score])
+    wb = load_workbook(output, read_only=True, data_only=True)
+    header, row = list(wb["Summary"].iter_rows(values_only=True))
+    return row[header.index("IdentityCheck")]
+
+
+def test_identity_check_ignores_area_and_rt_deviations(tmp_path: Path) -> None:
+    # A tailing analyte integrated 50% larger and 0.5 min later than the manual
+    # sheet is a deviation to review, not an identity failure.
+    peaks = [
+        ProgramPeakRow("SampleA", "ISTD", True, 10.0, 1000.0, 10000.0, True),
+        ProgramPeakRow("SampleA", "Analyte", False, 11.5, 2000.0, 30000.0, True),
+    ]
+
+    assert _identity_check_status(tmp_path, peaks) == "PASS"
+
+
+def test_identity_check_fails_when_a_manual_istd_peak_is_missing(
+    tmp_path: Path,
+) -> None:
+    peaks = [ProgramPeakRow("SampleA", "Analyte", False, 11.0, 2000.0, 20000.0, True)]
+
+    assert _identity_check_status(tmp_path, peaks) == "FAIL"
 
 
 def test_write_settings_csv_preserves_staging_config_contract(tmp_path: Path) -> None:
@@ -290,7 +324,7 @@ def test_write_validation_workbook_lists_per_target_failures(tmp_path: Path) -> 
 
     wb = load_workbook(output, read_only=True, data_only=True)
     per_target_rows = list(wb["PerTarget"].iter_rows(values_only=True))
-    failure_rows = list(wb["Failures"].iter_rows(values_only=True))
+    deviation_rows = list(wb["Deviations"].iter_rows(values_only=True))
 
     assert per_target_rows[0] == (
         "Name",
@@ -311,7 +345,7 @@ def test_write_validation_workbook_lists_per_target_failures(tmp_path: Path) -> 
     )
     assert [row[2] for row in per_target_rows[1:]] == ["LargeError", "Missing"]
     assert per_target_rows[2][13] is True
-    assert failure_rows[1:] == [
+    assert deviation_rows[1:] == [
         ("canonical_targeted", "SampleA", "LargeError", "RT_MAX_DELTA", 0.25, "<=0.20"),
         ("canonical_targeted", "SampleA", "LargeError", "AREA_ERROR", 0.4, "<=0.20"),
         (

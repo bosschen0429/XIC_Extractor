@@ -105,8 +105,8 @@ class ManualValidationResult:
 
 
 ManualValidationRunner = Callable[[], list[ProgramPeakRow]]
-FailureRecord = tuple[str, object, str]
-FailureRecordsByRow = dict[PerTargetScoreRow, list[FailureRecord]]
+DeviationRecord = tuple[str, object, str]
+DeviationRecordsByRow = dict[PerTargetScoreRow, list[DeviationRecord]]
 
 _THIN = Side(style="thin", color="BDBDBD")
 _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
@@ -349,8 +349,10 @@ def _print_summary(output_path: Path, result: ManualValidationResult) -> None:
     print(f"Summary workbook: {output_path}")
     print(
         "Current Targeted: "
-        f"area_median_abs_pct_error={score.area_median_abs_pct_error}, "
-        f"missing_manual_peaks={score.missing_manual_peaks}"
+        f"identity_check={'PASS' if _identity_check_passes(score) else 'FAIL'}, "
+        f"missing_manual_peaks={score.missing_manual_peaks}, "
+        f"istd_misses={score.istd_misses}, "
+        f"area_median_abs_pct_error={score.area_median_abs_pct_error}"
     )
 
 
@@ -378,17 +380,17 @@ def write_validation_workbook(
 ) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     workbook = Workbook()
-    failure_records_by_row = _collect_failure_records_by_row(scores)
+    deviation_records_by_row = _collect_deviation_records_by_row(scores)
 
     summary = workbook.active
     summary.title = "Summary"
     _write_summary_sheet(summary, scores)
 
     per_target = workbook.create_sheet("PerTarget")
-    _write_per_target_sheet(per_target, scores, failure_records_by_row)
+    _write_per_target_sheet(per_target, scores, deviation_records_by_row)
 
-    failures = workbook.create_sheet("Failures")
-    _write_failures_sheet(failures, scores, failure_records_by_row)
+    deviations = workbook.create_sheet("Deviations")
+    _write_deviations_sheet(deviations, scores, deviation_records_by_row)
 
     run_config = workbook.create_sheet("RunConfig")
     _write_run_config_sheet(run_config, scores)
@@ -564,7 +566,7 @@ def _write_summary_sheet(
 ) -> None:
     headers = [
         "Name",
-        "GuardrailStatus",
+        "IdentityCheck",
         "DetectedRows",
         "ScoredRows",
         "MissingManualPeaks",
@@ -584,7 +586,7 @@ def _write_summary_sheet(
             row_index,
             [
                 score.name,
-                "PASS" if _guardrail_passes(score) else "FAIL",
+                "PASS" if _identity_check_passes(score) else "FAIL",
                 score.detected_rows,
                 score.scored_rows,
                 score.missing_manual_peaks,
@@ -597,7 +599,7 @@ def _write_summary_sheet(
                 score.rt_median_abs_delta_min,
                 score.rt_max_abs_delta_min,
             ],
-            failed=not _guardrail_passes(score),
+            failed=not _identity_check_passes(score),
         )
     _autosize(worksheet, len(headers))
 
@@ -605,7 +607,7 @@ def _write_summary_sheet(
 def _write_per_target_sheet(
     worksheet: Worksheet,
     scores: list[ManualValidationScore],
-    failure_records_by_row: FailureRecordsByRow,
+    deviation_records_by_row: DeviationRecordsByRow,
 ) -> None:
     headers = [
         "Name",
@@ -648,23 +650,23 @@ def _write_per_target_sheet(
                     row.missing_peak,
                     row.manual_shape,
                 ],
-                failed=bool(failure_records_by_row[row]),
+                failed=bool(deviation_records_by_row[row]),
             )
             row_idx += 1
     _autosize(worksheet, len(headers))
 
 
-def _write_failures_sheet(
+def _write_deviations_sheet(
     worksheet: Worksheet,
     scores: list[ManualValidationScore],
-    failure_records_by_row: FailureRecordsByRow,
+    deviation_records_by_row: DeviationRecordsByRow,
 ) -> None:
     headers = ["Name", "SampleName", "Target", "Issue", "MetricValue", "Limit"]
     _write_header(worksheet, headers)
     row_idx = 2
     for score in scores:
         for row in score.per_target_rows:
-            for issue, metric_value, limit in failure_records_by_row[row]:
+            for issue, metric_value, limit in deviation_records_by_row[row]:
                 _write_row(
                     worksheet,
                     row_idx,
@@ -695,36 +697,31 @@ def _write_run_config_sheet(
     _autosize(worksheet, len(headers))
 
 
-def _guardrail_passes(score: ManualValidationScore) -> bool:
-    return (
-        score.missing_manual_peaks == 0
-        and score.istd_misses == 0
-        and score.large_area_misses == 0
-        and (
-            score.rt_median_abs_delta_min is None
-            or score.rt_median_abs_delta_min <= 0.05
-        )
-        and (score.rt_max_abs_delta_min is None or score.rt_max_abs_delta_min <= 0.20)
-    )
+def _identity_check_passes(score: ManualValidationScore) -> bool:
+    # The manual 2RAW set has known chromatographic problems (tailing, double
+    # peaks), so area and RT differences are reported for review, not judged.
+    return score.missing_manual_peaks == 0 and score.istd_misses == 0
 
 
-def _collect_failure_records_by_row(
+def _collect_deviation_records_by_row(
     scores: Sequence[ManualValidationScore],
-) -> FailureRecordsByRow:
+) -> DeviationRecordsByRow:
     return {
-        row: _failure_records(row) for score in scores for row in score.per_target_rows
+        row: _deviation_records(row)
+        for score in scores
+        for row in score.per_target_rows
     }
 
 
-def _failure_records(row: PerTargetScoreRow) -> list[FailureRecord]:
-    failures: list[FailureRecord] = []
+def _deviation_records(row: PerTargetScoreRow) -> list[DeviationRecord]:
+    deviations: list[DeviationRecord] = []
     if row.missing_peak:
-        failures.append(("MISSING_PEAK", "", "manual peak must be detected"))
+        deviations.append(("MISSING_PEAK", "", "manual peak must be detected"))
     if row.rt_abs_delta_min is not None and row.rt_abs_delta_min > 0.20:
-        failures.append(("RT_MAX_DELTA", row.rt_abs_delta_min, "<=0.20"))
+        deviations.append(("RT_MAX_DELTA", row.rt_abs_delta_min, "<=0.20"))
     if row.area_abs_pct_error is not None and row.area_abs_pct_error > 0.20:
-        failures.append(("AREA_ERROR", row.area_abs_pct_error, "<=0.20"))
-    return failures
+        deviations.append(("AREA_ERROR", row.area_abs_pct_error, "<=0.20"))
+    return deviations
 
 
 def _write_header(worksheet: Worksheet, headers: list[str]) -> None:

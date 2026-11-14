@@ -221,8 +221,10 @@ only acquisition.
 
 **Purpose**: Compare acquired peak RT/area against supplied manual measurements.
 **Topic group**: `targeted_manual_validation.py` (single-file)
-**Status note**: Resolver/acquisition calibration with an external manual
-reference; it does not substitute for finalized Targeted workbook validation.
+**Status note**: Peak identity check against an external manual reference:
+PASS requires every manual peak and ISTD to be found. Area and RT deviations
+are listed for review, not judged. It does not substitute for finalized
+Targeted workbook validation.
 
 ---
 

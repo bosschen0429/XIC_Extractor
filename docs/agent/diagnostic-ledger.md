@@ -225,12 +225,12 @@ tests (NoSplit HESI, Split NSI): specificity is good, but the chromatography
 has known problems such as tailing and double peaks. The set therefore checks
 peak identity, not area accuracy.
 
-All 100 scored manual peaks were found and no ISTD was missed; median absolute
-area error 2.24%, 92/95 within 10%/20%. The scripted guardrail reports
-**FAIL** on five rows. The user reviewed those five and the three other rows
-above 10% with MS1 traces and MS2 neutral-loss scans, and judged the program's
-peak and bounds more reasonable in seven; 8-Obz-dG was too poorly shaped to
-judge.
+The identity check passes: all 100 scored manual peaks were found and no ISTD
+was missed. Median absolute area error is 2.24%, 92/95 within 10%/20%; five
+rows deviate by more than 20% area or 0.20 min RT. The user reviewed those five
+and the three other rows above 10% with MS1 traces and MS2 neutral-loss scans,
+and judged the program's peak and bounds more reasonable in seven; 8-Obz-dG was
+too poorly shaped to judge.
 
 - m7G, N6-6Ah-dA and m1A (NoSplit, tailing): the program areas are 21–27%
   larger. Neutral-loss scans continue through the tail, and the program bounds
@@ -240,8 +240,9 @@ judge.
   program apex; the on-target MS2 at the manual ac4C RT shows none.
 
 The score uses the selected acquisition peak area, not the published workbook
-value. The stored target lists predate the current target schema; this run
-used copies converted to `expected_rt_min` at the window midpoint.
+value. The target lists in `XIC_MANUAL_2RAW_ROOT` use the current target
+schema, with `expected_rt_min` at the midpoint of the former ±1 min window;
+the former files are kept in its `legacy_format_targets/`.
 
 Rerun when Targeted peak selection or identity rules change. Area accuracy
 needs a manual set with clean chromatography.
