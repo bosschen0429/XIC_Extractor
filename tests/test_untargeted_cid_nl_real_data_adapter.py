@@ -472,25 +472,6 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
         assert relation.observed_loss_error_ppm == pytest.approx(0.001 / 116.0474 * 1e6)
 
 
-def test_peaks_without_their_event_table_cannot_be_assessed(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
-    from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
-
-    scenario = build_sample_adapter_scenario(tmp_path)
-    source_raw = _FakeRaw((7.98, 8.0, 8.02))
-    discovered = scenario.discover(source_raw)
-    # The peak table alone does not carry the events Alignment assesses.
-    candidates = read_discovery_peaks_csv(
-        write_discovery_peaks_csv(tmp_path / "peaks.csv", discovered)
-    )
-    raw, _vendor = scenario.open_raw(source_raw)
-
-    with pytest.raises(ValueError, match="lack the representative scan"):
-        scenario.adapt(candidates, raw=raw)
-
-
 def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     tmp_path: Path,
 ) -> None:

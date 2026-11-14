@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -453,3 +455,46 @@ def test_legacy_integration_records_raw_interval_sigma_without_redefining_area()
     )
     assert integration.area_raw_counts_seconds == 1234.0
     assert integration.area_uncertainty_noise_source == "asls_residual"
+
+
+def test_candidate_integration_keeps_baseline_and_morphology_areas_distinct() -> None:
+    """The candidate producer's two areas answer different questions.
+
+    ``area_baseline_corrected`` integrates raw minus the AsLS baseline;
+    ``area_ms1_morphology`` integrates the smoothed positive residual. Ripple on
+    a raised baseline separates them; one shared formula would make them equal.
+    """
+    rt = np.linspace(7.4, 8.6, 121)
+    ripple = 300.0 * np.sin(np.linspace(0.0, 120.0, rt.size))
+    intensity = 400.0 + ripple + 5000.0 * np.exp(-0.5 * ((rt - 8.0) / 0.05) ** 2)
+    apex = int(np.argmax(intensity))
+    selected = replace(
+        _candidate(float(rt[apex]), left=7.8, right=8.2),
+        selection_apex_index=apex,
+        raw_apex_index=apex,
+    )
+    result = PeakDetectionResult(
+        status="OK",
+        peak=selected.peak,
+        n_points=rt.size,
+        max_smoothed=float(intensity.max()),
+        n_prominent_peaks=1,
+        candidates=(selected,),
+    )
+
+    integration = build_peak_hypotheses(
+        sample_name="SampleA",
+        target_label="Analyte",
+        role="Analyte",
+        istd_pair="",
+        resolver_mode="local_minimum",
+        peak_result=result,
+        rt=rt,
+        intensity=intensity,
+    )[0].integration
+
+    assert integration.area_baseline_corrected is not None
+    assert integration.area_ms1_morphology is not None
+    assert integration.area_baseline_corrected > 0.0
+    assert integration.area_ms1_morphology > 0.0
+    assert integration.area_baseline_corrected != integration.area_ms1_morphology
