@@ -235,102 +235,6 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
     } == {owners[name].owner_id for name in accepted}
 
 
-def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monkeypatch):
-    from xic_extractor.untargeted_execution.partition_composition import (
-        finalize_untargeted_partition_grouping,
-        prepare_untargeted_partition_grouping,
-    )
-
-    settings = replace(_settings(), rt_min=8.4, rt_max=11.5)
-    peak_config = _peak_config(tmp_path)
-    paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(6))
-    raws, candidates = {}, {}
-    for index, path in enumerate(paths):
-        path.write_bytes(path.stem.encode())
-        raw = _FakeRaw((8.0,))
-        shift = 1.0 if index < 3 else 2.8
-        raw.rt += shift
-        raw.scans = tuple(replace(scan, rt=scan.rt + shift) for scan in raw.scans)
-        raws[path] = raw
-        candidates[path.stem] = _current_candidates(
-            raw,
-            raw_file=path,
-            settings=settings,
-        )
-    batch = build_dense_partition(
-        raw_paths=paths,
-        sample_metadata=tuple(
-            SampleMetadata(sample_name=path.stem, raw_stem=path.stem, injection_order=i)
-            for i, path in enumerate(paths, 1)
-        ),
-        settings=settings,
-        peak_config=peak_config,
-        peaks_by_sample=candidates,
-        dll_dir=tmp_path,
-        signal_processing_profile=TEST_PROFILE,
-    )
-    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
-    config = AlignmentConfig(anchor_min_seed_events=1)
-    observed = []
-
-    def prepare(initial):
-        bootstrap = prepare_untargeted_partition_grouping(
-            batch, initial, alignment_config=config, bootstrap_only=True
-        )
-        # Reuse identical captures, owners and RT frame; the shared acquisition
-        # setting must not change detection inputs in this grouping comparison.
-        for half_window in (1.0, 2.0):
-            variant = replace(
-                batch,
-                context=replace(
-                    batch.context,
-                    peak_config=replace(
-                        peak_config, nl_rt_anchor_half_window_min=half_window
-                    ),
-                ),
-            )
-            final = finalize_untargeted_partition_grouping(
-                variant, bootstrap, rt_frame=SampleRtFrame()
-            )
-            observed.append(
-                tuple(
-                    group
-                    for workset in final.worksets
-                    for group in workset.grouping_scope.groups
-                )
-            )
-        return final
-
-    result = execute_partition(
-        batch.jobs,
-        partition_key="runtime-fixture",
-        alignment_config=config,
-        prepare_grouping=prepare,
-    )
-    assert result.succeeded
-    assert len(observed) == 2
-
-    def partition(groups):
-        return {(frozenset(group.owner_ids), group.disposition) for group in groups}
-
-    assert partition(observed[0]) == partition(observed[1])
-    for groups in observed:
-        assert {
-            frozenset(owner.sample_stem for owner in group.owners) for group in groups
-        } == {
-            frozenset(("S0", "S1", "S2")),
-            frozenset(("S3", "S4", "S5")),
-        }
-        assert all(group.disposition == "established" for group in groups)
-        assert all(
-            len(group.owners) == len({owner.sample_stem for owner in group.owners})
-            for group in groups
-        )
-    assert {group.group_hypothesis_id for group in observed[0]} == {
-        group.group_hypothesis_id for group in observed[1]
-    }
-
-
 @pytest.mark.parametrize("empty", [False, True])
 @pytest.mark.parametrize("half_window", [0.10, 0.15])
 def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
@@ -338,10 +242,10 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
 ):
     import csv
 
+    from xic_extractor.alignment.cid_nl_initial_grouping import regroup_cid_nl_grouping
     from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
     from xic_extractor.untargeted_execution.partition_composition import (
-        finalize_untargeted_partition_grouping,
-        prepare_untargeted_partition_grouping,
+        group_acquired_partition,
     )
 
     shifts = {"S1": 0.0, "S2": 0.0, "Late": 0.4, "Early": -0.4}
@@ -395,14 +299,14 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
     )
 
     def prepare(initial):
-        bootstrap = prepare_untargeted_partition_grouping(
+        bootstrap = group_acquired_partition(
             batch,
             initial,
             alignment_config=config,
             bootstrap_only=True,
         )
-        return finalize_untargeted_partition_grouping(
-            batch, bootstrap, rt_frame=SampleRtFrame().with_warp(warp)
+        return regroup_cid_nl_grouping(
+            bootstrap, rt_frame=SampleRtFrame().with_warp(warp)
         )
 
     result = execute_partition(

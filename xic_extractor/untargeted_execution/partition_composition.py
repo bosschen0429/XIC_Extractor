@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import cast
 
 from xic_extractor.alignment.backfill.completion_evidence import (
@@ -12,11 +12,14 @@ from xic_extractor.alignment.backfill.completion_evidence import (
 from xic_extractor.alignment.cid_nl_completion import (
     CidNlWorksetCompletion,
     CidNlWorksetEvidence,
-    CidNlWorksetGrouping,
     prepare_cid_nl_workset,
 )
+from xic_extractor.alignment.cid_nl_initial_grouping import (
+    CidNlBatchGrouping,
+    CidNlGrouping,
+    prepare_cid_nl_grouping,
+)
 from xic_extractor.alignment.completion import (
-    CaptureWorkflowArguments,
     UntargetWorkflowCompositionRequest,
 )
 from xic_extractor.alignment.config import AlignmentConfig
@@ -24,23 +27,11 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.feature_membership_inference import (
-    FeatureInferenceOperationCounts,
-)
-from xic_extractor.alignment.grouping_workflow import (
-    build_initial_cid_nl_cross_sample_groups,
-    regroup_cid_nl_cross_sample_groups,
-)
-from xic_extractor.alignment.hypothesis_owner_adapter import (
-    compose_peak_hypotheses_from_assessment_universe,
-)
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     FinalizedUntargetBatchApplicationResult,
     UntargetedCandidateExclusion,
 )
-from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.execution.result_store import (
     SealedPartition,
@@ -49,9 +40,6 @@ from xic_extractor.execution.result_store import (
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
-    bind_owner_backed_capture_hypothesis,
-    mint_captured_peak_observation,
-    rebind_untargeted_capture_scope,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
@@ -68,16 +56,13 @@ from xic_extractor.peak_detection.search_scope import (
     CaptureMethodConstraints,
     EvidenceProviderBinding,
     UntargetedSearchScope,
-    require_capture_binding,
 )
 from xic_extractor.untargeted_execution.input_planning import (
     UntargetedInputPlan,
-    alignment_subject_worksets,
 )
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedInitialSampleResult,
     UntargetedPartitionJob,
-    UntargetedPreparedGrouping,
     UntargetedSampleResult,
     _SampleResultContext,
 )
@@ -97,61 +82,7 @@ class UntargetedPartitionInputs:
     context: UntargetedPartitionContext
     jobs: tuple[UntargetedPartitionJob, ...]
     sample_job_templates: tuple[UntargetedPartitionJob, ...] = ()
-    prepared_grouping: UntargetedPreparedGrouping | None = None
-
-
-class UntargetedBatchGroupingPreparation:
-    """Shared in-memory preparation for direct and spooled batch execution.
-
-    Callers supply initial groupings, freeze calibration, then finalize each
-    grouping against that frozen calibration. Only compact anchor projections
-    are retained; RAW access, partition admission and spooling remain with
-    runtime.
-    """
-
-    def __init__(self, context: UntargetedPartitionContext) -> None:
-        self._bootstrap_frame = context.rt_frame
-        self._calibration = BatchRtCalibrationAccumulator(
-            sample_stems=tuple(
-                self._bootstrap_frame.sample_universe
-                or self._bootstrap_frame.injection_order
-            ),
-            sample_cohorts=self._bootstrap_frame.sample_cohorts,
-        )
-        self._rt_frame: SampleRtFrame | None = None
-
-    def add_initial(self, prepared: UntargetedPreparedGrouping) -> None:
-        self._calibration.add_groups(prepared.rt_anchor_groups)
-        self._bootstrap_frame = self._bootstrap_frame.with_sources(
-            known_istd_reference=prepared.known_istd_reference
-        )
-
-    def freeze_calibration(self) -> None:
-        self._rt_frame = self._bootstrap_frame.with_sample_calibration(
-            self._calibration.freeze(
-                measured_istds=self._bootstrap_frame.measured_istd_coordinates
-            )
-        )
-
-    @property
-    def frozen_rt_frame(self) -> SampleRtFrame | None:
-        """The final batch map retained for persisted review consumers."""
-        return self._rt_frame
-
-    def finalize_grouping(
-        self,
-        batch: UntargetedPartitionInputs,
-        prepared: UntargetedPreparedGrouping,
-        *,
-        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
-    ) -> UntargetedPreparedGrouping:
-        assert self._rt_frame is not None
-        return finalize_untargeted_partition_grouping(
-            batch,
-            prepared,
-            rt_frame=self._rt_frame,
-            progress_callback=progress_callback,
-        )
+    prepared_grouping: CidNlGrouping | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -398,7 +329,7 @@ def compose_untargeted_partition(
     )
 
 
-def prepare_untargeted_partition_grouping(
+def group_acquired_partition(
     batch: UntargetedPartitionInputs,
     sample_results: tuple[UntargetedInitialSampleResult, ...],
     *,
@@ -406,364 +337,48 @@ def prepare_untargeted_partition_grouping(
     bootstrap_only: bool = False,
     known_istd_reference: KnownIstdReference | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
-) -> UntargetedPreparedGrouping:
-    """Freeze compatible-workset membership once, before any backfill search."""
-    requested_reference = known_istd_reference
-    # A sample acquisition is shared by all of its method-subject results.
-    # Flatten each retained context batch once, outside the workset loop.
+) -> CidNlGrouping:
+    """Hand acquired in-memory facts to Alignment, retaining no eligibility policy."""
+    # A sample acquisition shares its contexts across method-subject jobs.
     context_batches = {
         id(
             result.adapter_result.elution_contexts
         ): result.adapter_result.elution_contexts
         for result in sample_results
     }
-    elution_contexts = tuple(
-        context for contexts in context_batches.values() for context in contexts
-    )
-    results_by_subject: dict[str, list[UntargetedInitialSampleResult]] = {}
-    for result in sample_results:
-        results_by_subject.setdefault(
-            result.job.method_subject.method_subject_id, []
-        ).append(result)
-    for results in results_by_subject.values():
-        results.sort(key=lambda result: result.job.sample.sample_name)
-    capture_by_candidate = _runtime_captures_by_candidate(batch, sample_results)
-    peak_by_id = {
-        peak.peak_id: peak
-        for peaks in batch.context.peaks_by_sample.values()
-        for peak in peaks
-    }
-    unsupported_subjects = {}
-    for subject in batch.subject_batch.subjects:
-        subject_assessments = tuple(
-            assessment
-            for result in results_by_subject.get(subject.method_subject_id, ())
-            for assessment in result.effective_assessments
-        )
-        evaluated_unsupported = tuple(
-            ref.technical_state == "evaluated"
-            and ref.method_result in {"HOLD", "REJECT"}
-            for ref in subject_assessments
-        )
-        if any(evaluated_unsupported) and all(
-            is_unsupported or is_unsearched_cid_nl_discovery_assessment(ref)
-            for ref, is_unsupported in zip(
-                subject_assessments, evaluated_unsupported, strict=True
-            )
-        ):
-            unsupported_subjects[subject.method_subject_id] = subject_assessments
-    bindings = tuple(
-        require_capture_binding(
-            capture_by_candidate[candidate_id].scope,
-            candidate_id,
-        )
-        for candidate_id, method_subject_id in batch.subject_batch.candidate_memberships
-        if candidate_id in capture_by_candidate
-        and method_subject_id not in unsupported_subjects
-    )
-    exclusions = tuple(
-        UntargetedCandidateExclusion(
-            candidate_id=candidate_id,
-            method_subject_id=method_subject_id,
-            sample_key=batch.context.sample(
-                peak_by_id[candidate_id].sample_stem
-            ).sample_name,
-            peak_status=peak_by_id[candidate_id].status,
-            reason_code=(
-                "composite_requirement_not_supported"
-                if method_subject_id in unsupported_subjects
-                and unsupported_subjects[method_subject_id][
-                    0
-                ].method_subject.composition
-                is not None
-                else "cid_nl_requirement_not_supported"
-                if method_subject_id in unsupported_subjects
-                else "discovery_candidate_not_search_eligible"
-            ),
-            composite_assessments=tuple(
-                ref
-                for ref in unsupported_subjects.get(method_subject_id, ())
-                if ref.method_subject.composition is not None
-            ),
-            method_assessments=tuple(
-                ref
-                for ref in unsupported_subjects.get(method_subject_id, ())
-                if ref.method_subject.composition is None
-            ),
-        )
-        for candidate_id, method_subject_id in (
-            batch.subject_batch.candidate_memberships
-        )
-        # A peak is searched only when Alignment captured it: Discovery held
-        # it, or Alignment's own measurement of it is not available or needs
-        # overlap review.
-        if candidate_id not in capture_by_candidate
-        or method_subject_id in unsupported_subjects
-    )
-    # Partitioning changes execution ownership. Scientific composition keeps
-    # the global request scope and closes the exact subject views below.
-    request_batch = cast(
-        UntargetedCidNlMethodSubjectBatch, batch.context.method_subject
-    )
-    scope = UntargetedSearchScope(
-        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        method_subjects=batch.context.method_subject,
+    prepared = prepare_cid_nl_grouping(
+        subject_batch=batch.subject_batch,
+        request_subjects=cast(
+            UntargetedCidNlMethodSubjectBatch, batch.context.method_subject
+        ),
         samples=batch.context.samples,
+        candidates=tuple(
+            peak for peaks in batch.context.peaks_by_sample.values() for peak in peaks
+        ),
+        capture_by_candidate=_runtime_captures_by_candidate(batch, sample_results),
+        sample_assessments=tuple(
+            (result.job.sample, assessment)
+            for result in sample_results
+            for assessment in result.effective_assessments
+        ),
         method_constraints=CaptureMethodConstraints(
             boundary_policy="resolver_interval",
             peak_config=batch.context.peak_config,
             signal_processing_profile=batch.context.signal_processing_profile,
         ),
-        evidence_providers=tuple(
-            EvidenceProviderBinding(
-                provider_id=CID_NL_PROVIDER_ID,
-                method_subject_id=subject.method_subject_id,
-            )
-            for subject in request_batch.subjects
-        ),
-        declared_candidate_ids=tuple(
-            candidate_id
-            for candidate_id, _method_subject_id in (
-                request_batch.candidate_memberships
-            )
-        ),
-        capture_bindings=bindings,
-    )
-    parent_request = UntargetWorkflowCompositionRequest(
-        scope=scope,
-        excluded_candidates=exclusions,
-    )
-
-    prepared_worksets = []
-    bindings_by_subject: dict[str, list[CaptureCandidateBinding]] = {}
-    for binding in bindings:
-        bindings_by_subject.setdefault(binding.method_subject_id, []).append(binding)
-    sample_by_id = {sample.sample_name: sample for sample in batch.context.samples}
-    sample_universe = frozenset(sample.raw_stem for sample in batch.context.samples)
-    rt_frame = batch.context.rt_frame
-    if known_istd_reference is not None:
-        known_istd_reference = known_istd_reference.prepare_batch(
-            sample_universe=sample_universe,
-            injection_order=rt_frame.injection_order,
-        )
-    rt_frame = rt_frame.with_sources(known_istd_reference=known_istd_reference)
-    active_subjects = tuple(
-        subject
-        for subject in batch.subject_batch.subjects
-        if bindings_by_subject.get(subject.method_subject_id)
-    )
-    for subject_workset in alignment_subject_worksets(
-        active_subjects,
-        known_istd_reference=known_istd_reference,
-    ):
-        child_bindings = tuple(
-            sorted(
-                (
-                    binding
-                    for subject in subject_workset
-                    for binding in bindings_by_subject[subject.method_subject_id]
-                ),
-                key=lambda binding: binding.candidate_id,
-            )
-        )
-        child_scope = UntargetedSearchScope(
-            schema_version=scope.schema_version,
-            method_subjects=scope.method_subjects,
-            samples=scope.samples,
-            method_constraints=scope.method_constraints,
-            evidence_providers=tuple(
-                EvidenceProviderBinding(
-                    provider_id=CID_NL_PROVIDER_ID,
-                    method_subject_id=subject.method_subject_id,
-                )
-                for subject in subject_workset
-            ),
-            declared_candidate_ids=tuple(
-                binding.candidate_id for binding in child_bindings
-            ),
-            capture_bindings=child_bindings,
-        )
-        assessments = tuple(
-            (
-                result.job.sample,
-                assessment,
-            )
-            for subject in subject_workset
-            for result in results_by_subject.get(subject.method_subject_id, ())
-            for assessment in result.effective_assessments
-        )
-        assessments = tuple(sorted(assessments, key=lambda pair: pair[0].sample_name))
-        capture_inputs_list = []
-        captures_list = []
-        assessment_by_sample_subject = {
-            (
-                result.job.sample.sample_name,
-                subject.method_subject_id,
-            ): result.adapter_result.assessment_input.assessment
-            for subject in subject_workset
-            for result in results_by_subject.get(subject.method_subject_id, ())
-        }
-        hypotheses_by_sample_subject = {
-            key: compose_peak_hypotheses_from_assessment_universe(
-                sample=sample_by_id[key[0]],
-                assessment=assessment_by_sample_subject[key],
-            )
-            for key in dict.fromkeys(
-                (binding.sample_key, binding.method_subject_id)
-                for binding in child_bindings
-            )
-        }
-        retained_hypotheses_by_assessment = {
-            assessment_by_sample_subject[key]: hypotheses
-            for key, hypotheses in hypotheses_by_sample_subject.items()
-        }
-        for binding in child_bindings:
-            sample = sample_by_id[binding.sample_key]
-            trace = capture_by_candidate[binding.candidate_id].trace
-            captured = rebind_untargeted_capture_scope(
-                capture_by_candidate[binding.candidate_id],
-                scope=child_scope,
-            )
-            if captured.selected_hypothesis is None:
-                captures_list.append(captured)
-                capture_inputs_list.append(
-                    CaptureWorkflowArguments(
-                        candidate_id=binding.candidate_id,
-                        trace=trace,
-                    )
-                )
-                continue
-            observation = mint_captured_peak_observation(
-                captured,
-                sample=sample,
-            )
-            hypotheses = hypotheses_by_sample_subject[
-                (binding.sample_key, binding.method_subject_id)
-            ]
-            matches = tuple(
-                hypothesis
-                for hypothesis in hypotheses
-                if hypothesis.peak == observation
-            )
-            if len(matches) != 1:
-                raise RuntimeError(
-                    "CID-NL runtime assessment lost its exact captured observation"
-                )
-            owner_capture = bind_owner_backed_capture_hypothesis(
-                captured,
-                observation=observation,
-                hypothesis=matches[0],
-            )
-            captures_list.append(owner_capture)
-            capture_inputs_list.append(
-                CaptureWorkflowArguments(
-                    candidate_id=binding.candidate_id,
-                    trace=trace,
-                    owner_observation=observation,
-                    owner_hypothesis=matches[0],
-                )
-            )
-        captures = tuple(captures_list)
-        capture_inputs = tuple(capture_inputs_list)
-        operation_counts: list[FeatureInferenceOperationCounts] = []
-        (
-            grouping_scope,
-            grouping_result,
-            retained_candidates,
-        ) = build_initial_cid_nl_cross_sample_groups(
-            samples=batch.context.samples,
-            captures=captures,
-            sample_assessments=assessments,
-            alignment_config=alignment_config,
-            elution_contexts=elution_contexts,
-            rt_frame=rt_frame,
-            retained_hypotheses_by_assessment=(retained_hypotheses_by_assessment),
-            operation_counts_sink=operation_counts,
-        )
-        prepared_worksets.append(
-            CidNlWorksetGrouping(
-                subjects=subject_workset,
-                scope=child_scope,
-                captures=captures,
-                capture_inputs=capture_inputs,
-                grouping_scope=grouping_scope,
-                grouping_result=grouping_result,
-                retained_candidates=retained_candidates,
-            )
-        )
-    prepared = UntargetedPreparedGrouping(
-        request=parent_request,
-        worksets=tuple(prepared_worksets),
         alignment_config=alignment_config,
-        known_istd_reference=requested_reference,
-        rt_frame=rt_frame,
+        rt_frame=batch.context.rt_frame,
+        elution_contexts=tuple(
+            context for contexts in context_batches.values() for context in contexts
+        ),
+        known_istd_reference=known_istd_reference,
     )
     if bootstrap_only:
         return prepared
-    preparation = UntargetedBatchGroupingPreparation(batch.context)
+    preparation = CidNlBatchGrouping(batch.context.rt_frame)
     preparation.add_initial(prepared)
     preparation.freeze_calibration()
-    return preparation.finalize_grouping(
-        batch,
-        prepared,
-        progress_callback=progress_callback,
-    )
-
-
-def finalize_untargeted_partition_grouping(
-    batch: UntargetedPartitionInputs,
-    prepared: UntargetedPreparedGrouping,
-    *,
-    rt_frame: SampleRtFrame,
-    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
-) -> UntargetedPreparedGrouping:
-    """Regroup one bounded workset collection using the frozen batch calibration."""
-    alignment_config = prepared.alignment_config
-    final_worksets = []
-    for workset in prepared.worksets:
-        operation_counts: list[FeatureInferenceOperationCounts] = []
-        grouping_scope, grouping_result = regroup_cid_nl_cross_sample_groups(
-            samples=batch.context.samples,
-            grouping_scope=workset.grouping_scope,
-            grouping_result=workset.grouping_result,
-            alignment_config=alignment_config,
-            rt_frame=workset.grouping_result.rt_frame.with_calibration(rt_frame),
-            operation_counts_sink=operation_counts,
-        )
-        final_worksets.append(
-            replace(
-                workset,
-                grouping_scope=grouping_scope,
-                grouping_result=grouping_result,
-            )
-        )
-        if progress_callback is not None:
-            progress_callback(
-                {
-                    "event": "feature_membership_inference",
-                    "stage": "feature_membership_inference",
-                    "subject_count": len(workset.subjects),
-                    "group_count": len(grouping_scope.groups),
-                    "operation_counts": {
-                        key: (
-                            max(
-                                (getattr(item, key) for item in operation_counts),
-                                default=0,
-                            )
-                            if key.startswith("largest_")
-                            else sum(getattr(item, key) for item in operation_counts)
-                        )
-                        for key in FeatureInferenceOperationCounts.__dataclass_fields__
-                    },
-                }
-            )
-    return UntargetedPreparedGrouping(
-        request=prepared.request,
-        worksets=tuple(final_worksets),
-        alignment_config=alignment_config,
-        known_istd_reference=prepared.known_istd_reference,
-        rt_frame=prepared.rt_frame.with_calibration(rt_frame),
-    )
+    return preparation.finalize_grouping(prepared, progress_callback=progress_callback)
 
 
 def _build_production_composition_inputs(
@@ -838,7 +453,7 @@ def _build_production_composition_inputs(
         if not is_unsearched_cid_nl_discovery_assessment(assessment)
     ]
 
-    prepared = batch.prepared_grouping or prepare_untargeted_partition_grouping(
+    prepared = batch.prepared_grouping or group_acquired_partition(
         batch,
         tuple(
             UntargetedInitialSampleResult(item.job, item.adapter_result)
@@ -972,9 +587,9 @@ def _runtime_captures_by_candidate(
         peak.peak_id
         for peaks in batch.context.peaks_by_sample.values()
         for peak in peaks
-        if peak.peak_id in partition_ids and peak.is_clean_peak
+        if peak.peak_id in partition_ids
     }
-    # Alignment's own measurement may drop a peak; it never adds one.
+    # Acquisition cannot introduce a candidate outside this partition's input.
     if not set(captures) <= expected:
-        raise RuntimeError("runtime capture crossed capture-eligible peaks")
+        raise RuntimeError("runtime capture crossed partition peaks")
     return captures

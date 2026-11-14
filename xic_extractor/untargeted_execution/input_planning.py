@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from xic_extractor.alignment.cid_nl_grouping import alignment_subject_worksets
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
     UntargetedCandidateExclusion,
@@ -17,12 +18,10 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import DiscoverySettings
-from xic_extractor.mass_accuracy import mz_window
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlComposition,
     CidNlMethodSubject,
     UntargetedCidNlMethodSubjectBatch,
-    cid_nl_alignment_subject_worksets,
     mint_cid_nl_subject_membership,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
@@ -147,32 +146,6 @@ def prepare_untargeted_alignment_worksets(
         subjects_by_id=subjects_by_id,
         workset_ids_by_subject=workset_ids_by_subject,
         memberships_by_subject=memberships_by_subject,
-    )
-
-
-def alignment_subject_worksets(
-    subjects: tuple[CidNlMethodSubject, ...],
-    *,
-    known_istd_reference: KnownIstdReference | None = None,
-) -> tuple[tuple[CidNlMethodSubject, ...], ...]:
-    """Close compatible subjects including the supplied known-identity intervals."""
-    return cid_nl_alignment_subject_worksets(
-        subjects,
-        comparison_mz_intervals=_known_istd_comparison_intervals(known_istd_reference),
-    )
-
-
-def _known_istd_comparison_intervals(
-    reference: KnownIstdReference | None,
-) -> tuple[tuple[float, float], ...]:
-    """Co-locate possible known identities without assigning identity by mass."""
-    if reference is None:
-        return ()
-    return tuple(
-        mz_window(target.mz, target.ppm_tol)
-        for target in reference.anchor.targets
-        if target.neutral_loss_da is not None
-        and target.label in reference.anchor.observed_labels
     )
 
 

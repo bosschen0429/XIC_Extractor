@@ -18,20 +18,10 @@ from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
 )
 from xic_extractor.alignment.cell_observation.observations import CidNlCellGroupContext
-from xic_extractor.alignment.cid_nl_completion import CidNlWorksetGrouping
+from xic_extractor.alignment.cid_nl_initial_grouping import CidNlGrouping
 from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlBackfillInput,
 )
-from xic_extractor.alignment.completion import (
-    UntargetWorkflowCompositionRequest,
-)
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.grouping_bootstrap import (
-    measured_calibration_anchor_groups,
-)
-from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -268,25 +258,6 @@ class UntargetedInitialSampleResult:
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedPreparedGrouping:
-    request: UntargetWorkflowCompositionRequest
-    worksets: tuple[CidNlWorksetGrouping, ...]
-    alignment_config: AlignmentConfig
-    known_istd_reference: KnownIstdReference | None
-    rt_frame: SampleRtFrame
-
-    @property
-    def rt_anchor_groups(self) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
-        return tuple(
-            owners
-            for workset in self.worksets
-            for owners in measured_calibration_anchor_groups(
-                workset.grouping_scope, workset.retained_candidates
-            )
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class UntargetedSampleResult:
     job: UntargetedPartitionJob
     adapter_result: CidNlAcquisitionResult
@@ -420,7 +391,7 @@ class UntargetedPartitionResult:
 
     sample_results: tuple[UntargetedSampleResult, ...]
     failure: Exception | None = None
-    prepared_grouping: UntargetedPreparedGrouping | None = None
+    prepared_grouping: CidNlGrouping | None = None
 
     @property
     def succeeded(self) -> bool:

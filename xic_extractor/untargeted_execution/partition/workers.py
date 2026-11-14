@@ -12,6 +12,7 @@ from xic_extractor.alignment.backfill.cid_nl_planning import (
     plan_grouped_cid_nl_backfills,
     plan_subject_cid_nl_backfills,
 )
+from xic_extractor.alignment.cid_nl_initial_grouping import CidNlGrouping
 from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlBackfillInput,
 )
@@ -47,7 +48,6 @@ from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition impo
 from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionError,
     UntargetedPartitionJob,
-    UntargetedPreparedGrouping,
     _request_subject_candidates,
 )
 
@@ -308,7 +308,7 @@ def _apply_backfill_questions(
 def _prepare_group_authorized_backfills(
     states: list[_RuntimeJobState],
     *,
-    prepared: UntargetedPreparedGrouping,
+    prepared: CidNlGrouping,
     sample_templates: tuple[UntargetedPartitionJob, ...] = (),
 ) -> None:
     templates = {

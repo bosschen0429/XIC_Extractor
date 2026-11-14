@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.grouping_evidence import envelope_fraction
 from xic_extractor.alignment.grouping_rules import (
     DuplicateContext,
@@ -21,11 +22,42 @@ from xic_extractor.alignment.grouping_rules import (
     SeedSupportLevel,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.mass_accuracy import absolute_ppm_error
+from xic_extractor.mass_accuracy import absolute_ppm_error, mz_window
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
     supported_cid_nl_peaks,
 )
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CidNlMethodSubject,
+    cid_nl_alignment_subject_worksets,
+)
+
+
+def alignment_subject_worksets(
+    subjects: tuple[CidNlMethodSubject, ...],
+    *,
+    known_istd_reference: KnownIstdReference | None = None,
+) -> tuple[tuple[CidNlMethodSubject, ...], ...]:
+    """Close compatible subjects including the supplied known-identity intervals."""
+    return cid_nl_alignment_subject_worksets(
+        subjects,
+        comparison_mz_intervals=_known_istd_comparison_intervals(known_istd_reference),
+    )
+
+
+def _known_istd_comparison_intervals(
+    reference: KnownIstdReference | None,
+) -> tuple[tuple[float, float], ...]:
+    """Co-locate possible known identities without assigning identity by mass."""
+    if reference is None:
+        return ()
+    return tuple(
+        mz_window(target.mz, target.ppm_tol)
+        for target in reference.anchor.targets
+        if target.neutral_loss_da is not None
+        and target.label in reference.anchor.observed_labels
+    )
+
 
 _DISCOVERY_MODERATE_EVIDENCE_SCORE = 40
 

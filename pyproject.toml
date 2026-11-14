@@ -376,10 +376,12 @@ allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 id = "alignment-stays-off-pipelines-and-io"
-name = "Alignment does not import pipelines, targeted entry, output or RAW"
+name = "Alignment does not import runtime, pipelines, targeted entry, output or RAW"
 type = "forbidden"
 source_modules = ["xic_extractor.alignment"]
 forbidden_modules = [
+    "xic_extractor.execution",
+    "xic_extractor.untargeted_execution",
     "xic_extractor.discovery.pipeline",
     "xic_extractor.discovery.csv_writer",
     "xic_extractor.extractor",
