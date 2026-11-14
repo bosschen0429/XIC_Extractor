@@ -839,7 +839,7 @@ def test_offline_signal_choice_applies_to_every_item_and_view(review_page, tmp_p
     expect(_control(root, "svg-raw").locator("polyline")).to_have_count(0)
     expect(_control(root, "svg-raw")).to_contain_text("未保存平滑訊號")
     expect(lanes).to_have_count(0)
-    expect(root.locator(".lane-missing").first).to_contain_text("未保存平滑")
+    expect(root.locator(".lane-missing").first).to_contain_text("沒有平滑曲線")
     root.locator(".record-button", has_text="Item 2").click()
     assert _drawn_kinds(root) == {"smoothed", "baseline"}
 
@@ -941,7 +941,7 @@ def test_targeted_curve_rendering_preserves_raw_spikes_and_independent_scales(
     expect(review.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
     expect(review.locator(".tx-chart-meta").first).to_contain_text("面積 ND")
     expect(review.locator(".tx-support-note")).to_contain_text("原始訊號支撐不足")
-    expect(review.locator(".tx-support-note")).to_contain_text("本次讀取 XIC")
+    expect(review.locator(".tx-support-note")).to_contain_text("僅依本次讀取的 XIC")
     raw = review.locator(".tx-chart").first.locator('circle[data-kind="raw"]')
     assert (
         sum(
@@ -1032,7 +1032,9 @@ def test_targeted_rows_keep_rare_and_neutral_loss_evidence_in_place(
     )
     review = page.locator("#host")
     expect(review.locator(".tgt-context")).to_contain_text("預期 RT 9.25 min")
-    expect(review.locator(".tgt-reason").first).to_contain_text("排除原因未記錄")
+    expect(review.locator(".tgt-reason").first).to_contain_text(
+        "未記錄近內標訊號的排除原因"
+    )
     rows = review.locator(".tgt-table tbody tr")
     # Rows stay in run order; the rare detection is marked where it ran.
     expect(rows.nth(2).locator(".tgt-sample")).to_have_text("S3")

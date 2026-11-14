@@ -128,7 +128,7 @@
     const charts = node('div', undefined, 'tx-charts'); review.append(charts);
     const provenance = node('details', undefined, 'tx-provenance');
     provenance.append(node('summary', '本次 RAW 讀取設定 · 尚未比對是否為分析原檔'));
-    provenance.append(node('p', '曲線已從目前選擇的 RAW 成功讀取，依樣本名稱配對。工作簿未保留可比對的原檔指紋，因此不能確認與原分析使用的是同一份檔案。峰界與面積沿用已保存結果，不重新積分；請確認下方 RAW 資料夾與檔名正確。'));
+    provenance.append(node('p', '曲線依樣本名稱從目前 RAW 讀取；無法確認與原分析是同一份檔。峰界與面積沿用保存結果，不重新積分。'));
     const extraction = node('p'); provenance.append(extraction); review.append(provenance);
     let item, sample, rtWindow;
     const traces = () => item.curves.filter(curve => curve.sample_id === sample);
@@ -155,17 +155,17 @@
         head.append(identity, metadata); card.append(head);
         const failures = flags.reference_support_failures || [];
         const supportReason = failures.includes('insufficient_original_xic_support')
-          ? '原始訊號支撐不足：近內標段少於 2 個高於基線的原始 scan；平滑展開的鐘形不代表完整峰。'
+          ? '原始訊號支撐不足：近內標段少於 2 個高於基線的原始 scan；平滑後的鐘形不代表完整峰。'
           : failures.includes('insufficient_original_xic_continuity')
           ? '原始訊號支撐不足：近內標段沒有連續的有效原始 scan。' : '';
         if (supportReason) {
-          card.append(node('p', `ND 訊號檢查 · ${supportReason} 這是本次讀取 XIC 的檢查結果；原始分析來源未驗證，不改寫已保存判定。`, 'tx-support-note'));
+          card.append(node('p', `ND 訊號檢查 · ${supportReason} 僅依本次讀取的 XIC，不改寫判定。`, 'tx-support-note'));
         }
         const series = curve.processed_curves.find(s => s.kind === 'smoothed');
         const points = series?.rts.flatMap((rt, i) => rt >= lo && rt <= hi && finite(series.intensities[i]) ? [[rt, series.intensities[i]]] : []) || [];
         const rawPoints = curve.raw_rts.flatMap((rt, i) => rt >= lo && rt <= hi && finite(curve.raw_intensities[i]) ? [[rt, curve.raw_intensities[i]]] : []);
         if (!points.length) {
-          card.append(node('p', '此範圍沒有訊號點，請調整 RT 範圍。', 'tx-empty')); charts.append(card); continue;
+          card.append(node('p', '此 RT 範圍沒有訊號點。', 'tx-empty')); charts.append(card); continue;
         }
         let low = 0, high = 0;
         [...points, ...rawPoints].forEach(([, value]) => { low = Math.min(low, value); high = Math.max(high, value); });
@@ -240,7 +240,7 @@
       ? `預期 RT ${value(start)} min` : `設定 RT ${range(start, end)}`;
     const counted = v => v === true || v === 'TRUE' ? '是' : v === false || v === 'FALSE' ? '否' : '未記錄';
     const reviewWhy = review => review?.Why === '峰不在內標位置，報 ND'
-      ? 'ND；舊紀錄僅描述所選候選峰偏離內標，近內標訊號的排除原因未記錄，請看原始 scan'
+      ? 'ND；未記錄近內標訊號的排除原因，請看原始 scan'
       : review?.Why || '—';
     const isNumber = v => typeof v === 'number' && Number.isFinite(v);
     // Intensities span decades, so they read as Excel-style scientific notation.
@@ -459,7 +459,7 @@
     provenance.append(facts(payload.summary.method_context.filter(([key]) => labels[key]).map(([key, saved]) => [labels[key], saved])));
     review.append(provenance);
     // The online host states the readonly result scope beside this surface.
-    if (offline) review.append(element('p', '唯讀結果 · 未保存逐點曲線，不重建色譜圖。', 'tgt-note'));
+    if (offline) review.append(element('p', '唯讀結果 · 未保存逐點曲線。', 'tgt-note'));
     root.append(review);
   }
   const metadata = options.metadata || {};
@@ -606,7 +606,7 @@
     if(!finite(lo)){lo=0;hi=1;}if(lo===hi)hi=lo+1;
     const x=v=>8+(v-lo)/(hi-lo)*672;
     const lanes=nodes.map(n=>{const c=relationshipCurve(n),series=c?seriesList(c,axis,display.signal)[0]:null,xs=series?.rts||[],ys=series?.intensities||[];let chart='';
-      if(!c||!series||!xs.some(finite))chart=`<div class="lane-missing">${!c?'來源未提供此樣本的精確支持曲線；不以其他候選替代。':axis==='aligned'?'此擷取未提供所選訊號的校正時間；切回原始 RT 查看。':display.signal==='smoothed'?'此擷取未保存平滑曲線；可切換原始訊號檢查。':'此擷取未提供原始訊號。'}</div>`;
+      if(!c||!series||!xs.some(finite))chart=`<div class="lane-missing">${!c?'此樣本沒有支持曲線。':axis==='aligned'?'此擷取沒有校正時間；請切回原始 RT。':display.signal==='smoothed'?'此擷取沒有平滑曲線；請切換原始訊號。':'此擷取未提供原始訊號。'}</div>`;
       else{let max=0;ys.forEach(v=>{if(finite(v))max=Math.max(max,v);});const y=v=>76-(max?v/max:0)*68;let svg='';for(let i=0;i<=4;i++){const t=lo+(hi-lo)*i/4;svg+=`<line x1="${x(t)}" x2="${x(t)}" y1="4" y2="76" class="lane-grid"/><text x="${x(t)}" y="94" text-anchor="${i===0?'start':i===4?'end':'middle'}" class="lane-tick">${t.toFixed(2)}</text>`;}
         const left=axis==='aligned'?c.aligned_bound_left_rt:c.bound_left_rt,right=axis==='aligned'?c.aligned_bound_right_rt:c.bound_right_rt,apex=axis==='aligned'?c.aligned_apex_rt:c.apex_rt;
         if(finite(left)&&finite(right))svg+=`<rect x="${x(left)}" y="4" width="${Math.max(0,x(right)-x(left))}" height="72" class="lane-bound"/>`;
@@ -615,7 +615,7 @@
         chart=`<svg viewBox="0 0 690 100" preserveAspectRatio="none" aria-label="${esc(n.label)} 的${axis==='aligned'?'校正':'原始'}時間曲線"><title>${esc(n.label)} · ${esc(c.stage_label)} · ${display.signal==='smoothed'?'平滑':'原始'}最高強度 ${num(max)}</title>${svg}</svg>`;}
       return `<article class="relationship-lane" data-lane-member="${esc(n.id)}" data-injection-order="${n.order??''}"><div class="lane-label"><div class="lane-name"><span class="injection-order">${n.order===null?'?':String(n.order).padStart(2,'0')}</span>${esc(n.label)}</div><span class="reading-hint">${esc(c?.stage_label||'支持曲線未提供')}${axis==='aligned'&&c?.rt_alignment_label?' · '+esc(c.rt_alignment_label):''}</span>${n.curves.length>1?`<select data-lane-capture="${esc(n.id)}" aria-label="${esc(n.label)} 曲線選擇">${n.curves.map(v=>`<option value="${esc(v.evidence_ref)}" ${v===c?'selected':''}>${esc(v.stage_label||v.kind)}</option>`).join('')}</select>`:''}<details><summary>定量與來源</summary><p>正式結果：${areaText(n.row||{})}</p>${c?`<p>記錄峰頂：${drt(c.apex_rt)} min<br>積分範圍：${drt(c.bound_left_rt)}–${drt(c.bound_right_rt)} min<br>當次原始計數面積：${num(c.area)} counts·s</p>${evidenceButtons([c.evidence_ref],`${n.label} 的支持曲線`,'查看曲線來源')}`:''}${evidenceButtons(n.row?.decision_refs,`${n.label} 的正式結果`)}${evidenceButtons(originRefs(n.row?.support_origin),`${n.label} 的支持來源`,'查看支持記錄')}</details></div><div class="lane-chart">${chart}</div></article>`;
     }).join('');
-    return `<section class="relationship-curves" aria-label="依進樣順序的跨樣本曲線"><div class="relation-section-heading"><div><h3>跨樣本曲線</h3><p class="reading-hint">${nodes.length} 個樣本 · 依進樣先後，由上而下 · 共用${axis==='aligned'?'校正':'原始'}時間軸 · 各自最高點縮放；? 表示順序未提供</p></div><div class="relation-options"><div class="axis-switch"><button type="button" data-time-axis="raw" aria-pressed="${axis==='raw'}">原始 RT</button><button type="button" data-time-axis="aligned" aria-pressed="${axis==='aligned'}">校正 RT</button></div></div></div><div id="relationship-lanes">${lanes||'<p class="lane-missing">目前沒有可見樣本；可在樣本結果中恢復顯示。</p>'}</div><p class="reading-hint">線型：detect 樣本色實線 · backfill 樣本色虛線 · 空值樣本灰色細線 · 紫色虛線：記錄峰頂。只有無 RT 估計的樣本顯示原始 RT，並標示「無 RT 估計」。</p></section>`;
+    return `<section class="relationship-curves" aria-label="依進樣順序的跨樣本曲線"><div class="relation-section-heading"><div><h3>跨樣本曲線</h3><p class="reading-hint">${nodes.length} 個樣本 · 依進樣順序由上而下 · 共用${axis==='aligned'?'校正':'原始'}時間軸 · 各自最高點縮放；? 表示順序未提供</p></div><div class="relation-options"><div class="axis-switch"><button type="button" data-time-axis="raw" aria-pressed="${axis==='raw'}">原始 RT</button><button type="button" data-time-axis="aligned" aria-pressed="${axis==='aligned'}">校正 RT</button></div></div></div><div id="relationship-lanes">${lanes||'<p class="lane-missing">目前沒有可見樣本。</p>'}</div><p class="reading-hint">線型：detect 實線 · backfill 虛線 · 空值灰色細線 · 紫色虛線為記錄峰頂。無 RT 估計的樣本以原始 RT 顯示。</p></section>`;
   }
   function sampleRelationshipPanel(item){
     const model=relationshipModel(item);
@@ -703,7 +703,7 @@
       : `${filtered.length} / ${items.length} 筆`;
     const recordButton=item=>{const dm=item.delta_mass,reason=reviewReason(item,true);return `<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${identified(item)?`m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}`:breakable(itemTitle(item))}</span>${dm||item.badge_label==='已記錄'?'':`<span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span>`}</div><div class="record-meta">${identified(item)?esc(itemTitle(item)):`${dm?'':`${itemName(item)} · `}m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}`}</div>${reason?`<div class="record-reason">${esc(reason)}</div>`:''}</button>`;};
     const excludedGroup=excluded.length?`<section class="excluded-group"><button type="button" class="excluded-toggle" data-excluded-toggle aria-expanded="${showExcluded}" ${localFilterActive?'disabled title="篩選結果會保持展開"':''}><span>已排除候選</span><span>${excluded.length} 筆 ${showExcluded?'▾':'▸'}</span></button>${showExcluded?`<div class="excluded-items">${excluded.map(recordButton).join('')}</div>`:''}</section>`:'';
-    setHTML($('record-list'),regular.map(recordButton).join('')+excludedGroup||'<p class="empty-state">這份報告沒有符合的項目。請清除篩選條件。</p>');
+    setHTML($('record-list'),regular.map(recordButton).join('')+excludedGroup||'<p class="empty-state">沒有符合篩選的項目。</p>');
     filterStatus();detail();
   }
   function summary(item){
@@ -735,7 +735,7 @@
     return `<div class="cell-table-wrap"><table class="cell-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
   }
   function candidateControl(item){
-    if(!state.sample)return '<p class="control-value">先從樣本表查看一個樣本，才會列出該樣本的候選。</p>';
+    if(!state.sample)return '<p class="control-value">先從樣本表查看一個樣本。</p>';
     const cs=candidates(item);if(!cs.length)return '<p class="control-value">此樣本沒有候選峰紀錄。</p>';
     if(cs.length===1){const c=cs[0];return `<p class="control-value" data-current-candidate="${esc(c.id)}">${esc(candidateLabel(c))}<span class="viewing-tag">目前查看</span></p>`;}
     return `<select id="candidate-select" aria-label="查看候選">${cs.map(c=>`<option value="${esc(c.id)}" ${c.id===state.candidate?'selected':''}>${esc(candidateLabel(c))}</option>`).join('')}</select>`;
@@ -1011,7 +1011,7 @@
     const shown=curvesForPlot(item,peer),drawable=shown.flatMap(curve=>seriesList(curve,axis,signal).map(series=>({curve,series})));
     const extra=drawable.length?[...display.overlays].filter(k=>overlays(item).includes(k)).flatMap(kind=>shown.flatMap(curve=>seriesList(curve,axis,kind).map(series=>({curve,series})))):[];
     if(!drawable.length&&presentation.emptyMessage)return `<div class="empty-state">${esc(presentation.emptyMessage)}</div>`;
-    if(!drawable.length){const [chosen,other]=signal==='raw'?['原始訊號','平滑訊號']:['平滑訊號','原始訊號'];return `<div class="empty-state"><strong>${axis==='aligned'?'所選資料未提供對齊座標':shown.length?`所選來源未保存${chosen}`:'目前沒有可顯示的曲線'}</strong><p>${axis==='aligned'?'請切回原始時間；不會以原始座標代替。':shown.length?`不以${other}代替；可在上方切換訊號。`:'請確認樣本顯示勾選，或來源是否保存曲線。'}</p></div>`;}
+    if(!drawable.length){const chosen=signal==='raw'?'原始訊號':'平滑訊號';return `<div class="empty-state"><strong>${axis==='aligned'?'所選資料未提供對齊座標':shown.length?`所選來源未保存${chosen}`:'目前沒有可顯示的曲線'}</strong><p>${axis==='aligned'?'請切回原始時間。':shown.length?'可在上方切換訊號。':'請勾選樣本，或確認來源有保存曲線。'}</p></div>`;}
     const savedWindow=axis==='raw'&&Array.isArray(item.review_rt_window)?item.review_rt_window:null;
     const reviewWindow=mode==='curves'?state.plotWindow||valueApexWindow(item,axis)||savedWindow:axis==='raw'?(state.plotWindow||savedWindow):null;
     let lo=reviewWindow?.[0]??Infinity,hi=reviewWindow?.[1]??-Infinity,lowY=0,highY=0;
@@ -1070,9 +1070,9 @@
   }
   function sourceEvidencePanel(item){
     if(!state.evidence)return '';const record=records(item).find(r=>recordRefText(r.ref)===state.evidence);
-    if(!record)return `<aside class="evidence-panel" id="evidence-panel" tabindex="-1" aria-live="polite"><div class="evidence-header"><div><span class="eyebrow">${esc(state.evidenceContext||'目前資料')}</span><h3>來源內容未提供</h3></div><button type="button" class="evidence-close" id="close-evidence">關閉來源</button></div><p>${records(item).length?'這筆引用沒有對應到本報告內嵌的可讀紀錄。':'本報告未提供可讀來源紀錄，無法在離線頁面中補出說明。'}</p><details><summary>完整紀錄與引用</summary><div class="technical-ref"><code>${esc(state.evidence)}</code><button type="button" data-copy="${esc(state.evidence)}">複製</button></div><p class="control-note">本報告僅保留引用，未包含內容。</p></details></aside>`;
+    if(!record)return `<aside class="evidence-panel" id="evidence-panel" tabindex="-1" aria-live="polite"><div class="evidence-header"><div><span class="eyebrow">${esc(state.evidenceContext||'目前資料')}</span><h3>來源內容未提供</h3></div><button type="button" class="evidence-close" id="close-evidence">關閉來源</button></div><p>${records(item).length?'本報告沒有這筆引用的紀錄。':'本報告未附來源紀錄。'}</p><details><summary>完整紀錄與引用</summary><div class="technical-ref"><code>${esc(state.evidence)}</code><button type="button" data-copy="${esc(state.evidence)}">複製</button></div><p class="control-note">僅有引用，未含內容。</p></details></aside>`;
     const fields=Array.isArray(record.fields)?record.fields:[],links=Array.isArray(record.links)?record.links:[],tech=Array.isArray(record.technical_refs)?record.technical_refs:[];
-    return `<aside class="evidence-panel" id="evidence-panel" tabindex="-1" aria-live="polite"><div class="evidence-header"><div><span class="eyebrow">${esc(state.evidenceContext||'目前資料')}</span><h3>${esc(record.title||'可讀來源紀錄')}</h3></div><button type="button" class="evidence-close" id="close-evidence">關閉來源</button></div>${record.summary?`<p class="evidence-summary">${esc(record.summary)}</p>`:''}${links.length?`<section class="record-links"><h4>相關紀錄</h4>${links.map(link=>records(item).some(r=>recordRefText(r.ref)===recordRefText(link.ref))?`<button type="button" data-record-ref="${esc(recordRefText(link.ref))}">${esc(link.label||'查看相關紀錄')}</button>`:`<div class="external-reference"><strong>${esc(link.label||'外部引用')}</strong><span>本報告僅保留引用，未包含內容。</span></div>`).join('')}</section>`:''}<details><summary>完整紀錄與引用</summary>${fields.length?`<dl class="evidence-fields">${fields.map(f=>`<div><dt>${esc(f.label||'欄位')}</dt><dd>${fieldValue(f.value)}</dd></div>`).join('')}</dl>`:''}${tech.length?tech.map(t=>`<div class="technical-ref"><span><strong>${esc(t.label||'技術引用')}</strong><code>${esc(t.value??'')}</code></span><button type="button" data-copy="${esc(t.value??'')}">複製</button></div>`).join(''):`<div class="technical-ref"><span><strong>紀錄識別碼</strong><code>${esc(record.ref)}</code></span><button type="button" data-copy="${esc(record.ref)}">複製</button></div>`}</details></aside>`;
+    return `<aside class="evidence-panel" id="evidence-panel" tabindex="-1" aria-live="polite"><div class="evidence-header"><div><span class="eyebrow">${esc(state.evidenceContext||'目前資料')}</span><h3>${esc(record.title||'可讀來源紀錄')}</h3></div><button type="button" class="evidence-close" id="close-evidence">關閉來源</button></div>${record.summary?`<p class="evidence-summary">${esc(record.summary)}</p>`:''}${links.length?`<section class="record-links"><h4>相關紀錄</h4>${links.map(link=>records(item).some(r=>recordRefText(r.ref)===recordRefText(link.ref))?`<button type="button" data-record-ref="${esc(recordRefText(link.ref))}">${esc(link.label||'查看相關紀錄')}</button>`:`<div class="external-reference"><strong>${esc(link.label||'外部引用')}</strong><span>僅有引用，未含內容。</span></div>`).join('')}</section>`:''}<details><summary>完整紀錄與引用</summary>${fields.length?`<dl class="evidence-fields">${fields.map(f=>`<div><dt>${esc(f.label||'欄位')}</dt><dd>${fieldValue(f.value)}</dd></div>`).join('')}</dl>`:''}${tech.length?tech.map(t=>`<div class="technical-ref"><span><strong>${esc(t.label||'技術引用')}</strong><code>${esc(t.value??'')}</code></span><button type="button" data-copy="${esc(t.value??'')}">複製</button></div>`).join(''):`<div class="technical-ref"><span><strong>紀錄識別碼</strong><code>${esc(record.ref)}</code></span><button type="button" data-copy="${esc(record.ref)}">複製</button></div>`}</details></aside>`;
   }
   function evidencePanel(item){
     if(!state.evidence)return '';
@@ -1123,7 +1123,7 @@
   }
   function detail(){
     deltaView?.destroy();deltaView=null;
-    const item=items.find(i=>i.id===state.id);if(!item){const excluded=filtered.filter(isCollapsedExcluded).length;setHTML($('workspace-content'),excluded?`<div class="empty-state"><strong>目前未選取項目</strong><p>左側有 ${excluded} 筆已排除候選；展開後可查看保存曲線與來源紀錄。</p></div>`:'<p class="empty-state">這份報告沒有符合的項目。</p>');return;}normalize(item);if(item.transition_review?.review_kind==='cid_nl_differential'){differentialDetail(item);return;}
+    const item=items.find(i=>i.id===state.id);if(!item){const excluded=filtered.filter(isCollapsedExcluded).length;setHTML($('workspace-content'),excluded?`<div class="empty-state"><strong>目前未選取項目</strong><p>左側有 ${excluded} 筆已排除候選，展開即可查看。</p></div>`:'<p class="empty-state">這份報告沒有符合的項目。</p>');return;}normalize(item);if(item.transition_review?.review_kind==='cid_nl_differential'){differentialDetail(item);return;}
     if(item.delta_mass){
       deltaView=window.XicInspectorDeltaMass.mount($('workspace-content'),item,{
         renderXic(target,window,width,presentation){
@@ -1171,7 +1171,7 @@
     } else {
       const lower = start.valueAsNumber, upper = end.valueAsNumber;
       if (!finite(lower) || !finite(upper) || lower >= upper) {
-        start.setCustomValidity('請輸入有效範圍，起點必須小於終點。');start.reportValidity();return;
+        start.setCustomValidity('起點必須小於終點。');start.reportValidity();return;
       }
       state.plotWindow = [lower, upper];
     }

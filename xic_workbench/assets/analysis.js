@@ -67,11 +67,11 @@ function applyThemeButton() {
   toggle.setAttribute("aria-label", toggle.title);
 }
 async function shutdown() {
-  if (isBusy()) throw new Error("請先停止或等待目前工作完成，再結束工作區。");
+  if (isBusy()) throw new Error("請等待目前工作完成或先停止。");
   const accepted = await ui.confirm({
     title: "結束工作區？",
     message:
-      "本機工作區會停止，這個分頁之後無法再操作。已儲存的設定與結果都會保留。",
+      "工作區停止後此分頁無法再操作；已儲存的設定與結果保留。",
     accept: "結束工作區",
     danger: true,
   });
@@ -88,7 +88,7 @@ async function shutdown() {
   inner.append(
     glyph,
     el("h1", "工作區已結束"),
-    el("p", "可以關閉這個分頁。需要時重新啟動 XIC Extractor。", "subtle"),
+    el("p", "可以關閉此分頁。", "subtle"),
   );
   screen.append(inner);
   document.body.append(screen);
@@ -127,7 +127,7 @@ try {
     "內標清單",
     "targets",
     state.config.untargeted.targets_csv,
-  ).placeholder = "留空不使用 · 可拖曳 XLSX、CSV、TSV 到這裡";
+  ).placeholder = "留空不使用 · 可拖入 XLSX、CSV、TSV";
 
   $("sequence-source").value = state.config.untargeted.sequence_source || "";
   for (const method of state.config.methods) {

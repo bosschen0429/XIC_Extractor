@@ -29,10 +29,7 @@ from xic_extractor.matrix_curation.source import (
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_workbench.samples import from_payload, sample_annotations_path
 
-MISSING_SAMPLES = (
-    "找不到本次分析的樣本資訊。請在「改用其他來源」補入樣本資料；"
-    "新分析會自動沿用並保存前面確認的角色、組別與排除設定。"
-)
+MISSING_SAMPLES = "找不到本次分析的樣本資訊；請在「改用其他來源」補入樣本資料。"
 
 
 def resolve_samples(

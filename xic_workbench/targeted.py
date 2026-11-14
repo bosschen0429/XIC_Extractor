@@ -58,7 +58,7 @@ class TargetedRun:
         self.output_dir = self._config.output_csv.parent
         self.available_outputs: tuple[tuple[str, Path], ...] = ()
         self.sample_summary: dict[str, Any] | None = None
-        self.cancellation_reason = "使用者要求停止，本次 Targeted 執行已停止。"
+        self.cancellation_reason = "先前結果保留。"
 
     def execute(self) -> dict[str, Any]:
         try:
@@ -75,7 +75,7 @@ class TargetedRun:
             not self._config.data_dir.is_dir()
             or discover_raw_files(self._config.data_dir) != self._raw_paths
         ):
-            raise ConfigError("排隊後 RAW 檔案集合已變更；請確認本批次資料並重新提交。")
+            raise ConfigError("排隊期間 RAW 檔案集合已變更；請確認後重新提交。")
         config, targets = self._config, self._targets
         # Scoring loads scipy; keep it out of the settings page's startup path.
         from xic_extractor import extractor

@@ -218,7 +218,7 @@
     </header>
     <div id="offline-banner" class="offline-banner" role="alert" hidden>
       <svg class="icon"><use href="#i-alert" /></svg>
-      與本機工作區的連線中斷。若已關閉 XIC Extractor，請重新啟動後再開啟此頁。
+      與工作區的連線中斷。請重新啟動 XIC Extractor。
     </div>
     <section
       id="reader-setup"
@@ -231,8 +231,7 @@
         <h2 id="reader-setup-title">讀取 RAW 前還需要準備 RawFileReader</h2>
         <div id="reader-setup-dotnet" hidden>
           <p>
-            需要 .NET 8 以上（建議 .NET 10）。在 PowerShell 執行下列指令，完成後重新啟動
-            XIC Extractor。
+            需要 .NET 8 以上（建議 .NET 10）。在 PowerShell 執行下列指令後重新啟動 XIC Extractor。
           </p>
           <p class="reader-setup-command">
             <code id="reader-setup-command"></code>
@@ -241,13 +240,12 @@
         </div>
         <div id="reader-setup-dll" hidden>
           <div id="reader-setup-existing" hidden>
-            <p>本機已有可用的 RawFileReader，不需重新下載。</p>
+            <p>本機已有 RawFileReader。</p>
             <button type="button" id="reader-setup-use" class="primary">使用已安裝版本</button>
           </div>
           <div id="reader-setup-download">
             <p>
-              需要 Thermo RawFileReader <span id="reader-setup-version"></span>。同意授權後會下載到本機使用者資料夾，並自動設定
-              DLL 資料夾。
+              需要 Thermo RawFileReader <span id="reader-setup-version"></span>。同意授權後下載到本機並設定 DLL 資料夾。
             </p>
             <label class="reader-setup-accept">
               <input type="checkbox" id="reader-setup-accept" />
@@ -327,7 +325,7 @@
               </button></span
             >
           </form>
-          <p class="subtle">選擇已完成的結果即可檢閱與下載，不需要 RAW 或 DLL。</p>
+          <p class="subtle">檢閱與下載已完成的結果，不需 RAW 或 DLL。</p>
 
         </details>
       </section>
@@ -619,7 +617,7 @@
         <div class="dialog-body">
           <p id="exclude-message" class="dialog-message"></p>
           <p class="subtle">
-            寫入這次執行所用 RAW 資料夾的樣品資訊。目前的結果不會改變；重新執行後才會套用。
+            寫入此 RAW 資料夾的樣品資訊；目前結果不變，重新執行後套用。
           </p>
         </div>
         <div class="dialog-foot">
@@ -643,9 +641,9 @@
       </div>
       <div class="dialog-body">
         <p><a href="/help/" target="_blank" rel="noopener">開啟使用說明 ↗</a></p>
-        <p class="dialog-message">準備輸入、執行分析、判讀結果與疑難排解。文件與附圖可離線閱讀。</p>
+        <p class="dialog-message">輸入準備、執行、判讀與疑難排解；可離線閱讀。</p>
         <p class="dialog-message">
-          RAW 檔案與分析結果都留在這台電腦，不會上傳。結束時請使用工作區的結束控制。
+          RAW 與結果只留在本機，不上傳。結束請按「結束工作區」。
         </p>
         <h3>範例檔</h3>
         <p><a href="/examples/targets.xlsx" download>下載目標清單範例 XLSX</a></p>

@@ -70,7 +70,7 @@ async function acceptedStart(kind, values, job, acceptSampleRead) {
     dirty("targeted", false);
   }
   // Reading samples reports once, when it finishes.
-  if (kind !== "samples") status("分析已開始。關閉分頁不會停止分析。");
+  if (kind !== "samples") status("分析已開始；關閉分頁不會中斷。");
 }
 // Every file is processed, but the job is still writing its results.
 const publishing = (snapshot, job) =>
@@ -151,13 +151,13 @@ export function renderJob() {
   $("analysis-job-title").textContent =
     `${jobNames[job.kind]} · ${jobLabels[job.status]}`;
   $("analysis-job-message").textContent = publishing(snapshot, job)
-    ? "檔案已處理完，正在寫出結果。"
+    ? "正在寫出結果…"
     : snapshot.running
     ? [job.stage, job.message].filter(Boolean).join(" · ")
     : job.error ||
       {
         succeeded: "工作已完成。",
-        cancelled: "工作已停止；先前的可用結果仍保留。",
+        cancelled: "工作已停止；先前結果保留。",
         failed: "工作未完成。",
       }[job.status];
   const progressText = job.total ? `${job.completed} / ${job.total} · ` : "";
@@ -213,7 +213,7 @@ function completeJob(snapshot, job) {
       if (artifact) showArtifact(artifact);
     } else {
       dirty(job.kind, false);
-      done(`${jobNames[job.kind]}完成，結果已列在下方。`);
+      done(`${jobNames[job.kind]}完成。`);
       const result = snapshot.results[job.kind];
       const source =
         result.excel_path ||
@@ -228,7 +228,7 @@ function completeJob(snapshot, job) {
     }
   } else if (card.hidden)
     status(
-      `${jobNames[job.kind]}${jobLabels[job.status]}：${job.error || "先前的結果仍可檢閱。"}`,
+      `${jobNames[job.kind]}${jobLabels[job.status]}：${job.error || "先前結果仍可檢閱。"}`,
       job.status === "failed",
     );
   renderResults();
@@ -238,7 +238,7 @@ function confirmCancel(job) {
   return ui.confirm({
     title: `停止${jobNames[job.kind]}？`,
     message:
-      "已發布的結果會保留；正在執行的步驟會先完成清理再停止。先前的可用結果不受影響。",
+      "已發布的結果保留；目前步驟清理完才停止。",
     accept: "停止工作",
     danger: true,
   });

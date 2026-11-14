@@ -280,7 +280,7 @@ window.XicUi = (() => {
   async function requestExclusion({ sample_id }) {
     const dialog = $("exclude-dialog");
     $("exclude-message").textContent =
-      `把 ${sample_id} 標記為排除：之後分析這個 RAW 資料夾時不再分析它。`;
+      `把 ${sample_id} 標記為排除：之後分析此 RAW 資料夾時略過。`;
     dialog.returnValue = "cancel";
     dialog.showModal();
     $("exclude-accept").focus();
@@ -296,7 +296,7 @@ window.XicUi = (() => {
         raw_stem: sample_id,
       });
       window.XicUi.toast(
-        `已標記排除 ${sample_id}。目前結果不變；重新執行後才會套用。`, "ok");
+        `已標記排除 ${sample_id}；目前結果不變，重新執行後套用。`, "ok");
     } catch (error) {
       status(error.message, "error");
     }
@@ -360,7 +360,7 @@ window.XicUi = (() => {
     const value = Number(text);
     const invalid = nearestSearchMode() && text !== "" &&
       (!Number.isFinite(value) || value <= 0);
-    const message = invalid ? "請輸入大於 0 的有限 m/z（例如 123.4），或留白瀏覽。" : "";
+    const message = invalid ? "請輸入大於 0 的 m/z，或留白瀏覽全部。" : "";
     $("nearest-mz").setCustomValidity(message);
     $("nearest-mz").setAttribute("aria-invalid", String(invalid));
     $("nearest-mz-error").textContent = message;
@@ -609,7 +609,7 @@ window.XicUi = (() => {
         : "沒有需要先看的結果";
     const title = node("h2", conclusion);
     // The reading rule stays one hover away; the counts below show where it applies.
-    title.title = `需先看：各目標中占 ${Math.round(summary.minority_share * 100)}% 以下的一方；只決定閱讀順序，不改變已保存的判定。`;
+    title.title = `需先看：各目標中占 ${Math.round(summary.minority_share * 100)}% 以下的一方；只影響閱讀順序，不改判定。`;
     heading.append(title);
     const actions = node("div", undefined, "overview-actions");
     if (summary.focus_count) actions.append(resultButton(`先看這 ${count(summary.focus_count)} 筆 →`, "", true, "primary"));
@@ -699,7 +699,7 @@ window.XicUi = (() => {
     if (summary.unresolved_count) {
       // Unresolved cells stay blank in the Matrix: a count to open, not a task.
       const unresolved = node("button", undefined, "overview-metric-link"); unresolved.type = "button"; unresolved.dataset.idle = "";
-      unresolved.title = "有多個可能的峰、無法判定，矩陣中留空";
+      unresolved.title = "多峰無法判定，矩陣留空";
       unresolved.append(node("strong", count(summary.unresolved_count)), node("span", "部分樣本多峰留空"));
       unresolved.addEventListener("click", () => action(async () => {
         navigation.push(); $("query-form").reset(); await query(0, {review_scope: "unresolved"});
@@ -847,7 +847,7 @@ window.XicUi = (() => {
     if (!page.items.length) {
       const empty = document.createElement("p");
       empty.className = "empty";
-      empty.textContent = "沒有符合條件的項目。調整範圍或清除條件後再搜尋。";
+      empty.textContent = "沒有符合條件的項目。";
       list.append(empty);
     }
     list.scrollTop = 0;
@@ -924,7 +924,7 @@ window.XicUi = (() => {
       const supported = available.has(sample.id);
       const label = document.createElement("label");
       label.className = `sample-option${supported ? "" : " unavailable"}`;
-      if (!supported) label.title = "此樣本缺少觀測座標，無法自動擷取";
+      if (!supported) label.title = "缺少觀測座標，無法擷取";
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.value = sample.id;
@@ -965,7 +965,7 @@ window.XicUi = (() => {
     if (targeted) $("xic-download").href = `/reports/${view.id}.html?download=1`;
     const loadedLabel = () => $("xic-sample").selectedOptions[0]?.textContent;
     if (targeted && !$("xic-dialog").open) {
-      curveStatus("診斷曲線已載入；重新開啟曲線視窗即可檢閱。");
+      curveStatus("診斷曲線已載入。");
       return;
     }
     curveStatus("正在顯示所選樣本的診斷曲線…", "working");
@@ -1050,14 +1050,14 @@ window.XicUi = (() => {
   async function query(offset, filters = state.filters, select = null) {
     const revision = navigation.revision;
     if (!$("selection-empty").hidden)
-      selectionEmpty("正在查詢結果…", "正在依目前條件查詢；尚未取得結果。");
+      selectionEmpty("正在查詢結果…", "");
     let page;
     try {
       page = await requestPage("/api/query", { ...filters, offset, limit: 25 });
     } catch (error) {
       if (revision !== navigation.revision) return false;
       if (!$("selection-empty").hidden)
-        selectionEmpty("查詢未完成", `${error.message}。請重試或調整條件；這不代表零筆結果。`);
+        selectionEmpty("查詢未完成", `${error.message}。這不代表零筆結果。`);
       throw error;
     }
     if (revision !== navigation.revision) return false;
@@ -1096,7 +1096,7 @@ window.XicUi = (() => {
       // runs, so focus waits until they are enabled again.
       missing.scrollIntoView({ block: "center" });
       setTimeout(() => missing.focus({ preventScroll: true }));
-      const message = `看 XIC 需要讀取 RAW。請先選擇${rawMissing ? " RAW 資料夾" : " RawFileReader DLL 資料夾"}。`;
+      const message = `看 XIC 需要${rawMissing ? " RAW 資料夾" : " RawFileReader DLL 資料夾"}。`;
       $("curve-source-status").textContent = message;
       curveStatus(message, "error");
       return;
@@ -1131,7 +1131,7 @@ window.XicUi = (() => {
       showCurveView({...state.curveCache.get(key)});
       return;
     }
-    curveMessage(targeted || needsRaw() ? "正在讀取所選樣本的 RAW；不會重跑整批分析。"
+    curveMessage(targeted || needsRaw() ? "正在讀取所選樣本的 RAW…"
       : "正在顯示保存的曲線…");
     clearReview("xic-review");
     const view = state.curveView = {id: null, key};

@@ -112,7 +112,7 @@ def read_batch_samples(
         ]
     if importing and import_sequence:
         if should_cancel is not None and should_cancel():
-            raise InterruptedError("樣本資訊匯入已停止；原先確認的分組與排除未變更。")
+            raise InterruptedError("樣本資訊匯入已停止；原有分組與排除不變。")
         _write_confirmed(saved, from_payload(result["samples"]) or ())
         confirmed = True
     result["summary"]["annotation_source"] = (

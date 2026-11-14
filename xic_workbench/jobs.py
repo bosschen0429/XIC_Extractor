@@ -94,7 +94,7 @@ class AnalysisJobs:
             raise ValueError("不支援此工作類型。")
         with self._lock:
             if self.busy:
-                raise WorkspaceBusy("工作仍在執行；請等待完成或先停止。")
+                raise WorkspaceBusy("請等待目前工作完成或先停止。")
             self._cancel = threading.Event()
             self._runner = None
             values = copy.deepcopy(values)
@@ -319,7 +319,7 @@ class AnalysisJobs:
 
         expected_source = self._results.get("untargeted", {}).get("evidence")
         if not isinstance(expected_source, EvidenceLocator):
-            raise ValueError("Inspector 匯出需要目前已成功發布的 Untargeted 證據。")
+            raise ValueError("Inspector 匯出需要已完成的 Untargeted 結果。")
         try:
             report_result = generate_report(
                 Path(values["source"]),

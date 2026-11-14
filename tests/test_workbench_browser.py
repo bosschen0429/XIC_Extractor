@@ -605,7 +605,7 @@ def test_sequence_warnings_are_visible_in_sample_loading(
         [
             "序號 7 出現 2 次：A、B",
             "A：檔名是 BC2312，描述寫 BC2303",
-            "讀不到檔頭（要分析時會在執行前停止）：blank.raw",
+            "讀不到檔頭（分析前會停止）：blank.raw",
             "未配對的上機資訊：missing",
         ],
         timeout=BACKGROUND_JOB_TIMEOUT_MS,
@@ -955,9 +955,9 @@ def test_target_delta_mass_editor_names_ions_and_previews_actual_mz(
     add.click()
     editor.locator("input[aria-label^='Δm/z']").last.fill("+1.00002")
     editor.locator("input[aria-label^='Δm/z']").last.dispatch_event("change")
-    expect(editor.locator(".inline-status")).to_contain_text("Δm/z 太接近")
+    expect(editor.locator(".inline-status")).to_contain_text("取 4 位小數後相同")
     page.locator("#target-editor-done").click()
-    expect(page.locator("#target-editor-error")).to_contain_text("Δm/z 太接近")
+    expect(page.locator("#target-editor-error")).to_contain_text("取 4 位小數後相同")
     editor.get_by_role("button", name="移除第 3 個伴隨離子").click()
     ratio = editor.get_by_role("textbox", name="強度比範圍（第 1 個伴隨離子）")
     ratio.fill("0.2~0.8")
@@ -995,7 +995,7 @@ def test_unreadable_ratio_range_blocks_saving_the_target_list(workbench, config_
     page.locator("#target-editor-done").click()
     # The cell no longer matches the stored 0.1–10; nothing is saved.
     expect(page.locator("#target-editor")).to_be_visible()
-    expect(page.locator("#target-editor-error")).to_contain_text("強度比範圍")
+    expect(page.locator("#target-editor-error")).to_contain_text("強度比請填下限–上限")
     assert (config_dir / "workspace.json").read_bytes() == before
     editor.get_by_role("textbox", name="強度比範圍（第 1 個伴隨離子）").fill("0.2-0.8")
     _finish_and_save_targets(page)
@@ -1096,7 +1096,9 @@ def test_untargeted_delta_mass_method_edits_with_shared_terms(workbench, tmp_pat
     expect(
         dialog.get_by_role("spinbutton", name="中性丟失 Da（第 1 列）")
     ).to_be_disabled()
-    expect(page.locator("#method-cid-body")).to_contain_text("目前引擎只支援這個組合")
+    expect(page.locator("#method-cid-body")).to_contain_text(
+        "固定為 DNA_dR 116.0474 Da"
+    )
     expect(advanced).to_have_attribute("open", "")
     # Untargeted Δm/z is measured up from the lightest ion.
     dialog.get_by_role("button", name="＋ 伴隨離子").click()
@@ -1658,9 +1660,7 @@ def test_analysis_feedback_retains_results_and_requires_stop_confirmation(
     state["job"].update(completed=2)
     with page.expect_response("**/api/analysis"):
         page.clock.run_for(1000)
-    expect(page.locator("#analysis-job-message")).to_have_text(
-        "檔案已處理完，正在寫出結果。"
-    )
+    expect(page.locator("#analysis-job-message")).to_have_text("正在寫出結果…")
     assert page.locator("#analysis-progress").get_attribute("value") is None
     expect(page.locator("#activity")).not_to_contain_text("%")
     state["job"].update(status="failed", error="Example failure")
@@ -1755,7 +1755,7 @@ def test_istd_warning_distinguishes_confirmation_from_signal(analysis_feedback):
     page, _ = analysis_feedback
     warning = page.locator(".result-warning")
     expect(warning).to_contain_text("ISTD ISTD：0 / 1 個樣本通過確認")
-    expect(warning).to_contain_text("未通過確認不代表沒有訊號")
+    expect(warning).to_contain_text("未通過不代表沒有訊號")
     expect(warning).not_to_contain_text("個樣本偵測到")
 
 
@@ -1939,7 +1939,7 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
     )
     for invalid in ("abc", "Infinity", "NaN", "0", "-1"):
         page.locator("#nearest-mz").fill(invalid)
-        expect(page.locator("#nearest-mz-error")).to_contain_text("大於 0 的有限 m/z")
+        expect(page.locator("#nearest-mz-error")).to_contain_text("大於 0 的 m/z")
         assert not page.locator("#query-form").evaluate("form => form.checkValidity()")
         page.locator("#query-form button[type=submit]").click()
         expect(page.locator("#list-summary")).to_contain_text("123.4")
@@ -3320,8 +3320,10 @@ def test_targeted_row_xic_without_raw_points_at_the_missing_folder(workbench, tm
     expect(page.locator("#xic-dialog")).to_be_hidden()
     expect(page.locator("#raw-dir")).to_be_focused()
     expect(page.locator("#raw-dir")).to_be_in_viewport()
-    expect(page.locator("#status")).to_contain_text("請先選擇 RAW 資料夾")
-    expect(page.locator("#curve-source-status")).to_contain_text("請先選擇 RAW 資料夾")
+    expect(page.locator("#status")).to_contain_text("看 XIC 需要 RAW 資料夾")
+    expect(page.locator("#curve-source-status")).to_contain_text(
+        "看 XIC 需要 RAW 資料夾"
+    )
     expect(page.locator("#curve-source-status")).to_be_in_viewport()
 
 
@@ -3563,7 +3565,7 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     ).click()
     review = _wait_for_curve_report(page)
     expect(review.locator('.tx-chart polyline[data-kind="smoothed"]')).to_have_count(2)
-    expect(page.locator("#status")).not_to_contain_text("請先選擇 RAW 資料夾")
+    expect(page.locator("#status")).not_to_contain_text("看 XIC 需要 RAW 資料夾")
 
 
 @pytest.mark.parametrize("extension,drop", [("xlsx", True), ("tsv", False)])
@@ -4661,12 +4663,12 @@ def test_review_marks_an_exclusion_for_the_runs_folder(
     page.locator("#raw-dir").fill(str(tmp_path / "curves-copy"))
     review.get_by_role("button", name="標記排除 TumorBC102_DNA", exact=True).click()
     dialog = page.locator("#exclude-dialog")
-    expect(dialog).to_contain_text("重新執行後才會套用")
+    expect(dialog).to_contain_text("重新執行後套用")
     expect(page.locator("#exclude-reason")).to_have_count(0)
     with page.expect_response(lambda r: r.url.endswith("/api/samples/exclude")):
         dialog.get_by_role("button", name="標記排除", exact=True).click()
     expect(page.locator("#toasts")).to_contain_text(
-        "已標記排除 TumorBC102_DNA。目前結果不變；重新執行後才會套用。"
+        "已標記排除 TumorBC102_DNA；目前結果不變，重新執行後套用。"
     )
     saved = {
         row.raw_stem: row

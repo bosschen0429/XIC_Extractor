@@ -312,7 +312,7 @@ def test_sample_relationships_show_saved_curves_without_pair_claims(
     assert rendered["panel"].count("data-lane-member=") == 3
     assert rendered["panel"].count('class="lane-raw"') == 3
     assert "配對" not in rendered["panel"]
-    assert "來源未提供此樣本的精確支持曲線" not in rendered["panel"]
+    assert "此樣本沒有支持曲線" not in rendered["panel"]
     assert rendered["plot"].count("data-curve-ref=") == 3
     assert rendered["empty"] == ""
 

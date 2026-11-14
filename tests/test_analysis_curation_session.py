@@ -117,7 +117,7 @@ fixture.session.setSources({
 assert.equal(fixture.session.snapshot.detection, null);
 assert.equal(fixture.session.snapshot.preview, null);
 assert.equal(fixture.session.snapshot.canExport, false);
-await assert.rejects(fixture.session.export(), /預覽正在更新/);
+await assert.rejects(fixture.session.export(), /預覽更新中/);
 await fixture.clock.run(2);
 const requested = fixture.requests.filter(r => r.path.endsWith('/preview')).at(-1);
 assert.equal(requested.values.source_dir, '/another');
@@ -241,7 +241,7 @@ const fixture = setup({request: async (path, values) => {
 await ready(fixture);
 const exporting = fixture.session.export();
 assert.equal(fixture.session.snapshot.exporting, true);
-await assert.rejects(fixture.session.export(), /預覽正在更新/);
+await assert.rejects(fixture.session.export(), /預覽更新中/);
 assert.equal(preferenceRequests, 1);
 fixture.session.setStep('finite_fraction', step('0.9'));
 preferences.resolve({matrix_curation: {steps: {}}});

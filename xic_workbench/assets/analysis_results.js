@@ -125,7 +125,7 @@ export function renderResults() {
       const line = el("p", undefined, "result-warning");
       line.append(
         ui.icon("alert"),
-        `ISTD ${warning.label}：${warning.detected} / ${warning.total} 個樣本通過確認；未通過確認不代表沒有訊號。請到結果檢閱查看原因。`,
+        `ISTD ${warning.label}：${warning.detected} / ${warning.total} 個樣本通過確認；未通過不代表沒有訊號。`,
       );
       warnings.append(line);
     }
@@ -149,7 +149,7 @@ export function renderResults() {
       container.append(
         el(
           "p",
-          "Delta Mass 只做 Discovery：候選供診斷參考，未做跨樣本對齊與矩陣。",
+          "Delta Mass 只做 Discovery，沒有跨樣本對齊與矩陣。",
           "subtle",
         ),
       );

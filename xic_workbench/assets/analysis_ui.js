@@ -251,7 +251,7 @@ export async function readListFile(files) {
   if (!/\.(xlsx|csv|tsv)$/i.test(file.name))
     throw new Error("請選擇 XLSX、CSV 或 TSV 檔案；不支援 .xls。");
   if (!file.size || file.size > 1024 * 1024)
-    throw new Error("請選擇非空白且不超過 1 MiB 的檔案。");
+    throw new Error("檔案須非空白且不超過 1 MiB。");
   const content = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result.split(",")[1]);

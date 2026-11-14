@@ -83,7 +83,7 @@ def export_targeted_curves(
         raise FileExistsError(f"Curve output must be a new file: {output}")
     source = TargetedWorkbookSource(report)
     if expected_source is not None and source.locator != expected_source:
-        raise ExplanationError("Targeted 結果已變更，請重新開啟後再取得 XIC。")
+        raise ExplanationError("Targeted 結果已變更，請重新開啟。")
     targets = {row["Label"]: row for row in source.targets}
     if target_id not in targets:
         raise ExplanationError("所選 Target 不在這份工作簿。")

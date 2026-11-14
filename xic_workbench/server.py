@@ -401,7 +401,7 @@ def create_server(
                 result = workspace.evidence_summary(values["source"])
             elif path == "/api/shutdown":
                 if not workspace.request_shutdown():
-                    raise WorkspaceBusy("請先停止或等待目前工作完成。")
+                    raise WorkspaceBusy("請等待目前工作完成或先停止。")
                 self.close_connection = True
                 self._send(200, {"message": "工作區已結束。"})
                 threading.Thread(target=self.server.shutdown, daemon=True).start()

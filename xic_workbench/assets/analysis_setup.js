@@ -215,8 +215,8 @@ function sampleItems(page) {
         "info",
         "樣本角色（選用）",
         order
-          ? `上機資訊 ${pathTail(order)}；選好 RAW 資料夾後自動列出樣本`
-          : "選好 RAW 資料夾後自動列出樣本與角色",
+          ? `上機資訊 ${pathTail(order)}；選好 RAW 資料夾後列出樣本`
+          : "選好 RAW 資料夾後列出樣本",
         edit,
       ),
     ];

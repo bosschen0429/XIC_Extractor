@@ -273,7 +273,7 @@ function renderTargetPreview() {
     nodes.push(
       el(
         "p",
-        `另外 ${state.targets.length - 6} 個目標，按「檢視與編輯」查看完整清單。`,
+        `另有 ${state.targets.length - 6} 個目標，見「檢視與編輯」。`,
         "target-preview-more",
       ),
     );
@@ -307,7 +307,7 @@ function renderSelection() {
   const count = selection.keys.size;
   $("target-selection").textContent = count
     ? `已選 ${count} 個目標`
-    : "框選列號或搜尋，可一次設定多個目標";
+    : "框選列號或搜尋以批次設定";
   $("target-bulk").hidden = !count;
   for (const tr of $("target-rows").querySelectorAll("tr[data-target]"))
     tr.classList.toggle(
@@ -562,7 +562,7 @@ export function bindTargeted() {
     dirty("targeted");
     focusField("t-data_dir");
     done(
-      "已開始新批次：保留目標清單與結果存放位置，請選擇新的 RAW 資料夾。",
+      "新批次沿用目標清單與結果存放位置；請選擇 RAW 資料夾。",
     );
   };
   $("targeted-data").addEventListener("input", (event) => {
@@ -572,7 +572,7 @@ export function bindTargeted() {
     ) {
       // 上機資訊 describes one RAW folder; a new folder never inherits it.
       if ($("t-injection_order_source").value)
-        done("已清空上機資訊：它屬於前一個 RAW 資料夾。");
+        done("已清空前一個 RAW 資料夾的上機資訊。");
       $("t-injection_order_source").value = "";
       event.target.dataset.batchPath = event.target.value;
       sampleMetadata.clear("targeted");
@@ -635,13 +635,13 @@ export function bindTargeted() {
       targetCount();
       dirty("targeted");
       $("target-import-status").textContent =
-        "已放入範例清單：請改成你的目標，再保存批次設定。";
+        "已放入範例清單，請改成你的目標。";
       openTargetEditor();
     });
 
   $("target-import-preview").addEventListener("close", () => {
     if (pendingTargetImport)
-      $("target-import-status").textContent = "已取消匯入，目前清單未變更。";
+      $("target-import-status").textContent = "已取消匯入。";
     pendingTargetImport = null;
   });
   $("target-import-confirm").onclick = () => {

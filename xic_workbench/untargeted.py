@@ -138,7 +138,7 @@ class UntargetedRun:
         self.stage = "準備 Untargeted 執行"
         self.output_dir = request.output_dir
         self.available_outputs: tuple[tuple[str, Path], ...] = ()
-        self.cancellation_reason = "使用者要求停止，本次 Untargeted 執行已停止。"
+        self.cancellation_reason = "先前結果保留。"
         self._recipe_binding: BoundCidNlRecipe | None = None
         self.samples: tuple[SampleMetadata, ...] = ()
 

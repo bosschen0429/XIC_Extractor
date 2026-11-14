@@ -126,7 +126,7 @@ async function applyMethodDetails(data, preset, overrides = {}) {
   cropLabel.append(crop, el("span", "限制分析 RT 範圍（選用）"));
   const cropNote = el(
     "p",
-    "預設分析完整 RAW 採集範圍（自動）。需要裁切時才啟用；任一端留空會使用該 RAW 的採集起點／終點。",
+    "預設分析完整採集範圍；任一端留空沿用該 RAW 的起點／終點。",
     "settings-notice span-all",
   );
   cropFields.hidden = !hasCrop;
@@ -368,12 +368,12 @@ function editorDraft(editor) {
 function editorError(editor) {
   if (!editor.name.trim()) return "請輸入方法名稱。";
   if (!editor.cidOn && !editor.dmOn)
-    return "請至少啟用一種證據：CID-NL 中性丟失或 Delta Mass。";
+    return "請至少啟用 CID-NL 或 Delta Mass。";
   if (editor.cidOn) {
     if (!editor.losses.length) return "CID-NL：請至少加入一個中性丟失。";
     for (const loss of editor.losses)
       if (!loss.name.trim() || !(loss.neutral_loss_da > 0))
-        return "CID-NL：每個中性丟失都需要名稱與大於 0 的質量（Da）。";
+        return "CID-NL：每個中性丟失須有名稱與大於 0 的 Da。";
   }
   if (editor.dmOn) {
     if (!editor.ions.length) return "Delta Mass：請至少加入一個伴隨離子。";
@@ -458,7 +458,7 @@ function renderCidCard() {
     locked
       ? el(
           "p",
-          "搭配 Delta Mass 時固定為 DNA_dR 116.0474 Da：目前引擎只支援這個組合。",
+          "搭配 Delta Mass 時固定為 DNA_dR 116.0474 Da。",
           "subtle",
         )
       : add,
@@ -601,10 +601,10 @@ async function saveMethod(apply) {
       await applyMethodDetails(result, result.path);
       dirty("untargeted");
       $("method-editor").close();
-      done("方法已套用至批次設定；尚未保存。開始分析時也會一併保存。");
+      done("方法已套用至本批次，尚未保存。");
     } else {
       const result = await api("/api/method/save", { draft, path });
-      done(`方法檔已另存：${result.path}。目前批次設定不變。`);
+      done(`方法檔已另存：${result.path}`);
     }
   } catch (error) {
     $("method-error").hidden = false;
@@ -615,7 +615,7 @@ function renderIstd(result) {
   const selection = result.selection;
   $("istd-summary").textContent =
     result.message ||
-    `${selection.targets.length} 個適用內標；${selection.method_skipped.length} 個不適用此方法；略過 ${selection.skipped_count} 個一般目標。${selection.targets.length ? "" : " 本次不使用內標參考。"}`;
+    `${selection.targets.length} 個適用內標；${selection.method_skipped.length} 個不適用此方法；略過 ${selection.skipped_count} 個一般目標。${selection.targets.length ? "" : "本次不使用內標參考。"}`;
   const preview = $("istd-preview");
   preview.replaceChildren();
   if (!selection) return;
@@ -651,7 +651,7 @@ function renderIstd(result) {
 }
 export async function reloadIstd() {
   if (!state.method) {
-    renderIstd({ message: "請先選擇有效方法，才能判定適用內標。" });
+    renderIstd({ message: "請先選擇有效方法。" });
     return;
   }
   $("istd-preview").replaceChildren();
@@ -664,7 +664,7 @@ export async function reloadIstd() {
       }),
     );
   } catch (error) {
-    $("istd-summary").textContent = "清單未載入，請修正檔案或清空路徑停用。";
+    $("istd-summary").textContent = "清單無法載入；請修正檔案，或清空路徑停用。";
     throw error;
   }
 }
@@ -677,7 +677,7 @@ async function importIstdFiles(files) {
     lock();
     message.textContent = "正在讀取檔案…";
     const upload = await readListFile(files);
-    if (!state.method) throw new Error("請先選擇有效方法，再匯入內標清單。");
+    if (!state.method) throw new Error("請先選擇有效方法。");
     const result = await api("/api/istd/upload", {
       ...upload,
       preset_snapshot: state.method.draft,
@@ -793,7 +793,7 @@ export function bindUntargeted() {
     $("untargeted-result").hidden = true;
     dirty("untargeted");
     focusField("u-raw_dir");
-    done("已開始新批次：保留方法、內標與結果存放位置，請選擇新的 RAW 資料夾。");
+    done("新批次沿用方法、內標與結果存放位置；請選擇 RAW 資料夾。");
   };
   $("u-raw_dir").addEventListener("input", () => {
     const nextRawDir = $("u-raw_dir").value;
