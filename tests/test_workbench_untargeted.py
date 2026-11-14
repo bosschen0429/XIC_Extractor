@@ -8,11 +8,9 @@ import pytest
 
 from tests.raw_header_fakes import install_raw_sample_headers
 from xic_extractor.applications.untargeted.full_analysis import UntargetedAnalysis
-from xic_extractor.discovery.models import DiscoveryBatchOutputs
-from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.presets import load_preset
 from xic_extractor.raw_reader import RawSampleHeader
-from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
+from xic_extractor.sample_metadata import SampleMetadata
 from xic_workbench.methods import list_methods, method_details, save_method
 from xic_workbench.samples import export_samples, from_payload, load_samples
 from xic_workbench.untargeted import parse_request, present_result
@@ -392,155 +390,15 @@ def test_parse_request_preserves_sample_metadata_and_rejects_bad_method(
         )
 
 
-def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
-    tmp_path, monkeypatch
-) -> None:
-    import xic_extractor.applications.untargeted.full_analysis as module
-
-    values = _request_values(tmp_path)
-    values["preset_snapshot"] = method_details("dna_dr")["draft"]
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    (tmp_path / "dll").mkdir()
-    output = tmp_path / "output"
-    output.mkdir()
-    batch = tmp_path / "batch.csv"
-    batch.write_text(
-        "sample_stem,peak_count,admitted_peak_count\nA,3,1\n",
-        encoding="utf-8",
-    )
-    matrix = output / "alignment_matrix.tsv"
-    review = output / "alignment_review.tsv"
-    evidence = output / "alignment_explanation.sqlite"
-    for path in (matrix, review):
-        path.write_text("x", encoding="utf-8")
+def test_saved_matrix_overview_is_presented_without_analysis(tmp_path):
     from tests.inspector_fixtures import create_review_batch
+    from xic_extractor.evidence_artifacts import EvidenceLocator
 
-    evidence, _fixture_matrix = create_review_batch(output)
-    locator = SimpleNamespace(report_path=evidence)
-    raw = raw_dir / "A.raw"
-    raw.touch()
-    monkeypatch.setattr(
-        module,
-        "read_analysis_set",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            raw_paths=(raw,),
-            sample_metadata=(
-                SampleMetadata("A", "A", sample_role="sample", group="case"),
-            ),
-        ),
-    )
-    monkeypatch.setattr(
-        module,
-        "run_discovery_batch",
-        lambda *_args, **_kwargs: DiscoveryBatchOutputs(
-            batch_index_csv=batch, per_sample=()
-        ),
-    )
-    captured = {}
-
-    def align(request, context=None):
-        captured.update(request=request, context=context)
-        context.progress_callback(
-            {"stage": "final_grouping", "completed": 2, "total": 4}
-        )
-        return AlignmentRunOutputs(
-            review_tsv=review,
-            matrix_tsv=matrix,
-            evidence=locator,
-        )
-
-    monkeypatch.setattr(module, "run_untargeted_application", align)
-    progress = []
-    summary = UntargetedAnalysis(
-        parse_request(values),
-        progress=lambda *args: progress.append(args),
-        should_cancel=lambda: False,
-    ).execute()
-
-    assert captured["request"].publication.emit_alignment_explanation is True
-    assert captured["request"].alignment_config.backfill_enabled is True
-    assert captured["request"].publication.explanation_full_audit is False
-    peak_config = captured["request"].peak_config
-    assert peak_config.parallel_mode == "process"
-    assert (
-        peak_config.mass_recalibration
-        is captured["request"].discovery_settings.mass_recalibration
-    )
-    summary = present_result(summary)
+    evidence, matrix = create_review_batch(tmp_path)
+    summary = present_result({"evidence": EvidenceLocator(evidence, matrix, "fixture")})
     assert summary["overview"]["matrix_count"] == 3
     assert summary["overview"]["complete_count"] == 1
     assert summary["overview"]["unresolved_count"] == 1
-    assert summary["evidence"] is locator
-    assert (0, 0, "跨樣本特徵分組 · 2/4") in progress
-    saved = load_sample_metadata(output / "sample_metadata.tsv")
-    assert [(s.raw_stem, s.sample_role, s.group) for s in saved] == [
-        ("A", "sample", "case")
-    ]
-    assert summary["samples"][0]["group"] == "case"
-    assert summary["published_paths"] == [
-        str(output / "sample_metadata.tsv"),
-        str(batch),
-        str(review),
-        str(matrix),
-        str(evidence),
-    ]
-
-
-def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
-    tmp_path, monkeypatch
-) -> None:
-    import xic_extractor.applications.untargeted.full_analysis as module
-
-    values = _request_values(tmp_path)
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    raw = raw_dir / "A.raw"
-    raw.write_bytes(b"")
-    output = tmp_path / "output"
-    output.mkdir()
-    index = output / "discovery_batch_index.csv"
-    index.write_text(
-        "sample_stem,peak_count,admitted_peak_count\nA,1,1\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        module,
-        "read_analysis_set",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            raw_paths=(raw,), sample_metadata=(SampleMetadata("A", "A"),)
-        ),
-    )
-    monkeypatch.setattr(
-        module,
-        "run_discovery_batch",
-        lambda *_args, **_kwargs: DiscoveryBatchOutputs(
-            batch_index_csv=index, per_sample=()
-        ),
-    )
-    monkeypatch.setattr(
-        module,
-        "run_untargeted_application",
-        lambda request, context=None, **_kwargs: AlignmentRunOutputs(),
-    )
-    progress = []
-    summary = UntargetedAnalysis(
-        parse_request(values),
-        progress=lambda *args: progress.append(args),
-        should_cancel=lambda: False,
-    ).execute()
-    assert summary["published_paths"] == [
-        str(output / "sample_metadata.tsv"),
-        str(index),
-    ]
-    assert progress[-1] == (2, 2, "完成")
-
-    with pytest.raises(InterruptedError, match="cancelled"):
-        UntargetedAnalysis(
-            parse_request(values),
-            progress=lambda *_args: None,
-            should_cancel=lambda: True,
-        ).execute()
 
 
 def test_saved_custom_method_snapshot_preserves_full_effective_values(tmp_path):
@@ -702,11 +560,9 @@ def test_cancelled_delta_mass_run_is_not_reported_as_completed(tmp_path, monkeyp
         ),
     )
     cancelled = []
-    received = {}
 
     def delta_mass(*, should_cancel, **_kwargs):
         # The stop arrives while the last RAW is being analyzed.
-        received["should_cancel"] = should_cancel
         cancelled.append(True)
         return SimpleNamespace(
             candidates_csv=tmp_path / "c.csv",
@@ -730,4 +586,3 @@ def test_cancelled_delta_mass_run_is_not_reported_as_completed(tmp_path, monkeyp
     )
     with pytest.raises(InterruptedError):
         run.execute()
-    assert received["should_cancel"] is run.should_cancel

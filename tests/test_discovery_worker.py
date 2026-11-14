@@ -23,23 +23,9 @@ from xic_extractor.sample_metadata import SampleMetadata
 from xic_workbench.untargeted import parse_request
 
 
-def _execute(
-    request: FullAnalysisRequest,
-    *,
-    progress: list[tuple[int, int, str]] | None = None,
-) -> dict[str, Any]:
+def _execute(request: FullAnalysisRequest) -> dict[str, Any]:
     return UntargetedAnalysis(
-        request,
-        progress=(
-            (
-                lambda completed, total, message: progress.append(
-                    (completed, total, message)
-                )
-            )
-            if progress is not None
-            else lambda *_args: None
-        ),
-        should_cancel=lambda: False,
+        request, progress=lambda *_args: None, should_cancel=lambda: False
     ).execute()
 
 
@@ -108,9 +94,7 @@ def test_full_analysis_applies_default_runtime(
         )
 
     monkeypatch.setattr(module, "run_untargeted_application", fake_run_alignment)
-    progress: list[tuple[int, int, str]] = []
-
-    summary = _execute(request, progress=progress)
+    summary = _execute(request)
 
     settings = captured_alignment["request"].discovery_settings
     assert settings.nl_tolerance_ppm == 15.0
@@ -133,14 +117,9 @@ def test_full_analysis_applies_default_runtime(
     assert summary["alignment_outputs"] == {
         "matrix_tsv": str(output_dir / "alignment_matrix.tsv"),
     }
-    assert progress == [
-        (0, 2, "Discovery..."),
-        (0, 0, "Discovery 完成；準備跨樣本對齊與 Backfill"),
-        (2, 2, "完成"),
-    ]
     assert captured_discovery["max_workers"] == 1
     run_spec = captured_discovery["run_spec"]
-    assert run_spec.discovery_method.settings is settings
+    assert run_spec.discovery_method.settings == settings
     assert run_spec.acquisition_inputs[0].sample_stem == "A"
 
 

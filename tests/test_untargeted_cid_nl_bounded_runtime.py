@@ -990,6 +990,15 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     assert written_rows(tmp_path / "bounded-written", bounded_writer) == (
         written_rows(tmp_path / "eager-written", eager_writer)
     )
+    if scenario == "positive":
+        for writer in (eager_writer, bounded_writer):
+            areas = {}
+            for group, sample, cell in written_cells(writer):
+                areas.setdefault(group.group_hypothesis_id, {})[sample] = cell.value
+            assert areas
+            for samples in areas.values():
+                assert samples["S0"] > 0
+                assert samples["S1"] == pytest.approx(2 * samples["S0"])
     if scenario == "istd":
         expected_areas = {
             (group.group_hypothesis_id, sample_stem): cell.value
@@ -1010,19 +1019,9 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     assert actual.physical_peak_keys == expected.physical_peak_keys
     assert tuple(actual.excluded_candidates) == expected.excluded_candidates
     assert actual.processing_attempt_id == plan.context.processing_attempt_id
-    assert all(
-        left is right
-        for left, right in zip(
-            actual.canonical_samples, expected.canonical_samples, strict=True
-        )
-    )
+    assert actual.canonical_samples == expected.canonical_samples
     for child in actual.children:
-        assert all(
-            left is right
-            for left, right in zip(
-                child.canonical_samples, expected.canonical_samples, strict=True
-            )
-        )
+        assert child.canonical_samples == expected.canonical_samples
     assert len(bounded.method_assessments) == len(eager.method_assessments)
     assert {item for item in bounded.method_assessments} == {
         item for item in eager.method_assessments

@@ -67,7 +67,7 @@ def test_alignment_and_delta_mass_read_one_peak_mass(tmp_path, apex_mz):
         peak_receipts=receipts,
     )
     source = DiscoveryInputSource(batch)
-    (delta_mass_row,) = _load_cid_nl_peak_rows(batch.peak_csvs["sample"])
+    (delta_mass_row,) = _load_cid_nl_peak_rows((batch.peak_csvs["sample"],))
     assert source.locations[peak.peak_id].peak_mz == peak_mz
     assert source["sample"][0].peak_mz == peak_mz
     assert delta_mass_row.peak_mz == peak_mz

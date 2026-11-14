@@ -13,6 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.acquisition.review_xics import ReviewAcquisitionCancelled
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     ReviewCurveLocation,
@@ -46,10 +47,6 @@ RUN_METADATA_NAME = "alignment_run_metadata.json"
 SAVED_ROLE = "分析時保存的曲線"
 # The Matrix value of the cell, as recorded by the run.
 PUBLISHED_VALUE_METHOD = "published_matrix_value"
-
-
-class CurveAcquisitionCancelled(Exception):
-    """The caller cancelled curve reading."""
 
 
 class RunSettings:
@@ -299,4 +296,4 @@ def _trace(
 
 def _check_cancel(is_cancelled: Callable[[], bool]) -> None:
     if is_cancelled():
-        raise CurveAcquisitionCancelled("Curve acquisition cancelled")
+        raise ReviewAcquisitionCancelled("Curve acquisition cancelled")

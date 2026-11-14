@@ -368,7 +368,7 @@ def test_cid_nl_join_records_unmatched_reason_and_reproduces_from_published_tabl
         cid_csv.unlink()
         cid_rows = delta_mass_pipeline._load_cid_nl_peak_rows((first, second))
     else:
-        cid_rows = delta_mass_pipeline._load_cid_nl_peak_rows(cid_csv)
+        cid_rows = delta_mass_pipeline._load_cid_nl_peak_rows((cid_csv,))
     joined = delta_mass_pipeline._join_cid_nl(
         (
             candidate("edge", base_mz, 2.0 + 29.999 / 60),

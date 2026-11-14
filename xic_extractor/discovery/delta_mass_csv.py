@@ -6,6 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import cast
 
 from xic_extractor.configuration.delta_mass import DeltaMassPatternSettings
 from xic_extractor.discovery.delta_mass_patterns import DeltaMassCandidate
@@ -81,6 +82,8 @@ def write_delta_mass_outputs(
     candidates: Sequence[DeltaMassCandidate],
     sidecar: Mapping[str, object],
     settings: DeltaMassPatternSettings,
+    *,
+    cid_nl_export_csv: Path | None = None,
 ) -> DeltaMassDiscoveryOutputs:
     output_dir.mkdir(parents=True, exist_ok=True)
     outputs = DeltaMassDiscoveryOutputs(
@@ -131,6 +134,14 @@ def write_delta_mass_outputs(
             )
     write_delimited_rows(outputs.candidates_csv, rows, CANDIDATE_COLUMNS)
     write_delimited_rows(outputs.positions_csv, positions, POSITION_COLUMNS)
+    if cid_nl_export_csv is not None:
+        sidecar = {
+            **sidecar,
+            "inputs": {
+                **cast(Mapping[str, object], sidecar["inputs"]),
+                "cid_nl_peaks_csv": str(cid_nl_export_csv),
+            },
+        }
     outputs.sidecar_json.write_text(
         json.dumps(dict(sidecar), ensure_ascii=False, indent=2, allow_nan=False) + "\n",
         encoding="utf-8",

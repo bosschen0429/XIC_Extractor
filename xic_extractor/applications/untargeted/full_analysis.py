@@ -178,7 +178,7 @@ class UntargetedAnalysis:
             request.preset_snapshot, label=request.preset
         )
         peaks_csv = None
-        peak_tables = None
+        peak_tables: tuple[Path, ...] = ()
         if strategy.cid_nl_composite:
             cid_outputs = self._run_cid_nl_dr(raw_paths)
             peak_tables = tuple(Path(item.peaks_csv) for item in cid_outputs.per_sample)
@@ -191,7 +191,7 @@ class UntargetedAnalysis:
             dll_dir=request.dll_dir,
             output_dir=request.output_dir,
             strategy=strategy,
-            cid_nl_peaks_csv=peaks_csv,
+            cid_nl_export_csv=peaks_csv,
             cid_nl_peak_tables=peak_tables,
             raw_paths=raw_paths,
             should_cancel=self.should_cancel,

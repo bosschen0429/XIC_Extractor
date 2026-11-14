@@ -857,7 +857,7 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         deadline = time.monotonic() + 5
         while not is_cancelled() and time.monotonic() < deadline:
             time.sleep(0.01)
-        raise review_curves.CurveAcquisitionCancelled()
+        raise review_curves.ReviewAcquisitionCancelled()
 
     def wait_for(job_id, status):
         deadline = time.monotonic() + 5

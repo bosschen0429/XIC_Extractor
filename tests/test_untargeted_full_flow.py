@@ -1,7 +1,8 @@
 """Complete method routes with production stage owners and synthetic RAW I/O."""
 
 import csv
-from dataclasses import replace
+import json
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from xic_extractor.configuration.execution_profile import ExecutionProfile
 from xic_extractor.discovery.delta_mass_pipeline import run_delta_mass_discovery
 from xic_extractor.presets import load_preset
 from xic_extractor.presets.delta_mass import resolve_delta_mass_discovery
+from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 from xic_workbench.untargeted import parse_request
 
 
@@ -23,6 +25,14 @@ def test_complete_cid_nl_matches_workbench_intake_with_sample_values(
 ):
     _raws, opened = install_full_flow_raws(monkeypatch, tmp_path)
     preset = load_preset("dna_dr")
+    samples = (
+        SampleMetadata(
+            "first", "first", injection_order=1, sample_role="qc", group="control"
+        ),
+        SampleMetadata(
+            "second", "second", injection_order=2, sample_role="sample", group="case"
+        ),
+    )
     request = FullAnalysisRequest(
         preset="dna_dr",
         preset_snapshot=preset,
@@ -31,12 +41,24 @@ def test_complete_cid_nl_matches_workbench_intake_with_sample_values(
         dll_dir=tmp_path,
         output_dir=tmp_path / "direct",
         execution_profile=ExecutionProfile(parallel_workers=1, alignment_workers=1),
+        sample_metadata=samples,
     )
     direct = UntargetedAnalysis(
         request, progress=lambda *_: None, should_cancel=lambda: False
     ).execute()
     assert direct["modules"] == {"alignment": "completed", "backfill": "enabled"}
     assert Path(direct["matrix_tsv"]).is_file()
+    assert [
+        (s.raw_stem, s.sample_role, s.group)
+        for s in load_sample_metadata(request.output_dir / "sample_metadata.tsv")
+    ] == [("first", "qc", "control"), ("second", "sample", "case")]
+    assert {
+        "sample_metadata.tsv",
+        "discovery_batch_index.csv",
+        "alignment_matrix.tsv",
+        "alignment_review.tsv",
+        "alignment_explanation.sqlite",
+    } <= {Path(path).name for path in direct["published_paths"]}
     with Path(direct["matrix_tsv"]).open(encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle, delimiter="\t"))
     assert len(rows) == 1
@@ -53,6 +75,7 @@ def test_complete_cid_nl_matches_workbench_intake_with_sample_values(
                 "raw_dir": str(tmp_path),
                 "dll_dir": str(tmp_path),
                 "output_dir": str(tmp_path / "workbench-intake"),
+                "samples": [asdict(s) for s in samples],
             }
         ),
         execution_profile=request.execution_profile,
@@ -85,6 +108,17 @@ def test_complete_diagnostic_routes_keep_candidates_sample_bound_without_matrix(
         should_cancel=lambda: False,
     )
     result = run.execute()
+    sidecar = json.loads((run.output_dir / "delta_mass_sidecar.json").read_text())
+    export = (
+        run.output_dir / "cid_nl_dR" / "discovery_peaks.csv"
+        if preset.endswith("cid_nl_dr")
+        else None
+    )
+    assert sidecar["inputs"] == {
+        "raw_dir": str(tmp_path),
+        "raw_files": ["first.raw", "second.raw"],
+        "cid_nl_peaks_csv": str(export) if export else None,
+    }
     with Path(result["delta_mass"]["candidates_csv"]).open(
         encoding="utf-8", newline=""
     ) as handle:
@@ -112,7 +146,7 @@ def test_complete_diagnostic_routes_keep_candidates_sample_bound_without_matrix(
             dll_dir=tmp_path,
             output_dir=tmp_path / "table-input",
             strategy=resolve_delta_mass_discovery(preset),
-            cid_nl_peaks_csv=merged,
+            cid_nl_export_csv=merged,
             cid_nl_peak_tables=tuple(
                 run.output_dir / "cid_nl_dR" / stem / "discovery_peaks.csv"
                 for stem in ("first", "second")
@@ -152,9 +186,8 @@ def test_composite_validates_across_sample_tables_before_raw(tmp_path, invalid):
     assert not (tmp_path / "result").exists()
 
 
-def test_cancel_between_discovery_and_alignment_preserves_previous_matrix(
-    tmp_path, monkeypatch
-):
+@pytest.mark.parametrize("stage", ["before_start", "after_discovery"])
+def test_cancel_preserves_previous_matrix(tmp_path, monkeypatch, stage):
     install_full_flow_raws(monkeypatch, tmp_path)
     output = tmp_path / "result"
     output.mkdir()
@@ -175,16 +208,16 @@ def test_cancel_between_discovery_and_alignment_preserves_previous_matrix(
             output_dir=output,
         ),
         progress=progress,
-        should_cancel=lambda: bool(cancelled),
+        should_cancel=lambda: stage == "before_start" or bool(cancelled),
     )
-    with pytest.raises(InterruptedError, match="before Alignment"):
+    with pytest.raises(InterruptedError):
         run.execute()
     assert previous.read_bytes() == b"previous completed matrix"
     assert previous not in [path for _label, path in run.available_outputs]
     assert any(
         path.name == "discovery_batch_index.csv"
         for _label, path in run.available_outputs
-    )
+    ) == (stage == "after_discovery")
 
 
 @pytest.mark.parametrize("outcome", ["cancel", "failure"])

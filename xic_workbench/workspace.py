@@ -532,7 +532,7 @@ class ReviewWorkspace:
             update(phase="讀取 RAW", completed=completed, total=total, sample_id=sample)
 
         try:
-            from xic_workbench.review_curves import CurveAcquisitionCancelled
+            from xic_extractor.acquisition.review_xics import ReviewAcquisitionCancelled
         except ImportError as exc:
             update(status="failed", phase="未完成", message=str(exc))
             return
@@ -542,7 +542,6 @@ class ReviewWorkspace:
             sample_groups: dict[str, str] = {}
             if description["target_id"]:
                 from xic_extractor.acquisition.review_xics import (
-                    ReviewAcquisitionCancelled,
                     acquire_review_xics,
                 )
                 from xic_inspector.sources.targeted_workbook import (
@@ -572,16 +571,13 @@ class ReviewWorkspace:
                     on_progress=progress,
                     verified_raws=self._targeted_raws,
                 )
-                try:
-                    with closing(signals):
-                        bundle = targeted_curve_bundle(
-                            source,
-                            description["target_id"],
-                            signals,
-                            padding_min=request["padding_min"],
-                        )
-                except ReviewAcquisitionCancelled as exc:
-                    raise CurveAcquisitionCancelled(str(exc)) from exc
+                with closing(signals):
+                    bundle = targeted_curve_bundle(
+                        source,
+                        description["target_id"],
+                        signals,
+                        padding_min=request["padding_min"],
+                    )
                 prepared = prepare_curve_view(
                     bundle,
                     request["samples"],
@@ -637,7 +633,7 @@ class ReviewWorkspace:
                     )
             with self._lock:
                 if cancel.is_set():
-                    raise CurveAcquisitionCancelled("已取消曲線載入。")
+                    raise ReviewAcquisitionCancelled("已取消曲線載入。")
                 self._store_view(job_id, prepared, sample_groups=sample_groups)
                 update(
                     status="succeeded",
@@ -646,7 +642,7 @@ class ReviewWorkspace:
                     message="曲線已載入。",
                     unusable_samples=unusable,
                 )
-        except CurveAcquisitionCancelled, InspectorCancelled:
+        except ReviewAcquisitionCancelled, InspectorCancelled:
             update(
                 status="cancelled",
                 phase="已取消",

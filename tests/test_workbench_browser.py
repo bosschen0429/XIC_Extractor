@@ -2280,7 +2280,7 @@ def test_raw_curve_read_never_locks_review_and_a_new_action_replaces_it(
         while not is_cancelled() and time.monotonic() < deadline:
             time.sleep(0.01)
         cancelled.append(tuple(sample_ids))
-        raise review_curves.CurveAcquisitionCancelled()
+        raise review_curves.ReviewAcquisitionCancelled()
 
     def cancelled_reads(count):
         # The worker records its stop once it observes the cancellation.
@@ -2343,7 +2343,7 @@ def test_starting_analysis_ends_the_curve_job_and_its_poll(
         deadline = time.monotonic() + HANDSHAKE_TIMEOUT_S
         while not is_cancelled() and time.monotonic() < deadline:
             time.sleep(0.01)
-        raise review_curves.CurveAcquisitionCancelled()
+        raise review_curves.ReviewAcquisitionCancelled()
 
     monkeypatch.setattr(review_curves, "review_curve_bundle", blocked)
     report, _ = create_review_batch(tmp_path, sample_count=3)

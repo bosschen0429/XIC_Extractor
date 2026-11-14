@@ -69,8 +69,8 @@ def run_delta_mass_discovery(
     dll_dir: Path,
     output_dir: Path,
     strategy: DeltaMassDiscoveryStrategy,
-    cid_nl_peaks_csv: Path | None = None,
-    cid_nl_peak_tables: Sequence[Path] | None = None,
+    cid_nl_peak_tables: Sequence[Path] = (),
+    cid_nl_export_csv: Path | None = None,
     raw_paths: Sequence[Path] | None = None,
     should_cancel: Callable[[], bool] | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
@@ -81,9 +81,8 @@ def run_delta_mass_discovery(
     every RAW in the folder is analyzed. A cancellation stops before the next
     RAW and before any output is written.
 
-    A complete analysis supplies the existing per-sample ``cid_nl_peak_tables``.
-    In that case ``cid_nl_peaks_csv`` only names the downloadable merged export
-    in the sidecar; analysis never opens it. A stage CLI supplies that CSV alone.
+    ``cid_nl_peak_tables`` is the only CID-NL calculation source. The caller
+    supplies ``cid_nl_export_csv`` separately for publication; it is never read.
     """
     raw_paths = sorted(
         raw_paths
@@ -95,10 +94,8 @@ def run_delta_mass_discovery(
     if not raw_paths:
         raise ValueError(f"no RAW files in {raw_dir}")
     if strategy.cid_nl_composite:
-        if cid_nl_peak_tables is None:
-            if cid_nl_peaks_csv is None:
-                raise ValueError("composite preset requires --cid-nl-peaks-csv")
-            cid_nl_peak_tables = (cid_nl_peaks_csv,)
+        if not cid_nl_peak_tables:
+            raise ValueError("composite preset requires --cid-nl-peaks-csv")
         cid_rows = _load_cid_nl_peak_rows(cid_nl_peak_tables)
     else:
         cid_rows = ()
@@ -186,14 +183,18 @@ def run_delta_mass_discovery(
         "inputs": {
             "raw_dir": str(raw_dir),
             "raw_files": [p.name for p in raw_paths],
-            "cid_nl_peaks_csv": str(cid_nl_peaks_csv) if cid_nl_peaks_csv else None,
+            "cid_nl_peaks_csv": None,
         },
         "samples": samples,
         "status": "diagnostic_only",
     }
     raise_if_discovery_cancelled(should_cancel)
     return write_delta_mass_outputs(
-        output_dir, tuple(candidates), sidecar, strategy.settings
+        output_dir,
+        tuple(candidates),
+        sidecar,
+        strategy.settings,
+        cid_nl_export_csv=cid_nl_export_csv,
     )
 
 
@@ -262,7 +263,7 @@ class _CidNlPeakRow:
     evidence_score: float | None
 
 
-def _load_cid_nl_peak_rows(paths: Path | Sequence[Path]) -> tuple[_CidNlPeakRow, ...]:
+def _load_cid_nl_peak_rows(paths: Sequence[Path]) -> tuple[_CidNlPeakRow, ...]:
     """Load the measured CID-NL peaks a delta-mass base may join.
 
     Every row must carry ``peak_id``, ``sample_stem`` and ``status``.
@@ -271,7 +272,6 @@ def _load_cid_nl_peak_rows(paths: Path | Sequence[Path]) -> tuple[_CidNlPeakRow,
     event does not supply dR support.
     """
 
-    paths = (paths,) if isinstance(paths, Path) else paths
     rows = (
         (path, row_index, row)
         for path in paths
