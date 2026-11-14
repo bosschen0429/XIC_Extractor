@@ -959,13 +959,14 @@
       const series=seriesList(curve,axis);
       if(!series.length){if(axis==='aligned'&&seriesList(curve,'raw').length)add('未提供校正座標',curve);continue;}
       if(axis!=='raw'&&(curve.rt_alignment_methods?.includes('raw_fallback')||!curve.aligned_rts?.length))add(axis==='centered'?'無 RT 估計，以原始時間置中':'無 RT 估計，顯示原始 RT',curve);
+      // Coverage is judged on the saved bounds; the view's padding only frames them.
       // Without bounds the view falls back to the loaded range; that needs no note.
-      const peak=curvePeakWindow(curve,axis);
-      if(!peak)continue;
+      const left=curveTime(curve,axis,'bound_left_rt'),right=curveTime(curve,axis,'bound_right_rt');
+      if(!finite(left)||!finite(right)||right<=left)continue;
       for(const s of series){
         let lo=Infinity,hi=-Infinity;
         s.rts.forEach((v,i)=>{if(finite(v)&&finite(s.intensities[i])){lo=Math.min(lo,v);hi=Math.max(hi,v);}});
-        if(lo>peak[0]||hi<peak[1])add('曲線未涵蓋整個峰',curve);
+        if(lo>left+1e-9||hi<right-1e-9)add('曲線未涵蓋整個峰',curve);
       }
     }
     // Past a few names a count reads faster; the full list stays on hover.

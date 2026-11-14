@@ -320,13 +320,19 @@ def test_peak_centering_does_not_invent_apexes_or_missing_tails(review_page):
     item["curves"].append(no_bounds)
     item["samples"].append({"sample_id": "No center", "quantitative_value": None})
     payload["samples"].append({"id": "No center", "label": "No center"})
+    # Loaded exactly from the left to the right bound: the whole peak, no margin.
+    edge = deepcopy(item["curves"][0])
+    edge["sample_id"] = "Edge"
+    item["curves"].append(edge)
+    item["samples"].append({"sample_id": "Edge", "quantitative_value": 1})
+    payload["samples"].append({"id": "Edge", "label": "Edge"})
     truncated = item["curves"][1]
-    for key in ("raw_rts", "aligned_rts", "raw_intensities"):
-        truncated[key] = truncated[key][2:5]
-    for key in ("rts", "aligned_rts", "intensities"):
-        truncated["processed_curves"][0][key] = truncated["processed_curves"][0][key][
-            2:5
-        ]
+    for curve, start, stop in ((truncated, 2, 5), (edge, 1, 6)):
+        for key in ("raw_rts", "aligned_rts", "raw_intensities"):
+            curve[key] = curve[key][start:stop]
+        series = curve["processed_curves"][0]
+        for key in ("rts", "aligned_rts", "intensities"):
+            series[key] = series[key][start:stop]
     page = review_page
     page.set_content('<div id="host"></div>')
     _load_view_assets(page)
@@ -337,9 +343,12 @@ def test_peak_centering_does_not_invent_apexes_or_missing_tails(review_page):
     root = page.locator("#host")
     expect(root).to_contain_text("峰界中點置中：No apex")
     expect(root).to_contain_text("未記錄峰頂或完整峰界，無法置中：No center")
-    expect(root).to_contain_text("曲線未涵蓋整個峰：B")
+    # Coverage is judged against the saved bounds, not the padded view window.
+    expect(
+        root.locator(".alignment-summary", has_text="曲線未涵蓋整個峰")
+    ).to_have_text("曲線未涵蓋整個峰：B")
     chart = _control(root, "svg-raw")
-    expect(chart.locator("polyline")).to_have_count(3)
+    expect(chart.locator("polyline")).to_have_count(4)
     # The missing apex is not re-picked from the signal: midpoint is 10.15 min.
     assert chart.locator('polyline[data-sample-id="No apex"]').evaluate("""line=>{
       const d=line.ownerSVGElement.dataset;
@@ -357,7 +366,7 @@ def test_peak_centering_does_not_invent_apexes_or_missing_tails(review_page):
         == 3
     )
     root.get_by_role("button", name="原始 RT", exact=True).click()
-    expect(chart.locator("polyline")).to_have_count(4)
+    expect(chart.locator("polyline")).to_have_count(5)
 
 
 def test_inspector_reads_injection_order_from_final_calibration_summary(review_page):
