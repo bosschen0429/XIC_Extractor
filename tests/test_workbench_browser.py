@@ -2179,6 +2179,19 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     expect(review.locator("[data-inspector-id='svg-raw'] polyline")).to_have_count(
         sample_count
     )
+    expect(review.get_by_role("button", name="峰頂置中", exact=True)).to_have_attribute(
+        "aria-pressed", "true"
+    )
+    expect(review.locator("[data-inspector-id='svg-raw'] svg")).to_contain_text(
+        "距中心時間（秒）"
+    )
+    saved_results = saved.inner_text()
+    review.get_by_role("button", name="原始 RT", exact=True).click()
+    expect(review.locator("[data-inspector-id='svg-raw'] svg")).to_have_attribute(
+        "aria-label", "原始時間層析圖"
+    )
+    review.get_by_role("button", name="峰頂置中", exact=True).click()
+    assert saved.inner_text() == saved_results
     expect(page.locator("#xic-dialog")).to_be_hidden()
     expect(saved.locator(".cell-table")).to_be_visible()
     expect(saved.locator("[data-inspector-id='svg-raw']")).to_have_count(0)
@@ -2396,12 +2409,18 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     ).get_by_role("button", name="曲線").click()
     review = _wait_for_curve_report(page, inline=True)
     curves = review.locator("[data-inspector-id='svg-raw'] polyline")
+    expect(review).to_contain_text("未記錄峰頂或完整峰界，無法置中")
+    review.get_by_role("button", name="原始 RT", exact=True).click()
     expect(curves).to_have_count(1)
     expect(curves).to_have_attribute("data-sample-id", "S3")
     assert opened == ["S3.raw"]
     opened.clear()
     _check_curve_samples(page)
     page.locator("#load-curves").click()
+    expect(review.get_by_role("button", name="峰頂置中", exact=True)).to_have_attribute(
+        "aria-pressed", "true"
+    )
+    review.get_by_role("button", name="原始 RT", exact=True).click()
     expect(curves).to_have_count(3)
     # The saved result above the curves states the split once, as the legend.
     expect(page.locator("#recorded-review .summary-line")).to_have_text(

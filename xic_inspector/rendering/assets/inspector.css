@@ -431,6 +431,7 @@
 .xic-inspector .curve-missing { color:var(--subtle);font-size:12px; }
 .xic-inspector .curve-list-empty { padding:18px 4px;color:var(--muted);font-size:12px; }
 .xic-inspector .curve-main { min-width:0; }
+.xic-inspector .curve-axis-controls { display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-bottom:10px; }
 .xic-inspector .curve-plot-tools { display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-height:32px;margin-bottom:10px; }
 .xic-inspector .curve-plot-tools .rt-range { margin:0 auto 0 0; }
 .xic-inspector .curve-plot-tools .overlay-controls { margin:0;color:var(--muted); }
