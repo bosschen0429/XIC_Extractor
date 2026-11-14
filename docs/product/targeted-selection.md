@@ -6,7 +6,7 @@ and determines inclusion, detection counting and review reasons. A target-list
 entry is a search request, not evidence that the target was observed.
 
 For operation and result reading, start with the
-[Targeted guide](../user/targeted-extraction.md#review-the-batch). This page owns
+[Targeted guide](../user/targeted.md#看結果). This page owns
 the exact selection and projection rules. Targeted selection does four things:
 
 1. Targeted selection constrains the shared scientific lifecycle with an exact

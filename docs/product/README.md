@@ -11,7 +11,7 @@ for task rules, [AGENTS.md](../../AGENTS.md). Terms are defined once in the
 ## Find The Rule Behind A Result
 
 Start with the analysis question, then open the page that owns the decision.
-The [A/B/C processing story](../user/processing-guide.html) supplies the
+The [interpretation guide](../user/concepts.md) supplies the
 conceptual journey.
 
 | Analysis question | Topic owners |
@@ -45,7 +45,8 @@ If a topic page conflicts with an owner below, the owner wins.
 - Topic pages do not change writer authority, Matrix behavior, schema or
   validation verdicts. If a change affects them, update the owning code and
   tests first.
-- Explanatory HTML belongs with the [user guides](../user/README.md).
+- Explanations for users belong in the [user guides](../user/README.md);
+  explanatory pages for maintainers belong in [development](../development/README.md).
 
 ### Shared Conventions
 

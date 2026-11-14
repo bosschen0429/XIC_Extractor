@@ -469,6 +469,6 @@ the other topics:
   [Decision Policy](decision-policy.md).
 - Sample/cohort inputs: [Sample Metadata and QC](sample-metadata-qc.md).
 - Operation, diagnostics, and review:
-  [Untargeted Discovery](../user/untargeted-discovery.md),
+  [Untargeted analysis](../user/untargeted.md),
   [Diagnostics Index](../../tools/diagnostics/INDEX.md),
   [Workbench and review](workbench.md).

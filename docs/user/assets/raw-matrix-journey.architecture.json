@@ -33,9 +33,9 @@
           "end_line": 7
         },
         {
-          "path": "docs/user/raw-to-final-matrix-product-story.html",
-          "line": 380,
-          "end_line": 394
+          "path": "docs/user/concepts.md",
+          "line": 29,
+          "end_line": 39
         }
       ]
     },
@@ -179,9 +179,9 @@
       ],
       "sources": [
         {
-          "path": "docs/user/untargeted-discovery.md",
-          "line": 80,
-          "end_line": 109
+          "path": "docs/user/untargeted.md",
+          "line": 28,
+          "end_line": 46
         },
         {
           "path": "docs/product/quant-matrix.md",
@@ -236,9 +236,9 @@
           "end_line": 421
         },
         {
-          "path": "docs/user/raw-to-final-matrix-product-story.html",
-          "line": 475,
-          "end_line": 483
+          "path": "docs/user/methods.md",
+          "line": 5,
+          "end_line": 15
         }
       ]
     }

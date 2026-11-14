@@ -1,82 +1,72 @@
 # XIC Extractor 使用說明
 
-從一批 Thermo RAW 檔取得可判讀的定量結果。先選擇要完成的分析，遇到問題再查
-原理或欄位；不必先理解程式架構。本指南與附圖都可離線閱讀。
+從一批 Thermo RAW 檔取得可判讀的定量結果。全部在本機執行，說明可離線閱讀。
 
-<a id="start"></a>
-## 開始使用
+## 安裝與啟動
 
-1. **完整解壓縮應用程式 ZIP**，放在可寫入的資料夾，不要直接在 ZIP 內執行。
-2. 雙擊 **XIC_Extractor.exe**，程式會開啟本機瀏覽器工作區。不需要安裝 Python、uv 或 Git。
-3. 第一次使用先完成下方的 reader 設定，再選擇分析。
+1. 把應用程式 ZIP 完整解壓縮到可寫入的資料夾。不要在 ZIP 裡直接執行。
+2. 雙擊 `XIC_Extractor.exe`，瀏覽器會開啟工作區。
+3. 用完按右上角的電源圖示（**結束工作區**）。關掉所有分頁後，工作區也會自行結束；分析進行中或剛完成還沒看時會先保留。
 
-程式內右上角的 **使用說明與快捷鍵**可開啟同一份指南。程式關閉後，也可以直接用
-瀏覽器開啟資料夾內的 **開始使用.html**；不需啟動程式或連線網路。
+不需要安裝 Python，也不必安裝 Xcalibur。
 
-<a id="reader-setup"></a>
-## 首次設定
+## 第一次使用：準備 RawFileReader
 
-RAW 分析需要 **.NET 8 或更新版本**與 **Thermo RawFileReader 8.0.42**。
+讀 RAW 需要 .NET 8 以上與 Thermo RawFileReader。缺少時，工作區上方會出現「讀取 RAW 前還需要準備 RawFileReader」。
 
-1. 依工作區的設定提示，確認缺少的是 .NET、reader，還是 reader 資料夾未選好。
-2. 若缺 .NET，依提示安裝並重新啟動程式。
-3. 若缺 reader，閱讀連結中的 Thermo 授權，接受後按 **下載並設定 RawFileReader**。
-   已有相容 reader 時，可直接選取其資料夾。
+1. 缺 .NET：按 **複製指令**，在 PowerShell 執行後重新啟動 XIC Extractor。
+2. 缺 RawFileReader：勾選 **我已閱讀並同意**，按 **下載並設定 RawFileReader**。
+   - 本機已有：按 **使用已安裝版本**。
 
-首次下載外部依賴需要網路；文件與結果檢閱不需要網路。Xcalibur 不必安裝，也不會
-被修改。不要以舊 Xcalibur DLL 取代支援的 reader。
+下載需要網路一次。之後閱讀說明與檢閱結果都不需要網路。
 
-## 選擇分析
+## 選一種分析
 
-| 我想完成的工作 | 需要準備 | 從這裡開始 |
+| 你有的是 | 要得到的是 | 從這裡開始 |
 | --- | --- | --- |
-| 已知目標清單的定量 | RAW 資料夾、目標清單（XLSX、CSV 或 TSV） | [Targeted 操作指南](targeted-extraction.html) |
-| 探索並比較樣本中的 features | RAW 資料夾、CID-NL 方法、樣本角色及適用內標 | [Untargeted 操作指南](untargeted-discovery.html) |
+| 已知化合物的目標清單 | 每個樣本 × 每個目標的面積（Excel） | [Targeted 分析](targeted.md) |
+| 一種探索方法，例如 dR 中性丟失 | 全部 feature × 樣本的面積矩陣 | [Untargeted 分析](untargeted.md) |
 
-Targeted 的清單空白時，可在工作區按「從範例開始」直接編輯範例。要在 Excel 修改，
-從 **使用說明與快捷鍵** 下載目標清單範例；Untargeted 的內標清單也用這份格式，只讀
-`role=istd` 的列。
-Untargeted 可從 dR、R、MeR 方法開始，再依樣本與分析目的調整。
+兩種分析共用 [目標清單](target-list.md) 的格式：Targeted 讀全部目標，Untargeted 只讀內標列。
 
-## 判讀與重開結果
+## 重看已完成的結果
 
-- **Targeted：**先看工作簿的 `摘要`，再看 `需檢查`。在工作區選擇目標與樣本，
-  檢閱保存的判斷；要重新擷取 XIC 時，才需要相應 RAW 檔與 reader。
-- **Untargeted：**先看 `alignment_matrix.tsv`。在工作區檢閱 feature、樣本與缺格的
-  依據；候選表不是完成的 Matrix，feature 也不等於已確認的化合物。
-- **重開結果：**使用工作區的 **開啟既有結果**，選擇 Targeted 工作簿或完成的批次結果資料夾。
-  查看保存的結果不會重新選峰或改寫原始定量。
-- **整理 Matrix：**在完成的 Untargeted 結果選 **整理矩陣**，確認步驟與輸入。
-  整理會產生另一份結果，原始 Matrix 保留；它不代替 normalization 或下游統計。
-  結果有整理時，檢閱畫面跟著最新一次整理後的矩陣，並在標題旁標出整理資料夾；
-  被移除的 feature 在 **整理時移除**，附移除原因。要看另一次整理，直接開啟那個整理資料夾。
+1. 右上角按 **開啟既有結果**。
+2. **結果位置** 選 Targeted 的 `xic_results_*.xlsx`，或 Untargeted 的結果資料夾。
+3. 按 **開啟結果**。
 
-不確定數字代表什麼時，先讀[峰、偵測、面積與缺格的處理原理](processing-guide.html)。
-需要方法情境時再看[DNA adduct CID-NL 解說案例](raw-to-final-matrix-product-story.html)；
-案例不是所有方法的驗證證明。
+重看不會重算，也不需要 RAW。只有要看 XIC 時才需要原 RAW 檔。
+
+## 快捷鍵
+
+| 按鍵 | 動作 |
+| --- | --- |
+| <kbd>Ctrl</kbd> <kbd>1</kbd> | Targeted 分析 |
+| <kbd>Ctrl</kbd> <kbd>2</kbd> | Untargeted 分析 |
+| <kbd>Ctrl</kbd> <kbd>Enter</kbd> | 開始目前頁面的分析 |
+| <kbd>Ctrl</kbd> <kbd>S</kbd> | 儲存目前頁面的設定 |
+
+右上角的問號圖示（**使用說明與快捷鍵**）會列出全部快捷鍵，也可以下載目標清單範例。
+
+## 程式資料夾
+
+| 項目 | 內容 |
+| --- | --- |
+| `XIC_Extractor.exe` | 主程式 |
+| `_internal/` | 必要元件，不要移動或刪除 |
+| `開始使用.html` | 這份說明，程式關閉時也能直接開啟 |
+| `docs/` | 說明頁與截圖 |
+| `examples/` | 目標清單範例 |
+| `config/` | 本機設定，第一次執行後建立 |
+| `output/` | 預設的結果存放位置 |
+| `licenses/` | 第三方授權聲明 |
+
+搬移程式時，搬整個資料夾。更新版本前，先另存自己的目標清單、方法檔與結果。
 
 ## 遇到問題
 
-| 遇到的情況 | 下一步 |
+| 狀況 | 處理 |
 | --- | --- |
-| 雙擊後沒有工作區 | 確認已完整解壓縮，EXE 旁仍有 `_internal/`；查看 `output/launcher/` 啟動記錄 |
-| RAW 分析無法開始或 DLL 讀取失敗 | 回到工作區的 reader 設定提示，確認 .NET、reader 版本與資料夾 |
-| 輸入表無法匯入 | 依錯誤訊息修正檔案、列與欄位；使用範本，不以舊格式強行載入 |
-| 想關閉程式或停止分析 | 正在分析時用工作區的停止控制；結束時用 **結束工作區**，不要只依賴關閉分頁 |
-| 矩陣出現缺格或結果異常 | 先查樣本角色、方法及保存的判斷，再看 XIC；不要直接把缺格改成零 |
-
-<a id="reference"></a>
-## 查閱細節
-
-只有需要查細節時才讀這些參考；不必選擇另一套文件入口。
-
-- Targeted：[逐步操作](targeted-extraction.md)、[目標清單欄位](targeted-config-reference.md)、[輸出欄位](targeted-output-reference.md)。
-- Untargeted：[逐步操作與 Matrix 使用](untargeted-discovery.md)、[方法設定](untargeted-preset-guide.md)、[輸出欄位](untargeted-output-reference.md)。
-
-## 檔案與更新
-
-保留 EXE 旁的 `_internal/`，它是必要依賴，不用手動操作。移動程式時請移動整個資料夾。
-`docs/` 是指南與圖片，`examples/` 是可複製的範本，`licenses/` 是第三方授權聲明。
-`config/` 會保留本機設定，預設結果與啟動記錄在 `output/`；分析結果以工作區顯示的路徑為準。
-
-更新或刪除舊版前，另外保留自己的方法、設定與分析結果。
+| 雙擊後沒有出現工作區 | 確認已完整解壓縮，EXE 旁有 `_internal/` |
+| 讀不到 RAW | 依工作區上方提示補 .NET 或 RawFileReader |
+| 不知道某個數字代表什麼 | 看[判讀原理](concepts.md)與[結果檔案](results.md) |

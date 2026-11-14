@@ -27,8 +27,8 @@ accepts. They differ in what you ask for and what you receive.
 | **Targeted:** What happened to my known targets in this batch? | RAW files and a target list (XLSX, CSV or TSV): names, m/z, expected RT, CID-NL / Delta Mass specificity, and optional ISTD pairs | One Excel workbook: `摘要` for the batch overview, then `需檢查` for results needing attention |
 | **Untargeted:** Which features can I compare across samples? | RAW files and a CID-NL method (dR, R, MeR or custom neutral-loss tags); check sample information and any internal-standard list | `alignment_matrix.tsv` for feature × sample areas, then the workbench for evidence behind a feature or missing cell |
 
-The [Targeted guide](docs/user/targeted-extraction.md) and
-[Untargeted guide](docs/user/untargeted-discovery.md) take you from preparation
+The [Targeted guide](docs/user/targeted.md) and
+[Untargeted guide](docs/user/untargeted.md) take you from preparation
 through execution and result review. You do not need to read the processing
 contracts before running an analysis.
 
@@ -73,8 +73,8 @@ RAW analysis also needs **.NET 8 or later** and **Thermo RawFileReader 8.0.42**.
 On first launch, follow the setup notice: read the linked Thermo license,
 check acceptance, then click **下載並設定 RawFileReader**. If .NET is missing,
 run the command shown by the notice and restart. Xcalibur is not required;
-its older DLLs are not supported. See [reader setup details](docs/user/README.md#reader-setup)
-for manual installation and existing DLL overrides.
+its older DLLs are not supported. See [reader setup details](docs/user/README.md#第一次使用準備-rawfilereader)
+for using an already installed reader.
 
 Choose a workflow, select the batch inputs, load a method, and run. After
 completion, the same page shows the saved overview, review and downloads. Use
@@ -87,7 +87,7 @@ workspace's cancellation control. Use **結束工作區** when finished.
 **Targeted:** Open `xic_results_YYYYMMDD_HHMM.xlsx`. Start at `摘要`, follow
 the indicated items into `需檢查` when present, and use `面積` for saved
 sample × target areas. Open the XLSX in the workbench to inspect a target and
-sample; request its XIC when needed. [Workbook reading guide](docs/user/targeted-extraction.md#review-the-batch).
+sample; request its XIC when needed. [Workbook reading guide](docs/user/targeted.md#看結果).
 
 **Untargeted:** Start at `alignment_matrix.tsv`. Rows are aligned features,
 columns are samples, and cells contain published areas. Use workbench review
@@ -95,7 +95,7 @@ to investigate a feature, an unexpected value, or a missing cell. Optional
 **矩陣整理** writes a separate curated result without changing the source
 Matrix. Preview each step’s kept, removed, ISTD-protected and undetermined rows
 before exporting. Preview and export use the same curation decisions.
-[Matrix reading guide](docs/user/untargeted-discovery.md#read-and-use-the-matrix).
+[Matrix reading guide](docs/user/untargeted.md#看結果).
 
 To reopen a completed batch or workbook:
 
@@ -113,11 +113,9 @@ Finding a candidate, matching it across samples, measuring an area, and counting
 a detection are different judgments. An area is not proof of chemical identity;
 a blank cell is not automatically zero or proof of absence.
 
-For an explanation, follow the [A/B/C sample story](docs/user/processing-guide.html):
+For an explanation, follow the [interpretation guide](docs/user/concepts.md#從-raw-到矩陣):
 two samples have candidate peaks, a third has a missing cell, and each step
-answers a different question before a value can be used. The
-[DNA adduct CID-NL example](docs/user/raw-to-final-matrix-product-story.html)
-applies that reasoning to one method; it does not define the whole platform.
+answers a different question before a value can be used.
 
 The Untargeted Matrix currently comes from CID-NL Discovery. Other Discovery
 methods, such as Delta Mass / Pt pattern, produce diagnostic candidates for
@@ -129,8 +127,8 @@ alone does not establish support for quantitative output. Exact rules are in the
 
 Use the [user guide index](docs/user/README.md) to find setup, operation,
 field references, and explanations. Start troubleshooting with your workflow:
-[Targeted](docs/user/targeted-extraction.md#troubleshooting) or
-[Untargeted](docs/user/untargeted-discovery.md#troubleshooting).
+[Targeted](docs/user/targeted.md#遇到問題) or
+[Untargeted](docs/user/untargeted.md#遇到問題).
 
 If the problem remains, [open an issue](https://github.com/bosschen0429/XIC_Extractor/issues).
 Include the app version, workflow, steps, expected and actual result, and the

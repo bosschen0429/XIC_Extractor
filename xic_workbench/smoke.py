@@ -68,7 +68,8 @@ def run_smoke(report_path: Path) -> int:
         if "XIC Extractor 使用說明" not in request("/help/").decode("utf-8"):
             raise RuntimeError("Delivered application is missing its user guide")
         for resource in (
-            "/help/docs/user/targeted-extraction.html",
+            "/help/docs/user/targeted.html",
+            "/help/docs/user/assets/guide.css",
             "/help/docs/user/assets/targeted-workspace.png",
             "/help/examples/targets.xlsx",
         ):

@@ -80,7 +80,7 @@ def test_help_serves_user_guides_and_templates_without_exposing_repository(tmp_p
         assert status == 200
         assert "text/html" in headers["Content-Type"]
         assert "XIC Extractor 使用說明" in guide.decode("utf-8")
-        status, page, _ = request("/help/docs/user/targeted-extraction.html")
+        status, page, _ = request("/help/docs/user/targeted.html")
         assert status == 200
         assert "source checkout" not in page.decode("utf-8")
         status, example, _ = request("/help/examples/targets.xlsx")
@@ -89,7 +89,7 @@ def test_help_serves_user_guides_and_templates_without_exposing_repository(tmp_p
             "../config/workspace.json",
             "%2e%2e/config/workspace.json",
             "docs/development/command-line.md",
-            "docs/user/targeted-extraction.md",
+            "docs/user/targeted.md",
         ):
             assert request("/help/" + path)[0] == 404
 

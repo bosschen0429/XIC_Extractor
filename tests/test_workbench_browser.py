@@ -77,13 +77,17 @@ def test_help_opens_task_guide_without_changing_the_analysis(
         expect(
             guide.get_by_role("heading", name="XIC Extractor 使用說明")
         ).to_be_visible()
-        guide.get_by_role("link", name="Targeted 操作指南", exact=True).click()
+        # The guide follows the workspace theme and navigates by its page bar.
+        expect(guide.locator("html")).to_have_attribute("data-theme", theme)
+        pages = guide.get_by_role("navigation", name="使用說明")
+        pages.get_by_role("link", name="Targeted 分析", exact=True).click()
         expect(
-            guide.get_by_role(
-                "heading", name=re.compile("從目標清單.*走到可使用的批次結果")
-            )
+            guide.get_by_role("heading", level=1, name="Targeted 分析")
         ).to_be_visible()
-        guide.get_by_role("link", name="使用說明首頁", exact=True).first.click()
+        expect(
+            guide.get_by_role("img", name=re.compile("Targeted 工作區"))
+        ).to_be_visible()
+        pages.get_by_role("link", name="開始使用", exact=True).click()
         expect(
             guide.get_by_role("heading", name="XIC Extractor 使用說明")
         ).to_be_visible()

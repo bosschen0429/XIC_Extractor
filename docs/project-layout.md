@@ -139,8 +139,9 @@ Repo root 留給專案級設定、必要入口與主要目錄。Git、套件與�
   不能證明打包結果。
   `tools/distribution.py` 統一組裝交付 ZIP；build workflow 與 clean-source packaging
   test 共用此入口。它只發佈程式、離線使用指南、使用者範本與授權聲明，不複製 repo
-  README、開發目錄或 Python 原始碼。文件選集由組裝入口維護；Markdown 轉成 HTML，
-  與既有圖解頁分開命名，圖片及範本連結指向包內檔案。首次操作說明來自
+  README、開發目錄或 Python 原始碼。使用說明全部以 Markdown 撰寫，頁面清單與
+  閱讀順序由 `xic_workbench/user_guide.py` 的 `GUIDE_PAGES` 維護；轉成 HTML 時套用
+  共用樣式 `docs/user/assets/guide.css`，圖片及範本連結指向包內檔案。首次操作說明來自
   `docs/user/README.md`，也是程式內「使用說明」的正式入口。開發與 CLI 文件在
   `docs/development/`，不隨 ZIP 提供。`xic_workbench/user_guide.py` 統一發佈與讀取；
   wheel build 使用相同內容，不依賴 repo 文件或執行時網路。
