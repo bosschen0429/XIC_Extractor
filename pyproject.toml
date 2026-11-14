@@ -463,3 +463,30 @@ forbidden_modules = [
     "xic_extractor.execution",
 ]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+id = "alignment-consumes-quality-facts"
+name = "Alignment consumes quality facts without estimating noise"
+type = "forbidden"
+source_modules = ["xic_extractor.alignment"]
+forbidden_modules = [
+    "xic_extractor.peak_detection.baseline",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+id = "targeted-contracts-stay-headless"
+name = "Targeted contracts do not directly import outer adapters"
+type = "forbidden"
+source_modules = [
+    "xic_extractor.acquisition_contract",
+    "xic_extractor.execution.partitions",
+    "xic_extractor.applications.targeted.application",
+]
+forbidden_modules = [
+    "scripts",
+    "xic_workbench",
+    "xic_extractor.output",
+    "xic_extractor.raw_reader",
+]
+allow_indirect_imports = true

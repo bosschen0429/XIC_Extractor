@@ -2,6 +2,7 @@ import re
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -16,45 +17,39 @@ from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.raw_reader_errors import RawReaderError
 
 
-@pytest.fixture(autouse=True)
-def _isolate_cli_shell_from_production_workflow(monkeypatch):
-    """Keep CLI option tests focused; production composition has dedicated tests."""
-
-    module = _module()
-
-    class _Service:
-        def execute_application(self, request):
-            output = module.extractor.run(
-                request.config,
-                list(request.targets),
-                progress_callback=request.progress_callback,
-                should_stop=request.should_stop,
-                injection_order=request.injection_order,
+@pytest.fixture
+def cli_execution(monkeypatch):
+    """Record the CLI request and supply only its progress/summary response."""
+    output = RunOutput(
+        file_results=[
+            SimpleNamespace(sample_name="SampleA"),
+            SimpleNamespace(sample_name="SampleB"),
+        ],
+        diagnostics=[
+            DiagnosticRecord(
+                sample_name="SampleB",
+                target_label="Analyte",
+                issue="PEAK_NOT_FOUND",
+                reason="No peak",
             )
-            if request.excel_output_path is not None:
-                module.write_excel_from_run_output(
-                    request.config,
-                    list(request.targets),
-                    output,
-                    output_path=request.excel_output_path,
-                )
-            return TargetedApplicationExecution(active_output=output)
+        ],
+    )
 
+    def report(request):
+        request.progress_callback(1, 2, "SampleA.raw")
+        return TargetedApplicationExecution(active_output=output)
+
+    execute = Mock(side_effect=report)
     monkeypatch.setattr(
-        module,
-        "write_excel_from_run_output",
-        lambda *_args, output_path, **_kwargs: output_path,
-        raising=False,
-    )
-    monkeypatch.setattr(
-        module,
+        _module(),
         "build_canonical_targeted_application_service",
-        lambda _runner: _Service(),
+        lambda _runner: SimpleNamespace(execute_application=execute),
     )
+    return execute
 
 
 def test_cli_runs_extraction_with_base_dir_and_workbook(
-    tmp_path: Path, monkeypatch, capsys
+    tmp_path: Path, monkeypatch, cli_execution, capsys
 ) -> None:
     module = _module()
     config = _config(tmp_path)
@@ -66,20 +61,13 @@ def test_cli_runs_extraction_with_base_dir_and_workbook(
         return PreparedTargetedConfig(config, tuple(targets), config_dir)
 
     monkeypatch.setattr(module, "prepare_targeted_config", _load_config)
-    monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
-    monkeypatch.setattr(
-        module,
-        "write_excel_from_run_output",
-        lambda *_args, **_kwargs: calls.setdefault("excel", True),
-        raising=False,
-    )
 
     exit_code = module.main(["--base-dir", str(tmp_path)])
 
     assert exit_code == 0
     assert calls["config_dir"] == tmp_path / "config"
-    assert calls["run_targets"] == targets
-    assert calls["excel"] is True
+    cli_execution.assert_called_once()
+    assert cli_execution.call_args.args[0].targets == tuple(targets)
     stdout = capsys.readouterr().out
     assert "Processed files: 2" in stdout
     assert "Diagnostics: 1" in stdout
@@ -87,14 +75,11 @@ def test_cli_runs_extraction_with_base_dir_and_workbook(
 
 
 def test_cli_runs_excel_conversion_by_default(
-    tmp_path: Path, monkeypatch, capsys
+    tmp_path: Path, monkeypatch, cli_execution, capsys
 ) -> None:
-    import scripts.csv_to_excel as csv_to_excel
-
     module = _module()
     config = _config(tmp_path)
     targets = [_target("Analyte")]
-    calls: dict[str, object] = {}
 
     monkeypatch.setattr(
         module,
@@ -103,35 +88,15 @@ def test_cli_runs_excel_conversion_by_default(
             config, tuple(targets), config_dir
         ),
     )
-    monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
-    monkeypatch.setattr(
-        csv_to_excel,
-        "run",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("csv_to_excel.run should not be called")
-        ),
-    )
-    monkeypatch.setattr(
-        module,
-        "write_excel_from_run_output",
-        lambda excel_config, excel_targets, run_output, *, output_path: calls.update(
-            {
-                "excel_config": excel_config,
-                "excel_targets": excel_targets,
-                "excel_run_output": run_output,
-                "excel_output_path": output_path,
-            }
-        ),
-        raising=False,
-    )
 
     exit_code = module.main(["--base-dir", str(tmp_path)])
 
     assert exit_code == 0
-    assert calls["excel_config"] is config
-    assert calls["excel_targets"] == targets
-    assert calls["excel_run_output"] is calls["run_output"]
-    output_path = calls["excel_output_path"]
+    cli_execution.assert_called_once()
+    request = cli_execution.call_args.args[0]
+    assert request.config == config
+    assert request.targets == tuple(targets)
+    output_path = request.excel_output_path
     assert isinstance(output_path, Path)
     assert output_path.parent == tmp_path / "output"
     assert re.fullmatch(r"xic_results_\d{8}_\d{4}\.xlsx", output_path.name)
@@ -139,10 +104,11 @@ def test_cli_runs_excel_conversion_by_default(
 
 
 def test_cli_accepts_data_dir_override_for_validation_subset(
-    tmp_path: Path, monkeypatch, capsys
+    tmp_path: Path, monkeypatch, cli_execution, capsys
 ) -> None:
     module = _module()
     config = _config(tmp_path)
+    config.data_dir.mkdir()
     targets = [_target("Analyte")]
     validation_dir = tmp_path / "validation"
     validation_dir.mkdir()
@@ -158,35 +124,20 @@ def test_cli_accepts_data_dir_override_for_validation_subset(
         return PreparedTargetedConfig(loaded_config, tuple(targets), _config_dir)
 
     monkeypatch.setattr(module, "prepare_targeted_config", fake_load_config)
-    monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
-    monkeypatch.setattr(
-        module,
-        "write_excel_from_run_output",
-        lambda excel_config, excel_targets, run_output, *, output_path: calls.update(
-            {
-                "excel_config": excel_config,
-                "excel_targets": excel_targets,
-                "excel_run_output": run_output,
-                "excel_output_path": output_path,
-            }
-        ),
-        raising=False,
-    )
 
     exit_code = module.main(
         ["--base-dir", str(tmp_path), "--data-dir", str(validation_dir)]
     )
 
     assert exit_code == 0
-    assert calls["run_config"].data_dir == validation_dir.resolve()
-    assert calls["run_config"].output_csv == config.output_csv
-    assert calls["excel_config"] is calls["run_config"]
+    assert cli_execution.call_args.args[0].config.data_dir == validation_dir.resolve()
+    assert cli_execution.call_args.args[0].config.output_csv == config.output_csv
     assert calls["settings_overrides"] == {"data_dir": str(validation_dir.resolve())}
     assert "Excel skipped" not in capsys.readouterr().out
 
 
 def test_cli_applies_data_dir_override_before_real_config_validation(
-    tmp_path: Path, monkeypatch, capsys
+    tmp_path: Path, monkeypatch, cli_execution, capsys
 ) -> None:
     module = _module()
     config_dir = tmp_path / "config"
@@ -199,22 +150,13 @@ def test_cli_applies_data_dir_override_before_real_config_validation(
         data_dir=tmp_path / "placeholder_missing",
         dll_dir=dll_dir,
     )
-    calls: dict[str, object] = {}
-
-    monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
-    monkeypatch.setattr(
-        module,
-        "write_excel_from_run_output",
-        lambda *_args, **_kwargs: None,
-        raising=False,
-    )
 
     exit_code = module.main(
         ["--base-dir", str(tmp_path), "--data-dir", str(validation_dir)]
     )
 
     assert exit_code == 0
-    assert calls["run_config"].data_dir == validation_dir.resolve()
+    assert cli_execution.call_args.args[0].config.data_dir == validation_dir.resolve()
     assert "settings.csv" not in capsys.readouterr().err
 
 
@@ -240,12 +182,11 @@ def test_cli_rejects_retired_execution_overrides(args, capsys):
 
 
 def test_cli_preserves_loaded_parallel_settings_when_overrides_are_omitted(
-    tmp_path: Path, monkeypatch, capsys
+    tmp_path: Path, monkeypatch, cli_execution, capsys
 ) -> None:
     module = _module()
     config = replace(_config(tmp_path), parallel_mode="process", parallel_workers=4)
     targets = [_target("Analyte")]
-    calls: dict[str, object] = {}
 
     monkeypatch.setattr(
         module,
@@ -254,19 +195,12 @@ def test_cli_preserves_loaded_parallel_settings_when_overrides_are_omitted(
             config, tuple(targets), config_dir
         ),
     )
-    monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
-    monkeypatch.setattr(
-        module,
-        "write_excel_from_run_output",
-        lambda *_args, **_kwargs: calls.setdefault("excel", True),
-        raising=False,
-    )
 
     exit_code = module.main(["--base-dir", str(tmp_path)])
 
     assert exit_code == 0
-    assert calls["run_config"].parallel_mode == "process"
-    assert calls["run_config"].parallel_workers == 4
+    assert cli_execution.call_args.args[0].config.parallel_mode == "process"
+    assert cli_execution.call_args.args[0].config.parallel_workers == 4
     assert "Processed files: 2" in capsys.readouterr().out
 
 
@@ -291,7 +225,7 @@ def test_cli_reports_config_errors_without_traceback(
 
 
 def test_cli_reports_publication_rejections_without_traceback(
-    tmp_path: Path, monkeypatch, capsys
+    tmp_path: Path, monkeypatch, cli_execution, capsys
 ) -> None:
     module = _module()
     config = _config(tmp_path)
@@ -304,15 +238,7 @@ def test_cli_reports_publication_rejections_without_traceback(
         ),
     )
 
-    class _RejectingService:
-        def execute_application(self, _request):
-            raise TargetedOutputBoundaryError("output already exists")
-
-    monkeypatch.setattr(
-        module,
-        "build_canonical_targeted_application_service",
-        lambda _runner: _RejectingService(),
-    )
+    cli_execution.side_effect = TargetedOutputBoundaryError("output already exists")
 
     exit_code = module.main(["--base-dir", str(tmp_path)])
 
@@ -323,7 +249,7 @@ def test_cli_reports_publication_rejections_without_traceback(
 
 
 def test_cli_reports_reader_setup_errors_without_traceback(
-    tmp_path: Path, monkeypatch, capsys
+    tmp_path: Path, monkeypatch, cli_execution, capsys
 ) -> None:
     module = _module()
     config = _config(tmp_path)
@@ -335,13 +261,8 @@ def test_cli_reports_reader_setup_errors_without_traceback(
             config, tuple(targets), config_dir
         ),
     )
-    monkeypatch.setattr(
-        module.extractor,
-        "run",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            RawReaderError("pythonnet is not installed")
-        ),
-    )
+
+    cli_execution.side_effect = RawReaderError("pythonnet is not installed")
 
     exit_code = module.main(["--base-dir", str(tmp_path)])
 
@@ -355,41 +276,6 @@ def _module():
     import scripts.run_extraction as module
 
     return module
-
-
-def _fake_run(calls: dict[str, object]):
-    def _run(
-        config,
-        targets,
-        progress_callback=None,
-        should_stop=None,
-        injection_order=None,
-    ):
-        calls["run_config"] = config
-        calls["run_targets"] = targets
-        calls["should_stop"] = should_stop
-        calls["injection_order"] = injection_order
-
-        if progress_callback is not None:
-            progress_callback(1, 2, "SampleA.raw")
-        output = RunOutput(
-            file_results=[
-                SimpleNamespace(sample_name="SampleA"),
-                SimpleNamespace(sample_name="SampleB"),
-            ],
-            diagnostics=[
-                DiagnosticRecord(
-                    sample_name="SampleB",
-                    target_label="Analyte",
-                    issue="PEAK_NOT_FOUND",
-                    reason="No peak",
-                )
-            ],
-        )
-        calls["run_output"] = output
-        return output
-
-    return _run
 
 
 def _config(tmp_path: Path) -> ExtractionConfig:
@@ -441,7 +327,9 @@ def _write_cli_config(config_dir: Path, *, data_dir: Path, dll_dir: Path) -> Non
     )
 
 
-def test_cli_target_list_freezes_inputs_only_until_run_finishes(tmp_path, monkeypatch):
+def test_cli_target_list_freezes_inputs_only_until_run_finishes(
+    tmp_path, monkeypatch, cli_execution
+):
     from xic_extractor.configuration.target_list_files import (
         create_target_list,
         save_target_list,
@@ -467,7 +355,7 @@ def test_cli_target_list_freezes_inputs_only_until_run_finishes(tmp_path, monkey
     ]
     save_target_list(create_target_list(target_rows), list_path)
     calls = {}
-    fake_run = _fake_run(calls)
+    record_request = cli_execution.side_effect
 
     prepare = module.prepare_targeted_config
 
@@ -476,15 +364,15 @@ def test_cli_target_list_freezes_inputs_only_until_run_finishes(tmp_path, monkey
         calls["frozen_inputs"] = prepared.input_config_dir
         return prepared
 
-    def run_and_change_active_sources(config, targets, **kwargs):
+    def run_and_change_active_sources(request):
         list_path.write_text("edited during run", encoding="utf-8")
         (tmp_path / "config" / "workspace.json").write_text(
             "edited during run", encoding="utf-8"
         )
-        return fake_run(config, targets, **kwargs)
+        return record_request(request)
 
+    cli_execution.side_effect = run_and_change_active_sources
     monkeypatch.setattr(module, "prepare_targeted_config", record_frozen_inputs)
-    monkeypatch.setattr(module.extractor, "run", run_and_change_active_sources)
     assert (
         module.main(
             [
@@ -498,11 +386,13 @@ def test_cli_target_list_freezes_inputs_only_until_run_finishes(tmp_path, monkey
         )
         == 0
     )
-    config = calls["run_config"]
+    config = cli_execution.call_args.args[0].config
     assert config.data_dir == new_batch
     assert config.dll_dir == dll_dir
     assert config.nl_min_intensity_ratio == 0.01
     assert config.parallel_workers >= 1
-    assert [target.label for target in calls["run_targets"]] == ["MethodTarget"]
+    assert [target.label for target in cli_execution.call_args.args[0].targets] == [
+        "MethodTarget"
+    ]
     assert not calls["frozen_inputs"].exists()
     assert not (tmp_path / "output" / ".run_inputs").exists()

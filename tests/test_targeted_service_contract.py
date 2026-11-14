@@ -1,4 +1,3 @@
-import ast
 from dataclasses import replace
 from pathlib import Path
 
@@ -333,35 +332,6 @@ def test_empty_acquisition_reports_no_input_before_finalization(tmp_path: Path) 
         )
 
     assert calls == ["acquire"]
-
-
-def test_contract_modules_do_not_import_gui_writer_or_raw_adapter() -> None:
-    forbidden_prefixes = (
-        "gui",
-        "scripts",
-        "xic_extractor.output",
-        "xic_extractor.raw_reader",
-    )
-    for path in (
-        Path("xic_extractor/acquisition_contract.py"),
-        Path("xic_extractor/execution/partitions.py"),
-        Path("xic_extractor/applications/targeted/application.py"),
-    ):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        imports = _imports(tree)
-        assert not any(
-            imported.startswith(forbidden_prefixes) for imported in imports
-        ), f"{path}: forbidden dependency {imports}"
-
-
-def _imports(tree: ast.AST) -> tuple[str, ...]:
-    modules: list[str] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            modules.extend(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            modules.append(node.module)
-    return tuple(modules)
 
 
 def _config() -> ExtractionConfig:

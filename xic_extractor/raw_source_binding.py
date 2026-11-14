@@ -12,7 +12,11 @@ from xic_extractor.processing_identity import (
 from xic_extractor.raw_reader_errors import RawReaderError
 
 THERMO_RAW_ACQUISITION_FORMAT = "thermo_raw"
-THERMO_RAW_OBSERVATION_NAMESPACE = "thermo_raw_file_reader:Device.MS:1"
+THERMO_MS_DEVICE = "MS"
+THERMO_MS_CONTROLLER = 1
+THERMO_RAW_OBSERVATION_NAMESPACE = (
+    f"thermo_raw_file_reader:Device.{THERMO_MS_DEVICE}:{THERMO_MS_CONTROLLER}"
+)
 
 
 @dataclass(frozen=True)

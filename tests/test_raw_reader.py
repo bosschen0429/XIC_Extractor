@@ -387,6 +387,11 @@ def test_open_raw_binds_only_the_verified_acquisition_source(tmp_path: Path) -> 
         _thermo=_fake_thermo(raw),
     )
 
+    assert raw.selected_instrument == ("MS", 1)
+    assert (
+        handle.acquisition_source.observation_namespace
+        == "thermo_raw_file_reader:Device.MS:1"
+    )
     assert handle.acquisition_source == source
 
 
@@ -1213,8 +1218,8 @@ class _FakeRaw:
     def Dispose(self) -> None:
         self.disposed = True
 
-    def SelectInstrument(self, *_args) -> None:
-        return None
+    def SelectInstrument(self, device, controller) -> None:
+        self.selected_instrument = (device, controller)
 
     def ScanNumberFromRetentionTime(self, rt: float) -> int:
         return 1 if rt <= 8.0 else 2

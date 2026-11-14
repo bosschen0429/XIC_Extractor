@@ -421,13 +421,6 @@ def test_targeted_and_untargeted_read_one_sequence_owner(
     assert untargeted["Blank_1"]["sample_role"] == "blank"
 
 
-def test_targeted_observation_namespace_tracks_raw_adapter_controller() -> None:
-    raw_reader_source = Path("xic_extractor/raw_reader.py").read_text(encoding="utf-8")
-
-    assert "SelectInstrument(thermo.device_ms, 1)" in raw_reader_source
-    assert THERMO_RAW_OBSERVATION_NAMESPACE == ("thermo_raw_file_reader:Device.MS:1")
-
-
 def _sources(paths: list[Path], *, injection_order: dict[str, int]):
     return build_targeted_acquisition_sources(
         raw_paths=paths, injection_order=injection_order

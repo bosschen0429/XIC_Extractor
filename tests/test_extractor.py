@@ -421,7 +421,6 @@ def _disable_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "xic_extractor.extraction.pipeline.preflight_raw_reader",
         lambda _dll_dir: [],
-        raising=False,
     )
     install_fake_raw_headers(monkeypatch)
 
@@ -793,7 +792,6 @@ def test_run_raises_before_processing_when_reader_preflight_fails(
     monkeypatch.setattr(
         "xic_extractor.extraction.pipeline.preflight_raw_reader",
         lambda _dll_dir: ["pythonnet is not installed"],
-        raising=False,
     )
     monkeypatch.setattr(
         _OPEN_RAW_SEAM,
