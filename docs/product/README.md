@@ -45,7 +45,8 @@ If a topic page conflicts with an owner below, the owner wins.
 - Topic pages do not change writer authority, Matrix behavior, schema or
   validation verdicts. If a change affects them, update the owning code and
   tests first.
-- Explanatory HTML belongs with the [user guides](../user/README.md).
+- Explanations for users belong in the [user guides](../user/README.md);
+  explanatory pages for maintainers belong in [development](../development/README.md).
 
 ### Shared Conventions
 
