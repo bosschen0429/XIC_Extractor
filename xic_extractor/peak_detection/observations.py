@@ -140,31 +140,6 @@ class RetainedCaptureEvidence:
     observation_ref: PeakObservation | None = None
 
 
-def mint_peak_observation(
-    *,
-    sample: SampleMetadata,
-    trace: Trace,
-    integration: IntegrationResult,
-    resolver_mode: str,
-    proposal_sources: tuple[str, ...],
-    physical_evaluation: PhysicalPeakEvaluation | None = None,
-    signal_processing_profile: SignalProcessingProfile | None = None,
-    capture_stage: str = "initial_capture",
-) -> PeakObservation:
-    """Project an already selected integration into one sample-local peak."""
-    return _project_peak_observation(
-        sample_key=sample.sample_name,
-        trace=trace,
-        integration=integration,
-        selected_indices=integration.raw_scan_indices,
-        resolver_mode=resolver_mode,
-        proposal_sources=proposal_sources,
-        physical_evaluation=physical_evaluation,
-        signal_processing_profile=signal_processing_profile,
-        capture_stage=capture_stage,
-    )
-
-
 def mint_physical_peak_observations(
     *,
     sample: SampleMetadata,
@@ -356,17 +331,15 @@ def physical_peak_observation_integration(
     evaluation: PhysicalPeakEvaluation,
 ) -> IntegrationResult:
     """Bind the physical owner's raw descriptor to its exact selected samples."""
-    facts = evaluation.facts
-    integration = evaluation.integration
-    if evaluation.state != "available" or facts is None or integration is None:
-        raise PeakObservationContractError(
-            "physical observation requires available facts"
-        )
     segment = evaluation.answer.selected_segment
-    assert segment is not None
+    integration = evaluation.integration
+    if evaluation.state != "available" or segment is None or integration is None:
+        raise PeakObservationContractError(
+            "physical observation requires an available selected segment"
+        )
     return replace(
         integration,
-        height_smoothed=facts.height,
+        height_smoothed=segment.height,
         raw_scan_indices=tuple(range(segment.start_index, segment.end_index)),
     )
 
@@ -420,6 +393,5 @@ __all__ = [
     "PeakObservationContractError",
     "PeakObservationGenerationProvenance",
     "index_physical_peaks",
-    "mint_peak_observation",
     "same_selected_peak",
 ]

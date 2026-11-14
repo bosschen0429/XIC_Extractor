@@ -25,6 +25,7 @@ from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition im
     UntargetedCidNlBackfillTarget,
     acquire_untargeted_cid_nl_backfill_trace_batch,
     backfill_untargeted_cid_nl_sample_subject,
+    physical_backfill_observation,
 )
 
 
@@ -116,13 +117,17 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
     )
     if tolerance is not None:
         evaluation = result.capture_evidence[0].physical_evaluation
-        assert evaluation.facts is not None
+        assert evaluation.answer.selected_segment is not None
         assert evaluation.question.search_rt_window == pytest.approx((7.35, 7.75))
-        assert evaluation.facts.apex_rt_min > 7.75
-        assert evaluation.facts.left_rt_min < query_rt < evaluation.facts.right_rt_min
+        assert evaluation.answer.selected_segment.apex_rt_min > 7.75
+        assert (
+            evaluation.answer.selected_segment.left_rt_min
+            < query_rt
+            < evaluation.answer.selected_segment.right_rt_min
+        )
         receipt = assessment.evaluation_receipt
-        assert receipt.query_rt_min <= evaluation.facts.left_rt_min
-        assert evaluation.facts.right_rt_min <= receipt.query_rt_max
+        assert receipt.query_rt_min <= evaluation.answer.selected_segment.left_rt_min
+        assert evaluation.answer.selected_segment.right_rt_min <= receipt.query_rt_max
     from xic_extractor.alignment.backfill.cid_nl_evidence import (
         decide_cid_nl_backfill_revisit,
     )
@@ -312,7 +317,7 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
     # receipt propagation when an outside-apex-window peak is actually eligible.
     assert evaluation.state == "unavailable"
     assert evaluation.reason == "ambiguous_segment_candidates"
-    assert evaluation.facts is None and evaluation.integration is None
+    assert evaluation.answer.selected_segment is None and evaluation.integration is None
     receipt = result.assessment.evaluation_receipt
     assert (receipt.query_rt_min, receipt.query_rt_max) == (7.5, 8.5)
     assert result.assessment.candidate_peaks == ()
@@ -404,7 +409,7 @@ def test_physical_backfill_context_is_not_search_permission(
     assert gate_result == gated_direct.capture_evidence[0].physical_evaluation
     if reliable and tolerance == 12.0:
         assert gate_result.state == "unavailable"
-        assert gate_result.facts is None
+        assert gate_result.answer.selected_segment is None
         assert not gated.assessment.candidate_peaks
         assert gate_result.reason == (
             "sample_localization_unreliable"
@@ -415,19 +420,30 @@ def test_physical_backfill_context_is_not_search_permission(
         )
     elif target_present:
         assert gate_result.state == "available"
-        assert gate_result.facts is not None and first.facts is not None
-        assert gate_result.facts.area_counts_seconds == first.facts.area_counts_seconds
-        assert gate_result.facts.apex_rt_min == first.facts.apex_rt_min
+        assert (
+            gate_result.answer.selected_segment is not None
+            and first.answer.selected_segment is not None
+        )
+        assert (
+            gate_result.answer.selected_segment.area_counts_seconds
+            == first.answer.selected_segment.area_counts_seconds
+        )
+        assert (
+            gate_result.answer.selected_segment.apex_rt_min
+            == first.answer.selected_segment.apex_rt_min
+        )
     expected_window = (7.5, 8.5) if target_present and target_center == 8.45 else None
     assert first.question.search_rt_window == expected_window
     receipt = batched.assessment.evaluation_receipt
     expected_receipt = (7.0, 9.0) if expected_window is not None else (7.5, 8.5)
     assert (receipt.query_rt_min, receipt.query_rt_max) == expected_receipt
     if target_present:
-        assert first.state == "available" and first.facts is not None
-        assert first.facts.apex_rt_min == pytest.approx(target_center, abs=0.02)
+        assert first.state == "available" and first.answer.selected_segment is not None
+        assert first.answer.selected_segment.apex_rt_min == pytest.approx(
+            target_center, abs=0.02
+        )
         if target_center == 8.45:
-            assert first.facts.right_rt_min > 8.5
+            assert first.answer.selected_segment.right_rt_min > 8.5
             assert batched.capture_evidence[0].trace.rt_min == 7.0
         else:
             from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -445,14 +461,23 @@ def test_physical_backfill_context_is_not_search_permission(
                 query_rt_min=8.0,
                 selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
             )
-            assert original.facts is not None
-            assert first.facts.area_counts_seconds == original.facts.area_counts_seconds
-            assert first.facts.left_rt_min == original.facts.left_rt_min
-            assert first.facts.right_rt_min == original.facts.right_rt_min
+            assert original.answer.selected_segment is not None
+            assert (
+                first.answer.selected_segment.area_counts_seconds
+                == original.answer.selected_segment.area_counts_seconds
+            )
+            assert (
+                first.answer.selected_segment.left_rt_min
+                == original.answer.selected_segment.left_rt_min
+            )
+            assert (
+                first.answer.selected_segment.right_rt_min
+                == original.answer.selected_segment.right_rt_min
+            )
         # A measured MS1 peak alone still cannot assert method SUPPORT.
         assert batched.assessment.method_result != "SUPPORT"
     else:
-        assert first.state == "unavailable" and first.facts is None
+        assert first.state == "unavailable" and first.answer.selected_segment is None
         assert not batched.assessment.candidate_peaks
 
 
@@ -562,9 +587,6 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
     from xic_extractor.configuration.signal_processing_profile import (
         SignalProcessingProfile,
     )
-    from xic_extractor.peak_detection.capture import (
-        capture_physical_backfill_observation,
-    )
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         CidNlEvaluationReceipt,
         mint_cid_nl_method_assessment,
@@ -581,9 +603,8 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
     intensity = 1000.0 * np.exp(
         -0.5 * ((offset - 0.6) / np.where(offset < 0.6, 0.30, 0.06)) ** 2
     )
-    peak = capture_physical_backfill_observation(
+    peak = physical_backfill_observation(
         sample=sample,
-        method_subject=fixture.method_subject,
         trace=Trace(
             sample_name="S1",
             mz=500.0,
@@ -595,16 +616,19 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
             acquisition_source_id=source.acquisition_source_id,
         ),
         query_rt_min=8.0,
-        physical_mz=500.0,
         profile=profile,
         resolver_mode="local_minimum",
         search_rt_window=(7.5, 8.5),
     )
     assert peak is not None
     evaluation = peak.physical_evaluation
-    assert evaluation is not None and evaluation.facts is not None
-    assert not 7.5 <= evaluation.facts.apex_rt_min <= 8.5
-    assert evaluation.facts.left_rt_min < 8.0 < evaluation.facts.right_rt_min
+    assert evaluation is not None and evaluation.answer.selected_segment is not None
+    assert not 7.5 <= evaluation.answer.selected_segment.apex_rt_min <= 8.5
+    assert (
+        evaluation.answer.selected_segment.left_rt_min
+        < 8.0
+        < evaluation.answer.selected_segment.right_rt_min
+    )
     receipt = CidNlEvaluationReceipt(
         query_rt_min=7.5,
         query_rt_max=8.5,
@@ -627,5 +651,5 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
     assert assessment.method_result == "HOLD"
     assert assessment.evaluation_receipt == receipt
     assert assessment.candidate_peaks[0].integration.area_ms1_morphology == (
-        evaluation.facts.area_counts_seconds
+        evaluation.answer.selected_segment.area_counts_seconds
     )

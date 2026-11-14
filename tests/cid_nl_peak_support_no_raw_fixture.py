@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests.owner_peak_fixtures import trace_peak
 from tests.processing_identity_no_raw_fixture import (
     NEUTRAL_LOSS_DA,
     PRECURSOR_MZ,
@@ -18,7 +19,6 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.observations import (
     PeakObservation,
-    mint_peak_observation,
 )
 from xic_extractor.peak_detection.traces import Trace
 
@@ -65,7 +65,7 @@ def cid_nl_peak(
         boundary_sources=("candidate_interval", "gaussian15"),
         raw_scan_indices=(1, 2, 3),
     )
-    return mint_peak_observation(
+    return trace_peak(
         sample=sample,
         trace=trace,
         integration=integration,

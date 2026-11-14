@@ -434,10 +434,9 @@ def validate_production_entry_boundaries(repo_root: Path) -> list[str]:
         )
     if hypothesis_importers != {
         Path("xic_extractor/extraction/targeted_peak_hypotheses.py"),
-        Path("xic_extractor/peak_detection/capture.py"),
     }:
         problems.append(
-            "build_peak_hypotheses importers must be Targeted hypotheses and capture: "
+            "build_peak_hypotheses importers must be Targeted hypotheses only: "
             f"{sorted(map(str, hypothesis_importers))}"
         )
     return problems

@@ -52,7 +52,6 @@ def _fake_scope(
         schema_version="search_scope",
         method_subjects=method_subjects,
         samples=samples,
-        method_constraints=object(),
         evidence_providers=tuple(
             SimpleNamespace(method_subject_id=subject_id) for subject_id in subject_ids
         ),
@@ -199,7 +198,7 @@ def test_subject_composition_closes_without_runtime_and_preserves_failure_stage(
         lambda _: {"candidate": "subject"},
     )
 
-    def compose(supplied_request, supplied_adapter, *, completed_captures):
+    def compose(supplied_request, supplied_adapter):
         assert supplied_request is request
         assert supplied_adapter is adapter
         if fails:

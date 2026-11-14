@@ -891,10 +891,10 @@ def test_outside_strong_peak_cannot_erase_in_window_peak(
     # A full-acquisition AsLS baseline can change quantitation under interference;
     # Targeted must retain the component and publish the shared physical answer.
     assert result.physical_evaluation is not None
-    assert result.physical_evaluation.facts is not None
+    assert result.physical_evaluation.answer.selected_segment is not None
     assert (
         result.reported_peak_area
-        == result.physical_evaluation.facts.area_counts_seconds
+        == result.physical_evaluation.answer.selected_segment.area_counts_seconds
     )
     assert result.reported_peak_area > 0
 
@@ -983,8 +983,11 @@ def test_formal_target_ranks_only_physically_supported_signal(
         # shape is less symmetric than the smoothed, interrupted tail.
         assert result.reported_rt == pytest.approx(4.7, abs=0.04)
         assert evaluation.state == "available"
-        assert evaluation.facts is not None
-        assert result.reported_peak_area == evaluation.facts.area_counts_seconds
+        assert evaluation.answer.selected_segment is not None
+        assert (
+            result.reported_peak_area
+            == evaluation.answer.selected_segment.area_counts_seconds
+        )
         # The distant interrupted component is not the reference envelope;
         # only the localized main peak participates in shape review.
         assert projection.product_state == "detected_flagged"
@@ -1000,12 +1003,15 @@ def test_formal_target_ranks_only_physically_supported_signal(
         # acquired support; it does not switch to censored-cluster quantitation.
         assert result.reported_rt == pytest.approx(6.0, abs=0.04)
         assert evaluation.state == "available"
-        assert evaluation.facts is not None
+        assert evaluation.answer.selected_segment is not None
         assert evaluation.integration is not None
-        assert evaluation.facts.area_source == (
+        assert evaluation.integration.ms1_morphology_area_source == (
             "trapezoid_counts_seconds_on_canonical_signal"
         )
-        assert result.reported_peak_area == evaluation.facts.area_counts_seconds
+        assert (
+            result.reported_peak_area
+            == evaluation.answer.selected_segment.area_counts_seconds
+        )
         assert result.reported_peak_area > 0
         assert projection.counted_detection is True
         assert _result_row(output, [target], "Qualified", 0)["RT"] != "ND"
@@ -1102,12 +1108,15 @@ def test_retained_apex_outside_rt_hint_is_measured_without_inventing_nl_support(
         for segment in evaluation.segment_universe.segments
     )
     assert evaluation.state == "available"
-    assert evaluation.facts is not None
+    assert evaluation.answer.selected_segment is not None
     assert evaluation.integration is not None
     assert result.peak is not None
     assert result.selected_hypothesis is not None
     assert result.reported_rt == pytest.approx(12.6, abs=0.02)
-    assert result.reported_peak_area == evaluation.facts.area_counts_seconds
+    assert (
+        result.reported_peak_area
+        == evaluation.answer.selected_segment.area_counts_seconds
+    )
     assert result.reported_peak_area > 0
     assert result.targeted_product_projection is not None
     assert result.targeted_product_projection.counted_detection is (
@@ -1155,19 +1164,25 @@ def test_target_selection_window_uses_one_wide_physical_context(
     assert raw.windows == [(0.0, 20.0), (0.0, 20.0)]
     no_nl = output.file_results[0].results["NoNL"].physical_evaluation
     with_nl = output.file_results[0].results["WithNL"].physical_evaluation
-    assert no_nl is not None and no_nl.facts is not None
-    assert with_nl is not None and with_nl.facts is not None
+    assert no_nl is not None and no_nl.answer.selected_segment is not None
+    assert with_nl is not None and with_nl.answer.selected_segment is not None
     assert no_nl.prepared.profile == with_nl.prepared.profile
     assert no_nl.prepared == with_nl.prepared
     assert no_nl.segment_universe == (with_nl.segment_universe)
-    assert no_nl.facts.apex_rt_min == pytest.approx(9.6, abs=0.03)
-    assert no_nl.facts.right_rt_min > 10.0
-    assert no_nl.facts.apex_rt_min < 10.0
-    assert with_nl.facts.apex_rt_min == pytest.approx(no_nl.facts.apex_rt_min)
-    assert with_nl.facts.left_rt_min == pytest.approx(no_nl.facts.left_rt_min)
-    assert with_nl.facts.right_rt_min == pytest.approx(no_nl.facts.right_rt_min)
-    assert with_nl.facts.area_counts_seconds == pytest.approx(
-        no_nl.facts.area_counts_seconds
+    assert no_nl.answer.selected_segment.apex_rt_min == pytest.approx(9.6, abs=0.03)
+    assert no_nl.answer.selected_segment.right_rt_min > 10.0
+    assert no_nl.answer.selected_segment.apex_rt_min < 10.0
+    assert with_nl.answer.selected_segment.apex_rt_min == pytest.approx(
+        no_nl.answer.selected_segment.apex_rt_min
+    )
+    assert with_nl.answer.selected_segment.left_rt_min == pytest.approx(
+        no_nl.answer.selected_segment.left_rt_min
+    )
+    assert with_nl.answer.selected_segment.right_rt_min == pytest.approx(
+        no_nl.answer.selected_segment.right_rt_min
+    )
+    assert with_nl.answer.selected_segment.area_counts_seconds == pytest.approx(
+        no_nl.answer.selected_segment.area_counts_seconds
     )
 
 
@@ -2623,7 +2638,7 @@ def _formatted_peak_columns(
 ) -> dict[str, str]:
     evaluation = result.physical_evaluation
     assert evaluation is not None
-    facts = evaluation.facts
+    facts = evaluation.answer.selected_segment
     integration = evaluation.integration
     assert facts is not None
     assert integration is not None

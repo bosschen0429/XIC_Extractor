@@ -230,7 +230,11 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
                 attached_event_count=2,
             ),
             physical_evaluation=SimpleNamespace(
-                facts=SimpleNamespace(height=height, area_counts_seconds=height)
+                answer=SimpleNamespace(
+                    selected_segment=SimpleNamespace(
+                        height=height, area_counts_seconds=height
+                    )
+                )
             ),
             representative_event=SimpleNamespace(precursor_mz=precursor_mz),
         )

@@ -29,7 +29,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
-    CaptureMethodConstraints,
     EvidenceProviderBinding,
     UntargetedSearchScope,
 )
@@ -120,11 +119,6 @@ def complete_dense_partition(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
         method_subjects=context.method_subject,
         samples=batch.context.samples,
-        method_constraints=CaptureMethodConstraints(
-            boundary_policy="resolver_interval",
-            peak_config=batch.context.peak_config,
-            signal_processing_profile=batch.context.signal_processing_profile,
-        ),
         evidence_providers=tuple(
             EvidenceProviderBinding(CID_NL_PROVIDER_ID, subject.method_subject_id)
             for subject in batch.subject_batch.subjects

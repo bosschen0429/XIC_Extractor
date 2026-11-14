@@ -36,6 +36,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_REFERENCE_POLICY,
     PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
+    PhysicalPeakEvaluation,
 )
 from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
 
@@ -79,9 +80,12 @@ def test_background_contrast_rejects_weak_peak_for_capture_and_backfill(
     assert backfill.state == expected
     if expected == "unavailable":
         assert backfill.reason == "insufficient_backfill_peak_contrast"
-        assert backfill.facts is None
+        assert backfill.answer.selected_segment is None
     else:
-        assert backfill.facts.area_counts_seconds == detected.facts.area_counts_seconds
+        assert (
+            backfill.answer.selected_segment.area_counts_seconds
+            == detected.answer.selected_segment.area_counts_seconds
+        )
 
 
 @pytest.mark.parametrize("query_rt", [0.8, 1.2])
@@ -103,28 +107,43 @@ def test_backfill_recovers_the_complete_peak_containing_the_query(
         **question,
         selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     )
-    assert ordinary.state == "unavailable" and ordinary.facts is None
+    assert ordinary.state == "unavailable" and ordinary.answer.selected_segment is None
     backfill = evaluate_physical_peak(
         prepared,
         **question,
         selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
     )
-    assert backfill.state == "available" and backfill.facts is not None
+    assert (
+        backfill.state == "available" and backfill.answer.selected_segment is not None
+    )
     assert backfill.question.search_rt_window == window
-    assert backfill.facts.apex_rt_min == pytest.approx(1.0)
-    assert not window[0] <= backfill.facts.apex_rt_min <= window[1]
-    assert backfill.facts.left_rt_min < query_rt < backfill.facts.right_rt_min
+    assert backfill.answer.selected_segment.apex_rt_min == pytest.approx(1.0)
+    assert not window[0] <= backfill.answer.selected_segment.apex_rt_min <= window[1]
+    assert (
+        backfill.answer.selected_segment.left_rt_min
+        < query_rt
+        < backfill.answer.selected_segment.right_rt_min
+    )
     centered = evaluate_physical_peak(
         prepared,
         query_rt_min=1.0,
         search_rt_window=(0.95, 1.05),
         selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
     )
-    assert centered.facts is not None
+    assert centered.answer.selected_segment is not None
     assert backfill.answer.selected_segment == centered.answer.selected_segment
-    assert backfill.facts.area_counts_seconds == centered.facts.area_counts_seconds
-    assert backfill.facts.left_rt_min == centered.facts.left_rt_min
-    assert backfill.facts.right_rt_min == centered.facts.right_rt_min
+    assert (
+        backfill.answer.selected_segment.area_counts_seconds
+        == centered.answer.selected_segment.area_counts_seconds
+    )
+    assert (
+        backfill.answer.selected_segment.left_rt_min
+        == centered.answer.selected_segment.left_rt_min
+    )
+    assert (
+        backfill.answer.selected_segment.right_rt_min
+        == centered.answer.selected_segment.right_rt_min
+    )
 
 
 def test_backfill_window_does_not_take_a_neighbor_outside_the_expected_rt() -> None:
@@ -138,7 +157,7 @@ def test_backfill_window_does_not_take_a_neighbor_outside_the_expected_rt() -> N
     )
     assert result.state == "unavailable"
     assert result.reason == "no_peak_in_sample_local_window"
-    assert result.facts is None
+    assert result.answer.selected_segment is None
     assert result.segment_universe.segments
     assert result.segment_universe.segments[0].apex_rt_min == pytest.approx(0.4)
 
@@ -155,7 +174,7 @@ def test_backfill_window_overlap_without_query_containment_is_not_enough() -> No
     (segment,) = result.segment_universe.segments
     assert 1.2 < segment.right_rt_min < 1.5
     assert result.reason == "no_peak_in_sample_local_window"
-    assert result.state == "unavailable" and result.facts is None
+    assert result.state == "unavailable" and result.answer.selected_segment is None
 
 
 def test_backfill_does_not_choose_between_two_query_containing_segments() -> None:
@@ -171,7 +190,7 @@ def test_backfill_does_not_choose_between_two_query_containing_segments() -> Non
     )
     assert len(result.question.admissible_segments) == 2
     assert result.reason == "ambiguous_segment_candidates"
-    assert result.state == "unavailable" and result.facts is None
+    assert result.state == "unavailable" and result.answer.selected_segment is None
 
 
 def test_backfill_query_containment_does_not_bypass_background_qualification() -> None:
@@ -186,7 +205,7 @@ def test_backfill_query_containment_does_not_bypass_background_qualification() -
     )
     assert len(result.question.admissible_segments) == 1
     assert result.reason == "insufficient_backfill_peak_contrast"
-    assert result.state == "unavailable" and result.facts is None
+    assert result.state == "unavailable" and result.answer.selected_segment is None
 
 
 def test_backfill_query_containment_does_not_accept_a_clipped_peak() -> None:
@@ -200,7 +219,7 @@ def test_backfill_query_containment_does_not_accept_a_clipped_peak() -> None:
     )
     assert len(result.question.admissible_segments) == 1
     assert result.reason == "incomplete_peak_context"
-    assert result.state == "unavailable" and result.facts is None
+    assert result.state == "unavailable" and result.answer.selected_segment is None
 
 
 def test_backfill_retains_insufficient_support_reason_for_two_isolated_scans() -> None:
@@ -215,7 +234,7 @@ def test_backfill_retains_insufficient_support_reason_for_two_isolated_scans() -
     )
     assert result.state == "unavailable"
     assert result.reason == "insufficient_original_xic_continuity"
-    assert result.facts is None
+    assert result.answer.selected_segment is None
     assert result.segment_universe.segments
 
 
@@ -228,8 +247,8 @@ def test_unreliable_location_evaluates_unique_acquired_peak() -> None:
         selection_policy_version=PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     )
     assert result.state == "available"
-    assert result.facts is not None
-    assert result.facts.apex_rt_min == pytest.approx(0.4)
+    assert result.answer.selected_segment is not None
+    assert result.answer.selected_segment.apex_rt_min == pytest.approx(0.4)
 
 
 def test_unavailable_prepared_signal_keeps_live_asls_intermediate(monkeypatch) -> None:
@@ -268,10 +287,13 @@ def test_supported_short_peak_survives_noise_hits_and_persistence(
         selection_policy_version=policy,
     )
     assert result.state == "available"
-    assert result.facts is not None and result.integration is not None
-    assert result.facts.apex_rt_min == pytest.approx(rt[apex_index])
+    assert result.answer.selected_segment is not None and result.integration is not None
+    assert result.answer.selected_segment.apex_rt_min == pytest.approx(rt[apex_index])
     candidates = physical_candidates_result(prepared, result.segment_universe)
-    assert any(c.peak.rt == result.facts.apex_rt_min for c in candidates.candidates)
+    assert any(
+        c.peak.rt == result.answer.selected_segment.apex_rt_min
+        for c in candidates.candidates
+    )
     assert "near_detection_limit" not in result.integration.boundary_sources
 
 
@@ -280,7 +302,7 @@ def test_exterior_context_change_keeps_observed_near_baseline_peak_available() -
     full_signal = prepare_physical_signal(rt, raw)
     cropped_signal = prepare_physical_signal(rt[:-1], raw[:-1])
     full = evaluate_physical_peak(full_signal, query_rt_min=rt[23])
-    assert full.state == "available" and full.facts is not None
+    assert full.state == "available" and full.answer.selected_segment is not None
     selected = full.answer.selected_segment
     assert selected is not None
     assert selected.end_index + 7 <= len(rt) - 1
@@ -292,10 +314,19 @@ def test_exterior_context_change_keeps_observed_near_baseline_peak_available() -
 
     cropped = evaluate_physical_peak(cropped_signal, query_rt_min=rt[23])
     assert cropped.state == "available"
-    assert cropped.facts is not None and cropped.integration is not None
-    assert cropped.facts.apex_rt_min == full.facts.apex_rt_min
     assert (
-        rt[0] < cropped.facts.left_rt_min < rt[23] < cropped.facts.right_rt_min < rt[-2]
+        cropped.answer.selected_segment is not None and cropped.integration is not None
+    )
+    assert (
+        cropped.answer.selected_segment.apex_rt_min
+        == full.answer.selected_segment.apex_rt_min
+    )
+    assert (
+        rt[0]
+        < cropped.answer.selected_segment.left_rt_min
+        < rt[23]
+        < cropped.answer.selected_segment.right_rt_min
+        < rt[-2]
     )
 
 
@@ -316,7 +347,7 @@ def test_truncated_physical_peak_has_no_numeric_facts() -> None:
 
     assert result.state == "unavailable"
     assert result.reason == "incomplete_peak_context"
-    assert result.facts is None
+    assert result.answer.selected_segment is None
     assert result.integration is None
 
 
@@ -334,11 +365,13 @@ def test_search_window_does_not_admit_context_only_peak(target_present: bool) ->
     )
     if target_present:
         assert result.state == "available"
-        assert result.facts is not None
-        assert result.facts.apex_rt_min == pytest.approx(2.3, abs=0.04)
+        assert result.answer.selected_segment is not None
+        assert result.answer.selected_segment.apex_rt_min == pytest.approx(
+            2.3, abs=0.04
+        )
     else:
         assert result.state == "unavailable"
-        assert result.facts is None and result.integration is None
+        assert result.answer.selected_segment is None and result.integration is None
 
 
 def test_search_window_keeps_complete_peak_and_round_trips() -> None:
@@ -351,8 +384,13 @@ def test_search_window_keeps_complete_peak_and_round_trips() -> None:
         selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
         search_rt_window=(2.8, 3.2),
     )
-    assert result.state == "available" and result.facts is not None
-    assert result.facts.left_rt_min < 2.8 < 3.2 < result.facts.right_rt_min
+    assert result.state == "available" and result.answer.selected_segment is not None
+    assert (
+        result.answer.selected_segment.left_rt_min
+        < 2.8
+        < 3.2
+        < result.answer.selected_segment.right_rt_min
+    )
     assert result.question.search_rt_window == (2.8, 3.2)
     assert result.question.context_rt_start_min == 0.0
     assert result.question.context_rt_end_min == 6.0
@@ -371,7 +409,7 @@ def test_search_window_does_not_resolve_two_eligible_peaks_by_strength() -> None
         search_rt_window=(1.0, 3.5),
     )
     assert len(result.question.admissible_segments) == 2
-    assert result.state == "unavailable" and result.facts is None
+    assert result.state == "unavailable" and result.answer.selected_segment is None
     assert result.integration is None
 
 
@@ -421,7 +459,7 @@ def test_isolated_one_or_two_scan_pulses_do_not_supply_complete_peak_evidence(
         else "insufficient_local_peak_contrast"
     )
     assert result.answer.selected_segment is None
-    assert result.facts is None and result.integration is None
+    assert result.answer.selected_segment is None and result.integration is None
 
 
 @pytest.mark.parametrize(
@@ -447,7 +485,7 @@ def test_discontinuous_original_points_cannot_mint_fresh_physical_facts(
     assert fresh.state == "unavailable"
     assert fresh.reason == "insufficient_original_xic_continuity"
     assert fresh.answer.selected_segment is None
-    assert fresh.facts is None and fresh.integration is None
+    assert fresh.answer.selected_segment is None and fresh.integration is None
 
 
 @pytest.mark.parametrize(
@@ -466,7 +504,7 @@ def test_adjacent_pair_with_an_isolated_point_still_requires_contrast(
     )
     assert result.state == "unavailable"
     assert result.reason == "insufficient_local_peak_contrast"
-    assert result.facts is None
+    assert result.answer.selected_segment is None
 
 
 @pytest.mark.parametrize(
@@ -495,7 +533,7 @@ def test_heavily_interrupted_peak_without_contrast_persists_unavailable(
     )
     assert fresh.state == "unavailable"
     assert fresh.reason == "insufficient_local_peak_contrast"
-    assert fresh.facts is None and fresh.integration is None
+    assert fresh.answer.selected_segment is None and fresh.integration is None
 
 
 @pytest.mark.parametrize(
@@ -538,10 +576,12 @@ def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
         selection_policy_version=policy,
     )
     assert result.state == "available"
-    assert result.facts is not None and result.integration is not None
-    assert result.facts.left_rt_min <= rt[positions[0]]
-    assert result.facts.right_rt_min >= rt[positions[-1]]
-    assert result.facts.area_counts_seconds == pytest.approx(np.trapezoid(raw, rt) * 60)
+    assert result.answer.selected_segment is not None and result.integration is not None
+    assert result.answer.selected_segment.left_rt_min <= rt[positions[0]]
+    assert result.answer.selected_segment.right_rt_min >= rt[positions[-1]]
+    assert result.answer.selected_segment.area_counts_seconds == pytest.approx(
+        np.trapezoid(raw, rt) * 60
+    )
     assert "near_detection_limit" in result.integration.boundary_sources
     other = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
@@ -571,7 +611,7 @@ def test_stationary_sparse_hits_do_not_establish_a_censored_peak(policy) -> None
         selection_policy_version=policy,
     )
     assert result.state == "unavailable"
-    assert result.facts is None
+    assert result.answer.selected_segment is None
 
 
 @pytest.mark.parametrize(
@@ -593,7 +633,7 @@ def test_strong_continuous_peak_with_sparse_tail_keeps_original_segment(
         selection_policy_version=policy,
     )
     assert result.state == "available" and result.reason == ""
-    assert result.facts is not None and result.integration is not None
+    assert result.answer.selected_segment is not None and result.integration is not None
     selected = result.answer.selected_segment
     assert selected is not None
     # The continuous Gaussian returns to baseline before the sparse tail.
@@ -616,7 +656,9 @@ def test_strong_continuous_peak_with_sparse_tail_keeps_original_segment(
         )
         * 60.0
     )
-    assert result.facts.area_counts_seconds == pytest.approx(ordinary_area)
+    assert result.answer.selected_segment.area_counts_seconds == pytest.approx(
+        ordinary_area
+    )
     assert result.integration.area_raw_counts_seconds == pytest.approx(
         np.trapezoid(raw[interval], rt[interval]) * 60.0
     )
@@ -654,8 +696,11 @@ def test_compact_continuous_doublet_keeps_component_areas(
             selection_policy_version=policy,
         )
         assert result.state == "available"
-        assert result.facts is not None and result.integration is not None
-        facts = result.facts
+        assert (
+            result.answer.selected_segment is not None
+            and result.integration is not None
+        )
+        facts = result.answer.selected_segment
         assert facts.apex_rt_min == pytest.approx(center, abs=scan_spacing)
         # The analytical tenth-height Gaussian interval retains erf(sqrt(log 10))
         # of its mass; neither smoothing nor the gap hit may add the other peak.
@@ -673,9 +718,11 @@ def test_compact_continuous_doublet_keeps_component_areas(
             query_rt_min=center,
             selection_policy_version=policy,
         )
-        assert focused.state == "available" and focused.facts is not None
-        assert focused.facts.apex_rt_min == facts.apex_rt_min
-        assert focused.facts.area_counts_seconds == pytest.approx(
+        assert (
+            focused.state == "available" and focused.answer.selected_segment is not None
+        )
+        assert focused.answer.selected_segment.apex_rt_min == facts.apex_rt_min
+        assert focused.answer.selected_segment.area_counts_seconds == pytest.approx(
             expected_area,
             rel=0.03,
         )
@@ -704,16 +751,18 @@ def test_continuous_peak_with_isolated_dropouts_keeps_morphology_area(
         selection_policy_version=policy,
     )
     assert result.state == "available"
-    assert result.facts is not None and result.integration is not None
-    assert 3.8 < result.facts.apex_rt_min < 4.2
-    assert result.facts.area_source == "trapezoid_counts_seconds_on_canonical_signal"
+    assert result.answer.selected_segment is not None and result.integration is not None
+    assert 3.8 < result.answer.selected_segment.apex_rt_min < 4.2
+    assert result.integration.ms1_morphology_area_source == (
+        "trapezoid_counts_seconds_on_canonical_signal"
+    )
     assert "near_detection_limit" not in result.integration.boundary_sources
     assert "local_hit_density_enrichment" not in result.integration.boundary_sources
     assert prepared.prepared is not None
     segment = result.answer.selected_segment
     assert segment is not None
     interval = slice(segment.start_index, segment.end_index)
-    assert result.facts.area_counts_seconds == pytest.approx(
+    assert result.answer.selected_segment.area_counts_seconds == pytest.approx(
         np.trapezoid(
             np.asarray(prepared.prepared.positive_signal)[interval], rt[interval]
         )
@@ -734,12 +783,28 @@ def test_tail_dropout_neither_splits_nor_merges_a_resolved_doublet() -> None:
             prepare_physical_signal(rt, acquired),
             query_rt_min=2.0,
         )
-        assert result.state == "available" and result.facts is not None
+        assert (
+            result.state == "available" and result.answer.selected_segment is not None
+        )
         # Zero scans are censored: the notch is no valley and cannot hide the
         # acquired valley that separates the pair.
         assert len(result.segment_universe.segments) == 2
-        assert result.facts.apex_rt_min < 2.2
-        assert result.facts.right_rt_min < 3.5
+        assert result.answer.selected_segment.apex_rt_min < 2.2
+        assert result.answer.selected_segment.right_rt_min < 3.5
+
+
+def _measurement(evaluation: PhysicalPeakEvaluation) -> tuple[float | int, ...]:
+    """The selected peak's measured values, without its evidence labels."""
+    segment = evaluation.answer.selected_segment
+    assert segment is not None
+    return (
+        segment.apex_rt_min,
+        segment.left_rt_min,
+        segment.right_rt_min,
+        segment.height,
+        segment.scan_support_count,
+        segment.area_counts_seconds,
+    )
 
 
 def _physical_candidates(rt: np.ndarray, raw: np.ndarray) -> PeakCandidatesResult:
@@ -849,11 +914,11 @@ def test_whole_trend_has_matching_target_and_discovery_facts(
     ]
     for answer in answers:
         assert answer.state == "available", answer.reason
-        assert answer.facts is not None
-        assert answer.facts.left_rt_min == rt[above_return[0] - 1]
-        assert answer.facts.right_rt_min == rt[above_return[-1] + 1]
+        assert answer.answer.selected_segment is not None
+        assert answer.answer.selected_segment.left_rt_min == rt[above_return[0] - 1]
+        assert answer.answer.selected_segment.right_rt_min == rt[above_return[-1] + 1]
         observed_area = float(np.trapezoid(raw, rt)) * 60
-        assert answer.facts.area_counts_seconds > 0.85 * observed_area
+        assert answer.answer.selected_segment.area_counts_seconds > 0.85 * observed_area
     assert answers[0].integration == answers[1].integration
     assert answers[0].answer.selected_segment == (answers[1].answer.selected_segment)
 
@@ -889,7 +954,7 @@ def test_sparse_stationary_background_is_not_a_peak(
         selection_policy_version=policy,
     )
     assert result.state == "unavailable"
-    assert result.facts is None and result.integration is None
+    assert result.answer.selected_segment is None and result.integration is None
 
 
 @pytest.mark.parametrize("background_fragments", [False, True])
@@ -915,7 +980,7 @@ def test_acquired_peak_top_not_low_alternating_neighbors_supplies_support(
     )
     if not background_fragments:
         assert result.state == "unavailable"
-        assert result.facts is None and result.integration is None
+        assert result.answer.selected_segment is None and result.integration is None
         if policy == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY:
             # The query itself is the acquired 10%-height valley between two
             # alternating raw maxima, not a uniquely owned raw peak. This is
@@ -960,10 +1025,10 @@ def test_overlapping_components_keep_one_envelope_and_review(
         )
     )
     assert targeted.state == discovery.state == "available"
-    assert discovery.facts is not None
-    assert discovery.facts.apex_rt_min == pytest.approx(7.0, abs=0.15)
-    assert discovery.facts.left_rt_min < 3.0
-    assert discovery.facts.right_rt_min > 7.0
+    assert discovery.answer.selected_segment is not None
+    assert discovery.answer.selected_segment.apex_rt_min == pytest.approx(7.0, abs=0.15)
+    assert discovery.answer.selected_segment.left_rt_min < 3.0
+    assert discovery.answer.selected_segment.right_rt_min > 7.0
     assert discovery.integration == targeted.integration
     assert discovery.requires_overlap_review
 
@@ -1020,7 +1085,7 @@ def test_background_fluctuation_cannot_borrow_height_from_its_baseline(
     )
     assert fresh.state == "unavailable"
     assert fresh.reason == "insufficient_original_xic_support"
-    assert fresh.facts is None and fresh.integration is None
+    assert fresh.answer.selected_segment is None and fresh.integration is None
 
 
 @pytest.mark.parametrize(
@@ -1041,7 +1106,7 @@ def test_constant_background_cannot_supply_acquired_support_to_an_impulse(
     )
     assert fresh.state == "unavailable"
     assert fresh.reason == "insufficient_original_xic_support"
-    assert fresh.facts is None and fresh.integration is None
+    assert fresh.answer.selected_segment is None and fresh.integration is None
 
 
 @pytest.mark.parametrize("width", [0.1, 0.5, 1.0])
@@ -1083,11 +1148,11 @@ def test_background_component_generator_respects_query_ownership_policy(
         )
         assert result.state == "unavailable"
         assert result.reason == "incomplete_peak_context"
-        assert result.facts is None and result.integration is None
+        assert result.answer.selected_segment is None and result.integration is None
     else:
         assert result.state == "available"
         assert result.integration is not None
-        assert result.facts is not None
+        assert result.answer.selected_segment is not None
 
 
 @pytest.mark.parametrize("positive_points", [2, 3])
@@ -1191,7 +1256,7 @@ def test_other_peak_support_cannot_backfill_a_singleton_or_resolve_ambiguity(
     )
     assert result.state == "unavailable"
     assert result.reason == reason
-    assert result.facts is None
+    assert result.answer.selected_segment is None
     assert result.integration is None
 
 
@@ -1215,9 +1280,11 @@ def test_wide_supported_peak_does_not_use_uncut_top_ripples_as_contrast_valleys(
     )
 
     assert result.state == "available"
-    assert result.facts is not None
+    assert result.answer.selected_segment is not None
     analytic_area = amplitude * sigma * np.sqrt(2 * np.pi) * 60.0
-    assert result.facts.area_counts_seconds == pytest.approx(analytic_area, rel=0.15)
+    assert result.answer.selected_segment.area_counts_seconds == pytest.approx(
+        analytic_area, rel=0.15
+    )
     (segment,) = result.segment_universe.segments
     assert segment.apex_rt_min == pytest.approx(center, abs=0.03)
     assert segment.left_rt_min <= center - 1.5 * sigma
@@ -1242,17 +1309,21 @@ def test_clear_doublet_closes_at_relative_return_before_the_deeper_valley() -> N
         query_rt_min=right_center,
     )
 
-    assert left.state == "available" and left.facts is not None
-    assert right.state == "available" and right.facts is not None
-    assert left.facts.apex_rt_min == pytest.approx(left_center, abs=0.03)
-    assert right.facts.apex_rt_min == pytest.approx(right_center, abs=0.03)
+    assert left.state == "available" and left.answer.selected_segment is not None
+    assert right.state == "available" and right.answer.selected_segment is not None
+    assert left.answer.selected_segment.apex_rt_min == pytest.approx(
+        left_center, abs=0.03
+    )
+    assert right.answer.selected_segment.apex_rt_min == pytest.approx(
+        right_center, abs=0.03
+    )
     # Each lobe returns below 10% before the very deep inter-peak valley.
-    assert left_center < left.facts.right_rt_min < valley_rt
-    assert valley_rt < right.facts.left_rt_min < right_center
-    assert left.facts.right_rt_min == pytest.approx(
+    assert left_center < left.answer.selected_segment.right_rt_min < valley_rt
+    assert valley_rt < right.answer.selected_segment.left_rt_min < right_center
+    assert left.answer.selected_segment.right_rt_min == pytest.approx(
         left_center + sigma * np.sqrt(2.0 * np.log(10.0)), abs=0.04
     )
-    assert right.facts.left_rt_min == pytest.approx(
+    assert right.answer.selected_segment.left_rt_min == pytest.approx(
         right_center - sigma * np.sqrt(2.0 * np.log(10.0)), abs=0.04
     )
     assert left.answer.selected_segment != right.answer.selected_segment
@@ -1270,10 +1341,10 @@ def test_tail_beyond_relative_return_does_not_select_the_peak(
 
     assert result.state == "unavailable"
     assert result.reason == "no_selection"
-    assert result.facts is None
+    assert result.answer.selected_segment is None
     peak = evaluate_physical_peak(prepared, query_rt_min=2.0)
-    assert peak.state == "available" and peak.facts is not None
-    assert peak.facts.apex_rt_min == pytest.approx(2.0)
+    assert peak.state == "available" and peak.answer.selected_segment is not None
+    assert peak.answer.selected_segment.apex_rt_min == pytest.approx(2.0)
 
 
 @pytest.mark.parametrize("sigma", [0.02, 0.2])
@@ -1292,10 +1363,10 @@ def test_tenth_height_return_uses_canonical_apex_not_coarse_envelope(sigma) -> N
         query_rt_min=2.0,
         selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     )
-    assert peak.state == "available" and peak.facts is not None
-    assert peak.facts.left_rt_min == rt[left]
-    assert peak.facts.right_rt_min == rt[right]
-    assert peak.facts.area_counts_seconds == pytest.approx(
+    assert peak.state == "available" and peak.answer.selected_segment is not None
+    assert peak.answer.selected_segment.left_rt_min == rt[left]
+    assert peak.answer.selected_segment.right_rt_min == rt[right]
+    assert peak.answer.selected_segment.area_counts_seconds == pytest.approx(
         np.trapezoid(signal[left : right + 1], rt[left : right + 1]) * 60.0
     )
     tail = evaluate_physical_peak(
@@ -1306,7 +1377,7 @@ def test_tenth_height_return_uses_canonical_apex_not_coarse_envelope(sigma) -> N
     # The analytical single Gaussian has no separating raw valley here.
     # Its canonical 10% return still controls area, not NL membership.
     assert tail.state == "available"
-    assert tail.facts == peak.facts
+    assert _measurement(tail) == _measurement(peak)
 
 
 @pytest.mark.parametrize(
@@ -1339,11 +1410,11 @@ def test_group_window_selects_only_one_complete_peak(
     if expected == "ambiguous":
         assert result.reason == "ambiguous_segment_candidates"
     if expected == "available":
-        assert result.facts is not None
-        assert result.facts.apex_rt_min == pytest.approx(2.0)
-        assert result.facts.left_rt_min > query_rt
+        assert result.answer.selected_segment is not None
+        assert result.answer.selected_segment.apex_rt_min == pytest.approx(2.0)
+        assert result.answer.selected_segment.left_rt_min > query_rt
     else:
-        assert result.facts is None
+        assert result.answer.selected_segment is None
         assert result.integration is None
 
 
@@ -1502,10 +1573,14 @@ def test_shared_owner_closes_observed_tail_at_measurement_noise(
     )
     assert result.reason == expected_reason
     if not expected_reason:
-        assert result.state == "available" and result.facts is not None
-        assert result.facts.apex_rt_min == pytest.approx(9.04, abs=0.05)
-        assert rt[0] < result.facts.left_rt_min < 8.96988
-        assert result.facts.right_rt_min < rt[-1]
+        assert (
+            result.state == "available" and result.answer.selected_segment is not None
+        )
+        assert result.answer.selected_segment.apex_rt_min == pytest.approx(
+            9.04, abs=0.05
+        )
+        assert rt[0] < result.answer.selected_segment.left_rt_min < 8.96988
+        assert result.answer.selected_segment.right_rt_min < rt[-1]
 
 
 @pytest.mark.parametrize(
@@ -1531,8 +1606,8 @@ def test_group_window_prefers_the_one_peak_containing_the_group_rt(
     )
     assert result.reason == expected_reason
     if not expected_reason:
-        assert result.facts is not None
-        assert result.facts.apex_rt_min == pytest.approx(2.0)
+        assert result.answer.selected_segment is not None
+        assert result.answer.selected_segment.apex_rt_min == pytest.approx(2.0)
 
 
 @pytest.mark.parametrize("has_signal", [True, False])
@@ -1560,7 +1635,7 @@ def test_no_selection_policy_roundtrip_preserves_physical_context(
     assert evaluation.question.universe.segments == ordinary.question.universe.segments
     assert evaluation.question.admissible_segments == ()
     assert evaluation.state == "unavailable"
-    assert evaluation.facts is None
+    assert evaluation.answer.selected_segment is None
     assert evaluation.integration is None
     if has_signal:
         assert ordinary.state == "available"
@@ -1594,17 +1669,19 @@ def test_middle_query_selects_the_unresolved_envelope_not_a_component(
     ]
     for answer in answers:
         assert answer.state == "available", answer.reason
-        assert answer.facts is not None
-        assert answer.facts.apex_rt_min == pytest.approx(12.5, abs=0.15)
+        assert answer.answer.selected_segment is not None
+        assert answer.answer.selected_segment.apex_rt_min == pytest.approx(
+            12.5, abs=0.15
+        )
         # Only the left valley is clear. The middle and right lobes share one
         # envelope and cannot claim separate component-specific areas.
-        assert 9.4 < answer.facts.left_rt_min < 10.3
-        assert answer.facts.right_rt_min > 13.0
+        assert 9.4 < answer.answer.selected_segment.left_rt_min < 10.3
+        assert answer.answer.selected_segment.right_rt_min > 13.0
         assert answer.requires_overlap_review
     assert answers[0].integration == answers[1].integration
     # Measurement is unchanged; the Discovery interval is raw-valley-owned,
     # whereas ordinary point segmentation reports its canonical valley label.
-    assert answers[0].facts == answers[1].facts
+    assert _measurement(answers[0]) == _measurement(answers[1])
     assert (
         set(answers[0].answer.selected_segment.evidence_sources)
         - set(answers[1].answer.selected_segment.evidence_sources)
@@ -1625,13 +1702,17 @@ def test_brief_apex_dropout_does_not_create_two_quantitative_components(
         query_rt_min=5.0,
     )
     assert answer.state == "available"
-    assert answer.facts is not None
+    assert answer.answer.selected_segment is not None
     assert len(answer.segment_universe.segments) == 1
-    assert answer.facts.left_rt_min < 3.4
-    assert answer.facts.right_rt_min > 6.6
+    assert answer.answer.selected_segment.left_rt_min < 3.4
+    assert answer.answer.selected_segment.right_rt_min > 6.6
     # A 10%-height return retains about 96.8% of Gaussian mass, not the entire
     # positive tail. A false split would still lose about half the envelope.
     assert prepared.prepared is not None
     observed_mass = float(np.trapezoid(prepared.prepared.positive_signal, rt)) * 60.0
-    assert 0.96 * observed_mass < answer.facts.area_counts_seconds < observed_mass
+    assert (
+        0.96 * observed_mass
+        < answer.answer.selected_segment.area_counts_seconds
+        < observed_mass
+    )
     assert prepared.prepared.raw[middle - 1 : middle + 2] == (0.0, 0.0, 0.0)

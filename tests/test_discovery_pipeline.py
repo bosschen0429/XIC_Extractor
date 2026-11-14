@@ -1409,7 +1409,7 @@ def test_pipeline_scores_ms1_scan_support_against_the_profile_target(
             ).signal_processing_profile,
         )
         .evaluate(float(rows[0]["query_rt_min"]))
-        .facts
+        .answer.selected_segment
     )
     assert facts is not None
     assert facts.apex_rt_min == float(rows[0]["ms1_apex_rt"])

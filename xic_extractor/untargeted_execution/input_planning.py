@@ -16,7 +16,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.discovery.models import DiscoveryPeak
+from xic_extractor.discovery.models import DiscoveryPeak, representative_event_rt
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlComposition,
@@ -210,18 +210,22 @@ def prepare_indexed_untargeted_plan(
     feature_ids = source.feature_candidate_ids()
     precursor_by_id = {cid: source.locations[cid].peak_mz for cid in feature_ids}
 
+    def locate(candidate: DiscoveryPeak) -> DiscoveryPeak:
+        located = replace(
+            candidate,
+            located_events=source.located_events(
+                candidate, neutral_loss_by_tag=settings.neutral_loss_by_tag
+            ),
+        )
+        # A peak's representative MS2 scan must be in its event table; a
+        # missing row means the persisted Discovery outputs do not match.
+        representative_event_rt(located)
+        return located
+
     def load_partition(candidate_ids: tuple[str, ...]):
         candidates = source.load_candidates(candidate_ids)
         located = {
-            stem: tuple(
-                replace(
-                    candidate,
-                    located_events=source.located_events(
-                        candidate, neutral_loss_by_tag=settings.neutral_loss_by_tag
-                    ),
-                )
-                for candidate in values
-            )
+            stem: tuple(locate(candidate) for candidate in values)
             for stem, values in candidates.items()
         }
         return located, {stem: () for stem in source}

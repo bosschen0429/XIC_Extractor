@@ -105,7 +105,6 @@ class PhysicalPeakPopulation:
             question,
             answer,
             None,
-            None,
             operations,
         )
 

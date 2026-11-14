@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TypeAlias, cast
 
@@ -39,26 +39,17 @@ from xic_extractor.alignment.result.application_result import (
 )
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
+    TerminalSearchObservation,
     finalize_scientific_alignment,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.peak_detection.capture import (
-    SampleLocalCapture,
-    bind_owner_backed_capture_hypothesis,
-    capture_peak_hypotheses,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
 )
-from xic_extractor.peak_detection.observations import (
-    PeakObservation,
-)
-from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
     UntargetedSearchScope,
 )
-from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -77,21 +68,12 @@ class WorkflowStageFailure(Exception):
 
 class WorkflowStage(str, Enum):
     RUNTIME = "runtime"
-    CAPTURE = "capture"
     CROSS_SAMPLE_GROUPING = "cross_sample_grouping"
     SCIENTIFIC_FINAL = "scientific_final"
     PRE_CELL_PROJECTION = "pre_cell_projection"
     CELL_DECISION = "cell_decision"
     POST_CELL_PROJECTION = "post_cell_projection"
     APPLICATION_RESULT = "application_result"
-
-
-@dataclass(frozen=True, slots=True)
-class CaptureWorkflowArguments:
-    candidate_id: str
-    trace: Trace
-    owner_observation: PeakObservation | None = None
-    owner_hypothesis: MeasuredPeakHypothesis | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,7 +94,7 @@ WorkflowRequest: TypeAlias = TargetWorkflowRequest | UntargetWorkflowComposition
 
 @dataclass(frozen=True, slots=True)
 class _WorkflowAdapterFields:
-    capture_inputs: tuple[CaptureWorkflowArguments, ...]
+    terminal_subjects: tuple[TerminalSearchObservation, ...]
     predecessor_cell_observations: tuple[CellObservation, ...]
     rt_frame: SampleRtFrame
     backfill_cell_observations: tuple[CellObservation, ...] = ()
@@ -124,17 +106,7 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
         field(kw_only=True)
     )
     alignment_config: AlignmentConfig = field(kw_only=True)
-    completed_capture_handoff: InitVar[tuple[SampleLocalCapture, ...] | None] = None
     targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = ()
-
-    def __post_init__(
-        self, completed_capture_handoff: tuple[SampleLocalCapture, ...] | None = None
-    ) -> None:
-        object.__setattr__(self, "_completed_captures", completed_capture_handoff)
-
-    @property
-    def completed_captures(self) -> tuple[SampleLocalCapture, ...] | None:
-        return getattr(self, "_completed_captures", None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,8 +124,6 @@ WorkflowAdapter: TypeAlias = TargetWorkflowAdapter | UntargetWorkflowAdapter
 def compose_untarget_subject(
     request: UntargetWorkflowCompositionRequest,
     adapter: UntargetWorkflowAdapter,
-    *,
-    completed_captures: tuple[SampleLocalCapture, ...] | None = None,
 ) -> FinalizedUntargetApplicationResult:
     """Close one bounded subject workset without asserting runtime completion."""
     if type(request) is not UntargetWorkflowCompositionRequest:
@@ -169,11 +139,7 @@ def compose_untarget_subject(
             "Subject composition requires one exact included subject workset"
         )
     try:
-        result = complete_analysis(
-            request,
-            adapter,
-            completed_captures=completed_captures,
-        )
+        result = complete_analysis(request, adapter)
     except WorkflowStageFailure as failure:
         raise AlignmentWorkflowContractError(
             f"Untarget subject composition failed at {failure.stage.value}: "
@@ -189,60 +155,19 @@ def compose_untarget_subject(
 def _compose_application_result(
     request: WorkflowRequest,
     adapter: WorkflowAdapter,
-    *,
-    completed_captures: tuple[SampleLocalCapture, ...] | None = None,
 ) -> FinalizedTargetApplicationResult | FinalizedUntargetApplicationResult:
-    stage = WorkflowStage.CAPTURE
+    stage = WorkflowStage.CROSS_SAMPLE_GROUPING
     try:
-        if completed_captures is None:
-            captures = tuple(
-                _capture_workflow_input(request.scope, item)
-                for item in adapter.capture_inputs
-            )
-        else:
-            if type(completed_captures) is not tuple:
-                raise AlignmentWorkflowContractError(
-                    "completed captures require an immutable owner population"
-                )
-            for capture, item in zip(
-                completed_captures, adapter.capture_inputs, strict=True
-            ):
-                if (
-                    type(capture) is not SampleLocalCapture
-                    or capture.scope is not request.scope
-                    or capture.candidate_id != item.candidate_id
-                    or capture.trace is not item.trace
-                ):
-                    raise AlignmentWorkflowContractError(
-                        "completed capture crossed its workflow scope or input"
-                    )
-                if item.owner_hypothesis is not None and (
-                    capture.measured_hypothesis is not item.owner_hypothesis
-                    or item.owner_observation != item.owner_hypothesis.peak
-                ):
-                    raise AlignmentWorkflowContractError(
-                        "completed capture crossed its owner binding"
-                    )
-                if (
-                    item.owner_hypothesis is None
-                    and capture.selected_hypothesis is not None
-                ):
-                    raise AlignmentWorkflowContractError(
-                        "completed capture crossed its sealed selection"
-                    )
-            captures = completed_captures
         if type(adapter) is TargetWorkflowAdapter:
-            stage = WorkflowStage.CROSS_SAMPLE_GROUPING
             context = build_targeted_cross_sample_groups(
                 samples=request.scope.samples,
-                captures=captures,
+                terminal_subjects=adapter.terminal_subjects,
                 sample_assessments=adapter.sample_assessments,
                 alignment_config=adapter.alignment_config,
                 rt_frame=adapter.rt_frame,
             )
         else:
             untarget_adapter = cast(UntargetWorkflowAdapter, adapter)
-            stage = WorkflowStage.CROSS_SAMPLE_GROUPING
             # The adapter contract admits Untarget only with completed grouping.
             assert untarget_adapter.completed_grouping is not None
             context = untarget_adapter.completed_grouping
@@ -265,7 +190,7 @@ def _compose_application_result(
             )
         scientific = finalize_scientific_alignment(
             scope=request.scope,
-            captures=captures,
+            terminal_subjects=adapter.terminal_subjects,
             grouping_result=final_receipt,
             cell_observation_handoff=handoff,
             predecessor_cell_observations=(
@@ -289,27 +214,6 @@ def _compose_application_result(
         raise
     except Exception as exc:
         raise WorkflowStageFailure(stage, exc) from exc
-
-
-def _capture_workflow_input(
-    scope: TargetSearchScope | UntargetedSearchScope,
-    item: CaptureWorkflowArguments,
-) -> SampleLocalCapture:
-    capture = capture_peak_hypotheses(
-        scope=scope,
-        candidate_id=item.candidate_id,
-        trace=item.trace,
-    )
-    owner_observation = item.owner_observation
-    owner_hypothesis = item.owner_hypothesis
-    if owner_observation is None or capture.selected_hypothesis is None:
-        return capture
-    assert owner_hypothesis is not None
-    return bind_owner_backed_capture_hypothesis(
-        capture,
-        observation=owner_observation,
-        hypothesis=owner_hypothesis,
-    )
 
 
 def _untarget_scope_memberships(scope: UntargetedSearchScope) -> dict[str, str]:
@@ -374,24 +278,13 @@ def _finish_variant(
 def complete_analysis(
     request: WorkflowRequest,
     adapter: WorkflowAdapter,
-    *,
-    completed_captures: tuple[SampleLocalCapture, ...] | None = None,
 ) -> FinalizedTargetApplicationResult | FinalizedUntargetApplicationResult:
     """Complete acquired evidence without invoking runtime or persistence."""
-    return _compose_application_result(
-        request,
-        adapter,
-        completed_captures=(
-            adapter.completed_captures
-            if completed_captures is None and type(adapter) is TargetWorkflowAdapter
-            else completed_captures
-        ),
-    )
+    return _compose_application_result(request, adapter)
 
 
 __all__ = (
     "AlignmentWorkflowContractError",
-    "CaptureWorkflowArguments",
     "TargetWorkflowAdapter",
     "TargetWorkflowRequest",
     "UntargetWorkflowAdapter",

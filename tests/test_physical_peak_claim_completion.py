@@ -8,6 +8,7 @@ from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_support_policy,
     cid_nl_unique_support,
 )
+from tests.owner_peak_fixtures import trace_peak
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
@@ -39,7 +40,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     mint_cid_nl_method_assessment,
 )
 from xic_extractor.peak_detection.observations import (
-    mint_peak_observation,
     physical_peak_observation_integration,
 )
 from xic_extractor.peak_detection.physical_peak_equivalence import (
@@ -98,8 +98,8 @@ def _view(
         if unreliable
         else PHYSICAL_PEAK_POINT_POLICY,
     )
-    assert evaluation.facts is not None
-    peak = mint_peak_observation(
+    assert evaluation.answer.selected_segment is not None
+    peak = trace_peak(
         sample=sample,
         trace=Trace.from_arrays(
             sample_name=stem,

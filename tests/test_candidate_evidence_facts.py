@@ -202,12 +202,12 @@ def test_physical_owner_mints_closed_unique_admissible_bounded_facts() -> None:
     assert universe.context_rt_end_min == 3.0
     assert evaluation.question.admissible_segments == (universe.segments[0],)
     assert evaluation.state == "available"
-    assert evaluation.facts is not None
+    assert evaluation.answer.selected_segment is not None
     assert universe.prepared == evaluation.prepared
     assert evaluation.question.universe == universe
     assert evaluation.answer.question == evaluation.question
     assert evaluation.answer.selected_segment == universe.segments[0]
-    assert evaluation.facts.area_counts_seconds > 0.0
+    assert evaluation.answer.selected_segment.area_counts_seconds > 0.0
     assert evaluation.integration is not None
     selected = universe.segments[0]
     selected_raw = raw[selected.start_index : selected.end_index]
@@ -310,7 +310,7 @@ def test_malformed_trace_has_failed_terminal_question_and_rehydrates() -> None:
     assert evaluation.state == "failed"
     assert evaluation.reason == "nonfinite_trace"
     assert evaluation.segment_universe.segments == ()
-    assert evaluation.facts is None
+    assert evaluation.answer.selected_segment is None
     assert evaluation.integration is None
     assert evaluation.operations == ("trace_evaluation",)
     np.testing.assert_array_equal(evaluation.prepared.rt, rt)

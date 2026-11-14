@@ -29,7 +29,6 @@ from xic_extractor.discovery.ms2_events import collect_strict_nl_events
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
-from xic_extractor.peak_detection.capture import capture_physical_backfill_observation
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.alignment import (
@@ -38,6 +37,9 @@ from xic_extractor.untargeted_execution.alignment import (
 from xic_extractor.untargeted_execution.execution import (
     execute_untargeted_plan,
     materialize_untargeted_partition,
+)
+from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition import (
+    physical_backfill_observation,
 )
 
 
@@ -185,9 +187,8 @@ def test_review_rows_never_become_alignment_roots(
         sample = next(s for s in plan.context.samples if s.raw_stem == "Overlap")
         raw = raws[paths[1]]
         evaluations = []
-        observation = capture_physical_backfill_observation(
+        observation = physical_backfill_observation(
             sample=sample,
-            method_subject=plan.subject_batch.subjects[0],
             trace=Trace(
                 sample_name="Overlap",
                 mz=500.0,
@@ -201,7 +202,6 @@ def test_review_rows_never_become_alignment_roots(
                 ].acquisition_source.acquisition_source_id,
             ),
             query_rt_min=8.0,
-            physical_mz=500.0,
             profile=TEST_PROFILE,
             resolver_mode="local_minimum",
             evaluation_sink=evaluations.append,
@@ -392,3 +392,82 @@ def test_alignment_rejects_raw_replaced_after_discovery_without_recalibration(
             ),
             raw_workers=1,
         )
+
+
+@pytest.mark.parametrize("damage", ["event_rows_missing", "event_table_missing"])
+def test_peak_without_its_representative_event_row_fails_at_alignment_input(
+    tmp_path, monkeypatch, damage
+):
+    """A peak names its representative MS2 scan; the event table must hold it."""
+    import csv
+
+    stems = ("Clean1", "Clean2")
+    paths = tuple(tmp_path / f"{stem}.raw" for stem in stems)
+    for path in paths:
+        path.write_bytes(path.stem.encode())
+    settings = replace(_settings(), ms1_search_padding_min=0.6)
+    spec = compile_discovery_processing_run_spec(
+        paths, discovery_settings=settings, signal_processing_profile=TEST_PROFILE
+    )
+    raws, csvs, receipts, event_csvs = {}, {}, {}, {}
+    for path, source in zip(paths, spec.acquisition_inputs, strict=True):
+        raw = _FakeRaw((8.0,), acquisition_source=source.acquisition_source)
+        raws[path] = raw
+        capture = capture_ms1_peaks(
+            raw,
+            build_discovery_ions(
+                collect_strict_nl_events(raw, raw_file=path, settings=settings),
+                settings=settings,
+            ),
+            acquisition_source=source.acquisition_source,
+            settings=settings,
+            signal_processing_profile=TEST_PROFILE,
+            ms1_centroid=lambda *_: None,
+        )
+        folder = tmp_path / path.stem
+        folder.mkdir()
+        receipts.update(
+            build_discovery_receipts(folder, (path,), {path.stem: capture.peaks})
+        )
+        csvs[path.stem] = folder / f"{path.stem}.owner-candidates.csv"
+        event_csvs[path.stem] = write_discovery_events_csv(
+            folder / "discovery_events.csv", capture.attachments
+        )
+    if damage == "event_table_missing":
+        event_csvs["Clean1"] = None
+    else:
+        with event_csvs["Clean1"].open(encoding="utf-8", newline="") as stream:
+            header = next(csv.reader(stream))
+        with event_csvs["Clean1"].open("w", encoding="utf-8", newline="") as stream:
+            csv.writer(stream).writerow(header)
+    batch = DiscoveryBatchInput(
+        sample_order=stems,
+        peak_csvs=csvs,
+        raw_files={p.stem: p for p in paths},
+        event_csvs=event_csvs,
+        peak_receipts=receipts,
+    )
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    plan = prepare_untargeted_alignment_inputs(
+        discovery_batch=batch,
+        peaks_by_sample=DiscoveryInputSource(batch),
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "inputs",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        signal_processing_profile=TEST_PROFILE,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=i + 1,
+                sample_role="sample",
+            )
+            for i, stem in enumerate(stems)
+        ),
+        raw_workers=1,
+    )
+
+    with pytest.raises(ValueError, match="Clean1.*lack the representative scan"):
+        materialize_untargeted_partition(plan, plan.subject_batch)

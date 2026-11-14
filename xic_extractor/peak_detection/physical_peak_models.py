@@ -167,18 +167,6 @@ class PhysicalPeakAnswer:
 
 
 @dataclass(frozen=True, slots=True)
-class PhysicalPeakFacts:
-    schema_version: str
-    apex_rt_min: float
-    left_rt_min: float
-    right_rt_min: float
-    height: float
-    scan_support_count: int
-    area_counts_seconds: float
-    area_source: str
-
-
-@dataclass(frozen=True, slots=True)
 class PhysicalPeakEvaluation:
     state: PhysicalPeakState
     reason: str
@@ -186,7 +174,6 @@ class PhysicalPeakEvaluation:
     segment_universe: PhysicalSegmentUniverse
     question: PhysicalPeakQuestion
     answer: PhysicalPeakAnswer
-    facts: PhysicalPeakFacts | None
     integration: IntegrationResult | None
     operations: tuple[PhysicalPeakOperation, ...]
     # Live owner intermediates for projection; not scientific equality or identity.

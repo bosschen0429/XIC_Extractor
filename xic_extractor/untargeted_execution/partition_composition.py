@@ -38,9 +38,6 @@ from xic_extractor.execution.result_store import (
     StreamedResultStore,
 )
 from xic_extractor.immutable_sequence import ImmutableSequence
-from xic_extractor.peak_detection.capture import (
-    SampleLocalCapture,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
     is_unsearched_cid_nl_discovery_assessment,
@@ -49,11 +46,13 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     UntargetedCidNlMethodSubjectBatch,
 )
-from xic_extractor.peak_detection.observations import RetainedCaptureEvidence
+from xic_extractor.peak_detection.observations import (
+    PeakObservation,
+    RetainedCaptureEvidence,
+)
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
     CaptureCandidateBinding,
-    CaptureMethodConstraints,
     EvidenceProviderBinding,
     UntargetedSearchScope,
 )
@@ -136,11 +135,6 @@ def compose_untargeted_batch(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
         method_subjects=context.method_subject,
         samples=context.samples,
-        method_constraints=CaptureMethodConstraints(
-            boundary_policy="resolver_interval",
-            peak_config=context.peak_config,
-            signal_processing_profile=context.signal_processing_profile,
-        ),
         evidence_providers=tuple(
             EvidenceProviderBinding(CID_NL_PROVIDER_ID, subject.method_subject_id)
             for subject in plan.subject_batch.subjects
@@ -355,16 +349,13 @@ def group_acquired_partition(
         candidates=tuple(
             peak for peaks in batch.context.peaks_by_sample.values() for peak in peaks
         ),
-        capture_by_candidate=_runtime_captures_by_candidate(batch, sample_results),
+        observation_by_candidate=_runtime_observations_by_candidate(
+            batch, sample_results
+        ),
         sample_assessments=tuple(
             (result.job.sample, assessment)
             for result in sample_results
             for assessment in result.effective_assessments
-        ),
-        method_constraints=CaptureMethodConstraints(
-            boundary_policy="resolver_interval",
-            peak_config=batch.context.peak_config,
-            signal_processing_profile=batch.context.signal_processing_profile,
         ),
         alignment_config=alignment_config,
         rt_frame=batch.context.rt_frame,
@@ -572,16 +563,16 @@ def _build_production_composition_inputs(
     )
 
 
-def _runtime_captures_by_candidate(
+def _runtime_observations_by_candidate(
     batch: UntargetedPartitionInputs,
     sample_results: tuple[UntargetedInitialSampleResult, ...],
-) -> dict[str, SampleLocalCapture]:
-    captures: dict[str, SampleLocalCapture] = {}
+) -> dict[str, PeakObservation]:
+    observations: dict[str, PeakObservation] = {}
     for result in sample_results:
-        for capture in result.adapter_result.captures:
-            if capture.candidate_id in captures:
-                raise RuntimeError("runtime capture duplicated a peak")
-            captures[capture.candidate_id] = capture
+        for candidate_id, observation in result.adapter_result.candidate_observations:
+            if candidate_id in observations:
+                raise RuntimeError("runtime acquisition duplicated a peak")
+            observations[candidate_id] = observation
     partition_ids = {key for key, _ in batch.subject_batch.candidate_memberships}
     expected = {
         peak.peak_id
@@ -590,6 +581,6 @@ def _runtime_captures_by_candidate(
         if peak.peak_id in partition_ids
     }
     # Acquisition cannot introduce a candidate outside this partition's input.
-    if not set(captures) <= expected:
-        raise RuntimeError("runtime capture crossed partition peaks")
-    return captures
+    if not set(observations) <= expected:
+        raise RuntimeError("runtime acquisition crossed partition peaks")
+    return observations

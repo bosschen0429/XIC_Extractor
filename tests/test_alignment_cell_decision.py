@@ -25,6 +25,7 @@ from tests.cell_observations_fixtures import (
 from tests.cid_nl_evidence_spine_fixtures import _completed_receipt
 from tests.cid_nl_peak_support_no_raw_fixture import PRECURSOR_MZ
 from tests.group_fixtures import group_from_members
+from tests.owner_peak_fixtures import trace_peak
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
@@ -59,7 +60,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     mint_cid_nl_method_assessment,
 )
 from xic_extractor.peak_detection.observations import (
-    mint_peak_observation,
     physical_peak_observation_integration,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -507,7 +507,7 @@ def _censored_peak(
         source="cell_decision_no_raw_fixture",
         acquisition_source_id=source.acquisition_source_id,
     )
-    return mint_peak_observation(
+    return trace_peak(
         sample=sample,
         trace=trace,
         integration=physical_peak_observation_integration(evaluation),

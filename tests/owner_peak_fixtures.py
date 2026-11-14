@@ -1,4 +1,4 @@
-"""Build the captured peak that a test Alignment owner holds."""
+"""Build the measured peaks that test owners and hypotheses hold."""
 
 from __future__ import annotations
 
@@ -6,20 +6,17 @@ from dataclasses import replace
 from typing import Any
 
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.peak_detection.capture import (
-    SampleLocalCapture,
-    bind_owner_backed_capture_hypothesis,
-    mint_captured_peak_observation,
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.peak_detection.observations import PeakObservation
-from xic_extractor.peak_detection.peak_hypothesis_identity import (
-    compose_ms1_observation_peak_hypothesis,
+from xic_extractor.peak_detection.observations import (
+    PeakObservation,
+    prepare_peak_observation_provenance,
 )
-from xic_extractor.peak_detection.search_scope import (
-    SearchScope,
-    require_capture_binding,
-)
+from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
+from xic_extractor.peak_detection.traces import Trace
+from xic_extractor.sample_metadata import SampleMetadata
 
 
 def measured_peak(
@@ -114,20 +111,32 @@ def with_peak(
     )
 
 
-def bound_capture(
-    capture: SampleLocalCapture, *, scope: SearchScope
-) -> SampleLocalCapture:
-    """Bind a capture's selected peak as its measured hypothesis, as runtime does."""
+def trace_peak(
+    *,
+    sample: SampleMetadata,
+    trace: Trace,
+    integration: IntegrationResult,
+    resolver_mode: str = "local_minimum",
+    proposal_sources: tuple[str, ...] = ("local_minimum",),
+    physical_evaluation: PhysicalPeakEvaluation | None = None,
+    signal_processing_profile: SignalProcessingProfile | None = None,
+) -> PeakObservation:
+    """The peak ``integration`` selects on ``trace`` at its raw scan indices."""
 
-    if capture.selected_hypothesis is None:
-        return capture
-    sample_key = require_capture_binding(scope, capture.candidate_id).sample_key
-    sample = next(item for item in scope.samples if item.sample_name == sample_key)
-    observation = mint_captured_peak_observation(capture, sample=sample)
-    return bind_owner_backed_capture_hypothesis(
-        capture,
-        observation=observation,
-        hypothesis=compose_ms1_observation_peak_hypothesis(
-            peak_observation=observation
+    indices = integration.raw_scan_indices
+    return PeakObservation(
+        sample_key=sample.sample_name,
+        mz=float(trace.mz),
+        rt=tuple(float(trace.rt[index]) for index in indices),
+        intensity=tuple(float(trace.intensity[index]) for index in indices),
+        integration=replace(integration, raw_scan_indices=tuple(range(len(indices)))),
+        generation_provenance=prepare_peak_observation_provenance(
+            trace=trace,
+            selected_indices=indices,
+            resolver_mode=resolver_mode,
+            proposal_sources=proposal_sources,
         ),
+        source_trace=trace,
+        physical_evaluation=physical_evaluation,
+        signal_processing_profile=signal_processing_profile,
     )

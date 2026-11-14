@@ -433,7 +433,7 @@ def test_merged_physical_candidate_publishes_its_capture_conditions(
     assert [event.scan_number for event in candidate.located_events] == [10, 20]
     assert {event.peak_id for event in result.attachments} == {candidate.peak_id}
     evaluation = binding.physical_evaluation
-    assert evaluation.facts is not None
+    assert evaluation.answer.selected_segment is not None
     outputs = publish_discovery_batch_sample(
         raw_path,
         result.peaks,
@@ -750,7 +750,7 @@ def test_single_seed_discovery_acquires_complete_physical_context(
 
     assert result.measurements.reacquisition_request_count == 0
     candidate = result.peaks[0]
-    facts = result.physical_bindings[0].physical_evaluation.facts
+    facts = result.physical_bindings[0].physical_evaluation.answer.selected_segment
     assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
     assert facts is not None
     assert candidate.ms1_search_rt_max - facts.right_rt_min >= 0.04
@@ -760,17 +760,17 @@ def test_single_seed_discovery_acquires_complete_physical_context(
         request_context_rt_start_min=float(full_rt[0]),
         request_context_rt_end_min=float(full_rt[-1]),
     )
-    assert full_trace_evaluation.facts is not None
+    assert full_trace_evaluation.answer.selected_segment is not None
     assert facts.left_rt_min == pytest.approx(
-        full_trace_evaluation.facts.left_rt_min,
+        full_trace_evaluation.answer.selected_segment.left_rt_min,
         abs=0.04,
     )
     assert facts.right_rt_min == pytest.approx(
-        full_trace_evaluation.facts.right_rt_min,
+        full_trace_evaluation.answer.selected_segment.right_rt_min,
         abs=0.04,
     )
     assert facts.area_counts_seconds == pytest.approx(
-        full_trace_evaluation.facts.area_counts_seconds,
+        full_trace_evaluation.answer.selected_segment.area_counts_seconds,
         rel=0.10,
     )
 
@@ -1118,13 +1118,13 @@ def test_discovery_publishes_physical_qualification(
     evaluation = result.physical_bindings[0].physical_evaluation
     candidate = result.peaks[0]
     assert evaluation.state == "available"
-    assert evaluation.facts is not None
-    assert candidate.ms1_apex_rt == evaluation.facts.apex_rt_min
+    assert evaluation.answer.selected_segment is not None
+    assert candidate.ms1_apex_rt == evaluation.answer.selected_segment.apex_rt_min
     # Shallow valleys stay in one envelope, whose apex is the highest lobe.
     expected_apex = query_rt + (2.0 if trace_case == "overlapping_components" else 0)
     assert candidate.ms1_apex_rt == pytest.approx(expected_apex, abs=0.02)
-    assert rt[0] < evaluation.facts.left_rt_min < query_rt
-    assert query_rt < evaluation.facts.right_rt_min < rt[-1]
+    assert rt[0] < evaluation.answer.selected_segment.left_rt_min < query_rt
+    assert query_rt < evaluation.answer.selected_segment.right_rt_min < rt[-1]
     if trace_case == "overlapping_components":
         assert evaluation.requires_overlap_review
         assert candidate.status == "overlap"

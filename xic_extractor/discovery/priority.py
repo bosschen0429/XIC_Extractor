@@ -47,10 +47,10 @@ def _output_sort_key(
 
 
 def _area(binding: DiscoveryPeakPhysicalBinding) -> float:
-    facts = binding.physical_evaluation.facts
-    if facts is None:
+    segment = binding.physical_evaluation.answer.selected_segment
+    if segment is None:
         raise ValueError(f"{binding.peak.peak_id}: a Discovery peak lacks its area")
-    return facts.area_counts_seconds
+    return segment.area_counts_seconds
 
 
 def _review_rank(

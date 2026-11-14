@@ -24,6 +24,7 @@ from tests.cid_nl_raw_fixture import (
     _settings,
 )
 from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runtime_raws
+from tests.owner_peak_fixtures import trace_peak
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
@@ -63,7 +64,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
-from xic_extractor.peak_detection.observations import mint_peak_observation
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.partition import cid_nl_backfill_acquisition
@@ -115,7 +115,7 @@ def test_backfill_batch_retains_shape_contradictions_as_soft_risk(
             source="synthetic_gaussian",
             acquisition_source_id=source.acquisition_source_id,
         )
-        peak = mint_peak_observation(
+        peak = trace_peak(
             sample=sample,
             trace=trace,
             integration=IntegrationResult(

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -104,10 +103,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         for candidate in retained_candidates
     }
     assert all(
-        capture.measured_hypothesis is None
-        or retained_hypotheses_by_id[capture.measured_hypothesis.hypothesis_id]
-        == capture.measured_hypothesis
-        for capture in trace.retained_captures
+        retained_hypotheses_by_id[terminal.hypothesis.hypothesis_id]
+        == terminal.hypothesis
+        for terminal in trace.retained_terminals
     )
     assert all(
         retained_hypotheses_by_id[support.hypothesis.hypothesis_id]
@@ -219,16 +217,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             strict=True,
         )
     )
-    # Bootstrap captures cross a disk handoff; preserve content, not addresses.
-    for retained, consumed in zip(
-        trace.retained_captures,
-        trace.consumed_captures,
-        strict=True,
-    ):
-        assert retained.candidate_id == consumed.candidate_id
-        assert retained.selected_hypothesis == consumed.selected_hypothesis
-        assert list(retained.trace.rt) == list(consumed.trace.rt)
-        assert list(retained.trace.intensity) == list(consumed.trace.intensity)
+    # Bootstrap terminals cross a disk handoff; preserve content, not addresses.
+    assert sorted(trace.retained_terminals, key=lambda item: item.candidate_id) == (
+        sorted(trace.consumed_terminals, key=lambda item: item.candidate_id)
+    )
     for context, child in zip(
         trace.completed_contexts,
         completed.application_result.children,
@@ -240,16 +232,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     children = completed.application_result.children
     # Completed owner answers flow through projection, spool and writer once.
     assert len(trace.projection_builds) == len(children)
-    # Binding consumes the closed capture; it must not repeat physical selection.
-    assert not any(trace.binding_rechecks)
-    if case.method_mode != "intersection":
-        assert trace.binding_rechecks
-        assert trace.mint_rechecks
-        assert trace.mint_args
-    assert len(trace.mint_rechecks) == len(trace.mint_args)
-    assert all(
-        counts == {"prepare": 0, "evaluate": 0} for counts in trace.mint_rechecks
-    )
     if case.family_context:
         assert len(matrix_rows) == 1
         if case.family_precursor_delta:
@@ -332,10 +314,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             stem = result.job.sample.raw_stem
             (candidate,) = batch.context.peaks_by_sample[stem]
             assert candidate.peak_mz == representative_event(candidate).precursor_mz
-            # Alignment measures the peak again and gets Discovery's facts.
-            (capture,) = result.adapter_result.captures
-            assert capture.trace.mz == candidate.peak_mz
-            assert capture.physical_evaluation.facts == inputs.physical_facts[stem]
+            # Alignment measures the peak again and gets Discovery's peak.
+            ((_, observation),) = result.adapter_result.candidate_observations
+            assert observation.source_trace.mz == candidate.peak_mz
+            assert observation.physical_evaluation is not None
+            assert (
+                observation.physical_evaluation.answer.selected_segment
+                == inputs.physical_peaks[stem]
+            )
             assert fixture_assessment(result).method_result == (
                 "HOLD" if case.method_mode == "intersection" else "SUPPORT"
             )
@@ -366,10 +352,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 inputs.sample_stems
             )
             for sample_stem, cell in selected_cells:
-                facts = inputs.physical_facts[sample_stem]
-                assert cell.value == facts.area_counts_seconds
+                peak = inputs.physical_peaks[sample_stem]
+                assert cell.value == peak.area_counts_seconds
                 assert cell.selected_integration is not None
-                assert cell.selected_integration.rt_apex_min == facts.apex_rt_min
+                assert cell.selected_integration.rt_apex_min == peak.apex_rt_min
             close_and_verify_persisted_curves()
             return
     cells = tuple(written_cells(writer))
@@ -379,19 +365,19 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert inputs.separate_groups
             assert cell.value is None
             continue
-        facts = inputs.physical_facts[sample_stem]
-        assert cell.value == facts.area_counts_seconds
+        peak = inputs.physical_peaks[sample_stem]
+        assert cell.value == peak.area_counts_seconds
         assert cell.selected_integration.area_raw_counts_seconds != cell.value
-        assert cell.selected_integration.rt_apex_min == facts.apex_rt_min
-        assert cell.selected_integration.height_smoothed == facts.height
+        assert cell.selected_integration.rt_apex_min == peak.apex_rt_min
+        assert cell.selected_integration.height_smoothed == peak.height
     expected_row_count = sum(size > 1 for size in case.group_sizes)
     assert len(matrix_rows) == expected_row_count
-    for sample_stem, facts in inputs.physical_facts.items():
+    for sample_stem, peak in inputs.physical_peaks.items():
         sample_values = [
             float(row[sample_stem]) for row in matrix_rows if row[sample_stem]
         ]
         assert sample_values == pytest.approx(
-            [facts.area_counts_seconds] if expected_row_count else []
+            [peak.area_counts_seconds] if expected_row_count else []
         )
     if case.nearby:
         sources = written_source_candidates(tmp_path / "written", writer)
@@ -443,22 +429,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     close_and_verify_persisted_curves()
 
 
-def test_profile_replay_rejects_crossed_physical_capture(profile_replay) -> None:
-    trace = profile_replay.trace
-    from xic_extractor.peak_detection import capture as capture_owner
-
-    bound_capture, binding_args = trace.bound_captures[0]
-    changed_source = capture_owner.capture_peak_hypotheses(
-        scope=bound_capture.scope,
-        candidate_id=bound_capture.candidate_id,
-        trace=replace(bound_capture.trace, source="different-capture-source"),
-    )
-    with pytest.raises(capture_owner.SampleLocalCaptureError):
-        capture_owner.bind_owner_backed_capture_hypothesis(
-            changed_source, **binding_args
-        )
-
-
 def test_profile_replay_retains_positive_and_empty_backfill_evidence(
     tmp_path: Path,
     monkeypatch,
@@ -466,8 +436,6 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
 ) -> None:
     inputs = profile_replay.inputs
     trace = profile_replay.trace
-
-    from xic_extractor.peak_detection import capture as capture_owner
 
     batch = trace.captured_batches[0]
     from xic_extractor.peak_detection.cid_nl_peak_support import (
@@ -520,14 +488,14 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
     assert tuple(retained_recovery.trace.rt) == tuple(acquired.trace.rt)
     assert tuple(retained_recovery.trace.intensity) == tuple(acquired.trace.intensity)
     integ = observation.integration
-    physical_facts = observation.physical_evaluation.facts
-    assert physical_facts is not None
-    assert integ.area_baseline_corrected == physical_facts.area_counts_seconds
-    assert integ.height_smoothed == physical_facts.height
+    selected = observation.physical_evaluation.answer.selected_segment
+    assert selected is not None
+    assert integ.area_baseline_corrected == selected.area_counts_seconds
+    assert integ.height_smoothed == selected.height
     assert recovered.assessment.method_result == "HOLD"
     original_intensity = inputs.source_raws[inputs.paths[0]].intensity
     recovery_evaluations = []
-    evaluate_recovery = capture_owner.evaluate_physical_peak
+    evaluate_recovery = cid_nl_backfill_acquisition.evaluate_physical_peak
 
     def retain_recovery_evaluation(*args, **kwargs):
         evaluation = evaluate_recovery(*args, **kwargs)
@@ -535,7 +503,7 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
         return evaluation
 
     monkeypatch.setattr(
-        capture_owner,
+        cid_nl_backfill_acquisition,
         "evaluate_physical_peak",
         retain_recovery_evaluation,
     )
@@ -557,7 +525,7 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
             assert unavailable.assessment.method_result == "HOLD"
             assert unavailable.backfill_input is None
             assert recovery_evaluations[-1].reason == reason
-            assert recovery_evaluations[-1].facts is None
+            assert recovery_evaluations[-1].answer.selected_segment is None
             assert recovery_evaluations[-1].integration is None
             assert recovery_evaluations[-1].question.selection_policy_version == (
                 "sample_local_background_qualified_peak_in_context"

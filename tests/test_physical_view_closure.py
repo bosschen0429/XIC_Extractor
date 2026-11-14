@@ -94,7 +94,9 @@ def test_post_measurement_centroids_do_not_decide_peak_identity(
         scan for candidate in result.peaks for scan in located_scan_ids(candidate)
     ) == [10, 11, 12]
     for binding in result.physical_bindings:
-        assert binding.physical_evaluation.facts.area_counts_seconds == pytest.approx(
+        peak = binding.physical_evaluation.answer.selected_segment
+        assert peak is not None
+        assert peak.area_counts_seconds == pytest.approx(
             1000 * 0.06 * np.sqrt(2 * np.pi) * 60, rel=0.06
         )
 
@@ -192,7 +194,7 @@ def test_distinct_ions_in_overlapping_windows_stay_apart() -> None:
 
     assert sorted(located_scan_ids(peak) for peak in result.peaks) == [(10,), (11,)]
     areas = sorted(
-        binding.physical_evaluation.facts.area_counts_seconds
+        binding.physical_evaluation.answer.selected_segment.area_counts_seconds
         for binding in result.physical_bindings
     )
     assert areas[0] == pytest.approx(0.13 * areas[1])

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
@@ -22,8 +21,7 @@ from tests.cross_sample_association_lineage_fixtures import (
     _final_receipt as _lineage_final_receipt,
 )
 from tests.group_fixtures import group_from_members
-from tests.owner_peak_fixtures import bound_capture
-from tests.search_scope_capture_fixtures import _capture_binding, _peak_config
+from tests.owner_peak_fixtures import measured_peak
 from tests.untargeted_cid_nl_no_raw_fixture import (
     UntargetedCidNlNoRawFixture,
     build_untargeted_cid_nl_no_raw_fixture,
@@ -41,19 +39,24 @@ from xic_extractor.alignment.cross_sample.association import (
 from xic_extractor.alignment.projection.untarget import (
     project_untarget_matrix,
 )
-from xic_extractor.peak_detection.capture import capture_peak_hypotheses
+from xic_extractor.alignment.result import (
+    ObservedSearchSubject,
+    SearchedNoObservationSubject,
+)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     mint_cid_nl_method_assessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CID_NL_PROVIDER_ID
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    compose_ms1_observation_peak_hypothesis,
+)
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
-    CaptureMethodConstraints,
+    CaptureCandidateBinding,
     EvidenceProviderBinding,
     UntargetedSearchScope,
 )
-from xic_extractor.peak_detection.traces import Trace
 
 
 def _untarget_projection_inputs(
@@ -156,51 +159,12 @@ def _untarget_projection_inputs(
         coverage=coverage,
         final_receipt=receipt,
     )
-    rt = np.linspace(7.7, 8.3, 61)
-    intensities = (
-        100.0 * np.exp(-0.5 * ((rt - 8.0) / 0.06) ** 2),
-        np.zeros_like(rt),
-    )
     candidate_ids = ("candidate-b", "candidate-c")
-    bindings = []
-    traces = []
-    for candidate_id, sample, intensity in zip(
-        candidate_ids, fixture.samples, intensities, strict=True
-    ):
-        source = fixture.source(sample)
-        bindings.append(
-            _capture_binding(
-                candidate_id=candidate_id,
-                method_subject_id=fixture.method_subject.method_subject_id,
-                sample=sample,
-                acquisition_source_id=source.acquisition_source_id,
-                mz=fixture.method_subject.precursor_mz,
-                ppm_tol=fixture.method_subject.precursor_tolerance_ppm,
-                rt_min=float(rt[0]),
-                rt_max=float(rt[-1]),
-            )
-        )
-        traces.append(
-            Trace.from_arrays(
-                sample_name=sample.sample_name,
-                mz=fixture.method_subject.precursor_mz,
-                rt=rt,
-                intensity=intensity,
-                rt_min=float(rt[0]),
-                rt_max=float(rt[-1]),
-                ppm_tol=fixture.method_subject.precursor_tolerance_ppm,
-                source="untarget_projection_fixture",
-                acquisition_source_id=source.acquisition_source_id,
-            )
-        )
+    observed_sample, empty_sample = fixture.samples
     scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
         method_subjects=fixture.method_subject,
         samples=fixture.samples,
-        method_constraints=CaptureMethodConstraints(
-            boundary_policy="resolver_interval",
-            peak_config=_peak_config(tmp_path),
-        ),
         evidence_providers=(
             EvidenceProviderBinding(
                 provider_id=CID_NL_PROVIDER_ID,
@@ -208,23 +172,39 @@ def _untarget_projection_inputs(
             ),
         ),
         declared_candidate_ids=candidate_ids,
-        capture_bindings=tuple(bindings),
+        capture_bindings=tuple(
+            CaptureCandidateBinding(
+                candidate_id=candidate_id,
+                method_subject_id=fixture.method_subject.method_subject_id,
+                sample_key=sample.sample_name,
+            )
+            for candidate_id, sample in zip(candidate_ids, fixture.samples, strict=True)
+        ),
     )
-    captures = tuple(
-        bound_capture(
-            capture_peak_hypotheses(scope=scope, candidate_id=item, trace=trace),
-            scope=scope,
-        )
-        for item, trace in zip(candidate_ids, traces, strict=True)
+    terminals = (
+        ObservedSearchSubject(
+            candidate_id=candidate_ids[0],
+            sample_key=observed_sample.sample_name,
+            hypothesis=compose_ms1_observation_peak_hypothesis(
+                peak_observation=measured_peak(
+                    mz=fixture.method_subject.precursor_mz,
+                    apex_rt=8.0,
+                    sample_key=observed_sample.sample_name,
+                )
+            ),
+        ),
+        SearchedNoObservationSubject(
+            candidate_id=candidate_ids[1], sample_key=empty_sample.sample_name
+        ),
     )
     alignment = finalizer_owner.finalize_scientific_alignment(
         scope=scope,
-        captures=captures,
+        terminal_subjects=terminals,
         grouping_result=receipt,
         cell_observation_handoff=handoff,
         predecessor_cell_observations=predecessor_cells,
     )
-    return scope, captures, receipt, alignment
+    return scope, terminals, receipt, alignment
 
 
 def _completed_projection(tmp_path, monkeypatch, *, disposition, numeric=False):

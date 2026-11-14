@@ -190,7 +190,7 @@ def capture_ms1_peaks(
     located: dict[int, list[tuple[DiscoveryIon, DiscoveryEvent]]] = {}
     capture_by_work: dict[int, CapturedPhysicalPeak] = {}
     for (ion, event, _search), captured in zip(questions, captures, strict=True):
-        if captured.evaluation.facts is None:
+        if captured.evaluation.answer.selected_segment is None:
             attachments.append(
                 EventAttachment(
                     event=event,
@@ -304,7 +304,7 @@ def _one_measurement_per_ion_peak(
         # the segment at the apex is another peak; that window, like one that
         # selects nothing there, keeps the first measurement and its reading.
         if (
-            captured.evaluation.facts is not None
+            captured.evaluation.answer.selected_segment is not None
             and captured.evaluation.question.query_rt_min
             == capture_by_work[ordinal].evaluation.question.query_rt_min
         ):
@@ -383,10 +383,9 @@ def _measured_peak(
 ) -> tuple[DiscoveryPeak, DiscoveryEvent, tuple[EventAttachment, ...]]:
     """One measured peak, its attached attachments, and why the rest do not attach."""
     evaluation = captured.evaluation
-    facts = evaluation.facts
     selected = evaluation.answer.selected_segment
-    if facts is None or selected is None:
-        raise ValueError("a located Discovery peak requires measured facts")
+    if selected is None:
+        raise ValueError("a located Discovery peak requires a selected segment")
     request = captured.search.request
     located_events = [event for _, event in located]
     apex_mz, doubly_charged = ion_reading
@@ -431,7 +430,7 @@ def _measured_peak(
         neutral_loss_tag=representative.neutral_loss_tag,
         best_ms2_scan_id=representative.scan_number,
         attached_event_count=len(attached),
-        ms1_apex_rt=facts.apex_rt_min,
+        ms1_apex_rt=selected.apex_rt_min,
         ms1_search_rt_min=window.rt_min,
         ms1_search_rt_max=window.rt_max,
         query_rt_min=question.query_rt_min,
@@ -443,14 +442,14 @@ def _measured_peak(
         ms1_apex_mz=apex_mz,
         evidence_score=score_discovery_evidence(
             attached_event_count=len(attached),
-            ms1_event_delta_min=facts.apex_rt_min - representative.rt,
+            ms1_event_delta_min=selected.apex_rt_min - representative.rt,
             ms2_product_max_intensity=max(
                 event.product_intensity for event in evidence
             ),
-            ms1_area=facts.area_counts_seconds,
+            ms1_area=selected.area_counts_seconds,
             ms1_scan_support_score=min(
                 1.0,
-                float(facts.scan_support_count)
+                float(selected.scan_support_count)
                 / float(settings.evidence_profile.thresholds.scan_support_target),
             ),
             settings=settings,
@@ -650,14 +649,14 @@ def _apex_ion_mz(
 
     Readings spread wider than a few ppm come from two ions and report none.
     """
-    facts = evaluation.facts
-    if evaluation.state != "available" or facts is None:
+    selected = evaluation.answer.selected_segment
+    if evaluation.state != "available" or selected is None:
         return None, []
     rt = acquired.trace.rt
     intensity = acquired.trace.intensity
     if len(rt) == 0:
         return None, []
-    apex = int(np.argmin(np.abs(rt - facts.apex_rt_min)))
+    apex = int(np.argmin(np.abs(rt - selected.apex_rt_min)))
     half_width = mz_tolerance_da(request.mz, request.ppm_tol)
     readings = []
     ion_reads = []

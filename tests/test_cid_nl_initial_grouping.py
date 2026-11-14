@@ -23,7 +23,6 @@ from xic_extractor.alignment.cid_nl_initial_grouping import (
     prepare_cid_nl_grouping,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.peak_detection.search_scope import CaptureMethodConstraints
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.partition.execution import execute_partition
 
@@ -119,10 +118,10 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
     assert tuple(assessment.method_result for _, assessment in sample_assessments) == (
         method_results
     )
-    captures = {
-        capture.candidate_id: capture
+    observations = {
+        candidate_id: observation
         for result in initial.sample_results
-        for capture in result.adapter_result.captures
+        for candidate_id, observation in result.adapter_result.candidate_observations
     }
     peaks = tuple(peak for values in candidates.values() for peak in values)
     arguments = dict(
@@ -130,13 +129,8 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
         request_subjects=batch.context.method_subject,
         samples=batch.context.samples,
         candidates=peaks,
-        capture_by_candidate=captures,
+        observation_by_candidate=observations,
         sample_assessments=sample_assessments,
-        method_constraints=CaptureMethodConstraints(
-            boundary_policy="resolver_interval",
-            peak_config=batch.context.peak_config,
-            signal_processing_profile=TEST_PROFILE,
-        ),
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         rt_frame=batch.context.rt_frame,
     )
@@ -198,21 +192,10 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
             )
         ),
     )
-    renamed_captures = {}
-    for cid, capture in reversed(tuple(captures.items())):
-        scope = replace(
-            capture.scope,
-            declared_candidate_ids=tuple(
-                renamed[key] for key in capture.scope.declared_candidate_ids
-            ),
-            capture_bindings=tuple(
-                replace(binding, candidate_id=renamed[binding.candidate_id])
-                for binding in capture.scope.capture_bindings
-            ),
-        )
-        renamed_captures[renamed[cid]] = replace(
-            capture, scope=scope, candidate_id=renamed[cid]
-        )
+    renamed_observations = {
+        renamed[cid]: observation
+        for cid, observation in reversed(tuple(observations.items()))
+    }
     variant = prepare_cid_nl_grouping(
         **(
             arguments
@@ -223,7 +206,7 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
                     replace(peak, peak_id=renamed[peak.peak_id])
                     for peak in reversed(peaks)
                 ),
-                capture_by_candidate=renamed_captures,
+                observation_by_candidate=renamed_observations,
                 sample_assessments=tuple(reversed(sample_assessments)),
                 samples=tuple(reversed(batch.context.samples)),
             )

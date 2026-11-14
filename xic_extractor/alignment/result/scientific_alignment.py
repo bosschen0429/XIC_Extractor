@@ -27,13 +27,8 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePartitionTransition,
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.peak_hypothesis_identity import MeasuredPeakHypothesis
-from xic_extractor.peak_detection.search_scope import (
-    SearchScope,
-    SearchScopeContractError,
-    require_capture_binding,
-)
+from xic_extractor.peak_detection.search_scope import SearchScope
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -43,11 +38,10 @@ class FinalizedScientificAlignmentContractError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ObservedSearchSubject:
-    """One completed capture with a selected scientific hypothesis."""
+    """One searched candidate with its selected scientific hypothesis."""
 
     candidate_id: str
     sample_key: str
-    trace_group_id: str
     hypothesis: MeasuredPeakHypothesis
 
     @property
@@ -57,12 +51,10 @@ class ObservedSearchSubject:
 
 @dataclass(frozen=True, slots=True)
 class SearchedNoObservationSubject:
-    """One completed capture without a selected hypothesis."""
+    """One searched candidate without a selected hypothesis."""
 
     candidate_id: str
     sample_key: str
-    trace_group_id: str
-    detection_status: Literal["not_detected"]
 
     @property
     def variant(self) -> Literal["searched_no_observation"]:
@@ -106,31 +98,21 @@ class FinalizedScientificAlignment:
 def finalize_scientific_alignment(
     *,
     scope: SearchScope,
-    captures: Sequence[SampleLocalCapture],
+    terminal_subjects: Sequence[TerminalSearchObservation],
     grouping_result: CrossSampleGroupingResult,
     cell_observation_handoff: CrossSampleAssociationLineageHandoff | None,
     predecessor_cell_observations: Sequence[CellObservation],
     backfill_cell_observations: Sequence[CellObservation] = (),
     targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = (),
 ) -> FinalizedScientificAlignment:
-    """Validate one complete capture population and close its shared core."""
+    """Close one complete terminal population into its shared core."""
 
     if type(grouping_result) is not CrossSampleGroupingResult:
         raise FinalizedScientificAlignmentContractError(
             "finalization requires an exact CrossSample final receipt"
         )
-    if isinstance(captures, (str, bytes)):
-        raise FinalizedScientificAlignmentContractError(
-            "captures must be a finite sequence of completed values"
-        )
-    capture_tuple = tuple(captures)
-    terminal_subjects = tuple(
-        sorted(
-            (_terminal_subject(scope, capture) for capture in capture_tuple),
-            key=_terminal_sort_key,
-        )
-    )
-    _require_terminal_population(scope, terminal_subjects)
+    terminals = tuple(sorted(terminal_subjects, key=_terminal_sort_key))
+    _require_terminal_population(scope, terminals)
     canonical_samples: tuple[SampleMetadata, ...]
     samples = scope.samples
     if type(samples) is tuple and all(
@@ -164,57 +146,13 @@ def finalize_scientific_alignment(
     result = FinalizedScientificAlignment(
         scope=scope,
         canonical_samples=canonical_samples,
-        terminal_subjects=terminal_subjects,
+        terminal_subjects=terminals,
         cell_observation_handoff=cell_observation_handoff,
         cell_observations=canonical_cells,
         grouping_result=grouping_result,
         targeted_backfill_decisions=targeted_backfill_decisions,
     )
     return result
-
-
-def _terminal_subject(
-    scope: SearchScope,
-    capture: SampleLocalCapture,
-) -> TerminalSearchObservation:
-    if type(capture) is not SampleLocalCapture:
-        raise FinalizedScientificAlignmentContractError(
-            "terminal capture must be issued by the shared capture owner"
-        )
-    if capture.scope is not scope:
-        raise FinalizedScientificAlignmentContractError(
-            "terminal capture crossed its exact SearchScope"
-        )
-    try:
-        binding = require_capture_binding(scope, capture.candidate_id)
-    except SearchScopeContractError as exc:
-        raise FinalizedScientificAlignmentContractError(str(exc)) from exc
-    selected = capture.selected_hypothesis
-    if selected is None:
-        if capture.detection.status != "not_detected" or (
-            capture.detection.result is not None
-            and capture.detection.result.status == "WINDOW_TOO_SHORT"
-        ):
-            raise FinalizedScientificAlignmentContractError(
-                "capture is not a closed searched-no-observation terminal"
-            )
-        return SearchedNoObservationSubject(
-            candidate_id=capture.candidate_id,
-            sample_key=binding.sample_key,
-            trace_group_id=capture.trace_group.trace_group_id,
-            detection_status="not_detected",
-        )
-    measured = capture.measured_hypothesis
-    if measured is None or capture.detection.status != "detected":
-        raise FinalizedScientificAlignmentContractError(
-            "observed capture lacks a closed detected MeasuredPeakHypothesis"
-        )
-    return ObservedSearchSubject(
-        candidate_id=capture.candidate_id,
-        sample_key=binding.sample_key,
-        trace_group_id=capture.trace_group.trace_group_id,
-        hypothesis=measured,
-    )
 
 
 def _require_terminal_population(

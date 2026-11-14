@@ -236,12 +236,14 @@ def test_run_no_nl_reference_selects_each_samples_component(
             assert result.peak_result.paired_istd_anchor_rt is None
             assert result.peak_result.selection_reference_rt == pytest.approx(9.0)
         physical = result.physical_evaluation
-        assert physical is not None and physical.facts is not None
+        assert physical is not None and physical.answer.selected_segment is not None
         assert result.reported_peak_area == pytest.approx(
-            physical.facts.area_counts_seconds
+            physical.answer.selected_segment.area_counts_seconds
         )
-        assert result.reported_peak_start == physical.facts.left_rt_min
-        assert result.reported_peak_end == physical.facts.right_rt_min
+        assert (
+            result.reported_peak_start == physical.answer.selected_segment.left_rt_min
+        )
+        assert result.reported_peak_end == physical.answer.selected_segment.right_rt_min
         areas[file.sample_name] = result.reported_peak_area
     assert areas["SampleB"] == pytest.approx(areas["SampleA"] * 2.5, rel=0.01)
 

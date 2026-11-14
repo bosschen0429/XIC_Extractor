@@ -107,11 +107,11 @@ def test_disposition_decides_destination_and_complete_counts(
     assert group_cells == reordered
 
 
-def test_projection_is_deterministic_for_reversed_capture_order(tmp_path, monkeypatch):
-    _, captures, _, forward = _untarget_projection_inputs(tmp_path, monkeypatch)
+def test_projection_is_deterministic_for_reversed_terminal_order(tmp_path, monkeypatch):
+    _, terminals, _, forward = _untarget_projection_inputs(tmp_path, monkeypatch)
     reverse = finalizer_owner.finalize_scientific_alignment(
         scope=forward.scope,
-        captures=tuple(reversed(captures)),
+        terminal_subjects=tuple(reversed(terminals)),
         grouping_result=forward.grouping_result,
         cell_observation_handoff=forward.cell_observation_handoff,
         predecessor_cell_observations=_predecessor_cells(forward),

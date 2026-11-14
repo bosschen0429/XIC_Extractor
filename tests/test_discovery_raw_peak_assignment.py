@@ -34,11 +34,13 @@ def test_discovery_tail_event_selects_its_raw_peak_beyond_quantitative_return():
         query_rt_min=5.8,
         selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     )
-    assert result.facts is not None
-    assert result.facts.apex_rt_min == pytest.approx(5.0, abs=0.02)
-    assert result.facts.right_rt_min < 5.8
+    assert result.answer.selected_segment is not None
+    assert result.answer.selected_segment.apex_rt_min == pytest.approx(5.0, abs=0.02)
+    assert result.answer.selected_segment.right_rt_min < 5.8
     analytic_area = 1000.0 * 0.3 * np.sqrt(2 * np.pi) * 60.0
-    assert result.facts.area_counts_seconds == pytest.approx(analytic_area, rel=0.15)
+    assert result.answer.selected_segment.area_counts_seconds == pytest.approx(
+        analytic_area, rel=0.15
+    )
 
 
 def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl():
@@ -60,7 +62,7 @@ def test_bounded_capture_recovers_a_tail_window_without_admitting_a_far_tail_nl(
     assert candidate.ms1_apex_rt == pytest.approx(5.0, abs=0.03)
     # The NL event sits beyond the peak's right bound plus the attachment
     # tolerance, so the measured peak is kept without NL support.
-    facts = result.physical_bindings[0].physical_evaluation.facts
+    facts = result.physical_bindings[0].physical_evaluation.answer.selected_segment
     assert facts.right_rt_min + 0.1 < representative_event(candidate).rt
     assert candidate.status == "no_nl_event"
     assert result.measurements.reacquisition_request_count == 1
@@ -76,10 +78,10 @@ def test_raw_zero_valley_keeps_a_smaller_nl_peak_separate_from_bigger_neighbor()
         query_rt_min=14.51,
         selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     )
-    assert result.facts is not None
-    assert result.facts.apex_rt_min == pytest.approx(14.48, abs=0.04)
-    assert result.facts.left_rt_min > 14.26
-    assert result.facts.right_rt_min < 14.75
+    assert result.answer.selected_segment is not None
+    assert result.answer.selected_segment.apex_rt_min == pytest.approx(14.48, abs=0.04)
+    assert result.answer.selected_segment.left_rt_min > 14.26
+    assert result.answer.selected_segment.right_rt_min < 14.75
 
 
 def test_component_contrast_ignores_uncut_ripple_but_never_uses_interior_minimum():
@@ -105,8 +107,10 @@ def test_shared_valley_does_not_lend_a_noise_components_segment_to_another_peak(
             query_rt_min=query,
             selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
         )
-        assert answer.facts is not None
-        assert answer.facts.apex_rt_min == pytest.approx(query, abs=0.01)
+        assert answer.answer.selected_segment is not None
+        assert answer.answer.selected_segment.apex_rt_min == pytest.approx(
+            query, abs=0.01
+        )
         segment = answer.answer.selected_segment
         assert segment.raw_component is not None
         assert rt[segment.raw_component.apex_index] == pytest.approx(query)

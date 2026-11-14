@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from tests.cid_nl_peak_support_no_raw_fixture import PRECURSOR_MZ
+from tests.owner_peak_fixtures import trace_peak
 from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses,
 )
@@ -12,9 +13,6 @@ from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakDetectionResult,
     PeakResult,
-)
-from xic_extractor.peak_detection.observations import (
-    mint_peak_observation,
 )
 from xic_extractor.peak_detection.traces import Trace
 
@@ -86,7 +84,7 @@ def _numeric_peak(
         intensity=trace.intensity,
         baseline_integration_method="asls",
     )[0].integration
-    return mint_peak_observation(
+    return trace_peak(
         sample=sample,
         trace=trace,
         integration=integration,

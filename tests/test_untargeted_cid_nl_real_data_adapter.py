@@ -472,25 +472,6 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
         assert relation.observed_loss_error_ppm == pytest.approx(0.001 / 116.0474 * 1e6)
 
 
-def test_peaks_without_their_event_table_cannot_be_assessed(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
-    from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv
-
-    scenario = build_sample_adapter_scenario(tmp_path)
-    source_raw = _FakeRaw((7.98, 8.0, 8.02))
-    discovered = scenario.discover(source_raw)
-    # The peak table alone does not carry the events Alignment assesses.
-    candidates = read_discovery_peaks_csv(
-        write_discovery_peaks_csv(tmp_path / "peaks.csv", discovered)
-    )
-    raw, _vendor = scenario.open_raw(source_raw)
-
-    with pytest.raises(ValueError, match="lack the representative scan"):
-        scenario.adapt(candidates, raw=raw)
-
-
 def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     tmp_path: Path,
 ) -> None:
@@ -681,7 +662,7 @@ def test_auto_range_empty_subject_has_no_fabricated_query_and_needs_no_raw(
     assert assessment.technical_state == "not_evaluated"
     assert (receipt.query_rt_min, receipt.query_rt_max) == (None, None)
     assert receipt.search_completed is False
-    assert result.acquisition is None and not result.captures
+    assert result.acquisition is None and not result.candidate_observations
 
 
 def test_auto_range_evaluated_receipt_uses_current_raw_bounds(tmp_path: Path) -> None:
@@ -716,7 +697,9 @@ def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
     result = scenario.adapt((feature,), support_candidates=(support,), raw=raw)
 
     assert result.source_candidate_ids == (feature.peak_id,)
-    assert {capture.candidate_id for capture in result.captures} == {feature.peak_id}
+    assert {candidate_id for candidate_id, _ in result.candidate_observations} == {
+        feature.peak_id
+    }
     assert len(result.assessment_input.assessment.candidate_peaks) == 1
     assert result.strict_scan_count == 2
     assert len(result.assessment_input.assessment.evidence_observations) == 2
@@ -749,7 +732,7 @@ def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> No
 
     assert result.assessment_input.assessment.technical_state == ("not_evaluated")
     assert result.assessment_input.assessment.evidence_observations == ()
-    assert result.captures == ()
+    assert result.candidate_observations == ()
 
 
 @pytest.mark.parametrize("include_direct_candidate", [False, True])

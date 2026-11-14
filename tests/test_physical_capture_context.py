@@ -95,12 +95,14 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
     left, right, repeated = capture.capture((*searches, searches[0]))
 
     assert left.evaluation.state == right.evaluation.state == "available"
-    assert left.evaluation.facts.apex_rt_min == pytest.approx(4.8)
-    assert right.evaluation.facts.apex_rt_min == pytest.approx(5.25)
-    assert left.evaluation.facts.area_counts_seconds == pytest.approx(
+    assert left.evaluation.answer.selected_segment.apex_rt_min == pytest.approx(4.8)
+    assert right.evaluation.answer.selected_segment.apex_rt_min == pytest.approx(5.25)
+    assert left.evaluation.answer.selected_segment.area_counts_seconds == pytest.approx(
         1000 * 0.04 * np.sqrt(2 * np.pi) * 60, rel=0.06
     )
-    assert right.evaluation.facts.area_counts_seconds == pytest.approx(
+    right_peak = right.evaluation.answer.selected_segment
+    assert right_peak is not None
+    assert right_peak.area_counts_seconds == pytest.approx(
         2000 * 0.05 * np.sqrt(2 * np.pi) * 60, rel=0.06
     )
     assert left.evaluation.answer.selected_segment != (
@@ -120,8 +122,8 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
         == left.evaluation.answer.selected_segment
     )
     assert (
-        replay.evaluation.facts.area_counts_seconds
-        == left.evaluation.facts.area_counts_seconds
+        replay.evaluation.answer.selected_segment.area_counts_seconds
+        == left.evaluation.answer.selected_segment.area_counts_seconds
     )
     # Two physical peaks are measured once each, regardless of NL duplicates
     # or a later query for the same raw basin.
@@ -157,11 +159,11 @@ def test_sparse_extension_reunites_contexts_without_repeating_extension():
     assert left.search.request.rt_min < 4.75
     assert left.search.request.rt_max == 6.5
     assert left.evaluation.segment_universe == right.evaluation.segment_universe
-    assert right.evaluation.facts.apex_rt_min == pytest.approx(6.0)
+    assert right.evaluation.answer.selected_segment.apex_rt_min == pytest.approx(6.0)
     # One bounded extension does not override the owner's remaining uncertainty
     # or keep enlarging the population until an acceptable answer is obtained.
     assert left.evaluation.reason == "incomplete_peak_context"
-    assert left.evaluation.facts is None
+    assert left.evaluation.answer.selected_segment is None
 
 
 def test_mass_channel_uses_existing_ppm_rule_without_isotope_or_ppm_merging():
@@ -253,7 +255,7 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
             (
                 located_scan_ids(c),
                 b.peak.ms1_apex_rt,
-                b.physical_evaluation.facts,
+                b.physical_evaluation.answer.selected_segment,
                 b.peak.status,
             )
             for b in result.physical_bindings
@@ -303,8 +305,8 @@ def test_identical_narrow_probes_do_not_substitute_final_mass_windows():
     assert not np.array_equal(
         first.acquired_trace.trace.intensity, second.acquired_trace.trace.intensity
     )
-    assert first.evaluation.facts is not None
-    assert second.evaluation.facts is not None
+    assert first.evaluation.answer.selected_segment is not None
+    assert second.evaluation.answer.selected_segment is not None
 
 
 def test_mass_channels_take_the_first_channel_whose_every_member_is_within_ppm():
