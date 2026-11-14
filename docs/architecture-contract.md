@@ -25,7 +25,8 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | Targeted 分析與交付 | [`xic_workbench/targeted.py`](../xic_workbench/targeted.py)、[`scripts/run_extraction.py`](../scripts/run_extraction.py) → [`applications/targeted/application.py`](../xic_extractor/applications/targeted/application.py) |
 | 既有 Python Targeted 入口 | [`extractor.run`](../xic_extractor/extractor.py)，進入同一 Targeted application |
 | Discovery 候選產生 | [`scripts/run_discovery.py`](../scripts/run_discovery.py) → [`discovery/pipeline.py`](../xic_extractor/discovery/pipeline.py) |
-| Untargeted 全流程、Alignment 與 Matrix | [`xic_workbench/untargeted.py`](../xic_workbench/untargeted.py)、[`scripts/run_alignment.py`](../scripts/run_alignment.py) → [`applications/untargeted/application.py`](../xic_extractor/applications/untargeted/application.py) |
+| Untargeted 完整方法流程 | Workbench 的 [`jobs.py`](../xic_workbench/jobs.py) → [`applications/untargeted/full_analysis.py`](../xic_extractor/applications/untargeted/full_analysis.py)；非 UI caller 直接使用相同 request 與 runner |
+| 從既有 Discovery 開始的 Alignment 與 Matrix | [`scripts/run_alignment.py`](../scripts/run_alignment.py) 或完整 CID-NL application → [`applications/untargeted/application.py`](../xic_extractor/applications/untargeted/application.py) |
 | 完成 Matrix 後的矩陣整理 | [`xic_workbench/matrix_curation.py`](../xic_workbench/matrix_curation.py)、[`scripts/run_matrix_curation.py`](../scripts/run_matrix_curation.py) → [`matrix_curation/export.py`](../xic_extractor/matrix_curation/export.py)；只判定來源能否整理時讀 [`matrix_curation/source.py`](../xic_extractor/matrix_curation/source.py) |
 | 完成證據的只讀報告 | [`xic_inspector/cli.py`](../xic_inspector/cli.py) → [`xic_inspector/api.py`](../xic_inspector/api.py) |
 
@@ -237,7 +238,7 @@ this section states the shape and does not restate the contracts.
 | --- | --- | --- |
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
 | `applications/targeted/` | Targeted composition, request/result interface, input binding and publication | peak selection, cell decisions, RAW acquisition or workbook formatting |
-| `applications/untargeted/` | Untargeted composition from Discovery to published Matrix, assembly of the published explanation report, run lifetime and cancellation | grouping, cell decisions, a second runtime owner or writer algorithm |
+| `applications/untargeted/` | complete method routing, frozen run inputs, Discovery-to-Matrix CID-NL composition or Delta Mass diagnostics, stage outputs and cancellation; Alignment from existing Discovery remains a separate intent | grouping, cell decisions, a second runtime owner or writer algorithm |
 | `discovery/` | candidate discovery, seed generation, workflow-neutral discovery facts and receipt-bound candidate reading | matrix decisions or target-list policy |
 | `execution/` | generic attempt lifecycle, scheduling, workers, cancellation, cleanup, result storage and runtime metrics | method-specific science, subject splitting, or writer authority |
 | `extraction/` | Targeted acquisition, result models, product projection, input binding and capture population | application composition, UI, or Alignment decisions |
@@ -250,6 +251,13 @@ this section states the shape and does not restate the contracts.
 | `xic_inspector/` | read-only review API/CLI, source adapters, selection and offline HTML rendering | RAW acquisition, scientific recomputation, identity/Matrix decisions, or write authority |
 | `xic_workbench/` and `scripts/` | HTML interaction, local transport, and thin orchestration | reusable domain behavior or scientific authority |
 | root facades | current public compatibility and thin orchestration | new implementation detail |
+
+Complete Untargeted intent is `FullAnalysisRequest`, executed directly by
+`UntargetedAnalysis`; Workbench parses JSON and adds the Inspector overview to
+the completed result. Only the CID-NL route enters Alignment/Backfill and
+publishes Matrix. Delta Mass and CID-NL dR composite routes publish diagnostics.
+The composite reads existing per-sample peak tables; the downloadable merged
+peak table is an output, not an analysis handoff. Stage CLI inputs remain valid.
 
 | Cross-cutting owner | Responsibility |
 | --- | --- |

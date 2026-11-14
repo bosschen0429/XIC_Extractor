@@ -9,6 +9,10 @@ from tests.discovery_worker_fixtures import (
     _alignment_outputs,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.applications.untargeted.full_analysis import (
+    FullAnalysisRequest,
+    UntargetedAnalysis,
+)
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.output.alignment.pipeline_outputs import (
@@ -16,15 +20,15 @@ from xic_extractor.output.alignment.pipeline_outputs import (
 )
 from xic_extractor.presets import PresetError, load_preset
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_workbench.untargeted import DiscoveryRequest, UntargetedRun, parse_request
+from xic_workbench.untargeted import parse_request
 
 
 def _execute(
-    request: DiscoveryRequest,
+    request: FullAnalysisRequest,
     *,
     progress: list[tuple[int, int, str]] | None = None,
 ) -> dict[str, Any]:
-    return UntargetedRun(
+    return UntargetedAnalysis(
         request,
         progress=(
             (
@@ -43,9 +47,9 @@ def _full_request(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     **fields: Any,
-) -> tuple[DiscoveryRequest, dict[str, Any]]:
+) -> tuple[FullAnalysisRequest, dict[str, Any]]:
     """A one-RAW complete analysis whose Discovery stage is faked."""
-    import xic_workbench.untargeted as module
+    import xic_extractor.applications.untargeted.full_analysis as module
 
     index_path = write_batch(tmp_path, ("A",))
     raw_dir = tmp_path / "raw"
@@ -76,14 +80,14 @@ def _full_request(
         "output_dir": tmp_path / "out",
     }
     values.update(fields)
-    return DiscoveryRequest(**values), captured_discovery
+    return FullAnalysisRequest(**values), captured_discovery
 
 
 def test_full_analysis_applies_default_runtime(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import xic_workbench.untargeted as module
+    import xic_extractor.applications.untargeted.full_analysis as module
 
     output_dir = tmp_path / "out"
     request, captured_discovery = _full_request(
@@ -144,7 +148,7 @@ def test_alignment_interruption_propagates_from_execute(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import xic_workbench.untargeted as module
+    import xic_extractor.applications.untargeted.full_analysis as module
 
     request, _discovery = _full_request(tmp_path, monkeypatch)
     monkeypatch.setattr(
@@ -163,7 +167,7 @@ def test_full_uses_preset_snapshot_after_source_is_deleted(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import xic_workbench.untargeted as module
+    import xic_extractor.applications.untargeted.full_analysis as module
 
     preset_path = tmp_path / "custom.toml"
     preset_path.write_text(
@@ -198,7 +202,7 @@ def test_request_rejects_retired_standard_peak_route_before_discovery(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import xic_workbench.untargeted as module
+    import xic_extractor.applications.untargeted.full_analysis as module
 
     preset_path = tmp_path / "backfill-expansion.toml"
     preset_path.write_text(
@@ -217,13 +221,17 @@ def test_request_rejects_retired_standard_peak_route_before_discovery(
     )
 
     with pytest.raises(PresetError, match="diagnostic-only"):
-        parse_request(
-            {
-                "preset": str(preset_path),
-                "raw_dir": str(tmp_path / "raw"),
-                "dll_dir": str(tmp_path / "dll"),
-                "output_dir": str(tmp_path / "out"),
-            }
+        UntargetedAnalysis(
+            parse_request(
+                {
+                    "preset": str(preset_path),
+                    "raw_dir": str(tmp_path / "raw"),
+                    "dll_dir": str(tmp_path / "dll"),
+                    "output_dir": str(tmp_path / "out"),
+                }
+            ),
+            progress=lambda *_: None,
+            should_cancel=lambda: False,
         )
 
 
@@ -231,7 +239,7 @@ def test_execute_forwards_sample_metadata_and_targets_csv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import xic_workbench.untargeted as module
+    import xic_extractor.applications.untargeted.full_analysis as module
 
     targets_csv = tmp_path / "targets.csv"
     targets_csv.touch()

@@ -13,6 +13,13 @@ from scripts.run_discovery import (
 )
 from tests.discovery_worker_fixtures import _alignment_outputs
 from tests.processing_run_spec_fixtures import _raws, _settings
+from xic_extractor.applications.untargeted.full_analysis import (
+    FullAnalysisRequest,
+    UntargetedAnalysis,
+)
+from xic_extractor.applications.untargeted.full_analysis import (
+    compile_discovery_processing_run_spec as compile_workbench_processing_run_spec,
+)
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -22,10 +29,7 @@ from xic_extractor.processing_run_spec import (
     ProcessingRunSpec,
     canonical_processing_run_spec_bytes,
 )
-from xic_workbench.untargeted import DiscoveryRequest, UntargetedRun, parse_request
-from xic_workbench.untargeted import (
-    compile_discovery_processing_run_spec as compile_workbench_processing_run_spec,
-)
+from xic_workbench.untargeted import parse_request
 
 
 def test_equal_workbench_cli_inputs_compile_equal_immutable_identity(
@@ -65,7 +69,7 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
     monkeypatch: pytest.MonkeyPatch,
     isolated_config_dir: Path,
 ) -> None:
-    import xic_workbench.untargeted as workbench_module
+    import xic_extractor.applications.untargeted.full_analysis as workbench_module
     from scripts import run_discovery as cli_module
     from tests.raw_header_fakes import install_fake_raw_headers
 
@@ -100,14 +104,14 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
             sample_metadata=(),
         ),
     )
-    request = DiscoveryRequest(
+    request = FullAnalysisRequest(
         preset="dna_dr",
         tuning_overrides={},
         raw_dir=raw_dir,
         dll_dir=dll_dir,
         output_dir=tmp_path / "full",
     )
-    run = UntargetedRun(
+    run = UntargetedAnalysis(
         request, progress=lambda *_args: None, should_cancel=lambda: False
     )
     monkeypatch.setattr(run, "_run_alignment", lambda **_kwargs: _alignment_outputs())
@@ -171,7 +175,7 @@ def test_actual_workbench_entry_rejects_invalid_preset_before_fingerprint_or_raw
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import xic_workbench.untargeted as workbench_module
+    import xic_extractor.applications.untargeted.full_analysis as workbench_module
 
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
@@ -188,13 +192,17 @@ def test_actual_workbench_entry_rejects_invalid_preset_before_fingerprint_or_raw
     )
 
     with pytest.raises(PresetError):
-        parse_request(
-            {
-                "preset": "no_such_preset",
-                "raw_dir": str(raw_dir),
-                "dll_dir": str(tmp_path / "dll"),
-                "output_dir": str(tmp_path / "out"),
-            }
+        UntargetedAnalysis(
+            parse_request(
+                {
+                    "preset": "no_such_preset",
+                    "raw_dir": str(raw_dir),
+                    "dll_dir": str(tmp_path / "dll"),
+                    "output_dir": str(tmp_path / "out"),
+                }
+            ),
+            progress=lambda *_: None,
+            should_cancel=lambda: False,
         )
 
 

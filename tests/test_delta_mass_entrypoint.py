@@ -304,8 +304,10 @@ smoothing_window_sec = 1
     )
 
 
+@pytest.mark.parametrize("separate_tables", [False, True])
 def test_cid_nl_join_records_unmatched_reason_and_reproduces_from_published_table(
     tmp_path,
+    separate_tables,
 ):
     """Each unmatched base says why; the written table re-joins identically.
 
@@ -357,7 +359,16 @@ def test_cid_nl_join_records_unmatched_reason_and_reproduces_from_published_tabl
             positions=(),
         )
 
-    cid_rows = delta_mass_pipeline._load_cid_nl_peak_rows(cid_csv)
+    if separate_tables:
+        # Same rows across per-sample files; no merged input is needed.
+        lines = cid_csv.read_text(encoding="utf-8").splitlines(keepends=True)
+        first, second = tmp_path / "first.csv", tmp_path / "second.csv"
+        first.write_text("".join([lines[0], *lines[1:4]]), encoding="utf-8")
+        second.write_text("".join([lines[0], *lines[4:]]), encoding="utf-8")
+        cid_csv.unlink()
+        cid_rows = delta_mass_pipeline._load_cid_nl_peak_rows((first, second))
+    else:
+        cid_rows = delta_mass_pipeline._load_cid_nl_peak_rows(cid_csv)
     joined = delta_mass_pipeline._join_cid_nl(
         (
             candidate("edge", base_mz, 2.0 + 29.999 / 60),

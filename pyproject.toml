@@ -373,6 +373,10 @@ forbidden_modules = [
 ]
 # Direct imports only, as the retired AST check verified.
 allow_indirect_imports = true
+ignore_imports = [
+    # Complete-analysis composition may route diagnostics; Alignment and writers may not.
+    "xic_extractor.applications.untargeted.full_analysis -> xic_extractor.discovery.delta_mass_pipeline",
+]
 
 [[tool.importlinter.contracts]]
 id = "alignment-stays-off-pipelines-and-io"

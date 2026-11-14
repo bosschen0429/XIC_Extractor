@@ -1,5 +1,6 @@
 """CSV writers for the Discovery peak and event tables."""
 
+import csv
 from collections.abc import Iterable
 from pathlib import Path, PureWindowsPath
 
@@ -15,6 +16,24 @@ from xic_extractor.tabular_io import (
     format_machine_float,
     write_delimited_rows,
 )
+
+
+def merge_discovery_peak_tables(paths: Iterable[Path], target: Path) -> Path:
+    """Stream already-published sample tables into a downloadable peak export."""
+    header: list[str] | None = None
+    with target.open("w", encoding="utf-8", newline="") as handle:
+        writer = None
+        for path in paths:
+            with path.open(encoding="utf-8", newline="") as source:
+                reader = csv.DictReader(source)
+                if writer is None:
+                    header = list(reader.fieldnames or ())
+                    writer = csv.DictWriter(handle, fieldnames=header)
+                    writer.writeheader()
+                elif list(reader.fieldnames or ()) != header:
+                    raise ValueError(f"{path}: peak table columns differ")
+                writer.writerows(reader)
+    return target
 
 
 def write_discovery_peaks_csv(path: Path, peaks: Iterable[DiscoveryPeak]) -> Path:

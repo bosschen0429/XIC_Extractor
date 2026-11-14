@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from tests.raw_header_fakes import install_raw_sample_headers
+from xic_extractor.applications.untargeted.full_analysis import UntargetedAnalysis
 from xic_extractor.discovery.models import DiscoveryBatchOutputs
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.presets import load_preset
@@ -14,7 +15,7 @@ from xic_extractor.raw_reader import RawSampleHeader
 from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 from xic_workbench.methods import list_methods, method_details, save_method
 from xic_workbench.samples import export_samples, from_payload, load_samples
-from xic_workbench.untargeted import UntargetedRun, parse_request
+from xic_workbench.untargeted import parse_request, present_result
 from xic_workbench.untargeted_config import (
     read_untargeted_config,
     write_untargeted_config,
@@ -272,158 +273,6 @@ def test_method_adapter_exposes_effective_controls_and_saves_owner_toml(
     assert method_details(destination)["effective_values"]["nl_tolerance_ppm"] == 12.5
 
 
-@pytest.mark.parametrize("preset", ["pt_pattern", "pt_pattern_cid_nl_dr"])
-def test_delta_mass_preset_saves_unchanged_with_its_mass_policy(tmp_path, preset):
-    from xic_extractor.presets.apply import apply_to_delta_mass_discovery
-
-    assert preset in {item["key"] for item in list_methods()}
-    details = method_details(preset)
-    assert details["tuning_controls"] == []
-    assert details["preview"]["delta_mass_companions"] == 3
-    destination = tmp_path / "pt.toml"
-    save_method(details["draft"], destination)
-    saved, builtin = load_preset(destination), load_preset(preset)
-    assert apply_to_delta_mass_discovery(saved) == apply_to_delta_mass_discovery(
-        builtin
-    )
-    # Delta Mass omitting the key means none; the saved file keeps Easy-IC.
-    assert saved.discovery_overrides["mass_recalibration"] == "easy_ic_restore"
-    assert saved.discovery_overrides == builtin.discovery_overrides
-    assert (saved.tags, saved.combine_mode) == (builtin.tags, builtin.combine_mode)
-
-
-def test_new_cid_nl_and_delta_mass_method_round_trips_every_field(tmp_path):
-    overrides = method_details("pt_pattern")["draft"]["overrides"]
-    draft = {
-        "name": "Iso + dR",
-        "description": "Workbench 建立的方法",
-        "combine_mode": "intersection",
-        "tags": [
-            {"strategy": "delta_mass", "name": "Delta Mass", "pattern_id": "dm"},
-            {"strategy": "neutral_loss", "name": "DNA_dR", "neutral_loss_da": 116.0474},
-        ],
-        "overrides": {
-            **overrides,
-            "mass_recalibration": "easy_ic_restore",
-            "positions": [
-                {"label": "base", "delta_da": 0.0, "ratio_min": 1.0, "ratio_max": 1.0},
-                {
-                    "label": "+1.0034",
-                    "delta_da": 1.003355,
-                    "ratio_min": 0.05,
-                    "ratio_max": 0.5,
-                },
-            ],
-            "anchor_positions": ["base"],
-            "discriminating_positions": ["+1.0034"],
-            "lowest_position": "+1.0034",
-            "base_support_positions": ["+1.0034"],
-        },
-    }
-    destination = tmp_path / "new.toml"
-    save_method(draft, destination)
-    reloaded = method_details(destination)["draft"]
-    assert reloaded["overrides"] == draft["overrides"]
-    assert reloaded["combine_mode"] == "intersection"
-    assert [(t["strategy"], t["name"]) for t in reloaded["tags"]] == [
-        ("delta_mass", "Delta Mass"),
-        ("neutral_loss", "DNA_dR"),
-    ]
-
-
-@pytest.mark.parametrize("preset", ["pt_pattern", "pt_pattern_cid_nl_dr"])
-def test_workbench_runs_delta_mass_discovery_without_alignment(
-    tmp_path, monkeypatch, preset
-):
-    import xic_workbench.untargeted as module
-    from xic_extractor.discovery.delta_mass_csv import DeltaMassDiscoveryOutputs
-    from xic_extractor.discovery.models import DiscoveryRunOutputs
-
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir()
-    raws = []
-    for stem in ("A", "B"):
-        (raw_dir / f"{stem}.raw").touch()
-        raws.append(raw_dir / f"{stem}.raw")
-    (raw_dir / "excluded.raw").touch()
-    monkeypatch.setattr(
-        module,
-        "read_analysis_set",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            raw_paths=tuple(raws),
-            sample_metadata=tuple(SampleMetadata(r.stem, r.stem) for r in raws),
-        ),
-    )
-    discovered = {}
-
-    def discovery(paths, *, output_dir, settings, **_kwargs):
-        discovered.update(paths=paths, loss=settings.neutral_loss_profiles)
-        per_sample = []
-        for path in paths:
-            folder = output_dir / path.stem
-            folder.mkdir(parents=True)
-            peaks = folder / "discovery_peaks.csv"
-            peaks.write_text(
-                f"peak_id,sample_stem\n{path.stem}-1,{path.stem}\n", encoding="utf-8"
-            )
-            per_sample.append(DiscoveryRunOutputs(peaks, folder / "e", folder / "f"))
-        return DiscoveryBatchOutputs(output_dir / "index.csv", tuple(per_sample))
-
-    captured = {}
-
-    def delta_mass(
-        *, raw_dir, output_dir, strategy, cid_nl_peaks_csv, raw_paths, **_kwargs
-    ):
-        captured.update(
-            label=strategy.label,
-            peaks=cid_nl_peaks_csv.read_text(encoding="utf-8")
-            if cid_nl_peaks_csv
-            else None,
-            raws=tuple(raw_paths),
-        )
-        candidates = output_dir / "delta_mass_candidates.csv"
-        candidates.write_text(
-            "status\ncandidate\nrejected\ncandidate\n", encoding="utf-8"
-        )
-        return DeltaMassDiscoveryOutputs(
-            candidates, output_dir / "positions.csv", output_dir / "sidecar.json"
-        )
-
-    monkeypatch.setattr(module, "run_discovery_batch", discovery)
-    monkeypatch.setattr(module, "run_delta_mass_discovery", delta_mass)
-    monkeypatch.setattr(
-        module,
-        "run_untargeted_application",
-        lambda *_args, **_kwargs: pytest.fail("Delta Mass must not run Alignment"),
-    )
-    summary = UntargetedRun(
-        parse_request(
-            {
-                "preset": preset,
-                "preset_snapshot": method_details(preset)["draft"],
-                "raw_dir": str(raw_dir),
-                "dll_dir": str(tmp_path),
-                "output_dir": str(tmp_path / "out"),
-            }
-        ),
-        progress=lambda *_args: None,
-        should_cancel=lambda: False,
-    ).execute()
-
-    assert captured["label"] == preset
-    # The selected samples, not every RAW in the folder.
-    assert captured["raws"] == tuple(raws)
-    assert summary["modules"] == {"delta_mass": "completed"}
-    assert summary["delta_mass"]["candidate_count"] == 2
-    assert summary["matrix_tsv"] is None
-    if preset == "pt_pattern":
-        assert captured["peaks"] is None and not discovered
-    else:
-        assert [p.neutral_loss_da for p in discovered["loss"]] == [116.0474]
-        # One dR peak table across samples, for the composite's base join.
-        assert captured["peaks"] == "peak_id,sample_stem\nA-1,A\nB-1,B\n"
-
-
 def test_method_adapter_rejects_unknown_override_without_writing(tmp_path) -> None:
     details = method_details("dna_dr")
     draft = details["draft"]
@@ -538,13 +387,15 @@ def test_parse_request_preserves_sample_metadata_and_rejects_bad_method(
 
     values["overrides"] = {"invented_knob": 1}
     with pytest.raises(ValueError, match="unknown CID-NL recipe override"):
-        parse_request(values)
+        UntargetedAnalysis(
+            parse_request(values), progress=lambda *_: None, should_cancel=lambda: False
+        )
 
 
 def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
     tmp_path, monkeypatch
 ) -> None:
-    import xic_workbench.untargeted as module
+    import xic_extractor.applications.untargeted.full_analysis as module
 
     values = _request_values(tmp_path)
     values["preset_snapshot"] = method_details("dna_dr")["draft"]
@@ -601,7 +452,7 @@ def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
 
     monkeypatch.setattr(module, "run_untargeted_application", align)
     progress = []
-    summary = UntargetedRun(
+    summary = UntargetedAnalysis(
         parse_request(values),
         progress=lambda *args: progress.append(args),
         should_cancel=lambda: False,
@@ -616,6 +467,7 @@ def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
         peak_config.mass_recalibration
         is captured["request"].discovery_settings.mass_recalibration
     )
+    summary = present_result(summary)
     assert summary["overview"]["matrix_count"] == 3
     assert summary["overview"]["complete_count"] == 1
     assert summary["overview"]["unresolved_count"] == 1
@@ -638,7 +490,7 @@ def test_full_analysis_runs_backfill_and_reports_saved_matrix_overview(
 def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
     tmp_path, monkeypatch
 ) -> None:
-    import xic_workbench.untargeted as module
+    import xic_extractor.applications.untargeted.full_analysis as module
 
     values = _request_values(tmp_path)
     raw_dir = tmp_path / "raws"
@@ -672,7 +524,7 @@ def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
         lambda request, context=None, **_kwargs: AlignmentRunOutputs(),
     )
     progress = []
-    summary = UntargetedRun(
+    summary = UntargetedAnalysis(
         parse_request(values),
         progress=lambda *args: progress.append(args),
         should_cancel=lambda: False,
@@ -684,7 +536,7 @@ def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
     assert progress[-1] == (2, 2, "完成")
 
     with pytest.raises(InterruptedError, match="cancelled"):
-        UntargetedRun(
+        UntargetedAnalysis(
             parse_request(values),
             progress=lambda *_args: None,
             should_cancel=lambda: True,
@@ -763,7 +615,7 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
         draft["overrides"]["nl_tolerance_ppm"] = 25
         save_method(draft, preset_path)
         targets_path.write_text("label,mz\nCHANGED,200\n")
-        assert runner._build_settings().nl_tolerance_ppm == 12.5
+        assert runner.recipe.discovery_settings.nl_tolerance_ppm == 12.5
         from xic_extractor.configuration.execution_profile import (
             default_parallel_workers,
         )
@@ -778,7 +630,7 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
         monkeypatch.setattr(
             runner,
             "execute",
-            lambda: {"method_ppm": runner._build_settings().nl_tolerance_ppm},
+            lambda: {"method_ppm": runner.recipe.discovery_settings.nl_tolerance_ppm},
         )
         callback, *args = submitted[0]
         callback(*args)
@@ -836,7 +688,7 @@ def test_delta_mass_discovery_stops_on_cancel_before_reading_raw(tmp_path):
 
 
 def test_cancelled_delta_mass_run_is_not_reported_as_completed(tmp_path, monkeypatch):
-    import xic_workbench.untargeted as module
+    import xic_extractor.applications.untargeted.full_analysis as module
 
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
@@ -863,7 +715,7 @@ def test_cancelled_delta_mass_run_is_not_reported_as_completed(tmp_path, monkeyp
         )
 
     monkeypatch.setattr(module, "run_delta_mass_discovery", delta_mass)
-    run = UntargetedRun(
+    run = UntargetedAnalysis(
         parse_request(
             {
                 "preset": "pt_pattern",

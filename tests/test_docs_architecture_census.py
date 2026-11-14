@@ -527,14 +527,14 @@ def test_default_production_activation_loci_are_exact() -> None:
     outer_callers = production_calls["run_untargeted_application"]
     assert outer_callers == {
         Path("scripts/run_alignment.py"),
-        Path("xic_workbench/untargeted.py"),
+        Path("xic_extractor/applications/untargeted/full_analysis.py"),
     }
     application_path = Path("xic_extractor/applications/untargeted/application.py")
     activation_loci = outer_callers | {application_path}
     assert activation_loci == {
         application_path,
         Path("scripts/run_alignment.py"),
-        Path("xic_workbench/untargeted.py"),
+        Path("xic_extractor/applications/untargeted/full_analysis.py"),
     }
     assert production_calls["complete_untargeted_alignment"] == {application_path}
     assert production_calls["execute_untargeted_plan"] == {
