@@ -218,12 +218,34 @@ hardened gate rejected 13 promoted weak-seed rows as
 A new selection, boundary or promotion question needs evidence on current code,
 starting with 8RAW.
 
-### Standard mixture manual 2RAW guardrail fails
+### Standard mixture manual 2RAW: identity check, not an area reference
 
-`diagnostic_only`; `b58ac1e2d` (2026-11-03). All 100 scored positive peaks were
-found, median absolute area error 2.24%, 91/94 within 10%/20%; six exceeded 20%,
-two with RT differences up to 47.7 s. The manual guardrail is **FAIL**. Four
-manual ND targets were not requested, so false-positive transfer is unmeasured.
+`diagnostic_only`; `e8a99be0` (2026-11-14). The two RAWs are method-change
+tests (NoSplit HESI, Split NSI): specificity is good, but the chromatography
+has known problems such as tailing and double peaks. The set therefore checks
+peak identity, not area accuracy.
+
+The identity check passes: all 100 scored manual peaks were found and no ISTD
+was missed. Median absolute area error is 2.24%, 92/95 within 10%/20%; five
+rows deviate by more than 20% area or 0.20 min RT. The user reviewed those five
+and the three other rows above 10% with MS1 traces and MS2 neutral-loss scans,
+and judged the program's peak and bounds more reasonable in seven; 8-Obz-dG was
+too poorly shaped to judge.
+
+- m7G, N6-6Ah-dA and m1A (NoSplit, tailing): the program areas are 21–27%
+  larger. Neutral-loss scans continue through the tail, and the program bounds
+  tailing more consistently than the manual sheet.
+- ac4C (NoSplit) and O6-HPdG (Split, double peak): the program apex is
+  0.41–0.79 min later than the manual RT. Neutral-loss scans sit at the
+  program apex; the on-target MS2 at the manual ac4C RT shows none.
+
+The score uses the selected acquisition peak area, not the published workbook
+value. The target lists in `XIC_MANUAL_2RAW_ROOT` use the current target
+schema, with `expected_rt_min` at the midpoint of the former ±1 min window;
+the former files are kept in its `legacy_format_targets/`.
+
+Rerun when Targeted peak selection or identity rules change. Area accuracy
+needs a manual set with clean chromatography.
 
 ## Alignment Performance
 
