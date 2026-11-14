@@ -53,7 +53,7 @@ function renderCuration(snapshot) {
       source ? "ok" : "todo",
       "樣本資料",
       !source
-        ? "尚無樣本資訊；請展開「改用其他來源」補充"
+        ? "尚無樣本資訊；請在「改用其他來源」補入"
         : {
             file: `選擇的檔案 ${pathTail(source.label)}`,
             run: `${source.label}（${detection.sample_count} 個樣本，${detection.study_sample_count} 個未排除研究樣本）`,
@@ -66,7 +66,7 @@ function renderCuration(snapshot) {
       istd ? "ok" : "todo",
       "內標清單",
       !istd
-        ? "本次沒有宣告內標；若實際有使用，請展開「改用其他來源」補充"
+        ? "本次未宣告內標；有使用請在「改用其他來源」補入"
         : `${istd.kind === "file" ? `選擇的檔案 ${pathTail(istd.label)}` : istd.label}（${detection.istd_count} 個內標，一律保留）`,
     );
   }
@@ -89,7 +89,7 @@ function renderCuration(snapshot) {
   if (!detection) {
     const note = el("p", undefined, error ? "result-warning" : "subtle");
     if (error) note.append(ui.icon("alert"));
-    note.append(error || "選擇 Alignment 輸出資料夾後，會列出可用的整理步驟。");
+    note.append(error || "選擇 Alignment 輸出資料夾後列出整理步驟。");
     container.append(note);
     return;
   }
@@ -222,7 +222,7 @@ export function bindCuration() {
     "samples",
     "",
     "curation-",
-    "通常不需選擇：會沿用這次分析的樣本角色、注射順序與排除設定。",
+    "預設沿用該次分析的樣本角色、注射順序與排除。",
   );
   pathField(
     $("curation-overrides"),
@@ -231,7 +231,7 @@ export function bindCuration() {
     "targets",
     "",
     "curation-",
-    "預設使用該次分析的內標清單；舊輸出找不到時才需要選擇。",
+    "預設沿用該次分析的內標清單；找不到時才需選擇。",
   );
   let displayedDetection;
   let displayedError;

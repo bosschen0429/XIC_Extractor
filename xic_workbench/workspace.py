@@ -181,8 +181,7 @@ class ReviewWorkspace:
                 # The technical reason travels as detail, not as the headline.
                 rerun = "Alignment" if path.suffix.lower() == ".sqlite" else "分析"
                 raise ValueError(
-                    "無法讀取這份結果：可能由舊版本產生或檔案已損壞，"
-                    f"請用目前版本重新執行 {rerun}。"
+                    f"無法讀取這份結果（舊版本或已損壞）；請重新執行 {rerun}。"
                 ) from exc
             sample_ids = tuple(sample["sample_key"] for sample in summary["samples"])
             if not sample_ids:
@@ -474,7 +473,7 @@ class ReviewWorkspace:
             ):
                 raise ValueError("此項目沒有可供擷取的分組或候選身份。")
             if set(samples) - set(description["curve_sample_ids"]):
-                raise ValueError("所選樣本缺少已記錄的擷取座標，無法自動取得此組曲線。")
+                raise ValueError("所選樣本沒有擷取座標，無法取得曲線。")
             self._replace_job()
             curves = self._curves
             raw_needed = curves is None or curves.needs_raw(samples)
@@ -483,9 +482,9 @@ class ReviewWorkspace:
                 raw_dir = Path(_text(values.get("raw_dir"), "RAW 資料夾"))
                 dll_dir = Path(_text(values.get("dll_dir"), "RawFileReader DLL 資料夾"))
                 if not raw_dir.is_dir() or not dll_dir.is_dir():
-                    raise ValueError("RAW 或 DLL 資料夾不存在，請重新選擇來源位置。")
+                    raise ValueError("RAW 或 DLL 資料夾不存在。")
                 if self.analysis.jobs.busy:
-                    raise WorkspaceBusy("分析仍在執行；請完成或停止後再讀取 RAW 曲線。")
+                    raise WorkspaceBusy("分析執行中；完成後才能讀取 RAW。")
             job_id = uuid.uuid4().hex
             self._cancel = cancel = threading.Event()
             self._job = {
@@ -618,14 +617,14 @@ class ReviewWorkspace:
                     status="succeeded",
                     phase="完成",
                     view_id=job_id,
-                    message="曲線已載入；分析結果與量值保持原樣。",
+                    message="曲線已載入。",
                     unusable_samples=unusable,
                 )
         except CurveAcquisitionCancelled, InspectorCancelled:
             update(
                 status="cancelled",
                 phase="已取消",
-                message="已取消；原有檢閱結果仍可使用。",
+                message="已取消。",
             )
         except ExplanationError as exc:
             update(status="failed", phase="未完成", message=str(exc))

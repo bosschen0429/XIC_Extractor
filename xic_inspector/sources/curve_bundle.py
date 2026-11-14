@@ -770,13 +770,12 @@ class CurveBundleSource:
                     "badge_label": "診斷曲線",
                     "method_label": "curve bundle",
                     "reason_label": (
-                        "依樣本名稱新讀取的診斷 XIC；工作簿未保存 RAW 指紋，"
-                        "無法驗證是否為原分析檔。不重新積分、不改寫結果。"
+                        "依樣本名稱新讀取的診斷 XIC；未驗證是否為原分析檔，"
+                        "不重新積分、不改寫結果。"
                         if transition.quality_flags.get("source_binding_basis")
                         == "workbook_sample_name_unverified"
-                        else f"{len(item.sample_ids)} 個樣本的已保存診斷曲線；"
+                        else f"{len(item.sample_ids)} 個樣本的已保存診斷曲線 · "
                         f"{len(transition.quality_flags)} 項轉換品質旗標"
-                        "保存在來源紀錄。"
                     ),
                     "precursor_mz": item.witnesses[0].precursor_mz,
                     "rt_apex_min": item.witnesses[0].rt_apex_min,

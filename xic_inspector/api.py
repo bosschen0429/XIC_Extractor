@@ -72,9 +72,9 @@ def resolve_source(path: Path) -> Path:
         raise ValueError("資料夾有多份 XLSX；請明確選擇 Targeted XLSX 檔案。")
     if (path / "delta_mass_candidates.csv").is_file():
         raise FileNotFoundError(
-            "Delta Mass Discovery 尚未含檢閱曲線；先以 "
-            "tools.diagnostics.delta_mass_review 選取候選建立 review JSON，"
-            "再用 Inspector 開啟該檔。不需執行 Alignment。"
+            "Delta Mass Discovery 沒有檢閱曲線；請以 "
+            "tools.diagnostics.delta_mass_review 建立 review JSON，"
+            "再用 Inspector 開啟；不需執行 Alignment。"
         )
     raise FileNotFoundError(
         f"No Targeted XLSX or {EXPLANATION_ARTIFACT_NAME} in {path}; "

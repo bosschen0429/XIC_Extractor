@@ -67,7 +67,7 @@
             <!-- An empty list names every way to start: import, the example, or blank. -->
             <p id="target-start" class="target-start">
               還沒有清單？<button id="target-from-example" type="button" class="text-button" data-analysis-idle>從範例開始</button>
-              或按「新增目標」從空白建立。
+              或按「新增目標」。
             </p>
             <p id="target-import-status" role="status" aria-live="polite"></p>
           </div>
@@ -172,7 +172,7 @@
             <p id="istd-summary" class="subtle"></p>
             <details id="istd-list-tools" class="setup-tools">
               <summary>內標明細與檔案工具</summary>
-              <p class="subtle">只使用 role=istd 且符合本方法 CID-NL tag 的列；其他 tag 不當成 ND。</p>
+              <p class="subtle">只用 role=istd 且 CID-NL tag 符合本方法的列；其他 tag 不計為 ND。</p>
               <div id="istd-preview" class="target-preview"></div>
               <div class="button-row">
                 <button type="button" id="istd-reload" data-analysis-idle>
@@ -324,7 +324,7 @@
   <div class="dialog-body">
     <div class="target-toolbar">
       <input id="target-filter" type="search" placeholder="搜尋目標" aria-label="搜尋目標；符合的目標會被選取" />
-      <span id="target-selection" class="target-selection" aria-live="polite">框選列號或搜尋，可一次設定多個目標</span>
+      <span id="target-selection" class="target-selection" aria-live="polite">框選列號或搜尋以批次設定</span>
       <div id="target-bulk" class="target-bulk" hidden>
         <label>CID-NL 中性丟失（Da）<input id="target-bulk-cid" list="cid-nl-losses" inputmode="decimal" placeholder="例如 116.0474" /></label>
         <label>Delta Mass Δm/z<input id="target-bulk-delta" placeholder="例如 +1.0021, +4.0052" /></label>
@@ -333,7 +333,7 @@
       </div>
     </div>
     <datalist id="cid-nl-losses"></datalist>
-    <p class="subtle">CID-NL 與 Delta Mass 都空白是 MS1 only；都填時兩個條件都要符合。</p>
+    <p class="subtle">CID-NL 與 Delta Mass 都空白為 MS1 only；都填則須同時符合。</p>
     <div id="target-table" class="table-scroll editor-table" tabindex="-1">
       <table>
         <thead id="target-head"></thead>
@@ -343,7 +343,7 @@
     <details id="target-delta-advanced" class="target-advanced">
       <summary>進階：Delta Mass 判斷設定（整份清單共用）</summary>
       <div id="target-delta-settings" class="method-advanced-grid"></div>
-      <p class="subtle">共洗脫容差取「下限」與「MS1 掃描間隔 × 倍數」中較大者；峰形以目標 m/z（基準離子）為參考。</p>
+      <p class="subtle">共洗脫容差取「下限」與「MS1 掃描間隔 × 倍數」的較大者；峰形以各列 m/z 為基準。</p>
     </details>
     <p id="target-editor-error" class="inline-status error" role="alert" hidden></p>
   </div>
@@ -375,7 +375,7 @@
       <input
         id="sample-filter"
         type="search"
-        placeholder="輸入檔名或樣品名稱，選取全部符合的樣本"
+        placeholder="以檔名或樣品名稱選取"
       />
       <span class="toolbar-group" id="sample-actions"
         ><span id="sample-selection" class="subtle">先框選或搜尋</span></span
@@ -426,7 +426,7 @@
       >
       <p id="method-combine-fixed" class="method-combine-fixed" hidden>組合：兩者都要符合</p>
     </div>
-    <p class="subtle">套用只更新目前批次，保存批次設定或開始分析才會留下變更。另存方法檔供其他批次使用；內建方法不會被覆寫。</p>
+    <p class="subtle">套用只改本批次，保存批次設定或開始分析才留存；另存方法檔可供其他批次使用。</p>
     <section class="evidence-card">
       <label class="evidence-toggle"><input id="method-cid-on" type="checkbox" /> <strong>CID-NL 中性丟失</strong> <span class="subtle">MS2 失去固定質量的片段</span></label>
       <div id="method-cid-body"></div>
@@ -460,7 +460,7 @@
     </div>
     <div class="dialog-body">
       <p class="dialog-message">
-        匯出可離線開啟的單一 HTML，不需要工作區或 RAW 也能檢閱。
+        匯出可離線檢閱的單一 HTML。
       </p>
       <div class="settings-grid">
         <label class="field"

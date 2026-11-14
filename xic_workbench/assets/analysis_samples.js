@@ -71,7 +71,7 @@ function summaryNotes(summary) {
   }
   if (summary.unreadable_raw?.length)
     notes.push(
-      `讀不到檔頭（要分析時會在執行前停止）：${summary.unreadable_raw.join("、")}`,
+      `讀不到檔頭（分析前會停止）：${summary.unreadable_raw.join("、")}`,
     );
   if (summary.unopened_context?.length)
     notes.push(
@@ -261,7 +261,7 @@ function renderSamples() {
   );
   if (!set.rows.length) {
     const tr = el("tr", undefined, "sample-empty");
-    const td = el("td", "選好 RAW 資料夾後會自動列出樣本。");
+    const td = el("td", "選好 RAW 資料夾後列出樣本。");
     td.colSpan = 3;
     tr.append(td);
     $("sample-rows").append(tr);

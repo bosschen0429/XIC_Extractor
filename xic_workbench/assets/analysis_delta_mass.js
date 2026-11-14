@@ -23,7 +23,7 @@ export function parseOffsets(text) {
     .filter(Boolean);
   const values = parts.map(Number);
   if (values.some((value) => !Number.isFinite(value)))
-    throw new Error("Δm/z 請以逗號分隔數字，例如 +1.0021, -2.0157。");
+    throw new Error("Δm/z 以逗號分隔，如 +1.0021, -2.0157。");
   return values;
 }
 // Shown to four significant digits; an untouched cell keeps the exact values.
@@ -67,18 +67,18 @@ export function ionsError(ions, { allowNegative }) {
   for (const [index, ion] of ions.entries()) {
     const where = `第 ${index + 1} 個伴隨離子`;
     if (unreadableRatios.has(ion))
-      return `${where}：強度比範圍看不懂，請輸入下限–上限（例如 0.2–0.8）或單一數字。`;
+      return `${where}：強度比請填下限–上限（如 0.2–0.8）或單一數字。`;
     if (ion.offset_mz === null || !Number.isFinite(ion.offset_mz))
       return `${where}：請填寫 Δm/z。`;
     if (ion.offset_mz === 0) return `${where}：Δm/z 不可為 0（0 是基準離子）。`;
     if (!allowNegative && ion.offset_mz < 0)
-      return `${where}：Untargeted 的 Δm/z 只能 ≥ 0，基準是最輕的離子。`;
+      return `${where}：Untargeted 的 Δm/z 須 ≥ 0（基準為最輕離子）。`;
     if (!(ion.ratio_min > 0 && ion.ratio_max >= ion.ratio_min))
-      return `${where}：強度比範圍需大於 0，例如 0.2–0.8。`;
+      return `${where}：強度比須大於 0。`;
   }
   const names = ions.map((ion) => ion.label);
   if (new Set(names).size !== names.length)
-    return "Δm/z 太接近：兩個伴隨離子的名稱（四捨五入到 4 位小數）相同。";
+    return "兩個伴隨離子的 Δm/z 取 4 位小數後相同。";
   return "";
 }
 

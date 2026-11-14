@@ -156,7 +156,7 @@ class AnalysisWorkspace:
         ):
             settings["dll_dir"] = reader["installed_dir"]
             reader = {**reader, "dll_dir": reader["installed_dir"], "dll_errors": []}
-            warnings.append("RawFileReader：已使用本機已安裝的版本，不需重新下載。")
+            warnings.append("RawFileReader：使用本機已安裝版本。")
         discovery = read_untargeted_config(config_dir=self.config_dir)
         discovery["dll_dir"] = settings.get("dll_dir", "")
         if self.defaults.get("raw_dir") and not discovery.get("raw_dir"):
@@ -340,8 +340,8 @@ class AnalysisWorkspace:
             write_dll_dir(str(target), config_dir=self.config_dir)
             if self.defaults.pop("dll_dir", None):
                 message += (
-                    "。本次工作區已改用新路徑；下次啟動前請更新或移除 "
-                    "--dll-dir／THERMO_RAWFILE_READER_DLL_DIR 的舊設定。"
+                    "；下次啟動前請更新或移除 --dll-dir／"
+                    "THERMO_RAWFILE_READER_DLL_DIR 舊設定。"
                 )
             return {
                 "message": message,

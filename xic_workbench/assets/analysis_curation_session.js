@@ -139,7 +139,7 @@ export function createCurationSession(
     message =
       kind === "source"
         ? "正在讀取整理來源…"
-        : "正在計算預覽；仍可修改設定或檢閱結果。";
+        : "正在計算預覽…";
     publish();
     let response;
     let failure;
@@ -232,7 +232,7 @@ export function createCurationSession(
     },
     async export() {
       if (!current.canExport)
-        throw new Error("預覽正在更新，請稍候再產生新矩陣。");
+        throw new Error("預覽更新中，請稍候。");
       const submitted = approved;
       exporting = true;
       publish();
@@ -243,7 +243,7 @@ export function createCurationSession(
         remembered = submitted.remembered;
         adoptPreferences(preferences);
         if (disposed || submitted.revision !== revision)
-          throw new Error("設定已變更，請等候新的預覽再匯出。");
+          throw new Error("設定已變更，請等新預覽完成。");
         return await startJob("curation", submitted.values);
       } finally {
         exporting = false;

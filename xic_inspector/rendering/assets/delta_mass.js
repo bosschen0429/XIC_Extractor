@@ -172,7 +172,7 @@
     }
     const provenance = node('details', undefined, 'dm-provenance');
     provenance.append(node('summary', '來源與擷取設定'));
-    provenance.append(node('p', '判讀沿用保存結果；曲線與 MS2 為新讀取的診斷資料，不是原決策重播。顯示範圍不重算判讀。', 'dm-note'));
+    provenance.append(node('p', '判讀沿用保存結果；曲線與 MS2 為新讀取，不是原決策重播。', 'dm-note'));
     provenance.append(table(['項目', '內容'], [
       ['Candidate', saved.candidate_id], ['保存狀態', saved.status], ['保存原因', saved.reject_reason || '—'],
       ['方法', saved.method_label],
@@ -185,7 +185,7 @@
     root.append(advanced);
     const xicPresentation = {
       height:260, coordinateData:true, pointLimit:50,
-      emptyMessage:'這個候選沒有可用的 RAW XIC；不以保存的 height 補畫曲線。',
+      emptyMessage:'此候選沒有可用的 RAW XIC。',
       curveStyle:curve => ({stroke:color(curve.position_index), dash:dash(curve.position_index), width:2}),
     };
     let window = [...saved.rt_window], selectedScan = null, width = 0, activeNl = null, supportMatches = [], supportCursor = 0;
@@ -352,7 +352,7 @@
           // A dedicated annotation lane stays above every spectrum peak.
           svg.append(mark('text', {x:(L+R)/2, y:18, 'text-anchor':'middle', 'font-weight':600, fill:'var(--ink)', 'data-nl-product-label':true}, `NL 產物 m/z ${mass(match.product_mz)}`));
           svg.append(mark('path', {d:`M${(L+R)/2},26 L${x(match.product_mz)},${T-8} L${x(match.product_mz)},${y(scan.intensity[index])-3}`, fill:'none', stroke:'var(--muted)', 'stroke-dasharray':'3 3', 'pointer-events':'none', 'data-nl-leader':true}));
-        } else spectrum.append(node('p', '保存的 NL 產物不在此 spectrum 中，未繪製產物標記。', 'dm-note'));
+        } else spectrum.append(node('p', '保存的 NL 產物不在此 spectrum。', 'dm-note'));
       }
       function showPeak(index) {
         const mz = scan.mz[index], intensity = scan.intensity[index];
