@@ -26,7 +26,6 @@ def _disable_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "xic_extractor.extraction.pipeline.preflight_raw_reader",
         lambda _dll_dir: [],
-        raising=False,
     )
 
 

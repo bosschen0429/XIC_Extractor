@@ -49,6 +49,8 @@ from xic_extractor.raw_mass_recalibration import (
 )
 from xic_extractor.raw_reader_errors import RawReaderError, RawReaderOpenError
 from xic_extractor.raw_source_binding import (
+    THERMO_MS_CONTROLLER,
+    THERMO_MS_DEVICE,
     _verify_expected_acquisition_source,
     _verify_source_path_still_bound,
     bind_expected_path_identity,
@@ -752,7 +754,7 @@ def open_raw(
     raw_file = None
     try:
         raw_file = thermo.raw_file_reader_adapter.FileFactory(str(path))
-        raw_file.SelectInstrument(thermo.device_ms, 1)
+        raw_file.SelectInstrument(thermo.device_ms, THERMO_MS_CONTROLLER)
     except Exception as exc:
         cleanup_error = _dispose_after_failed_open(raw_file)
         message = f"Failed to load Thermo DLL or open raw file: {exc}"
@@ -923,7 +925,7 @@ def _load_thermo_api(import_module_func: Callable[[str], Any]) -> _ThermoApi:
     filter_enums = import_module_func("ThermoFisher.CommonCore.Data.FilterEnums")
     return _ThermoApi(
         raw_file_reader_adapter=raw_module.RawFileReaderAdapter,
-        device_ms=business.Device.MS,
+        device_ms=getattr(business.Device, THERMO_MS_DEVICE),
         mass_range_factory=business.Range,
         trace_settings_factory=business.ChromatogramTraceSettings,
         mass_range_trace_type=business.TraceType.MassRange,

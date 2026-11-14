@@ -448,7 +448,7 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
         raise AssertionError("Alignment reread a Discovery event from RAW")
 
     for name in ("read_ms1_mass_windows", "iter_ms2_scans", "iter_ms2_scan_subset"):
-        monkeypatch.setattr(type(raw), name, forbid_reread, raising=False)
+        monkeypatch.setattr(type(raw), name, forbid_reread)
     if cached:
         from xic_extractor.untargeted_execution.acquisition_cache import (
             CachedUntargetedRaw,

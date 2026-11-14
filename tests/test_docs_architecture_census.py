@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import json
 import shutil
 import subprocess
@@ -499,52 +498,6 @@ def test_discovery_does_not_import_alignment_or_presets(
     assert observed == set()
 
 
-@pytest.mark.current_repository_census
-def test_default_production_activation_loci_are_exact() -> None:
-    production_calls: dict[str, set[Path]] = {
-        "run_untargeted_application": set(),
-        "complete_untargeted_alignment": set(),
-        "execute_untargeted_plan": set(),
-        "execute_partition": set(),
-    }
-    for path in census.repository_python_paths(ROOT):
-        if not path.parts or path.parts[0] == "tests":
-            continue
-        tree = ast.parse((ROOT / path).read_text(encoding="utf-8-sig"))
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            called = (
-                node.func.id
-                if isinstance(node.func, ast.Name)
-                else node.func.attr
-                if isinstance(node.func, ast.Attribute)
-                else ""
-            )
-            if called in production_calls:
-                production_calls[called].add(path)
-
-    outer_callers = production_calls["run_untargeted_application"]
-    assert outer_callers == {
-        Path("scripts/run_alignment.py"),
-        Path("xic_extractor/applications/untargeted/full_analysis.py"),
-    }
-    application_path = Path("xic_extractor/applications/untargeted/application.py")
-    activation_loci = outer_callers | {application_path}
-    assert activation_loci == {
-        application_path,
-        Path("scripts/run_alignment.py"),
-        Path("xic_extractor/applications/untargeted/full_analysis.py"),
-    }
-    assert production_calls["complete_untargeted_alignment"] == {application_path}
-    assert production_calls["execute_untargeted_plan"] == {
-        Path("xic_extractor/untargeted_execution/alignment.py")
-    }
-    assert production_calls["execute_partition"] == {
-        Path("xic_extractor/untargeted_execution/execution.py")
-    }
-
-
 def test_census_excludes_ignored_modules_from_grimp_graph(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -681,6 +634,8 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "extraction-backends-delegate",
         "completed-evidence-readers-do-not-load-raw",
         "alignment-domain-models-stay-pure",
+        "alignment-consumes-quality-facts",
+        "targeted-contracts-stay-headless",
         "delta-mass-method-stays-inward",
         "delta-mass-outside-product-routes",
         "product-routes-ignore-delta-mass",
@@ -693,6 +648,8 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
     }
     direct_only = {
         "alignment-domain-models-stay-pure",
+        "alignment-consumes-quality-facts",
+        "targeted-contracts-stay-headless",
         "delta-mass-method-stays-inward",
         "delta-mass-outside-product-routes",
         "product-routes-ignore-delta-mass",
@@ -954,3 +911,205 @@ def test_json_census_rejects_nonignored_repo_path(
             observed,
             ROOT,
         )
+
+
+@pytest.mark.parametrize(
+    ("source", "rule"),
+    [
+        (
+            'monkeypatch.setattr("xic_extractor.example.missing", 1, raising=False)',
+            "permissive-production-patch",
+        ),
+        (
+            "from scripts import run_extraction as cli\n"
+            'monkeypatch.setattr(cli, "missing", 1, raising=False)',
+            "permissive-production-patch",
+        ),
+        (
+            "def module():\n"
+            " import xic_workbench.targeted as target\n"
+            " return target\n"
+            'monkeypatch.setattr(module(), "missing", 1, raising=False)',
+            "permissive-production-patch",
+        ),
+        (
+            'from pathlib import Path\nPath("xic_inspector/api.py").read_text()',
+            "production-source-read",
+        ),
+        (
+            "from pathlib import Path\n"
+            "import xic_extractor\n"
+            "root = Path(xic_extractor.__file__).parent\n"
+            'for path in root.rglob("*.py"):\n'
+            " path.read_bytes()",
+            "production-source-read",
+        ),
+        (
+            "from inspect import getsource as source\n"
+            "from xic_extractor import extractor\n"
+            "source(extractor)",
+            "production-source-read",
+        ),
+        (
+            "from pathlib import Path\n"
+            "def read(path):\n"
+            " return path.read_text()\n"
+            "def test_entry():\n"
+            ' read(Path("scripts/run_extraction.py"))',
+            "production-source-read",
+        ),
+        ('open("tools/testing/test_selection.py").read()', "production-source-read"),
+        (
+            "from pathlib import Path as P\n"
+            'P("tools/testing/test_selection.py").open()',
+            "production-source-read",
+        ),
+    ],
+)
+def test_test_source_gate_rejects_production_shortcuts(tmp_path, source, rule):
+    relative = Path("tests/test_example.py")
+    path = tmp_path / relative
+    path.parent.mkdir()
+    path.write_text(source, encoding="utf-8")
+
+    problems = census.validate_test_source_boundaries(tmp_path, [relative])
+
+    assert len(problems) == 1
+    assert problems[0].startswith("tests/test_example.py:")
+    assert rule in problems[0]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import sys\n"
+        'monkeypatch.setattr(sys, "frozen", True, raising=False)\n'
+        'monkeypatch.delenv("XIC_HOME", raising=False)',
+        "from xic_extractor.configuration import paths\n"
+        'monkeypatch.setattr(paths.sys, "frozen", True, raising=False)',
+        "from xic_extractor import extractor\n"
+        'monkeypatch.setattr(extractor, "run", replacement)',
+        "from xic_extractor import extractor\n"
+        "class Fake:\n def __init__(self, module): pass\n"
+        "fake = Fake(extractor)\n"
+        'monkeypatch.setattr(fake, "missing", 1, raising=False)',
+        "from pathlib import Path\n"
+        'Path("tests/test_example.py").read_text()\n'
+        "Path(__file__).read_text()",
+        "from pathlib import Path\n"
+        "def test_gate(tmp_path):\n"
+        ' source = tmp_path / "xic_extractor" / "example.py"\n'
+        ' source.write_text("import xic_extractor")\n'
+        " source.read_text()",
+        "from scripts import check_architecture_census as census\n"
+        "def test_gate(tmp_path):\n"
+        " for path in census.repository_python_paths(tmp_path):\n"
+        "  path.read_text()",
+        "from pathlib import Path\n"
+        'Path("xic_extractor/configuration/data/example.json").read_text()',
+    ],
+)
+def test_test_source_gate_allows_nonproduction_and_strict_patches(tmp_path, source):
+    relative = Path("tests/test_example.py")
+    path = tmp_path / relative
+    path.parent.mkdir()
+    path.write_text(source, encoding="utf-8")
+
+    assert census.validate_test_source_boundaries(tmp_path, [relative]) == []
+
+
+@pytest.mark.parametrize(
+    ("path", "source", "message"),
+    [
+        (
+            "scripts/run_extraction.py",
+            "def main():\n prepare()\n multiprocessing.freeze_support()",
+            "freeze_support first",
+        ),
+        (
+            "xic_workbench/cli.py",
+            "def main():\n prepare()\n multiprocessing.freeze_support()",
+            "freeze_support first",
+        ),
+        (
+            "xic_extractor/other.py",
+            "run_untargeted_application(request)",
+            "run_untargeted_application callers",
+        ),
+        (
+            "xic_extractor/other.py",
+            "from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses",
+            "build_peak_hypotheses importers",
+        ),
+        (
+            "xic_extractor/alignment/other.py",
+            "from xic_extractor.peak_detection.signal_quality "
+            "import measure_signal_quality",
+            "cannot import noise estimators",
+        ),
+    ],
+)
+def test_production_entry_gate_preserves_required_boundaries(
+    tmp_path, path, source, message, monkeypatch
+):
+    sources = {
+        "scripts/run_extraction.py": "def main():\n multiprocessing.freeze_support()",
+        "xic_workbench/cli.py": "def main():\n multiprocessing.freeze_support()",
+        "scripts/run_alignment.py": "run_untargeted_application(request)",
+        "xic_extractor/applications/untargeted/full_analysis.py": (
+            "run_untargeted_application(request)"
+        ),
+        "xic_extractor/extraction/targeted_peak_hypotheses.py": (
+            "from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses"
+        ),
+        "xic_extractor/peak_detection/capture.py": (
+            "from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses"
+        ),
+        # Internal callers and completed quality facts are not restricted.
+        "xic_extractor/alignment/other.py": (
+            "from xic_extractor.peak_detection.signal_quality import SignalQuality\n"
+            "execute_partition()\n"
+            "execute_untargeted_plan()\n"
+            "complete_untargeted_alignment()"
+        ),
+    }
+    for relative, content in sources.items():
+        target = tmp_path / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(
+        census,
+        "repository_python_paths",
+        lambda root: tuple(p.relative_to(root) for p in root.rglob("*.py")),
+    )
+    assert census.validate_production_entry_boundaries(tmp_path) == []
+
+    target = tmp_path / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(source, encoding="utf-8")
+
+    problems = census.validate_production_entry_boundaries(tmp_path)
+    assert len(problems) == 1
+    assert message in problems[0]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'monkeypatch.setattr("xic_extractor.example.name", 1, raising=False)',
+        'from pathlib import Path\nPath("scripts/run_extraction.py").read_text()',
+    ],
+)
+def test_internal_defense_cli_also_enforces_test_source_boundaries(
+    tmp_path, monkeypatch, capsys, source
+):
+    _defense_gate_repo(tmp_path, "")
+    path = tmp_path / "tests" / "test_example.py"
+    path.parent.mkdir()
+    path.write_text(source, encoding="utf-8")
+    monkeypatch.setattr(census, "ROOT", tmp_path)
+
+    assert census.main(["--internal-defense-base", "HEAD"]) == 1
+    assert "tests/test_example.py:" in capsys.readouterr().err
+    path.write_text("", encoding="utf-8")
+    assert census.main(["--internal-defense-base", "HEAD"]) == 0

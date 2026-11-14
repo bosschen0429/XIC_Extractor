@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import replace
 from multiprocessing import get_context
@@ -221,6 +220,9 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         )
     )
 
+    assert workbook_path.is_file(), (
+        "Targeted application must publish requested workbook"
+    )
     assert len(assessments) == 2
     assert len(relation_answers) == 2
     assert all(
@@ -2057,20 +2059,6 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
         assert saved[sample]["Review Reason"] == rows[sample]["Review Reason"]
     for column in ("RT", "Area", "Counted Detection"):
         assert saved["Far"][column] == rows["Far"][column]
-
-
-def test_cli_and_workbench_route_through_acquisition_service_boundary() -> None:
-    import scripts.run_extraction as cli_module
-    import xic_workbench.targeted as workbench_module
-
-    cli_source = inspect.getsource(cli_module)
-    workbench_source = inspect.getsource(workbench_module)
-    assert "extractor.run" not in cli_source
-    assert "extractor.run" not in workbench_source
-    assert "extractor.acquire" in cli_source
-    assert "extractor.acquire" in workbench_source
-    assert "write_excel_from_run_output" not in cli_source
-    assert "write_excel_from_run_output" not in workbench_source
 
 
 def test_publication_lists_samples_in_injection_order(tmp_path: Path) -> None:

@@ -935,7 +935,6 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
         runtime_owner,
         "ensure_assemblies_loaded",
         lambda *_args: warm_threads.append(get_ident()),
-        raising=False,
     )
     config = AlignmentConfig(anchor_min_seed_events=1)
     batch = materialize_untargeted_partition(plan, plan.subject_batch)

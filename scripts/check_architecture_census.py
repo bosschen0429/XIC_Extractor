@@ -156,6 +156,290 @@ def validate_architecture_census(
     problems.extend(validate_semantic_identifiers(repo_root))
     problems.extend(validate_documented_code_names(repo_root))
     problems.extend(validate_ppm_arithmetic(repo_root))
+    problems.extend(validate_test_source_boundaries(repo_root))
+    problems.extend(validate_production_entry_boundaries(repo_root))
+    return problems
+
+
+def validate_test_source_boundaries(
+    repo_root: Path,
+    paths: Sequence[Path] | None = None,
+) -> list[str]:
+    """Reject permissive production patches and tests reading production Python.
+
+    Follow local imports, assignments, loop paths and helper arguments/returns.
+    This is a static syntax gate, not execution or a general Python resolver.
+    Temporary fixture paths and tests' own files are not production source.
+    """
+    if paths is None:
+        paths = repository_python_paths(repo_root)
+    problems = []
+    for path in paths:
+        if path.parts[0] != "tests":
+            continue
+        tree = ast.parse((repo_root / path).read_text(encoding="utf-8-sig"))
+        problems.extend(_test_source_boundary_problems(tree, path))
+    return problems
+
+
+def _test_source_boundary_problems(tree: ast.Module, path: Path) -> list[str]:
+    problems: list[str] = []
+    parents = {
+        child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)
+    }
+
+    def scope(node: ast.AST) -> ast.AST:
+        while node in parents:
+            node = parents[node]
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                return node
+        return tree
+
+    bindings: dict[tuple[ast.AST, str], list[ast.AST | str | None]] = {}
+
+    def bind(owner: ast.AST, name: str, value: ast.AST | str | None) -> None:
+        bindings.setdefault((owner, name), []).append(value)
+
+    def lookup(node: ast.AST, name: str) -> list[ast.AST | str | None]:
+        owner = scope(node)
+        while True:
+            if (owner, name) in bindings:
+                return bindings[owner, name]
+            if owner is tree:
+                return []
+            owner = scope(owner)
+
+    for node in ast.walk(tree):
+        owner = scope(node)
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                module = (
+                    alias.name
+                    if isinstance(node, ast.Import)
+                    else f"{node.module}.{alias.name}"
+                )
+                bind(
+                    owner,
+                    alias.asname
+                    or (
+                        alias.name.split(".")[0]
+                        if isinstance(node, ast.Import)
+                        else alias.name
+                    ),
+                    module,
+                )
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    bind(owner, target.id, node.value)
+        elif isinstance(node, (ast.For, ast.comprehension)) and isinstance(
+            node.target, ast.Name
+        ):
+            bind(owner, node.target.id, node.iter)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            bind(owner, node.name, node)
+            for arg in node.args.args:
+                bind(
+                    node,
+                    arg.arg,
+                    "temporary"
+                    if arg.arg in {"tmp_path", "tmp_path_factory"}
+                    else None,
+                )
+    # Helper parameters inherit the actual arguments, not a global name match.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            for helper in lookup(node, node.func.id):
+                if isinstance(helper, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    for arg, value in zip(helper.args.args, node.args, strict=False):
+                        bind(helper, arg.arg, value)
+
+    def origins(
+        node: ast.AST | str | None, seen: frozenset[ast.AST] = frozenset()
+    ) -> set[str]:
+        if node is None or node in seen:
+            return set()
+        if isinstance(node, str):
+            return (
+                {"production"}
+                if node.split(".")[0] in REPOSITORY_ROOTS
+                else ({"temporary"} if node == "temporary" else set())
+            )
+        seen = seen | {node}
+        if isinstance(node, ast.Attribute) and node.attr in sys.stdlib_module_names:
+            # Patching module.sys.frozen still patches the standard library.
+            return set()
+        values: list[ast.AST | str | None]
+        if isinstance(node, ast.Name):
+            values = lookup(node, node.id)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            parts = re.split(r"[\\/.]", node.value)
+            return (
+                {"production"}
+                if any(part in REPOSITORY_ROOTS for part in parts)
+                else set()
+            ) | ({"python"} if node.value.endswith(".py") else set())
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            values = [
+                child.value
+                for child in ast.walk(node)
+                if isinstance(child, ast.Return) and scope(child) is node
+            ]
+        elif isinstance(node, ast.Call):
+            # Only path constructors/conversions propagate argument provenance.
+            values = [node.func]
+            if isinstance(node.func, ast.Attribute) or (
+                isinstance(node.func, ast.Name)
+                and (
+                    node.func.id in {"Path", "str", "type"}
+                    or "pathlib.Path" in lookup(node, node.func.id)
+                )
+            ):
+                values.extend(node.args)
+            if (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "repository_python_paths"
+            ):
+                return {"production", "python"} | set().union(
+                    *(origins(argument, seen) for argument in node.args)
+                )
+        else:
+            values = list(ast.iter_child_nodes(node))
+        result = set().union(*(origins(value, seen) for value in values))
+        if isinstance(node, ast.Attribute) and node.attr == "__file__":
+            result.add("python")
+        return result
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        called = (
+            node.func.attr
+            if isinstance(node.func, ast.Attribute)
+            else node.func.id
+            if isinstance(node.func, ast.Name)
+            else ""
+        )
+        if isinstance(node.func, ast.Name):
+            imported = lookup(node, node.func.id)
+            if len(imported) == 1 and isinstance(imported[0], str):
+                called = imported[0].rsplit(".", 1)[-1]
+        if (
+            called == "setattr"
+            and node.args
+            and any(
+                k.arg == "raising"
+                and isinstance(k.value, ast.Constant)
+                and k.value.value is False
+                for k in node.keywords
+            )
+        ):
+            if "production" in origins(node.args[0]):
+                problems.append(
+                    f"{path.as_posix()}:{node.lineno}: permissive-production-patch: "
+                    "remove raising=False"
+                )
+        source = None
+        if called in {"read_text", "read_bytes", "open"} and isinstance(
+            node.func, ast.Attribute
+        ):
+            source = node.func.value
+        elif called in {"getsource", "getsourcelines", "open"} and node.args:
+            source = node.args[0]
+        evidence = origins(source)
+        if (
+            "production" in evidence
+            and "temporary" not in evidence
+            and (called in {"getsource", "getsourcelines"} or "python" in evidence)
+        ):
+            problems.append(
+                f"{path.as_posix()}:{node.lineno}: production-source-read: "
+                "assert behavior or use the architecture gate"
+            )
+    return problems
+
+
+def validate_production_entry_boundaries(repo_root: Path) -> list[str]:
+    """Keep symbol-level construction constraints with the architecture owner."""
+    problems = []
+    outer_callers = set()
+    hypothesis_importers = set()
+    entrypoints = {Path("scripts/run_extraction.py"), Path("xic_workbench/cli.py")}
+    for path in repository_python_paths(repo_root):
+        if path.parts[0] not in REPOSITORY_ROOTS:
+            continue
+        tree = ast.parse((repo_root / path).read_text(encoding="utf-8-sig"))
+        for node in ast.walk(tree):
+            if (
+                path.parts[:2] == ("xic_extractor", "alignment")
+                and isinstance(node, ast.ImportFrom)
+                and node.module == "xic_extractor.peak_detection.signal_quality"
+                and any(
+                    alias.name
+                    in {
+                        "short_scale_noise_sigma",
+                        "measure_signal_quality",
+                        "candidate_signal_quality",
+                        "*",
+                    }
+                    for alias in node.names
+                )
+            ):
+                problems.append(
+                    f"{path.as_posix()}:{node.lineno}: "
+                    "Alignment cannot import noise estimators"
+                )
+            if (
+                isinstance(node, ast.ImportFrom)
+                and node.module == "xic_extractor.peak_detection.hypotheses"
+                and any(alias.name == "build_peak_hypotheses" for alias in node.names)
+            ):
+                hypothesis_importers.add(path)
+            if isinstance(node, ast.Call) and (
+                (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id == "run_untargeted_application"
+                )
+                or (
+                    isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "run_untargeted_application"
+                )
+            ):
+                outer_callers.add(path)
+        if path in entrypoints:
+            main = next(
+                (
+                    node
+                    for node in tree.body
+                    if isinstance(node, ast.FunctionDef) and node.name == "main"
+                ),
+                None,
+            )
+            if (
+                main is None
+                or ast.unparse(main.body[0]) != "multiprocessing.freeze_support()"
+            ):
+                problems.append(
+                    f"{path.as_posix()}: main must call "
+                    "multiprocessing.freeze_support first"
+                )
+    if outer_callers != {
+        Path("scripts/run_alignment.py"),
+        Path("xic_extractor/applications/untargeted/full_analysis.py"),
+    }:
+        problems.append(
+            "run_untargeted_application callers must be CLI and full analysis: "
+            f"{sorted(map(str, outer_callers))}"
+        )
+    if hypothesis_importers != {
+        Path("xic_extractor/extraction/targeted_peak_hypotheses.py"),
+        Path("xic_extractor/peak_detection/capture.py"),
+    }:
+        problems.append(
+            "build_peak_hypotheses importers must be Targeted hypotheses and capture: "
+            f"{sorted(map(str, hypothesis_importers))}"
+        )
     return problems
 
 
@@ -737,10 +1021,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, subprocess.CalledProcessError, SyntaxError, ValueError) as exc:
             problems = [str(exc)]
         problems.extend(validate_ppm_arithmetic(ROOT))
+        problems.extend(validate_test_source_boundaries(ROOT))
         for problem in problems:
             print(problem, file=sys.stderr)
         if not problems:
-            print("Internal-defense growth and ppm arithmetic gates passed.")
+            print("Internal-defense, ppm and test-source gates passed.")
         return int(bool(problems))
     census = build_architecture_census(ROOT)
     problems = validate_architecture_census(ROOT, census)
