@@ -12,6 +12,7 @@ from openpyxl import Workbook, load_workbook
 from tests.workbench_http import workbench_client
 from tests.workbench_review_fixtures import review_workspace
 from tests.xic_inspector_targeted_workbook_fixtures import (
+    acquire_targeted_bundle,
     install_targeted_raws,
     write_rare_detection_workbook,
 )
@@ -110,29 +111,24 @@ def test_targeted_xic_reads_only_selected_raw_and_includes_pair_without_writes(
     monkeypatch,
     nested,
 ):
-    from xic_inspector.sources.curve_bundle import read_curve_bundle
-    from xic_workbench import targeted_curves
 
     before = workbook.read_bytes()
     raw_dir = tmp_path / "raw"
     reads = install_targeted_raws(
-        monkeypatch, raw_dir, {"Sample A": 100, "Sample B": 300}
+        monkeypatch, raw_dir, {"Sample A": 100, "Sample B": 300}, pair_scale=0.5
     )
     if nested:
         for sample in ("Sample A", "Sample B"):
             batch = raw_dir / sample / "batch"
             batch.mkdir(parents=True)
             (raw_dir / f"{sample}.raw").rename(batch / f"{sample}.RAW")
-    output = tmp_path / "curves.json"
-    receipt = targeted_curves.export_targeted_curves(
+    bundle = acquire_targeted_bundle(
         workbook,
-        output,
         raw_dir=raw_dir,
         dll_dir=tmp_path,
         target_id="Analyte",
         sample_ids=("Sample A", "Sample B"),
     )
-    bundle = read_curve_bundle(output)
     traces = bundle.transitions[0].traces
     assert len(traces) == 4
     assert [(t.sample_id, t.quality_flags["target_label"]) for t in traces] == [
@@ -147,30 +143,35 @@ def test_targeted_xic_reads_only_selected_raw_and_includes_pair_without_writes(
     )
     assert traces[0].peak_bounds is None  # ND is still inspectable.
     assert traces[2].peak_bounds.apex == 9.1
-    assert receipt["source_binding_basis"] == "workbook_sample_name_unverified"
-    assert not receipt["original_acquisition_verified"]
+    assert (traces[2].peak_bounds.start, traces[2].peak_bounds.end) == (9.0, 9.2)
+    assert [t.quality_flags["saved_area"] for t in traces] == ["ND", 0, 123.456, None]
+    assert [max(t.raw.intensity) for t in traces] == pytest.approx([100, 50, 300, 150])
+    assert all(
+        t.quality_flags["source_binding_basis"] == "workbook_sample_name_unverified"
+        for t in traces
+    )
+    assert all(not t.quality_flags["original_acquisition_verified"] for t in traces)
     assert workbook.read_bytes() == before
 
 
 def test_targeted_xic_reuses_raw_identity_while_the_file_is_unchanged(
     workbook, tmp_path, monkeypatch
 ):
-    from xic_workbench import targeted_curves
+    from xic_extractor.acquisition import review_xics
 
     raw_dir = tmp_path / "raw"
     install_targeted_raws(monkeypatch, raw_dir, {"Sample A": 100, "Sample B": 300})
     identified = []
-    real = targeted_curves.build_acquisition_source_identity
+    real = review_xics.build_acquisition_source_identity
     monkeypatch.setattr(
-        targeted_curves,
+        review_xics,
         "build_acquisition_source_identity",
         lambda path, **kwargs: identified.append(path.name) or real(path, **kwargs),
     )
     verified = {}
-    for index in range(2):
-        targeted_curves.export_targeted_curves(
+    for _ in range(2):
+        acquire_targeted_bundle(
             workbook,
-            tmp_path / f"curves-{index}.json",
             raw_dir=raw_dir,
             dll_dir=tmp_path,
             target_id="Analyte",
@@ -179,9 +180,8 @@ def test_targeted_xic_reuses_raw_identity_while_the_file_is_unchanged(
         )
     assert identified == ["Sample A.raw"]
     (raw_dir / "Sample A.raw").write_bytes(b"replaced acquisition")
-    targeted_curves.export_targeted_curves(
+    acquire_targeted_bundle(
         workbook,
-        tmp_path / "curves-changed.json",
         raw_dir=raw_dir,
         dll_dir=tmp_path,
         target_id="Analyte",
@@ -191,22 +191,23 @@ def test_targeted_xic_reuses_raw_identity_while_the_file_is_unchanged(
     assert identified == ["Sample A.raw", "Sample A.raw"]
 
 
-def test_nd_curve_acquisition_reports_original_support_without_changing_saved_values(
+def test_nd_curve_acquisition_reports_new_support_without_changing_saved_values(
     tmp_path, monkeypatch
 ):
-    from xic_inspector.sources.curve_bundle import read_curve_bundle
-    from xic_workbench.targeted_curves import export_targeted_curves
 
     workbook = write_rare_detection_workbook(tmp_path / "nd.xlsx")
+    # A method RT difference must not be applied to this near-ISTD diagnostic.
+    book = load_workbook(workbook)
+    book["Targets"]["E2"], book["Targets"]["F2"] = 6, 8
+    book.save(workbook)
+    book.close()
     original = workbook.read_bytes()
     raw_dir = tmp_path / "raw"
     install_targeted_raws(
         monkeypatch, raw_dir, {"S1": 13000, "S2": 1000}, impulse_samples=("S1",)
     )
-    output = tmp_path / "curves.json"
-    export_targeted_curves(
+    bundle = acquire_targeted_bundle(
         workbook,
-        output,
         raw_dir=raw_dir,
         dll_dir=tmp_path,
         target_id="Analyte",
@@ -214,7 +215,7 @@ def test_nd_curve_acquisition_reports_original_support_without_changing_saved_va
     )
     traces = {
         trace.sample_id: trace
-        for trace in read_curve_bundle(output).transitions[0].traces
+        for trace in bundle.transitions[0].traces
         if trace.quality_flags["target_label"] == "Analyte"
     }
     assert sum(value != 0 for value in traces["S1"].raw.intensity) == 1
@@ -224,6 +225,8 @@ def test_nd_curve_acquisition_reports_original_support_without_changing_saved_va
     )
     assert not traces["S2"].quality_flags["reference_support_failures"]
     assert traces["S1"].quality_flags["saved_area"] == "ND"
+    assert traces["S1"].quality_flags["support_reference_rt"] == 9.0
+    assert traces["S2"].quality_flags["support_reference_rt"] == 9.1
     assert workbook.read_bytes() == original
 
 
@@ -233,6 +236,14 @@ def test_targeted_http_loads_nd_sample_curves_without_changing_workbook(
     monkeypatch,
 ):
     import time
+
+    from xic_inspector.sources import curve_bundle
+
+    def unexpected_file_handoff(*args, **kwargs):
+        raise AssertionError("Interactive curves must not use a bundle file")
+
+    monkeypatch.setattr(curve_bundle, "write_curve_bundle", unexpected_file_handoff)
+    monkeypatch.setattr(curve_bundle, "read_curve_bundle", unexpected_file_handoff)
 
     raw_dir = tmp_path / "raw"
     reads = install_targeted_raws(monkeypatch, raw_dir, {"Sample A": 100})
@@ -275,7 +286,6 @@ def test_targeted_curve_rejects_ambiguous_raw_before_acquisition(
     workbook, tmp_path, monkeypatch
 ):
     from xic_extractor.alignment_explanation.errors import ExplanationError
-    from xic_workbench.targeted_curves import export_targeted_curves
 
     raw_dir = tmp_path / "raw"
     reads = install_targeted_raws(
@@ -285,18 +295,15 @@ def test_targeted_curve_rejects_ambiguous_raw_before_acquisition(
     batch.mkdir()
     (batch / "Sample A.RAW").write_bytes(b"different injection with the same stem")
     before = workbook.read_bytes()
-    output = tmp_path / "curves.json"
     with pytest.raises(ExplanationError, match="Sample A.*多個 RAW"):
-        export_targeted_curves(
+        acquire_targeted_bundle(
             workbook,
-            output,
             raw_dir=raw_dir,
             dll_dir=tmp_path,
             target_id="Analyte",
             sample_ids=("Sample B", "Sample A"),
         )
     assert not reads
-    assert not output.exists()
     assert workbook.read_bytes() == before
 
 
@@ -306,23 +313,19 @@ def test_targeted_curve_failure_does_not_publish_or_modify_results(
     tmp_path,
     failure,
 ):
+    from xic_extractor.acquisition.review_xics import ReviewAcquisitionCancelled
     from xic_extractor.alignment_explanation.errors import ExplanationError
-    from xic_workbench.review_curves import CurveAcquisitionCancelled
-    from xic_workbench.targeted_curves import export_targeted_curves
 
     before = workbook.read_bytes()
-    output = tmp_path / "curves.json"
-    with pytest.raises((ExplanationError, CurveAcquisitionCancelled)):
-        export_targeted_curves(
+    with pytest.raises((ExplanationError, ReviewAcquisitionCancelled)):
+        acquire_targeted_bundle(
             workbook,
-            output,
             target_id="Analyte",
             raw_dir=tmp_path,
             dll_dir=tmp_path,
             sample_ids=("Unknown" if failure == "unknown_sample" else "Sample A",),
             is_cancelled=lambda: failure == "cancelled",
         )
-    assert not output.exists()
     assert workbook.read_bytes() == before
 
 
@@ -703,8 +706,6 @@ def test_targeted_review_replays_saved_mass_policy(
         MassRecalibrationResult,
     )
     from xic_extractor.output.metadata import build_metadata_rows
-    from xic_inspector.sources.curve_bundle import read_curve_bundle
-    from xic_workbench.targeted_curves import export_targeted_curves
 
     expected = MassRecalibration(policy or "none")
     if policy is not None:
@@ -738,15 +739,13 @@ def test_targeted_review_replays_saved_mass_policy(
 
         yield Raw()
 
-    monkeypatch.setattr("xic_workbench.targeted_curves.open_raw", raw)
-    output = tmp_path / "policy-curves.json"
-    export_targeted_curves(
+    monkeypatch.setattr("xic_extractor.acquisition.review_xics.open_raw", raw)
+    bundle = acquire_targeted_bundle(
         workbook,
-        output,
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         target_id="Analyte",
         sample_ids=("Sample A", "Sample B"),
     )
-    traces = read_curve_bundle(output).transitions[0].traces
+    traces = bundle.transitions[0].traces
     assert [max(t.raw.intensity) for t in traces] == pytest.approx([100, 100, 300, 300])

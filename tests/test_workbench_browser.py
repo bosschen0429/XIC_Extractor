@@ -2542,7 +2542,7 @@ def test_curve_history_restores_snapshot_after_pending_load(
         install_targeted_raws,
         write_rare_detection_workbook,
     )
-    from xic_workbench import targeted_curves
+    from xic_extractor.acquisition import review_xics
 
     page = workbench
     raw_dir = tmp_path / "review-raw"
@@ -2550,7 +2550,7 @@ def test_curve_history_restores_snapshot_after_pending_load(
         monkeypatch, raw_dir, {"S3": 1000, "S4": 300}, pair_scale=1000
     )
     release = threading.Event()
-    open_raw = targeted_curves.open_raw
+    open_raw = review_xics.open_raw
 
     @contextmanager
     def delayed_raw(*args, **kwargs):
@@ -2558,7 +2558,7 @@ def test_curve_history_restores_snapshot_after_pending_load(
         with open_raw(*args, **kwargs) as raw:
             yield raw
 
-    monkeypatch.setattr(targeted_curves, "open_raw", delayed_raw)
+    monkeypatch.setattr(review_xics, "open_raw", delayed_raw)
     for sample in ("S3", "S4"):
         batch = raw_dir / sample
         batch.mkdir()
@@ -2868,7 +2868,7 @@ def test_cached_sample_replaces_a_pending_raw_read(workbench, tmp_path, monkeypa
         install_targeted_raws,
         write_rare_detection_workbook,
     )
-    from xic_workbench import targeted_curves
+    from xic_extractor.acquisition import review_xics
 
     page = workbench
     raw_dir = tmp_path / "raw"
@@ -2876,17 +2876,21 @@ def test_cached_sample_replaces_a_pending_raw_read(workbench, tmp_path, monkeypa
         monkeypatch, raw_dir, {"S3": 1000, "S4": 300}, pair_scale=1000
     )
     entered, release = threading.Event(), threading.Event()
-    open_raw = targeted_curves.open_raw
+    open_raw = review_xics.open_raw
+    closed = []
 
     @contextmanager
     def held_raw(path, *args, **kwargs):
         if path.stem == "S4":
             entered.set()
             assert release.wait(HANDSHAKE_TIMEOUT_S)
-        with open_raw(path, *args, **kwargs) as raw:
-            yield raw
+        try:
+            with open_raw(path, *args, **kwargs) as raw:
+                yield raw
+        finally:
+            closed.append(path.stem)
 
-    monkeypatch.setattr(targeted_curves, "open_raw", held_raw)
+    monkeypatch.setattr(review_xics, "open_raw", held_raw)
     workbook = write_rare_detection_workbook(tmp_path / "paired.xlsx")
     _open_results(page)
     page.locator("#source").fill(str(workbook))
@@ -2920,6 +2924,7 @@ def test_cached_sample_replaces_a_pending_raw_read(workbench, tmp_path, monkeypa
             [job["id"], BACKGROUND_JOB_TIMEOUT_MS],
         )
         assert completed["status"] == "cancelled"
+        assert closed == ["S3", "S4"]
         expect(page.locator("#xic-sample")).to_have_value("S3")
         expect(review.locator(".tx-sample-name")).to_have_text("S3")
         expect(review).to_have_attribute("data-view-id", cached_view)

@@ -11,6 +11,7 @@ import json
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -540,25 +541,50 @@ class ReviewWorkspace:
             unusable: list[str] = []
             sample_groups: dict[str, str] = {}
             if description["target_id"]:
-                from xic_workbench.targeted_curves import export_targeted_curves
+                from xic_extractor.acquisition.review_xics import (
+                    ReviewAcquisitionCancelled,
+                    acquire_review_xics,
+                )
+                from xic_inspector.sources.targeted_workbook import (
+                    TargetedWorkbookSource,
+                )
+                from xic_inspector.targeted_curves import targeted_curve_bundle
 
-                bundle_path = self._folder / f"{job_id}.json"
-                export_targeted_curves(
+                source = TargetedWorkbookSource(
                     request["report"],
-                    bundle_path,
+                    expected_source=request["source"],
+                )
+                coordinates = source.curve_targets(
+                    description["target_id"], request["samples"]
+                )
+                mass_policy, profile = source.curve_processing_settings()
+                signals = acquire_review_xics(
                     raw_dir=request["raw_dir"],
                     dll_dir=request["dll_dir"],
-                    target_id=description["target_id"],
                     sample_ids=request["samples"],
-                    padding_min=request["padding_min"],
-                    expected_source=request["source"],
+                    coordinates=coordinates,
+                    mass_policy=mass_policy,
+                    profile=profile,
+                    support_reference_rts=source.support_reference_rts(
+                        request["samples"], tuple(coordinates)
+                    ),
                     is_cancelled=cancel.is_set,
                     on_progress=progress,
                     verified_raws=self._targeted_raws,
                 )
-                prepared = prepare_report(
-                    bundle_path,
-                    SelectionRequest(sample_ids=request["samples"]),
+                try:
+                    with closing(signals):
+                        bundle = targeted_curve_bundle(
+                            source,
+                            description["target_id"],
+                            signals,
+                            padding_min=request["padding_min"],
+                        )
+                except ReviewAcquisitionCancelled as exc:
+                    raise CurveAcquisitionCancelled(str(exc)) from exc
+                prepared = prepare_curve_view(
+                    bundle,
+                    request["samples"],
                     is_cancelled=cancel.is_set,
                 )
             else:
