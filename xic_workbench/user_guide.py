@@ -33,7 +33,7 @@ USER_PAGES = (
 )
 START_PAGE = Path("開始使用.html")
 
-EXAMPLES = ("targeted-method.xlsx", "targets.xlsx", "targets.csv")
+EXAMPLES = ("targets.xlsx",)
 
 PAGE_STYLE = """
 body { margin: 2rem auto; padding: 0 1.5rem; max-width: 76rem;

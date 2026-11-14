@@ -7,10 +7,10 @@ import pytest
 
 from tests.targeted_delta_mass_fixtures import PatternRaw
 from xic_extractor.configuration.models import ConfigError
-from xic_extractor.configuration.targeted_method_files import (
-    create_targeted_method,
-    load_targeted_method,
-    save_targeted_method,
+from xic_extractor.configuration.target_list_files import (
+    create_target_list,
+    load_target_list,
+    save_target_list,
 )
 
 
@@ -55,10 +55,10 @@ def details(*ions, label="custom target", **settings):
 
 
 def test_delta_mass_round_trip_keeps_target_as_the_quantitation_ion(tmp_path):
-    method = create_targeted_method({}, [target_row()], delta_mass=details())
+    method = create_target_list([target_row()], delta_mass=details())
     path = tmp_path / "custom.xlsx"
-    save_targeted_method(method, path)
-    loaded = load_targeted_method(path)
+    save_target_list(method, path)
+    loaded = load_target_list(path)
     assert loaded.targets == method.targets
     assert loaded.delta_mass == method.delta_mass
     target = loaded.targets[0]
@@ -70,8 +70,8 @@ def test_delta_mass_round_trip_keeps_target_as_the_quantitation_ion(tmp_path):
 
 
 def test_new_ions_are_named_by_offset_and_default_to_record_only_ratios():
-    target = create_targeted_method(
-        {}, [target_row(delta_mass_mz="+4.005213, -2.0157")]
+    target = create_target_list(
+        [target_row(delta_mass_mz="+4.005213, -2.0157")]
     ).targets[0]
     ions = target.identification.delta_mass.ions
     assert [ion.label for ion in ions] == ["+4.0052", "-2.0157"]
@@ -95,17 +95,15 @@ def test_new_ions_are_named_by_offset_and_default_to_record_only_ratios():
 )
 def test_invalid_delta_mass_is_not_silently_ms1_only(changes, message):
     with pytest.raises(ConfigError, match=message):
-        create_targeted_method({}, [target_row(**changes)])
+        create_target_list([target_row(**changes)])
 
 
 def test_details_must_name_declared_ions_and_targets():
     stray = {"label": "x", "offset_mz": 3.0}
     with pytest.raises(ConfigError, match="一致"):
-        create_targeted_method({}, [target_row()], delta_mass=details(stray))
+        create_target_list([target_row()], delta_mass=details(stray))
     with pytest.raises(ConfigError, match="不存在的目標"):
-        create_targeted_method(
-            {}, [target_row()], delta_mass=details(label="someone else")
-        )
+        create_target_list([target_row()], delta_mass=details(label="someone else"))
 
 
 @pytest.mark.parametrize("use_method_file", [False, True])
@@ -126,14 +124,12 @@ def test_workspace_and_run_receipts_keep_delta_mass_details(tmp_path, use_method
     )
     saved = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
     assert saved["delta_mass"]["settings"]["mz_tolerance_ppm"] == 12
-    method_path = None
+    list_path = None
     if use_method_file:
-        method_path = tmp_path / "portable.xlsx"
-        save_targeted_method(
-            create_targeted_method({}, [row], delta_mass=details()), method_path
-        )
+        list_path = tmp_path / "portable.xlsx"
+        save_target_list(create_target_list([row], delta_mass=details()), list_path)
     prepared = prepare_targeted_config(
-        config_dir, method_path=method_path, output_dir=tmp_path / "results"
+        config_dir, target_list_path=list_path, output_dir=tmp_path / "results"
     )
     try:
         _, replayed = load_config_snapshot(
@@ -164,21 +160,11 @@ def test_workbench_export_import_carries_details_without_mutating_preview_state(
     path = tmp_path / "portable.xlsx"
     workspace.action("targets/export", {**values, "path": str(path)})
     preview = preview_target_upload(
-        path.name, base64.b64encode(path.read_bytes()).decode(), {}
+        path.name, base64.b64encode(path.read_bytes()).decode()
     )
-    assert preview["kind"] == "method"
     assert preview["targets"][0]["delta_mass_mz"] == "-2.0"
     assert preview["delta_mass"]["ions"]["custom target"][0]["offset_mz"] == -2.0
     assert (workspace.config_dir / "workspace.json").read_bytes() == original
-    workspace.action("targeted/method/save", {**values, "name": "Reusable"})
-    loaded = workspace.action(
-        "targeted/method/load",
-        {
-            "path": str(workspace.config_dir / "methods" / "Reusable.xlsx"),
-            "settings": values["settings"],
-        },
-    )
-    assert loaded["delta_mass"] == preview["delta_mass"]
 
 
 def extract_pattern(
@@ -187,8 +173,8 @@ def extract_pattern(
     from tests.targeted_peak_selection_fixtures import _config
     from xic_extractor.extraction.target_extraction import extract_one_target
 
-    target = create_targeted_method(
-        {}, [row or target_row()], delta_mass=delta_mass or details()
+    target = create_target_list(
+        [row or target_row()], delta_mass=delta_mass or details()
     ).targets[0]
     results = {}
     extract_one_target(
@@ -317,7 +303,7 @@ def test_delta_mass_reaches_finalized_workbook_and_readonly_inspector(
         "xic_extractor.extraction.target_extraction.open_raw",
         lambda path, *_args, **_kwargs: nullcontext(raws[path.stem]),
     )
-    target = create_targeted_method({}, [target_row()], delta_mass=details()).targets[0]
+    target = create_target_list([target_row()], delta_mass=details()).targets[0]
     path = tmp_path / "results.xlsx"
     execution = TargetedApplicationService(pipeline.run_pipeline).execute_application(
         build_targeted_application_request(

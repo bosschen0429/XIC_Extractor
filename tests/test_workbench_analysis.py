@@ -572,7 +572,7 @@ def test_inspector_job_rejects_source_not_bound_to_published_untargeted_result(
         jobs.close()
 
 
-def test_http_targeted_bootstrap_explains_active_source(tmp_path):
+def test_http_targeted_bootstrap_accepts_saved_worker_reset(tmp_path):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     from xic_extractor.configuration.workspace_state import save_workspace
@@ -583,9 +583,7 @@ def test_http_targeted_bootstrap_explains_active_source(tmp_path):
         status, config, _ = request("/api/config")
         assert status == 200
         assert config["settings"]["parallel_workers"] == ""
-        summary = config["targeted_method"]
-        assert not any("parallel_workers" in w for w in summary["warnings"])
-        assert config["settings_source"] == "workspace.json"
+        assert not any("parallel_workers" in w for w in config["targeted_warnings"])
 
 
 def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
@@ -608,12 +606,12 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
         assert config["settings"]["dll_dir"] == "C:/preferred-dll"
         assert config["settings"]["parallel_workers"] == ""
         assert config["untargeted"]["dll_dir"] == "C:/preferred-dll"
-        assert config["targeted_method"]["warnings"]
+        assert config["targeted_warnings"]
     finally:
         workspace.jobs.close()
 
 
-def test_http_retired_method_overrides_and_reset_are_not_accepted(tmp_path):
+def test_http_retired_settings_and_removed_routes_are_not_accepted(tmp_path):
     from tests.workbench_http import workbench_client
     from xic_workbench.application import create_workspace
 
@@ -621,11 +619,9 @@ def test_http_retired_method_overrides_and_reset_are_not_accepted(tmp_path):
     with workbench_client(workspace) as request:
         _, config, _ = request("/api/config")
         settings = {**config["settings"], "ms2_precursor_tol_da": "1.2"}
-        assert request("/api/targeted/method", {"settings": settings})[0] == 400
-        assert (
-            request("/api/targeted/method/reset", {"settings": config["settings"]})[0]
-            == 404
-        )
+        assert request("/api/targeted/settings", {"settings": settings})[0] == 400
+        for route in ("/api/targeted/method/save", "/api/targeted/method/load"):
+            assert request(route, {"settings": config["settings"]})[0] == 404
         assert request("/api/config")[1]["settings"] == config["settings"]
         assert not (tmp_path / "config" / "settings.csv").exists()
 

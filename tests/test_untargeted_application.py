@@ -1151,16 +1151,12 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
 
 
 @pytest.mark.parametrize(
-    "filename", ["targets.csv", "targets.xlsx", "targeted-method.xlsx"]
-)
-@pytest.mark.parametrize(
     "method,loss,count",
     [("dna_dr", 116.0474, 6), ("rna_ribose", 132.0423, 1), ("rna_mer", 146.0579, 0)],
 )
 def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     tmp_path,
     monkeypatch,
-    filename,
     method,
     loss,
     count,
@@ -1175,7 +1171,7 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
         / "xic_extractor"
         / "configuration"
         / "data"
-        / filename
+        / "targets.xlsx"
     )
     all_targets = read_targets(source)
     batch_index = _write_batch(tmp_path, ("S1",))

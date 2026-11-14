@@ -50,13 +50,26 @@ def _unsaved(page, kind: str) -> bool:
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
-def test_help_opens_task_guide_without_changing_the_analysis(workbench, theme):
+def test_help_opens_task_guide_without_changing_the_analysis(
+    workbench, tmp_path, theme
+):
+    from xic_extractor.configuration.target_list_files import load_target_list
+    from xic_extractor.configuration.targets import read_istd_targets
+
     page = workbench
     if theme == "dark":
         page.get_by_role("button", name="切換深色模式").click()
     original_raw = page.locator("#t-data_dir").input_value()
     page.get_by_role("button", name="使用說明與快捷鍵").click()
     expect(page.get_by_role("heading", name="使用說明與快捷鍵")).to_be_visible()
+    # Both analyses read the one example list, offered only here.
+    expect(page.locator('a[href^="/examples/"]')).to_have_count(1)
+    with page.expect_download() as download:
+        page.get_by_role("link", name="下載目標清單範例 XLSX").click()
+    example = tmp_path / "example.xlsx"
+    download.value.save_as(example)
+    assert load_target_list(example).targets
+    assert read_istd_targets(example).targets
     with page.expect_popup() as opened:
         page.get_by_role("link", name="開啟使用說明").click()
     guide = opened.value
@@ -557,7 +570,7 @@ def test_untargeted_only_submits_complete_analysis(workbench, config_dir):
         "execution_profile",
     }
     assert not retired & sent.value.post_data_json.keys()
-    expect(page.locator("#toasts")).to_contain_text("已儲存")
+    expect(page.locator("#toasts")).to_contain_text("已保存")
     assert not retired & json.loads(draft.read_text()).keys()
 
 
@@ -774,11 +787,11 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
     workbench, config_dir, loss
 ):
     page = workbench
-    expect(page.locator("#target-method-state")).not_to_be_visible()
-    page.locator("summary", has_text="處理策略與設定來源").click()
-    expect(page.locator("#target-method-state")).to_have_text("共用 Targeted 策略")
+    # Fixed platform strategy has no panel; step 2 offers import and the editor.
+    expect(page.locator("#targeted-form")).not_to_contain_text("處理策略")
     expect(page.locator("#targeted-form")).not_to_contain_text("版本")
-    page.locator("summary", has_text="處理策略與設定來源").click()
+    step = page.locator("#targeted-form section.step").nth(1)
+    expect(step.locator("button:visible, a:visible, select:visible")).to_have_count(2)
     for cell in page.locator("#target-preview th, #target-preview td").all():
         expect(cell).to_have_css("text-align", "center")
     expect(page.locator("#t-parallel_workers")).to_have_count(0)
@@ -797,11 +810,10 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
     page.get_by_role(
         "combobox", name="CID-NL 中性丟失（Da）（第 1 列）", exact=True
     ).fill(loss)
-    expect(page.locator("#target-rows .target-specificity").first).to_have_text(
+    _finish_and_save_targets(page)
+    expect(page.locator("#target-preview tbody tr").first).to_contain_text(
         f"CID-NL {loss}" if loss else "MS1 only"
     )
-    page.locator("#target-editor-save").click()
-    expect(page.locator("#target-editor")).not_to_be_visible()
     page.reload()
     page.locator("#target-edit").click()
     expect(
@@ -814,6 +826,23 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(
     ).to_have_value(loss)
     assert read_settings(config_dir=config_dir)["parallel_workers"] == ""
     expect(page.locator("#t-parallel_workers")).to_have_count(0)
+
+
+def _finish_and_save_targets(page):
+    page.locator("#target-editor-done").click()
+    expect(page.locator("#target-editor")).not_to_be_visible()
+    with page.expect_response("**/api/targeted/save"):
+        page.locator("#target-save").click()
+
+
+def _target_specificity(page, row):
+    cid = page.get_by_role(
+        "combobox", name=f"CID-NL 中性丟失（Da）（第 {row} 列）", exact=True
+    )
+    delta = page.get_by_role(
+        "button", name=f"編輯 Delta Mass Δm/z（第 {row} 列）", exact=True
+    )
+    return cid, delta
 
 
 def _fill_target(page, row, label, mz):
@@ -839,8 +868,8 @@ def test_targeted_bulk_specificity_selects_like_samples(
     ):
         page.locator("#target-add").click()
         _fill_target(page, row, label, mz)
-    # Nothing selected: the toolbar is idle.
-    expect(page.locator("#target-bulk-apply")).to_be_disabled()
+    # Nothing selected: the bulk toolbar stays out of the way.
+    expect(page.locator("#target-bulk")).to_be_hidden()
     handles = page.locator("#target-rows td.target-handle")
     # Drag a band over the row numbers. Keep the gesture away from the scroll
     # box's edges, where a held drag deliberately keeps scrolling.
@@ -865,13 +894,12 @@ def test_targeted_bulk_specificity_selects_like_samples(
     page.locator("#target-bulk-cid").fill("162.0528")
     page.locator("#target-bulk-delta").fill("+1.003355, -2.0157")
     page.locator("#target-bulk-apply").click()
-    specificity = page.locator("#target-rows .target-specificity")
-    expect(specificity.nth(0)).to_have_text("CID-NL 116.0474")
-    expect(specificity.nth(1)).to_have_text(
-        "CID-NL 162.0528 ＋ Delta Mass +1.0034, -2.0157"
-    )
+    expect(_target_specificity(page, 1)[0]).to_have_value("116.0474")
+    cid, delta = _target_specificity(page, 2)
+    expect(cid).to_have_value("162.0528")
+    expect(delta).to_have_text("+1.0034, -2.0157")
     # A new row starts with the previous row's CID-NL loss.
-    expect(specificity.nth(2)).to_have_text("CID-NL 116.0474")
+    expect(_target_specificity(page, 3)[0]).to_have_value("116.0474")
     # Only filled toolbar fields are written; a search selects what it finds.
     page.locator("#target-filter").fill("Fourth")
     expect(page.locator("#target-selection")).to_have_text("已選 1 個目標")
@@ -879,12 +907,13 @@ def test_targeted_bulk_specificity_selects_like_samples(
     page.locator("#target-bulk-delta").fill("+2.0")
     page.locator("#target-bulk-apply").click()
     page.locator("#target-filter").fill("")
-    expect(specificity.nth(3)).to_have_text("CID-NL 162.0528 ＋ Delta Mass +2.0000")
+    cid, delta = _target_specificity(page, 4)
+    expect(cid).to_have_value("162.0528")
+    expect(delta).to_have_text("+2.0000")
     page.locator("#target-editor").screenshot(
         path=str(tmp_path / f"target-editor-{theme}.png")
     )
-    page.locator("#target-editor-save").click()
-    expect(page.locator("#target-editor")).not_to_be_visible()
+    _finish_and_save_targets(page)
     state = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
     rows = {row["label"]: row for row in state["targets"]}
     assert rows["Second"]["delta_mass_mz"] == "+1.003355, -2.0157"
@@ -899,9 +928,9 @@ def test_targeted_bulk_specificity_selects_like_samples(
     page.locator("#target-edit").click()
     page.locator("#target-rows td.target-handle").nth(1).click()
     page.locator("#target-bulk-ms1").click()
-    expect(page.locator("#target-rows .target-specificity").nth(1)).to_have_text(
-        "MS1 only"
-    )
+    cid, delta = _target_specificity(page, 2)
+    expect(cid).to_have_value("")
+    expect(delta).to_have_text("—")
 
 
 def test_target_delta_mass_editor_names_ions_and_previews_actual_mz(
@@ -927,7 +956,7 @@ def test_target_delta_mass_editor_names_ions_and_previews_actual_mz(
     editor.locator("input[aria-label^='Δm/z']").last.fill("+1.00002")
     editor.locator("input[aria-label^='Δm/z']").last.dispatch_event("change")
     expect(editor.locator(".inline-status")).to_contain_text("Δm/z 太接近")
-    page.locator("#target-editor-save").click()
+    page.locator("#target-editor-done").click()
     expect(page.locator("#target-editor-error")).to_contain_text("Δm/z 太接近")
     editor.get_by_role("button", name="移除第 3 個伴隨離子").click()
     ratio = editor.get_by_role("textbox", name="強度比範圍（第 1 個伴隨離子）")
@@ -938,8 +967,7 @@ def test_target_delta_mass_editor_names_ions_and_previews_actual_mz(
     advanced.locator("summary").click()
     page.locator("#target-delta-settings input").first.fill("12")
     expect(advanced).to_have_attribute("open", "")
-    page.locator("#target-editor-save").click()
-    expect(page.locator("#target-editor")).not_to_be_visible()
+    _finish_and_save_targets(page)
     state = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
     assert state["targets"][0]["delta_mass_mz"] == "+4.005213, +1.00001"
     assert state["delta_mass"]["settings"]["mz_tolerance_ppm"] == 12
@@ -964,14 +992,13 @@ def test_unreadable_ratio_range_blocks_saving_the_target_list(workbench, config_
     editor.get_by_role("textbox", name="Δm/z（第 1 個伴隨離子）").fill("+2")
     editor.get_by_role("textbox", name="強度比範圍（第 1 個伴隨離子）").fill("0.8-0.2")
     before = (config_dir / "workspace.json").read_bytes()
-    page.locator("#target-editor-save").click()
+    page.locator("#target-editor-done").click()
     # The cell no longer matches the stored 0.1–10; nothing is saved.
     expect(page.locator("#target-editor")).to_be_visible()
     expect(page.locator("#target-editor-error")).to_contain_text("強度比範圍")
     assert (config_dir / "workspace.json").read_bytes() == before
     editor.get_by_role("textbox", name="強度比範圍（第 1 個伴隨離子）").fill("0.2-0.8")
-    page.locator("#target-editor-save").click()
-    expect(page.locator("#target-editor")).not_to_be_visible()
+    _finish_and_save_targets(page)
     state = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
     (ion,) = state["delta_mass"]["ions"]["Browser target"]
     assert (ion["ratio_min"], ion["ratio_max"]) == (0.2, 0.8)
@@ -1002,80 +1029,38 @@ def test_target_ions_follow_their_row_not_a_label_typed_through(
     name = page.get_by_role("textbox", name="名稱（第 2 列）", exact=True)
     name.press_sequentially("Pt-2")
     _fill_target(page, 2, "Pt-2", "600")
-    page.locator("#target-editor-save").click()
-    expect(page.locator("#target-editor")).not_to_be_visible()
+    _finish_and_save_targets(page)
     state = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
     assert set(state["delta_mass"]["ions"]) == {"Pt"}
     assert state["delta_mass"]["ions"]["Pt"][0]["label"] == "+1.0021"
     assert [row["delta_mass_mz"] for row in state["targets"]] == ["+1.0021", ""]
 
 
-def test_imported_earlier_method_keeps_ion_names_until_their_offset_changes(
-    workbench, config_dir, tmp_path
+def test_imported_earlier_method_workbook_is_rejected_with_the_fix(
+    workbench, tmp_path, browser_errors
 ):
     import openpyxl
 
-    from xic_workbench.config_io import read_targets
-
     portable = tmp_path / "earlier.xlsx"
     book = openpyxl.Workbook()
-    book.remove(book.active)
-    sheet = book.create_sheet("Method")
-    sheet.append(["key", "value"])
-    sheet.append(["strategy", "cid-nl"])
-    sheet = book.create_sheet("Targets")
-    sheet.append(["label", "mz", "expected_rt_min", "method", "role", "istd_pair"])
-    for row in read_targets(config_dir=config_dir):
-        sheet.append(
-            [
-                row["label"],
-                row["mz"],
-                row["expected_rt_min"],
-                "Pair",
-                row["role"],
-                row["istd_pair"],
-            ]
-        )
-    sheet = book.create_sheet("Identification Methods")
-    sheet.append(
-        [
-            "Method",
-            "Combine",
-            "m/z Tolerance ppm",
-            "Condition",
-            "Kind",
-            "Position",
-            "Delta m/z",
-        ]
-    )
-    sheet.append(["Pair", "all", 20, 1, "delta_mass", "quant", 0])
-    sheet.append(["Pair", "all", 20, 1, "delta_mass", "light", -2])
-    sheet.append(["Pair", "all", 20, 1, "delta_mass", "heavy", 2])
+    book.active.title = "Method"
+    book.active.append(["key", "value"])
+    book.active.append(["strategy", "cid-nl"])
+    targets = book.create_sheet("Targets")
+    targets.append(["label", "mz", "expected_rt_min", "role", "istd_pair"])
+    targets.append(["A", "300", "2", "analyte", ""])
     book.save(portable)
     page = workbench
+    before = page.locator("#target-preview").inner_text()
     page.locator("#target-import-file").set_input_files(portable)
-    expect(page.locator("#target-import-preview")).to_be_visible()
-    expect(page.locator("#target-import-rows")).to_contain_text(
-        "Delta Mass -2.0000, +2.0000"
+    expect(page.locator("#target-import-status")).to_contain_text("舊格式")
+    expect(page.locator("#target-import-status")).to_contain_text("Delta Mass Settings")
+    expect(page.locator("#target-import-preview")).not_to_be_visible()
+    assert page.locator("#target-preview").inner_text() == before
+    browser_errors.remove(
+        "Failed to load resource: the server responded with a status of "
+        "400 (Bad Request)"
     )
-    page.locator("#target-import-confirm").click()
-    page.locator("#target-edit").click()
-    page.get_by_role(
-        "button", name="編輯 Delta Mass Δm/z（第 1 列）", exact=True
-    ).click()
-    editor = page.locator(".target-delta-row .delta-editor")
-    second = editor.get_by_role("textbox", name="Δm/z（第 2 個伴隨離子）")
-    second.fill("+3")
-    second.dispatch_event("change")
-    page.locator("#target-editor-save").click()
-    expect(page.locator("#target-editor")).not_to_be_visible()
-    state = json.loads((config_dir / "workspace.json").read_text(encoding="utf-8"))
-    ions = state["delta_mass"]["ions"]["Browser target"]
-    assert [(i["label"], i["offset_mz"]) for i in ions] == [
-        ("light", -2.0),
-        ("+3.0000", 3.0),
-    ]
-    assert "method" not in state["targets"][0]
 
 
 def test_untargeted_delta_mass_method_edits_with_shared_terms(workbench, tmp_path):
@@ -1217,7 +1202,7 @@ def test_new_untargeted_delta_mass_method_restores_easy_ic(workbench, tmp_path):
     page.locator("#method-apply").click()
     expect(page.locator("#method-editor")).not_to_be_visible()
     page.locator("#untargeted-save").click()
-    expect(page.locator("#toasts")).to_contain_text("Untargeted 批次設定已儲存")
+    expect(page.locator("#toasts")).to_contain_text("批次設定已保存")
     assert not _unsaved(page, "untargeted")
     page.reload()
     expect(page.locator("body")).not_to_have_class("booting")
@@ -1239,7 +1224,7 @@ def test_untargeted_method_apply_is_draft_until_saved(workbench, config_dir, tmp
     expect(page.locator("#method-editor")).not_to_be_visible()
     assert not current.exists(), "Applying a draft must not save it"
     page.locator("#untargeted-save").click()
-    expect(page.locator("#toasts")).to_contain_text("Untargeted 批次設定已儲存")
+    expect(page.locator("#toasts")).to_contain_text("批次設定已保存")
     assert not _unsaved(page, "untargeted")
     assert load_preset(current).name == "Saved method"
     saved_bytes = current.read_bytes()
@@ -1277,7 +1262,7 @@ def test_switching_method_discards_the_unsaved_applied_choice(workbench):
         0
     )
     page.locator("#untargeted-save").click()
-    expect(page.locator("#toasts")).to_contain_text("Untargeted 批次設定已儲存")
+    expect(page.locator("#toasts")).to_contain_text("批次設定已保存")
     assert not _unsaved(page, "untargeted")
     page.reload()
     expect(page.locator("#u-preset")).to_have_value("rna_ribose")
@@ -1403,11 +1388,7 @@ def test_new_batch_preserves_method_but_uses_the_new_folders_samples(
     expect(page.locator(f"#{sequence}")).to_have_value("")
     expect(page.locator(f"#{prefix}role-summary")).to_have_text("尚未讀取樣本")
     page.locator(f"#{save}").click()
-    expect(page.locator("#toasts")).to_contain_text(
-        "Targeted 設定與目標已儲存"
-        if kind == "targeted"
-        else "Untargeted 批次設定已儲存"
-    )
+    expect(page.locator("#toasts")).to_contain_text("批次設定已保存")
     assert not _unsaved(page, kind)
     page.reload()
     expect(page.locator(f"#{raw}")).to_have_value("")
@@ -1466,22 +1447,23 @@ def test_new_batch_preserves_method_but_uses_the_new_folders_samples(
     assert previous_rows[0].excluded is True
 
 
-def test_target_list_save_and_load_preserves_batch(workbench):
+def test_target_list_export_and_import_preserve_batch(workbench, tmp_path):
     page = workbench
     original_batch = page.locator("#t-data_dir").input_value()
-    page.get_by_role("button", name="另存清單", exact=True).click()
-    page.get_by_label("清單名稱（不含 .xlsx）", exact=True).fill("Browser saved list")
-    page.locator("#path-dialog").get_by_role("button", name="確定").click()
-    expect(page.locator("#target-method-select option:checked")).to_have_text(
-        "Browser saved list"
-    )
+    exported = tmp_path / "Browser list.xlsx"
     page.locator("#target-edit").click()
-    page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True).fill("4")
-    page.locator("#target-editor-save").click()
-    page.get_by_role("button", name="載入清單", exact=True).click()
+    page.locator("#target-export").click()
+    page.locator("#path-dialog-value").fill(str(exported))
+    page.locator("#path-dialog").get_by_role("button", name="確定").click()
     expect(
-        page.locator("#toasts .toast.ok").filter(has_text="已載入目標清單")
+        page.locator("#toasts .toast.ok").filter(has_text="已匯出目標清單")
     ).to_be_visible()
+    page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True).fill("4")
+    page.locator("#target-editor-done").click()
+    page.locator("#target-import-file").set_input_files(exported)
+    expect(page.locator("#target-import-confirm")).to_have_text("取代目前清單")
+    page.locator("#target-import-confirm").click()
+    expect(page.locator("#target-import-status")).to_contain_text("已匯入")
     expect(page.locator("#t-data_dir")).to_have_value(original_batch)
     page.locator("#target-edit").click()
     expect(
@@ -1502,7 +1484,7 @@ def test_template_batch_folder_reads_as_unselected_and_still_saves(
     expect(page.locator("#t-data_dir")).to_have_value("")
     expect(page.locator("#target-checklist")).to_contain_text("尚未選擇資料夾")
     page.locator("#target-save").click()
-    expect(page.locator("#toasts .toast.ok")).to_contain_text("已儲存")
+    expect(page.locator("#toasts .toast.ok")).to_contain_text("已保存")
     assert (
         read_settings(config_dir=config_dir)["data_dir"]
         == CANONICAL_SETTINGS_DEFAULTS["data_dir"]
@@ -1570,7 +1552,9 @@ def test_empty_targeted_run_explains_where_to_add_a_target(workbench):
     )
     _start(page, "targeted")
     error = page.locator("#toasts .toast.error")
-    expect(error).to_have_text("目標清單是空的：按「檢視與編輯」新增，或匯入目標清單。")
+    expect(error).to_have_text(
+        "目標清單是空的：匯入清單、從範例開始，或按「新增目標」。"
+    )
     # The empty list is caught before any run request reaches the workspace.
     assert requests == []
 
@@ -1670,6 +1654,15 @@ def test_analysis_feedback_retains_results_and_requires_stop_confirmation(
         page.clock.run_for(1000)
     expect(page.locator("#analysis-job-title")).to_contain_text("執行中")
     expect(page.locator("#analysis-progress")).to_have_attribute("value", "1")
+    # Every file processed but still writing results: no stalled 100% bar.
+    state["job"].update(completed=2)
+    with page.expect_response("**/api/analysis"):
+        page.clock.run_for(1000)
+    expect(page.locator("#analysis-job-message")).to_have_text(
+        "檔案已處理完，正在寫出結果。"
+    )
+    assert page.locator("#analysis-progress").get_attribute("value") is None
+    expect(page.locator("#activity")).not_to_contain_text("%")
     state["job"].update(status="failed", error="Example failure")
     with page.expect_response("**/api/analysis"):
         page.clock.run_for(1000)
@@ -3437,63 +3430,60 @@ def test_sample_restore_is_bound_to_current_inputs(
         expect(page.locator("#samples-conflicts")).to_contain_text("old_blank.raw")
 
 
-def test_downloaded_current_method_edits_and_saves_without_changing_batch(
+def test_empty_list_starts_from_the_example_and_exports_without_changing_batch(
     workbench, config_dir, tmp_path
 ):
-    from xic_extractor.configuration.targeted_method_files import load_targeted_method
+    from xic_extractor.configuration.target_list_files import load_target_list
 
     page = workbench
     batch = page.locator("#t-data_dir").input_value()
     dll = page.locator("#t-dll_dir").input_value()
-    with page.expect_download() as download:
-        page.get_by_role("link", name="下載目標清單範例 XLSX", exact=True).click()
-    path = tmp_path / "downloaded-method.xlsx"
-    download.value.save_as(path)
-    original = path.read_bytes()
-    assert dict(load_targeted_method(path).settings) == {"strategy": "cid-nl"}
-    with page.expect_file_chooser() as chooser:
-        page.locator("#target-import").click()
-    chooser.value.set_files(path)
-    expect(page.locator("#target-import-summary")).to_contain_text(
-        "方法檔（Method + Targets）"
-    )
-    expect(page.locator("#target-preview")).to_contain_text("Browser target")
-    page.locator("#target-import-confirm").click()
+    # A loaded list offers no example; an empty one names all three starts.
+    expect(page.locator("#target-start")).to_be_hidden()
+    expect(page.locator("#target-edit")).to_have_text("檢視與編輯")
+    page.locator("#target-edit").click()
+    page.locator("#target-rows button[aria-label^='刪除']").first.click()
+    page.locator("#target-editor-done").click()
+    expect(page.locator("#target-start")).to_be_visible()
+    expect(page.locator("#target-edit")).to_have_text("新增目標")
+    page.get_by_role("button", name="從範例開始", exact=True).click()
+    expect(page.locator("#target-editor")).to_be_visible()
+    expect(page.locator("#target-import-status")).to_contain_text("範例清單")
     expect(page.locator("#target-preview")).to_contain_text("5-hmdC")
+    expect(page.locator("#target-start")).to_be_hidden()
     expect(page.locator("#t-data_dir")).to_have_value(batch)
     expect(page.locator("#t-dll_dir")).to_have_value(dll)
-    page.locator("#target-edit").click()
     page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True).fill(
         "9.25"
     )
-    page.locator("#target-editor-save").click()
-    page.locator("#target-method-save").click()
-    page.locator("#path-dialog-value").fill("Edited method")
+    exported = tmp_path / "Edited list.xlsx"
+    page.locator("#target-export").click()
+    page.locator("#path-dialog-value").fill(str(exported))
     page.locator("#path-dialog").get_by_role("button", name="確定").click()
-    expect(page.locator("#target-method-select option:checked")).to_have_text(
-        "Edited method"
-    )
-    saved = load_targeted_method(config_dir / "methods" / "Edited method.xlsx")
-    assert dict(saved.settings) == {"strategy": "cid-nl"}
+    expect(
+        page.locator("#toasts .toast.ok").filter(has_text="已匯出目標清單")
+    ).to_be_visible()
+    saved = load_target_list(exported)
     assert saved.target_rows[0]["expected_rt_min"] == "9.25"
     assert saved.target_rows[0]["cid_nl_loss_da"] == "116.0474"
-    assert path.read_bytes() == original
     assert not (config_dir / "settings.csv").exists()
     assert not (config_dir / "targets.csv").exists()
-    assert (config_dir / "workspace.json").is_file()
-    page.screenshot(path=str(tmp_path / "xlsx-method-workspace.png"), full_page=True)
+    page.screenshot(path=str(tmp_path / "xlsx-list-workspace.png"), full_page=True)
 
 
 def test_drop_target_table_preview_cancel_and_confirm(workbench, tmp_path):
 
     from tests.targeted_fixtures import targeted_rows
-    from xic_extractor.configuration.targeted_method_files import save_target_table
+    from xic_extractor.configuration.target_list_files import (
+        create_target_list,
+        save_target_list,
+    )
 
     page = workbench
     # Format decoding belongs to the upload owner tests. This case exercises
     # the browser's drop/preview/cancel/confirm wiring with one real workbook.
     path = tmp_path / "renamed.xlsx"
-    save_target_table(targeted_rows(), path)
+    save_target_list(create_target_list(targeted_rows()), path)
     batch = page.locator("#t-data_dir").input_value()
     for confirm in [False, True]:
         transfer = page.evaluate_handle(
@@ -3512,7 +3502,7 @@ def test_drop_target_table_preview_cancel_and_confirm(workbench, tmp_path):
             "drop", {"dataTransfer": transfer}
         )
         expect(page.locator("#target-import-summary")).to_contain_text(
-            "目標表 · 2 個目標（ISTD 1 個）"
+            "renamed.xlsx · 2 個目標（ISTD 1 個）"
         )
         expect(page.locator("#target-import-rows tr").nth(1)).to_contain_text(
             "standard"
@@ -3583,13 +3573,15 @@ def test_untargeted_istd_shared_upload_and_persistence(
     import csv
 
     from tests.targeted_fixtures import targeted_rows
-    from xic_extractor.configuration.targeted_method_files import save_target_table
-    from xic_extractor.configuration.targets import read_istd_targets
+    from xic_extractor.configuration.target_list_files import (
+        create_target_list,
+        save_target_list,
+    )
 
     page = workbench
     path = tmp_path / f"shared.{extension}"
     if extension == "xlsx":
-        save_target_table(targeted_rows(), path)
+        save_target_list(create_target_list(targeted_rows()), path)
     else:
         with path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(
@@ -3601,12 +3593,6 @@ def test_untargeted_istd_shared_upload_and_persistence(
             writer.writerows(targeted_rows())
     original_targets = page.locator("#target-preview").inner_text()
     page.get_by_role("button", name="Untargeted", exact=True).click()
-    _expand_section(page, "#istd-list-tools")
-    expect(page.get_by_role("link", name="下載共用清單範例 XLSX")).to_be_visible()
-    with page.expect_download() as download:
-        page.get_by_role("link", name="下載共用清單範例 XLSX").click()
-    download.value.save_as(tmp_path / "example.xlsx")
-    assert read_istd_targets(tmp_path / "example.xlsx").targets
     _expand_section(page, "#istd-list-tools")
     if drop:
         transfer = page.evaluate_handle(
@@ -3640,7 +3626,7 @@ def test_untargeted_istd_shared_upload_and_persistence(
     expect(page.locator("#u-targets_csv")).to_have_value(retained)
     expect(page.locator("#istd-preview")).to_contain_text("standard")
     page.locator("#untargeted-save").click()
-    expect(page.locator("#toasts")).to_contain_text("Untargeted 批次設定已儲存")
+    expect(page.locator("#toasts")).to_contain_text("批次設定已保存")
     assert not _unsaved(page, "untargeted")
     assert (
         json.loads((config_dir / "discovery_gui.json").read_text(encoding="utf-8"))[
@@ -3668,7 +3654,10 @@ def test_untargeted_istd_shared_upload_and_persistence(
 
 def test_untargeted_istd_applicability_tracks_method_not_nd(workbench, tmp_path):
     from tests.targeted_fixtures import targeted_rows
-    from xic_extractor.configuration.targeted_method_files import save_target_table
+    from xic_extractor.configuration.target_list_files import (
+        create_target_list,
+        save_target_list,
+    )
 
     page = workbench
     targets = targeted_rows()
@@ -3676,7 +3665,7 @@ def test_untargeted_istd_applicability_tracks_method_not_nd(workbench, tmp_path)
         {**targets[0], "label": "RNA standard", "cid_nl_loss_da": "132.0423"}
     )
     path = tmp_path / "method-standards.xlsx"
-    save_target_table(targets, path)
+    save_target_list(create_target_list(targets), path)
     _view(page, "untargeted")
     _drop_file(page, "#istd-path-field", path.name, path.read_bytes())
     expect(page.locator("#istd-import-status")).to_contain_text("已匯入")

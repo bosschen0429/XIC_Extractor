@@ -407,7 +407,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "Targets CSV containing ISTD definitions. When provided, ISTD drift "
             "anchors are extracted directly in-memory from RAW files without "
             "requiring an external Excel workbook. Defaults to the GUI template "
-            "xic_extractor/configuration/data/targets.csv unless a workbook "
+            "xic_extractor/configuration/data/targets.xlsx unless a workbook "
             "or --allow-uncorrected "
             "is specified. The resolved source and ISTD count are printed."
         ),

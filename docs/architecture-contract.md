@@ -92,7 +92,7 @@ Code that does not follow this yet is debt to converge, not precedent.
 
 | Owner | Responsibility |
 | --- | --- |
-| `configuration.targeted_method_files` | strict Targeted XLSX exchange |
+| `configuration.target_list_files` | strict Targeted target-list XLSX exchange |
 | `configuration.workspace_state` | local JSON application, batch and target persistence |
 | `configuration.delta_mass` | shared pure pattern settings |
 | `configuration.targeted_identification` | named all/any condition intake and quantitation-relative Delta Mass conversion |

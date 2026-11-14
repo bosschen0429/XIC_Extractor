@@ -435,10 +435,10 @@ window.XicUi = (() => {
       state.page.offset + state.page.limit >= state.page.matched_count;
     $("cancel").hidden = !state.job;
     $("cancel").disabled = state.job?.status === "cancelling";
-    const sampleIndex = state.item?.curve_sample_ids.indexOf($("xic-sample").value) ?? -1;
+    const sampleIndex = curveSequence().indexOf($("xic-sample").value);
     $("xic-sample").disabled = busy || analysisBusy;
     $("xic-previous").disabled = busy || analysisBusy || sampleIndex <= 0;
-    $("xic-next").disabled = busy || analysisBusy || sampleIndex < 0 || sampleIndex >= (state.item?.curve_sample_ids.length || 0) - 1;
+    $("xic-next").disabled = busy || analysisBusy || sampleIndex < 0 || sampleIndex >= curveSequence().length - 1;
     $("xic-cancel").hidden = !state.job;
     $("xic-cancel").disabled = state.job?.status === "cancelling";
     $("xic-retry").disabled = busy || analysisBusy;
@@ -1106,8 +1106,11 @@ window.XicUi = (() => {
     $("xic-navigation").hidden = !targeted;
     if (targeted) {
       $("xic-sample").value = [...state.samples][0];
-      const index = state.item.curve_sample_ids.indexOf($("xic-sample").value);
-      $("xic-position").textContent = `${index + 1} / ${state.item.curve_sample_ids.length}`;
+      const ids = curveSequence(), index = ids.indexOf($("xic-sample").value);
+      $("xic-position").textContent = index < 0 ? "" : `${index + 1} / ${ids.length}`;
+      const note = state.curveNotes?.[$("xic-sample").value];
+      $("xic-note").textContent = note && note !== "—" ? `檢閱註記：${note}` : "";
+      $("xic-note").hidden = !$("xic-note").textContent;
     }
     if (targeted && !$("xic-dialog").open) {
       navigation.push();
@@ -1195,9 +1198,15 @@ window.XicUi = (() => {
     }
   }
 
-  function requestCurves({item_id, sample_id, opener}) {
+  // Targeted XIC steps through the samples the reader was looking at.
+  function curveSequence() {
+    return state.curveSequence?.length ? state.curveSequence : state.item?.curve_sample_ids || [];
+  }
+  function requestCurves({item_id, sample_id, opener, sample_ids, notes}) {
     if (item_id !== state.item?.id ||
         !state.item.curve_sample_ids.includes(sample_id)) return;
+    state.curveSequence = (sample_ids || []).filter(id => state.item.curve_sample_ids.includes(id));
+    state.curveNotes = notes || {};
     const loaded = state.page.source_kind !== "targeted_workbook" &&
       !$("inline-curve-review").hidden &&
       $("inline-curve-review").querySelector(`[data-curve-focus="${CSS.escape(sample_id)}"]:not(:disabled)`);
@@ -1234,7 +1243,7 @@ window.XicUi = (() => {
   $("xic-sample").addEventListener("change", () => action(() => selectCurveSample($("xic-sample").value)));
   for (const [id, step] of [["xic-previous", -1], ["xic-next", 1]]) {
     $(id).addEventListener("click", () => {
-      const ids = state.item.curve_sample_ids, index = ids.indexOf($("xic-sample").value);
+      const ids = curveSequence(), index = ids.indexOf($("xic-sample").value);
       if (ids[index + step]) action(() => selectCurveSample(ids[index + step]));
     });
   }

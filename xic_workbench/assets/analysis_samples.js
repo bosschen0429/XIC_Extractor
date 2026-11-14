@@ -100,7 +100,7 @@ export function renderSampleSummary(summary, prefix = "samples") {
   const notes = summaryNotes(summary);
   const unmatched = summary.unmatched_sequence_names?.length;
   $(`${prefix}-summary`).textContent =
-    `RAW ${summary.raw_count} 次上機` +
+    `讀取 ${summary.raw_count} 個 RAW` +
     (summary.sequence_source ? ` · 上機資訊配對 ${summary.matched_count} 個` : "") +
     (unmatched ? ` · ${unmatched} 筆上機資訊未配對` : "") +
     (notes.length

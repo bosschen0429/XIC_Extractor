@@ -11,43 +11,24 @@ from tempfile import TemporaryDirectory
 from typing import cast
 from zipfile import BadZipFile, ZipFile
 
-import openpyxl
-
 from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.csv_io import read_target_draft_rows
 from xic_extractor.configuration.models import ConfigError
-from xic_extractor.configuration.targeted_method_files import load_target_table
+from xic_extractor.configuration.target_list_files import load_target_list
 
 MAX_UPLOAD_BYTES = 1024 * 1024
 
 
-def preview_target_upload(name: object, content: object, settings: dict) -> dict:
+def preview_target_upload(name: object, content: object) -> dict:
     """Decode browser bytes and delegate semantics; never persist a preview."""
-    from xic_extractor.configuration.targeted_method_files import (
-        apply_targeted_method,
-        load_targeted_method,
-    )
-    from xic_workbench.targeted_config import method_summary
-
     with uploaded_target_file(name, content) as path:
-        is_method = False
         if path.suffix == ".xlsx":
-            book = openpyxl.load_workbook(path, read_only=True)
-            try:
-                is_method = "Method" in book.sheetnames
-            finally:
-                book.close()
-        if is_method:
-            method = load_targeted_method(path)
-            applied = apply_targeted_method(settings, method)
+            target_list = load_target_list(path)
             return {
-                "kind": "method",
-                "targets": [dict(row) for row in method.target_rows],
-                "delta_mass": method.delta_mass,
-                "settings": applied,
-                "summary": method_summary(applied),
+                "targets": [dict(row) for row in target_list.target_rows],
+                "delta_mass": target_list.delta_mass,
             }
-        return {"kind": "targets", "targets": import_targets(path)}
+        return {"targets": import_targets(path), "delta_mass": None}
 
 
 def import_istd_upload(
@@ -78,7 +59,7 @@ def uploaded_target_file(name: object, content: object) -> Iterator[Path]:
     """Bound and decode browser bytes for both list consumers; names are labels."""
     suffix = Path(name).suffix.lower() if isinstance(name, str) else ""
     if suffix not in {".xlsx", ".csv", ".tsv"}:
-        raise ConfigError("請選擇 XLSX 方法檔或目標表，也支援 CSV／TSV；不支援 .xls。")
+        raise ConfigError("請選擇 XLSX、CSV 或 TSV 目標清單；不支援 .xls。")
     if not isinstance(content, str) or len(content) > 4 * ((MAX_UPLOAD_BYTES + 2) // 3):
         raise ConfigError("檔案不可超過 1 MiB。")
     try:
@@ -114,5 +95,5 @@ def import_targets(path: Path) -> list[dict[str, str]]:
 
         return upgrade_target_table(read_target_draft_rows(source))[0]
     if source.suffix.lower() == ".xlsx":
-        return load_target_table(source)
+        return [dict(row) for row in load_target_list(source).target_rows]
     raise ConfigError(f"{source}: 請選擇 XLSX、CSV 或 TSV 目標表；不支援 .xls。")

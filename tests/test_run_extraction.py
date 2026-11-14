@@ -441,12 +441,10 @@ def _write_cli_config(config_dir: Path, *, data_dir: Path, dll_dir: Path) -> Non
     )
 
 
-def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
-    tmp_path, monkeypatch
-):
-    from xic_extractor.configuration.targeted_method_files import (
-        create_targeted_method,
-        save_targeted_method,
+def test_cli_target_list_freezes_inputs_only_until_run_finishes(tmp_path, monkeypatch):
+    from xic_extractor.configuration.target_list_files import (
+        create_target_list,
+        save_target_list,
     )
 
     module = _module()
@@ -456,7 +454,7 @@ def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
     for folder in (raw_dir, new_batch, dll_dir):
         folder.mkdir()
     _write_cli_config(tmp_path / "config", data_dir=raw_dir, dll_dir=dll_dir)
-    method_dir = tmp_path / "method.xlsx"
+    list_path = tmp_path / "targets.xlsx"
     target_rows = [
         dict(
             label="MethodTarget",
@@ -467,7 +465,7 @@ def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
             istd_pair="",
         )
     ]
-    save_targeted_method(create_targeted_method({}, target_rows), method_dir)
+    save_target_list(create_target_list(target_rows), list_path)
     calls = {}
     fake_run = _fake_run(calls)
 
@@ -479,7 +477,7 @@ def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
         return prepared
 
     def run_and_change_active_sources(config, targets, **kwargs):
-        method_dir.write_text("edited during run", encoding="utf-8")
+        list_path.write_text("edited during run", encoding="utf-8")
         (tmp_path / "config" / "workspace.json").write_text(
             "edited during run", encoding="utf-8"
         )
@@ -492,8 +490,8 @@ def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
             [
                 "--base-dir",
                 str(tmp_path),
-                "--method",
-                str(method_dir),
+                "--targets",
+                str(list_path),
                 "--data-dir",
                 str(new_batch),
             ]

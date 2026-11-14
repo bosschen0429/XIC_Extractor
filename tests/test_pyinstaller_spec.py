@@ -20,7 +20,7 @@ from xic_extractor.presets import list_presets
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SPEC_PATH = PROJECT_ROOT / "packaging" / "xic_extractor.spec"
 TARGET_TEMPLATE_RELATIVE = (
-    Path("xic_extractor") / "configuration" / "data" / "targets.csv"
+    Path("xic_extractor") / "configuration" / "data" / "targets.xlsx"
 )
 TARGET_TEMPLATE_ARCHIVE_PATH = PurePosixPath(*TARGET_TEMPLATE_RELATIVE.parts)
 INSTALLED_WHEEL_PROBE = """
@@ -74,18 +74,14 @@ if config_io.CONFIG_DIR.resolve().is_relative_to(target):
     raise RuntimeError("installed workbench would write settings into site-packages")
 if not targets_template_path().resolve().is_relative_to(target / "xic_extractor"):
     raise RuntimeError("template is not owned by the installed package")
-from xic_extractor.configuration.targeted_method_files import (
-    load_targeted_method, load_target_table,
-)
+from xic_extractor.configuration.target_list_files import load_target_list
 examples = targets_template_path().parent
 from xic_workbench.user_guide import read_user_guide
 guide = read_user_guide("")
 if guide is None or "XIC Extractor 使用說明" not in guide[0].decode("utf-8"):
     raise RuntimeError("installed workbench is missing its offline guide")
-method = load_targeted_method(examples / "targeted-method.xlsx")
-target_rows = load_target_table(examples / "targets.xlsx")
-if not method.targets or list(method.target_rows) != target_rows:
-    raise RuntimeError("installed XLSX examples are missing or inconsistent")
+if not load_target_list(examples / "targets.xlsx").targets:
+    raise RuntimeError("installed XLSX example is missing or empty")
 installed_distribution = next(
     distribution for distribution in distributions(path=[str(target)])
     if distribution.metadata["Name"] == "xic-extractor"
@@ -362,7 +358,7 @@ def test_primary_package_routes_to_html_workbench_without_qt() -> None:
     assert "gui*" not in project["tool"]["setuptools"]["packages"]["find"]["include"]
     assert project["tool"]["setuptools"]["package-data"][
         "xic_extractor.configuration"
-    ] == ["data/*.csv", "data/*.json", "data/*.xlsx"]
+    ] == ["data/*.json", "data/*.xlsx"]
     assert "data-files" not in project["tool"]["setuptools"]
 
 
@@ -563,7 +559,7 @@ def test_built_wheel_contains_workbench_and_matching_target_template(
             if PurePosixPath(member).name.casefold()
             == TARGET_TEMPLATE_RELATIVE.name.casefold()
         ]
-        help_example = PurePosixPath("xic_workbench/assets/help/examples/targets.csv")
+        help_example = PurePosixPath("xic_workbench/assets/help/examples/targets.xlsx")
         assert set(resource_members) == {TARGET_TEMPLATE_ARCHIVE_PATH, help_example}
         resource_bytes = wheel.read(TARGET_TEMPLATE_ARCHIVE_PATH.as_posix())
         assert wheel.read(help_example.as_posix()) == resource_bytes
@@ -588,7 +584,7 @@ def test_built_wheel_contains_workbench_and_matching_target_template(
         cwd=packaging_source.parent,
         timeout_seconds=300,
     )
-    installed_resource = packaging_source.parent / "installed-targets.csv"
+    installed_resource = packaging_source.parent / "installed-targets.xlsx"
     probe_metadata = packaging_source.parent / "installed-probe.json"
     _run_packaging_command(
         (
@@ -722,25 +718,14 @@ def test_final_pyinstaller_archive_runs_html_workbench_smoke(
 
     final_output = dist_root / "XIC_Extractor"
     assert final_output.is_dir()
-    templates = list(
-        final_output.glob("**/xic_extractor/configuration/data/targets.csv")
-    )
+    templates = list(final_output.glob(f"**/{TARGET_TEMPLATE_ARCHIVE_PATH.as_posix()}"))
     assert len(templates) == 1
     assert (
         templates[0].read_bytes()
-        == (PROJECT_ROOT / "xic_extractor/configuration/data/targets.csv").read_bytes()
+        == (PROJECT_ROOT / TARGET_TEMPLATE_RELATIVE).read_bytes()
     )
     assert not list(final_output.rglob("settings.example.csv"))
     assert not list(final_output.rglob("targets.example.csv"))
-    for name in ("targeted-method.xlsx", "targets.xlsx"):
-        examples = list(
-            final_output.glob(f"**/xic_extractor/configuration/data/{name}")
-        )
-        assert len(examples) == 1
-        assert (
-            examples[0].read_bytes()
-            == (PROJECT_ROOT / "xic_extractor/configuration/data" / name).read_bytes()
-        )
     # Exercise the archive that would be delivered, rather than rebuilding a probe.
     version = tomllib.loads(
         (packaging_source / "pyproject.toml").read_text(encoding="utf-8")

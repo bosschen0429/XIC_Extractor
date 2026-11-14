@@ -246,7 +246,7 @@ export function bindListUpload(
   }
 }
 export async function readListFile(files) {
-  if (files.length !== 1) throw new Error("請一次選擇一個方法檔或目標表。");
+  if (files.length !== 1) throw new Error("請一次選擇一個檔案。");
   const file = files[0];
   if (!/\.(xlsx|csv|tsv)$/i.test(file.name))
     throw new Error("請選擇 XLSX、CSV 或 TSV 檔案；不支援 .xls。");

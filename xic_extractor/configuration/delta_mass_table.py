@@ -2,7 +2,7 @@
 
 The target row's ``delta_mass_mz`` cell declares which ions a target has; this
 table adds each ion's name, ratio range and shape comparison. List-shared
-settings are ``delta_mass_*`` keys of the Method sheet.
+settings are ``delta_mass_*`` keys of the Delta Mass Settings sheet.
 """
 
 from __future__ import annotations
@@ -27,7 +27,9 @@ _ION_FIELDS = (
     ("Ratio Max", "ratio_max"),
     ("Compare Shape", "compare_shape"),
 )
-# Method-sheet keys of the list-shared settings.
+DELTA_MASS_SETTINGS_SHEET = "Delta Mass Settings"
+DELTA_MASS_SETTINGS_HEADERS = ("key", "value", "description")
+# Delta Mass Settings keys of the list-shared settings.
 DELTA_MASS_SETTING_KEYS = {
     "delta_mass_mz_tolerance_ppm": "mz_tolerance_ppm",
     "delta_mass_apex_floor_sec": "apex_floor_sec",

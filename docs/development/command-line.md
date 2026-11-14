@@ -38,7 +38,7 @@ Useful overrides:
 | --- | --- |
 | `--base-dir` | Directory containing `config/` and `output/` |
 | `--data-dir` | One-run RAW directory override |
-| `--method` | Saved target-intent XLSX (`Method` + `Targets`) |
+| `--targets` | Target-list XLSX (`Targets`, plus Delta Mass sheets when used) |
 | `--injection-order-source` | Explicit injection order for this batch |
 
 Execution scheduling is automatic; actual workers are recorded in run metadata.
@@ -72,8 +72,8 @@ from a RAW directory, including Backfill; it has no mode selector.
 ## Alignment CLI Inputs
 
 The Alignment CLI resolves ISTD input before RAW acquisition. An explicit
-targets CSV or reference workbook takes precedence; otherwise it uses the same
-[bundled target template](../../xic_extractor/configuration/data/targets.csv) as the HTML workbench's fresh default and prints the
+targets CSV or reference workbook takes precedence; otherwise it uses the
+[bundled target template](../../xic_extractor/configuration/data/targets.xlsx) and prints the
 resolved source and ISTD count. Missing or invalid input fails before RAW work.
 An intentional uncorrected CLI run requires `--allow-uncorrected`, which cannot
 be combined with either ISTD input. The Python API retains its explicit optional
@@ -109,5 +109,5 @@ cannot be combined with separate tag selectors such as `--feature-list` or
 CLI uses the same method admission and execution:
 
 ```powershell
-.venv\Scripts\python.exe -m scripts.run_extraction --method C:\methods\my-method.xlsx
+.venv\Scripts\python.exe -m scripts.run_extraction --targets C:\lists\my-targets.xlsx
 ```

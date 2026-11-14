@@ -20,4 +20,4 @@ def runtime_root() -> Path:
 
 
 def targets_template_path() -> Path:
-    return Path(__file__).with_name("data") / "targets.csv"
+    return Path(__file__).with_name("data") / "targets.xlsx"

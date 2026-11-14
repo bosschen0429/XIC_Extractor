@@ -47,14 +47,14 @@ def write_work(
     values, _parsed, _warnings = resolve_settings(
         read_settings(config_dir=config_dir), settings
     )
-    from xic_extractor.configuration.targeted_method_files import create_targeted_method
+    from xic_extractor.configuration.target_list_files import create_target_list
 
-    method = create_targeted_method({}, targets, delta_mass=delta_mass)
+    target_list = create_target_list(targets, delta_mass=delta_mass)
     save_workspace(
         _runtime_dir(config_dir),
         settings=values,
-        targets=[dict(row) for row in method.target_rows],
-        delta_mass=dict(method.delta_mass) if method.delta_mass else None,
+        targets=[dict(row) for row in target_list.target_rows],
+        delta_mass=dict(target_list.delta_mass) if target_list.delta_mass else None,
     )
     return values
 

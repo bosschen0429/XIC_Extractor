@@ -314,11 +314,9 @@ def targets_delta_mass_payload(targets: Sequence[Target]) -> dict | None:
 
 def read_targets(path: Path) -> tuple[Target, ...]:
     if path.suffix.lower() == ".xlsx":
-        from xic_extractor.configuration.targeted_method_files import (
-            load_workbook_targets,
-        )
+        from xic_extractor.configuration.target_list_files import load_target_list
 
-        return load_workbook_targets(path)
+        return load_target_list(path).targets
     return tuple(_read_targets(path))
 
 

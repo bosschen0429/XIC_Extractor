@@ -6,16 +6,17 @@ import openpyxl
 import pytest
 
 from tests.targeted_fixtures import ScopedMs2WindowReader
+from xic_extractor.configuration.legacy_target_methods import upgrade_target_table
 from xic_extractor.configuration.models import ConfigError
+from xic_extractor.configuration.target_list_files import (
+    create_target_list,
+    load_target_list,
+    save_target_list,
+)
 from xic_extractor.configuration.targeted_identification import (
     DeltaMassCondition,
     QuantRelativeIon,
     target_specificity,
-)
-from xic_extractor.configuration.targeted_method_files import (
-    create_targeted_method,
-    load_targeted_method,
-    save_targeted_method,
 )
 
 
@@ -67,13 +68,12 @@ def test_negative_offsets_normalize_without_moving_quantitation():
     ],
 )
 def test_specificity_is_derived_from_the_two_parameter_columns(changes, expected):
-    (target,) = create_targeted_method({}, [row(**changes)]).targets
+    (target,) = create_target_list([row(**changes)]).targets
     assert target_specificity(target) == expected
 
 
 def test_cid_nl_alone_ranks_while_with_delta_mass_it_is_a_required_condition():
-    alone, both = create_targeted_method(
-        {},
+    alone, both = create_target_list(
         [
             row(label="alone", cid_nl_loss_da="116.0474"),
             row(label="both", cid_nl_loss_da="116.0474", delta_mass_mz="-2.0"),
@@ -88,182 +88,103 @@ def test_cid_nl_alone_ranks_while_with_delta_mass_it_is_a_required_condition():
     ]
 
 
-def _legacy_workbook(path, method_rows, target_rows):
-    book = openpyxl.Workbook()
-    book.remove(book.active)
-    sheet = book.create_sheet("Method")
-    sheet.append(["key", "value"])
-    sheet.append(["strategy", "cid-nl"])
-    sheet = book.create_sheet("Targets")
-    sheet.append(["label", "mz", "expected_rt_min", "method", "role", "istd_pair"])
-    for values in target_rows:
-        sheet.append(values)
-    sheet = book.create_sheet("Identification Methods")
-    header = [
-        "Method",
-        "Combine",
-        "m/z Tolerance ppm",
-        "Condition",
-        "Kind",
-        "CID-NL Tag",
-        "Position",
-        "Delta m/z",
-        "Ratio Min",
-        "Ratio Max",
-        "Compare Shape",
-        "Apex Floor sec",
-    ]
-    sheet.append(header)
-    for values in method_rows:
-        sheet.append([values.get(column, "") for column in header])
-    book.save(path)
-
-
-def _pair_rows(name="Pair", combine="all", ppm=20, apex=1, cid=True):
-    rows = (
-        [
-            {
-                "Method": name,
-                "Combine": combine,
-                "m/z Tolerance ppm": ppm,
-                "Condition": 1,
-                "Kind": "cid_nl",
-                "CID-NL Tag": "dR",
-            },
-        ]
-        if cid
-        else []
+def _pair_method(combine="all", ppm=20, apex=1, cid=True):
+    """An earlier named identification method: CID-NL dR plus an M+1 pair."""
+    conditions = [{"kind": "cid_nl", "tag": "dR"}] if cid else []
+    conditions.append(
+        {
+            "kind": "delta_mass",
+            "apex_floor_sec": apex,
+            "positions": [
+                {"label": "quant", "offset_mz": 0},
+                {
+                    "label": "m1",
+                    "offset_mz": 1.003355,
+                    "ratio_min": 0.05,
+                    "ratio_max": 0.5,
+                },
+            ],
+        }
     )
-    number = 2 if cid else 1
-    rows += [
-        {
-            "Method": name,
-            "Combine": combine,
-            "m/z Tolerance ppm": ppm,
-            "Condition": number,
-            "Kind": "delta_mass",
-            "Position": "quant",
-            "Delta m/z": 0,
-            "Apex Floor sec": apex,
-        },
-        {
-            "Method": name,
-            "Combine": combine,
-            "m/z Tolerance ppm": ppm,
-            "Condition": number,
-            "Kind": "delta_mass",
-            "Position": "m1",
-            "Delta m/z": 1.003355,
-            "Ratio Min": 0.05,
-            "Ratio Max": 0.5,
-            "Apex Floor sec": apex,
-        },
-    ]
-    return rows
+    return {"combine_mode": combine, "mz_tolerance_ppm": ppm, "conditions": conditions}
 
 
-def test_earlier_workbook_with_named_methods_reads_as_parameter_columns(tmp_path):
+def _named(label, method):
+    return {
+        "label": label,
+        "mz": "302",
+        "expected_rt_min": "2",
+        "method": method,
+        "role": "analyte",
+        "istd_pair": "",
+    }
+
+
+def test_earlier_workbook_with_named_methods_is_rejected(tmp_path):
     path = tmp_path / "legacy.xlsx"
-    _legacy_workbook(
-        path,
-        _pair_rows(),
-        [
-            ["iso", "302", "2", "Pair", "analyte", ""],
-            ["plain", "258.1085", "9", "R", "analyte", ""],
-            ["ms1", "200", "5", "", "analyte", ""],
-        ],
-    )
-    method = load_targeted_method(path)
-    iso, plain, ms1 = method.targets
-    assert [dict(r)["cid_nl_loss_da"] for r in method.target_rows] == [
-        "116.0474",
-        "132.0423",
-        "",
-    ]
-    assert dict(method.target_rows[0])["delta_mass_mz"] == "+1.003355"
-    assert plain.neutral_loss_da == 132.0423 and ms1.neutral_loss_da is None
-    (ion,) = iso.identification.delta_mass.ions
-    # Names survive; the earlier method default did not compare shape.
-    assert (ion.label, ion.offset_mz, ion.ratio_min, ion.compare_shape) == (
-        "m1",
-        1.003355,
-        0.05,
-        False,
-    )
-    assert iso.identification.cid_nl_loss_da == 116.0474
-    resaved = tmp_path / "new.xlsx"
-    save_targeted_method(method, resaved)
-    book = openpyxl.load_workbook(resaved, read_only=True)
-    try:
-        assert set(book.sheetnames) == {"Method", "Targets", "Delta Mass"}
-    finally:
-        book.close()
-    assert load_targeted_method(resaved).targets == method.targets
+    book = openpyxl.Workbook()
+    book.active.title = "Targets"
+    book.active.append(["label", "mz", "expected_rt_min", "method", "role"])
+    book.active.append(["iso", "302", "2", "Pair", "analyte"])
+    book.create_sheet("Identification Methods").append(["Method", "Condition", "Kind"])
+    book.save(path)
+    with pytest.raises(ConfigError, match="舊格式.*Identification Methods"):
+        load_target_list(path)
 
 
 @pytest.mark.parametrize(
-    "method_rows,message",
+    "method,message",
     [
-        (_pair_rows(combine="any"), "任一符合"),
+        (_pair_method(combine="any"), "任一符合"),
         (
-            _pair_rows(cid=False)
-            + [
-                {
-                    "Method": "Pair",
-                    "Combine": "all",
-                    "m/z Tolerance ppm": 20,
-                    "Condition": 2,
-                    "Kind": "cid_nl",
-                    "CID-NL Tag": "dR",
-                },
-                {
-                    "Method": "Pair",
-                    "Combine": "all",
-                    "m/z Tolerance ppm": 20,
-                    "Condition": 3,
-                    "Kind": "cid_nl",
-                    "CID-NL Tag": "R",
-                },
-            ],
+            {
+                "conditions": [
+                    {"kind": "cid_nl", "tag": "dR"},
+                    {"kind": "cid_nl", "tag": "R"},
+                ]
+            },
             "同類條件",
         ),
         (
-            [
-                {
-                    "Method": "Pair",
-                    "Combine": "all",
-                    "m/z Tolerance ppm": 20,
-                    "Condition": 1,
-                    "Kind": "cid_nl",
-                    "CID-NL Tag": "dR",
-                }
-            ],
+            {"conditions": [{"kind": "cid_nl", "tag": "dR"}]},
             # A required CID-NL condition must not become ranking-only support.
             "必要條件",
         ),
     ],
 )
 def test_methods_the_new_format_cannot_express_are_rejected_with_targets(
-    tmp_path, method_rows, message
+    method, message
 ):
-    path = tmp_path / "legacy.xlsx"
-    _legacy_workbook(path, method_rows, [["iso", "302", "2", "Pair", "analyte", ""]])
     with pytest.raises(ConfigError, match=f"iso.*{message}"):
-        load_targeted_method(path)
+        upgrade_target_table([_named("iso", "Pair")], {"Pair": method})
 
 
-def test_delta_mass_methods_with_different_shared_settings_are_rejected(tmp_path):
-    path = tmp_path / "legacy.xlsx"
-    _legacy_workbook(
-        path,
-        _pair_rows("A") + _pair_rows("B", apex=3),
-        [
-            ["a", "302", "2", "A", "analyte", ""],
-            ["b", "402", "2", "B", "analyte", ""],
-        ],
-    )
+def test_delta_mass_methods_with_different_shared_settings_are_rejected():
     with pytest.raises(ConfigError, match="共用一組：a、b"):
-        load_targeted_method(path)
+        upgrade_target_table(
+            [_named("a", "A"), _named("b", "B")],
+            {"A": _pair_method(), "B": _pair_method(apex=3)},
+        )
+
+
+def test_named_methods_convert_to_parameter_columns():
+    rows, details = upgrade_target_table(
+        [_named("iso", "Pair"), _named("plain", "R"), _named("ms1", "")],
+        {"Pair": _pair_method()},
+    )
+    assert [(r["cid_nl_loss_da"], r["delta_mass_mz"]) for r in rows] == [
+        ("116.0474", "+1.003355"),
+        ("132.0423", ""),
+        ("", ""),
+    ]
+    (ion,) = details["ions"]["iso"]
+    # Names survive; the earlier method default did not compare shape.
+    assert (ion["label"], ion["offset_mz"], ion["ratio_min"], ion["compare_shape"]) == (
+        "m1",
+        1.003355,
+        0.05,
+        False,
+    )
 
 
 def test_earlier_workspace_state_reads_as_parameter_columns(tmp_path):
@@ -321,7 +242,7 @@ def extract(tmp_path, raw, target_row, delta_mass, *, acquire_ms2=False):
     from xic_extractor.extraction.target_extraction import extract_one_target
     from xic_extractor.ms2_scan_models import Ms2Window
 
-    (target,) = create_targeted_method({}, [target_row], delta_mass=delta_mass).targets
+    (target,) = create_target_list([target_row], delta_mass=delta_mass).targets
     results = {}
     extract_one_target(
         raw,
@@ -453,14 +374,13 @@ def test_list_shared_delta_mass_settings_round_trip_through_the_method_sheet(
         "shape_window_sec": 8.0,
         "min_shape_r": 0.8,
     }
-    method = create_targeted_method(
-        {},
+    method = create_target_list(
         [row(delta_mass_mz="-2.0")],
         delta_mass={"settings": settings, "ions": {}},
     )
     path = tmp_path / "shared.xlsx"
-    save_targeted_method(method, path)
-    loaded = load_targeted_method(path)
+    save_target_list(method, path)
+    loaded = load_target_list(path)
     assert loaded.delta_mass["settings"] == settings
     assert loaded.targets[0].ppm_tol == 12.0
     assert loaded.targets == method.targets

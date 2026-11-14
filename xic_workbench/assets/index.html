@@ -323,7 +323,7 @@
               >
                 資料夾</button
               ><button class="primary" type="submit" data-idle>
-                開啟批次
+                開啟結果
               </button></span
             >
           </form>
@@ -584,6 +584,7 @@
         <button id="xic-next" type="button" aria-label="下一個樣本">→</button>
         <span id="xic-position" class="subtle"></span>
       </div>
+      <p id="xic-note" class="xic-note" hidden></p>
       <div id="xic-loading" class="xic-loading" role="status" aria-live="polite">
         <svg class="icon"><use href="#i-peak" /></svg>
         <p id="xic-status">讀取所選樣本的曲線…</p>
@@ -645,6 +646,11 @@
         <p class="dialog-message">準備輸入、執行分析、判讀結果與疑難排解。文件與附圖可離線閱讀。</p>
         <p class="dialog-message">
           RAW 檔案與分析結果都留在這台電腦，不會上傳。結束時請使用工作區的結束控制。
+        </p>
+        <h3>範例檔</h3>
+        <p><a href="/examples/targets.xlsx" download>下載目標清單範例 XLSX</a></p>
+        <p class="dialog-message">
+          Targeted 讀全部目標；Untargeted 只讀 <code>role=istd</code> 列。
         </p>
         <h3>快捷鍵</h3>
         <div class="shortcut-list">

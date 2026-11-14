@@ -13,9 +13,9 @@ Excel workbook, read from batch summary to the individual results needing attent
    to install RawFileReader 8.0.42 and, if needed, .NET 8 or later.
 2. Select **Targeted**.
 3. Set the RAW folder and result location. The local DLL setting is retained.
-4. Select a saved target list and press **載入清單**, import a list, or choose
-   **檢視與編輯** to open the full-height target table.
-   **完成** keeps edits and returns to the batch summary; **儲存目標** also saves them.
+4. Import a target list (drag it onto **匯入清單** or click **瀏覽**), or choose
+   **檢視與編輯** to open the full-height target table. **完成** checks the
+   edits and returns to the batch summary.
 5. Check **樣本角色**; press **調整** to change roles or exclusions, or for
    **匯出樣本資料**. The **上機資訊** line imports an optional
    acquisition-information file. Statistical groups are not required or edited
@@ -27,18 +27,19 @@ Excel workbook, read from batch summary to the individual results needing attent
    `<date>_<time>_targeted_<RAW folder>` folder under **結果存放位置**.
 
 **開始新批次** clears the RAW directory, injection-order source and displayed
-samples while retaining targets, DLL, the selected strategy and result location.
+samples while retaining targets, DLL and result location.
 Confirmed roles and exclusions stay with their original RAW folder. Settings
 edited after a run apply to the next analysis only; an opened result keeps the
 settings it ran with.
 
-The workbench saves the current setup locally. A fresh workspace has no selected targets. Download the method or
-target-table XLSX example from the target-list card and save a copy. Drag the file
-onto **匯入檔案** or click its **瀏覽** (no pasted path). Workbench detects the
-file type and previews targets and ISTD pairs; **確認匯入並取代** applies the list,
-while **取消** leaves current work unchanged. **保存批次設定** saves the current
-setup for reopening; starting analysis also saves it. **另存清單** creates a
-reusable XLSX, without changing the current batch.
+The workbench saves the current setup locally. A fresh workspace has no targets
+and offers three starts: import your own list, **從範例開始** (the bundled example
+opens in the editor to change), or **新增目標** to build one row by row. To
+import, drag the file onto **匯入清單** or click its **瀏覽** (no pasted path). The preview
+shows targets and ISTD pairs; **匯入** (or **取代目前清單** when a list is loaded)
+applies it, while **取消** leaves current work unchanged. **保存批次設定** saves
+the current setup for reopening; starting analysis also saves it. **匯出清單
+XLSX** in the target editor writes the current list to a file for another batch.
 The [field reference](targeted-config-reference.md) owns
 workbook sheet names and the exact editable fields.
 
@@ -48,17 +49,16 @@ workbook sheet names and the exact editable fields.
 | --- | --- |
 | RAW directory | Batch of Thermo `.raw` files to process |
 | DLL directory | RawFileReader 8.0.42 folder selected by setup; not the Xcalibur folder |
-| Target table | Names, m/z, expected RT, role, ISTD pairing, CID-NL neutral loss and Delta Mass Δm/z |
-| Reusable analysis method | Processing strategy plus the complete targets/ISTD table |
+| Target list | Names, m/z, expected RT, role, ISTD pairing, CID-NL neutral loss and Delta Mass Δm/z |
 | Environment and output | DLL and output location; shared worker count in execution resources |
 
 Target labels become public workbook and CSV identifiers. Rename them only when
 downstream scripts and review expectations can tolerate the changed column
 prefixes.
 
-## Analysis Method And Saved Settings
+## Target List And Saved Settings
 
-The normal flow is **select samples → choose method/targets → run → review**.
+The normal flow is **select samples → choose targets → run → review**.
 The target table specifies name, m/z, expected RT in minutes, role, an optional
 ISTD relationship and the target's specificity. An analyte may reference an ISTD
 row or leave the pair blank; an ISTD does not reference another row. Specificity
@@ -76,11 +76,11 @@ shoulders, and double tops can retain area with review notes; incompatible
 correspondence means ND. A cleaner or larger peak elsewhere is not automatically
 a replacement for a reference-supported body.
 
-Use **另存清單** to save the complete target table plus the scientific strategy.
-Load it for another batch without changing that batch's RAW/DLL paths
-or injection order. There is no advanced method panel or method reset: scientific
-processing belongs to the platform, not hidden settings. Local worker count is
-an execution resource, never part of a portable method.
+Export the list (**匯出清單 XLSX**) to reuse it in another batch; importing it
+replaces only the targets, never that batch's RAW/DLL paths or injection order.
+Scientific processing belongs to the platform; there is no method panel or
+hidden setting. Local worker count is an execution resource, never part of a
+target list.
 
 The current sample's credible paired ISTD supplies the RT shift while preserving
 the declared expected analyte–ISTD offset. Expected RT is an identity hint, not an

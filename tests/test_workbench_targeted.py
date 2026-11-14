@@ -48,16 +48,6 @@ def test_settings_round_trip_rejects_hidden_science_without_migrating(tmp_path):
     assert "old_unknown" in (tmp_path / "settings.csv").read_text()
 
 
-def test_method_summary_names_strategy_without_revision():
-    from xic_workbench.targeted_config import method_summary
-
-    assert method_summary({}) == {
-        "label": "共用 Targeted 策略",
-        "custom_keys": [],
-        "differences": [],
-    }
-
-
 def test_invalid_targets_leave_saved_input_unchanged(tmp_path):
     from xic_workbench.config_io import write_targets
 
@@ -111,11 +101,14 @@ def test_target_import_entrypoint_preserves_draft_precision_and_hidden_metadata(
 
 def test_target_import_entrypoint_uses_explicit_targets_sheet(tmp_path):
     from tests.targeted_fixtures import targeted_rows
-    from xic_extractor.configuration.targeted_method_files import save_target_table
+    from xic_extractor.configuration.target_list_files import (
+        create_target_list,
+        save_target_list,
+    )
     from xic_workbench.target_import import import_targets
 
     source = tmp_path / "targets.xlsx"
-    save_target_table(targeted_rows(), source)
+    save_target_list(create_target_list(targeted_rows()), source)
     imported = import_targets(source)
     assert imported[0]["role"] == "istd"
     assert imported[1]["istd_pair"] == "standard"
@@ -133,7 +126,7 @@ def test_excel_target_import_without_target_rows_is_rejected(tmp_path: Path) -> 
     workbook.save(source)
     workbook.close()
 
-    with pytest.raises(ConfigError, match="工作表必須"):
+    with pytest.raises(ConfigError, match="需要 Targets 工作表"):
         import_targets(source)
 
 
@@ -150,25 +143,18 @@ def test_targeted_fields_are_batch_and_machine_only():
     assert fields["dll_dir"]["scope"] == "environment"
 
 
-@pytest.mark.parametrize(
-    "kind, extension",
-    [("method", "xlsx"), ("targets", "xlsx"), ("targets", "csv"), ("targets", "tsv")],
-)
-def test_uploaded_files_detect_content_and_preserve_batch(tmp_path, kind, extension):
+@pytest.mark.parametrize("extension", ["xlsx", "csv", "tsv"])
+def test_uploaded_lists_read_targets_only(tmp_path, extension):
     import base64
     import csv
 
     from tests.targeted_fixtures import targeted_rows
-    from xic_extractor.configuration import targeted_method_files as files
+    from xic_extractor.configuration import target_list_files as files
     from xic_workbench.target_import import preview_target_upload
 
     path = tmp_path / f"arbitrary-name.{extension}"
-    if kind == "method":
-        files.save_targeted_method(
-            files.create_targeted_method({}, targeted_rows()), path
-        )
-    elif extension == "xlsx":
-        files.save_target_table(targeted_rows(), path)
+    if extension == "xlsx":
+        files.save_target_list(files.create_target_list(targeted_rows()), path)
     else:
         with path.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(
@@ -180,40 +166,34 @@ def test_uploaded_files_detect_content_and_preserve_batch(tmp_path, kind, extens
             )
             writer.writeheader()
             writer.writerows(targeted_rows())
-    settings = {"data_dir": "current-raw", "dll_dir": "current-dll"}
     result = preview_target_upload(
-        path.name, base64.b64encode(path.read_bytes()).decode(), settings
+        path.name, base64.b64encode(path.read_bytes()).decode()
     )
-    assert result["kind"] == kind
+    assert set(result) == {"targets", "delta_mass"}
     assert [row["label"] for row in result["targets"]] == ["standard", "analyte"]
     assert result["targets"][1]["istd_pair"] == "standard"
-    assert settings == {"data_dir": "current-raw", "dll_dir": "current-dll"}
-    if kind == "method":
-        assert result["settings"]["data_dir"] == "current-raw"
-        assert result["settings"]["dll_dir"] == "current-dll"
-    else:
-        assert "settings" not in result
 
 
-def test_uploaded_invalid_method_is_not_downgraded_to_target_table(tmp_path):
+def test_uploaded_earlier_method_workbook_is_rejected(tmp_path):
     import base64
 
     import openpyxl
 
     from tests.targeted_fixtures import targeted_rows
-    from xic_extractor.configuration.targeted_method_files import save_target_table
+    from xic_extractor.configuration.target_list_files import (
+        create_target_list,
+        save_target_list,
+    )
     from xic_workbench.target_import import preview_target_upload
 
     path = tmp_path / "broken.xlsx"
-    save_target_table(targeted_rows(), path)
+    save_target_list(create_target_list(targeted_rows()), path)
     book = openpyxl.load_workbook(path)
-    book.create_sheet("Method").append(["invalid"])
+    book.create_sheet("Method").append(["key", "value"])
     book.save(path)
     book.close()
-    with pytest.raises(ConfigError):
-        preview_target_upload(
-            path.name, base64.b64encode(path.read_bytes()).decode(), {}
-        )
+    with pytest.raises(ConfigError, match="舊格式"):
+        preview_target_upload(path.name, base64.b64encode(path.read_bytes()).decode())
 
 
 @pytest.mark.parametrize(
@@ -230,4 +210,4 @@ def test_upload_rejects_invalid_or_oversized_input(name, content):
     from xic_workbench.target_import import preview_target_upload
 
     with pytest.raises(ConfigError):
-        preview_target_upload(name, content, {})
+        preview_target_upload(name, content)

@@ -24,7 +24,7 @@ accepts. They differ in what you ask for and what you receive.
 
 | Your question | Prepare | Start reviewing here |
 | --- | --- | --- |
-| **Targeted:** What happened to my known targets in this batch? | RAW files and a target table or saved method XLSX: names, m/z, expected RT, CID-NL / Delta Mass specificity, and optional ISTD pairs | One Excel workbook: `摘要` for the batch overview, then `需檢查` for results needing attention |
+| **Targeted:** What happened to my known targets in this batch? | RAW files and a target list (XLSX, CSV or TSV): names, m/z, expected RT, CID-NL / Delta Mass specificity, and optional ISTD pairs | One Excel workbook: `摘要` for the batch overview, then `需檢查` for results needing attention |
 | **Untargeted:** Which features can I compare across samples? | RAW files and a CID-NL method (dR, R, MeR or custom neutral-loss tags); check sample information and any internal-standard list | `alignment_matrix.tsv` for feature × sample areas, then the workbench for evidence behind a feature or missing cell |
 
 The [Targeted guide](docs/user/targeted-extraction.md) and

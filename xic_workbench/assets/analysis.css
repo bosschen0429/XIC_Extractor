@@ -179,13 +179,6 @@
   background: var(--warn-line);
   color: var(--ink);
 }
-.method-note {
-  color: var(--warn);
-  font-size: 12px;
-}
-.method-note:empty {
-  display: none;
-}
 .method-summary-line {
   display: flex;
   flex-wrap: wrap;
@@ -618,7 +611,8 @@
   line-height: 1.6;
   margin: 8px 0;
 }
-.settings-warning { color: var(--warning, #a76816); }
+.settings-warning { color: var(--warn); }
+#targeted-warnings:empty { display: none; }
 .path-line > small.field-help {
   grid-column: 2 / -1;
   margin-top: -4px;
@@ -635,11 +629,6 @@
   .path-line > small.field-help { grid-column: 1 / -1; }
 }
 
-.settings-source {
-  color: var(--muted);
-  font-size: 12px;
-  margin: 10px 0 4px;
-}
 .method-difference { font-weight: 600; }
 .sequence-conflicts {
   margin: 4px 0 0;
@@ -664,10 +653,9 @@
   border-color: var(--accent);
   background: var(--accent-soft);
 }
-.list-actions a {
-  font-size: 13px;
-}
 #target-import-status:empty { display: none; }
+.target-start { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.target-start[hidden] { display: none; }
 #target-import-status.error { color: var(--danger); }
 #target-import-preview .table-scroll { max-height: 45vh; overflow: auto; }
 
@@ -728,6 +716,14 @@
 }
 .delta-editor > .table-scroll {
   max-width: 100%;
+}
+.delta-editor > p {
+  max-width: 62ch;
+  margin: 0;
+  text-align: left;
+}
+.delta-empty {
+  font-weight: 600;
 }
 .delta-ion-table caption {
   padding: 0 0 6px;
@@ -902,10 +898,6 @@
 }
 #target-rows tr.selected td {
   background: var(--accent-soft);
-}
-#target-rows .target-specificity {
-  white-space: nowrap;
-  color: var(--muted);
 }
 #target-rows .target-delta-cell {
   min-width: 7em;

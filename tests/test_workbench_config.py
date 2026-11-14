@@ -107,10 +107,10 @@ def test_discovery_defaults_use_bundled_shared_targets(monkeypatch, tmp_path):
     monkeypatch.setattr(
         untargeted_config,
         "targets_template_path",
-        lambda: tmp_path / "bundle" / "targets.csv",
+        lambda: tmp_path / "bundle" / "targets.xlsx",
     )
     assert untargeted_config.read_untargeted_config()["targets_csv"] == str(
-        tmp_path / "bundle" / "targets.csv"
+        tmp_path / "bundle" / "targets.xlsx"
     )
     untargeted_config.write_untargeted_config({"targets_csv": ""})
     assert untargeted_config.read_untargeted_config()["targets_csv"] == ""
@@ -181,7 +181,7 @@ def test_launch_dll_override_is_transient_and_both_workflows_share_it(tmp_path):
         bootstrap = workspace.bootstrap()
         assert bootstrap["settings"]["dll_dir"] == "launch-dll"
         assert bootstrap["untargeted"]["dll_dir"] == "launch-dll"
-        assert any("dll_dir" in w for w in bootstrap["targeted_method"]["warnings"])
+        assert any("dll_dir" in w for w in bootstrap["targeted_warnings"])
         assert (tmp_path / "workspace.json").read_bytes() == before
         assert (
             config_io.read_settings(config_dir=tmp_path)["dll_dir"] == "persisted-dll"

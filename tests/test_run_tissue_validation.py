@@ -159,12 +159,9 @@ def test_preflight_exposes_overrides_and_rejects_output_reuse(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     raw_dir, dll_dir, library = _inputs(tmp_path, count=8)
-    targets = tmp_path / "targets.csv"
-    targets.write_text(
-        Path("xic_extractor/configuration/data/targets.csv").read_text(
-            encoding="utf-8"
-        ),
-        encoding="utf-8",
+    targets = tmp_path / "targets.xlsx"
+    targets.write_bytes(
+        Path("xic_extractor/configuration/data/targets.xlsx").read_bytes()
     )
     output_dir = tmp_path / "custom-output"
     monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])

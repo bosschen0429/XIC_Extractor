@@ -33,7 +33,7 @@ records the effective settings and resource allocation.
 | `role` | `analyte` or `istd` |
 | `istd_pair` | Optional ISTD label for an analyte; blank for an ISTD or an analyte without a paired ISTD |
 | `cid_nl_loss_da` | Optional CID-NL neutral loss in Da, below `mz`, for example `116.0474` (dR), `132.0423` (R) or `146.0579` (MeR); any value is used as written |
-| `delta_mass_mz` | Optional comma-separated Delta Mass Δm/z of companion ions, relative to `mz`, for example `+1.0021, +4.0052`; positive or negative |
+| `delta_mass_mz` | Optional comma-separated exact mass differences of companion ions from this row's `mz` (the base), for example `+1.0021, +4.0052`; positive or negative. Blank means no Delta Mass |
 
 Both blank means MS1 only with the shared 20 ppm precursor tolerance. With both
 filled, both conditions must match the same peak. Older tables with a single
@@ -56,21 +56,22 @@ ND. Touching lobes can propose a total area alongside the original regions,
 without erasing the valleys needed to distinguish other targets. Shoulders and
 double tops can require review without suppressing the measured total.
 
-## Portable method
+## Target-list XLSX
 
-A method `.xlsx` has `Method` and `Targets` worksheets, plus a `Delta Mass`
-worksheet when any target has Delta Mass ions. `Method` uses `key,value`
-(optional `description`) with `strategy,cid-nl`, plus the list-shared Delta Mass
-settings when used: `delta_mass_mz_tolerance_ppm`, `delta_mass_apex_floor_sec`,
-`delta_mass_scan_interval_multiplier`, `delta_mass_shape_window_sec` and
-`delta_mass_min_shape_r`.
-A target-table `.xlsx` has exactly one `Targets` worksheet with the columns above.
-Headers occupy the first row. Use actual values, not formulas or Excel error cells.
+A target-list `.xlsx` has a `Targets` worksheet with the columns above. When
+targets use Delta Mass it may add a `Delta Mass` worksheet (one row per ion,
+below) and a `Delta Mass Settings` worksheet whose `key,value` rows (optional
+`description`) hold the list-shared settings: `delta_mass_mz_tolerance_ppm`,
+`delta_mass_apex_floor_sec`, `delta_mass_scan_interval_multiplier`,
+`delta_mass_shape_window_sec` and `delta_mass_min_shape_r`. No other worksheet
+is accepted. An earlier workbook with a `Method` or `Identification Methods`
+worksheet is rejected: delete those sheets and move any `delta_mass_*` rows to
+`Delta Mass Settings`. Headers occupy the first row. Use actual values, not formulas or Excel error cells.
 Numeric text and descriptive metadata survive round trips without rounding.
 
-Download [method XLSX](../../xic_extractor/configuration/data/targeted-method.xlsx)
-or [target-table XLSX](../../xic_extractor/configuration/data/targets.xlsx), or use
-the links in the target-list card. Save a copy before editing. These are format
+Download the example list from **使用說明與快捷鍵** in the workbench, or press
+**從範例開始** while the list is empty to edit it there.
+Save a copy before editing a file. These are format
 examples, not evidence that the listed specificity suits your samples.
 
 ### Set specificity in the target editor
@@ -86,7 +87,8 @@ examples, not evidence that the listed specificity suits your samples.
    ions that round to the same name cannot be saved.
 4. Co-elution and shape thresholds are in the collapsed
    **進階：Delta Mass 判斷設定（整份清單共用）** panel.
-5. Save the workspace or **另存清單**. XLSX export includes the Delta Mass details.
+5. Press **完成**, then **保存批次設定**, or export the list with **匯出清單 XLSX**.
+   The export includes the Delta Mass details.
 
 The `Delta Mass` worksheet has one row per target ion:
 
@@ -108,22 +110,23 @@ scientifically validated; evaluate its suitability for your samples separately.
 
 ### Earlier target tables
 
-A `method` (or `cid_nl_tag`) column is converted when read: `dR`, `R` and `MeR`
-become their losses; a named method from an `Identification Methods` worksheet
-becomes its CID-NL loss and Delta Mass ions (names, ratios and shape comparison
-kept). A method the new columns cannot express is rejected with the affected
+A `method` (or `cid_nl_tag`) column in a CSV/TSV table or a saved workspace is
+converted when read: `dR`, `R` and `MeR` become their losses; a workspace's named
+method becomes its CID-NL loss and Delta Mass ions (names, ratios and shape
+comparison kept). Workbooks with an `Identification Methods` worksheet are
+rejected, as above. A method the new columns cannot express is rejected with the affected
 targets: a method with only a CID-NL condition (it required the loss; the
 CID-NL column alone only ranks peaks), any-of combination, two conditions of
 one kind, or tolerance and co-elution settings that differ between methods. Saving writes the new format.
 
-Drag a file into the target-list import area or use **選擇檔案**. XLSX content
-automatically distinguishes a method from a target table; CSV/TSV are target tables.
-Uploads accept one nonempty file up to 1 MiB. Review the filename, detected type,
-targets and ISTD pairs, then choose **確認匯入並取代**; cancellation changes nothing.
+Drag a file into the target-list import area or use **瀏覽**. Uploads accept one
+nonempty XLSX, CSV or TSV file up to 1 MiB. Review the filename, targets and ISTD
+pairs, then choose **匯入** (**取代目前清單** when a list is loaded); cancellation
+changes nothing.
 
-Loading a method replaces the complete target list while retaining RAW/DLL paths,
-injection metadata and worker settings. **另存清單** creates a named XLSX under
-`config/methods/`; **保存目前工作** saves JSON without overwriting that named method.
+Importing replaces the complete target list while retaining RAW/DLL paths,
+injection metadata and worker settings. **匯出清單 XLSX** writes the list to a
+file you choose; **保存批次設定** saves the current setup locally.
 CSV/TSV target tables remain explicit draft imports only, not a second startup
 configuration. DNA/RNA workbook detection and `.xls` conversion are not offered.
 

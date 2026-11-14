@@ -27,4 +27,3 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     "injection_order_source": "上機資訊（Word／Excel／CSV／TSV），補充樣本角色",
     "parallel_workers": "RAW worker 數；留空使用 CPU 數減一（至少 1）",
 }
-METHOD_KEYS = ("strategy",)

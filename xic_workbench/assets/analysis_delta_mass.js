@@ -84,15 +84,16 @@ export function ionsError(ions, { allowNegative }) {
 
 // options: ions (mutated in place), base ("基準＝…" header text), baseMz
 // (actual m/z for the preview, or null for Δ), allowNegative, showShape,
-// onChange(), and extraHead/extraCells for page-specific columns.
+// empty (shown while there is no ion), onChange(), and extraHead/extraCells
+// for page-specific columns.
 export function deltaMassEditor(options) {
   const root = el("div", undefined, "delta-editor");
   const render = () => {
     const table = el("table", undefined, "method-ion-table delta-ion-table");
     const head = el("tr");
     for (const [text, cls] of [
-      ["Δm/z", "num"],
-      ["強度比範圍（只記錄，不淘汰）", "num"],
+      ["Δm/z（伴隨 − 基準）", "num"],
+      ["強度比（伴隨 ÷ 基準，只記錄）", "num"],
       ...(options.showShape ? [["比對峰形", "center"]] : []),
       ["", ""],
     ])
@@ -174,7 +175,17 @@ export function deltaMassEditor(options) {
     const problem = ionsError(options.ions, options);
     error.textContent = problem;
     error.hidden = !problem;
-    root.replaceChildren(scroll, add, error, previewPlot(options.ions, options));
+    // What to fill, for someone who has never seen a companion ion.
+    const hint = el(
+      "p",
+      "伴隨離子：同一 RT 一起出現的其他 MS1 離子。Δm/z 填精確質量差，如 +6.0201。",
+      "subtle delta-hint",
+    );
+    const parts = [hint];
+    // Without an ion the condition is off; say how it turns on and from which base.
+    if (!options.ions.length && options.empty)
+      parts.push(el("p", options.empty, "delta-empty"));
+    root.replaceChildren(...parts, scroll, add, error, previewPlot(options.ions, options));
   };
   const changed = (structural = false) => {
     options.onChange?.();
