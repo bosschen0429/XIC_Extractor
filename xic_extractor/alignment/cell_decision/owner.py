@@ -354,7 +354,7 @@ def _decision_sort_key(decision: ProductionCellDecision) -> tuple[str, ...]:
     if type(subject) is TargetCellSubject:
         return (
             "target",
-            subject.target.lookup_label,
+            subject.target.label,
             subject.canonical_sample.sample_name,
         )
     if type(subject) is GroupCellSubject:

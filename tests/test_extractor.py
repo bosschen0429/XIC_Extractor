@@ -724,8 +724,7 @@ def test_batch_context_uses_supported_bodies_and_retention_uncertainty(
     main = next(
         result
         for result in finalized
-        if result.completed_projection.row_binding.target.definition.target.label
-        == "Main"
+        if result.completed_projection.row_binding.target.label == "Main"
     )
     assert main.completed_projection.accepted_cell_count == (
         0 if reference_bias == 22.5 else 2

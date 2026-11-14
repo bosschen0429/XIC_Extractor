@@ -4,7 +4,7 @@ import json
 import math
 import statistics
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from functools import cached_property
 from typing import Literal
 
@@ -15,11 +15,6 @@ from xic_extractor.alignment.sample_rt_calibration import (
     interpolate_calibrated_rt_min,
 )
 from xic_extractor.configuration.models import Target
-from xic_extractor.configuration.target_identity import (
-    TargetListSnapshot,
-    mint_target_list_snapshot,
-    target_list_snapshot_payload,
-)
 from xic_extractor.mass_accuracy import mz_tolerance_da, neutral_loss_match
 
 DriftPriorSource = Literal[
@@ -53,7 +48,7 @@ class KnownIstdReference:
             "workbook_path": self.workbook_path,
             "workbook_sha256": self.workbook_sha256,
             "target_snapshot": json.dumps(
-                target_list_snapshot_payload(self.anchor.target_snapshot),
+                _istd_target_snapshot_payload(self.anchor.targets),
                 sort_keys=True,
                 separators=(",", ":"),
                 allow_nan=False,
@@ -243,9 +238,6 @@ def mint_known_istd_reference_from_measurements(
     if len({t.label for t in istd_targets}) != len(istd_targets):
         raise ValueError("known ISTD reference requires unique ISTD target labels")
 
-    snapshot = mint_target_list_snapshot(
-        istd_targets, identity_namespace="known-istd-reference"
-    )
     labels = {t.label for t in istd_targets}
 
     for (label, _sample), rt in coordinates.items():
@@ -269,9 +261,25 @@ def mint_known_istd_reference_from_measurements(
     return KnownIstdReference(
         workbook_path=source_identifier,
         workbook_sha256=source_sha256,
-        anchor=build_targeted_istd_identity_anchor(snapshot, observed_labels=labels),
+        anchor=build_targeted_istd_identity_anchor(
+            istd_targets, observed_labels=labels
+        ),
         coordinates=coords,
     )
+
+
+def _istd_target_snapshot_payload(targets: tuple[Target, ...]) -> dict[str, object]:
+    definitions = []
+    for target in targets:
+        payload = asdict(target)
+        if target.identification is None:
+            del payload["identification"]
+        definitions.append({"target_label": target.label, "target": payload})
+    return {
+        "schema": "target_list_snapshot",
+        "identity_namespace": "known-istd-reference",
+        "definitions": definitions,
+    }
 
 
 @dataclass(frozen=True)
@@ -293,18 +301,12 @@ class TargetedIstdIdentityAnchor:
     context, not a second grouping owner or a persisted Matrix identity.
     """
 
-    target_snapshot: TargetListSnapshot
+    targets: tuple[Target, ...]
     observed_labels: tuple[str, ...]
-
-    @property
-    def targets(self) -> tuple[Target, ...]:
-        return tuple(
-            definition.target for definition in self.target_snapshot.definitions
-        )
 
 
 def build_targeted_istd_identity_anchor(
-    target_snapshot: TargetListSnapshot,
+    targets: tuple[Target, ...],
     *,
     observed_labels: Iterable[str],
 ) -> TargetedIstdIdentityAnchor:
@@ -313,10 +315,10 @@ def build_targeted_istd_identity_anchor(
     labels = tuple(
         sorted({str(label).strip() for label in observed_labels if str(label).strip()})
     )
-    if not target_snapshot.definitions or not labels:
+    if not targets or not labels:
         raise ValueError("ISTD identity anchor requires targets and observed labels")
     return TargetedIstdIdentityAnchor(
-        target_snapshot=target_snapshot,
+        targets=targets,
         observed_labels=labels,
     )
 

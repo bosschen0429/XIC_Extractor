@@ -171,7 +171,7 @@ def test_known_reference_uses_declared_targets_rt_and_source_bytes(
     changed = read_known_istd_reference(path)
     assert changed.coordinates == reference.coordinates
     assert changed.workbook_sha256 != reference.workbook_sha256
-    assert changed.anchor.target_snapshot == reference.anchor.target_snapshot
+    assert changed.anchor.targets == reference.anchor.targets
     assert changed.provenance["coordinates"] == reference.provenance["coordinates"]
 
 

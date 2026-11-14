@@ -3,10 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
-from xic_extractor.configuration.target_identity import (
-    ResolvedTargetDefinition,
-    TargetListSnapshot,
-)
+from xic_extractor.configuration.models import Target
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     UntargetedCidNlMethodSubjectBatch,
@@ -45,8 +42,7 @@ class TargetSearchScope:
     evidence_providers: tuple[EvidenceProviderBinding, ...]
     declared_candidate_ids: tuple[str, ...]
     capture_bindings: tuple[CaptureCandidateBinding, ...]
-    target_snapshot: TargetListSnapshot
-    target: ResolvedTargetDefinition
+    target: Target
 
     @property
     def variant(self) -> Literal["targeted"]:
@@ -70,14 +66,12 @@ class UntargetedSearchScope:
 SearchScope: TypeAlias = TargetSearchScope | UntargetedSearchScope
 
 
-def target_ms1_subject_id(target: ResolvedTargetDefinition) -> str:
-    """Return the exact Target-definition identity used by MS1-only capture."""
+def target_ms1_subject_id(target: Target) -> str:
+    """Return the natural Target label key used by MS1-only capture."""
 
-    if not isinstance(target, ResolvedTargetDefinition):
-        raise SearchScopeContractError("MS1 Target subject must be owner-resolved")
-    if target.definition.target.neutral_loss_da is not None:
+    if target.neutral_loss_da is not None:
         raise SearchScopeContractError("MS1 Target subject requires neutral loss off")
-    return f"target-ms1:{target.lookup_label}"
+    return f"target-ms1:{target.label}"
 
 
 __all__ = (

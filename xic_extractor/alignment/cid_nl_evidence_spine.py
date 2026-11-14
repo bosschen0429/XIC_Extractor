@@ -22,7 +22,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_support,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
+from xic_extractor.configuration.models import Target
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     CidNlChromatographicSupportContractError,
     compose_cid_nl_chromatographic_support,
@@ -83,7 +83,7 @@ class CidNlReferenceSpine:
 
 def build_cid_nl_reference_spine(
     *,
-    target: ResolvedTargetDefinition | None = None,
+    target: Target | None = None,
     method_subject: CidNlMethodSubject | None = None,
     sample_assessments: tuple[
         tuple[SampleMetadata, CidNlMethodAssessment],

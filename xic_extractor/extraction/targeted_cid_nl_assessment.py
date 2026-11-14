@@ -9,7 +9,6 @@ Untargeted CID-NL re-acquires its evidence under its own policy.
 from __future__ import annotations
 
 from xic_extractor.configuration.models import Target
-from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.extraction.targeted_capture_population import (
     TargetedCapturePopulation,
@@ -51,7 +50,7 @@ def assess_targeted_cid_nl_samples(
 
 def _assess_sample(
     *,
-    target: ResolvedTargetDefinition,
+    target: Target,
     sample: SampleMetadata,
     acquisition_source: AcquisitionSourceIdentity,
     result: ExtractionResult,
@@ -76,7 +75,7 @@ def _assess_sample(
                 scan_number=product.scan_number,
                 precursor_mz=product.precursor_mz,
                 product_mz=product.product_mz,
-                configured_neutral_loss_da=_neutral_loss(target.definition.target),
+                configured_neutral_loss_da=_neutral_loss(target),
                 observed_neutral_loss_da=product.observed_loss_da,
                 observed_loss_error_ppm=product.observed_loss_error_ppm,
                 scan_rt_min=product.scan_rt,

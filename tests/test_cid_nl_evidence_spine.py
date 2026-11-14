@@ -574,7 +574,7 @@ def test_assessment_requires_qualifying_evidence_before_reject(
         tmp_path, sample_stems=("nonqual",)
     )
     sample = fixture.sample("nonqual")
-    target = fixture.target.definition.target
+    target = fixture.target
     assert target.neutral_loss_da is not None
     observed_loss = target.neutral_loss_da + 1.0
     evidence = cid_nl_evidence_observation(

@@ -1762,7 +1762,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
                 for sample, file in context.results_by_sample
                 if sample.raw_stem == "SampleC"
             )
-        if not args[1].definition.target.is_istd:
+        if not args[1].is_istd:
             from xic_extractor.alignment.peak_trajectories import PeakTrajectory
 
             with monkeypatch.context() as patch:
@@ -1791,8 +1791,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     finalized = next(
         r
         for r in execution.finalized_results
-        if r.completed_projection.row_binding.target.definition.target.label
-        == "Analyte"
+        if r.completed_projection.row_binding.target.label == "Analyte"
     )
     decisions = finalized.scientific_core.targeted_backfill_decisions
     accepted = [d for d in decisions if d.disposition == "candidate_mapped"]
@@ -2210,7 +2209,7 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
     [finalized] = [
         item
         for item in execution.finalized_results
-        if item.completed_projection.row_binding.target.definition.target.is_istd
+        if item.completed_projection.row_binding.target.is_istd
     ]
     accepted = [
         decision

@@ -15,9 +15,7 @@ from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
     TerminalSearchObservation,
 )
-from xic_extractor.configuration.target_identity import (
-    ResolvedTargetDefinition,
-)
+from xic_extractor.configuration.models import Target
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
 )
@@ -40,7 +38,7 @@ class TargetRowBinding:
     """One fixed Target row with a closed zero/one/many group binding."""
 
     variant: TargetRowBindingVariant
-    target: ResolvedTargetDefinition
+    target: Target
     eligible_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
 
     @property
@@ -54,7 +52,7 @@ class TargetRowBinding:
 class TargetCellSubject:
     """One Target × canonical-sample subject for the cell-decision owner."""
 
-    target: ResolvedTargetDefinition
+    target: Target
     canonical_sample: SampleMetadata
     row_binding: TargetRowBinding
     terminal_subject: TerminalSearchObservation
@@ -201,7 +199,7 @@ def _member_from_terminal(
 
 def _mint_row_binding(
     *,
-    target: ResolvedTargetDefinition,
+    target: Target,
     eligible_groups: tuple[CrossSamplePeakGroupHypothesis, ...],
 ) -> TargetRowBinding:
     count = len(eligible_groups)

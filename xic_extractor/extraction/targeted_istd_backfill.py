@@ -150,7 +150,7 @@ def resolve_targeted_istd_backfill(
 ) -> IstdAnchoredBackfill:
     """Backfill HOLD samples of an ISTD-related Target from their direct peers."""
 
-    target = population.target.definition.target
+    target = population.target
     if not (target.is_istd or target.istd_pair) or not assessments:
         return IstdAnchoredBackfill.none()
     assessment_by_sample = {
@@ -185,9 +185,7 @@ def _paired_istd_observations(
 ) -> tuple[PeakObservation, ...]:
     observations = []
     for entry in population.entries:
-        pair = entry.file_result.results.get(
-            population.target.definition.target.istd_pair
-        )
+        pair = entry.file_result.results.get(population.target.istd_pair)
         if pair is None or credible_istd_anchor_rt(pair) is None:
             continue
         evaluation = pair.physical_evaluation

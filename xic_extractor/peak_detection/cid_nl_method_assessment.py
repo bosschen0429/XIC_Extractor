@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
-from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
+from xic_extractor.configuration.models import Target
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelation,
     resolve_dda_cid_nl_candidate_set_relation,
@@ -263,7 +263,7 @@ def mint_cid_nl_method_assessment(
     *,
     sample: SampleMetadata,
     acquisition_source: AcquisitionSourceIdentity,
-    target: ResolvedTargetDefinition | None = None,
+    target: Target | None = None,
     method_subject: CidNlMethodSubject | None = None,
     detector_invocation_id: str,
     evaluation_receipt: CidNlEvaluationReceipt,
@@ -318,7 +318,7 @@ def mint_cid_nl_method_assessment(
 
 def _resolve_method_subject(
     *,
-    target: ResolvedTargetDefinition | None,
+    target: Target | None,
     method_subject: CidNlMethodSubject | None,
 ) -> CidNlMethodSubject:
     if (target is None) == (method_subject is None):

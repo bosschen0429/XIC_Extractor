@@ -21,7 +21,7 @@ from xic_extractor.alignment.cell_observation.method_evidence import (
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupMemberSubject,
 )
-from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
+from xic_extractor.configuration.models import Target
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
     CidNlMethodResult,
@@ -180,7 +180,7 @@ def _outside_group_relation(
 def mint_cell_observation(
     *,
     sample: SampleMetadata,
-    target: ResolvedTargetDefinition | None = None,
+    target: Target | None = None,
     group_context: CidNlCellGroupContext,
     method_assessment: CidNlMethodAssessment,
     peak_observation: PeakObservation | None = None,
