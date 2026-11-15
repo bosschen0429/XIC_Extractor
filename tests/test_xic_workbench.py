@@ -717,7 +717,7 @@ def test_workbench_module_imports_form_no_cycle():
     # Only static specifiers are visible here; a dynamic import would hide an edge.
     assert not [name for name, text in sources.items() if "import(" in text]
     graph = {
-        name: set(re.findall(r'(?:from|import)\s*"\./([^"/]+\.js)"', text))
+        name: set(re.findall(r"""(?:from|import)\s*["']\./([^"'/]+\.js)["']""", text))
         for name, text in sources.items()
     }
     finished: set[str] = set()
