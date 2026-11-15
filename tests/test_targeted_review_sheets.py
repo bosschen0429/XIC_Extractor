@@ -204,3 +204,14 @@ def test_summary_counts_analytes_and_names_only_istds_missing_somewhere():
     assert not sheet.merged_cells.ranges
     assert not sheet._charts
     assert not any(cell.hyperlink for row in sheet for cell in row)
+
+
+def test_reasons_never_send_the_reader_to_a_hidden_sheet():
+    from xic_extractor.output.reason_display import _REASON_TEXT
+
+    hidden = ("XIC Results", "Targets", "Run Metadata", "Method Evidence", "Delta Mass")
+    # Reasons reach 摘要 and the workbench; a pointer to a hidden record sheet
+    # sends the reader nowhere.
+    assert not [
+        text for text in _REASON_TEXT.values() if any(name in text for name in hidden)
+    ]
