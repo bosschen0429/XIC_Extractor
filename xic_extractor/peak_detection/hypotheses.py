@@ -303,9 +303,6 @@ def _integration_from_candidate(
         height_smoothed=candidate.selection_apex_intensity,
         area_raw_counts_seconds=candidate.peak.area,
         signal_quality=quality,
-        area_baseline_corrected=(
-            baseline.area_baseline_corrected if baseline is not None else None
-        ),
         area_uncertainty=baseline.area_uncertainty if baseline is not None else None,
         area_uncertainty_formula_version=(
             baseline.area_uncertainty_formula_version if baseline is not None else ""

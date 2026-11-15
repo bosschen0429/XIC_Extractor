@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from xic_extractor.alignment.primary_matrix_area import (
-    ASLS_PRIMARY_MATRIX_AREA_SOURCE,
     MISSING_MS1_MORPHOLOGY_AREA,
     primary_matrix_area_from_integration,
 )
@@ -36,7 +35,6 @@ def test_targeted_area_column_and_reported_peak_area_use_ms1_morphology_area() -
         height_raw=1000.0,
         height_smoothed=950.0,
         area_raw_counts_seconds=1200.0,
-        area_baseline_corrected=800.0,
         baseline_type="asls",
         area_ms1_morphology=900.0,
         ms1_morphology_area_source="gaussian15_positive_asls_residual",
@@ -76,7 +74,6 @@ def test_alignment_primary_matrix_area_preserves_accepted_area_source(
         height_raw=1000.0,
         height_smoothed=950.0,
         area_raw_counts_seconds=1200.0,
-        area_baseline_corrected=800.0,
         baseline_type="asls",
         area_ms1_morphology=900.0,
         ms1_morphology_area_source=area_source,
@@ -98,7 +95,6 @@ def test_alignment_primary_matrix_area_rejects_invalid_observed_censored_area(
     decision = primary_matrix_area_from_integration(
         SimpleNamespace(
             baseline_type="",
-            area_baseline_corrected=None,
             area_ms1_morphology=area,
             ms1_morphology_area_source=(
                 "trapezoid_counts_seconds_on_observed_censored_signal"
@@ -115,7 +111,6 @@ def test_alignment_primary_matrix_area_rejects_unknown_positive_area_source() ->
     decision = primary_matrix_area_from_integration(
         SimpleNamespace(
             baseline_type="",
-            area_baseline_corrected=None,
             area_ms1_morphology=900.0,
             ms1_morphology_area_source="unknown_signal",
         )
@@ -126,7 +121,7 @@ def test_alignment_primary_matrix_area_rejects_unknown_positive_area_source() ->
     assert decision.reason == MISSING_MS1_MORPHOLOGY_AREA
 
 
-def test_alignment_primary_matrix_area_retires_asls_legacy_fallback() -> None:
+def test_missing_morphology_area_publishes_no_area_instead_of_raw_area() -> None:
     integration = IntegrationResult(
         rt_left_min=1.0,
         rt_apex_min=1.2,
@@ -136,8 +131,18 @@ def test_alignment_primary_matrix_area_retires_asls_legacy_fallback() -> None:
         height_raw=1000.0,
         height_smoothed=950.0,
         area_raw_counts_seconds=1200.0,
-        area_baseline_corrected=800.0,
         baseline_type="asls",
+    )
+    result = ExtractionResult(
+        peak_result=PeakDetectionResult(
+            status="OK",
+            peak=None,
+            n_points=5,
+            max_smoothed=950.0,
+            n_prominent_peaks=1,
+        ),
+        nl=None,
+        selected_hypothesis=_hypothesis(integration),
     )
 
     decision = primary_matrix_area_from_integration(integration)
@@ -145,7 +150,7 @@ def test_alignment_primary_matrix_area_retires_asls_legacy_fallback() -> None:
     assert decision.value is None
     assert decision.source == ""
     assert decision.reason == MISSING_MS1_MORPHOLOGY_AREA
-    assert ASLS_PRIMARY_MATRIX_AREA_SOURCE == "asls_baseline_corrected"
+    assert result.reported_peak_area is None
 
 
 def _hypothesis(integration: IntegrationResult) -> PeakHypothesis:

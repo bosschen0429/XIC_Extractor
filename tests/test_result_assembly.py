@@ -153,6 +153,8 @@ def test_build_extraction_result_uses_selection_decision_projection() -> None:
             height_raw=1200.0,
             height_smoothed=1100.0,
             area_raw_counts_seconds=1234.5,
+            area_ms1_morphology=1234.5,
+            ms1_morphology_area_source="gaussian15_positive_asls_residual",
         )
     )
     decision = PeakHypothesisSelectionDecision(
@@ -198,39 +200,6 @@ def test_extraction_result_reports_selected_integration_values() -> None:
             height_raw=765.0,
             height_smoothed=700.0,
             area_raw_counts_seconds=4567.89,
-        )
-    )
-
-    result = build_extraction_result(
-        peak_result=peak_result,
-        nl_result=None,
-        candidate_ms2_evidence=None,
-        target=_target(),
-        candidate=peak_result.candidates[0],
-        scoring_context_builder=None,
-        selected_hypothesis=selected,
-    )
-
-    assert result.reported_rt == 8.95
-    assert result.reported_peak_area == 4567.89
-    assert result.reported_peak_intensity == 765.0
-    assert result.reported_peak_start == 8.7
-    assert result.reported_peak_end == 9.3
-    assert result.reported_peak_width == pytest.approx(0.42)
-
-
-def test_extraction_result_reports_ms1_morphology_area_when_available() -> None:
-    peak_result = _peak_result_with_candidate()
-    selected = _selected_hypothesis_with_integration(
-        IntegrationResult(
-            rt_left_min=8.7,
-            rt_apex_min=8.95,
-            rt_right_min=9.3,
-            raw_apex_rt_min=8.96,
-            rt_width_min=0.42,
-            height_raw=765.0,
-            height_smoothed=700.0,
-            area_raw_counts_seconds=4567.89,
             area_ms1_morphology=4321.0,
             ms1_morphology_area_source="gaussian15_positive_asls_residual",
         )
@@ -246,7 +215,12 @@ def test_extraction_result_reports_ms1_morphology_area_when_available() -> None:
         selected_hypothesis=selected,
     )
 
-    assert result.reported_peak_area == pytest.approx(4321.0)
+    assert result.reported_rt == 8.95
+    assert result.reported_peak_area == 4321.0
+    assert result.reported_peak_intensity == 765.0
+    assert result.reported_peak_start == 8.7
+    assert result.reported_peak_end == 9.3
+    assert result.reported_peak_width == pytest.approx(0.42)
 
 
 def test_selected_physical_shoulder_adds_review_without_changing_values() -> None:
@@ -373,6 +347,9 @@ def test_build_extraction_result_adds_targeted_product_projection() -> None:
             target=target,
             peak_result=peak_result,
             candidate_ms2_evidence={candidate: _ms2_evidence()},
+            # Production passes the trace; without it there is no reportable area.
+            rt=np.array([8.4, 8.5, 8.6]),
+            intensity=np.array([100.0, 1200.0, 100.0]),
         )
     )
 
@@ -431,6 +408,8 @@ def test_istd_rt_conflict_inside_target_window_stays_counted() -> None:
             height_raw=1200.0,
             height_smoothed=1100.0,
             area_raw_counts_seconds=1234.5,
+            area_ms1_morphology=1234.5,
+            ms1_morphology_area_source="gaussian15_positive_asls_residual",
         ),
         evidence=EvidenceVector(
             reason="decision: accepted",
@@ -984,6 +963,8 @@ def _result_with_targeted_projection_semantics(
                 height_raw=1200.0,
                 height_smoothed=1100.0,
                 area_raw_counts_seconds=1234.5,
+                area_ms1_morphology=1234.5,
+                ms1_morphology_area_source="gaussian15_positive_asls_residual",
             )
         ),
         evidence=EvidenceVector(

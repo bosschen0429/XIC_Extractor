@@ -10,8 +10,6 @@ if TYPE_CHECKING:
     from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 MISSING_MS1_MORPHOLOGY_AREA = "missing_ms1_morphology_area"
-MISSING_ASLS_PRIMARY_AREA = MISSING_MS1_MORPHOLOGY_AREA
-ASLS_PRIMARY_MATRIX_AREA_SOURCE = "asls_baseline_corrected"
 MS1_MORPHOLOGY_PRIMARY_MATRIX_AREA_SOURCE = MS1_MORPHOLOGY_AREA_SOURCE
 CANONICAL_PHYSICAL_PRIMARY_MATRIX_AREA_SOURCE = (
     "trapezoid_counts_seconds_on_canonical_signal"
@@ -38,33 +36,15 @@ class PrimaryMatrixAreaDecision:
 def primary_matrix_area_from_integration(
     integration: IntegrationResult | None,
 ) -> PrimaryMatrixAreaDecision:
-    if integration is None:
+    if (
+        integration is not None
+        and integration.ms1_morphology_area_source in PRIMARY_MATRIX_AREA_SOURCES
+        and (area := _valid_area(integration.area_ms1_morphology)) is not None
+    ):
         return PrimaryMatrixAreaDecision(
-            value=None,
-            source="",
-            reason=MISSING_MS1_MORPHOLOGY_AREA,
-        )
-    area_source = integration.ms1_morphology_area_source
-    if area_source in PRIMARY_MATRIX_AREA_SOURCES:
-        morphology_area = _valid_area(integration.area_ms1_morphology)
-        if morphology_area is not None:
-            return PrimaryMatrixAreaDecision(
-                value=morphology_area,
-                source=area_source,
-                reason="",
-            )
-    if integration.baseline_type != "asls":
-        return PrimaryMatrixAreaDecision(
-            value=None,
-            source="",
-            reason=MISSING_MS1_MORPHOLOGY_AREA,
-        )
-    area = _valid_area(integration.area_baseline_corrected)
-    if area is None:
-        return PrimaryMatrixAreaDecision(
-            value=None,
-            source="",
-            reason=MISSING_MS1_MORPHOLOGY_AREA,
+            value=area,
+            source=integration.ms1_morphology_area_source,
+            reason="",
         )
     return PrimaryMatrixAreaDecision(
         value=None,

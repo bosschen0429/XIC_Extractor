@@ -224,10 +224,7 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
     # A candidate that selected an already retained peak supports it.
     (observed,) = assessment.candidate_peaks
     assert observed == measured
-    assert (
-        observed.integration.area_baseline_corrected
-        == integration.area_baseline_corrected
-    )
+    assert observed.integration.area_ms1_morphology == integration.area_ms1_morphology
     assert observed.integration.rt_apex_min == integration.rt_apex_min
     batch = acquire_untargeted_cid_nl_sample_trace_batch(
         sample=fixture.sample("S1"),
@@ -394,7 +391,7 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
     assert measured.source_trace.rt_max == candidate.ms1_search_rt_max
     assert measured.physical_evaluation == discovered.physical_evaluation
     assert (
-        measured.integration.area_baseline_corrected
+        measured.integration.area_ms1_morphology
         == discovered.physical_evaluation.answer.selected_segment.area_counts_seconds
     )
     assert representative_event(candidate).precursor_mz == pytest.approx(500.016)

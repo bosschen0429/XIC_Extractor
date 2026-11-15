@@ -369,7 +369,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert cell.value == peak.area_counts_seconds
         assert cell.selected_integration.area_raw_counts_seconds != cell.value
         assert cell.selected_integration.rt_apex_min == peak.apex_rt_min
-        assert cell.selected_integration.height_smoothed == peak.height
+        # Reported height keeps the baseline that the segment height removes.
+        assert cell.selected_integration.height_smoothed > peak.height
     expected_row_count = sum(size > 1 for size in case.group_sizes)
     assert len(matrix_rows) == expected_row_count
     for sample_stem, peak in inputs.physical_peaks.items():
@@ -490,8 +491,12 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
     integ = observation.integration
     selected = observation.physical_evaluation.answer.selected_segment
     assert selected is not None
-    assert integ.area_baseline_corrected == selected.area_counts_seconds
-    assert integ.height_smoothed == selected.height
+    assert integ.area_ms1_morphology == selected.area_counts_seconds
+    prepared = observation.physical_evaluation.retained_prepared_signal
+    assert prepared is not None
+    # Reported height is the Gaussian trace at the apex, without baseline removal.
+    assert integ.height_smoothed == prepared.smoothed[selected.apex_index]
+    assert integ.height_smoothed > selected.height
     assert recovered.assessment.method_result == "HOLD"
     original_intensity = inputs.source_raws[inputs.paths[0]].intensity
     recovery_evaluations = []

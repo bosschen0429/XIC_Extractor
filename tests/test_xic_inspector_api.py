@@ -896,7 +896,8 @@ def test_saved_cell_is_answered_on_its_sample_without_internal_records(tmp_path)
     assert sample["decision_refs"] == []
     curve = item["curves"][0]
     assert curve["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
-    assert curve["integration"]["area_raw_counts_seconds"] == 2500.0
+    # The card shows the published (baseline-removed) area, never raw area.
+    assert curve["area"] == 2400.0
 
 
 def test_sample_answers_keep_null_zero_and_unknown_distinct(
@@ -984,7 +985,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
 
     def precise_curve(writer):
         payload = inspector_curve_payload("S1", "C1", "obs-01", apex_rt=apex_rt)
-        payload["integration"]["area_raw_counts_seconds"] = area
+        payload["integration"]["area_ms1_morphology"] = area
         writer.add_curve_payload("S1", "initial_capture", "obs-01", payload)
 
     report, _, _ = create_inspector_report(
@@ -1003,7 +1004,7 @@ def test_readable_numeric_formatting_keeps_scientific_payload_precision(tmp_path
     assert item["samples"][0]["quantitative_value"] == area
     assert curve["apex_rt"] == apex_rt
     assert curve["area"] == area
-    assert curve["integration"]["area_raw_counts_seconds"] == area
+    assert curve["integration"]["area_ms1_morphology"] == area
     assert curve["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
 
 

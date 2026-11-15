@@ -629,7 +629,7 @@ class CidNlSource:
             "bound_left_rt": integration.get("rt_left_min"),
             "bound_right_rt": integration.get("rt_right_min"),
             "apex_rt": integration.get("rt_apex_min", integration.get("apex_rt_min")),
-            "area": integration.get("area_raw_counts_seconds"),
+            "area": integration.get("area_ms1_morphology"),
             "integration": integration,
             "provenance": payload.get("provenance"),
         }

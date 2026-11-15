@@ -305,7 +305,7 @@ def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_v
     curves = {c["candidate_id"]: c for c in item["curves"]}
     assert curves["source-s1"]["area"] == 120.5
     assert curves["paired-istd"]["area"] == 999.0
-    assert curves["source-s1"]["integration"]["raw_apex_rt_min"] == 6.1
+    assert curves["source-s1"]["integration"]["apex_rt_min"] == 6.1
     assert curves["source-s1"]["processed_curves"][-1] == {
         "kind": "positive_signal",
         "rts": [4, 5, 6, 7],
@@ -321,7 +321,8 @@ def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_v
     )
     # Areas read in one format wherever they appear.
     assert 'data-readout="area">1.205e+2 <span>counts·s' in rendered["readout"]
-    assert 'data-readout="raw-apex">6.100' in rendered["readout"]
+    # The saved apex belongs to the value, not to the raw signal.
+    assert 'data-readout="raw-apex"' not in rendered["readout"]
     assert 'data-readout="quantity">1.725e+1' in rendered["readout"]
     expected = (
         'area-empty">空值'
@@ -360,8 +361,8 @@ def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_v
         ),
         lambda body: body["transitions"][0]["traces"][0].update(
             integration={
-                "area_raw_counts_seconds": True,
-                "raw_apex_rt_min": 6.1,
+                "area_counts_seconds": True,
+                "apex_rt_min": 6.1,
                 "integration_method": "raw_trapezoid",
             }
         ),
