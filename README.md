@@ -24,7 +24,7 @@ accepts. They differ in what you ask for and what you receive.
 
 | Your question | Prepare | Start reviewing here |
 | --- | --- | --- |
-| **Targeted:** What happened to my known targets in this batch? | RAW files and a target list (XLSX, CSV or TSV): names, m/z, expected RT, CID-NL / Delta Mass specificity, and optional ISTD pairs | One Excel workbook: `摘要` for the batch overview, then `需檢查` for results needing attention |
+| **Targeted:** What happened to my known targets in this batch? | RAW files and a target list (XLSX, CSV or TSV): names, m/z, expected RT, CID-NL / Delta Mass specificity, and optional ISTD pairs | One Excel workbook: `摘要` for the batch conclusion and the results needing attention, `面積` for saved areas |
 | **Untargeted:** Which features can I compare across samples? | RAW files and a CID-NL method (dR, R, MeR or custom neutral-loss tags); check sample information and any internal-standard list | `alignment_matrix.tsv` for feature × sample areas, then the workbench for evidence behind a feature or missing cell |
 
 The [Targeted guide](docs/user/targeted.md) and
@@ -84,9 +84,9 @@ workspace's cancellation control. Use **結束工作區** when finished.
 
 ## Read Your Results
 
-**Targeted:** Open `xic_results_YYYYMMDD_HHMM.xlsx`. Start at `摘要`, follow
-the indicated items into `需檢查` when present, and use `面積` for saved
-sample × target areas. Open the XLSX in the workbench to inspect a target and
+**Targeted:** Open `xic_results_YYYYMMDD_HHMM.xlsx`. Start at `摘要`: its first
+line says how many results to look at first, listed right below, and use `面積`
+for saved sample × target areas. Open the XLSX in the workbench to inspect a target and
 sample; request its XIC when needed. [Workbook reading guide](docs/user/targeted.md#看結果).
 
 **Untargeted:** Start at `alignment_matrix.tsv`. Rows are aligned features,
