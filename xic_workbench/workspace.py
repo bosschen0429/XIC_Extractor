@@ -85,6 +85,7 @@ class ReviewWorkspace:
         # Curve locations of the opened detail item, read once per selection.
         self._curves: ReviewCurves | None = None
         self._job: dict[str, Any] | None = None
+        self._replaced_job: dict[str, Any] | None = None
         self._detail: dict[str, Any] | None = None
         self._views: dict[str, Path] = {}
 
@@ -103,9 +104,19 @@ class ReviewWorkspace:
         if self._closing:
             raise WorkspaceBusy("工作區正在結束，請重新開啟。")
 
-    def _replace_job(self) -> None:
-        """A new review action replaces the curve job; a running read stops."""
+    def _replace_job(self, reason: str = "已停止曲線載入。") -> None:
+        """A new action replaces the curve job; a running read stops.
+
+        A poll already sent for the replaced job reads that it ended, rather
+        than an unknown job, so the page follows it to a normal finish.
+        """
         self._cancel.set()
+        if self._job is not None:
+            self._replaced_job = (
+                {**self._job, "status": "cancelled", "message": reason}
+                if self._job["status"] in {"running", "cancelling"}
+                else dict(self._job)
+            )
         self._job = None
 
     @property
@@ -132,7 +143,7 @@ class ReviewWorkspace:
         with self._lock:
             self._require_open()
             started = self.analysis.jobs.start(kind, values)
-            self._replace_job()
+            self._replace_job("已停止曲線載入，分析工作已開始。")
             return started
 
     def analysis_action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
@@ -660,14 +671,16 @@ class ReviewWorkspace:
 
     def job(self, job_id: str) -> dict[str, Any]:
         with self._lock:
-            if self._job is None or self._job["id"] != job_id:
-                raise ValueError("找不到這次曲線工作。")
-            return dict(self._job)
+            for job in (self._job, self._replaced_job):
+                if job is not None and job["id"] == job_id:
+                    return dict(job)
+            raise ValueError("找不到這次曲線工作。")
 
     def cancel(self, job_id: str) -> dict[str, Any]:
         with self._lock:
-            self.job(job_id)
-            assert self._job is not None
+            job = self.job(job_id)
+            if self._job is None or self._job["id"] != job_id:
+                return job
             if self._job["status"] == "running":
                 self._cancel.set()
                 self._job.update(status="cancelling", message="正在停止讀取…")

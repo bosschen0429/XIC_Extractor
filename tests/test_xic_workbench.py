@@ -932,10 +932,12 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         )
         status, current, _ = request(f"/api/jobs/{first['id']}")
         assert status == 200 and current["status"] == "running"
-        # A new request replaces the running read; the old one is gone.
+        # A new request replaces the running read; a poll still following the
+        # old one reads that it ended instead of an unknown job.
         status, second, _ = request("/api/curves", parameters)
         assert status == 202 and second["id"] != first["id"]
-        assert request(f"/api/jobs/{first['id']}")[0] == 400
+        status, replaced, _ = request(f"/api/jobs/{first['id']}")
+        assert status == 200 and replaced["status"] == "cancelled"
         # Searching during a read is answered and ends the read.
         assert request("/api/query", {})[0] == 200
         assert request("/api/review")[1]["job"] is None
@@ -948,6 +950,22 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         assert "view_id" not in wait_for(job["id"], "cancelled")
         assert request(report_url)[1] == original
         assert request(view_url)[1] == original_payload
+
+        # An accepted analysis ends a running read; its poll reads why.
+        entered.clear()
+        _, job, _ = request("/api/curves", parameters)
+        assert entered.wait(timeout=5)
+        monkeypatch.setattr(
+            workspace.analysis.jobs, "start", lambda kind, values: {"accepted": True}
+        )
+        assert (
+            request("/api/analysis/start", {"kind": "targeted", "values": {}})[0] == 202
+        )
+        status, ended, _ = request(f"/api/jobs/{job['id']}")
+        assert status == 200 and ended["status"] == "cancelled"
+        assert ended["message"] == "已停止曲線載入，分析工作已開始。"
+        assert request("/api/review")[1]["job"] is None
+        assert request(f"/api/jobs/{job['id']}/cancel", {})[1]["status"] == "cancelled"
 
         def failed_read(*args, **kwargs):
             raise FileNotFoundError("selected RAW is missing")
