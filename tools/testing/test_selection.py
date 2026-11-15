@@ -61,7 +61,7 @@ SOURCE_SCAN = re.compile(r"""\.r?glob\(\s*[rf]?["'][^"']*\.py["']""")
 # adding a browser test or moving its dependencies needs no path registration.
 RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
     "browser_e2e": re.compile(
-        r"^(xic_workbench/|xic_inspector/"
+        r"^(xic_workbench/|xic_inspector/|docs/user/"
         # Shared test-support modules (fixtures, fakes, browser diagnostics)
         # can feed browser journeys; any change to them runs the browser lane.
         r"|tests/(?!test_)[^/]+\.py$"
@@ -133,10 +133,10 @@ def plan_for_change(
             if tests is None:
                 break
             selected.update(tests)
-            if path.endswith(".py"):
+            if path.endswith(".py") or path.split("/", 1)[0] in repository.packages:
                 # Documentation indexes and ambiguous asset basenames widen the
-                # regression selection, not browser-runtime relevance. Python
-                # consumers follow imports and executable file references.
+                # regression selection, not browser-runtime relevance. Package
+                # consumers follow imports and executable resource references.
                 consumers = repository.dependent_tests(path, follow_data=False) or ()
                 if any("browser_e2e" in repository.test_markers[t] for t in consumers):
                     relevant.add("browser_e2e")

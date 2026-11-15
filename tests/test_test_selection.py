@@ -221,6 +221,8 @@ def test_relevant_marker_selects_every_test_carrying_it(selection_repo: Path) ->
         "tests/test_workbench_browser.py",
         "tests/test_xic_inspector_browser.py",
         "tests/test_browser_diagnostics.py",
+        "xic_extractor/presets/data/dna_dr.toml",
+        "docs/user/README.md",
     ],
 )
 def test_browser_plan_keeps_selected_browser_consumers(changed: str) -> None:
@@ -243,14 +245,18 @@ def test_browser_plan_keeps_selected_browser_consumers(changed: str) -> None:
         ("seltests/test_plot.py", True),
         ("selpkg/consumer.py", True),
         ("selpkg/core.py", True),
+        ("selpkg/data/preset.toml", True),
+        ("seltests/fixtures/case.json", True),
         ("seltests/test_unrelated.py", False),
     ],
 )
-def test_browser_lane_follows_imports_without_a_test_filename_registry(
+def test_browser_lane_follows_consumers_without_a_test_filename_registry(
     selection_repo: Path, changed: str, browser_required: bool
 ) -> None:
     (selection_repo / "seltests/test_plot.py").write_text(
         "import pytest\nfrom selpkg.consumer import VALUE\n"
+        "from selpkg.loader import PACKAGE\n"
+        "CASE = 'seltests/fixtures/case.json'\n"
         "pytestmark = [pytest.mark.browser_e2e]\n"
         "def test_plot(): assert VALUE\n",
         encoding="utf-8",
@@ -673,7 +679,10 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
         ("docs/product/backfill.md", set()),
         ("MANIFEST.in", {"packaging_build"}),
         ("docs/development/command-line.md", set()),
-        ("docs/user/assets/targeted-workspace.png", {"packaging_build"}),
+        (
+            "docs/user/assets/targeted-workspace.png",
+            {"packaging_build", "browser_e2e"},
+        ),
         ("docs/architecture-contract.md", set()),
         ("README.md", set()),
         ("pyproject.toml.example", set()),
