@@ -1,9 +1,7 @@
 // Shared sample roles, exclusions and optional acquisition-information import.
-import { analysis } from "./analysis_jobs.js";
-import { checklist } from "./analysis_setup.js";
 import { createRowSelection } from "./analysis_row_selection.js";
 import { createSampleMetadata } from "./analysis_sample_metadata.js";
-import { state } from "./analysis_state.js";
+import { analysis, state } from "./analysis_state.js";
 import {
   $,
   act,
@@ -153,7 +151,6 @@ export function renderRoleSummary(page) {
     ? roleSummary(page, set.rows)
     : "尚未讀取樣本";
   renderSequenceLine(page);
-  checklist(page);
 }
 
 // Listing reads every RAW header, so roles and order are known before a run.

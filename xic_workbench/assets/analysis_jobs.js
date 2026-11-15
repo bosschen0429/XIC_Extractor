@@ -3,6 +3,7 @@ import {
   artifactDetails,
   openReview,
   renderResults,
+  resultIds,
   showArtifact,
 } from "./analysis_results.js";
 import {
@@ -15,7 +16,13 @@ import {
   selectView,
   showingResult,
 } from "./analysis_setup.js";
-import { state, updateConfig } from "./analysis_state.js";
+import {
+  adoptAnalysis,
+  analysis,
+  state,
+  updateConfig,
+} from "./analysis_state.js";
+import { dirtyTargeted } from "./analysis_targeted.js";
 import {
   $,
   act,
@@ -27,8 +34,6 @@ import {
   status,
   ui,
 } from "./analysis_ui.js";
-
-export let analysis = null;
 
 const jobLabels = {
   running: "執行中",
@@ -45,11 +50,6 @@ const jobNames = {
   inspector: "Inspector 匯出",
 };
 const jobPage = { targeted: "targeted", curation: "untargeted" };
-export const resultIds = {
-  targeted: "target-result",
-  untargeted: "untargeted-result",
-  curation: "curation-result",
-};
 export const pageOf = (job) => job?.page || jobPage[job?.kind] || "untargeted";
 function prepareStart(kind, values) {
   if (isBusy()) throw new Error("請等待目前工作完成或先停止。");
@@ -67,7 +67,7 @@ async function acceptedStart(kind, values, job, acceptSampleRead) {
   if (acceptSampleRead) acceptSampleRead(job);
   if (kind === "targeted") {
     updateConfig({ settings: { ...values.settings } });
-    dirty("targeted", false);
+    dirtyTargeted(false);
   }
   // Reading samples reports once, when it finishes.
   if (kind !== "samples") status("分析已開始；關閉分頁不會中斷。");
@@ -212,7 +212,8 @@ function completeJob(snapshot, job) {
       const artifact = snapshot.results.inspector.artifacts?.[0];
       if (artifact) showArtifact(artifact);
     } else {
-      dirty(job.kind, false);
+      if (job.kind === "targeted") dirtyTargeted(false);
+      else dirty(job.kind, false);
       done(`${jobNames[job.kind]}完成。`);
       const result = snapshot.results[job.kind];
       const source =
@@ -245,14 +246,18 @@ function confirmCancel(job) {
 }
 
 export function bindJobs(initial) {
-  analysis = createAnalysisSession(initial, {
+  adoptAnalysis(createAnalysisSession(initial, {
     request: api,
     prepareStart,
     acceptedStart,
     confirmCancel,
-  });
+  }));
   sampleMetadata.restore(analysis.snapshot);
   $("analysis-stop").onclick = () => act(() => analysis.cancel());
+  // A page switch, or opening the panel that can reveal the result card
+  // replacing a finished job, re-places the job card.
+  document.addEventListener("xic:page-layout", renderJob);
+  $("result-curation").addEventListener("toggle", renderJob);
   let wasBusy = false;
   // Bootstrap attaches observation once the initial views are ready. Merely
   // restoring a job must not race the initial Review/ISTD restoration.

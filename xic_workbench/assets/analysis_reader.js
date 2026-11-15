@@ -7,6 +7,7 @@ import {
   updateTargetedSettings,
   updateUntargetedSettings,
 } from "./analysis_state.js";
+import { dirtyTargeted } from "./analysis_targeted.js";
 import { $, api, done, el, status } from "./analysis_ui.js";
 
 let readerValidation = 0;
@@ -70,7 +71,7 @@ export function bindReader() {
     if (!["t-dll_dir", "u-dll_dir", "dll-dir"].includes(event.target.id))
       return;
     setDllDir(event.target.value);
-    dirty("targeted");
+    dirtyTargeted();
     dirty("untargeted");
     const version = readerValidation;
     const dllDir = event.target.value.trim();

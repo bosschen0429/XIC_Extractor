@@ -29,6 +29,7 @@ from xic_workbench.session import WorkbenchSession
 _ASSETS = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/assets/workspace.js": ("workspace.js", "text/javascript; charset=utf-8"),
+    "/assets/workspace_ui.js": ("workspace_ui.js", "text/javascript; charset=utf-8"),
     "/assets/workspace.css": ("workspace.css", "text/css; charset=utf-8"),
     "/assets/analysis.html": ("analysis.html", "text/html; charset=utf-8"),
     "/assets/analysis.js": ("analysis.js", "text/javascript; charset=utf-8"),

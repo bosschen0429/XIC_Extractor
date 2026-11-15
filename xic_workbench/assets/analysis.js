@@ -1,25 +1,27 @@
 "use strict";
-import { bindCuration, curation } from "./analysis_curation.js";
-import { analysis, bindJobs, renderJob } from "./analysis_jobs.js";
+import { bindCuration, curation, prepareResult } from "./analysis_curation.js";
+import { bindJobs, renderJob } from "./analysis_jobs.js";
 import { bindReader, renderReaderSetup } from "./analysis_reader.js";
 import { bindResults, renderResults } from "./analysis_results.js";
 import {
   bindSamples,
+  listSamples,
   mountSampleSteps,
   renderRoleSummary,
+  renderSampleActions,
   sampleMetadata,
 } from "./analysis_samples.js";
 import {
   bindSetup,
   checklist,
-  prepareResult,
   registerNavigation,
   reloadedOnResult,
   selectView,
-  showMode,
   showingResult,
+  showMode,
 } from "./analysis_setup.js";
 import {
+  analysis,
   initializeConfig,
   markBooted,
   markClosed,
@@ -37,6 +39,7 @@ import {
   $,
   act,
   api,
+  connectPage,
   el,
   isBusy,
   pathField,
@@ -50,14 +53,19 @@ import {
   reloadIstd,
   saveUntargeted,
 } from "./analysis_untargeted.js";
+import { ready, session } from "./workspace.js";
 
-registerNavigation();
-window.XicAnalysis = {
-  excludeSamples: sampleMetadata.exclude,
-  get busy() {
-    return analysis?.snapshot.busy || false;
+connectPage({
+  busy: () => Boolean(analysis?.snapshot.busy) || sampleMetadata.saving,
+  lock() {
+    if ($("curation-export"))
+      $("curation-export").disabled = isBusy() || !curation?.snapshot.canExport;
+    renderSampleActions();
   },
-};
+  pathChanged: checklist,
+  sourceChanged: listSamples,
+});
+registerNavigation();
 
 function applyThemeButton() {
   const dark = document.documentElement.dataset.theme === "dark";
@@ -101,7 +109,7 @@ try {
   $("analysis-root").innerHTML = await response.text();
   $("analysis-result").append($("result-curation"));
   mountSampleSteps();
-  await window.XicReview.session;
+  await session;
   stopWindowTracking = ui.trackWindow();
   initializeConfig(await api("/api/config"));
   loadDeltaMass(state.config.delta_mass);
@@ -167,7 +175,7 @@ try {
     false,
   );
   renderJob();
-  const initialReview = await window.XicReview.ready;
+  const initialReview = await ready;
   if (initialReview?.page) {
     prepareResult(initialReview.page);
     if (reloadedOnResult || initialReview.opened) showMode("result");

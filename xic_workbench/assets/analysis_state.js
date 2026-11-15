@@ -1,5 +1,11 @@
 // Application settings. Analysis Session and sampleMetadata own jobs and samples;
 // DOM controls and uncommitted editor drafts stay with views.
+// The page's Analysis Session, held here so every view reads it without
+// importing the jobs view that composes it.
+export let analysis = null;
+export function adoptAnalysis(session) {
+  analysis = session;
+}
 export const state = {
   config: null,
   targets: [],

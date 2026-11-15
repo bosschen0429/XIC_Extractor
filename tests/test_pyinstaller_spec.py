@@ -52,7 +52,7 @@ for asset in ("inspector.html", "inspector.js", "inspector.css"):
     if not files("xic_inspector.rendering").joinpath("assets", asset).read_bytes():
         raise RuntimeError(f"installed Inspector asset is empty: {asset}")
 for asset in (
-    "index.html", "workspace.js", "workspace.css",
+    "index.html", "workspace.js", "workspace_ui.js", "workspace.css",
     "analysis.html", "analysis.js", "analysis.css",
     "analysis_state.js", "analysis_session.js", "analysis_sample_metadata.js",
     "analysis_curation_session.js",
@@ -470,6 +470,7 @@ def test_pyinstaller_collects_workbench_frontend() -> None:
         ("index.html", "xic_workbench/assets"),
         ("workspace.css", "xic_workbench/assets"),
         ("workspace.js", "xic_workbench/assets"),
+        ("workspace_ui.js", "xic_workbench/assets"),
     }
 
 
