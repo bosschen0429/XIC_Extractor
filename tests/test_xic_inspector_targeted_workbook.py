@@ -378,11 +378,16 @@ def test_targeted_curve_failure_does_not_publish_or_modify_results(
             if failure == "cancelled":
                 try:
                     assert entered.wait(10)
-                    request(f"/api/jobs/{job['id']}/cancel", {})
+                    status, job, _ = request(f"/api/jobs/{job['id']}/cancel", {})
+                    assert status == 200
+                    assert job["status"] == "cancelling"
                 finally:
                     release.set()
             deadline = time.monotonic() + 10
-            while job["status"] == "running" and time.monotonic() < deadline:
+            while (
+                job["status"] in {"running", "cancelling"}
+                and time.monotonic() < deadline
+            ):
                 time.sleep(0.02)
                 _, job, _ = request(f"/api/jobs/{job['id']}")
             assert job["status"] == (

@@ -56,15 +56,12 @@ ALL_TESTS = "ALL"
 # so can every test that runs such code.
 SOURCE_SCAN = re.compile(r"""\.r?glob\(\s*[rf]?["'][^"']*\.py["']""")
 
-# Markers whose tests are expensive and guard a known set of inputs. A change
-# that touches none of a marker's paths skips that marker's tests; a change that
-# touches one selects every test carrying the marker. CI
-# (.github/workflows/ci.yml) and local runs both read this table.
+# Path-level relevance for inputs not represented by Python imports alone.
+# Browser relevance also follows the selected tests' actual pytest markers;
+# adding a browser test or moving its dependencies needs no path registration.
 RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
     "browser_e2e": re.compile(
-        r"^(xic_workbench/|xic_inspector/"
-        r"|tests/(test_browser_diagnostics|test_workbench_browser"
-        r"|test_xic_inspector_browser)\.py$"
+        r"^(xic_workbench/|xic_inspector/|docs/user/"
         # Shared test-support modules (fixtures, fakes, browser diagnostics)
         # can feed browser journeys; any change to them runs the browser lane.
         r"|tests/(?!test_)[^/]+\.py$"
@@ -116,29 +113,48 @@ def discover_test_files(root: Path = Path("tests")) -> tuple[Path, ...]:
     )
 
 
-def select_test_files(
+def plan_for_change(
     changed: Sequence[str],
     *,
+    base_expression: str,
     root: Path = Path("."),
     packages: Sequence[str] = FIRST_PARTY_PACKAGES,
     test_package: str = "tests",
-) -> tuple[str, ...] | None:
-    """Return the test files ``changed`` can affect, or None to run them all."""
+) -> SelectionPlan:
+    """Derive files and lane relevance together so markers cannot hide consumers."""
 
-    if any(FULL_RUN_INPUTS.match(path) for path in changed):
-        return None
-    repository = _Repository(root, packages, test_package)
-    selected: set[str] = set()
-    for path in changed:
-        tests = repository.dependent_tests(path)
-        if tests is None:
-            return None
-        selected.update(tests)
-    for marker in relevant_markers(changed):
-        selected.update(
-            t for t, source in repository.test_sources.items() if marker in source
-        )
-    return tuple(sorted(selected))
+    relevant = set(relevant_markers(changed))
+    files: tuple[str, ...] | None = None
+    if not any(FULL_RUN_INPUTS.match(path) for path in changed):
+        repository = _Repository(root, packages, test_package)
+        selected: set[str] = set()
+        for path in changed:
+            tests = repository.dependent_tests(path)
+            if tests is None:
+                break
+            selected.update(tests)
+            if path.endswith(".py") or path.split("/", 1)[0] in repository.packages:
+                # Documentation indexes and ambiguous asset basenames widen the
+                # regression selection, not browser-runtime relevance. Package
+                # consumers follow imports and executable resource references.
+                consumers = repository.dependent_tests(path, follow_data=False) or ()
+                if any("browser_e2e" in repository.test_markers[t] for t in consumers):
+                    relevant.add("browser_e2e")
+        else:
+            selected.update(
+                t
+                for t, markers in repository.test_markers.items()
+                if relevant & markers
+            )
+            files = tuple(sorted(selected))
+    if files is None:
+        # An unplaceable change cannot establish that browser consumers are safe.
+        relevant.add("browser_e2e")
+    exclusions = [f"not {m}" for m in RELEVANCE_RULES if m not in relevant]
+    return SelectionPlan(
+        files=files,
+        marker_expression=" and ".join(filter(None, [base_expression, *exclusions])),
+    )
 
 
 class _Repository:
@@ -150,6 +166,9 @@ class _Repository:
         self.test_sources = {
             path.relative_to(root).as_posix(): _read(path)
             for path in discover_test_files(root / test_package)
+        }
+        self.test_markers = {
+            path: _pytest_markers(source) for path, source in self.test_sources.items()
         }
         self.graph = grimp.build_graph(*packages, cache_dir=None)
         self.test_modules = {_module_name(path): path for path in self.test_sources}
@@ -260,6 +279,19 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def _pytest_markers(source: str) -> set[str]:
+    """Read pytest.mark references, not marker names in comments or fixture strings."""
+    return {
+        node.attr
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "mark"
+        and isinstance(node.value.value, ast.Name)
+        and node.value.value.id == "pytest"
+    }
+
+
 def _dependency_source(path: Path) -> str:
     """Keep executable source spellings, not paths mentioned only in prose."""
     source = _read(path)
@@ -329,20 +361,6 @@ def relevant_markers(changed_paths: Sequence[str]) -> tuple[str, ...]:
         marker
         for marker, pattern in RELEVANCE_RULES.items()
         if any(pattern.match(path) for path in changed_paths)
-    )
-
-
-def irrelevant_markers(changed_paths: Sequence[str]) -> tuple[str, ...]:
-    """Return the relevance-gated markers that no changed path touches."""
-    relevant = relevant_markers(changed_paths)
-    return tuple(marker for marker in RELEVANCE_RULES if marker not in relevant)
-
-
-def plan_for_change(changed: Sequence[str], *, base_expression: str) -> SelectionPlan:
-    exclusions = [f"not {marker}" for marker in irrelevant_markers(changed)]
-    return SelectionPlan(
-        files=select_test_files(changed),
-        marker_expression=" and ".join(filter(None, [base_expression, *exclusions])),
     )
 
 

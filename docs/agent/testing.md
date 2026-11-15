@@ -141,7 +141,10 @@ After bootstrap, install the locked Chromium once and run the Workbench checks:
     .venv\Scripts\python.exe -m pytest tests/test_workbench_browser.py -q
 
 CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
-explicit local opt-in. The browser lane runs on dedicated GitHub-hosted Windows
+explicit local opt-in. The Windows test launcher mitigates the
+[randomized TCP port defect](diagnostic-ledger.md#windows-randomized-tcp-ports-can-fail-at-low-connection-counts)
+while retaining Playwright's stock feature settings; product browsers are unchanged.
+The browser lane runs on dedicated GitHub-hosted Windows
 VMs, independently of the scientific and packaging tests. Relevance selects the
 lane on PRs and on master pushes, each judged by its own changed range, so a
 merge whose PR skipped the lane does not run it again on master. A selected lane
