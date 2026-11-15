@@ -1128,7 +1128,7 @@
       const style=presentation.curveStyle?.(curve)||{},stroke=style.stroke??curveColor(item,curve.sample_id);
       svg+=`<polyline data-kind="${esc(s.kind)}" data-sample-id="${esc(curve.sample_id)}" data-position-label="${esc(curve.position_label||'')}" data-curve-overlay="${!!overlay}" data-curve-origin="${esc(curveAcquisitionLabel(curve))}" data-curve-ref="${esc(curve.evidence_ref||'')}" data-support-origin="${originClass(origin)}" clip-path="url(#${clipId})" fill="none" stroke="${stroke}" stroke-width="${style.width??(emptySample(item,curve.sample_id)?1:overlay?1.2:s.kind==='raw'?1.7:2.2)}" stroke-dasharray="${overlay?'3 3':style.dash??dash(curve,origin)}" opacity="${opacity}" points="${points}">${title}</polyline>`;
       if(presentation.pointLimit>0 && s.rts.filter(v=>v>=lo&&v<=hi).length<=presentation.pointLimit){
-        s.rts.forEach((v,i)=>{if(v>=lo&&v<=hi)svg+=`<circle cx="${x(v)}" cy="${y(s.intensities[i])}" r="4" fill="${stroke}" stroke="var(--card)" stroke-width="2"/>`;});
+        s.rts.forEach((v,i)=>{if(v>=lo&&v<=hi)svg+=`<circle cx="${x(v)}" cy="${y(s.intensities[i])}" r="4" fill="${stroke}" stroke="var(--surface)" stroke-width="2"/>`;});
       }
       const valueApex=mode==='curves'&&!overlay?curveTime(curve,axis,'apex_rt'):null;
       if(finite(valueApex)&&valueApex>=lo&&valueApex<=hi&&axis!=='centered')svg+=`<line data-marker="value-apex" data-sample-id="${esc(curve.sample_id)}" x1="${x(valueApex)}" x2="${x(valueApex)}" y1="${T}" y2="${T+IH}" stroke="${stroke}" stroke-dasharray="2 3" opacity="${opacity}"><title>${esc(sampleName(curve.sample_id))} 計入峰頂 ${timeValue(valueApex,axis)}</title></line>`;

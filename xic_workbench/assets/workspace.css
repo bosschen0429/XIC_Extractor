@@ -4,29 +4,10 @@
   --font:
     Aptos, "Segoe UI Variable Text", "Segoe UI", "Microsoft JhengHei UI",
     system-ui, sans-serif;
-  --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
-  --bg: #f3f5f4;
-  --surface: #ffffff;
-  --surface-2: #f7f9f8;
-  --ink: #131c1a;
-  --muted: #4d5955;
-  --subtle: #6b7672;
-  --border: #d8dedb;
-  --line: #e8ecea;
   --field: #ffffff;
   --field-border: #ccd4d0;
-  --accent: #155e75;
-  --accent-hover: #0f4a5c;
-  --accent-soft: #e7f1f4;
   --accent-line: #b8d4dd;
   --on-accent: #ffffff;
-  --ok: #1f6b41;
-  --ok-soft: #e5f3ea;
-  --warn: #83470f;
-  --warn-soft: #fcf1e1;
-  --warn-line: #e2c08e;
-  --danger: #a4323c;
-  --danger-soft: #fbe9eb;
   --shadow-sm: 0 1px 2px rgb(16 28 26 / 5%);
   --shadow-md: 0 6px 20px rgb(16 28 26 / 8%);
   --shadow-lg: 0 24px 64px rgb(16 28 26 / 22%);
@@ -41,28 +22,10 @@
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #16181d;
-  --surface: #1e2127;
-  --surface-2: #242830;
-  --ink: #e5e8ee;
-  --muted: #b0b7c3;
-  --subtle: #939dab;
-  --border: #3b414c;
-  --line: #2f343d;
   --field: #181b20;
   --field-border: #454c59;
-  --accent: #a3c2ef;
-  --accent-hover: #c8dcfa;
-  --accent-soft: #263244;
   --accent-line: #3d5373;
   --on-accent: #0f1c2e;
-  --ok: #9acdb0;
-  --ok-soft: #22362b;
-  --warn: #dfbd88;
-  --warn-soft: #393123;
-  --warn-line: #7c6847;
-  --danger: #eda8ae;
-  --danger-soft: #3c282f;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
   --shadow-md: 0 8px 24px rgb(0 0 0 / 35%);
   --shadow-lg: 0 24px 70px rgb(0 0 0 / 55%);
