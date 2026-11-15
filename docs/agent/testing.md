@@ -144,20 +144,26 @@ CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
 explicit local opt-in. The Windows test launcher mitigates the
 [randomized TCP port defect](diagnostic-ledger.md#windows-randomized-tcp-ports-can-fail-at-low-connection-counts)
 while retaining Playwright's stock feature settings; product browsers are unchanged.
-The browser lane runs on dedicated GitHub-hosted Windows
-VMs, independently of the scientific and packaging tests. Relevance selects the
-lane on PRs and on master pushes, each judged by its own changed range, so a
-merge whose PR skipped the lane does not run it again on master. A selected lane
-runs every browser test exactly once across three independent Windows VMs, with
-one process per VM. The `tools.testing.test_sharding` pytest plugin splits the
+CI computes one coverage plan at the end of the existing Linux lint job, using
+its installed dependencies rather than allocating another runner. Test jobs
+wait for lint and planning to succeed. PR lanes share the affected-file selection;
+master still runs every ordinary test.
+Browser relevance follows each event's own changed range. An irrelevant browser
+job is skipped before allocating Windows VMs, not reported as a passing test run.
+A selected lane runs every browser test exactly once across three independent
+GitHub-hosted Windows VMs, with one process per VM. The plan supplies file
+candidates derived from marker references; pytest still decides actual case
+membership. No browser filename registry is maintained.
+The `tools.testing.test_sharding` pytest plugin splits the
 sorted node IDs left after marker selection; adding a case needs no registry.
 Each case keeps its own browser context, loopback server, config and evidence
 directory. Every shard must succeed, and one failure does not cancel the others.
 CI installs only the locked Chromium headless
 shell already used by the launch fixture, not an unused headed browser.
 The required `test (Python 3.12)`
-check succeeds only when the Linux Python, Windows integration and browser jobs
-succeed. Failures, cancellations, and skipped jobs fail that check. Browser
+check requires successful lint/planning, Linux Python and Windows integration. Browser
+must succeed or be explicitly declared unnecessary by that successful plan.
+Failures, cancellations and any other skipped job fail that check. Browser
 deadlines are hang watchdogs: CI sets
 `XIC_BROWSER_DEADLINE_SCALE=3` to widen every one of them for runner stalls,
 while local runs keep Playwright's defaults. Browser failures retain

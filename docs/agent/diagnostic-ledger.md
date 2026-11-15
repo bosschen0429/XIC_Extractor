@@ -60,6 +60,33 @@ stack or locked Chromium/Playwright update, or another `ERR_NO_BUFFER_SPACE`;
 use a native socket error and contemporaneous resource counts rather than
 assuming that the error name proves resource exhaustion.
 
+### Browser collection excludes unrelated test files
+
+`diagnostic_only`, `exact_safe` (2026-11-15). Replayed the full-collection policy
+and narrowed file candidates on the same checkout based on `e447a28e`, Python
+3.15.2, locked dependencies and `OPENBLAS_NUM_THREADS=1`. After one warm-up pair,
+three interleaved pairs gave process-start-through-collection-exit medians of
+3.891 seconds (range 3.890–3.932) and 1.520 seconds (1.513–1.528). This is about
+61% less local collection time, not an end-to-end CI speedup.
+
+The full policy collected 4,763 cases before marker filtering; the six candidate
+files collected 330. Both retained exactly the same 169 browser node IDs. The
+three narrowed shards covered them once, without overlap, at 57/56/56 cases.
+Pytest, not the file-candidate scan, remains the membership oracle.
+
+The existing lint job produces the shared plan once, rather than each test VM
+planning separately. No extra runner is allocated. Irrelevant browser jobs are
+gated before allocating their three Windows VMs. Test startup now waits for lint
+to succeed (about 35 seconds in the retained hosted baseline), trading some
+feedback latency for lower resource use; hosted elapsed-time and billing savings
+have not been measured. The successful-plan-only skip and failure propagation
+were exercised through the workflow's PowerShell steps.
+
+Evidence is under `output/browser-ci-scheduling/collection-comparison.json`,
+the adjacent collection logs. Recheck parity and cost when
+marker discovery, collection, sharding or CI scheduling changes. Keep local
+collection timings separate from runner startup, browser execution and billing.
+
 ## Stored Review Evidence
 
 ### Lossless storage and indexed curve reads

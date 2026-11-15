@@ -17,16 +17,17 @@ from __future__ import annotations
 import argparse
 import ast
 import io
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tokenize
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Sequence, cast
+from typing import Literal, Sequence, cast
 
 import grimp
 
@@ -98,6 +99,14 @@ class SelectionPlan:
 
     files: tuple[str, ...] | None
     marker_expression: str
+
+
+@dataclass(frozen=True)
+class CIPlan:
+    """Shared ordinary-test coverage and an optional complete browser lane."""
+
+    tests: SelectionPlan
+    browser: SelectionPlan | None
 
 
 def discover_test_files(root: Path = Path("tests")) -> tuple[Path, ...]:
@@ -392,11 +401,30 @@ def _local_change_base() -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def ci_plan(base: str, head: str) -> SelectionPlan | None:
-    paths = changed_paths(base, head)
-    if paths is None:
-        return None
-    return plan_for_change(paths, base_expression=CI_BASE_MARKER_EXPRESSION)
+def ci_plan(
+    base: str, head: str, *, event: Literal["pull_request", "push"] = "pull_request"
+) -> CIPlan | None:
+    if set(base) == {"0"}:
+        changed = SelectionPlan(files=None, marker_expression=CI_BASE_MARKER_EXPRESSION)
+    else:
+        paths = changed_paths(base, head)
+        if paths is None:
+            return None
+        changed = plan_for_change(paths, base_expression=CI_BASE_MARKER_EXPRESSION)
+    browser = (
+        None
+        if "not browser_e2e" in changed.marker_expression
+        else SelectionPlan(
+            files=_files_naming_marker("browser_e2e"),
+            marker_expression=changed.marker_expression,
+        )
+    )
+    return CIPlan(
+        tests=changed
+        if event == "pull_request"
+        else SelectionPlan(files=None, marker_expression=CI_BASE_MARKER_EXPRESSION),
+        browser=browser,
+    )
 
 
 # Packaging builds verify installed and frozen artifacts. CI runs them for every
@@ -499,7 +527,7 @@ def _run_parallel_then_serial(
             env=environment,
         )
     ]
-    serial_files = _files_naming_serial_marker(files)
+    serial_files = _files_naming_marker(SERIAL_MARKER, files)
     if serial_files:
         print(f"Serial session ({SERIAL_MARKER})", flush=True)
         exit_codes.append(
@@ -537,17 +565,17 @@ def _and_markers(*expressions: str) -> str:
     return " and ".join(f"({expression})" for expression in present)
 
 
-def _files_naming_serial_marker(files: tuple[str, ...] | None) -> tuple[str, ...]:
-    """Test files that can hold serial tests: a marked file names the marker."""
+def _files_naming_marker(
+    marker: str, files: tuple[str, ...] | None = None
+) -> tuple[str, ...]:
+    """Conservative file candidates; pytest still decides actual marker membership."""
     candidates = (
         files
         if files is not None
         else tuple(path.as_posix() for path in discover_test_files())
     )
     return tuple(
-        path
-        for path in candidates
-        if SERIAL_MARKER in Path(path).read_text(encoding="utf-8")
+        path for path in candidates if marker in Path(path).read_text(encoding="utf-8")
     )
 
 
@@ -693,9 +721,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--ci-plan",
         action="store_true",
         help=(
-            "Print the CI marker expression, then the affected test files "
-            f"(or {ALL_TESTS}), for --base..--head and exit"
+            "Print one JSON coverage plan for ordinary tests and browser tests "
+            "for --base..--head and exit"
         ),
+    )
+    parser.add_argument(
+        "--ci-event",
+        choices=("pull_request", "push"),
+        default="pull_request",
+        help="Pushes run all ordinary tests; browser relevance still follows the range",
     )
     parser.add_argument("--base", help="Base revision for --ci-plan")
     parser.add_argument("--head", help="Head revision for --ci-plan")
@@ -704,11 +738,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.ci_plan:
         if not (args.base and args.head):
             parser.error("--ci-plan requires --base and --head")
-        plan = ci_plan(args.base, args.head)
-        if plan is None:
+        coverage = ci_plan(args.base, args.head, event=args.ci_event)
+        if coverage is None:
             print("git diff failed", file=sys.stderr)
             return 2
-        return _print_plan(plan)
+        print(json.dumps(asdict(coverage), separators=(",", ":")))
+        return 0
     plan = _local_plan(run_all=args.all, all_markers=args.all_markers)
     if args.print:
         return _print_plan(plan, pytest_args)
