@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from xic_extractor.acquisition_contract import (
     BatchXICAdapter,
-    RawAcquisitionSessionReceipt,
 )
 from xic_extractor.discovery.ms1_capture import _DiscoveryMs1Measurements
 from xic_extractor.execution.timing import TimingRecorder
-from xic_extractor.processing_identity import AcquisitionSourceIdentity
 
 DISCOVERY_MS1_MEASUREMENT_NAMES = frozenset(
     {
@@ -203,29 +201,24 @@ def _record_rss_unavailable(
         )
 
 
-def record_raw_open_metrics(
+def record_unavailable_raw_open(
     timing_recorder: TimingRecorder,
-    acquisition_source: AcquisitionSourceIdentity | None,
-    raw_open_receipt: RawAcquisitionSessionReceipt | None,
     sample_stem: str,
 ) -> None:
-    """Count the one RAW session a sample opens, or say why it is unknown."""
-    raw_open_count: int | None = None
-    if acquisition_source is None:
-        reason = "RAW opener has no bound acquisition source"
-    elif raw_open_receipt is None:
-        reason = "process result carries no owner RAW-open receipt"
-    else:
-        raw_open_count = 1
-        reason = ""
+    """Leave an explicit unknown when acquisition supplied no open observation."""
+    if any(
+        row["metric"] == "raw_open_count" and row["scope"] == sample_stem
+        for row in timing_recorder.measurement_observations
+    ):
+        return
     timing_recorder.observe(
         "raw_open_count",
-        value=raw_open_count,
+        value=None,
         scope=sample_stem,
         unit="opens",
-        source="xic_extractor.discovery.runtime_measurements.record_raw_open_metrics",
-        availability="measured" if raw_open_count is not None else "unavailable",
-        reason=reason,
+        source="xic_extractor.discovery.runtime_measurements.record_unavailable_raw_open",
+        availability="unavailable",
+        reason="RAW opener supplied no successful-open observation",
     )
 
 
@@ -242,7 +235,6 @@ def portable_worker_observations(
 def _is_reserved_process_measurement(observation: dict[str, object]) -> bool:
     metric = observation.get("metric")
     reserved = {
-        "raw_open_count",
         "logical_xic_request_count",
         "xic_batch_count",
         "adapter_chromatogram_call_count",

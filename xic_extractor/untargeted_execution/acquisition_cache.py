@@ -18,6 +18,7 @@ from typing import Any, Literal, cast
 import numpy as np
 
 from xic_extractor.acquisition_contract import (
+    NATIVE_SCAN_COORDINATE_KIND,
     AcquiredTrace,
     TraceAcquisitionBatch,
     TraceAcquisitionCapability,
@@ -87,10 +88,6 @@ class CachedUntargetedRaw:
     @property
     def acquisition_source(self) -> AcquisitionSourceIdentity:
         return self._source
-
-    @property
-    def raw_open_receipt(self) -> object:
-        return None if self._handle is None else self._handle.raw_open_receipt
 
     @property
     def raw_chromatogram_call_count(self) -> int:
@@ -185,8 +182,6 @@ class CachedUntargetedRaw:
                 if (
                     acquired.coordinate.capability != capability
                     or acquired.coordinate.request != request
-                    or acquired.coordinate.coordinate_kind
-                    is not capability.coordinate_kind
                 ):
                     raise UntargetedAcquisitionCacheError(
                         "cached XIC trace conflicts with its exact request key"
@@ -393,7 +388,7 @@ def _trace_key(capability: TraceAcquisitionCapability, request: XICRequest) -> b
     return _key_bytes(
         "xic",
         capability.adapter_namespace,
-        capability.coordinate_kind.value,
+        NATIVE_SCAN_COORDINATE_KIND,
         _float_text(request.mz),
         _float_text(request.rt_min),
         _float_text(request.rt_max),

@@ -1,11 +1,10 @@
-"""Capability-aware no-I/O contract over the existing XIC request/trace seam."""
+"""Source-bound native scan acquisition and its persisted trace codec."""
 
 from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
-from enum import Enum
 from typing import Protocol
 
 import numpy as np
@@ -20,34 +19,16 @@ from xic_extractor.validation_primitives import (
     require_keys,
     require_list,
     require_mapping,
-    require_optional_integer,
     require_owner_normalized_text,
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
+NATIVE_SCAN_COORDINATE_KIND = "native_scan"
+"""Persisted coordinate kind of every acquired trace; native scans are the only one."""
+
 
 class AcquisitionContractError(ValueError):
     """Raised when an adapter cannot truthfully satisfy its declared capability."""
-
-
-@dataclass(frozen=True, slots=True)
-class RawAcquisitionSessionReceipt:
-    """A successful vendor open, carried by its existing job/sample result."""
-
-    acquisition_source: AcquisitionSourceIdentity
-
-
-def _mint_raw_acquisition_session_receipt(
-    acquisition_source: AcquisitionSourceIdentity,
-) -> RawAcquisitionSessionReceipt:
-    """RAW-reader seam, called only after the vendor handle has opened."""
-    return RawAcquisitionSessionReceipt(acquisition_source=acquisition_source)
-
-
-class TraceCoordinateKind(str, Enum):
-    NATIVE_SCAN = "native_scan"
-    CONVERSION_SCAN = "conversion_scan"
-    RT_ONLY = "rt_only"
 
 
 class BatchXICAdapter(Protocol):
@@ -65,7 +46,6 @@ class BatchXICAdapter(Protocol):
 class TraceAcquisitionCapability:
     acquisition_source: AcquisitionSourceIdentity
     adapter_namespace: str
-    coordinate_kind: TraceCoordinateKind
 
     def __post_init__(self) -> None:
         if not isinstance(self.acquisition_source, AcquisitionSourceIdentity):
@@ -73,18 +53,14 @@ class TraceAcquisitionCapability:
                 "acquisition_source must be an owner-minted identity"
             )
         _required_text(self.adapter_namespace, "adapter_namespace")
-        if not isinstance(self.coordinate_kind, TraceCoordinateKind):
-            raise AcquisitionContractError(
-                "coordinate_kind must be a TraceCoordinateKind"
-            )
 
 
 @dataclass(frozen=True, slots=True)
 class TraceCoordinate:
     capability: TraceAcquisitionCapability
     request: XICRequest
-    first_scan: int | None
-    last_scan: int | None
+    first_scan: int
+    last_scan: int
     trace_point_count: int
 
     def __post_init__(self) -> None:
@@ -94,10 +70,6 @@ class TraceCoordinate:
             )
         if not isinstance(self.request, XICRequest):
             raise AcquisitionContractError("request must be an XICRequest")
-        if not isinstance(self.coordinate_kind, TraceCoordinateKind):
-            raise AcquisitionContractError(
-                "coordinate_kind must be a TraceCoordinateKind"
-            )
         if (
             isinstance(self.trace_point_count, bool)
             or not isinstance(self.trace_point_count, int)
@@ -106,25 +78,17 @@ class TraceCoordinate:
             raise AcquisitionContractError(
                 "trace_point_count must be a non-negative integer"
             )
-        if self.coordinate_kind is TraceCoordinateKind.RT_ONLY:
-            if self.first_scan is not None or self.last_scan is not None:
-                raise AcquisitionContractError("rt_only coordinates cannot claim scans")
-        else:
-            if (
-                isinstance(self.first_scan, bool)
-                or not isinstance(self.first_scan, int)
-                or isinstance(self.last_scan, bool)
-                or not isinstance(self.last_scan, int)
-                or self.first_scan < 0
-                or self.last_scan < self.first_scan
-            ):
-                raise AcquisitionContractError(
-                    "scan coordinates require an ordered non-negative window"
-                )
-
-    @property
-    def coordinate_kind(self) -> TraceCoordinateKind:
-        return self.capability.coordinate_kind
+        if (
+            isinstance(self.first_scan, bool)
+            or not isinstance(self.first_scan, int)
+            or isinstance(self.last_scan, bool)
+            or not isinstance(self.last_scan, int)
+            or self.first_scan < 0
+            or self.last_scan < self.first_scan
+        ):
+            raise AcquisitionContractError(
+                "scan coordinates require an ordered non-negative window"
+            )
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -252,8 +216,8 @@ def deserialize_acquired_trace(
     coordinate = TraceCoordinate(
         capability=capability,
         request=request,
-        first_scan=_optional_integer(coordinate_value["first_scan"], "first_scan"),
-        last_scan=_optional_integer(coordinate_value["last_scan"], "last_scan"),
+        first_scan=_nonnegative_integer(coordinate_value["first_scan"], "first_scan"),
+        last_scan=_nonnegative_integer(coordinate_value["last_scan"], "last_scan"),
         trace_point_count=_nonnegative_integer(
             coordinate_value["trace_point_count"], "trace_point_count"
         ),
@@ -360,19 +324,15 @@ def mint_trace_acquisition_capability(
     acquisition_source: AcquisitionSourceIdentity,
     *,
     adapter_namespace: str,
-    coordinate_kind: TraceCoordinateKind,
 ) -> TraceAcquisitionCapability:
     if not isinstance(acquisition_source, AcquisitionSourceIdentity):
         raise AcquisitionContractError(
             "acquisition_source must be an owner-minted identity"
         )
-    if not isinstance(coordinate_kind, TraceCoordinateKind):
-        raise AcquisitionContractError("coordinate_kind must be a TraceCoordinateKind")
     namespace = _required_text(adapter_namespace, "adapter_namespace")
     return TraceAcquisitionCapability(
         acquisition_source=acquisition_source,
         adapter_namespace=namespace,
-        coordinate_kind=coordinate_kind,
     )
 
 
@@ -406,12 +366,9 @@ def acquire_trace_batch(
     for request, trace in zip(requests, traces, strict=True):
         if not isinstance(trace, XICTrace):
             raise AcquisitionContractError("batch adapter returned an invalid trace")
-        first_scan: int | None = None
-        last_scan: int | None = None
-        if capability.coordinate_kind is not TraceCoordinateKind.RT_ONLY:
-            first_scan, last_scan = adapter.scan_window_for_request(request)
-        coordinate = _mint_trace_coordinate(
-            capability,
+        first_scan, last_scan = adapter.scan_window_for_request(request)
+        coordinate = TraceCoordinate(
+            capability=capability,
             request=request,
             first_scan=first_scan,
             last_scan=last_scan,
@@ -429,28 +386,11 @@ def acquire_trace_batch(
     )
 
 
-def _mint_trace_coordinate(
-    capability: TraceAcquisitionCapability,
-    *,
-    request: XICRequest,
-    first_scan: int | None,
-    last_scan: int | None,
-    trace_point_count: int,
-) -> TraceCoordinate:
-    return TraceCoordinate(
-        capability=capability,
-        request=request,
-        first_scan=first_scan,
-        last_scan=last_scan,
-        trace_point_count=trace_point_count,
-    )
-
-
 def _capability_content(capability: TraceAcquisitionCapability) -> dict[str, object]:
     return {
         "acquisition_source": asdict(capability.acquisition_source),
         "adapter_namespace": capability.adapter_namespace,
-        "coordinate_kind": capability.coordinate_kind.value,
+        "coordinate_kind": NATIVE_SCAN_COORDINATE_KIND,
     }
 
 
@@ -508,18 +448,13 @@ def _capability_from_payload(value: object) -> TraceAcquisitionCapability:
         if revision is None
         else (revision[0], revision[1], revision[2], revision[3], revision[4]),
     )
-    try:
-        kind = TraceCoordinateKind(
-            _required_text(capability["coordinate_kind"], "coordinate_kind")
-        )
-    except ValueError as exc:
-        raise AcquisitionContractError("unknown trace coordinate kind") from exc
+    if capability["coordinate_kind"] != NATIVE_SCAN_COORDINATE_KIND:
+        raise AcquisitionContractError("unsupported trace coordinate kind")
     return TraceAcquisitionCapability(
         acquisition_source=acquisition_source,
         adapter_namespace=_required_text(
             capability["adapter_namespace"], "adapter_namespace"
         ),
-        coordinate_kind=kind,
     )
 
 
@@ -567,16 +502,6 @@ def _require_keys(
     require_keys(value, keys, label=label, error_factory=AcquisitionContractError)
 
 
-def _optional_integer(value: object, field: str) -> int | None:
-    return require_optional_integer(
-        value,
-        field=field,
-        non_negative=True,
-        error_factory=AcquisitionContractError,
-        type_error_factory=AcquisitionContractError,
-    )
-
-
 def _required_text(value: object, field: str) -> str:
     return require_owner_normalized_text(
         value, field=field, error_factory=AcquisitionContractError
@@ -603,14 +528,13 @@ def _nonnegative_integer(value: object, field: str) -> int:
 
 
 __all__ = [
+    "NATIVE_SCAN_COORDINATE_KIND",
     "AcquiredTrace",
     "AcquisitionContractError",
     "BatchXICAdapter",
-    "RawAcquisitionSessionReceipt",
     "TraceAcquisitionBatch",
     "TraceAcquisitionCapability",
     "TraceCoordinate",
-    "TraceCoordinateKind",
     "acquire_trace_batch",
     "deserialize_acquired_trace",
     "mint_trace_acquisition_capability",

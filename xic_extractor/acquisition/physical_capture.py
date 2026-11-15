@@ -17,7 +17,6 @@ from xic_extractor.acquisition_contract import (
     AcquiredTrace,
     BatchXICAdapter,
     TraceAcquisitionBatch,
-    TraceCoordinateKind,
     acquire_trace_batch,
     mint_trace_acquisition_capability,
 )
@@ -82,7 +81,6 @@ class PhysicalPeakCapture:
         self._capability = mint_trace_acquisition_capability(
             acquisition_source,
             adapter_namespace=adapter_namespace,
-            coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
         )
         self._profile = profile
         self._populations: dict[

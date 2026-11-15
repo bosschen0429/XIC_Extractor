@@ -270,7 +270,6 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
     comparison_views = {}
     if fresh_context:
         from xic_extractor.acquisition_contract import (
-            TraceCoordinateKind,
             acquire_trace_batch,
             mint_trace_acquisition_capability,
         )
@@ -297,6 +296,9 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
         class ComparisonRaw:
             raw_chromatogram_call_count = 0
 
+            def scan_window_for_request(self, request):
+                return (101, 401)
+
             def extract_xic_many(self, requests):
                 self.raw_chromatogram_call_count += 1
                 result = []
@@ -313,7 +315,6 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
             mint_trace_acquisition_capability(
                 source,
                 adapter_namespace="test:comparison-context",
-                coordinate_kind=TraceCoordinateKind.RT_ONLY,
             ),
             tuple(
                 XICRequest(peak.mz, float(shifted_rt[0]), float(shifted_rt[-1]), 20.0)

@@ -177,6 +177,7 @@ def install_runtime_raw(
         expected_acquisition_source,
         _expected_path_identity=None,
         prepared_mass_recalibration=None,
+        timing_recorder=None,
     ):
         assert path == raw_path
         return open_raw(
@@ -186,6 +187,7 @@ def install_runtime_raw(
             expected_acquisition_source=expected_acquisition_source,
             _expected_path_identity=_expected_path_identity,
             prepared_mass_recalibration=prepared_mass_recalibration,
+            timing_recorder=timing_recorder,
             _import_module=_working_imports,
             _thermo=SimpleNamespace(
                 raw_file_reader_adapter=SimpleNamespace(
@@ -236,6 +238,7 @@ def install_runtime_raws(
         expected_acquisition_source,
         _expected_path_identity=None,
         prepared_mass_recalibration=None,
+        timing_recorder=None,
     ):
         vendor_raw = _FakeThermoRaw(sources_by_path[path])
         opened.setdefault(path, []).append(vendor_raw)
@@ -246,6 +249,7 @@ def install_runtime_raws(
             expected_acquisition_source=expected_acquisition_source,
             _expected_path_identity=_expected_path_identity,
             prepared_mass_recalibration=prepared_mass_recalibration,
+            timing_recorder=timing_recorder,
             _import_module=_working_imports,
             _thermo=SimpleNamespace(
                 raw_file_reader_adapter=SimpleNamespace(
