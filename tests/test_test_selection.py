@@ -9,10 +9,7 @@ import yaml
 from _pytest.mark.expression import Expression
 
 from tools.testing import test_selection
-from tools.testing.test_selection import (
-    SelectionPlan,
-    select_test_files,
-)
+from tools.testing.test_selection import SelectionPlan
 
 
 @pytest.fixture
@@ -34,7 +31,9 @@ def selection_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "seltests/test_cli_subprocess.py": "SCRIPT = 'selpkg/cli.py'\n",
         "seltests/test_docs.py": "GUIDE = 'docs/guide.md'\n",
         "seltests/test_workflow.py": "WORKFLOW = '.github/workflows/ci.yml'\n",
-        "seltests/test_marked.py": "import pytest\n\npytest.mark.browser_e2e\n",
+        "seltests/test_marked.py": (
+            "import pytest\n\npytestmark = pytest.mark.browser_e2e\n"
+        ),
         "selpkg/data/__init__.py": "",
         "selpkg/data/preset.toml": "name = 'preset'\n",
         "selpkg/loader.py": "PACKAGE = 'selpkg.data'\n",
@@ -74,9 +73,13 @@ def selection_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _select(root: Path, *changed: str) -> tuple[str, ...] | None:
-    return select_test_files(
-        changed, root=root, packages=("selpkg", "seltests"), test_package="seltests"
-    )
+    return test_selection.plan_for_change(
+        changed,
+        base_expression="",
+        root=root,
+        packages=("selpkg", "seltests"),
+        test_package="seltests",
+    ).files
 
 
 def test_module_change_selects_importers_and_source_scanners(
@@ -212,6 +215,68 @@ def test_relevant_marker_selects_every_test_carrying_it(selection_repo: Path) ->
 
 @pytest.mark.parametrize(
     "changed",
+    [
+        "tests/test_delta_mass_review_browser.py",
+        "xic_extractor/diagnostics/delta_mass_review_data.py",
+        "tests/test_workbench_browser.py",
+        "tests/test_xic_inspector_browser.py",
+        "tests/test_browser_diagnostics.py",
+    ],
+)
+def test_browser_plan_keeps_selected_browser_consumers(changed: str) -> None:
+    plan = test_selection.plan_for_change(
+        [changed], base_expression=test_selection.CI_BASE_MARKER_EXPRESSION
+    )
+
+    assert "not browser_e2e" not in plan.marker_expression
+    assert plan.files is not None
+    assert {
+        "tests/test_delta_mass_review_browser.py",
+        "tests/test_workbench_browser.py",
+        "tests/test_xic_inspector_browser.py",
+    } <= set(plan.files)
+
+
+@pytest.mark.parametrize(
+    "changed, browser_required",
+    [
+        ("seltests/test_plot.py", True),
+        ("selpkg/consumer.py", True),
+        ("selpkg/core.py", True),
+        ("seltests/test_unrelated.py", False),
+    ],
+)
+def test_browser_lane_follows_imports_without_a_test_filename_registry(
+    selection_repo: Path, changed: str, browser_required: bool
+) -> None:
+    (selection_repo / "seltests/test_plot.py").write_text(
+        "import pytest\nfrom selpkg.consumer import VALUE\n"
+        "pytestmark = [pytest.mark.browser_e2e]\n"
+        "def test_plot(): assert VALUE\n",
+        encoding="utf-8",
+    )
+    (selection_repo / "seltests/test_unrelated.py").write_text(
+        "# pytest.mark.browser_e2e is mentioned, not applied\n"
+        'EXAMPLE = "pytestmark = pytest.mark.browser_e2e"\n'
+        "def test_unrelated(): pass\n",
+        encoding="utf-8",
+    )
+    plan = test_selection.plan_for_change(
+        [changed],
+        base_expression="",
+        root=selection_repo,
+        packages=("selpkg", "seltests"),
+        test_package="seltests",
+    )
+
+    assert ("not browser_e2e" not in plan.marker_expression) == browser_required
+    assert plan.files is not None
+    assert ("seltests/test_plot.py" in plan.files) == browser_required
+    assert ("seltests/test_marked.py" in plan.files) == browser_required
+
+
+@pytest.mark.parametrize(
+    "changed",
     (
         "assets/unreferenced.bin",
         "pyproject.toml",
@@ -223,7 +288,15 @@ def test_relevant_marker_selects_every_test_carrying_it(selection_repo: Path) ->
 def test_change_the_derivation_cannot_place_runs_every_test(
     selection_repo: Path, changed: str
 ) -> None:
-    assert _select(selection_repo, "selpkg/core.py", changed) is None
+    plan = test_selection.plan_for_change(
+        ["selpkg/core.py", changed],
+        base_expression="",
+        root=selection_repo,
+        packages=("selpkg", "seltests"),
+        test_package="seltests",
+    )
+    assert plan.files is None
+    assert "not browser_e2e" not in plan.marker_expression
 
 
 @pytest.mark.parametrize(
@@ -235,7 +308,9 @@ def test_change_the_derivation_cannot_place_runs_every_test(
     ],
 )
 def test_selection_owner_change_runs_every_test(owner: str) -> None:
-    assert select_test_files([owner]) is None
+    plan = test_selection.plan_for_change([owner], base_expression="")
+    assert plan.files is None
+    assert "not browser_e2e" not in plan.marker_expression
 
 
 def test_selection_prefers_uv_runner_when_pytest_is_not_importable(
@@ -577,10 +652,7 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
         ("xic_workbench/server.py", {"packaging_build", "browser_e2e"}),
         ("xic_workbench/workspace.py", {"packaging_build", "browser_e2e"}),
         ("xic_workbench/jobs.py", {"packaging_build", "browser_e2e"}),
-        ("tests/test_workbench_browser.py", {"browser_e2e"}),
         ("tests/browser_diagnostics.py", {"browser_e2e"}),
-        ("tests/test_browser_diagnostics.py", {"browser_e2e"}),
-        ("tests/test_xic_inspector_browser.py", {"browser_e2e"}),
         ("tests/test_xic_inspector_api.py", set()),
         ("tests/inspector_fixtures.py", {"browser_e2e"}),
         ("tests/workbench_http.py", {"browser_e2e"}),
@@ -612,9 +684,7 @@ def test_marker_intersection_without_owned_expression_keeps_caller_markers(
 def test_relevance_rules_keep_only_markers_whose_paths_changed(
     path: str, kept: set[str]
 ) -> None:
-    skipped = set(test_selection.irrelevant_markers([path]))
-
-    assert set(test_selection.RELEVANCE_RULES) - skipped == kept
+    assert set(test_selection.relevant_markers([path])) == kept
 
 
 def test_local_run_skips_markers_unrelated_to_the_change(
@@ -627,7 +697,14 @@ def test_local_run_skips_markers_unrelated_to_the_change(
         lambda base, head=None: ["docs/architecture-contract.md"],
     )
     monkeypatch.setattr(
-        test_selection, "select_test_files", lambda _changed: ("tests/test_a.py",)
+        test_selection,
+        "plan_for_change",
+        lambda _changed, **kwargs: SelectionPlan(
+            files=("tests/test_a.py",),
+            marker_expression=(
+                "not browser_e2e and not packaging_build and not ci_workflow"
+            ),
+        ),
     )
 
     plan = test_selection._local_plan(run_all=False, all_markers=False)
@@ -653,7 +730,12 @@ def test_local_run_leaves_packaging_builds_to_ci_unless_requested(
         ],
     )
     monkeypatch.setattr(
-        test_selection, "select_test_files", lambda _changed: ("tests/test_a.py",)
+        test_selection,
+        "plan_for_change",
+        lambda _changed, **kwargs: SelectionPlan(
+            files=("tests/test_a.py",),
+            marker_expression="not browser_e2e and not ci_workflow",
+        ),
     )
 
     assert test_selection._local_plan(run_all=False, all_markers=False) == (
@@ -853,12 +935,9 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
         )
     ]
     selection = (
-        " and ".join(
-            [
-                test_selection.CI_BASE_MARKER_EXPRESSION,
-                *(f"not {m}" for m in test_selection.irrelevant_markers(changed)),
-            ]
-        )
+        test_selection.plan_for_change(
+            changed, base_expression=test_selection.CI_BASE_MARKER_EXPRESSION
+        ).marker_expression
         if event == "pull_request"
         else test_selection.CI_BASE_MARKER_EXPRESSION
     )
@@ -988,6 +1067,7 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
     [
         ("before", ("README.md",), "false"),
         ("before", ("xic_workbench/server.py",), "true"),
+        ("before", ("tests/test_delta_mass_review_browser.py",), "true"),
         # A new branch has no pushed range; everything stays selected.
         ("0" * 40, ("README.md",), "true"),
     ],
@@ -1002,12 +1082,9 @@ def test_push_browser_lane_follows_the_pushed_range(
     step = next(
         s for s in jobs["browser"]["steps"] if s.get("name") == "Plan browser coverage"
     )
-    selection = " and ".join(
-        [
-            test_selection.CI_BASE_MARKER_EXPRESSION,
-            *(f"not {m}" for m in test_selection.irrelevant_markers(changed)),
-        ]
-    )
+    selection = test_selection.plan_for_change(
+        changed, base_expression=test_selection.CI_BASE_MARKER_EXPRESSION
+    ).marker_expression
     calls_path = tmp_path / "calls.jsonl"
     output_path = tmp_path / "outputs.txt"
     monkeypatch.setenv("XIC_CI_TEST_CALLS", str(calls_path))
