@@ -889,8 +889,8 @@ def test_ci_reads_the_plan_from_the_selection_owner() -> None:
     for pattern in test_selection.RELEVANCE_RULES.values():
         assert pattern.pattern[:30] not in workflow
     jobs = yaml.safe_load(workflow)["jobs"]
-    lint = jobs["lint"]
-    coverage = next(step for step in lint["steps"] if step.get("id") == "coverage")
+    plan = jobs["plan"]
+    coverage = next(step for step in plan["steps"] if step.get("id") == "coverage")
     assert coverage["env"]["XIC_CI_BASE"] == (
         "${{ github.event.pull_request.base.sha || github.event.before }}"
     )
@@ -898,8 +898,8 @@ def test_ci_reads_the_plan_from_the_selection_owner() -> None:
         "${{ github.event.pull_request.head.sha || github.sha }}"
     )
     assert coverage["env"]["XIC_CI_EVENT"] == "${{ github.event_name }}"
-    assert lint["outputs"]["coverage"] == "${{ steps.coverage.outputs.coverage }}"
-    assert lint["outputs"]["browser_required"] == (
+    assert plan["outputs"]["coverage"] == "${{ steps.coverage.outputs.coverage }}"
+    assert plan["outputs"]["browser_required"] == (
         "${{ steps.coverage.outputs.browser_required }}"
     )
     for lane, step_name in (
@@ -909,7 +909,7 @@ def test_ci_reads_the_plan_from_the_selection_owner() -> None:
     ):
         step = next(s for s in jobs[lane]["steps"] if s.get("name") == step_name)
         environment = {**jobs[lane].get("env", {}), **step.get("env", {})}
-        assert environment["XIC_CI_PLAN"] == "${{ needs.lint.outputs.coverage }}"
+        assert environment["XIC_CI_PLAN"] == "${{ needs.plan.outputs.coverage }}"
 
 
 # PowerShell stand-ins for the expensive child commands of a CI step. The step
@@ -1046,7 +1046,7 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
             step for step in workflow["jobs"][job]["steps"] if step.get("name") == name
         )
         for job, name in (
-            ("lint", "Plan test coverage"),
+            ("plan", "Plan test coverage"),
             ("windows-integration", "Test"),
             ("python-tests", "Test"),
             ("browser", "Browser test"),
@@ -1090,7 +1090,7 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
             monkeypatch.setenv("XIC_CI_PLAN", outputs["coverage"])
         if step.get("name") == "Browser test":
             assert workflow["jobs"]["browser"]["if"] == (
-                "${{ needs.lint.outputs.browser_required == 'true' }}"
+                "${{ needs.plan.outputs.browser_required == 'true' }}"
             )
             if outputs["browser_required"] != "true":
                 assert "NOT RUN" in (tmp_path / "summary.txt").read_text("utf-8-sig")
@@ -1218,7 +1218,7 @@ def test_push_browser_lane_follows_the_pushed_range(
         pytest.skip("PowerShell is required to exercise the CI steps")
     jobs = yaml.safe_load(Path(".github/workflows/ci.yml").read_text("utf-8"))["jobs"]
     step = next(
-        s for s in jobs["lint"]["steps"] if s.get("name") == "Plan test coverage"
+        s for s in jobs["plan"]["steps"] if s.get("name") == "Plan test coverage"
     )
     monkeypatch.setattr(test_selection, "changed_paths", lambda *_args: list(changed))
     coverage = test_selection.ci_plan(before, "after", event="push")
@@ -1271,7 +1271,7 @@ def test_push_browser_lane_follows_the_pushed_range(
     [(None, "success")]
     + [
         (lane, result)
-        for lane in ("lint", "python-tests", "browser", "windows-integration")
+        for lane in ("lint", "plan", "python-tests", "browser", "windows-integration")
         for result in ("failure", "cancelled", "skipped")
     ],
 )
@@ -1286,24 +1286,27 @@ def test_ci_required_check_accepts_only_success_or_planned_browser_skip(
     assert gate["name"] == "test (Python 3.12)"
     assert set(gate["needs"]) == {
         "lint",
+        "plan",
         "python-tests",
         "browser",
         "windows-integration",
     }
     assert gate["if"] == "${{ always() }}"
+    assert "needs" not in jobs["plan"]
+    assert "needs" not in jobs["lint"]
     assert jobs["browser"]["runs-on"] == "windows-latest"
     for lane in ("python-tests", "browser", "windows-integration"):
-        assert jobs[lane]["needs"] == "lint"
+        assert jobs[lane]["needs"] == "plan"
     assert (
-        jobs["browser"]["if"] == "${{ needs.lint.outputs.browser_required == 'true' }}"
+        jobs["browser"]["if"] == "${{ needs.plan.outputs.browser_required == 'true' }}"
     )
-    assert jobs["browser"]["strategy"]["matrix"]["shard"] == [1, 2, 3]
+    assert jobs["browser"]["strategy"]["matrix"]["shard"] == [1, 2, 3, 4, 5]
     assert jobs["browser"]["strategy"]["fail-fast"] is False
     lane_results = {
         lane: {"result": result if lane == failed_lane else "success"}
         for lane in gate["needs"]
     }
-    lane_results["lint"]["outputs"] = {
+    lane_results["plan"]["outputs"] = {
         "browser_required": str(browser_required).lower()
     }
     if not browser_required and failed_lane != "browser":

@@ -144,13 +144,13 @@ CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
 explicit local opt-in. The Windows test launcher mitigates the
 [randomized TCP port defect](diagnostic-ledger.md#windows-randomized-tcp-ports-can-fail-at-low-connection-counts)
 while retaining Playwright's stock feature settings; product browsers are unchanged.
-CI computes one coverage plan at the end of the existing Linux lint job, using
-its installed dependencies rather than allocating another runner. Test jobs
-wait for lint and planning to succeed. PR lanes share the affected-file selection;
+CI computes one coverage plan in a short Linux job parallel to lint and typecheck.
+Test jobs wait only for planning; lint remains required by the final gate.
+PR lanes share the affected-file selection;
 master still runs every ordinary test.
 Browser relevance follows each event's own changed range. An irrelevant browser
 job is skipped before allocating Windows VMs, not reported as a passing test run.
-A selected lane runs every browser test exactly once across three independent
+A selected lane runs every browser test exactly once across five independent
 GitHub-hosted Windows VMs, with one process per VM. The plan supplies file
 candidates derived from marker references; pytest still decides actual case
 membership. No browser filename registry is maintained.

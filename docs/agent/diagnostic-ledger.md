@@ -74,13 +74,14 @@ files collected 330. Both retained exactly the same 169 browser node IDs. The
 three narrowed shards covered them once, without overlap, at 57/56/56 cases.
 Pytest, not the file-candidate scan, remains the membership oracle.
 
-The existing lint job produces the shared plan once, rather than each test VM
-planning separately. No extra runner is allocated. Irrelevant browser jobs are
-gated before allocating their three Windows VMs. Test startup now waits for lint
-to succeed (about 35 seconds in the retained hosted baseline), trading some
-feedback latency for lower resource use; hosted elapsed-time and billing savings
-have not been measured. The successful-plan-only skip and failure propagation
-were exercised through the workflow's PowerShell steps.
+Hosted runs with identical 169-case browser coverage showed that waiting for
+lint before dispatching tests regressed whole-run elapsed time from 189 to 238
+seconds (`43689952191` and `43702971655`). The 32-second lint prerequisite was
+on the critical path; local collection savings did not establish a CI speedup.
+Planning now runs separately from lint, and five isolated browser shards trade
+additional runner capacity for shorter elapsed time. Hosted validation is still
+required before accepting that scheduling change. Irrelevant browser jobs stay
+gated before VM allocation; only a successful plan can authorize the skip.
 
 Evidence is under `output/browser-ci-scheduling/collection-comparison.json`,
 the adjacent collection logs. Recheck parity and cost when
