@@ -2,6 +2,8 @@ import itertools
 import json
 import shutil
 import subprocess
+import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -9,7 +11,7 @@ import yaml
 from _pytest.mark.expression import Expression
 
 from tools.testing import test_selection
-from tools.testing.test_selection import SelectionPlan
+from tools.testing.test_selection import CIPlan, SelectionPlan
 
 
 @pytest.fixture
@@ -317,6 +319,96 @@ def test_selection_owner_change_runs_every_test(owner: str) -> None:
     plan = test_selection.plan_for_change([owner], base_expression="")
     assert plan.files is None
     assert "not browser_e2e" not in plan.marker_expression
+
+
+def test_ci_browser_file_plan_keeps_actual_pytest_membership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    sources = {
+        "test_new_view.py": (
+            "import pytest\npytestmark = pytest.mark.browser_e2e\n"
+            "def test_view(): pass\n"
+        ),
+        "test_mixed.py": (
+            "import pytest\n@pytest.mark.browser_e2e\n"
+            "@pytest.mark.parametrize('value', [1, 2])\n"
+            "def test_chart(value): assert value\n"
+            "def test_ordinary(): pass\n"
+        ),
+        "test_fixture_string.py": (
+            "EXAMPLE = 'pytest.mark.browser_e2e'\ndef test_plain(): pass\n"
+        ),
+        "test_unrelated.py": "def test_unrelated(): pass\n",
+    }
+    for name, source in sources.items():
+        (tests / name).write_text(source, encoding="utf-8")
+    config = tmp_path / "pytest.ini"
+    config.write_text("[pytest]\nmarkers =\n    browser_e2e: browser case\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        test_selection, "changed_paths", lambda *_args: ["pyproject.toml"]
+    )
+
+    assert (
+        test_selection.main(["--ci-plan", "--base", "before", "--head", "after"]) == 0
+    )
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["tests"]["files"] is None
+    assert set(plan["browser"]["files"]) == {
+        "tests/test_new_view.py",
+        "tests/test_mixed.py",
+        "tests/test_fixture_string.py",
+    }
+    nodes = []
+    for targets in ((), plan["browser"]["files"]):
+        collected = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "--collect-only",
+                "-q",
+                "--noconftest",
+                "-c",
+                str(config),
+                "-m",
+                f"({plan['browser']['marker_expression']}) and browser_e2e",
+                *targets,
+            ],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert collected.returncode == 0, collected.stdout + collected.stderr
+        nodes.append(
+            {
+                line
+                for line in collected.stdout.splitlines()
+                if line.startswith("tests/")
+            }
+        )
+    assert (
+        nodes[0]
+        == nodes[1]
+        == {
+            "tests/test_new_view.py::test_view",
+            "tests/test_mixed.py::test_chart[1]",
+            "tests/test_mixed.py::test_chart[2]",
+        }
+    )
+
+
+def test_ci_plan_git_failure_has_no_success_payload(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(test_selection, "changed_paths", lambda *_args: None)
+    assert (
+        test_selection.main(["--ci-plan", "--base", "before", "--head", "after"]) == 2
+    )
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "git diff failed" in output.err
 
 
 def test_selection_prefers_uv_runner_when_pytest_is_not_importable(
@@ -793,9 +885,31 @@ def test_renamed_module_reports_its_old_path_and_runs_every_test(
 def test_ci_reads_the_plan_from_the_selection_owner() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert "tools.testing.test_selection --ci-plan" in workflow
+    assert workflow.count("tools.testing.test_selection --ci-plan") == 1
     for pattern in test_selection.RELEVANCE_RULES.values():
         assert pattern.pattern[:30] not in workflow
+    jobs = yaml.safe_load(workflow)["jobs"]
+    plan = jobs["plan"]
+    coverage = next(step for step in plan["steps"] if step.get("id") == "coverage")
+    assert coverage["env"]["XIC_CI_BASE"] == (
+        "${{ github.event.pull_request.base.sha || github.event.before }}"
+    )
+    assert coverage["env"]["XIC_CI_HEAD"] == (
+        "${{ github.event.pull_request.head.sha || github.sha }}"
+    )
+    assert coverage["env"]["XIC_CI_EVENT"] == "${{ github.event_name }}"
+    assert plan["outputs"]["coverage"] == "${{ steps.coverage.outputs.coverage }}"
+    assert plan["outputs"]["browser_required"] == (
+        "${{ steps.coverage.outputs.browser_required }}"
+    )
+    for lane, step_name in (
+        ("windows-integration", "Test"),
+        ("python-tests", "Test"),
+        ("browser", "Browser test"),
+    ):
+        step = next(s for s in jobs[lane]["steps"] if s.get("name") == step_name)
+        environment = {**jobs[lane].get("env", {}), **step.get("env", {})}
+        assert environment["XIC_CI_PLAN"] == "${{ needs.plan.outputs.coverage }}"
 
 
 # PowerShell stand-ins for the expensive child commands of a CI step. The step
@@ -808,6 +922,9 @@ function .\.venv\Scripts\python.exe {
     $global:LASTEXITCODE = 0
     if ($args[1] -eq 'tools.testing.test_selection') {
         $env:XIC_CI_TEST_PLAN -split "`n" | Where-Object { $_ } | Write-Output
+        if ($env:XIC_CI_TEST_FAILED_PHASE -eq 'plan') {
+            $global:LASTEXITCODE = [int]$env:XIC_CI_TEST_FAILED_CODE
+        }
     } elseif ($args[1] -eq 'playwright') {
         if ($env:XIC_CI_TEST_FAILED_PHASE -eq 'browser_install') {
             $global:LASTEXITCODE = [int]$env:XIC_CI_TEST_FAILED_CODE
@@ -831,18 +948,9 @@ function uv {
 }
 """
 
-_PUSH_RANGE_BASE = "${{ github.event.pull_request.base.sha || github.event.before }}"
-_PUSH_RANGE_HEAD = "${{ github.event.pull_request.head.sha || github.sha }}"
 
-
-def _render_ci_step(run: str, event: str, *, before: str = "before") -> str:
-    pushed = event == "push"
+def _render_ci_step(run: str) -> str:
     expressions = {
-        _PUSH_RANGE_BASE: before if pushed else "base",
-        _PUSH_RANGE_HEAD: "after" if pushed else "head",
-        "${{ github.event.pull_request.base.sha }}": "base",
-        "${{ github.event.pull_request.head.sha }}": "head",
-        "${{ github.event_name }}": event,
         "${{ matrix.shard }}": "1",
         "${{ strategy.job-total }}": "2",
     }
@@ -915,6 +1023,7 @@ def _render_ci_step(run: str, event: str, *, before: str = "before") -> str:
             5,
         ),
         ("push", (), None, "serial", 13, 13),
+        ("push", (), None, "plan", 17, 17),
     ),
 )
 def test_ci_runs_the_selected_plan_without_losing_failures(
@@ -937,26 +1046,32 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
             step for step in workflow["jobs"][job]["steps"] if step.get("name") == name
         )
         for job, name in (
+            ("plan", "Plan test coverage"),
             ("windows-integration", "Test"),
             ("python-tests", "Test"),
-            ("browser", "Plan browser coverage"),
             ("browser", "Browser test"),
         )
     ]
-    selection = (
-        test_selection.plan_for_change(
-            changed, base_expression=test_selection.CI_BASE_MARKER_EXPRESSION
-        ).marker_expression
-        if event == "pull_request"
-        else test_selection.CI_BASE_MARKER_EXPRESSION
+    monkeypatch.setattr(test_selection, "changed_paths", lambda *_args: list(changed))
+    base = "0" * 40 if event == "push" else "base"
+    coverage = test_selection.ci_plan(base, "head", event=event)
+    assert coverage is not None
+    selection = coverage.tests.marker_expression
+    # The workflow consumes a plan; these file cases exercise ALL, empty and
+    # subset arguments independently of the dependency graph tested above.
+    coverage = CIPlan(
+        tests=SelectionPlan(files=files, marker_expression=selection),
+        browser=coverage.browser,
     )
-    plan_lines = [selection, *(files if files is not None else ("ALL",))]
     for step in steps:
         for name, value in step.get("env", {}).items():
             monkeypatch.setenv(name, str(value))
     calls_path = tmp_path / "calls.jsonl"
     monkeypatch.setenv("XIC_CI_TEST_CALLS", str(calls_path))
-    monkeypatch.setenv("XIC_CI_TEST_PLAN", "\n".join(plan_lines))
+    monkeypatch.setenv("XIC_CI_TEST_PLAN", json.dumps(asdict(coverage)))
+    monkeypatch.setenv("XIC_CI_BASE", base)
+    monkeypatch.setenv("XIC_CI_HEAD", "head")
+    monkeypatch.setenv("XIC_CI_EVENT", event)
     monkeypatch.setenv("XIC_CI_TEST_FAILED_PHASE", failed_phase)
     monkeypatch.setenv("XIC_CI_TEST_FAILED_CODE", str(failed_code))
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.txt"))
@@ -967,18 +1082,21 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
     # are replaced. PowerShell still owns ordering, argument quoting and exit.
     results = []
     for index, step in enumerate(steps):
-        if step.get("name") == "Browser test":
-            assert step["if"] == "steps.browser-plan.outputs.required == 'true'"
+        if index:
             outputs = dict(
                 line.split("=", 1)
                 for line in output_path.read_text("utf-8-sig").splitlines()
             )
-            if outputs["required"] != "true":
+            monkeypatch.setenv("XIC_CI_PLAN", outputs["coverage"])
+        if step.get("name") == "Browser test":
+            assert workflow["jobs"]["browser"]["if"] == (
+                "${{ needs.plan.outputs.browser_required == 'true' }}"
+            )
+            if outputs["browser_required"] != "true":
                 assert "NOT RUN" in (tmp_path / "summary.txt").read_text("utf-8-sig")
                 continue
-            monkeypatch.setenv("XIC_BROWSER_MARKERS", outputs["marker_expression"])
 
-        actual_script = _CI_COMMAND_FAKES + _render_ci_step(step["run"], event)
+        actual_script = _CI_COMMAND_FAKES + _render_ci_step(step["run"])
         script_path = tmp_path / f"ci-step-{index}.ps1"
         script_path.write_text(actual_script, encoding="utf-8")
         results.append(
@@ -990,6 +1108,9 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
                 timeout=30,
             )
         )
+        if index == 0 and results[-1].returncode:
+            # GitHub does not schedule jobs whose required plan failed.
+            break
     assert next((r.returncode for r in results if r.returncode), 0) == expected_exit, (
         "\n".join(r.stdout + r.stderr for r in results)
     )
@@ -997,8 +1118,14 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
         json.loads(line) for line in calls_path.read_text("utf-8-sig").splitlines()
     ]
     pytest_calls = [call for call in calls if call[:2] == ["-m", "pytest"]]
+    assert (
+        sum(call[:2] == ["-m", "tools.testing.test_selection"] for call in calls) == 1
+    )
+    if failed_phase == "plan":
+        assert not pytest_calls
+        return
     runs_selection = files is None or len(files) > 0
-    browser_selected = "not browser_e2e" not in selection
+    browser_selected = coverage.browser is not None
     packaging_selected = "not packaging_build" not in selection
     browser_ran = browser_selected and failed_phase != "browser_install"
     assert len(pytest_calls) == 2 * runs_selection + browser_ran + packaging_selected
@@ -1035,7 +1162,9 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
         )
         assert browser[browser.index("-p") + 1] == "tools.testing.test_sharding"
         assert browser[browser.index("--test-shard") + 1] == "1/2"
-        assert not any(arg.startswith("tests/") for arg in browser)
+        assert coverage.browser is not None and coverage.browser.files
+        browser_files = list(coverage.browser.files)
+        assert browser[-len(browser_files) :] == browser_files
         browser_expression = Expression.compile(browser[browser.index("-m", 2) + 1])
 
     # The original selection must be partitioned exactly once, including the
@@ -1089,21 +1218,26 @@ def test_push_browser_lane_follows_the_pushed_range(
         pytest.skip("PowerShell is required to exercise the CI steps")
     jobs = yaml.safe_load(Path(".github/workflows/ci.yml").read_text("utf-8"))["jobs"]
     step = next(
-        s for s in jobs["browser"]["steps"] if s.get("name") == "Plan browser coverage"
+        s for s in jobs["plan"]["steps"] if s.get("name") == "Plan test coverage"
     )
-    selection = test_selection.plan_for_change(
-        changed, base_expression=test_selection.CI_BASE_MARKER_EXPRESSION
-    ).marker_expression
+    monkeypatch.setattr(test_selection, "changed_paths", lambda *_args: list(changed))
+    coverage = test_selection.ci_plan(before, "after", event="push")
+    assert coverage is not None
+    assert coverage.tests.files is None
+    assert coverage.tests.marker_expression == test_selection.CI_BASE_MARKER_EXPRESSION
     calls_path = tmp_path / "calls.jsonl"
     output_path = tmp_path / "outputs.txt"
     monkeypatch.setenv("XIC_CI_TEST_CALLS", str(calls_path))
-    monkeypatch.setenv("XIC_CI_TEST_PLAN", f"{selection}\nALL")
+    monkeypatch.setenv("XIC_CI_TEST_PLAN", json.dumps(asdict(coverage)))
+    monkeypatch.setenv("XIC_CI_BASE", before)
+    monkeypatch.setenv("XIC_CI_HEAD", "after")
+    monkeypatch.setenv("XIC_CI_EVENT", "push")
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.txt"))
     monkeypatch.setenv("GITHUB_OUTPUT", str(output_path))
     (tmp_path / ".venv" / "Scripts").mkdir(parents=True)
     script_path = tmp_path / "plan.ps1"
     script_path.write_text(
-        _CI_COMMAND_FAKES + _render_ci_step(step["run"], "push", before=before),
+        _CI_COMMAND_FAKES + _render_ci_step(step["run"]),
         encoding="utf-8",
     )
     result = subprocess.run(
@@ -1117,30 +1251,32 @@ def test_push_browser_lane_follows_the_pushed_range(
     outputs = dict(
         line.split("=", 1) for line in output_path.read_text("utf-8-sig").splitlines()
     )
-    assert outputs["required"] == required
-    planned = calls_path.exists()
-    assert planned == (before != "0" * 40)
-    if planned:
-        call = json.loads(calls_path.read_text("utf-8-sig").splitlines()[0])
-        assert call[call.index("--base") + 1 : call.index("--base") + 4] == [
-            "before",
-            "--head",
-            "after",
-        ]
+    assert outputs["browser_required"] == required
+    assert json.loads(outputs["coverage"]) == json.loads(json.dumps(asdict(coverage)))
+    calls = calls_path.read_text("utf-8-sig").splitlines()
+    assert len(calls) == 1
+    call = json.loads(calls[0])
+    assert call[call.index("--base") + 1 : call.index("--base") + 4] == [
+        before,
+        "--head",
+        "after",
+    ]
+    assert call[call.index("--ci-event") + 1] == "push"
 
 
 @pytest.mark.ci_workflow
+@pytest.mark.parametrize("browser_required", [True, False])
 @pytest.mark.parametrize(
     "failed_lane,result",
     [(None, "success")]
     + [
         (lane, result)
-        for lane in ("python-tests", "browser", "windows-integration")
+        for lane in ("lint", "plan", "python-tests", "browser", "windows-integration")
         for result in ("failure", "cancelled", "skipped")
     ],
 )
-def test_ci_required_check_rejects_any_unsuccessful_lane(
-    tmp_path, monkeypatch, failed_lane, result
+def test_ci_required_check_accepts_only_success_or_planned_browser_skip(
+    tmp_path, monkeypatch, failed_lane, result, browser_required
 ):
     pwsh = shutil.which("pwsh")
     if pwsh is None:
@@ -1148,29 +1284,50 @@ def test_ci_required_check_rejects_any_unsuccessful_lane(
     jobs = yaml.safe_load(Path(".github/workflows/ci.yml").read_text("utf-8"))["jobs"]
     gate = jobs["test"]
     assert gate["name"] == "test (Python 3.12)"
-    assert set(gate["needs"]) == {"python-tests", "browser", "windows-integration"}
+    assert set(gate["needs"]) == {
+        "lint",
+        "plan",
+        "python-tests",
+        "browser",
+        "windows-integration",
+    }
     assert gate["if"] == "${{ always() }}"
+    assert "needs" not in jobs["plan"]
+    assert "needs" not in jobs["lint"]
     assert jobs["browser"]["runs-on"] == "windows-latest"
-    assert "needs" not in jobs["browser"]
+    for lane in ("python-tests", "browser", "windows-integration"):
+        assert jobs[lane]["needs"] == "plan"
+    assert (
+        jobs["browser"]["if"] == "${{ needs.plan.outputs.browser_required == 'true' }}"
+    )
+    assert jobs["browser"]["strategy"]["matrix"]["shard"] == [1, 2, 3, 4, 5]
+    assert jobs["browser"]["strategy"]["fail-fast"] is False
+    lane_results = {
+        lane: {"result": result if lane == failed_lane else "success"}
+        for lane in gate["needs"]
+    }
+    lane_results["plan"]["outputs"] = {
+        "browser_required": str(browser_required).lower()
+    }
+    if not browser_required and failed_lane != "browser":
+        lane_results["browser"]["result"] = "skipped"
     monkeypatch.setenv(
         "TEST_LANE_RESULTS",
-        json.dumps(
-            {
-                lane: {"result": result if lane == failed_lane else "success"}
-                for lane in gate["needs"]
-            }
-        ),
+        json.dumps(lane_results),
     )
     step = gate["steps"][0]
     assert step["env"]["TEST_LANE_RESULTS"] == "${{ toJSON(needs) }}"
     script_path = tmp_path / "gate.ps1"
     script_path.write_text(step["run"], encoding="utf-8")
-    result = subprocess.run(
+    completed = subprocess.run(
         [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
         capture_output=True,
         text=True,
         timeout=30,
     )
-    assert (result.returncode == 0) == (failed_lane is None), (
-        result.stdout + result.stderr
+    expected_success = failed_lane is None or (
+        not browser_required and failed_lane == "browser" and result == "skipped"
+    )
+    assert (completed.returncode == 0) == expected_success, (
+        completed.stdout + completed.stderr
     )

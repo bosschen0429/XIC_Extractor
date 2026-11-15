@@ -60,6 +60,39 @@ stack or locked Chromium/Playwright update, or another `ERR_NO_BUFFER_SPACE`;
 use a native socket error and contemporaneous resource counts rather than
 assuming that the error name proves resource exhaustion.
 
+### Browser collection excludes unrelated test files
+
+`diagnostic_only`, `exact_safe` (2026-11-15). Replayed the full-collection policy
+and narrowed file candidates on the same checkout based on `e447a28e`, Python
+3.15.2, locked dependencies and `OPENBLAS_NUM_THREADS=1`. After one warm-up pair,
+three interleaved pairs gave process-start-through-collection-exit medians of
+3.891 seconds (range 3.890–3.932) and 1.520 seconds (1.513–1.528). This is about
+61% less local collection time, not an end-to-end CI speedup.
+
+The full policy collected 4,763 cases before marker filtering; the six candidate
+files collected 330. Both retained exactly the same 169 browser node IDs. The
+three narrowed shards covered them once, without overlap, at 57/56/56 cases.
+Pytest, not the file-candidate scan, remains the membership oracle.
+
+Hosted runs with identical 169-case browser coverage showed that waiting for
+lint before dispatching tests regressed whole-run elapsed time from 189 to 238
+seconds (`43689952191` and `43702971655`). The 32-second lint prerequisite was
+on the critical path; local collection savings did not establish a CI speedup.
+Planning now runs separately from lint, and five isolated browser shards trade
+additional runner capacity for shorter elapsed time. Hosted run `43705606879`
+at `54b7fc36` completed in 165 seconds, with the same 169 browser node IDs
+executed once at 34/34/34/34/33 cases. The plan took 20 seconds; browser jobs
+took 103–126 seconds. Cumulative job time increased from the original baseline's
+809 to 962 seconds, so the elapsed-time win is not a compute-cost saving.
+These are hosted observations, not a guarantee against runner/queue variability;
+ordinary regression coverage also grew. Irrelevant browser jobs stay gated
+before VM allocation; only a successful plan can authorize the skip.
+
+Evidence is under `output/browser-ci-scheduling/collection-comparison.json`,
+the adjacent collection logs. Recheck parity and cost when
+marker discovery, collection, sharding or CI scheduling changes. Keep local
+collection timings separate from runner startup, browser execution and billing.
+
 ## Stored Review Evidence
 
 ### Lossless storage and indexed curve reads

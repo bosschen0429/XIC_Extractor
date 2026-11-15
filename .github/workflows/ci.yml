@@ -51,6 +51,48 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run python scripts/check_repository_docs.py
 
+  plan:
+    # Keep lint/census off the test critical path. This short job is the only
+    # prerequisite for test allocation, including browser relevance.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      coverage: ${{ steps.coverage.outputs.coverage }}
+      browser_required: ${{ steps.coverage.outputs.browser_required }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: "0.13.7"
+          python-version: "3.15"
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+      - run: uv sync --locked --extra dev --group dev --python 3.15
+      - name: Plan test coverage
+        id: coverage
+        shell: pwsh
+        env:
+          XIC_CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          XIC_CI_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          XIC_CI_EVENT: ${{ github.event_name }}
+        run: |
+          $coverageJson = uv run --no-sync python -m tools.testing.test_selection --ci-plan --base $env:XIC_CI_BASE --head $env:XIC_CI_HEAD --ci-event $env:XIC_CI_EVENT
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $coverage = $coverageJson | ConvertFrom-Json
+          $browserRequired = $null -ne $coverage.browser
+          "coverage=$coverageJson" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "browser_required=$($browserRequired.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "- marker_expression=$($coverage.tests.marker_expression)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          if (-not $browserRequired) {
+            "- browser_tests=NOT RUN (not relevant to this change)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            Write-Output '::notice title=Browser tests not run::Not relevant to this change; no browser VM is allocated.'
+          }
+
   typecheck:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -72,6 +114,7 @@ jobs:
       - run: uv run mypy xic_extractor scripts xic_workbench xic_inspector tools
 
   windows-integration:
+    needs: plan
     name: Windows integration (3.15)
     # Keep post-merge work off the PR runner. Label an independent PR to use
     # hosted capacity too; this is explicit routing, not an idle-runner probe.
@@ -108,27 +151,18 @@ jobs:
           # xdist owns parallelism; native BLAS pools must not multiply its
           # worker budget and starve subprocess deadlines.
           OPENBLAS_NUM_THREADS: "1"
+          XIC_CI_PLAN: ${{ needs.plan.outputs.coverage }}
         run: |
           $venvScripts = (Resolve-Path .\.venv\Scripts).Path
           $env:PATH = "$venvScripts;$env:PATH"
-          $markerExpression = "not current_repository_census and not serial_ci"
-          $runPackagingBuild = $true
+          $coverage = $env:XIC_CI_PLAN | ConvertFrom-Json
+          $markerExpression = $coverage.tests.marker_expression
+          $runPackagingBuild = $markerExpression -notmatch 'not packaging_build'
           # An empty target list runs every test; a selected subset passes paths.
           $testTargets = @()
-          $selectedSubset = $false
-          if ("${{ github.event_name }}" -eq "pull_request") {
-            $baseSha = "${{ github.event.pull_request.base.sha }}"
-            $headSha = "${{ github.event.pull_request.head.sha }}"
-            # tools.testing.test_selection owns which tests and gated markers this change needs.
-            $plan = @(& .\.venv\Scripts\python.exe -m tools.testing.test_selection --ci-plan --base $baseSha --head $headSha)
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            $markerExpression = $plan[0]
-            $selectedFiles = @($plan | Select-Object -Skip 1)
-            if ($selectedFiles -notcontains 'ALL') {
-              $testTargets = $selectedFiles
-              $selectedSubset = $true
-            }
-            $runPackagingBuild = $markerExpression -notmatch 'not packaging_build'
+          $selectedSubset = $null -ne $coverage.tests.files
+          if ($selectedSubset) {
+            $testTargets = @($coverage.tests.files)
           }
           $selectionSummary = if ($selectedSubset) { $testTargets.Count } else { 'all' }
           "- selected_test_files=$selectionSummary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -174,6 +208,7 @@ jobs:
           Get-NetTCPConnection | Group-Object State | Select-Object Name, Count | Format-Table -AutoSize
 
   python-tests:
+    needs: plan
     name: Python tests (3.15, Linux, shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
     strategy:
@@ -184,6 +219,7 @@ jobs:
     env:
       OPENBLAS_NUM_THREADS: "1"
       PYTHONNET_RUNTIME: coreclr
+      XIC_CI_PLAN: ${{ needs.plan.outputs.coverage }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -207,20 +243,12 @@ jobs:
       - name: Test
         shell: pwsh
         run: |
-          $markerExpression = "not current_repository_census and not serial_ci"
+          $coverage = $env:XIC_CI_PLAN | ConvertFrom-Json
+          $markerExpression = $coverage.tests.marker_expression
           $testTargets = @()
-          $selectedSubset = $false
-          if ("${{ github.event_name }}" -eq "pull_request") {
-            $baseSha = "${{ github.event.pull_request.base.sha }}"
-            $headSha = "${{ github.event.pull_request.head.sha }}"
-            $plan = @(uv run --no-sync python -m tools.testing.test_selection --ci-plan --base $baseSha --head $headSha)
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            $markerExpression = $plan[0]
-            $selectedFiles = @($plan | Select-Object -Skip 1)
-            if ($selectedFiles -notcontains 'ALL') {
-              $testTargets = $selectedFiles
-              $selectedSubset = $true
-            }
+          $selectedSubset = $null -ne $coverage.tests.files
+          if ($selectedSubset) {
+            $testTargets = @($coverage.tests.files)
           }
           $selectionSummary = if ($selectedSubset) { $testTargets.Count } else { 'all' }
           "- selected_test_files=$selectionSummary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -239,6 +267,8 @@ jobs:
           exit $testExitCode
 
   browser:
+    needs: plan
+    if: ${{ needs.plan.outputs.browser_required == 'true' }}
     name: Browser (Windows Chromium, shard ${{ matrix.shard }})
     # A fresh pytest process still inherits the VM's Winsock/resource state.
     # Keep Chromium and loopback HTTP off the scientific/build-test machine.
@@ -246,7 +276,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -264,42 +294,21 @@ jobs:
         shell: pwsh
         working-directory: repo-3.15-browser
         run: uv sync --locked --extra dev --group dev --python 3.15
-      - name: Plan browser coverage
-        id: browser-plan
-        shell: pwsh
-        working-directory: repo-3.15-browser
-        run: |
-          $markerExpression = "not current_repository_census and not serial_ci"
-          # A push applies the PR's relevance rule to the pushed range, so a
-          # merge whose PR skipped this lane does not run it again on master.
-          $baseSha = "${{ github.event.pull_request.base.sha || github.event.before }}"
-          $headSha = "${{ github.event.pull_request.head.sha || github.sha }}"
-          if ($baseSha -notmatch '^0*$') {
-            $plan = @(& .\.venv\Scripts\python.exe -m tools.testing.test_selection --ci-plan --base $baseSha --head $headSha)
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            $markerExpression = $plan[0]
-          }
-          "- marker_expression=$markerExpression" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          "marker_expression=$markerExpression" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          $required = $markerExpression -notmatch 'not browser_e2e'
-          "required=$($required.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          if (-not $required) {
-            "- browser_tests=NOT RUN (not relevant to this change)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-            Write-Output '::notice title=Browser tests not run::Not relevant to this change; this is not a passing test run.'
-          }
       - name: Browser test
-        if: steps.browser-plan.outputs.required == 'true'
         shell: pwsh
         working-directory: repo-3.15-browser
         env:
           XIC_PLAYWRIGHT_CHANNEL: ""
           OPENBLAS_NUM_THREADS: "1"
           XIC_BROWSER_DEADLINE_SCALE: "3"
-          XIC_BROWSER_MARKERS: ${{ steps.browser-plan.outputs.marker_expression }}
+          XIC_CI_PLAN: ${{ needs.plan.outputs.coverage }}
         run: |
           $venvScripts = (Resolve-Path .\.venv\Scripts).Path
           $env:PATH = "$venvScripts;$env:PATH"
-          $markerExpression = $env:XIC_BROWSER_MARKERS
+          $coverage = ($env:XIC_CI_PLAN | ConvertFrom-Json).browser
+          $markerExpression = $coverage.marker_expression
+          $testTargets = @($coverage.files)
+          if ($testTargets.Count -eq 0) { throw 'Required browser coverage has no candidate files.' }
           $started = Get-Date
           # The launch fixture already uses headless shell, never headed Chromium.
           & .\.venv\Scripts\python.exe -m playwright install --only-shell chromium
@@ -312,7 +321,7 @@ jobs:
           $browserMarkers = "($markerExpression) and browser_e2e"
           # Separate Windows VMs own disjoint cases; don't concentrate concurrent
           # Chromium/loopback traffic on one VM. Every matrix result is required.
-          & .\.venv\Scripts\python.exe -m pytest -p tools.testing.test_sharding --test-shard "${{ matrix.shard }}/${{ strategy.job-total }}" -m $browserMarkers -n 0 -v --tb=short --durations=10
+          & .\.venv\Scripts\python.exe -m pytest -p tools.testing.test_sharding --test-shard "${{ matrix.shard }}/${{ strategy.job-total }}" -m $browserMarkers -n 0 -v --tb=short --durations=10 @testTargets
           $browserExitCode = $LASTEXITCODE
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- browser_test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -338,7 +347,7 @@ jobs:
   test:
     # Legacy branch-protection name only; this job does not run Python 3.12.
     name: test (Python 3.12)
-    needs: [python-tests, windows-integration, browser]
+    needs: [lint, plan, python-tests, windows-integration, browser]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -350,6 +359,11 @@ jobs:
         run: |
           $lanes = $env:TEST_LANE_RESULTS | ConvertFrom-Json
           foreach ($lane in $lanes.PSObject.Properties) {
+            if ($lane.Name -eq 'browser' -and $lane.Value.result -eq 'skipped' -and
+                $lanes.plan.result -eq 'success' -and
+                $lanes.plan.outputs.browser_required -eq 'false') {
+              continue
+            }
             if ($lane.Value.result -ne 'success') {
               Write-Error "$($lane.Name): $($lane.Value.result)"
               exit 1
