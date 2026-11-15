@@ -1167,25 +1167,28 @@ document.addEventListener("click", async (event) => {
 });
 // A result opened from its run keeps that run's folders; the editable
 // RAW field may later point elsewhere, for example to load curves.
-document.addEventListener("xic:open-review", (event) => {
-  $("source").value = event.detail.source;
-  if (event.detail.reviewPaths) {
-    $("raw-dir").value = event.detail.reviewPaths.raw_dir;
-    $("dll-dir").value = event.detail.reviewPaths.dll_dir;
-    state.runFolders.set(event.detail.source, { ...event.detail.reviewPaths });
+export function openReview(source, reviewPaths) {
+  $("source").value = source;
+  if (reviewPaths) {
+    $("raw-dir").value = reviewPaths.raw_dir;
+    $("dll-dir").value = reviewPaths.dll_dir;
+    state.runFolders.set(source, { ...reviewPaths });
   } else {
     $("raw-dir").value = "";
   }
   action(openBatch, "正在讀取分析結果…");
-});
+}
 // A new curation of the open result replaces the one the page follows.
 // Completion arrives once; a busy review applies it when it unlocks.
-document.addEventListener("xic:curation-published", (event) => {
-  state.publishedCuration = event.detail.source_dir;
+export function curationPublished(result) {
+  state.publishedCuration = result.source_dir;
   applyPublishedCuration();
-});
-document.addEventListener("xic:analysis-busy", controls);
-document.addEventListener("xic:analysis-started", () => {
+}
+// Review controls lock while an analysis runs.
+export function analysisBusyChanged() {
+  controls();
+}
+export function analysisStarted() {
   // The accepted analysis replaces the server's curve job, including a
   // /curves response that has not reached this tab yet.
   if (state.job || (state.curveView && !state.curveView.id)) {
@@ -1193,7 +1196,7 @@ document.addEventListener("xic:analysis-started", () => {
     curveMessage("已停止曲線載入，分析工作已開始。", false, "");
     controls();
   }
-});
+}
 // One session read is shared with the setup page.
 export const session = api("/api/session");
 // One initial read is shared with the setup page, regardless of load order.

@@ -321,3 +321,42 @@ def test_reader_setup_installs_and_points_both_workflows_at_rawfilereader(
             assert "THERMO_RAWFILE_READER_DLL_DIR" in result["message"]
     finally:
         workspace.jobs.close()
+
+
+def test_concurrent_preference_writes_keep_both_changes(tmp_path, monkeypatch):
+    """Requests run on threads; a write that read the file first must not erase
+    the write that finished while it was still reading."""
+    import threading
+
+    original = config_io._read_json_object
+    first_reading = threading.Event()
+    release_first = threading.Event()
+
+    def paused_read(path):
+        payload = original(path)
+        if threading.current_thread().name == "first":
+            first_reading.set()
+            assert release_first.wait(5)
+        return payload
+
+    monkeypatch.setattr(config_io, "_read_json_object", paused_read)
+    first = threading.Thread(
+        name="first",
+        target=config_io.write_preferences,
+        args=({"view": "untargeted"},),
+        kwargs={"config_dir": tmp_path},
+    )
+    first.start()
+    assert first_reading.wait(5)
+    second = threading.Thread(
+        target=config_io.write_preferences,
+        args=({"theme": "dark"},),
+        kwargs={"config_dir": tmp_path},
+    )
+    second.start()
+    second.join(0.2)
+    release_first.set()
+    first.join(5)
+    second.join(5)
+    saved = json.loads((tmp_path / "workbench.json").read_text(encoding="utf-8"))
+    assert saved == {"view": "untargeted", "theme": "dark"}

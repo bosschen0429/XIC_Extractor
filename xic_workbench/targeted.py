@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from xic_extractor.analysis_set import discover_raw_files
-from xic_extractor.configuration import loader as config_loader
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
+from xic_workbench import config_io
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
@@ -41,7 +41,7 @@ class TargetedRun:
     ) -> None:
         config_dir = Path(config_dir)
         # Confirmed sample metadata replaces the batch's 上機資訊 for this run only.
-        prepared = config_loader.prepare_targeted_config(
+        prepared = config_io.prepare_targeted_config(
             config_dir,
             output_dir=output_dir,
             settings_overrides={"injection_order_source": str(sample_annotations)}

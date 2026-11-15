@@ -243,6 +243,7 @@ def _substitute_prepared_inputs(monkeypatch, module, config_dir, config, targets
     tests use real CSV preparation and verify frozen calculation/manifest bytes.
     RAW membership still crosses the real discovery/check interface here.
     """
+    from xic_extractor.configuration import loader
     from xic_extractor.configuration.loader import PreparedTargetedConfig
 
     config.data_dir = config_dir.parent / "raw"
@@ -250,7 +251,7 @@ def _substitute_prepared_inputs(monkeypatch, module, config_dir, config, targets
     config.dll_dir = config_dir.parent / "dll"
     config.injection_order_source = None
     monkeypatch.setattr(
-        module.config_loader,
+        loader,
         "prepare_targeted_config",
         lambda *_args, **_kwargs: PreparedTargetedConfig(
             config, tuple(targets), config_dir
@@ -294,7 +295,9 @@ def test_targeted_run_reads_confirmed_annotations_for_this_run_only(
         calls.append(kwargs)
         raise Stop
 
-    monkeypatch.setattr(targeted.config_loader, "prepare_targeted_config", prepare)
+    from xic_extractor.configuration import loader
+
+    monkeypatch.setattr(loader, "prepare_targeted_config", prepare)
     annotations = tmp_path / "confirmed.tsv"
     for value in (annotations, None):
         try:
