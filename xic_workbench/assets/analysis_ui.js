@@ -1,12 +1,6 @@
-import { curation } from "./analysis_curation.js";
-// Transport and reusable DOM/form controls shared by analysis views.
-import { analysis } from "./analysis_jobs.js";
-import {
-  listSamples,
-  renderSampleActions,
-  sampleMetadata,
-} from "./analysis_samples.js";
-import { checklist } from "./analysis_setup.js";
+// Transport and reusable DOM/form controls shared by analysis views. Views
+// import this module, so it imports no view: the entry connects what the page
+// coordinates across them.
 import { state } from "./analysis_state.js";
 
 export const $ = (id) => document.getElementById(id);
@@ -18,10 +12,7 @@ export const pathFields = [
   ["output_dir", OUTPUT_LABEL, "folder"],
   ["dll_dir", "RawFileReader DLL 資料夾", "folder"],
 ];
-// A declaration, not a const: modules in this import cycle capture it before this body runs.
-export function api(path, values, signal) {
-  return window.XicUi.api(path, values, signal);
-}
+export const { api } = ui;
 export function status(text, error = false) {
   ui.toast(text, error ? "error" : "info");
 }
@@ -59,17 +50,15 @@ export function pathTail(path, parts = 2) {
     ? `…\\${segments.slice(-parts).join("\\")}`
     : String(path || "");
 }
+// busy(), lock(), pathChanged(page) and sourceChanged(page), from the entry.
+let page;
+export function connectPage(hooks) {
+  page = hooks;
+}
 export function isBusy() {
-  return (
-    state.importing ||
-    Boolean(analysis?.snapshot.busy) ||
-    sampleMetadata.saving
-  );
+  return state.importing || page.busy();
 }
 export function lock() {
-  document.querySelectorAll("[data-sample-edit]").forEach((node) => {
-    node.disabled = !sampleMetadata.canEdit;
-  });
   document
     .querySelectorAll("[data-analysis-idle]")
     .forEach(
@@ -78,9 +67,7 @@ export function lock() {
           isBusy() ||
           (node.dataset.rtBound === "true" && !$("u-rt-crop")?.checked)),
     );
-  if ($("curation-export"))
-    $("curation-export").disabled = isBusy() || !curation?.snapshot.canExport;
-  renderSampleActions();
+  page.lock();
 }
 export const isTemplatePath = (value) =>
   value.startsWith("<") || /[\\/]your[\\/]/i.test(value);
@@ -181,18 +168,18 @@ export function pathField(
     input.dataset.validatedPath = result.usable ? value : "";
     problem.textContent = result.usable ? "" : result.message;
     input.setAttribute("aria-invalid", String(!result.usable));
-    checklist(prefix === "t-" ? "targeted" : "untargeted");
+    page.pathChanged(view);
     return result.usable;
   };
+  const view = prefix === "t-" ? "targeted" : "untargeted";
   input.addEventListener("input", () => {
     delete input.dataset.validatedPath;
-    checklist(prefix === "t-" ? "targeted" : "untargeted");
+    page.pathChanged(view);
   });
   input.addEventListener("change", () =>
     act(async () => {
-      const page = prefix === "t-" ? "targeted" : "untargeted";
       if (["data_dir", "raw_dir"].includes(key)) {
-        if (await validate()) await listSamples(page);
+        if (await validate()) await page.sourceChanged(view);
       } else await validate();
     }),
   );

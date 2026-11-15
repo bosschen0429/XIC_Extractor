@@ -5,8 +5,10 @@ import { bindReader, renderReaderSetup } from "./analysis_reader.js";
 import { bindResults, renderResults } from "./analysis_results.js";
 import {
   bindSamples,
+  listSamples,
   mountSampleSteps,
   renderRoleSummary,
+  renderSampleActions,
   sampleMetadata,
 } from "./analysis_samples.js";
 import {
@@ -37,6 +39,7 @@ import {
   $,
   act,
   api,
+  connectPage,
   el,
   isBusy,
   pathField,
@@ -51,6 +54,16 @@ import {
   saveUntargeted,
 } from "./analysis_untargeted.js";
 
+connectPage({
+  busy: () => Boolean(analysis?.snapshot.busy) || sampleMetadata.saving,
+  lock() {
+    if ($("curation-export"))
+      $("curation-export").disabled = isBusy() || !curation?.snapshot.canExport;
+    renderSampleActions();
+  },
+  pathChanged: checklist,
+  sourceChanged: listSamples,
+});
 registerNavigation();
 window.XicAnalysis = {
   excludeSamples: sampleMetadata.exclude,
