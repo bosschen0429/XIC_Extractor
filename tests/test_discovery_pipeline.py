@@ -21,6 +21,7 @@ from tests.discovery_pipeline_fixtures import (
     _spec_bound_opener,
     discover_vendor_fake_sample,
     vendor_fake_discovery_opener,
+    vendor_fake_open_raw,
 )
 from xic_extractor.discovery import pipeline as _pipeline
 from xic_extractor.discovery.batch_contract import DISCOVERY_BATCH_INDEX_COLUMNS
@@ -1848,3 +1849,53 @@ def test_acquisition_open_observations_keep_sample_attribution_in_serial_and_spa
                 assert (output_dir / f"{stem}.closed").read_text() == "disposed"
         observed.append(by_sample)
     assert observed[0] == observed[1]
+
+
+@pytest.mark.parametrize("mode", ("success", "read_failure"))
+def test_process_worker_records_raw_open_through_its_production_opener(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
+    from xic_extractor.raw_reader import EXPECTED_THERMO_DLLS
+
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_text(mode)
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    for name in EXPECTED_THERMO_DLLS:
+        (dll_dir / name).write_bytes(b"fake dll")
+    settings = _settings(
+        mass_recalibration=MassRecalibration.NONE, rt_min=7.5, rt_max=8.6
+    )
+    spec = _compiled_run_spec((raw_path,), settings)
+    item = spec.acquisition_inputs[0]
+    job = DiscoverySampleProcessJob(
+        item.input_ordinal,
+        raw_path,
+        tmp_path / "out",
+        settings,
+        dll_dir,
+        item.acquisition_source,
+        spec,
+        item,
+        instrument_diagnostics=True,
+    )
+    # Only the vendor is substituted; the worker's own opener supplies the recorder.
+    monkeypatch.setattr("xic_extractor.raw_reader.open_raw", vendor_fake_open_raw(job))
+
+    result = run_discovery_sample_process_job(
+        job, discover_sample=discover_sample_for_process_job
+    )
+
+    expected_type = (
+        DiscoverySampleProcessResult
+        if mode == "success"
+        else DiscoverySampleProcessError
+    )
+    assert isinstance(result, expected_type)
+    rows = [
+        (row["scope"], row["value"], row["availability"])
+        for row in result.measurement_observations
+        if row["metric"] == "raw_open_count"
+    ]
+    assert rows == [("sample", 1, "measured")]

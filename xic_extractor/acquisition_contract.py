@@ -23,6 +23,9 @@ from xic_extractor.validation_primitives import (
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
+NATIVE_SCAN_COORDINATE_KIND = "native_scan"
+"""Persisted coordinate kind of every acquired trace; native scans are the only one."""
+
 
 class AcquisitionContractError(ValueError):
     """Raised when an adapter cannot truthfully satisfy its declared capability."""
@@ -387,7 +390,7 @@ def _capability_content(capability: TraceAcquisitionCapability) -> dict[str, obj
     return {
         "acquisition_source": asdict(capability.acquisition_source),
         "adapter_namespace": capability.adapter_namespace,
-        "coordinate_kind": "native_scan",
+        "coordinate_kind": NATIVE_SCAN_COORDINATE_KIND,
     }
 
 
@@ -445,7 +448,7 @@ def _capability_from_payload(value: object) -> TraceAcquisitionCapability:
         if revision is None
         else (revision[0], revision[1], revision[2], revision[3], revision[4]),
     )
-    if capability["coordinate_kind"] != "native_scan":
+    if capability["coordinate_kind"] != NATIVE_SCAN_COORDINATE_KIND:
         raise AcquisitionContractError("unsupported trace coordinate kind")
     return TraceAcquisitionCapability(
         acquisition_source=acquisition_source,
@@ -525,6 +528,7 @@ def _nonnegative_integer(value: object, field: str) -> int:
 
 
 __all__ = [
+    "NATIVE_SCAN_COORDINATE_KIND",
     "AcquiredTrace",
     "AcquisitionContractError",
     "BatchXICAdapter",

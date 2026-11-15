@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import cast
 
 from xic_extractor.acquisition_contract import (
+    NATIVE_SCAN_COORDINATE_KIND,
     AcquiredTrace,
     TraceAcquisitionBatch,
     mint_trace_acquisition_capability,
@@ -544,7 +545,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             sample_name=sample.sample_name,
             request=capture_request,
             xic_trace=capture_acquired.trace,
-            source=(f"{_ADAPTER_NAMESPACE}.backfill:native_scan"),
+            source=f"{_ADAPTER_NAMESPACE}.backfill:{NATIVE_SCAN_COORDINATE_KIND}",
             acquisition_source_id=source.acquisition_source_id,
         )
         physical_evaluations.clear()

@@ -18,6 +18,7 @@ from typing import Any, Literal, cast
 import numpy as np
 
 from xic_extractor.acquisition_contract import (
+    NATIVE_SCAN_COORDINATE_KIND,
     AcquiredTrace,
     TraceAcquisitionBatch,
     TraceAcquisitionCapability,
@@ -387,7 +388,7 @@ def _trace_key(capability: TraceAcquisitionCapability, request: XICRequest) -> b
     return _key_bytes(
         "xic",
         capability.adapter_namespace,
-        "native_scan",
+        NATIVE_SCAN_COORDINATE_KIND,
         _float_text(request.mz),
         _float_text(request.rt_min),
         _float_text(request.rt_max),

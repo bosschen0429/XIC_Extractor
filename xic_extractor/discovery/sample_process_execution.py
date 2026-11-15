@@ -383,7 +383,6 @@ def run_discovery_sample_process_job(
             timing_recorder=recorder,
             mass_recalibration_result=discovery_result.mass_recalibration_result,
         )
-        record_unavailable_raw_open(recorder, sample_stem)
         return DiscoverySampleProcessResult(
             sample_index=job.sample_index,
             sample_stem=sample_stem,
@@ -395,7 +394,6 @@ def run_discovery_sample_process_job(
             acquisition_source_id=job.acquisition_source.acquisition_source_id,
         )
     except Exception as exc:
-        record_unavailable_raw_open(recorder, job.raw_path.stem)
         return _discovery_process_error(
             job,
             exc,

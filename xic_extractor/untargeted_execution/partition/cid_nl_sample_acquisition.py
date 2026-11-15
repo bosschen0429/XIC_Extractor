@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from dataclasses import field as dataclass_field
 
 from xic_extractor.acquisition_contract import (
+    NATIVE_SCAN_COORDINATE_KIND,
     AcquiredTrace,
     TraceAcquisitionBatch,
     mint_trace_acquisition_capability,
@@ -82,7 +83,9 @@ from xic_extractor.untargeted_execution.partition.cid_nl_raw_source import (
 )
 from xic_extractor.xic_models import XICRequest
 
-UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE = f"{_ADAPTER_NAMESPACE}:native_scan"
+UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE = (
+    f"{_ADAPTER_NAMESPACE}:{NATIVE_SCAN_COORDINATE_KIND}"
+)
 _WRITER_ROUNDING_REL_TOL = 5e-6
 _WRITER_ROUNDING_ABS_TOL = 5e-6
 

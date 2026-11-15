@@ -241,8 +241,12 @@ class _FakeRawHandle:
         return 0, max(len(self._rt) - 1, 0)
 
 
-def vendor_fake_discovery_opener(job, recorder):
-    """Exercise open_raw with a controllable vendor; never load a real DLL."""
+def vendor_fake_open_raw(job):
+    """Stand in for ``open_raw`` with a controllable vendor; never load a real DLL.
+
+    Caller keyword arguments reach the real ``open_raw`` unchanged, so the
+    production opener's own wiring decides what is observed.
+    """
     from types import SimpleNamespace
 
     from tests.cid_nl_raw_fixture import _FakeRaw, _FakeThermoRaw, _working_imports
@@ -269,7 +273,7 @@ def vendor_fake_discovery_opener(job, recorder):
     elif mode in {"read_failure", "cancel"}:
         vendor.ScanNumberFromRetentionTime = fail
 
-    def open_vendor(path, dll_dir):
+    def open_vendor(path, dll_dir, **kwargs):
         if mode == "unobserved":
             raw = _FakeRawHandle(events=[])
             raw.acquisition_source = job.acquisition_source
@@ -277,9 +281,7 @@ def vendor_fake_discovery_opener(job, recorder):
         return open_raw(
             path,
             dll_dir,
-            expected_acquisition_source=job.acquisition_source,
-            mass_recalibration=job.settings.mass_recalibration,
-            timing_recorder=recorder,
+            **kwargs,
             _import_module=_working_imports,
             _thermo=SimpleNamespace(
                 raw_file_reader_adapter=SimpleNamespace(
@@ -292,6 +294,21 @@ def vendor_fake_discovery_opener(job, recorder):
         )
 
     return open_vendor
+
+
+def vendor_fake_discovery_opener(job, recorder):
+    open_vendor = vendor_fake_open_raw(job)
+
+    def open_sample(path, dll_dir):
+        return open_vendor(
+            path,
+            dll_dir,
+            expected_acquisition_source=job.acquisition_source,
+            mass_recalibration=job.settings.mass_recalibration,
+            timing_recorder=recorder,
+        )
+
+    return open_sample
 
 
 def discover_vendor_fake_sample(job, *, timing_recorder, measurement_observer):
