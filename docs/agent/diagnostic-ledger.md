@@ -27,6 +27,39 @@ none of these entries grants readiness or writer authority.
 | RAW root | `$env:XIC_RAW_ROOT` |
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
 
+## Browser Transport
+
+### Windows randomized TCP ports can fail at low connection counts
+
+`diagnostic_only` (2026-11-15). The first attempt of
+[CI run 43683214989](https://github.com/bosschen0429/XIC_Extractor/actions/runs/43683214989/attempts/1)
+failed loading `analysis.css` with `ERR_NO_BUFFER_SPACE` and no HTTP response.
+Its retained trace does not contain a native socket error, so attributing that
+specific CI failure to the allocator remains an inference.
+
+The inspected [upstream reproduction](https://github.com/microsoft/playwright/issues/43545)
+isolated `SO_RANDOMIZE_PORT` locally on Windows build 22631.6491:
+ordinary phases completed 40,000 connections without error; randomized phases
+failed with Winsock 10055 after 7,062 and 12,540 attempts, with about 230 TCP rows.
+This reproduced the allocator defect independently of XIC, at low TCP occupancy.
+The original browser shard passed 57 cases both before and after mitigation,
+with sampled TCP counts below 503 and over 8 GiB of available memory. Neither run
+reproduced the browser error; these clean intervals do not prove its elimination.
+
+The Windows test launch disables `TcpPortRandomizationWin`, preserving all 18
+stock disabled features observed with Playwright 1.64.1 / Chromium 156.0.8078.4.
+A temporary stock browser supplies that list once per channel and process;
+there is no copied list, test retry, increased worker budget or product-browser
+change. The real-browser regression compares the effective launch features
+against an independently launched stock browser.
+
+Evidence is under `output/browser-ci-analysis/`: `native-probe-result.json`,
+`shard-baseline/` and `shard-candidate/` hold the native comparison, live resource
+snapshots and Chromium NetLogs. Re-evaluate the mitigation after a Windows TCP
+stack or locked Chromium/Playwright update, or another `ERR_NO_BUFFER_SPACE`;
+use a native socket error and contemporaneous resource counts rather than
+assuming that the error name proves resource exhaustion.
+
 ## Stored Review Evidence
 
 ### Lossless storage and indexed curve reads

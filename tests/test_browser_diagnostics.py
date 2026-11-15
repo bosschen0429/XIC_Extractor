@@ -16,26 +16,59 @@ def test_teardown_errors_keep_browser_evidence_after_tmp_path_cleanup(tmp_path):
     probe = tmp_path / "test_probe.py"
     probe.write_text(
         """
+import os
+import sys
 import pytest
-from playwright.sync_api import expect
+from playwright.sync_api import BrowserType, expect, sync_playwright
 from tests.workbench_browser_fixtures import (
     browser, browser_errors, config_dir, workbench, workbench_defaults,
 )
 pytest_plugins = ("tests.browser_diagnostics",)
 
 @pytest.fixture(scope="module", autouse=True)
-def assertion_timeouts():
+def browser_runtime_settings():
     configured = []
+    stock_features = set()
+    if sys.platform == "win32":
+        with sync_playwright() as playwright:
+            stock = playwright.chromium.launch(
+                channel=os.environ.get("XIC_PLAYWRIGHT_CHANNEL") or None,
+                args=["--enable-automation"],
+            )
+            try:
+                session = stock.new_browser_cdp_session()
+                arguments = session.send("Browser.getBrowserCommandLine")["arguments"]
+                stock_features = set(next(
+                    arg.split("=", 1)[1] for arg in reversed(arguments)
+                    if arg.startswith("--disable-features=")
+                ).split(","))
+            finally:
+                stock.close()
     set_options = expect.set_options
+    launch = BrowserType.launch
     def record_options(**options):
         configured.append(options["timeout"])
         set_options(**options)
+    def inspectable_launch(self, **options):
+        options["args"] = [*options.get("args", ()), "--enable-automation"]
+        return launch(self, **options)
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(expect, "set_options", record_options)
-        yield configured
+        patch.setattr(BrowserType, "launch", inspectable_launch)
+        yield configured, stock_features
 
-def test_shared_browser_scales_assertion_deadline(browser, assertion_timeouts):
-    assert assertion_timeouts and assertion_timeouts[-1] == 15_000
+def test_shared_browser_deadline_and_launch_defaults(browser, browser_runtime_settings):
+    configured, stock_features = browser_runtime_settings
+    assert configured and configured[-1] == 15_000
+    if sys.platform == "win32":
+        session = browser.new_browser_cdp_session()
+        arguments = session.send("Browser.getBrowserCommandLine")["arguments"]
+        session.detach()
+        effective = set(next(
+            arg.split("=", 1)[1] for arg in reversed(arguments)
+            if arg.startswith("--disable-features=")
+        ).split(","))
+        assert stock_features | {"TcpPortRandomizationWin"} == effective
 
 def test_transport(workbench):
     workbench.route("**/diagnostic-probe*", lambda route: route.abort("failed"))
