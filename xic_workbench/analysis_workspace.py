@@ -119,8 +119,8 @@ class AnalysisWorkspace:
         from xic_extractor.configuration.settings import (
             resolve_settings,
         )
-        from xic_extractor.configuration.workspace_state import read_workspace
         from xic_workbench.config_io import (
+            read_delta_mass,
             read_settings,
             read_targets,
         )
@@ -173,7 +173,7 @@ class AnalysisWorkspace:
             "review_source": self.defaults.get("source", ""),
             "settings": settings,
             "targets": read_targets(config_dir=self.config_dir),
-            "delta_mass": read_workspace(self.config_dir).get("delta_mass"),
+            "delta_mass": read_delta_mass(config_dir=self.config_dir),
             "targeted_specificity": targeted_specificity_choices(),
             "targeted_form": {"settings": setting_fields()},
             "targeted_warnings": warnings,

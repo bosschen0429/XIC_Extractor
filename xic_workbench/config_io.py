@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import functools
 import json
+import threading
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from xic_extractor.configuration.atomic_write import atomic_write_text
 from xic_extractor.configuration.models import ConfigError
@@ -15,18 +19,37 @@ from xic_extractor.configuration.workspace_state import (
     workspace_settings,
 )
 
+if TYPE_CHECKING:
+    from xic_extractor.configuration.loader import PreparedTargetedConfig
+
 ROOT = runtime_root()
 CONFIG_DIR = ROOT / "config"
+
+# Workbench requests run on threads. Windows refuses to replace a state file
+# another thread has open, and a read-modify-write would erase a concurrent
+# edit, so every read and write of the state files here runs alone.
+_state_lock = threading.RLock()
+
+
+def _serialized[**P, R](function: Callable[P, R]) -> Callable[P, R]:
+    @functools.wraps(function)
+    def run(*args: P.args, **kwargs: P.kwargs) -> R:
+        with _state_lock:
+            return function(*args, **kwargs)
+
+    return run
 
 
 def _runtime_dir(config_dir: Path | None) -> Path:
     return Path(config_dir) if config_dir is not None else CONFIG_DIR
 
 
+@_serialized
 def read_settings(*, config_dir: Path | None = None) -> dict[str, str]:
     return workspace_settings(read_workspace(_runtime_dir(config_dir)))
 
 
+@_serialized
 def write_settings(
     settings: dict[str, str], *, config_dir: Path | None = None
 ) -> dict[str, str]:
@@ -37,6 +60,7 @@ def write_settings(
     return values
 
 
+@_serialized
 def write_work(
     settings: dict[str, str],
     targets: list[dict[str, str]],
@@ -59,6 +83,7 @@ def write_work(
     return values
 
 
+@_serialized
 def write_application_settings(
     settings: dict[str, str], *, config_dir: Path | None = None
 ) -> dict[str, str]:
@@ -71,6 +96,7 @@ def write_application_settings(
     return selected
 
 
+@_serialized
 def write_dll_dir(dll_dir: str, *, config_dir: Path | None = None) -> None:
     write_application_settings({"dll_dir": dll_dir}, config_dir=config_dir)
 
@@ -87,10 +113,12 @@ def _write_json_object(path: Path, payload: dict) -> None:
     atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
 
+@_serialized
 def read_preferences(*, config_dir: Path | None = None) -> dict:
     return _read_json_object(_runtime_dir(config_dir) / "workbench.json")
 
 
+@_serialized
 def write_preferences(values: dict, *, config_dir: Path | None = None) -> dict:
     if set(values) - {"theme", "view", "targeted_output_dir", "matrix_curation"}:
         raise ValueError("不支援此偏好設定；DLL 目錄由應用設定管理。")
@@ -101,10 +129,12 @@ def write_preferences(values: dict, *, config_dir: Path | None = None) -> dict:
     return payload
 
 
+@_serialized
 def read_targets(*, config_dir: Path | None = None) -> list[dict[str, str]]:
     return read_workspace(_runtime_dir(config_dir))["targets"]
 
 
+@_serialized
 def write_targets(
     targets: list[dict[str, str]], *, config_dir: Path | None = None
 ) -> None:
@@ -112,3 +142,16 @@ def write_targets(
 
     parse_target_rows(targets)
     save_workspace(_runtime_dir(config_dir), targets=targets)
+
+
+@_serialized
+def read_delta_mass(*, config_dir: Path | None = None) -> dict | None:
+    return read_workspace(_runtime_dir(config_dir)).get("delta_mass")
+
+
+@_serialized
+def prepare_targeted_config(config_dir: Path, **options: Any) -> PreparedTargetedConfig:
+    """A Targeted run freezes its inputs from the same state files."""
+    from xic_extractor.configuration import loader
+
+    return loader.prepare_targeted_config(config_dir, **options)
