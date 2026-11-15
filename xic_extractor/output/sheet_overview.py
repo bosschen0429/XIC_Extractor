@@ -24,7 +24,7 @@ from xic_extractor.output.workbook_styles import (
 )
 from xic_extractor.output.workbook_values import _excel_text
 
-# Both tables share columns A-C, so each width suits either table's column.
+# Both tables share columns A-B, so each width suits either table's column.
 _WORKLIST = (
     ("目標", "Target"),
     ("樣本", "Sample"),
@@ -33,7 +33,7 @@ _WORKLIST = (
     ("RT (min)", "RT"),
     ("Area", "Area"),
 )
-_TARGETS = ("目標", "類型", "計入樣本數")
+_ANALYTES = ("分析物", "計入樣本數")
 _WIDTHS = (22, 32, 10, 46, 9, 11)
 _FIRST_TABLE_ROW = 4
 
@@ -45,10 +45,10 @@ def build_overview_sheet(
     worklist: Sequence[Mapping[str, object]],
     provenance: str,
 ) -> None:
-    """Write the conclusion, the results to look at first, then target counts.
+    """Write the conclusion, the results to look at first, then analyte counts.
 
-    ISTDs counted in every sample are the batch fact on line two; only the
-    exceptions get a row.
+    ISTD status is one batch fact on line two, naming only an ISTD that was not
+    counted in every sample.
     """
     _prepare_sheet(ws, landscape=False)
     ws["A1"] = (
@@ -60,14 +60,19 @@ def build_overview_sheet(
     )
     ws["A1"].font = _font(INK, bold=True, size=16)
     ws.row_dimensions[1].height = 30
-    istd = (
-        "ISTD 全部計入"
-        if overview.istd_counted == overview.istd_total
-        else f"ISTD 計入 {overview.istd_counted}/{overview.istd_total}"
-    )
     facts = [f"{overview.sample_count} 個樣本", f"{len(overview.targets)} 個目標"]
-    if overview.istd_total:
-        facts.append(istd)
+    gaps = [
+        f"{target.label} {target.counted}/{target.total}"
+        for target in overview.targets
+        if target.role == "ISTD" and target.counted < target.total
+    ]
+    if gaps:
+        facts.append(
+            f"ISTD 計入 {overview.istd_counted}/{overview.istd_total}"
+            f"（{'、'.join(gaps)}）"
+        )
+    elif overview.istd_total:
+        facts.append("ISTD 全部計入")
     if overview.count_unknown:
         facts.append(f"{overview.count_unknown} 筆未記錄計數判定")
     facts.append(provenance)
@@ -77,23 +82,13 @@ def build_overview_sheet(
     row = _FIRST_TABLE_ROW
     if worklist:
         row = _write_worklist(ws, row, worklist) + 2
-    targets = [
-        target
-        for target in overview.targets
-        if target.role != "ISTD" or target.counted < target.total
-    ]
-    if targets:
-        _write_header(ws, row, _TARGETS, {"計入樣本數"})
-        for offset, target in enumerate(targets, 1):
-            for column, value in enumerate(
-                (_excel_text(target.label), target.role, target.counted), 1
-            ):
-                _style_body(
-                    ws.cell(row + offset, column, value),
-                    color=SOFT if column == 2 else INK,
-                    numeric=column == 3,
-                )
-        row += len(targets)
+    analytes = [target for target in overview.targets if target.role != "ISTD"]
+    if analytes:
+        _write_header(ws, row, _ANALYTES, {"計入樣本數"})
+        for offset, target in enumerate(analytes, 1):
+            _style_body(ws.cell(row + offset, 1, _excel_text(target.label)))
+            _style_body(ws.cell(row + offset, 2, target.counted), numeric=True)
+        row += len(analytes)
     ws.cell(row + 2, 1, "逐峰檢查：在工作台開啟此檔看 XIC。").font = _font(SOFT, size=9)
     for column, width in enumerate(_WIDTHS, 1):
         ws.column_dimensions[get_column_letter(column)].width = width

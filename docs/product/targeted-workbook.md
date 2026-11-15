@@ -16,7 +16,7 @@ and no sheet exists to translate one.
 
 | Sheet | Role | Reader |
 | --- | --- | --- |
-| `摘要` | Conclusion line; batch fact line ending with version and date; the results counted in 先看, one row each; then one row per analyte with its counted samples, and per ISTD only when it is not counted in every sample | Human (landing sheet) |
+| `摘要` | Conclusion line; batch fact line (ISTD status names only an ISTD not counted in every sample) ending with version and date; the results counted in 先看, one row each; then one row per analyte with its counted samples | Human (landing sheet) |
 | `面積` | Saved Area per sample × target; analytes sharing an ISTD sit together, followed by that ISTD | Human, in-sheet calculation |
 | `XIC Results` | One row per sample-target result; hidden | Inspector, ISTD reference, workbook compare |
 | `Targets` | Admitted target intent, including `Specificity`; hidden | Inspector, ISTD reference, workbook compare |

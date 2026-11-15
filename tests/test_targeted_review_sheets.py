@@ -164,7 +164,7 @@ def test_minority_counted_without_saved_review_names_its_supporting_evidence():
     assert record["Area"] == "13.5"
 
 
-def test_summary_lists_analytes_and_only_istds_missing_somewhere():
+def test_summary_counts_analytes_and_names_only_istds_missing_somewhere():
     samples = ("S1", "S2", "S3", "S4", "S5")
     counted = {
         ("Rare", "Analyte"): {"S3"},
@@ -187,23 +187,20 @@ def test_summary_lists_analytes_and_only_istds_missing_somewhere():
     sheet = Workbook().active
     build_overview_sheet(sheet, overview, worklist=worklist, provenance="v1")
     assert sheet["A1"].value == "先看 2 筆結果"
-    assert sheet["A2"].value == "5 個樣本 · 4 個目標 · ISTD 計入 9/10 · v1"
+    # ISTD status is one batch fact that names only the exception.
+    assert sheet["A2"].value == "5 個樣本 · 4 個目標 · ISTD 計入 9/10（Gap 4/5） · v1"
     header = next(
         row
         for row in range(1, sheet.max_row + 1)
-        if sheet.cell(row, 3).value == "計入樣本數"
+        if sheet.cell(row, 1).value == "分析物"
     )
+    assert sheet.cell(header, 2).value == "計入樣本數"
     table = {
-        sheet.cell(row, 1).value: (sheet.cell(row, 2).value, sheet.cell(row, 3).value)
-        for row in range(header + 1, header + 4)
+        sheet.cell(row, 1).value: sheet.cell(row, 2).value
+        for row in range(header + 1, header + 3)
     }
-    # An ISTD counted in every sample is the batch fact on line two.
-    assert table == {
-        "Rare": ("Analyte", 1),
-        "Gap": ("ISTD", 4),
-        "Steady": ("Analyte", 5),
-    }
-    assert not sheet.cell(header + 4, 1).value
+    assert table == {"Rare": 1, "Steady": 5}
+    assert not sheet.cell(header + 3, 1).value
     assert not sheet.merged_cells.ranges
     assert not sheet._charts
     assert not any(cell.hyperlink for row in sheet for cell in row)
