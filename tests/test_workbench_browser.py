@@ -3621,8 +3621,13 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
     _set_reader_path(page, str(tmp_path / "next-dll"))
     page.get_by_role("button", name="檢閱結果", exact=True).click()
+    # The setup page keeps its own hidden link with the same name; wait for the
+    # review page's link instead of whichever one exists when the click starts.
+    review_download = page.locator("#result-download")
+    expect(review_download).to_be_visible()
+    expect(review_download).to_have_text("下載結果 Excel")
     with page.expect_download() as pending:
-        page.get_by_role("link", name="下載結果 Excel", exact=True).click()
+        review_download.click()
     assert (
         Path(pending.value.path()).read_bytes()
         == fake_runs.targeted_workbook.read_bytes()
