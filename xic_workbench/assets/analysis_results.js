@@ -1,8 +1,13 @@
 // Completed-result summaries, artifact viewing and Inspector export selection.
-import { curation, openCuration } from "./analysis_curation.js";
-import { analysis, renderJob, resultIds } from "./analysis_jobs.js";
-import { state } from "./analysis_state.js";
+import { openCuration, showCurationResult } from "./analysis_curation.js";
+import { analysis } from "./analysis_state.js";
 import { $, act, api, button, el, ui } from "./analysis_ui.js";
+
+export const resultIds = {
+  targeted: "target-result",
+  untargeted: "untargeted-result",
+  curation: "curation-result",
+};
 
 let exportSource;
 export function artifactLink(artifact, label = artifact.name) {
@@ -196,18 +201,6 @@ export function renderResults() {
     details.append(el("p", `來源：${curated.source_dir}`, "subtle mono"));
     showCurationResult();
   }
-}
-const folderKey = (path) =>
-  (path || "").trim().replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
-// A curated matrix belongs to its source; another source never offers it.
-export function showCurationResult() {
-  const curated = analysis.snapshot.results.curation;
-  $(resultIds.curation).hidden =
-    !curated ||
-    folderKey(curated.source_dir) !==
-      folderKey(curation.snapshot.sources.source_dir);
-  // The finished curation job shows its card again when this one is hidden.
-  renderJob();
 }
 export function openReview(source, reviewPaths) {
   document.dispatchEvent(

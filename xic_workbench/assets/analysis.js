@@ -1,6 +1,6 @@
 "use strict";
-import { bindCuration, curation } from "./analysis_curation.js";
-import { analysis, bindJobs, renderJob } from "./analysis_jobs.js";
+import { bindCuration, curation, prepareResult } from "./analysis_curation.js";
+import { bindJobs, renderJob } from "./analysis_jobs.js";
 import { bindReader, renderReaderSetup } from "./analysis_reader.js";
 import { bindResults, renderResults } from "./analysis_results.js";
 import {
@@ -14,14 +14,14 @@ import {
 import {
   bindSetup,
   checklist,
-  prepareResult,
   registerNavigation,
   reloadedOnResult,
   selectView,
-  showMode,
   showingResult,
+  showMode,
 } from "./analysis_setup.js";
 import {
+  analysis,
   initializeConfig,
   markBooted,
   markClosed,

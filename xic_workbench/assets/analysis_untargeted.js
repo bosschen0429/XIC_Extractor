@@ -1,9 +1,9 @@
 // Untargeted method selection/editor, tuning controls and ISTD imports.
 import { deltaMassEditor, ionsError } from "./analysis_delta_mass.js";
-import { analysis } from "./analysis_jobs.js";
 import { sampleMetadata } from "./analysis_samples.js";
 import { checklist, dirty } from "./analysis_setup.js";
 import {
+  analysis,
   setImporting,
   setMethod,
   state,

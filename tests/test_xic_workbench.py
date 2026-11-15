@@ -705,6 +705,37 @@ def test_analysis_module_graph_is_served_with_javascript_mime(tmp_path):
         assert request("/assets/../server.py")[0] == 404
 
 
+def test_workbench_module_imports_form_no_cycle():
+    """A cycle lets a module read another's binding before it is initialized."""
+    from importlib.resources import files
+
+    sources = {
+        asset.name: asset.read_text(encoding="utf-8")
+        for asset in files("xic_workbench").joinpath("assets").iterdir()
+        if asset.name.endswith(".js")
+    }
+    # Only static specifiers are visible here; a dynamic import would hide an edge.
+    assert not [name for name, text in sources.items() if "import(" in text]
+    graph = {
+        name: set(re.findall(r'(?:from|import)\s*"\./([^"/]+\.js)"', text))
+        for name, text in sources.items()
+    }
+    finished: set[str] = set()
+
+    def visit(name: str, path: tuple[str, ...]) -> None:
+        if name in path:
+            cycle = " -> ".join((*path[path.index(name) :], name))
+            raise AssertionError(f"import cycle: {cycle}")
+        if name in finished:
+            return
+        for imported in sorted(graph[name]):
+            visit(imported, (*path, name))
+        finished.add(name)
+
+    for name in sorted(graph):
+        visit(name, ())
+
+
 def test_view_endpoint_guards_unknown_ids_and_serves_only_packaged_assets(tmp_path):
     from importlib.resources import files
 

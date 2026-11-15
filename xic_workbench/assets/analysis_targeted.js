@@ -1,5 +1,4 @@
 // Target tables, per-target specificity and Targeted batch settings.
-import { analysis } from "./analysis_jobs.js";
 import { sampleMetadata, samplePages } from "./analysis_samples.js";
 import {
   deltaMassEditor,
@@ -10,9 +9,10 @@ import {
   parseOffsets,
 } from "./analysis_delta_mass.js";
 import { createRowSelection } from "./analysis_row_selection.js";
-import { checklist, dirty, showSettingsWarnings } from "./analysis_setup.js";
+import { checklist, dirty } from "./analysis_setup.js";
 import {
   addTarget,
+  analysis,
   removeTarget,
   setDeltaMass,
   setImporting,
@@ -42,6 +42,30 @@ import {
 
 let pendingTargetImport = null;
 
+let settingsTimer;
+// Every Targeted setup change also checks the settings server-side, so their
+// problems show while the setup is edited.
+export function dirtyTargeted(value = true) {
+  dirty("targeted", value);
+  clearTimeout(settingsTimer);
+  settingsTimer = setTimeout(
+    () =>
+      act(async () => {
+        const { warnings } = await api("/api/targeted/settings", {
+          settings: settingsValues(),
+        });
+        showSettingsWarnings(warnings);
+      }),
+    250,
+  );
+}
+// Settings problems stay in view beside the paths they concern.
+function showSettingsWarnings(warnings) {
+  $("targeted-warnings").replaceChildren(
+    ...(warnings || []).map((warning) => el("p", warning, "settings-warning")),
+  );
+  checklist("targeted");
+}
 export function settingsValues() {
   const values = { ...state.config.settings };
   for (const spec of state.config.targeted_form.settings) {
@@ -164,7 +188,7 @@ export async function saveTargeted(quiet = false) {
     output_dir,
   });
   updateConfig({ settings: receipt.settings, targeted_output_dir: output_dir });
-  dirty("targeted", false);
+  dirtyTargeted(false);
   if (!quiet) done(receipt.message);
 }
 const isIstd = (row) => row.role === "istd";
@@ -369,7 +393,7 @@ function renderTargets() {
             [key]: key === "label" ? input.value : input.value.trim(),
           });
           if (key === "mz" && expandedRow === row) renderExpanded(tr, row);
-          dirty("targeted");
+          dirtyTargeted();
           targetCount();
         });
         td.append(input);
@@ -383,7 +407,7 @@ function renderTargets() {
         setTargetIons(row, []);
         removeTarget(index);
         if (expandedRow === row) expandedRow = null;
-        dirty("targeted");
+        dirtyTargeted();
         renderTargets();
       },
       "icon-button",
@@ -426,7 +450,7 @@ function pairingSelect(row, where) {
       role: input.value === "role:istd" ? "istd" : "analyte",
       istd_pair: input.value.startsWith("pair:") ? input.value.slice(5) : "",
     });
-    dirty("targeted");
+    dirtyTargeted();
     renderTargets();
   });
   return input;
@@ -454,7 +478,7 @@ function renderExpanded(tr, row) {
         updateTarget(row, { delta_mass_mz: formatOffsets(valid) });
         const cell = tr.querySelector(".target-delta-cell");
         cell.lastChild.textContent = deltaText(row) || "—";
-        dirty("targeted");
+        dirtyTargeted();
         targetCount();
       },
     }),
@@ -480,7 +504,7 @@ function renderSharedSettings() {
     input.addEventListener("input", () => {
       state.deltaMass.settings[key] =
         input.value === "" ? null : Number(input.value);
-      dirty("targeted");
+      dirtyTargeted();
     });
     label.append(input);
     grid.append(label);
@@ -507,7 +531,7 @@ function applyBulk(ms1Only) {
     if (ms1Only) setTargetIons(row, []);
     else if (offsets) setTargetIons(row, ionsForOffsets(offsets, targetIons(row)));
   }
-  dirty("targeted");
+  dirtyTargeted();
   renderTargets();
   done(
     ms1Only
@@ -538,7 +562,7 @@ function openTargetEditor() {
 }
 
 export function bindTargeted() {
-  $("targeted-form").addEventListener("input", () => dirty("targeted"));
+  $("targeted-form").addEventListener("input", () => dirtyTargeted());
 
   $("targeted-form").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -559,7 +583,7 @@ export function bindTargeted() {
     updateTargetedSettings({ data_dir: "", injection_order_source: "" });
     sampleMetadata.clear("targeted");
     $("target-result").hidden = true;
-    dirty("targeted");
+    dirtyTargeted();
     focusField("t-data_dir");
     done(
       "新批次沿用目標清單與結果存放位置；請選擇 RAW 資料夾。",
@@ -598,7 +622,7 @@ export function bindTargeted() {
       cid_nl_loss_da: state.targets.at(-1)?.cid_nl_loss_da || "",
       delta_mass_mz: "",
     });
-    dirty("targeted");
+    dirtyTargeted();
     renderTargets();
     $("target-rows")
       .querySelector("tr[data-target]:last-of-type input")
@@ -633,7 +657,7 @@ export function bindTargeted() {
       setTargets(result.targets);
       loadDeltaMass(result.delta_mass);
       targetCount();
-      dirty("targeted");
+      dirtyTargeted();
       $("target-import-status").textContent =
         "已放入範例清單，請改成你的目標。";
       openTargetEditor();
@@ -651,7 +675,7 @@ export function bindTargeted() {
     setTargets(result.targets);
     loadDeltaMass(result.delta_mass);
     targetCount();
-    dirty("targeted");
+    dirtyTargeted();
     $("target-import-preview").close();
     $("target-import-status").textContent =
       `已匯入 ${state.targets.length} 個目標。`;

@@ -1,9 +1,7 @@
 // Matrix curation presentation and intention adapters; Session owns the draft.
 import { createCurationSession } from "./analysis_curation_session.js";
-import { analysis, renderJob } from "./analysis_jobs.js";
-import { showCurationResult } from "./analysis_results.js";
 import { showResult } from "./analysis_setup.js";
-import { state, updateConfig } from "./analysis_state.js";
+import { analysis, state, updateConfig } from "./analysis_state.js";
 import {
   $,
   act,
@@ -23,12 +21,40 @@ export function loadCurationSource(sourceDir, samples) {
   $("curation-istd").value = "";
   curation.load(sourceDir, samples);
 }
+const folderKey = (path) =>
+  (path || "").trim().replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
+// A curated matrix belongs to its source; another source never offers it.
+export function showCurationResult() {
+  const curated = analysis.snapshot.results.curation;
+  $("curation-result").hidden =
+    !curated ||
+    folderKey(curated.source_dir) !==
+      folderKey(curation.snapshot.sources.source_dir);
+  // The finished curation job shows its card again when this one is hidden.
+  document.dispatchEvent(new CustomEvent("xic:page-layout"));
+}
 export function openCuration(sourceDir, samples) {
   showResult();
   $("result-curation").hidden = false;
   $("result-curation").open = true;
   $("result-curation").scrollIntoView({ behavior: "smooth" });
   return loadCurationSource(sourceDir, samples);
+}
+// An Untargeted result opens with curation ready, so producing a curated
+// matrix takes only its own button.
+export function prepareResult(page) {
+  const panel = $("result-curation");
+  const load = () => {
+    const folder = page.source.replace(/[\\/][^\\/]+$/, "");
+    if (curation.snapshot.runSource !== folder) {
+      const run = analysis.snapshot.results.untargeted;
+      act(() => loadCurationSource(folder, run?.output_dir === folder ? run.samples : null));
+    }
+  };
+  panel.hidden = page.overview?.kind !== "untargeted";
+  panel.open = Boolean(page.curatable);
+  panel.ontoggle = () => panel.open && load();
+  if (page.curatable) load();
 }
 function renderCuration(snapshot) {
   const { detection, sourceError: error } = snapshot;
@@ -248,8 +274,12 @@ export function bindCuration() {
     showCurationResult();
     lock();
   });
-  // Opening the panel can reveal the result card that replaces a finished job.
-  $("result-curation").addEventListener("toggle", renderJob);
+  // A result restored at startup is ready behind 開啟既有結果; only an
+  // explicit open, or reloading the tab that showed it, switches to it.
+  document.addEventListener("xic:result-opened", (event) => {
+    prepareResult(event.detail);
+    showResult();
+  });
   $("curation-form").onsubmit = (event) => {
     event.preventDefault();
     act(() => curation.export());

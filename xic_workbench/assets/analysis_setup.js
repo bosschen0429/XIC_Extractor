@@ -1,9 +1,6 @@
 // Setup/result navigation, readiness checklists and unsaved-setting state.
-import { curation, loadCurationSource } from "./analysis_curation.js";
-import { analysis, renderJob } from "./analysis_jobs.js";
 import { sampleId, sampleMetadata, samplePages } from "./analysis_samples.js";
 import { setDirty, setView, state } from "./analysis_state.js";
-import { settingsValues } from "./analysis_targeted.js";
 import {
   $,
   OUTPUT_LABEL,
@@ -16,32 +13,11 @@ import {
   ui,
 } from "./analysis_ui.js";
 
-let settingsTimer;
 // Starting an analysis saves the setup, so only leaving the page can lose it;
 // the page asks before unloading then.
 export function dirty(kind, value = true) {
   setDirty(kind, value);
-  if (kind === "targeted") {
-    clearTimeout(settingsTimer);
-    settingsTimer = setTimeout(
-      () =>
-        act(async () => {
-          const { warnings } = await api("/api/targeted/settings", {
-            settings: settingsValues(),
-          });
-          showSettingsWarnings(warnings);
-        }),
-      250,
-    );
-  }
   checklist(kind);
-}
-// Settings problems stay in view beside the paths they concern.
-export function showSettingsWarnings(warnings) {
-  $("targeted-warnings").replaceChildren(
-    ...(warnings || []).map((warning) => el("p", warning, "settings-warning")),
-  );
-  checklist("targeted");
 }
 // The page shows either the next analysis's setup or one opened result,
 // never a result appended under an unrelated setup form.
@@ -64,7 +40,7 @@ export function showMode(mode) {
   $("analysis-root").hidden = mode === "result";
   $("analysis-result").hidden = mode !== "result";
   // The job card follows the visible page, so feedback is never hidden.
-  if (state.config) renderJob();
+  document.dispatchEvent(new CustomEvent("xic:page-layout"));
   document
     .querySelectorAll(".view-tabs [data-view]")
     .forEach((node) =>
@@ -73,22 +49,6 @@ export function showMode(mode) {
         mode === "setup" && node.dataset.view === state.view ? "page" : "false",
       ),
     );
-}
-// An Untargeted result opens with curation ready, so producing a curated
-// matrix takes only its own button.
-export function prepareResult(page) {
-  const panel = $("result-curation");
-  const load = () => {
-    const folder = page.source.replace(/[\\/][^\\/]+$/, "");
-    if (curation.snapshot.runSource !== folder) {
-      const run = analysis.snapshot.results.untargeted;
-      act(() => loadCurationSource(folder, run?.output_dir === folder ? run.samples : null));
-    }
-  };
-  panel.hidden = page.overview?.kind !== "untargeted";
-  panel.open = Boolean(page.curatable);
-  panel.ontoggle = () => panel.open && load();
-  if (page.curatable) load();
 }
 export function showResult() {
   if (!showingResult()) window.XicUi.navigation.push();
@@ -241,6 +201,8 @@ function sampleItems(page) {
 }
 
 export function bindSetup() {
+  // Sample roles count toward readiness wherever they change.
+  sampleMetadata.subscribe(({ pages }) => pages.forEach(checklist));
   document
     .querySelectorAll("[data-view]")
     .forEach((node) =>
@@ -280,10 +242,4 @@ export function bindSetup() {
     $("source").focus();
   };
   $("result-back").onclick = () => selectView(state.view);
-  // A result restored at startup is ready behind 開啟既有結果; only an
-  // explicit open, or reloading the tab that showed it, switches to it.
-  document.addEventListener("xic:result-opened", (event) => {
-    prepareResult(event.detail);
-    showResult();
-  });
 }

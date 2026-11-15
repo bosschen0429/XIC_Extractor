@@ -2361,8 +2361,7 @@ def test_starting_analysis_ends_the_curve_job_and_its_poll(
     # Exercise the normal analysis client, with isolated settings/fake analysis.
     page.evaluate(
         """async output => {
-          const {analysis} = await import('/assets/analysis_jobs.js');
-          const {state} = await import('/assets/analysis_state.js');
+          const {analysis, state} = await import('/assets/analysis_state.js');
           await analysis.start('targeted', {
             settings: state.config.settings, targets: state.config.targets,
             output_dir: output,
