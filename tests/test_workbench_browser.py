@@ -880,12 +880,9 @@ def test_targeted_bulk_specificity_selects_like_samples(
     handles = page.locator("#target-rows td.target-handle")
     # Drag a band over the row numbers. Keep the gesture away from the scroll
     # box's edges, where a held drag deliberately keeps scrolling.
-    # Measure only after the dialog has stopped moving.
-    page.locator("#target-editor").evaluate(
-        "dialog => Promise.all(dialog.getAnimations({subtree: true})"
-        ".map(animation => animation.finished))"
-    )
     page.locator("#target-table").evaluate("box => { box.scrollTop = 0; }")
+    # Hover waits for actionability, including stable geometry, before measuring.
+    handles.first.hover()
     start = handles.nth(0).bounding_box()
     end = handles.nth(2).bounding_box()
     page.mouse.move(start["x"] + 5, start["y"] + 5)
@@ -1526,15 +1523,17 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     fake_runs.release.set()
     _wait_for_analysis_status(page, "已完成")
     # Each run writes its own new folder inside the location; none is reused.
+    fake_runs.release.clear()
     _start(page, "targeted")
-    for _ in range(100):
-        if len(fake_runs.output_dirs) == 2:
-            break
-        page.wait_for_timeout(50)
+    expect(page.locator("#analysis-job-message")).to_contain_text(
+        "Browser fake progress"
+    )
     first, second = fake_runs.output_dirs
     assert first.parent == second.parent == chosen
     assert first != second
     assert re.fullmatch(r"\d{8}_\d{6}_targeted(_.+)?", first.name)
+    fake_runs.release.set()
+    _wait_for_analysis_status(page, "已完成")
     page.reload()
     expect(page.locator("#t-output_dir")).to_have_value(str(chosen))
     _view(page, "untargeted")
@@ -2086,12 +2085,13 @@ def test_review_download_survives_reload_and_keeps_original_product(
     _open_results(page)
     page.locator("#source").fill(str(source))
     page.locator("#open-form button[type=submit]").click()
-    link = page.get_by_role(
-        "link", name="下載結果 Excel" if targeted else "下載 Alignment 矩陣", exact=True
-    )
+    link = page.locator("#result-download")
+    download_name = "下載結果 Excel" if targeted else "下載 Alignment 矩陣"
     expect(link).to_be_visible()
+    expect(link).to_have_text(download_name)
     page.reload()
     expect(link).to_be_visible()
+    expect(link).to_have_text(download_name)
     with page.expect_download() as pending:
         link.click()
     downloaded = pending.value
@@ -4291,6 +4291,7 @@ def test_sample_editor_selects_by_drag_search_and_shift_and_marks_other_rows(
 
     # Dragging across a range of the name-ordered rows selects it; keys 1-5
     # apply a role.
+    _sample_row(page, "Tumor_1").hover()
     first = _sample_row(page, "Tumor_1").bounding_box()
     last = _sample_row(page, "Tumor_2").bounding_box()
     page.mouse.move(first["x"] + 20, first["y"] + first["height"] / 2)
@@ -4404,6 +4405,7 @@ def test_sample_click_right_after_a_drag_selects_that_row(
     )
     _wait_for_analysis_status(page, "已完成")
     page.locator("#t-samples-edit").click()
+    _sample_row(page, "S1").hover()
     first = _sample_row(page, "S1").bounding_box()
     last = _sample_row(page, "S3").bounding_box()
     page.mouse.move(first["x"] + 20, first["y"] + first["height"] / 2)
@@ -5156,9 +5158,15 @@ def test_results_stay_in_analysis_page_without_raw(
     expect(page.locator("#source-settings")).not_to_have_attribute("open", "")
     # The start shortcut belongs to setup; on a result it starts nothing.
     started = len(fake_runs.requests)
+    page.evaluate("""() => {
+        window.analysisSubmissions = [];
+        document.addEventListener('submit', event => {
+            window.analysisSubmissions.push(event.target.id);
+        }, true);
+    }""")
     page.keyboard.press("Control+Enter")
-    page.wait_for_timeout(500)
-    assert len(fake_runs.requests) == started
+    # The key handler submits synchronously; observe that boundary, not a delay.
+    assert page.evaluate("window.analysisSubmissions") == []
     if kind == "untargeted":
         expect(page.locator("#targeted-overview")).not_to_contain_text("HIGH")
         # Curation opens with the result, its source already loaded.
@@ -5180,6 +5188,7 @@ def test_results_stay_in_analysis_page_without_raw(
     with page.expect_download() as pending:
         page.locator("#result-download").click()
     assert Path(pending.value.path()).read_bytes() == artifact.read_bytes()
+    assert len(fake_runs.requests) == started
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
