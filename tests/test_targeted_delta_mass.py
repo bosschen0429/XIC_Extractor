@@ -325,6 +325,14 @@ def test_delta_mass_reaches_finalized_workbook_and_readonly_inspector(
     assert by_sample["missing"].reported_peak_area is None
     book = load_workbook(path, read_only=True, data_only=True)
     try:
+        # Delta Mass evidence is saved record for the workbench, kept hidden.
+        assert {"Delta Mass", "Method Evidence", "Delta Mass Evidence"} <= set(
+            book.sheetnames
+        )
+        assert [ws.title for ws in book.worksheets if ws.sheet_state == "visible"] == [
+            "摘要",
+            "面積",
+        ]
         rows = list(book["Delta Mass Evidence"].values)
         assert (
             len(rows) == 5
