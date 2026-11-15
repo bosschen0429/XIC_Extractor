@@ -79,9 +79,14 @@ lint before dispatching tests regressed whole-run elapsed time from 189 to 238
 seconds (`43689952191` and `43702971655`). The 32-second lint prerequisite was
 on the critical path; local collection savings did not establish a CI speedup.
 Planning now runs separately from lint, and five isolated browser shards trade
-additional runner capacity for shorter elapsed time. Hosted validation is still
-required before accepting that scheduling change. Irrelevant browser jobs stay
-gated before VM allocation; only a successful plan can authorize the skip.
+additional runner capacity for shorter elapsed time. Hosted run `43705606879`
+at `54b7fc36` completed in 165 seconds, with the same 169 browser node IDs
+executed once at 34/34/34/34/33 cases. The plan took 20 seconds; browser jobs
+took 103–126 seconds. Cumulative job time increased from the original baseline's
+809 to 962 seconds, so the elapsed-time win is not a compute-cost saving.
+These are hosted observations, not a guarantee against runner/queue variability;
+ordinary regression coverage also grew. Irrelevant browser jobs stay gated
+before VM allocation; only a successful plan can authorize the skip.
 
 Evidence is under `output/browser-ci-scheduling/collection-comparison.json`,
 the adjacent collection logs. Recheck parity and cost when
