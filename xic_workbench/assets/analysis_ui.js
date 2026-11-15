@@ -18,19 +18,9 @@ export const pathFields = [
   ["output_dir", OUTPUT_LABEL, "folder"],
   ["dll_dir", "RawFileReader DLL 資料夾", "folder"],
 ];
-export async function api(path, values) {
-  const response = await fetch(path, {
-    method: values === undefined ? "GET" : "POST",
-    headers: {
-      "X-XIC-Client": "workbench",
-      ...(values === undefined ? {} : { "Content-Type": "application/json" }),
-    },
-    ...(values === undefined ? {} : { body: JSON.stringify(values) }),
-  });
-  const data = await response.json();
-  if (!response.ok)
-    throw new Error(data.error || `要求失敗（${response.status}）`);
-  return data;
+// A declaration, not a const: modules in this import cycle capture it before this body runs.
+export function api(path, values, signal) {
+  return window.XicUi.api(path, values, signal);
 }
 export function status(text, error = false) {
   ui.toast(text, error ? "error" : "info");

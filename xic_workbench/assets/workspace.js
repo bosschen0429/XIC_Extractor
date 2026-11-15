@@ -150,12 +150,30 @@ window.XicUi = (() => {
       document.removeEventListener("visibilitychange", visible);
     };
   }
-  return { icon, toast, confirm, setTheme, formatDuration, navigation, trackWindow };
+  // The server admits workbench requests by header; failures carry its detail.
+  async function api(path, values, signal) {
+    const response = await fetch(path, {
+      signal,
+      method: values === undefined ? "GET" : "POST",
+      headers: {
+        "X-XIC-Client": "workbench",
+        ...(values === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      ...(values === undefined ? {} : { body: JSON.stringify(values) }),
+    });
+    const data = await response.json();
+    if (!response.ok)
+      throw Object.assign(new Error(data.error || `要求失敗（${response.status}）`), {
+        detail: data.detail || "",
+      });
+    return data;
+  }
+  return { api, icon, toast, confirm, setTheme, formatDuration, navigation, trackWindow };
 })();
 
 (() => {
   const $ = (id) => document.getElementById(id);
-  const { navigation } = window.XicUi;
+  const { api, navigation } = window.XicUi;
   const state = {
     runFolders: new Map(),
     runFolder: null,
@@ -211,23 +229,6 @@ window.XicUi = (() => {
     }
     if (statusOwner === "curves" || !$("status").classList.contains("error"))
       status(message, kind, "curves");
-  }
-  async function api(path, values, signal) {
-    const response = await fetch(path, {
-      signal,
-      method: values === undefined ? "GET" : "POST",
-      headers: {
-        "X-XIC-Client": "workbench",
-        ...(values === undefined ? {} : { "Content-Type": "application/json" }),
-      },
-      ...(values === undefined ? {} : { body: JSON.stringify(values) }),
-    });
-    const data = await response.json();
-    if (!response.ok)
-      throw Object.assign(new Error(data.error || `要求失敗（${response.status}）`), {
-        detail: data.detail || "",
-      });
-    return data;
   }
   const reviewSlots = new Map();
   function clearReview(id) {

@@ -1110,11 +1110,11 @@
     if(!finite(lo)||!finite(hi))return '<div class="empty-state">未提供成對的時間與訊號數值。</div>';if(lo===hi){lo-=.5;hi+=.5;}if(lowY===highY)highY=lowY+1;
     const W=width||(wide?1060:760),H=presentation.height??(width?420:330),L=62,T=24,IW=W-88,IH=H-82,x=v=>L+(v-lo)/(hi-lo)*IW,y=v=>T+IH-(v-lowY)/(highY-lowY)*IH;
     const clipId=`curve-window-${axis}${mode==='curves'?(width?'-main':'-zoom'):''}`;
-    let svg=`<defs><clipPath id="${clipId}"><rect x="${L}" y="${T}" width="${IW}" height="${IH}"/></clipPath></defs><text x="8" y="14" font-size="13" fill="#48534f">訊號強度</text>`;
-    for(let i=0;i<=4;i++){const v=lowY+(highY-lowY)*i/4;svg+=`<line x1="${L}" y1="${y(v)}" x2="${L+IW}" y2="${y(v)}" stroke="#e4e9ec"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end" font-size="13" fill="#48534f">${tickNum(v)}</text>`;}
-    svg+=`<path d="M${L},${T}V${T+IH}H${L+IW}" fill="none" stroke="#91a0a8"/>`;
+    let svg=`<defs><clipPath id="${clipId}"><rect x="${L}" y="${T}" width="${IW}" height="${IH}"/></clipPath></defs><text x="8" y="14" font-size="13" class="plot-label">訊號強度</text>`;
+    for(let i=0;i<=4;i++){const v=lowY+(highY-lowY)*i/4;svg+=`<line x1="${L}" y1="${y(v)}" x2="${L+IW}" y2="${y(v)}" class="plot-grid"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end" font-size="13" class="plot-label">${tickNum(v)}</text>`;}
+    svg+=`<path d="M${L},${T}V${T+IH}H${L+IW}" class="plot-axis"/>`;
     const ticks=[0,1,2,3,4].map(i=>lo+(hi-lo)*i/4),wholeSeconds=ticks.every(v=>Math.abs(v-Math.round(v))<1e-6);
-    ticks.forEach((v,i)=>{svg+=`<text x="${x(v)}" y="${H-32}" text-anchor="${width&&i===0?'start':width&&i===4?'end':'middle'}" font-size="13" fill="#48534f">${axis==='centered'?fixed(Math.abs(v)<1e-9?0:v,wholeSeconds?0:1):rt(v)}</text>`;});
+    ticks.forEach((v,i)=>{svg+=`<text x="${x(v)}" y="${H-32}" text-anchor="${width&&i===0?'start':width&&i===4?'end':'middle'}" font-size="13" class="plot-label">${axis==='centered'?fixed(Math.abs(v)<1e-9?0:v,wholeSeconds?0:1):rt(v)}</text>`;});
     if(axis==='centered'&&lo<=0&&hi>=0)svg+=`<line data-marker="peak-center" x1="${x(0)}" x2="${x(0)}" y1="${T}" y2="${T+IH}" stroke="var(--muted)" stroke-dasharray="4 4"><title>置中參考 · 0 秒</title></line>`;
     const active=peer?null:activeCurve(item);
     if(active&&state.bounds){const left=curveTime(active,axis,'bound_left_rt'),right=curveTime(active,axis,'bound_right_rt');if(finite(left)&&finite(right)){const a=Math.max(lo,Math.min(left,right)),b=Math.min(hi,Math.max(left,right));if(b>=a)svg+=`<rect data-integration-range="true" x="${x(a)}" y="${T}" width="${Math.max(0,x(b)-x(a))}" height="${IH}" fill="${color(active.sample_id)}" opacity=".09"><title>積分範圍 ${timeValue(left,axis)}–${timeValue(right,axis)}</title></rect>`;}}
@@ -1141,7 +1141,7 @@
       marks.forEach(([kind,label,v])=>{if(finite(v))svg+=`<line data-marker="${kind}" x1="${x(v)}" x2="${x(v)}" y1="${T}" y2="${T+IH}" stroke="${color(curve.sample_id)}" stroke-dasharray="${kind==='bound'?'5 4':kind==='raw-apex'?'2 4':'1 3'}"><title>${label} ${drt(v)} min</title></line>`;});
     });
     const hoverData=mode==='curves'||presentation.coordinateData?`data-curve-chart="true" data-domain-start="${lo}" data-domain-end="${hi}" data-signal-low="${lowY}" data-signal-high="${highY}" data-chart-left="${L}" data-chart-width="${IW}" data-chart-top="${T}" data-chart-height="${IH}"`:'';
-    return `<svg role="img" ${hoverData} aria-label="${timeAxisTitle(axis)}層析圖" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}<text x="${L+IW/2}" y="${H-6}" text-anchor="middle" font-size="13" fill="#48534f">${axis==='centered'?'距中心時間（秒）':`${axis==='raw'?'原始 RT':'對齊 RT'}（min）`}</text></svg>`;
+    return `<svg role="img" ${hoverData} aria-label="${timeAxisTitle(axis)}層析圖" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${svg}<text x="${L+IW/2}" y="${H-6}" text-anchor="middle" font-size="13" class="plot-label">${axis==='centered'?'距中心時間（秒）':`${axis==='raw'?'原始 RT':'對齊 RT'}（min）`}</text></svg>`;
   }
   function plotCard(item){
     const canAlign=alignedAvailable(item),axis=canAlign?rel.axis:'raw',coverage=alignmentCoverage(item),total=Math.max(coverage.total,coverage.available);
@@ -1184,9 +1184,9 @@
     const f=item.transition_review,window=f[`${side}_rt_window`],center=f[`${side}_center_rt`];
     const lo=window[0],hi=window[1],W=760,H=330,L=62,T=24,IW=672,IH=248;
     const x=v=>L+(v-lo)/(hi-lo)*IW,y=v=>T+IH-v/sharedMax*IH;
-    let svg=`<defs><clipPath id="differential-${side}"><rect x="${L}" y="${T}" width="${IW}" height="${IH}"/></clipPath></defs><text x="8" y="14" font-size="13" fill="#48534f">訊號強度</text>`;
-    for(let i=0;i<=4;i++){const v=sharedMax*i/4;svg+=`<line x1="${L}" y1="${y(v)}" x2="${L+IW}" y2="${y(v)}" stroke="#e4e9ec"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end" font-size="10">${v===0?'0':v.toExponential(1)}</text><text x="${x(lo+(hi-lo)*i/4)}" y="296" text-anchor="middle" font-size="10">${rt(lo+(hi-lo)*i/4)}</text>`;}
-    svg+=`<path d="M${L},${T}V${T+IH}H${L+IW}" fill="none" stroke="#91a0a8"/><line data-marker="centre-rt" x1="${x(center)}" x2="${x(center)}" y1="${T}" y2="${T+IH}" stroke="#222" stroke-dasharray="6 4"><title>Hypothesis centre RT ${drt(center)} min</title></line>`;
+    let svg=`<defs><clipPath id="differential-${side}"><rect x="${L}" y="${T}" width="${IW}" height="${IH}"/></clipPath></defs><text x="8" y="14" font-size="13" class="plot-label">訊號強度</text>`;
+    for(let i=0;i<=4;i++){const v=sharedMax*i/4;svg+=`<line x1="${L}" y1="${y(v)}" x2="${L+IW}" y2="${y(v)}" class="plot-grid"/><text x="${L-8}" y="${y(v)+4}" text-anchor="end" font-size="10">${v===0?'0':v.toExponential(1)}</text><text x="${x(lo+(hi-lo)*i/4)}" y="296" text-anchor="middle" font-size="10">${rt(lo+(hi-lo)*i/4)}</text>`;}
+    svg+=`<path d="M${L},${T}V${T+IH}H${L+IW}" class="plot-axis"/><line data-marker="centre-rt" x1="${x(center)}" x2="${x(center)}" y1="${T}" y2="${T+IH}" class="plot-marker" stroke-dasharray="6 4"><title>Hypothesis centre RT ${drt(center)} min</title></line>`;
     (item.curves||[]).filter(c=>c.kind===side&&state.visible.has(c.sample_id)&&(!state.sample||state.sample===c.sample_id)).forEach(c=>{
       const s=differentialSeries(c),points=s.rts.map((v,i)=>finite(v)&&finite(s.intensities[i])?`${x(v)},${y(s.intensities[i])}`:'').filter(Boolean).join(' ');
       if(points)svg+=`<polyline data-kind="${display.signal}" data-decision="${esc(c.quality_flags?.successor_decision||'')}" clip-path="url(#differential-${side})" fill="none" stroke="${differentialColor(c)}" stroke-width="2" opacity=".75" points="${points}"><title>${esc(sampleName(c.sample_id))} · ${esc(c.quality_flags?.successor_decision||'unclassified')}</title></polyline>`;
@@ -1199,7 +1199,7 @@
     const pairs=[...bySample.values()].filter(p=>p.source&&p.successor).map(p=>({source:maximum(p.source)+1,successor:maximum(p.successor)+1,curve:p.successor}));
     const max=Math.max(1,...pairs.map(p=>Math.max(p.source,p.successor))),logMax=Math.max(1,Math.log10(max));
     const L=68,T=22,S=230,x=v=>L+Math.log10(v)/logMax*S,y=v=>T+S-Math.log10(v)/logMax*S;
-    let svg=`<path d="M${L},${T}V${T+S}H${L+S}" fill="none" stroke="#91a0a8"/><line data-reference="identity" x1="${x(1)}" y1="${y(1)}" x2="${x(max)}" y2="${y(max)}" stroke="#666" stroke-dasharray="6 4"/><text x="${L+S/2}" y="285" text-anchor="middle" font-size="11">Source Gaussian15 max + 1</text><text transform="translate(16 ${T+S/2}) rotate(-90)" text-anchor="middle" font-size="11">Successor Gaussian15 max + 1</text>`;
+    let svg=`<path d="M${L},${T}V${T+S}H${L+S}" class="plot-axis"/><line data-reference="identity" x1="${x(1)}" y1="${y(1)}" x2="${x(max)}" y2="${y(max)}" class="plot-reference" stroke-dasharray="6 4"/><text x="${L+S/2}" y="285" text-anchor="middle" font-size="11">Source Gaussian15 max + 1</text><text transform="translate(16 ${T+S/2}) rotate(-90)" text-anchor="middle" font-size="11">Successor Gaussian15 max + 1</text>`;
     pairs.forEach(p=>svg+=`<circle data-decision="${esc(p.curve.quality_flags?.successor_decision||'')}" cx="${x(p.source)}" cy="${y(p.successor)}" r="5" fill="${differentialColor(p.curve)}" opacity=".8"><title>${esc(sampleName(p.curve.sample_id))}: ${num(p.source)} / ${num(p.successor)}</title></circle>`);
     return `<svg role="img" aria-label="Log-log source versus successor Gaussian15 maxima with y equals x" viewBox="0 0 330 300" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
   }
