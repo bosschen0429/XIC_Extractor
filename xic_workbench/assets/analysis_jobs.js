@@ -1,7 +1,6 @@
 // Analysis workflow composition, job presentation and completion effects.
 import {
   artifactDetails,
-  openReview,
   renderResults,
   resultIds,
   showArtifact,
@@ -34,6 +33,12 @@ import {
   status,
   ui,
 } from "./analysis_ui.js";
+import {
+  analysisBusyChanged,
+  analysisStarted,
+  curationPublished,
+  openReview,
+} from "./workspace.js";
 
 const jobLabels = {
   running: "執行中",
@@ -59,7 +64,7 @@ function prepareStart(kind, values) {
 }
 
 async function acceptedStart(kind, values, job, acceptSampleRead) {
-  document.dispatchEvent(new CustomEvent("xic:analysis-started"));
+  analysisStarted();
   if (kind === "untargeted") {
     updateConfig({ untargeted: values });
     dirty("untargeted", false);
@@ -199,11 +204,7 @@ function completeJob(snapshot, job) {
     } else if (job.kind === "curation") {
       // A visible curation result card is the notice.
       renderResults();
-      document.dispatchEvent(
-        new CustomEvent("xic:curation-published", {
-          detail: snapshot.results.curation,
-        }),
-      );
+      curationPublished(snapshot.results.curation);
       if (!curationResultShown())
         done(`矩陣整理完成：${snapshot.results.curation.output_dir}`);
     }
@@ -265,7 +266,7 @@ export function bindJobs(initial) {
     analysis.subscribe((snapshot, completed) => {
       if (wasBusy !== snapshot.busy) {
         wasBusy = snapshot.busy;
-        document.dispatchEvent(new CustomEvent("xic:analysis-busy"));
+        analysisBusyChanged();
       }
       const offline = snapshot.connection === "offline";
       document.body.classList.toggle("offline", offline);

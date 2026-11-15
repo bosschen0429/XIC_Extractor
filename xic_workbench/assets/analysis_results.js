@@ -2,6 +2,7 @@
 import { openCuration, showCurationResult } from "./analysis_curation.js";
 import { analysis } from "./analysis_state.js";
 import { $, act, api, button, el, ui } from "./analysis_ui.js";
+import { openReview } from "./workspace.js";
 
 export const resultIds = {
   targeted: "target-result",
@@ -201,11 +202,6 @@ export function renderResults() {
     details.append(el("p", `來源：${curated.source_dir}`, "subtle mono"));
     showCurationResult();
   }
-}
-export function openReview(source, reviewPaths) {
-  document.dispatchEvent(
-    new CustomEvent("xic:open-review", { detail: { source, reviewPaths } }),
-  );
 }
 // Matrix curation
 async function openInspectorExport(source) {

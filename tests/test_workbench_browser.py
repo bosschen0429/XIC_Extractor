@@ -3333,8 +3333,8 @@ def test_curated_result_names_its_curation_and_lists_removed_rows(workbench, tmp
             ],
         )
         page.evaluate(
-            """source_dir => document.dispatchEvent(new CustomEvent(
-                "xic:curation-published", {detail: {source_dir}}))""",
+            """async source_dir => (await import('/assets/workspace.js'))
+                .curationPublished({source_dir})""",
             str(tmp_path),
         )
 
