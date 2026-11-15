@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from xic_extractor.configuration.models import ExtractionConfig
-from xic_extractor.output import metadata
 from xic_extractor.output.workbook_styles import (
     _add_table,
     _prepare_sheet,
@@ -33,11 +31,10 @@ _DESCRIPTIONS = {
 }
 
 
-def _build_metadata_sheet(ws, config: ExtractionConfig) -> None:
+def _build_metadata_sheet(ws, rows: list[tuple[str, object]]) -> None:
     """Value comes last so a long saved setting extends into empty space."""
     _prepare_sheet(ws, landscape=False)
     _write_header(ws, 1, ("Key", "說明", "Value"))
-    rows = metadata.build_metadata_rows(config)
     for row, (key, value) in enumerate(rows, start=2):
         for column, cell_value in enumerate(
             (key, _DESCRIPTIONS.get(key, ""), value), start=1

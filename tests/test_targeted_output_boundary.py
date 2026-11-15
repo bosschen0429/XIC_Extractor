@@ -1013,7 +1013,7 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
     assert set(winning.paths) == expected_paths
     assert all(path.is_file() for path in winning.paths)
     workbook = load_workbook(request.excel_output_path, read_only=True)
-    worklist_text = str(list(workbook["需檢查"].values))
+    worklist_text = str(list(workbook["摘要"].values))
     workbook.close()
     assert (
         sum(marker in worklist_text for marker in ("concurrent-a", "concurrent-b")) == 1

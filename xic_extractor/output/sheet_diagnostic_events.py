@@ -1,6 +1,6 @@
 """Keep the run's diagnostic events with the only artifact a run delivers.
 
-The sheet is hidden: it serves tracing a past decision, not reading the batch.
+It serves tracing a past decision, not reading the batch.
 """
 
 from __future__ import annotations
@@ -25,4 +25,3 @@ def build_diagnostic_events_sheet(ws, diagnostics: list[dict[str, str]]) -> None
         ws.column_dimensions[letter].width = width
     _add_table(ws, "DiagnosticEvents", f"A1:D{len(diagnostics) + 1}")
     ws.freeze_panes = "A2"
-    ws.sheet_state = "hidden"

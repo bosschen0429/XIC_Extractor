@@ -1,111 +1,133 @@
-"""The workbook opens on one conclusion and one table of targets."""
+"""The workbook opens on its conclusion: the results to look at, then targets."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from openpyxl.utils import get_column_letter
 
-from xic_extractor.output.targeted_overview import TargetedOverview, TargetOverview
+from xic_extractor.output.targeted_overview import TargetedOverview
 from xic_extractor.output.workbook_styles import (
-    FOCUS,
     INK,
+    LINE_HEIGHT,
+    MUTED,
     SOFT,
+    _add_table,
     _font,
-    _link,
+    _is_number,
+    _measurement_value,
+    _number_format,
     _prepare_sheet,
+    _prose_line_count,
     _style_body,
     _write_header,
 )
 from xic_extractor.output.workbook_values import _excel_text
 
-_HEADERS = ("目標", "類型", "配對 ISTD", "計入", "全部", "需先看", "說明")
-_NUMERIC = frozenset({"計入", "全部", "需先看"})
-_WIDTHS = (22, 9, 22, 7, 7, 8, 30)
-_TABLE_ROW = 4
+# Both tables share columns A-C, so each width suits either table's column.
+_WORKLIST = (
+    ("目標", "Target"),
+    ("樣本", "Sample"),
+    ("結果", "Outcome"),
+    ("原因", "Why"),
+    ("RT (min)", "RT"),
+    ("Area", "Area"),
+)
+_TARGETS = ("目標", "類型", "計入樣本數")
+_WIDTHS = (22, 32, 10, 46, 9, 11)
+_FIRST_TABLE_ROW = 4
 
 
 def build_overview_sheet(
     ws,
     overview: TargetedOverview,
     *,
-    pairs: Mapping[str, str],
-    worklist_size: int,
-    review_rows_by_target: Mapping[str, int],
+    worklist: Sequence[Mapping[str, object]],
+    provenance: str,
 ) -> None:
-    """Write the summary; `review_rows_by_target` locates each target in 需檢查.
+    """Write the conclusion, the results to look at first, then target counts.
 
-    The headline counts every 需檢查 row, including events without a result.
+    ISTDs counted in every sample are the batch fact on line two; only the
+    exceptions get a row.
     """
     _prepare_sheet(ws, landscape=False)
     ws["A1"] = (
         "尚無已保存結果"
         if not overview.result_count
-        else f"先看 {worklist_size} 筆結果"
-        if worklist_size
+        else f"先看 {len(worklist)} 筆結果"
+        if worklist
         else "沒有需要先看的結果"
     )
     ws["A1"].font = _font(INK, bold=True, size=16)
     ws.row_dimensions[1].height = 30
-    facts = [
-        f"{overview.sample_count} 個樣本",
-        f"{len(overview.targets)} 個目標",
-        f"Analyte 計入 {overview.analyte_counted}/{overview.analyte_total}",
-        f"ISTD 計入 {overview.istd_counted}/{overview.istd_total}",
-    ]
+    istd = (
+        "ISTD 全部計入"
+        if overview.istd_counted == overview.istd_total
+        else f"ISTD 計入 {overview.istd_counted}/{overview.istd_total}"
+    )
+    facts = [f"{overview.sample_count} 個樣本", f"{len(overview.targets)} 個目標"]
+    if overview.istd_total:
+        facts.append(istd)
     if overview.count_unknown:
         facts.append(f"{overview.count_unknown} 筆未記錄計數判定")
+    facts.append(provenance)
     ws["A2"] = " · ".join(facts)
     ws["A2"].font = _font(SOFT)
 
-    _write_header(ws, _TABLE_ROW, _HEADERS, _NUMERIC)
-    for row, target in enumerate(overview.targets, _TABLE_ROW + 1):
-        focus = len(target.focus_samples)
-        values = (
-            _excel_text(target.label),
-            target.role,
-            _excel_text(pairs.get(target.label, "")),
-            target.counted,
-            target.total,
-            focus or None,
-            _focus_note(target),
-        )
-        for column, (header, value) in enumerate(zip(_HEADERS, values, strict=True), 1):
-            cell = ws.cell(row, column, value)
-            color = SOFT if header in {"類型", "配對 ISTD"} else INK
-            if focus and header in {"需先看", "說明"}:
-                color = FOCUS
-            _style_body(cell, color=color, numeric=header in _NUMERIC)
-        if focus and target.label in review_rows_by_target:
-            _link(
-                ws.cell(row, 6),
-                f"'需檢查'!A{review_rows_by_target[target.label]}",
-                color=FOCUS,
-                bold=True,
-            )
-    note = _TABLE_ROW + len(overview.targets) + 2
-    for row, text in (
-        (
-            note,
-            "需先看＝該目標中占 20% 以下的判定；沒有明顯多數時改看檢閱註記。"
-            "只決定閱讀順序，不改變已保存判定。",
-        ),
-        (note + 1, "數值與判定皆為已保存結果；逐峰檢查請在工作台開啟此檔看 XIC。"),
-    ):
-        ws.cell(row, 1, text).font = _font(SOFT, size=9)
+    row = _FIRST_TABLE_ROW
+    if worklist:
+        row = _write_worklist(ws, row, worklist) + 2
+    targets = [
+        target
+        for target in overview.targets
+        if target.role != "ISTD" or target.counted < target.total
+    ]
+    if targets:
+        _write_header(ws, row, _TARGETS, {"計入樣本數"})
+        for offset, target in enumerate(targets, 1):
+            for column, value in enumerate(
+                (_excel_text(target.label), target.role, target.counted), 1
+            ):
+                _style_body(
+                    ws.cell(row + offset, column, value),
+                    color=SOFT if column == 2 else INK,
+                    numeric=column == 3,
+                )
+        row += len(targets)
+    ws.cell(row + 2, 1, "逐峰檢查：在工作台開啟此檔看 XIC。").font = _font(SOFT, size=9)
     for column, width in enumerate(_WIDTHS, 1):
         ws.column_dimensions[get_column_letter(column)].width = width
-    ws.freeze_panes = f"A{_TABLE_ROW + 1}"
-    ws.print_area = f"A1:G{note + 1}"
+    ws.print_area = f"A1:F{row + 2}"
 
 
-def _focus_note(target: TargetOverview) -> str:
-    return (
-        {
-            "minority_counted": "少數計入：確認是否抓錯峰",
-            "minority_not_counted": "少數未計入：確認是否漏抓",
-            "mixed": "沒有明顯多數：看檢閱註記",
-        }.get(target.focus_kind, "")
-        if target.focus_samples
-        else ""
+def _write_worklist(ws, header_row: int, worklist) -> int:
+    """Write the worklist table; return its last row."""
+    _write_header(
+        ws, header_row, [title for title, _ in _WORKLIST], {"RT (min)", "Area"}
     )
+    row = header_row
+    for row, record in enumerate(worklist, header_row + 1):
+        for column, (_, key) in enumerate(_WORKLIST, 1):
+            measured = key in {"RT", "Area"}
+            value = (
+                _measurement_value(key, record.get(key, ""))
+                if measured
+                else _excel_text(record.get(key, ""))
+            )
+            cell = ws.cell(row, column, value)
+            _style_body(
+                cell,
+                color=MUTED if measured and not _is_number(value) else INK,
+                numeric=measured,
+                # Every cell starts at the top so wrapped rows read as one line.
+                wrap=True,
+            )
+            if measured and _is_number(value):
+                cell.number_format = _number_format(key)
+        lines = max(
+            _prose_line_count(record.get("Why", ""), 44),
+            _prose_line_count(record.get("Sample", ""), 30),
+        )
+        ws.row_dimensions[row].height = LINE_HEIGHT * lines + 4
+    _add_table(ws, "TargetedReview", f"A{header_row}:F{row}")
+    return row

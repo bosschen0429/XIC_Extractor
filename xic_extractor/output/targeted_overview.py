@@ -9,10 +9,7 @@ from math import isfinite
 from statistics import median
 
 from xic_extractor.output.reason_display import decision_basis
-from xic_extractor.output.review_queue_model import (
-    CONFIRM_COUNTED_PEAK,
-    review_queue_rows,
-)
+from xic_extractor.output.review_queue_model import review_queue_rows
 
 # A detection outcome shared by at most this share of a target's recorded
 # decisions is the unusual one: it is where a wrong peak or a missed peak hides.
@@ -143,9 +140,6 @@ def focus_worklist(
                     "Outcome": "已計入" if counted else "未計入",
                     "Why": f"多數樣本{'未' if counted else ''}計入；"
                     f"此樣本：{decision_basis(record).text}",
-                    "Action": CONFIRM_COUNTED_PEAK
-                    if counted
-                    else "在 XIC 確認是否漏抓",
                     "RT": record.get("RT", ""),
                     "Area": record.get("Area", ""),
                 }
@@ -159,7 +153,7 @@ def focus_worklist(
     for review in review_queue_rows(orphan_rows, diagnostics):
         messages = orphans[(review["Sample"], review["Target"])]
         entry: dict[str, object] = dict(review)
-        entry["Action"] = f"{review['Action']}：{'；'.join(messages)}"
+        entry["Why"] = f"{review['Why']}：{'；'.join(messages)}"
         worklist.append(entry)
     return worklist
 

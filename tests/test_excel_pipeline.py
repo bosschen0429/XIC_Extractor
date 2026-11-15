@@ -39,7 +39,7 @@ def test_workbook_filters_belong_to_tables_not_overlapping_worksheet_ranges(tmp_
     with ZipFile(path) as archive:
         assert (
             len([name for name in archive.namelist() if name.startswith("xl/tables/")])
-            == 5
+            == 4
         )
         for name in archive.namelist():
             if name.startswith("xl/worksheets/sheet"):
@@ -122,7 +122,6 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         "XIC Results",
         "Targets",
         "Run Metadata",
-        "欄位說明",
         "診斷事件",
     ]
     assert wb["診斷事件"].sheet_state == "hidden"
@@ -227,14 +226,15 @@ def test_workbook_keeps_an_event_without_a_result_on_the_worklist(tmp_path):
     )
     book = load_workbook(path)
     assert book.active.title == "摘要"
-    rows = list(book["需檢查"].iter_rows(values_only=False))
+    summary = book["摘要"]
+    rows = list(summary[summary.tables["TargetedReview"].ref])
     headers = [cell.value for cell in rows[0]]
     record = {h: cell for h, cell in zip(headers, rows[1], strict=True)}
     assert record["樣本"].value == "Another sample"
     assert record["結果"].value == "未記錄判定"
-    assert record["原因"].value == "RAW 處理失敗"
-    assert record["建議檢查"].value.endswith(diagnostic.reason)
-    assert record["建議檢查"].data_type != "f"
+    assert record["原因"].value.startswith("RAW 處理失敗：")
+    assert record["原因"].value.endswith(diagnostic.reason)
+    assert record["原因"].data_type != "f"
     # The full event also stays on the hidden trace sheet, as literal text.
     events = book["診斷事件"]
     assert events.sheet_state == "hidden"
@@ -298,7 +298,11 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
         output_path=tmp_path / "readable.xlsx",
     )
     book = load_workbook(path)
-    values = list(book["需檢查"].values)
+    summary = book["摘要"]
+    values = [
+        [cell.value for cell in row]
+        for row in summary[summary.tables["TargetedReview"].ref]
+    ]
     records = {row[1]: dict(zip(values[0], row, strict=True)) for row in values[1:]}
     assert "Recovered" not in records
     assert records["Held"]["結果"] == "未計入"
