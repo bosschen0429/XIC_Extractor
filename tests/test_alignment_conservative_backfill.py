@@ -620,9 +620,7 @@ def test_recovery_receipt_prevents_independent_near_isobaric_target_pairing(
         (_peak(fixture, "missing", apex_rt=8.0),),
     )
 
-    assert (
-        fixture.target.definition.target.mz == fixture.other_target.definition.target.mz
-    )
+    assert fixture.target.mz == fixture.other_target.mz
     with pytest.raises(
         ConservativeBackfillContractError,
         match="exact sample and target",

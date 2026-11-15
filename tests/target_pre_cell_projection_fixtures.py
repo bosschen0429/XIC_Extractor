@@ -83,7 +83,6 @@ def _finalized_case(
         ),
         declared_candidate_ids=tuple(binding.candidate_id for binding in bindings),
         capture_bindings=bindings,
-        target_snapshot=fixture.target.snapshot,
         target=fixture.target,
     )
     assessments = tuple(

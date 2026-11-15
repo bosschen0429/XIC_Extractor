@@ -36,7 +36,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.peak_trajectories import PeakTrajectory
 from xic_extractor.alignment.rt_frame import RtFrame
-from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
+from xic_extractor.configuration.models import Target
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
 )
@@ -61,7 +61,7 @@ class IstdAnchoredBackfill:
 def resolve_istd_anchored_backfill(
     *,
     sample_population: tuple[SampleMetadata, ...],
-    target: ResolvedTargetDefinition,
+    target: Target,
     direct_supports: tuple[CidNlCellGroupSupport, ...],
     sample_assessments: SampleAssessments,
     paired_istd_observations: Callable[[], tuple[PeakObservation, ...]],
@@ -93,7 +93,7 @@ def resolve_istd_anchored_backfill(
     # The fixed Target is the identity: its confirmed peers form one group
     # however far RT drifts over the run. Two bound owners in one sample remain
     # an unresolved conflict rather than a choice between recovery windows.
-    target_identity = target.lookup_label
+    target_identity = target.label
     groups = (
         construct_cross_sample_peak_group_hypotheses(
             owners,
@@ -173,7 +173,7 @@ def resolve_istd_anchored_backfill(
         # are useful for an ISTD itself, not an alternative analyte identity.
         locate_missing = (
             trajectory.backfill_locations
-            if target.definition.target.is_istd
+            if target.is_istd
             else trajectory.paired_istd_locations
         )
         locations = locate_missing(

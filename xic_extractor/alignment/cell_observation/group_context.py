@@ -103,7 +103,7 @@ class CidNlCellGroupContext:
     @property
     def target_label(self) -> str | None:
         target = self.method_subject.target
-        return None if target is None else target.lookup_label
+        return None if target is None else target.label
 
     @property
     def sorted_owner_ids(self) -> tuple[str, ...]:

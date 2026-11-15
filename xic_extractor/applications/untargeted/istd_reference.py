@@ -155,6 +155,15 @@ def read_known_istd_reference(path: Path) -> KnownIstdReference:
             )
         if not targets or len({t.label for t in targets}) != len(targets):
             raise ValueError("known ISTD reference requires unique ISTD target labels")
+        for target in targets:
+            if not (
+                target.mz > 0
+                and target.ppm_tol > 0
+                and 0 <= target.rt_min < target.rt_max
+            ):
+                raise ValueError(
+                    f"known ISTD reference: invalid target window {target.label}"
+                )
         labels = {target.label for target in targets}
         coordinates: dict[tuple[str, str], float] = {}
         seen: set[tuple[str, str]] = set()

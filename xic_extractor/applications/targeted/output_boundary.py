@@ -6,17 +6,15 @@ import errno
 import os
 import shutil
 import tempfile
-from collections.abc import Callable, Mapping
-from contextlib import ExitStack, contextmanager
+from collections.abc import Callable
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Iterator
 
 from xic_extractor.applications.targeted.application import (
-    TargetedApplicationRequest,
     TargetedOutputBoundaryError,
     TargetedPublication,
 )
-from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 
 if TYPE_CHECKING:
@@ -38,44 +36,36 @@ _PUBLICATION_LOCK_NAME = ".xic-targeted-publish.lock"
 
 
 def publish_targeted_outputs(
-    request: TargetedApplicationRequest,
     completed_workflow: CompletedTargetedProductionWorkflow,
-    acquisition_evidence: RunOutput,
+    *,
+    excel_output_path: Path | None,
+    replace_existing: bool = False,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> TargetedPublication:
-    """Stage and commit one complete render set after typed finalization."""
+    """Render one completed workbook and publish it without partial output."""
 
-    from xic_extractor.applications.targeted.production_workflow import (
-        CompletedTargetedProductionWorkflow,
-    )
-
-    if type(completed_workflow) is not CompletedTargetedProductionWorkflow:
-        raise TargetedOutputBoundaryError(
-            "publication requires an exact attempt-bound completed workflow"
-        )
-    render_view = completed_workflow.publication_output(request, acquisition_evidence)
-    output_dir = request.config.output_csv.parent
+    render_view = completed_workflow.publication_output
+    if excel_output_path is None or (should_cancel is not None and should_cancel()):
+        return TargetedPublication(paths=(), output=render_view)
+    output_dir = completed_workflow.config.output_csv.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".xic-targeted-publish-", dir=output_dir))
     preserve_stage_root = False
     try:
-        # Without a workbook destination the run is computed but not published.
-        staged_to_final: dict[Path, Path] = {}
-        if request.excel_output_path is not None:
-            stage_excel = stage_root / _STAGE_EXCEL_OUTPUT
-            write_excel_from_run_output(
-                request.config,
-                list(request.targets),
-                render_view,
-                output_path=stage_excel,
-            )
-            staged_to_final[stage_excel] = request.excel_output_path
-        _reject_duplicate_destinations(staged_to_final)
-        paths = _commit_staged_outputs(
-            staged_to_final,
-            replace_existing=request.replace_existing_outputs,
-            should_cancel=request.should_stop,
+        stage_excel = stage_root / _STAGE_EXCEL_OUTPUT
+        write_excel_from_run_output(
+            completed_workflow.config,
+            list(completed_workflow.targets),
+            render_view,
+            output_path=stage_excel,
         )
-        return TargetedPublication(paths=paths, output=render_view)
+        _commit_workbook(
+            stage_excel,
+            excel_output_path,
+            replace_existing=replace_existing,
+            should_cancel=should_cancel,
+        )
+        return TargetedPublication(paths=(excel_output_path,), output=render_view)
     except _TargetedPublicationCancelled:
         return TargetedPublication(paths=(), output=render_view)
     except _TargetedRollbackRecoveryRequired:
@@ -92,128 +82,55 @@ def publish_targeted_outputs(
             shutil.rmtree(stage_root, ignore_errors=True)
 
 
-def _reject_collisions(paths: Any) -> None:
-    collisions = [path for path in paths if path.exists()]
-    if collisions:
-        joined = ", ".join(str(path) for path in sorted(collisions, key=str))
-        raise TargetedOutputBoundaryError(
-            f"Targeted output path already exists: {joined}"
-        )
-
-
-def _reject_duplicate_destinations(mapping: Mapping[Path, Path]) -> None:
-    staged_by_destination: dict[str, Path] = {}
-    for staged, final in mapping.items():
-        normalized_final = os.path.normcase(
-            str(Path(final).expanduser().resolve(strict=False))
-        )
-        previous_staged = staged_by_destination.get(normalized_final)
-        if previous_staged is not None:
-            raise TargetedOutputBoundaryError(
-                "Targeted output transaction maps staged artifacts "
-                f"{previous_staged} and {staged} to duplicate destination "
-                f"{normalized_final}"
-            )
-        staged_by_destination[normalized_final] = staged
-
-
-def _commit_staged_outputs(
-    mapping: dict[Path, Path],
+def _commit_workbook(
+    staged: Path,
+    final: Path,
     *,
     replace_existing: bool = False,
     should_cancel: Callable[[], bool] | None = None,
-) -> tuple[Path, ...]:
-    moved: list[tuple[Path, Path]] = []
-    backups: list[tuple[Path, Path]] = []
-    ordered = sorted(mapping.items(), key=lambda item: item[1].name)
-    if not ordered:
-        return ()
-    recovery_root = ordered[0][0].parent
-    lock_paths_by_key = {
-        os.path.normcase(
-            str(final.parent.expanduser().resolve(strict=False))
-        ): final.parent.expanduser().resolve(strict=False) / _PUBLICATION_LOCK_NAME
-        for _, final in ordered
-    }
+) -> None:
+    backup = staged.parent / ".previous.xlsx"
+    previous_saved = False
+    published = False
 
     def check_cancellation() -> None:
         if should_cancel is not None and should_cancel():
             raise _TargetedPublicationCancelled
 
-    with ExitStack() as locks:
-        for key in sorted(lock_paths_by_key):
-            locks.enter_context(_publication_commit_lock(lock_paths_by_key[key]))
-        try:
-            if not replace_existing:
-                _reject_collisions(final for _, final in ordered)
-            if replace_existing:
-                check_cancellation()
-                backup_dir = next(iter(mapping)).parent / ".existing"
-                backup_dir.mkdir()
-                for index, (_, final) in enumerate(ordered):
-                    if final.exists():
-                        backup = backup_dir / f"{index}-{final.name}"
-                        final.replace(backup)
-                        backups.append((backup, final))
-                        check_cancellation()
-            for staged, final in ordered:
-                check_cancellation()
-                final.parent.mkdir(parents=True, exist_ok=True)
-                if replace_existing:
-                    staged.replace(final)
-                else:
-                    _publish_without_replace(staged, final)
-                moved.append((staged, final))
-                check_cancellation()
-        except Exception as exc:
-            rollback_failures: list[Path] = []
-            for staged, final in reversed(moved):
-                if not _restore_moved_output(final, staged):
-                    rollback_failures.append(final)
-            for backup, final in reversed(backups):
-                if not _restore_previous_output(backup, final):
-                    rollback_failures.append(final)
-            detail = (
-                f"; rollback failed for {rollback_failures}"
-                if rollback_failures
-                else ""
-            )
-            if isinstance(exc, _TargetedPublicationCancelled):
-                if rollback_failures:
-                    raise _TargetedRollbackRecoveryRequired(
-                        "Targeted output commit was cancelled and rollback failed"
-                        f"{detail}; recoverable files retained at {recovery_root}"
-                    ) from exc
-                raise
-            if (
-                not moved
-                and not backups
-                and isinstance(exc, TargetedOutputBoundaryError)
-            ):
-                raise
-            if rollback_failures:
-                raise _TargetedRollbackRecoveryRequired(
-                    "Targeted output commit failed and rollback was incomplete"
-                    f"{detail}; recoverable files retained at {recovery_root}"
-                ) from exc
+    lock_path = final.parent.expanduser().resolve(strict=False) / _PUBLICATION_LOCK_NAME
+    with _publication_commit_lock(lock_path):
+        if not replace_existing and final.exists():
             raise TargetedOutputBoundaryError(
-                f"Targeted output commit failed and was rolled back{detail}"
-            ) from exc
-    return tuple(final for _, final in ordered)
-
-
-def _restore_moved_output(final: Path, staged: Path) -> bool:
-    if staged.exists():
-        return _remove_published_output(final, recovery_path=staged)
-    try:
-        final.replace(staged)
-        return True
-    except OSError:
+                f"Targeted output path already exists: {final}"
+            )
         try:
-            _atomic_copy_replace(final, staged)
-            return _remove_published_output(final, recovery_path=staged)
-        except OSError:
-            return False
+            check_cancellation()
+            if replace_existing and final.exists():
+                final.replace(backup)
+                previous_saved = True
+                check_cancellation()
+            if replace_existing:
+                staged.replace(final)
+            else:
+                _publish_without_replace(staged, final)
+            published = True
+            check_cancellation()
+        except Exception as exc:
+            recovered = True
+            if previous_saved:
+                recovered = _restore_previous_output(backup, final)
+            elif published:
+                recovered = _remove_published_output(final, recovery_path=staged)
+            if not recovered:
+                raise _TargetedRollbackRecoveryRequired(
+                    f"Targeted output publication failed and rollback was incomplete: "
+                    f"{final}; recoverable files retained at {staged.parent}"
+                ) from exc
+            if isinstance(exc, _TargetedPublicationCancelled):
+                raise
+            raise TargetedOutputBoundaryError(
+                f"Targeted output commit failed and was rolled back: {final}: {exc}"
+            ) from exc
 
 
 def _restore_previous_output(backup: Path, final: Path) -> bool:

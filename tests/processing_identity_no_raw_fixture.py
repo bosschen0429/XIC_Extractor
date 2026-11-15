@@ -6,11 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from xic_extractor.configuration.models import Target
-from xic_extractor.configuration.target_identity import (
-    ResolvedTargetDefinition,
-    mint_target_list_snapshot,
-    resolve_target_definition,
-)
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,
@@ -35,8 +30,8 @@ class ProcessingIdentityNoRawFixture:
     processing_attempt_id: str
     samples: tuple[SampleMetadata, ...]
     acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
-    target: ResolvedTargetDefinition
-    other_target: ResolvedTargetDefinition
+    target: Target
+    other_target: Target
 
     def sample(self, raw_stem: str) -> SampleMetadata:
         matches = tuple(
@@ -121,16 +116,12 @@ def build_processing_identity_no_raw_fixture(
         is_istd=False,
         istd_pair="",
     )
-    target_snapshot = mint_target_list_snapshot(
-        (target_value, other_target_value),
-        identity_namespace="target-list:processing-identity-no-raw",
-    )
     return ProcessingIdentityNoRawFixture(
         processing_attempt_id=str(uuid.uuid4()),
         samples=tuple(metadata),
         acquisition_sources=sources,
-        target=resolve_target_definition(target_snapshot, "Analyte"),
-        other_target=resolve_target_definition(target_snapshot, "Other Analyte"),
+        target=target_value,
+        other_target=other_target_value,
     )
 
 

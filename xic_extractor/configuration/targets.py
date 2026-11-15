@@ -24,10 +24,8 @@ from xic_extractor.configuration.targeted_identification import (
     QuantRelativeIon,
     TargetIdentification,
     delta_mass_payload,
-    format_offset,
     ion_name,
     parse_delta_mass_payload,
-    target_cid_nl_loss,
 )
 from xic_extractor.mass_accuracy import mz_tolerance_da
 
@@ -271,29 +269,6 @@ def _identification(
         raise fail(str(exc)) from None
     return TargetIdentification(
         (*((CidNlCondition(loss),) if loss is not None else ()), condition)
-    )
-
-
-def target_definition_row(target: Target) -> dict[str, str]:
-    """The target-table row that admits to ``target``."""
-    loss = target_cid_nl_loss(target)
-    ions = target.identification.delta_mass.ions if target.identification else ()
-    return {
-        "label": target.label,
-        "mz": str(target.mz),
-        "expected_rt_min": str(target.expected_rt_min),
-        "role": "istd" if target.is_istd else "analyte",
-        "istd_pair": target.istd_pair,
-        "cid_nl_loss_da": "" if loss is None else str(loss),
-        "delta_mass_mz": ", ".join(format_offset(ion.offset_mz) for ion in ions),
-    }
-
-
-def reparse_target(target: Target, path: Path) -> Target:
-    """Admit target's own definition alone, without list relationships."""
-    settings, details = parse_delta_mass_payload(targets_delta_mass_payload([target]))
-    return _parse_target_row(
-        path, 2, target_definition_row(target), settings, details.get(target.label)
     )
 
 

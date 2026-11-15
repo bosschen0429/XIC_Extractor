@@ -171,7 +171,7 @@ def test_known_reference_uses_declared_targets_rt_and_source_bytes(
     changed = read_known_istd_reference(path)
     assert changed.coordinates == reference.coordinates
     assert changed.workbook_sha256 != reference.workbook_sha256
-    assert changed.anchor.target_snapshot == reference.anchor.target_snapshot
+    assert changed.anchor.targets == reference.anchor.targets
     assert changed.provenance["coordinates"] == reference.provenance["coordinates"]
 
 
@@ -225,6 +225,7 @@ def test_known_reference_content_identity_tracks_declared_and_measured_content()
         "duplicate_target",
         "malformed_rt",
         "malformed_mass",
+        "zero_width_rt",
         "missing_header",
         "undeclared_target",
         "unbound_sample",
@@ -245,6 +246,8 @@ def test_known_reference_rejects_invalid_consumed_input(
         workbook["Targets"].append(["known", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50])
     elif damage == "malformed_rt":
         workbook["XIC Results"]["D3"] = "broken"
+    elif damage == "zero_width_rt":
+        workbook["Targets"]["E2"] = workbook["Targets"]["D2"].value
     elif damage == "malformed_mass":
         workbook["Targets"]["C2"] = "broken"
     elif damage == "missing_header":

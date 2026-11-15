@@ -206,7 +206,6 @@ def _finalization_inputs(
             )
             for candidate_id, sample in zip(candidate_ids, fixture.samples, strict=True)
         ),
-        target_snapshot=fixture.target.snapshot,
         target=fixture.target,
     )
     observed_sample = fixture.samples[0]

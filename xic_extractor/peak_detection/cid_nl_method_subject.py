@@ -3,7 +3,7 @@
 Targeted and Untargeted callers may constrain the same CID-NL assessment owner,
 but a configured Target is not a universal scientific identity.  This module
 keeps the common precursor/method facts explicit and retains Targeted identity
-only when the subject was adapted from an owner-resolved target definition.
+only when the subject was adapted from a configured Target.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
-from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
+from xic_extractor.configuration.models import Target
 from xic_extractor.mass_accuracy import absolute_ppm_error, reference_mz_window
 
 SCHEMA_VERSION = "cid_nl_method_subject"
@@ -72,7 +72,7 @@ class CidNlMethodSubject:
     precursor_mz: float
     precursor_tolerance_ppm: float
     neutral_loss_da: float | None
-    target: ResolvedTargetDefinition | None = None
+    target: Target | None = None
     composition: CidNlComposition | None = None
 
     def __post_init__(self) -> None:
@@ -102,9 +102,9 @@ class CidNlMethodSubject:
                 "subject_kind must be targeted_definition or untargeted_precursor"
             )
         if self.subject_kind == "targeted_definition":
-            if not isinstance(self.target, ResolvedTargetDefinition):
+            if not isinstance(self.target, Target):
                 raise CidNlMethodSubjectContractError(
-                    "targeted method subject requires its resolved Target"
+                    "targeted method subject requires its configured Target"
                 )
         elif self.target is not None:
             raise CidNlMethodSubjectContractError(
@@ -124,7 +124,7 @@ class CidNlMethodSubject:
         """Natural key: the Target label, or the precursor and its losses."""
 
         if self.target is not None:
-            return f"target|{self.target.lookup_label}"
+            return f"target|{self.target.label}"
         if self.composition is not None:
             losses = f"{self.composition.combine_mode}:" + ",".join(
                 f"{name}={loss!r}" for name, loss in self.composition.tags
@@ -167,24 +167,19 @@ class UntargetedCidNlMethodSubjectBatch:
 
 
 def cid_nl_method_subject_from_target(
-    target: ResolvedTargetDefinition,
+    target: Target,
 ) -> CidNlMethodSubject:
-    """Adapt one owner-resolved Target into the shared CID-NL subject."""
+    """Adapt one configured Target into the shared CID-NL subject."""
 
-    if not isinstance(target, ResolvedTargetDefinition):
-        raise CidNlMethodSubjectContractError(
-            "target must be an owner-resolved target definition"
-        )
-    target_value = target.definition.target
-    neutral_loss_da = target_value.neutral_loss_da
+    neutral_loss_da = target.neutral_loss_da
     if neutral_loss_da is None:
         raise CidNlMethodSubjectContractError(
             "CID-NL Targeted subject requires configured neutral loss"
         )
     return _mint_subject(
         subject_kind="targeted_definition",
-        precursor_mz=target_value.mz,
-        precursor_tolerance_ppm=target_value.ppm_tol,
+        precursor_mz=target.mz,
+        precursor_tolerance_ppm=target.ppm_tol,
         neutral_loss_da=neutral_loss_da,
         target=target,
     )
@@ -461,7 +456,7 @@ def _mint_subject(
     precursor_mz: float,
     precursor_tolerance_ppm: float,
     neutral_loss_da: float | None,
-    target: ResolvedTargetDefinition | None = None,
+    target: Target | None = None,
     composition: CidNlComposition | None = None,
 ) -> CidNlMethodSubject:
     precursor = _positive_finite_float(precursor_mz, field="precursor_mz")

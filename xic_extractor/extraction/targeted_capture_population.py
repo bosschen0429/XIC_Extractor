@@ -25,9 +25,6 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
     resolve_signal_processing_profile,
 )
-from xic_extractor.configuration.target_identity import (
-    ResolvedTargetDefinition,
-)
 from xic_extractor.extraction.result_assembly import TARGETED_ACQUISITION_TRACE_SOURCE
 from xic_extractor.extraction.result_models import ExtractionResult, FileResult
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -96,7 +93,7 @@ class TargetedSampleCapture:
 class TargetedCapturePopulation:
     """Every sample of one Target, with its scope and selected hypotheses."""
 
-    target: ResolvedTargetDefinition
+    target: Target
     acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
     samples: tuple[SampleMetadata, ...]
     scope: TargetSearchScope
@@ -104,7 +101,7 @@ class TargetedCapturePopulation:
 
     @property
     def ms1_only(self) -> bool:
-        return self.target.definition.target.neutral_loss_da is None
+        return self.target.neutral_loss_da is None
 
     @property
     def terminal_subjects(self) -> tuple[TerminalSearchObservation, ...]:
@@ -171,7 +168,7 @@ class TargetedCapturePopulation:
 
 def build_targeted_capture_population(
     *,
-    target: ResolvedTargetDefinition,
+    target: Target,
     acquisition_sources: Mapping[str, AcquisitionSourceIdentity],
     samples: tuple[SampleMetadata, ...],
     results_by_sample: ResultsBySample,
@@ -180,8 +177,8 @@ def build_targeted_capture_population(
     """Observe every sample that retained a physical evaluation for ``target``."""
 
     profile = targeted_signal_processing_profile(config)
-    label = target.definition.target.label
-    ms1_only = target.definition.target.neutral_loss_da is None
+    label = target.label
+    ms1_only = target.neutral_loss_da is None
     method_subject = None if ms1_only else cid_nl_method_subject_from_target(target)
     method_subject_id = (
         target_ms1_subject_id(target)
@@ -236,7 +233,6 @@ def build_targeted_capture_population(
         ),
         declared_candidate_ids=tuple(binding.candidate_id for binding in bindings),
         capture_bindings=bindings,
-        target_snapshot=target.snapshot,
         target=target,
     )
     candidate_by_sample = {
@@ -268,7 +264,7 @@ def build_targeted_capture_population(
             acquisition_sources[sample.raw_stem],
             sample,
             result,
-            target.definition.target,
+            target,
         )
         evaluation = result.physical_evaluation
         selected_observation = (
@@ -385,13 +381,13 @@ def bound_acquisition_trace(
 
 
 def targeted_capture_candidate_id(
-    target: ResolvedTargetDefinition,
+    target: Target,
     sample: SampleMetadata,
 ) -> str:
     return ":".join(
         (
             "targeted-capture",
-            target.lookup_label,
+            target.label,
             sample.sample_name,
         )
     )

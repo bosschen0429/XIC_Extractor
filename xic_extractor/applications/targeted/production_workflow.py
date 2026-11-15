@@ -28,12 +28,6 @@ from xic_extractor.applications.targeted.application import (
     TargetedOutputBoundaryError,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.configuration.target_identity import (
-    ResolvedTargetDefinition,
-    TargetListSnapshot,
-    mint_target_list_snapshot,
-    resolve_target_definition,
-)
 from xic_extractor.extraction.result_models import (
     ExtractionResult,
     FileResult,
@@ -79,8 +73,6 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import SampleMetadata
 
-_IDENTITY_NAMESPACE = "targeted-production"
-
 
 @dataclass(frozen=True, slots=True)
 class TargetedProductionInputSnapshot:
@@ -90,7 +82,7 @@ class TargetedProductionInputSnapshot:
     raw_paths: tuple[Path, ...]
     raw_file_states: tuple[tuple[int, int, int, int, int], ...]
     resolved_inputs: ResolvedTargetedInputs
-    target_snapshot: TargetListSnapshot
+    targets: tuple[Target, ...]
     acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
 
     def acquisition_sources_by_sample(self) -> dict[str, AcquisitionSourceExpectation]:
@@ -120,10 +112,9 @@ class _PreparedTargetedProductionWorkflow:
     acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
     rt_frame: SampleRtFrame
     samples: tuple[SampleMetadata, ...]
-    targets: tuple[ResolvedTargetDefinition, ...]
+    targets: tuple[Target, ...]
     results_by_sample: tuple[tuple[SampleMetadata, FileResult], ...]
     raw_stems: frozenset[str]
-    acquisition_file_ids: tuple[int, ...]
     acquisition_evidence: RunOutput
 
 
@@ -132,25 +123,9 @@ class CompletedTargetedProductionWorkflow:
     """Owner-completed science and a publication model consumed without mutation."""
 
     finalized_results: tuple[FinalizedTargetProductionResult, ...]
-    _acquisition_file_ids: tuple[int, ...]
-    _publication_output: RunOutput
-
-    def publication_output(
-        self,
-        request: TargetedApplicationRequest,
-        acquisition_evidence: RunOutput,
-    ) -> RunOutput:
-        """Bind a publication request and return its already-completed result view."""
-
-        acquisition_file_ids = tuple(
-            id(file_result) for file_result in acquisition_evidence.file_results
-        )
-        if acquisition_file_ids != self._acquisition_file_ids:
-            raise TargetedOutputBoundaryError(
-                "prepared Targeted workflow crossed the acquisition evidence"
-            )
-        _validate_target_population(request, self.finalized_results)
-        return self._publication_output
+    config: ExtractionConfig
+    targets: tuple[Target, ...]
+    publication_output: RunOutput
 
     def __len__(self) -> int:
         return len(self.finalized_results)
@@ -182,8 +157,9 @@ def execute_targeted_production_workflow(
     )
     return CompletedTargetedProductionWorkflow(
         finalized_results=finalized_results,
-        _acquisition_file_ids=prepared.acquisition_file_ids,
-        _publication_output=publication_output,
+        config=request.config,
+        targets=request.targets,
+        publication_output=publication_output,
     )
 
 
@@ -209,9 +185,7 @@ def _validate_target_population(
             "finalized workflow did not cover every declared Target"
         )
     for target, result in zip(request.targets, results, strict=True):
-        finalized_target = (
-            result.completed_projection.row_binding.target.definition.target
-        )
+        finalized_target = result.completed_projection.row_binding.target
         if finalized_target != target:
             raise TargetedApplicationError(
                 "finalized Target result order differs from the declared Target list"
@@ -238,15 +212,15 @@ def _build_publication_output(
     backfills = {}
     backfill_diagnostics = []
     for result in finalized_results:
-        target = result.completed_projection.row_binding.target.definition
-        target_label = target.target.label
+        target = result.completed_projection.row_binding.target
+        target_label = target.label
         target_id = target_label
         if target_label in target_ids_by_label:
             raise TargetedOutputBoundaryError(
                 "finalized Targeted result population contains duplicate Targets"
             )
         target_ids_by_label[target_label] = target_id
-        targets_by_label[target_label] = target.target
+        targets_by_label[target_label] = target
         for backfill in result.scientific_core.targeted_backfill_decisions:
             sample_id = backfill.target_cell.sample_key
             backfills[(sample_id, target_id)] = backfill
@@ -702,13 +676,11 @@ def _prepare_targeted_production_workflow(
     raw_paths = list(current_inputs.raw_paths)
     if len(raw_paths) != len(acquisition_evidence.file_results):
         raise RuntimeError("Targeted acquisition returned partial sample coverage")
-    acquisition_file_ids = tuple(id(item) for item in acquisition_evidence.file_results)
     results_by_raw_path = _bind_results_to_raw_paths(
         raw_paths,
         acquisition_evidence.file_results,
     )
     resolved_inputs = current_inputs.resolved_inputs
-    target_snapshot = current_inputs.target_snapshot
     metadata_by_stem = {row.raw_stem: row for row in resolved_inputs.sample_metadata}
     samples = tuple(
         replace(
@@ -719,10 +691,7 @@ def _prepare_targeted_production_workflow(
         )
         for raw_path, file_result in results_by_raw_path
     )
-    resolved_targets = tuple(
-        resolve_target_definition(target_snapshot, target.label)
-        for target in request.targets
-    )
+    targets = current_inputs.targets
     profile = targeted_signal_processing_profile(request.config)
     physical_evaluations = {}
     for sample, (_, file_result) in zip(
@@ -730,8 +699,8 @@ def _prepare_targeted_production_workflow(
         results_by_raw_path,
         strict=True,
     ):
-        for target in resolved_targets:
-            result = file_result.results.get(target.definition.target.label)
+        for target in targets:
+            result = file_result.results.get(target.label)
             if result is not None and result.physical_evaluation is not None:
                 candidate_id = targeted_capture_candidate_id(target, sample)
                 physical_evaluations[candidate_id] = result.physical_evaluation
@@ -750,7 +719,7 @@ def _prepare_targeted_production_workflow(
         acquisition_sources=current_inputs.acquisition_sources,
         rt_frame=SampleRtFrame.from_samples(samples),
         samples=samples,
-        targets=resolved_targets,
+        targets=targets,
         results_by_sample=tuple(
             (sample, file_result)
             for sample, (_, file_result) in zip(
@@ -760,7 +729,6 @@ def _prepare_targeted_production_workflow(
             )
         ),
         raw_stems=frozenset(path.stem for path in raw_paths),
-        acquisition_file_ids=acquisition_file_ids,
         acquisition_evidence=acquisition_evidence,
     )
 
@@ -778,10 +746,6 @@ def snapshot_targeted_production_inputs(
         raw_paths=raw_paths,
         injection_order=request.injection_order,
     )
-    target_snapshot = mint_target_list_snapshot(
-        request.targets,
-        identity_namespace=_IDENTITY_NAMESPACE,
-    )
     raw_file_states = _raw_file_states(raw_paths)
     acquisition_sources = build_targeted_acquisition_sources(
         raw_paths=raw_paths,
@@ -795,7 +759,7 @@ def snapshot_targeted_production_inputs(
         raw_paths=tuple(raw_paths),
         raw_file_states=raw_file_states,
         resolved_inputs=resolved_inputs,
-        target_snapshot=target_snapshot,
+        targets=request.targets,
         acquisition_sources=acquisition_sources,
     )
 
@@ -810,16 +774,12 @@ def _validate_targeted_production_input_snapshot(
         raw_paths=raw_paths,
         injection_order=request.injection_order,
     )
-    target_snapshot = mint_target_list_snapshot(
-        request.targets,
-        identity_namespace=_IDENTITY_NAMESPACE,
-    )
     if (
         request.config != expected.config
         or tuple(raw_paths) != expected.raw_paths
         or _raw_file_states(raw_paths) != expected.raw_file_states
         or resolved_inputs != expected.resolved_inputs
-        or target_snapshot != expected.target_snapshot
+        or request.targets != expected.targets
     ):
         raise RuntimeError("Targeted production inputs changed during acquisition")
     return expected
@@ -868,7 +828,7 @@ def _bind_results_to_raw_paths(
 def _execute_target(
     context: _PreparedTargetedProductionWorkflow,
     request: TargetedApplicationRequest,
-    target: ResolvedTargetDefinition,
+    target: Target,
 ) -> FinalizedTargetProductionResult:
     population = build_targeted_capture_population(
         target=target,

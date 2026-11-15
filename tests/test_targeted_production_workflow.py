@@ -63,9 +63,7 @@ def test_retained_trace_reaches_one_finalized_target_result(tmp_path: Path) -> N
     )
 
     assert len(finalized) == 1
-    assert (
-        finalized[0].completed_projection.row_binding.target.definition.target == target
-    )
+    assert finalized[0].completed_projection.row_binding.target == target
     assert len(finalized[0].canonical_samples) == 1
     assert finalized[0].scientific_core.cell_observation_handoff is None
     assert finalized[0].scientific_core.cell_observations == ()
@@ -256,7 +254,7 @@ def test_publication_uses_final_peak_evidence_not_stale_selected_summary(tmp_pat
         injection_order={"SampleA": 1, "SampleB": 2},
     )
     completed = execute_targeted_production_workflow(request, output)
-    published = completed.publication_output(request, output)
+    published = completed.publication_output
     first_final, second_final = [
         f.results[target.label] for f in published.file_results
     ]
@@ -733,7 +731,7 @@ def test_neutral_loss_disabled_target_uses_shared_cell_decision(tmp_path: Path) 
     assert len(finalized) == 1
     result = finalized[0]
     assert isinstance(result, FinalizedTargetApplicationResult)
-    assert result.completed_projection.row_binding.target.definition.target == target
+    assert result.completed_projection.row_binding.target == target
     assert len(result.completed_projection.decisions) == 2
     assert all(
         decision.variant == "numeric"
