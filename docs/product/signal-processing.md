@@ -401,9 +401,11 @@ subtraction and area with it:
 - `Int` and `height_raw` are the raw maximum inside the selected segment;
   `IntSmoothed` and `height_smoothed` are the Gaussian trace at the selected
   apex.
-- Matrix and workbook `Area`, and every area shown in review, are the published
-  morphology area. A peak without one publishes no area
-  (`missing_ms1_morphology_area`); raw area is never a fallback.
+- Matrix and workbook `Area` are the morphology area. A review curve shows its
+  own morphology area, which equals the published value on the curve that gave
+  it. Raw area is never a fallback: a peak without a morphology area publishes
+  none (Alignment `missing_ms1_morphology_area`; Targeted
+  `missing_positive_ms1_peak`).
 - `area_raw_counts_seconds` stays internal grouping evidence (shoulder test and
   owner order) and is not shown.
 
