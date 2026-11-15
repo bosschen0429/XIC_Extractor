@@ -53,6 +53,7 @@ import {
   reloadIstd,
   saveUntargeted,
 } from "./analysis_untargeted.js";
+import { ready, session } from "./workspace.js";
 
 connectPage({
   busy: () => Boolean(analysis?.snapshot.busy) || sampleMetadata.saving,
@@ -65,12 +66,6 @@ connectPage({
   sourceChanged: listSamples,
 });
 registerNavigation();
-window.XicAnalysis = {
-  excludeSamples: sampleMetadata.exclude,
-  get busy() {
-    return analysis?.snapshot.busy || false;
-  },
-};
 
 function applyThemeButton() {
   const dark = document.documentElement.dataset.theme === "dark";
@@ -114,7 +109,7 @@ try {
   $("analysis-root").innerHTML = await response.text();
   $("analysis-result").append($("result-curation"));
   mountSampleSteps();
-  await window.XicReview.session;
+  await session;
   stopWindowTracking = ui.trackWindow();
   initializeConfig(await api("/api/config"));
   loadDeltaMass(state.config.delta_mass);
@@ -180,7 +175,7 @@ try {
     false,
   );
   renderJob();
-  const initialReview = await window.XicReview.ready;
+  const initialReview = await ready;
   if (initialReview?.page) {
     prepareResult(initialReview.page);
     if (reloadedOnResult || initialReview.opened) showMode("result");

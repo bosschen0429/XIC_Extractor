@@ -699,7 +699,7 @@ def test_analysis_module_graph_is_served_with_javascript_mime(tmp_path):
         shipped_modules = {
             asset.name
             for asset in files("xic_workbench").joinpath("assets").iterdir()
-            if asset.name.startswith("analysis") and asset.name.endswith(".js")
+            if asset.name.endswith(".js")
         }
         assert visited == shipped_modules
         assert request("/assets/../server.py")[0] == 404

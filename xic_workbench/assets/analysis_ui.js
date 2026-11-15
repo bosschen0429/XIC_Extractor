@@ -2,9 +2,10 @@
 // import this module, so it imports no view: the entry connects what the page
 // coordinates across them.
 import { state } from "./analysis_state.js";
+import * as ui from "./workspace_ui.js";
 
 export const $ = (id) => document.getElementById(id);
-export const ui = window.XicUi;
+export { ui };
 // The location holds every run; each analysis writes a new folder inside it.
 export const OUTPUT_LABEL = "結果存放位置";
 export const pathFields = [

@@ -12,6 +12,7 @@ import {
   status,
   ui,
 } from "./analysis_ui.js";
+import { navigation } from "./workspace_ui.js";
 
 // Starting an analysis saves the setup, so only leaving the page can lose it;
 // the page asks before unloading then.
@@ -51,7 +52,7 @@ export function showMode(mode) {
     );
 }
 export function showResult() {
-  if (!showingResult()) window.XicUi.navigation.push();
+  if (!showingResult()) navigation.push();
   showMode("result");
   window.scrollTo(0, 0);
   // Do not leave focus on a run control moved inside the optional, closed panel.
@@ -60,7 +61,7 @@ export function showResult() {
 }
 export function selectView(view, persist = true) {
   if (persist && (view !== state.view || showingResult()))
-    window.XicUi.navigation.push();
+    navigation.push();
   setView(view);
   document.body.dataset.view = view;
   for (const name of ["targeted", "untargeted"])
@@ -69,7 +70,7 @@ export function selectView(view, persist = true) {
   if (persist) act(() => api("/api/preferences", { view }));
 }
 export function registerNavigation() {
-  window.XicUi.navigation.register("workspace", {
+  navigation.register("workspace", {
     capture: () => ({ view: state.view, mode: document.body.dataset.mode }),
     restore: (saved) => {
       selectView(saved.view, false);
