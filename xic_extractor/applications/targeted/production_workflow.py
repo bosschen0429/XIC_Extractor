@@ -28,7 +28,6 @@ from xic_extractor.applications.targeted.application import (
     TargetedOutputBoundaryError,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.configuration.targets import validate_target_settings
 from xic_extractor.extraction.result_models import (
     ExtractionResult,
     FileResult,
@@ -738,8 +737,6 @@ def snapshot_targeted_production_inputs(
     request: TargetedApplicationRequest,
 ) -> TargetedProductionInputSnapshot:
     """Snapshot local RAW revisions and scientific inputs for a production phase."""
-
-    validate_target_settings(request.targets)
 
     raw_paths = resolve_targeted_raw_paths(request.config)
     if not raw_paths:

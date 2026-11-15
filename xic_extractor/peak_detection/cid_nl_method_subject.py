@@ -3,7 +3,7 @@
 Targeted and Untargeted callers may constrain the same CID-NL assessment owner,
 but a configured Target is not a universal scientific identity.  This module
 keeps the common precursor/method facts explicit and retains Targeted identity
-only when the subject was adapted from an configured Target.
+only when the subject was adapted from a configured Target.
 """
 
 from __future__ import annotations

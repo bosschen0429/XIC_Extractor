@@ -24,10 +24,8 @@ from xic_extractor.configuration.targeted_identification import (
     QuantRelativeIon,
     TargetIdentification,
     delta_mass_payload,
-    format_offset,
     ion_name,
     parse_delta_mass_payload,
-    target_cid_nl_loss,
 )
 from xic_extractor.mass_accuracy import mz_tolerance_da
 
@@ -274,29 +272,6 @@ def _identification(
     )
 
 
-def target_definition_row(target: Target) -> dict[str, str]:
-    """The target-table row that admits to ``target``."""
-    loss = target_cid_nl_loss(target)
-    ions = target.identification.delta_mass.ions if target.identification else ()
-    return {
-        "label": target.label,
-        "mz": str(target.mz),
-        "expected_rt_min": str(target.expected_rt_min),
-        "role": "istd" if target.is_istd else "analyte",
-        "istd_pair": target.istd_pair,
-        "cid_nl_loss_da": "" if loss is None else str(loss),
-        "delta_mass_mz": ", ".join(format_offset(ion.offset_mz) for ion in ions),
-    }
-
-
-def reparse_target(target: Target, path: Path) -> Target:
-    """Admit target's own definition alone, without list relationships."""
-    settings, details = parse_delta_mass_payload(targets_delta_mass_payload([target]))
-    return _parse_target_row(
-        path, 2, target_definition_row(target), settings, details.get(target.label)
-    )
-
-
 def targets_delta_mass_payload(targets: Sequence[Target]) -> dict | None:
     """Delta Mass details of admitted targets, or None when none use it."""
     conditions = {
@@ -355,43 +330,3 @@ def read_istd_targets(path: Path) -> IstdTargetSelection:
             "or clear the optional list to run without ISTD alignment."
         )
     return IstdTargetSelection(istds, len(targets) - len(istds))
-
-
-def validate_target_settings(targets: tuple[Target, ...]) -> None:
-    """Validate typed settings once at Targeted application admission."""
-    if not targets:
-        raise ConfigError("target list must contain at least one target")
-    for target in targets:
-        _validate_target(target)
-    labels = [target.label for target in targets]
-    if len(set(labels)) != len(labels):
-        raise ConfigError("target list has a duplicate target label")
-    _validate_target_relationships(Path("<target-settings>"), list(targets))
-
-
-def _validate_target(target: Target) -> None:
-    if not isinstance(target, Target):
-        raise ConfigError("target settings require Target values")
-    if target.expected_rt_min is None:
-        # Shared domain callers construct geometric targets directly;
-        # CSV intake is a separate admission boundary.
-        import math
-
-        if (
-            not target.label.strip()
-            or not all(
-                math.isfinite(v)
-                for v in (target.mz, target.rt_min, target.rt_max, target.ppm_tol)
-            )
-            or target.mz <= 0
-            or target.ppm_tol <= 0
-            or target.rt_min < 0
-            or target.rt_min >= target.rt_max
-        ):
-            raise ConfigError("invalid geometric target definition")
-        return
-    parsed = reparse_target(target, Path("<target-settings>"))
-    if parsed != target:
-        raise ConfigError(
-            "target must be owner-normalized Target configuration content"
-        )
