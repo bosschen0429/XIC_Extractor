@@ -195,9 +195,7 @@ def test_workbench_sample_data_never_uses_imported_reader_paths(tmp_path, monkey
     raw_dir.mkdir()
     still_missing = detect()
     assert still_missing["sample_source"] is None
-    assert "找不到本次分析的樣本資訊" in finite(still_missing)[
-        "unavailable_reason"
-    ]
+    assert "找不到本次分析的樣本資訊" in finite(still_missing)["unavailable_reason"]
 
     confirmed = save_batch_samples(config, raw_dir, sample_payload())["path"]
     assert detect()["sample_source"] == {"kind": "confirmed", "label": confirmed}
