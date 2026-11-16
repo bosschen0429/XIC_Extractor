@@ -705,40 +705,21 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
     assert output.read_bytes() == before
 
 
-@pytest.mark.parametrize(
-    ("capture_kind", "invocation", "expected_kind", "expected_label"),
-    (
-        (
-            "backfill_observation",
-            "untargeted-cid-nl-backfill",
-            "backfill_support",
-            "backfill",
-        ),
-        (
-            "initial_capture",
-            "untargeted-cid-nl-real-data:local_minimum",
-            "discovery_support",
-            "detect",
-        ),
-    ),
-)
-def test_sample_support_origin_uses_exact_method_capture_and_observation(
-    tmp_path, capture_kind, invocation, expected_kind, expected_label
-):
+def test_sample_support_origin_uses_exact_method_capture_and_observation(tmp_path):
     refs = {}
 
     def method_capture(writer):
         refs["capture"] = writer.add_curve_payload(
             "S1",
-            capture_kind,
+            "initial_capture",
             "obs-01",
-            inspector_curve_payload("S1", "C1", "obs-01", kind=capture_kind),
+            inspector_curve_payload("S1", "C1", "obs-01"),
         )
         writer.add_assessment(
             {
                 "sample_key": "S1",
                 "method_subject_id": "M1",
-                "detector_invocation_id": invocation,
+                "detector_invocation_id": "untargeted-cid-nl-real-data:local_minimum",
                 "method_result": "SUPPORT",
             },
             candidate_physical_peak_keys=("obs-01",),
@@ -760,10 +741,10 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(
     generate_report(report, SelectionRequest(), output)
     item = read_report_payload(output)["items"][0]
 
-    assert item["review_summary"]["origin_kinds"] == [expected_kind]
+    assert item["review_summary"]["origin_kinds"] == ["discovery_support"]
     assert item["samples"][0]["support_origin"] == {
-        "kind": expected_kind,
-        "label": expected_label,
+        "kind": "discovery_support",
+        "label": "detect",
         "method_refs": [str(refs["method"])],
         "capture_refs": [str(refs["capture"])],
         "observation_refs": ["obs-01"],
@@ -825,6 +806,72 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
         "backfill",
         ["obs-01"],
     )
+
+
+def test_backfill_curve_is_not_shown_on_rows_sharing_its_method_subject(tmp_path):
+    def backfill_curve(sample_key, peak):
+        payload = inspector_curve_payload(
+            sample_key, None, peak, kind="backfill_observation", apex_rt=1.5
+        )
+        payload["provenance"]["method_subject_id"] = "M1"
+        return payload
+
+    def second_row(writer):
+        # G2 shares C1's method subject: detected in S2, backfilled in S1.
+        writer.add_peak("S1", "obs-bf", (None, 1.5, None))
+        member = add_witness(
+            writer, "C2", "S2", rt=1.0, precursor_mz=500.0, method_subject_id="M1"
+        )
+        writer.add_final_group(
+            "G2", feature_id="G2", disposition="completed", members=[member]
+        )
+        writer.add_cells(
+            "G2",
+            [
+                {
+                    "sample_key": "S1",
+                    "variant": "numeric",
+                    "value": 500.0,
+                    "support_origin": "backfill_support",
+                    "observation_ids": ["obs-bf"],
+                },
+                {"sample_key": "S2", "variant": "numeric", "value": 900.0},
+            ],
+        )
+        writer.add_curve_payload(
+            "S2",
+            "initial_capture",
+            "peak-C2-S2",
+            inspector_curve_payload("S2", "C2", "peak-C2-S2"),
+        )
+        # G2's Backfill in S1, and G1's attempt in S2 that found no peak.
+        writer.add_curve_payload(
+            "S1", "backfill_observation", "obs-bf", backfill_curve("S1", "obs-bf")
+        )
+        writer.add_curve_payload(
+            "S2", "backfill_observation", "M1", backfill_curve("S2", None)
+        )
+
+    report, _, _ = create_inspector_report(
+        tmp_path, candidate={"method_subject_id": "M1"}, extend=second_row
+    )
+    output = tmp_path / "shared-subject.html"
+    generate_report(
+        report, SelectionRequest(strategy="query", group_ids=("G1", "G2")), output
+    )
+    items = {
+        json.loads(item["id"])[-1]: item
+        for item in read_report_payload(output)["items"]
+    }
+
+    def shown(row):
+        return sorted((c["sample_id"], c["kind"]) for c in items[row]["curves"])
+
+    assert shown("G1") == [("S1", "initial_capture")]
+    assert shown("G2") == [("S2", "initial_capture")]
+    backfilled = next(s for s in items["G2"]["samples"] if s["sample_id"] == "S1")
+    assert backfilled["support_origin"]["kind"] == "backfill_support"
+    assert backfilled["support_origin"]["observation_refs"] == ["obs-bf"]
 
 
 def test_curve_replays_final_rt_estimate_including_boundary_shift(tmp_path):

@@ -9,8 +9,9 @@ follows from those facts:
   Backfill SUPPORT assessment that lists the peak (Backfill has no terminal);
 - an initial group keeps only candidates of the method subjects its
   hypothesis members belong to;
-- a curve relates its own candidate, or else the candidates bound to its peak
-  and those of its provenance method subject.
+- a curve relates only its own candidate. A Backfill observation has none: it
+  was taken for one row's cell, which the stored facts do not name, and rows
+  that share its method subject must not show it.
 
 Each relation is computed into a TEMP table the first time a connection asks
 for it. Nothing is written into a report, so the rule stays with the reader.
@@ -66,20 +67,7 @@ _INITIAL_GROUP_CANDIDATES = """
 _CURVE_CANDIDATES = """
     SELECT cu.payload_id, c.id AS candidate FROM main.curves cu
     JOIN main.samples s ON s.sample_key = cu.sample_id
-    JOIN main.candidates c ON c.candidate_id = cu.candidate_id AND c.sample = s.id
-    WHERE cu.candidate_id IS NOT NULL
-    UNION
-    SELECT cu.payload_id, pc.candidate FROM main.curves cu
-    JOIN main.samples s ON s.sample_key = cu.sample_id
-    JOIN main.peaks p
-      ON p.sample = s.id AND p.physical_peak_key = cu.physical_peak_key
-    JOIN temp.peak_candidates pc ON pc.peak = p.id
-    WHERE cu.candidate_id IS NULL
-    UNION
-    SELECT cu.payload_id, c.id FROM main.curves cu
-    JOIN main.samples s ON s.sample_key = cu.sample_id
-    JOIN main.candidates c ON c.method_subject = cu.method_subject AND c.sample = s.id
-    WHERE cu.candidate_id IS NULL AND cu.method_subject IS NOT NULL"""
+    JOIN main.candidates c ON c.candidate_id = cu.candidate_id AND c.sample = s.id"""
 
 # name: (query, prerequisites, index columns)
 _RELATIONS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
@@ -95,11 +83,7 @@ _RELATIONS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
         ("member_candidates",),
         ("group_id", "candidate"),
     ),
-    "curve_candidates": (
-        _CURVE_CANDIDATES,
-        ("peak_candidates",),
-        ("payload_id", "candidate"),
-    ),
+    "curve_candidates": (_CURVE_CANDIDATES, (), ("payload_id", "candidate")),
 }
 
 

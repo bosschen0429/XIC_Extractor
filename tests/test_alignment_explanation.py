@@ -509,11 +509,14 @@ def _curve_payload():
     }
 
 
-def test_related_set_links_preserve_union_of_repeated_records(tmp_path):
+def test_repeated_curve_record_is_stored_once_and_relates_only_its_candidate(
+    tmp_path,
+):
     report = tmp_path / "normalized.sqlite"
     with ExplanationReportWriter(report) as writer:
         writer.declare_samples([{"sample_key": "S1", "sample_stem": "S1"}])
-        # C1 and C2 end on the curve's peak; C3 shares its provenance subject.
+        # The curve is C1's; C2 also ends on its peak and C3 shares its
+        # provenance subject.
         for candidate_id, subject in (("C1", "M1"), ("C2", "M2"), ("C3", "M3")):
             writer.add_candidate(
                 candidate_id,
@@ -530,28 +533,27 @@ def test_related_set_links_preserve_union_of_repeated_records(tmp_path):
                 hypothesis_id=f"h-{candidate_id}",
                 physical_peak_key="obs-1",
             )
-        payload = _curve_payload()
+        payload = {**_curve_payload(), "candidate_id": "C1"}
         payload["provenance"] = {**payload["provenance"], "method_subject_id": "M3"}
         binding = dict(sample_id="S1", kind="initial_capture", record_id="obs-1")
-        # The same record written repeatedly is stored once and relates the
-        # union of its peak's and its subject's candidates.
+        # The same record written repeatedly is stored once.
         ids = {writer.add_curve_payload(**binding, payload=payload) for _ in range(3)}
         assert len(ids) == 1
         writer.finalize(explanation_summary({"neutral_loss_by_tag": {"dR": 116.0}}))
 
     evidence = read_review_evidence(report)
-    assert {
-        key for key, candidate in evidence.candidates.items() if candidate.curves
-    } == {(candidate_id, "S1") for candidate_id in ("C1", "C2", "C3")}
-    assert {candidate.curves for candidate in evidence.candidates.values()} == {("1",)}
+    assert {key: c.curves for key, c in evidence.candidates.items()} == {
+        ("C1", "S1"): ("1",),
+        ("C2", "S1"): (),
+        ("C3", "S1"): (),
+    }
     details = [
         read_alignment_explanation(report, candidate_id=candidate_id)[
             "capture_evidence"
         ]
         for candidate_id in ("C1", "C2", "C3")
     ]
-    assert len(details[0]) == 1
-    assert details == [details[0]] * 3
+    assert [len(detail) for detail in details] == [1, 0, 0]
 
 
 def test_report_rejects_terminal_without_a_candidate(tmp_path):
