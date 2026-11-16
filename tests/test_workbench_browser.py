@@ -46,6 +46,29 @@ def test_launch_capability_is_removed_after_session_exchange(workbench):
     assert urlsplit(workbench.url).fragment == ""
 
 
+def test_desktop_relaunch_authenticates_a_browser_without_session_cookie(
+    browser, config_dir
+):
+    from tests.workbench_lifecycle_fixtures import _launch
+
+    with _launch(config_dir) as (server, first_url):
+        with browser.new_context() as context:
+            page = context.new_page()
+            page.goto(first_url)
+            expect(page.locator("#t-data_dir")).to_be_visible()
+            context.clear_cookies()
+            with _launch(config_dir) as (launcher, reopened_url):
+                assert launcher.wait(timeout=5) == 0
+                assert server.poll() is None
+                assert reopened_url == first_url
+                page = context.new_page()
+                with page.expect_response("**/api/session") as exchange:
+                    page.goto(reopened_url)
+                assert exchange.value.status == 200
+                expect(page.locator("#t-data_dir")).to_be_visible()
+                assert urlsplit(page.url).fragment == ""
+
+
 def _unsaved(page, kind: str) -> bool:
     """The setup state the page asks about before unloading."""
     return page.evaluate(

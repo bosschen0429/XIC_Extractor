@@ -130,9 +130,9 @@ def create_server(
     """Serve only packaged frontend files and reports produced by this session."""
     session = secrets.token_urlsafe(32)
     cookie_name = f"xic_session_{secrets.token_hex(8)}"
+    # A private launch capability stays valid for this server's lifetime so the
+    # desktop launcher can reopen it even after the browser loses its cookie.
     launch_capability = secrets.token_urlsafe(32)
-    launch_lock = threading.Lock()
-    launch_available = True
 
     class Handler(BaseHTTPRequestHandler):
         server: ThreadingHTTPServer
@@ -212,33 +212,18 @@ def create_server(
                 raise PermissionError("請重新載入工作區頁面。")
 
         def _open_session(self):
-            nonlocal launch_available
-            payload = {
-                "defaults": workspace.defaults,
-                "desktop_key": None if workspace.closing else desktop_key,
-            }
-            if self._has_session():
-                self._send(
-                    200,
-                    payload,
-                    Set_Cookie=(
-                        f"{cookie_name}={session}; Path=/; HttpOnly; SameSite=Strict"
-                    ),
-                )
-                return
-            with launch_lock:
-                if not launch_available or not self._has_launch_capability():
-                    raise PermissionError("請從啟動網址開啟工作區。")
-                self._send(
-                    200,
-                    payload,
-                    Set_Cookie=(
-                        f"{cookie_name}={session}; Path=/; HttpOnly; SameSite=Strict"
-                    ),
-                )
-                # A disconnected response leaves the capability available so the
-                # intended browser can retry an exchange it never received.
-                launch_available = False
+            if not self._has_session() and not self._has_launch_capability():
+                raise PermissionError("請從啟動網址開啟工作區。")
+            self._send(
+                200,
+                {
+                    "defaults": workspace.defaults,
+                    "desktop_key": None if workspace.closing else desktop_key,
+                },
+                Set_Cookie=(
+                    f"{cookie_name}={session}; Path=/; HttpOnly; SameSite=Strict"
+                ),
+            )
 
         def _handle(self, action):
             try:

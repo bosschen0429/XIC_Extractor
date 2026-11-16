@@ -128,7 +128,7 @@ def test_http_accepts_page_asset_burst_before_dispatch(tmp_path):
         workspace.close()
 
 
-def test_session_requires_one_time_launch_capability_and_preserves_reload(tmp_path):
+def test_session_requires_private_launch_capability_and_preserves_reopening(tmp_path):
     workspace = review_workspace(config_dir=tmp_path)
     server = create_server(
         workspace,
@@ -164,16 +164,15 @@ def test_session_requires_one_time_launch_capability_and_preserves_reload(tmp_pa
         assert status == 200 and defaults["desktop_key"] == "desktop-intent"
         cookie = headers["Set-Cookie"].split(";", 1)[0]
 
-        status, _, headers = request(
-            "/api/session", {**client, "X-XIC-Launch": launch}
-        )
+        status, _, headers = request("/api/session", {**client, "X-XIC-Launch": launch})
+        assert status == 200 and headers["Set-Cookie"].split(";", 1)[0] == cookie
+        status, _, headers = request("/api/session", client)
         assert status == 403 and "Set-Cookie" not in headers
+        assert request("/api/analysis", {**client, "X-XIC-Launch": launch})[0] == 403
         authenticated = {**client, "Cookie": cookie}
         assert request("/api/session", authenticated)[0] == 200
         assert request("/api/analysis", authenticated)[0] == 200
-        status, desktop, headers = request(
-            "/api/desktop", {"X-XIC-Launch": launch}
-        )
+        status, desktop, headers = request("/api/desktop", {"X-XIC-Launch": launch})
         assert status == 200 and desktop == {"desktop_key": "desktop-intent"}
         assert "Set-Cookie" not in headers
     finally:
