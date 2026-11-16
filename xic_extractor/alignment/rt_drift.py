@@ -11,7 +11,7 @@ Everything here is an in-memory calculation on measured RTs.
 
 from __future__ import annotations
 
-import math
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -112,56 +112,82 @@ class RtDriftModel:
     def batch_state(
         self, owner_ids: Iterable[str], rt_min: float
     ) -> Mapping[str, float]:
-        """B for a group: its own anchor's shape, else shapes borrowed by RT."""
-        if not self.anchors:
-            return {}
-        members = frozenset(owner_ids)
-        overlap = max(len(members & anchor.owner_ids) for anchor in self.anchors)
-        if overlap:
-            own = min(
-                (a for a in self.anchors if len(members & a.owner_ids) == overlap),
-                key=lambda a: (abs(a.reference_rt_min - rt_min), a.channel),
+        """B for one group; see ``batch_state_lookup`` for repeated queries."""
+        return self.batch_state_lookup()(owner_ids, rt_min)
+
+    def batch_state_lookup(
+        self,
+    ) -> Callable[[Iterable[str], float], Mapping[str, float]]:
+        """Prepare anchors once; the lookup gives a group's B.
+
+        A group uses the shape of the anchor sharing most of its owners
+        (nearest in RT, then channel, on ties); other groups borrow shapes
+        weighted by a Gaussian of RT distance, rescaled to a unit range.
+        """
+        anchors = self.anchors
+        if not anchors:
+            return lambda _owners, _rt: {}
+        samples = sorted(set().union(*(a.shape for a in anchors)))
+        matrix = np.array([[a.shape.get(s, np.nan) for s in samples] for a in anchors])
+        present = ~np.isnan(matrix)
+        values = np.where(present, matrix, 0.0)
+        references = np.array([a.reference_rt_min for a in anchors])
+        by_owner: dict[str, list[int]] = defaultdict(list)
+        for index, anchor in enumerate(anchors):
+            for owner_id in anchor.owner_ids:
+                by_owner[owner_id].append(index)
+
+        def lookup(owner_ids: Iterable[str], rt_min: float) -> Mapping[str, float]:
+            shared: dict[int, int] = defaultdict(int)
+            for owner_id in owner_ids:
+                for index in by_owner.get(owner_id, ()):
+                    shared[index] += 1
+            if shared:
+                overlap = max(shared.values())
+                own = min(
+                    (i for i, count in shared.items() if count == overlap),
+                    key=lambda i: (abs(references[i] - rt_min), anchors[i].channel),
+                )
+                return anchors[own].shape
+            weights = np.exp(-0.5 * ((references - rt_min) / _SHAPE_BANDWIDTH_MIN) ** 2)
+            if weights.sum() <= 0:
+                nearest = min(
+                    range(len(anchors)),
+                    key=lambda i: (abs(references[i] - rt_min), anchors[i].channel),
+                )
+                return anchors[nearest].shape
+            total = weights @ present
+            blended = weights @ values
+            return _unit_range(
+                {
+                    sample: float(blended[index] / total[index])
+                    for index, sample in enumerate(samples)
+                    if total[index] > 0
+                }
             )
-            return own.shape
-        weights = [
-            math.exp(-0.5 * ((a.reference_rt_min - rt_min) / _SHAPE_BANDWIDTH_MIN) ** 2)
-            for a in self.anchors
-        ]
-        if sum(weights) <= 0:
-            nearest = min(
-                self.anchors,
-                key=lambda a: (abs(a.reference_rt_min - rt_min), a.channel),
-            )
-            return nearest.shape
-        samples = set().union(*(a.shape for a in self.anchors))
-        blended = {}
-        for sample in samples:
-            pairs = [
-                (w, a.shape[sample])
-                for w, a in zip(weights, self.anchors, strict=True)
-                if sample in a.shape
-            ]
-            total = sum(w for w, _ in pairs)
-            if total > 0:
-                blended[sample] = sum(w * v for w, v in pairs) / total
-        return _unit_range(blended)
+
+        return lookup
 
     def displacement_lookup(self) -> Callable[[float, str, str], tuple[float, ...]]:
         """Prepare anchors' drift once; the lookup returns second-minus-first
         displacements predicted by each anchor near an RT."""
-        prepared = tuple(
+        prepared = sorted(
             (
-                anchor.reference_rt_min,
-                self.sample_offsets(anchor.coefficients, anchor.shape),
-            )
-            for anchor in self.anchors
+                (
+                    anchor.reference_rt_min,
+                    self.sample_offsets(anchor.coefficients, anchor.shape),
+                )
+                for anchor in self.anchors
+            ),
+            key=lambda item: item[0],
         )
+        references = [reference for reference, _ in prepared]
 
         def displacements(rt_min: float, first: str, second: str) -> tuple[float, ...]:
             values = set()
-            for reference, offsets in prepared:
-                if abs(reference - rt_min) > _TRACK_RT_WINDOW_MIN:
-                    continue
+            low = bisect_left(references, rt_min - _TRACK_RT_WINDOW_MIN)
+            high = bisect_right(references, rt_min + _TRACK_RT_WINDOW_MIN)
+            for _, offsets in prepared[low:high]:
                 if first in offsets and second in offsets:
                     value = offsets[second] - offsets[first]
                     if value:
@@ -566,12 +592,28 @@ def _slope(x: Sequence[float] | np.ndarray, y: Sequence[float] | np.ndarray) -> 
     if len(x) < 2:
         return 0.0
     xs, ys = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
-    dx = xs[None, :] - xs[:, None]
-    dy = ys[None, :] - ys[:, None]
-    upper = np.triu(np.ones_like(dx, dtype=bool), k=1) & (dx != 0)
-    if not upper.any():
+    first, second = upper_pairs(len(xs))
+    dx = xs[second] - xs[first]
+    dy = ys[second] - ys[first]
+    distinct = dx != 0
+    if not distinct.any():
         return 0.0
-    return float(np.median(dy[upper] / dx[upper]))
+    slopes = dy[distinct] / dx[distinct]
+    middle = len(slopes) // 2
+    if len(slopes) % 2:
+        return float(np.partition(slopes, middle)[middle])
+    low, high = np.partition(slopes, (middle - 1, middle))[middle - 1 : middle + 1]
+    return float((low + high) / 2.0)
+
+
+_UPPER_PAIRS: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+
+
+def upper_pairs(size: int) -> tuple[np.ndarray, np.ndarray]:
+    """Index pairs i < j in ``itertools.combinations`` order, prepared once."""
+    if size not in _UPPER_PAIRS:
+        _UPPER_PAIRS[size] = np.triu_indices(size, 1)
+    return _UPPER_PAIRS[size]
 
 
 # A coefficient needs enough members and enough regressor spread to be
