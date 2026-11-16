@@ -306,7 +306,12 @@ def _robust_spread_sec(values: Sequence[float]) -> float:
 def _unsettled_channels(
     calibrated: Mapping[str, Mapping[str, float]], orders: Mapping[str, int]
 ) -> dict[str, dict[str, float]]:
-    """Residuals of channels whose spread the general map leaves large."""
+    """Residuals of channels whose spread the general map leaves large.
+
+    Every channel with a spread is checked, not only those with enough samples
+    to test synchrony: a channel mixing two peaks can qualify as an anchor
+    with few samples and still bend a sparsely supported part of the map.
+    """
     return {
         channel: {
             sample: rt - median(values.values())
@@ -314,7 +319,7 @@ def _unsettled_channels(
             if sample in orders
         }
         for channel, values in calibrated.items()
-        if len(values) >= _MIN_COMMON_SAMPLES
+        if len(values) >= 2
         and _robust_spread_sec(list(values.values())) >= _DRIFT_SPREAD_SEC
     }
 
