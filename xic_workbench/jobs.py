@@ -280,14 +280,6 @@ class AnalysisJobs:
                     inputs.get("data_dir" if kind == "targeted" else "raw_dir") or ""
                 ),
                 "dll_dir": str(inputs.get("dll_dir") or ""),
-                "sequence_source": str(
-                    inputs.get(
-                        "injection_order_source"
-                        if kind == "targeted"
-                        else "sequence_source"
-                    )
-                    or ""
-                ),
             }
             return result
         if kind == "samples":

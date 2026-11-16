@@ -1,11 +1,8 @@
 // Result review: batch and item navigation, curve reading and Inspector views.
 import { analysis } from "./analysis_state.js";
-import { sampleMetadata } from "./analysis_samples.js";
 import { api, navigation, toast } from "./workspace_ui.js";
 const $ = (id) => document.getElementById(id);
 const state = {
-  runFolders: new Map(),
-  runFolder: null,
   page: null,
   get item() { return this.detail?.item ?? null; },
   detail: null,
@@ -90,12 +87,6 @@ async function mountReview(id, view, mode) {
         if (reviewSlots.get(id) === slot && state.detail === slot.detail)
           requestCurves(request);
       },
-      // Only a run-bound result knows which RAW folder owns the exclusion.
-      ...(mode === "result" &&
-      state.page?.source_kind === "targeted_workbook" &&
-      state.runFolder
-        ? { onRequestExclusion: requestExclusion }
-        : {}),
     });
     $(id).dataset.viewId = view;
     return true;
@@ -104,31 +95,6 @@ async function mountReview(id, view, mode) {
     clearReview(id);
     if (mode === "curves") curveMessage(error.message, true);
     else status(error.message, "error");
-  }
-}
-// The run's RAW folder owns the exclusion; it applies on the next run.
-async function requestExclusion({ sample_id }) {
-  const dialog = $("exclude-dialog");
-  $("exclude-message").textContent =
-    `把 ${sample_id} 標記為排除：之後分析此 RAW 資料夾時略過。`;
-  dialog.returnValue = "cancel";
-  dialog.showModal();
-  $("exclude-accept").focus();
-  const accepted = await new Promise(resolve =>
-    dialog.addEventListener("close", () => resolve(dialog.returnValue === "ok"), { once: true }));
-  if (!accepted) return;
-  try {
-    const { raw_dir, dll_dir, sequence_source } = state.runFolder;
-    await sampleMetadata.exclude({
-      raw_dir,
-      dll_dir,
-      sequence_source,
-      raw_stem: sample_id,
-    });
-    toast(
-      `已標記排除 ${sample_id}；目前結果不變，重新執行後套用。`, "ok");
-  } catch (error) {
-    status(error.message, "error");
   }
 }
 let serverPage = null;
@@ -218,10 +184,8 @@ function applyPublishedCuration() {
   state.publishedCuration = null;
   const key = (path) => (path || "").replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
   if (!state.page || key(state.page.source.replace(/[\\/][^\\/]+$/, "")) !== key(result)) return;
-  if (state.page.curation && key($("source").value) === key(state.page.curation.path)) {
-    if (state.runFolder) state.runFolders.set(result, state.runFolder);
+  if (state.page.curation && key($("source").value) === key(state.page.curation.path))
     $("source").value = result;
-  }
   action(loadBatch, "正在套用新的矩陣整理…");
 }
 function controls() {
@@ -849,7 +813,6 @@ async function openBatch() {
 }
 // Loads the source into the review without switching the visible page.
 async function loadBatch() {
-  state.runFolder = state.runFolders.get($("source").value) || null;
   const page = await requestPage("/api/open", { source: $("source").value });
   $("query-form").reset();
   state.filters = {};
@@ -1165,14 +1128,12 @@ document.addEventListener("click", async (event) => {
     button.removeAttribute("aria-busy");
   }
 });
-// A result opened from its run keeps that run's folders; the editable
-// RAW field may later point elsewhere, for example to load curves.
+// A result opened from its run starts with that run's RAW and DLL folders.
 export function openReview(source, reviewPaths) {
   $("source").value = source;
   if (reviewPaths) {
     $("raw-dir").value = reviewPaths.raw_dir;
     $("dll-dir").value = reviewPaths.dll_dir;
-    state.runFolders.set(source, { ...reviewPaths });
   } else {
     $("raw-dir").value = "";
   }

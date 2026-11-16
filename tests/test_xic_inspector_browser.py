@@ -782,16 +782,13 @@ def test_targeted_hosts_share_saved_values_but_only_workbench_can_request_xic(
                 window.requests.push({
                     item_id, sample_id, label: opener.getAttribute('aria-label'),
                 });
-            window.exclusions = [];
-            const onRequestExclusion = ({sample_id}) =>
-                window.exclusions.push(sample_id);
             window.online = XicInspector.mount(
                 document.getElementById('online'), payload,
-                {mode:'result', onRequestCurves, onRequestExclusion});
-            // An offline report has no host to write to, whatever is passed.
+                {mode:'result', onRequestCurves});
+            // An offline report has no host to ask, whatever is passed.
             XicInspector.mount(
                 document.getElementById('offline'), payload,
-                {mode:'offline', onRequestExclusion});
+                {mode:'offline', onRequestCurves});
         }""",
         prepared.payload,
     )
@@ -806,9 +803,6 @@ def test_targeted_hosts_share_saved_values_but_only_workbench_can_request_xic(
     expect(online_rows.nth(2).locator("td").nth(2)).to_have_text("5.55E+01")
     expect(online_rows.nth(2).locator("td").nth(4)).to_have_text("9.2")
     expect(offline.locator(".tgt-xic")).to_have_count(0)
-    expect(offline.locator(".tgt-exclude")).to_have_count(0)
-    online.get_by_role("button", name="標記排除 S2", exact=True).click()
-    assert page.evaluate("window.exclusions") == ["S2"]
     online.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True).click()
     assert page.evaluate("window.requests") == [
         {

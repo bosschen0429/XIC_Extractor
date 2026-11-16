@@ -83,7 +83,6 @@ export function createSampleMetadata({ request, inputs, jobBusy = () => false })
     pendingWrites += 1;
     publish([]);
     // Continue after a predecessor fails; its caller still receives that error.
-    // Save and Review exclusion share this queue, not just their UI revisions.
     const saving = (saves.get(rawDir) || Promise.resolve()).then(send, send);
     saves.set(rawDir, saving);
     try {
@@ -146,37 +145,6 @@ export function createSampleMetadata({ request, inputs, jobBusy = () => false })
       if (!result?.input_paths) return false;
       const page = result.page || "untargeted";
       return adopt(captureRead(page, result.input_paths), result);
-    },
-    async exclude(values) {
-      requireWritable();
-      const submitted = structuredClone(values);
-      const rawDir = submitted.raw_dir;
-      // A confirmed exclusion supersedes reads even on a newly selected folder
-      // whose preview has not populated any rows yet.
-      const reads = pages
-        .filter((page) => inputs(page).raw_dir === rawDir)
-        .map((page) => beginRead(page, { raw_dir: rawDir }));
-      return writeFolder(
-        rawDir,
-        () => request("/api/samples/exclude", submitted),
-        (result) => {
-          const rows = owned(result.samples);
-          const overview = owned(result.overview);
-          const changed = [];
-          for (const read of reads) {
-            if (!current(read)) continue;
-            sets[read.page] = Object.freeze({
-              ...sets[read.page],
-              rows,
-              overview,
-              source: "confirmed",
-            });
-            changed.push(read.page);
-          }
-          if (changed.length) publish(changed, true);
-          return result;
-        },
-      );
     },
     async edit(page, stems, changes) {
       requireWritable();
