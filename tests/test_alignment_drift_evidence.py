@@ -166,7 +166,7 @@ def test_known_reference_uses_declared_targets_rt_and_source_bytes(
         ("known", "late", 9, 0.5),
     )
     assert reference.workbook_sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
-    workbook["XIC Results"]["E3"] = 123456789
+    workbook["XIC Results"]["D3"] = 123456789
     workbook.save(path)
     changed = read_known_istd_reference(path)
     assert changed.coordinates == reference.coordinates
@@ -241,17 +241,17 @@ def test_known_reference_rejects_invalid_consumed_input(
     path = tmp_path / "reference.xlsx"
     workbook = _known_reference_workbook(path)
     if damage == "duplicate_reference":
-        workbook["XIC Results"].append(["early", "known", "ISTD", 8, 1])
+        workbook["XIC Results"].append(["early", "known", 8, 1])
     elif damage == "duplicate_target":
         workbook["Targets"].append(["known", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50])
     elif damage == "malformed_rt":
-        workbook["XIC Results"]["D3"] = "broken"
+        workbook["XIC Results"]["C3"] = "broken"
     elif damage == "zero_width_rt":
         workbook["Targets"]["E2"] = workbook["Targets"]["D2"].value
     elif damage == "malformed_mass":
         workbook["Targets"]["C2"] = "broken"
     elif damage == "missing_header":
-        workbook["XIC Results"]["D1"] = "time"
+        workbook["XIC Results"]["C1"] = "time"
     elif damage == "unbound_sample":
         workbook["XIC Results"].delete_rows(2)
     else:
@@ -347,12 +347,12 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
     # from a group must not recreate reference authority.
     ambiguous = reference.bind((early, late, replace(late, owner_id="overlap")))
     assert_unavailable_pair_uses_only_raw(late, ambiguous)
-    workbook["XIC Results"]["D5"] = "ND"
+    workbook["XIC Results"]["C5"] = "ND"
     workbook.save(path)
     partial = read_known_istd_reference(path).bind((early, late))
     assert_unavailable_pair_uses_only_raw(late, partial)
     workbook["Targets"].append(["second", "ISTD", 500, 7, 10, 20, 116.0474, 20, 50])
-    workbook["XIC Results"].append(["early", "second", "ISTD", 8, 1])
+    workbook["XIC Results"].append(["early", "second", 8, 1])
     workbook.save(path)
     two_targets = read_known_istd_reference(path).bind((early, late))
     assert not two_targets.bindings
@@ -416,7 +416,7 @@ def _batch_reference(tmp_path: Path, observations):
         )
     for sample, observed in observations.items():
         for index, rt in enumerate(observed):
-            results.append([sample, f"landmark-{index}", "ISTD", rt, 100])
+            results.append([sample, f"landmark-{index}", rt, 100])
     workbook.save(path)
     return read_known_istd_reference(path)
 

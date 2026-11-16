@@ -123,6 +123,7 @@ def read_known_istd_reference(path: Path) -> KnownIstdReference:
 
     try:
         targets = []
+        declared: set[str] = set()
         for row in rows(
             "Targets",
             (
@@ -137,6 +138,7 @@ def read_known_istd_reference(path: Path) -> KnownIstdReference:
                 "NL ppm max",
             ),
         ):
+            declared.add(text(row, "Label"))
             if str(row["Role"]).strip() != "ISTD":
                 continue
             targets.append(
@@ -175,6 +177,8 @@ def read_known_istd_reference(path: Path) -> KnownIstdReference:
                 sample = text(row, "SampleName")
             # Targets owns each label's role; a result row only names its target.
             label = text(row, "Target")
+            if label not in declared:
+                raise ValueError(f"XIC Results: undeclared target {label}")
             if label not in labels:
                 continue
             if sample is None:
