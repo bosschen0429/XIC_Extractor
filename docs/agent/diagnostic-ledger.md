@@ -398,6 +398,24 @@ measurements, not a full85 RAW or Backfill runtime claim.
 Reopen when drift fitting, pair scoring or the comparison population changes.
 Artifacts: `output/codex-rt1165-grouping-optimization/` in the #1165 worktree.
 
+### Grouping-only output avoids round-trip work
+
+`diagnostic_only` (#1165, 2026-11-17). Grouping-only execution writes its first
+computed groups, members and decisions directly. Replay capture is opt-in; no
+normal run reads and recomputes its own snapshot. Snapshot correctness is covered
+by focused round-trip tests when its producer or reader changes.
+
+On the retained 8RAW inputs (871 groups, 2,681 observations), sharing batch models
+and curve-free elution contexts reduced the snapshot from 193,277,443 to 5,056,890
+bytes. Single observations: old load 25.41 s, compact write 3.88 s, compact load
+0.47 s. All five replay TSVs were byte-identical. A fresh cache-backed 8RAW run
+also matched the pre-change context-selection implementation in all five result
+tables; it wrote no snapshot and ran no diagnostic replay. This is not a new
+full85 timing or scientific acceptance claim.
+
+Reopen for changes to replay fields, context tie priority or grouping-only output.
+Artifacts: `output/codex-grouping-output/` in the #1165 worktree.
+
 ### Accepted Alignment optimizations
 
 All `exact_safe` with byte-identical public outputs; local gains, not cohort

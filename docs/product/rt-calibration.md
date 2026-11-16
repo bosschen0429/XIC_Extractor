@@ -147,7 +147,7 @@ back to raw RT, with an explicit label. This changes display coordinates, not
 measured signal, area, grouping or quantification. Injection order is preserved
 separately. Obsolete explanation layouts require rerunning Alignment.
 
-Grouping snapshots (`scripts.run_alignment --stop-after grouping`) also keep the
+Optional grouping snapshots (`--stop-after grouping --save-grouping-inputs`) keep the
 frozen drift model, including the owners each drift anchor observed, so replay
 reuses its B shapes and M. Explanation summaries keep only the calibration.
 

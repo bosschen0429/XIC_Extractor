@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import cast
 
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.grouping_experiment import replay_grouping
 from xic_extractor.applications.untargeted.istd_reference import (
     extract_batch_known_istd_reference,
     read_known_istd_reference,
@@ -23,9 +22,9 @@ from xic_extractor.configuration.mass_recalibration import (
     serialize_mass_recalibration_result,
 )
 from xic_extractor.diagnostics.grouping_experiment_io import (
-    group_signature,
-    read_grouping_inputs,
     write_grouping_inputs,
+    write_grouping_result,
+    write_json,
 )
 from xic_extractor.discovery.batch_contract import DiscoveryPeakUniverseReceipt
 from xic_extractor.discovery.csv_reader import (
@@ -291,11 +290,13 @@ def _resolve_known_istd_reference(
     return None
 
 
-def snapshot_untargeted_grouping(
+def run_untargeted_grouping(
     request: UntargetedRequest,
     context: UntargetedExecutionContext | None = None,
+    *,
+    save_snapshot: bool = False,
 ) -> Path:
-    """Run the formal Alignment up to grouping and write its replay snapshot.
+    """Write the formal initial groups; optionally retain compact replay inputs.
 
     Same inputs, ISTD reference, initial assessment, calibration and grouping
     as a full run; stops before Backfill and publication.
@@ -312,8 +313,10 @@ def snapshot_untargeted_grouping(
         request, batch, recorder, mass_recalibration_by_sample
     )
     snapshot = request.output_dir / GROUPING_SNAPSHOT_NAME
-    if snapshot.exists():
-        raise ValueError(f"grouping snapshot already exists: {snapshot}")
+    if (request.output_dir / "groups.tsv").exists() or (
+        save_snapshot and snapshot.exists()
+    ):
+        raise ValueError(f"grouping output already exists: {request.output_dir}")
     plan = prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
         peaks_by_sample=peaks_by_sample,
@@ -337,7 +340,7 @@ def snapshot_untargeted_grouping(
             else None
         ),
     )
-    with recorder.stage("alignment.grouping_snapshot") as stage:
+    with recorder.stage("alignment.grouping") as stage:
         grouping = cast(
             PreparedGroupingExperiment,
             execute_prepared_alignment(
@@ -361,24 +364,24 @@ def snapshot_untargeted_grouping(
                 ),
             ),
         )
-        write_grouping_inputs(
-            snapshot,
-            grouping.inputs,
-            provenance={
-                "discovery_batch_index": str(request.discovery_batch_index.resolve()),
-                "partition_count": grouping.total_partition_count,
-                "initial_job_count": grouping.initial_job_count,
-            },
-        )
         stage.metrics["partition_count"] = grouping.total_partition_count
         stage.metrics["group_count"] = len(grouping.groups)
-    with recorder.stage("alignment.grouping_snapshot.verify"):
-        restored, _ = read_grouping_inputs(snapshot)
-        if group_signature(replay_grouping(restored)) != group_signature(
-            grouping.groups
-        ):
-            raise ValueError("Snapshot replay differs from formal initial grouping")
-    return snapshot
+    provenance = {
+        "discovery_batch_index": str(request.discovery_batch_index.resolve()),
+        "partition_count": grouping.total_partition_count,
+        "initial_job_count": grouping.initial_job_count,
+    }
+    with recorder.stage("alignment.write_grouping_results"):
+        summary = write_grouping_result(
+            request.output_dir, grouping.inputs, grouping.groups
+        )
+        write_json(
+            request.output_dir / "summary.json", {**summary, "source": provenance}
+        )
+    if save_snapshot:
+        with recorder.stage("alignment.write_grouping_snapshot"):
+            write_grouping_inputs(snapshot, grouping.inputs, provenance=provenance)
+    return request.output_dir
 
 
 # No level writes these any more. They stay owned so that a copy left by an

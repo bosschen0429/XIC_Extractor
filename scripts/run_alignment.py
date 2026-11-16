@@ -19,7 +19,7 @@ from xic_extractor.alignment.drift_evidence import (
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
     run_untargeted_application,
-    snapshot_untargeted_grouping,
+    run_untargeted_grouping,
 )
 from xic_extractor.applications.untargeted.istd_reference import (
     read_known_istd_reference,
@@ -242,7 +242,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             if profiler is not None:
                 profiler.enable()
             if args.stop_after == "grouping":
-                snapshot = snapshot_untargeted_grouping(request, context)
+                grouping_output = run_untargeted_grouping(
+                    request, context, save_snapshot=args.save_grouping_inputs
+                )
             else:
                 outputs = run_untargeted_application(request, context)
         finally:
@@ -279,7 +281,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
 
     if args.stop_after == "grouping":
-        print(f"Grouping snapshot: {snapshot}")
+        print(f"Grouping results: {grouping_output}")
         return 0
     if outputs.review_tsv is not None:
         print(f"Alignment review TSV: {outputs.review_tsv}")
@@ -537,9 +539,13 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         choices=("grouping",),
         help=(
             "Stop after initial assessment, RT calibration and grouping; write "
-            "grouping-inputs.json.gz for tools.diagnostics.grouping_experiment "
-            "replay instead of running Backfill and publication."
+            "group, member and decision tables without Backfill or Matrix publication."
         ),
+    )
+    parser.add_argument(
+        "--save-grouping-inputs",
+        action="store_true",
+        help="With --stop-after grouping, save compact inputs for diagnostic replay.",
     )
     parser.add_argument("--emit-alignment-cells", action="store_true")
     parser.add_argument(
@@ -586,7 +592,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="Baseline integration method. Only asls is supported.",
     )
     parser.add_argument("--emit-alignment-status-matrix", action="store_true")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.save_grouping_inputs and args.stop_after != "grouping":
+        parser.error("--save-grouping-inputs requires --stop-after grouping")
+    return args
 
 
 def _validate_launch_artifacts(

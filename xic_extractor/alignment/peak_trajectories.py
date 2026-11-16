@@ -1048,6 +1048,18 @@ def resolve_peak_trajectories(
     )
 
 
+def ordered_pattern_contexts(
+    contexts: Sequence[SampleElutionContext],
+) -> tuple[SampleElutionContext, ...]:
+    """Retain curve-based tie priority as order, including curve-free replays.
+
+    A saved replay keeps this order instead of carrying entire curves solely
+    to break equal-range/equal-mass ties. With no curves, stable sorting keeps
+    the supplied priority.
+    """
+    return tuple(sorted(contexts, key=lambda context: (context.rt, context.raw)))
+
+
 def _local_patterns(
     owners: Sequence[SampleLocalMS1Owner],
     contexts: Sequence[SampleElutionContext],
@@ -1074,6 +1086,9 @@ def _local_patterns(
     physical_order: set[tuple[int, int]] = set()
     shared_segments: set[tuple[int, int]] = set()
     retained: set[SampleElutionContext] = set()
+    context_order: dict[int, int] = {}
+    for index, context in enumerate(ordered_pattern_contexts(contexts)):
+        context_order.setdefault(id(context), index)
 
     def add_pattern(
         context: SampleElutionContext, start: int, end: int
@@ -1151,8 +1166,7 @@ def _local_patterns(
             key=lambda item: (
                 -(item.rt_end - item.rt_start),
                 absolute_ppm_error(owner.peak.mz, item.mz),
-                item.rt,
-                item.raw,
+                context_order[id(item)],
             ),
         )
         peaks = context.landmarks
@@ -1190,8 +1204,7 @@ def _local_patterns(
             item.sample_stem,
             -(item.rt_end - item.rt_start),
             item.mz,
-            item.rt,
-            item.raw,
+            context_order[id(item)],
         ),
     ):
         if not context.landmarks or context in retained:

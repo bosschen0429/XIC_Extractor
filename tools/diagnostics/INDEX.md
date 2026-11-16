@@ -31,7 +31,7 @@ workflow owner rather than chaining similarly named commands.
 | Review instrument QC | `scripts.run_instrument_qc`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns its inputs and claims |
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
 | Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/local-execution.md#validation-scale) own prerequisites |
-| Query Discovery or experiment with grouping / RT calibration | `scripts.run_alignment --stop-after grouping`, then `tools.diagnostics.grouping_experiment replay`; [Grouping experiments](#grouping_experimentpy) describes the input and output boundary |
+| Query Discovery or experiment with grouping / RT calibration | `scripts.run_alignment --stop-after grouping` outputs groups directly; add `--save-grouping-inputs` for later `tools.diagnostics.grouping_experiment replay`; see [Grouping experiments](#grouping_experimentpy) |
 | Score one peak quantified in several Matrix rows | `tools.diagnostics.duplicate_quantification --alignment-dir <validation output>`; [Duplicate quantification](#duplicate_quantificationpy) |
 | Maintain CI or command safety | `tools.testing.test_selection` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |
 
@@ -354,7 +354,7 @@ evidence sidecar.
 a formal grouping snapshot with parameter, RT coordinate or code changes without
 RAW or Backfill.
 
-**Owner:** `scripts.run_alignment --stop-after grouping` writes the snapshot
+**Owner:** `scripts.run_alignment --stop-after grouping` writes the initial groups
 through the formal Alignment application (same config, ISTD reference,
 assessment, calibration and grouping as a full run);
 `xic_extractor.alignment.grouping_experiment` delegates replay to
@@ -368,7 +368,7 @@ loop over saved Discovery candidates for scalar CID-NL presets:
 
 ```powershell
 .venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment query --discovery-batch-index <index.csv> --mz-range 242.12:242.13 --output-dir output/query
-.venv/Scripts/python.exe -m scripts.run_alignment --stop-after grouping <usual Alignment arguments> --output-dir output/grouping
+.venv/Scripts/python.exe -m scripts.run_alignment --stop-after grouping --save-grouping-inputs <usual Alignment arguments> --output-dir output/grouping
 .venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment replay --inputs output/grouping/grouping-inputs.json.gz --set preferred_rt_sec=30 --output-dir output/grouping-tight
 .venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment replay --inputs output/grouping/grouping-inputs.json.gz --calibrate --output-dir output/grouping-calibrated
 ```
@@ -381,18 +381,21 @@ and reports measured-mass candidates plus every sample, including zero-match
 samples. A query is a lookup in the saved Discovery population, not a fresh
 extraction at that mass.
 
-`--stop-after grouping` retains every partition of the batch, runs the formal
-initial assessment, RT calibration and grouping, writes
-`grouping-inputs.json.gz` into the output directory and stops before Backfill
-and publication. It requires the matching RAW files and current Discovery
-owner-closure artifacts, and checks that replaying the written snapshot equals
-the formal grouping.
+`--stop-after grouping` runs the formal initial assessment, RT calibration and
+grouping, then writes `groups.tsv`, `members.tsv`, `decisions.tsv`, `samples.tsv`,
+`changes.tsv` and `summary.json` directly from that result. It stops before
+Backfill and Matrix publication. It requires the matching RAW files and current
+Discovery owner-closure artifacts. There is no automatic diagnostic replay.
+Add `--save-grouping-inputs` only when later regrouping needs a retained input;
+it writes `grouping-inputs.json.gz` without reading or replaying it again.
 
 The compressed `grouping-inputs.json.gz` retains scalar observations, exact
-member identities, frozen batch calibration, compact elution contexts, local peak-shape
-descriptors and configuration. It omits full chromatogram arrays. Older snapshots
+member identities, measured member peaks, frozen batch calibration, elution
+landmarks, local peak-shape descriptors and configuration. Batch models and
+contexts are shared across worksets. Context RT/intensity arrays are omitted;
+their tie priority is retained as context order. Older snapshots
 without shape descriptors cannot test shape-aware membership; a new
-`--stop-after grouping` snapshot supplies them through the formal owner adapter.
+explicitly saved grouping snapshot supplies them through the formal owner adapter.
 Backfill acquisition windows are not grouping inputs. The snapshot reader also
 accepts retained snapshots carrying that extra metadata, without using it for
 membership; new snapshots omit it.
