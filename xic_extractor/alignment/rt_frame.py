@@ -23,6 +23,7 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
+    from xic_extractor.alignment.rt_drift import RtDriftModel
     from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 
 
@@ -46,6 +47,9 @@ class RtFrame(Protocol):
 
     @property
     def known_identity_bindings(self) -> tuple[tuple[str, str], ...]: ...
+
+    @property
+    def drift_model(self) -> RtDriftModel | None: ...
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float: ...
 
@@ -104,6 +108,8 @@ class SampleRtFrame:
     injection_order: Mapping[str, int] = field(default_factory=dict)
     sample_cohorts: Mapping[str, str] = field(default_factory=dict)
     sample_universe: frozenset[str] | None = None
+    # Pooled QC injections share one matrix; they define batch state.
+    qc_samples: frozenset[str] = frozenset()
     _drift: DriftEvidenceLookup | KnownIstdOwnerLookup | None = field(
         default=None,
         repr=False,
@@ -111,6 +117,7 @@ class SampleRtFrame:
     _reference: KnownIstdReference | None = field(default=None, repr=False)
     _warp: BatchRtWarp | None = field(default=None, repr=False)
     _sample_calibration: BatchRtCalibration | None = field(default=None, repr=False)
+    _drift_model: RtDriftModel | None = field(default=None, repr=False)
     _coordinate_override: Callable[[SampleLocalMS1Owner], float] | None = field(
         default=None,
         repr=False,
@@ -130,6 +137,9 @@ class SampleRtFrame:
             },
             sample_cohorts={sample.raw_stem: sample.batch_id for sample in samples},
             sample_universe=frozenset(sample.raw_stem for sample in samples),
+            qc_samples=frozenset(
+                sample.raw_stem for sample in samples if sample.sample_role == "qc"
+            ),
         )
 
     def with_sources(
@@ -165,17 +175,28 @@ class SampleRtFrame:
             self,
             _warp=warp,
             _sample_calibration=None,
+            _drift_model=None,
             _coordinate_override=None,
         )
 
-    def with_sample_calibration(self, calibration: BatchRtCalibration) -> SampleRtFrame:
+    def with_sample_calibration(
+        self,
+        calibration: BatchRtCalibration,
+        drift_model: RtDriftModel | None = None,
+    ) -> SampleRtFrame:
         """Attach the bounded batch map shared by grouping and localization."""
         return replace(
             self,
             _sample_calibration=calibration,
+            _drift_model=drift_model,
             _warp=None,
             _coordinate_override=None,
         )
+
+    @property
+    def drift_model(self) -> RtDriftModel | None:
+        """Frozen batch state and sample shift beyond the general map."""
+        return self._drift_model
 
     @property
     def measured_istd_coordinates(self) -> tuple[tuple[str, str, float], ...]:
@@ -220,6 +241,7 @@ class SampleRtFrame:
             self,
             _warp=frozen._warp,
             _sample_calibration=frozen._sample_calibration,
+            _drift_model=frozen._drift_model,
             _coordinate_override=frozen._coordinate_override,
         )
 

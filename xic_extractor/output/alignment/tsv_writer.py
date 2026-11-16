@@ -32,6 +32,7 @@ from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
     ObservedSearchSubject,
 )
+from xic_extractor.alignment.rt_drift import DriftCoefficients
 from xic_extractor.output.alignment.matrix_output_contract import (
     canonical_mz_text,
     serialize_public_matrix_table,
@@ -70,6 +71,8 @@ ALIGNMENT_REVIEW_COLUMNS = (
     "accepted_cell_count",
     "accepted_backfill_count",
     "membership_risk_flags",
+    "rt_time_coefficient",
+    "rt_sample_shift_coefficient",
     "warning",
 )
 
@@ -571,6 +574,11 @@ def _review_row(
     backfilled_count = status_counts["backfilled"]
     not_searched_count = status_counts["not_searched"]
     unresolved_count = status_counts["unresolved"]
+    drift = (
+        group.inference_basis.rt_drift
+        if group.inference_basis is not None
+        else DriftCoefficients()
+    )
     return {
         "feature_id": group_columns["feature_id"],
         "matrix_row_index": matrix_row_index,
@@ -586,6 +594,9 @@ def _review_row(
         "accepted_cell_count": sum(cell.value is not None for cell in cells),
         "accepted_backfill_count": backfilled_count,
         "membership_risk_flags": ";".join(risk_flags),
+        # Response to the batch's RT state (unit shape) and to sample shift.
+        "rt_time_coefficient": drift.time,
+        "rt_sample_shift_coefficient": drift.sample_shift,
         "warning": _warning(
             has_anchor=has_anchor,
             sample_count=sample_count,

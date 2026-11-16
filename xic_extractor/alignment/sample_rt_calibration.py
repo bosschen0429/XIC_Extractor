@@ -24,6 +24,9 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 _MIN_LOESS_POSITIONS = 8
 _MIN_ORDINARY_COHORT_FRACTION = 0.5
 _ROBUST_RESIDUAL_CUTOFF = 6.0
+# An ordinary observation this far from its sample's overall offset is a
+# different peak or a gross error, not drift the local fit should follow.
+_COARSE_OUTLIER_MIN = 1.0
 
 
 @dataclass(frozen=True)
@@ -268,13 +271,18 @@ def build_batch_rt_calibration(
     """Fit one map from same-cohort measured correspondences and ISTDs.
 
     Ordinary correspondences need at least half their cohort and two peers.
-    Measured identity anchors need a peer, not ordinary-feature prevalence.
-    Predicted, interpolated or backfilled coordinates are never training data.
-    Timeline facts explain measured perturbation; they do not fit the map.
+    An ordinary observation more than a minute from its sample's median offset
+    is removed before the fit. Measured identity anchors need a peer, not
+    ordinary-feature prevalence. Predicted, interpolated or backfilled
+    coordinates are never training data. Timeline facts explain measured
+    perturbation; they do not fit the map.
     """
     samples = tuple(sorted(set(sample_stems)))
     knots, observations_by_knot, standards, ordinary_samples = _anchor_coordinates(
-        detected_rt_by_feature, samples, sample_cohorts, measured_istds
+        _without_coarse_outliers(detected_rt_by_feature, samples, sample_cohorts),
+        samples,
+        sample_cohorts,
+        measured_istds,
     )
     sample_knots: dict[str, tuple[tuple[float, float], ...]] = {}
     anchor_counts: dict[str, int] = {}
@@ -467,6 +475,38 @@ def _anchor_coordinates(
     )
 
 
+def _without_coarse_outliers(
+    detected_rt_by_feature: Mapping[str, Mapping[str, float]],
+    samples: tuple[str, ...],
+    sample_cohorts: Mapping[str, str] | None,
+) -> dict[str, dict[str, float]]:
+    knots, observations_by_knot, _, _ = _anchor_coordinates(
+        detected_rt_by_feature, samples, sample_cohorts, ()
+    )
+    offsets: dict[str, list[float]] = defaultdict(list)
+    for knot in knots:
+        for sample, rt in observations_by_knot[knot.knot_id].items():
+            offsets[sample].append(rt - knot.reference_rt_min)
+    sample_offset = {
+        sample: float(median(values)) for sample, values in offsets.items()
+    }
+    rejected = {
+        (feature, sample)
+        for knot in knots
+        for feature in knot.feature_ids
+        for sample, rt in observations_by_knot[knot.knot_id].items()
+        if abs(rt - knot.reference_rt_min - sample_offset[sample]) > _COARSE_OUTLIER_MIN
+    }
+    return {
+        feature: {
+            sample: rt
+            for sample, rt in rt_by_sample.items()
+            if (feature, sample) not in rejected
+        }
+        for feature, rt_by_sample in detected_rt_by_feature.items()
+    }
+
+
 def _distinct_anchor_positions(
     points: Sequence[tuple[float, float]],
 ) -> tuple[tuple[float, float], ...]:
@@ -579,48 +619,6 @@ def _bound_standard_landmarks(
         value = proposed[index] if lower < proposed[index] < upper else reference
         result.append((observed, value))
     return tuple(result)
-
-
-class BatchRtCalibrationAccumulator:
-    """Retain compact bootstrap anchors and fit once after the last partition."""
-
-    def __init__(
-        self, *, sample_stems: Sequence[str], sample_cohorts: Mapping[str, str]
-    ) -> None:
-        self._samples = tuple(sample_stems)
-        self._cohorts = sample_cohorts
-        self._observations: dict[str, dict[str, float]] = {}
-
-    def add_groups(self, groups: Sequence[Sequence[SampleLocalMS1Owner]]) -> None:
-        for group in groups:
-            # These are upstream-owned observation facts, not a second peak
-            # assessment. A retained MS1-only or ambiguous member may still be
-            # grouped, but cannot establish other samples' RT coordinates.
-            anchors = tuple(
-                owner
-                for owner in group
-                if owner.primary_identity_event is not None
-                and owner.quantification_eligible
-            )
-            if not anchors:
-                continue
-            key = min(owner.owner_id for owner in anchors)
-            self._observations[key] = {
-                owner.sample_stem: owner.peak.integration.rt_apex_min
-                for owner in anchors
-            }
-
-    def freeze(
-        self, *, measured_istds: Sequence[tuple[str, str, float]] = ()
-    ) -> BatchRtCalibration:
-        return build_batch_rt_calibration(
-            self._observations,
-            sample_stems=self._samples,
-            sample_cohorts=self._cohorts,
-            measured_istds=measured_istds,
-            prior_injections={},
-            policy=RtCalibrationPolicy(),
-        )
 
 
 def _is_usable(knots: tuple[tuple[float, float], ...]) -> bool:

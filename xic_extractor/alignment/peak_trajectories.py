@@ -143,8 +143,12 @@ class PeakTrajectory:
         rt_frame: RtFrame,
         backfill_half_window_min: float,
         paired_istd_rts: Mapping[str, float] | None = None,
+        drift_offsets: Mapping[str, float] | None = None,
     ) -> Mapping[str, BackfillPeakLocation]:
         """Prepare row residuals once, not once per missing sample.
+
+        ``drift_offsets`` is the group's modeled drift per sample; forecasts
+        are fitted with it removed and the target's drift added back.
 
         Only direct reference samples contribute held-out residuals. The same
         trajectory estimator supplies both the prediction and its empirical
@@ -170,6 +174,7 @@ class PeakTrajectory:
                 sample,
                 rt_frame=rt_frame,
                 backfill_half_window_min=backfill_half_window_min,
+                drift_offsets=drift_offsets,
             )
             for sample in sample_stems
             if sample not in paired_locations
@@ -184,6 +189,7 @@ class PeakTrajectory:
             needed_cohorts=needed_cohorts,
             rt_frame=rt_frame,
             backfill_half_window_min=backfill_half_window_min,
+            drift_offsets=drift_offsets,
         )
         result = {
             sample: BackfillPeakLocation(
@@ -225,6 +231,7 @@ class PeakTrajectory:
                 needed_cohorts=comparable_cohorts,
                 rt_frame=rt_frame,
                 backfill_half_window_min=backfill_half_window_min,
+                drift_offsets=drift_offsets,
             )
             for sample, localized in result.items():
                 reference_tolerance = reference_tolerances.get(
@@ -240,6 +247,7 @@ class PeakTrajectory:
                     sample,
                     rt_frame=rt_frame,
                     backfill_half_window_min=backfill_half_window_min,
+                    drift_offsets=drift_offsets,
                 )
                 # Both estimates use the same scientific owner and empirical
                 # compatibility rule. Neither wins a conflict: retain the query
@@ -258,6 +266,7 @@ class PeakTrajectory:
         needed_cohorts: set[str],
         rt_frame: RtFrame,
         backfill_half_window_min: float,
+        drift_offsets: Mapping[str, float] | None = None,
     ) -> dict[str, float]:
         """Bound each cohort once using held-out direct-reference residuals."""
         residuals: dict[str, list[float]] = defaultdict(list)
@@ -277,6 +286,7 @@ class PeakTrajectory:
                 sample,
                 rt_frame=rt_frame,
                 backfill_half_window_min=backfill_half_window_min,
+                drift_offsets=drift_offsets,
             )
             assert cohort is not None
             residuals[cohort].append(abs(held_out.query_rt - observed_rt) * 60.0)
@@ -296,6 +306,7 @@ class PeakTrajectory:
         *,
         rt_frame: RtFrame,
         backfill_half_window_min: float,
+        drift_offsets: Mapping[str, float] | None = None,
     ) -> PeakLocation:
         """Use an observed point or fit the unobserved part of this trajectory.
 
@@ -311,6 +322,7 @@ class PeakTrajectory:
             sample_stem,
             rt_frame=rt_frame,
             backfill_half_window_min=backfill_half_window_min,
+            drift_offsets=drift_offsets,
         )
 
     def _estimate(
@@ -319,9 +331,15 @@ class PeakTrajectory:
         *,
         rt_frame: RtFrame,
         backfill_half_window_min: float,
+        drift_offsets: Mapping[str, float] | None = None,
     ) -> PeakLocation:
         order = rt_frame.injection_order.get(sample_stem)
         cohort = rt_frame.sample_cohorts.get(sample_stem)
+        # Unknown drift for the target leaves its forecast unadjusted; a
+        # neighbor with unknown drift does not enter an adjusted fit.
+        offsets = (
+            drift_offsets if drift_offsets and sample_stem in drift_offsets else None
+        )
         nearest = sorted(
             (
                 (sample, rt)
@@ -330,6 +348,7 @@ class PeakTrajectory:
                 and cohort is not None
                 and sample in rt_frame.injection_order
                 and rt_frame.sample_cohorts.get(sample) == cohort
+                and (offsets is None or sample in offsets)
             ),
             key=lambda point: (
                 abs(rt_frame.injection_order[point[0]] - (order or 0)),
@@ -346,8 +365,14 @@ class PeakTrajectory:
             )
         common = [rt_frame.estimate_rt(sample, rt) for sample, rt in nearest]
         common_available = all(value is not None for value in common)
+        if not common_available:
+            offsets = None
         coordinates = (
-            [value.rt_min for value in common if value is not None]
+            [
+                value.rt_min - (offsets[sample] if offsets is not None else 0.0)
+                for (sample, _), value in zip(nearest, common, strict=True)
+                if value is not None
+            ]
             if common_available
             else [rt for _, rt in nearest]
         )
@@ -359,7 +384,9 @@ class PeakTrajectory:
         )
         if common_available:
             target_estimate = rt_frame.estimate_observed_rt(
-                sample_stem, fitted.query_rt
+                sample_stem,
+                fitted.query_rt
+                + (offsets[sample_stem] if offsets is not None else 0.0),
             )
             if target_estimate is not None:
                 weak = target_estimate.rt_weight < 1.0 or any(

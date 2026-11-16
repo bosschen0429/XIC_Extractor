@@ -15,8 +15,8 @@ from xic_extractor.alignment.edge_scoring import (
     evaluate_owner_edge as _evaluate_owner_edge,
 )
 from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
+from xic_extractor.alignment.rt_drift import BatchRtModelAccumulator
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.configuration.models import Target
 
 
@@ -436,8 +436,10 @@ def test_batch_istd_coordinates_are_shared_by_grouping_and_backfill(tmp_path):
         known_istd_reference=reference
     )
     frame = frame.with_sample_calibration(
-        BatchRtCalibrationAccumulator(
-            sample_stems=tuple(samples), sample_cohorts=dict.fromkeys(samples, "batch")
+        *BatchRtModelAccumulator(
+            sample_stems=tuple(samples),
+            sample_cohorts=dict.fromkeys(samples, "batch"),
+            injection_order=frame.injection_order,
         ).freeze(measured_istds=frame.measured_istd_coordinates)
     )
     for sample, observed in (("early", 16), ("middle", 16.2), ("late", 16.4)):

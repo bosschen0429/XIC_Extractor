@@ -166,6 +166,7 @@ def _accepted_final_memberships(
                     "minimum_feasible_complete_group_cost"
                     if assigned
                     else "separation_has_lower_configuration_cost",
+                    rt_drift=comparison.coefficients(group),
                 )
             )
             for owner_id in group:

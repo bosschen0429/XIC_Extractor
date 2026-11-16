@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from tests.alignment_pipeline_helpers import resolved_elution_context
+from tests.membership_fixtures import freeze_channel_anchors
 from tests.owner_peak_fixtures import measured_peak, with_peak
 from tests.window_feature_membership_fixtures import (
     _synthetic_owner,
@@ -30,10 +31,7 @@ from xic_extractor.alignment.peak_trajectories import (
     resolve_peak_trajectories,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
-from xic_extractor.alignment.sample_rt_calibration import (
-    BatchRtCalibration,
-    BatchRtCalibrationAccumulator,
-)
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
@@ -1411,11 +1409,9 @@ def test_estimated_warp_recovers_an_injected_early_shift() -> None:
                 for sample in orders
             )
         )
-    calibration = BatchRtCalibrationAccumulator(
-        sample_stems=tuple(orders), sample_cohorts=dict.fromkeys(orders, "batch")
+    warp, _ = freeze_channel_anchors(
+        groups, samples=tuple(orders), cohorts=dict.fromkeys(orders, "batch")
     )
-    calibration.add_groups(groups)
-    warp = calibration.freeze()
     assert len(warp.knots) == 36
     assert warp.offset_min("s10", 7.0) * 60.0 < -25.0
     assert abs(warp.offset_min("s10", 27.0) * 60.0) < 8.0

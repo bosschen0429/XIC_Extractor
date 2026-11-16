@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from collections import Counter
 from collections.abc import Callable
 from contextlib import ExitStack, closing
 from dataclasses import dataclass, replace
@@ -65,6 +67,7 @@ def publish_untargeted_outputs(
         metadata = {
             **metadata,
             "processing_attempt_id": completed.processing_attempt_id,
+            "rt_drift_summary": _rt_drift_summary(completed),
         }
         inputs = completed.publication_inputs
         matrix_path = outputs.matrix_tsv
@@ -159,3 +162,64 @@ def _explanation_sink(
     what lets the run release them instead of retaining every one.
     """
     return None if explanation is None else explanation.consume_child
+
+
+def _rt_drift_summary(completed: CompletedUntargetBatchWorkflowResult) -> str:
+    """Batch-level RT model facts for review: anchors, failures and fitted groups."""
+    frame = completed.sample_rt_frame
+    calibration = frame.calibration_for_snapshot if frame is not None else None
+    drift = frame.drift_model if frame is not None else None
+    coefficients = [
+        group.inference_basis.rt_drift
+        for group in completed.initial_groups
+        if group.inference_basis is not None
+    ]
+    knots_by_segment: Counter[str] = Counter()
+    for knot in calibration.knots if calibration is not None else ():
+        start = int(knot.reference_rt_min // 4) * 4
+        knots_by_segment[f"{start}-{start + 4}"] += 1
+    return json.dumps(
+        {
+            "batch_state_basis": drift.batch_state_basis if drift else "none",
+            "drift_anchors": [
+                {
+                    "channel": anchor.channel,
+                    "reference_rt_min": anchor.reference_rt_min,
+                    "family": anchor.family,
+                    "sample_shift_member": anchor.sample_shift_member,
+                }
+                for anchor in (drift.anchors if drift else ())
+            ],
+            "sample_shift_unknown_samples": sorted(
+                set(frame.sample_universe or frame.injection_order)
+                - set(drift.sample_shift_min)
+            )
+            if drift is not None and frame is not None
+            else [],
+            "calibration_knots_by_rt_min": dict(
+                sorted(
+                    knots_by_segment.items(),
+                    key=lambda item: float(item[0].split("-")[0]),
+                )
+            ),
+            "calibration_failed_samples": {
+                sample: fitted.status
+                for sample, fitted in sorted(
+                    (calibration.samples if calibration is not None else {}).items()
+                )
+                if fitted.status != "calibrated"
+            },
+            "nonzero_coefficient_groups": {
+                "time_only": sum(
+                    c.time != 0 and c.sample_shift == 0 for c in coefficients
+                ),
+                "sample_shift_only": sum(
+                    c.time == 0 and c.sample_shift != 0 for c in coefficients
+                ),
+                "both": sum(c.time != 0 and c.sample_shift != 0 for c in coefficients),
+            },
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
