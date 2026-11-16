@@ -239,27 +239,38 @@ changes.
 
 ### Steep compound-specific RT drift splits one compound into several rows
 
-`diagnostic_only`; 8RAW `dna_dr` grouping replay at `e830a113` plus read-only
-85RAW XIC/MS2 (2026-11-16). One compound family, not a rate estimate.
+`diagnostic_only`; 8RAW `dna_dr` full runs and grouping replay (c1fa9a71 versus
+the #1165 batch drift model, 2026-11-16), read-only 8RAW XIC/MS2, 85RAW
+existing unique-channel matrix offline. One batch.
 
-- m/z 348.2122 (MS2 base 232.165, dR loss) is one compound in the 8RAW rows
-  F000324 and F000325. Replay: the split costs 3.0202 and one row 3.3724; no
-  hard veto applied (no pattern track, no population gap, all pairs under
-  `max_rt_sec`).
-- 85RAW: pooled QC RT rises +3.5 min from injection 17 to 85, while ISTDs and
-  ordinary compounds at nearby RT move -0.3 to +0.7 min; calibration anchors
-  follow those, not this compound. After removing its own QC trend the compound
-  still scatters -149 to +145 s between samples (ISTD residual p95 3-32 s).
-  m/z 273.1506 moves with it (per-sample Pearson 0.945, n = 47).
-- Under current rules no single row can hold it at 85RAW: the QC series alone
-  spans 209 s raw. A per-feature trend would need membership first, and the
-  residual scatter alone exceeds 180 s.
-- Same symptom, other mechanisms: 299.1553 is blocked by a pattern-track veto;
-  273.1506 by a low-SNR owner occupying a sample in a second row.
+- Cause: a few compounds (m/z 348.2122 with MS2 base 232.165, its 13C,
+  285.1506, 273.1506 and others at 10-14 min) also follow a per-sample shift
+  that ISTDs and ordinary compounds at nearby RT do not. The shared RT map
+  cannot carry it, so one compound split into rows.
+- #1165 adds batch state B (pooled-QC trend, one frozen shape per drift anchor)
+  and sample shift M, with two coefficients per group. 8RAW: 348.2122 and
+  349.2155 each become one row (all seven 348.2122 Y owners, no 227.139-base
+  component); the four isomer controls 244.12, 288.07, 827.17 and 828.17 stay
+  separate.
+- 8RAW is too small to estimate coefficients: permuting M across samples
+  leaves 5-13 of 21 sample-shift fits nonzero. 85RAW offline (not grouping):
+  two-coefficient residual SD 348.21 94 -> 15 s, 285.15 65 -> 15 s,
+  347.21 81 -> 9 s; ordinary channels 90% |a| < 0.07, |b| < 0.03.
+- 299.1553 is two components at fixed RT whose height ratio reverses between
+  pooled QC3 and QC5 (10.61/11.19 vs 10.59/11.19 min; MS2 cosine 0.85-0.94
+  within each, 0.61-0.73 across). The pattern track keeping QC3's and QC5's
+  selected peaks apart is correct; it is not a drift case.
+- Channel anchors moved the general map 10-30 s where support is sparse or a
+  sample has few anchors (TumorBC2263: 23 positions). With boundary-shift
+  coordinates at half RT weight and isomer groups in non-interleaved injection
+  blocks, m/z 404.1159 merged two isomers (QC3 5.98 and TumorBC2312 6.08 with
+  Benign fat 7.99/8.01 min); a single-peak sample of 312.0704 now sits midway
+  between its isomer rows and cannot be assigned by RT.
 
-Reopen for an Alignment design that links observations by non-RT identity
-evidence, or for a new column or method. Artifacts: `output/f000324-replay/`
-and the issue #1150 side-session notes `f000324-split/` (outside the repo).
+Reopen for 85RAW acceptance of #1165, for a change to the population-gap
+exemption or boundary RT weighting, or for a new column or method. Artifacts:
+`output/rt1165-8raw-*` in the #1165 worktree and the issue #1165 side-session
+notes (outside the repo).
 
 ## Targeted And Peak Evidence
 

@@ -186,16 +186,26 @@ supply positions; it lacks a second landmark to establish an ordered pattern.
 When both complete compared patterns lie inside their sample calibration spans,
 matching uses common-RT apices and transforms peak widths into that same frame. The calibration
 already supplies the displacement: matching permits width-bounded residuals, not
-a second free shift onto neighboring peaks. Cross-sample context selection and
-neighbor pruning/ranking use the same supported common coordinates before the
-match; local owner-to-landmark binding remains in measured coordinates.
+a free shift onto neighboring peaks. Compounds that drift beyond the map are the
+exception, so each frozen drift anchor within 2 minutes of the pattern adds one
+discrete displacement hypothesis, its own predicted drift between the two
+samples ([Drift beyond the map](rt-calibration.md#drift-beyond-the-map)). The
+best complete pairing over zero and those hypotheses wins with the usual
+ranking; a tie between different pairings still yields no correspondence, and
+same-sample physical order keeps its veto. Cross-sample context selection and
+neighbor ranking use the same supported common coordinates before the
+match, without a distance bound; local owner-to-landmark binding remains in
+measured coordinates.
 Initial grouping retains supplied contexts so calibrated regroup can reconsider
 candidates excluded by raw-RT pruning.
 Diagnostic replay retains full calibration support and arbitrary-landmark RT
 mapping, including bounded sample calibration loaded from a file or fitted by
 the replay command. An owner-only coordinate callback does not supply those
 facts. If any required apex or width endpoint lacks support, the entire
-pair retains raw-RT pattern matching; missing support is not measured zero drift.
+pair retains raw-RT pattern matching with a shared shift of at most 3 minutes:
+without a measured common coordinate, an unbounded shift would let any
+similarly spaced peaks in the channel correspond. Missing support is not
+measured zero drift.
 These comparison coordinates do not replace measured landmarks or owner values.
 
 Different seed windows may produce slightly different apices for the same peak.
@@ -242,7 +252,9 @@ Alignment projects sample observations onto a shared retention-time coordinate
 frame before final membership and localization. The fit, anchor qualification,
 and LOESS model are described in
 [Retention Time Calibration](rt-calibration.md), including the implementation
-owner, anchor rules, support floors, and graded query details.
+owner, anchor rules, support floors, and graded query details. Drift that the
+shared map cannot carry (batch state B, sample shift M) is frozen with it; see
+[Drift beyond the map](rt-calibration.md#drift-beyond-the-map).
 
 Final grouping rebuilds correspondence in the frozen frame and carries those
 trajectories to localization. Weak estimates multiply RT costs by 0.5 in
@@ -301,7 +313,12 @@ same membership cost to fixed groups within its own search eligibility; see
   is not a final-membership veto. Existing peak signal-quality facts reduce the
   weight of RT/shape/region evidence; no noise or SNR is recalculated.
 - A singleton costs 1. A group costs 1 plus its maximum pair cost and local trend
-  penalty; configuration cost is the sum of group costs. The cost is not
+  penalty; configuration cost is the sum of group costs. A group may instead
+  fit drift coefficients against the frozen B and M; it is then evaluated,
+  population gap included, in its drift-adjusted coordinate, and each nonzero
+  coefficient adds the cost of a 10-second pair RT difference. Zero
+  coefficients keep the plain coordinate. There is no fixed RT ceiling on pairs;
+  RT difference is a cost. The cost is not
   multiplied by sample count. Whole-band merges and per-sample assignment use
   this same objective and accept strict improvements. Every proposed group is
   evaluated as a whole, so a favorable connecting pair cannot hide its endpoints.
@@ -411,7 +428,10 @@ merge rule.
 
 Trajectories use observed positions for localization. Missing positions are
 estimated from up to twelve neighboring observations in the same cohort, using
-available batch coordinates and a robust local RT fit. This includes compatible
+available batch coordinates and a robust local RT fit. For a group with drift
+coefficients, the fit uses its drift-adjusted coordinate and adds the target
+sample's modeled drift back; a target with unknown drift keeps the plain fit.
+Backfill admission keeps the group's coefficients and does not refit them. This includes compatible
 MS1-only positions without creating CID-NL support.
 
 Insufficient temporal support, bounded extrapolation, and localization

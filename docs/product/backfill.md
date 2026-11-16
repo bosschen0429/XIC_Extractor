@@ -128,7 +128,10 @@ The request center is sample-specific: take up to twelve same-cohort
 injection neighbors, convert their measured RTs to common coordinates when
 all references are supported, fit a robust local linear trend over injection
 order so steep drift is followed rather than lagged, then invert the same frozen
-batch calibration for the target sample. If that inverse is unsupported, refit
+batch calibration for the target sample. A group with drift coefficients fits
+that trend with its modeled drift removed and adds the target's drift back,
+using the coefficients final grouping chose. Neighbors with unknown drift are
+left out of that fit; a target with unknown drift keeps the plain coordinates. If that inverse is unsupported, refit
 the whole forecast in observed coordinates. Both XIC bounds
 and preferred-peak selection use this query RT. Insufficient calibration and
 missing-context fallbacks have explicit bases; neither means measured zero
