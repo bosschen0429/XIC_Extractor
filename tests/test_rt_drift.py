@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from itertools import combinations
 from statistics import median
@@ -193,8 +194,6 @@ def test_proposed_groups_reuse_exact_pair_costs_when_the_comparison_grows():
     have been compared. Subsequent proposals exercise newly filled cache rows,
     overlapping subsets, and a member with an unknown drift regressor.
     """
-    import math
-
     owners = tuple(
         cid_nl_owner(sample, "drift", apex_rt=10.0 + 1.1 * SHIFT[sample])
         for sample in SAMPLES
@@ -284,6 +283,42 @@ def test_anchor_displacement_lets_a_drifted_main_peak_match_its_main_peak():
     # A complete undrifted match keeps winning over a partial drifted one.
     still = _match_patterns(left, left, max_shift=0.0, shift_hypotheses=(0.6,))
     assert still is not None and still.pairs == ((0, 0), (1, 1))
+
+
+@pytest.mark.parametrize("query_rt", (0.0, 2.0, 4.0, 6.0, 25.0))
+def test_anchor_lookup_preserves_the_closed_displacement_window(query_rt):
+    references = [
+        reference
+        for edge in (query_rt - 2.0, query_rt + 2.0)
+        for reference in (
+            math.nextafter(edge, -math.inf),
+            edge,
+            math.nextafter(edge, math.inf),
+        )
+        if reference >= 0.0
+    ]
+    anchors = tuple(
+        DriftAnchor(
+            f"boundary-{index}",
+            reference,
+            index,
+            True,
+            {"left": 0.0, "right": 1.0},
+            DriftCoefficients(time=(index + 1) / 10.0),
+        )
+        for index, reference in enumerate(references)
+    )
+    # The scientific window is evaluated by the original subtraction, not by
+    # separately rounded query +/- window bounds.
+    expected = tuple(
+        sorted(
+            anchor.coefficients.time
+            for anchor in anchors
+            if abs(anchor.reference_rt_min - query_rt) <= 2.0
+        )
+    )
+    lookup = RtDriftModel(anchors).displacement_lookup()
+    assert lookup(query_rt, "left", "right") == expected
 
 
 def test_backfill_tie_break_scores_extensions_in_the_original_model():

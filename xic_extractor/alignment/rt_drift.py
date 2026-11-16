@@ -184,9 +184,14 @@ class RtDriftModel:
         references = [reference for reference, _ in prepared]
 
         def displacements(rt_min: float, first: str, second: str) -> tuple[float, ...]:
+            def relative_rt(reference: float) -> float:
+                return reference - rt_min
+
             values = set()
-            low = bisect_left(references, rt_min - _TRACK_RT_WINDOW_MIN)
-            high = bisect_right(references, rt_min + _TRACK_RT_WINDOW_MIN)
+            # Keep abs(reference - rt_min) <= window at floating-point edges;
+            # forming rt_min +/- window first can round a different boundary.
+            low = bisect_left(references, -_TRACK_RT_WINDOW_MIN, key=relative_rt)
+            high = bisect_right(references, _TRACK_RT_WINDOW_MIN, key=relative_rt)
             for _, offsets in prepared[low:high]:
                 if first in offsets and second in offsets:
                     value = offsets[second] - offsets[first]
