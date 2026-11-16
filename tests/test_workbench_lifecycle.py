@@ -3,6 +3,9 @@
 import threading
 import time
 from contextlib import contextmanager
+from pathlib import Path
+from urllib.parse import unquote, urlsplit
+from urllib.request import url2pathname
 
 from tests.workbench_lifecycle_fixtures import (
     _launch,
@@ -10,8 +13,19 @@ from tests.workbench_lifecycle_fixtures import (
 )
 from xic_workbench.application import create_workspace
 from xic_workbench.browser_lifetime import BrowserLifetime
+from xic_workbench.desktop_instance import DesktopInstance
 from xic_workbench.server import create_server
 from xic_workbench.user_guide import read_user_guide
+
+
+def test_browser_handoff_keeps_capability_out_of_process_url(tmp_path):
+    launch_url = "http://127.0.0.1:12345/#launch=private-capability"
+    with DesktopInstance(tmp_path, {}, 12345) as desktop:
+        handoff_url = desktop.browser_handoff(launch_url)
+        handoff_path = Path(url2pathname(unquote(urlsplit(handoff_url).path)))
+        assert urlsplit(handoff_url).scheme == "file"
+        assert "private-capability" not in handoff_url
+        assert "private-capability" in handoff_path.read_text(encoding="utf-8")
 
 
 def test_repeated_desktop_launch_reuses_the_existing_workspace(tmp_path):
@@ -69,7 +83,7 @@ def _timed_server(config):
     )
     thread.start()
     try:
-        yield workspace, server, thread, f"http://127.0.0.1:{server.server_port}/"
+        yield workspace, server, thread, server.launch_url
     finally:
         if thread.is_alive():
             server.shutdown()

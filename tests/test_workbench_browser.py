@@ -10,6 +10,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 from playwright.sync_api import expect
@@ -39,6 +40,10 @@ pytest_plugins = ("tests.browser_diagnostics",)
 BACKGROUND_JOB_TIMEOUT_MS = 30_000 * DEADLINE_SCALE
 # A test thread holding a server request until the browser reaches a state.
 HANDSHAKE_TIMEOUT_S = 10 * DEADLINE_SCALE
+
+
+def test_launch_capability_is_removed_after_session_exchange(workbench):
+    assert urlsplit(workbench.url).fragment == ""
 
 
 def _unsaved(page, kind: str) -> bool:

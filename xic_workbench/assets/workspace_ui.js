@@ -149,14 +149,15 @@ function trackWindow() {
     document.removeEventListener("visibilitychange", visible);
   };
 }
-// The server admits workbench requests by header; failures carry its detail.
-async function api(path, values, signal) {
+// The server admits workbench requests by session; failures carry its detail.
+async function api(path, values, signal, requestHeaders = {}) {
   const response = await fetch(path, {
     signal,
     method: values === undefined ? "GET" : "POST",
     headers: {
       "X-XIC-Client": "workbench",
       ...(values === undefined ? {} : { "Content-Type": "application/json" }),
+      ...requestHeaders,
     },
     ...(values === undefined ? {} : { body: JSON.stringify(values) }),
   });
@@ -167,4 +168,34 @@ async function api(path, values, signal) {
     });
   return data;
 }
-export { api, icon, toast, confirm, setTheme, formatDuration, navigation, trackWindow };
+async function openSession() {
+  const fragment = new URLSearchParams(window.location.hash.slice(1));
+  const capability = fragment.get("launch");
+  const opened = await api(
+    "/api/session",
+    undefined,
+    undefined,
+    capability ? { "X-XIC-Launch": capability } : {},
+  );
+  if (capability !== null) {
+    fragment.delete("launch");
+    const remaining = fragment.toString();
+    history.replaceState(
+      history.state,
+      "",
+      `${window.location.pathname}${window.location.search}${remaining ? `#${remaining}` : ""}`,
+    );
+  }
+  return opened;
+}
+export {
+  api,
+  icon,
+  toast,
+  confirm,
+  setTheme,
+  formatDuration,
+  navigation,
+  trackWindow,
+  openSession,
+};

@@ -9,10 +9,17 @@ import json
 import os
 import sys
 import time
+from html import escape
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from xic_extractor.configuration.atomic_write import atomic_write_text
+
+
+def _write_private(path: Path, text: str) -> None:
+    atomic_write_text(path, text)
+    if os.name != "nt":
+        path.chmod(0o600)
 
 
 class DesktopInstance:
@@ -24,6 +31,7 @@ class DesktopInstance:
         folder = config_dir.resolve() / ".workbench"
         folder.mkdir(parents=True, exist_ok=True)
         self._record = folder / f"{self.key}.json"
+        self._handoff = folder / f"{self.key}.html"
         self._stream = (folder / f"{self.key}.lock").open("a+b")
         self._stream.seek(0, os.SEEK_END)
         if not self._stream.tell():
@@ -74,6 +82,7 @@ class DesktopInstance:
         if not isinstance(url, str):
             return None
         address = urlsplit(url)
+        fragment = parse_qs(address.fragment, keep_blank_values=True)
         if (
             address.scheme != "http"
             or address.hostname != "127.0.0.1"
@@ -81,7 +90,9 @@ class DesktopInstance:
             or address.password is not None
             or address.path != "/"
             or address.query
-            or address.fragment
+            or set(fragment) != {"launch"}
+            or len(fragment["launch"]) != 1
+            or not fragment["launch"][0]
         ):
             return None
         try:
@@ -92,7 +103,11 @@ class DesktopInstance:
             return None
         connection = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
         try:
-            connection.request("GET", "/api/session")
+            connection.request(
+                "GET",
+                "/api/desktop",
+                headers={"X-XIC-Launch": fragment["launch"][0]},
+            )
             response = connection.getresponse()
             data = json.loads(response.read())
             if response.status == 200 and data.get("desktop_key") == self.key:
@@ -105,12 +120,26 @@ class DesktopInstance:
         return None
 
     def publish(self, url: str) -> None:
-        atomic_write_text(self._record, json.dumps({"url": url}))
+        _write_private(self._record, json.dumps({"url": url}))
+
+    def browser_handoff(self, url: str) -> str:
+        """Return a protected local page so secrets do not enter browser arguments."""
+        _write_private(
+            self._handoff,
+            (
+                '<!doctype html><meta charset="utf-8">'
+                '<meta http-equiv="refresh" '
+                f'content="0;url={escape(url, quote=True)}">'
+                "<title>XIC Workbench</title>"
+            ),
+        )
+        return self._handoff.resolve().as_uri()
 
     def __exit__(self, *exc) -> None:
         try:
             if self._owned:
                 self._record.unlink(missing_ok=True)
+                self._handoff.unlink(missing_ok=True)
         finally:
             # Closing releases the OS lock even after an interrupted startup.
             self._stream.close()

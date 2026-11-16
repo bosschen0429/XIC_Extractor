@@ -4,6 +4,7 @@ import http.client
 import json
 import threading
 from contextlib import contextmanager
+from urllib.parse import parse_qs, urlsplit
 
 
 def unavailable_guide(relative_url):
@@ -25,7 +26,15 @@ def workbench_client(workspace, *, read_user_guide=unavailable_guide):
     thread.start()
     connection = http.client.HTTPConnection(*server.server_address, timeout=10)
     try:
-        connection.request("GET", "/api/session")
+        launch = parse_qs(urlsplit(server.launch_url).fragment)["launch"][0]
+        connection.request(
+            "GET",
+            "/api/session",
+            headers={
+                "X-XIC-Client": "workbench",
+                "X-XIC-Launch": launch,
+            },
+        )
         response = connection.getresponse()
         cookie = response.getheader("Set-Cookie").split(";", 1)[0]
         response.read()

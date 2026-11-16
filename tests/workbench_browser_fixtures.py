@@ -96,8 +96,7 @@ def workbench(
         page = context.new_page()
         page.set_default_timeout(ACTION_TIMEOUT_MS)
         browser_diagnostics.attach(page, browser_errors)
-        host, port = server.server_address
-        page.goto(f"http://{host}:{port}/")
+        page.goto(server.launch_url)
         expect(page.locator("body")).not_to_have_class("booting")
         expect(page.locator("#t-data_dir")).to_be_visible()
         yield page
