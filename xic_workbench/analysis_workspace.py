@@ -119,9 +119,7 @@ class AnalysisWorkspace:
         self.defaults = defaults
         self.jobs = jobs
         self.curation = curation
-        self._artifact_temporary = TemporaryDirectory(
-            prefix="xic-workbench-artifacts-"
-        )
+        self._artifact_temporary = TemporaryDirectory(prefix="xic-workbench-artifacts-")
         self._artifact_folder = Path(self._artifact_temporary.name)
         self._files: dict[str, _RegisteredArtifact] = {}
         self._result_versions: dict[str, str] = {}
