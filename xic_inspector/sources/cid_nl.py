@@ -365,14 +365,10 @@ def _support_origin(sample_id, observation_refs, cell, curves, assessments):
         and facts["method_result"] == "SUPPORT"
         and observation_set.intersection(facts["candidate_physical_peak_keys"])
     ]
+    # A Backfill capture relates no candidate, so only Discovery is derived here.
     capture_kinds = {facts["kind"] for _, facts in captures}
     invocations = {facts["detector_invocation_id"] for _, facts in methods}
-    if (
-        "backfill_observation" in capture_kinds
-        and "untargeted-cid-nl-backfill" in invocations
-    ):
-        kind = "backfill_support"
-    elif "initial_capture" in capture_kinds and any(
+    if "initial_capture" in capture_kinds and any(
         isinstance(value, str) and value.startswith("untargeted-cid-nl-real-data:")
         for value in invocations
     ):
