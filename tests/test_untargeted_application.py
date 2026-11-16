@@ -91,6 +91,8 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
 
     class MockCompleted:
         application_result = SimpleNamespace(children=())
+        initial_groups = ()
+        sample_rt_frame = None
         processing_request_id = "request-test"
         processing_attempt_id = "attempt-test"
 
@@ -223,6 +225,8 @@ def test_pure_cid_nl_cancellation_after_completion_skips_publication(
     completed = SimpleNamespace(
         close=lambda: closed.append(True),
         application_result=SimpleNamespace(children=()),
+        initial_groups=(),
+        sample_rt_frame=None,
     )
     cancellation_checks = iter((False, True))
     monkeypatch.setattr(
@@ -262,6 +266,8 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
     completed = SimpleNamespace(
         close=lambda: closed.append(True),
         application_result=SimpleNamespace(children=()),
+        initial_groups=(),
+        sample_rt_frame=None,
     )
     cancellation_checks = iter((False, False, True))
     monkeypatch.setattr(
@@ -420,6 +426,8 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     completed = SimpleNamespace(
         close=lambda: closed.append(True),
         application_result=SimpleNamespace(children=()),
+        initial_groups=(),
+        sample_rt_frame=None,
     )
     monkeypatch.setattr(
         application_module,
@@ -790,6 +798,8 @@ def test_pure_cid_nl_targets_csv_integration(
     closed = []
     completed = SimpleNamespace(
         application_result=SimpleNamespace(children=()),
+        initial_groups=(),
+        sample_rt_frame=None,
         close=lambda: closed.append(True),
     )
     fake_ref = SimpleNamespace(provenance={"workbook_sha256": "b" * 64})

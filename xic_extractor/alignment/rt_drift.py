@@ -36,6 +36,8 @@ _SYNC_CORRELATION = 0.75
 _MIN_COMMON_SAMPLES = 6
 # Isotopes, adducts and co-eluting ions share an elution family and one vote.
 _FAMILY_RT_MIN = 0.05
+# Drifting family members can have medians this far apart.
+_FAMILY_SEARCH_MIN = 5.0
 # Groups without their own anchor borrow shapes from anchors nearby in RT.
 _SHAPE_BANDWIDTH_MIN = 1.0
 # Pattern correspondence considers the displacement of anchors this close.
@@ -286,19 +288,41 @@ def _calibrated(
 
 
 def _families(channels: Mapping[str, Mapping[str, float]]) -> dict[str, int]:
+    """Co-eluting channels form one family: their apices coincide per sample.
+
+    Compare on the samples both channels observe, since drifting channels
+    observed in different samples have different medians. Without common
+    samples, compare medians.
+    """
     centers = sorted(
         (float(median(values.values())), channel)
         for channel, values in channels.items()
         if values
     )
+    parent = {channel: channel for _, channel in centers}
+
+    def root(channel: str) -> str:
+        while parent[channel] != channel:
+            parent[channel] = parent[parent[channel]]
+            channel = parent[channel]
+        return channel
+
+    for index, (center, first) in enumerate(centers):
+        for other_center, second in centers[index + 1 :]:
+            if other_center - center > _FAMILY_SEARCH_MIN:
+                break
+            common = set(channels[first]) & set(channels[second])
+            gap = (
+                median(abs(channels[first][s] - channels[second][s]) for s in common)
+                if common
+                else other_center - center
+            )
+            if gap <= _FAMILY_RT_MIN:
+                parent[root(second)] = root(first)
     family: dict[str, int] = {}
-    index = -1
-    previous = -math.inf
-    for center, channel in centers:
-        if center - previous > _FAMILY_RT_MIN:
-            index += 1
-        family[channel] = index
-        previous = center
+    roots: dict[str, int] = {}
+    for _, channel in centers:
+        family[channel] = roots.setdefault(root(channel), len(roots))
     return family
 
 
