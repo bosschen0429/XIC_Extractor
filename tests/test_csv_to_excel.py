@@ -260,12 +260,15 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
         "Run Metadata",
     ]
     assert wb.active.title == "摘要"
-    # The reader sees the conclusion and the areas; the saved record the
-    # workbench and tools read stays in the file, hidden.
+    # The reader sees the conclusion, the areas, every result and the targets;
+    # settings and trace records stay in the file, hidden.
     assert [ws.title for ws in wb.worksheets if ws.sheet_state == "visible"] == [
         "摘要",
         "面積",
+        "XIC Results",
+        "Targets",
     ]
+    assert wb["Run Metadata"].sheet_state == "hidden"
     records = _sheet_records(wb["XIC Results"])
     assert [(r["SampleName"], r["Area"], r["Counted Detection"]) for r in records] == [
         ("Sample A", 123, "TRUE"),

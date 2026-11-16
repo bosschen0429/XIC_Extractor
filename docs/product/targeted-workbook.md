@@ -7,10 +7,11 @@ settings and version produced it. Targeted results rarely leave the workbook for
 downstream statistics; the Untargeted `matrix.tsv` owns that role. Per-peak
 inspection belongs to the workbench XIC view, not the XLSX.
 
-The same file is also the saved record the workbench and tools read. Only the
-two sheets that answer the reader's questions are visible; every record sheet
-stays in the file, hidden, so the reader never meets a column written for code
-and no sheet exists to translate one.
+The same file is also the saved record the workbench and tools read. The
+sheets a reader looks things up in are visible: `摘要`, `面積`, every result in
+`XIC Results` and the targets in `Targets`. Settings, Delta Mass evidence and
+trace records stay in the file, hidden. Visible columns are plain enough that
+no sheet exists to translate them.
 
 ## Sheets
 
@@ -18,8 +19,8 @@ and no sheet exists to translate one.
 | --- | --- | --- |
 | `摘要` | Conclusion line; batch fact line (ISTD status names only an ISTD not counted in every sample) ending with version and date; the results counted in 先看, one row each; then one row per analyte with its counted samples | Human (landing sheet) |
 | `面積` | Saved Area per sample × target; analytes sharing an ISTD sit together, followed by that ISTD | Human, in-sheet calculation |
-| `XIC Results` | One row per sample-target result; hidden | Inspector, ISTD reference, workbook compare |
-| `Targets` | Admitted target intent, including `Specificity`; hidden | Inspector, ISTD reference, workbook compare |
+| `XIC Results` | One row per sample-target result | Human, Inspector, ISTD reference, workbook compare |
+| `Targets` | Admitted target intent, including `Specificity` | Human, Inspector, ISTD reference, workbook compare |
 | `Delta Mass` | Delta Mass ions of each target, with the list-shared thresholds; hidden; only with Delta Mass targets | Inspector, reproducibility |
 | `Method Evidence` | Same-peak candidate/condition statuses and acceptance; hidden; only with Delta Mass targets | Inspector |
 | `Delta Mass Evidence` | Per-position pattern answers and selected-candidate flags; hidden; only with Delta Mass clauses | Inspector |

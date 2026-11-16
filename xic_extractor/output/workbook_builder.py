@@ -62,7 +62,7 @@ def write_workbook_from_rows(
     )
     build_area_matrix_sheet(wb.create_sheet("面積"), rows)
     # The sheets below are the saved record that the workbench and tools read.
-    # They stay in the file, hidden, so the reader sees only 摘要 and 面積.
+    # Only READING_SHEETS stay visible; the rest are hidden for tracing.
     _build_data_sheet(wb.create_sheet("XIC Results"), rows, review_rows=review_rows)
     _build_targets_sheet(wb.create_sheet("Targets"), targets)
     build_identification_sheets(wb, targets, identification_rows or [])

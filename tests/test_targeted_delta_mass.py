@@ -332,6 +332,8 @@ def test_delta_mass_reaches_finalized_workbook_and_readonly_inspector(
         assert [ws.title for ws in book.worksheets if ws.sheet_state == "visible"] == [
             "摘要",
             "面積",
+            "XIC Results",
+            "Targets",
         ]
         rows = list(book["Delta Mass Evidence"].values)
         assert (
