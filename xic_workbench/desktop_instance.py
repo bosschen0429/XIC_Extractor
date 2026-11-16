@@ -105,7 +105,7 @@ class DesktopInstance:
         try:
             connection.request(
                 "GET",
-                "/api/desktop",
+                "/api/session",
                 headers={"X-XIC-Launch": fragment["launch"][0]},
             )
             response = connection.getresponse()

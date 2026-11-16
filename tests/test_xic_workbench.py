@@ -172,9 +172,6 @@ def test_session_requires_private_launch_capability_and_preserves_reopening(tmp_
         authenticated = {**client, "Cookie": cookie}
         assert request("/api/session", authenticated)[0] == 200
         assert request("/api/analysis", authenticated)[0] == 200
-        status, desktop, headers = request("/api/desktop", {"X-XIC-Launch": launch})
-        assert status == 200 and desktop == {"desktop_key": "desktop-intent"}
-        assert "Set-Cookie" not in headers
     finally:
         server.shutdown()
         server.server_close()

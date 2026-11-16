@@ -264,10 +264,7 @@ def create_server(
 
         def _get(self):
             url = urlsplit(self.path)
-            self._guard(
-                api=url.path.startswith("/api/")
-                and url.path not in {"/api/session", "/api/desktop"}
-            )
+            self._guard(api=url.path.startswith("/api/") and url.path != "/api/session")
             if url.path in _ASSETS:
                 asset, content_type = _ASSETS[url.path]
                 data = files("xic_workbench").joinpath("assets", asset).read_bytes()
@@ -299,13 +296,6 @@ def create_server(
                 )
             elif url.path == "/api/session":
                 self._open_session()
-            elif url.path == "/api/desktop":
-                if not self._has_launch_capability():
-                    raise PermissionError("請從啟動程式開啟工作區。")
-                self._send(
-                    200,
-                    {"desktop_key": None if workspace.closing else desktop_key},
-                )
             elif match := re.fullmatch(r"/api/jobs/([a-f0-9]{32})", url.path):
                 self._send(200, workspace.job(match[1]))
             elif match := re.fullmatch(r"/api/views/([a-f0-9]{32})", url.path):
