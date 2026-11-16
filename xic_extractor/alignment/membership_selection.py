@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import heapq
 import math
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
 from statistics import median
+from typing import NamedTuple
 
 import numpy as np
 
@@ -41,8 +42,7 @@ _RT_POPULATION_RANGE_RATIO = 2.0
 _COEFFICIENT_COST_SEC = 10.0
 
 
-@dataclass(frozen=True, slots=True)
-class _PairTerms:
+class _PairTerms(NamedTuple):
     """RT-independent parts of one pair cost, in their summation order."""
 
     weight: float
@@ -73,24 +73,11 @@ class _PairArrays:
     @classmethod
     def of(cls, comparison: MembershipComparison, key: tuple[str, ...]) -> _PairArrays:
         first, second = upper_pairs(len(key))
-        terms = [
-            comparison._pair_terms[(key[i], key[j])]
-            for i, j in zip(first.tolist(), second.tolist(), strict=True)
-        ]
-
-        def column(values: Iterable[float]) -> np.ndarray:
-            return np.fromiter(values, dtype=float, count=len(terms))
-
-        return cls(
-            first,
-            second,
-            column(t.weight for t in terms),  # type: ignore[union-attr]
-            column(t.mass for t in terms),  # type: ignore[union-attr]
-            column(t.composition for t in terms),  # type: ignore[union-attr]
-            column(t.neighborhood for t in terms),  # type: ignore[union-attr]
-            column(t.shape or 0.0 for t in terms),  # type: ignore[union-attr]
-            column(t.weak for t in terms),  # type: ignore[union-attr]
-        )
+        values = comparison._prepare_pair_values()
+        columns = values[comparison._pair_indices(key)].T
+        # Missing shape evidence contributes no disagreement cost.
+        columns[4, np.isnan(columns[4])] = 0.0
+        return cls(first, second, *columns)
 
     def max_cost(
         self,
@@ -326,6 +313,16 @@ class MembershipComparison:
             self.drift.batch_state_lookup() if self.drift is not None else None
         )
         self._pair_terms: dict[tuple[str, str], _PairTerms | None] = {}
+        # Packed upper triangle: every feasible pair's fixed numeric terms
+        # are converted once, then gathered for each proposed group.
+        self._pair_positions = {p: i for i, p in enumerate(sorted(self.owners))}
+        size = len(self.owners)
+        self._pair_row_offsets = {
+            p: i * (2 * size - i - 1) // 2 - i - 1
+            for p, i in self._pair_positions.items()
+        }
+        self._pair_values: np.ndarray | None = None
+        self._pair_cost_values: np.ndarray | None = None
         self._models: dict[tuple[str, ...], tuple[_GroupModel, ...]] = {}
         self._batch_states: dict[tuple[str, ...], Mapping[str, float]] = {}
         self._fixed_coefficients = dict(fixed_coefficients or {})
@@ -356,7 +353,41 @@ class MembershipComparison:
         key = (first, second) if first <= second else (second, first)
         if key not in self.pairs:
             self.pairs[key] = self._compose(key[0], key[1])
+            if self._pair_cost_values is not None and key[0] != key[1]:
+                self._pair_cost_values[
+                    self._pair_row_offsets[key[0]] + self._pair_positions[key[1]]
+                ] = self.pairs[key][0]
         return self.pairs[key]
+
+    def _pair_indices(self, key: tuple[str, ...]) -> np.ndarray:
+        """Packed positions of a canonical group's pairs, in combinations order."""
+        first, second = upper_pairs(len(key))
+        positions = np.array([self._pair_positions[p] for p in key])
+        rows = np.array([self._pair_row_offsets[p] for p in key])
+        return rows[first] + positions[second]
+
+    def _prepare_pair_values(self) -> np.ndarray:
+        """Materialize numeric pair evidence once a drift fit needs it.
+
+        Subsequent pair evaluations fill the same table. Uncomputed zero-model
+        costs stay NaN so the scalar path retains its original short circuit.
+        """
+        if self._pair_values is None:
+            size = len(self.owners)
+            count = size * (size - 1) // 2
+            self._pair_values = np.empty((count, 6))
+            self._pair_cost_values = np.full(count, np.nan)
+            for (a, b), terms in self._pair_terms.items():
+                if terms is not None:
+                    self._pair_values[
+                        self._pair_row_offsets[a] + self._pair_positions[b]
+                    ] = terms
+            for (a, b), (cost, _) in self.pairs.items():
+                if a != b:
+                    self._pair_cost_values[
+                        self._pair_row_offsets[a] + self._pair_positions[b]
+                    ] = cost
+        return self._pair_values
 
     def _terms(self, first: str, second: str) -> _PairTerms | None:
         """RT-independent pair evidence, computed once per pair."""
@@ -412,6 +443,10 @@ class MembershipComparison:
         weak = 0.20 * (int(key[0] in self.weak) + int(key[1] in self.weak)) / 2
         terms = _PairTerms(weight, mass, composition, neighborhood, shape, weak)
         self._pair_terms[key] = terms
+        if self._pair_values is not None:
+            self._pair_values[
+                self._pair_row_offsets[key[0]] + self._pair_positions[key[1]]
+            ] = terms
         return terms
 
     def _compose(
@@ -629,6 +664,7 @@ class MembershipComparison:
             return _GroupModel(coefficients, math.inf, False)
         offsets, unknown = self._frame(coefficients, basis or key)
         model_cost = self._coefficient_cost * coefficients.nonzero_count
+        pair_cost: float | None
         if arrays is not None and (offsets or unknown):
             pair_cost = arrays.max_cost(self, key, offsets, unknown)
             if not math.isfinite(pair_cost) or 1.0 + pair_cost + model_cost >= bound:
@@ -641,16 +677,31 @@ class MembershipComparison:
                 evidence,
                 self.has_rt_population_gap(key, offsets, unknown),
             )
-        pair_cost = 0.0
-        for first, second in combinations(key, 2):
-            value = (
-                self._compose(first, second, offsets, unknown)[0]
-                if offsets or unknown
-                else self.pair(first, second)[0]
-            )
-            pair_cost = max(pair_cost, value)
-            if not math.isfinite(pair_cost) or 1.0 + pair_cost + model_cost >= bound:
-                return _GroupModel(coefficients, math.inf, False)
+        pair_cost = None
+        if (
+            not (offsets or unknown)
+            and len(key) > 2
+            and self._pair_cost_values is not None
+        ):
+            cached = self._pair_cost_values[self._pair_indices(key)]
+            if not np.isnan(cached).any():
+                pair_cost = float(cached.max())
+        if pair_cost is None:
+            pair_cost = 0.0
+            for first, second in combinations(key, 2):
+                value = (
+                    self._compose(first, second, offsets, unknown)[0]
+                    if offsets or unknown
+                    else self.pair(first, second)[0]
+                )
+                pair_cost = max(pair_cost, value)
+                if (
+                    not math.isfinite(pair_cost)
+                    or 1.0 + pair_cost + model_cost >= bound
+                ):
+                    return _GroupModel(coefficients, math.inf, False)
+        elif not math.isfinite(pair_cost) or 1.0 + pair_cost + model_cost >= bound:
+            return _GroupModel(coefficients, math.inf, False)
         evidence = 1.0 + pair_cost + self._group_trend_cost(key, offsets, unknown)
         if coefficients.nonzero_count:
             evidence += model_cost

@@ -589,21 +589,32 @@ def _drift_model(
 
 def _slope(x: Sequence[float] | np.ndarray, y: Sequence[float] | np.ndarray) -> float:
     """Theil-Sen slope; zero without at least two distinct x values."""
-    if len(x) < 2:
-        return 0.0
-    xs, ys = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+    return _slope_lookup(x)(y)
+
+
+def _slope_lookup(
+    x: Sequence[float] | np.ndarray,
+) -> Callable[[Sequence[float] | np.ndarray], float]:
+    """Prepare the fixed regressor pairs once for repeated residual fits."""
+    xs = np.asarray(x, dtype=float)
     first, second = upper_pairs(len(xs))
     dx = xs[second] - xs[first]
-    dy = ys[second] - ys[first]
     distinct = dx != 0
-    if not distinct.any():
-        return 0.0
-    slopes = dy[distinct] / dx[distinct]
-    middle = len(slopes) // 2
-    if len(slopes) % 2:
-        return float(np.partition(slopes, middle)[middle])
-    low, high = np.partition(slopes, (middle - 1, middle))[middle - 1 : middle + 1]
-    return float((low + high) / 2.0)
+    first, second, dx = first[distinct], second[distinct], dx[distinct]
+
+    def slope(y: Sequence[float] | np.ndarray) -> float:
+        if not len(dx):
+            return 0.0
+        ys = np.asarray(y, dtype=float)
+        slopes = (ys[second] - ys[first]) / dx
+        middle = len(slopes) // 2
+        if len(slopes) % 2:
+            slopes.partition(middle)
+            return float(slopes[middle])
+        slopes.partition((middle - 1, middle))
+        return float((slopes[middle - 1] + slopes[middle]) / 2.0)
+
+    return slope
 
 
 _UPPER_PAIRS: dict[int, tuple[np.ndarray, np.ndarray]] = {}
@@ -652,11 +663,12 @@ def candidate_coefficients(
         ys = np.array([p[0] for p in both])
         bs = np.array([p[1] for p in both])
         ms = np.array([p[2] for p in both])
-        a = _slope(bs, ys)
+        time_slope, shift_slope = _slope_lookup(bs), _slope_lookup(ms)
+        a = time_slope(ys)
         c = 0.0
         for _ in range(_BACKFIT_ITERATIONS):
-            c_next = _slope(ms, ys - a * bs)
-            a_next = _slope(bs, ys - c_next * ms)
+            c_next = shift_slope(ys - a * bs)
+            a_next = time_slope(ys - c_next * ms)
             converged = abs(a_next - a) < 1e-9 and abs(c_next - c) < 1e-9
             a, c = a_next, c_next
             if converged:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from itertools import combinations
+from statistics import median
 from types import SimpleNamespace
 
 import pytest
@@ -141,6 +143,92 @@ def test_coefficients_need_enough_members_and_regressor_spread():
     assert candidate_coefficients(flat) == ()
     fitted = candidate_coefficients([(10.0 + 2 * v, None, v) for v in SHIFT.values()])
     assert fitted == (DriftCoefficients(sample_shift=pytest.approx(2.0)),)
+
+
+@pytest.mark.parametrize("missing", (False, True))
+def test_residual_fits_preserve_the_pairwise_median_slope(missing):
+    """Independent scalar Theil-Sen oracle, including tied and missing regressors."""
+    points = [
+        (
+            10.0 + 0.8 * (index // 2) + 1.1 * shift + (index % 3) * 0.01,
+            None if missing and index == 3 else float(index // 2),
+            None if missing and index == 7 else shift,
+        )
+        for index, shift in enumerate(SHIFT.values())
+    ]
+
+    def slope(xs, ys):
+        return median(
+            (ys[j] - ys[i]) / (xs[j] - xs[i])
+            for i, j in combinations(range(len(xs)), 2)
+            if xs[i] != xs[j]
+        )
+
+    with_b = [(y, b) for y, b, _ in points if b is not None]
+    with_m = [(y, m) for y, _, m in points if m is not None]
+    both = [(y, b, m) for y, b, m in points if b is not None and m is not None]
+    ys, bs, ms = zip(*both, strict=True)
+    a, c = slope(bs, ys), 0.0
+    for _ in range(20):
+        next_c = slope(ms, [y - a * b for y, b in zip(ys, bs, strict=True)])
+        next_a = slope(bs, [y - next_c * m for y, m in zip(ys, ms, strict=True)])
+        converged = abs(next_a - a) < 1e-9 and abs(next_c - c) < 1e-9
+        a, c = next_a, next_c
+        if converged:
+            break
+    expected = (
+        DriftCoefficients(time=slope([b for _, b in with_b], [y for y, _ in with_b])),
+        DriftCoefficients(
+            sample_shift=slope([m for _, m in with_m], [y for y, _ in with_m])
+        ),
+        DriftCoefficients(time=a, sample_shift=c),
+    )
+    assert candidate_coefficients(points) == expected
+
+
+def test_proposed_groups_reuse_exact_pair_costs_when_the_comparison_grows():
+    """Vectorized proposals agree with scalar pair evaluation, even after caching.
+
+    The first proposal prepares numeric pair evidence before the later owners
+    have been compared. Subsequent proposals exercise newly filled cache rows,
+    overlapping subsets, and a member with an unknown drift regressor.
+    """
+    import math
+
+    owners = tuple(
+        cid_nl_owner(sample, "drift", apex_rt=10.0 + 1.1 * SHIFT[sample])
+        for sample in SAMPLES
+    )
+    frame = _frame(_model({s: v for s, v in SHIFT.items() if s != "s09"}))
+
+    def comparison():
+        return MembershipComparison(
+            owners,
+            rules=CID_NL_GROUPING_RULES,
+            config=AlignmentConfig(),
+            rt_frame=frame,
+            trajectories=PeakTrajectories(),
+        )
+
+    actual, scalar = comparison(), comparison()
+    for subset in (owners[:6], owners[6:], owners[::2], owners[1::2], owners):
+        key = tuple(sorted(o.owner_id for o in subset))
+        models = [scalar._evaluate(key, DriftCoefficients())]
+        models.extend(
+            scalar._evaluate(key, coefficients)
+            for coefficients in scalar._candidate_coefficients(key)
+        )
+        feasible = [model for model in models if not model.population_gap]
+        expected = min(
+            feasible,
+            key=lambda model: (model.evidence, model.coefficients.nonzero_count),
+        )
+        assert math.isfinite(expected.evidence)
+        assert actual.group_cost(key) == expected.evidence
+        assert actual.coefficients(key) == expected.coefficients
+        # A self-comparison remains a hard conflict, not a packed off-diagonal
+        # entry that could poison a later valid group's cost.
+        assert actual.pair(owners[2].owner_id, owners[2].owner_id)[0] == math.inf
 
 
 def test_several_supported_peaks_leave_that_channel_sample_unknown():

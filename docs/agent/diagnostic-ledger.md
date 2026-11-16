@@ -380,6 +380,24 @@ baseline noise and was removed.
 
 Rerun for changed host resources, workload or locality.
 
+### Drift grouping reuses prepared numerical evidence
+
+`diagnostic_only`; output-preserving grouping optimization against `2fa578cb`
+(#1165, 2026-11-17). Repeated Theil-Sen residual fits share their fixed regressor
+pairs. Candidate groups gather comparison-scoped numeric pair terms and cached
+zero-model costs instead of rebuilding columns or revisiting every scalar pair.
+Uncomputed pairs retain the scalar evaluation order and hard-conflict short circuit.
+
+On 255 synthetic owners (85 samples, 100 anchors, one mass window), interleaved
+baseline/candidate/candidate/baseline runs took 110.38-112.12 versus 53.61-60.24 s.
+The complete inference results, including coefficients, decisions and operation
+counts, were identical. An existing 8RAW snapshot replay retained all 871 groups
+and 2,681 observations with five byte-identical TSVs. These are in-memory grouping
+measurements, not a full85 RAW or Backfill runtime claim.
+
+Reopen when drift fitting, pair scoring or the comparison population changes.
+Artifacts: `output/codex-rt1165-grouping-optimization/` in the #1165 worktree.
+
 ### Accepted Alignment optimizations
 
 All `exact_safe` with byte-identical public outputs; local gains, not cohort
