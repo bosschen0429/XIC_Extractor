@@ -10,14 +10,12 @@ from __future__ import annotations
 import re
 from unicodedata import east_asian_width
 
-from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, NamedStyle, Side
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from xic_extractor.output.workbook_values import (
     ND_ERROR,
     _excel_text,
-    _nl_to_display,
     _safe_float,
 )
 
@@ -28,22 +26,17 @@ MUTED = "9AA5B1"
 FOCUS = "B45309"
 _RULE = Side(style="thin", color="E5E9EE")
 _HEAD_RULE = Side(style="thin", color="8C99A6")
-_READING_TAB = "1F2A37"
-_REFERENCE_TAB = "A6B3C2"
-READING_SHEETS = ("摘要", "需檢查", "面積", "XIC Results")
+# The reader's sheets; the rest are records for the workbench and tools, hidden.
+READING_SHEETS = ("摘要", "面積", "XIC Results", "Targets")
 LINE_HEIGHT = 16
 TEXT_HEADERS = frozenset(
     {
         "SampleName",
         "Target",
-        "Review",
         "Review Reason",
         "NL Evidence",
         "Reason",
-        "Review Evidence",
-        "Role",
         "Group",
-        "NL",
         "Counted Detection",
     }
 )
@@ -58,12 +51,8 @@ _NUMBER_FORMATS = {
 }
 
 
-def _font(
-    color: str = INK, *, bold: bool = False, size: int = 10, underline=None
-) -> Font:
-    return Font(
-        name=REPORT_FONT, size=size, bold=bold, color=color, underline=underline
-    )
+def _font(color: str = INK, *, bold: bool = False, size: int = 10) -> Font:
+    return Font(name=REPORT_FONT, size=size, bold=bold, color=color)
 
 
 def _prepare_sheet(
@@ -126,15 +115,8 @@ def _style_body(
     cell.style = name
 
 
-def _link(cell, location: str, *, color: str = INK, bold: bool = False) -> None:
-    cell.hyperlink = f"#{location}"
-    cell.font = _font(color, bold=bold, underline="single")
-
-
 def _measurement_value(header: str, raw: object) -> object:
     """Saved measurements become numbers; ND and other text stay literal."""
-    if header == "NL":
-        return _nl_to_display(str(raw)) if raw else ""
     if header in _NUMBER_FORMATS and isinstance(raw, str) and raw not in ND_ERROR:
         parsed = _safe_float(raw)
         if parsed is not None:
@@ -190,10 +172,3 @@ def _add_table(ws, name: str, reference: str) -> None:
     # A Table owns its filter. A second worksheet filter on the same range
     # makes desktop Excel repair the workbook and remove the Table.
     ws.auto_filter.ref = None
-
-
-def _apply_sheet_role_styles(wb: Workbook) -> None:
-    for sheet in wb.worksheets:
-        sheet.sheet_properties.tabColor = (
-            _READING_TAB if sheet.title in READING_SHEETS else _REFERENCE_TAB
-        )

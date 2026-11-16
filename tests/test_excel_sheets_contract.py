@@ -48,7 +48,6 @@ def test_default_xlsx_has_summary_landing_sheet(tmp_path: Path, monkeypatch) -> 
         "XIC Results",
         "Targets",
         "Run Metadata",
-        "欄位說明",
     ]
     assert wb.active.title == "摘要"
 

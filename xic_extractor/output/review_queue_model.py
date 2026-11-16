@@ -5,25 +5,11 @@ from collections.abc import Iterable
 
 from xic_extractor.output.reason_display import (
     MISSING_DIRECT_NL_REVIEW,
-    BasisKind,
     decision_basis,
     reason_text,
     reasons,
     targeted_context_review_texts,
 )
-
-# The check that could overturn a counted result resting on its MS1 peak.
-CONFIRM_COUNTED_PEAK = "在 XIC 確認峰形成立，不是雜訊或鄰近峰"
-# The check that could overturn each uncounted basis.
-_NOT_COUNTED_ACTION: dict[BasisKind, str] = {
-    "identification_method_not_supported": "檢查特異性條件證據的各離子、RT 與峰形條件",
-    "not_quantifiable": "在原始 XIC 檢查訊噪比、缺點與連續訊號支持；不要只看平滑線",
-    "ms1_shape_failed": "在 XIC 看峰形為什麼未通過",
-    "paired_istd_not_counted": "先看配對 ISTD 在此樣本的結果",
-    "istd_without_identity": "在 XIC 比較同批樣本的 ISTD 峰",
-    "no_paired_istd": "在 XIC 判斷這個峰是否就是目標",
-    "no_ms1_peak": "在 XIC 確認 RT 範圍內是否有峰",
-}
 
 _INFORMATIONAL_EVENTS = {
     "MULTI_PEAK",
@@ -62,7 +48,6 @@ def review_queue_rows(
                 "Why": _review_why(issue, row, evidence),
                 "RT": row.get("RT", ""),
                 "Area": row.get("Area", ""),
-                "Action": _suggested_action(issue, row, evidence),
                 "Issue Count": str(len(row_diagnostics) if row_diagnostics else 1),
                 "Evidence": evidence,
             }
@@ -322,57 +307,3 @@ def _has_product_projection(row: dict[str, str]) -> bool:
     return row.get("Counted Detection", "").upper() in {"TRUE", "FALSE"} and bool(
         row.get("Product State", "")
     )
-
-
-def _projection_action(issue: str, row: dict[str, str]) -> str:
-    if issue == "PRODUCT_EXCLUDED":
-        if "file_error" in row.get("Projection Exclusion Reasons", ""):
-            return "確認 RAW 檔路徑與能否開啟"
-        return "核對 Targets 的樣本適用範圍"
-    if issue in {"PROJECTION_CONFLICT", "PRODUCT_AMBIGUOUS"}:
-        return "在 XIC 確認所選峰是不是目標"
-    review = reasons(row, "Projection Review Reasons")
-    if targeted_context_review_texts(row):
-        return (
-            "比較完整 XIC、原始訊號點、同批樣本與 target 順序，確認暫定對應及積分範圍"
-        )
-    if row.get("Counted Detection", "").upper() == "TRUE":
-        if "physical_shoulder_overlap" in review:
-            return "在 XIC 看肩峰是否影響積分範圍"
-        if "trace_morphology_review" in review:
-            return "在 XIC 看峰形是否完整"
-        if "targeted_rt_review" in review:
-            return "在 XIC 比對 RT 與配對 ISTD"
-        return CONFIRM_COUNTED_PEAK
-    return _NOT_COUNTED_ACTION.get(decision_basis(row).kind, "在 XIC 確認此峰")
-
-
-def _suggested_action(issue: str, row: dict[str, str], evidence: str) -> str:
-    if "PAIRED_POSITION_SUPPORT_REJECTED" in evidence:
-        return "在 XIC 確認內標附近有真實的訊號點，而不只是平滑線的起伏"
-    if "paired_istd_position_mismatch" in row.get("Projection Review Reasons", ""):
-        return "在 XIC 比對此峰與配對 ISTD 的 RT 差，確認不是其他物質"
-    if "BACKFILL" in evidence:
-        return "在 XIC 比較同批樣本的峰位置與峰形"
-    if _has_product_projection(row):
-        return _projection_action(issue, row)
-    if issue in {"NL_FAIL", "NL_WARN"}:
-        return "看所選 RT 附近的 MS2 是否有預期的中性丟失"
-    if issue == "NO_MS2":
-        return "確認所選 RT 附近是否有觸發 MS2 掃描"
-    if issue in {"PEAK_NOT_FOUND", "NO_SIGNAL"}:
-        return "在 XIC 確認 RT 範圍內是否有峰"
-    if issue == "FILE_ERROR":
-        return "確認 RAW 檔路徑與能否開啟"
-    if issue in {
-        "PROJECTION_CONFLICT",
-        "PRODUCT_AMBIGUOUS",
-        "PRODUCT_NOT_COUNTED",
-        "PROJECTION_FLAGGED",
-    }:
-        return "在 XIC 確認此峰"
-    if issue == "PRODUCT_EXCLUDED":
-        return "核對 Targets 的樣本適用範圍"
-    if issue == "MULTI_PEAK":
-        return "在 XIC 比較候選峰"
-    return "在 XIC 確認此峰"

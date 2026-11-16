@@ -1156,17 +1156,13 @@ def test_targeted_rows_keep_rare_and_neutral_loss_evidence_in_place(
     book = load_workbook(workbook)
     book["Targets"]["E2"] = book["Targets"]["F2"] = 9.25
     results = book["XIC Results"]
-    results.cell(2, 8, "峰不在內標位置，報 ND")
+    results.cell(2, 7, "峰不在內標位置，報 ND")
     nl_column = results.max_column + 1
-    results.cell(1, nl_column, "NL")
-    results.cell(1, nl_column + 1, "NL Evidence")
+    results.cell(1, nl_column, "NL Evidence")
     for row in range(2, results.max_row + 1):
         # Only S1's Analyte (row 2) observed its neutral loss.
         observed = row == 2
-        results.cell(row, nl_column, "OK" if observed else "NO_MS2")
-        results.cell(
-            row, nl_column + 1, "已觀察到" if observed else "所選峰沒有對應的 MS2"
-        )
+        results.cell(row, nl_column, "已觀察到" if observed else "所選峰沒有對應的 MS2")
     book.save(workbook)
     book.close()
     payload = prepare_report(

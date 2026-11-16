@@ -14,7 +14,8 @@ TARGETED_DIAGNOSTIC_CSV_SCHEMA_VERSION = "targeted_diagnostics_csv"
 
 # The delivered workbook is a measurement table, not the internal long-row dump.
 # Measurements, counted status and review reasons show; the collapsed secondary
-# columns retain peak evidence and the established ISTD readers.
+# columns retain peak evidence. A target's role lives on Targets, and a
+# nonempty Review Reason is the review mark.
 WORKBOOK_RESULT_HEADERS: tuple[str, ...] = (
     "SampleName",
     "Target",
@@ -22,20 +23,18 @@ WORKBOOK_RESULT_HEADERS: tuple[str, ...] = (
     "Area",
     "IntSmoothed",
     "Counted Detection",
-    "Review",
     "Review Reason",
     "PeakStart",
     "PeakEnd",
     "NL Evidence",
     "Reason",
-    "Review Evidence",
-    "Role",
     "Group",
-    "NL",
     "Int",
     "PeakWidth",
 )
-WORKBOOK_DETAIL_HEADERS = frozenset(WORKBOOK_RESULT_HEADERS[8:])
+WORKBOOK_DETAIL_HEADERS = frozenset(
+    WORKBOOK_RESULT_HEADERS[WORKBOOK_RESULT_HEADERS.index("PeakStart") :]
+)
 
 MS1_SUFFIXES: tuple[str, ...] = (
     "RT",

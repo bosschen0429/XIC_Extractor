@@ -7,28 +7,36 @@ settings and version produced it. Targeted results rarely leave the workbook for
 downstream statistics; the Untargeted `matrix.tsv` owns that role. Per-peak
 inspection belongs to the workbench XIC view, not the XLSX.
 
+The same file is also the saved record the workbench and tools read. The
+sheets a reader looks things up in are visible: `摘要`, `面積`, every result in
+`XIC Results` and the targets in `Targets`. Settings, Delta Mass evidence and
+trace records stay in the file, hidden. Visible columns are plain enough that
+no sheet exists to translate them.
+
 ## Sheets
 
 | Sheet | Role | Reader |
 | --- | --- | --- |
-| `摘要` | One conclusion line, one batch fact line, one table of targets | Human (landing sheet) |
-| `需檢查` | Only the results counted in 先看, one row each; absent when there are none | Human |
+| `摘要` | Conclusion line; batch fact line (ISTD status names only an ISTD not counted in every sample) ending with version and date; the results counted in 先看, one row each; then one row per analyte with its counted samples | Human (landing sheet) |
 | `面積` | Saved Area per sample × target; analytes sharing an ISTD sit together, followed by that ISTD | Human, in-sheet calculation |
-| `XIC Results` | One row per sample-target result | Inspector, ISTD reference, human |
-| `Targets` | Admitted target intent, including `Specificity` | Inspector, human |
-| `Delta Mass` | Delta Mass ions of each target, with the list-shared thresholds; only with Delta Mass targets | Inspector, reproducibility |
-| `Method Evidence` | Same-peak candidate/condition statuses and acceptance; only with Delta Mass targets | Inspector, human |
-| `Delta Mass Evidence` | Per-position pattern answers and selected-candidate flags; only with Delta Mass clauses | Inspector, human |
-| `Run Metadata` | `Key`, `說明`, `Value` | Inspector, workbook compare |
-| `欄位說明` | Meaning and unit of every delivered column | Human |
-| `診斷事件` | Every diagnostic event (`SampleName`, `Target`, `Issue`, `Reason`), hidden; only when nonempty | Traceability |
-| `Sample Context` | Supplied sample order table, hidden; only when supplied | Traceability |
+| `XIC Results` | One row per sample-target result | Human, Inspector, ISTD reference, workbook compare |
+| `Targets` | Admitted target intent, including `Specificity` | Human, Inspector, ISTD reference, workbook compare |
+| `Delta Mass` | Delta Mass ions of each target, with the list-shared thresholds; hidden; only with Delta Mass targets | Inspector, reproducibility |
+| `Method Evidence` | Same-peak candidate/condition statuses and acceptance; hidden; only with Delta Mass targets | Inspector |
+| `Delta Mass Evidence` | Per-position pattern answers and selected-candidate flags; hidden; only with Delta Mass clauses | Inspector |
+| `Run Metadata` | `Key`, `說明`, `Value`; hidden | Inspector, workbook compare |
+| `診斷事件` | Every diagnostic event (`SampleName`, `Target`, `Issue`, `Reason`); hidden; only when nonempty | Traceability |
+| `Sample Context` | Supplied sample order table; hidden; only when supplied | Traceability |
 
 `XIC Results`, `Targets` and `Run Metadata` are reader contracts: readers bind
 their named headers and the unversioned `targeted_output` format, not column
 positions or a numeric layout tag. Workbooks carrying the retired layout tag
 must be regenerated. Human sheets may change layout; they never change saved
 values or decisions.
+
+An `XIC Results` row holds only what belongs to that result. A target's role
+is read from `Targets`; a nonempty `Review Reason` is the review mark; the
+neutral-loss observation is `NL Evidence` alone.
 
 `Targets.Specificity` states each target's specificity and parameters, for
 example `MS1 only`, `CID-NL 116.0474` or `CID-NL 116.0474 + Delta Mass +1.0034`.
@@ -56,12 +64,13 @@ decisions.
 
 - `需先看` is the minority outcome of each target (at most 20% of recorded
   decisions), or, without a clear majority, the targets' saved review conditions.
-  The summary target table, the worklist and the workbench count the same result
-  rows; the summary headline counts every `需檢查` row.
+  The worklist on `摘要` and the workbench count the same result rows; the
+  headline counts every worklist row.
 - A minority outcome without a saved review condition states the saved decision
   against the majority. It adds no scientific flag.
 - A diagnostic event without a delivered result (a RAW file that failed to open)
-  stays on `需檢查` with its message, because no XIC view can explain it.
+  stays on the worklist with its message in the reason, because no XIC view can
+  explain it.
 - Every diagnostic event is kept as literal text on the hidden `診斷事件` sheet.
   The delivered XLSX is the run's only artifact, and the XIC view shows the peak
   but not why a selection was made. The sheet is for tracing a past decision,
@@ -72,19 +81,20 @@ decisions.
   explains that signal was observed but cannot support reliable quantity.
   It is not rendered as zero or ND. The original XIC remains reviewable;
   its diagnostic integral is not substituted for the withheld value.
-- A review reason names the evidence the saved decision rests on, and the
-  suggested check names the one thing that could overturn it. A counted analyte
+- A review reason names the evidence the saved decision rests on; the reader
+  checks it in the XIC view, so the workbook adds no separate suggested check.
+  A counted analyte
   rests on its MS1 peak at the paired ISTD position (or on observed neutral
   loss); an uncounted one names the failed MS1 check or the missing identity
   source. Under CID a missing neutral loss or MS2 scan is a given fact, so it is
-  never the reason, the check or the review level. An answer that follows from
+  never the reason or the review level. An answer that follows from
   the evidence stays quiet: a counted result without a saved concern (a missing
   neutral loss is none) is not listed.
 - `XIC Results` `Reason` (the workbench's 原始選峰紀錄) states the same basis
   first, then other saved concerns; a missing neutral loss is not listed. The
   workbench shows `NL Evidence` up front only when a neutral loss was observed.
-- Reasons and checks use plain domain words (RT, MS1, XIC, ISTD, 中性丟失) and
-  point to the XIC view; internal codes stay out of the workbook.
+- Reasons use plain domain words (RT, MS1, XIC, ISTD, 中性丟失); internal codes
+  stay out of the visible sheets.
 
 ## Run Metadata
 
@@ -116,11 +126,11 @@ sidecar is published, and Targeted runs have no replay entry point.
 | Numbers right-aligned, text left-aligned | Columns scan by magnitude |
 | No gridlines, fills or stripes; one hairline between rows | Non-data ink competes with values |
 | Two text inks; grey marks not counted or ND | Grey repeats `Counted Detection`, which remains its own column |
-| One accent colour, used only for 先看 | The exception is the only thing that stands out |
+| One accent colour, used only for `Review Reason` in `XIC Results` | The landing sheet's worklist is already the exception |
 | Area and intensities in `0.00E+00`; RT in `0.00` | Large values compare by exponent; storage keeps full precision |
-| Column meanings on `欄位說明`, not hover comments | Documentation is visible and printable |
+| Visible headers are plain words; record-sheet columns are documented in the user guide | No sheet exists only to translate another |
 | No charts, KPI cards or decorative layout | The summary table already carries the counts |
-| Frozen headers, Excel tables, repeated print titles | Native navigation at 1 or 200 targets |
+| Excel tables; frozen headers and repeated print titles on single-table sheets | Native navigation at 1 or 200 targets |
 | Wide sheets print across pages | Text is never shrunk to fit one page |
 
 ## Owners

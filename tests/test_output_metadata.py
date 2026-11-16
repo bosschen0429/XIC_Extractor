@@ -83,12 +83,13 @@ def test_build_metadata_rows_returns_contract_keys_in_order() -> None:
 
 
 def test_build_metadata_sheet_writes_headers_values_layout_and_styles() -> None:
+    from xic_extractor.output.metadata import build_metadata_rows
     from xic_extractor.output.sheet_metadata import _build_metadata_sheet
 
     wb = Workbook()
     ws = wb.active
 
-    _build_metadata_sheet(ws, _config(Path("output")))
+    _build_metadata_sheet(ws, build_metadata_rows(_config(Path("output"))))
 
     # Value comes last so a long saved setting extends into empty space
     # instead of hiding behind its description.

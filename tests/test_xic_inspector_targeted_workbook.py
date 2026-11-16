@@ -42,7 +42,6 @@ def workbook(tmp_path):
             "Area",
             "PeakStart",
             "PeakEnd",
-            "Review",
             "Review Reason",
             "Reason",
             "Counted Detection",
@@ -57,15 +56,12 @@ def workbook(tmp_path):
             "ND",
             "ND",
             "ND",
-            "Review",
             "Peak not found",
             "No positive peak",
             "FALSE",
         ]
     )
-    results.append(
-        ["Sample A", "A", "ISTD", 8.8, 0, 8.7, 8.9, None, None, None, "FALSE"]
-    )
+    results.append(["Sample A", "A", "ISTD", 8.8, 0, 8.7, 8.9, None, None, "FALSE"])
     results.append(
         [
             "Sample B",
@@ -75,15 +71,12 @@ def workbook(tmp_path):
             123.456,
             9.0,
             9.2,
-            "Check",
             "MS2 trigger missing",
             '<script>alert("unsafe")</script>',
             "TRUE",
         ]
     )
-    results.append(
-        ["Sample B", None, "ISTD", 9.0, None, 8.9, 9.1, None, None, None, "FALSE"]
-    )
+    results.append(["Sample B", None, "ISTD", 9.0, None, 8.9, 9.1, None, None, "FALSE"])
     metadata = book.create_sheet("Run Metadata")
     metadata.append(["Key", "Value"])
     metadata.append(["targeted_output_schema_version", "targeted_output"])
@@ -447,9 +440,7 @@ def test_targeted_http_review_preserves_values_scope_and_source(workbook):
             {
                 "Sample": "Sample B",
                 "Target": "Analyte",
-                "Status": "Check",
                 "Why": "MS2 trigger missing",
-                "Evidence": None,
             }
         ]
         _, zero, _ = request("/api/query", {"target_id": "ISTD"})
@@ -607,8 +598,7 @@ def role_workbook(workbook):
                     10 + index,
                     8,
                     9,
-                    "Review" if index in (0, 2) and sample == "Sample A" else None,
-                    "Inspect" if index in (0, 2) else None,
+                    "Inspect" if index in (0, 2) and sample == "Sample A" else None,
                     None,
                     "FALSE" if index in (0, 2) and sample == "Sample A" else "TRUE",
                 ]

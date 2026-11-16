@@ -599,7 +599,6 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             "RT",
             "IntSmoothed",
             "Counted Detection",
-            "Review",
             "Review Reason",
         ):
             index = headers.index(header) + 1
@@ -612,7 +611,6 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             "NL Evidence",
             "PeakStart",
             "PeakEnd",
-            "NL",
             "Int",
             "PeakWidth",
         ):
@@ -666,7 +664,6 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             long_rows[sample_name]["Projection Reason"] == projection.projection_reason
         )
         # Under CID the neutral-loss status does not set the review level.
-        assert workbook_rows[sample_name]["Review"] == "Review"
         assert workbook_rows[sample_name]["Review Reason"]
         for field in ("Int", "IntSmoothed"):
             assert workbook_rows[sample_name][field] == float(
@@ -744,7 +741,6 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
         assert row["Counted Detection"] == "FALSE"
     assert long_row["Review State"] == "review_required"
     assert long_row["Projection Reason"] == "finalized_searched_no_observation"
-    assert workbook_row["Review"] == "Review"
     assert workbook_row["Review Reason"]
     assert workbook_row["Reason"] == long_row["Reason"]
 
@@ -1013,7 +1009,7 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
     assert set(winning.paths) == expected_paths
     assert all(path.is_file() for path in winning.paths)
     workbook = load_workbook(request.excel_output_path, read_only=True)
-    worklist_text = str(list(workbook["需檢查"].values))
+    worklist_text = str(list(workbook["摘要"].values))
     workbook.close()
     assert (
         sum(marker in worklist_text for marker in ("concurrent-a", "concurrent-b")) == 1
@@ -1730,20 +1726,16 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
             for r in TargetedWorkbookSource(workbook_path).records
             if r["SampleName"] == "SampleC" and r["Target"] == "Analyte"
         )
-        assert saved["Review"] == row["Review"]
         assert saved["Review Reason"] == row["Review Reason"]
         if counted and sample_review:
-            assert row["Review"] == "Check"
             assert row["Review Reason"] == "證據需檢查"
             assert (
                 "sample_review" in rendered.targeted_product_projection.review_reasons
             )
         elif counted:
-            assert row["Review"] is None, (row["Review Reason"], row["Review Evidence"])
             assert row["Review Reason"] is None
-            assert row["Review Evidence"] is None
         else:
-            assert "backfill" in str(row["Review Evidence"]).lower()
+            assert "回填" in str(row["Review Reason"])
         assert any(
             (record.sample_name, record.target_label, record.issue)
             == ("SampleC", "Analyte", "BACKFILL_ACCEPTED")
@@ -1891,15 +1883,10 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
     assert rows["Far"]["Counted Detection"] == "FALSE"
     assert rows["Far"]["Area"] == "ND"
     assert rows["Far"]["RT"] == "ND"
-    assert rows["Far"]["Review"] is None
     assert rows["Far"]["Review Reason"] is None
-    assert rows["Near"]["Review"] is None, (
-        rows["Near"]["Review Reason"],
-        rows["Near"]["Review Evidence"],
-    )
+    assert rows["Near"]["Review Reason"] is None
     assert rows["Spike"]["Counted Detection"] == "FALSE"
     assert rows["Spike"]["Area"] == "ND"
-    assert rows["Spike"]["Review"] is None
     assert rows["Spike"]["Review Reason"] is None
     assert any(
         record.sample_name == "Spike"
@@ -1919,7 +1906,6 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
         if r["Target"] == "Analyte"
     }
     for sample in ("Near", "Far", "Spike"):
-        assert saved[sample]["Review"] == rows[sample]["Review"]
         assert saved[sample]["Review Reason"] == rows[sample]["Review Reason"]
     for column in ("RT", "Area", "Counted Detection"):
         assert saved["Far"][column] == rows["Far"][column]

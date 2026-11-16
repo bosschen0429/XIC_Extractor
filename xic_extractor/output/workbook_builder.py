@@ -12,15 +12,14 @@ from xic_extractor.output.detection import (
     MissingTargetedProductProjectionError,
     is_accepted_row_detection,
 )
+from xic_extractor.output.metadata import build_metadata_rows
 from xic_extractor.output.review_queue_model import review_queue_rows
 from xic_extractor.output.sheet_area_matrix import build_area_matrix_sheet
 from xic_extractor.output.sheet_diagnostic_events import build_diagnostic_events_sheet
-from xic_extractor.output.sheet_field_guide import build_field_guide_sheet
 from xic_extractor.output.sheet_identification import build_identification_sheets
 from xic_extractor.output.sheet_metadata import _build_metadata_sheet
 from xic_extractor.output.sheet_overview import build_overview_sheet
 from xic_extractor.output.sheet_results import _build_data_sheet
-from xic_extractor.output.sheet_review import build_review_sheet
 from xic_extractor.output.sheet_targets import _build_targets_sheet
 from xic_extractor.output.targeted_overview import (
     focus_worklist,
@@ -30,7 +29,7 @@ from xic_extractor.output.workbook_inputs import (
     _read_diagnostics,
     _read_long_results,
 )
-from xic_extractor.output.workbook_styles import _apply_sheet_role_styles, _excel_text
+from xic_extractor.output.workbook_styles import READING_SHEETS, _excel_text
 
 _COUNTED_PRODUCT_STATES = {"detected_clean", "detected_flagged"}
 _NOT_COUNTED_PRODUCT_STATES = {"not_counted", "excluded", "ambiguous"}
@@ -49,46 +48,35 @@ def write_workbook_from_rows(
     _require_product_projection(rows)
     review_rows = review_queue_rows(rows, diagnostics)
     overview = summarize_targeted_results(rows, review_rows)
-    worklist = focus_worklist(overview, rows, review_rows, diagnostics)
-    result_rows = {
-        (row.get("SampleName", ""), row.get("Target", "")): index
-        for index, row in enumerate(rows, 2)
-    }
+    metadata_rows = build_metadata_rows(config)
+    run = dict(metadata_rows)
     wb = Workbook()
     summary = wb.active
     summary.title = "摘要"
-    review_rows_by_target = (
-        build_review_sheet(wb.create_sheet("需檢查"), worklist, result_rows=result_rows)
-        if worklist
-        else {}
-    )
     build_overview_sheet(
         summary,
         overview,
-        pairs={target.label: target.istd_pair for target in targets},
-        worklist_size=len(worklist),
-        review_rows_by_target=review_rows_by_target,
+        worklist=focus_worklist(overview, rows, review_rows, diagnostics),
+        provenance=f"XIC Extractor {run['app_version']}"
+        f" · {str(run['generated_at'])[:10]}",
     )
     build_area_matrix_sheet(wb.create_sheet("面積"), rows)
+    # The sheets below are the saved record that the workbench and tools read.
+    # Only READING_SHEETS stay visible; the rest are hidden for tracing.
     _build_data_sheet(wb.create_sheet("XIC Results"), rows, review_rows=review_rows)
     _build_targets_sheet(wb.create_sheet("Targets"), targets)
     build_identification_sheets(wb, targets, identification_rows or [])
-    _build_metadata_sheet(
-        wb.create_sheet("Run Metadata"),
-        config,
-    )
-    build_field_guide_sheet(
-        wb.create_sheet("欄位說明"),
-        identification_methods=any(target.identification for target in targets),
-    )
+    _build_metadata_sheet(wb.create_sheet("Run Metadata"), metadata_rows)
     if diagnostics:
         build_diagnostic_events_sheet(wb.create_sheet("診斷事件"), diagnostics)
 
     if config.injection_order_source is not None:
         _embed_input_table(wb, "Sample Context", config.injection_order_source)
 
+    for sheet in wb.worksheets:
+        if sheet.title not in READING_SHEETS:
+            sheet.sheet_state = "hidden"
     wb.active = wb.index(summary)
-    _apply_sheet_role_styles(wb)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)
     wb.close()
@@ -123,7 +111,6 @@ def _embed_input_table(workbook: Workbook, title: str, source: Path) -> None:
         )
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
-    sheet.sheet_state = "hidden"
 
 
 def run_from_config(

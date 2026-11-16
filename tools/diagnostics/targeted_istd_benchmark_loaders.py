@@ -93,8 +93,12 @@ def read_target_definitions(path: Path) -> tuple[TargetDefinition, ...]:
 
 
 def read_targeted_points(path: Path) -> dict[str, tuple[TargetedPoint, ...]]:
-    if not path.exists():
-        raise FileNotFoundError(str(path))
+    # Targets owns each label's role; a result row only names its target.
+    istds = {
+        target.label
+        for target in read_target_definitions(path)
+        if target.role == "ISTD"
+    }
     workbook = load_workbook(path, read_only=True, data_only=True)
     try:
         sheet = workbook["XIC Results"]
@@ -105,10 +109,8 @@ def read_targeted_points(path: Path) -> dict[str, tuple[TargetedPoint, ...]]:
             (
                 "SampleName",
                 "Target",
-                "Role",
                 "RT",
                 "Area",
-                "NL",
                 "Reason",
             ),
             "XIC Results",
@@ -122,17 +124,14 @@ def read_targeted_points(path: Path) -> dict[str, tuple[TargetedPoint, ...]]:
             if not current_sample:
                 continue
             label = _text(row[cols["Target"]])
-            role = _text(row[cols["Role"]])
-            if not label or role != "ISTD":
+            if label not in istds:
                 continue
             grouped.setdefault(label, []).append(
                 TargetedPoint(
                     sample_stem=current_sample,
                     target_label=label,
-                    role=role,
                     rt=_float_value(row[cols["RT"]]),
                     area=_float_value(row[cols["Area"]]),
-                    nl=_text(row[cols["NL"]]),
                     reason=_text(row[cols["Reason"]]),
                 )
             )
