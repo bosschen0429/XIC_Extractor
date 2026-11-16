@@ -642,29 +642,19 @@ def test_completed_analysis_keeps_its_own_review_locations(tmp_path, monkeypatch
 
     monkeypatch.setattr("xic_workbench.targeted.TargetedRun", Run)
     monkeypatch.setattr(AnalysisJobs, "_prepare_untargeted", lambda *args: Run())
-    settings = {
-        "data_dir": "batch-a",
-        "dll_dir": "dll-a",
-        "injection_order_source": "list-a.csv",
-    }
+    settings = {"data_dir": "batch-a", "dll_dir": "dll-a"}
     values = (
         {"settings": settings, "targets": sample_target_rows()}
         if kind == "targeted"
-        else {"raw_dir": "batch-a", "dll_dir": "dll-a", "sequence_source": "list-a.csv"}
+        else {"raw_dir": "batch-a", "dll_dir": "dll-a"}
     )
     jobs = AnalysisJobs(tmp_path)
     try:
         jobs.start(kind, values)
-        values.update(raw_dir="batch-b", dll_dir="dll-b", sequence_source="list-b.csv")
-        settings.update(
-            data_dir="batch-b", dll_dir="dll-b", injection_order_source="list-b.csv"
-        )
+        values.update(raw_dir="batch-b", dll_dir="dll-b")
+        settings.update(data_dir="batch-b", dll_dir="dll-b")
         result = _terminal(jobs)["results"][kind]
-        assert result["review_paths"] == {
-            "raw_dir": "batch-a",
-            "dll_dir": "dll-a",
-            "sequence_source": "list-a.csv",
-        }
+        assert result["review_paths"] == {"raw_dir": "batch-a", "dll_dir": "dll-a"}
     finally:
         jobs.close()
 

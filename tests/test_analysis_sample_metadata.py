@@ -192,40 +192,6 @@ for (const page of ['targeted', 'untargeted']) {
     )
 
 
-def test_review_exclusion_supersedes_reads_without_touching_another_folder():
-    _run_metadata_case(
-        """
-locations.untargeted.raw_dir = '/another-batch';
-const late = deferred();
-let confirmed;
-const metadata = createSampleMetadata({
-  request: (url, values) => {
-    if (url.endsWith('/exclude')) return Promise.resolve(confirmed);
-    return values.raw_dir === '/another-batch'
-      ? Promise.resolve(result('blank', 'untargeted')) : late.promise;
-  },
-  inputs,
-});
-metadata.restore(initial(result()));
-await metadata.preview('untargeted');
-const old = result();
-const preview = metadata.preview('targeted');
-await flush();
-confirmed = result('qc');
-confirmed.samples[0].excluded = true;
-confirmed.overview = {excluded: [{raw_stem: 'A', reason: ''}]};
-await metadata.exclude({raw_dir: '/batch', raw_stem: 'A'});
-confirmed.samples[0].excluded = false;
-late.resolve(old);
-assert.equal(await preview, false);
-assert.equal(metadata.forPage('targeted').rows[0].excluded, true);
-assert.equal(metadata.forPage('targeted').rows[0].sample_role, 'qc');
-assert.equal(metadata.forPage('untargeted').rows[0].sample_role, 'blank');
-assert.deepEqual(metadata.forPage('untargeted').overview.excluded, []);
-"""
-    )
-
-
 def test_a_restored_running_read_cannot_apply_results_for_different_inputs():
     _run_metadata_case(
         """
@@ -236,66 +202,6 @@ const running = {...job(), status: 'running'};
 metadata.restore({job: running, results: {}});
 assert.equal(metadata.completeJob(job(), old), false);
 assert.deepEqual(metadata.forPage('targeted').rows, []);
-"""
-    )
-
-
-def test_review_exclusion_supersedes_previews_even_when_the_folder_is_not_loaded():
-    _run_metadata_case(
-        """
-const late = deferred(), old = result(), confirmed = result();
-confirmed.samples[0].excluded = true;
-const metadata = createSampleMetadata({
-  request: url => url.endsWith('/exclude')
-    ? Promise.resolve(confirmed) : late.promise,
-  inputs,
-});
-const preview = metadata.preview('targeted');
-await flush();
-await metadata.exclude({raw_dir: '/batch', raw_stem: 'A'});
-late.resolve(old);
-assert.equal(await preview, false);
-for (const page of ['targeted', 'untargeted']) {
-  assert.deepEqual(metadata.forPage(page).rows.map(row => row.excluded),
-    [true, false]);
-}
-"""
-    )
-
-
-def test_review_exclusion_waits_for_older_saves_and_keeps_the_latest_role():
-    _run_metadata_case(
-        """
-let disk = result().samples;
-const releaseSave = deferred(), calls = [];
-const metadata = createSampleMetadata({
-  request: async (url, values) => {
-    calls.push(url);
-    if (url.endsWith('/save')) {
-      await releaseSave.promise;
-      disk = structuredClone(values.samples);
-      return {overview: {excluded: []}};
-    }
-    disk = disk.map(row => row.raw_stem === values.raw_stem
-      ? {...row, excluded: true} : row);
-    return {samples: disk, overview: {excluded: [{raw_stem: 'A', reason: ''}]}};
-  }, inputs,
-});
-metadata.restore(initial(result()));
-const saving = metadata.edit('targeted', ['A'], {sample_role: 'blank'});
-const excluding = metadata.exclude({raw_dir: '/batch', raw_stem: 'A'});
-await flush();
-assert.deepEqual(calls, ['/api/samples/save']);
-releaseSave.resolve();
-await saving;
-await excluding;
-assert.deepEqual(calls, ['/api/samples/save', '/api/samples/exclude']);
-assert.deepEqual(disk.map(row => [row.sample_role, row.excluded]),
-  [['blank', true], ['qc', false]]);
-for (const page of ['targeted', 'untargeted']) {
-  assert.deepEqual(metadata.forPage(page).rows.map(row =>
-    [row.sample_role, row.excluded]), [['blank', true], ['qc', false]]);
-}
 """
     )
 
@@ -311,8 +217,6 @@ const metadata = createSampleMetadata({
 metadata.restore(initial(result()));
 assert.equal(metadata.canEdit, false);
 await assert.rejects(metadata.edit('targeted', ['A'], {excluded: true}),
-  /目前工作/);
-await assert.rejects(metadata.exclude({raw_dir: '/batch', raw_stem: 'A'}),
   /目前工作/);
 assert.equal(requests, 0);
 assert.equal(metadata.forPage('targeted').rows[0].excluded, false);

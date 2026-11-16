@@ -420,7 +420,6 @@ def create_server(
                 "method/save",
                 "samples/save",
                 "samples/annotations",
-                "samples/exclude",
                 "samples/export",
                 "matrix-curation/source",
                 "istd",

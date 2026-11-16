@@ -137,40 +137,6 @@ def _write_confirmed(path: Path, metadata: Sequence[SampleMetadata]) -> None:
     _write_rows(path, metadata)
 
 
-def exclude_sample(
-    config_dir: Path,
-    raw_dir: Path,
-    raw_stem: str,
-    reason: str = "",
-    *,
-    dll_dir: Path | None,
-    sequence_source: Path | None = None,
-) -> dict[str, Any]:
-    """Mark one injection of a reviewed run excluded for the folder's next run.
-
-    A folder without confirmed metadata is read first with the 上機資訊 the
-    reviewed run used, so the exclusion keeps that run's roles and groups.
-    """
-    path = sample_annotations_path(config_dir, raw_dir)
-    rows = (
-        [asdict(row) for row in load_sample_metadata(path)]
-        if path.is_file()
-        else read_batch_samples(
-            config_dir, raw_dir, dll_dir=dll_dir, sequence_source=sequence_source
-        )["samples"]
-    )
-    target = next(
-        (row for row in rows if row["raw_stem"].casefold() == raw_stem.casefold()),
-        None,
-    )
-    if target is None:
-        raise ValueError(f"{raw_stem} 不在這個 RAW 資料夾的樣品資訊中。")
-    target["excluded"] = True
-    if reason.strip():
-        target["exclusion_reason"] = reason.strip()
-    return {**save_batch_samples(config_dir, raw_dir, rows), "samples": rows}
-
-
 def sample_overview(rows: Sequence[SampleMetadata]) -> dict[str, Any]:
     """Pre-run facts the setup checklist shows."""
     return {

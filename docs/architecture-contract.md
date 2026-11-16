@@ -280,7 +280,7 @@ intentions and read immutable snapshots; rendering does not advance lifecycle.
 `analysis_jobs.js` composes that Module with application-setting adoption and
 presentation. [Sample metadata](../xic_workbench/assets/analysis_sample_metadata.js)
 owns sample rows, read recency, cross-flow sharing and ordered folder-scoped
-edits and Review exclusions. Consumers read immutable page snapshots and submit
+edits. Consumers read immutable page snapshots and submit
 edits by RAW stem; they do not coordinate revisions or mutate retained job
 results. Within one Workbench page, metadata writes and Analysis jobs exclude
 one another so sequence-import jobs cannot overlap those writes. Ending Analysis

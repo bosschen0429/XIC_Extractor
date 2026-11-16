@@ -381,24 +381,6 @@ class AnalysisWorkspace:
                 values["raw_dir"], values["samples"], saved["overview"]
             )
             return saved
-        if action == "samples/exclude":
-            from xic_workbench.samples import exclude_sample
-
-            raw_dir = Path(values["raw_dir"])
-            result = exclude_sample(
-                self.config_dir,
-                raw_dir,
-                str(values["raw_stem"]),
-                str(values.get("reason") or ""),
-                dll_dir=Path(values["dll_dir"]) if values.get("dll_dir") else None,
-                sequence_source=Path(values["sequence_source"])
-                if values.get("sequence_source")
-                else None,
-            )
-            self.jobs.remember_samples(
-                values["raw_dir"], result["samples"], result["overview"]
-            )
-            return result
         if action == "samples/export":
             from xic_workbench.samples import export_samples
 
