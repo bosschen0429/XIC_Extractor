@@ -319,7 +319,8 @@ def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_v
         "return JSON.stringify({readout:readout(items[0]),"
         "table:cellTable(items[0])});",
     )
-    # Areas read in one format wherever they appear.
+    # Areas read in one format wherever they appear. Another peak's area stays
+    # beside the formal value for comparison.
     assert 'data-readout="area">1.205e+2 <span>counts·s' in rendered["readout"]
     # The saved apex belongs to the value, not to the raw signal.
     assert 'data-readout="raw-apex"' not in rendered["readout"]
@@ -330,6 +331,42 @@ def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_v
         else ('class="num">0<' if second_value == 0 else 'class="num">4.213e+1<')
     )
     assert expected in rendered["table"]
+
+
+def test_readout_shows_one_area_on_the_curve_that_gave_the_value(tmp_path):
+    transition = _fixture_bundle().transitions[0]
+    first, second = transition.traces
+    first = replace(
+        first, integration=CurveIntegration(17.25, 6.1, "published_matrix_value")
+    )
+    bundle = CurveBundle(
+        (
+            replace(
+                transition,
+                traces=(first, second),
+                quantifications=(SampleQuantification("sample-1", 17.25, "counts·s"),),
+            ),
+        )
+    )
+    source, output = tmp_path / "curves.json", tmp_path / "review.html"
+    write_curve_bundle(bundle, source)
+    generate_report(source, SelectionRequest(), output)
+    content = output.read_text(encoding="utf-8")
+    payload = json.loads(
+        content.split(
+            '<script id="inspector-data" type="application/json">',
+            1,
+        )[1].split("</script>", 1)[0]
+    )
+    rendered = _evaluate_report_functions(
+        content,
+        payload,
+        "state.sample='sample-1';normalize(items[0],true);"
+        "return JSON.stringify({readout:readout(items[0])});",
+    )
+
+    assert 'data-readout="area"' not in rendered["readout"]
+    assert 'data-readout="quantity">1.725e+1' in rendered["readout"]
 
 
 @pytest.mark.parametrize(
