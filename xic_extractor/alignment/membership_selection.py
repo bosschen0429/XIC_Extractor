@@ -234,6 +234,19 @@ class MembershipComparison:
         self._models: dict[tuple[str, ...], tuple[_GroupModel, ...]] = {}
         self._batch_states: dict[tuple[str, ...], Mapping[str, float]] = {}
         self._fixed_coefficients = dict(fixed_coefficients or {})
+        # One drift frame per (coefficients, batch-state group), shared by
+        # every pair, group and tie-break that uses that model.
+        self._frames: dict[
+            tuple[DriftCoefficients, tuple[str, ...]],
+            tuple[dict[str, float], frozenset[str]],
+        ] = {}
+        self._mean_pairs: dict[
+            tuple[tuple[str, ...], DriftCoefficients, tuple[str, ...]], float
+        ] = {}
+        self._fixed_models: dict[
+            tuple[tuple[str, ...], tuple[str, ...]], _GroupModel
+        ] = {}
+        self._fixed_costs: dict[tuple[tuple[str, ...], tuple[str, ...]], float] = {}
         self._coefficient_cost = 0.70 * _COEFFICIENT_COST_SEC / config.preferred_rt_sec
 
     def partition_key(self, partition: Partition) -> tuple[object, ...]:
@@ -372,10 +385,26 @@ class MembershipComparison:
         self, group: tuple[str, ...], first: str, second: str
     ) -> tuple[float, tuple[str, ...]]:
         """One pair in its group's drift-adjusted coordinate."""
-        coefficients = self.coefficients(group)
+        key = tuple(sorted(group))
+        return self._model_pair(first, second, self.coefficients(key), key)
+
+    def fixed_pair(
+        self, first: str, second: str, original: tuple[str, ...]
+    ) -> tuple[float, tuple[str, ...]]:
+        """One pair in a fixed Backfill group's coordinate (its original model)."""
+        basis = tuple(sorted(original))
+        return self._model_pair(first, second, self.coefficients(basis), basis)
+
+    def _model_pair(
+        self,
+        first: str,
+        second: str,
+        coefficients: DriftCoefficients,
+        basis: tuple[str, ...],
+    ) -> tuple[float, tuple[str, ...]]:
         if not coefficients.nonzero_count:
             return self.pair(first, second)
-        offsets, unknown = self._offsets(tuple(sorted(group)), coefficients)
+        offsets, unknown = self._frame(coefficients, basis)
         return self._compose(first, second, offsets, unknown)
 
     def group_cost(self, group: tuple[str, ...]) -> float:
@@ -412,10 +441,14 @@ class MembershipComparison:
             return cached
         key = tuple(sorted(group))
         if key not in self._models:
-            models = [self._evaluate(key, DriftCoefficients())]
-            if math.isfinite(models[0].evidence):
+            zero = self._evaluate(key, DriftCoefficients())
+            models = [zero]
+            if math.isfinite(zero.evidence):
+                # A drift model matters only if it can cost less than a
+                # feasible zero model; stop scoring it once it cannot.
+                bound = math.inf if zero.population_gap else zero.evidence
                 models.extend(
-                    self._evaluate(key, coefficients)
+                    self._evaluate(key, coefficients, bound=bound)
                     for coefficients in self._candidate_coefficients(key)
                 )
             self._models[key] = tuple(models)
@@ -454,34 +487,45 @@ class MembershipComparison:
             )
         return self._batch_states[key]
 
-    def _offsets(
-        self,
-        key: tuple[str, ...],
-        coefficients: DriftCoefficients,
-        basis: tuple[str, ...] | None = None,
+    def _frame(
+        self, coefficients: DriftCoefficients, basis: tuple[str, ...]
     ) -> tuple[dict[str, float], frozenset[str]]:
-        """Each member's modeled drift; ``basis`` names the group owning B."""
+        """Every owner's modeled drift under one model; ``basis`` owns B.
+
+        Owners whose regressor is unknown are returned separately; they keep
+        their general coordinate.
+        """
         if not coefficients.nonzero_count or self.drift is None:
             return {}, frozenset()
-        by_sample = self.drift.sample_offsets(
-            coefficients, self._batch_state(basis or key)
-        )
-        offsets = {
-            p: by_sample[self.owners[p].sample_stem]
-            for p in key
-            if self.owners[p].sample_stem in by_sample
-        }
-        return offsets, frozenset(p for p in key if p not in offsets)
+        cache_key = (coefficients, basis)
+        if cache_key not in self._frames:
+            by_sample = self.drift.sample_offsets(
+                coefficients, self._batch_state(basis)
+            )
+            offsets = {
+                owner_id: by_sample[owner.sample_stem]
+                for owner_id, owner in self.owners.items()
+                if owner.sample_stem in by_sample
+            }
+            self._frames[cache_key] = (
+                offsets,
+                frozenset(self.owners).difference(offsets),
+            )
+        return self._frames[cache_key]
 
     def _evaluate(
         self,
         key: tuple[str, ...],
         coefficients: DriftCoefficients,
         basis: tuple[str, ...] | None = None,
+        *,
+        bound: float = math.inf,
     ) -> _GroupModel:
+        """Score one model; above ``bound`` it is reported as infinite."""
         if len({self.owners[p].sample_stem for p in key}) != len(key):
             return _GroupModel(coefficients, math.inf, False)
-        offsets, unknown = self._offsets(key, coefficients, basis)
+        offsets, unknown = self._frame(coefficients, basis or key)
+        model_cost = self._coefficient_cost * coefficients.nonzero_count
         pair_cost = 0.0
         for first, second in combinations(key, 2):
             value = (
@@ -490,14 +534,25 @@ class MembershipComparison:
                 else self.pair(first, second)[0]
             )
             pair_cost = max(pair_cost, value)
-            if not math.isfinite(pair_cost):
+            if not math.isfinite(pair_cost) or 1.0 + pair_cost + model_cost >= bound:
                 return _GroupModel(coefficients, math.inf, False)
         evidence = 1.0 + pair_cost + self._group_trend_cost(key, offsets, unknown)
         if coefficients.nonzero_count:
-            evidence += self._coefficient_cost * coefficients.nonzero_count
+            evidence += model_cost
         return _GroupModel(
             coefficients, evidence, self.has_rt_population_gap(key, offsets, unknown)
         )
+
+    def fixed_group_model(
+        self, group: tuple[str, ...], original: tuple[str, ...]
+    ) -> _GroupModel:
+        """A Backfill extension under its original group's model, never refit."""
+        key, basis = tuple(sorted(group)), tuple(sorted(original))
+        if (key, basis) not in self._fixed_models:
+            self._fixed_models[(key, basis)] = self._evaluate(
+                key, self.coefficients(basis), basis
+            )
+        return self._fixed_models[(key, basis)]
 
     def fixed_group_cost(
         self, group: tuple[str, ...], original: tuple[str, ...]
@@ -510,20 +565,22 @@ class MembershipComparison:
         The complete extension still obeys the RT-population constraint, and
         keeps the original group's drift coefficients rather than refitting.
         """
-        coefficients = self.coefficients(original)
-        key = tuple(sorted(group))
-        basis = tuple(sorted(original))
-        model = self._evaluate(key, coefficients, basis)
-        if math.isfinite(model.evidence) and (
-            group == original or not model.population_gap
-        ):
+        key, basis = tuple(sorted(group)), tuple(sorted(original))
+        if (key, basis) not in self._fixed_costs:
+            self._fixed_costs[(key, basis)] = self._fixed_group_cost(key, basis)
+        return self._fixed_costs[(key, basis)]
+
+    def _fixed_group_cost(self, key: tuple[str, ...], basis: tuple[str, ...]) -> float:
+        model = self.fixed_group_model(key, basis)
+        if math.isfinite(model.evidence) and (key == basis or not model.population_gap):
             return model.evidence
-        offsets, unknown = self._offsets(key, coefficients, basis)
-        if group != original and self.has_rt_population_gap(key, offsets, unknown):
+        coefficients = model.coefficients
+        offsets, unknown = self._frame(coefficients, basis)
+        if key != basis and self.has_rt_population_gap(key, offsets, unknown):
             return math.inf
-        if len({self.owners[p].sample_stem for p in group}) != len(group):
+        if len({self.owners[p].sample_stem for p in key}) != len(key):
             return math.inf
-        fixed = frozenset(original)
+        fixed = frozenset(basis)
         pair_cost = 0.0
         for first, second in combinations(key, 2):
             value = self._compose(first, second, offsets, unknown)[0]
@@ -534,6 +591,40 @@ class MembershipComparison:
         if coefficients.nonzero_count:
             cost += self._coefficient_cost * coefficients.nonzero_count
         return cost
+
+    def fixed_peer_fit(
+        self, groups: Sequence[tuple[tuple[str, ...], tuple[str, ...]]]
+    ) -> float:
+        """Mean peer fit of a Backfill configuration of (group, original) pairs.
+
+        Each extension is scored in its original group's model, as its cost is.
+        """
+        total = math.fsum(
+            len(group)
+            * self._mean_pair(
+                tuple(sorted(group)),
+                self.coefficients(tuple(sorted(original))),
+                tuple(sorted(original)),
+            )
+            for group, original in groups
+        )
+        return total / len(self.owners) if self.owners else 0.0
+
+    def _mean_pair(
+        self,
+        key: tuple[str, ...],
+        coefficients: DriftCoefficients,
+        basis: tuple[str, ...],
+    ) -> float:
+        if len(key) < 2:
+            return 1.0
+        cache_key = (key, coefficients, basis)
+        if cache_key not in self._mean_pairs:
+            self._mean_pairs[cache_key] = math.fsum(
+                self._model_pair(a, b, coefficients, basis)[0]
+                for a, b in combinations(key, 2)
+            ) / (len(key) * (len(key) - 1) / 2)
+        return self._mean_pairs[cache_key]
 
     def _group_trend_cost(
         self,
@@ -631,14 +722,9 @@ class MembershipComparison:
         """
         for group in partition:
             if group not in self.group_peer_fits:
-                self.group_peer_fits[group] = (
-                    math.fsum(
-                        self.group_pair(group, a, b)[0]
-                        for a, b in combinations(group, 2)
-                    )
-                    / (len(group) * (len(group) - 1) / 2)
-                    if len(group) > 1
-                    else 1.0
+                key = tuple(sorted(group))
+                self.group_peer_fits[group] = self._mean_pair(
+                    key, self.coefficients(key), key
                 )
         return (
             math.fsum(len(g) * self.group_peer_fits[g] for g in partition)
@@ -793,6 +879,8 @@ class MembershipComparison:
         selected_cost = self.cost(partition)
         selected_fit = self.peer_fit(partition)
         for group in partition:
+            key = tuple(sorted(group))
+            coefficients = self.coefficients(key)
             for owner_id in group:
                 alternatives = (
                     alternatives_by_owner[owner_id]
@@ -823,7 +911,9 @@ class MembershipComparison:
                             reason
                             for peer in group
                             if peer != owner_id
-                            for reason in self.group_pair(group, owner_id, peer)[1]
+                            for reason in self._model_pair(
+                                owner_id, peer, coefficients, key
+                            )[1]
                         }
                     )
                 )

@@ -196,3 +196,36 @@ def test_anchor_displacement_lets_a_drifted_main_peak_match_its_main_peak():
     # A complete undrifted match keeps winning over a partial drifted one.
     still = _match_patterns(left, left, max_shift=0.0, shift_hypotheses=(0.6,))
     assert still is not None and still.pairs == ((0, 0), (1, 1))
+
+
+def test_backfill_tie_break_scores_extensions_in_the_original_model():
+    from itertools import combinations
+
+    from xic_extractor.alignment.rt_drift import DriftCoefficients
+
+    owners = tuple(
+        cid_nl_owner(sample, "drift", apex_rt=10.0 + 1.1 * SHIFT[sample])
+        for sample in SAMPLES[:10]
+    )
+    extra = cid_nl_owner("s10", "late", apex_rt=10.0 + 1.1 * SHIFT["s10"] + 0.4)
+    original = tuple(sorted(owner.owner_id for owner in owners))
+    fixed = DriftCoefficients(sample_shift=1.1)
+    comparison = MembershipComparison(
+        (*owners, extra),
+        rules=CID_NL_GROUPING_RULES,
+        config=AlignmentConfig(),
+        rt_frame=_frame(_model()),
+        trajectories=PeakTrajectories(),
+        fixed_coefficients={original: fixed},
+    )
+    extended = tuple(sorted((*original, extra.owner_id)))
+    in_original_model = [
+        comparison.fixed_pair(a, b, original)[0] for a, b in combinations(extended, 2)
+    ]
+    expected = (len(extended) * sum(in_original_model) / len(in_original_model)) / len(
+        comparison.owners
+    )
+    assert comparison.fixed_peer_fit(((extended, original),)) == pytest.approx(expected)
+    # The same extension scored as a free group would refit its own model.
+    assert comparison.coefficients(extended) != fixed
+    assert comparison.fixed_group_model(extended, original).coefficients == fixed

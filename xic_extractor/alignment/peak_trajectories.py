@@ -871,6 +871,7 @@ def resolve_peak_trajectories(
         if (peak := _common_rt_peak(node.sample, node.landmark, rt_frame)) is not None
     }
     drift = rt_frame.drift_model if rt_frame is not None else None
+    displacements = drift.displacement_lookup() if drift is not None else None
     matches = []
     comparisons = 0
     for left, right in _neighbor_pairs(
@@ -899,12 +900,12 @@ def resolve_peak_trajectories(
                 for index in right.nodes
             ],
             max_shift=0.0 if calibrated else _RAW_PATTERN_SHIFT_MIN,
-            shift_hypotheses=drift.displacements(
+            shift_hypotheses=displacements(
                 sum(peak.apex_rt for peak in left_peaks) / len(left_peaks),
                 left.sample,
                 right.sample,
             )
-            if calibrated and drift is not None
+            if calibrated and displacements is not None
             else (),
         )
         if match is not None:

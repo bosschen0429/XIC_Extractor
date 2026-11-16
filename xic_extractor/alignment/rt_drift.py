@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from statistics import median
 
@@ -146,20 +146,29 @@ class RtDriftModel:
                 blended[sample] = sum(w * v for w, v in pairs) / total
         return _unit_range(blended)
 
-    def displacements(
-        self, rt_min: float, first: str, second: str
-    ) -> tuple[float, ...]:
-        """Second-minus-first drift predicted by each anchor near this RT."""
-        values = set()
-        for anchor in self.anchors:
-            if abs(anchor.reference_rt_min - rt_min) > _TRACK_RT_WINDOW_MIN:
-                continue
-            offsets = self.sample_offsets(anchor.coefficients, anchor.shape)
-            if first in offsets and second in offsets:
-                value = offsets[second] - offsets[first]
-                if value:
-                    values.add(value)
-        return tuple(sorted(values))
+    def displacement_lookup(self) -> Callable[[float, str, str], tuple[float, ...]]:
+        """Prepare anchors' drift once; the lookup returns second-minus-first
+        displacements predicted by each anchor near an RT."""
+        prepared = tuple(
+            (
+                anchor.reference_rt_min,
+                self.sample_offsets(anchor.coefficients, anchor.shape),
+            )
+            for anchor in self.anchors
+        )
+
+        def displacements(rt_min: float, first: str, second: str) -> tuple[float, ...]:
+            values = set()
+            for reference, offsets in prepared:
+                if abs(reference - rt_min) > _TRACK_RT_WINDOW_MIN:
+                    continue
+                if first in offsets and second in offsets:
+                    value = offsets[second] - offsets[first]
+                    if value:
+                        values.add(value)
+            return tuple(sorted(values))
+
+        return displacements
 
     def sample_offsets(
         self, coefficients: DriftCoefficients, batch_state: Mapping[str, float]
