@@ -49,6 +49,10 @@ from xic_extractor.rt_calibration_codec import (
 from xic_extractor.rt_calibration_codec import (
     rt_calibration_payload as _rt_calibration_payload,
 )
+from xic_extractor.rt_calibration_codec import (
+    rt_drift_from_payload,
+    rt_drift_payload,
+)
 from xic_extractor.tabular_io import write_delimited_rows
 
 
@@ -119,6 +123,9 @@ def write_grouping_inputs(
                 "rt_calibration": _rt_calibration_payload(workset.rt_calibration)
                 if workset.rt_calibration is not None
                 else None,
+                "rt_drift": rt_drift_payload(workset.rt_drift)
+                if workset.rt_drift is not None
+                else None,
             }
             for workset in inputs.worksets
         ],
@@ -187,6 +194,9 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
                 rt_warp=warp,
                 rt_calibration=_read_rt_calibration_payload(value["rt_calibration"])
                 if value.get("rt_calibration") is not None
+                else None,
+                rt_drift=rt_drift_from_payload(value["rt_drift"])
+                if value.get("rt_drift") is not None
                 else None,
                 elution_contexts=tuple(
                     _read_elution_context(context)
