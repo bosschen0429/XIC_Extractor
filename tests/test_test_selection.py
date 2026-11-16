@@ -912,6 +912,12 @@ def test_ci_reads_the_plan_from_the_selection_owner() -> None:
         assert environment["XIC_CI_PLAN"] == "${{ needs.plan.outputs.coverage }}"
 
 
+def test_ci_windows_integration_uses_hosted_runner() -> None:
+    jobs = yaml.safe_load(Path(".github/workflows/ci.yml").read_text("utf-8"))["jobs"]
+
+    assert jobs["windows-integration"]["runs-on"] == "windows-latest"
+
+
 # PowerShell stand-ins for the expensive child commands of a CI step. The step
 # itself still owns ordering, argument quoting and exit codes.
 _CI_COMMAND_FAKES = r"""

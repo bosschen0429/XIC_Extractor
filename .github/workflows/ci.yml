@@ -116,9 +116,9 @@ jobs:
   windows-integration:
     needs: plan
     name: Windows integration (3.15)
-    # Keep post-merge work off the PR runner. Label an independent PR to use
-    # hosted capacity too; this is explicit routing, not an idle-runner probe.
-    runs-on: ${{ (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'ci:hosted-windows')) && 'windows-latest' || 'self-hosted' }}
+    # Pull-request revisions are untrusted; checkout-controlled installation and
+    # tests must run on a disposable GitHub-hosted worker.
+    runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
