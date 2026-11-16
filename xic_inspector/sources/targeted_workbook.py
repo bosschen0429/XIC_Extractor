@@ -139,21 +139,19 @@ class TargetedWorkbookSource:
                     "PeakStart",
                     "PeakEnd",
                     "Reason",
-                    "Review",
                     "Review Reason",
                     "Counted Detection",
                 },
             )
+            # A saved review reason is the review mark.
             self.queue = [
                 {
                     "Sample": row["SampleName"],
                     "Target": row["Target"],
-                    "Status": row["Review"],
                     "Why": row["Review Reason"],
-                    "Evidence": row.get("Review Evidence"),
                 }
                 for row in self.records
-                if row["Review"]
+                if row["Review Reason"]
             ]
         finally:
             book.close()

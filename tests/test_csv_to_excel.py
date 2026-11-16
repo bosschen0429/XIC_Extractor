@@ -31,7 +31,7 @@ def test_data_sheet_preserves_measurements_and_compact_review_fields() -> None:
         ("Tumor_3", "ND", "ND"),
     ]
     assert records[0]["NL Evidence"] == "已觀察到"
-    assert records[1]["NL"] == "⚠ 12.3ppm"
+    assert records[1]["NL Evidence"] == "已觀察到（質量偏差偏大）"
     assert records[1]["Review Reason"].replace("\n", "") == "中性丟失質量偏差偏大"
     # RT precedes Area; intensities read as scientific notation. Numbers align
     # right and text left so a column scans by magnitude.
@@ -44,7 +44,7 @@ def test_data_sheet_preserves_measurements_and_compact_review_fields() -> None:
     assert records[0]["PeakWidth"] == 0.4
     assert ws["E2"].number_format == "0.00E+00"
     assert ws.freeze_panes == "C2"
-    assert ws.tables["TargetedResults"].ref == "A1:R4"
+    assert ws.tables["TargetedResults"].ref == "A1:N4"
     assert ws.auto_filter.ref is None
     wb.close()
 
@@ -88,7 +88,6 @@ def test_data_sheet_preserves_reason_without_dumping_projection_codes() -> None:
     assert record["Reason"] == row["Reason"]
     assert record["Area"] == 123
     assert record["Counted Detection"] == "FALSE"
-    assert record["Review"] == "Review"
     assert record["Review Reason"].replace("\n", "") == "證據衝突，身分未定"
     assert not any(header.startswith("Projection ") for header in record)
     assert "Legacy Authority Status" not in record
@@ -583,8 +582,7 @@ def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
     )
     assert "selected RT 9.0000 min" in records[0].reason
     record = _sheet_records(workbook["XIC Results"])[0]
-    assert record["Review"] is None
-    assert record["Review Evidence"] is None
+    assert record["Review Reason"] is None
     # An informational event is not a worklist entry; its full text stays on
     # the hidden trace sheet so a past selection can still be explained.
     assert "需檢查" not in workbook.sheetnames

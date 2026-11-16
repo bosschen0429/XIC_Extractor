@@ -16,7 +16,6 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from xic_extractor.output.workbook_values import (
     ND_ERROR,
     _excel_text,
-    _nl_to_display,
     _safe_float,
 )
 
@@ -34,14 +33,10 @@ TEXT_HEADERS = frozenset(
     {
         "SampleName",
         "Target",
-        "Review",
         "Review Reason",
         "NL Evidence",
         "Reason",
-        "Review Evidence",
-        "Role",
         "Group",
-        "NL",
         "Counted Detection",
     }
 )
@@ -122,8 +117,6 @@ def _style_body(
 
 def _measurement_value(header: str, raw: object) -> object:
     """Saved measurements become numbers; ND and other text stay literal."""
-    if header == "NL":
-        return _nl_to_display(str(raw)) if raw else ""
     if header in _NUMBER_FORMATS and isinstance(raw, str) and raw not in ND_ERROR:
         parsed = _safe_float(raw)
         if parsed is not None:

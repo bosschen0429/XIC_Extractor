@@ -46,10 +46,8 @@ class TargetDefinition:
 class TargetedPoint:
     sample_stem: str
     target_label: str
-    role: str
     rt: float | None
     area: float | None
-    nl: str
     reason: str
 
     @property

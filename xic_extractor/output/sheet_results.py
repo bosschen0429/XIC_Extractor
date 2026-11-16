@@ -19,7 +19,7 @@ from xic_extractor.output.workbook_styles import (
     _write_header,
 )
 
-_CENTERED = frozenset({"Counted Detection", "Review"})
+_CENTERED = frozenset({"Counted Detection"})
 
 
 def _build_data_sheet(
@@ -38,17 +38,13 @@ def _build_data_sheet(
         review = review_by_key.get(
             (row.get("SampleName", ""), row.get("Target", "")), {}
         )
-        values = row | {
-            "Review": review.get("Status", ""),
-            "Review Reason": review.get("Why", ""),
-            "Review Evidence": review.get("Evidence", ""),
-        }
+        values = row | {"Review Reason": review.get("Why", "")}
         counted = values.get("Counted Detection", "").upper() == "TRUE"
         for column, header in enumerate(headers, start=1):
             value = _measurement_value(header, values.get(header, ""))
             cell = ws.cell(row=row_index, column=column, value=value)
             color = INK if counted else MUTED
-            if header == "Review" and value:
+            if header == "Review Reason" and value:
                 color = FOCUS
             elif header in numeric and not _is_number(value):
                 color = MUTED

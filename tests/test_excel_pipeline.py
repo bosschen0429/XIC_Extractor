@@ -135,16 +135,12 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         "Area",
         "IntSmoothed",
         "Counted Detection",
-        "Review",
         "Review Reason",
         "PeakStart",
         "PeakEnd",
         "NL Evidence",
         "Reason",
-        "Review Evidence",
-        "Role",
         "Group",
-        "NL",
         "Int",
         "PeakWidth",
     ]
@@ -163,16 +159,14 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert record["Int"] == 500.0
     assert record["PeakWidth"] == 0.3
     assert record["NL Evidence"] == "已觀察到（質量偏差偏大）"
-    assert record["NL"] == "⚠ 12.3ppm"
-    assert record["Review"] == "Check"
     assert record["Review Reason"].replace("\n", "") == "證據需檢查"
     assert not ws.merged_cells.ranges
     assert ws.freeze_panes == "C2"
     result_columns = {cell.value: cell.column_letter for cell in ws[1]}
     # Measurements, counted status and review reasons show; evidence collapses.
-    for header in headers[:8]:
+    for header in headers[:7]:
         assert ws.column_dimensions[result_columns[header]].hidden is not True
-    for header in headers[8:]:
+    for header in headers[7:]:
         assert ws.column_dimensions[result_columns[header]].hidden is True
 
     ws_metadata = wb["Run Metadata"]
@@ -471,7 +465,6 @@ def test_counted_backfill_review_names_quality_not_identity(
         output_path=tmp_path / "final-peak-review.xlsx",
     )
     saved = TargetedWorkbookSource(path).records[0]
-    assert saved["Review"] == "Check"
     assert saved["Review Reason"] == expected
     assert saved["Counted Detection"] == "TRUE"
     assert saved["RT"] == result.reported_rt

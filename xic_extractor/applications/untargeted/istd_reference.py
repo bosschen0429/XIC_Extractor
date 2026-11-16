@@ -168,20 +168,19 @@ def read_known_istd_reference(path: Path) -> KnownIstdReference:
         coordinates: dict[tuple[str, str], float] = {}
         seen: set[tuple[str, str]] = set()
         sample: str | None = None
-        for row in rows("XIC Results", ("SampleName", "Target", "Role", "RT")):
+        for row in rows("XIC Results", ("SampleName", "Target", "RT")):
             # The report carries SampleName across each sample block, whose
             # first named row can be an analyte rather than an ISTD.
             if row["SampleName"] is not None and str(row["SampleName"]).strip():
                 sample = text(row, "SampleName")
-            if str(row["Role"]).strip() != "ISTD":
+            # Targets owns each label's role; a result row only names its target.
+            label = text(row, "Target")
+            if label not in labels:
                 continue
             if sample is None:
                 raise ValueError(
                     "XIC Results: ISTD reference has no preceding SampleName"
                 )
-            label = text(row, "Target")
-            if label not in labels:
-                raise ValueError(f"XIC Results: undeclared ISTD target {label}")
             key = label, sample
             if key in seen:
                 raise ValueError(f"XIC Results: duplicate ISTD reference {key}")

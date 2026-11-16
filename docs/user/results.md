@@ -37,7 +37,7 @@
 | `診斷事件` | 挑峰時的事件，供追查過去的判定 |
 | `Sample Context` | 這次使用的上機資訊；有提供時才有 |
 
-`XIC Results` 的欄位如下；前八欄回答日常判讀，其餘欄預設收合，按欄標上方的 **＋** 展開。
+`XIC Results` 的欄位如下；前七欄回答日常判讀，其餘欄預設收合，按欄標上方的 **＋** 展開。
 
 | 欄 | 意思 |
 | --- | --- |
@@ -47,11 +47,10 @@
 | `Area` | 所選峰的面積（counts·s）；有數值不代表已計入 |
 | `IntSmoothed` | 平滑後的峰頂強度（counts），不是面積 |
 | `Counted Detection` | `TRUE` 已計入，`FALSE` 未計入；未計入的列是灰字 |
-| `Review` | `Review` 或 `Check` 表示有待確認的事，空白表示沒有 |
-| `Review Reason` | 待確認的事 |
+| `Review Reason` | 待確認的事；空白表示沒有 |
 | `PeakStart`、`PeakEnd` | 積分起點與終點（min） |
 | `NL Evidence`、`Reason` | 中性丟失的觀察與完整判定說明 |
-| `Role`、`Group` | ISTD 或 Analyte；樣本組別 |
+| `Group` | 樣本組別；目標是 ISTD 或 Analyte 見 `Targets` |
 | `Int`、`PeakWidth` | 原始峰頂強度與峰寬 |
 
 ## Untargeted 結果資料夾

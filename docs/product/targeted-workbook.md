@@ -33,6 +33,10 @@ positions or a numeric layout tag. Workbooks carrying the retired layout tag
 must be regenerated. Human sheets may change layout; they never change saved
 values or decisions.
 
+An `XIC Results` row holds only what belongs to that result. A target's role
+is read from `Targets`; a nonempty `Review Reason` is the review mark; the
+neutral-loss observation is `NL Evidence` alone.
+
 `Targets.Specificity` states each target's specificity and parameters, for
 example `MS1 only`, `CID-NL 116.0474` or `CID-NL 116.0474 + Delta Mass +1.0034`.
 For a Delta Mass target, `Method Evidence` records each sample, target,
@@ -121,7 +125,7 @@ sidecar is published, and Targeted runs have no replay entry point.
 | Numbers right-aligned, text left-aligned | Columns scan by magnitude |
 | No gridlines, fills or stripes; one hairline between rows | Non-data ink competes with values |
 | Two text inks; grey marks not counted or ND | Grey repeats `Counted Detection`, which remains its own column |
-| One accent colour, used only for the review mark in `XIC Results` | The landing sheet's worklist is already the exception |
+| One accent colour, used only for `Review Reason` in `XIC Results` | The landing sheet's worklist is already the exception |
 | Area and intensities in `0.00E+00`; RT in `0.00` | Large values compare by exponent; storage keeps full precision |
 | Visible headers are plain words; record-sheet columns are documented in the user guide | No sheet exists only to translate another |
 | No charts, KPI cards or decorative layout | The summary table already carries the counts |
