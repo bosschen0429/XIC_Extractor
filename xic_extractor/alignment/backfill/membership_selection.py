@@ -42,6 +42,17 @@ def select_backfill_memberships(
         )
     )
 
+    worst_pair = {
+        index: max(
+            (
+                comparison.pair(proposals[index][1], peer)[0]
+                for peer in original_groups[proposals[index][0]]
+            ),
+            default=0.0,
+        )
+        for index in compatible_indices
+    }
+
     def groups_for(selected: frozenset[int]) -> dict[str, tuple[str, ...]]:
         groups = dict(original_groups)
         for index in sorted(selected):
@@ -99,18 +110,22 @@ def select_backfill_memberships(
             }
             choices.add((current - displaced) | {index})
         # Feasibility is not hereditary: a complete group can be feasible even
-        # when each partial extension has an RT gap. Try its compatible bundle
-        # before relying on one-at-a-time improvements.
+        # when each partial extension has an RT gap. Try its compatible
+        # bundles before relying on one-at-a-time improvements, nearest
+        # candidates first so one distant candidate cannot poison the rest.
         for group in original_groups:
             bundle = frozenset(i for i in current if proposals[i][0] != group)
-            for index in compatible_indices:
-                candidate_group, _ = proposals[index]
-                if candidate_group == group and not any(
+            choices.add(bundle)
+            for index in sorted(
+                (i for i in compatible_indices if proposals[i][0] == group),
+                key=lambda i: (worst_pair[i], i),
+            ):
+                if not any(
                     (min(index, other), max(index, other)) in conflicts
                     for other in bundle
                 ):
                     bundle |= {index}
-            choices.add(bundle)
+                    choices.add(bundle)
         return {choice for choice in choices if math.isfinite(cost(choice))}
 
     while True:

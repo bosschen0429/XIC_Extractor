@@ -249,7 +249,6 @@ def _join_window_bands(
             right_members,
             orders=orders,
             corrected_rt=corrected_rt,
-            max_rt_sec=config.max_rt_sec,
         ):
             continue
         if (len(left_members), left) < (len(right_members), right):
@@ -275,7 +274,6 @@ def rt_trend_supports_union(
     *,
     orders: Mapping[str, int],
     corrected_rt: Mapping[str, float],
-    max_rt_sec: float,
 ) -> bool:
     """Check the whole union against the shared local RT-band tolerance."""
     combined = tuple((*left, *right))
@@ -284,9 +282,11 @@ def rt_trend_supports_union(
     trends = _NearestInjectionMedians.prepare(combined, orders, corrected_rt)
     for owner in combined:
         expected = trends.median(owner, exclude_owner_id=owner.owner_id)
-        if expected is not None and abs(
-            corrected_rt[owner.owner_id] - expected
-        ) * 60.0 > min(_WINDOW_TREND_TOLERANCE_SEC, max_rt_sec):
+        if (
+            expected is not None
+            and abs(corrected_rt[owner.owner_id] - expected) * 60.0
+            > _WINDOW_TREND_TOLERANCE_SEC
+        ):
             return False
     return True
 
@@ -365,7 +365,6 @@ def _bridge_separated_window_bands(
                         bands[right],
                         orders=orders,
                         corrected_rt=corrected_rt,
-                        max_rt_sec=config.max_rt_sec,
                     )
                 ):
                     continue
@@ -437,17 +436,13 @@ def _window_band_candidate(
         expected = (
             trends or _NearestInjectionMedians.prepare(band, orders, corrected_rt)
         ).median(owner)
-        tolerance_sec = min(
-            config.max_rt_sec,
-            max(_WINDOW_TREND_TOLERANCE_SEC, config.preferred_rt_sec),
-        )
+        tolerance_sec = max(_WINDOW_TREND_TOLERANCE_SEC, config.preferred_rt_sec)
     else:
         expected = statistics.median(corrected_rt[item.owner_id] for item in band)
         nearest_gap = min(
             abs(orders[owner.sample_stem] - orders[item.sample_stem]) for item in band
         )
         tolerance_sec = min(
-            config.max_rt_sec,
             120.0,
             max(config.preferred_rt_sec, 45.0 + 4.0 * nearest_gap),
         )

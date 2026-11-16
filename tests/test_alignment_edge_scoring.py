@@ -134,7 +134,7 @@ def test_missing_drift_and_raw_over_strict_window_is_weak() -> None:
     edge = evaluate_owner_edge(
         _owner("s1", owner_apex_rt=10.00),
         _owner("s2", owner_apex_rt=10.75),
-        config=AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0),
+        config=AlignmentConfig(preferred_rt_sec=30.0),
         rt_frame=SampleRtFrame(),
     )
 
@@ -149,7 +149,7 @@ def test_missing_drift_and_raw_close_edge_is_strong() -> None:
     edge = evaluate_owner_edge(
         _owner("s1", owner_apex_rt=10.00),
         _owner("s2", owner_apex_rt=10.25),
-        config=AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0),
+        config=AlignmentConfig(preferred_rt_sec=30.0),
         rt_frame=SampleRtFrame(),
     )
 
@@ -168,7 +168,7 @@ def test_drift_corrected_close_edge_is_strong_even_when_raw_exceeds_strict() -> 
     edge = evaluate_owner_edge(
         _owner("s1", owner_apex_rt=10.00),
         _owner("s2", owner_apex_rt=10.75),
-        config=AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0),
+        config=AlignmentConfig(preferred_rt_sec=30.0),
         rt_frame=SampleRtFrame().with_sources(
             drift_lookup=_DriftLookup(
                 deltas={"s1": 0.00, "s2": 0.50},
@@ -199,7 +199,7 @@ def test_invalid_drift_prior_source_raises_before_evidence_is_produced() -> None
         evaluate_owner_edge(
             _owner("s1", owner_apex_rt=10.00),
             _owner("s2", owner_apex_rt=10.75),
-            config=AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0),
+            config=AlignmentConfig(preferred_rt_sec=30.0),
             rt_frame=SampleRtFrame().with_sources(
                 drift_lookup=_DriftLookup(
                     deltas={"s1": 0.00, "s2": 0.50},
@@ -221,7 +221,7 @@ def test_sufficient_raw_edge_is_preserved_before_applying_drift() -> None:
     edge = evaluate_owner_edge(
         _owner("s1", owner_apex_rt=10.00),
         _owner("s2", owner_apex_rt=10.10),
-        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0),
+        config=AlignmentConfig(preferred_rt_sec=60.0),
         rt_frame=SampleRtFrame().with_sources(
             drift_lookup=CountingDrift(
                 deltas={"s1": 0.00, "s2": -0.30},
@@ -249,7 +249,7 @@ def test_degraded_drift_falls_back_without_keeping_prior_bonus(
     )
 
     raw_sec = 6.0 if corrected_sec == 24.0 else 56.0
-    config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0)
+    config = AlignmentConfig(preferred_rt_sec=60.0)
     left = _owner("s1", evidence_score=45, seed_event_count=1)
     right = _owner(
         "s2",
@@ -298,7 +298,7 @@ def test_insufficient_raw_keeps_helpful_drift() -> None:
     edge = evaluate_owner_edge(
         _owner("s1", evidence_score=45, seed_event_count=1),
         _owner("s2", owner_apex_rt=11.5, evidence_score=45, seed_event_count=1),
-        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0),
+        config=AlignmentConfig(preferred_rt_sec=60.0),
         rt_frame=SampleRtFrame().with_sources(
             drift_lookup=_DriftLookup(
                 deltas={"s1": 0.0, "s2": 1.0},

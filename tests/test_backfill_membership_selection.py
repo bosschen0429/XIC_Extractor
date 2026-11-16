@@ -65,7 +65,7 @@ def test_blank_wins_when_finite_assignment_cost_exceeds_separation():
     comparison = MembershipComparison(
         owners,
         rules=CID_NL_GROUPING_RULES,
-        config=AlignmentConfig(max_rt_sec=180, preferred_rt_sec=30),
+        config=AlignmentConfig(preferred_rt_sec=30),
         rt_frame=SampleRtFrame(),
         trajectories=PeakTrajectories(),
     )

@@ -182,7 +182,7 @@ class MembershipComparison:
             ):
                 self.weak.add(owner.owner_id)
         ordered_rts = sorted(self.rts.items(), key=lambda item: item[1])
-        radius_sec = min(120.0, config.max_rt_sec)
+        radius_sec = 120.0
         self.density = {}
         left = right = 0
         for key, rt in ordered_rts:
@@ -234,8 +234,6 @@ class MembershipComparison:
         ):
             return math.inf, ()
         delta = abs(self.rts[first] - self.rts[second]) * 60
-        if delta > cfg.max_rt_sec:
-            return math.inf, ()  # outside the declared candidate universe
         weight = min(self.quality[first], self.quality[second])
         rt_weight = min(self.rt_weights[first], self.rt_weights[second])
         cost = 0.70 * weight * rt_weight * delta / cfg.preferred_rt_sec

@@ -38,6 +38,10 @@ _TRAJECTORY_NEIGHBORS = 12
 _TIE_EPSILON = 1e-9
 _TREND_SCALE_FLOOR_MIN = 0.5 / 60.0
 _TREND_TOLERANCE_MIN = 1e-8 / 60.0
+# Without a measured common coordinate, a shared displacement is unconstrained:
+# any similarly spaced peaks in the same channel would correspond. Bound raw
+# geometry only; calibrated patterns are compared without a distance bound.
+_RAW_PATTERN_SHIFT_MIN = 3.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -696,6 +700,11 @@ class _PatternCenter:
             return abs(self.common - other.common)
         return abs(self.observed - other.observed)
 
+    def comparable_to(self, other: _PatternCenter) -> bool:
+        return (self.common is not None and other.common is not None) or abs(
+            self.observed - other.observed
+        ) <= _RAW_PATTERN_SHIFT_MIN
+
 
 def _pattern_center(
     sample: str,
@@ -857,7 +866,7 @@ def resolve_peak_trajectories(
                 common_peaks[index] if calibrated else nodes[index].landmark
                 for index in right.nodes
             ],
-            max_shift=0.0 if calibrated else config.max_rt_sec / 60.0,
+            max_shift=0.0 if calibrated else _RAW_PATTERN_SHIFT_MIN,
         )
         if match is not None:
             gap = abs(
@@ -1168,10 +1177,7 @@ def _local_patterns(
                 (peaks[start], peaks[end - 1]),
                 rt_frame,
             )
-            if any(
-                center.distance_to(seed_centers[index]) * 60.0 <= config.max_rt_sec
-                for index in compatible
-            ):
+            if any(center.comparable_to(seed_centers[index]) for index in compatible):
                 add_pattern(context, start, end)
                 retained.add(context)
             start = end
@@ -1213,9 +1219,9 @@ def _neighbor_pairs(
                 pattern.mz, other.mz, config.preferred_ppm
             ):
                 continue
-            distance = center.distance_to(centers[other_index])
-            if distance * 60.0 > config.max_rt_sec:
+            if not center.comparable_to(centers[other_index]):
                 continue
+            distance = center.distance_to(centers[other_index])
             candidates.append(
                 (
                     abs(

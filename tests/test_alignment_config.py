@@ -25,7 +25,6 @@ def test_default_config_matches_alignment_contract():
     assert config.preferred_ppm == 20.0
     assert config.max_ppm == 50.0
     assert config.preferred_rt_sec == 60.0
-    assert config.max_rt_sec == 180.0
     assert config.product_mz_tolerance_ppm == 20.0
     assert config.observed_loss_tolerance_ppm == 20.0
     assert config.min_peak_shape_similarity == 0.80
@@ -63,8 +62,6 @@ def test_alignment_config_owner_gate_validation(field, value):
         {"max_ppm": -1.0},
         {"preferred_ppm": 51.0, "max_ppm": 50.0},
         {"preferred_rt_sec": 0.0},
-        {"max_rt_sec": -1.0},
-        {"preferred_rt_sec": 181.0, "max_rt_sec": 180.0},
         {"product_mz_tolerance_ppm": 0.0},
         {"observed_loss_tolerance_ppm": -1.0},
         {"min_peak_shape_similarity": -0.1},
@@ -86,7 +83,6 @@ def test_invalid_tolerance_windows_are_rejected(kwargs):
         "preferred_ppm",
         "max_ppm",
         "preferred_rt_sec",
-        "max_rt_sec",
         "product_mz_tolerance_ppm",
         "observed_loss_tolerance_ppm",
     ],
@@ -105,7 +101,6 @@ def test_non_finite_tolerance_windows_are_rejected(field, value):
         "preferred_ppm",
         "max_ppm",
         "preferred_rt_sec",
-        "max_rt_sec",
         "product_mz_tolerance_ppm",
         "observed_loss_tolerance_ppm",
     ],
