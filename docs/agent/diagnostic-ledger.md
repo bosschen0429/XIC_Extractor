@@ -237,6 +237,30 @@ ion inside its request; banded windows were not adopted.
 Rerun when the instrument, its MS2 resolution or calibration, or the method
 changes.
 
+### Steep compound-specific RT drift splits one compound into several rows
+
+`diagnostic_only`; 8RAW `dna_dr` grouping replay at `e830a113` plus read-only
+85RAW XIC/MS2 (2026-11-16). One compound family, not a rate estimate.
+
+- m/z 348.2122 (MS2 base 232.165, dR loss) is one compound in the 8RAW rows
+  F000324 and F000325. Replay: the split costs 3.0202 and one row 3.3724; no
+  hard veto applied (no pattern track, no population gap, all pairs under
+  `max_rt_sec`).
+- 85RAW: pooled QC RT rises +3.5 min from injection 17 to 85, while ISTDs and
+  ordinary compounds at nearby RT move -0.3 to +0.7 min; calibration anchors
+  follow those, not this compound. After removing its own QC trend the compound
+  still scatters -149 to +145 s between samples (ISTD residual p95 3-32 s).
+  m/z 273.1506 moves with it (per-sample Pearson 0.945, n = 47).
+- Under current rules no single row can hold it at 85RAW: the QC series alone
+  spans 209 s raw. A per-feature trend would need membership first, and the
+  residual scatter alone exceeds 180 s.
+- Same symptom, other mechanisms: 299.1553 is blocked by a pattern-track veto;
+  273.1506 by a low-SNR owner occupying a sample in a second row.
+
+Reopen for an Alignment design that links observations by non-RT identity
+evidence, or for a new column or method. Artifacts: `output/f000324-replay/`
+and the issue #1150 side-session notes `f000324-split/` (outside the repo).
+
 ## Targeted And Peak Evidence
 
 ### NL116 ISTD human boundary calibration
