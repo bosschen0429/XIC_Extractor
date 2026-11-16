@@ -118,7 +118,10 @@ def select_backfill_memberships(
             choices.add(bundle)
             for index in sorted(
                 (i for i in compatible_indices if proposals[i][0] == group),
-                key=lambda i: (worst_pair[i], i),
+                key=lambda i: (
+                    worst_pair[i],
+                    comparison.measured_keys[proposals[i][1]],
+                ),
             ):
                 if not any(
                     (min(index, other), max(index, other)) in conflicts
