@@ -1,9 +1,10 @@
 """Curate a published Alignment Matrix with independently switchable steps.
 
 A step runs when its parameters are given, or its flag for a step without
-parameters. Without --sample-metadata, sample roles are read from the run's RAW
-headers, as Alignment reads them. Internal standards come from --istd-list, or
-else from the list the run declared; they are always kept.
+parameters. Without --sample-metadata, saved sample roles are reused; older
+outputs can read the run's RAW headers only with an explicit --dll-dir.
+Internal standards come from --istd-list, or else from the list the run
+declared; they are always kept.
 """
 
 from __future__ import annotations
@@ -43,7 +44,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--sample-metadata",
         type=Path,
-        help="Canonical sample_metadata TSV/CSV (default: roles from the RAW headers)",
+        help="Canonical sample_metadata TSV/CSV (default: the saved run snapshot)",
+    )
+    parser.add_argument(
+        "--dll-dir",
+        type=Path,
+        help=(
+            "trusted RawFileReader DLL folder; enables RAW-header sample roles "
+            "for an older result without saved sample metadata"
+        ),
     )
     parser.add_argument(
         "--istd-list",
@@ -91,8 +100,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             metadata = read_sample_metadata_file(args.sample_metadata)
             sample_source = str(args.sample_metadata)
         else:
-            metadata = read_run_samples(source)
-            sample_source = f"RAW headers: {source.raw_dir}" if metadata else ""
+            metadata = read_run_samples(source, dll_dir=args.dll_dir)
+            saved = source.source_dir / "sample_metadata.tsv"
+            if not metadata:
+                sample_source = ""
+            elif saved.is_file():
+                sample_source = str(saved)
+            else:
+                sample_source = f"RAW headers: {source.raw_dir}"
         istd: tuple[IstdWindow, ...] | None
         if args.istd_list is not None:
             istd, istd_source = read_istd_file(args.istd_list), str(args.istd_list)

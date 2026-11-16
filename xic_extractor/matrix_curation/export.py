@@ -140,16 +140,18 @@ def read_sample_metadata_file(path: Path) -> tuple[SampleMetadata, ...]:
     return load_sample_metadata(path)
 
 
-def read_run_samples(source: CurationSource) -> tuple[SampleMetadata, ...] | None:
+def read_run_samples(
+    source: CurationSource, *, dll_dir: Path | None = None
+) -> tuple[SampleMetadata, ...] | None:
     """The run's saved sample data, else its RAW-header roles.
 
-    Used when no sample data was supplied; None when the RAW folder or the
-    reader is not available on this computer.
+    RAW headers are read only with a DLL directory supplied by the current
+    caller. Run metadata is provenance and never selects executable assemblies.
     """
     saved = source.source_dir / "sample_metadata.tsv"
     if saved.is_file():
         return read_sample_metadata_file(saved)
-    if source.raw_dir is None or source.dll_dir is None:
+    if source.raw_dir is None or dll_dir is None:
         return None
     if not source.raw_dir.is_dir():
         return None
@@ -158,7 +160,7 @@ def read_run_samples(source: CurationSource) -> tuple[SampleMetadata, ...] | Non
 
     try:
         return read_analysis_set(
-            source.raw_dir, source.dll_dir, analysis="untargeted"
+            source.raw_dir, dll_dir, analysis="untargeted"
         ).sample_metadata
     except OSError, RawReaderError, ValueError:
         return None

@@ -84,7 +84,6 @@ function renderCuration(snapshot) {
             file: `選擇的檔案 ${pathTail(source.label)}`,
             run: `${source.label}（${detection.sample_count} 個樣本，${detection.study_sample_count} 個未排除研究樣本）`,
             confirmed: "RAW 資料夾已確認的樣本資訊",
-            raw: `依 RAW 檔頭判定角色 ${pathTail(source.label)}`,
           }[source.kind],
     );
     const istd = detection.istd_source;

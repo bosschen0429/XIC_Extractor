@@ -166,23 +166,16 @@ def test_cli_does_not_overwrite_existing_output(tmp_path):
     assert marker.read_text() == "existing result"
 
 
-def test_sample_data_prefers_file_then_run_then_confirmed_then_raw_headers(
-    tmp_path, monkeypatch
-):
+def test_workbench_sample_data_never_uses_imported_reader_paths(tmp_path, monkeypatch):
     from xic_workbench.matrix_curation import describe_source
-    from xic_workbench.samples import from_payload, save_batch_samples
+    from xic_workbench.samples import save_batch_samples
 
     config = tmp_path / "config"
     raw_dir = tmp_path / "raw"
     source = alignment_output(tmp_path / "alignment", raw_dir=raw_dir)
-    header_reads = []
-
-    def read_analysis_set(root, dll_dir, **_kwargs):
-        header_reads.append((root, dll_dir))
-        return SimpleNamespace(sample_metadata=from_payload(sample_payload()))
-
     monkeypatch.setattr(
-        "xic_extractor.raw_sequence.read_analysis_set", read_analysis_set
+        "xic_extractor.raw_sequence.read_analysis_set",
+        lambda *_args, **_kwargs: pytest.fail("Workbench opened imported RAW metadata"),
     )
 
     def detect(**values):
@@ -198,13 +191,13 @@ def test_sample_data_prefers_file_then_run_then_confirmed_then_raw_headers(
         )
 
     assert "找不到本次分析的樣本資訊" in finite(missing)["unavailable_reason"]
-    assert header_reads == []
 
     raw_dir.mkdir()
-    from_headers = detect()
-    assert from_headers["sample_source"] == {"kind": "raw", "label": str(raw_dir)}
-    assert finite(from_headers)["unavailable_reason"] == ""
-    assert header_reads == [(raw_dir, source / "dll")]
+    still_missing = detect()
+    assert still_missing["sample_source"] is None
+    assert "找不到本次分析的樣本資訊" in finite(still_missing)[
+        "unavailable_reason"
+    ]
 
     confirmed = save_batch_samples(config, raw_dir, sample_payload())["path"]
     assert detect()["sample_source"] == {"kind": "confirmed", "label": confirmed}
@@ -214,8 +207,38 @@ def test_sample_data_prefers_file_then_run_then_confirmed_then_raw_headers(
     write_tsv(samples, sample_rows(), SAMPLE_METADATA_COLUMNS)
     chosen = detect(samples=sample_payload(), sample_metadata_path=str(samples))
     assert chosen["sample_source"] == {"kind": "file", "label": str(samples)}
-    assert len(header_reads) == 1
     assert Path(chosen["output_dir"]).parent == source
+
+
+def test_run_samples_requires_an_explicit_reader_directory(tmp_path, monkeypatch):
+    from xic_extractor.matrix_curation.export import read_run_samples
+    from xic_extractor.matrix_curation.source import locate_curation_source
+    from xic_workbench.samples import from_payload
+
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    folder = alignment_output(tmp_path / "alignment", raw_dir=raw_dir)
+    source = locate_curation_source(folder)
+    imported_dll_dir = Path(
+        json.loads((folder / "alignment_run_metadata.json").read_text())["dll_dir"]
+    )
+    header_reads = []
+
+    def read_analysis_set(root, dll_dir, **_kwargs):
+        header_reads.append((root, dll_dir))
+        return SimpleNamespace(sample_metadata=from_payload(sample_payload()))
+
+    monkeypatch.setattr(
+        "xic_extractor.raw_sequence.read_analysis_set", read_analysis_set
+    )
+
+    assert read_run_samples(source) is None
+    trusted_dll_dir = tmp_path / "trusted-reader"
+    assert trusted_dll_dir != imported_dll_dir
+    rows = read_run_samples(source, dll_dir=trusted_dll_dir)
+
+    assert rows == from_payload(sample_payload())
+    assert header_reads == [(raw_dir, trusted_dll_dir)]
 
 
 def test_saved_run_samples_are_reused_without_raw_or_current_batch_settings(tmp_path):
