@@ -773,13 +773,15 @@
     const measuredMz=c&&Object.prototype.hasOwnProperty.call(c.witness||{},"ms1_apex_mz")?`<p data-readout="measured-mz">實測 MS1 apex m/z：${finite(c.witness.ms1_apex_mz)?c.witness.ms1_apex_mz.toFixed(6):"未提供"}</p>`:"";
     if(!curve)return `<div class="integration-empty"><strong>${esc(sampleName(state.sample))}</strong>${measuredMz}<p>沒有保存曲線</p></div>`;
     const candidateName=c?(c.witness?.label||c.witness?.title||c.witness?.role||`候選 ${c.index+1}`):'',stage=curve.stage_label||curve.kind||'保留曲線';
+    // A curve area equal to the published value would repeat it; another peak's area stays for comparison.
+    const quantity=row.quantitative_value, sameArea=finite(curve.area)&&finite(quantity)&&Math.abs(curve.area-quantity)<=1e-9*Math.abs(quantity);
     const rawApex=curve.integration?.raw_apex_rt_min, showRaw=finite(rawApex)&&(!finite(curve.apex_rt)||Math.abs(rawApex-curve.apex_rt)>1e-7);
     return `<div class="readout-heading"><strong>${esc([c?candidateName:'',stage===candidateName?'':stage].filter(Boolean).join(' · '))}</strong><span>原始 RT</span></div>${measuredMz}<dl class="integration-grid">${[
       // A curve saved without its integration lists only what it carries.
       ['積分範圍','bounds',finite(curve.bound_left_rt)||finite(curve.bound_right_rt)?`${drt(curve.bound_left_rt)}–${drt(curve.bound_right_rt)} min`:''],
       ['積分峰頂','apex',finite(curve.apex_rt)?drtMin(curve.apex_rt):''],
       ['原始訊號峰頂','raw-apex',showRaw?`${drt(rawApex)} min`:''],
-      ['本次積分面積','area',finite(curve.area)?`${curve.area.toExponential(3)} <span>counts·s</span>`:''],
+      ['本次積分面積','area',finite(curve.area)&&!sameArea?`${curve.area.toExponential(3)} <span>counts·s</span>`:''],
       ['正式定量值','quantity',areaText(row)],
     ].filter(([,,value])=>value).map(([label,key,value])=>`<div><dt>${label}</dt><dd data-readout="${key}">${value}</dd></div>`).join('')}</dl>`;
   }

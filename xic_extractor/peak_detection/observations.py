@@ -339,7 +339,6 @@ def physical_peak_observation_integration(
         )
     return replace(
         integration,
-        height_smoothed=segment.height,
         raw_scan_indices=tuple(range(segment.start_index, segment.end_index)),
     )
 

@@ -393,6 +393,25 @@ windows are method parameters (see [Area changes](#area-changes)).
   window, MS2/NL opportunity, CID-NL evidence and cross-sample gates decide
   acceptance ([decision policy](decision-policy.md)).
 
+### Reported height and area
+
+Values written to outputs or shown for review report height without baseline
+subtraction and area with it:
+
+- `Int` and `height_raw` are the raw maximum inside the selected segment;
+  `IntSmoothed` and `height_smoothed` are the Gaussian trace at the selected
+  apex.
+- Matrix and workbook `Area` are the morphology area. A review curve shows its
+  own morphology area, which equals the published value on the curve that gave
+  it. Raw area is never a fallback: a peak without a morphology area publishes
+  none (Alignment `missing_ms1_morphology_area`; Targeted
+  `missing_positive_ms1_peak`).
+- `area_raw_counts_seconds` stays internal grouping evidence (shoulder test and
+  owner order) and is not shown.
+
+Segmentation, selection, grouping and blank qualification keep their own
+signals; this rule does not change which peaks are kept.
+
 ### Area changes
 
 - Area differences from legacy integration are accepted expected differences;

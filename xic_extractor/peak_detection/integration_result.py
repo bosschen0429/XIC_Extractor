@@ -18,7 +18,6 @@ _FLOAT_FIELDS = (
     "area_raw_counts_seconds",
 )
 _OPTIONAL_FLOAT_FIELDS = (
-    "area_baseline_corrected",
     "area_uncertainty",
     "baseline_residual_mad",
     "baseline_score",
@@ -42,7 +41,6 @@ class IntegrationResult:
     area_raw_counts_seconds: float
     integration_method: str = "raw_trapezoid"
     boundary_sources: tuple[str, ...] = ("candidate_interval",)
-    area_baseline_corrected: float | None = None
     area_uncertainty: float | None = None
     area_uncertainty_formula_version: str = ""
     baseline_residual_mad: float | None = None

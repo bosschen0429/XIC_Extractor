@@ -29,6 +29,7 @@ from xic_extractor.peak_detection.models import (
     PeakDetectionResult,
     PeakResult,
 )
+from xic_extractor.peak_detection.ms1_morphology import MS1_MORPHOLOGY_AREA_SOURCE
 
 
 def _target(label: str, *, neutral_loss_da: float | None = 116.0474) -> Target:
@@ -332,6 +333,18 @@ def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
         )
     )
     assert selected is not None
+    # Built without a trace, the hypothesis has no morphology area; give it the
+    # measured area the legacy row reports so only finalized identity differs.
+    legacy_peak = legacy.peak_result.peak
+    assert legacy_peak is not None
+    selected = replace(
+        selected,
+        integration=replace(
+            selected.integration,
+            area_ms1_morphology=legacy_peak.area,
+            ms1_morphology_area_source=MS1_MORPHOLOGY_AREA_SOURCE,
+        ),
+    )
     with_selected = build_extraction_result(
         peak_result=legacy.peak_result,
         nl_result=legacy.nl,
@@ -378,7 +391,9 @@ def test_csv_rows_project_selected_integration_values_when_present() -> None:
                 rt_width_min=-0.42,
                 height_raw=765.0,
                 height_smoothed=700.0,
-                area_raw_counts_seconds=4567.89,
+                area_raw_counts_seconds=9999.0,
+                area_ms1_morphology=4567.89,
+                ms1_morphology_area_source=MS1_MORPHOLOGY_AREA_SOURCE,
             )
         ),
     )

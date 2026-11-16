@@ -64,7 +64,6 @@ from xic_extractor.output.targeted_product_model import (
 )
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
-    MeasuredPeakHypothesis,
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.processing_identity import (
@@ -505,7 +504,7 @@ def _finalized_extraction_result(
         if (
             value is None
             or type(evidence) is not ObservedSearchSubject
-            or _hypothesis_area(evidence.hypothesis) != value
+            or evidence.hypothesis.peak.integration.area_ms1_morphology != value
         ):
             raise TargetedOutputBoundaryError(
                 "finalized Targeted value does not match its public result model"
@@ -551,13 +550,6 @@ def _finalized_extraction_result(
         selection_decision=None,
         targeted_product_projection=projection,
     )
-
-
-def _hypothesis_area(hypothesis: MeasuredPeakHypothesis) -> float:
-    integration = hypothesis.peak.integration
-    if integration.area_ms1_morphology is not None:
-        return integration.area_ms1_morphology
-    return integration.area_raw_counts_seconds
 
 
 def _same_physical_peak(

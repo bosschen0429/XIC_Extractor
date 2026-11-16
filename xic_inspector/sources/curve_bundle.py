@@ -46,10 +46,10 @@ class PeakBounds:
 
 @dataclass(frozen=True, slots=True)
 class CurveIntegration:
-    """Saved integration metadata; the Inspector never integrates the series."""
+    """Area and apex of the value this curve gave; the Inspector never integrates."""
 
-    area_raw_counts_seconds: float
-    raw_apex_rt_min: float
+    area_counts_seconds: float
+    apex_rt_min: float
     integration_method: str
 
 
@@ -188,11 +188,11 @@ def _integration(value: object, where: str) -> CurveIntegration | None:
     obj = _mapping(
         value,
         where,
-        {"area_raw_counts_seconds", "raw_apex_rt_min", "integration_method"},
+        {"area_counts_seconds", "apex_rt_min", "integration_method"},
     )
     return CurveIntegration(
-        _number(obj.get("area_raw_counts_seconds"), f"{where}.area_raw_counts_seconds"),
-        _number(obj.get("raw_apex_rt_min"), f"{where}.raw_apex_rt_min"),
+        _number(obj.get("area_counts_seconds"), f"{where}.area_counts_seconds"),
+        _number(obj.get("apex_rt_min"), f"{where}.apex_rt_min"),
         _text(obj.get("integration_method"), f"{where}.integration_method"),
     )
 
@@ -615,7 +615,7 @@ class CurveBundleSource:
                         "raw_intensities": trace.raw.intensity,
                         "processed_curves": processed,
                         "quality_flags": trace.quality_flags,
-                        "area": trace.integration.area_raw_counts_seconds
+                        "area": trace.integration.area_counts_seconds
                         if trace.integration
                         else None,
                         "integration": asdict(trace.integration)
@@ -628,7 +628,7 @@ class CurveBundleSource:
                         # the value it gave.
                         "apex_rt": trace.peak_bounds.apex
                         if trace.peak_bounds
-                        else trace.integration.raw_apex_rt_min
+                        else trace.integration.apex_rt_min
                         if trace.integration
                         else None,
                         "bound_right_rt": trace.peak_bounds.end
@@ -692,14 +692,12 @@ class CurveBundleSource:
                                         "value": trace.integration.integration_method,
                                     },
                                     {
-                                        "label": "Raw area (counts·s)",
-                                        "value": (
-                                            trace.integration.area_raw_counts_seconds
-                                        ),
+                                        "label": "Area (counts·s)",
+                                        "value": trace.integration.area_counts_seconds,
                                     },
                                     {
-                                        "label": "Raw apex (min)",
-                                        "value": trace.integration.raw_apex_rt_min,
+                                        "label": "Apex (min)",
+                                        "value": trace.integration.apex_rt_min,
                                     },
                                 ]
                                 if trace.integration

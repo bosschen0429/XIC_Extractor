@@ -492,7 +492,6 @@ def _integration(apex_rt: float) -> IntegrationResult:
         height_raw=100.0,
         height_smoothed=100.0,
         area_raw_counts_seconds=1_000.0,
-        area_baseline_corrected=900.0,
         baseline_type="asls",
         boundary_sources=("test_owner",),
         area_ms1_morphology=900.0,

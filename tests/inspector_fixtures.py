@@ -233,6 +233,10 @@ def inspector_curve_payload(
                 height_raw=1000.0,
                 height_smoothed=1000.0,
                 area_raw_counts_seconds=2500.0,
+                area_ms1_morphology=2400.0,
+                ms1_morphology_area_source=(
+                    "trapezoid_counts_seconds_on_canonical_signal"
+                ),
             )
         ),
         "provenance": {

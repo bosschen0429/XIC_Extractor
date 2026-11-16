@@ -436,7 +436,6 @@ def test_alignment_writers_preserve_physical_owner_area_source(
 ) -> None:
     integration = _integration(
         raw_area=66.6,
-        asls_area=None,
         morphology_area=66.6,
         morphology_area_source=area_source,
     )
@@ -648,7 +647,7 @@ def test_advisory_signal_quality_is_sample_scoped_and_matrix_unchanged(tmp_path)
     from xic_extractor.peak_detection.signal_quality import SignalQuality
 
     def cell(area: float, signal_to_noise: float | None) -> ProductionCellDecision:
-        integration = _integration(raw_area=area, asls_area=area)
+        integration = _integration(raw_area=area)
         if signal_to_noise is not None:
             integration = replace(
                 integration,
@@ -726,7 +725,6 @@ def _display_collision_matrix() -> object:
 def _integration(
     *,
     raw_area: float,
-    asls_area: float | None,
     baseline_type: str = "asls",
     morphology_area: float | None = None,
     morphology_area_source: str = "gaussian15_positive_asls_residual",
@@ -740,7 +738,6 @@ def _integration(
         height_raw=100.0,
         height_smoothed=100.0,
         area_raw_counts_seconds=raw_area,
-        area_baseline_corrected=asls_area,
         baseline_type=baseline_type,
         boundary_sources=("test",),
         area_ms1_morphology=morphology_area,

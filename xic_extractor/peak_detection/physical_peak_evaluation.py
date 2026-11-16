@@ -1026,7 +1026,6 @@ def _physical_raw_descriptor_projection(
             if censored
             else ("canonical_physical_segment",)
         ),
-        area_baseline_corrected=selected.area_counts_seconds,
         baseline_type=prepared.profile.baseline_method,
         raw_scan_indices=(),
         area_ms1_morphology=selected.area_counts_seconds,
