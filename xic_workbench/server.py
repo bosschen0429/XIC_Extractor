@@ -95,6 +95,12 @@ _INSPECTOR_ASSETS = {
     "/assets/delta_mass.js": ("delta_mass.js", "text/javascript; charset=utf-8"),
     "/assets/inspector.css": ("inspector.css", "text/css; charset=utf-8"),
 }
+_ARTIFACT_HTML_CSP = (
+    "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; "
+    "style-src 'unsafe-inline'; img-src data:; font-src data:; "
+    "connect-src 'none'; form-action 'none'; base-uri 'none'; "
+    "frame-src 'none'; object-src 'none'"
+)
 
 
 class _WorkbenchHTTPServer(ThreadingHTTPServer):
@@ -300,9 +306,10 @@ def create_server(
                     mimetypes.guess_type(path.name)[0] or "application/octet-stream"
                 )
                 headers = {}
-                if path.suffix.lower() != ".html" or parse_qs(url.query).get(
-                    "download"
-                ) == ["1"]:
+                download = parse_qs(url.query).get("download") == ["1"]
+                if path.suffix.lower() == ".html" and not download:
+                    headers["Content_Security_Policy"] = _ARTIFACT_HTML_CSP
+                else:
                     from urllib.parse import quote
 
                     headers["Content_Disposition"] = (

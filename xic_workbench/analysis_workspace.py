@@ -6,10 +6,19 @@ import os
 import shutil
 import sys
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Protocol
 
 from xic_workbench.json_transport import json_value
+
+
+@dataclass(frozen=True, slots=True)
+class _RegisteredArtifact:
+    source: Path
+    served: Path
+    version: str | None
 
 
 class AnalysisJobControl(Protocol):
@@ -110,7 +119,12 @@ class AnalysisWorkspace:
         self.defaults = defaults
         self.jobs = jobs
         self.curation = curation
-        self._files: dict[str, Path] = {}
+        self._artifact_temporary = TemporaryDirectory(
+            prefix="xic-workbench-artifacts-"
+        )
+        self._artifact_folder = Path(self._artifact_temporary.name)
+        self._files: dict[str, _RegisteredArtifact] = {}
+        self._result_versions: dict[str, str] = {}
 
     def bootstrap(self) -> dict[str, Any]:
         from xic_extractor.configuration.loader import default_output_dir
@@ -225,35 +239,61 @@ class AnalysisWorkspace:
 
     def state(self) -> dict[str, Any]:
         state = json_value(self.jobs.state())
-        for result in state["results"].values():
+        job = state.get("job")
+        if (
+            job is not None
+            and job.get("status") == "succeeded"
+            and job.get("kind") in state["results"]
+        ):
+            # Only a new successful publication may replace an earlier snapshot.
+            self._result_versions[job["kind"]] = job["job_id"]
+        for kind, result in state["results"].items():
+            version = self._result_versions.setdefault(kind, kind)
             paths = result.get("published_paths", [])
             paths += [
                 result[key] for key in ("output", "manifest_path") if result.get(key)
             ]
             result["artifacts"] = [
-                self.register_artifact(Path(path))
+                self.register_artifact(Path(path), version=version)
                 for path in paths
                 if Path(path).is_file()
             ]
-        job = state.get("job")
         if job is not None:
             for item in job.get("available_outputs", []):
                 if Path(item["path"]).is_file():
-                    item["artifact"] = self.register_artifact(Path(item["path"]))
+                    item["artifact"] = self.register_artifact(
+                        Path(item["path"]), version=job["job_id"]
+                    )
         return state
 
-    def register_artifact(self, path: Path) -> dict[str, str]:
+    def register_artifact(
+        self, path: Path, *, version: str | None = None
+    ) -> dict[str, str]:
         """Expose a published or opened result through the local file allowlist."""
         path = path.resolve()
-        key = next((key for key, value in self._files.items() if value == path), None)
+        key = next(
+            (
+                key
+                for key, artifact in self._files.items()
+                if artifact.source == path and artifact.version == version
+            ),
+            None,
+        )
         if key is None:
             key = uuid.uuid4().hex
-            self._files[key] = path
+            served = path
+            if path.suffix.lower() == ".html":
+                # Active content is frozen before its URL becomes browser-reachable.
+                snapshot_folder = self._artifact_folder / key
+                snapshot_folder.mkdir()
+                served = snapshot_folder / path.name
+                shutil.copyfile(path, served)
+            self._files[key] = _RegisteredArtifact(path, served, version)
         return {"name": path.name, "path": str(path), "url": f"/files/{key}"}
 
     def artifact_path(self, key: str) -> Path:
         try:
-            return self._files[key]
+            return self._files[key].served
         except KeyError as exc:
             raise ValueError("這個檔案不屬於目前工作區的輸出。") from exc
 
@@ -449,4 +489,7 @@ class AnalysisWorkspace:
         raise ValueError("不支援此操作。")
 
     def close(self) -> None:
-        self.jobs.close()
+        try:
+            self.jobs.close()
+        finally:
+            self._artifact_temporary.cleanup()
