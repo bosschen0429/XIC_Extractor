@@ -38,6 +38,8 @@ _MIN_COMMON_SAMPLES = 6
 _FAMILY_RT_MIN = 0.05
 # Groups without their own anchor borrow shapes from anchors nearby in RT.
 _SHAPE_BANDWIDTH_MIN = 1.0
+# Pattern correspondence considers the displacement of anchors this close.
+_TRACK_RT_WINDOW_MIN = 2.0 * _SHAPE_BANDWIDTH_MIN
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,13 +53,41 @@ class RtAnchorObservation:
 
 
 @dataclass(frozen=True, slots=True)
+class DriftCoefficients:
+    """A group's response to batch state (unit shape) and sample shift (min)."""
+
+    time: float = 0.0
+    sample_shift: float = 0.0
+
+    @property
+    def nonzero_count(self) -> int:
+        return int(self.time != 0.0) + int(self.sample_shift != 0.0)
+
+    def offset_min(
+        self, batch_state: float | None, sample_shift: float | None
+    ) -> float | None:
+        """Predicted drift, or None when a used regressor is unknown."""
+        offset = 0.0
+        if self.time:
+            if batch_state is None:
+                return None
+            offset += self.time * batch_state
+        if self.sample_shift:
+            if sample_shift is None:
+                return None
+            offset += self.sample_shift * sample_shift
+        return offset
+
+
+@dataclass(frozen=True, slots=True)
 class DriftAnchor:
     """A channel that drifts beyond the general map, with its frozen B shape.
 
     ``shape`` is the channel's injection-order trend after removing its
     sample-shift response, scaled to a unit 5-95% range and oriented to rise
     with injection order. ``sample_shift_member`` marks channels whose
-    detrended offsets define M.
+    detrended offsets define M. ``coefficients`` is the channel's own fit
+    against its shape and M, used to predict its displacement between samples.
     """
 
     channel: str
@@ -65,6 +95,7 @@ class DriftAnchor:
     family: int
     sample_shift_member: bool
     shape: Mapping[str, float]
+    coefficients: DriftCoefficients = DriftCoefficients()
     owner_ids: frozenset[str] = field(default_factory=frozenset, compare=False)
 
 
@@ -112,6 +143,21 @@ class RtDriftModel:
             if total > 0:
                 blended[sample] = sum(w * v for w, v in pairs) / total
         return _unit_range(blended)
+
+    def displacements(
+        self, rt_min: float, first: str, second: str
+    ) -> tuple[float, ...]:
+        """Second-minus-first drift predicted by each anchor near this RT."""
+        values = set()
+        for anchor in self.anchors:
+            if abs(anchor.reference_rt_min - rt_min) > _TRACK_RT_WINDOW_MIN:
+                continue
+            offsets = self.sample_offsets(anchor.coefficients, anchor.shape)
+            if first in offsets and second in offsets:
+                value = offsets[second] - offsets[first]
+                if value:
+                    values.add(value)
+        return tuple(sorted(values))
 
     def sample_offsets(
         self, coefficients: DriftCoefficients, batch_state: Mapping[str, float]
@@ -183,7 +229,12 @@ def fit_batch_rt_model(
     measured_istds: Sequence[tuple[str, str, float]] = (),
     channel_owner_ids: Mapping[str, frozenset[str]] | None = None,
 ) -> tuple[BatchRtCalibration, RtDriftModel]:
-    """Fit, exclude channels that drift together, refit, then freeze B and M."""
+    """Fit, refit without channels the map cannot carry, then freeze B and M.
+
+    A channel left with large residual spread either drifts beyond the map or
+    mixes peaks across samples; neither can anchor the general map. Those that
+    another elution family reproduces are drift anchors.
+    """
 
     def fit(selected: Mapping[str, Mapping[str, float]]) -> BatchRtCalibration:
         return build_batch_rt_calibration(
@@ -196,12 +247,11 @@ def fit_batch_rt_model(
         )
 
     first = fit(channels)
-    drifting = _drifting_channels(
-        _calibrated(channels, first), injection_order, _families(channels)
-    )
+    unsettled = _unsettled_channels(_calibrated(channels, first), injection_order)
+    drifting = frozenset(_synchronized(unsettled, _families(channels)))
     calibration = (
-        fit({key: value for key, value in channels.items() if key not in drifting})
-        if drifting
+        fit({key: value for key, value in channels.items() if key not in unsettled})
+        if unsettled
         else first
     )
     calibrated = _calibrated({key: channels[key] for key in drifting}, calibration)
@@ -253,31 +303,20 @@ def _robust_spread_sec(values: Sequence[float]) -> float:
     return 1.4826 * float(median(abs(v - center) for v in values)) * 60.0
 
 
-def _drifting_channels(
-    calibrated: Mapping[str, Mapping[str, float]],
-    orders: Mapping[str, int],
-    families: Mapping[str, int],
-) -> frozenset[str]:
-    """Large residual spread that another family's channel reproduces."""
-    candidates = {
-        channel: values
+def _unsettled_channels(
+    calibrated: Mapping[str, Mapping[str, float]], orders: Mapping[str, int]
+) -> dict[str, dict[str, float]]:
+    """Residuals of channels whose spread the general map leaves large."""
+    return {
+        channel: {
+            sample: rt - median(values.values())
+            for sample, rt in values.items()
+            if sample in orders
+        }
         for channel, values in calibrated.items()
         if len(values) >= _MIN_COMMON_SAMPLES
         and _robust_spread_sec(list(values.values())) >= _DRIFT_SPREAD_SEC
     }
-    return frozenset(
-        _synchronized(
-            {
-                channel: {
-                    sample: rt - median(values.values())
-                    for sample, rt in values.items()
-                    if sample in orders
-                }
-                for channel, values in candidates.items()
-            },
-            families,
-        )
-    )
 
 
 def _synchronized(
@@ -448,6 +487,12 @@ def _drift_model(
                 families[channel],
                 channel in members,
                 shape,
+                _own_fit(
+                    [
+                        (rt, shape.get(sample), sample_shift.get(sample))
+                        for sample, rt in calibrated[channel].items()
+                    ]
+                ),
                 owner_ids.get(channel, frozenset()),
             )
         )
@@ -477,33 +522,6 @@ MIN_COEFFICIENT_MEMBERS = 6
 _MIN_BATCH_STATE_RANGE = 0.25
 _MIN_SAMPLE_SHIFT_RANGE_MIN = 10.0 / 60.0
 _BACKFIT_ITERATIONS = 20
-
-
-@dataclass(frozen=True, slots=True)
-class DriftCoefficients:
-    """A group's response to batch state (unit shape) and sample shift (min)."""
-
-    time: float = 0.0
-    sample_shift: float = 0.0
-
-    @property
-    def nonzero_count(self) -> int:
-        return int(self.time != 0.0) + int(self.sample_shift != 0.0)
-
-    def offset_min(
-        self, batch_state: float | None, sample_shift: float | None
-    ) -> float | None:
-        """Predicted drift, or None when a used regressor is unknown."""
-        offset = 0.0
-        if self.time:
-            if batch_state is None:
-                return None
-            offset += self.time * batch_state
-        if self.sample_shift:
-            if sample_shift is None:
-                return None
-            offset += self.sample_shift * sample_shift
-        return offset
 
 
 def candidate_coefficients(
@@ -545,6 +563,26 @@ def candidate_coefficients(
                 break
         models.append(DriftCoefficients(time=a, sample_shift=c))
     return tuple(model for model in models if model.nonzero_count)
+
+
+def _own_fit(
+    points: Sequence[tuple[float, float | None, float | None]],
+) -> DriftCoefficients:
+    """The candidate leaving the least robust residual spread; zero if none."""
+    best = (_robust_spread_sec([y for y, _, _ in points]), 0, DriftCoefficients())
+    for model in candidate_coefficients(points):
+        adjusted = [
+            y - offset
+            for y, b, m in points
+            if (offset := model.offset_min(b, m)) is not None
+        ]
+        if len(adjusted) >= MIN_COEFFICIENT_MEMBERS:
+            best = min(
+                best,
+                (_robust_spread_sec(adjusted), model.nonzero_count, model),
+                key=lambda item: (item[0], item[1]),
+            )
+    return best[2]
 
 
 def _columns(pairs: Sequence[tuple[float, float]]) -> tuple[list[float], list[float]]:
