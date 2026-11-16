@@ -247,7 +247,10 @@ def fit_batch_rt_model(
         )
 
     first = fit(channels)
-    unsettled = _unsettled_channels(_calibrated(channels, first), injection_order)
+    cohorts = dict(sample_cohorts or {})
+    unsettled = _unsettled_channels(
+        _calibrated(channels, first), injection_order, cohorts
+    )
     drifting = frozenset(_synchronized(unsettled, _families(channels)))
     calibration = (
         fit({key: value for key, value in channels.items() if key not in unsettled})
@@ -259,6 +262,7 @@ def fit_batch_rt_model(
         calibrated,
         injection_order=injection_order,
         qc_samples=qc_samples,
+        cohorts=cohorts,
         families=_families(calibrated),
         owner_ids=channel_owner_ids or {},
     )
@@ -303,8 +307,27 @@ def _robust_spread_sec(values: Sequence[float]) -> float:
     return 1.4826 * float(median(abs(v - center) for v in values)) * 60.0
 
 
+def _cohort_residuals(
+    values: Mapping[str, float],
+    orders: Mapping[str, int],
+    cohorts: Mapping[str, str],
+) -> dict[str, float]:
+    """Offsets from the same-cohort median, as calibration references are."""
+    by_cohort: dict[str, list[float]] = defaultdict(list)
+    for sample, rt in values.items():
+        by_cohort[cohorts.get(sample, "")].append(rt)
+    centers = {cohort: median(rts) for cohort, rts in by_cohort.items()}
+    return {
+        sample: rt - centers[cohorts.get(sample, "")]
+        for sample, rt in values.items()
+        if sample in orders
+    }
+
+
 def _unsettled_channels(
-    calibrated: Mapping[str, Mapping[str, float]], orders: Mapping[str, int]
+    calibrated: Mapping[str, Mapping[str, float]],
+    orders: Mapping[str, int],
+    cohorts: Mapping[str, str],
 ) -> dict[str, dict[str, float]]:
     """Residuals of channels whose spread the general map leaves large.
 
@@ -312,13 +335,13 @@ def _unsettled_channels(
     to test synchrony: a channel mixing two peaks can qualify as an anchor
     with few samples and still bend a sparsely supported part of the map.
     """
-    return {
-        channel: {
-            sample: rt - median(values.values())
-            for sample, rt in values.items()
-            if sample in orders
-        }
+    residuals = {
+        channel: _cohort_residuals(values, orders, cohorts)
         for channel, values in calibrated.items()
+    }
+    return {
+        channel: values
+        for channel, values in residuals.items()
         if len(values) >= 2
         and _robust_spread_sec(list(values.values())) >= _DRIFT_SPREAD_SEC
     }
@@ -403,17 +426,14 @@ def _drift_model(
     *,
     injection_order: Mapping[str, int],
     qc_samples: frozenset[str],
+    cohorts: Mapping[str, str],
     families: Mapping[str, int],
     owner_ids: Mapping[str, frozenset[str]],
 ) -> RtDriftModel:
     if not calibrated:
         return RtDriftModel()
     residual = {
-        channel: {
-            sample: rt - median(values.values())
-            for sample, rt in values.items()
-            if sample in injection_order
-        }
+        channel: _cohort_residuals(values, injection_order, cohorts)
         for channel, values in calibrated.items()
     }
     # Pooled QC has a fixed matrix, so its trend is batch state alone.

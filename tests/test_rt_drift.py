@@ -181,3 +181,18 @@ def test_anchor_observations_need_direct_quantifiable_support():
     observations = rt_anchor_observations(scope, candidates)
     assert [o.owner_id for o in observations] == [owners[0].owner_id]
     assert observations[0].channel == "precursor|500"
+
+
+def test_anchor_displacement_lets_a_drifted_main_peak_match_its_main_peak():
+    from xic_extractor.alignment.peak_trajectories import _match_patterns
+    from xic_extractor.peak_detection.elution_context import ElutionLandmark
+
+    left = [ElutionLandmark(10.0, 100.0, 0.2), ElutionLandmark(10.6, 10.0, 0.2)]
+    right = [ElutionLandmark(10.6, 100.0, 0.2), ElutionLandmark(11.2, 10.0, 0.2)]
+    # Without drift the main peak can only meet the minor peak: one pair.
+    assert _match_patterns(left, right, max_shift=0.0) is None
+    match = _match_patterns(left, right, max_shift=0.0, shift_hypotheses=(0.6,))
+    assert match is not None and match.pairs == ((0, 0), (1, 1))
+    # A complete undrifted match keeps winning over a partial drifted one.
+    still = _match_patterns(left, left, max_shift=0.0, shift_hypotheses=(0.6,))
+    assert still is not None and still.pairs == ((0, 0), (1, 1))

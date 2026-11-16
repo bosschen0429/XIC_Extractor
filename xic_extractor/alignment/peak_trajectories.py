@@ -870,6 +870,7 @@ def resolve_peak_trajectories(
         for index, node in enumerate(nodes)
         if (peak := _common_rt_peak(node.sample, node.landmark, rt_frame)) is not None
     }
+    drift = rt_frame.drift_model if rt_frame is not None else None
     matches = []
     comparisons = 0
     for left, right in _neighbor_pairs(
@@ -882,18 +883,29 @@ def resolve_peak_trajectories(
         comparisons += 1
         calibrated = all(index in common_peaks for index in (*left.nodes, *right.nodes))
         # A measured map already supplies the displacement. Fit the residual
-        # within the transformed peak widths; a second free shift could match
-        # a neighboring pattern instead. Unsupported pairs retain raw matching.
+        # within the transformed peak widths; a free shift could match a
+        # neighboring pattern instead. Compounds that drift beyond the map
+        # move by a frozen anchor's predicted displacement, so those discrete
+        # displacements are the only other hypotheses. Unsupported pairs
+        # retain raw matching.
+        left_peaks = [
+            common_peaks[index] if calibrated else nodes[index].landmark
+            for index in left.nodes
+        ]
         match = _match_patterns(
-            [
-                common_peaks[index] if calibrated else nodes[index].landmark
-                for index in left.nodes
-            ],
+            left_peaks,
             [
                 common_peaks[index] if calibrated else nodes[index].landmark
                 for index in right.nodes
             ],
             max_shift=0.0 if calibrated else _RAW_PATTERN_SHIFT_MIN,
+            shift_hypotheses=drift.displacements(
+                sum(peak.apex_rt for peak in left_peaks) / len(left_peaks),
+                left.sample,
+                right.sample,
+            )
+            if calibrated and drift is not None
+            else (),
         )
         if match is not None:
             gap = abs(
@@ -1301,7 +1313,13 @@ def _match_patterns(
     right: Sequence[ElutionLandmark | _CommonRtPeak],
     *,
     max_shift: float,
+    shift_hypotheses: Sequence[float] = (),
 ) -> _Match | None:
+    """The unique best ordered pairing under one shared displacement.
+
+    Displacements range within ``max_shift``; ``shift_hypotheses`` adds
+    discrete displacements, each checked only at its own value.
+    """
     heights = max(peak.height for peak in left), max(peak.height for peak in right)
     deltas = [[b.apex_rt - a.apex_rt for b in right] for a in left]
     tolerances = [[(a.width + b.width) / 2.0 for b in right] for a in left]
@@ -1325,6 +1343,7 @@ def _match_patterns(
             )
     ordered = sorted(endpoints)
     shifts.update((a + b) / 2.0 for a, b in zip(ordered, ordered[1:], strict=False))
+    shifts.update(shift_hypotheses)
     empty: _ScoredPath = ((0, 0.0, 0.0), ())
     alternatives: dict[tuple[tuple[int, int], ...], tuple[int, float, float]] = {}
     for shift in sorted(shifts):
