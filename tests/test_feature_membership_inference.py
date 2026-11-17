@@ -6,11 +6,7 @@ from typing import Any, cast
 
 import pytest
 
-from tests.membership_fixtures import (
-    channel_anchor_observations,
-    cid_nl_owner,
-    freeze_channel_anchors,
-)
+from tests.membership_fixtures import cid_nl_owner
 from tests.owner_peak_fixtures import with_peak
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
@@ -27,8 +23,8 @@ from xic_extractor.alignment.feature_membership_inference import (
 from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
 )
-from xic_extractor.alignment.rt_drift import BatchRtModelAccumulator
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 
 
 def infer_feature_memberships(
@@ -101,29 +97,28 @@ def test_rt_calibration_accumulates_support_across_partition_boundaries() -> Non
         )
         for feature in range(12)
     )
-    observations = channel_anchor_observations(groups)
-    accumulators = [
-        BatchRtModelAccumulator(
-            sample_stems=samples,
-            sample_cohorts=dict.fromkeys(samples, "batch"),
-            injection_order={},
-        )
-        for _ in range(2)
-    ]
-    whole, partitioned = accumulators
-    whole.add_observations(observations)
-    for observation in reversed(observations):
-        partitioned.add_observations((observation,))
+    whole = BatchRtCalibrationAccumulator(
+        sample_stems=samples, sample_cohorts=dict.fromkeys(samples, "batch")
+    )
+    whole.add_groups(groups)
+    partitioned = BatchRtCalibrationAccumulator(
+        sample_stems=samples, sample_cohorts=dict.fromkeys(samples, "batch")
+    )
+    for group in reversed(groups):
+        partitioned.add_groups((group,))
     assert partitioned.freeze() == whole.freeze()
-    calibration, _ = whole.freeze()
-    assert calibration.offset_min("s12", 15.0) == pytest.approx(0.2)
-    assert calibration.has_support("s12")
-    assert not calibration.has_support("missing")
+    assert whole.freeze().offset_min("s12", 15.0) == pytest.approx(0.2)
+    assert whole.freeze().has_support("s12")
+    assert not whole.freeze().has_support("missing")
 
 
 def test_rt_calibration_does_not_pool_incompatible_cohort_support() -> None:
     samples = tuple(f"s{i:02}" for i in range(24))
-    result, _ = freeze_channel_anchors(
+    calibration = BatchRtCalibrationAccumulator(
+        sample_stems=samples,
+        sample_cohorts={sample: str(i // 12) for i, sample in enumerate(samples)},
+    )
+    calibration.add_groups(
         tuple(
             tuple(
                 cid_nl_owner(
@@ -132,13 +127,43 @@ def test_rt_calibration_does_not_pool_incompatible_cohort_support() -> None:
                 for i, sample in enumerate(samples)
             )
             for feature in range(12)
-        ),
-        samples=samples,
-        cohorts={sample: str(i // 12) for i, sample in enumerate(samples)},
+        )
     )
+    result = calibration.freeze()
     assert result.common_rt_min("s00", 10) == pytest.approx(10)
     assert result.common_rt_min("s12", 15) == pytest.approx(15)
     assert all(result.has_support(sample) for sample in samples)
+
+
+@pytest.mark.parametrize(
+    "untrusted",
+    (
+        {"quantification_eligible": False},
+        {"primary_identity_event": None},
+    ),
+)
+def test_observations_without_direct_clean_support_do_not_calibrate_others(
+    untrusted,
+) -> None:
+    samples = ("a", "b", "c", "d", "e")
+    groups = tuple(
+        tuple(
+            replace(cid_nl_owner(sample, f"f{i}", apex_rt=8.0 + i), **untrusted)
+            if sample == "e"
+            else cid_nl_owner(sample, f"f{i}", apex_rt=8.0 + i)
+            for sample in samples
+        )
+        for i in range(12)
+    )
+    accumulator = BatchRtCalibrationAccumulator(
+        sample_stems=samples, sample_cohorts=dict.fromkeys(samples, "batch")
+    )
+    accumulator.add_groups(groups)
+    calibration = accumulator.freeze()
+    assert not calibration.has_support("e")
+    assert calibration.samples["e"].anchor_count == 0
+    assert all(calibration.has_support(sample) for sample in samples[:-1])
+    assert all(len(group) == 5 for group in groups)
 
 
 def test_rt_warp_round_trip_uses_the_same_coordinate_system() -> None:

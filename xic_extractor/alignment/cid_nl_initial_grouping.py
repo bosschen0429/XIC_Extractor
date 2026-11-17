@@ -16,6 +16,7 @@ from xic_extractor.alignment.feature_membership_inference import (
 from xic_extractor.alignment.grouping_bootstrap import (
     InitialGroupingScope,
     RetainedGroupingCandidate,
+    measured_calibration_anchor_groups,
 )
 from xic_extractor.alignment.grouping_workflow import (
     build_initial_cid_nl_cross_sample_groups,
@@ -24,6 +25,7 @@ from xic_extractor.alignment.grouping_workflow import (
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
+from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.result.application_result import (
     UntargetedCandidateExclusion,
 )
@@ -33,6 +35,7 @@ from xic_extractor.alignment.rt_drift import (
     RtAnchorObservation,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessment,
@@ -62,6 +65,16 @@ class CidNlGrouping:
     alignment_config: AlignmentConfig
     known_istd_reference: KnownIstdReference | None
     rt_frame: SampleRtFrame
+
+    @property
+    def rt_anchor_groups(self) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
+        return tuple(
+            owners
+            for workset in self.worksets
+            for owners in measured_calibration_anchor_groups(
+                workset.grouping_scope, workset.retained_candidates
+            )
+        )
 
     @property
     def rt_anchor_observations(self) -> tuple[RtAnchorObservation, ...]:
@@ -124,11 +137,14 @@ class CidNlBatchGrouping:
 
     def __init__(self, rt_frame: SampleRtFrame) -> None:
         self._bootstrap_frame = rt_frame
-        self._calibration = BatchRtModelAccumulator(
+        self._calibration = BatchRtCalibrationAccumulator(
             sample_stems=tuple(
                 self._bootstrap_frame.sample_universe
                 or self._bootstrap_frame.injection_order
             ),
+            sample_cohorts=self._bootstrap_frame.sample_cohorts,
+        )
+        self._drift = BatchRtModelAccumulator(
             sample_cohorts=self._bootstrap_frame.sample_cohorts,
             injection_order=self._bootstrap_frame.injection_order,
             qc_samples=self._bootstrap_frame.qc_samples,
@@ -136,17 +152,18 @@ class CidNlBatchGrouping:
         self._rt_frame: SampleRtFrame | None = None
 
     def add_initial(self, prepared: CidNlGrouping) -> None:
-        self._calibration.add_observations(prepared.rt_anchor_observations)
+        self._calibration.add_groups(prepared.rt_anchor_groups)
+        self._drift.add_observations(prepared.rt_anchor_observations)
         self._bootstrap_frame = self._bootstrap_frame.with_sources(
             known_istd_reference=prepared.known_istd_reference
         )
 
     def freeze_calibration(self) -> None:
-        calibration, drift_model = self._calibration.freeze(
+        calibration = self._calibration.freeze(
             measured_istds=self._bootstrap_frame.measured_istd_coordinates
         )
         self._rt_frame = self._bootstrap_frame.with_sample_calibration(
-            calibration, drift_model
+            calibration, self._drift.freeze(calibration)
         )
 
     @property

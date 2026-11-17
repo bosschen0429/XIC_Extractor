@@ -278,19 +278,28 @@ def test_anchor_without_shift_response_keeps_samples_whose_shift_is_unknown():
 
 def test_several_supported_peaks_leave_that_channel_sample_unknown():
     accumulator = BatchRtModelAccumulator(
-        sample_stems=SAMPLES,
-        sample_cohorts=dict.fromkeys(SAMPLES, ""),
-        injection_order=ORDERS,
+        sample_cohorts=dict.fromkeys(SAMPLES, ""), injection_order=ORDERS
+    )
+    # Two drifting channels in different elution families follow SHIFT.
+    accumulator.add_observations(
+        RtAnchorObservation(
+            f"c{channel}", sample, f"{sample}:{channel}", 10.0 * (channel + 1) + shift
+        )
+        for channel in range(2)
+        for sample, shift in SHIFT.items()
     )
     accumulator.add_observations(
-        RtAnchorObservation(f"c{channel}", sample, f"{sample}:{channel}", 8.0 + channel)
-        for channel in range(10)
-        for sample in SAMPLES
+        (RtAnchorObservation("c0", "s00", "s00:second", 10.5),)
     )
-    accumulator.add_observations((RtAnchorObservation("c0", "s00", "s00:second", 8.5),))
-    calibration, _ = accumulator.freeze()
-    assert calibration.samples["s00"].anchor_count == 9
-    assert calibration.samples["s01"].anchor_count == 10
+    identity = BatchRtCalibration.from_coordinate_knots(
+        tuple((sample, ((0.0, 0.0), (60.0, 60.0))) for sample in SAMPLES)
+    )
+    owners = {
+        anchor.channel: anchor.owner_ids
+        for anchor in accumulator.freeze(identity).anchors
+    }
+    assert "s00:0" not in owners["c0"] and "s01:0" in owners["c0"]
+    assert "s00:1" in owners["c1"]
 
 
 def test_anchor_observations_need_direct_quantifiable_support():

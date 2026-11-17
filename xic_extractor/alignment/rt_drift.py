@@ -3,9 +3,10 @@
 General calibration moves every compound at one RT together. A few compounds
 also follow the batch's chromatographic state (B, a smooth trend along
 injection order) and a sample-specific shift (M) that only some compounds
-feel. One accumulator collects low-ambiguity anchor observations; freezing
-fits the general map without the drifting channels and freezes B shapes and
-M before final grouping. Groups then fit two coefficients against them.
+feel. One accumulator collects each method channel's unique peaks; against
+the frozen general map it finds the channels that drift beyond it and freezes
+their B shapes and M before final grouping. Groups then fit two coefficients
+against them.
 Everything here is an in-memory calculation on measured RTs.
 """
 
@@ -19,11 +20,7 @@ from statistics import median
 
 import numpy as np
 
-from xic_extractor.alignment.sample_rt_calibration import (
-    BatchRtCalibration,
-    RtCalibrationPolicy,
-    build_batch_rt_calibration,
-)
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 
 # A channel whose general-calibrated RT keeps this much robust spread drifts
 # beyond the shared map.
@@ -222,12 +219,10 @@ class BatchRtModelAccumulator:
     def __init__(
         self,
         *,
-        sample_stems: Sequence[str],
         sample_cohorts: Mapping[str, str],
         injection_order: Mapping[str, int],
         qc_samples: frozenset[str] = frozenset(),
     ) -> None:
-        self._samples = tuple(sample_stems)
         self._cohorts = sample_cohorts
         self._orders = injection_order
         self._qc = qc_samples
@@ -239,9 +234,8 @@ class BatchRtModelAccumulator:
                 item.rt_min
             )
 
-    def freeze(
-        self, *, measured_istds: Sequence[tuple[str, str, float]] = ()
-    ) -> tuple[BatchRtCalibration, RtDriftModel]:
+    def freeze(self, calibration: BatchRtCalibration) -> RtDriftModel:
+        """Freeze B shapes and M against the general map, once per batch."""
         channels: dict[str, dict[str, float]] = defaultdict(dict)
         owners: dict[str, set[str]] = defaultdict(set)
         # Several supported peaks leave that sample unknown; never pick one.
@@ -250,57 +244,35 @@ class BatchRtModelAccumulator:
                 ((owner_id, rt),) = by_owner.items()
                 channels[channel][sample] = rt
                 owners[channel].add(owner_id)
-        return fit_batch_rt_model(
+        return fit_rt_drift_model(
             channels,
-            sample_stems=self._samples,
-            sample_cohorts=self._cohorts,
+            calibration,
             injection_order=self._orders,
+            sample_cohorts=self._cohorts,
             qc_samples=self._qc,
-            measured_istds=measured_istds,
             channel_owner_ids={key: frozenset(value) for key, value in owners.items()},
         )
 
 
-def fit_batch_rt_model(
+def fit_rt_drift_model(
     channels: Mapping[str, Mapping[str, float]],
+    calibration: BatchRtCalibration,
     *,
-    sample_stems: Sequence[str],
-    sample_cohorts: Mapping[str, str] | None,
     injection_order: Mapping[str, int],
+    sample_cohorts: Mapping[str, str] | None = None,
     qc_samples: frozenset[str] = frozenset(),
-    measured_istds: Sequence[tuple[str, str, float]] = (),
     channel_owner_ids: Mapping[str, frozenset[str]] | None = None,
-) -> tuple[BatchRtCalibration, RtDriftModel]:
-    """Fit, refit without channels the map cannot carry, then freeze B and M.
-
-    A channel left with large residual spread either drifts beyond the map or
-    mixes peaks across samples; neither can anchor the general map. Those that
-    another elution family reproduces are drift anchors.
+) -> RtDriftModel:
+    """Drift anchors are channels the general map leaves spread out and that
+    another elution family reproduces; freeze their B shapes and M.
     """
-
-    def fit(selected: Mapping[str, Mapping[str, float]]) -> BatchRtCalibration:
-        return build_batch_rt_calibration(
-            selected,
-            sample_stems=sample_stems,
-            sample_cohorts=sample_cohorts,
-            measured_istds=measured_istds,
-            prior_injections={},
-            policy=RtCalibrationPolicy(),
-        )
-
-    first = fit(channels)
     cohorts = dict(sample_cohorts or {})
     unsettled = _unsettled_channels(
-        _calibrated(channels, first), injection_order, cohorts
+        _calibrated(channels, calibration), injection_order, cohorts
     )
     drifting = frozenset(_synchronized(unsettled, _families(channels)))
-    calibration = (
-        fit({key: value for key, value in channels.items() if key not in unsettled})
-        if unsettled
-        else first
-    )
     calibrated = _calibrated({key: channels[key] for key in drifting}, calibration)
-    model = _drift_model(
+    return _drift_model(
         calibrated,
         injection_order=injection_order,
         qc_samples=qc_samples,
@@ -308,7 +280,6 @@ def fit_batch_rt_model(
         families=_families(calibrated),
         owner_ids=channel_owner_ids or {},
     )
-    return calibration, model
 
 
 def _calibrated(
@@ -393,12 +364,7 @@ def _unsettled_channels(
     orders: Mapping[str, int],
     cohorts: Mapping[str, str],
 ) -> dict[str, dict[str, float]]:
-    """Residuals of channels whose spread the general map leaves large.
-
-    Every channel with a spread is checked, not only those with enough samples
-    to test synchrony: a channel mixing two peaks can qualify as an anchor
-    with few samples and still bend a sparsely supported part of the map.
-    """
+    """Residuals of channels whose spread the general map leaves large."""
     residuals = {
         channel: _cohort_residuals(values, orders, cohorts)
         for channel, values in calibrated.items()

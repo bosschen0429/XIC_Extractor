@@ -260,12 +260,22 @@ existing unique-channel matrix offline. One batch.
   pooled QC3 and QC5 (10.61/11.19 vs 10.59/11.19 min; MS2 cosine 0.85-0.94
   within each, 0.61-0.73 across). The pattern track keeping QC3's and QC5's
   selected peaks apart is correct; it is not a drift case.
-- Channel anchors moved the general map 10-30 s where support is sparse or a
-  sample has few anchors (TumorBC2263: 23 positions). With boundary-shift
-  coordinates at half RT weight and isomer groups in non-interleaved injection
-  blocks, m/z 404.1159 merged two isomers (QC3 5.98 and TumorBC2312 6.08 with
-  Benign fat 7.99/8.01 min); a single-peak sample of 312.0704 now sits midway
-  between its isomer rows and cannot be assigned by RT.
+- The general map stays on bootstrap-group anchors; method channels (a
+  channel's only direct-supported peak per sample) measure drift only. Fitting
+  the map from channels instead, with a one-minute filter against each sample's
+  overall offset, was tried and reverted: on 85RAW about 20 tumor samples'
+  late ISTDs (23.5 and 25.75 min) sat 1-3 min off the map (bootstrap anchors:
+  2 samples above 30 s). The filter removed correct late anchors where a
+  sample's offset changes with RT, and the robust LOESS's sample-wide residual
+  scale then extrapolated the steep 16.5-18.6 min stretch. Dropping the filter
+  let drifting compounds shape the first fit, and M vanished. On 8RAW the
+  revert gives 867 rows against master's 872 with 13 changed m/z
+  neighborhoods; 404.1159 is separate again, as on master, where its own mixed
+  group anchors the map.
+- 827.17 and 299.1553 on the 85-sample selected worksets: owners form one
+  continuous RT band (827.17: 15.08-15.58 calibrated, isomers about 0.3 min
+  apart, one owner per sample). Either map only cuts that band somewhere; RT
+  does not assign the middle samples.
 - 288.0658 on the 85-sample selected worksets: QC7's owner (15.236 calibrated) is
   the front component but sits in the rear row; QC7 has a rear peak at 15.505.
   Double-peak samples put the front at 15.12-15.24 and the rear at

@@ -6,8 +6,8 @@ observations across runs. It models run-to-run retention drift, not compound
 identification.
 
 [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
-owns the fit and [`rt_drift`](../../xic_extractor/alignment/rt_drift.py) the
-anchor observations and drift model; downstream consumers access the frozen map
+owns anchor preparation and the fit, and [`rt_drift`](../../xic_extractor/alignment/rt_drift.py)
+the drift model on top of it; downstream consumers access the frozen map
 through `SampleRtFrame`. Shared terminology remains owned by the
 [Domain Glossary](domain-glossary.md). See [Alignment](alignment.md) for how
 grouping consumes this frame.
@@ -16,15 +16,10 @@ grouping consumes this frame.
 
 ### Anchor qualification
 
-General anchors come from method channels, not from initial grouping. A
-channel is one CID-NL method subject (precursor m/z and neutral loss). When a
-sample has exactly one owner in that channel with direct method support,
-quantifiable integration and a primary identity event, its apex RT is that
-channel's observation in that sample. Several such owners leave the sample
-unknown for the channel; no peak is chosen among them. A unique peak is a
-low-ambiguity candidate, not an identity confirmation. Initial grouping
-membership is not consulted, so channels that drift too far to group before
-calibration still contribute.
+Bootstrap obtains measured anchors from consistent directional grouping
+results; ordinary bootstrap membership is not used directly as the final
+answer. Pattern seeds participate in both directions. Extensions that disagree
+between directions remain unresolved without downgrading the seed.
 
 Known-ISTD reference acquisition reuses Targeted's authoritative peak selection
 and credible-anchor decisions rather than adding a separate rule that makes all
@@ -36,31 +31,26 @@ input selection.
 
 | Mechanism | Current source and use |
 | --- | --- |
-| Known-ISTD reference | Exact identity bindings and measured coordinates. Bootstrap comparison uses the shared fitter with ISTDs only; final calibration combines those measurements with channel anchors. |
-| Sample RT calibration | One frozen map fitted from the complete request's measured ISTDs and channel anchors. Final Grouping, Backfill localization/admission, and replay consume this map through `SampleRtFrame`. |
-| Batch drift model | Frozen batch state (B), sample shift (M) and drift anchors; see [Drift beyond the map](#drift-beyond-the-map). |
+| Known-ISTD reference | Exact identity bindings and measured coordinates. Bootstrap comparison uses the shared fitter with ISTDs only; final calibration combines those measurements with ordinary anchors. |
+| Sample RT calibration | One frozen map fitted from the complete request's measured ISTDs and ordinary bootstrap correspondences. Final Grouping, Backfill localization/admission, and replay consume this map through `SampleRtFrame`. |
+| Batch drift model | Frozen batch state (B), sample shift (M) and drift anchors, measured against the frozen map; see [Drift beyond the map](#drift-beyond-the-map). |
 | Peak trajectory | Ordered correspondences and direct/MS1-only positions, used for membership constraints and sample-local localization. |
 | Calibration diagnostic | Uses the same fit owner with detected-cell inputs and an interleaved held-out comparison. Its files do not alter production results. |
 
-[`rt_drift`](../../xic_extractor/alignment/rt_drift.py) owns the channel
-observations and the batch model; [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
-owns the fit. A channel's reference is its same-cohort median observed RT.
-Channels need observations in at least half the declared cohort (rounded up),
-with at least three measured members. These are anchor qualifications, not
-feature-retention rules: other observations remain available to grouping.
-Exact duplicate sample/RT patterns contribute only once. An ordinary
-observation whose offset differs from its sample's median offset by more than
-one minute is removed before the fit: it is another peak or a gross error, and
-at a sparsely supported edge it can bend the map. Measured ISTDs require at
-least two same-cohort measurements, but not ordinary-feature prevalence.
-Missing ISTDs, predicted coordinates and Backfill observations are not imputed
-as anchors. Declared batch IDs define cohorts; empty IDs share an unspecified
-cohort and sample role does not define the cohort.
-
-The map is fitted twice. After the first fit, a channel whose calibrated RT
-still has a robust spread of at least 12 seconds is left out of the second fit:
-it either drifts beyond what compounds at its RT share, or mixes peaks across
-samples. Neither can anchor the shared map.
+[`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
+owns anchor preparation and the fit. A correspondence's reference is its
+same-cohort median observed RT. Ordinary correspondences require direct identity
+support, no identity conflict or provisional status, and quantification-eligible
+observations in at least half the declared cohort (rounded up), with at least
+three measured members. Bootstrap takes measured support from the retained
+assessment binding, not nominal method-query masses projected into an
+observation-only owner. These are anchor qualifications, not feature-retention
+rules: other observations remain available to grouping. Exact duplicate
+sample/RT patterns contribute only once. Measured ISTDs require at least two
+same-cohort measurements, but not ordinary-feature prevalence. Missing ISTDs,
+predicted coordinates and Backfill observations are not imputed as anchors.
+Declared batch IDs define cohorts; empty IDs share an unspecified cohort and
+sample role does not define the cohort.
 
 ### Robust LOESS fit
 
@@ -84,7 +74,7 @@ theorem. Local support, polynomial degree, bandwidth and sampling density still
 matter; see [Cleveland (1979)](https://doi.org/10.1080/01621459.1979.10481038)
 and the [NIST LOESS guidance](https://www.itl.nist.gov/div898/handbook/pmd/section1/pmd144.htm).
 It counts RT positions per injection, not the number of samples in the batch.
-The fit consumes fixed channel anchors once; final regrouping and Backfill do
+The fit consumes fixed bootstrap anchors once; final regrouping and Backfill do
 not feed their own results back into that fit. Saved frozen maps keep their
 coordinates on replay and are not refitted under this floor.
 
@@ -169,8 +159,15 @@ more, and differently: after general calibration,
 [`rt_drift`](../../xic_extractor/alignment/rt_drift.py) freezes B and M once,
 after the general fit and before final grouping:
 
-- **Drift anchors** are the channels left out of the second fit whose residuals
-  correlate (Spearman ≥ 0.75 over at least six common samples) with a channel
+- **Channels**: a channel is one CID-NL method subject (precursor m/z and
+  neutral loss). When a sample has exactly one owner in that channel with
+  direct method support, quantifiable integration and a primary identity event,
+  its apex RT is that channel's observation in that sample; several such owners
+  leave the sample unknown. Initial grouping membership is not consulted, so
+  compounds that drift too far to group before calibration still contribute.
+  Channels measure drift only; they do not anchor the general map.
+- **Drift anchors** are channels whose general-calibrated RT keeps a robust
+  spread of at least 12 seconds and whose residuals correlate (Spearman ≥ 0.75 over at least six common samples) with a channel
   of another elution family. Channels whose apices coincide within 0.05 min
   (median over the samples both observe) form one family (isotopes, adducts,
   co-eluting ions) and vote once.

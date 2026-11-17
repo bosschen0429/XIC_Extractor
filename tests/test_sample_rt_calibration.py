@@ -143,9 +143,7 @@ def test_boundary_shift_preserves_order_and_inverse_of_supported_curve():
 def test_failed_strong_fit_retains_explicit_weak_estimate():
     detected = {
         f"F{i}": {
-            # Below the coarse-outlier minute, so only the robust fit rejects it.
-            s: 8.0 + 4 * i + (0.9 if s == "S01" and i == 3 else 0.0)
-            for s in SAMPLES
+            s: 8.0 + 4 * i + (2.0 if s == "S01" and i == 3 else 0.0) for s in SAMPLES
         }
         for i in range(8)
     }
@@ -360,14 +358,11 @@ def test_identity_landmark_corrects_locally_without_unbounded_influence(
         **kwargs,
     )
     before, after = ordinary.samples["a"], known.samples["a"]
+    assert after.anchor_count == before.anchor_count
     assert after.reliable_observed_range == before.reliable_observed_range
-    # A 14.7-minute ordinary offset is a coarse outlier and leaves the fit, so
-    # only the 16.65 reference keeps an ordinary view of the same position.
-    if standard_reference == 16.65:
-        assert after.anchor_count == before.anchor_count
-        assert [(x, y) for x, y in after.knots if x != 15.3] == [
-            (x, y) for x, y in before.knots if x != 15.3
-        ]
+    assert [(x, y) for x, y in after.knots if x != 15.3] == [
+        (x, y) for x, y in before.knots if x != 15.3
+    ]
     calibrated = after.calibrated_rt(15.3)
     if standard_reference == 16.65:
         assert calibrated == pytest.approx(standard_reference, abs=0.1)

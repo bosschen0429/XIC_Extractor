@@ -20,7 +20,7 @@ from xic_extractor.alignment.grouping_experiment import (
     replay_grouping,
 )
 from xic_extractor.alignment.peak_trajectories import ordered_pattern_contexts
-from xic_extractor.alignment.rt_drift import BatchRtModelAccumulator
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.diagnostics.grouping_experiment_io import (
     group_signature,
     read_grouping_inputs,
@@ -416,12 +416,11 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
     )
     formal_frame = plan.context.rt_frame.with_sources(known_istd_reference=reference)
     formal_frame = formal_frame.with_sample_calibration(
-        *BatchRtModelAccumulator(
+        BatchRtCalibrationAccumulator(
             sample_stems=tuple(
                 formal_frame.sample_universe or formal_frame.injection_order
             ),
             sample_cohorts=formal_frame.sample_cohorts,
-            injection_order=formal_frame.injection_order,
         ).freeze(measured_istds=formal_frame.measured_istd_coordinates)
     )
     assert formal_frame.common_rt_min("S1", 8) == pytest.approx(6)

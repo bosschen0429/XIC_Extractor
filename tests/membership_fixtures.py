@@ -50,34 +50,3 @@ def cid_nl_owner(
         supporting_events=supporting_events,
         assignment_reason="same_apex_window",
     )
-
-
-def channel_anchor_observations(groups):
-    """One method channel per group: each owner is that channel's only peak."""
-    from xic_extractor.alignment.rt_drift import RtAnchorObservation
-
-    return tuple(
-        RtAnchorObservation(
-            f"channel:{index}",
-            owner.sample_stem,
-            owner.owner_id,
-            owner.peak.integration.rt_apex_min,
-        )
-        for index, group in enumerate(groups)
-        for owner in group
-    )
-
-
-def freeze_channel_anchors(
-    groups, *, samples, cohorts=None, orders=None, measured_istds=()
-):
-    """Freeze the batch RT model from per-group channel observations."""
-    from xic_extractor.alignment.rt_drift import BatchRtModelAccumulator
-
-    accumulator = BatchRtModelAccumulator(
-        sample_stems=tuple(samples),
-        sample_cohorts=cohorts if cohorts is not None else dict.fromkeys(samples, ""),
-        injection_order=orders or {},
-    )
-    accumulator.add_observations(channel_anchor_observations(groups))
-    return accumulator.freeze(measured_istds=measured_istds)
