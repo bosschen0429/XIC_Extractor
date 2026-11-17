@@ -424,8 +424,10 @@ group's coefficients held fixed, the current, swapped-N2313 and returned-T2275
 configurations cost the same; the +0.006/+0.010 differences came only from
 refitting coefficients, which moved an unrelated worst pair. Offering settled
 group coefficients as reassignment candidates put all 46 in one group. Retained
-8RAW replay: 871 groups, physical membership unchanged. Selected 85 worksets: only
-the 348.21 neighborhood changed; 244.12, 827.17 and 828.17 controls unchanged;
+8RAW replay: 871 groups, physical membership unchanged; 42 decisions price their
+alternatives under settled models, and two 273.15 TumorBC2312 owners gain
+`accepted_competition`. Selected 85 worksets: only the 348.21 neighborhood
+changed membership; N2313@13.13 carries `accepted_competition` against 13.52; 244.12, 827.17 and 828.17 controls unchanged;
 288.07 mixing persists (not addressed). Owner renaming and input reversal gave
 identical membership. Not a full85 or Backfill claim.
 
