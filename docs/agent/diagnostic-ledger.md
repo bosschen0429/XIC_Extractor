@@ -266,6 +266,16 @@ existing unique-channel matrix offline. One batch.
   blocks, m/z 404.1159 merged two isomers (QC3 5.98 and TumorBC2312 6.08 with
   Benign fat 7.99/8.01 min); a single-peak sample of 312.0704 now sits midway
   between its isomer rows and cannot be assigned by RT.
+- 288.0658 on the 85-sample selected worksets: QC7's owner (15.236 calibrated) is
+  the front component but sits in the rear row; QC7 has a rear peak at 15.505.
+  Double-peak samples put the front at 15.12-15.24 and the rear at
+  15.40-15.51; most single-peak samples, BenignfatBC1055 among them (15.245),
+  sit between and cannot be assigned by RT.
+- Isomers that share the NL have identical identity evidence in grouping; only
+  RT, shape and region remain. Three RT-only objectives (group model, evidence
+  acceptance, RT likelihood with a CRP prior and double-peak observations) each
+  split 348.21 Y or merged isomer controls once searched. MS2 fragment
+  evidence is #1170.
 
 Reopen for 85RAW acceptance of #1165, for a change to the population-gap
 exemption or boundary RT weighting, or for a new column or method. Artifacts:
