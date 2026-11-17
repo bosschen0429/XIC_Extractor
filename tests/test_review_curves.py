@@ -17,6 +17,7 @@ from tests.explanation_review_fixtures import (
     _group_with_missing_apex_review,
     _install_distinct_curve_raws,
 )
+from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_explanation,
@@ -72,6 +73,7 @@ def test_cells_with_values_show_their_run_curves_without_raw(tmp_path, monkeypat
         reports[name] = write_alignment_explanation(
             folder / "alignment_explanation.sqlite",
             completed=completed,
+            children=children_of(completed.application_result),
             **explanation_discovery_facts(completed),
             peaks_by_sample=candidates,
             matrix_path=matrix,
@@ -162,7 +164,7 @@ def test_saved_curves_stay_with_their_own_cell(tmp_path):
         )
         writer.set_cell_position("G1", "S3", 8.05)
         for sid, (rt, raw) in saved.items():
-            writer.set_cell_curve("G1", sid, rt, raw)
+            writer.set_cell_curve("G1", sid, encode_review_curve(rt, raw))
         writer.finalize(
             explanation_summary(
                 {

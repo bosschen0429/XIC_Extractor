@@ -17,6 +17,7 @@ from tests.cid_nl_runtime_fixtures import (
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
+from tests.untargeted_partition_fixtures import project_composed_child
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -117,6 +118,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         plan,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=100,
+        project_child=project_composed_child,
     )
     store = StreamedResultStore(
         tmp_path / "elution-spool", adapter.get_shared_objects()
@@ -227,8 +229,8 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     } == group_ids
     assert {
         group.group_hypothesis_id
-        for child in persisted.children
-        for group in child.scientific_core.grouping_result.final_population
+        for output in persisted.child_outputs
+        for group in output.child.scientific_core.grouping_result.final_population
     } == group_ids
     store.seal()
     completed = adapter.finalize_application(store, (initial_composed, composed))
@@ -334,6 +336,7 @@ def test_review_only_input_leaves_each_group_cell_for_independent_backfill(
         plan,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=100,
+        project_child=project_composed_child,
     )
     store = StreamedResultStore(tmp_path / "reuse-spool", adapter.get_shared_objects())
     initial_phase, grouping_phase, backfill_phase = adapter.execution_phases()

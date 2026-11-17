@@ -17,10 +17,10 @@ PRESERVED_INDEX_NAME = "partition-index.pickle"
 
 
 class StreamingPartitionPayload(Protocol):
-    """Dataclass metadata whose ``children`` are streamed beside it."""
+    """Dataclass metadata whose ``child_outputs`` are streamed beside it."""
 
     @property
-    def children(self) -> object: ...
+    def child_outputs(self) -> object: ...
 
 
 class _PartitionWriter:
@@ -57,9 +57,9 @@ def write_partition_payload(
     payload: Any,
     *,
     shared_objects: tuple[object, ...],
-    children: Iterable[object] | None = None,
+    child_outputs: Iterable[object] | None = None,
     individually_addressable_fields: frozenset[str] = frozenset(
-        {"children", "excluded_candidates"}
+        {"child_outputs", "excluded_candidates"}
     ),
     before_publish: Callable[[], None] | None = None,
     retain_memory: bool = False,
@@ -81,12 +81,12 @@ def write_partition_payload(
         for item in fields(payload)
         if not item.name.startswith("_")
         and type(getattr(payload, item.name)) is tuple
-        and not (item.name == "children" and children is not None)
+        and not (item.name == "child_outputs" and child_outputs is not None)
     }
-    if children is not None:
-        if "children" not in field_names:
-            raise TypeError("streaming partition payload requires children")
-        lengths["children"] = 0
+    if child_outputs is not None:
+        if "child_outputs" not in field_names:
+            raise TypeError("streaming partition payload requires child outputs")
+        lengths["child_outputs"] = 0
     temporary = path.with_suffix(".tmp")
     if path.exists():
         raise FileExistsError(f"partition artifact already exists: {path}")
@@ -110,21 +110,21 @@ def write_partition_payload(
             records: dict[str, tuple[tuple[int, int], ...]] = {}
             cached_fields: dict[str, tuple[tuple[Any, ...], ...]] = {}
             for name in field_names:
-                if name == "children" and children is not None:
+                if name == "child_outputs" and child_outputs is not None:
                     entries = []
                     cached_items: list[tuple[Any, ...]] | None = (
                         [] if retain_memory else None
                     )
-                    for value in children:
+                    for value in child_outputs:
                         entries.append((writer.size_bytes, 1))
                         _OwnerPickler(writer, shared_objects).dump((value,))
                         if cached_items is not None:
                             cached_items.append((value,))
                         del value
-                    lengths["children"] = len(entries)
-                    records["children"] = tuple(entries)
+                    lengths["child_outputs"] = len(entries)
+                    records["child_outputs"] = tuple(entries)
                     if cached_items is not None:
-                        cached_fields["children"] = tuple(cached_items)
+                        cached_fields["child_outputs"] = tuple(cached_items)
                     continue
                 if name not in lengths:
                     continue
@@ -172,7 +172,7 @@ class StreamedResultStore:
         shared_objects: tuple[object, ...],
         *,
         individually_addressable_fields: frozenset[str] = frozenset(
-            {"children", "excluded_candidates"}
+            {"child_outputs", "excluded_candidates"}
         ),
     ):
         self._directory = Path(directory).resolve()
@@ -200,24 +200,24 @@ class StreamedResultStore:
             raise TypeError("partition payload requires a dataclass result")
         return self._append_payload(partition_key, payload, retain_memory=retain_memory)
 
-    def append_children(
+    def append_child_outputs(
         self,
         partition_key: str,
         metadata_payload: StreamingPartitionPayload,
-        children: Iterable[object],
+        child_outputs: Iterable[object],
         before_publish: Callable[[], None] | None = None,
         retain_memory: bool = False,
     ) -> SealedPartition:
-        """Atomically append children while composing them one at a time."""
+        """Atomically append child outputs while composing them one at a time."""
 
         if not is_dataclass(metadata_payload) or isinstance(metadata_payload, type):
             raise TypeError("partition payload requires a dataclass result")
-        if metadata_payload.children != ():
-            raise ValueError("streaming metadata payload must have empty children")
+        if metadata_payload.child_outputs != ():
+            raise ValueError("streaming metadata payload must have empty child outputs")
         return self._append_payload(
             partition_key,
             metadata_payload,
-            children=children,
+            child_outputs=child_outputs,
             before_publish=before_publish,
             retain_memory=retain_memory,
         )
@@ -227,7 +227,7 @@ class StreamedResultStore:
         partition_key: str,
         payload: Any,
         *,
-        children: Iterable[object] | None = None,
+        child_outputs: Iterable[object] | None = None,
         before_publish: Callable[[], None] | None = None,
         retain_memory: bool = False,
     ) -> SealedPartition:
@@ -238,7 +238,7 @@ class StreamedResultStore:
             path,
             payload,
             shared_objects=self._shared_objects,
-            children=children,
+            child_outputs=child_outputs,
             individually_addressable_fields=self._individually_addressable_fields,
             before_publish=before_publish,
             retain_memory=retain_memory,

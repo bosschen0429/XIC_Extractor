@@ -19,6 +19,7 @@ from tests.cid_nl_raw_fixture import (
 from tests.cid_nl_runtime_fixtures import install_runtime_raws
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
+    children_of,
     complete_dense_partition,
     execute_dense_partition,
     fixture_assessment,
@@ -209,7 +210,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         assert rows[0]["S4"] == ""
     if scenario == "recovery_complete":
         assert float(rows[0]["S4"]) > 0
-        (child,) = completed.application_result.children
+        (child,) = children_of(completed.application_result)
         core = child.scientific_core
         (before,) = core.grouping_result.initial_population
         (after,) = core.final_population
@@ -249,7 +250,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
 def _assert_unsupported_exclusion_closes_exact_coverage(completed):
 
     result = completed.application_result
-    assert not result.children
+    assert not result.child_outputs
     exclusions = result.excluded_candidates
     assert exclusions
     assert all(

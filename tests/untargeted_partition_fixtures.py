@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import replace
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from tests.cid_nl_runtime_fixtures import (
@@ -14,9 +14,18 @@ from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample.peak_groups import (
+    CrossSamplePeakGroupHypothesis,
+)
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
+    FinalizedUntargetApplicationResult,
     FinalizedUntargetBatchApplicationResult,
+)
+from xic_extractor.alignment.rt_frame import SampleRtFrame
+from xic_extractor.applications.untargeted.publication import (
+    UntargetedPublicationPolicy,
+    untargeted_child_projection,
 )
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
@@ -24,6 +33,8 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.discovery.models import DiscoveryPeak
 from xic_extractor.discovery.settings import DiscoverySettings
+from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
+from xic_extractor.output.alignment.tsv_writer import UntargetChildOutputs
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
 )
@@ -46,10 +57,89 @@ from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionResult,
 )
 from xic_extractor.untargeted_execution.partition_composition import (
+    ChildProjectionContext,
     UntargetedPartitionInputs,
     compose_untargeted_partition,
     group_acquired_partition,
 )
+
+# Every TSV kind, so projected children can be written to any of them.
+ALL_ROW_OUTPUTS = AlignmentRunOutputs(
+    review_tsv=Path("review.tsv"),
+    matrix_tsv=Path("matrix.tsv"),
+    backfill_cell_evidence_tsv=Path("backfill.tsv"),
+    cells_tsv=Path("cells.tsv"),
+    status_matrix_tsv=Path("status.tsv"),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ComposedChildOutputs(UntargetChildOutputs):
+    """A child's published projection beside the child it was projected from,
+    so scientific fixtures can inspect what the outputs were written from."""
+
+    child: FinalizedUntargetApplicationResult | None = None
+
+
+def project_composed_child(
+    child: FinalizedUntargetApplicationResult,
+    context: ChildProjectionContext,
+    *,
+    policy: UntargetedPublicationPolicy | None = None,
+) -> ComposedChildOutputs:
+    """The production projection of ``child`` into every TSV and the report."""
+
+    outputs = untargeted_child_projection(
+        ALL_ROW_OUTPUTS, policy or UntargetedPublicationPolicy()
+    )(child, context)
+    assert isinstance(outputs, UntargetChildOutputs)
+    return ComposedChildOutputs(outputs.groups, outputs.explanation, child)
+
+
+def composed_child_outputs(
+    children: Iterable[FinalizedUntargetApplicationResult],
+    initial_groups: Iterable[CrossSamplePeakGroupHypothesis],
+    *,
+    sample_rt_frame: SampleRtFrame | None = None,
+) -> tuple[ComposedChildOutputs, ...]:
+    """Project in-memory children with their partition's membership risks."""
+
+    context = ChildProjectionContext(
+        membership_risks_by_owner={
+            decision.owner_id: decision.accepted_risk
+            for group in initial_groups
+            for decision in group.inference_decisions
+            if decision.accepted_risk is not None
+        },
+        sample_rt_frame=sample_rt_frame,
+    )
+    return tuple(project_composed_child(child, context) for child in children)
+
+
+def children_of(
+    batch: FinalizedUntargetBatchApplicationResult,
+) -> tuple[FinalizedUntargetApplicationResult, ...]:
+    """The finalized children a fixture batch's outputs were projected from."""
+
+    children = tuple(
+        output.child
+        for output in batch.child_outputs
+        if isinstance(output, ComposedChildOutputs)
+    )
+    assert len(children) == len(batch.child_outputs)
+    return tuple(child for child in children if child is not None)
+
+
+def has_flagged_backfill_risk(
+    children: Iterable[FinalizedUntargetApplicationResult],
+) -> bool:
+    return any(
+        risk.risk_flags
+        for child in children
+        for _, _, risk in (
+            child.scientific_core.grouping_result.backfill_membership_risks
+        )
+    )
 
 
 def build_dense_partition(
@@ -135,8 +225,11 @@ def complete_dense_partition(
             context.acquisition_sources_by_sample[sample.raw_stem].source
             for sample in context.samples
         ),
-        children=partition.children,
+        child_outputs=composed_child_outputs(
+            partition.children, partition.initial_groups
+        ),
         excluded_candidates=partition.excluded_candidates,
+        has_flagged_backfill_risk=has_flagged_backfill_risk(partition.children),
     )
     return CompletedUntargetBatchWorkflowResult(
         application_result=application_result,
@@ -156,3 +249,17 @@ def fixture_assessment(result):
     if result.backfill_attempt is not None:
         return result.backfill_attempt.assessment
     return result.adapter_result.assessment_input.assessment
+
+
+def physical_peak_keys(
+    batch: FinalizedUntargetBatchApplicationResult,
+) -> tuple[str, ...]:
+    """Every final member's physical peak key, in the batch's child order."""
+
+    return tuple(
+        content.physical_peak_key
+        for child in children_of(batch)
+        for group in child.scientific_core.final_population
+        for member in group.member_subjects
+        for content in member.physical_peaks
+    )

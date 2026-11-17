@@ -28,6 +28,7 @@ from tests.untargeted_cid_nl_production_batch_fixtures import (
     profile_replay as profile_replay,
 )
 from tests.untargeted_partition_fixtures import (
+    children_of,
     fixture_assessment,
 )
 from xic_extractor.alignment.config import AlignmentConfig
@@ -185,12 +186,15 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         tmp_path / "producer-evidence.sqlite",
         full_audit=True,
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=inputs.candidates,
         matrix_path=matrix_path,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     )
-    assert len(trace.retained_contexts) == len(completed.application_result.children)
+    assert len(trace.retained_contexts) == len(
+        children_of(completed.application_result)
+    )
     assert len(trace.retained_contexts) == len(trace.consumed_contexts)
     # This fixture keeps the frozen partition; Backfill can add risk decisions.
     # The completed content, including those decisions, must survive finalization
@@ -223,13 +227,13 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     for context, child in zip(
         trace.completed_contexts,
-        completed.application_result.children,
+        children_of(completed.application_result),
         strict=True,
     ):
         assert child.scientific_core.final_population == context.final_population
         assert child.scientific_core.lineage == ()
         assert child.scientific_core.grouping_result == context
-    children = completed.application_result.children
+    children = children_of(completed.application_result)
     # Completed owner answers flow through projection, spool and writer once.
     assert len(trace.projection_builds) == len(children)
     if case.family_context:
@@ -338,7 +342,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             close_and_verify_persisted_curves()
             return
         if case.method_mode == "union":
-            (child,) = completed.application_result.children
+            (child,) = children_of(completed.application_result)
             assert sorted(
                 len(group.member_subjects)
                 for group in child.scientific_core.final_population
@@ -395,7 +399,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         close_and_verify_persisted_curves()
         return
     if inputs.separate_groups:
-        (child,) = completed.application_result.children
+        (child,) = children_of(completed.application_result)
         scientific = child.scientific_core
         assert len(scientific.final_population) == 2
         assert len(scientific.cell_observations) == 2 * len(inputs.sample_stems)

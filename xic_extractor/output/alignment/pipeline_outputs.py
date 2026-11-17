@@ -7,11 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
-
 if TYPE_CHECKING:
     from xic_extractor.alignment.result.application_result import (
-        FinalizedUntargetApplicationResult,
         FinalizedUntargetBatchApplicationResult,
     )
     from xic_extractor.evidence_artifacts import EvidenceLocator
@@ -30,7 +27,10 @@ from xic_extractor.output.alignment.output_levels import (
     AlignmentOutputLevel,
     artifact_names_for_output_level,
 )
-from xic_extractor.output.alignment.tsv_writer import write_alignment_tsvs
+from xic_extractor.output.alignment.tsv_writer import (
+    UntargetChildOutputs,
+    write_alignment_tsvs,
+)
 
 
 @dataclass(frozen=True)
@@ -123,20 +123,9 @@ def alignment_metadata(
     return metadata
 
 
-def write_completed_untargeted_outputs_atomic(
-    outputs: AlignmentRunOutputs,
-    completed: FinalizedUntargetBatchApplicationResult,
-    *,
-    metadata: dict[str, str],
-    timing_recorder: TimingRecorder,
-    consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
-    membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
-    before_write: Callable[[], None] | None = None,
-) -> int:
-    """Render every requested TSV in one pass, then publish them atomically."""
-    if before_write is not None:
-        before_write()
-    row_paths = {
+def row_output_paths(outputs: AlignmentRunOutputs) -> dict[str, Path]:
+    """The requested TSVs by the names their projected rows are stored under."""
+    return {
         name: path
         for name, path in (
             ("matrix", outputs.matrix_tsv),
@@ -147,6 +136,21 @@ def write_completed_untargeted_outputs_atomic(
         )
         if path is not None
     }
+
+
+def write_completed_untargeted_outputs_atomic(
+    outputs: AlignmentRunOutputs,
+    completed: FinalizedUntargetBatchApplicationResult,
+    *,
+    metadata: dict[str, str],
+    timing_recorder: TimingRecorder,
+    consume_child: Callable[[UntargetChildOutputs, int], None] | None = None,
+    before_write: Callable[[], None] | None = None,
+) -> int:
+    """Render every requested TSV in one pass, then publish them atomically."""
+    if before_write is not None:
+        before_write()
+    row_paths = row_output_paths(outputs)
     paths = list(row_paths.values())
     if outputs.run_metadata_json is not None:
         paths.append(outputs.run_metadata_json)
@@ -158,7 +162,6 @@ def write_completed_untargeted_outputs_atomic(
             {name: temp_paths[path] for name, path in row_paths.items()},
             completed,
             consume_child=consume_child,
-            membership_risks_by_owner=membership_risks_by_owner,
         )
         if outputs.run_metadata_json is not None:
             _write_metadata_json(temp_paths[outputs.run_metadata_json], metadata)

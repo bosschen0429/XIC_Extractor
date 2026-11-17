@@ -25,6 +25,7 @@ from tests.inspector_fixtures import (
 )
 from tests.workbench_http import workbench_client
 from tests.workbench_review_fixtures import review_workspace
+from xic_extractor.alignment_explanation.storage import encode_review_curve
 from xic_workbench.server import create_server
 from xic_workbench.user_guide import read_user_guide
 
@@ -1068,7 +1069,7 @@ def test_http_saved_curves_answer_in_the_same_request_without_raw(tmp_path):
         prepare=lambda writer: writer.add_peak("S1", "obs-01", (500.0, 1.0, 5.0)),
         extend=lambda writer: (
             writer.set_row_destination("G1", "matrix"),
-            writer.set_cell_curve("G1", "S1", rt, raw),
+            writer.set_cell_curve("G1", "S1", encode_review_curve(rt, raw)),
         ),
     )
     with workbench_client(

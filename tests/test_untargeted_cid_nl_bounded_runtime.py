@@ -37,8 +37,11 @@ from tests.untargeted_cid_nl_bounded_runtime_fixtures import (
     _plan,
 )
 from tests.untargeted_partition_fixtures import (
+    children_of,
     complete_dense_partition,
     execute_dense_partition,
+    physical_peak_keys,
+    project_composed_child,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.immutable_sequence import ImmutableSequence
@@ -158,6 +161,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
             max_partition_jobs=capacity,
             raw_workers=1,
             known_istd_reference=reference,
+            project_child=project_composed_child,
         )
         store = StreamedResultStore(
             tmp_path / f"spool-{capacity}-{reverse_initial}",
@@ -270,6 +274,7 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             max_partition_jobs=capacity,
             raw_workers=1,
+            project_child=project_composed_child,
         )
         store = StreamedResultStore(
             tmp_path / f"spool-{capacity}", adapter.get_shared_objects()
@@ -358,6 +363,7 @@ def test_bounded_partition_keeps_alignment_workset_atomic(
         packing_plan,
         alignment_config=AlignmentConfig(),
         max_partition_jobs=sample_count * 2,
+        project_child=project_composed_child,
     )
 
     assert {
@@ -372,6 +378,7 @@ def test_bounded_partition_keeps_alignment_workset_atomic(
             packing_plan,
             alignment_config=AlignmentConfig(),
             max_partition_jobs=sample_count,
+            project_child=project_composed_child,
         )
 
 
@@ -474,6 +481,7 @@ def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
         packing_plan,
         alignment_config=AlignmentConfig(),
         max_partition_jobs=len(plan.context.samples) * len(subjects),
+        project_child=project_composed_child,
     )
     payloads = tuple(
         adapter_partition.payload for adapter_partition in adapter.bootstrap_partitions
@@ -507,6 +515,7 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
         indexed_plan,
         alignment_config=AlignmentConfig(),
         max_partition_jobs=len(plan.context.samples),
+        project_child=project_composed_child,
     )
     canonical_ids = tuple(
         subject.method_subject_id for subject in plan.subject_batch.subjects
@@ -515,7 +524,7 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
 
     class StoredChildren:
         def sequence(self, field_name: str):
-            assert field_name == "children"
+            assert field_name == "child_outputs"
             return (None,) * len(mass_execution_ids)
 
         def read_selected(
@@ -524,7 +533,7 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
             field_name: str,
             positions: tuple[int, ...],
         ):
-            assert field_name == "children"
+            assert field_name == "child_outputs"
             assert positions == (0,)
             return (mass_execution_ids[index],)
 
@@ -533,6 +542,7 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
             result=SimpleNamespace(
                 excluded_candidate_ids=(),
                 child_order_keys=(subject_id,),
+                has_flagged_backfill_risk=False,
                 sealed=SimpleNamespace(index=index),
             )
         )
@@ -546,7 +556,7 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
 
     finalized = adapter.finalize_application(StoredChildren(), outputs)
 
-    assert tuple(finalized.children) == canonical_ids
+    assert tuple(finalized.child_outputs) == canonical_ids
 
 
 def test_prepared_workset_index_stores_one_id_set_per_workset(
@@ -782,6 +792,7 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         packing_plan,
         alignment_config=AlignmentConfig(),
         max_partition_jobs=len(plan.context.samples) * 2,
+        project_child=project_composed_child,
     )
 
     assert len(adapter.bootstrap_partitions) == 2
@@ -827,7 +838,10 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     assert len(eligible_subject_ids) == (2 if scenario == "mixed_eligibility" else 0)
     config = AlignmentConfig(anchor_min_seed_events=1)
     adapter = UntargetedPartitionPipelineAdapter(
-        plan, alignment_config=config, max_partition_jobs=len(plan.context.samples)
+        plan,
+        alignment_config=config,
+        max_partition_jobs=len(plan.context.samples),
+        project_child=project_composed_child,
     )
     assert {
         subject.method_subject_id
@@ -861,6 +875,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         max_partition_jobs=len(plan.context.samples),
         raw_workers=raw_workers,
         pipeline_overlap=True,
+        project_child=project_composed_child,
     )
     assert plan.subject_batch == subject_batch
     assert set(result.application_result.candidate_ids) == set(candidate_by_id)
@@ -869,7 +884,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
         for assessment in result.method_assessments
     } == eligible_subject_ids
     assert not result.application_result.excluded_candidates
-    assert bool(result.application_result.children) is bool(eligible_subject_ids)
+    assert bool(children_of(result.application_result)) is bool(eligible_subject_ids)
     writer = result.application_result
     if eager is not None:
         assert written_rows(tmp_path / "bounded-written", writer) == written_rows(
@@ -889,6 +904,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
     report = write_alignment_explanation(
         tmp_path / "eligibility.sqlite",
         completed=result,
+        children=children_of(result.application_result),
         **plan_discovery_facts(plan),
         peaks_by_sample=load_plan_inputs(plan),
         matrix_path=matrix_path,
@@ -979,11 +995,12 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
             progress_callback=report_progress,
             max_partition_jobs=(partition_subject_capacity * len(plan.context.samples)),
             raw_workers=raw_workers,
+            project_child=project_composed_child,
         )
     assert type(bounded) is CompletedUntargetBatchWorkflowResult
     assert bool(warm_threads) is (raw_workers > 1)
     assert all(thread == coordinator_thread for thread in warm_threads)
-    assert type(bounded.application_result.children) is ImmutableSequence
+    assert type(bounded.application_result.child_outputs) is ImmutableSequence
     bounded_writer = bounded.application_result
     eager_writer = eager.application_result
     assert written_rows(tmp_path / "bounded-written", bounded_writer) == (
@@ -1015,11 +1032,11 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     actual = bounded.application_result
     expected = eager.application_result
     assert actual.candidate_ids == expected.candidate_ids
-    assert actual.physical_peak_keys == expected.physical_peak_keys
+    assert physical_peak_keys(actual) == physical_peak_keys(expected)
     assert tuple(actual.excluded_candidates) == expected.excluded_candidates
     assert actual.processing_attempt_id == plan.context.processing_attempt_id
     assert actual.canonical_samples == expected.canonical_samples
-    for child in actual.children:
+    for child in children_of(actual):
         assert child.canonical_samples == expected.canonical_samples
     assert len(bounded.method_assessments) == len(eager.method_assessments)
     assert {item for item in bounded.method_assessments} == {
@@ -1059,7 +1076,7 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     heartbeat = json.loads(live_path.read_text(encoding="utf-8"))["heartbeat"]
     assert heartbeat["stage"] == "batch_completed"
     assert heartbeat["completed"] == heartbeat["total"] == phase_count
-    assert actual.children
+    assert actual.child_outputs
     if scenario == "recovery":
         assert any(result.backfill_attempts for result in eager_runtime.sample_results)
 
@@ -1080,6 +1097,7 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
         report = write_alignment_explanation(
             tmp_path / f"{name}.sqlite",
             completed=completed,
+            children=children_of(completed.application_result),
             **plan_discovery_facts(plan),
             peaks_by_sample=load_plan_inputs(plan),
             matrix_path=matrix,
@@ -1103,7 +1121,7 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
         seam_name = "execute_partition"
     else:
         seam_owner = bounded_owner.StreamedResultStore
-        seam_name = "append_children"
+        seam_name = "append_child_outputs"
     original = getattr(seam_owner, seam_name)
 
     def fail_second(*args, **kwargs):
@@ -1126,6 +1144,7 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
             output_dir=tmp_path / "failed-output",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             max_partition_jobs=len(plan.context.samples),
+            project_child=project_composed_child,
         )
     assert len(calls) == 2
     assert error.value.__cause__ is original_error
@@ -1156,12 +1175,13 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=len(baseline_plan.context.samples),
         pipeline_overlap=False,
+        project_child=project_composed_child,
     )
     baseline_writer = baseline.application_result
     opened_runs = []
     plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
     output_dir = tmp_path / "retry-output"
-    original_append = owner.StreamedResultStore.append_children
+    original_append = owner.StreamedResultStore.append_child_outputs
     append_calls = 0
 
     def fail_second(store, *args, **kwargs):
@@ -1171,7 +1191,7 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
             raise OSError("second partition storage unavailable")
         return original_append(store, *args, **kwargs)
 
-    monkeypatch.setattr(owner.StreamedResultStore, "append_children", fail_second)
+    monkeypatch.setattr(owner.StreamedResultStore, "append_child_outputs", fail_second)
     with pytest.raises(RuntimeError, match="failed before batch publication"):
         owner.execute_untargeted_plan(
             plan,
@@ -1179,10 +1199,13 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             max_partition_jobs=len(plan.context.samples),
             pipeline_overlap=False,
+            project_child=project_composed_child,
         )
     failed_attempt_id = plan.context.processing_attempt_id
 
-    monkeypatch.setattr(owner.StreamedResultStore, "append_children", original_append)
+    monkeypatch.setattr(
+        owner.StreamedResultStore, "append_child_outputs", original_append
+    )
     retry_plan, _ = _plan(tmp_path, monkeypatch, opened_sink=opened_runs)
     completed = owner.execute_untargeted_plan(
         retry_plan,
@@ -1190,6 +1213,7 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=len(retry_plan.context.samples),
         pipeline_overlap=False,
+        project_child=project_composed_child,
     )
 
     assert completed.application_result.processing_attempt_id == (
@@ -1204,8 +1228,8 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
     assert completed.application_result.candidate_ids == (
         baseline.application_result.candidate_ids
     )
-    assert completed.application_result.physical_peak_keys == (
-        baseline.application_result.physical_peak_keys
+    assert physical_peak_keys(completed.application_result) == (
+        physical_peak_keys(baseline.application_result)
     )
     completed_samples = tuple(
         sample for sample in completed.application_result.canonical_samples
@@ -1258,10 +1282,11 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
         max_partition_jobs=len(plan.context.samples),
         raw_workers=4,
         pipeline_overlap=False,
+        project_child=project_composed_child,
     )
 
     original_leaf = owner.execute_partition
-    original_append = owner.StreamedResultStore.append_children
+    original_append = owner.StreamedResultStore.append_child_outputs
     first_two = {"partition-00000-initial", "partition-00001-initial"}
     barrier = Barrier(2)
     second_completed = Event()
@@ -1312,7 +1337,7 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
                 composition_active = 0
 
     monkeypatch.setattr(owner, "execute_partition", leaf)
-    monkeypatch.setattr(owner.StreamedResultStore, "append_children", append)
+    monkeypatch.setattr(owner.StreamedResultStore, "append_child_outputs", append)
     overlapped = owner.execute_untargeted_plan(
         plan,
         output_dir=tmp_path / "overlapped-partitions",
@@ -1320,6 +1345,7 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
         max_partition_jobs=len(plan.context.samples),
         raw_workers=4,
         pipeline_overlap=True,
+        project_child=project_composed_child,
     )
 
     assert completion_order.index("partition-00001-initial") < completion_order.index(
@@ -1337,8 +1363,8 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
     assert overlapped.application_result.candidate_ids == (
         serial.application_result.candidate_ids
     )
-    assert overlapped.application_result.physical_peak_keys == (
-        serial.application_result.physical_peak_keys
+    assert physical_peak_keys(overlapped.application_result) == (
+        physical_peak_keys(serial.application_result)
     )
 
 
@@ -1380,6 +1406,7 @@ def test_overlapped_partition_acquisition_failure_propagates(
             max_partition_jobs=len(plan.context.samples),
             raw_workers=4,
             pipeline_overlap=True,
+            project_child=project_composed_child,
         )
     assert error.value.__cause__ is injected_error
     assert {
@@ -1425,6 +1452,7 @@ def test_last_bootstrap_failure_prevents_backfill_admission(tmp_path, monkeypatc
             max_partition_jobs=len(plan.context.samples),
             raw_workers=4,
             pipeline_overlap=True,
+            project_child=project_composed_child,
         )
     assert not waiting_final.is_set()
 
@@ -1499,6 +1527,7 @@ def test_final_grouping_failure_stops_before_any_backfill(
                 if event.get("event") == "partition_timeline"
                 else None
             ),
+            project_child=project_composed_child,
         )
     # Final grouping is a shared phase boundary, before Backfill admission.
     assert len(finalized) >= 2
@@ -1525,6 +1554,7 @@ def test_backfill_requires_frozen_batch_calibration(tmp_path, monkeypatch):
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=len(plan.context.samples),
         raw_workers=1,
+        project_child=project_composed_child,
     )
     try:
         with pytest.raises(RuntimeError, match="requires frozen batch calibration"):
@@ -1574,7 +1604,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     original_chromatogram = _FakeThermoRaw.GetChromatogramData
     original_init = _FakeThermoRaw.__init__
     original_dispose = _FakeThermoRaw.Dispose
-    original_append = owner.StreamedResultStore.append_children
+    original_append = owner.StreamedResultStore.append_child_outputs
     original_prepare = runtime_owner._prepare_group_authorized_backfills
 
     def materialize(*args, **kwargs):
@@ -1651,7 +1681,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
-    monkeypatch.setattr(owner.StreamedResultStore, "append_children", append)
+    monkeypatch.setattr(owner.StreamedResultStore, "append_child_outputs", append)
     result = owner.execute_untargeted_plan(
         plan,
         output_dir=tmp_path / "parallel",
@@ -1659,6 +1689,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
         max_partition_jobs=8,
         raw_workers=raw_workers,
         progress_callback=progress,
+        project_child=project_composed_child,
     )
     assert type(result) is CompletedUntargetBatchWorkflowResult
     initial_sample_count = sum(
@@ -1765,6 +1796,7 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
             max_partition_jobs=8,
             should_cancel=should_cancel,
             progress_callback=progress,
+            project_child=project_composed_child,
         )
     if failure_mode in {"vendor_failure", "cleanup_failure"}:
         assert "injected " + failure_mode.replace("_", " ") in str(error.value)
@@ -2118,6 +2150,7 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
         plan,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=100,
+        project_child=project_composed_child,
     )
     assert len(adapter.bootstrap_partitions) == 1
     store = StreamedResultStore(tmp_path / "formal-spool", adapter.get_shared_objects())
@@ -2196,8 +2229,8 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
     } == prepared_group_ids
     assert {
         group.group_hypothesis_id
-        for child in persisted.children
-        for group in child.scientific_core.grouping_result.final_population
+        for output in persisted.child_outputs
+        for group in output.child.scientific_core.grouping_result.final_population
     } == prepared_group_ids
 
 
@@ -2215,6 +2248,7 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
         plan,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=100,
+        project_child=project_composed_child,
     )
     store = StreamedResultStore(
         tmp_path / "retention-spool", adapter.get_shared_objects()
@@ -2226,7 +2260,9 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
     persisted = composed.result
 
     stored = store.read(composed.sealed.index)
-    child_before = store.read_selected(composed.sealed.index, "children", (0,))[0]
+    child_before = store.read_selected(composed.sealed.index, "child_outputs", (0,))[
+        0
+    ].child
     child_scope = child_before.scientific_core.scope
     assert child_scope.capture_bindings
     child_observations = child_before.scientific_core.cell_observations
@@ -2238,14 +2274,16 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
     assert persisted.excluded_candidate_ids == expected_excluded_ids
     assert not hasattr(persisted, "excluded_candidates")
     assert not hasattr(persisted, "capture_bindings")
-    assert stored.capture_bindings == ()
+    assert not hasattr(stored, "capture_bindings")
     assert stored.capture_evidence
 
     store.seal()
     finalized = adapter.finalize_application(store, (composed,))
     assert finalized.scope.capture_bindings == ()
     assert tuple(finalized.excluded_candidates) == tuple(plan.excluded_candidates)
-    child_after = store.read_selected(composed.sealed.index, "children", (0,))[0]
+    child_after = store.read_selected(composed.sealed.index, "child_outputs", (0,))[
+        0
+    ].child
     assert (
         child_after.scientific_core.scope.capture_bindings
         == child_scope.capture_bindings
@@ -2293,6 +2331,7 @@ def test_process_backend_reuses_one_shared_pool_and_closes_once(
         raw_workers=8,
         raw_worker_backend="process",
         acquisition_workers=2,
+        project_child=project_composed_child,
     )
 
     assert adapter.acquisition_workers == 2
@@ -2342,6 +2381,7 @@ def _run_for_spool(tmp_path, monkeypatch, *, retain):
         known_istd_reference=reference,
         max_partition_jobs=len(plan.context.samples),
         retain_partition_spool=retain,
+        project_child=project_composed_child,
     )
     spools = _spool_dirs(output_dir)
     assert len(spools) == 1
@@ -2349,7 +2389,7 @@ def _run_for_spool(tmp_path, monkeypatch, *, retain):
         tuple(
             observation.key for observation in child.scientific_core.cell_observations
         )
-        for child in result.application_result.children
+        for child in children_of(result.application_result)
     )
     alias = replace(result)
     result.close()
@@ -2386,9 +2426,10 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
     restored = open_preserved_results(index)
     recovered = tuple(
         tuple(
-            observation.key for observation in child.scientific_core.cell_observations
+            observation.key
+            for observation in output.child.scientific_core.cell_observations
         )
-        for child in restored.sequence("children")
+        for output in restored.sequence("child_outputs")
     )
     # The spool keeps partition write order; the result restores canonical order.
     assert sorted(recovered, key=repr) == sorted(child_ids, key=repr)
@@ -2397,9 +2438,11 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
     first_child_partition = next(
         position
         for position, lengths in enumerate(restored._field_lengths)
-        if lengths["children"]
+        if lengths["child_outputs"]
     )
-    first = restored.read_selected(first_child_partition, "children", (0,))[0]
+    first = restored.read_selected(first_child_partition, "child_outputs", (0,))[
+        0
+    ].child
     assert (
         tuple(
             observation.key for observation in first.scientific_core.cell_observations
@@ -2421,6 +2464,7 @@ def test_result_store_close_failure_is_reported_once(tmp_path, monkeypatch, reta
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=len(plan.context.samples),
         retain_partition_spool=retain,
+        project_child=project_composed_child,
     )
     alias = replace(result)
     operation = "preserve_results" if retain else "cleanup"
@@ -2461,6 +2505,7 @@ def _run_for_cache(tmp_path, monkeypatch, *, retain, tag, shared=None):
         max_partition_jobs=len(plan.context.samples),
         retain_acquisition_cache=retain,
         acquisition_cache_dir=shared,
+        project_child=project_composed_child,
     )
     result.close()
     return output_dir / ".cid_nl_acquisition_cache"
@@ -2495,7 +2540,7 @@ def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):
 
     plan, _ = _plan(tmp_path, monkeypatch)
     calls = []
-    original = bounded_owner.StreamedResultStore.append_children
+    original = bounded_owner.StreamedResultStore.append_child_outputs
 
     def fail_second(*args, **kwargs):
         calls.append(1)
@@ -2504,7 +2549,7 @@ def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):
         return original(*args, **kwargs)
 
     monkeypatch.setattr(
-        bounded_owner.StreamedResultStore, "append_children", fail_second
+        bounded_owner.StreamedResultStore, "append_child_outputs", fail_second
     )
     output_dir = tmp_path / "failed-cache-output"
     with pytest.raises(RuntimeError, match="failed before batch publication"):
@@ -2513,5 +2558,6 @@ def test_acquisition_cache_survives_a_failed_attempt(tmp_path, monkeypatch):
             output_dir=output_dir,
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             max_partition_jobs=len(plan.context.samples),
+            project_child=project_composed_child,
         )
     assert (output_dir / ".cid_nl_acquisition_cache").is_dir()

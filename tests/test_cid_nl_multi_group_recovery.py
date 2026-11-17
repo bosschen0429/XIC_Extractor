@@ -31,7 +31,9 @@ from tests.processing_identity_no_raw_fixture import (
 from tests.untargeted_cid_nl_real_data_adapter_fixtures import _without_ms1_peak
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
+    children_of,
     complete_dense_partition,
+    project_composed_child,
 )
 from xic_extractor.alignment.cid_nl_inputs import CID_NL_ALIGNMENT_CONFIG
 from xic_extractor.alignment.config import AlignmentConfig
@@ -651,7 +653,7 @@ def test_runtime_recovers_every_authorized_rt_group(
         assert len(completed.initial_groups) == 2
         projection_context = partition_models._SampleResultContext(jobs)
 
-        (child,) = completed.application_result.children
+        (child,) = children_of(completed.application_result)
         scientific = child.scientific_core
         transition = scientific.partition_transition
         assert len(transition.predecessors) == len(transition.successors) == 2
@@ -1103,7 +1105,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     # Ions within the precursor tolerance share one Discovery ion channel.
     assert len(set(physical_ids)) == 1
 
-    (child,) = completed.application_result.children
+    (child,) = children_of(completed.application_result)
     transition = child.scientific_core.partition_transition
     assert len(transition.predecessors) == len(transition.successors) == 2
     assert transition.admitted_members == ()
@@ -1250,7 +1252,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
-    (child,) = completed.application_result.children
+    (child,) = children_of(completed.application_result)
     missing_cells = tuple(
         cell
         for cell in child.scientific_core.cell_observations
@@ -1265,7 +1267,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     assert sum(decision.value is not None for decision in missing_decisions) == 1
     assert all(
         sum(cell_status(cell) == "detected" for cell in cells) == 2
-        for child in writer.children
+        for child in children_of(writer)
         for _group, cells in child.group_cells
     )
     assert sum(cell.evidence_states == ("unresolved",) for cell in missing_cells) == 1
@@ -1289,6 +1291,7 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
         tmp_path / "backfill.sqlite",
         full_audit=False,
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
@@ -1413,7 +1416,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
-    (child,) = completed.application_result.children
+    (child,) = children_of(completed.application_result)
     (missing_cell,) = tuple(
         cell
         for cell in child.scientific_core.cell_observations
@@ -1634,6 +1637,7 @@ def _assert_alignment_uses_configured_recovery_groups(
         alignment_config=AlignmentConfig(
             anchor_min_seed_events=2, preferred_rt_sec=2.0
         ),
+        project_child=project_composed_child,
     )
     assert sorted(len(group.owners) for group in completed.initial_groups) == [1, 2]
     missing = next(
@@ -1643,7 +1647,7 @@ def _assert_alignment_uses_configured_recovery_groups(
     )
     (recovery,) = missing.backfill_attempts
     assert recovery.assessment.candidate_peaks == ()
-    (child,) = completed.application_result.children
+    (child,) = children_of(completed.application_result)
     missing_cells = tuple(
         cell
         for cell in child.scientific_core.cell_observations

@@ -17,9 +17,11 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 from xic_extractor.alignment.owner_group_delivery import feature_id_label
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 from xic_extractor.alignment_explanation.review import review_cell
+from xic_extractor.alignment_explanation.storage import encode_review_curve
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
 )
+from xic_extractor.output.alignment.tsv_writer import UntargetChildOutputs
 from xic_extractor.rt_calibration_codec import rt_calibration_payload
 
 if TYPE_CHECKING:
@@ -30,6 +32,7 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
     )
+    from xic_extractor.alignment.rt_frame import SampleRtFrame
     from xic_extractor.discovery.models import DiscoveryPeak
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         CidNlMethodAssessment,
@@ -87,7 +90,7 @@ def _final_cell_observation_payload(observation: Any) -> dict[str, Any]:
 
 
 def _emit_curve_payload(
-    sink: ExplanationReportWriter,
+    sink: ExplanationReportWriter | _CurvesUnlessCaptureEvidence,
     ref: Any,
     sample_id: str,
     *,
@@ -195,11 +198,280 @@ def _emit_curve_payload(
     )
 
 
+def _signal_digest(content: Any) -> str:
+    """Digest of the selected raw signal that identifies one physical peak."""
+    return hashlib.blake2b(
+        repr((content.sample_key, content.mz, content.rt, content.intensity)).encode(
+            "utf-8"
+        ),
+        digest_size=16,
+    ).hexdigest()
+
+
+def _peak_coordinates(content: Any) -> tuple[float, float, float]:
+    return (
+        content.mz,
+        content.integration.rt_apex_min,
+        content.generation_provenance.query_ppm_tol,
+    )
+
+
+# One recorded report write: the writer method, its arguments and keywords.
+_Write = tuple[str, tuple[Any, ...], dict[str, Any]]
+
+
+class _RecordedWrites:
+    """Record one child's report writes by their natural keys.
+
+    The writer numbers peaks, members, risk owners and records by first
+    appearance, so the writes are replayed into it in the batch's child order
+    instead of being written while each child composes.
+    """
+
+    def __init__(self, *, review_only: bool, curve_mz_ranges: Sequence[Any]):
+        self.review_only = review_only
+        self.curve_mz_ranges = tuple(curve_mz_ranges)
+        self.writes: list[_Write] = []
+        self.unless_capture_evidence = _CurvesUnlessCaptureEvidence(self)
+
+    def __getattr__(self, name: str) -> Callable[..., None]:
+        if name not in _RECORDED_WRITER_METHODS:
+            raise AttributeError(name)
+
+        def record(*args: Any, **kwargs: Any) -> None:
+            self.writes.append((name, args, kwargs))
+
+        return record
+
+
+class _CurvesUnlessCaptureEvidence:
+    """Curves written only when the batch retained no capture evidence."""
+
+    def __init__(self, recorded: _RecordedWrites):
+        self._recorded = recorded
+        self.review_only = recorded.review_only
+        self.curve_mz_ranges = recorded.curve_mz_ranges
+
+    def add_curve_payload(self, **kwargs: Any) -> None:
+        self._recorded.writes.append(("curve_unless_capture_evidence", (), kwargs))
+
+
+_RECORDED_WRITER_METHODS = frozenset(
+    {
+        "add_terminal",
+        "add_final_group",
+        "set_row_destination",
+        "add_cells",
+        "set_cell_curve",
+        "set_cell_position",
+    }
+)
+
+
+def project_alignment_explanation_child(
+    child: FinalizedUntargetApplicationResult,
+    *,
+    sample_rt_frame: SampleRtFrame | None,
+    full_audit: bool = False,
+    curve_mz_ranges: Sequence[tuple[float, float]] = (),
+) -> tuple[_Write, ...]:
+    """Record the report writes of one finalized child without batch numbering.
+
+    A final group's ``feature_id`` is recorded as its position among the
+    child's written groups; replay turns it into the batch label.
+    """
+    sink = _RecordedWrites(review_only=not full_audit, curve_mz_ranges=curve_mz_ranges)
+    core = child.scientific_core
+
+    def locate(content: Any) -> str:
+        key: str = content.physical_peak_key
+        sink.writes.append(
+            (
+                "locate",
+                (content.sample_key, key, _peak_coordinates(content)),
+                {"digest": _signal_digest(content)},
+            )
+        )
+        return key
+
+    for terminal in core.terminal_subjects:
+        key = terminal.candidate_id, terminal.sample_key
+        if not isinstance(terminal, ObservedSearchSubject):
+            sink.add_terminal(*key, variant=terminal.variant)
+            continue
+        hypothesis = terminal.hypothesis
+        ref = hypothesis.peak
+        sink.add_terminal(
+            *key,
+            variant=terminal.variant,
+            hypothesis_id=hypothesis.hypothesis_id,
+            physical_peak_key=locate(ref),
+        )
+        _emit_curve_payload(
+            sink.unless_capture_evidence,
+            ref,
+            sample_id=key[1],
+            kind=ref.capture_stage,
+        )
+
+    # Same row order as the TSV writer that labels rows.
+    feature_offsets = {
+        group.group_hypothesis_id: offset
+        for offset, (group, _cells) in enumerate(child.group_cells)
+    }
+    # Recorded group position of each empty cell, and the group centre and
+    # query ppm used to inspect it.
+    positions: dict[tuple[str, str], float] = {}
+    centers: dict[str, tuple[float, float]] = {}
+    context_by_group = {
+        cell.group_hypothesis_id: cell.effective_cells[0].group_context
+        for cell in core.cell_observations
+        if cell.effective_cells
+    }
+    frame = sample_rt_frame
+    sample_stems = {
+        sample.sample_name: sample.raw_stem for sample in child.canonical_samples
+    }
+    group_positions = {}
+    for group in core.final_population:
+        peaks = [
+            peak for member in group.member_subjects for peak in member.physical_peaks
+        ]
+        raw_positions = [peak.integration.rt_apex_min for peak in peaks]
+        common_positions = [
+            estimate.rt_min
+            for peak in peaks
+            if frame is not None
+            and (
+                estimate := frame.estimate_rt(
+                    sample_stems[peak.sample_key], peak.integration.rt_apex_min
+                )
+            )
+            is not None
+        ]
+        if raw_positions:
+            group_positions[group.group_hypothesis_id] = (
+                median(raw_positions),
+                median(common_positions) if common_positions else None,
+            )
+    for final_cell in core.cell_observations:
+        refs = {
+            ref.physical_peak_key: ref
+            for ref in (
+                *final_cell.direct_observations,
+                *(hypothesis.peak for hypothesis in final_cell.direct_hypotheses),
+            )
+        }
+        for ref in refs.values():
+            locate(ref)
+        if refs:
+            continue
+        # Empty cells remain inspectable at the recorded physical group
+        # position. This is explicitly diagnostic, not an invented peak.
+        context = (
+            final_cell.effective_cells[0].group_context
+            if final_cell.effective_cells
+            else context_by_group.get(final_cell.group_hypothesis_id)
+        )
+        if context is None:
+            continue
+        position = group_positions.get(final_cell.group_hypothesis_id)
+        if position is None:
+            continue
+        raw_position, common_position = position
+        estimate = (
+            frame.estimate_observed_rt(
+                final_cell.canonical_sample.raw_stem, common_position
+            )
+            if frame is not None and common_position is not None
+            else None
+        )
+        gid = final_cell.group_hypothesis_id
+        positions[gid, final_cell.sample_key] = (
+            estimate.rt_min if estimate is not None else raw_position
+        )
+        center = (
+            context.group.group_center_mz,
+            context.method_subject.precursor_tolerance_ppm,
+        )
+        if centers.setdefault(gid, center) != center:
+            raise ValueError(f"one group has two inspection centres: {gid}")
+    for group in core.final_population:
+        position = centers.get(group.group_hypothesis_id)
+        members = [
+            {
+                **_fields(member, "sample_key", "subject_kind", "subject_id"),
+                "physical_peak_keys": [locate(peak) for peak in member.physical_peaks],
+            }
+            for member in group.member_subjects
+        ]
+        sink.add_final_group(
+            group.group_hypothesis_id,
+            feature_id=feature_offsets.get(group.group_hypothesis_id),
+            disposition=group.disposition,
+            members=members,
+            center_mz=position[0] if position else None,
+            ppm=position[1] if position else None,
+        )
+    # Member risks are stored with the member; a cell keeps only the
+    # Backfill risks no member owns.
+    risks_by_group_sample: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(
+        list
+    )
+    for (
+        group_id,
+        sample_id,
+        backfill_risk,
+    ) in core.grouping_result.backfill_membership_risks:
+        risks_by_group_sample[group_id, sample_id].append(asdict(backfill_risk))
+
+    for group, group_cells in child.group_cells:
+        group_id = group.group_hypothesis_id
+        cells = [
+            {
+                **review_cell(decision),
+                "membership_risks": risks_by_group_sample.get(
+                    (
+                        group_id,
+                        decision.subject.canonical_sample.sample_name,
+                    ),
+                    [],
+                ),
+            }
+            for decision in group_cells
+        ]
+        sink.set_row_destination(group_id, group.destination)
+        if full_audit:
+            for decision, cell in zip(group_cells, cells, strict=True):
+                cell["observation"] = _final_cell_observation_payload(decision.evidence)
+        sink.add_cells(group_id, cells)
+        for decision in group_cells:
+            if decision.value is None:
+                continue
+            # The extraction window of the peak that gave the value.
+            evidence = cast("FinalGroupCellObservation", decision.evidence)
+            trace = next(
+                peak.source_trace
+                for peak in evidence.value_peaks
+                if peak.integration == decision.selected_integration
+            )
+            sink.set_cell_curve(
+                group_id,
+                decision.subject.canonical_sample.sample_name,
+                encode_review_curve(trace.rt, trace.intensity),
+            )
+        for cell in cells:
+            cell_position = positions.get((group_id, cell["sample_key"]))
+            if cell_position is not None:
+                sink.set_cell_position(group_id, cell["sample_key"], cell_position)
+    return tuple(sink.writes)
+
+
 @dataclass(frozen=True)
 class PreparedAlignmentExplanation:
-    """Consume owner results now; publish only after the Matrix is available."""
+    """Consume projected children now; publish only after the Matrix exists."""
 
-    consume_child: Callable[[FinalizedUntargetApplicationResult], None]
+    consume_child: Callable[[UntargetChildOutputs, int], None]
     finalize: Callable[[Path], Path]
 
 
@@ -207,6 +479,7 @@ def write_alignment_explanation(
     path: Path,
     *,
     completed: CompletedUntargetBatchWorkflowResult,
+    children: Sequence[FinalizedUntargetApplicationResult],
     peaks_by_sample: Mapping[str, Sequence[DiscoveryPeak]],
     matrix_path: Path,
     alignment_config: AlignmentConfig,
@@ -217,7 +490,10 @@ def write_alignment_explanation(
     full_audit: bool = False,
     curve_mz_ranges: Sequence[tuple[float, float]] = (),
 ) -> Path:
-    """Persist exact owner identities, reasons and Matrix publication provenance."""
+    """Persist in-memory composed children with Matrix publication provenance.
+
+    ``children`` are the batch's finalized children in its child order.
+    """
     with prepare_alignment_explanation(
         path,
         completed=completed,
@@ -230,8 +506,21 @@ def write_alignment_explanation(
         full_audit=full_audit,
         curve_mz_ranges=curve_mz_ranges,
     ) as explanation:
-        for child in completed.application_result.children:
-            explanation.consume_child(child)
+        first_group = 0
+        for child in children:
+            explanation.consume_child(
+                UntargetChildOutputs(
+                    groups=(),
+                    explanation=project_alignment_explanation_child(
+                        child,
+                        sample_rt_frame=completed.sample_rt_frame,
+                        full_audit=full_audit,
+                        curve_mz_ranges=curve_mz_ranges,
+                    ),
+                ),
+                first_group,
+            )
+            first_group += len(child.group_cells)
         return explanation.finalize(matrix_path)
 
 
@@ -249,7 +538,11 @@ def prepare_alignment_explanation(
     full_audit: bool = False,
     curve_mz_ranges: Sequence[tuple[float, float]] = (),
 ) -> Iterator[PreparedAlignmentExplanation]:
-    """Keep one bounded transaction while outputs share the loaded children."""
+    """Keep one bounded transaction while the TSV pass replays each child.
+
+    The children were projected with the same ``full_audit`` and
+    ``curve_mz_ranges``.
+    """
     measured_mz = ms1_apex_mz_by_candidate or {}
     with ExplanationReportWriter(
         path,
@@ -266,26 +559,31 @@ def prepare_alignment_explanation(
                 for stem, sample in samples.items()
             ]
         )
-        located_peaks: dict[str, Any] = {}
+        located_peaks: dict[str, str] = {}
 
-        def locate(content: Any) -> str:
+        def add_located_peak(
+            sample_key: str,
+            key: str,
+            coordinates: tuple[float, float, float],
+            *,
+            digest: str,
+        ) -> None:
             """Written locator of one physical peak; never shared by two peaks.
 
             A peak is its selected raw signal. Reads of it in other XIC windows
             can integrate differently; each cell keeps its own value and curve.
             """
-            key: str = content.physical_peak_key
-            signal = (content.sample_key, content.mz, content.rt, content.intensity)
-            if located_peaks.setdefault(key, signal) != signal:
+            if located_peaks.setdefault(key, digest) != digest:
                 raise ValueError(f"distinct physical peaks share one locator: {key}")
-            sink.add_peak(
+            sink.add_peak(sample_key, key, coordinates)
+
+        def locate(content: Any) -> str:
+            key: str = content.physical_peak_key
+            add_located_peak(
                 content.sample_key,
                 key,
-                (
-                    content.mz,
-                    content.integration.rt_apex_min,
-                    content.generation_provenance.query_ppm_tol,
-                ),
+                _peak_coordinates(content),
+                digest=_signal_digest(content),
             )
             return key
 
@@ -433,238 +731,71 @@ def prepare_alignment_explanation(
             for assessment in refs:
                 emit_assessment(assessment)
 
-        def emit_group(
-            stage: str,
-            group: Any,
-            feature_id: str | None = None,
-            position: tuple[float, float] | None = None,
-        ) -> None:
-            members = [
-                {
-                    **_fields(member, "sample_key", "subject_kind", "subject_id"),
-                    "physical_peak_keys": [
-                        locate(peak) for peak in member.physical_peaks
-                    ],
-                }
-                for member in group.member_subjects
-            ]
-            if stage == "final_groups":
-                sink.add_final_group(
-                    group.group_hypothesis_id,
-                    feature_id=feature_id,
-                    disposition=group.disposition,
-                    members=members,
-                    center_mz=position[0] if position else None,
-                    ppm=position[1] if position else None,
-                )
-                return
-            inference_basis = (
-                group.inference_basis
-                if isinstance(group, CrossSamplePeakGroupHypothesis)
-                else None
-            )
-            sink.add_initial_group(
-                disposition=group.disposition,
-                members=members,
-                inference_basis=None
-                if inference_basis is None
-                else asdict(inference_basis),
-                inference_decisions=None
-                if inference_basis is None
-                else [asdict(decision) for decision in group.inference_decisions],
-            )
-
         child_count = 0
-        row_count = 0
         matrix_row_count = 0
-        report_progress("children", 0, len(application.children))
+        child_total = len(application.child_outputs)
+        report_progress("children", 0, child_total)
 
-        def consume_child(child: FinalizedUntargetApplicationResult) -> None:
-            nonlocal child_count, row_count, matrix_row_count
-            core = child.scientific_core
-            for terminal in core.terminal_subjects:
-                key = terminal.candidate_id, terminal.sample_key
-                if not isinstance(terminal, ObservedSearchSubject):
-                    sink.add_terminal(*key, variant=terminal.variant)
-                    continue
-                hypothesis = terminal.hypothesis
-                ref = hypothesis.peak
-                sink.add_terminal(
-                    *key,
-                    variant=terminal.variant,
-                    hypothesis_id=hypothesis.hypothesis_id,
-                    physical_peak_key=locate(ref),
-                )
-                if not capture_evidence:
-                    _emit_curve_payload(
-                        sink,
-                        ref,
-                        sample_id=key[1],
-                        kind=ref.capture_stage,
+        def consume_child(child: UntargetChildOutputs, first_group: int) -> None:
+            nonlocal child_count, matrix_row_count
+            for name, args, kwargs in cast(
+                "tuple[_Write, ...]", child.explanation or ()
+            ):
+                if name == "locate":
+                    add_located_peak(*args, **kwargs)
+                elif name == "curve_unless_capture_evidence":
+                    if not capture_evidence:
+                        sink.add_curve_payload(**kwargs)
+                elif name == "add_final_group":
+                    offset = kwargs["feature_id"]
+                    sink.add_final_group(
+                        *args,
+                        **{
+                            **kwargs,
+                            "feature_id": None
+                            if offset is None
+                            else feature_id_label(first_group + offset + 1),
+                        },
                     )
-
-            # Same child and row order as the TSV writer that labels rows.
-            feature_ids = {}
-            for group, _cells in child.group_cells:
-                row_count += 1
-                matrix_row_count += group.destination == "matrix"
-                feature_ids[group.group_hypothesis_id] = feature_id_label(row_count)
-            # Recorded group position of each empty cell, and the group centre
-            # and query ppm used to inspect it.
-            positions: dict[tuple[str, str], float] = {}
-            centers: dict[str, tuple[float, float]] = {}
-            context_by_group = {
-                cell.group_hypothesis_id: cell.effective_cells[0].group_context
-                for cell in core.cell_observations
-                if cell.effective_cells
-            }
-            frame = completed.sample_rt_frame
-            sample_stems = {
-                sample.sample_name: sample.raw_stem for sample in samples.values()
-            }
-            group_positions = {}
-            for group in core.final_population:
-                peaks = [
-                    peak
-                    for member in group.member_subjects
-                    for peak in member.physical_peaks
-                ]
-                raw_positions = [peak.integration.rt_apex_min for peak in peaks]
-                common_positions = [
-                    estimate.rt_min
-                    for peak in peaks
-                    if frame is not None
-                    and (
-                        estimate := frame.estimate_rt(
-                            sample_stems[peak.sample_key], peak.integration.rt_apex_min
-                        )
-                    )
-                    is not None
-                ]
-                if raw_positions:
-                    group_positions[group.group_hypothesis_id] = (
-                        median(raw_positions),
-                        median(common_positions) if common_positions else None,
-                    )
-            for final_cell in core.cell_observations:
-                refs = {
-                    ref.physical_peak_key: ref
-                    for ref in (
-                        *final_cell.direct_observations,
-                        *(
-                            hypothesis.peak
-                            for hypothesis in final_cell.direct_hypotheses
-                        ),
-                    )
-                }
-                for ref in refs.values():
-                    locate(ref)
-                if refs:
-                    continue
-                # Empty cells remain inspectable at the recorded physical group
-                # position. This is explicitly diagnostic, not an invented peak.
-                context = (
-                    final_cell.effective_cells[0].group_context
-                    if final_cell.effective_cells
-                    else context_by_group.get(final_cell.group_hypothesis_id)
-                )
-                if context is None:
-                    continue
-                position = group_positions.get(final_cell.group_hypothesis_id)
-                if position is None:
-                    continue
-                raw_position, common_position = position
-                estimate = (
-                    frame.estimate_observed_rt(
-                        final_cell.canonical_sample.raw_stem, common_position
-                    )
-                    if frame is not None and common_position is not None
-                    else None
-                )
-                gid = final_cell.group_hypothesis_id
-                positions[gid, final_cell.sample_key] = (
-                    estimate.rt_min if estimate is not None else raw_position
-                )
-                center = (
-                    context.group.group_center_mz,
-                    context.method_subject.precursor_tolerance_ppm,
-                )
-                if centers.setdefault(gid, center) != center:
-                    raise ValueError(f"one group has two inspection centres: {gid}")
-            for group in core.final_population:
-                emit_group(
-                    "final_groups",
-                    group,
-                    feature_ids.get(group.group_hypothesis_id),
-                    centers.get(group.group_hypothesis_id),
-                )
-            # Member risks are stored with the member; a cell keeps only the
-            # Backfill risks no member owns.
-            risks_by_group_sample: dict[tuple[str, str], list[dict[str, Any]]] = (
-                defaultdict(list)
-            )
-            for (
-                group_id,
-                sample_id,
-                backfill_risk,
-            ) in core.grouping_result.backfill_membership_risks:
-                risks_by_group_sample[group_id, sample_id].append(asdict(backfill_risk))
-
-            for group, group_cells in child.group_cells:
-                group_id = group.group_hypothesis_id
-                cells = [
-                    {
-                        **review_cell(decision),
-                        "membership_risks": risks_by_group_sample.get(
-                            (
-                                group_id,
-                                decision.subject.canonical_sample.sample_name,
-                            ),
-                            [],
-                        ),
-                    }
-                    for decision in group_cells
-                ]
-                sink.set_row_destination(group_id, group.destination)
-                if full_audit:
-                    for decision, cell in zip(group_cells, cells, strict=True):
-                        cell["observation"] = _final_cell_observation_payload(
-                            decision.evidence
-                        )
-                sink.add_cells(group_id, cells)
-                for decision in group_cells:
-                    if decision.value is None:
-                        continue
-                    # The extraction window of the peak that gave the value.
-                    evidence = cast("FinalGroupCellObservation", decision.evidence)
-                    trace = next(
-                        peak.source_trace
-                        for peak in evidence.value_peaks
-                        if peak.integration == decision.selected_integration
-                    )
-                    sink.set_cell_curve(
-                        group_id,
-                        decision.subject.canonical_sample.sample_name,
-                        trace.rt,
-                        trace.intensity,
-                    )
-                for cell in cells:
-                    cell_position = positions.get((group_id, cell["sample_key"]))
-                    if cell_position is not None:
-                        sink.set_cell_position(
-                            group_id, cell["sample_key"], cell_position
-                        )
+                else:
+                    if name == "set_row_destination":
+                        matrix_row_count += args[1] == "matrix"
+                    getattr(sink, name)(*args, **kwargs)
             child_count += 1
             if child_count % 256 == 0:
-                report_progress("children", child_count, len(application.children))
+                report_progress("children", child_count, child_total)
 
         def finalize(matrix_path: Path) -> Path:
-            if child_count != len(application.children):
+            if child_count != child_total:
                 raise ValueError("explanation did not consume every finalized child")
             if child_count % 256:
-                report_progress("children", child_count, len(application.children))
+                report_progress("children", child_count, child_total)
             for group in phase_items("initial_groups", completed.initial_groups):
-                emit_group("initial_groups", group)
+                inference_basis = (
+                    group.inference_basis
+                    if isinstance(group, CrossSamplePeakGroupHypothesis)
+                    else None
+                )
+                sink.add_initial_group(
+                    disposition=group.disposition,
+                    members=[
+                        {
+                            **_fields(
+                                member, "sample_key", "subject_kind", "subject_id"
+                            ),
+                            "physical_peak_keys": [
+                                locate(peak) for peak in member.physical_peaks
+                            ],
+                        }
+                        for member in group.member_subjects
+                    ],
+                    inference_basis=None
+                    if inference_basis is None
+                    else asdict(inference_basis),
+                    inference_decisions=None
+                    if inference_basis is None
+                    else [asdict(decision) for decision in group.inference_decisions],
+                )
 
             report_progress("finalizing", sink.record_count, None)
             with Path(matrix_path).open("rb") as handle:

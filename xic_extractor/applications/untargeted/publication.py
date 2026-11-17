@@ -6,11 +6,12 @@ from collections.abc import Callable
 from contextlib import ExitStack, closing
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from xic_extractor.applications.untargeted.alignment_explanation_projection import (
     PreparedAlignmentExplanation,
     prepare_alignment_explanation,
+    project_alignment_explanation_child,
 )
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_extractor.execution.timing import TimingRecorder
@@ -22,12 +23,25 @@ from xic_extractor.output.alignment.output_levels import (
 from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
     output_paths,
+    row_output_paths,
     write_completed_untargeted_outputs_atomic,
+)
+from xic_extractor.output.alignment.tsv_writer import (
+    UntargetChildOutputs,
+    project_untarget_child_rows,
+    untarget_sample_order,
 )
 
 if TYPE_CHECKING:
+    from xic_extractor.alignment.result.application_result import (
+        FinalizedUntargetApplicationResult,
+    )
     from xic_extractor.untargeted_execution.execution_result import (
         CompletedUntargetBatchWorkflowResult,
+    )
+    from xic_extractor.untargeted_execution.partition_composition import (
+        ChildOutputProjection,
+        ChildProjectionContext,
     )
 
 
@@ -49,6 +63,39 @@ class UntargetedPublicationPolicy:
             emit_alignment_cells=self.emit_alignment_cells,
             emit_alignment_status_matrix=self.emit_alignment_status_matrix,
         )
+
+
+def untargeted_child_projection(
+    outputs: AlignmentRunOutputs,
+    policy: UntargetedPublicationPolicy,
+) -> ChildOutputProjection:
+    """Project each composed child into the requested TSV rows and its review
+    database writes.
+
+    Whether the database is written is known only once every Backfill risk
+    is, so every child records its writes; publication drops them otherwise.
+    """
+    row_names = tuple(row_output_paths(outputs))
+
+    def project(
+        child: FinalizedUntargetApplicationResult, context: ChildProjectionContext
+    ) -> UntargetChildOutputs:
+        return UntargetChildOutputs(
+            groups=project_untarget_child_rows(
+                child,
+                outputs=row_names,
+                sample_order=untarget_sample_order(child.canonical_samples),
+                membership_risks_by_owner=context.membership_risks_by_owner,
+            ),
+            explanation=project_alignment_explanation_child(
+                child,
+                sample_rt_frame=context.sample_rt_frame,
+                full_audit=policy.explanation_full_audit,
+                curve_mz_ranges=policy.explanation_curve_mz_ranges,
+            ),
+        )
+
+    return project
 
 
 def publish_untargeted_outputs(
@@ -79,13 +126,7 @@ def publish_untargeted_outputs(
         }
         write_explanation = (
             any(risk.risk_flags for risk in membership_risks.values())
-            or any(
-                risk.risk_flags
-                for child in completed.application_result.children
-                for _, _, risk in (
-                    child.scientific_core.grouping_result.backfill_membership_risks
-                )
-            )
+            or completed.application_result.has_flagged_backfill_risk
             or policy.emit_alignment_explanation
             or policy.explanation_full_audit
             or bool(policy.explanation_curve_mz_ranges)
@@ -118,7 +159,6 @@ def publish_untargeted_outputs(
             metadata=metadata,
             timing_recorder=timing_recorder,
             consume_child=_explanation_sink(explanation),
-            membership_risks_by_owner=membership_risks,
             before_write=lambda: _ensure_output_publication_not_cancelled(
                 should_cancel
             ),
@@ -155,12 +195,8 @@ def _ensure_output_publication_not_cancelled(
 
 def _explanation_sink(
     explanation: PreparedAlignmentExplanation | None,
-) -> Callable[[Any], None] | None:
-    """Consume children only when a report will be written from them.
-
-    Without a report nothing needs the children after they compose, which is
-    what lets the run release them instead of retaining every one.
-    """
+) -> Callable[[UntargetChildOutputs, int], None] | None:
+    """Replay children's recorded writes only when a report is written."""
     return None if explanation is None else explanation.consume_child
 
 

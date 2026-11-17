@@ -23,6 +23,7 @@ from tests.workbench_browser_fixtures import browser_errors as browser_errors
 from tests.workbench_browser_fixtures import config_dir as config_dir
 from tests.workbench_browser_fixtures import workbench as workbench
 from tests.workbench_browser_fixtures import workbench_defaults as workbench_defaults
+from xic_extractor.alignment_explanation.storage import encode_review_curve
 from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_workbench.config_io import read_settings, write_settings
@@ -2206,7 +2207,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
             samples=[{"sample_key": "S1"}],
             base_cell={"observation_ids": ["obs-01"], "apex_rt_min": 1.0},
             extend=lambda writer: writer.set_cell_curve(
-                "G1", "S1", (0.9, 1.0, 1.1), (1.0, 5.0, 1.0)
+                "G1", "S1", encode_review_curve((0.9, 1.0, 1.1), (1.0, 5.0, 1.0))
             ),
         )[0]
         if sample_count == 1

@@ -17,6 +17,7 @@ from tests.alignment_explanation_fixtures import (
     explanation_discovery_facts,
     explanation_summary,
 )
+from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
@@ -137,7 +138,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
         tmp_path, monkeypatch, "positive"
     )
     expected = {}
-    for child in completed.application_result.children:
+    for child in children_of(completed.application_result):
         for terminal in child.scientific_core.terminal_subjects:
             hypothesis = getattr(terminal, "hypothesis", None)
             if hypothesis is not None:
@@ -155,6 +156,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
         tmp_path / "metadata.sqlite",
         full_audit=True,
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,

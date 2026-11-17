@@ -37,7 +37,11 @@ from tests.cid_nl_runtime_fixtures import (
 )
 from tests.untargeted_cid_nl_batch_runtime_fixtures import _nearby_subject_candidates
 from tests.untargeted_partition_fixtures import (
+    children_of,
+    composed_child_outputs,
     fixture_assessment,
+    physical_peak_keys,
+    project_composed_child,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
@@ -134,8 +138,13 @@ def _assert_partition_composition_parity(
         scope=original.scope,
         processing_attempt_id=original.processing_attempt_id,
         acquisition_sources=original.acquisition_sources,
-        children=tuple(child for part in parts for child in part.children),
+        child_outputs=tuple(
+            output
+            for part in parts
+            for output in composed_child_outputs(part.children, part.initial_groups)
+        ),
         excluded_candidates=exclusions,
+        has_flagged_backfill_risk=original.has_flagged_backfill_risk,
     )
     recomposed = replace(completed, application_result=result)
     with tempfile.TemporaryDirectory() as directory:
@@ -143,10 +152,10 @@ def _assert_partition_composition_parity(
             Path(directory) / "recomposed", recomposed.application_result
         ) == written_rows(Path(directory) / "original", completed.application_result)
     assert result.excluded_candidates == original.excluded_candidates
-    assert result.physical_peak_keys == original.physical_peak_keys
+    assert physical_peak_keys(result) == physical_peak_keys(original)
     assert all(
         left is right
-        for child in result.children
+        for child in children_of(result)
         for left, right in zip(
             child.canonical_samples, original.canonical_samples, strict=True
         )
@@ -879,6 +888,7 @@ def profile_replay(tmp_path, monkeypatch, request):
                 sample_reader=lambda: ProcessMemorySample(123456, 654321, "measured"),
             ),
         ),
+        project_child=project_composed_child,
     )
     try:
         yield SimpleNamespace(
@@ -964,7 +974,7 @@ def _source_verification_inputs(tmp_path: Path):
 def _assert_conservative_coverage_handoff(
     completed, writer_inputs, batch, runtime_result, tmp_path, *, threshold: bool
 ) -> None:
-    (child,) = completed.application_result.children
+    (child,) = children_of(completed.application_result)
     scientific = child.scientific_core
     handoff = scientific.cell_observation_handoff
     assert handoff is not None

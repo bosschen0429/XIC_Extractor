@@ -16,6 +16,7 @@ from tests.cid_nl_runtime_fixtures import (
 from tests.untargeted_cid_nl_production_batch_fixtures import (
     _source_verification_inputs,
 )
+from tests.untargeted_partition_fixtures import project_composed_child
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_with_expectations,
@@ -49,6 +50,7 @@ def test_production_reuses_source_verification_across_runtime_opens(
         output_dir=tmp_path / "out",
         alignment_config=AlignmentConfig(),
         max_partition_jobs=1,
+        project_child=project_composed_child,
     )
     assert len(opened[path]) == len(plan.subject_batch.subjects) > 1
     assert fingerprints == []
@@ -96,4 +98,5 @@ def test_production_rejects_source_change_after_input_verification(
             plan,
             output_dir=tmp_path / "failed-output",
             alignment_config=AlignmentConfig(),
+            project_child=project_composed_child,
         )
