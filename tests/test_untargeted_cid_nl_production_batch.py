@@ -1198,6 +1198,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             child_outputs=composed_child_outputs(
                 (replace(weighted_child, group_cells=((written_group, cells),)),),
                 completed.initial_groups,
+                samples=writer_inputs.canonical_samples,
             ),
         )
         accepted = tuple(cell for cell in cells if cell.value is not None)

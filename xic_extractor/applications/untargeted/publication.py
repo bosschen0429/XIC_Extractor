@@ -8,6 +8,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from xic_extractor.alignment.cross_sample.peak_groups import (
+    accepted_membership_risks,
+)
 from xic_extractor.applications.untargeted.alignment_explanation_projection import (
     PreparedAlignmentExplanation,
     prepare_alignment_explanation,
@@ -84,7 +87,7 @@ def untargeted_child_projection(
             groups=project_untarget_child_rows(
                 child,
                 outputs=row_names,
-                sample_order=untarget_sample_order(child.canonical_samples),
+                sample_order=untarget_sample_order(context.samples),
                 membership_risks_by_owner=context.membership_risks_by_owner,
             ),
             explanation=project_alignment_explanation_child(
@@ -118,14 +121,11 @@ def publish_untargeted_outputs(
         }
         inputs = completed.publication_inputs
         matrix_path = outputs.matrix_tsv
-        membership_risks = {
-            decision.owner_id: decision.accepted_risk
-            for group in completed.initial_groups
-            for decision in group.inference_decisions
-            if decision.accepted_risk is not None
-        }
         write_explanation = (
-            any(risk.risk_flags for risk in membership_risks.values())
+            any(
+                risk.risk_flags
+                for risk in accepted_membership_risks(completed.initial_groups).values()
+            )
             or completed.application_result.has_flagged_backfill_risk
             or policy.emit_alignment_explanation
             or policy.explanation_full_audit

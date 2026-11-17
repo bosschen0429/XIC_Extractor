@@ -16,6 +16,7 @@ from xic_extractor.alignment.cid_nl_inputs import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
+    accepted_membership_risks,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.result.application_result import (
@@ -100,17 +101,15 @@ def composed_child_outputs(
     children: Iterable[FinalizedUntargetApplicationResult],
     initial_groups: Iterable[CrossSamplePeakGroupHypothesis],
     *,
+    samples: tuple[SampleMetadata, ...],
     sample_rt_frame: SampleRtFrame | None = None,
 ) -> tuple[ComposedChildOutputs, ...]:
-    """Project in-memory children with their partition's membership risks."""
+    """Project in-memory children with the batch's samples and their
+    partition's membership risks."""
 
     context = ChildProjectionContext(
-        membership_risks_by_owner={
-            decision.owner_id: decision.accepted_risk
-            for group in initial_groups
-            for decision in group.inference_decisions
-            if decision.accepted_risk is not None
-        },
+        samples=samples,
+        membership_risks_by_owner=accepted_membership_risks(initial_groups),
         sample_rt_frame=sample_rt_frame,
     )
     return tuple(project_composed_child(child, context) for child in children)
@@ -226,7 +225,7 @@ def complete_dense_partition(
             for sample in context.samples
         ),
         child_outputs=composed_child_outputs(
-            partition.children, partition.initial_groups
+            partition.children, partition.initial_groups, samples=context.samples
         ),
         excluded_candidates=partition.excluded_candidates,
         has_flagged_backfill_risk=has_flagged_backfill_risk(partition.children),

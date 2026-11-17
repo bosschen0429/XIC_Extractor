@@ -141,7 +141,9 @@ def _assert_partition_composition_parity(
         child_outputs=tuple(
             output
             for part in parts
-            for output in composed_child_outputs(part.children, part.initial_groups)
+            for output in composed_child_outputs(
+                part.children, part.initial_groups, samples=batch.context.samples
+            )
         ),
         excluded_candidates=exclusions,
         has_flagged_backfill_risk=original.has_flagged_backfill_risk,

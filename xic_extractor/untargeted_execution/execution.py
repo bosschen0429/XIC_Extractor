@@ -220,6 +220,8 @@ class UntargetedPartitionPipelineAdapter:
     ) -> None:
         if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
             raise ValueError("acquisition_workers must be 1 or 2")
+        if project_child is None and not grouping_only:
+            raise ValueError("composing children requires an output projection")
         self._retain_partition_spool = bool(retain_partition_spool)
         self._grouping_only = grouping_only
         self._project_child = project_child
@@ -626,15 +628,13 @@ class UntargetedPartitionPipelineAdapter:
             if should_cancel is not None and should_cancel():
                 raise InterruptedError("CID-NL batch cancelled")
 
-        if self._project_child is None:
-            raise ValueError("composing children requires an output projection")
         persisted = compose_and_persist_untargeted_partition(
             batch,
             leaf.sample_results,
             store=store,
             partition_key=partition.partition_key,
             alignment_config=self._alignment_config,
-            project_child=self._project_child,
+            project_child=cast(ChildOutputProjection, self._project_child),
             sample_rt_frame=self._batch_preparation.frozen_rt_frame,
             known_istd_reference=self._known_istd_reference,
             should_cancel=cancel_check,

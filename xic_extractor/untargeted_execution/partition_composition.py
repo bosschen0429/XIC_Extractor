@@ -25,6 +25,7 @@ from xic_extractor.alignment.completion import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
+    accepted_membership_risks,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
@@ -58,6 +59,7 @@ from xic_extractor.peak_detection.search_scope import (
     EvidenceProviderBinding,
     UntargetedSearchScope,
 )
+from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.input_planning import (
     UntargetedInputPlan,
 )
@@ -100,8 +102,10 @@ class UntargetedPartitionComposition:
 
 @dataclass(frozen=True, slots=True)
 class ChildProjectionContext:
-    """Partition facts a child's output projection reads besides the child."""
+    """Batch and partition facts a child's output projection reads besides the
+    child: the batch's samples, which order every row's sample columns."""
 
+    samples: tuple[SampleMetadata, ...]
     membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk]
     sample_rt_frame: SampleRtFrame | None
 
@@ -176,15 +180,15 @@ def compose_untargeted_batch(
     )
     child_outputs = store.sequence("child_outputs")
     if child_positions:
-        ordered_children = tuple(sorted(child_positions))
-        if len(ordered_children) != len(child_outputs):
-            raise ValueError("partition child order lost a scientific result")
+        ordered_outputs = tuple(sorted(child_positions))
+        if len(ordered_outputs) != len(child_outputs):
+            raise ValueError("partition child order lost a projected child")
         child_outputs = ImmutableSequence(
-            (1,) * len(ordered_children),
+            (1,) * len(ordered_outputs),
             lambda index: store.read_selected(
-                ordered_children[index][1],
+                ordered_outputs[index][1],
                 "child_outputs",
-                (ordered_children[index][2],),
+                (ordered_outputs[index][2],),
             ),
         )
     return FinalizedUntargetBatchApplicationResult(
@@ -277,12 +281,8 @@ def compose_and_persist_untargeted_partition(
     child_order_keys: list[str] = []
     has_flagged_backfill_risk = False
     projection_context = ChildProjectionContext(
-        membership_risks_by_owner={
-            decision.owner_id: decision.accepted_risk
-            for group in inputs.initial_groups
-            for decision in group.inference_decisions
-            if decision.accepted_risk is not None
-        },
+        samples=batch.context.samples,
+        membership_risks_by_owner=accepted_membership_risks(inputs.initial_groups),
         sample_rt_frame=sample_rt_frame,
     )
 
