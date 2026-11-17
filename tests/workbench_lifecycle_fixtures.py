@@ -8,18 +8,26 @@ import sys
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 
 def _request(url, path, values=None):
     address = urlsplit(url)
     connection = http.client.HTTPConnection(address.hostname, address.port, timeout=10)
     try:
-        connection.request("GET", "/api/session")
+        launch = parse_qs(address.fragment)["launch"][0]
+        connection.request(
+            "GET",
+            "/api/session",
+            headers={
+                "X-XIC-Client": "workbench",
+                "X-XIC-Launch": launch,
+            },
+        )
         response = connection.getresponse()
-        cookie = response.getheader("Set-Cookie").split(";", 1)[0]
         response.read()
         assert response.status == 200
+        cookie = response.getheader("Set-Cookie").split(";", 1)[0]
         headers = {"Cookie": cookie, "X-XIC-Client": "workbench"}
         if values is not None:
             headers["Content-Type"] = "application/json"

@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         if desktop.url:
             print(f"XIC Workbench: {desktop.url}", flush=True)
             if not args.no_open:
-                webbrowser.open(desktop.url)
+                webbrowser.open(desktop.browser_handoff(desktop.url))
             return 0
         workspace = create_workspace(defaults=defaults, config_dir=args.config_dir)
         try:
@@ -72,12 +72,12 @@ def main(argv: list[str] | None = None) -> int:
         except OSError as exc:
             workspace.close()
             parser.exit(1, f"Unable to start the local workspace: {exc}\n")
-        url = f"http://127.0.0.1:{server.server_port}/"
+        url = server.launch_url
         desktop.publish(url)
         print(f"XIC Workbench: {url}", flush=True)
         print("Press Ctrl+C to stop the local workspace.", flush=True)
         if not args.no_open:
-            webbrowser.open(url)
+            webbrowser.open(desktop.browser_handoff(url))
         try:
             server.serve_forever()
         except KeyboardInterrupt:

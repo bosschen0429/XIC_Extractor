@@ -9,6 +9,7 @@ import sys
 import threading
 import uuid
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from xic_extractor.discovery.blank_qualification import get_default_background_library
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
@@ -34,7 +35,15 @@ def run_smoke(report_path: Path) -> int:
         str(server.server_address[0]), server.server_address[1], timeout=20
     )
     try:
-        connection.request("GET", "/api/session")
+        launch = parse_qs(urlsplit(server.launch_url).fragment)["launch"][0]
+        connection.request(
+            "GET",
+            "/api/session",
+            headers={
+                "X-XIC-Client": "workbench",
+                "X-XIC-Launch": launch,
+            },
+        )
         response = connection.getresponse()
         session_cookie = response.getheader("Set-Cookie")
         if session_cookie is None:

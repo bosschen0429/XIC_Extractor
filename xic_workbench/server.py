@@ -14,7 +14,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.configuration.models import ConfigError
@@ -103,6 +103,7 @@ class _WorkbenchHTTPServer(ThreadingHTTPServer):
     request_queue_size = socket.SOMAXCONN
 
     browser_lifetime: BrowserLifetime | None = None
+    launch_url: str
     workspace: WorkbenchSession
 
     def service_actions(self) -> None:
@@ -125,10 +126,13 @@ def create_server(
     port: int = 0,
     desktop_key: str | None = None,
     browser_lifetime: BrowserLifetime | None = None,
-) -> ThreadingHTTPServer:
+) -> _WorkbenchHTTPServer:
     """Serve only packaged frontend files and reports produced by this session."""
     session = secrets.token_urlsafe(32)
     cookie_name = f"xic_session_{secrets.token_hex(8)}"
+    # A private launch capability stays valid for this server's lifetime so the
+    # desktop launcher can reopen it even after the browser loses its cookie.
+    launch_capability = secrets.token_urlsafe(32)
 
     class Handler(BaseHTTPRequestHandler):
         server: ThreadingHTTPServer
@@ -182,6 +186,21 @@ def create_server(
                 # acknowledged, and an error response must not be sent twice.
                 raise _ResponseDisconnected() from exc
 
+        def _has_session(self):
+            cookie = SimpleCookie(self.headers.get("Cookie", ""))
+            token = cookie.get(cookie_name)
+            return (
+                token is not None
+                and secrets.compare_digest(token.value, session)
+                and self.headers.get("X-XIC-Client") == "workbench"
+            )
+
+        def _has_launch_capability(self):
+            capability = self.headers.get("X-XIC-Launch")
+            return capability is not None and secrets.compare_digest(
+                capability, launch_capability
+            )
+
         def _guard(self, *, api=False):
             authority = f"127.0.0.1:{self.server.server_port}"
             if self.headers.get("Host") != authority:
@@ -189,15 +208,22 @@ def create_server(
             origin = self.headers.get("Origin")
             if origin is not None and origin != f"http://{authority}":
                 raise PermissionError("工作區不接受其他網站的要求。")
-            if api:
-                cookie = SimpleCookie(self.headers.get("Cookie", ""))
-                token = cookie.get(cookie_name)
-                if (
-                    token is None
-                    or not secrets.compare_digest(token.value, session)
-                    or self.headers.get("X-XIC-Client") != "workbench"
-                ):
-                    raise PermissionError("請重新載入工作區頁面。")
+            if api and not self._has_session():
+                raise PermissionError("請重新載入工作區頁面。")
+
+        def _open_session(self):
+            if not self._has_session() and not self._has_launch_capability():
+                raise PermissionError("請從啟動網址開啟工作區。")
+            self._send(
+                200,
+                {
+                    "defaults": workspace.defaults,
+                    "desktop_key": None if workspace.closing else desktop_key,
+                },
+                Set_Cookie=(
+                    f"{cookie_name}={session}; Path=/; HttpOnly; SameSite=Strict"
+                ),
+            )
 
         def _handle(self, action):
             try:
@@ -269,16 +295,7 @@ def create_server(
                     Content_Disposition=f'attachment; filename="{name}"',
                 )
             elif url.path == "/api/session":
-                self._send(
-                    200,
-                    {
-                        "defaults": workspace.defaults,
-                        "desktop_key": None if workspace.closing else desktop_key,
-                    },
-                    Set_Cookie=(
-                        f"{cookie_name}={session}; Path=/; HttpOnly; SameSite=Strict"
-                    ),
-                )
+                self._open_session()
             elif match := re.fullmatch(r"/api/jobs/([a-f0-9]{32})", url.path):
                 self._send(200, workspace.job(match[1]))
             elif match := re.fullmatch(r"/api/views/([a-f0-9]{32})", url.path):
@@ -442,4 +459,8 @@ def create_server(
     server.workspace = workspace
     server.browser_lifetime = browser_lifetime
     server.daemon_threads = True
+    server.launch_url = (
+        f"http://127.0.0.1:{server.server_port}/"
+        f"#{urlencode({'launch': launch_capability})}"
+    )
     return server

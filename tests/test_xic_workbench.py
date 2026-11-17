@@ -14,6 +14,7 @@ import threading
 import time
 from dataclasses import replace
 from http.server import ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -124,6 +125,57 @@ def test_http_accepts_page_asset_burst_before_dispatch(tmp_path):
             server.shutdown()
             thread.join(timeout=5)
         server.server_close()
+        workspace.close()
+
+
+def test_session_requires_private_launch_capability_and_preserves_reopening(tmp_path):
+    workspace = review_workspace(config_dir=tmp_path)
+    server = create_server(
+        workspace,
+        read_user_guide=read_user_guide,
+        desktop_key="desktop-intent",
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    launch = parse_qs(urlsplit(server.launch_url).fragment)["launch"][0]
+
+    def request(path, headers=None):
+        connection = http.client.HTTPConnection(*server.server_address, timeout=10)
+        try:
+            connection.request("GET", path, headers=headers or {})
+            response = connection.getresponse()
+            data = json.loads(response.read())
+            return response.status, data, dict(response.getheaders())
+        finally:
+            connection.close()
+
+    client = {"X-XIC-Client": "workbench"}
+    try:
+        status, _, headers = request("/api/session", client)
+        assert status == 403 and "Set-Cookie" not in headers
+        status, _, headers = request(
+            "/api/session", {**client, "X-XIC-Launch": "not-the-capability"}
+        )
+        assert status == 403 and "Set-Cookie" not in headers
+
+        status, defaults, headers = request(
+            "/api/session", {**client, "X-XIC-Launch": launch}
+        )
+        assert status == 200 and defaults["desktop_key"] == "desktop-intent"
+        cookie = headers["Set-Cookie"].split(";", 1)[0]
+
+        status, _, headers = request("/api/session", {**client, "X-XIC-Launch": launch})
+        assert status == 200 and headers["Set-Cookie"].split(";", 1)[0] == cookie
+        status, _, headers = request("/api/session", client)
+        assert status == 403 and "Set-Cookie" not in headers
+        assert request("/api/analysis", {**client, "X-XIC-Launch": launch})[0] == 403
+        authenticated = {**client, "Cookie": cookie}
+        assert request("/api/session", authenticated)[0] == 200
+        assert request("/api/analysis", authenticated)[0] == 200
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
         workspace.close()
 
 

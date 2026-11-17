@@ -1,6 +1,6 @@
 // Result review: batch and item navigation, curve reading and Inspector views.
 import { analysis } from "./analysis_state.js";
-import { api, navigation, toast } from "./workspace_ui.js";
+import { api, navigation, openSession, toast } from "./workspace_ui.js";
 const $ = (id) => document.getElementById(id);
 const state = {
   page: null,
@@ -1159,7 +1159,7 @@ export function analysisStarted() {
   }
 }
 // One session read is shared with the setup page.
-export const session = api("/api/session");
+export const session = openSession();
 // One initial read is shared with the setup page, regardless of load order.
 export const ready = action(async () => {
   const { defaults } = await session;
