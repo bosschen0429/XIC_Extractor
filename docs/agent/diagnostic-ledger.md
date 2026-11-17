@@ -415,8 +415,23 @@ counts, were identical. An existing 8RAW snapshot replay retained all 871 groups
 and 2,681 observations with five byte-identical TSVs. These are in-memory grouping
 measurements, not a full85 RAW or Backfill runtime claim.
 
+Against `2f2d5769` (#1172), a group's drift models share its RT, weight and
+region arrays and its injection-order trend neighbours, and drift offsets are
+expanded only for the owners a consumer scores; the per-model whole-comparison
+frame cache is gone. Repeat counts showed no reusable work: 68,954 of 69,220
+candidate fits were distinct groups on the 255-owner fixture, where partition
+construction, sorting and alternatives took under 2% of the time (7% of a
+3.8 s 8RAW replay). On the same fixture under a
+concurrently loaded host, interleaved runs took 89.45-94.23 versus 68.89-77.79 s
+(medians 91.71/71.85) and peak working set fell from 1,261 to 314 MB; Theil-Sen
+fitting and batch-state lookup remain the floor. Six drift scenarios (missing B
+or M, population gaps, settled reassignment, fixed-original Backfill with
+competition) produced identical complete results. The 8RAW replay kept five
+byte-identical TSVs and its grouping time stayed within noise (4.89 versus 4.79 s).
+
 Reopen when drift fitting, pair scoring or the comparison population changes.
-Artifacts: `output/codex-rt1165-grouping-optimization/` in the #1165 worktree.
+Artifacts: `output/codex-rt1165-grouping-optimization/` in the #1165 worktree;
+`output/1172/` in the #1172 worktree.
 
 ### Grouping-only output avoids round-trip work
 
