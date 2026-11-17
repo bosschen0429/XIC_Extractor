@@ -253,14 +253,13 @@ Sample data is chosen in this order:
    required; curation selects eligible samples by role and exclusion only;
 3. the samples carried by the current run's result, when no saved file exists;
 4. the workbench's confirmed sample data for the RAW folder named by
-   `alignment_run_metadata.json`;
-5. the roles read from that RAW folder's headers with the same reader Alignment
-   uses when it is given no sample data (Thermo sample type and the QC, blank
-   and similar vocabulary in names). This needs the RAW folder and reader
-   recorded in the run metadata on this computer.
+   `alignment_run_metadata.json`.
 
-The CLI uses the explicit file, saved result file, then RAW headers. When none applies, the steps that
-need samples are unavailable and a sample file must be selected.
+The Workbench does not open RAW files or load DLLs while inspecting an imported
+result. When none of its sample sources applies, the steps that need samples are
+unavailable and a sample file must be selected. The CLI uses the explicit file,
+then the saved result file. For an older output, an explicit trusted `--dll-dir`
+allows the CLI to read roles from the RAW folder recorded in run metadata.
 
 `same_compound` reads per-cell detection, value and apex from the folder's
 `alignment_explanation.sqlite`. Direct detections take their apex from its
@@ -326,7 +325,9 @@ For batches, `xic-matrix-curation --source-dir <folder> --min-finite-fraction
 or, for `same_compound`, its flag are given. `--istd-list` selects a target
 list; without it the run's own standards are used.
 `--sample-metadata` selects a file; without it the saved result's sample data is
-used, falling back to RAW headers for older outputs. The module entry is `python -m scripts.run_matrix_curation`.
+used. For an older output, `--dll-dir` explicitly enables the RAW-header
+fallback without trusting an executable path from run metadata. The module
+entry is `python -m scripts.run_matrix_curation`.
 
 ## Verification
 

@@ -12,7 +12,6 @@ from xic_extractor.matrix_curation.export import (
     export_matrix_curation,
     prepare_matrix_curation,
     read_run_istd,
-    read_run_samples,
     read_sample_metadata_file,
 )
 from xic_extractor.matrix_curation.istd import IstdWindow, read_istd_file
@@ -42,7 +41,7 @@ def resolve_samples(
     """Pick sample data and say where it came from.
 
     Order: a chosen file, the saved run snapshot, the run's in-memory rows,
-    confirmed folder rows, then RAW headers for older outputs.
+    then confirmed folder rows. Imported results never initiate RAW or DLL reads.
     """
     if sample_metadata_path.strip():
         path = Path(sample_metadata_path.strip())
@@ -63,9 +62,6 @@ def resolve_samples(
                 "kind": "confirmed",
                 "label": str(confirmed),
             }
-    header_rows = read_run_samples(source)
-    if header_rows is not None:
-        return header_rows, {"kind": "raw", "label": str(source.raw_dir)}
     return None, None
 
 
@@ -183,11 +179,7 @@ def preview_curation(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]
 
 
 def _summary_label(sample_source: dict[str, str] | None) -> str:
-    if sample_source is None:
-        return ""
-    if sample_source["kind"] == "raw":
-        return f"RAW headers: {sample_source['label']}"
-    return sample_source["label"]
+    return sample_source["label"] if sample_source is not None else ""
 
 
 def _istd_label(source: CurationSource, istd_source: dict[str, str] | None) -> str:

@@ -21,7 +21,6 @@ class CurationSource:
     review_path: Path
     # Where the run read its RAW, from the Alignment run metadata when present.
     raw_dir: Path | None = None
-    dll_dir: Path | None = None
     # The run's per-cell explanation, when the folder has one.
     explanation_path: Path | None = None
     # The run's declared target list, from the Alignment run metadata.
@@ -45,18 +44,15 @@ def locate_curation_source(source_dir: Path) -> CurationSource:
         run = loaded if isinstance(loaded, dict) else {}
     except OSError, ValueError:
         pass
-    raw_dir, dll_dir = (
-        Path(value) if isinstance(value, str) and value.strip() else None
-        for value in (run.get("raw_dir"), run.get("dll_dir"))
-    )
+    value = run.get("raw_dir")
+    raw_dir = Path(value) if isinstance(value, str) and value.strip() else None
     explanation = source_dir / EXPLANATION_ARTIFACT_NAME
     snapshot = run.get("known_istd_reference_target_snapshot")
     return CurationSource(
-        source_dir,
-        matrix,
-        review,
-        raw_dir,
-        dll_dir,
-        explanation if explanation.is_file() else None,
-        snapshot if isinstance(snapshot, str) else None,
+        source_dir=source_dir,
+        matrix_path=matrix,
+        review_path=review,
+        raw_dir=raw_dir,
+        explanation_path=explanation if explanation.is_file() else None,
+        target_snapshot=snapshot if isinstance(snapshot, str) else None,
     )
