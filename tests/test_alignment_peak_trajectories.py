@@ -415,6 +415,45 @@ def test_order_survives_height_reversal_and_overlapping_absolute_rts(
     }
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_single_peak_samples_cannot_hide_an_informative_doublet(reverse):
+    from tests.alignment_pipeline_helpers import resolved_elution_context
+
+    # Both end samples have a measured doublet; the later sample contributes
+    # only its front peak as an owner. Twelve intervening single-peak samples
+    # used to consume both endpoints' six-neighbor budgets, even though no
+    # single-peak comparison can establish an ordered correspondence.
+    contexts = [
+        resolved_elution_context("first", ((10.0, 100.0), (10.6, 60.0))),
+        resolved_elution_context("last", ((10.1, 100.0), (10.7, 60.0))),
+    ]
+    owners = [
+        _owner("first", "early", 10.0),
+        _owner("first", "late", 10.6),
+        _owner("last", "early", 10.1),
+    ]
+    orders = {"first": 0, "last": 13}
+    for i in range(1, 13):
+        sample = f"single-{i}"
+        contexts.append(_context(sample, ((10.3, 100.0),)))
+        owners.append(_owner(sample, "only", 10.3))
+        orders[sample] = i
+    if reverse:
+        contexts.reverse()
+        owners.reverse()
+    result = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    assert result.supports_ordered_pair("first:early", "last:early")
+    assert not result.permits_membership(("first:late", "last:early"))
+    assert not any(
+        owner.startswith("single-")
+        for track in result.tracks
+        for owner in track.owner_ids
+    )
+    assert result.source_contexts == tuple(contexts)
+
+
 @pytest.mark.parametrize("second_sample_supported", [False, True])
 def test_pattern_calibration_requires_support_for_both_samples(second_sample_supported):
     owners = [_owner("a", "early", 10.0), _owner("b", "early", 11.6)]

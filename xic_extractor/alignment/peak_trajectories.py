@@ -1264,6 +1264,9 @@ def _neighbor_pairs(
         for pattern in patterns
     ]
     for index, pattern in enumerate(patterns):
+        # A single peak cannot establish an ordered correspondence.
+        if len(pattern.nodes) < 2:
+            continue
         center = centers[index]
         candidates = []
         for other_index in mass_index.candidates(pattern.mz):
@@ -1287,10 +1290,26 @@ def _neighbor_pairs(
                 )
             )
         samples: set[str] = set()
+        nearby = []
         for _, _, sample, other_index in sorted(candidates):
             if sample not in samples and len(samples) == _NEIGHBOR_SAMPLES:
                 continue
             samples.add(sample)
+            if len(patterns[other_index].nodes) >= 2:
+                nearby.append(other_index)
+        if not nearby:
+            # Preserve usable local comparisons. Only a neighborhood containing
+            # no informative pattern searches farther: otherwise sparse samples
+            # can consume every slot with comparisons the matcher must reject.
+            samples.clear()
+            for _, _, sample, other_index in sorted(candidates):
+                if len(patterns[other_index].nodes) < 2:
+                    continue
+                if sample not in samples and len(samples) == _NEIGHBOR_SAMPLES:
+                    continue
+                samples.add(sample)
+                nearby.append(other_index)
+        for other_index in nearby:
             first, second = sorted((index, other_index))
             chosen.add((first, second))
     return tuple((patterns[i], patterns[j]) for i, j in sorted(chosen))
