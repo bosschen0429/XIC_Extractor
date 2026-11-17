@@ -199,7 +199,12 @@ Final grouping uses them as follows:
   least six members having that regressor and a regressor range of at least a
   quarter of the shape range (B) or 10 seconds (M); otherwise it stays zero.
   Each nonzero coefficient costs what a 10-second RT difference costs a pair.
-  A group keeps the cheapest feasible choice, zero included.
+  A group keeps the cheapest feasible choice, zero included. After the initial
+  whole-band grouping, each settled group's coefficients are also a candidate
+  for every group it overlaps during per-sample and per-owner reassignment. A
+  moved owner is judged by the model of the group it joins or leaves, not by
+  how its move perturbs a refit; a refit can otherwise shift a worst pair the
+  moved owner is not part of.
 - A member with unknown B or M does not enter the fit; it keeps its general
   coordinate with half the RT weight and is not placed in the drift-adjusted
   frame for the population-gap constraint. It does not force the group to

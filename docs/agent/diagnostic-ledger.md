@@ -266,6 +266,16 @@ existing unique-channel matrix offline. One batch.
   blocks, m/z 404.1159 merged two isomers (QC3 5.98 and TumorBC2312 6.08 with
   Benign fat 7.99/8.01 min); a single-peak sample of 312.0704 now sits midway
   between its isomer rows and cannot be assigned by RT.
+- 288.0658 on the 85-sample selected worksets: QC7's owner (15.236 calibrated) is
+  the front component but sits in the rear row; QC7 has a rear peak at 15.505.
+  Double-peak samples put the front at 15.12-15.24 and the rear at
+  15.40-15.51; most single-peak samples, BenignfatBC1055 among them (15.245),
+  sit between and cannot be assigned by RT.
+- Isomers that share the NL have identical identity evidence in grouping; only
+  RT, shape and region remain. Three RT-only objectives (group model, evidence
+  acceptance, RT likelihood with a CRP prior and double-peak observations) each
+  split 348.21 Y or merged isomer controls once searched. MS2 fragment
+  evidence is #1170.
 
 Reopen for 85RAW acceptance of #1165, for a change to the population-gap
 exemption or boundary RT weighting, or for a new column or method. Artifacts:
@@ -415,6 +425,23 @@ full85 timing or scientific acceptance claim.
 
 Reopen for changes to replay fields, context tie priority or grouping-only output.
 Artifacts: `output/codex-grouping-output/` in the #1165 worktree.
+
+### Reassignment uses settled drift models
+
+`diagnostic_only` (#1165, 2026-11-17). On the 85-sample selected 348.21
+workset, the formal method split 46 MS2-labelled Y owners 44+1+1. With the main
+group's coefficients held fixed, the current, swapped-N2313 and returned-T2275
+configurations cost the same; the +0.006/+0.010 differences came only from
+refitting coefficients, which moved an unrelated worst pair. Offering settled
+group coefficients as reassignment candidates put all 46 in one group. Retained
+8RAW replay: 871 groups, physical membership unchanged; 42 decisions price their
+alternatives under settled models, and two 273.15 TumorBC2312 owners gain
+`accepted_competition`. Selected 85 worksets: only the 348.21 neighborhood
+changed membership; N2313@13.13 carries `accepted_competition` against 13.52; 244.12, 827.17 and 828.17 controls unchanged;
+288.07 mixing persists (not addressed). Owner renaming and input reversal gave
+identical membership. Not a full85 or Backfill claim.
+
+Reopen when coefficient fitting, reassignment or settled-model scope changes.
 
 ### Accepted Alignment optimizations
 

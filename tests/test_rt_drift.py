@@ -116,6 +116,29 @@ def test_unknown_sample_shift_affects_only_that_member():
     assert comparison.coefficients(group).sample_shift == pytest.approx(1.1)
 
 
+def test_settled_model_judges_a_moved_owner_instead_of_its_refit():
+    # Each refit after one owner leaves perturbs the coefficients; with this
+    # jitter, removing an interior owner raised the group's own refit cost.
+    jitter = (0.1, 0.08, -0.02, -0.07, 0.0, -0.03, 0.09, -0.06, -0.01, 0.03, 0.12, 0.0)
+    owners = tuple(
+        cid_nl_owner(sample, "drift", apex_rt=round(10.0 + 1.1 * SHIFT[sample] + j, 3))
+        for sample, j in zip(SAMPLES, jitter, strict=True)
+    )
+    comparison = MembershipComparison(
+        owners,
+        rules=CID_NL_GROUPING_RULES,
+        config=AlignmentConfig(),
+        rt_frame=_frame(_model()),
+        trajectories=PeakTrajectories(),
+    )
+    group = tuple(sorted(owner.owner_id for owner in owners))
+    comparison.settle((group,))
+    full = comparison.group_cost(group)
+    for owner_id in group:
+        remainder = tuple(p for p in group if p != owner_id)
+        assert comparison.group_cost(remainder) <= full
+
+
 def test_membership_does_not_depend_on_owner_ids_or_input_order():
     owners = tuple(
         cid_nl_owner(sample, "drift", apex_rt=10.0 + 1.1 * SHIFT[sample])

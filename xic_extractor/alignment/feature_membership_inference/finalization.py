@@ -66,6 +66,7 @@ def _accepted_final_memberships(
             [partition, *direction_candidates],
             key=lambda p: (comparison.cost(p), comparison.partition_key(p)),
         )
+        comparison.settle(partition)
         by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
         for owner in window:
             by_sample[owner.sample_stem].append(owner)

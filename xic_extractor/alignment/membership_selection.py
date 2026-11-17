@@ -326,6 +326,7 @@ class MembershipComparison:
         self._models: dict[tuple[str, ...], tuple[_GroupModel, ...]] = {}
         self._batch_states: dict[tuple[str, ...], Mapping[str, float]] = {}
         self._fixed_coefficients = dict(fixed_coefficients or {})
+        self._settled: tuple[tuple[frozenset[str], DriftCoefficients], ...] = ()
         # One drift frame per (coefficients, batch-state group), shared by
         # every pair, group and tie-break that uses that model.
         self._frames: dict[
@@ -605,7 +606,7 @@ class MembershipComparison:
             return ()
         batch_state = self._batch_state(key)
         shift = self.drift.sample_shift_min
-        return candidate_coefficients(
+        fitted = candidate_coefficients(
             tuple(
                 (
                     self.rts[p],
@@ -615,6 +616,32 @@ class MembershipComparison:
                 for p in key
             )
         )
+        settled = sorted(
+            {
+                coefficients
+                for members, coefficients in self._settled
+                if coefficients not in fitted and not members.isdisjoint(key)
+            },
+            key=lambda c: (c.time, c.sample_shift),
+        )
+        return (*fitted, *settled)
+
+    def settle(self, partition: Partition) -> None:
+        """Offer each settled group's drift fit to every group it overlaps.
+
+        Moving one owner refits that group's coefficients. A refit
+        perturbation can shift a worst pair the moved owner is not part of.
+        The owner should be judged by the model of the group it joins or
+        leaves. Own refits remain candidates; the settled set stays fixed
+        while reassignment runs, so cost remains a function of the partition.
+        """
+        self._settled = tuple(
+            (frozenset(group), coefficients)
+            for group in partition
+            if (coefficients := self.coefficients(group)).nonzero_count
+        )
+        self._models.clear()
+        self.group_peer_fits.clear()
 
     def _batch_state(self, key: tuple[str, ...]) -> Mapping[str, float]:
         if key not in self._batch_states:
