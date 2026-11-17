@@ -416,6 +416,21 @@ full85 timing or scientific acceptance claim.
 Reopen for changes to replay fields, context tie priority or grouping-only output.
 Artifacts: `output/codex-grouping-output/` in the #1165 worktree.
 
+### Reassignment uses settled drift models
+
+`diagnostic_only` (#1165, 2026-11-17). On the 85-sample selected 348.21
+workset, the formal method split 46 MS2-labelled Y owners 44+1+1. With the main
+group's coefficients held fixed, the current, swapped-N2313 and returned-T2275
+configurations cost the same; the +0.006/+0.010 differences came only from
+refitting coefficients, which moved an unrelated worst pair. Offering settled
+group coefficients as reassignment candidates put all 46 in one group. Retained
+8RAW replay: 871 groups, physical membership unchanged. Selected 85 worksets: only
+the 348.21 neighborhood changed; 244.12, 827.17 and 828.17 controls unchanged;
+288.07 mixing persists (not addressed). Owner renaming and input reversal gave
+identical membership. Not a full85 or Backfill claim.
+
+Reopen when coefficient fitting, reassignment or settled-model scope changes.
+
 ### Accepted Alignment optimizations
 
 All `exact_safe` with byte-identical public outputs; local gains, not cohort
