@@ -269,7 +269,7 @@ existing unique-channel matrix offline. One batch.
   sample's offset changes with RT, and the robust LOESS's sample-wide residual
   scale then extrapolated the steep 16.5-18.6 min stretch. Dropping the filter
   let drifting compounds shape the first fit, and M vanished. On 8RAW the
-  revert gives 867 rows against master's 872 with 13 changed m/z
+  revert gives 867 rows against master's 872 with 14 changed m/z
   neighborhoods; 404.1159 is separate again, as on master, where its own mixed
   group anchors the map.
 - 827.17 and 299.1553 on the 85-sample selected worksets: owners form one
