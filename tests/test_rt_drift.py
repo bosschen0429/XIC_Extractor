@@ -25,6 +25,7 @@ from xic_extractor.alignment.rt_drift import (
     DriftCoefficients,
     RtAnchorObservation,
     RtDriftModel,
+    _drift_model,
     candidate_coefficients,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
@@ -251,6 +252,28 @@ def test_proposed_groups_reuse_exact_pair_costs_when_the_comparison_grows():
         # A self-comparison remains a hard conflict, not a packed off-diagonal
         # entry that could poison a later valid group's cost.
         assert actual.pair(owners[2].owner_id, owners[2].owner_id)[0] == math.inf
+
+
+def test_anchor_without_shift_response_keeps_samples_whose_shift_is_unknown():
+    # M comes from two synchronized families observed in s00-s10; the flat
+    # channel also has s11, where M is unknown and its zero response needs none.
+    measured = SAMPLES[:-1]
+    calibrated = {
+        "a": {s: 10.0 + SHIFT[s] for s in measured},
+        "b": {s: 20.0 + SHIFT[s] for s in measured},
+        "flat": dict.fromkeys(SAMPLES, 30.0),
+    }
+    model = _drift_model(
+        calibrated,
+        injection_order=ORDERS,
+        qc_samples=frozenset(),
+        cohorts={},
+        families={"a": 0, "b": 1, "flat": 2},
+        owner_ids={},
+    )
+    assert "s11" not in model.sample_shift_min
+    flat = next(anchor for anchor in model.anchors if anchor.channel == "flat")
+    assert set(flat.shape) == set(SAMPLES)
 
 
 def test_several_supported_peaks_leave_that_channel_sample_unknown():

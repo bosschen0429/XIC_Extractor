@@ -553,7 +553,7 @@ def _drift_model(
         )
         trend = _smooth(
             {
-                s: v - response * own_shift[s]
+                s: v - (response * own_shift[s] if response else 0.0)
                 for s, v in values.items()
                 if s in own_shift or response == 0.0
             },
