@@ -142,7 +142,10 @@ def _assert_partition_composition_parity(
             output
             for part in parts
             for output in composed_child_outputs(
-                part.children, part.initial_groups, samples=batch.context.samples
+                part.children,
+                part.initial_groups,
+                samples=batch.context.samples,
+                capture_evidence_retained=bool(part.capture_evidence),
             )
         ),
         excluded_candidates=exclusions,

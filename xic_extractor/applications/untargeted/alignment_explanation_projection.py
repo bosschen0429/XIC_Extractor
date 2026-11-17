@@ -272,13 +272,16 @@ def project_alignment_explanation_child(
     child: FinalizedUntargetApplicationResult,
     *,
     sample_rt_frame: SampleRtFrame | None,
+    capture_evidence_retained: bool,
     full_audit: bool = False,
     curve_mz_ranges: Sequence[tuple[float, float]] = (),
 ) -> tuple[_Write, ...]:
     """Record the report writes of one finalized child without batch numbering.
 
     A final group's ``feature_id`` is recorded as its position among the
-    child's written groups; replay turns it into the batch label.
+    child's written groups; replay turns it into the batch label. Terminal
+    curves are written only when the batch retained no capture evidence, so
+    a child whose partition retained some records none.
     """
     sink = _RecordedWrites(review_only=not full_audit, curve_mz_ranges=curve_mz_ranges)
     core = child.scientific_core
@@ -307,12 +310,13 @@ def project_alignment_explanation_child(
             hypothesis_id=hypothesis.hypothesis_id,
             physical_peak_key=locate(ref),
         )
-        _emit_curve_payload(
-            sink.unless_capture_evidence,
-            ref,
-            sample_id=key[1],
-            kind=ref.capture_stage,
-        )
+        if not capture_evidence_retained:
+            _emit_curve_payload(
+                sink.unless_capture_evidence,
+                ref,
+                sample_id=key[1],
+                kind=ref.capture_stage,
+            )
 
     # Same row order as the TSV writer that labels rows.
     feature_offsets = {
@@ -514,6 +518,7 @@ def write_alignment_explanation(
                     explanation=project_alignment_explanation_child(
                         child,
                         sample_rt_frame=completed.sample_rt_frame,
+                        capture_evidence_retained=bool(completed.capture_evidence),
                         full_audit=full_audit,
                         curve_mz_ranges=curve_mz_ranges,
                     ),

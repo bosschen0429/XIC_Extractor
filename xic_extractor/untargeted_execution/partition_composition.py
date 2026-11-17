@@ -108,6 +108,8 @@ class ChildProjectionContext:
     samples: tuple[SampleMetadata, ...]
     membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk]
     sample_rt_frame: SampleRtFrame | None
+    # The partition retained capture evidence, so the batch has some too.
+    capture_evidence_retained: bool
 
 
 # Projects one finalized child into the outputs published from it. The
@@ -284,6 +286,7 @@ def compose_and_persist_untargeted_partition(
         samples=batch.context.samples,
         membership_risks_by_owner=accepted_membership_risks(inputs.initial_groups),
         sample_rt_frame=sample_rt_frame,
+        capture_evidence_retained=bool(inputs.capture_evidence),
     )
 
     def check_cancellation() -> None:

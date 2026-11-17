@@ -93,6 +93,7 @@ def untargeted_child_projection(
             explanation=project_alignment_explanation_child(
                 child,
                 sample_rt_frame=context.sample_rt_frame,
+                capture_evidence_retained=context.capture_evidence_retained,
                 full_audit=policy.explanation_full_audit,
                 curve_mz_ranges=policy.explanation_curve_mz_ranges,
             ),
