@@ -17,7 +17,10 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.feature_membership_inference import (
     infer_feature_memberships,
 )
-from xic_extractor.alignment.membership_selection import MembershipComparison
+from xic_extractor.alignment.membership_selection import (
+    MembershipComparison,
+    _GroupInputs,
+)
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 from xic_extractor.alignment.rt_drift import (
     BatchRtModelAccumulator,
@@ -407,3 +410,186 @@ def test_backfill_tie_break_scores_extensions_in_the_original_model():
     # The same extension scored as a free group would refit its own model.
     assert comparison.coefficients(extended) != fixed
     assert comparison.fixed_group_model(extended, original).coefficients == fixed
+
+
+def test_borrowed_batch_state_is_shared_only_by_queries_without_an_own_anchor():
+    rising = {sample: index / 11 for index, sample in enumerate(SAMPLES)}
+    falling = {sample: 1 - value for sample, value in rising.items()}
+    model = RtDriftModel(
+        (
+            DriftAnchor(
+                "early", 10.0, 0, True, rising, owner_ids=frozenset({"own-early"})
+            ),
+            DriftAnchor(
+                "late", 13.0, 1, True, falling, owner_ids=frozenset({"own-late"})
+            ),
+        )
+    )
+    lookup = model.batch_state_lookup()
+    borrowed = dict(lookup(("a",), 11.0))
+    # Both anchors contribute; the blend is neither anchor's shape.
+    assert borrowed not in (rising, falling)
+    # A group sharing an anchor's owner keeps that anchor's shape at an RT
+    # already answered by a borrowed shape, in either query order.
+    assert lookup(("own-late", "b"), 11.0) == falling
+    assert lookup(("b", "c"), 11.0) == borrowed
+    reversed_lookup = model.batch_state_lookup()
+    assert reversed_lookup(("own-early",), 11.0) == rising
+    assert reversed_lookup(("d",), 11.0) == borrowed
+    # Another frozen model at the same RT borrows its own anchors' shapes.
+    late_only = RtDriftModel((DriftAnchor("late", 13.0, 1, True, falling),))
+    other = late_only.batch_state_lookup()(("a",), 11.0)
+    assert other != borrowed
+    assert other == late_only.batch_state(("e",), 11.0)
+    assert lookup(("a",), 11.0) == borrowed
+
+
+@pytest.mark.parametrize("missing", (False, True))
+def test_drift_models_rejected_by_one_pair_match_full_scoring(missing):
+    """Early rejection keeps every model's value, before and after settling.
+
+    The reference scores each model without the zero model's worst pair. Some
+    models are rejected by that pair alone, some only by another pair, and
+    some survive; a population-gap group has no finite bound to reject by.
+    """
+    jitter = (0.1, 0.08, -0.02, -0.07, 0.0, -0.03, 0.09, -0.06, -0.01, 0.03, 0.12, 0.0)
+    noise = (
+        0.05,
+        -0.04,
+        0.03,
+        0.08,
+        -0.07,
+        0.02,
+        -0.01,
+        0.06,
+        -0.05,
+        0.04,
+        -0.08,
+        0.01,
+    )
+    owners = (
+        *(
+            cid_nl_owner(s, "drift", apex_rt=round(10.0 + 1.1 * SHIFT[s] + j, 3))
+            for s, j in zip(SAMPLES, jitter, strict=True)
+        ),
+        *(
+            cid_nl_owner(s, "flat", apex_rt=10.2 + (0.01 if i % 2 else 0.0))
+            for i, s in enumerate(SAMPLES)
+        ),
+        *(
+            cid_nl_owner(s, "noisy", apex_rt=round(12.0 + n + 0.1 * SHIFT[s], 3))
+            for s, n in zip(SAMPLES, noise, strict=True)
+        ),
+        *(
+            cid_nl_owner(s, "pop", apex_rt=13.0 if i % 2 else 13.8)
+            for i, s in enumerate(SAMPLES)
+        ),
+    )
+    shift = {s: v for s, v in SHIFT.items() if not (missing and s in ("s03", "s07"))}
+    frame = _frame(_model(shift))
+
+    def comparison():
+        return MembershipComparison(
+            owners,
+            rules=CID_NL_GROUPING_RULES,
+            config=AlignmentConfig(),
+            rt_frame=frame,
+            trajectories=PeakTrajectories(),
+        )
+
+    actual, reference = comparison(), comparison()
+    by_name: dict[str, list[str]] = {}
+    for owner in owners:
+        by_name.setdefault(owner.owner_id.split("-")[2], []).append(owner.owner_id)
+    drift, flat, noisy, pop = (
+        tuple(sorted(by_name[n])) for n in ("drift", "flat", "noisy", "pop")
+    )
+    groups = [
+        tuple(sorted(group))
+        for group in (
+            drift,
+            flat,
+            noisy,
+            pop,
+            drift[:6],
+            drift[::2],
+            noisy[:6],
+            noisy[2:],
+            noisy[1::2] + noisy[:1],
+            drift[:7] + flat[7:],
+            drift[:9] + flat[9:],
+            drift[:11] + flat[11:],
+        )
+    ]
+    outcomes = set()
+
+    def expected_models(key):
+        zero = reference._evaluate(key, DriftCoefficients())
+        models = [zero]
+        if not math.isfinite(zero.evidence):
+            return tuple(models)
+        bound = math.inf if zero.population_gap else zero.evidence
+        worst = max(combinations(key, 2), key=lambda pair: reference.pair(*pair)[0])
+        for coefficients in reference._candidate_coefficients(key):
+            model = reference._evaluate(key, coefficients, bound=bound)
+            models.append(model)
+            if math.isinf(bound):
+                outcomes.add("no_bound")
+                continue
+            offsets, unknown = reference._frame(
+                reference._sample_offsets(coefficients, key), key
+            )
+            witness = reference._compose(*worst, offsets, unknown)[0]
+            penalty = reference._coefficient_cost * coefficients.nonzero_count
+            if 1.0 + witness + penalty >= bound:
+                outcomes.add("rejected_by_worst_zero_pair")
+            elif math.isinf(model.evidence):
+                outcomes.add("rejected_by_another_pair")
+            else:
+                outcomes.add("kept")
+        return tuple(models)
+
+    for settled in ((), (drift, flat, noisy)):
+        actual.settle(settled)
+        reference.settle(settled)
+        for key in groups:
+            assert actual._group_models(key) == expected_models(key)
+    expected_outcomes = {"rejected_by_worst_zero_pair", "kept", "no_bound"}
+    if not missing:
+        expected_outcomes.add("rejected_by_another_pair")
+    assert outcomes >= expected_outcomes
+
+
+def test_one_pair_rejection_bound_is_inclusive_like_full_scoring():
+    owners = tuple(
+        cid_nl_owner(s, "drift", apex_rt=10.0 + 1.1 * SHIFT[s]) for s in SAMPLES
+    )
+    comparison = MembershipComparison(
+        owners,
+        rules=CID_NL_GROUPING_RULES,
+        config=AlignmentConfig(),
+        rt_frame=_frame(_model()),
+        trajectories=PeakTrajectories(),
+    )
+    key = tuple(sorted(owner.owner_id for owner in owners))
+    zero = comparison._evaluate(key, DriftCoefficients())
+    (coefficients,) = comparison._candidate_coefficients(key)
+    offsets, unknown = comparison._frame(
+        comparison._sample_offsets(coefficients, key), key
+    )
+    worst_zero_pair = max(
+        combinations(key, 2), key=lambda pair: comparison.pair(*pair)[0]
+    )
+    witness = comparison._compose(*worst_zero_pair, offsets, unknown)[0]
+    at_witness = 1.0 + witness + comparison._coefficient_cost
+    assert at_witness < zero.evidence
+    for bound in (at_witness, math.nextafter(at_witness, math.inf)):
+        full = comparison._evaluate(key, coefficients, bound=bound)
+        inputs = _GroupInputs(comparison, key)
+        assert comparison._evaluate(key, DriftCoefficients(), inputs=inputs) == zero
+        assert inputs.witness == worst_zero_pair
+        early = comparison._evaluate(key, coefficients, bound=bound, inputs=inputs)
+        assert early == full
+    assert math.isinf(
+        comparison._evaluate(key, coefficients, bound=at_witness).evidence
+    )

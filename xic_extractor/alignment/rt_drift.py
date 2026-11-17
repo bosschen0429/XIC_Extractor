@@ -120,6 +120,8 @@ class RtDriftModel:
         A group uses the shape of the anchor sharing most of its owners
         (nearest in RT, then channel, on ties); other groups borrow shapes
         weighted by a Gaussian of RT distance, rescaled to a unit range.
+        A borrowed shape depends only on RT, so this lookup returns the same
+        mapping for every query at that exact RT; callers must not mutate it.
         """
         anchors = self.anchors
         if not anchors:
@@ -133,6 +135,7 @@ class RtDriftModel:
         for index, anchor in enumerate(anchors):
             for owner_id in anchor.owner_ids:
                 by_owner[owner_id].append(index)
+        borrowed: dict[float, Mapping[str, float]] = {}
 
         def lookup(owner_ids: Iterable[str], rt_min: float) -> Mapping[str, float]:
             shared: dict[int, int] = defaultdict(int)
@@ -146,6 +149,11 @@ class RtDriftModel:
                     key=lambda i: (abs(references[i] - rt_min), anchors[i].channel),
                 )
                 return anchors[own].shape
+            if rt_min not in borrowed:
+                borrowed[rt_min] = borrow(rt_min)
+            return borrowed[rt_min]
+
+        def borrow(rt_min: float) -> Mapping[str, float]:
             weights = np.exp(-0.5 * ((references - rt_min) / _SHAPE_BANDWIDTH_MIN) ** 2)
             if weights.sum() <= 0:
                 nearest = min(

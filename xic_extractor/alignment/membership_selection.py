@@ -150,15 +150,16 @@ class _GroupInputs:
     """Inputs one proposed group shares across all of its drift models.
 
     Built lazily while that group's models are scored; nothing outlives the
-    group's evaluation.
+    group's evaluation. ``witness`` is the zero model's costliest pair.
     """
 
-    __slots__ = ("_comparison", "_key", "_pairs", "_neighbors")
+    __slots__ = ("_comparison", "_key", "_pairs", "_neighbors", "witness")
 
     def __init__(self, comparison: MembershipComparison, key: tuple[str, ...]) -> None:
         self._comparison, self._key = comparison, key
         self._pairs: _PairArrays | None = None
         self._neighbors: tuple[np.ndarray, np.ndarray] | None | bool = False
+        self.witness: tuple[str, str] | None = None
 
     def pairs(self) -> _PairArrays:
         if self._pairs is None:
@@ -730,6 +731,30 @@ class MembershipComparison:
                 offsets[owner_id] = by_sample[sample]
         return offsets, frozenset(members).difference(offsets)
 
+    def _witness_cost(
+        self,
+        witness: tuple[str, str],
+        coefficients: DriftCoefficients,
+        basis: tuple[str, ...],
+    ) -> float:
+        """One pair's cost in a drift model, framed as ``_frame`` frames it.
+
+        A sample's modeled drift depends only on its own regressors, so the
+        pair needs only its two samples' offsets.
+        """
+        assert self.drift is not None
+        batch_state = self._batch_state(basis)
+        offsets = {}
+        for owner_id in witness:
+            sample = self.owners[owner_id].sample_stem
+            offset = coefficients.offset_min(
+                batch_state.get(sample), self.drift.sample_shift_min.get(sample)
+            )
+            if offset is not None:
+                offsets[owner_id] = offset
+        unknown = frozenset(witness).difference(offsets)
+        return self._compose(*witness, offsets, unknown)[0]
+
     def _evaluate(
         self,
         key: tuple[str, ...],
@@ -745,10 +770,23 @@ class MembershipComparison:
         """
         if len({self.owners[p].sample_stem for p in key}) != len(key):
             return _GroupModel(coefficients, math.inf, False)
+        model_cost = self._coefficient_cost * coefficients.nonzero_count
+        if (
+            inputs is not None
+            and inputs.witness is not None
+            and math.isfinite(bound)
+            and coefficients.nonzero_count
+            and 1.0
+            + self._witness_cost(inputs.witness, coefficients, basis or key)
+            + model_cost
+            >= bound
+        ):
+            # The group's cost is its costliest pair, so one pair already
+            # above the bound rejects the model without scoring the others.
+            return _GroupModel(coefficients, math.inf, False)
         offsets, unknown = self._frame(
             self._sample_offsets(coefficients, basis or key), key
         )
-        model_cost = self._coefficient_cost * coefficients.nonzero_count
         pair_cost: float | None
         if inputs is not None and (offsets or unknown):
             # Only a finite zero model admits drift candidates, so every pair
@@ -774,7 +812,14 @@ class MembershipComparison:
         ):
             cached = self._pair_cost_values[self._pair_indices(key)]
             if not np.isnan(cached).any():
-                pair_cost = float(cached.max())
+                worst = int(cached.argmax())
+                pair_cost = float(cached[worst])
+                if inputs is not None:
+                    first_index, second_index = upper_pairs(len(key))
+                    inputs.witness = (
+                        key[first_index[worst]],
+                        key[second_index[worst]],
+                    )
         if pair_cost is None:
             pair_cost = 0.0
             for first, second in combinations(key, 2):
@@ -783,6 +828,8 @@ class MembershipComparison:
                     if offsets or unknown
                     else self.pair(first, second)[0]
                 )
+                if inputs is not None and (inputs.witness is None or value > pair_cost):
+                    inputs.witness = (first, second)
                 pair_cost = max(pair_cost, value)
                 if (
                     not math.isfinite(pair_cost)
