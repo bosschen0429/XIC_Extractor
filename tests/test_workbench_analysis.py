@@ -233,11 +233,60 @@ def test_artifact_urls_serve_only_registered_published_files(tmp_path):
     analysis.jobs._results["targeted"] = {"published_paths": [str(published)]}
     try:
         artifact = analysis.state()["results"]["targeted"]["artifacts"][0]
-        assert analysis.artifact_path(artifact["url"].split("/")[-1]) == published
+        snapshot = analysis.artifact_path(artifact["url"].split("/")[-1])
+        assert snapshot != published
+        assert snapshot.read_text() == "<h1>Published report</h1>"
+        published.write_text("<script>window.parent.fetch('/api/analysis')</script>")
+        repeated = analysis.state()["results"]["targeted"]["artifacts"][0]
+        assert repeated["url"] == artifact["url"]
+        assert snapshot.read_text() == "<h1>Published report</h1>"
+        published.write_text("<h1>New job report</h1>")
+        analysis.jobs._current = {
+            "job_id": "1" * 32,
+            "kind": "targeted",
+            "status": "succeeded",
+            "started_at": 1.0,
+            "finished_at": 2.0,
+        }
+        updated = analysis.state()["results"]["targeted"]["artifacts"][0]
+        updated_snapshot = analysis.artifact_path(updated["url"].split("/")[-1])
+        assert updated["url"] != artifact["url"]
+        assert updated_snapshot.read_text() == "<h1>New job report</h1>"
         with pytest.raises(ValueError):
             analysis.artifact_path("unregistered")
     finally:
         analysis.close()
+    assert not snapshot.exists()
+    assert not updated_snapshot.exists()
+
+
+def test_registered_html_is_served_in_an_opaque_restricted_sandbox(tmp_path):
+    workspace = create_workspace(config_dir=tmp_path / "config")
+    published = tmp_path / "collaborator-report.html"
+    published.write_text(
+        "<script>window.parent.fetch('/api/preferences')</script>",
+        encoding="utf-8",
+    )
+    workspace.analysis.jobs._results["inspector"] = {"output": str(published)}
+
+    with workbench_client(workspace) as request:
+        status, state, _ = request("/api/analysis")
+        assert status == 200
+        artifact = state["results"]["inspector"]["artifacts"][0]
+        status, body, headers = request(artifact["url"])
+        assert status == 200
+        assert body == published.read_bytes()
+        assert headers["Content-Security-Policy"] == (
+            "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; "
+            "style-src 'unsafe-inline'; img-src data:; font-src data:; "
+            "connect-src 'none'; form-action 'none'; base-uri 'none'; "
+            "frame-src 'none'; object-src 'none'"
+        )
+        _, analysis_page, _ = request("/assets/analysis.html")
+        frame = analysis_page.split(b"<iframe", 1)[1].split(b"></iframe>", 1)[0]
+        assert b'id="artifact-frame"' in frame
+        assert b'sandbox="allow-scripts"' in frame
+        assert b'allow="clipboard-write"' in frame
 
 
 def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
@@ -608,7 +657,7 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
         assert config["untargeted"]["dll_dir"] == "C:/preferred-dll"
         assert config["targeted_warnings"]
     finally:
-        workspace.jobs.close()
+        workspace.close()
 
 
 def test_http_retired_settings_and_removed_routes_are_not_accepted(tmp_path):
