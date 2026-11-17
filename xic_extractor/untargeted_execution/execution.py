@@ -59,6 +59,7 @@ from xic_extractor.untargeted_execution.partition.models import (
     build_sample_jobs,
 )
 from xic_extractor.untargeted_execution.partition_composition import (
+    ChildOutputProjection,
     PersistedUntargetedPartition,
     UntargetedPartitionInputs,
     compose_and_persist_untargeted_partition,
@@ -79,7 +80,7 @@ class _GroupingPartition:
 
     grouping: _GroupingInputs
     initial_results: tuple[UntargetedInitialSampleResult, ...] = ()
-    children: tuple[()] = ()
+    child_outputs: tuple[()] = ()
     excluded_candidates: tuple[()] = ()
     method_assessments: tuple[()] = ()
     initial_groups: tuple[()] = ()
@@ -215,11 +216,15 @@ class UntargetedPartitionPipelineAdapter:
         grouping_only: bool = False,
         mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
         | None = None,
+        project_child: ChildOutputProjection | None = None,
     ) -> None:
         if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
             raise ValueError("acquisition_workers must be 1 or 2")
+        if project_child is None and not grouping_only:
+            raise ValueError("composing children requires an output projection")
         self._retain_partition_spool = bool(retain_partition_spool)
         self._grouping_only = grouping_only
+        self._project_child = project_child
         self._plan = plan
         self._alignment_config = alignment_config
         sample_universe = frozenset(sample.raw_stem for sample in plan.context.samples)
@@ -629,6 +634,8 @@ class UntargetedPartitionPipelineAdapter:
             store=store,
             partition_key=partition.partition_key,
             alignment_config=self._alignment_config,
+            project_child=cast(ChildOutputProjection, self._project_child),
+            sample_rt_frame=self._batch_preparation.frozen_rt_frame,
             known_istd_reference=self._known_istd_reference,
             should_cancel=cancel_check,
             retain_memory=retain_memory,
@@ -704,12 +711,14 @@ def execute_untargeted_plan(
     grouping_only: bool = False,
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
+    project_child: ChildOutputProjection | None = None,
 ) -> CompletedUntargetBatchWorkflowResult | PreparedGroupingExperiment:
-    """Spill complete subject results, then close the exact global population.
+    """Spill projected subject results, then close the exact global population.
 
     A partition contains every sample for its subjects, preserving grouping and
     backfill decisions. Operational work units describe partition/sample phases;
-    scientific per-subject receipts live in the owner-controlled result store.
+    each composed child is stored only as its ``project_child`` projection,
+    which grouping-only runs do not need.
     """
     if type(plan) is not UntargetedInputPlan:
         raise TypeError("bounded execution requires a production plan")
@@ -743,6 +752,7 @@ def execute_untargeted_plan(
         retain_partition_spool=retain_partition_spool,
         grouping_only=grouping_only,
         mass_recalibration_by_sample=mass_recalibration_by_sample,
+        project_child=project_child,
     )
     completed_once = False
     try:

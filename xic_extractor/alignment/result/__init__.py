@@ -1,7 +1,6 @@
 """Shared scientific and application-result finalization contracts."""
 
 from xic_extractor.alignment.result.application_result import (
-    ApplicationResultContractError,
     FinalizedApplicationResult,
     FinalizedTargetApplicationResult,
     FinalizedUntargetApplicationResult,
@@ -17,7 +16,6 @@ from xic_extractor.alignment.result.scientific_alignment import (
 )
 
 __all__ = (
-    "ApplicationResultContractError",
     "FinalGroupCellObservation",
     "FinalizedApplicationResult",
     "FinalizedScientificAlignment",

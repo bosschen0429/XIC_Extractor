@@ -15,6 +15,7 @@ from tests.explanation_review_fixtures import (
     _competition_review_report,
     _quality_review_report,
 )
+from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
@@ -55,6 +56,7 @@ def test_summary_from_an_older_format_is_rejected_without_conversion(
     source = write_alignment_explanation(
         tmp_path / "old.sqlite",
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
@@ -88,6 +90,7 @@ def test_explanation_from_an_older_alignment_is_rejected_on_open(
     source = write_alignment_explanation(
         tmp_path / "old.sqlite",
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
@@ -247,6 +250,7 @@ def test_default_review_keeps_values_and_query_without_curves(
     report = write_alignment_explanation(
         tmp_path / "review.sqlite",
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
@@ -264,7 +268,7 @@ def test_default_review_keeps_values_and_query_without_curves(
             decision.variant,
             getattr(decision, "value", None),
         )
-        for child in completed.application_result.children
+        for child in children_of(completed.application_result)
         for _group, cells in child.group_cells
         for decision in cells
     )
@@ -299,6 +303,7 @@ def test_selected_curves_are_explicit_and_other_ranges_stay_small(
     )
     arguments = dict(
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
@@ -327,6 +332,7 @@ def test_existing_full_report_conversion_preserves_sample_values(tmp_path, monke
     full = write_alignment_explanation(
         tmp_path / "full.sqlite",
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
@@ -484,6 +490,7 @@ def test_produced_membership_risk_reaches_final_samples(
         tmp_path / "produced.sqlite",
         full_audit=full_audit,
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,

@@ -22,7 +22,6 @@ from .storage import (
     create_optional_table,
     create_schema,
     encode_object,
-    encode_review_curve,
 )
 
 CandidateKey = tuple[str, str]
@@ -472,17 +471,12 @@ class ExplanationReportWriter:
             ],
         }
 
-    def set_cell_curve(
-        self,
-        group_id: str,
-        sample_key: str,
-        rt: Iterable[float],
-        raw: Iterable[float],
-    ) -> None:
+    def set_cell_curve(self, group_id: str, sample_key: str, curve: bytes) -> None:
         """The measured RT and raw intensity of the extraction window that gave
-        a cell its value, at full precision; readers recompute processed signals.
+        a cell its value, as ``encode_review_curve`` stores them at full
+        precision; readers recompute processed signals.
         """
-        self._cell_curves[group_id, sample_key] = encode_review_curve(rt, raw)
+        self._cell_curves[group_id, sample_key] = curve
 
     # Curves -------------------------------------------------------------
 

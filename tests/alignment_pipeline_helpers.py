@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 import numpy as np
 
+from tests.untargeted_partition_fixtures import ComposedChildOutputs, children_of
 from xic_extractor.alignment.cell_decision.owner import (
     NoWriteCellDecision,
     NoWriteState,
@@ -34,7 +35,8 @@ from xic_extractor.discovery.batch_contract import (
 from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
 from xic_extractor.discovery.models import DISCOVERY_PEAK_COLUMNS
 from xic_extractor.output.alignment.tsv_writer import (
-    completed_untarget_batch_sample_order,
+    project_untarget_child_rows,
+    untarget_sample_order,
     write_alignment_tsvs,
 )
 from xic_extractor.peak_detection.elution_context import (
@@ -173,6 +175,8 @@ class WriterPeak:
     physical_peak_key: str
     mz: float
     rt: float
+    sample_key: str = ""
+    intensity: tuple[float, ...] = ()
 
     @property
     def content(self) -> "WriterPeak":
@@ -264,6 +268,38 @@ def writer_group(*cells: ProductionCellDecision, **facts: Any) -> WriterGroup:
     return WriterGroup(cells, **facts)
 
 
+@dataclass(frozen=True)
+class WriterBatch:
+    """Writer-facing children not yet projected into their written rows."""
+
+    canonical_samples: tuple[Any, ...]
+    children: tuple[Any, ...]
+
+
+def projected(batch: Any, **inputs: Any) -> Any:
+    """``batch`` with its children projected as composition projects them."""
+
+    if not isinstance(batch, WriterBatch):
+        return batch
+    sample_order = untarget_sample_order(batch.canonical_samples)
+    return SimpleNamespace(
+        canonical_samples=batch.canonical_samples,
+        child_outputs=tuple(
+            ComposedChildOutputs(
+                project_untarget_child_rows(
+                    child,
+                    outputs=("matrix", "review", "backfill", "cells", "status"),
+                    sample_order=sample_order,
+                    **inputs,
+                ),
+                None,
+                child,
+            )
+            for child in batch.children
+        ),
+    )
+
+
 def writer_batch(sample_order: tuple[str, ...], *groups: WriterGroup) -> Any:
     """A completed batch with one child holding ``groups`` in this order.
 
@@ -348,7 +384,7 @@ def writer_batch(sample_order: tuple[str, ...], *groups: WriterGroup) -> Any:
                 )
             )
         group_cells.append((group, tuple(cells)))
-    return SimpleNamespace(
+    return WriterBatch(
         canonical_samples=samples,
         children=(
             SimpleNamespace(
@@ -368,7 +404,7 @@ def render(kind: str, path: Path, batch: Any, **inputs: Any) -> Path:
     ``kind`` is ``matrix``, ``review``, ``backfill``, ``cells`` or ``status``.
     """
 
-    write_alignment_tsvs({kind: path}, batch, **inputs)
+    write_alignment_tsvs({kind: path}, projected(batch, **inputs))
     return path
 
 
@@ -382,8 +418,8 @@ def written_cells(
 ) -> Iterator[tuple[Any, str, ProductionCellDecision]]:
     """Every written cell with its group and sample, in writer order."""
 
-    sample_order = completed_untarget_batch_sample_order(completed)
-    for child in completed.children:
+    sample_order = untarget_sample_order(completed.canonical_samples)
+    for child in _children(completed):
         for group, cells in child.group_cells:
             by_stem = {cell.subject.canonical_sample.raw_stem: cell for cell in cells}
             for sample_stem in sample_order:
@@ -394,7 +430,7 @@ def written_groups(completed: Any) -> tuple[Any, ...]:
     """Every finalized group in written order."""
 
     return tuple(
-        group for child in completed.children for group, _cells in child.group_cells
+        group for child in _children(completed) for group, _cells in child.group_cells
     )
 
 
@@ -423,8 +459,14 @@ def written_rows(
         kind: directory / f"{kind}.tsv"
         for kind in ("matrix", "review", "backfill", "cells", "status")
     }
-    write_alignment_tsvs(paths, completed, **inputs)
+    write_alignment_tsvs(paths, projected(completed, **inputs))
     return {kind: read_tsv(path) for kind, path in paths.items()}
+
+
+def _children(completed: Any) -> tuple[Any, ...]:
+    if isinstance(completed, WriterBatch):
+        return completed.children
+    return children_of(completed)
 
 
 def matrix(sample_order: tuple[str, ...]) -> Any:

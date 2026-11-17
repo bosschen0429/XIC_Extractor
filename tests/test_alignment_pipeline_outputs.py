@@ -6,7 +6,12 @@ import pytest
 
 import xic_extractor.output.alignment.pipeline_outputs as pipeline_outputs_module
 from tests.alignment_pipeline_helpers import matrix as _matrix
-from tests.alignment_pipeline_helpers import owner_cell, writer_batch, writer_group
+from tests.alignment_pipeline_helpers import (
+    owner_cell,
+    projected,
+    writer_batch,
+    writer_group,
+)
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.pipeline_outputs import (
@@ -353,7 +358,7 @@ def test_one_pass_writes_every_requested_file(tmp_path: Path) -> None:
 def _write(outputs, batch, *, metadata, timing_recorder=None) -> int:
     return pipeline_outputs_module.write_completed_untargeted_outputs_atomic(
         outputs,
-        batch,
+        projected(batch),
         metadata=metadata,
         timing_recorder=timing_recorder or TimingRecorder.disabled("alignment"),
     )

@@ -15,6 +15,7 @@ from tests.alignment_explanation_fixtures import (
     explanation_summary,
     run_alignment_fixture,
 )
+from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_explanation,
 )
@@ -49,6 +50,7 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
         tmp_path / "alignment_explanation.sqlite",
         full_audit=True,
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
@@ -56,7 +58,7 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
     )
     expected_observations = {
         ref.physical_peak_key: asdict(ref.integration)
-        for child in completed.application_result.children
+        for child in children_of(completed.application_result)
         for terminal in child.scientific_core.terminal_subjects
         if getattr(terminal, "hypothesis", None) is not None
         for ref in (terminal.hypothesis.peak,)
@@ -146,6 +148,7 @@ def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) 
         tmp_path / "alignment_explanation.sqlite",
         full_audit=True,
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
@@ -178,6 +181,7 @@ def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
         tmp_path / "alignment_explanation.sqlite",
         full_audit=True,
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
@@ -234,6 +238,7 @@ def test_acceptance_a7_cancel_and_atomic_replace(tmp_path, monkeypatch) -> None:
         tmp_path / "alignment_explanation.sqlite",
         full_audit=True,
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,

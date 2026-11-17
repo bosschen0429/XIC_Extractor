@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from tests.alignment_explanation_fixtures import curve_provenance, explanation_summary
+from xic_extractor.alignment_explanation.storage import encode_review_curve
 
 
 def create_review_batch(tmp_path, sample_count=2, *, keep_curves=False):
@@ -62,7 +63,7 @@ def create_review_batch(tmp_path, sample_count=2, *, keep_curves=False):
                     if isinstance(value, int):
                         rt = [0.5 + 0.02 * i for i in range(51)]
                         raw = [value * 2.718 ** (-(((x - 1) / 0.1) ** 2)) for x in rt]
-                        writer.set_cell_curve(rid, sid, rt, raw)
+                        writer.set_cell_curve(rid, sid, encode_review_curve(rt, raw))
         add_witness(writer, "orphan", "S1", rt=1, precursor_mz=600)
         writer.finalize(
             explanation_summary(

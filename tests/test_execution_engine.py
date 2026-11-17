@@ -34,7 +34,7 @@ from xic_extractor.execution.workers import WorkerAdmissionPool
 
 @dataclass(frozen=True)
 class MockPayload:
-    children: tuple
+    child_outputs: tuple
     method_assessments: tuple = ()
     excluded_candidates: tuple = ()
     label: str = "partition"
@@ -48,7 +48,7 @@ class CustomPayload:
 
 @dataclass(frozen=True)
 class RefPayload:
-    children: tuple
+    child_outputs: tuple
     ref: object = None
 
 
@@ -91,7 +91,7 @@ def _execute_shared_process_task(task: SharedProcessTask) -> SharedProcessResult
 def test_streamed_result_store_basic_roundtrip(tmp_path: Path) -> None:
     store = StreamedResultStore(tmp_path / "spool", ())
     payload = MockPayload(
-        children=(1, 2, 3),
+        child_outputs=(1, 2, 3),
         method_assessments=("assess_1",),
         excluded_candidates=("ex_1", "ex_2"),
     )
@@ -101,12 +101,12 @@ def test_streamed_result_store_basic_roundtrip(tmp_path: Path) -> None:
     assert entry.size_bytes > 0
 
     restored = store.read(0)
-    assert restored.children == (1, 2, 3)
+    assert restored.child_outputs == (1, 2, 3)
     assert restored.method_assessments == ("assess_1",)
     assert restored.excluded_candidates == ("ex_1", "ex_2")
 
     store.seal()
-    assert tuple(store.sequence("children")) == (1, 2, 3)
+    assert tuple(store.sequence("child_outputs")) == (1, 2, 3)
     assert tuple(store.sequence("method_assessments")) == ("assess_1",)
     assert store.read_selected(0, "excluded_candidates", (1, 0)) == ("ex_2", "ex_1")
 
@@ -116,11 +116,11 @@ def test_streamed_result_store_retained_memory_bypass(
 ) -> None:
     store = StreamedResultStore(tmp_path / "spool", ())
     payload = MockPayload(
-        children=(10, 20, 30),
+        child_outputs=(10, 20, 30),
         method_assessments=(100, 200),
         excluded_candidates=(1000, 2000),
     )
-    entry = store.append_children(
+    entry = store.append_child_outputs(
         "p-0",
         MockPayload(
             (),
@@ -128,7 +128,7 @@ def test_streamed_result_store_retained_memory_bypass(
             payload.excluded_candidates,
             payload.label,
         ),
-        children=(10, 20, 30),
+        child_outputs=(10, 20, 30),
         retain_memory=True,
     )
     assert entry.size_bytes > 0
@@ -144,7 +144,7 @@ def test_streamed_result_store_retained_memory_bypass(
 
     monkeypatch.setattr(Path, "open", tracking_open)
 
-    seq = store.sequence("children")
+    seq = store.sequence("child_outputs")
     assert tuple(seq) == (10, 20, 30)
     assert len(opened) == 0
 
@@ -164,22 +164,24 @@ def test_streamed_result_store_shared_objects_identity(
         shared += (shared_config,)
     store = StreamedResultStore(tmp_path / "spool", shared)
 
-    payload = RefPayload(children=((shared_config, shared_ref),), ref=shared_config)
+    payload = RefPayload(
+        child_outputs=((shared_config, shared_ref),), ref=shared_config
+    )
     store.append("p-0", payload)
     restored = store.read(0)
 
     assert restored.ref is shared_config
-    assert restored.children[0][0] is shared_config
-    assert restored.children[0][1] is shared_ref
+    assert restored.child_outputs[0][0] is shared_config
+    assert restored.child_outputs[0][1] is shared_ref
     checkpoint = store.preserve_failed_results()
     assert checkpoint is not None
     retained = open_preserved_results(checkpoint)
     replay = retained.read(0)
     assert replay.ref == shared_config
-    assert replay.children[0][1] == shared_ref
+    assert replay.child_outputs[0][1] == shared_ref
     assert replay.ref is retained._shared_objects[0]
-    assert replay.children[0][0] is replay.ref
-    assert replay.children[0][1] is retained._shared_objects[1]
+    assert replay.child_outputs[0][0] is replay.ref
+    assert replay.child_outputs[0][1] is retained._shared_objects[1]
 
 
 def test_streamed_result_store_unknown_shared_identity_rejected() -> None:
@@ -219,7 +221,7 @@ def test_streamed_result_store_individually_addressable_fields(
 def test_streamed_result_store_cleanup_idempotent(tmp_path: Path) -> None:
     spool_dir = tmp_path / "spool"
     store = StreamedResultStore(spool_dir, ())
-    store.append("p-0", MockPayload(children=(1, 2)))
+    store.append("p-0", MockPayload(child_outputs=(1, 2)))
     assert spool_dir.exists()
 
     store.cleanup()
@@ -310,7 +312,7 @@ class MockAdapter:
         if self.fail_composition_index == partition.index:
             raise RuntimeError("simulated composition exception")
         payload = MockPayload(
-            children=(f"child-{partition.index}",),
+            child_outputs=(f"child-{partition.index}",),
             method_assessments=(f"assess-{partition.index}",),
             excluded_candidates=(f"ex-{partition.index}",),
         )
@@ -329,7 +331,7 @@ class MockAdapter:
     ) -> dict[str, Any]:
         if self.fail_finalize:
             raise RuntimeError("simulated finalize application exception")
-        return {"total_children": len(store.sequence("children"))}
+        return {"total_children": len(store.sequence("child_outputs"))}
 
     def build_workflow_result(
         self,
@@ -338,7 +340,7 @@ class MockAdapter:
     ) -> dict[str, Any]:
         return {
             "application_result": application_result,
-            "children": tuple(store.sequence("children")),
+            "child_outputs": tuple(store.sequence("child_outputs")),
         }
 
 
@@ -360,7 +362,7 @@ def test_scheduler_execute_success(tmp_path: Path) -> None:
     )
 
     assert result["application_result"]["total_children"] == 2
-    assert result["children"] == ("child-0", "child-1")
+    assert result["child_outputs"] == ("child-0", "child-1")
 
     # Verify progress event sequence
     stages = [
@@ -563,11 +565,11 @@ def test_scheduler_composition_failure_retains_completed_results(
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 1
     retained = open_preserved_results(spool_dirs[0] / "failed-results.pickle")
-    assert tuple(retained.sequence("children")) == ("child-0",)
+    assert tuple(retained.sequence("child_outputs")) == ("child-0",)
     assert tuple(retained.sequence("method_assessments")) == ("assess-0",)
     assert not list(spool_dirs[0].glob("*.tmp"))
     with pytest.raises(ValueError, match="sealed"):
-        retained.append("new-partition", MockPayload(children=("invented",)))
+        retained.append("new-partition", MockPayload(child_outputs=("invented",)))
 
 
 def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) -> None:
@@ -589,7 +591,7 @@ def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) ->
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 1
     retained = open_preserved_results(spool_dirs[0] / "failed-results.pickle")
-    assert tuple(retained.sequence("children")) == ("child-0", "child-1")
+    assert tuple(retained.sequence("child_outputs")) == ("child-0", "child-1")
     assert tuple(retained.sequence("method_assessments")) == ("assess-0", "assess-1")
 
 
@@ -1322,11 +1324,11 @@ def test_reserved_partition_written_elsewhere_reads_back_identically(
             "from pathlib import Path",
             "from tests.test_execution_engine import MockPayload",
             "from %s import write_partition_payload" % module,
-            "payload = MockPayload(children=(), method_assessments=('a', 'b'),"
+            "payload = MockPayload(child_outputs=(), method_assessments=('a', 'b'),"
             " label='remote')",
             "kids = tuple({'child': index} for index in range(4))",
             "size, lengths, records, _ = write_partition_payload("
-            "Path(%r), payload, shared_objects=(), children=kids)"
+            "Path(%r), payload, shared_objects=(), child_outputs=kids)"
             % str(reservation.path),
             "print(json.dumps({'lengths': lengths,"
             " 'size': size, 'records': {name: [list(item) for item in rows]"
@@ -1356,12 +1358,12 @@ def test_reserved_partition_written_elsewhere_reads_back_identically(
     restored = store.read(0)
     assert restored.label == "remote"
     assert restored.method_assessments == ("a", "b")
-    assert restored.children == tuple({"child": index} for index in range(4))
+    assert restored.child_outputs == tuple({"child": index} for index in range(4))
 
     local = StreamedResultStore(tmp_path / "local", ())
-    local_sealed = local.append_children(
+    local_sealed = local.append_child_outputs(
         "partition-local",
-        MockPayload(children=(), method_assessments=("a", "b"), label="remote"),
+        MockPayload(child_outputs=(), method_assessments=("a", "b"), label="remote"),
         tuple({"child": index} for index in range(4)),
     )
     assert local_sealed.size_bytes == sealed.size_bytes
@@ -1400,8 +1402,8 @@ def test_scheduler_phase_barrier_preserves_global_order(
 
     def prepare(store, check_cancel):
         check_cancel()
-        assert store.read(0).children == ("child-0",)
-        assert store.read(1).children == ("child-1",)
+        assert store.read(0).child_outputs == ("child-0",)
+        assert store.read(1).child_outputs == ("child-1",)
         assert ("artifacts", 0) in events and ("artifacts", 1) in events
         assert ("acquire", 2) not in events
         events.append("prepare")
@@ -1418,7 +1420,7 @@ def test_scheduler_phase_barrier_preserves_global_order(
         pipeline_overlap=pipeline_overlap,
         acquisition_workers=2,
     )
-    assert result["children"] == tuple(f"child-{i}" for i in range(4))
+    assert result["child_outputs"] == tuple(f"child-{i}" for i in range(4))
     assert events.count("finalize") == 1
     assert events.index("prepare") < events.index(("acquire", 2))
     assert [
@@ -1446,7 +1448,7 @@ def test_scheduler_phase_preparation_abort_prevents_admission(
     cancelled = threading.Event()
 
     def prepare(store, check_cancel):
-        assert store.read(1).children == ("child-1",)
+        assert store.read(1).child_outputs == ("child-1",)
         if cancel:
             cancelled.set()
         else:

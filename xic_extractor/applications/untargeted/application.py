@@ -12,7 +12,10 @@ from xic_extractor.applications.untargeted.istd_reference import (
     extract_batch_known_istd_reference,
     read_known_istd_reference,
 )
-from xic_extractor.applications.untargeted.publication import publish_untargeted_outputs
+from xic_extractor.applications.untargeted.publication import (
+    publish_untargeted_outputs,
+    untargeted_child_projection,
+)
 from xic_extractor.applications.untargeted.request import (
     UntargetedExecutionContext,
     UntargetedRequest,
@@ -170,6 +173,7 @@ def run_untargeted_application(
                 is not MassRecalibration.NONE
                 else None
             ),
+            project_child=untargeted_child_projection(outputs, request.publication),
         )
     except RuntimeError as exc:
         raise AlignmentProcessExecutionError(str(exc)) from exc

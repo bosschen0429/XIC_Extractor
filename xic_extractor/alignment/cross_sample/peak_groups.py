@@ -7,7 +7,7 @@ the one representation of a group from grouping to the written outputs.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Literal, TypeAlias, cast
 
@@ -39,6 +39,7 @@ from xic_extractor.alignment.feature_membership_inference import (
     infer_feature_memberships,
 )
 from xic_extractor.alignment.grouping_rules import GroupingRules
+from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
 from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
 )
@@ -217,7 +218,21 @@ def _hypothesis_from_owner_group(
     )
 
 
+def accepted_membership_risks(
+    groups: Iterable[CrossSamplePeakGroupHypothesis],
+) -> dict[str, AcceptedMembershipRisk]:
+    """The accepted membership risk of each owner, keyed by owner."""
+
+    return {
+        decision.owner_id: decision.accepted_risk
+        for group in groups
+        for decision in group.inference_decisions
+        if decision.accepted_risk is not None
+    }
+
+
 __all__ = (
+    "accepted_membership_risks",
     "CrossSampleContractError",
     "CrossSampleEdgeDisposition",
     "CrossSampleGroupDisposition",

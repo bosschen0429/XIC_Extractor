@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
@@ -17,7 +16,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     UntargetedCidNlMethodSubjectBatch,
 )
-from xic_extractor.peak_detection.observations import PeakObservation
 from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
@@ -29,10 +27,6 @@ if TYPE_CHECKING:
         TargetPostCellProjection,
     )
     from xic_extractor.alignment.projection.untarget.matrix import GroupCells
-
-
-class ApplicationResultContractError(ValueError):
-    """Raised when application-result owners cannot close exactly."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,25 +84,22 @@ class FinalizedUntargetApplicationResult:
 class FinalizedUntargetBatchApplicationResult:
     """One immutable batch handoff over exact Untarget workset results.
 
-    The batch result owns only complete child results.  It does not regroup
-    rows, select values, or synthesize missing evidence; those decisions stay
-    with the existing workset-local owners.
+    Each finalized child was projected into its published rows when it
+    composed; ``child_outputs`` holds those projections in the batch's child
+    order. The batch does not regroup rows, select values, or synthesize
+    missing evidence; those decisions stay with the workset-local owners.
     """
 
     scope: UntargetedSearchScope
     processing_attempt_id: str
     acquisition_sources: tuple[AcquisitionSourceIdentity, ...]
-    children: (
-        tuple[FinalizedUntargetApplicationResult, ...]
-        | ImmutableSequence[FinalizedUntargetApplicationResult]
-    )
+    child_outputs: tuple[object, ...] | ImmutableSequence[object]
     excluded_candidates: (
         tuple[UntargetedCandidateExclusion, ...]
         | ImmutableSequence[UntargetedCandidateExclusion]
     ) = ()
-
-    def __post_init__(self) -> None:
-        _require_batch_population(self)
+    # Whether any child admitted a Backfill with a flagged membership risk.
+    has_flagged_backfill_risk: bool = False
 
     @property
     def variant(self) -> Literal["untargeted_batch"]:
@@ -118,8 +109,6 @@ class FinalizedUntargetBatchApplicationResult:
     def canonical_samples(
         self,
     ) -> tuple[SampleMetadata, ...]:
-        # Batch closure already checked every child's sample-identity population.
-        # Sample metadata does not require restoring a stored scientific child.
         return tuple(sorted(self.scope.samples, key=_sample_sort_key))
 
     @property
@@ -142,16 +131,6 @@ class FinalizedUntargetBatchApplicationResult:
             provider.method_subject_id for provider in self.scope.evidence_providers
         )
 
-    @property
-    def physical_peak_keys(self) -> tuple[str, ...]:
-        return tuple(
-            content.physical_peak_key
-            for child in self.children
-            for group in child.scientific_core.final_population
-            for member in group.member_subjects
-            for content in member.physical_peaks
-        )
-
 
 FinalizedApplicationResult: TypeAlias = (
     FinalizedTargetApplicationResult
@@ -160,59 +139,11 @@ FinalizedApplicationResult: TypeAlias = (
 )
 
 
-def _require_batch_population(
-    request: FinalizedUntargetBatchApplicationResult,
-) -> None:
-    """Close cross-child coverage once; children retain their owner's answers."""
-    expected = Counter(request.scope.declared_candidate_ids)
-    actual = Counter((item.candidate_id for item in request.excluded_candidates))
-    memberships = dict(request.method_subjects.candidate_memberships)
-    excluded_ids = set(actual)
-    expected_subjects = {
-        subject
-        for candidate, subject in memberships.items()
-        if candidate not in excluded_ids
-    }
-    actual_subjects: Counter[str] = Counter()
-    seen_groups: set[str] = set()
-    seen_physical: set[PeakObservation] = set()
-    for child in request.children:
-        core = child.scientific_core
-        actual.update(core.scope.declared_candidate_ids)
-        actual_subjects.update(
-            provider.method_subject_id for provider in core.scope.evidence_providers
-        )
-        for group, _cells in child.group_cells:
-            group_id = group.group_hypothesis_id
-            if group_id in seen_groups:
-                raise ApplicationResultContractError(
-                    "Untarget batch row identity conflicts across children"
-                )
-            seen_groups.add(group_id)
-        for group in core.final_population:
-            for member in group.member_subjects:
-                physical_ids = set(member.physical_peaks)
-                if seen_physical.intersection(physical_ids):
-                    raise ApplicationResultContractError(
-                        "Untarget batch children share a physical observation"
-                    )
-                seen_physical.update(physical_ids)
-    if actual != expected:
-        raise ApplicationResultContractError(
-            "Untarget batch child/exclusion candidate union is not exactly once"
-        )
-    if actual_subjects != Counter({subject: 1 for subject in expected_subjects}):
-        raise ApplicationResultContractError(
-            "Untarget batch result has missing or duplicate subjects across children"
-        )
-
-
 def _sample_sort_key(sample: SampleMetadata) -> str:
     return sample.sample_name
 
 
 __all__ = (
-    "ApplicationResultContractError",
     "FinalizedApplicationResult",
     "FinalizedTargetApplicationResult",
     "FinalizedUntargetApplicationResult",

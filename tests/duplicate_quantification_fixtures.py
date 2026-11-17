@@ -4,6 +4,7 @@ from tests.alignment_explanation_fixtures import (
     explanation_discovery_facts,
     run_alignment_fixture,
 )
+from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.applications.untargeted.alignment_explanation_projection import (
     write_alignment_explanation,
 )
@@ -36,6 +37,7 @@ def publish_owner_run(tmp_path, monkeypatch, level):
     write_alignment_explanation(
         output_dir / EXPLANATION_ARTIFACT_NAME,
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=outputs.matrix_tsv,

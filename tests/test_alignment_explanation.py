@@ -16,6 +16,7 @@ from tests.alignment_explanation_fixtures import (
     explanation_summary,
     run_alignment_fixture,
 )
+from tests.untargeted_partition_fixtures import children_of
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetBatchApplicationResult,
 )
@@ -64,6 +65,7 @@ def test_candidate_measured_mz_roundtrip_without_center_fallback(
     report = write_alignment_explanation(
         tmp_path / "measured.sqlite",
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
@@ -104,6 +106,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         tmp_path / "report.sqlite",
         full_audit=True,
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=candidates,
         matrix_path=matrix,
@@ -219,6 +222,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             report,
             full_audit=True,
             completed=completed,
+            children=children_of(completed.application_result),
             **explanation_discovery_facts(completed),
             peaks_by_sample=candidates,
             matrix_path=matrix,
@@ -230,6 +234,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             tmp_path / "missing_audit.sqlite",
             full_audit=True,
             completed=missing_audit,
+            children=children_of(missing_audit.application_result),
             **explanation_discovery_facts(missing_audit),
             peaks_by_sample=candidates,
             matrix_path=matrix,
@@ -281,6 +286,7 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
     original = write_alignment_explanation(
         tmp_path / "original.sqlite",
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         **kwargs,
         full_audit=True,
@@ -303,7 +309,7 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
         scope=application.scope,
         processing_attempt_id=application.processing_attempt_id,
         acquisition_sources=application.acquisition_sources,
-        children=application.children,
+        child_outputs=application.child_outputs,
         excluded_candidates=ImmutableSequence((len(excluded),), load_exclusions),
     )
     duplicated = replace(
@@ -325,6 +331,7 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
             tmp_path / "duplicated.sqlite",
             full_audit=True,
             completed=duplicated,
+            children=children_of(duplicated.application_result),
             **explanation_discovery_facts(duplicated),
             progress_callback=progress,
             **kwargs,
@@ -358,71 +365,6 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
             ) == read_alignment_explanation(original, candidate_id=candidate.peak_id)
 
 
-@dataclass(frozen=True)
-class _ChildBatch:
-    children: tuple
-
-
-@pytest.mark.parametrize("scenario", ("positive", "review_only"))
-def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, scenario):
-    completed, candidates, matrix, config = run_alignment_fixture(
-        tmp_path, monkeypatch, scenario
-    )
-    application = completed.application_result
-    kwargs = dict(
-        peaks_by_sample=candidates,
-        matrix_path=matrix,
-        alignment_config=config,
-    )
-    original = write_alignment_explanation(
-        tmp_path / "memory.sqlite",
-        completed=completed,
-        **explanation_discovery_facts(completed),
-        **kwargs,
-        full_audit=True,
-    )
-    store = StreamedResultStore(
-        tmp_path / "child-store",
-        (
-            application.processing_attempt_id,
-            *application.canonical_samples,
-        ),
-    )
-    store.append("one", _ChildBatch(tuple(application.children)))
-    store.seal()
-    loads = 0
-    read_record = store._read_record
-
-    def counted_read(*args):
-        nonlocal loads
-        loads += 1
-        return read_record(*args)
-
-    monkeypatch.setattr(store, "_read_record", counted_read)
-    restored = FinalizedUntargetBatchApplicationResult(
-        scope=application.scope,
-        processing_attempt_id=application.processing_attempt_id,
-        acquisition_sources=application.acquisition_sources,
-        children=store.sequence("children"),
-        excluded_candidates=application.excluded_candidates,
-    )
-    loads = 0
-    report = write_alignment_explanation(
-        tmp_path / "stored.sqlite",
-        full_audit=True,
-        completed=replace(completed, application_result=restored),
-        **explanation_discovery_facts(replace(completed, application_result=restored)),
-        **kwargs,
-    )
-    assert loads == len(application.children), (loads, len(application.children))
-    assert read_alignment_explanation(report) == read_alignment_explanation(original)
-    for values in candidates.values():
-        for candidate in values:
-            assert read_alignment_explanation(
-                report, candidate_id=candidate.peak_id
-            ) == read_alignment_explanation(original, candidate_id=candidate.peak_id)
-
-
 def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypatch):
     completed, candidates, matrix, config = run_alignment_fixture(
         tmp_path, monkeypatch, "all_hold"
@@ -438,6 +380,7 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
             report,
             full_audit=True,
             completed=completed,
+            children=children_of(completed.application_result),
             **explanation_discovery_facts(completed),
             peaks_by_sample=candidates,
             matrix_path=matrix,

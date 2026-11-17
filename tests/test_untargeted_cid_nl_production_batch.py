@@ -40,9 +40,12 @@ from tests.untargeted_cid_nl_production_batch_fixtures import (
 )
 from tests.untargeted_partition_fixtures import (
     build_dense_partition,
+    children_of,
     complete_dense_partition,
+    composed_child_outputs,
     execute_dense_partition,
     fixture_assessment,
+    project_composed_child,
 )
 from xic_extractor.alignment.cell_decision.owner import (
     NoWriteCellDecision,
@@ -65,7 +68,7 @@ from xic_extractor.output.alignment.pipeline_outputs import (
     write_completed_untargeted_outputs_atomic,
 )
 from xic_extractor.output.alignment.tsv_writer import (
-    completed_untarget_batch_sample_order,
+    untarget_sample_order,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution_result import (
@@ -156,7 +159,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         alignment_config=alignment_config,
     )
 
-    (child,) = completed.application_result.children
+    (child,) = children_of(completed.application_result)
     (group,) = child.scientific_core.final_population
     source_subject_ids = {
         source.method_assessment.method_subject.method_subject_id
@@ -207,6 +210,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         report = projection.write_alignment_explanation(
             tmp_path / "no-input-review.sqlite",
             completed=completed,
+            children=children_of(completed.application_result),
             **explanation_discovery_facts(completed),
             peaks_by_sample=peaks_by_sample,
             matrix_path=destination,
@@ -360,6 +364,7 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
                 exclusion_reason="operator exclusion",
             ),
         ),
+        project_child=project_composed_child,
     )
 
     assert result.application_result is application_result
@@ -443,7 +448,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         if method_subject_id == subject.method_subject_id
     )
     writer_inputs = completed.application_result
-    assert completed_untarget_batch_sample_order(writer_inputs) == ("S1",)
+    assert untarget_sample_order(writer_inputs.canonical_samples) == ("S1",)
     assert len(written_groups(writer_inputs)) == 2
     assert len(tuple(written_cells(writer_inputs))) == 2
     feature_by_group = {
@@ -451,7 +456,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         for ordinal, group in enumerate(written_groups(writer_inputs), start=1)
     }
     expected_source_ids: dict[tuple[str, str], str] = {}
-    for child in completed.application_result.children:
+    for child in children_of(completed.application_result):
         candidate_by_hypothesis = {
             (
                 subject.sample_key,
@@ -678,16 +683,17 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
         output_dir=tmp_path / "admission-output",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         raw_workers=1,
+        project_child=project_composed_child,
     )
     assert set(completed.application_result.candidate_ids) == admitted
     assert not completed.application_result.excluded_candidates
     writer = completed.application_result
-    assert completed_untarget_batch_sample_order(writer) == stems
+    assert untarget_sample_order(writer.canonical_samples) == stems
     assert not rejected.intersection(
         written_source_candidates(tmp_path / "written", writer).values()
     )
     if not admitted:
-        assert not completed.application_result.children
+        assert not children_of(completed.application_result)
         assert not written_groups(writer)
         assert sum(map(len, opened.values())) == opens_before
 
@@ -935,7 +941,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         if cell.value is not None
     }
     assert len({cell.value for *_, cell in corrected_cells}) == len(paths)
-    (child,) = corrected.application_result.children
+    (child,) = children_of(corrected.application_result)
     expected_loss_by_sample = {path.stem: configured_loss for path in paths}
     support_losses_by_sample = {
         cell.canonical_sample.raw_stem: {
@@ -1056,7 +1062,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     )
 
-    assert completed.application_result.children
+    assert children_of(completed.application_result)
     writer_inputs = completed.application_result
     if recovery_case != "positive":
         assert (
@@ -1077,7 +1083,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         project_completed_backfill,
     )
 
-    (child,) = completed.application_result.children
+    (child,) = children_of(completed.application_result)
     recovered_source = next(
         source
         for cell in child.scientific_core.cell_observations
@@ -1088,10 +1094,10 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         project_completed_backfill(
             recovered[0], group_context=recovered_source.group_context
         )
-    assert completed_untarget_batch_sample_order(writer_inputs) == sample_stems
+    assert untarget_sample_order(writer_inputs.canonical_samples) == sample_stems
     ((written_group, row_cells),) = (
         (group, cells)
-        for child in writer_inputs.children
+        for child in children_of(writer_inputs)
         for group, cells in child.group_cells
     )
     cells_by_sample = {
@@ -1112,7 +1118,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     expected_presentation_facts: dict[str, tuple[float, float]] = {}
     expected_cell_apexes: dict[str, float] = {}
     diagnostic_observation_ids: set[str] = set()
-    for child in completed.application_result.children:
+    for child in children_of(completed.application_result):
         for projected_group, cells in child.group_cells:
             group = next(
                 group
@@ -1186,10 +1192,14 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             )
             for cell in row_cells
         )
-        (weighted_child,) = writer_inputs.children
+        (weighted_child,) = children_of(writer_inputs)
         weighted_matrix = replace(
             writer_inputs,
-            children=(replace(weighted_child, group_cells=((written_group, cells),)),),
+            child_outputs=composed_child_outputs(
+                (replace(weighted_child, group_cells=((written_group, cells),)),),
+                completed.initial_groups,
+                samples=writer_inputs.canonical_samples,
+            ),
         )
         accepted = tuple(cell for cell in cells if cell.value is not None)
         legacy_rt = sum(
@@ -1306,7 +1316,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     completed = complete_dense_partition(
         batch, runtime, alignment_config=alignment_config
     )
-    (child,) = completed.application_result.children
+    (child,) = children_of(completed.application_result)
     ((_owner_group, owner_cells),) = child.group_cells
     owner_decisions = {
         decision.subject.canonical_sample.raw_stem: decision for decision in owner_cells
@@ -1403,6 +1413,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     write_alignment_explanation(
         published / "alignment_explanation.sqlite",
         completed=completed,
+        children=children_of(completed.application_result),
         **explanation_discovery_facts(completed),
         peaks_by_sample=peaks_by_sample,
         matrix_path=published_outputs.matrix_tsv,

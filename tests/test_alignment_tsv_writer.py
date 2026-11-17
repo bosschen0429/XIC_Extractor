@@ -2,6 +2,7 @@ import csv
 import math
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Literal
 
 import pytest
@@ -9,13 +10,17 @@ import pytest
 from tests.alignment_pipeline_helpers import (
     WriterGroup,
     owner_cell,
+    projected,
     read_tsv,
     render,
     writer_batch,
     writer_group,
 )
 from xic_extractor.alignment.cell_decision.owner import ProductionCellDecision
-from xic_extractor.output.alignment.tsv_writer import ALIGNMENT_CELLS_COLUMNS
+from xic_extractor.output.alignment.tsv_writer import (
+    ALIGNMENT_CELLS_COLUMNS,
+    write_alignment_tsvs,
+)
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 REVIEW_COLUMNS = [
@@ -524,6 +529,36 @@ def test_write_alignment_matrix_rejects_duplicate_source_candidate_writes(
         render("matrix", tmp_path / "matrix.tsv", matrix)
 
 
+@pytest.mark.parametrize("same_signal", (True, False))
+def test_write_alignment_tsvs_rejects_one_physical_peak_in_two_rows(
+    tmp_path: Path, same_signal: bool
+) -> None:
+    """Rows composed in different children still may not share a peak.
+
+    A peak is equal by its measured signal, so the same key with another
+    signal is a different peak and both rows are written.
+    """
+    batch = projected(_two_sample_matrix())
+    (child,) = batch.child_outputs
+    (group,) = child.groups
+    other = replace(
+        group,
+        physical_peaks=tuple(
+            (key, digest if same_signal else "another-signal")
+            for key, digest in group.physical_peaks
+        ),
+    )
+    batch = replace_namespace(
+        batch, child_outputs=(child, replace(child, groups=(other,)))
+    )
+
+    if same_signal:
+        with pytest.raises(ValueError, match="reused physical observations"):
+            write_alignment_tsvs({"review": tmp_path / "review.tsv"}, batch)
+    else:
+        assert write_alignment_tsvs({"review": tmp_path / "review.tsv"}, batch) == 2
+
+
 def test_write_alignment_review_tsv_reports_archived_row_route(tmp_path: Path):
     matrix = _matrix(
         ("sample-a",),
@@ -749,3 +784,7 @@ def _integration(
             morphology_area_source if morphology_area is not None else ""
         ),
     )
+
+
+def replace_namespace(namespace: object, **values: object) -> SimpleNamespace:
+    return SimpleNamespace(**{**vars(namespace), **values})

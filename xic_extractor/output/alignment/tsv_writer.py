@@ -1,19 +1,22 @@
 """Untargeted TSV outputs rendered from each finalized group and its cells.
 
-A batch is rendered in one pass, one group at a time, so no output keeps the
-whole Matrix in memory. Row-level values that exist only in the written
-outputs (the reported RT, the ordinal ``feature_id``, the cell's source
-candidate) are derived here when written; the reported m/z is the group's own
-centre.
+Each finalized child is formatted into rows when it is composed; the batch
+then writes those rows in one pass in its global child order, adding only the
+batch-scoped values (the ordinal ``feature_id`` and Matrix row index) and the
+cross-row checks. Row-level values that exist only in the written outputs
+(the reported RT, the cell's source candidate) are derived when formatting;
+the reported m/z is the group's own centre.
 """
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import math
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from contextlib import ExitStack
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -42,6 +45,7 @@ from xic_extractor.output.alignment.output_rows import (
     format_value,
 )
 from xic_extractor.peak_detection.observations import PeakObservation
+from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.tabular_io import escape_excel_formula
 
 if TYPE_CHECKING:
@@ -100,12 +104,12 @@ STATUS_MATRIX_GROUP_COLUMNS = (
 )
 
 
-def completed_untarget_batch_sample_order(
-    completed: FinalizedUntargetBatchApplicationResult,
+def untarget_sample_order(
+    canonical_samples: Iterable[SampleMetadata],
 ) -> tuple[str, ...]:
     """Return the canonical output columns, including for an empty batch."""
 
-    canonical_samples = tuple(completed.canonical_samples)
+    canonical_samples = tuple(canonical_samples)
     injection_orders = tuple(sample.injection_order for sample in canonical_samples)
     if any(
         isinstance(order, bool) or not isinstance(order, int) or order < 1
@@ -126,27 +130,222 @@ def completed_untarget_batch_sample_order(
     return sample_stems
 
 
-def write_alignment_tsvs(
-    paths: Mapping[str, Path],
-    completed: FinalizedUntargetBatchApplicationResult,
-    *,
-    consume_child: Callable[[FinalizedUntargetApplicationResult], None] | None = None,
-    membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
-) -> int:
-    """Render the requested TSVs (``matrix``, ``review``, ``backfill``,
-    ``cells``, ``status``) in one bounded pass and return the group count."""
+@dataclass(frozen=True, slots=True)
+class UntargetGroupRows:
+    """One written group's TSV rows before the batch numbers its rows.
 
-    sample_order = completed_untarget_batch_sample_order(completed)
-    headers = {
+    Each row is its formatted cells; the first cell of every row other than a
+    Matrix row is the ``feature_id`` slot, and a review row's second cell is
+    its ``matrix_row_index`` slot. Physical peaks are named by their key and a
+    digest of the measured signal that makes two peaks equal.
+    """
+
+    destination: str
+    physical_peaks: tuple[tuple[str, str], ...]
+    source_candidate_ids: tuple[str, ...]
+    rows: tuple[tuple[str, tuple[tuple[str, ...], ...]], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class UntargetChildOutputs:
+    """One finalized child's written rows and its review-database projection."""
+
+    groups: tuple[UntargetGroupRows, ...]
+    explanation: object | None = None
+
+
+def _output_headers(sample_order: tuple[str, ...]) -> dict[str, tuple[str, ...]]:
+    return {
         "matrix": serialize_public_matrix_table((), sample_columns=sample_order).header,
         "review": ALIGNMENT_REVIEW_COLUMNS,
         "backfill": ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
         "cells": ALIGNMENT_CELLS_COLUMNS,
         "status": (*STATUS_MATRIX_GROUP_COLUMNS, *sample_order),
     }
+
+
+def peak_signal_digest(peak: PeakObservation) -> str:
+    """Digest of the fields that make two physical peaks equal."""
+
+    return hashlib.blake2b(
+        repr(
+            (peak.sample_key, peak.mz, peak.rt, peak.intensity, peak.integration)
+        ).encode("utf-8"),
+        digest_size=16,
+    ).hexdigest()
+
+
+def project_untarget_child_rows(
+    child: FinalizedUntargetApplicationResult,
+    *,
+    outputs: Iterable[str],
+    sample_order: tuple[str, ...],
+    membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
+) -> tuple[UntargetGroupRows, ...]:
+    """Format one child's groups for the requested TSVs (``matrix``,
+    ``review``, ``backfill``, ``cells``, ``status``) without batch numbering."""
+
+    requested = frozenset(outputs)
+    headers = _output_headers(sample_order)
     risks_by_owner = membership_risks_by_owner or {}
+    core = child.scientific_core
+    direct_candidate_ids = _direct_candidate_ids(core)
+    projected = []
+    for group, canonical_cells in child.group_cells:
+        rows: dict[str, list[tuple[str, ...]]] = {}
+
+        def emit(
+            name: str,
+            values: Iterable[Mapping[str, object]],
+            rows: dict[str, list[tuple[str, ...]]] = rows,
+        ) -> None:
+            if name in requested:
+                rows.setdefault(name, []).extend(
+                    tuple(format_value(row.get(column, "")) for column in headers[name])
+                    for row in values
+                )
+
+        cells = _cells_in_sample_order(canonical_cells, sample_order)
+        evidence = tuple(
+            cast(FinalGroupCellObservation, cell.evidence) for cell in cells
+        )
+        peaks = _member_direct_peaks(evidence)
+        center_mz = float(group.group_center_mz)
+        center_rt = _member_mean_rt(peaks)
+        if not math.isfinite(center_mz):
+            raise ValueError("group centre m/z is not finite")
+        tag, product_mz, loss_da, has_anchor = _cell_context_facts(evidence)
+        candidate_ids = {
+            sample_stem: candidate_id
+            for sample_stem, cell, observation in zip(
+                sample_order, cells, evidence, strict=True
+            )
+            if (
+                candidate_id := _selected_cell_source(
+                    cell, observation, direct_candidate_ids=direct_candidate_ids
+                )
+            )
+            is not None
+        }
+        risk_flags = _membership_risk_flags(
+            group,
+            risks_by_owner,
+            core.grouping_result.backfill_membership_risks,
+        )
+        group_columns = {
+            "feature_id": "",
+            "neutral_loss_tag": tag,
+            "group_center_mz": format_value(center_mz),
+            "group_center_rt": format_value(center_rt),
+        }
+        if group.destination == "matrix":
+            emit(
+                "matrix",
+                serialize_public_matrix_table(
+                    (
+                        {
+                            "Mz": center_mz,
+                            "RT": center_rt,
+                            **{
+                                sample_stem: ""
+                                if cell.value is None
+                                else format_float(cell.value)
+                                for sample_stem, cell in zip(
+                                    sample_order, cells, strict=True
+                                )
+                            },
+                        },
+                    ),
+                    sample_columns=sample_order,
+                ).rows,
+            )
+        emit(
+            "review",
+            (
+                _review_row(
+                    group,
+                    cells,
+                    group_columns=group_columns,
+                    center_mz=center_mz,
+                    center_rt=center_rt,
+                    product_mz=product_mz,
+                    loss_da=loss_da,
+                    has_anchor=has_anchor,
+                    risk_flags=risk_flags,
+                    sample_count=len(sample_order),
+                ),
+            ),
+        )
+        if any(cell_origin(cell) == "backfilled" for cell in cells):
+            emit(
+                "backfill",
+                (
+                    {
+                        **_cell_fields(sample_stem, cell, candidate_ids),
+                        **dict(
+                            zip(
+                                (
+                                    "backfill_query_rt_min",
+                                    "backfill_query_rt_max",
+                                ),
+                                map(format_value, backfill_query_bounds(cell)),
+                                strict=True,
+                            )
+                        ),
+                    }
+                    for sample_stem, cell in zip(sample_order, cells, strict=True)
+                    if cell_origin(cell) is not None
+                ),
+            )
+        emit(
+            "cells",
+            (
+                _cell_fields(sample_stem, cell, candidate_ids)
+                for sample_stem, cell in zip(sample_order, cells, strict=True)
+            ),
+        )
+        emit(
+            "status",
+            (
+                {
+                    **group_columns,
+                    **{
+                        sample_stem: cell_status(cell)
+                        for sample_stem, cell in zip(sample_order, cells, strict=True)
+                    },
+                },
+            ),
+        )
+        projected.append(
+            UntargetGroupRows(
+                destination=group.destination,
+                physical_peaks=tuple(
+                    (peak.physical_peak_key, peak_signal_digest(peak)) for peak in peaks
+                ),
+                source_candidate_ids=tuple(candidate_ids.values()),
+                rows=tuple((name, tuple(values)) for name, values in rows.items()),
+            )
+        )
+    return tuple(projected)
+
+
+def write_alignment_tsvs(
+    paths: Mapping[str, Path],
+    completed: FinalizedUntargetBatchApplicationResult,
+    *,
+    consume_child: Callable[[UntargetChildOutputs, int], None] | None = None,
+) -> int:
+    """Number and write the requested TSVs from the batch's projected rows in
+    one bounded pass, and return the group count.
+
+    ``consume_child`` receives each child's outputs with the count of groups
+    written before it, so its review records name the same ``feature_id``.
+    """
+
+    sample_order = untarget_sample_order(completed.canonical_samples)
+    headers = _output_headers(sample_order)
     source_candidate_owners: dict[str, str] = {}
-    seen_physical_peaks: set[PeakObservation] = set()
+    seen_physical_peaks: set[tuple[str, str]] = set()
     group_count = 0
     matrix_row_count = 0
     with ExitStack() as stack:
@@ -160,64 +359,22 @@ def write_alignment_tsvs(
             writer.writerow([escape_excel_formula(column) for column in headers[name]])
             writers[name] = writer
 
-        def emit(name: str, rows: Iterable[Mapping[str, object]]) -> None:
-            if name in writers:
-                for row in rows:
-                    writers[name].writerow(
-                        [format_value(row.get(column, "")) for column in headers[name]]
-                    )
-
-        for child in completed.children:
-            core = child.scientific_core
-            direct_candidate_ids = _direct_candidate_ids(core)
-            for group, canonical_cells in child.group_cells:
+        for child in completed.child_outputs:
+            child = cast(UntargetChildOutputs, child)
+            first_group = group_count
+            for group in child.groups:
                 group_count += 1
-                feature_id = feature_id_label(group_count)
-                cells = _cells_in_sample_order(canonical_cells, sample_order)
-                evidence = tuple(
-                    cast(FinalGroupCellObservation, cell.evidence) for cell in cells
-                )
-                peaks = _member_direct_peaks(evidence)
-                center_mz = float(group.group_center_mz)
-                center_rt = _member_mean_rt(peaks)
-                if not math.isfinite(center_mz):
-                    raise ValueError("group centre m/z is not finite")
-                duplicate_peaks = seen_physical_peaks.intersection(peaks)
+                feature_id = format_value(feature_id_label(group_count))
+                duplicate_peaks = seen_physical_peaks.intersection(group.physical_peaks)
                 if duplicate_peaks:
                     raise ValueError(
                         "writer projection reused physical observations across rows: "
-                        + ", ".join(
-                            sorted(peak.physical_peak_key for peak in duplicate_peaks)
-                        )
+                        + ", ".join(sorted(key for key, _digest in duplicate_peaks))
                     )
-                seen_physical_peaks.update(peaks)
-                tag, product_mz, loss_da, has_anchor = _cell_context_facts(evidence)
-                candidate_ids = {
-                    sample_stem: candidate_id
-                    for sample_stem, cell, observation in zip(
-                        sample_order, cells, evidence, strict=True
-                    )
-                    if (
-                        candidate_id := _selected_cell_source(
-                            cell, observation, direct_candidate_ids=direct_candidate_ids
-                        )
-                    )
-                    is not None
-                }
-                risk_flags = _membership_risk_flags(
-                    group,
-                    risks_by_owner,
-                    core.grouping_result.backfill_membership_risks,
-                )
-                group_columns = {
-                    "feature_id": feature_id,
-                    "neutral_loss_tag": tag,
-                    "group_center_mz": format_value(center_mz),
-                    "group_center_rt": format_value(center_rt),
-                }
-                matrix_row_index: int | None = None
+                seen_physical_peaks.update(group.physical_peaks)
+                matrix_row_index = ""
                 if group.destination == "matrix":
-                    for candidate_id in candidate_ids.values():
+                    for candidate_id in group.source_candidate_ids:
                         previous = source_candidate_owners.setdefault(
                             candidate_id, feature_id
                         )
@@ -227,93 +384,22 @@ def write_alignment_tsvs(
                                 f"hypothesis rows: {candidate_id}"
                             )
                     matrix_row_count += 1
-                    matrix_row_index = matrix_row_count
-                    emit(
-                        "matrix",
-                        serialize_public_matrix_table(
-                            (
-                                {
-                                    "Mz": center_mz,
-                                    "RT": center_rt,
-                                    **{
-                                        sample_stem: ""
-                                        if cell.value is None
-                                        else format_float(cell.value)
-                                        for sample_stem, cell in zip(
-                                            sample_order, cells, strict=True
-                                        )
-                                    },
-                                },
-                            ),
-                            sample_columns=sample_order,
-                        ).rows,
-                    )
-                emit(
-                    "review",
-                    (
-                        _review_row(
-                            group,
-                            cells,
-                            group_columns=group_columns,
-                            matrix_row_index=matrix_row_index,
-                            center_mz=center_mz,
-                            center_rt=center_rt,
-                            product_mz=product_mz,
-                            loss_da=loss_da,
-                            has_anchor=has_anchor,
-                            risk_flags=risk_flags,
-                            sample_count=len(sample_order),
-                        ),
-                    ),
-                )
-                if any(cell_origin(cell) == "backfilled" for cell in cells):
-                    emit(
-                        "backfill",
-                        (
-                            {
-                                **_cell_fields(
-                                    feature_id, sample_stem, cell, candidate_ids
-                                ),
-                                **dict(
-                                    zip(
-                                        (
-                                            "backfill_query_rt_min",
-                                            "backfill_query_rt_max",
-                                        ),
-                                        map(format_value, backfill_query_bounds(cell)),
-                                        strict=True,
-                                    )
-                                ),
-                            }
-                            for sample_stem, cell in zip(
-                                sample_order, cells, strict=True
+                    matrix_row_index = format_value(matrix_row_count)
+                for name, rows in group.rows:
+                    row_writer = writers.get(name)
+                    if row_writer is None:
+                        continue
+                    for row in rows:
+                        if name == "matrix":
+                            row_writer.writerow(row)
+                        elif name == "review":
+                            row_writer.writerow(
+                                (feature_id, matrix_row_index, *row[2:])
                             )
-                            if cell_origin(cell) is not None
-                        ),
-                    )
-                emit(
-                    "cells",
-                    (
-                        _cell_fields(feature_id, sample_stem, cell, candidate_ids)
-                        for sample_stem, cell in zip(sample_order, cells, strict=True)
-                    ),
-                )
-                emit(
-                    "status",
-                    (
-                        {
-                            **group_columns,
-                            **{
-                                sample_stem: cell_status(cell)
-                                for sample_stem, cell in zip(
-                                    sample_order, cells, strict=True
-                                )
-                            },
-                        },
-                    ),
-                )
+                        else:
+                            row_writer.writerow((feature_id, *row[1:]))
             if consume_child is not None:
-                consume_child(child)
+                consume_child(child, first_group)
     return group_count
 
 
@@ -512,7 +598,6 @@ def backfill_query_bounds(
 
 
 def _cell_fields(
-    feature_id: str,
     sample_stem: str,
     cell: ProductionCellDecision,
     candidate_ids: Mapping[str, str],
@@ -525,7 +610,7 @@ def _cell_fields(
         else ""
     )
     return {
-        "feature_id": feature_id,
+        "feature_id": "",
         "sample_stem": sample_stem,
         "status": cell_status(cell),
         "area": format_value(cell.value),
@@ -560,7 +645,6 @@ def _review_row(
     cells: tuple[ProductionCellDecision, ...],
     *,
     group_columns: Mapping[str, object],
-    matrix_row_index: int | None,
     center_mz: float,
     center_rt: float,
     product_mz: float | None,
@@ -581,7 +665,7 @@ def _review_row(
     )
     return {
         "feature_id": group_columns["feature_id"],
-        "matrix_row_index": matrix_row_index,
+        "matrix_row_index": "",
         "neutral_loss_tag": group_columns["neutral_loss_tag"],
         "group_center_mz": canonical_mz_text(center_mz),
         "group_center_rt": center_rt,

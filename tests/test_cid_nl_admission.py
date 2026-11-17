@@ -15,6 +15,7 @@ from tests.cid_nl_runtime_fixtures import build_discovery_receipts, install_runt
 from tests.physical_peak_evaluation_fixtures import (
     _overlapping_triplet_trace,
 )
+from tests.untargeted_partition_fixtures import children_of, project_composed_child
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.csv_reader import (
     DiscoveryBatchInput,
@@ -216,16 +217,19 @@ def test_review_rows_never_become_alignment_roots(
         output_dir=tmp_path / "alignment",
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         raw_workers=1,
+        project_child=project_composed_child,
     )
     assert set(result.application_result.candidate_ids) == expected_ids
     assert not result.application_result.excluded_candidates
     assert not rejected_ids.intersection(
         subject.candidate_id
-        for child in result.application_result.children
+        for child in children_of(result.application_result)
         for subject in child.scientific_core.terminal_subjects
     )
     if not with_supported:
-        assert not result.application_result.children and not result.method_assessments
+        assert (
+            not children_of(result.application_result) and not result.method_assessments
+        )
         assert sum(map(len, opened.values())) == 0
 
 
@@ -314,6 +318,7 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         output_dir=tmp_path / "alignment",
         alignment_config=config,
         raw_workers=1,
+        project_child=project_composed_child,
     )
     measured = {
         evidence.candidate_id
@@ -331,6 +336,7 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
     report = write_alignment_explanation(
         tmp_path / "explanation.sqlite",
         completed=completed,
+        children=children_of(completed.application_result),
         peaks_by_sample=loaded,
         matrix_path=matrix,
         alignment_config=config,

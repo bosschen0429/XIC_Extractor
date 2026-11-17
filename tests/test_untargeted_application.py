@@ -90,7 +90,9 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     closed: list[bool] = []
 
     class MockCompleted:
-        application_result = SimpleNamespace(children=())
+        application_result = SimpleNamespace(
+            child_outputs=(), has_flagged_backfill_risk=False
+        )
         initial_groups = ()
         sample_rt_frame = None
         processing_request_id = "request-test"
@@ -154,7 +156,9 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
             path.write_text("published", encoding="utf-8")
             return path
 
-        yield SimpleNamespace(consume_child=lambda _child: None, finalize=finalize)
+        yield SimpleNamespace(
+            consume_child=lambda _child, _first_group: None, finalize=finalize
+        )
 
     monkeypatch.setattr(
         publication_module, "write_completed_untargeted_outputs_atomic", write_outputs
@@ -224,7 +228,9 @@ def test_pure_cid_nl_cancellation_after_completion_skips_publication(
     closed: list[bool] = []
     completed = SimpleNamespace(
         close=lambda: closed.append(True),
-        application_result=SimpleNamespace(children=()),
+        application_result=SimpleNamespace(
+            child_outputs=(), has_flagged_backfill_risk=False
+        ),
         initial_groups=(),
         sample_rt_frame=None,
     )
@@ -265,7 +271,9 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
     closed: list[bool] = []
     completed = SimpleNamespace(
         close=lambda: closed.append(True),
-        application_result=SimpleNamespace(children=()),
+        application_result=SimpleNamespace(
+            child_outputs=(), has_flagged_backfill_risk=False
+        ),
         initial_groups=(),
         sample_rt_frame=None,
     )
@@ -425,7 +433,9 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     closed: list[bool] = []
     completed = SimpleNamespace(
         close=lambda: closed.append(True),
-        application_result=SimpleNamespace(children=()),
+        application_result=SimpleNamespace(
+            child_outputs=(), has_flagged_backfill_risk=False
+        ),
         initial_groups=(),
         sample_rt_frame=None,
     )
@@ -467,7 +477,7 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
 
 @pytest.mark.parametrize("emit_explanation", (True, False))
 @pytest.mark.parametrize("failure", (None, "projection", "matrix"))
-def test_pipeline_streams_partition_children_once_and_cleans_up(
+def test_pipeline_publishes_projected_children_and_cleans_up(
     tmp_path,
     monkeypatch,
     failure,
@@ -477,6 +487,11 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     import sqlite3
 
     from tests.untargeted_cid_nl_bounded_runtime_fixtures import _plan
+    from tests.untargeted_partition_fixtures import (
+        ALL_ROW_OUTPUTS,
+        children_of,
+        project_composed_child,
+    )
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetApplicationResult,
     )
@@ -487,28 +502,43 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         write_alignment_explanation,
     )
     from xic_extractor.execution.result_store import StreamedResultStore
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_tsvs
+    from xic_extractor.output.alignment.tsv_writer import (
+        UntargetChildOutputs,
+        write_alignment_tsvs,
+    )
     from xic_extractor.untargeted_execution.execution import (
         execute_untargeted_plan,
     )
 
     plan, _ = _plan(tmp_path, monkeypatch)
     config = AlignmentConfig(anchor_min_seed_events=1)
-    completed = execute_untargeted_plan(
-        plan,
-        output_dir=tmp_path / "runtime",
-        alignment_config=config,
-        max_partition_jobs=4,
-        retain_partition_memory=False,
-    )
-    assert len(completed.application_result.children) == 3
     candidates = load_plan_inputs(plan)
-    completed = completed.bind_publication_inputs(
-        peaks_by_sample=candidates,
-        precursor_mz_by_candidate=representative_precursors(candidates),
-        neutral_loss_by_tag=plan.context.settings.neutral_loss_by_tag,
-        alignment_config=config,
+
+    def execute(name, project_child):
+        return execute_untargeted_plan(
+            plan,
+            output_dir=tmp_path / name,
+            alignment_config=config,
+            max_partition_jobs=4,
+            retain_partition_memory=False,
+            project_child=project_child,
+        ).bind_publication_inputs(
+            peaks_by_sample=candidates,
+            precursor_mz_by_candidate=representative_precursors(candidates),
+            neutral_loss_by_tag=plan.context.settings.neutral_loss_by_tag,
+            alignment_config=config,
+        )
+
+    # The reference keeps each child beside its outputs, as a scientific
+    # fixture does; the published run stores only the production projection.
+    expected = execute("expected", project_composed_child)
+    completed = execute(
+        "runtime",
+        publication_module.untargeted_child_projection(
+            ALL_ROW_OUTPUTS, UntargetedPublicationPolicy()
+        ),
     )
+    assert len(completed.application_result.child_outputs) == 3
     output_dir = tmp_path / "out"
     output_dir.mkdir()
     matrix_path = output_dir / "alignment_matrix.tsv"
@@ -534,17 +564,19 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
             }
 
     if failure is None:
-        write_alignment_tsvs({"matrix": matrix_path}, completed.application_result)
+        write_alignment_tsvs({"matrix": matrix_path}, expected.application_result)
         matrix_bytes = matrix_path.read_bytes()
         write_alignment_explanation(
             reference,
-            completed=completed,
-            **explanation_discovery_facts(completed),
+            completed=expected,
+            children=children_of(expected.application_result),
+            **explanation_discovery_facts(expected),
             peaks_by_sample=candidates,
             matrix_path=matrix_path,
             alignment_config=config,
         )
         matrix_path.unlink()
+    expected.close()
 
     batch_index = _write_batch(tmp_path, tuple(candidates))
     monkeypatch.setattr(
@@ -561,21 +593,22 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     restores = 0
     read_record = StreamedResultStore._read_record
 
-    def live_children():
+    def live_outputs():
         gc.collect()
         return sum(
-            id(value) in restored_ids
-            and type(value) is FinalizedUntargetApplicationResult
+            id(value) in restored_ids and type(value) is UntargetChildOutputs
             for value in gc.get_objects()
         )
 
     def counted_read(store, *args):
         nonlocal restores
         # The preceding loop item may still be live; earlier partitions must be gone.
-        assert live_children() <= 1
+        assert live_outputs() <= 1
         values = read_record(store, *args)
         for value in values:
-            if type(value) is FinalizedUntargetApplicationResult:
+            # Publication never restores a finalized child from the store.
+            assert type(value) is not FinalizedUntargetApplicationResult
+            if type(value) is UntargetChildOutputs:
                 restores += 1
                 restored_ids.add(id(value))
         return values
@@ -589,12 +622,12 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
             consume = kwargs.get("consume_child")
             consumed = 0
 
-            def consume_then_fail(child):
+            def consume_then_fail(child, first_group):
                 nonlocal consumed
                 if consume is not None:
-                    consume(child)
+                    consume(child, first_group)
                 consumed += 1
-                if consumed == len(value.children):
+                if consumed == len(value.child_outputs):
                     raise OSError("projection failed")
 
             return write_tsvs(
@@ -631,8 +664,8 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
             result = run()
             assert matrix_path.read_bytes() == matrix_bytes
             if not emit_explanation and not has_membership_risk:
-                # Nothing consumes the children, so nothing is written for them
-                # and the run still releases every one.
+                # Nothing replays the children's report writes, so no report
+                # is written and the run still releases every output.
                 assert not report_path.exists()
                 assert result.evidence is None
             else:
@@ -660,7 +693,7 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
             assert not report_path.exists()
         assert restores == 3
         assert not report_path.with_name(report_path.name + ".tmp").exists()
-        assert live_children() == 0
+        assert live_outputs() == 0
     finally:
         completed.close()
 
@@ -797,7 +830,9 @@ def test_pure_cid_nl_targets_csv_integration(
 
     closed = []
     completed = SimpleNamespace(
-        application_result=SimpleNamespace(children=()),
+        application_result=SimpleNamespace(
+            child_outputs=(), has_flagged_backfill_risk=False
+        ),
         initial_groups=(),
         sample_rt_frame=None,
         close=lambda: closed.append(True),

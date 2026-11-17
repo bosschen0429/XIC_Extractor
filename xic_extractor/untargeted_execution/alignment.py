@@ -47,6 +47,9 @@ from xic_extractor.untargeted_execution.input_planning import (
     UntargetedInputPlan,
     prepare_indexed_untargeted_plan,
 )
+from xic_extractor.untargeted_execution.partition_composition import (
+    ChildOutputProjection,
+)
 
 _SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl"
 _RUNTIME_ARTIFACT_NAMESPACE = "untargeted-cid-nl-alignment"
@@ -193,8 +196,12 @@ def complete_untargeted_alignment(
     max_partition_jobs: int = 100_000,
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
+    project_child: ChildOutputProjection,
 ) -> CompletedUntargetBatchWorkflowResult:
-    """Execute and compose one owner-closed CID-NL batch exactly once."""
+    """Execute and compose one owner-closed CID-NL batch exactly once.
+
+    Each composed child is kept only as its ``project_child`` projection.
+    """
 
     if progress_callback:
         progress_callback({"stage": "alignment_inputs"})
@@ -239,6 +246,7 @@ def complete_untargeted_alignment(
                 acquisition_cache_dir=acquisition_cache_dir,
                 max_partition_jobs=max_partition_jobs,
                 mass_recalibration_by_sample=mass_recalibration_by_sample,
+                project_child=project_child,
             ),
         )
         pending.callback(completed.close)
@@ -269,6 +277,7 @@ def execute_prepared_alignment(
     acquisition_cache_dir: Path | None = None,
     max_partition_jobs: int = 100_000,
     grouping_only: bool = False,
+    project_child: ChildOutputProjection | None = None,
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
 ) -> CompletedUntargetBatchWorkflowResult | PreparedGroupingExperiment:
@@ -318,6 +327,7 @@ def execute_prepared_alignment(
             pipeline_overlap=True,
             max_partition_jobs=max_partition_jobs,
             grouping_only=grouping_only,
+            project_child=project_child,
             mass_recalibration_by_sample=mass_recalibration_by_sample,
         )
     return completed

@@ -25,13 +25,16 @@ from xic_extractor.alignment.completion import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
+    accepted_membership_risks,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
+from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     FinalizedUntargetBatchApplicationResult,
     UntargetedCandidateExclusion,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.execution.result_store import (
     SealedPartition,
@@ -56,6 +59,7 @@ from xic_extractor.peak_detection.search_scope import (
     EvidenceProviderBinding,
     UntargetedSearchScope,
 )
+from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.input_planning import (
     UntargetedInputPlan,
 )
@@ -97,6 +101,36 @@ class UntargetedPartitionComposition:
 
 
 @dataclass(frozen=True, slots=True)
+class ChildProjectionContext:
+    """Batch and partition facts a child's output projection reads besides the
+    child: the batch's samples, which order every row's sample columns."""
+
+    samples: tuple[SampleMetadata, ...]
+    membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk]
+    sample_rt_frame: SampleRtFrame | None
+    # The partition retained capture evidence, so the batch has some too.
+    capture_evidence_retained: bool
+
+
+# Projects one finalized child into the outputs published from it. The
+# composition owner stores only this projection, never the child itself.
+ChildOutputProjection = Callable[
+    [FinalizedUntargetApplicationResult, ChildProjectionContext], object
+]
+
+
+@dataclass(frozen=True, slots=True)
+class _PersistedPartitionComposition:
+    """Stored partition: projected child outputs beside the retained facts."""
+
+    child_outputs: tuple[object, ...]
+    excluded_candidates: tuple[UntargetedCandidateExclusion, ...]
+    method_assessments: tuple[CidNlMethodAssessment, ...]
+    initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
+    capture_evidence: tuple[RetainedCaptureEvidence, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class PersistedUntargetedPartition:
     """Lightweight positions for one persisted scientific partition."""
 
@@ -104,6 +138,7 @@ class PersistedUntargetedPartition:
     child_count: int
     excluded_candidate_ids: tuple[str, ...]
     child_order_keys: tuple[str, ...] = ()
+    has_flagged_backfill_risk: bool = False
 
 
 def compose_untargeted_batch(
@@ -112,7 +147,7 @@ def compose_untargeted_batch(
     store: StreamedResultStore,
     partitions: Sequence[PersistedUntargetedPartition],
 ) -> FinalizedUntargetBatchApplicationResult:
-    """Close the planned batch with canonical, lazily loaded partition results.
+    """Close the planned batch over its partitions' stored child outputs.
 
     Partition composition owns scientific ordering and the complete batch scope;
     the runtime adapter supplies sealed partitions without reconstructing either.
@@ -145,17 +180,17 @@ def compose_untargeted_batch(
         # Capture authorization and physical evidence belong to each child.
         capture_bindings=(),
     )
-    children = store.sequence("children")
+    child_outputs = store.sequence("child_outputs")
     if child_positions:
-        ordered_children = tuple(sorted(child_positions))
-        if len(ordered_children) != len(children):
-            raise ValueError("partition child order lost a scientific result")
-        children = ImmutableSequence(
-            (1,) * len(ordered_children),
+        ordered_outputs = tuple(sorted(child_positions))
+        if len(ordered_outputs) != len(child_outputs):
+            raise ValueError("partition child order lost a projected child")
+        child_outputs = ImmutableSequence(
+            (1,) * len(ordered_outputs),
             lambda index: store.read_selected(
-                ordered_children[index][1],
-                "children",
-                (ordered_children[index][2],),
+                ordered_outputs[index][1],
+                "child_outputs",
+                (ordered_outputs[index][2],),
             ),
         )
     return FinalizedUntargetBatchApplicationResult(
@@ -165,9 +200,12 @@ def compose_untargeted_batch(
             context.acquisition_sources_by_sample[sample.raw_stem].source
             for sample in context.samples
         ),
-        children=children,
+        child_outputs=child_outputs,
         excluded_candidates=_ordered_exclusions(
             store, exclusion_positions, plan.excluded_candidates
+        ),
+        has_flagged_backfill_risk=any(
+            persisted.has_flagged_backfill_risk for persisted in partitions
         ),
     )
 
@@ -219,6 +257,8 @@ def compose_and_persist_untargeted_partition(
     store: StreamedResultStore,
     partition_key: str,
     alignment_config: AlignmentConfig,
+    project_child: ChildOutputProjection,
+    sample_rt_frame: SampleRtFrame | None = None,
     known_istd_reference: KnownIstdReference | None = None,
     should_cancel: Callable[[], object] | None = None,
     retain_memory: bool = False,
@@ -226,9 +266,11 @@ def compose_and_persist_untargeted_partition(
 ) -> PersistedUntargetedPartition:
     """Compose one child at a time and publish only after the full partition.
 
-    Composition inputs are prepared once.  The result store owns the trusted
-    owner references and atomic file publication while this owner controls
-    scientific child order and cancellation boundaries.
+    Composition inputs are prepared once. Each child is projected into its
+    outputs as soon as it composes, and only the projection is stored. The
+    result store owns the trusted owner references and atomic file
+    publication while this owner controls scientific child order and
+    cancellation boundaries.
     """
 
     inputs = _build_production_composition_inputs(
@@ -239,13 +281,20 @@ def compose_and_persist_untargeted_partition(
     )
     child_count = 0
     child_order_keys: list[str] = []
+    has_flagged_backfill_risk = False
+    projection_context = ChildProjectionContext(
+        samples=batch.context.samples,
+        membership_risks_by_owner=accepted_membership_risks(inputs.initial_groups),
+        sample_rt_frame=sample_rt_frame,
+        capture_evidence_retained=bool(inputs.capture_evidence),
+    )
 
     def check_cancellation() -> None:
         if should_cancel is not None and should_cancel():
             raise InterruptedError("CID-NL partition cancelled")
 
-    def children():
-        nonlocal child_count
+    def child_outputs():
+        nonlocal child_count, has_flagged_backfill_risk
         for completion, receipts in inputs.completions:
             check_cancellation()
             child = completion.complete(receipts)
@@ -256,22 +305,25 @@ def compose_and_persist_untargeted_partition(
                     for provider in child.scientific_core.scope.evidence_providers
                 )
             )
-            yield child
+            has_flagged_backfill_risk = has_flagged_backfill_risk or any(
+                risk.risk_flags
+                for _, _, risk in (
+                    child.scientific_core.grouping_result.backfill_membership_risks
+                )
+            )
+            yield project_child(child, projection_context)
             del child
 
-    metadata_payload = UntargetedPartitionComposition(
-        children=(),
+    metadata_payload = _PersistedPartitionComposition(
+        child_outputs=(),
         excluded_candidates=inputs.request.excluded_candidates,
-        # Child scopes and capture_evidence retain the complete physical facts.
-        # The partition index does not need a second copy of their graphs.
-        capture_bindings=(),
         method_assessments=inputs.method_assessments,
         initial_groups=inputs.initial_groups,
         capture_evidence=inputs.capture_evidence,
     )
-    sealed = store.append_children(
+    sealed = store.append_child_outputs(
         partition_key,
-        children=children(),
+        child_outputs=child_outputs(),
         before_publish=check_cancellation,
         metadata_payload=metadata_payload,
         retain_memory=retain_memory,
@@ -283,6 +335,7 @@ def compose_and_persist_untargeted_partition(
             item.candidate_id for item in inputs.request.excluded_candidates
         ),
         child_order_keys=tuple(child_order_keys),
+        has_flagged_backfill_risk=has_flagged_backfill_risk,
     )
 
 
