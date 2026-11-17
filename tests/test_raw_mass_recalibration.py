@@ -639,13 +639,19 @@ def test_batched_recalibrated_xics_match_hand_sums_in_request_order():
     other_mass = XICRequest(mz=150.0, rt_min=1.0, rt_max=5.0, ppm_tol=10.0)
     inner = XICRequest(mz=100.0, rt_min=4.0, rt_max=5.0, ppm_tol=10.0)
     no_ms1 = XICRequest(mz=100.0, rt_min=3.0, rt_max=3.0, ppm_tol=10.0)
+    # Same m/z and window, narrower ppm: only the centre centroid is inside.
+    narrow = XICRequest(mz=100.0, rt_min=1.0, rt_max=5.0, ppm_tol=2.0)
+    # Same start as the peak window, earlier end.
+    early = XICRequest(mz=100.0, rt_min=1.0, rt_max=2.0, ppm_tol=10.0)
     expected = {
         peak: [(1.0, 7.0), (2.0, 0.0), (4.0, 16.0), (5.0, 0.0)],
         other_mass: [(1.0, 0.0), (2.0, 0.0), (4.0, 32.0), (5.0, 64.0)],
         inner: [(4.0, 16.0), (5.0, 0.0)],
         no_ms1: [],
+        narrow: [(1.0, 2.0), (2.0, 0.0), (4.0, 16.0), (5.0, 0.0)],
+        early: [(1.0, 7.0), (2.0, 0.0)],
     }
-    requests = (inner, peak, no_ms1, other_mass, peak)
+    requests = (inner, peak, no_ms1, narrow, other_mass, early, peak)
     for order in (requests, requests[::-1]):
         vendor = _GridVendor()
         traces = _grid_handle(vendor).extract_xic_many(order)
