@@ -33,6 +33,8 @@ REVIEW_COLUMNS = [
     "accepted_cell_count",
     "accepted_backfill_count",
     "membership_risk_flags",
+    "rt_time_coefficient",
+    "rt_sample_shift_coefficient",
     "warning",
 ]
 
@@ -55,6 +57,8 @@ def test_write_alignment_review_tsv_columns_and_counts(tmp_path: Path):
     assert list(rows[0]) == REVIEW_COLUMNS
     assert rows[0] == {
         "membership_risk_flags": "",
+        "rt_time_coefficient": "0",
+        "rt_sample_shift_coefficient": "0",
         "feature_id": "F000001",
         "matrix_row_index": "1",
         "neutral_loss_tag": "DNA_dR",

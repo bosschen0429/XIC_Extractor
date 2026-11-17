@@ -25,6 +25,8 @@ from xic_extractor.alignment.feature_membership_inference import (
 )
 from xic_extractor.alignment.grouping_experiment import GroupingInputs, GroupingWorkset
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
+from xic_extractor.alignment.peak_trajectories import ordered_pattern_contexts
+from xic_extractor.alignment.rt_drift import RtDriftModel
 from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
@@ -49,7 +51,13 @@ from xic_extractor.rt_calibration_codec import (
 from xic_extractor.rt_calibration_codec import (
     rt_calibration_payload as _rt_calibration_payload,
 )
+from xic_extractor.rt_calibration_codec import (
+    rt_drift_from_payload,
+    rt_drift_payload,
+)
 from xic_extractor.tabular_io import write_delimited_rows
+
+_RtModel = tuple[BatchRtWarp | None, BatchRtCalibration | None, RtDriftModel | None]
 
 
 def query_discovery(
@@ -97,7 +105,56 @@ def write_json(path: Path, value: object) -> None:
 def write_grouping_inputs(
     path: Path, inputs: GroupingInputs, *, provenance: Mapping[str, Any]
 ) -> None:
-    """Persist grouping facts and shape evidence, excluding full acquisition traces."""
+    """Persist replay facts; share batch models and curve-free pattern contexts."""
+    rt_models: list[dict[str, Any]] = []
+    model_indices: dict[tuple[int, int, int], int] = {}
+    contexts: list[SampleElutionContext] = []
+    context_indices: dict[SampleElutionContext, int] = {}
+    worksets = []
+    for workset in inputs.worksets:
+        identity = (
+            id(workset.rt_warp),
+            id(workset.rt_calibration),
+            id(workset.rt_drift),
+        )
+        if identity not in model_indices:
+            # Partition restoration can make equal copies of the frozen batch
+            # model. Include anchor-owner bindings, which dataclass equality
+            # deliberately excludes, when sharing the persisted facts.
+            model = {
+                "rt_warp": asdict(workset.rt_warp)
+                if workset.rt_warp is not None
+                else None,
+                "rt_calibration": _rt_calibration_payload(workset.rt_calibration)
+                if workset.rt_calibration is not None
+                else None,
+                "rt_drift": rt_drift_payload(workset.rt_drift)
+                if workset.rt_drift is not None
+                else None,
+            }
+            index = next(
+                (i for i, other in enumerate(rt_models) if other == model),
+                len(rt_models),
+            )
+            if index == len(rt_models):
+                rt_models.append(model)
+            model_indices[identity] = index
+        selected_contexts = []
+        for context in ordered_pattern_contexts(workset.elution_contexts):
+            scalar = replace(context, rt=(), raw=())
+            if scalar not in context_indices:
+                context_indices[scalar] = len(contexts)
+                contexts.append(scalar)
+            selected_contexts.append(context_indices[scalar])
+        worksets.append(
+            {
+                "key": workset.key,
+                "owners": [_owner_payload(owner) for owner in workset.owners],
+                "known_identity_bindings": workset.known_identity_bindings,
+                "rt_model_index": model_indices[identity],
+                "elution_context_indices": selected_contexts,
+            }
+        )
     payload = {
         "schema": "grouping_experiment_inputs",
         "provenance": dict(provenance),
@@ -105,23 +162,16 @@ def write_grouping_inputs(
         "injection_order": dict(inputs.injection_order),
         "alignment_config": asdict(inputs.alignment_config),
         "candidate_ids_by_owner": dict(inputs.candidate_ids_by_owner),
-        "worksets": [
+        "rt_models": rt_models,
+        "elution_contexts": [
             {
-                "key": workset.key,
-                "owners": [_owner_payload(owner) for owner in workset.owners],
-                "known_identity_bindings": workset.known_identity_bindings,
-                "elution_contexts": [
-                    asdict(context) for context in workset.elution_contexts
-                ],
-                "rt_warp": asdict(workset.rt_warp)
-                if workset.rt_warp is not None
-                else None,
-                "rt_calibration": _rt_calibration_payload(workset.rt_calibration)
-                if workset.rt_calibration is not None
-                else None,
+                key: value
+                for key, value in asdict(context).items()
+                if key not in {"rt", "raw"}
             }
-            for workset in inputs.worksets
+            for context in contexts
         ],
+        "worksets": worksets,
     }
     with gzip.open(path, "wt", encoding="utf-8") as stream:
         json.dump(
@@ -163,19 +213,16 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
         for key, value in payload["alignment_config"].items()
         if key not in _RETIRED_ALIGNMENT_CONFIG_KEYS
     }
+    rt_models = [_read_rt_model(value) for value in payload.get("rt_models", ())]
+    contexts = tuple(
+        _read_elution_context(value) for value in payload.get("elution_contexts", ())
+    )
     worksets = []
     for value in payload["worksets"]:
-        raw_warp = value["rt_warp"]
-        warp = (
-            None
-            if raw_warp is None
-            else BatchRtWarp(
-                tuple(
-                    (sample, tuple(tuple(pair) for pair in knots))
-                    for sample, knots in raw_warp["knots_by_sample"]
-                ),
-                raw_warp["anchor_group_count"],
-            )
+        warp, calibration, drift = (
+            _snapshot_item(rt_models, value["rt_model_index"], "RT model")
+            if "rt_model_index" in value
+            else _read_rt_model(value)
         )
         worksets.append(
             GroupingWorkset(
@@ -185,12 +232,18 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
                     tuple(binding) for binding in value["known_identity_bindings"]
                 ),
                 rt_warp=warp,
-                rt_calibration=_read_rt_calibration_payload(value["rt_calibration"])
-                if value.get("rt_calibration") is not None
-                else None,
-                elution_contexts=tuple(
-                    _read_elution_context(context)
-                    for context in value.get("elution_contexts", ())
+                rt_calibration=calibration,
+                rt_drift=drift,
+                elution_contexts=(
+                    tuple(
+                        _snapshot_item(contexts, index, "elution context")
+                        for index in value["elution_context_indices"]
+                    )
+                    if "elution_context_indices" in value
+                    else tuple(
+                        _read_elution_context(context)
+                        for context in value.get("elution_contexts", ())
+                    )
                 ),
             )
         )
@@ -215,6 +268,36 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
     return inputs, payload["provenance"]
 
 
+def _snapshot_item(values: Sequence[Any], index: object, label: str) -> Any:
+    if type(index) is not int or not 0 <= index < len(values):
+        raise ValueError(f"Grouping snapshot has invalid {label} index: {index}")
+    return values[index]
+
+
+def _read_rt_model(value: Mapping[str, Any]) -> _RtModel:
+    raw_warp = value.get("rt_warp")
+    warp = (
+        None
+        if raw_warp is None
+        else BatchRtWarp(
+            tuple(
+                (sample, tuple(tuple(pair) for pair in knots))
+                for sample, knots in raw_warp["knots_by_sample"]
+            ),
+            raw_warp["anchor_group_count"],
+        )
+    )
+    return (
+        warp,
+        _read_rt_calibration_payload(value["rt_calibration"])
+        if value.get("rt_calibration") is not None
+        else None,
+        rt_drift_from_payload(value["rt_drift"])
+        if value.get("rt_drift") is not None
+        else None,
+    )
+
+
 def _read_elution_context(value: dict[str, Any]) -> SampleElutionContext:
     landmarks = []
     for item in value["landmarks"]:
@@ -237,8 +320,8 @@ def _read_elution_context(value: dict[str, Any]) -> SampleElutionContext:
     return SampleElutionContext(
         **{
             **value,
-            "rt": tuple(value["rt"]),
-            "raw": tuple(value["raw"]),
+            "rt": tuple(value.get("rt", ())),
+            "raw": tuple(value.get("raw", ())),
             "landmarks": tuple(landmarks),
         }
     )

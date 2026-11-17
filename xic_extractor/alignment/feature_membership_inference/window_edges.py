@@ -44,7 +44,7 @@ def _window_candidate_edges(
 ) -> list[_WindowEdge]:
     """Apply pair eligibility and score supported edges in one mass window."""
     window_rts = sorted(corrected_rt[owner.owner_id] for owner in window)
-    sparse_radius_min = min(120.0, config.max_rt_sec) / 60.0
+    sparse_radius_min = 120.0 / 60.0
     local_detection_count = {
         owner.owner_id: bisect_right(
             window_rts, corrected_rt[owner.owner_id] + sparse_radius_min
@@ -101,7 +101,6 @@ def _window_candidate_edges(
                 rt_limit_sec = max(120.0, config.preferred_rt_sec)
             else:
                 rt_limit_sec = min(120.0, 45.0 + 4.0 * gap)
-            rt_limit_sec = min(rt_limit_sec, config.max_rt_sec)
             if rt_delta_sec > rt_limit_sec:
                 continue
             counts["owner_edge_evaluations"] += 1

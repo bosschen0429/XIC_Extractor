@@ -128,7 +128,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     assert initial.succeeded
     initial_grouping = initial.result[1].prepared_grouping
     assert initial_grouping is not None
-    assert len(initial_grouping.rt_anchor_groups) == 2
+    assert initial_grouping.rt_anchor_observations
     if missing_pattern_location:
         # The final sample has no local pattern position for the missing peak.
         # Other samples still supply its MS1 trajectory, including S1 where

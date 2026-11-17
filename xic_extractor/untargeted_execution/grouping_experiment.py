@@ -79,6 +79,7 @@ def grouping_experiment_from_prepared(
                     known_identity_bindings=bindings,
                     rt_warp=partition.rt_frame.warp_for_snapshot,
                     rt_calibration=partition.rt_frame.calibration_for_snapshot,
+                    rt_drift=partition.rt_frame.drift_model,
                     elution_contexts=workset.grouping_scope.peak_trajectories.source_contexts,
                 )
             )

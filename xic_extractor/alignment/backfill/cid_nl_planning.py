@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from statistics import median
 from typing import TYPE_CHECKING, Literal
 
 from xic_extractor.alignment.backfill.cid_nl_evidence import (
@@ -122,6 +123,7 @@ def plan_grouped_cid_nl_backfills(
                 ),
                 rt_frame=rt_frame,
                 backfill_half_window_min=half_windows_by_sample[min(target_ids)],
+                drift_offsets=_group_drift_offsets(group, rt_frame),
             )
             questions.extend(
                 CidNlBackfillQuestion(
@@ -173,4 +175,25 @@ def plan_subject_cid_nl_backfills(
             groups, sample_population=sample_population
         )
         for sample_id in sorted(target_ids)
+    )
+
+
+def _group_drift_offsets(
+    group: CrossSamplePeakGroupHypothesis, rt_frame: SampleRtFrame
+) -> Mapping[str, float] | None:
+    """The settled group's modeled drift; Backfill never refits it."""
+    drift = rt_frame.drift_model
+    basis = group.inference_basis
+    if drift is None or basis is None or not basis.rt_drift.nonzero_count:
+        return None
+    coordinates = [
+        estimate.rt_min
+        for owner in group.owners
+        if (estimate := rt_frame.membership_coordinate(owner)) is not None
+    ]
+    if len(coordinates) != len(group.owners):
+        return None
+    return drift.sample_offsets(
+        basis.rt_drift,
+        drift.batch_state(group.owner_ids, float(median(coordinates))),
     )

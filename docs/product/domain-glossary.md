@@ -165,6 +165,10 @@ Keep these facts on separate axes:
 - `Batch RT warp`: a frozen per-injection RT mapping fitted from agreed anchors
   across the whole request, with residual neighbours restricted to the declared
   acquisition batch. Unsupported calibration is not measured zero drift.
+- `Batch state` (B) and `sample shift` (M): drift the shared warp cannot carry,
+  measured from method channels' only direct-supported peaks and frozen per
+  batch; a group's two RT drift coefficients respond to them.
+  Unknown M is not zero.
 - `Local feature RT trend`: the RT of one feature estimated from nearby
   injections, distinct from the shared sample warp.
 - `Backfill query RT`: the target sample's request center. It controls

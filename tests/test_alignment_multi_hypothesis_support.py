@@ -13,10 +13,10 @@ from tests.cid_nl_peak_support_no_raw_fixture import (
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
+from xic_extractor.alignment.cid_nl_initial_grouping import rt_anchor_observations
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_bootstrap import (
     bootstrap_cid_nl_initial_population,
-    measured_calibration_anchor_groups,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
@@ -180,9 +180,9 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         observation_ids,
     }
     assert {
-        frozenset(owner.owner_id for owner in group)
-        for group in measured_calibration_anchor_groups(grouping_scope, candidates)
-    } == {direct_ids}
+        observation.owner_id
+        for observation in rt_anchor_observations(grouping_scope, candidates)
+    } == direct_ids
 
 
 def _assessment_with_observation_only_peak(

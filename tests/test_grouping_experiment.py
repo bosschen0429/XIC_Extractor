@@ -19,6 +19,7 @@ from xic_extractor.alignment.grouping_experiment import (
     GroupingWorkset,
     replay_grouping,
 )
+from xic_extractor.alignment.peak_trajectories import ordered_pattern_contexts
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.diagnostics.grouping_experiment_io import (
     group_signature,
@@ -86,6 +87,75 @@ def test_retained_snapshot_ignores_only_retired_alignment_keys(tmp_path):
         read_grouping_inputs(path)
 
 
+@pytest.mark.parametrize("repeat_equal_priority", (False, True))
+def test_compact_snapshot_keeps_curve_tie_priority_and_distinct_anchor_bindings(
+    tmp_path,
+    repeat_equal_priority,
+):
+    from xic_extractor.alignment.peak_trajectories import _local_patterns
+    from xic_extractor.alignment.rt_drift import DriftAnchor, RtDriftModel
+    from xic_extractor.peak_detection.elution_context import (
+        ElutionLandmark,
+        SampleElutionContext,
+    )
+
+    owner = _owner("A", "one", apex_rt=9.0, precursor_mz=500.0)
+    assert owner.cross_sample_member_subject is not None
+    owner = replace(owner, owner_id=owner.cross_sample_member_subject.subject_id)
+    first = SampleElutionContext(
+        "A",
+        500.0,
+        8.0,
+        11.0,
+        (ElutionLandmark(9.0, 100.0, 0.2),),
+        rt=(8.0, 11.0),
+        raw=(1.0, 0.0),
+    )
+    preferred = replace(
+        first, landmarks=(ElutionLandmark(9.0, 500.0, 0.2),), raw=(0.0, 1.0)
+    )
+    contexts = (
+        (first, replace(preferred, raw=first.raw), first)
+        if repeat_equal_priority
+        else (first, preferred)
+    )
+    anchor = DriftAnchor(
+        "channel", 9.0, 0, False, {"A": 0.0}, owner_ids=frozenset({owner.owner_id})
+    )
+    drift = RtDriftModel((anchor,))
+    other_drift = RtDriftModel((replace(anchor, owner_ids=frozenset({"other-owner"})),))
+    workset = GroupingWorkset("first", (owner,), (), None, contexts, rt_drift=drift)
+    inputs = GroupingInputs(
+        ("A",),
+        {"A": 1},
+        AlignmentConfig(),
+        (
+            workset,
+            replace(workset, key="same"),
+            replace(workset, key="other", rt_drift=other_drift),
+        ),
+        {},
+    )
+    path = tmp_path / "compact.json.gz"
+    write_grouping_inputs(path, inputs, provenance={})
+    with gzip.open(path, "rt", encoding="utf-8") as stream:
+        payload = json.load(stream)
+    assert len(payload["elution_contexts"]) == 2
+    assert len(payload["rt_models"]) == 2
+    restored, _ = read_grouping_inputs(path)
+    assert restored.worksets[0].rt_drift.anchors[0].owner_ids == anchor.owner_ids
+    assert restored.worksets[2].rt_drift.anchors[0].owner_ids == frozenset(
+        {"other-owner"}
+    )
+    for contexts in (workset.elution_contexts, restored.worksets[0].elution_contexts):
+        nodes, _, owner_nodes, _ = _local_patterns(
+            (owner,), contexts, AlignmentConfig(), None
+        )
+        assert nodes[owner_nodes[owner.owner_id]].landmark.height == (
+            100.0 if repeat_equal_priority else 500.0
+        )
+
+
 @pytest.mark.parametrize("saved_acquisition_window", [None, 1.0, 2.0])
 def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
     tmp_path, saved_acquisition_window
@@ -146,13 +216,31 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
         with gzip.open(path, "wt", encoding="utf-8") as stream:
             json.dump(payload, stream)
     restored, _ = read_grouping_inputs(path)
-    assert restored == inputs
-    assert restored.worksets[0].elution_contexts == tuple(contexts)
+    compact_contexts = tuple(
+        replace(context, rt=(), raw=())
+        for context in ordered_pattern_contexts(contexts)
+    )
+    assert restored == replace(
+        inputs,
+        worksets=(replace(inputs.worksets[0], elution_contexts=compact_contexts),),
+    )
+    assert all(
+        "rt" not in context and "raw" not in context
+        for context in payload["elution_contexts"]
+    )
     assert {
         frozenset(group.owner_ids) for group in replay_grouping(restored)
     } == expected
 
     # Legacy captures remain readable, but cannot invent measured resolution.
+    for workset in payload["worksets"]:
+        workset.update(payload["rt_models"][workset.pop("rt_model_index")])
+        workset["elution_contexts"] = [
+            payload["elution_contexts"][index]
+            for index in workset.pop("elution_context_indices")
+        ]
+    payload.pop("rt_models")
+    payload.pop("elution_contexts")
     for item in payload["worksets"][0]["owners"]:
         item["peak_shape"].pop("half_height_point_count")
         item["peak_shape"].pop("edge_intensity_ratio")
@@ -172,8 +260,9 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
 
 
 @pytest.mark.parametrize("raw_workers", [1, 4])
-def test_application_snapshot_and_cli_replay_preserve_formal_grouping(
-    tmp_path, monkeypatch, raw_workers
+@pytest.mark.parametrize("save_snapshot", [False, True])
+def test_application_outputs_formal_groups_with_an_optional_snapshot(
+    tmp_path, monkeypatch, raw_workers, save_snapshot
 ):
     import xic_extractor.applications.untargeted.application as application
     import xic_extractor.untargeted_execution.partition.workers as workers
@@ -203,37 +292,52 @@ def test_application_snapshot_and_cli_replay_preserve_formal_grouping(
         "prepare_untargeted_alignment_inputs",
         lambda **kwargs: plan,
     )
-    snapshot = application.snapshot_untargeted_grouping(
-        UntargetedRequest(
-            discovery_batch_index=write_batch(tmp_path, ("S0", "S1", "S2", "S3")),
-            raw_dir=tmp_path,
-            dll_dir=tmp_path,
-            output_dir=tmp_path / "snapshot",
-            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-            discovery_settings=plan.context.settings,
-            peak_config=plan.context.peak_config,
-            execution=UntargetedExecutionPolicy(
-                raw_workers=raw_workers,
-                raw_worker_backend="thread",
-                max_partition_jobs=8,
+    import xic_extractor.alignment.grouping_experiment as experiment
+
+    with monkeypatch.context() as diagnostic_guard:
+        diagnostic_guard.setattr(experiment, "group_cid_nl_owners", forbidden)
+        output = application.run_untargeted_grouping(
+            UntargetedRequest(
+                discovery_batch_index=write_batch(tmp_path, ("S0", "S1", "S2", "S3")),
+                raw_dir=tmp_path,
+                dll_dir=tmp_path,
+                output_dir=tmp_path / "snapshot",
+                alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+                discovery_settings=plan.context.settings,
+                peak_config=plan.context.peak_config,
+                execution=UntargetedExecutionPolicy(
+                    raw_workers=raw_workers,
+                    raw_worker_backend="thread",
+                    max_partition_jobs=8,
+                ),
             ),
+            save_snapshot=save_snapshot,
         )
-    )
-    inputs, provenance = read_grouping_inputs(snapshot)
-    groups = replay_grouping(inputs)
-    assert len(groups) == 1
+    with (output / "members.tsv").open(encoding="utf-8", newline="") as stream:
+        formal_members = list(csv.DictReader(stream, delimiter="\t"))
+    assert {row["sample_stem"] for row in formal_members} == {"S0", "S1"}
+    assert len({row["group_id"] for row in formal_members}) == 1
     assert len(scheduled) == 1
     assert [phase.name for phase in scheduled[0]["phases"]] == [
         "initial-acquisition",
         "final-grouping",
     ]
-    assert provenance["initial_job_count"] == 2
+    summary = json.loads((output / "summary.json").read_text())
+    assert summary["source"]["initial_job_count"] == 2
+    assert summary["group_count"] == 1
+    assert not (output / "alignment_matrix.tsv").exists()
+    snapshot = output / "grouping-inputs.json.gz"
+    assert snapshot.exists() is save_snapshot
+    if not save_snapshot:
+        return
+    inputs, provenance = read_grouping_inputs(snapshot)
+    groups = replay_grouping(inputs)
+    assert len(groups) == 1
     assert inputs.sample_stems == ("S0", "S1", "S2", "S3")
     assert {owner.sample_stem for group in groups for owner in group.owners} == {
         "S0",
         "S1",
     }
-    assert not (snapshot.parent / "alignment_matrix.tsv").exists()
     restored, provenance = read_grouping_inputs(snapshot)
     original_shapes = {
         owner.owner_id: owner.peak_shape
@@ -262,6 +366,10 @@ def test_application_snapshot_and_cli_replay_preserve_formal_grouping(
         == 0
     )
     assert (tmp_path / "replay" / "members.tsv").is_file()
+    for name in ("groups", "members", "decisions", "samples"):
+        assert (output / f"{name}.tsv").read_bytes() == (
+            tmp_path / "replay" / f"{name}.tsv"
+        ).read_bytes()
     with (tmp_path / "replay" / "decisions.tsv").open(
         encoding="utf-8", newline=""
     ) as stream:

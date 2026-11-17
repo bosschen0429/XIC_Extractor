@@ -38,6 +38,10 @@ _TRAJECTORY_NEIGHBORS = 12
 _TIE_EPSILON = 1e-9
 _TREND_SCALE_FLOOR_MIN = 0.5 / 60.0
 _TREND_TOLERANCE_MIN = 1e-8 / 60.0
+# Without a measured common coordinate, a shared displacement is unconstrained:
+# any similarly spaced peaks in the same channel would correspond. Bound raw
+# geometry only; calibrated patterns are compared without a distance bound.
+_RAW_PATTERN_SHIFT_MIN = 3.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,8 +143,12 @@ class PeakTrajectory:
         rt_frame: RtFrame,
         backfill_half_window_min: float,
         paired_istd_rts: Mapping[str, float] | None = None,
+        drift_offsets: Mapping[str, float] | None = None,
     ) -> Mapping[str, BackfillPeakLocation]:
         """Prepare row residuals once, not once per missing sample.
+
+        ``drift_offsets`` is the group's modeled drift per sample; forecasts
+        are fitted with it removed and the target's drift added back.
 
         Only direct reference samples contribute held-out residuals. The same
         trajectory estimator supplies both the prediction and its empirical
@@ -166,6 +174,7 @@ class PeakTrajectory:
                 sample,
                 rt_frame=rt_frame,
                 backfill_half_window_min=backfill_half_window_min,
+                drift_offsets=drift_offsets,
             )
             for sample in sample_stems
             if sample not in paired_locations
@@ -180,6 +189,7 @@ class PeakTrajectory:
             needed_cohorts=needed_cohorts,
             rt_frame=rt_frame,
             backfill_half_window_min=backfill_half_window_min,
+            drift_offsets=drift_offsets,
         )
         result = {
             sample: BackfillPeakLocation(
@@ -221,6 +231,7 @@ class PeakTrajectory:
                 needed_cohorts=comparable_cohorts,
                 rt_frame=rt_frame,
                 backfill_half_window_min=backfill_half_window_min,
+                drift_offsets=drift_offsets,
             )
             for sample, localized in result.items():
                 reference_tolerance = reference_tolerances.get(
@@ -236,6 +247,7 @@ class PeakTrajectory:
                     sample,
                     rt_frame=rt_frame,
                     backfill_half_window_min=backfill_half_window_min,
+                    drift_offsets=drift_offsets,
                 )
                 # Both estimates use the same scientific owner and empirical
                 # compatibility rule. Neither wins a conflict: retain the query
@@ -254,6 +266,7 @@ class PeakTrajectory:
         needed_cohorts: set[str],
         rt_frame: RtFrame,
         backfill_half_window_min: float,
+        drift_offsets: Mapping[str, float] | None = None,
     ) -> dict[str, float]:
         """Bound each cohort once using held-out direct-reference residuals."""
         residuals: dict[str, list[float]] = defaultdict(list)
@@ -273,6 +286,7 @@ class PeakTrajectory:
                 sample,
                 rt_frame=rt_frame,
                 backfill_half_window_min=backfill_half_window_min,
+                drift_offsets=drift_offsets,
             )
             assert cohort is not None
             residuals[cohort].append(abs(held_out.query_rt - observed_rt) * 60.0)
@@ -292,6 +306,7 @@ class PeakTrajectory:
         *,
         rt_frame: RtFrame,
         backfill_half_window_min: float,
+        drift_offsets: Mapping[str, float] | None = None,
     ) -> PeakLocation:
         """Use an observed point or fit the unobserved part of this trajectory.
 
@@ -307,6 +322,7 @@ class PeakTrajectory:
             sample_stem,
             rt_frame=rt_frame,
             backfill_half_window_min=backfill_half_window_min,
+            drift_offsets=drift_offsets,
         )
 
     def _estimate(
@@ -315,9 +331,15 @@ class PeakTrajectory:
         *,
         rt_frame: RtFrame,
         backfill_half_window_min: float,
+        drift_offsets: Mapping[str, float] | None = None,
     ) -> PeakLocation:
         order = rt_frame.injection_order.get(sample_stem)
         cohort = rt_frame.sample_cohorts.get(sample_stem)
+        # Unknown drift for the target leaves its forecast unadjusted; a
+        # neighbor with unknown drift does not enter an adjusted fit.
+        offsets = (
+            drift_offsets if drift_offsets and sample_stem in drift_offsets else None
+        )
         nearest = sorted(
             (
                 (sample, rt)
@@ -326,6 +348,7 @@ class PeakTrajectory:
                 and cohort is not None
                 and sample in rt_frame.injection_order
                 and rt_frame.sample_cohorts.get(sample) == cohort
+                and (offsets is None or sample in offsets)
             ),
             key=lambda point: (
                 abs(rt_frame.injection_order[point[0]] - (order or 0)),
@@ -342,8 +365,14 @@ class PeakTrajectory:
             )
         common = [rt_frame.estimate_rt(sample, rt) for sample, rt in nearest]
         common_available = all(value is not None for value in common)
+        if not common_available:
+            offsets = None
         coordinates = (
-            [value.rt_min for value in common if value is not None]
+            [
+                value.rt_min - (offsets[sample] if offsets is not None else 0.0)
+                for (sample, _), value in zip(nearest, common, strict=True)
+                if value is not None
+            ]
             if common_available
             else [rt for _, rt in nearest]
         )
@@ -355,7 +384,9 @@ class PeakTrajectory:
         )
         if common_available:
             target_estimate = rt_frame.estimate_observed_rt(
-                sample_stem, fitted.query_rt
+                sample_stem,
+                fitted.query_rt
+                + (offsets[sample_stem] if offsets is not None else 0.0),
             )
             if target_estimate is not None:
                 weak = target_estimate.rt_weight < 1.0 or any(
@@ -696,6 +727,11 @@ class _PatternCenter:
             return abs(self.common - other.common)
         return abs(self.observed - other.observed)
 
+    def comparable_to(self, other: _PatternCenter) -> bool:
+        return (self.common is not None and other.common is not None) or abs(
+            self.observed - other.observed
+        ) <= _RAW_PATTERN_SHIFT_MIN
+
 
 def _pattern_center(
     sample: str,
@@ -834,6 +870,8 @@ def resolve_peak_trajectories(
         for index, node in enumerate(nodes)
         if (peak := _common_rt_peak(node.sample, node.landmark, rt_frame)) is not None
     }
+    drift = rt_frame.drift_model if rt_frame is not None else None
+    displacements = drift.displacement_lookup() if drift is not None else None
     matches = []
     comparisons = 0
     for left, right in _neighbor_pairs(
@@ -846,18 +884,29 @@ def resolve_peak_trajectories(
         comparisons += 1
         calibrated = all(index in common_peaks for index in (*left.nodes, *right.nodes))
         # A measured map already supplies the displacement. Fit the residual
-        # within the transformed peak widths; a second free shift could match
-        # a neighboring pattern instead. Unsupported pairs retain raw matching.
+        # within the transformed peak widths; a free shift could match a
+        # neighboring pattern instead. Compounds that drift beyond the map
+        # move by a frozen anchor's predicted displacement, so those discrete
+        # displacements are the only other hypotheses. Unsupported pairs
+        # retain raw matching.
+        left_peaks = [
+            common_peaks[index] if calibrated else nodes[index].landmark
+            for index in left.nodes
+        ]
         match = _match_patterns(
-            [
-                common_peaks[index] if calibrated else nodes[index].landmark
-                for index in left.nodes
-            ],
+            left_peaks,
             [
                 common_peaks[index] if calibrated else nodes[index].landmark
                 for index in right.nodes
             ],
-            max_shift=0.0 if calibrated else config.max_rt_sec / 60.0,
+            max_shift=0.0 if calibrated else _RAW_PATTERN_SHIFT_MIN,
+            shift_hypotheses=displacements(
+                sum(peak.apex_rt for peak in left_peaks) / len(left_peaks),
+                left.sample,
+                right.sample,
+            )
+            if calibrated and displacements is not None
+            else (),
         )
         if match is not None:
             gap = abs(
@@ -999,6 +1048,18 @@ def resolve_peak_trajectories(
     )
 
 
+def ordered_pattern_contexts(
+    contexts: Sequence[SampleElutionContext],
+) -> tuple[SampleElutionContext, ...]:
+    """Retain curve-based tie priority as order, including curve-free replays.
+
+    A saved replay keeps this order instead of carrying entire curves solely
+    to break equal-range/equal-mass ties. With no curves, stable sorting keeps
+    the supplied priority.
+    """
+    return tuple(sorted(contexts, key=lambda context: (context.rt, context.raw)))
+
+
 def _local_patterns(
     owners: Sequence[SampleLocalMS1Owner],
     contexts: Sequence[SampleElutionContext],
@@ -1025,6 +1086,9 @@ def _local_patterns(
     physical_order: set[tuple[int, int]] = set()
     shared_segments: set[tuple[int, int]] = set()
     retained: set[SampleElutionContext] = set()
+    context_order: dict[int, int] = {}
+    for index, context in enumerate(ordered_pattern_contexts(contexts)):
+        context_order.setdefault(id(context), index)
 
     def add_pattern(
         context: SampleElutionContext, start: int, end: int
@@ -1102,8 +1166,7 @@ def _local_patterns(
             key=lambda item: (
                 -(item.rt_end - item.rt_start),
                 absolute_ppm_error(owner.peak.mz, item.mz),
-                item.rt,
-                item.raw,
+                context_order[id(item)],
             ),
         )
         peaks = context.landmarks
@@ -1141,8 +1204,7 @@ def _local_patterns(
             item.sample_stem,
             -(item.rt_end - item.rt_start),
             item.mz,
-            item.rt,
-            item.raw,
+            context_order[id(item)],
         ),
     ):
         if not context.landmarks or context in retained:
@@ -1168,10 +1230,7 @@ def _local_patterns(
                 (peaks[start], peaks[end - 1]),
                 rt_frame,
             )
-            if any(
-                center.distance_to(seed_centers[index]) * 60.0 <= config.max_rt_sec
-                for index in compatible
-            ):
+            if any(center.comparable_to(seed_centers[index]) for index in compatible):
                 add_pattern(context, start, end)
                 retained.add(context)
             start = end
@@ -1205,6 +1264,9 @@ def _neighbor_pairs(
         for pattern in patterns
     ]
     for index, pattern in enumerate(patterns):
+        # A single peak cannot establish an ordered correspondence.
+        if len(pattern.nodes) < 2:
+            continue
         center = centers[index]
         candidates = []
         for other_index in mass_index.candidates(pattern.mz):
@@ -1213,9 +1275,9 @@ def _neighbor_pairs(
                 pattern.mz, other.mz, config.preferred_ppm
             ):
                 continue
-            distance = center.distance_to(centers[other_index])
-            if distance * 60.0 > config.max_rt_sec:
+            if not center.comparable_to(centers[other_index]):
                 continue
+            distance = center.distance_to(centers[other_index])
             candidates.append(
                 (
                     abs(
@@ -1228,10 +1290,26 @@ def _neighbor_pairs(
                 )
             )
         samples: set[str] = set()
+        nearby = []
         for _, _, sample, other_index in sorted(candidates):
             if sample not in samples and len(samples) == _NEIGHBOR_SAMPLES:
                 continue
             samples.add(sample)
+            if len(patterns[other_index].nodes) >= 2:
+                nearby.append(other_index)
+        if not nearby:
+            # Preserve usable local comparisons. Only a neighborhood containing
+            # no informative pattern searches farther: otherwise sparse samples
+            # can consume every slot with comparisons the matcher must reject.
+            samples.clear()
+            for _, _, sample, other_index in sorted(candidates):
+                if len(patterns[other_index].nodes) < 2:
+                    continue
+                if sample not in samples and len(samples) == _NEIGHBOR_SAMPLES:
+                    continue
+                samples.add(sample)
+                nearby.append(other_index)
+        for other_index in nearby:
             first, second = sorted((index, other_index))
             chosen.add((first, second))
     return tuple((patterns[i], patterns[j]) for i, j in sorted(chosen))
@@ -1268,7 +1346,13 @@ def _match_patterns(
     right: Sequence[ElutionLandmark | _CommonRtPeak],
     *,
     max_shift: float,
+    shift_hypotheses: Sequence[float] = (),
 ) -> _Match | None:
+    """The unique best ordered pairing under one shared displacement.
+
+    Displacements range within ``max_shift``; ``shift_hypotheses`` adds
+    discrete displacements, each checked only at its own value.
+    """
     heights = max(peak.height for peak in left), max(peak.height for peak in right)
     deltas = [[b.apex_rt - a.apex_rt for b in right] for a in left]
     tolerances = [[(a.width + b.width) / 2.0 for b in right] for a in left]
@@ -1292,6 +1376,7 @@ def _match_patterns(
             )
     ordered = sorted(endpoints)
     shifts.update((a + b) / 2.0 for a, b in zip(ordered, ordered[1:], strict=False))
+    shifts.update(shift_hypotheses)
     empty: _ScoredPath = ((0, 0.0, 0.0), ())
     alternatives: dict[tuple[tuple[int, int], ...], tuple[int, float, float]] = {}
     for shift in sorted(shifts):

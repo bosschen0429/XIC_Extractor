@@ -420,7 +420,7 @@ def _long_rt_same_mass_owners(
 
 
 def _long_rt_config() -> AlignmentConfig:
-    return AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0)
+    return AlignmentConfig(preferred_rt_sec=30.0)
 
 
 def test_sparse_long_rt_same_mass_without_drift_is_undecided() -> None:
@@ -496,7 +496,7 @@ def test_sparse_same_mass_raw_fallback_remains_assignable() -> None:
     )
     result = infer_feature_memberships(
         owners,
-        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0),
+        config=AlignmentConfig(preferred_rt_sec=60.0),
         rt_frame=SampleRtFrame(injection_order=({"s0": 1, "s1": 2})).with_sources(
             drift_lookup=_DriftLookup(
                 deltas={"s0": 0.0, "s1": -0.3}, orders={"s0": 1, "s1": 2}
@@ -580,7 +580,7 @@ def test_assigned_sparse_decisions_record_the_witness_and_rt_basis_used() -> Non
                 seed_event_count=1,
             ),
         ),
-        config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0),
+        config=AlignmentConfig(preferred_rt_sec=60.0),
         rt_frame=SampleRtFrame(injection_order=({"s0": 1, "s1": 2})).with_sources(
             drift_lookup=_DriftLookup(
                 deltas={"s0": 0.0, "s1": -0.3}, orders={"s0": 1, "s1": 2}

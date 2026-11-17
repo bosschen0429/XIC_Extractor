@@ -10,7 +10,6 @@ class AlignmentConfig:
     preferred_ppm: float = 20.0
     max_ppm: float = 50.0
     preferred_rt_sec: float = 60.0
-    max_rt_sec: float = 180.0
     product_mz_tolerance_ppm: float = 20.0
     observed_loss_tolerance_ppm: float = 20.0
     min_peak_shape_similarity: float = 0.80
@@ -28,13 +27,6 @@ class AlignmentConfig:
         _require_positive("max_ppm", self.max_ppm)
         _require_at_most("preferred_ppm", self.preferred_ppm, "max_ppm", self.max_ppm)
         _require_positive("preferred_rt_sec", self.preferred_rt_sec)
-        _require_positive("max_rt_sec", self.max_rt_sec)
-        _require_at_most(
-            "preferred_rt_sec",
-            self.preferred_rt_sec,
-            "max_rt_sec",
-            self.max_rt_sec,
-        )
         _require_positive("product_mz_tolerance_ppm", self.product_mz_tolerance_ppm)
         _require_numeric_range(
             "min_peak_shape_similarity",

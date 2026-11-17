@@ -311,6 +311,7 @@ def writer_batch(sample_order: tuple[str, ...], *groups: WriterGroup) -> Any:
             member_subjects=tuple(members),
             destination=spec.destination,
             disposition=spec.disposition,
+            inference_basis=None,
         )
         candidates = dict(spec.candidates)
         cells = []

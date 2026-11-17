@@ -17,6 +17,7 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import (
     resolve_peak_trajectories,
 )
+from xic_extractor.alignment.rt_drift import RtDriftModel
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
@@ -34,6 +35,7 @@ class GroupingWorkset:
     rt_warp: BatchRtWarp | None
     elution_contexts: tuple[SampleElutionContext, ...] = ()
     rt_calibration: BatchRtCalibration | None = None
+    rt_drift: RtDriftModel | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +69,9 @@ def replay_grouping(
     for workset in inputs.worksets:
         frame = override or base_frame.with_warp(workset.rt_warp)
         if override is None and workset.rt_calibration is not None:
-            frame = frame.with_sample_calibration(workset.rt_calibration)
+            frame = frame.with_sample_calibration(
+                workset.rt_calibration, workset.rt_drift
+            )
         trajectories = resolve_peak_trajectories(
             workset.owners,
             workset.elution_contexts,

@@ -6,7 +6,8 @@ observations across runs. It models run-to-run retention drift, not compound
 identification.
 
 [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
-owns anchor preparation and the fit; downstream consumers access the frozen map
+owns anchor preparation and the fit, and [`rt_drift`](../../xic_extractor/alignment/rt_drift.py)
+the drift model on top of it; downstream consumers access the frozen map
 through `SampleRtFrame`. Shared terminology remains owned by the
 [Domain Glossary](domain-glossary.md). See [Alignment](alignment.md) for how
 grouping consumes this frame.
@@ -32,6 +33,7 @@ input selection.
 | --- | --- |
 | Known-ISTD reference | Exact identity bindings and measured coordinates. Bootstrap comparison uses the shared fitter with ISTDs only; final calibration combines those measurements with ordinary anchors. |
 | Sample RT calibration | One frozen map fitted from the complete request's measured ISTDs and ordinary bootstrap correspondences. Final Grouping, Backfill localization/admission, and replay consume this map through `SampleRtFrame`. |
+| Batch drift model | Frozen batch state (B), sample shift (M) and drift anchors, measured against the frozen map; see [Drift beyond the map](#drift-beyond-the-map). |
 | Peak trajectory | Ordered correspondences and direct/MS1-only positions, used for membership constraints and sample-local localization. |
 | Calibration diagnostic | Uses the same fit owner with detected-cell inputs and an interleaved held-out comparison. Its files do not alter production results. |
 
@@ -61,7 +63,12 @@ least eight positions; they expand when rejected points would otherwise fill
 the final neighborhood. Distance weights remain unequal: eight positions are
 not a guarantee of precision or dense coverage. A deficient strong fit is
 unavailable, not replaced by a two-point line or interpolated pseudo-anchors.
-Non-monotone strong fits also remain unavailable. With only ISTDs, contradictory
+A fit whose reference order folds between adjacent positions merges only those
+positions into one knot at their mean observed and fitted RT
+(pool-adjacent-violators); ordered stretches keep their fitted values. A fold
+broad enough to leave fewer than eight knots keeps the strong fit unavailable.
+In 85RAW two Tumor injections folded at one pair 0.04 min apart, where the
+offset drops from about +40 s to about 0 s. With only ISTDs, contradictory
 landmark order cannot establish strong calibration from the same
 measurements. Ordinary corroboration can support a fit despite a conflicting
 standard; fitted standard residuals remain visible and do not reselect that
@@ -134,3 +141,88 @@ fit, continuous endpoint `boundary_shift` outside it, and qualified
 back to raw RT, with an explicit label. This changes display coordinates, not
 measured signal, area, grouping or quantification. Injection order is preserved
 separately. Obsolete explanation layouts require rerunning Alignment.
+
+Optional grouping snapshots (`--stop-after grouping --save-grouping-inputs`) keep the
+frozen drift model, including the owners each drift anchor observed, so replay
+reuses its B shapes and M. Explanation summaries keep only the calibration.
+
+## Drift beyond the map
+
+The general map moves every compound at one RT together. A few compounds move
+more, and differently: after general calibration,
+
+> RT(c, s) = center(c) + a(c) × B(s) + b(c) × M(s) + error
+
+- **Batch state B** is the batch's slow chromatographic change along injection
+  order. Pooled QC, a fixed matrix, carries it alone.
+- **Sample shift M** is each sample's own retention offset, felt only by some
+  compounds (a matrix effect is the likely cause; tissue type explains little of
+  it, so it is measured per sample).
+- **a, b** are one group's two coefficients; ordinary compounds have both near
+  zero.
+
+[`rt_drift`](../../xic_extractor/alignment/rt_drift.py) freezes B and M once,
+after the general fit and before final grouping:
+
+- **Channels**: a channel is one CID-NL method subject (precursor m/z and
+  neutral loss). When a sample has exactly one owner in that channel with
+  direct method support, quantifiable integration and a primary identity event,
+  its apex RT is that channel's observation in that sample; several such owners
+  leave the sample unknown. Initial grouping membership is not consulted, so
+  compounds that drift too far to group before calibration still contribute.
+  Channels measure drift only; they do not anchor the general map.
+- **Drift anchors** are channels whose general-calibrated RT keeps a robust
+  spread of at least 12 seconds and whose residuals correlate (Spearman ≥ 0.75 over at least six common samples) with a channel
+  of another elution family. Channels whose apices coincide within 0.05 min
+  (median over the samples both observe) form one family (isotopes, adducts,
+  co-eluting ions) and vote once.
+- **M**: each drift anchor's residual is detrended by its pooled-QC trend (the
+  samples' own running median along injection order when fewer than two QCs
+  carry it). Anchors whose scatter around their own running trend has a robust
+  spread of at least 8 seconds, and that correlate with another family's
+  scatter, define M. M(s) is the median over families of each family's median
+  offset. A sample without such an offset has unknown M, not zero. The zero of
+  M is arbitrary: a constant is absorbed by the group center.
+- **B shapes**: each drift anchor freezes its own shape, the running median
+  along injection order of its residual after removing its own M response
+  (a Theil–Sen slope against M without its own family), scaled to a unit
+  5–95% range and oriented to rise with injection order. Shapes are not one
+  batch-wide curve: early and late RT drift differently.
+- Without pooled QC, M is measured against the samples' running trend; when
+  samples are injected in tissue blocks, time and tissue then mix.
+
+Final grouping uses them as follows:
+
+- A group overlapping a drift anchor's observations uses that anchor's shape;
+  other groups borrow shapes from anchors weighted by a Gaussian of RT distance
+  (σ = 1 min). No group fits a free curve during grouping.
+- Each group may fit time only, sample shift only, or both, by intercept-bearing
+  Theil–Sen (alternating for both). A coefficient is estimated only with at
+  least six members having that regressor and a regressor range of at least a
+  quarter of the shape range (B) or 10 seconds (M); otherwise it stays zero.
+  Each nonzero coefficient costs what a 10-second RT difference costs a pair.
+  A group keeps the cheapest feasible choice, zero included. After the initial
+  whole-band grouping, each settled group's coefficients are also a candidate
+  for every group it overlaps during per-sample and per-owner reassignment. A
+  moved owner is judged by the model of the group it joins or leaves, not by
+  how its move perturbs a refit; a refit can otherwise shift a worst pair the
+  moved owner is not part of.
+- A member with unknown B or M does not enter the fit; it keeps its general
+  coordinate with half the RT weight and is not placed in the drift-adjusted
+  frame for the population-gap constraint. It does not force the group to
+  zero coefficients.
+- Once chosen, pair costs, population gap, local trend, mean peer fit and
+  contradiction flags all use the group's adjusted coordinate. Backfill
+  admission keeps the group's coefficients and B, and a Backfill forecast is
+  fitted in the adjusted coordinate with the target's drift added back.
+- Pattern correspondence between two calibrated samples also tries each nearby
+  drift anchor's own predicted displacement; see [Alignment](alignment.md).
+- Observed RT, peak boundaries and area are unchanged. Review rows record
+  `rt_time_coefficient` and `rt_sample_shift_coefficient`; run metadata records
+  `rt_drift_summary` (drift anchors, unknown-M samples, knots per RT segment,
+  failed calibrations, groups with nonzero coefficients).
+
+Known limits: a non-anchor drifting compound near the RT boundary between two
+shape types can borrow the wrong shape; isomers that occupy different injection
+segments can be explained by a segment-aligned M only when the shift within
+each segment does not contradict it.

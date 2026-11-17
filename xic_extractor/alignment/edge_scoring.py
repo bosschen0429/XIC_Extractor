@@ -314,13 +314,13 @@ def _score(
     score = 0
     if rt_raw_delta_sec <= config.preferred_rt_sec:
         score += 30
-    elif rt_raw_delta_sec <= config.max_rt_sec:
+    else:
         score += 10
 
     if rt_drift_corrected_delta_sec is not None:
         if rt_drift_corrected_delta_sec <= config.preferred_rt_sec:
             score += 35
-        elif rt_drift_corrected_delta_sec <= config.max_rt_sec:
+        else:
             score += 10
         if rt_raw_delta_sec - rt_drift_corrected_delta_sec >= 10.0:
             score += 10

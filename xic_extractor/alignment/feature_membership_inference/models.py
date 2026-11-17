@@ -9,6 +9,7 @@ from typing import Literal
 from xic_extractor.alignment.edge_scoring import RTEvidenceBasis
 from xic_extractor.alignment.membership_selection import AcceptedMembershipRisk
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.rt_drift import DriftCoefficients
 
 FeatureMembershipDisposition = Literal[
     "assigned",
@@ -64,6 +65,8 @@ class FeatureMembershipGroup:
     basis: FeatureMembershipBasis
     reason: str
     known_identity_label: str | None = None
+    # Response to batch state and sample shift; Backfill reuses it unchanged.
+    rt_drift: DriftCoefficients = DriftCoefficients()
 
 
 @dataclass(frozen=True, slots=True)

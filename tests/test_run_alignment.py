@@ -1871,11 +1871,13 @@ def test_run_alignment_cli_rejects_invalid_sample_metadata_before_application(
 
 
 @pytest.mark.parametrize("profile", ("off", "cprofile"))
-def test_run_alignment_stop_after_grouping_writes_snapshot_without_publication(
+@pytest.mark.parametrize("save_inputs", (False, True))
+def test_run_alignment_stop_after_grouping_outputs_results_without_publication(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
     profile: str,
+    save_inputs: bool,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     _write_empty_batch_index(batch_index)
@@ -1886,17 +1888,16 @@ def test_run_alignment_stop_after_grouping_writes_snapshot_without_publication(
     output_dir = tmp_path / "grouping"
     captured = {}
 
-    def fake_snapshot(request, context=None):
-        captured.update(request=request)
+    def fake_grouping(request, context=None, *, save_snapshot=False):
+        captured.update(request=request, save_snapshot=save_snapshot)
         output_dir.mkdir(parents=True, exist_ok=True)
-        snapshot = output_dir / "grouping-inputs.json.gz"
-        snapshot.write_bytes(b"x")
-        return snapshot
+        (output_dir / "members.tsv").write_text("sample_stem\towner_id\nA\tpeak-A\n")
+        return output_dir
 
     def fail_alignment(request, context=None):
         pytest.fail("--stop-after grouping must not run Backfill or publication")
 
-    monkeypatch.setattr(run_alignment, "snapshot_untargeted_grouping", fake_snapshot)
+    monkeypatch.setattr(run_alignment, "run_untargeted_grouping", fake_grouping)
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fail_alignment)
 
     code = run_alignment.main(
@@ -1917,18 +1918,42 @@ def test_run_alignment_stop_after_grouping_writes_snapshot_without_publication(
             profile,
             "--profile-output-dir",
             str(tmp_path / "profile"),
+            *(["--save-grouping-inputs"] if save_inputs else []),
         ]
     )
 
     assert code == 0
     assert captured["request"].peak_config.parallel_mode == "process"
-    assert "Grouping snapshot:" in capsys.readouterr().out
-    assert sorted(path.name for path in output_dir.iterdir()) == [
-        "grouping-inputs.json.gz"
-    ]
+    assert captured["save_snapshot"] is save_inputs
+    assert "Grouping results:" in capsys.readouterr().out
+    assert "A\tpeak-A" in (output_dir / "members.tsv").read_text()
     if profile == "cprofile":
         stats = pstats.Stats(str(tmp_path / "profile" / "profile.prof"))
-        assert any(name == "fake_snapshot" for _, _, name in stats.stats)
-        assert "fake_snapshot" in (tmp_path / "profile" / "profile_top.txt").read_text(
+        assert any(name == "fake_grouping" for _, _, name in stats.stats)
+        assert "fake_grouping" in (tmp_path / "profile" / "profile_top.txt").read_text(
             encoding="utf-8"
         )
+
+
+def test_saved_grouping_inputs_require_the_grouping_stop(capsys):
+    with pytest.raises(SystemExit) as error:
+        run_alignment.main(
+            [
+                "--preset",
+                "dna_dr",
+                "--discovery-batch-index",
+                "unused.csv",
+                "--raw-dir",
+                "unused",
+                "--dll-dir",
+                "unused",
+                "--output-dir",
+                "unused",
+                "--save-grouping-inputs",
+            ]
+        )
+    assert error.value.code == 2
+    assert (
+        "--save-grouping-inputs requires --stop-after grouping"
+        in capsys.readouterr().err
+    )

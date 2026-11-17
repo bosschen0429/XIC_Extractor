@@ -1,6 +1,7 @@
 """Query Discovery and replay grouping snapshots without RAW.
 
-Write a snapshot with `scripts.run_alignment --stop-after grouping`.
+Save replay inputs with `scripts.run_alignment --stop-after grouping
+--save-grouping-inputs`.
 """
 
 from __future__ import annotations

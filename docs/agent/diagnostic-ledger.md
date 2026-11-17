@@ -237,6 +237,61 @@ ion inside its request; banded windows were not adopted.
 Rerun when the instrument, its MS2 resolution or calibration, or the method
 changes.
 
+### Steep compound-specific RT drift splits one compound into several rows
+
+`diagnostic_only`; 8RAW `dna_dr` full runs and grouping replay (c1fa9a71 versus
+the #1165 batch drift model, 2026-11-16), read-only 8RAW XIC/MS2, 85RAW
+existing unique-channel matrix offline. One batch.
+
+- Cause: a few compounds (m/z 348.2122 with MS2 base 232.165, its 13C,
+  285.1506, 273.1506 and others at 10-14 min) also follow a per-sample shift
+  that ISTDs and ordinary compounds at nearby RT do not. The shared RT map
+  cannot carry it, so one compound split into rows.
+- #1165 adds batch state B (pooled-QC trend, one frozen shape per drift anchor)
+  and sample shift M, with two coefficients per group. 8RAW: 348.2122 and
+  349.2155 each become one row (all seven 348.2122 Y owners, no 227.139-base
+  component); the four isomer controls 244.12, 288.07, 827.17 and 828.17 stay
+  separate.
+- 8RAW is too small to estimate coefficients: permuting M across samples
+  leaves 5-13 of 21 sample-shift fits nonzero. 85RAW offline (not grouping):
+  two-coefficient residual SD 348.21 94 -> 15 s, 285.15 65 -> 15 s,
+  347.21 81 -> 9 s; ordinary channels 90% |a| < 0.07, |b| < 0.03.
+- 299.1553 is two components at fixed RT whose height ratio reverses between
+  pooled QC3 and QC5 (10.61/11.19 vs 10.59/11.19 min; MS2 cosine 0.85-0.94
+  within each, 0.61-0.73 across). The pattern track keeping QC3's and QC5's
+  selected peaks apart is correct; it is not a drift case.
+- The general map stays on bootstrap-group anchors; method channels (a
+  channel's only direct-supported peak per sample) measure drift only. Fitting
+  the map from channels instead, with a one-minute filter against each sample's
+  overall offset, was tried and reverted: on 85RAW about 20 tumor samples'
+  late ISTDs (23.5 and 25.75 min) sat 1-3 min off the map (bootstrap anchors:
+  2 samples above 30 s). The filter removed correct late anchors where a
+  sample's offset changes with RT, and the robust LOESS's sample-wide residual
+  scale then extrapolated the steep 16.5-18.6 min stretch. Dropping the filter
+  let drifting compounds shape the first fit, and M vanished. On 8RAW the
+  revert gives 867 rows against master's 872 with 14 changed m/z
+  neighborhoods; 404.1159 is separate again, as on master, where its own mixed
+  group anchors the map.
+- 827.17 and 299.1553 on the 85-sample selected worksets: owners form one
+  continuous RT band (827.17: 15.08-15.58 calibrated, isomers about 0.3 min
+  apart, one owner per sample). Either map only cuts that band somewhere; RT
+  does not assign the middle samples.
+- 288.0658 on the 85-sample selected worksets: QC7's owner (15.236 calibrated) is
+  the front component but sits in the rear row; QC7 has a rear peak at 15.505.
+  Double-peak samples put the front at 15.12-15.24 and the rear at
+  15.40-15.51; most single-peak samples, BenignfatBC1055 among them (15.245),
+  sit between and cannot be assigned by RT.
+- Isomers that share the NL have identical identity evidence in grouping; only
+  RT, shape and region remain. Three RT-only objectives (group model, evidence
+  acceptance, RT likelihood with a CRP prior and double-peak observations) each
+  split 348.21 Y or merged isomer controls once searched. MS2 fragment
+  evidence is #1170.
+
+Reopen for 85RAW acceptance of #1165, for a change to the population-gap
+exemption or boundary RT weighting, or for a new column or method. Artifacts:
+`output/rt1165-8raw-*` in the #1165 worktree and the issue #1165 side-session
+notes (outside the repo).
+
 ## Targeted And Peak Evidence
 
 ### NL116 ISTD human boundary calibration
@@ -344,6 +399,84 @@ private bytes rising 6.3 to 10.6 GB. The shared default stays at four; use
 baseline noise and was removed.
 
 Rerun for changed host resources, workload or locality.
+
+### Drift grouping reuses prepared numerical evidence
+
+`diagnostic_only`; output-preserving grouping optimization against `2fa578cb`
+(#1165, 2026-11-17). Repeated Theil-Sen residual fits share their fixed regressor
+pairs. Candidate groups gather comparison-scoped numeric pair terms and cached
+zero-model costs instead of rebuilding columns or revisiting every scalar pair.
+Uncomputed pairs retain the scalar evaluation order and hard-conflict short circuit.
+
+On 255 synthetic owners (85 samples, 100 anchors, one mass window), interleaved
+baseline/candidate/candidate/baseline runs took 110.38-112.12 versus 53.61-60.24 s.
+The complete inference results, including coefficients, decisions and operation
+counts, were identical. An existing 8RAW snapshot replay retained all 871 groups
+and 2,681 observations with five byte-identical TSVs. These are in-memory grouping
+measurements, not a full85 RAW or Backfill runtime claim.
+
+Reopen when drift fitting, pair scoring or the comparison population changes.
+Artifacts: `output/codex-rt1165-grouping-optimization/` in the #1165 worktree.
+
+### Grouping-only output avoids round-trip work
+
+`diagnostic_only` (#1165, 2026-11-17). Grouping-only execution writes its first
+computed groups, members and decisions directly. Replay capture is opt-in; no
+normal run reads and recomputes its own snapshot. Snapshot correctness is covered
+by focused round-trip tests when its producer or reader changes.
+
+On the retained 8RAW inputs (871 groups, 2,681 observations), sharing batch models
+and curve-free elution contexts reduced the snapshot from 193,277,443 to 5,056,890
+bytes. Single observations: old load 25.41 s, compact write 3.88 s, compact load
+0.47 s. All five replay TSVs were byte-identical. A fresh cache-backed 8RAW run
+also matched the pre-change context-selection implementation in all five result
+tables; it wrote no snapshot and ran no diagnostic replay. This is not a new
+full85 timing or scientific acceptance claim.
+
+Reopen for changes to replay fields, context tie priority or grouping-only output.
+Artifacts: `output/codex-grouping-output/` in the #1165 worktree.
+
+### Reassignment uses settled drift models
+
+`diagnostic_only` (#1165, 2026-11-17). On the 85-sample selected 348.21
+workset, the formal method split 46 MS2-labelled Y owners 44+1+1. With the main
+group's coefficients held fixed, the current, swapped-N2313 and returned-T2275
+configurations cost the same; the +0.006/+0.010 differences came only from
+refitting coefficients, which moved an unrelated worst pair. Offering settled
+group coefficients as reassignment candidates put all 46 in one group. Retained
+8RAW replay: 871 groups, physical membership unchanged; 42 decisions price their
+alternatives under settled models, and two 273.15 TumorBC2312 owners gain
+`accepted_competition`. Selected 85 worksets: only the 348.21 neighborhood
+changed membership; N2313@13.13 carries `accepted_competition` against 13.52; 244.12, 827.17 and 828.17 controls unchanged;
+288.07 mixing persists (not addressed). Owner renaming and input reversal gave
+identical membership. Not a full85 or Backfill claim.
+
+Reopen when coefficient fitting, reassignment or settled-model scope changes.
+
+### A locally folded calibration keeps its curve
+
+`diagnostic_only` (#1165, 2026-11-17). At `9aa1b046` two 85RAW Tumor injections
+(TumorBC2281, TumorBC2286_DNAandRNA) had 22 qualified positions, but their LOESS
+fit folded at one pair 0.04 min apart near 13.3 min. The whole map was dropped
+for a constant shift (+5.7/+2.9 s); ISTDs then missed by up to 63/47 s, and the
+two injections recovered 18.7%/20.1% of eligible cells against a 27.9% Tumor
+median. Pooling only the folded pair (`3770d271`), on captured inputs that
+reproduce all 85 frozen maps, changes only those two maps; the other 83 are
+value-identical. Held-out ISTDs improve where the curve bends (12 min 35 to
+1–3 s; 25 min 64/48 to 46/25 s). The pre-set rule failed at oxodG (2281
+5 to 22 s) and the 40.6 min endpoint; healthy Tumor curves also lose to a
+constant shift at both under the same hold-out (10/32 vs 9/11 s).
+
+Full 85RAW (cached RAW, same Discovery): the two injections recover 28.1%/29.7%
+(+59/+66 Backfill cells). The two newly calibrated injections change drift
+anchors, so `a` changed in 100 and `b` in 17 groups that keep identical
+non-target members; 172 groups changed membership. Whole matrix 1,319 to 1,318
+rows, numeric 40,571 to 40,835, unresolved −216 in the other 83 samples,
+published direct observations −11 (28 lost, 17 gained, at most 3 per m/z). Y: 51
+retained labels in one row, unchanged. Not judged neighborhood by neighborhood.
+
+Reopen when the LOESS fit, the support floor or the drift-anchor population changes.
+Artifacts: `output/rt1165-calib-monotone/` in the #1165 worktree.
 
 ### Accepted Alignment optimizations
 

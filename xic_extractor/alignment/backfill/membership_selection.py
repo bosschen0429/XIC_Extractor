@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from xic_extractor.alignment.membership_selection import (
     AcceptedMembershipRisk,
@@ -42,6 +42,17 @@ def select_backfill_memberships(
         )
     )
 
+    worst_pair = {
+        index: max(
+            (
+                comparison.pair(proposals[index][1], peer)[0]
+                for peer in original_groups[proposals[index][0]]
+            ),
+            default=0.0,
+        )
+        for index in compatible_indices
+    }
+
     def groups_for(selected: frozenset[int]) -> dict[str, tuple[str, ...]]:
         groups = dict(original_groups)
         for index in sorted(selected):
@@ -49,25 +60,36 @@ def select_backfill_memberships(
             groups[group] = (*groups[group], owner)
         return groups
 
+    costs: dict[frozenset[int], float] = {}
+
     def cost(selected: frozenset[int]) -> float:
         # A blank costs one, as separation does in the membership policy.
         # Only changes to original groups contribute; their accepted state is fixed.
-        groups = groups_for(selected)
-        return (
-            len(proposals)
-            - len(selected)
-            + math.fsum(
-                comparison.fixed_group_cost(ids, original_groups[group]) - bases[group]
-                for group, ids in groups.items()
-                if ids != original_groups[group]
+        if selected not in costs:
+            groups = groups_for(selected)
+            costs[selected] = (
+                len(proposals)
+                - len(selected)
+                + math.fsum(
+                    comparison.fixed_group_cost(ids, original_groups[group])
+                    - bases[group]
+                    for group, ids in groups.items()
+                    if ids != original_groups[group]
+                )
             )
-        )
+        return costs[selected]
 
     def key(selected: frozenset[int]) -> tuple[object, ...]:
-        partition = canonical_partition(tuple(groups_for(selected).values()))
+        groups = groups_for(selected)
+        partition = canonical_partition(tuple(groups.values()))
+        # Peer fit only breaks primary-cost ties, in each original's model.
         return (
             cost(selected),
-            comparison.peer_fit(partition),
+            _OnTie(
+                lambda: comparison.fixed_peer_fit(
+                    tuple((ids, original_groups[name]) for name, ids in groups.items())
+                )
+            ),
             comparison.partition_key(partition),
             partition,
         )
@@ -99,18 +121,25 @@ def select_backfill_memberships(
             }
             choices.add((current - displaced) | {index})
         # Feasibility is not hereditary: a complete group can be feasible even
-        # when each partial extension has an RT gap. Try its compatible bundle
-        # before relying on one-at-a-time improvements.
+        # when each partial extension has an RT gap. Try its compatible
+        # bundles before relying on one-at-a-time improvements, nearest
+        # candidates first so one distant candidate cannot poison the rest.
         for group in original_groups:
             bundle = frozenset(i for i in current if proposals[i][0] != group)
-            for index in compatible_indices:
-                candidate_group, _ = proposals[index]
-                if candidate_group == group and not any(
+            choices.add(bundle)
+            for index in sorted(
+                (i for i in compatible_indices if proposals[i][0] == group),
+                key=lambda i: (
+                    worst_pair[i],
+                    comparison.measured_keys[proposals[i][1]],
+                ),
+            ):
+                if not any(
                     (min(index, other), max(index, other)) in conflicts
                     for other in bundle
                 ):
                     bundle |= {index}
-            choices.add(bundle)
+                    choices.add(bundle)
         return {choice for choice in choices if math.isfinite(cost(choice))}
 
     while True:
@@ -146,12 +175,17 @@ def select_backfill_memberships(
                     flag
                     for peer in groups[group]
                     if peer != owner
-                    for flag in comparison.pair(owner, peer)[1]
+                    for flag in comparison.fixed_pair(
+                        owner, peer, original_groups[group]
+                    )[1]
                 }
             )
         )
         flags = {"accepted_contradiction"} if contradictions else set()
-        if not math.isfinite(comparison.group_cost(original_groups[group])):
+        original_model = comparison.fixed_group_model(
+            original_groups[group], original_groups[group]
+        )
+        if not math.isfinite(original_model.evidence) or original_model.population_gap:
             flags.update(("fixed_original_conflict", "accepted_contradiction"))
         if any(index in pair for pair in conflicts):
             flags.add("backfill_competition")
@@ -178,3 +212,27 @@ def select_backfill_memberships(
             rt_estimate=comparison.rt_estimates[owner],
         )
     return selected, risks
+
+
+class _OnTie:
+    """A sort-key value computed only when the preceding key elements tie."""
+
+    __slots__ = ("_compute", "_value")
+
+    def __init__(self, compute: Callable[[], float]) -> None:
+        self._compute = compute
+        self._value: float | None = None
+
+    @property
+    def value(self) -> float:
+        if self._value is None:
+            self._value = self._compute()
+        return self._value
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _OnTie) and self.value == other.value
+
+    def __lt__(self, other: _OnTie) -> bool:
+        return self.value < other.value
+
+    __hash__ = None  # type: ignore[assignment]

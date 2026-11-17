@@ -394,6 +394,11 @@ def admit_cid_nl_group_backfills(
         config=alignment_config,
         rt_frame=result.rt_frame,
         trajectories=peak_trajectories or PeakTrajectories(),
+        fixed_coefficients={
+            tuple(sorted(group.owner_ids)): group.inference_basis.rt_drift
+            for group in groups
+            if group.inference_basis is not None
+        },
     )
     low_localization = {
         i

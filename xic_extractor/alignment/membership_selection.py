@@ -12,11 +12,20 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
 from statistics import median
+from typing import NamedTuple
+
+import numpy as np
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_rules import GroupingRules
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
+from xic_extractor.alignment.rt_drift import (
+    MIN_COEFFICIENT_MEMBERS,
+    DriftCoefficients,
+    candidate_coefficients,
+    upper_pairs,
+)
 from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.alignment.sample_rt_calibration import RtEstimate
 from xic_extractor.mass_accuracy import absolute_ppm_error, within_ppm
@@ -29,6 +38,97 @@ OwnerPartition = tuple[tuple[OwnerFacts, ...], ...]
 _RT_POPULATION_MIN_MEMBERS = 4
 _RT_POPULATION_MIN_GAP_SEC = 20.0
 _RT_POPULATION_RANGE_RATIO = 2.0
+# One nonzero drift coefficient costs what this RT difference costs a pair.
+_COEFFICIENT_COST_SEC = 10.0
+
+
+class _PairTerms(NamedTuple):
+    """RT-independent parts of one pair cost, in their summation order."""
+
+    weight: float
+    mass: float
+    composition: float
+    neighborhood: float
+    shape: float | None
+    weak: float
+
+
+@dataclass(frozen=True, slots=True)
+class _PairArrays:
+    """One group's pairs, in ``combinations`` order, with their fixed terms.
+
+    ``max_cost`` repeats ``MembershipComparison._compose`` elementwise in the
+    same operation order, so each pair cost is the identical float.
+    """
+
+    first: np.ndarray
+    second: np.ndarray
+    weight: np.ndarray
+    mass: np.ndarray
+    composition: np.ndarray
+    neighborhood: np.ndarray
+    shape: np.ndarray
+    weak: np.ndarray
+
+    @classmethod
+    def of(cls, comparison: MembershipComparison, key: tuple[str, ...]) -> _PairArrays:
+        first, second = upper_pairs(len(key))
+        values = comparison._prepare_pair_values()
+        columns = values[comparison._pair_indices(key)].T
+        # Missing shape evidence contributes no disagreement cost.
+        columns[4, np.isnan(columns[4])] = 0.0
+        return cls(first, second, *columns)
+
+    def max_cost(
+        self,
+        comparison: MembershipComparison,
+        key: tuple[str, ...],
+        offsets: Mapping[str, float],
+        unknown: frozenset[str],
+    ) -> float:
+        if not len(self.first):
+            return 0.0
+        offset = np.array([offsets.get(p, 0.0) for p in key])
+        rts = np.array([comparison.rts[p] for p in key])
+        rt_weights = np.array(
+            [comparison.rt_weights[p] * (0.5 if p in unknown else 1.0) for p in key]
+        )
+        regions = [comparison.regions[p] for p in key]
+        starts = np.array([r[0] if r[0] is not None else np.nan for r in regions])  # type: ignore[index]
+        ends = np.array([r[2] if r[2] is not None else np.nan for r in regions])  # type: ignore[index]
+        a, b = self.first, self.second
+        preferred = comparison.config.preferred_rt_sec
+        delta = np.abs((rts[a] - offset[a]) - (rts[b] - offset[b])) * 60
+        rt_weight = np.minimum(rt_weights[a], rt_weights[b])
+        cost = 0.70 * self.weight * rt_weight * delta / preferred
+        cost = cost + self.mass
+        cost = cost + self.composition
+        cost = cost + self.neighborhood
+        cost = cost + self.shape
+        gap = (
+            np.maximum(
+                np.maximum(0.0, (starts[a] - offset[a]) - (ends[b] - offset[b])),
+                (starts[b] - offset[b]) - (ends[a] - offset[a]),
+            )
+            * 60
+        )
+        regional = ~(
+            np.isnan(starts[a])
+            | np.isnan(ends[a])
+            | np.isnan(starts[b])
+            | np.isnan(ends[b])
+        ) & (gap != 0)
+        region_cost = self.weight * rt_weight * 0.25 * np.minimum(gap / preferred, 1.0)
+        cost = cost + np.where(regional, region_cost, 0.0)
+        cost = cost + self.weak
+        return float(cost.max())
+
+
+@dataclass(frozen=True, slots=True)
+class _GroupModel:
+    coefficients: DriftCoefficients
+    evidence: float
+    population_gap: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,9 +210,16 @@ class MembershipComparison:
         config: AlignmentConfig,
         rt_frame: RtFrame,
         trajectories: PeakTrajectories,
+        fixed_coefficients: Mapping[tuple[str, ...], DriftCoefficients] | None = None,
     ) -> None:
+        """``fixed_coefficients`` keeps settled groups' drift fits unchanged."""
         self.owners = {o.owner_id: o for o in owners}
         self.measured_keys = {o.owner_id: measured_owner_key(o) for o in owners}
+        ranked = sorted(set(self.measured_keys.values()))
+        dense = {measured: index for index, measured in enumerate(ranked)}
+        self._measured_rank = {
+            key: dense[value] for key, value in self.measured_keys.items()
+        }
         self.rules, self.config, self.trajectories = rules, config, trajectories
         regions = {o.owner_id: rt_frame.calibrated_peak_region(o) for o in owners}
         coordinates = {o.owner_id: rt_frame.membership_coordinate(o) for o in owners}
@@ -182,7 +289,7 @@ class MembershipComparison:
             ):
                 self.weak.add(owner.owner_id)
         ordered_rts = sorted(self.rts.items(), key=lambda item: item[1])
-        radius_sec = min(120.0, config.max_rt_sec)
+        radius_sec = 120.0
         self.density = {}
         left = right = 0
         for key, rt in ordered_rts:
@@ -199,6 +306,41 @@ class MembershipComparison:
         self.group_costs: dict[tuple[str, ...], float] = {}
         self.population_gaps: dict[tuple[str, ...], bool] = {}
         self.group_peer_fits: dict[tuple[str, ...], float] = {}
+        # Drift beyond the general map is modeled only on the common frame.
+        drift = rt_frame.drift_model if self.rt_basis == "drift_corrected" else None
+        self.drift = drift if drift is not None and drift.anchors else None
+        self._batch_lookup = (
+            self.drift.batch_state_lookup() if self.drift is not None else None
+        )
+        self._pair_terms: dict[tuple[str, str], _PairTerms | None] = {}
+        # Packed upper triangle: every feasible pair's fixed numeric terms
+        # are converted once, then gathered for each proposed group.
+        self._pair_positions = {p: i for i, p in enumerate(sorted(self.owners))}
+        size = len(self.owners)
+        self._pair_row_offsets = {
+            p: i * (2 * size - i - 1) // 2 - i - 1
+            for p, i in self._pair_positions.items()
+        }
+        self._pair_values: np.ndarray | None = None
+        self._pair_cost_values: np.ndarray | None = None
+        self._models: dict[tuple[str, ...], tuple[_GroupModel, ...]] = {}
+        self._batch_states: dict[tuple[str, ...], Mapping[str, float]] = {}
+        self._fixed_coefficients = dict(fixed_coefficients or {})
+        self._settled: tuple[tuple[frozenset[str], DriftCoefficients], ...] = ()
+        # One drift frame per (coefficients, batch-state group), shared by
+        # every pair, group and tie-break that uses that model.
+        self._frames: dict[
+            tuple[DriftCoefficients, tuple[str, ...]],
+            tuple[dict[str, float], frozenset[str]],
+        ] = {}
+        self._mean_pairs: dict[
+            tuple[tuple[str, ...], DriftCoefficients, tuple[str, ...]], float
+        ] = {}
+        self._fixed_models: dict[
+            tuple[tuple[str, ...], tuple[str, ...]], _GroupModel
+        ] = {}
+        self._fixed_costs: dict[tuple[tuple[str, ...], tuple[str, ...]], float] = {}
+        self._coefficient_cost = 0.70 * _COEFFICIENT_COST_SEC / config.preferred_rt_sec
 
     def partition_key(self, partition: Partition) -> tuple[object, ...]:
         return tuple(
@@ -211,16 +353,54 @@ class MembershipComparison:
     def pair(self, first: str, second: str) -> tuple[float, tuple[str, ...]]:
         key = (first, second) if first <= second else (second, first)
         if key not in self.pairs:
-            self.pairs[key] = self._pair(first, second)
+            self.pairs[key] = self._compose(key[0], key[1])
+            if self._pair_cost_values is not None and key[0] != key[1]:
+                self._pair_cost_values[
+                    self._pair_row_offsets[key[0]] + self._pair_positions[key[1]]
+                ] = self.pairs[key][0]
         return self.pairs[key]
 
-    def _pair(self, first: str, second: str) -> tuple[float, tuple[str, ...]]:
-        left, right = self.owners[first], self.owners[second]
+    def _pair_indices(self, key: tuple[str, ...]) -> np.ndarray:
+        """Packed positions of a canonical group's pairs, in combinations order."""
+        first, second = upper_pairs(len(key))
+        positions = np.array([self._pair_positions[p] for p in key])
+        rows = np.array([self._pair_row_offsets[p] for p in key])
+        return rows[first] + positions[second]
+
+    def _prepare_pair_values(self) -> np.ndarray:
+        """Materialize numeric pair evidence once a drift fit needs it.
+
+        Subsequent pair evaluations fill the same table. Uncomputed zero-model
+        costs stay NaN so the scalar path retains its original short circuit.
+        """
+        if self._pair_values is None:
+            size = len(self.owners)
+            count = size * (size - 1) // 2
+            self._pair_values = np.empty((count, 6))
+            self._pair_cost_values = np.full(count, np.nan)
+            for (a, b), terms in self._pair_terms.items():
+                if terms is not None:
+                    self._pair_values[
+                        self._pair_row_offsets[a] + self._pair_positions[b]
+                    ] = terms
+            for (a, b), (cost, _) in self.pairs.items():
+                if a != b:
+                    self._pair_cost_values[
+                        self._pair_row_offsets[a] + self._pair_positions[b]
+                    ] = cost
+        return self._pair_values
+
+    def _terms(self, first: str, second: str) -> _PairTerms | None:
+        """RT-independent pair evidence, computed once per pair."""
+        key = (first, second) if first <= second else (second, first)
+        if key in self._pair_terms:
+            return self._pair_terms[key]
+        left, right = self.owners[key[0]], self.owners[key[1]]
         cfg = self.config
         method = self.rules.pair_evidence(left, right, cfg)
         if (
             left.sample_stem == right.sample_stem
-            or not self.trajectories.permits_membership((first, second))
+            or not self.trajectories.permits_membership(key)
             or not within_ppm(
                 max(left.peak.mz, right.peak.mz),
                 min(left.peak.mz, right.peak.mz),
@@ -232,14 +412,10 @@ class MembershipComparison:
                 and not method.measurement_failure_allows_rt_continuity
             )
         ):
-            return math.inf, ()
-        delta = abs(self.rts[first] - self.rts[second]) * 60
-        if delta > cfg.max_rt_sec:
-            return math.inf, ()  # outside the declared candidate universe
-        weight = min(self.quality[first], self.quality[second])
-        rt_weight = min(self.rt_weights[first], self.rt_weights[second])
-        cost = 0.70 * weight * rt_weight * delta / cfg.preferred_rt_sec
-        cost += (
+            self._pair_terms[key] = None
+            return None
+        weight = min(self.quality[key[0]], self.quality[key[1]])
+        mass = (
             0.15
             * absolute_ppm_error(
                 max(left.peak.mz, right.peak.mz),
@@ -247,25 +423,68 @@ class MembershipComparison:
             )
             / cfg.max_ppm
         )
-        cost += 0.15 * self.rules.pair_mass_fraction(left, right, cfg)
+        composition = 0.15 * self.rules.pair_mass_fraction(left, right, cfg)
         gap = abs(
             self.orders.get(left.sample_stem, 0) - self.orders.get(right.sample_stem, 0)
         )
-        density = max(self.density[first], self.density[second])
-        cost += 0.10 * gap / (gap + 16) * density / (density + 10)
-        contradictions = []
+        density = max(self.density[key[0]], self.density[key[1]])
+        neighborhood = 0.10 * gap / (gap + 16) * density / (density + 10)
+        shape = None
         if left.peak_shape is not None and right.peak_shape is not None:
             similarity = compare_local_peak_shapes(
                 left.peak_shape, right.peak_shape
             ).similarity
             if similarity is not None and similarity < cfg.min_peak_shape_similarity:
-                cost += (
+                shape = (
                     weight
                     * 0.25
                     * (cfg.min_peak_shape_similarity - similarity)
                     / cfg.min_peak_shape_similarity
                 )
-                contradictions.append("shape_disagreement")
+        weak = 0.20 * (int(key[0] in self.weak) + int(key[1] in self.weak)) / 2
+        terms = _PairTerms(weight, mass, composition, neighborhood, shape, weak)
+        self._pair_terms[key] = terms
+        if self._pair_values is not None:
+            self._pair_values[
+                self._pair_row_offsets[key[0]] + self._pair_positions[key[1]]
+            ] = terms
+        return terms
+
+    def _compose(
+        self,
+        first: str,
+        second: str,
+        offsets: Mapping[str, float] | None = None,
+        unadjusted: frozenset[str] = frozenset(),
+    ) -> tuple[float, tuple[str, ...]]:
+        """Pair cost in one group's coordinate; offsets are its modeled drift.
+
+        A member whose drift regressor is unknown keeps its general coordinate
+        with half the RT influence.
+        """
+        terms = self._terms(first, second)
+        if terms is None:
+            return math.inf, ()
+        cfg = self.config
+        first_offset = offsets.get(first, 0.0) if offsets else 0.0
+        second_offset = offsets.get(second, 0.0) if offsets else 0.0
+        delta = (
+            abs((self.rts[first] - first_offset) - (self.rts[second] - second_offset))
+            * 60
+        )
+        rt_weight = min(
+            self.rt_weights[first] * (0.5 if first in unadjusted else 1.0),
+            self.rt_weights[second] * (0.5 if second in unadjusted else 1.0),
+        )
+        weight = terms.weight
+        cost = 0.70 * weight * rt_weight * delta / cfg.preferred_rt_sec
+        cost += terms.mass
+        cost += terms.composition
+        cost += terms.neighborhood
+        contradictions = []
+        if terms.shape is not None:
+            cost += terms.shape
+            contradictions.append("shape_disagreement")
         a, b = self.regions[first], self.regions[second]
         assert a is not None and b is not None
         if (
@@ -274,7 +493,14 @@ class MembershipComparison:
             and b[0] is not None
             and b[2] is not None
         ):
-            region_gap = max(0.0, a[0] - b[2], b[0] - a[2]) * 60
+            region_gap = (
+                max(
+                    0.0,
+                    (a[0] - first_offset) - (b[2] - second_offset),
+                    (b[0] - second_offset) - (a[2] - first_offset),
+                )
+                * 60
+            )
             if region_gap:
                 cost += (
                     weight
@@ -283,39 +509,248 @@ class MembershipComparison:
                     * min(region_gap / cfg.preferred_rt_sec, 1.0)
                 )
                 contradictions.append("region_disagreement")
-        cost += 0.20 * (int(first in self.weak) + int(second in self.weak)) / 2
+        cost += terms.weak
         return cost, tuple(contradictions)
 
+    def group_pair(
+        self, group: tuple[str, ...], first: str, second: str
+    ) -> tuple[float, tuple[str, ...]]:
+        """One pair in its group's drift-adjusted coordinate."""
+        key = tuple(sorted(group))
+        return self._model_pair(first, second, self.coefficients(key), key)
+
+    def fixed_pair(
+        self, first: str, second: str, original: tuple[str, ...]
+    ) -> tuple[float, tuple[str, ...]]:
+        """One pair in a fixed Backfill group's coordinate (its original model)."""
+        basis = tuple(sorted(original))
+        return self._model_pair(first, second, self.coefficients(basis), basis)
+
+    def _model_pair(
+        self,
+        first: str,
+        second: str,
+        coefficients: DriftCoefficients,
+        basis: tuple[str, ...],
+    ) -> tuple[float, tuple[str, ...]]:
+        if not coefficients.nonzero_count:
+            return self.pair(first, second)
+        offsets, unknown = self._frame(coefficients, basis)
+        return self._compose(first, second, offsets, unknown)
+
     def group_cost(self, group: tuple[str, ...]) -> float:
-        key = group if group in self.population_gaps else tuple(sorted(group))
-        if key not in self.population_gaps:
-            self.population_gaps[key] = self.has_rt_population_gap(key)
-        if self.population_gaps[key]:
-            return math.inf
-        return self._group_evidence_cost(key)
+        """Least feasible cost over zero and fitted drift coefficients."""
+        return min(
+            (
+                model.evidence
+                for model in self._group_models(group)
+                if not model.population_gap
+            ),
+            default=math.inf,
+        )
+
+    def coefficients(self, group: tuple[str, ...]) -> DriftCoefficients:
+        """The drift coefficients behind this group's cost; zero when none help."""
+        fixed = self._fixed_coefficients.get(tuple(sorted(group)))
+        if fixed is not None:
+            return fixed
+        feasible = [m for m in self._group_models(group) if not m.population_gap]
+        if not feasible:
+            return DriftCoefficients()
+        return min(
+            feasible, key=lambda m: (m.evidence, m.coefficients.nonzero_count)
+        ).coefficients
 
     def _group_evidence_cost(self, group: tuple[str, ...]) -> float:
-        # Production partitions are already canonical; reuse their cost without
-        # sorting the same group again for every assignment and merge proposal.
-        cached = self.group_costs.get(group)
+        return min(model.evidence for model in self._group_models(group))
+
+    def _group_models(self, group: tuple[str, ...]) -> tuple[_GroupModel, ...]:
+        # Production partitions are already canonical; reuse their models
+        # without sorting the same group again for every proposal.
+        cached = self._models.get(group)
         if cached is not None:
             return cached
         key = tuple(sorted(group))
-        if key not in self.group_costs:
-            if len({self.owners[p].sample_stem for p in key}) != len(key):
-                self.group_costs[key] = math.inf
-                return math.inf
+        if key not in self._models:
+            zero = self._evaluate(key, DriftCoefficients())
+            models = [zero]
+            candidates = (
+                self._candidate_coefficients(key)
+                if math.isfinite(zero.evidence)
+                else ()
+            )
+            if candidates:
+                # A drift model matters only if it can cost less than a
+                # feasible zero model; it is reported infinite once it cannot.
+                bound = math.inf if zero.population_gap else zero.evidence
+                # Every pair is feasible here; share its fixed terms across models.
+                arrays = _PairArrays.of(self, key)
+                models.extend(
+                    self._evaluate(key, coefficients, bound=bound, arrays=arrays)
+                    for coefficients in candidates
+                )
+            self._models[key] = tuple(models)
+            self.group_costs[key] = models[0].evidence
+            self.population_gaps[key] = models[0].population_gap
+        return self._models[key]
+
+    def _candidate_coefficients(
+        self, key: tuple[str, ...]
+    ) -> tuple[DriftCoefficients, ...]:
+        if self.drift is None:
+            return ()
+        span_sec = (max(self.rts[p] for p in key) - min(self.rts[p] for p in key)) * 60
+        # RT and region terms change by at most 0.95 per preferred interval of
+        # span; below one coefficient's cost no fit can pay for itself.
+        if span_sec * 0.95 / self.config.preferred_rt_sec < self._coefficient_cost:
+            return ()
+        # The member floor limits estimating new coefficients. A settled model
+        # stays available to smaller proposals, so removing one owner from a
+        # minimum-size drifting group is not priced in the unadjusted frame.
+        fitted: tuple[DriftCoefficients, ...] = ()
+        if len(key) >= MIN_COEFFICIENT_MEMBERS:
+            batch_state = self._batch_state(key)
+            shift = self.drift.sample_shift_min
+            fitted = candidate_coefficients(
+                tuple(
+                    (
+                        self.rts[p],
+                        batch_state.get(self.owners[p].sample_stem),
+                        shift.get(self.owners[p].sample_stem),
+                    )
+                    for p in key
+                )
+            )
+        settled = sorted(
+            {
+                coefficients
+                for members, coefficients in self._settled
+                if coefficients not in fitted and not members.isdisjoint(key)
+            },
+            key=lambda c: (c.time, c.sample_shift),
+        )
+        return (*fitted, *settled)
+
+    def settle(self, partition: Partition) -> None:
+        """Offer each settled group's drift fit to every group it overlaps.
+
+        Moving one owner refits that group's coefficients. A refit
+        perturbation can shift a worst pair the moved owner is not part of.
+        The owner should be judged by the model of the group it joins or
+        leaves. Own refits remain candidates; the settled set stays fixed
+        while reassignment runs, so cost remains a function of the partition.
+        """
+        self._settled = tuple(
+            (frozenset(group), coefficients)
+            for group in partition
+            if (coefficients := self.coefficients(group)).nonzero_count
+        )
+        self._models.clear()
+        self.group_peer_fits.clear()
+
+    def _batch_state(self, key: tuple[str, ...]) -> Mapping[str, float]:
+        if key not in self._batch_states:
+            assert self._batch_lookup is not None
+            self._batch_states[key] = self._batch_lookup(
+                key, float(median(self.rts[p] for p in key))
+            )
+        return self._batch_states[key]
+
+    def _frame(
+        self, coefficients: DriftCoefficients, basis: tuple[str, ...]
+    ) -> tuple[dict[str, float], frozenset[str]]:
+        """Every owner's modeled drift under one model; ``basis`` owns B.
+
+        Owners whose regressor is unknown are returned separately; they keep
+        their general coordinate.
+        """
+        if not coefficients.nonzero_count or self.drift is None:
+            return {}, frozenset()
+        cache_key = (coefficients, basis)
+        if cache_key not in self._frames:
+            by_sample = self.drift.sample_offsets(
+                coefficients, self._batch_state(basis)
+            )
+            offsets = {
+                owner_id: by_sample[owner.sample_stem]
+                for owner_id, owner in self.owners.items()
+                if owner.sample_stem in by_sample
+            }
+            self._frames[cache_key] = (
+                offsets,
+                frozenset(self.owners).difference(offsets),
+            )
+        return self._frames[cache_key]
+
+    def _evaluate(
+        self,
+        key: tuple[str, ...],
+        coefficients: DriftCoefficients,
+        basis: tuple[str, ...] | None = None,
+        *,
+        bound: float = math.inf,
+        arrays: _PairArrays | None = None,
+    ) -> _GroupModel:
+        """Score one model; above ``bound`` it is reported as infinite."""
+        if len({self.owners[p].sample_stem for p in key}) != len(key):
+            return _GroupModel(coefficients, math.inf, False)
+        offsets, unknown = self._frame(coefficients, basis or key)
+        model_cost = self._coefficient_cost * coefficients.nonzero_count
+        pair_cost: float | None
+        if arrays is not None and (offsets or unknown):
+            pair_cost = arrays.max_cost(self, key, offsets, unknown)
+            if not math.isfinite(pair_cost) or 1.0 + pair_cost + model_cost >= bound:
+                return _GroupModel(coefficients, math.inf, False)
+            evidence = 1.0 + pair_cost + self._group_trend_cost(key, offsets, unknown)
+            if coefficients.nonzero_count:
+                evidence += model_cost
+            return _GroupModel(
+                coefficients,
+                evidence,
+                self.has_rt_population_gap(key, offsets, unknown),
+            )
+        pair_cost = None
+        if (
+            not (offsets or unknown)
+            and len(key) > 2
+            and self._pair_cost_values is not None
+        ):
+            cached = self._pair_cost_values[self._pair_indices(key)]
+            if not np.isnan(cached).any():
+                pair_cost = float(cached.max())
+        if pair_cost is None:
             pair_cost = 0.0
             for first, second in combinations(key, 2):
-                pair_cost = max(pair_cost, self.pair(first, second)[0])
-                if not math.isfinite(pair_cost):
-                    break
-            self.group_costs[key] = (
-                1.0 + pair_cost + self._group_trend_cost(key)
-                if math.isfinite(pair_cost)
-                else math.inf
+                value = (
+                    self._compose(first, second, offsets, unknown)[0]
+                    if offsets or unknown
+                    else self.pair(first, second)[0]
+                )
+                pair_cost = max(pair_cost, value)
+                if (
+                    not math.isfinite(pair_cost)
+                    or 1.0 + pair_cost + model_cost >= bound
+                ):
+                    return _GroupModel(coefficients, math.inf, False)
+        elif not math.isfinite(pair_cost) or 1.0 + pair_cost + model_cost >= bound:
+            return _GroupModel(coefficients, math.inf, False)
+        evidence = 1.0 + pair_cost + self._group_trend_cost(key, offsets, unknown)
+        if coefficients.nonzero_count:
+            evidence += model_cost
+        return _GroupModel(
+            coefficients, evidence, self.has_rt_population_gap(key, offsets, unknown)
+        )
+
+    def fixed_group_model(
+        self, group: tuple[str, ...], original: tuple[str, ...]
+    ) -> _GroupModel:
+        """A Backfill extension under its original group's model, never refit."""
+        key, basis = tuple(sorted(group)), tuple(sorted(original))
+        if (key, basis) not in self._fixed_models:
+            self._fixed_models[(key, basis)] = self._evaluate(
+                key, self.coefficients(basis), basis
             )
-        return self.group_costs[key]
+        return self._fixed_models[(key, basis)]
 
     def fixed_group_cost(
         self, group: tuple[str, ...], original: tuple[str, ...]
@@ -325,74 +760,138 @@ class MembershipComparison:
         Original members cannot move in Backfill. Their pre-existing hard
         conflict is not a new candidate's failure, nor an infinite baseline to
         subtract. Every pair involving a new owner still has to be feasible.
-        The complete extension still obeys the RT-population constraint.
+        The complete extension still obeys the RT-population constraint, and
+        keeps the original group's drift coefficients rather than refitting.
         """
-        cost = (
-            self._group_evidence_cost(group)
-            if group == original
-            else self.group_cost(group)
-        )
-        if math.isfinite(cost):
-            return cost
-        if group != original and self.has_rt_population_gap(group):
+        key, basis = tuple(sorted(group)), tuple(sorted(original))
+        if (key, basis) not in self._fixed_costs:
+            self._fixed_costs[(key, basis)] = self._fixed_group_cost(key, basis)
+        return self._fixed_costs[(key, basis)]
+
+    def _fixed_group_cost(self, key: tuple[str, ...], basis: tuple[str, ...]) -> float:
+        model = self.fixed_group_model(key, basis)
+        if math.isfinite(model.evidence) and (key == basis or not model.population_gap):
+            return model.evidence
+        coefficients = model.coefficients
+        offsets, unknown = self._frame(coefficients, basis)
+        if key != basis and self.has_rt_population_gap(key, offsets, unknown):
             return math.inf
-        if len({self.owners[p].sample_stem for p in group}) != len(group):
+        if len({self.owners[p].sample_stem for p in key}) != len(key):
             return math.inf
-        fixed = frozenset(original)
+        fixed = frozenset(basis)
         pair_cost = 0.0
-        for first, second in combinations(group, 2):
-            value = self.pair(first, second)[0]
+        for first, second in combinations(key, 2):
+            value = self._compose(first, second, offsets, unknown)[0]
             if not math.isfinite(value) and first in fixed and second in fixed:
                 continue
             pair_cost = max(pair_cost, value)
-        return 1.0 + pair_cost + self._group_trend_cost(group)
+        cost = 1.0 + pair_cost + self._group_trend_cost(key, offsets, unknown)
+        if coefficients.nonzero_count:
+            cost += self._coefficient_cost * coefficients.nonzero_count
+        return cost
 
-    def _group_trend_cost(self, key: tuple[str, ...]) -> float:
-        trend = 0.0
+    def fixed_peer_fit(
+        self, groups: Sequence[tuple[tuple[str, ...], tuple[str, ...]]]
+    ) -> float:
+        """Mean peer fit of a Backfill configuration of (group, original) pairs.
 
+        Each extension is scored in its original group's model, as its cost is.
+        """
+        total = math.fsum(
+            len(group)
+            * self._mean_pair(
+                tuple(sorted(group)),
+                self.coefficients(tuple(sorted(original))),
+                tuple(sorted(original)),
+            )
+            for group, original in groups
+        )
+        return total / len(self.owners) if self.owners else 0.0
+
+    def _mean_pair(
+        self,
+        key: tuple[str, ...],
+        coefficients: DriftCoefficients,
+        basis: tuple[str, ...],
+    ) -> float:
+        if len(key) < 2:
+            return 1.0
+        cache_key = (key, coefficients, basis)
+        if cache_key not in self._mean_pairs:
+            self._mean_pairs[cache_key] = math.fsum(
+                self._model_pair(a, b, coefficients, basis)[0]
+                for a, b in combinations(key, 2)
+            ) / (len(key) * (len(key) - 1) / 2)
+        return self._mean_pairs[cache_key]
+
+    def _group_trend_cost(
+        self,
+        key: tuple[str, ...],
+        offsets: Mapping[str, float] | None = None,
+        unadjusted: frozenset[str] = frozenset(),
+    ) -> float:
+        """Worst weighted residual from the six nearest injections' median RT.
+
+        Neighbors are ordered by injection distance, then measured facts,
+        then group order, as a stable sort on those keys would order them.
+        """
+        rts = np.array(
+            [self.rts[p] - (offsets.get(p, 0.0) if offsets else 0.0) for p in key]
+        )
         # A neighbor median stays inside the group's RT range. A range of
         # at most 90 seconds therefore cannot incur the trend penalty.
-        if (
-            len(key) > 2
-            and (max(self.rts[p] for p in key) - min(self.rts[p] for p in key)) * 60
-            > 90.0
-        ):
-            for owner_id in key:
-                owner = self.owners[owner_id]
-                if owner.sample_stem not in self.orders:
-                    continue
-                neighbors = sorted(
-                    (p for p in key if p != owner_id),
-                    key=lambda p: (
-                        abs(
-                            self.orders.get(self.owners[p].sample_stem, 0)
-                            - self.orders[owner.sample_stem]
-                        ),
-                        self.measured_keys[p],
-                    ),
-                )[:6]
-                residual = (
-                    abs(self.rts[owner_id] - median(self.rts[p] for p in neighbors))
-                    * 60
-                )
-                rt_weight = min(self.rt_weights[p] for p in (owner_id, *neighbors))
-                trend = max(trend, rt_weight * 0.20 * max(0.0, residual / 90.0 - 1))
-        return trend
+        if len(key) <= 2 or (rts.max() - rts.min()) * 60 <= 90.0:
+            return 0.0
+        samples = [self.owners[p].sample_stem for p in key]
+        ordered = np.array([i for i, s in enumerate(samples) if s in self.orders])
+        if not len(ordered):
+            return 0.0
+        orders = np.array([self.orders.get(s, 0) for s in samples], dtype=np.int64)
+        ranks = np.array([self._measured_rank[p] for p in key])
+        size = len(key)
+        distance = np.abs(orders[None, :] - orders[ordered][:, None])
+        position = np.broadcast_to(np.arange(size), distance.shape)
+        rank = np.broadcast_to(ranks, distance.shape)
+        # Self sorts last; lexsort is stable and its last key is primary.
+        distance = np.where(
+            position == ordered[:, None], np.iinfo(np.int64).max, distance
+        )
+        order = np.lexsort((position, rank, distance), axis=1)
+        neighbors = order[:, : min(6, size - 1)]
+        weights = np.array(
+            [self.rt_weights[p] * (0.5 if p in unadjusted else 1.0) for p in key]
+        )
+        residual = np.abs(rts[ordered] - np.median(rts[neighbors], axis=1)) * 60
+        rt_weight = np.minimum(weights[ordered], weights[neighbors].min(axis=1))
+        return float((rt_weight * 0.20 * np.maximum(0.0, residual / 90.0 - 1)).max())
 
-    def has_rt_population_gap(self, group: tuple[str, ...]) -> bool:
+    def has_rt_population_gap(
+        self,
+        group: tuple[str, ...],
+        offsets: Mapping[str, float] | None = None,
+        unadjusted: frozenset[str] = frozenset(),
+    ) -> bool:
         """Reject two concentrated populations in a complete common-RT group.
 
         This is not a pair veto: adding intervening observations can make a
         group feasible. Raw coordinates never fill gaps in calibration support.
         Populations that split the batch into earlier and later injections stay
         a cost: residual drift explains them as well as two compounds do.
+        Modeled drift is removed before the populations are compared; members
+        whose drift is unknown are not placed in that frame.
         """
+        group = tuple(key for key in group if key not in unadjusted)
         if len(group) < _RT_POPULATION_MIN_MEMBERS or any(
             key not in self.common_rts for key in group
         ):
             return False
-        ordered = sorted(group, key=lambda key: self.common_rts[key])
-        rts = [self.common_rts[key] for key in ordered]
+        common = (
+            {key: self.common_rts[key] - offsets.get(key, 0.0) for key in group}
+            if offsets
+            else self.common_rts
+        )
+        ordered = sorted(group, key=lambda key: common[key])
+        rts = [common[key] for key in ordered]
         split = max(range(1, len(rts)), key=lambda i: rts[i] - rts[i - 1])
         gap_sec = (rts[split] - rts[split - 1]) * 60
         side_range_sec = max(rts[split - 1] - rts[0], rts[-1] - rts[split]) * 60
@@ -423,11 +922,9 @@ class MembershipComparison:
         """
         for group in partition:
             if group not in self.group_peer_fits:
-                self.group_peer_fits[group] = (
-                    math.fsum(self.pair(a, b)[0] for a, b in combinations(group, 2))
-                    / (len(group) * (len(group) - 1) / 2)
-                    if len(group) > 1
-                    else 1.0
+                key = tuple(sorted(group))
+                self.group_peer_fits[group] = self._mean_pair(
+                    key, self.coefficients(key), key
                 )
         return (
             math.fsum(len(g) * self.group_peer_fits[g] for g in partition)
@@ -582,6 +1079,8 @@ class MembershipComparison:
         selected_cost = self.cost(partition)
         selected_fit = self.peer_fit(partition)
         for group in partition:
+            key = tuple(sorted(group))
+            coefficients = self.coefficients(key)
             for owner_id in group:
                 alternatives = (
                     alternatives_by_owner[owner_id]
@@ -612,7 +1111,9 @@ class MembershipComparison:
                             reason
                             for peer in group
                             if peer != owner_id
-                            for reason in self.pair(owner_id, peer)[1]
+                            for reason in self._model_pair(
+                                owner_id, peer, coefficients, key
+                            )[1]
                         }
                     )
                 )
