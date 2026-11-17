@@ -156,6 +156,54 @@ def test_failed_strong_fit_retains_explicit_weak_estimate():
     assert estimate.fit_status == sample.status != "calibrated"
 
 
+# (observed, batch reference) of one 85RAW Tumor injection, rounded: its
+# 13.27/13.31 pair sits where the offset drops from about +40 s to about 0 s.
+_FOLDING_INJECTION = (
+    (8.03, 8.03), (8.48, 8.59), (8.61, 8.61), (8.65, 8.61), (9.02, 9.03),
+    (11.80, 12.49), (11.83, 12.51), (11.91, 12.58), (13.27, 13.29), (13.31, 13.30),
+    (14.30, 14.35), (14.34, 14.35), (14.97, 14.98), (16.55, 16.56), (17.03, 17.12),
+    (18.58, 19.38), (18.61, 19.38), (22.89, 23.48), (22.97, 23.49), (24.59, 25.74),
+    (24.68, 25.74), (40.32, 40.62),
+)  # fmt: skip
+
+
+def _single_injection(points):
+    peers = tuple(f"P{i}" for i in range(8))
+    detected = {
+        f"F{j}": {**dict.fromkeys(peers, reference), "S": observed}
+        for j, (observed, reference) in enumerate(points)
+    }
+    return build_batch_rt_calibration(
+        detected,
+        sample_stems=("S", *peers),
+        prior_injections={},
+        policy=RtCalibrationPolicy(),
+    ).samples["S"]
+
+
+def test_local_fold_merges_only_its_positions_and_keeps_the_curve():
+    sample = _single_injection(_FOLDING_INJECTION)
+    assert sample.status == "calibrated"
+    observed = [x for x, _ in sample.knots]
+    assert len(observed) == len(_FOLDING_INJECTION) - 1
+    assert [x for x in observed if 13.2 < x < 13.4] == [pytest.approx(13.29)]
+    references = [y for _, y in sample.knots]
+    assert references == sorted(set(references))
+    # The +40 s stretch and the late offsets keep their own correction.
+    assert sample.estimate_rt(11.83).method == "loess"
+    assert sample.calibrated_rt(11.83) - 11.83 > 0.6
+    assert sample.calibrated_rt(24.59) - 24.59 > 0.9
+
+
+def test_broadly_reversed_fit_stays_unavailable():
+    reversed_order = tuple(
+        (40.0 - reference, reference) for reference in np.linspace(10, 30, 10)
+    )
+    sample = _single_injection(reversed_order)
+    assert sample.status == "non_monotonic_anchors"
+    assert sample.estimate_rt(25.0).method == "median_shift"
+
+
 def test_weak_estimate_snapshot_round_trip_rejects_old_maps(tmp_path):
     from xic_extractor.diagnostics.grouping_experiment_io import (
         read_rt_calibration,

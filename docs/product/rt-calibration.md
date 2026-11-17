@@ -63,7 +63,12 @@ least eight positions; they expand when rejected points would otherwise fill
 the final neighborhood. Distance weights remain unequal: eight positions are
 not a guarantee of precision or dense coverage. A deficient strong fit is
 unavailable, not replaced by a two-point line or interpolated pseudo-anchors.
-Non-monotone strong fits also remain unavailable. With only ISTDs, contradictory
+A fit whose reference order folds between adjacent positions merges only those
+positions into one knot at their mean observed and fitted RT
+(pool-adjacent-violators); ordered stretches keep their fitted values. A fold
+broad enough to leave fewer than eight knots keeps the strong fit unavailable.
+In 85RAW two Tumor injections folded at one pair 0.04 min apart, where the
+offset drops from about +40 s to about 0 s. With only ISTDs, contradictory
 landmark order cannot establish strong calibration from the same
 measurements. Ordinary corroboration can support a fit despite a conflicting
 standard; fitted standard residuals remain visible and do not reselect that

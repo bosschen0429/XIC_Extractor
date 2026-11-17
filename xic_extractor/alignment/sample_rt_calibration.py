@@ -534,10 +534,12 @@ def _fit_sample_knots(
     supported_x = x[robust > 0]
     if len(supported_x) < _MIN_LOESS_POSITIONS:
         return ()
-    knots = tuple(
-        (float(a), float(b))
-        for a, b in zip(x, x + fitted, strict=True)
-        if supported_x[0] <= a <= supported_x[-1]
+    knots = _pool_order_violations(
+        tuple(
+            (float(a), float(b))
+            for a, b in zip(x, x + fitted, strict=True)
+            if supported_x[0] <= a <= supported_x[-1]
+        )
     )
     # Identity cannot rescue an unsupported/non-monotone trend or extend its
     # span. Its local influence uses the same residual scale as robust fitting,
@@ -546,6 +548,30 @@ def _fit_sample_knots(
         return knots
     limit = _ROBUST_RESIDUAL_CUTOFF * float(np.median(abs((y - fitted)[robust > 0])))
     return _bound_standard_landmarks(knots, standard_points, limit)
+
+
+def _pool_order_violations(
+    knots: tuple[tuple[float, float], ...],
+) -> tuple[tuple[float, float], ...]:
+    """Merge only the adjacent fitted positions whose reference order folds.
+
+    Pool-adjacent-violators: each folded run becomes one knot at its mean
+    observed and fitted reference RT; ordered stretches stay exactly as fitted.
+    A map that folds broadly would fall below the LOESS support floor; it stays
+    the unavailable folded fit rather than a pooled map with too few positions.
+    """
+    blocks: list[list[float]] = []  # [observed sum, reference sum, count]
+    for observed, reference in knots:
+        blocks.append([observed, reference, 1])
+        while (
+            len(blocks) > 1
+            and blocks[-2][1] / blocks[-2][2] >= blocks[-1][1] / blocks[-1][2]
+        ):
+            last = blocks.pop()
+            blocks[-1] = [a + b for a, b in zip(blocks[-1], last, strict=True)]
+    if len(blocks) == len(knots) or len(blocks) < _MIN_LOESS_POSITIONS:
+        return knots
+    return tuple((x_sum / n, y_sum / n) for x_sum, y_sum, n in blocks)
 
 
 def _bound_standard_landmarks(
