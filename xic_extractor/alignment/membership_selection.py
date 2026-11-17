@@ -597,25 +597,30 @@ class MembershipComparison:
     def _candidate_coefficients(
         self, key: tuple[str, ...]
     ) -> tuple[DriftCoefficients, ...]:
-        if self.drift is None or len(key) < MIN_COEFFICIENT_MEMBERS:
+        if self.drift is None:
             return ()
         span_sec = (max(self.rts[p] for p in key) - min(self.rts[p] for p in key)) * 60
         # RT and region terms change by at most 0.95 per preferred interval of
         # span; below one coefficient's cost no fit can pay for itself.
         if span_sec * 0.95 / self.config.preferred_rt_sec < self._coefficient_cost:
             return ()
-        batch_state = self._batch_state(key)
-        shift = self.drift.sample_shift_min
-        fitted = candidate_coefficients(
-            tuple(
-                (
-                    self.rts[p],
-                    batch_state.get(self.owners[p].sample_stem),
-                    shift.get(self.owners[p].sample_stem),
+        # The member floor limits estimating new coefficients. A settled model
+        # stays available to smaller proposals, so removing one owner from a
+        # minimum-size drifting group is not priced in the unadjusted frame.
+        fitted: tuple[DriftCoefficients, ...] = ()
+        if len(key) >= MIN_COEFFICIENT_MEMBERS:
+            batch_state = self._batch_state(key)
+            shift = self.drift.sample_shift_min
+            fitted = candidate_coefficients(
+                tuple(
+                    (
+                        self.rts[p],
+                        batch_state.get(self.owners[p].sample_stem),
+                        shift.get(self.owners[p].sample_stem),
+                    )
+                    for p in key
                 )
-                for p in key
             )
-        )
         settled = sorted(
             {
                 coefficients
