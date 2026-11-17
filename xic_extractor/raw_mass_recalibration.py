@@ -134,16 +134,28 @@ def restore_ms1_spectrum(
     return rt, masses[valid][order] / scale, intensities[valid][order]
 
 
-def restored_xic(
-    spectra: Sequence[tuple[float, np.ndarray, np.ndarray]], request: XICRequest
-) -> XICTrace:
-    """Sum restored centroids in the requested inclusive mass window."""
-    tolerance = mz_tolerance_da(request.mz, request.ppm_tol)
-    rts: list[float] = []
-    values: list[float] = []
-    for rt, masses, intensities in spectra:
-        low = np.searchsorted(masses, request.mz - tolerance, side="left")
-        high = np.searchsorted(masses, request.mz + tolerance, side="right")
-        rts.append(rt)
-        values.append(float(intensities[low:high].sum()))
-    return XICTrace.from_arrays(rts, values) if rts else XICTrace.empty()
+def restored_xics(
+    spectra: Sequence[tuple[float, np.ndarray, np.ndarray]],
+    requests: Sequence[XICRequest],
+) -> tuple[XICTrace, ...]:
+    """Sum restored centroids in each request's inclusive mass window.
+
+    All windows are searched together, one pass over the shared spectra. Each
+    nonempty window keeps its own slice sum, whose float order is the output.
+    """
+    if not spectra:
+        return tuple(XICTrace.empty() for _ in requests)
+    lows = np.empty(len(requests), dtype=float)
+    highs = np.empty(len(requests), dtype=float)
+    for index, request in enumerate(requests):
+        tolerance = mz_tolerance_da(request.mz, request.ppm_tol)
+        lows[index] = request.mz - tolerance
+        highs[index] = request.mz + tolerance
+    values = np.zeros((len(requests), len(spectra)), dtype=float)
+    for column, (_rt, masses, intensities) in enumerate(spectra):
+        low = np.searchsorted(masses, lows, side="left")
+        high = np.searchsorted(masses, highs, side="right")
+        for row in np.flatnonzero(high > low):
+            values[row, column] = intensities[low[row] : high[row]].sum()
+    rt = np.array([spectrum[0] for spectrum in spectra], dtype=float)
+    return tuple(XICTrace.from_arrays(rt.copy(), row.copy()) for row in values)

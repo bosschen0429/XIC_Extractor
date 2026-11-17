@@ -6,8 +6,13 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from xic_extractor.configuration.mass_recalibration import MassRecalibration
+from xic_extractor.configuration.mass_recalibration import (
+    MassRecalibration,
+    MassRecalibrationResult,
+)
+from xic_extractor.mass_accuracy import mz_tolerance_da
 from xic_extractor.precursor_evidence import supports_direct_nl
+from xic_extractor.raw_mass_recalibration import restored_xics
 from xic_extractor.raw_reader import RawFileHandle
 from xic_extractor.xic_models import XICRequest
 
@@ -559,3 +564,154 @@ def test_missing_scan_lm_is_not_inferred_from_baseline():
     )
     with pytest.raises(RawReaderError, match="finite 'LM Correction"):
         handle.read_ms1_mass_windows(((3, 499, 501),))
+
+
+_TOL_100 = mz_tolerance_da(100.0, 10.0)
+_GRID_SPECTRA = {
+    # Both window edges are inclusive; the next float outside each is not.
+    1: (
+        [
+            np.nextafter(100.0 - _TOL_100, 0.0),
+            100.0 - _TOL_100,
+            100.0,
+            100.0 + _TOL_100,
+            np.nextafter(100.0 + _TOL_100, np.inf),
+            200.0,
+        ],
+        [1000.0, 1.0, 2.0, 4.0, 2000.0, 8.0],
+    ),
+    2: ([], []),
+    # Scan 3 is MS2 and contributes no XIC point.
+    4: ([100.0, 100.0005, 150.0], [16.0, 0.0, 32.0]),
+    5: ([150.0], [64.0]),
+}
+
+
+class _GridVendor:
+    """Unit-scale restoration: every scan records the baseline LM."""
+
+    def __init__(self, gain: float = 1.0):
+        self.gain = gain
+        self.centroid_reads = 0
+
+    def ScanNumberFromRetentionTime(self, rt):
+        return int(rt)
+
+    def RetentionTimeFromScanNumber(self, scan):
+        return float(scan)
+
+    def GetFilterForScanNumber(self, scan):
+        return SimpleNamespace(MSOrder="Ms2" if scan == 3 else "Ms1")
+
+    def GetCentroidStream(self, scan, _refresh):
+        self.centroid_reads += 1
+        masses, intensities = _GRID_SPECTRA[scan]
+        return SimpleNamespace(
+            Masses=masses, Intensities=[value * self.gain for value in intensities]
+        )
+
+    def GetChromatogramData(self, *_args):
+        raise AssertionError("recalibrated XICs must not use the vendor XIC")
+
+    def GetTrailerExtraHeaderInformation(self):
+        return [SimpleNamespace(Label="LM Correction (ppm):")]
+
+    def GetTrailerExtraInformation(self, scan):
+        return SimpleNamespace(Values=["1.0"])
+
+
+def _grid_handle(vendor: _GridVendor | None = None) -> RawFileHandle:
+    handle = _handle(vendor or _GridVendor())
+    handle.use_mass_recalibration_result(
+        MassRecalibrationResult(
+            "applied", policy=MassRecalibration.EASY_IC_RESTORE, baseline_lm=1.0
+        )
+    )
+    return handle
+
+
+def _pairs(trace):
+    return list(zip(trace.rt.tolist(), trace.intensity.tolist(), strict=True))
+
+
+def test_batched_recalibrated_xics_match_hand_sums_in_request_order():
+    peak = XICRequest(mz=100.0, rt_min=1.0, rt_max=5.0, ppm_tol=10.0)
+    other_mass = XICRequest(mz=150.0, rt_min=1.0, rt_max=5.0, ppm_tol=10.0)
+    inner = XICRequest(mz=100.0, rt_min=4.0, rt_max=5.0, ppm_tol=10.0)
+    no_ms1 = XICRequest(mz=100.0, rt_min=3.0, rt_max=3.0, ppm_tol=10.0)
+    expected = {
+        peak: [(1.0, 7.0), (2.0, 0.0), (4.0, 16.0), (5.0, 0.0)],
+        other_mass: [(1.0, 0.0), (2.0, 0.0), (4.0, 32.0), (5.0, 64.0)],
+        inner: [(4.0, 16.0), (5.0, 0.0)],
+        no_ms1: [],
+    }
+    requests = (inner, peak, no_ms1, other_mass, peak)
+    for order in (requests, requests[::-1]):
+        vendor = _GridVendor()
+        traces = _grid_handle(vendor).extract_xic_many(order)
+        assert [_pairs(trace) for trace in traces] == [expected[r] for r in order]
+        # Each MS1/MS2 scan in the batch is read from the vendor once.
+        assert vendor.centroid_reads == 4
+    duplicates = [t for r, t in zip(order, traces, strict=True) if r == peak]
+    assert duplicates[0].intensity is not duplicates[1].intensity
+
+
+def test_recalibrated_xics_stay_with_their_own_sample():
+    request = XICRequest(mz=150.0, rt_min=4.0, rt_max=5.0, ppm_tol=10.0)
+    low, high = (
+        _grid_handle(_GridVendor(gain)).extract_xic_many((request,))[0]
+        for gain in (1.0, 3.0)
+    )
+    assert _pairs(low) == [(4.0, 32.0), (5.0, 64.0)]
+    assert _pairs(high) == [(4.0, 96.0), (5.0, 192.0)]
+
+
+def test_restored_xics_equal_one_window_at_a_time_sums_bit_for_bit():
+    rng = np.random.default_rng(1173)
+    spectra = []
+    for scan in range(40):
+        # Clustered masses put up to dozens of centroids in one window, so
+        # numpy's pairwise slice summation order is exercised.
+        masses = np.sort(
+            np.concatenate((rng.uniform(99.99, 100.01, 30), rng.uniform(100, 400, 200)))
+        )
+        spectra.append((10.0 + scan / 60, masses, rng.lognormal(10, 2, masses.size)))
+    requests = tuple(
+        XICRequest(mz=float(mz), rt_min=0.0, rt_max=1.0, ppm_tol=float(ppm))
+        for mz, ppm in zip(
+            np.concatenate(([100.0, 100.0], rng.uniform(99.995, 400, 60))),
+            np.concatenate(([50.0, 50.0], rng.choice([5.0, 10.0, 30.0], 60))),
+            strict=True,
+        )
+    )
+
+    traces = restored_xics(spectra, requests)
+
+    widest = 0
+    for request, trace in zip(requests, traces, strict=True):
+        tolerance = mz_tolerance_da(request.mz, request.ppm_tol)
+        expected = []
+        for _rt, masses, intensities in spectra:
+            low = np.searchsorted(masses, request.mz - tolerance, side="left")
+            high = np.searchsorted(masses, request.mz + tolerance, side="right")
+            widest = max(widest, int(high - low))
+            expected.append(float(intensities[low:high].sum()))
+        assert trace.rt.tobytes() == np.array([s[0] for s in spectra]).tobytes()
+        assert trace.intensity.tobytes() == np.array(expected).tobytes()
+    assert widest >= 9
+
+
+def test_superwindow_crops_shared_recalibrated_reads_back_to_each_request():
+    from xic_extractor.raw_superwindow_source import RawSuperWindowSource
+
+    peak = XICRequest(mz=100.0, rt_min=4.0, rt_max=5.0, ppm_tol=10.0)
+    context = XICRequest(mz=100.0, rt_min=1.0, rt_max=5.0, ppm_tol=10.0)
+    neighbour = XICRequest(mz=150.0, rt_min=2.0, rt_max=4.0, ppm_tol=10.0)
+    requests = (peak, neighbour, context)
+
+    batched = RawSuperWindowSource(_grid_handle()).extract_xic_many(requests)
+
+    for request, trace in zip(requests, batched, strict=True):
+        alone = _grid_handle().extract_xic_many((request,))[0]
+        assert trace.rt.tobytes() == alone.rt.tobytes()
+        assert trace.intensity.tobytes() == alone.intensity.tobytes()

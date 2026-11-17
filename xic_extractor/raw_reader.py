@@ -42,7 +42,7 @@ from xic_extractor.raw_mass_recalibration import (
     resolve_mass_restoration,
     restore_ms1_spectrum,
     restore_ms2_precursor,
-    restored_xic,
+    restored_xics,
 )
 from xic_extractor.raw_reader_errors import RawReaderError, RawReaderOpenError
 from xic_extractor.raw_source_binding import (
@@ -305,7 +305,7 @@ class RawFileHandle:
         if not requests:
             return ()
         if self.mass_recalibration_result.outcome == "applied":
-            return tuple(self._recalibrated_xic(request) for request in requests)
+            return self._recalibrated_xics(requests)
         grouped: dict[tuple[int, int], list[tuple[int, Any]]] = defaultdict(list)
         for index, request in enumerate(requests):
             start_scan, end_scan = self.scan_window_for_request(request)
@@ -623,15 +623,38 @@ class RawFileHandle:
         self._recalibrated_ms1[scan_number] = spectrum
         return spectrum
 
-    def _recalibrated_xic(self, request: XICRequest) -> XICTrace:
-        """Read native MS1 facts before integrating in restored coordinates."""
-        start_scan, end_scan = self.scan_window_for_request(request)
-        spectra = []
-        for scan_number in range(start_scan, end_scan + 1):
-            spectrum = self._recalibrated_ms1_spectrum(scan_number)
-            if spectrum is not None:
-                spectra.append(spectrum)
-        return restored_xic(spectra, request)
+    def _recalibrated_xics(
+        self, requests: Sequence[XICRequest]
+    ) -> tuple[XICTrace, ...]:
+        """Visit each scan window once for all its distinct mass windows."""
+        scan_windows: dict[tuple[float, float], tuple[int, int]] = {}
+        # Scan window -> (m/z, ppm) -> request positions sharing that trace.
+        channels: dict[tuple[int, int], dict[tuple[float, float], list[int]]] = {}
+        for index, request in enumerate(requests):
+            rt_window = (request.rt_min, request.rt_max)
+            if rt_window not in scan_windows:
+                scan_windows[rt_window] = self.scan_window_for_request(request)
+            channels.setdefault(scan_windows[rt_window], {}).setdefault(
+                (request.mz, request.ppm_tol), []
+            ).append(index)
+        traces: list[XICTrace] = [XICTrace.empty()] * len(requests)
+        for (start_scan, end_scan), positions_by_mass in channels.items():
+            spectra = []
+            for scan_number in range(start_scan, end_scan + 1):
+                spectrum = self._recalibrated_ms1_spectrum(scan_number)
+                if spectrum is not None:
+                    spectra.append(spectrum)
+            positions = tuple(positions_by_mass.values())
+            restored = restored_xics(
+                spectra, tuple(requests[same[0]] for same in positions)
+            )
+            for trace, same in zip(restored, positions, strict=True):
+                traces[same[0]] = trace
+                for duplicate in same[1:]:
+                    traces[duplicate] = XICTrace.from_arrays(
+                        trace.rt.copy(), trace.intensity.copy()
+                    )
+        return tuple(traces)
 
     def _recalibrate_ms2_precursor(
         self, scan_number: int, precursor_mz: float, metadata: Ms2PrecursorMetadata
