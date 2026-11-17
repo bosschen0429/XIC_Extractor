@@ -429,9 +429,21 @@ or M, population gaps, settled reassignment, fixed-original Backfill with
 competition) produced identical complete results. The 8RAW replay kept five
 byte-identical TSVs and its grouping time stayed within noise (4.89 versus 4.79 s).
 
+Against `4082cce7` (#1175), a borrowed batch state is computed once per exact
+RT within a frozen model's lookup, and a drift model is rejected before full
+scoring when the zero model's costliest pair already exceeds the bound in that
+model. On the historical 85-sample 312.069 / 299.154 worksets, borrowed
+computations fell from 16,220 / 12,049 to 227 / 208 and full pair scorings from
+48,220 / 44,975 to 15,859 / 38,566; interleaved medians went from 19.95 to
+14.61 s and 13.27 to 11.55 s, and the full 8RAW snapshot replay went from 3.13
+to 2.91 s. Every scored group model, every replayed group, six drift scenarios
+and a current-format 8RAW Alignment's scientific content were identical.
+Theil-Sen fitting remains the floor; a fixed-term lower bound that would skip
+fits was diagnosed but not attempted.
+
 Reopen when drift fitting, pair scoring or the comparison population changes.
 Artifacts: `output/codex-rt1165-grouping-optimization/` in the #1165 worktree;
-`output/1172/` in the #1172 worktree.
+`output/1172/` in the #1172 worktree; `output/1175/` in the #1175 worktree.
 
 ### Grouping-only output avoids round-trip work
 
