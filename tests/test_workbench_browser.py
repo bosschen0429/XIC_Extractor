@@ -82,6 +82,7 @@ def _unsaved(page, kind: str) -> bool:
 def test_help_opens_task_guide_without_changing_the_analysis(
     workbench, tmp_path, theme
 ):
+    from xic_extractor.configuration.paths import dna_dr_nucleosides_path
     from xic_extractor.configuration.target_list_files import load_target_list
     from xic_extractor.configuration.targets import read_istd_targets
 
@@ -91,14 +92,18 @@ def test_help_opens_task_guide_without_changing_the_analysis(
     original_raw = page.locator("#t-data_dir").input_value()
     page.get_by_role("button", name="使用說明與快捷鍵").click()
     expect(page.get_by_role("heading", name="使用說明與快捷鍵")).to_be_visible()
-    # Both analyses read the one example list, offered only here.
-    expect(page.locator('a[href^="/examples/"]')).to_have_count(1)
     with page.expect_download() as download:
         page.get_by_role("link", name="下載目標清單範例 XLSX").click()
     example = tmp_path / "example.xlsx"
     download.value.save_as(example)
     assert load_target_list(example).targets
     assert read_istd_targets(example).targets
+    with page.expect_download() as windows:
+        page.get_by_role("link", name="下載核苷清單範例 TSV（DNA dR）").click()
+    downloaded = tmp_path / windows.value.suggested_filename
+    windows.value.save_as(downloaded)
+    assert downloaded.name == dna_dr_nucleosides_path().name
+    assert downloaded.read_bytes() == dna_dr_nucleosides_path().read_bytes()
     with page.expect_popup() as opened:
         page.get_by_role("link", name="開啟使用說明").click()
     guide = opened.value
@@ -4790,6 +4795,47 @@ def _open_curation_folder(page, tmp_path, fake_runs):
     threshold.fill("0.6")
     expect(page.locator("#curation-export")).to_be_enabled()
     return output
+
+
+def test_picking_a_nucleoside_list_preserves_draft_and_exports_only_when_enabled(
+    workbench, fake_runs, tmp_path, monkeypatch
+):
+    from xic_extractor.tabular_io import read_tsv_with_header
+
+    page = workbench
+    source = _open_curation_folder(page, tmp_path, fake_runs)
+    toggle = page.locator("#curation-step-known_nucleosides")
+    expect(toggle).to_be_disabled()
+    listing = tmp_path / "chosen.tsv"
+    listing.write_text("label\tmz\texpected_rt_min\nX\t103\t2.5\n", encoding="utf-8")
+
+    def choose(kind, current):
+        assert kind == "nucleosides"
+        return str(listing)
+
+    monkeypatch.setattr("xic_workbench.server.choose_path", choose)
+    page.locator("#curation-input-tools > summary").click()
+    page.locator('[data-browse="curation-nucleosides"]').click()
+    expect(toggle).to_be_enabled()
+    expect(toggle).not_to_be_checked()
+    preview = page.locator("#curation-preview")
+    expect(preview).to_contain_text("保留 2 列")
+    toggle.check()
+    expect(preview).to_contain_text("保留 1 列")
+    page.locator("#curation-export").click()
+    expect(page.locator("#curation-result")).to_contain_text(
+        "1保留 feature", timeout=BACKGROUND_JOB_TIMEOUT_MS
+    )
+    (folder,) = source.glob("matrix_curation_*")
+    _, decisions = read_tsv_with_header(folder / "feature_decisions.tsv")
+    assert [
+        (r["known_nucleosides_label"], r["decision_reason"]) for r in decisions
+    ] == [
+        ("", "kept_by_all_steps"),
+        ("", "dropped_by:finite_fraction"),
+        ("X", "dropped_by:known_nucleosides"),
+        ("", "dropped_by:finite_fraction"),
+    ]
 
 
 def test_reselecting_same_curation_metadata_refreshes_preview(

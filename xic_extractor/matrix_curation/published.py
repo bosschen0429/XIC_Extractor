@@ -87,6 +87,8 @@ def _removal_reason(row: dict[str, str], parameters: dict[str, dict]) -> str:
         # Rows it derives from, other than the representative.
         via = row["same_compound_via_feature_ids"].replace(";", "、")
         return f"{line}（來自 {via}）" if via else line
+    if step == "known_nucleosides":
+        return f"命中核苷清單視窗：{row['known_nucleosides_label']}"
     if step == "finite_fraction":
         threshold = parameters["finite_fraction"]["min_finite_fraction"]
         return (

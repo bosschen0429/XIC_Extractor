@@ -2,24 +2,20 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from xic_extractor.matrix_curation.export import (
+    CurationEvaluation,
     default_output_dir,
     describe_steps,
-    export_matrix_curation,
     prepare_matrix_curation,
     read_run_istd,
     read_sample_metadata_file,
 )
-from xic_extractor.matrix_curation.istd import IstdWindow, read_istd_file
-from xic_extractor.matrix_curation.published import (
-    CURATED_MATRIX_NAME,
-    DECISIONS_NAME,
-)
-from xic_extractor.matrix_curation.same_compound import RELATIONS_NAME, REVIEW_NAME
+from xic_extractor.matrix_curation.istd import read_istd_file
+from xic_extractor.matrix_curation.mass_rt_windows import MzRtWindow
+from xic_extractor.matrix_curation.published import CURATED_MATRIX_NAME
 from xic_extractor.matrix_curation.source import (
     RUN_METADATA_NAME,
     CurationSource,
@@ -67,7 +63,7 @@ def resolve_samples(
 
 def resolve_istd(
     source: CurationSource, *, istd_path: str = ""
-) -> tuple[tuple[IstdWindow, ...] | None, dict[str, str] | None]:
+) -> tuple[tuple[MzRtWindow, ...] | None, dict[str, str] | None]:
     """Pick the internal standard list: a chosen file, else the run's own list."""
     if istd_path.strip():
         path = Path(istd_path.strip())
@@ -76,6 +72,11 @@ def resolve_istd(
     if windows:
         return windows, {"kind": "run", "label": "本次分析宣告的內標清單"}
     return None, None
+
+
+def _nucleoside_list(values: dict[str, Any]) -> Path | None:
+    path = str(values.get("nucleoside_path") or "").strip()
+    return Path(path) if path else None
 
 
 def describe_source(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
@@ -101,61 +102,44 @@ def describe_source(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
         ),
         "istd_source": istd_source,
         "istd_count": len(istd or ()),
-        "steps": describe_steps(source, metadata, missing_samples=MISSING_SAMPLES),
+        "steps": describe_steps(
+            source,
+            metadata,
+            missing_samples=MISSING_SAMPLES,
+            nucleoside_list=_nucleoside_list(values),
+        ),
         "output_dir": str(default_output_dir(source)),
     }
 
 
 def run_curation(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
     source = locate_curation_source(Path(str(values.get("source_dir") or "")))
-    metadata, sample_source = resolve_samples(
-        config_dir,
-        source,
-        sample_metadata_path=str(values.get("sample_metadata_path") or ""),
-        samples=values.get("samples"),
-    )
-    steps = values.get("steps")
-    if not isinstance(steps, dict):
-        raise ValueError("請至少啟用一個整理步驟。")
     output_text = str(values.get("output_dir") or "").strip()
     output_dir = Path(output_text) if output_text else default_output_dir(source)
-    istd, istd_source = resolve_istd(
-        source, istd_path=str(values.get("istd_path") or "")
-    )
-    summary = export_matrix_curation(
-        source=source,
-        sample_metadata=metadata,
-        sample_source=_summary_label(sample_source),
-        steps=steps,
-        output_dir=output_dir,
-        istd_windows=istd,
-        istd_source=_istd_label(source, istd_source),
-    )
-    counts = json.loads(summary.read_text(encoding="utf-8"))
+    evaluation = _evaluate(config_dir, source, values)
+    summary = evaluation.write_to(output_dir)
     return {
         "output_dir": str(output_dir),
         "source_dir": str(source.source_dir),
         "summary_path": str(summary),
         "matrix_tsv": str(output_dir / CURATED_MATRIX_NAME),
-        "feature_count": counts["feature_count"],
-        "kept_feature_count": counts["kept_feature_count"],
+        "feature_count": evaluation.summary["feature_count"],
+        "kept_feature_count": evaluation.summary["kept_feature_count"],
         "published_paths": [
-            str(path)
-            for path in (
-                output_dir / CURATED_MATRIX_NAME,
-                output_dir / DECISIONS_NAME,
-                output_dir / RELATIONS_NAME,
-                output_dir / REVIEW_NAME,
-                output_dir / "sample_metadata.tsv",
-                summary,
-            )
-            if path.is_file()
+            *(str(output_dir / name) for name in evaluation.tables),
+            str(summary),
         ],
     }
 
 
 def preview_curation(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
     source = locate_curation_source(Path(str(values.get("source_dir") or "")))
+    return _evaluate(config_dir, source, values).preview
+
+
+def _evaluate(
+    config_dir: Path, source: CurationSource, values: dict[str, Any]
+) -> CurationEvaluation:
     metadata, sample_source = resolve_samples(
         config_dir,
         source,
@@ -173,9 +157,10 @@ def preview_curation(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]
         sample_metadata=metadata,
         sample_source=_summary_label(sample_source),
         steps=steps,
+        nucleoside_list=_nucleoside_list(values),
         istd_windows=istd,
         istd_source=_istd_label(source, istd_source),
-    ).preview
+    )
 
 
 def _summary_label(sample_source: dict[str, str] | None) -> str:

@@ -10,7 +10,6 @@ declared; they are always kept.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -18,12 +17,13 @@ from pathlib import Path
 from xic_extractor.matrix_curation.export import (
     STEPS,
     default_output_dir,
-    export_matrix_curation,
+    prepare_matrix_curation,
     read_run_istd,
     read_run_samples,
     read_sample_metadata_file,
 )
-from xic_extractor.matrix_curation.istd import IstdWindow, read_istd_file
+from xic_extractor.matrix_curation.istd import read_istd_file
+from xic_extractor.matrix_curation.mass_rt_windows import MzRtWindow
 from xic_extractor.matrix_curation.source import (
     RUN_METADATA_NAME,
     locate_curation_source,
@@ -53,6 +53,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             "trusted RawFileReader DLL folder; enables RAW-header sample roles "
             "for an older result without saved sample metadata"
         ),
+    )
+    parser.add_argument(
+        "--nucleoside-list",
+        type=Path,
+        help="Override the run method's nucleoside windows with a curation TSV",
     )
     parser.add_argument(
         "--istd-list",
@@ -108,7 +113,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 sample_source = str(saved)
             else:
                 sample_source = f"RAW headers: {source.raw_dir}"
-        istd: tuple[IstdWindow, ...] | None
+        istd: tuple[MzRtWindow, ...] | None
         if args.istd_list is not None:
             istd, istd_source = read_istd_file(args.istd_list), str(args.istd_list)
         else:
@@ -117,17 +122,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"run metadata: {source.source_dir / RUN_METADATA_NAME}" if istd else ""
             )
         output_dir = args.output_dir or default_output_dir(source)
-        summary = json.loads(
-            export_matrix_curation(
-                source=source,
-                sample_metadata=metadata,
-                sample_source=sample_source,
-                steps=steps,
-                output_dir=output_dir,
-                istd_windows=istd,
-                istd_source=istd_source,
-            ).read_text(encoding="utf-8")
+        evaluation = prepare_matrix_curation(
+            source=source,
+            sample_metadata=metadata,
+            sample_source=sample_source,
+            steps=steps,
+            nucleoside_list=args.nucleoside_list,
+            istd_windows=istd,
+            istd_source=istd_source,
         )
+        evaluation.write_to(output_dir)
+        summary = evaluation.summary
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2

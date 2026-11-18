@@ -470,13 +470,17 @@ def test_example_downloads_are_fixed_public_resources_not_local_files(tmp_path):
     with workbench_client(
         review_workspace(config_dir=config), read_user_guide=read_user_guide
     ) as request:
-        for name in ("targets.xlsx",):
+        for name, mime in (
+            (
+                "targets.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+            ("dna_dr_nucleosides.tsv", "text/tab-separated-values; charset=utf-8"),
+        ):
             status, payload, headers = request(f"/examples/{name}")
             assert status == 200
             assert headers["Content-Disposition"] == f'attachment; filename="{name}"'
-            assert headers["Content-Type"] == (
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            assert headers["Content-Type"] == mime
             assert payload == (targets_template_path().parent / name).read_bytes()
         for path in ("workspace.json", "../config/workspace.json", "targets.csv"):
             assert request(f"/examples/{path}")[0] == 404

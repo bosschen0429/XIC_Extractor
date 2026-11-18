@@ -35,6 +35,198 @@ def _files(folder: Path) -> list[Path]:
     return sorted(path for path in folder.iterdir())
 
 
+def _curate_nucleosides(source, output, listing=None):
+    from scripts.run_matrix_curation import main
+
+    args = [
+        "--source-dir",
+        str(source),
+        "--output-dir",
+        str(output),
+        "--known-nucleosides",
+    ]
+    if listing is not None:
+        args.extend(["--nucleoside-list", str(listing)])
+    return main(args)
+
+
+def _write_features(tmp_path, observations):
+    from tests.matrix_review_fixtures import current_matrix_review_row
+    from xic_extractor.output.alignment.matrix_output_contract import (
+        MATRIX_REVIEW_COLUMNS,
+        public_matrix_mz_text,
+    )
+
+    matrix, review = [], []
+    for i, (mz, rt) in enumerate(observations, 1):
+        matrix.append(
+            {"Mz": public_matrix_mz_text(str(mz)), "RT": str(rt), "S": str(i)}
+        )
+        review.append(
+            current_matrix_review_row(
+                index=i, mz=str(mz), rt=str(rt), feature_id=f"F{i:06d}"
+            )
+        )
+    write_tsv(tmp_path / "alignment_matrix.tsv", matrix, ("Mz", "RT", "S"))
+    write_tsv(tmp_path / "alignment_review.tsv", review, MATRIX_REVIEW_COLUMNS)
+    return matrix
+
+
+def test_cli_excludes_only_matching_nucleosides_without_sample_data(tmp_path):
+    source = alignment_output(tmp_path / "alignment")
+    listing = tmp_path / "windows.tsv"
+    listing.write_text(
+        "label\tmz\texpected_rt_min\nB\t101\t1.75\nA\t101\t3.25\nB\t101\t2.5\n"
+        "late\t102\t3.26\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "result"
+    result = _run(
+        source,
+        None,
+        output,
+        "--nucleoside-list",
+        str(listing),
+        "--known-nucleosides",
+        threshold=None,
+    )
+    assert result.returncode == 0, result.stderr
+    _, decisions = read_tsv_with_header(output / "feature_decisions.tsv")
+    assert [r["known_nucleosides_label"] for r in decisions] == ["A;B", "", "", ""]
+    assert [r["decision"] for r in decisions] == ["drop", "keep", "keep", "keep"]
+    assert decisions[0]["decision_reason"] == "dropped_by:known_nucleosides"
+    assert not decisions[0]["istd_label"]
+
+
+@pytest.mark.parametrize(
+    ("row", "problem"),
+    [
+        ("missing", "windows.tsv"),
+        ("", "沒有資料列"),
+        (" \t101\t1\t3\t", "label"),
+        ("x\t0\t1\t3\t", "mz"),
+        ("x\tNaN\t1\t3\t", "mz"),
+        ("x\t101\tinf\t3\t", "rt_min"),
+        ("x\t101\t1\t\t2", "rt_max"),
+        ("x\t101\t\t3\t2", "rt_min"),
+        ("x\t101\t3\t3\t2", "rt_max"),
+        ("x\t101\t\t\t", "expected_rt_min"),
+        ("x\t101\t\t\tbogus", "expected_rt_min"),
+    ],
+)
+def test_enabled_nucleoside_step_rejects_bad_list_before_export(
+    tmp_path, row, problem, capsys
+):
+
+    source = alignment_output(tmp_path / "alignment")
+    output = tmp_path / "result"
+    listing = tmp_path / "windows.tsv"
+    if row != "missing":
+        listing.write_text(
+            "label\tmz\trt_min\trt_max\texpected_rt_min\n" + row, encoding="utf-8"
+        )
+    assert _curate_nucleosides(source, output, listing) == 2
+    assert problem in capsys.readouterr().err
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("method", "bound"),
+    [
+        ({"DNA_dR": 116.0474}, True),
+        ({"RNA_ribose": 132.0423}, True),
+        ({"RNA_MeR": 146.0579}, True),
+        ({"DNA_dR": 116.0474, "RNA_ribose": 132.0423}, True),
+        ({"DNA_dR": 116.0474}, False),
+        (None, False),
+    ],
+)
+def test_nucleoside_windows_follow_published_method_unless_replaced(
+    tmp_path, method, bound
+):
+    from tests.alignment_explanation_fixtures import explanation_summary
+    from xic_extractor.alignment_explanation.writer import ExplanationReportWriter
+    from xic_extractor.tabular_io import file_sha256
+    from xic_workbench.matrix_curation import describe_source
+
+    _write_features(tmp_path, [(268.1040, 14.5), (268.1040, 18.5)])
+    if method is not None:
+        with ExplanationReportWriter(
+            tmp_path / "alignment_explanation.sqlite", review_only=True
+        ) as writer:
+            writer.finalize(
+                explanation_summary(
+                    {
+                        "neutral_loss_by_tag": method,
+                        "samples": [{"sample_key": "S"}],
+                        "matrix_sha256": file_sha256(
+                            tmp_path / "alignment_matrix.tsv", uppercase=False
+                        )
+                        if bound
+                        else "0" * 64,
+                    },
+                    review_only=True,
+                )
+            )
+    available = bound and method == {"DNA_dR": 116.0474}
+    info = describe_source(tmp_path, {"source_dir": str(tmp_path)})
+    step = next(s for s in info["steps"] if s["key"] == "known_nucleosides")
+    assert (not step["unavailable_reason"]) == available
+    if available:
+        assert "DNA dR" in step["list_label"]
+    custom = tmp_path / "late.tsv"
+    custom.write_text(
+        "label\tmz\texpected_rt_min\nlate\t268.1040\t18.5\n", encoding="utf-8"
+    )
+    for name, listing, labels in [
+        ("builtin", None, ["dG", ""]),
+        ("override", custom, ["", "late"]),
+    ]:
+        output = tmp_path / name
+        status = _curate_nucleosides(tmp_path, output, listing)
+        if name == "builtin" and not available:
+            assert status == 2 and not output.exists()
+            continue
+        assert status == 0
+        _, decisions = read_tsv_with_header(output / "feature_decisions.tsv")
+        assert [r["known_nucleosides_label"] for r in decisions] == labels
+        assert [r["decision"] for r in decisions] == [
+            "drop" if label else "keep" for label in labels
+        ]
+
+
+@pytest.mark.parametrize("reorder", [False, True])
+def test_membership_uses_bound_full_precision_mass_and_rt_not_id_or_order(
+    tmp_path, reorder
+):
+    # ±0.015625 is exactly ±10 ppm of 1562.5. All four near-boundary masses
+    # round to just two distinct values in the public Matrix.
+    observations = [
+        (1562.484375, 4),
+        (1562.515625, 6),
+        (1562.484374, 5),
+        (1562.515626, 5),
+        (1562.5, 6.01),
+        (1562.5, 12),
+    ]
+    if reorder:
+        observations.reverse()
+    matrix = _write_features(tmp_path, observations)
+    listing = tmp_path / "windows.tsv"
+    listing.write_text(
+        "label\tmz\trt_min\trt_max\texpected_rt_min\nx\t1562.5\t4\t6\t12\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "result"
+    assert _curate_nucleosides(tmp_path, output, listing) == 0
+    _, selected = read_tsv_with_header(output / "analysis_matrix.tsv")
+    assert selected == [
+        r
+        for r, observation in zip(matrix, observations, strict=True)
+        if observation not in {(1562.484375, 4), (1562.515625, 6)}
+    ]
+
+
 def test_cli_keeps_original_rows_and_records_each_decision(tmp_path):
     source, samples = _inputs(tmp_path)
     inputs = [*_files(source), samples]
@@ -331,23 +523,22 @@ def test_workbench_job_matches_cli_and_writes_inside_the_source(tmp_path):
 @pytest.mark.parametrize("protected", [False, True])
 def test_preview_matches_export_without_writing_or_changing_inputs(tmp_path, protected):
     from xic_extractor.matrix_curation.export import (
-        export_matrix_curation,
         prepare_matrix_curation,
         read_sample_metadata_file,
     )
-    from xic_extractor.matrix_curation.istd import IstdWindow
+    from xic_extractor.matrix_curation.mass_rt_windows import MzRtWindow
     from xic_extractor.matrix_curation.source import locate_curation_source
 
     folder, samples = _inputs(tmp_path)
     before = {str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
-    arguments = dict(
+    evaluation = prepare_matrix_curation(
         source=locate_curation_source(folder),
         sample_metadata=read_sample_metadata_file(samples),
         sample_source=str(samples),
         steps={"finite_fraction": {"min_finite_fraction": 2 / 3}},
-        istd_windows=(IstdWindow("blank-only", 104, 2, 3),) if protected else (),
+        istd_windows=(MzRtWindow("blank-only", 104, 2, 3),) if protected else (),
     )
-    preview = prepare_matrix_curation(**arguments).preview
+    preview = evaluation.preview
     assert {
         str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()
     } == before
@@ -358,7 +549,7 @@ def test_preview_matches_export_without_writing_or_changing_inputs(tmp_path, pro
     assert step["protected"] == int(protected)
     assert step["undetermined"] == 0
     output = tmp_path / "export"
-    export_matrix_curation(**arguments, output_dir=output)
+    evaluation.write_to(output)
     _, rows = read_tsv_with_header(output / "analysis_matrix.tsv")
     assert len(rows) == preview["kept"]
     assert [row["Mz"] for row in rows] == (

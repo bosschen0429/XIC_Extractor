@@ -16,11 +16,13 @@ import numpy as np
 
 from xic_extractor.alignment_explanation.storage import EXPLANATION_ARTIFACT_NAME
 from xic_extractor.matrix_curation.finite_fraction import FINITE_FRACTION_STEP
-from xic_extractor.matrix_curation.istd import (
-    IstdWindow,
-    match_istd,
-    windows_from_target_snapshot,
+from xic_extractor.matrix_curation.istd import windows_from_target_snapshot
+from xic_extractor.matrix_curation.known_nucleosides import (
+    KNOWN_NUCLEOSIDES_STEP,
+    method_nucleosides,
+    read_nucleoside_list,
 )
+from xic_extractor.matrix_curation.mass_rt_windows import MzRtWindow, match_labels
 from xic_extractor.matrix_curation.published import (
     CURATED_MATRIX_NAME,
     DECISIONS_NAME,
@@ -43,6 +45,7 @@ from xic_extractor.matrix_curation.steps import (
     CurationMatrix,
     CurationStep,
     FeatureIdentity,
+    NucleosideList,
     SampleBinding,
     StepResult,
     StepTable,
@@ -57,13 +60,18 @@ from xic_extractor.sample_metadata import (
 )
 from xic_extractor.tabular_io import (
     escape_excel_formula,
+    file_sha256,
     read_tsv_with_header_snapshot,
     validate_delimited_header,
     write_tsv,
 )
 
 # A later step joins by adding itself here; the page and outputs follow.
-STEPS: tuple[CurationStep, ...] = (SAME_COMPOUND_STEP, FINITE_FRACTION_STEP)
+STEPS: tuple[CurationStep, ...] = (
+    SAME_COMPOUND_STEP,
+    KNOWN_NUCLEOSIDES_STEP,
+    FINITE_FRACTION_STEP,
+)
 DECISION_KEY_COLUMNS = (
     "source_matrix_row_index",
     "feature_id",
@@ -73,26 +81,51 @@ DECISION_KEY_COLUMNS = (
 )
 
 
-def cell_evidence_problem(source: CurationSource) -> str:
-    """Why per-cell detection evidence cannot be read, or an empty string."""
+def _run_evidence(source: CurationSource) -> tuple[dict[str, Any], str]:
+    """Published method metadata, or why the explanation is unavailable."""
     from xic_extractor.alignment_explanation.errors import ExplanationError
     from xic_extractor.alignment_explanation.reader import (
         read_explanation_metadata,
     )
 
     if source.explanation_path is None:
-        return (
+        return {}, (
             f"資料夾中沒有 {EXPLANATION_ARTIFACT_NAME}，無法取得每格的直接偵測證據；"
             "請重新執行 Alignment 產生新輸出。"
         )
     try:
-        read_explanation_metadata(source.explanation_path)
+        return read_explanation_metadata(source.explanation_path), ""
     except ExplanationError as exc:
-        return f"無法讀取 {EXPLANATION_ARTIFACT_NAME}：{exc}"
-    return ""
+        return {}, f"無法讀取 {EXPLANATION_ARTIFACT_NAME}：{exc}"
 
 
-def read_run_istd(source: CurationSource) -> tuple[IstdWindow, ...] | None:
+def _curation_inputs(
+    source: CurationSource,
+    binding: SampleBinding,
+    steps: Sequence[CurationStep],
+    selected_list: Path | None,
+    *,
+    matrix_digest: str | None = None,
+) -> CurationInputs:
+    reference = (
+        NucleosideList(selected_list, f"自訂清單：{selected_list.name}")
+        if selected_list
+        else None
+    )
+    lookup = KNOWN_NUCLEOSIDES_STEP in steps and reference is None
+    if not lookup and not any(step.needs_cell_evidence for step in steps):
+        return CurationInputs(binding, nucleoside_list=reference)
+    metadata, problem = _run_evidence(source)
+    # Bind the method to this Matrix, not the open Workbench preset or a
+    # similarly named RAW folder. Mixed/unknown channels have no default.
+    if lookup and (builtin := method_nucleosides(metadata.get("neutral_loss_by_tag"))):
+        digest = matrix_digest or file_sha256(source.matrix_path)
+        if digest.lower() == metadata.get("matrix_sha256"):
+            reference = builtin
+    return CurationInputs(binding, problem, reference)
+
+
+def read_run_istd(source: CurationSource) -> tuple[MzRtWindow, ...] | None:
     """The internal standards the run declared, or None when it cannot be read."""
     if source.target_snapshot is None:
         return None
@@ -110,9 +143,6 @@ def load_cell_evidence(
         read_published_cells,
     )
 
-    problem = cell_evidence_problem(source)
-    if problem:
-        raise ValueError(problem)
     by_feature: dict[str, dict[str, CellEvidence]] = {
         feature.feature_id: {} for feature in features
     }
@@ -201,6 +231,7 @@ def describe_steps(
     metadata: Sequence[SampleMetadata] | None,
     *,
     missing_samples: str,
+    nucleoside_list: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Each step with its parameters and, when it cannot run, the reason."""
     with source.matrix_path.open(encoding="utf-8-sig", newline="") as stream:
@@ -209,9 +240,11 @@ def describe_steps(
             path=source.matrix_path,
             required_columns=("Mz", "RT"),
         )
-    inputs = CurationInputs(
+    inputs = _curation_inputs(
+        source,
         bind_samples(header[2:], metadata, missing=missing_samples),
-        cell_evidence_problem(source),
+        STEPS,
+        nucleoside_list,
     )
     return [
         {
@@ -220,6 +253,11 @@ def describe_steps(
             "description": step.description,
             "parameters": [asdict(parameter) for parameter in step.parameters],
             "unavailable_reason": step.unavailable_reason(inputs),
+            **(
+                {"list_label": inputs.nucleoside_list.label}
+                if step is KNOWN_NUCLEOSIDES_STEP and inputs.nucleoside_list
+                else {}
+            ),
         }
         for step in STEPS
     ]
@@ -251,11 +289,24 @@ def _step_parameters(
 
 @dataclass(frozen=True)
 class CurationEvaluation:
-    """The same owner decisions feed a read-only preview and the existing writer."""
+    """One set of decisions for preview and publication."""
 
     tables: Mapping[str, StepTable]
     summary: dict[str, Any]
     preview: dict[str, Any]
+
+    def write_to(self, output_dir: Path) -> Path:
+        """Publish these exact tables into a new directory, summary last."""
+        output_dir.mkdir(parents=True, exist_ok=False)
+        for name, table in self.tables.items():
+            write_tsv(output_dir / name, table.rows, table.columns)
+        # Written last: a folder without the summary is an incomplete export.
+        summary_path = output_dir / SUMMARY_NAME
+        summary_path.write_text(
+            json.dumps(self.summary, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return summary_path
 
 
 def prepare_matrix_curation(
@@ -264,8 +315,9 @@ def prepare_matrix_curation(
     sample_metadata: Sequence[SampleMetadata] | None,
     sample_source: str,
     steps: Mapping[str, Mapping[str, object]],
-    istd_windows: Sequence[IstdWindow] | None = None,
+    istd_windows: Sequence[MzRtWindow] | None = None,
     istd_source: str = "",
+    nucleoside_list: Path | None = None,
 ) -> CurationEvaluation:
     """Evaluate once without writing; preview and export consume these decisions.
 
@@ -281,9 +333,7 @@ def prepare_matrix_curation(
         raise ValueError("請至少啟用一個整理步驟。")
     parameters = {step.key: _step_parameters(step, steps[step.key]) for step in enabled}
 
-    # The snapshot reader also rejects rows whose cell count disagrees with
-    # the header; its digest is not needed here.
-    header, rows, _ = read_tsv_with_header_snapshot(
+    header, rows, matrix_digest = read_tsv_with_header_snapshot(
         source.matrix_path, required_columns=("Mz", "RT"), encoding="utf-8-sig"
     )
     review_header, review_rows, _ = read_tsv_with_header_snapshot(
@@ -307,8 +357,8 @@ def prepare_matrix_curation(
         header[2:], sample_metadata, missing="找不到樣本資料；請選擇樣本資料 TSV。"
     )
     needs_cells = any(step.needs_cell_evidence for step in enabled)
-    inputs = CurationInputs(
-        binding, cell_evidence_problem(source) if needs_cells else ""
+    inputs = _curation_inputs(
+        source, binding, enabled, nucleoside_list, matrix_digest=matrix_digest
     )
     for step in enabled:
         reason = step.unavailable_reason(inputs)
@@ -326,15 +376,21 @@ def prepare_matrix_curation(
                     f"matrix row {index + 1}, sample {column!r}: "
                     f"invalid numeric value {token!r}"
                 ) from exc
+    enabled_list = (
+        inputs.nucleoside_list.path
+        if KNOWN_NUCLEOSIDES_STEP in enabled and inputs.nucleoside_list
+        else None
+    )
     matrix = CurationMatrix(
         sample_binding=binding,
         values=values,
         features=features,
+        nucleoside_windows=read_nucleoside_list(enabled_list) if enabled_list else (),
         cells=load_cell_evidence(source, features) if needs_cells else None,
     )
     windows = tuple(istd_windows or ())
     istd_labels = [
-        match_istd(feature.matrix_mz, feature.matrix_rt, windows)
+        match_labels(feature.matrix_mz, feature.matrix_rt, windows)
         for feature in features
     ]
     final_keep = [True] * len(features)
@@ -473,6 +529,9 @@ def prepare_matrix_curation(
                 else ""
             ),
             "sample_metadata": sample_source,
+            **(
+                {"nucleoside_list": str(enabled_list.resolve())} if enabled_list else {}
+            ),
         },
         "feature_count": len(rows),
         "kept_feature_count": len(kept_rows),
@@ -515,39 +574,3 @@ def prepare_matrix_curation(
             "steps": preview_steps,
         },
     )
-
-
-def export_matrix_curation(
-    *,
-    source: CurationSource,
-    sample_metadata: Sequence[SampleMetadata] | None,
-    sample_source: str,
-    steps: Mapping[str, Mapping[str, object]],
-    output_dir: Path,
-    istd_windows: Sequence[IstdWindow] | None = None,
-    istd_source: str = "",
-) -> Path:
-    """Write the curated Matrix and per-feature decisions into a new folder.
-
-    Each enabled step judges the original Matrix on its own. A feature is kept
-    when it is an internal standard or every enabled step keeps it. Sources are
-    never modified.
-    """
-    evaluation = prepare_matrix_curation(
-        source=source,
-        sample_metadata=sample_metadata,
-        sample_source=sample_source,
-        steps=steps,
-        istd_windows=istd_windows,
-        istd_source=istd_source,
-    )
-    output_dir.mkdir(parents=True, exist_ok=False)
-    for name, table in evaluation.tables.items():
-        write_tsv(output_dir / name, table.rows, table.columns)
-    # Written last: a folder without the summary is an incomplete export.
-    summary_path = output_dir / SUMMARY_NAME
-    summary_path.write_text(
-        json.dumps(evaluation.summary, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    return summary_path

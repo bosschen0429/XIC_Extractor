@@ -76,6 +76,8 @@ def _validate_path(value: str, kind: Any) -> dict[str, Any]:
     folder = kind in {"folder", "output"}
     noun = "資料夾" if folder else "檔案"
     if not value.strip():
+        if kind == "nucleosides":
+            return {"usable": True, "message": ""}
         return {"usable": False, "message": "尚未選擇路徑"}
     path = Path(value).expanduser()
     if kind == "output" and not path.exists():

@@ -88,7 +88,7 @@ assert.throws(() => {
     .min_finite_fraction = '1';
 }, TypeError);
 const expected = {
-  source_dir: '/run', sample_metadata_path: '', istd_path: '',
+  source_dir: '/run', sample_metadata_path: '', istd_path: '', nucleoside_path: '',
   samples: [
     {raw_stem: 'S1', sample_role: 'sample', excluded: false},
     {raw_stem: 'QC', sample_role: 'qc', excluded: false},
@@ -112,7 +112,8 @@ def test_a_new_source_immediately_retires_detection_preview_and_run_samples():
 const fixture = setup();
 await ready(fixture);
 fixture.session.setSources({
-  source_dir: '/another', sample_metadata_path: '/samples.tsv', istd_path: '',
+  source_dir: '/another', sample_metadata_path: '/samples.tsv',
+  istd_path: '', nucleoside_path: '',
 });
 assert.equal(fixture.session.snapshot.detection, null);
 assert.equal(fixture.session.snapshot.preview, null);
@@ -197,7 +198,7 @@ fixture.session.load('/run', samples);
 await fixture.clock.run();
 assert.equal(fixture.session.snapshot.sourceError, 'source unavailable');
 fixture.session.setSources({source_dir: '/run', sample_metadata_path: '',
-  istd_path: ''});
+  istd_path: '', nucleoside_path: ''});
 await fixture.clock.run(2);
 assert.equal(attempts, 2);
 assert.equal(fixture.session.snapshot.sourceError, '');
