@@ -80,7 +80,9 @@ def test_local_correspondences_do_not_require_near_all_batch_prevalence() -> Non
 
     calibration = _calibrate(detected)
 
-    assert any("rare" in k.feature_ids for k in calibration.knots)
+    assert any(
+        (k.reference_rt_min, k.sample_count) == (20.0, 5) for k in calibration.knots
+    )
     assert calibration.samples["S01"].calibrated_rt(20) == pytest.approx(20, abs=0.01)
 
 
@@ -273,7 +275,7 @@ def test_ordinary_anchor_needs_half_of_its_cohort_not_just_three_members() -> No
     detected = _batch()
     detected["sparse"] = dict.fromkeys(SAMPLES[:3], 20.0)
     calibration = _calibrate(detected)
-    assert not any("sparse" in knot.feature_ids for knot in calibration.knots)
+    assert not any(knot.reference_rt_min == 20.0 for knot in calibration.knots)
     assert "sparse" in detected  # Anchor rejection does not delete a feature.
 
 
@@ -300,7 +302,7 @@ def test_unshared_standard_cannot_extend_calibration_support() -> None:
         policy=RtCalibrationPolicy(),
         measured_istds=(("unshared", "S01", 50.0),),
     )
-    assert not any("unshared" in knot.feature_ids for knot in calibration.knots)
+    assert not any(knot.istd_label == "unshared" for knot in calibration.knots)
     assert calibration.samples["S01"].calibrated_rt(40.0) is None
 
 

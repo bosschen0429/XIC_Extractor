@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.result.application_result import (
         FinalizedUntargetBatchApplicationResult,
     )
+    from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
     from xic_extractor.evidence_artifacts import EvidenceLocator
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
@@ -27,6 +28,7 @@ from xic_extractor.output.alignment.output_levels import (
     AlignmentOutputLevel,
     artifact_names_for_output_level,
 )
+from xic_extractor.output.alignment.rt_anchor_table import write_rt_anchor_table
 from xic_extractor.output.alignment.tsv_writer import (
     UntargetChildOutputs,
     write_alignment_tsvs,
@@ -41,6 +43,7 @@ class AlignmentRunOutputs:
     cells_tsv: Path | None = None
     status_matrix_tsv: Path | None = None
     run_metadata_json: Path | None = None
+    rt_anchors_tsv: Path | None = None
     owner_backfill_evaluation_coverage: BackfillEvaluationCoverageBatch | None = None
     # No live workflow result is published. The run closes its partition
     # store before returning, so a result handed back here would load its
@@ -93,6 +96,11 @@ def output_paths(
             if emit_target_snapshot_metadata or "alignment_review.tsv" in artifacts
             else None
         ),
+        rt_anchors_tsv=(
+            output_dir / "alignment_rt_anchors.tsv"
+            if "alignment_rt_anchors.tsv" in artifacts
+            else None
+        ),
     )
 
 
@@ -143,6 +151,7 @@ def write_completed_untargeted_outputs_atomic(
     completed: FinalizedUntargetBatchApplicationResult,
     *,
     metadata: dict[str, str],
+    rt_calibration: BatchRtCalibration | None,
     timing_recorder: TimingRecorder,
     consume_child: Callable[[UntargetChildOutputs, int], None] | None = None,
     before_write: Callable[[], None] | None = None,
@@ -154,6 +163,8 @@ def write_completed_untargeted_outputs_atomic(
     paths = list(row_paths.values())
     if outputs.run_metadata_json is not None:
         paths.append(outputs.run_metadata_json)
+    if outputs.rt_anchors_tsv is not None:
+        paths.append(outputs.rt_anchors_tsv)
     row_count = 0
 
     def render_all(temp_paths: Mapping[Path, Path]) -> None:
@@ -165,6 +176,8 @@ def write_completed_untargeted_outputs_atomic(
         )
         if outputs.run_metadata_json is not None:
             _write_metadata_json(temp_paths[outputs.run_metadata_json], metadata)
+        if outputs.rt_anchors_tsv is not None:
+            write_rt_anchor_table(temp_paths[outputs.rt_anchors_tsv], rt_calibration)
 
     with timing_recorder.stage("alignment.write_outputs"):
         _write_artifacts_atomic(

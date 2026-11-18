@@ -32,6 +32,7 @@ def publish_owner_run(tmp_path, monkeypatch, level):
         outputs,
         completed.application_result,
         metadata={},
+        rt_calibration=None,
         timing_recorder=TimingRecorder.disabled("writer"),
     )
     write_alignment_explanation(

@@ -14,10 +14,18 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from statistics import median
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+
+if TYPE_CHECKING:
+    from xic_extractor.alignment.rt_anchors import RtAnchorObservation
+
+# (precursor m/z, neutral loss Da) of a method channel; the loss is None for a
+# composition channel.
+AnchorChannel = tuple[float, float | None]
 
 # Operational support floors, not a universal mathematical LOESS minimum.
 # Count acquired RT positions, not ion aliases, interpolation knots or samples.
@@ -59,12 +67,19 @@ class PriorInjection:
 
 @dataclass(frozen=True)
 class CalibrationKnot:
-    """One measured correspondence's same-cohort reference position."""
+    """One measured correspondence's same-cohort reference position.
+
+    ``istd_label`` names a measured ISTD; None for an ordinary correspondence.
+    ``channels`` are the method channels its observations were measured in,
+    empty when the caller supplied none.
+    """
 
     knot_id: str
     reference_rt_min: float
-    feature_ids: tuple[str, ...]
     sample_count: int
+    cohort: str
+    istd_label: str | None
+    channels: tuple[AnchorChannel, ...]
 
 
 @dataclass(frozen=True)
@@ -264,8 +279,12 @@ def build_batch_rt_calibration(
     policy: RtCalibrationPolicy,
     sample_cohorts: Mapping[str, str] | None = None,
     measured_istds: Sequence[tuple[str, str, float]] = (),
+    channels_by_feature: Mapping[str, Mapping[str, AnchorChannel]] | None = None,
 ) -> BatchRtCalibration:
     """Fit one map from same-cohort measured correspondences and ISTDs.
+
+    ``channels_by_feature`` gives each correspondence's per-sample method
+    channel, recorded on its knots; it does not affect the fit.
 
     Ordinary correspondences need at least half their cohort and two peers.
     Measured identity anchors need a peer, not ordinary-feature prevalence.
@@ -274,7 +293,11 @@ def build_batch_rt_calibration(
     """
     samples = tuple(sorted(set(sample_stems)))
     knots, observations_by_knot, standards, ordinary_samples = _anchor_coordinates(
-        detected_rt_by_feature, samples, sample_cohorts, measured_istds
+        detected_rt_by_feature,
+        samples,
+        sample_cohorts,
+        measured_istds,
+        channels_by_feature or {},
     )
     sample_knots: dict[str, tuple[tuple[float, float], ...]] = {}
     anchor_counts: dict[str, int] = {}
@@ -388,6 +411,7 @@ def _anchor_coordinates(
     samples: tuple[str, ...],
     sample_cohorts: Mapping[str, str] | None,
     measured_istds: Sequence[tuple[str, str, float]],
+    channels_by_feature: Mapping[str, Mapping[str, AnchorChannel]],
 ) -> tuple[
     tuple[CalibrationKnot, ...],
     dict[str, dict[str, float]],
@@ -407,8 +431,11 @@ def _anchor_coordinates(
     known: dict[str, dict[str, float]] = defaultdict(dict)
     for label, sample, observed_rt in measured_istds:
         known[label][sample] = observed_rt
-    anchors: list[tuple[float, str, dict[str, float], bool]] = []
-    seen: set[tuple[tuple[str, float], ...]] = set()
+    anchors: list[
+        tuple[float, str, dict[str, float], bool, str, set[AnchorChannel]]
+    ] = []
+    # An exact duplicate pattern contributes once; its channels stay listed.
+    channels_by_signature: dict[tuple[tuple[str, float], ...], set[AnchorChannel]] = {}
     for is_standard, features in ((False, detected_rt_by_feature), (True, known)):
         for feature_id, rt_by_sample in sorted(features.items()):
             by_cohort: dict[str, dict[str, float]] = defaultdict(dict)
@@ -426,16 +453,26 @@ def _anchor_coordinates(
                 )
                 if len(observed) < required:
                     continue
+                feature_channels = channels_by_feature.get(feature_id, {})
+                channels = {
+                    feature_channels[sample]
+                    for sample in observed
+                    if sample in feature_channels
+                }
                 signature = tuple(sorted(observed.items()))
-                if not is_standard and signature in seen:
-                    continue
-                seen.add(signature)
+                if not is_standard:
+                    if signature in channels_by_signature:
+                        channels_by_signature[signature].update(channels)
+                        continue
+                    channels_by_signature[signature] = channels
                 anchors.append(
                     (
                         float(median(observed.values())),
                         feature_id,
                         observed,
                         is_standard,
+                        cohort,
+                        channels,
                     )
                 )
     anchors.sort(key=lambda item: (item[0], item[1], tuple(sorted(item[2]))))
@@ -443,14 +480,23 @@ def _anchor_coordinates(
     observations_by_knot: dict[str, dict[str, float]] = {}
     standards: dict[str, list[tuple[str, float, float]]] = defaultdict(list)
     ordinary_samples: set[str] = set()
-    for index, (reference, feature, observed, is_standard) in enumerate(anchors):
+    for index, (
+        reference,
+        feature,
+        observed,
+        is_standard,
+        cohort,
+        channels,
+    ) in enumerate(anchors):
         knot_id = f"K{index + 1:03d}"
         knots.append(
             CalibrationKnot(
                 knot_id=knot_id,
                 reference_rt_min=reference,
-                feature_ids=(feature,),
                 sample_count=len(observed),
+                cohort=cohort,
+                istd_label=feature if is_standard else None,
+                channels=tuple(sorted(channels)),
             )
         )
         observations_by_knot[knot_id] = observed
@@ -616,24 +662,27 @@ class BatchRtCalibrationAccumulator:
         self._samples = tuple(sample_stems)
         self._cohorts = sample_cohorts
         self._observations: dict[str, dict[str, float]] = {}
+        self._channels: dict[str, dict[str, AnchorChannel]] = {}
 
-    def add_groups(self, groups: Sequence[Sequence[SampleLocalMS1Owner]]) -> None:
-        for group in groups:
-            # These are upstream-owned observation facts, not a second peak
-            # assessment. A retained MS1-only or ambiguous member may still be
-            # grouped, but cannot establish other samples' RT coordinates.
-            anchors = tuple(
-                owner
-                for owner in group
-                if owner.primary_identity_event is not None
-                and owner.quantification_eligible
-            )
-            if not anchors:
-                continue
-            key = min(owner.owner_id for owner in anchors)
+    def add_observations(self, observations: Sequence[RtAnchorObservation]) -> None:
+        """Each agreed bootstrap group is one correspondence, keyed by its
+        smallest owner ID; observations outside such a group do not calibrate.
+        """
+        by_group: dict[str, list[RtAnchorObservation]] = defaultdict(list)
+        for observation in observations:
+            if observation.bootstrap_group_id is not None:
+                by_group[observation.bootstrap_group_id].append(observation)
+        for anchors in by_group.values():
+            key = min(anchor.owner_id for anchor in anchors)
             self._observations[key] = {
-                owner.sample_stem: owner.peak.integration.rt_apex_min
-                for owner in anchors
+                anchor.sample_stem: anchor.rt_min for anchor in anchors
+            }
+            self._channels[key] = {
+                anchor.sample_stem: (
+                    anchor.method_subject.precursor_mz,
+                    anchor.method_subject.neutral_loss_da,
+                )
+                for anchor in anchors
             }
 
     def freeze(
@@ -644,6 +693,7 @@ class BatchRtCalibrationAccumulator:
             sample_stems=self._samples,
             sample_cohorts=self._cohorts,
             measured_istds=measured_istds,
+            channels_by_feature=self._channels,
             prior_injections={},
             policy=RtCalibrationPolicy(),
         )

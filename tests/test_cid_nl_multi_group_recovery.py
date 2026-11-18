@@ -1450,6 +1450,7 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
             ),
             writer,
             metadata={},
+            rt_calibration=None,
             timing_recorder=TimingRecorder.disabled("writer"),
         )
         required = (

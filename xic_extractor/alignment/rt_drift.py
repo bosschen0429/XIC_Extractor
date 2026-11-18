@@ -17,10 +17,14 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from statistics import median
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
+
+if TYPE_CHECKING:
+    from xic_extractor.alignment.rt_anchors import RtAnchorObservation
 
 # A channel whose general-calibrated RT keeps this much robust spread drifts
 # beyond the shared map.
@@ -39,16 +43,6 @@ _FAMILY_SEARCH_MIN = 5.0
 _SHAPE_BANDWIDTH_MIN = 1.0
 # Pattern correspondence considers the displacement of anchors this close.
 _TRACK_RT_WINDOW_MIN = 2.0 * _SHAPE_BANDWIDTH_MIN
-
-
-@dataclass(frozen=True, slots=True)
-class RtAnchorObservation:
-    """One sample's only direct-supported, quantifiable peak in a channel."""
-
-    channel: str
-    sample_stem: str
-    owner_id: str
-    rt_min: float
 
 
 @dataclass(frozen=True, slots=True)

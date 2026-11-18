@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from dataclasses import replace
 from itertools import combinations
 from statistics import median
 from types import SimpleNamespace
@@ -12,7 +11,6 @@ import pytest
 
 from tests.membership_fixtures import cid_nl_owner
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
-from xic_extractor.alignment.cid_nl_initial_grouping import rt_anchor_observations
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.feature_membership_inference import (
     infer_feature_memberships,
@@ -22,11 +20,11 @@ from xic_extractor.alignment.membership_selection import (
     _GroupInputs,
 )
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
+from xic_extractor.alignment.rt_anchors import RtAnchorObservation
 from xic_extractor.alignment.rt_drift import (
     BatchRtModelAccumulator,
     DriftAnchor,
     DriftCoefficients,
-    RtAnchorObservation,
     RtDriftModel,
     _drift_model,
     candidate_coefficients,
@@ -283,16 +281,24 @@ def test_several_supported_peaks_leave_that_channel_sample_unknown():
     accumulator = BatchRtModelAccumulator(
         sample_cohorts=dict.fromkeys(SAMPLES, ""), injection_order=ORDERS
     )
+
     # Two drifting channels in different elution families follow SHIFT.
+    def subject(channel):
+        return SimpleNamespace(method_subject_id=channel)
+
     accumulator.add_observations(
         RtAnchorObservation(
-            f"c{channel}", sample, f"{sample}:{channel}", 10.0 * (channel + 1) + shift
+            subject(f"c{channel}"),
+            sample,
+            f"{sample}:{channel}",
+            10.0 * (channel + 1) + shift,
+            None,
         )
         for channel in range(2)
         for sample, shift in SHIFT.items()
     )
     accumulator.add_observations(
-        (RtAnchorObservation("c0", "s00", "s00:second", 10.5),)
+        (RtAnchorObservation(subject("c0"), "s00", "s00:second", 10.5, None),)
     )
     identity = BatchRtCalibration.from_coordinate_knots(
         tuple((sample, ((0.0, 0.0), (60.0, 60.0))) for sample in SAMPLES)
@@ -303,29 +309,6 @@ def test_several_supported_peaks_leave_that_channel_sample_unknown():
     }
     assert "s00:0" not in owners["c0"] and "s01:0" in owners["c0"]
     assert "s00:1" in owners["c1"]
-
-
-def test_anchor_observations_need_direct_quantifiable_support():
-    owners = [cid_nl_owner(s, "x", apex_rt=10.0) for s in ("a", "b", "c")]
-    owners[1] = replace(owners[1], quantification_eligible=False)
-    scope = SimpleNamespace(groups=(SimpleNamespace(owners=tuple(owners)),))
-    direct = SimpleNamespace(
-        method_subject=SimpleNamespace(method_subject_id="precursor|500")
-    )
-    candidates = (
-        SimpleNamespace(
-            peak_hypothesis_id=owners[0].owner_id, direct_support_assessment=direct
-        ),
-        SimpleNamespace(
-            peak_hypothesis_id=owners[1].owner_id, direct_support_assessment=direct
-        ),
-        SimpleNamespace(
-            peak_hypothesis_id=owners[2].owner_id, direct_support_assessment=None
-        ),
-    )
-    observations = rt_anchor_observations(scope, candidates)
-    assert [o.owner_id for o in observations] == [owners[0].owner_id]
-    assert observations[0].channel == "precursor|500"
 
 
 def test_anchor_displacement_lets_a_drifted_main_peak_match_its_main_peak():

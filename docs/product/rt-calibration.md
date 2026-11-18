@@ -5,8 +5,10 @@ frame so cross-sample correspondence, Backfill forecasting and review can compar
 observations across runs. It models run-to-run retention drift, not compound
 identification.
 
+[`rt_anchors`](../../xic_extractor/alignment/rt_anchors.py) owns the anchor
+observations both models read,
 [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
-owns anchor preparation and the fit, and [`rt_drift`](../../xic_extractor/alignment/rt_drift.py)
+the knots and the fit, and [`rt_drift`](../../xic_extractor/alignment/rt_drift.py)
 the drift model on top of it; downstream consumers access the frozen map
 through `SampleRtFrame`. Shared terminology remains owned by the
 [Domain Glossary](domain-glossary.md). See [Alignment](alignment.md) for how
@@ -37,20 +39,32 @@ input selection.
 | Peak trajectory | Ordered correspondences and direct/MS1-only positions, used for membership constraints and sample-local localization. |
 | Calibration diagnostic | Uses the same fit owner with detected-cell inputs and an interleaved held-out comparison. Its files do not alter production results. |
 
+[`rt_anchors`](../../xic_extractor/alignment/rt_anchors.py) produces the
+anchor observations once per initial grouping: an owner with direct method
+support, a primary identity event and quantification-eligible integration,
+with its method channel, apex RT and, when its bootstrap group is agreed, that
+group. Bootstrap takes measured support from the retained assessment binding,
+not nominal method-query masses projected into an observation-only owner. The
+same observations feed calibration and the [drift model](#drift-beyond-the-map);
+neither filters them again.
+
 [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
-owns anchor preparation and the fit. A correspondence's reference is its
-same-cohort median observed RT. Ordinary correspondences require direct identity
-support, no identity conflict or provisional status, and quantification-eligible
-observations in at least half the declared cohort (rounded up), with at least
-three measured members. Bootstrap takes measured support from the retained
-assessment binding, not nominal method-query masses projected into an
-observation-only owner. These are anchor qualifications, not feature-retention
-rules: other observations remain available to grouping. Exact duplicate
-sample/RT patterns contribute only once. Measured ISTDs require at least two
-same-cohort measurements, but not ordinary-feature prevalence. Missing ISTDs,
-predicted coordinates and Backfill observations are not imputed as anchors.
-Declared batch IDs define cohorts; empty IDs share an unspecified cohort and
-sample role does not define the cohort.
+turns each agreed bootstrap group into one ordinary correspondence and fits the
+map. A correspondence's reference is its same-cohort median observed RT; it
+needs observations in at least half the declared cohort (rounded up), with at
+least three measured members. These are anchor qualifications, not
+feature-retention rules: other observations remain available to grouping. Exact
+duplicate sample/RT patterns contribute only once, keeping every channel the
+duplicates were measured in. Measured ISTDs require at least two same-cohort
+measurements, but not ordinary-feature prevalence. Missing ISTDs, predicted
+coordinates and Backfill observations are not imputed as anchors. Declared
+batch IDs define cohorts; empty IDs share an unspecified cohort and sample role
+does not define the cohort.
+
+Each knot is one correspondence in one cohort. It records that cohort, the ISTD
+label for a measured ISTD, and the method channels (precursor m/z, neutral
+loss) of its observations; ISTD knots and the diagnostic fits, which have no
+method channel, record none.
 
 ### Robust LOESS fit
 
@@ -123,7 +137,7 @@ review outputs. Weak localization uses an `estimated_` basis and remains a
 forecast, not a physical observation. Neither query changes observed RT, peak
 boundaries, area, identity, or Backfill admission rules.
 
-Calibration schema v3 retains the measured support for these queries. Legacy
+The persisted calibration retains the measured support for these queries. Legacy
 v1/v2 coordinates remain exact and bounded, with quality unrecorded; old knots
 do not create weak estimates. Bootstrap's strong-only APIs and ISTD-only unique
 same-target fallback retain their existing meaning.
@@ -131,7 +145,8 @@ same-target fallback retain their existing meaning.
 ### Persisted RT replay
 
 Explanation summaries retain the final frozen batch `sample_rt_calibration`,
-including fitted knots and distinct qualified observation positions with their
+including its knots with their cohort, ISTD label and channels, fitted sample
+knots and distinct qualified observation positions with their
 `estimate_support`. The bootstrap ISTD reference's measured identity provenance
 and target snapshot are recorded once, in the run metadata
 `known_istd_reference_*` keys, not as a second display calibration. Inspector and
@@ -140,11 +155,24 @@ fit, continuous endpoint `boundary_shift` outside it, and qualified
 `median_shift` for samples without a curve. Only samples with no estimate fall
 back to raw RT, with an explicit label. This changes display coordinates, not
 measured signal, area, grouping or quantification. Injection order is preserved
-separately. Obsolete explanation layouts require rerunning Alignment.
+separately. Obsolete explanation layouts and calibrations whose knot fields
+differ from the current ones require rerunning Alignment.
 
 Optional grouping snapshots (`--stop-after grouping --save-grouping-inputs`) keep the
 frozen drift model, including the owners each drift anchor observed, so replay
 reuses its B shapes and M. Explanation summaries keep only the calibration.
+
+### RT anchor table
+
+Every Alignment run writes `alignment_rt_anchors.tsv`, and
+`--stop-after grouping` writes `rt_anchors.tsv`: one row per frozen knot, with
+`knot_id`, `cohort`, `kind` (`ordinary` or `istd`), `istd_label`,
+`precursor_mz`, `neutral_loss_da`, `reference_rt_min` and `sample_count`. A knot
+measured in several channels lists them in matching order, separated by `;`;
+ISTD knots leave the channel columns empty, as does a composition channel's
+neutral loss. The table is a projection of the persisted knots, not another
+calculation; without a calibration it has only its header. Per-sample anchor
+RTs are not written.
 
 ## Drift beyond the map
 
@@ -165,12 +193,12 @@ more, and differently: after general calibration,
 after the general fit and before final grouping:
 
 - **Channels**: a channel is one CID-NL method subject (precursor m/z and
-  neutral loss). When a sample has exactly one owner in that channel with
-  direct method support, quantifiable integration and a primary identity event,
-  its apex RT is that channel's observation in that sample; several such owners
-  leave the sample unknown. Initial grouping membership is not consulted, so
-  compounds that drift too far to group before calibration still contribute.
-  Channels measure drift only; they do not anchor the general map.
+  neutral loss). When a sample has exactly one
+  [anchor observation](#anchor-qualification) in that channel, its apex RT is
+  that channel's observation in that sample; several leave the sample unknown.
+  Whether the bootstrap group agreed is not consulted, so compounds that drift
+  too far to group before calibration still contribute. Grouping by channel
+  measures drift only; it does not anchor the general map.
 - **Drift anchors** are channels whose general-calibrated RT keeps a robust
   spread of at least 12 seconds and whose residuals correlate (Spearman ≥ 0.75 over at least six common samples) with a channel
   of another elution family. Channels whose apices coincide within 0.05 min
