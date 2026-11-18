@@ -106,8 +106,12 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
     from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 
     for plan in plans:
+        assert set(plan["commands"]) == {"discovery", "alignment"}
         discovery_args = run_discovery._parse_args(plan["commands"]["discovery"][3:])
         alignment_args = run_alignment._parse_args(plan["commands"]["alignment"][3:])
+        assert alignment_args.require_all_raw and not alignment_args.preflight_only
+        assert alignment_args.output_level == "validation-minimal"
+        assert alignment_args.timing_output and alignment_args.timing_live_output
         discovery_settings = run_discovery._discovery_settings(discovery_args)
         _, recipe = run_alignment._resolve_preset(alignment_args)
         assert CidNlDiscoveryMethodSpec(settings=discovery_settings) == (
@@ -127,6 +131,14 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
     assert plans[1]["execution"]["alignment_workers"] == 4
     assert plans[0]["inputs"]["raw_count"] == 8
     assert plans[1]["inputs"]["raw_count"] == 85
+
+
+def test_formal_85raw_plan_requires_worktree_interpreter(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(
+        run_tissue_validation.sys, "executable", str(tmp_path / "external-python")
+    )
+    assert run_tissue_validation.main(["--dataset", "85", "--preflight-only"]) == 2
+    assert "this worktree .venv" in capsys.readouterr().err
 
 
 def test_preflight_rejects_wrong_raw_count_before_creating_output(
@@ -213,7 +225,9 @@ def test_preflight_exposes_overrides_and_rejects_output_reuse(
     assert "output directory already exists" in capsys.readouterr().err
 
 
-def test_execution_persists_plan_and_stops_after_failed_discovery(
+@pytest.mark.parametrize("discovery_code", (0, 9))
+def test_execution_runs_alignment_once_only_after_successful_discovery(
+    discovery_code,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -222,11 +236,11 @@ def test_execution_persists_plan_and_stops_after_failed_discovery(
     monkeypatch.setattr(run_tissue_validation, "preflight_raw_reader", lambda _path: [])
     executed: list[tuple[tuple[str, ...], Path]] = []
 
-    def fail_discovery(command: list[str], log_path: Path) -> int:
+    def run_stage(command: list[str], log_path: Path) -> int:
         executed.append((tuple(command), log_path))
-        return 9
+        return discovery_code if len(executed) == 1 else 0
 
-    monkeypatch.setattr(run_tissue_validation, "_run_command", fail_discovery)
+    monkeypatch.setattr(run_tissue_validation, "_run_command", run_stage)
 
     code = run_tissue_validation.main(
         _preflight_args(
@@ -238,14 +252,17 @@ def test_execution_persists_plan_and_stops_after_failed_discovery(
         )[:-1]
     )
 
-    assert code == 9
-    assert len(executed) == 1
-    assert "scripts.run_discovery" in executed[0][0]
+    assert code == discovery_code
+    assert [command[2] for command, _ in executed] == (
+        ["scripts.run_discovery"]
+        if discovery_code
+        else ["scripts.run_discovery", "scripts.run_alignment"]
+    )
     assert (output_dir / "validation_plan.json").is_file()
     timings = json.loads(
         (output_dir / "stage_timings.json").read_text(encoding="utf-8")
     )
-    assert timings["discovery"]["returncode"] == 9
+    assert timings["discovery"]["returncode"] == discovery_code
 
 
 @pytest.mark.parametrize(

@@ -8,6 +8,7 @@ import os
 import pstats
 import sys
 from collections.abc import Sequence
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from zipfile import BadZipFile
@@ -82,29 +83,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_dir = args.raw_dir.resolve()
     dll_dir = args.dll_dir.resolve()
     output_dir = args.output_dir.resolve()
-    sample_metadata = None
-    if args.sample_metadata is not None:
-        metadata_path = args.sample_metadata.resolve()
-        try:
-            # 上機資訊 annotates; the RAW owner supplies names and order.
-            analysis_set = read_analysis_set(
-                raw_dir, dll_dir, analysis="untargeted", sequence_source=metadata_path
-            )
-            sample_metadata = tuple(entry.metadata for entry in analysis_set.analyzed)
-        except (SampleMetadataError, RawReaderError, ValueError, OSError) as exc:
-            print(str(exc), file=sys.stderr)
-            return 2
-        batches = sorted({row.batch_id for row in sample_metadata})
-        print(
-            f"Sample metadata: {metadata_path} "
-            f"({len(sample_metadata)} samples; {len(batches)} batches: "
-            f"{', '.join(batch or '<unspecified>' for batch in batches)})"
-        )
-    else:
-        print(
-            "Sample metadata: RAW-derived metadata "
-            f"(single-directory batch fallback: {raw_dir.name})"
-        )
     signal_processing_profile = resolve_signal_processing_profile(
         signal_processing_method=args.signal_processing_method,
         signal_processing_window_points=args.signal_processing_window_points,
@@ -128,24 +106,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    if not raw_dir.is_dir():
-        print(f"{raw_dir}: raw directory does not exist", file=sys.stderr)
-        return 2
-    if not dll_dir.is_dir():
-        print(f"{dll_dir}: dll directory does not exist", file=sys.stderr)
-        return 2
+    timing_recorder = (
+        TimingRecorder("alignment", process_memory_sampler=ProcessTreeMemorySampler())
+        if not args.preflight_only and (args.timing_output or args.timing_live_output)
+        else None
+    )
     try:
-        known_istd_reference = _resolve_istd_input(args)
-    except (ValueError, OSError, BadZipFile, KeyError, ConfigError) as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    try:
-        discovery_batch = read_discovery_batch_index(discovery_batch_index)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    try:
-        _validate_unique_sample_stems(discovery_batch_index, discovery_batch)
+        with (
+            timing_recorder.stage("alignment.read_batch_index")
+            if timing_recorder
+            else nullcontext()
+        ):
+            discovery_batch = read_discovery_batch_index(discovery_batch_index)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -162,20 +134,53 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    if not raw_dir.is_dir():
+        print(f"{raw_dir}: raw directory does not exist", file=sys.stderr)
+        return 2
+    if not dll_dir.is_dir():
+        print(f"{dll_dir}: dll directory does not exist", file=sys.stderr)
+        return 2
     try:
-        _validate_expected_full_cohort_contract(args)
-    except ValueError as exc:
+        known_istd_reference = _resolve_istd_input(args)
+    except (ValueError, OSError, BadZipFile, KeyError, ConfigError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     try:
         resolved_raw_paths = _validate_launch_artifacts(
             discovery_batch,
             raw_dir=raw_dir,
-            require_all_raw=(args.preflight_only or args.expected_sample_count == 85),
+            require_all_raw=(
+                args.preflight_only
+                or args.require_all_raw
+                or args.stop_after == "grouping"
+            ),
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+    sample_metadata = None
+    if args.sample_metadata is not None:
+        metadata_path = args.sample_metadata.resolve()
+        try:
+            # 上機資訊 annotates; the RAW owner supplies names and order.
+            analysis_set = read_analysis_set(
+                raw_dir, dll_dir, analysis="untargeted", sequence_source=metadata_path
+            )
+            sample_metadata = tuple(entry.metadata for entry in analysis_set.analyzed)
+        except (SampleMetadataError, RawReaderError, ValueError, OSError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        batches = sorted({row.batch_id for row in sample_metadata})
+        print(
+            f"Sample metadata: {metadata_path} "
+            f"({len(sample_metadata)} samples; {len(batches)} batches: "
+            f"{', '.join(batch or '<unspecified>' for batch in batches)})"
+        )
+    else:
+        print(
+            "Sample metadata: RAW-derived metadata "
+            f"(single-directory batch fallback: {raw_dir.name})"
+        )
     if args.preflight_only:
         _print_preflight_summary(
             args,
@@ -188,24 +193,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
 
-    timing_recorder = (
-        TimingRecorder(
-            "alignment",
-            process_memory_sampler=ProcessTreeMemorySampler(),
-            live_output_path=(
-                args.timing_live_output.resolve()
-                if args.timing_live_output is not None
-                else None
-            ),
-        )
-        if args.timing_output is not None or args.timing_live_output is not None
-        else None
-    )
     if timing_recorder is not None:
+        timing_recorder.live_output_path = (
+            args.timing_live_output.resolve()
+            if args.timing_live_output is not None
+            else None
+        )
         timing_recorder.start_process_memory()
     try:
         request = UntargetedRequest(
-            discovery_batch_index=discovery_batch_index,
+            discovery_batch_index=discovery_batch,
             raw_dir=raw_dir,
             dll_dir=dll_dir,
             output_dir=output_dir,
@@ -471,9 +468,14 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--expected-sample-count",
         type=_positive_int,
         help=(
-            "Expected discovery_batch_index sample count. Use 8 or 85 for scoped "
-            "validation gates to fail fast when the wrong batch index is passed."
+            "Expected discovery_batch_index sample count. This only checks the "
+            "size of the input batch; it does not select a validation tier."
         ),
+    )
+    parser.add_argument(
+        "--require-all-raw",
+        action="store_true",
+        help="Check that all indexed RAWs exist before acquisition.",
     )
     parser.add_argument(
         "--preflight-only",
@@ -617,6 +619,9 @@ def _validate_launch_artifacts(
             f"{sample_stem}: {peak_csv}{suffix}"
         )
 
+    if not require_all_raw:
+        return {}
+
     resolved_raw_paths = existing_raw_paths(
         sample_order=discovery_batch.sample_order,
         raw_files=discovery_batch.raw_files,
@@ -627,7 +632,7 @@ def _validate_launch_artifacts(
         for sample_stem in discovery_batch.sample_order
         if sample_stem not in resolved_raw_paths
     )
-    if require_all_raw and missing_raw_samples:
+    if missing_raw_samples:
         sample_text = ", ".join(missing_raw_samples[:5])
         suffix = _truncated_count_suffix(len(missing_raw_samples))
         raise ValueError(
@@ -635,52 +640,6 @@ def _validate_launch_artifacts(
             f"{sample_text}{suffix}"
         )
     return resolved_raw_paths
-
-
-def _validate_unique_sample_stems(
-    path: Path,
-    discovery_batch: DiscoveryBatchInput,
-) -> None:
-    seen: set[str] = set()
-    duplicates: list[str] = []
-    for sample_stem in discovery_batch.sample_order:
-        if sample_stem in seen and sample_stem not in duplicates:
-            duplicates.append(sample_stem)
-        seen.add(sample_stem)
-    if duplicates:
-        duplicate_text = ", ".join(duplicates[:5])
-        suffix = _truncated_count_suffix(len(duplicates))
-        raise ValueError(
-            f"{path}: duplicate sample_stem values are not supported: "
-            f"{duplicate_text}{suffix}"
-        )
-
-
-def _validate_expected_full_cohort_contract(args: argparse.Namespace) -> None:
-    if args.expected_sample_count != 85:
-        return
-
-    failures: list[str] = []
-    if args.output_level not in {"production", "validation-minimal"}:
-        failures.append(
-            "--output-level must be 'production' or 'validation-minimal'; "
-            f"got {args.output_level!r}"
-        )
-    if args.timing_output is None:
-        failures.append("--timing-output is required for canonical FULL COHORT runs")
-    if args.timing_live_output is None:
-        failures.append(
-            "--timing-live-output is required for canonical FULL COHORT runs"
-        )
-    if not _is_repo_venv_python():
-        failures.append(
-            "Python executable must be under this worktree .venv for canonical "
-            f"FULL COHORT runs; got {sys.executable}"
-        )
-
-    if failures:
-        joined = "\n- ".join(failures)
-        raise ValueError(f"FULL COHORT canonical launch contract failed:\n- {joined}")
 
 
 def _resolve_preset(args: argparse.Namespace) -> tuple[Preset, BoundCidNlRecipe]:
@@ -713,29 +672,6 @@ def _resolve_preset(args: argparse.Namespace) -> tuple[Preset, BoundCidNlRecipe]
     return preset, recipe
 
 
-def _expect_arg(
-    failures: list[str],
-    flag: str,
-    actual: object,
-    expected: object,
-) -> None:
-    if actual != expected:
-        failures.append(f"{flag} must be {expected!r}; got {actual!r}")
-
-
-def _is_repo_venv_python() -> bool:
-    repo_venv = (_repo_root() / ".venv").resolve()
-    try:
-        python_executable = Path(sys.executable).resolve()
-    except OSError:
-        return False
-    return python_executable.is_relative_to(repo_venv)
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
-
-
 def _truncated_count_suffix(count: int) -> str:
     if count <= 1:
         return ""
@@ -765,10 +701,6 @@ def _print_preflight_summary(
     print(f"RAW paths found: {len(resolved_raw_paths)}")
     if args.expected_sample_count is not None:
         print(f"Expected sample count: {args.expected_sample_count}")
-    print(
-        "FULL COHORT canonical contract: "
-        f"{'enforced' if args.expected_sample_count == 85 else 'not requested'}"
-    )
     print(f"Python executable: {sys.executable}")
     print(f"run_alignment module: {Path(__file__).resolve()}")
     print(f"Working directory: {Path.cwd().resolve()}")

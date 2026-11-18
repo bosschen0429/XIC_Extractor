@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import math
 from collections import Counter
@@ -56,8 +57,8 @@ from xic_extractor.sample_metadata import (
 )
 from xic_extractor.tabular_io import (
     escape_excel_formula,
-    read_tsv_with_header,
     read_tsv_with_header_snapshot,
+    validate_delimited_header,
     write_tsv,
 )
 
@@ -76,7 +77,7 @@ def cell_evidence_problem(source: CurationSource) -> str:
     """Why per-cell detection evidence cannot be read, or an empty string."""
     from xic_extractor.alignment_explanation.errors import ExplanationError
     from xic_extractor.alignment_explanation.reader import (
-        read_explanation_summary,
+        read_explanation_metadata,
     )
 
     if source.explanation_path is None:
@@ -85,7 +86,7 @@ def cell_evidence_problem(source: CurationSource) -> str:
             "請重新執行 Alignment 產生新輸出。"
         )
     try:
-        read_explanation_summary(source.explanation_path)
+        read_explanation_metadata(source.explanation_path)
     except ExplanationError as exc:
         return f"無法讀取 {EXPLANATION_ARTIFACT_NAME}：{exc}"
     return ""
@@ -202,9 +203,12 @@ def describe_steps(
     missing_samples: str,
 ) -> list[dict[str, Any]]:
     """Each step with its parameters and, when it cannot run, the reason."""
-    header, _ = read_tsv_with_header(
-        source.matrix_path, required_columns=("Mz", "RT"), encoding="utf-8-sig"
-    )
+    with source.matrix_path.open(encoding="utf-8-sig", newline="") as stream:
+        header = validate_delimited_header(
+            next(csv.reader(stream, delimiter="\t"), ()),
+            path=source.matrix_path,
+            required_columns=("Mz", "RT"),
+        )
     inputs = CurationInputs(
         bind_samples(header[2:], metadata, missing=missing_samples),
         cell_evidence_problem(source),

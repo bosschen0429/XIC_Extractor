@@ -40,9 +40,13 @@ XIC-specific task routing and invariants; global rules own general defaults.
 - **Domain purity:** core algorithms work on in-memory domain models. Never mix
   RAW/DLL I/O, multiprocessing, byte hashing or output formatting into
   mathematical or alignment algorithms.
+- **Shortest path to evidence:** default to the valid inputs in hand. Require
+  an input, stage or environment only if removing it changes the answer or
+  invalidates its evidence. Coupling an independent check to an unrelated
+  requirement forces callers to bypass its protection to avoid that requirement.
 - **Batch cost:** prepare shared inputs outside loops; measure call counts before
-  scaling. Deep diagnostics, full re-validation and audits run on demand unless
-  no cheaper check can decide this output's correctness.
+  scaling. Within one operation, reuse unchanged inputs and results; recheck at
+  a later boundary when a change there could invalidate the result.
 - **Current state only:** code, comments, tests and docs describe current
   behavior and non-obvious constraints. History stays in Git and PRs.
 - **Module naming:** name modules for their capability, following

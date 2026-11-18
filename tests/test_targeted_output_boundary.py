@@ -1332,6 +1332,7 @@ def test_cancelled_publication_removes_new_workbook_when_unlink_is_denied(
 
 def test_service_accepts_raw_order_that_differs_from_canonical_order(
     tmp_path: Path,
+    monkeypatch,
 ) -> None:
     sample_names = ("SampleD", "SampleC", "SampleB", "SampleA")
     config, target, output = production_case(
@@ -1348,9 +1349,19 @@ def test_service_accepts_raw_order_that_differs_from_canonical_order(
         },
     )
 
-    execution = TargetedApplicationService(
-        lambda *_args, **_kwargs: output
-    ).execute_application(request)
+    from unittest.mock import Mock
+
+    from xic_extractor.extraction import targeted_inputs
+
+    resolutions = Mock(wraps=targeted_inputs.read_analysis_set)
+    monkeypatch.setattr(targeted_inputs, "read_analysis_set", resolutions)
+
+    def acquire(*args, **kwargs):
+        assert resolutions.call_count == 1  # One snapshot before acquisition.
+        return output
+
+    execution = TargetedApplicationService(acquire).execute_application(request)
+    assert resolutions.call_count == 2  # Independent post-acquisition check.
 
     assert execution.published_paths
     assert (

@@ -1,13 +1,7 @@
 from pathlib import Path
 
 from scripts import run_instrument_qc
-from xic_extractor.instrument_qc.classification import InstrumentQCClass
 from xic_extractor.instrument_qc.models import InstrumentQCRunOutput
-from xic_extractor.instrument_qc.sequence_manifest import (
-    ManifestMatchConfidence,
-    ManifestMatchStatus,
-    SequenceManifestRow,
-)
 
 
 def _fake_output(output_dir: Path) -> InstrumentQCRunOutput:
@@ -138,38 +132,41 @@ def test_run_instrument_qc_cli_generates_manifest_from_method_doc(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    from tests.sample_metadata_sequence_parsing_fixtures import _create_synthetic_docx
+    from tools.diagnostics.instrument_qc_sequence_manifest import main as manifest
+    from xic_extractor.sample_metadata import load_sample_metadata
+
     calls: dict[str, object] = {}
     method_doc = tmp_path / "method.docx"
-    method_doc.write_bytes(b"fake docx")
+    _create_synthetic_docx(method_doc)
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-
-    def fake_build_sequence_manifest(**kwargs):
-        assert kwargs["method_doc"] == method_doc
-        assert kwargs["raw_dir"] == raw_dir
-        return (
-            SequenceManifestRow(
-                source_doc=str(method_doc),
-                source_section="table:1:row:2",
-                doc_display_name="SDOLEK-pretest",
-                raw_stem="SDOLEK-pretest",
-                injection_order=4,
-                instrument_qc_class=InstrumentQCClass.SDOLEK,
-                match_status=ManifestMatchStatus.MATCHED,
-                match_confidence=ManifestMatchConfidence.HIGH,
-                match_reason="matched",
-            ),
+    for stem in ("Blank_1", "QC_Pool_1"):
+        (raw_dir / f"{stem}.raw").touch()
+    standalone = tmp_path / "manifest"
+    assert (
+        manifest(
+            [
+                "--method-doc",
+                str(method_doc),
+                "--raw-dir",
+                str(raw_dir),
+                "--output-dir",
+                str(standalone),
+            ]
         )
+        == 0
+    )
+    name = "instrument_qc_sample_metadata.tsv"
+    assert [
+        (row.raw_stem, row.sample_role, row.injection_order)
+        for row in load_sample_metadata(standalone / name)
+    ] == [("Blank_1", "blank", 1), ("QC_Pool_1", "qc", 2)]
 
     def fake_run_sdolek_pipeline(**kwargs):
         calls.update(kwargs)
         return _fake_output(kwargs["output_dir"])
 
-    monkeypatch.setattr(
-        run_instrument_qc,
-        "build_sequence_manifest",
-        fake_build_sequence_manifest,
-    )
     monkeypatch.setattr(
         run_instrument_qc,
         "run_sdolek_pipeline",
@@ -197,7 +194,7 @@ def test_run_instrument_qc_cli_generates_manifest_from_method_doc(
         tmp_path / "out" / "instrument_qc_sequence_manifest.tsv"
     )
     assert (tmp_path / "out" / "instrument_qc_sequence_manifest.tsv").exists()
-    assert (tmp_path / "out" / "instrument_qc_sample_metadata.tsv").exists()
+    assert (tmp_path / "out" / name).read_bytes() == (standalone / name).read_bytes()
     assert (tmp_path / "out" / "instrument_qc_sequence_manifest.json").exists()
     assert (tmp_path / "out" / "instrument_qc_sequence_manifest.md").exists()
 

@@ -166,6 +166,29 @@ def test_cli_does_not_overwrite_existing_output(tmp_path):
     assert marker.read_text() == "existing result"
 
 
+def test_describe_steps_reads_only_a_valid_header(tmp_path):
+    import csv
+
+    from xic_workbench.matrix_curation import describe_source
+
+    folder = alignment_output(tmp_path / "alignment")
+    matrix = folder / "alignment_matrix.tsv"
+    # Lower the CSV field limit below one data value, but not below the header.
+    # A body-reading description would raise csv.Error even for an available step.
+    with matrix.open("a", encoding="utf-8") as stream:
+        stream.write("9" * 200 + "\n")
+    previous = csv.field_size_limit(100)
+    try:
+        assert describe_source(tmp_path / "config", {"source_dir": str(folder)})[
+            "steps"
+        ]
+        matrix.write_text("Mz\tSample A\n")
+        with pytest.raises(ValueError, match="missing required columns: RT"):
+            describe_source(tmp_path / "config", {"source_dir": str(folder)})
+    finally:
+        csv.field_size_limit(previous)
+
+
 def test_workbench_sample_data_never_uses_imported_reader_paths(tmp_path, monkeypatch):
     from xic_workbench.matrix_curation import describe_source
     from xic_workbench.samples import save_batch_samples

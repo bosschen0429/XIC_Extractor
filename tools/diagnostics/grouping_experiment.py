@@ -22,12 +22,12 @@ from xic_extractor.alignment.grouping_experiment import (
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import RtCalibrationPolicy
 from xic_extractor.diagnostics.grouping_experiment_io import (
-    compare_membership,
     query_discovery,
     read_grouping_inputs,
     read_rt_calibration,
     write_grouping_result,
     write_json,
+    write_membership_comparison,
     write_rt_calibration,
     write_table,
 )
@@ -54,7 +54,17 @@ def _parser() -> argparse.ArgumentParser:
     replay = commands.add_parser(
         "replay", help="Regroup compact observations without RAW or Backfill"
     )
-    for command in (query, replay):
+    compare = commands.add_parser(
+        "compare",
+        help="Compare saved memberships from the same observations without replay",
+    )
+    compare.add_argument(
+        "--before", type=Path, required=True, help="Baseline members.tsv"
+    )
+    compare.add_argument(
+        "--after", type=Path, required=True, help="Variant members.tsv"
+    )
+    for command in (query, replay, compare):
         command.add_argument("--output-dir", required=True, type=Path)
     query.add_argument("--discovery-batch-index", required=True, type=Path)
     query.add_argument("--mz-range", action="append", type=_range, required=True)
@@ -82,27 +92,6 @@ def _parser() -> argparse.ArgumentParser:
         help="Previous replay output dir of the same snapshot (e.g. another commit)",
     )
     return parser
-
-
-def _membership_comparison(args: argparse.Namespace, groups) -> dict[str, Any]:
-    if args.compare_to is None:
-        return {}
-    rows, counts = compare_membership(args.compare_to / "members.tsv", groups)
-    write_table(
-        args.output_dir / "membership-diff.tsv",
-        rows,
-        (
-            "change",
-            "group_id",
-            "mz",
-            "part_count",
-            "part_sizes",
-            "part_apex_rt",
-            "apex_gap_sec",
-            "part_samples",
-        ),
-    )
-    return {"compared_to": str(args.compare_to), "membership_diff": counts}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -137,7 +126,21 @@ def main(argv: list[str] | None = None) -> int:
                 "candidate_count": len(rows),
                 "mz_ranges": args.mz_range,
             }
+        elif args.command == "compare":
+            summary = {
+                "compared_to": str(args.before),
+                "membership_diff": write_membership_comparison(
+                    args.before, args.after, args.output_dir
+                ),
+            }
         else:
+            if (
+                args.compare_to is not None
+                and args.compare_to.resolve() == args.output_dir.resolve()
+            ):
+                raise ValueError(
+                    "Comparison baseline must not be the replay output directory"
+                )
             inputs, provenance = read_grouping_inputs(args.inputs)
             config_values = asdict(inputs.alignment_config)
             overrides: dict[str, Any] = {}
@@ -169,17 +172,31 @@ def main(argv: list[str] | None = None) -> int:
                 if calibration is not None
                 else None
             )
-            groups = replay_grouping(inputs, config=config, rt_coordinates=rt_frame)
+            # An explicit sample calibration replaces (rather than retaining)
+            # each workset's drift model. Identical effective inputs need no replay.
+            variant = config != inputs.alignment_config or (
+                calibration is not None
+                and any(
+                    workset.rt_drift is not None
+                    or workset.rt_calibration != calibration
+                    for workset in inputs.worksets
+                )
+            )
+            groups = (
+                replay_grouping(inputs, config=config, rt_coordinates=rt_frame)
+                if variant
+                else baseline
+            )
             summary = {
                 **write_grouping_result(
                     args.output_dir,
                     inputs,
                     groups,
-                    baseline=baseline,
+                    baseline=baseline if variant else (),
+                    compare_to=args.compare_to,
                     rt_coordinates=rt_frame,
                 ),
                 "source": provenance,
-                **_membership_comparison(args, groups),
                 "overrides": overrides,
                 "rt_calibration": bool(calibration),
                 "calibration_knot_count": len(calibration.knots) if calibration else 0,

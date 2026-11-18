@@ -28,6 +28,7 @@ from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
     read_review_evidence,
+    read_summary_with_examples,
 )
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
@@ -389,6 +390,89 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
         )
     assert not report.exists()
     assert not report.with_name(report.name + ".tmp").exists()
+
+
+def test_exact_candidate_loads_only_its_evidence_across_samples(tmp_path, monkeypatch):
+    reports = []
+    samples = [{"sample_key": key, "sample_stem": key} for key in ("A", "B")]
+    for unrelated in (0, 20):
+        path = tmp_path / f"report-{unrelated}.sqlite"
+        with ExplanationReportWriter(path) as writer:
+            writer.declare_samples(samples)
+            for idx, (cid, sample) in enumerate(
+                [
+                    ("same", "A"),
+                    ("same", "B"),
+                    *((f"other-{i}", "A") for i in range(unrelated)),
+                ]
+            ):
+                subject = f"M{idx}"
+                writer.add_method_subject({"method_subject_id": subject})
+                writer.add_candidate(
+                    cid,
+                    sample,
+                    precursor_mz=400.0 + idx,
+                    neutral_loss_tag="A",
+                    method_subject_id=subject,
+                )
+                writer.add_terminal(
+                    cid,
+                    sample,
+                    variant="observed",
+                    hypothesis_id=f"h{idx}",
+                    physical_peak_key=f"p{idx}",
+                )
+            writer.finalize(
+                explanation_summary(
+                    {"samples": samples, "neutral_loss_by_tag": {"A": 116.0}}
+                )
+            )
+        reports.append(path)
+
+    # Count rows crossing SQLite's application boundary, not query text or time.
+    connect = sqlite3.connect
+    fetched = []
+
+    def counted_connect(*args, **kwargs):
+        db = connect(*args, **kwargs)
+
+        def count_row(cursor, row):
+            fetched.append(1)
+            return row
+
+        db.row_factory = count_row
+        return db
+
+    monkeypatch.setattr(sqlite3, "connect", counted_connect)
+    counts = []
+    page_counts = []
+    for report in reports:
+        fetched.clear()
+        result = read_alignment_explanation(report, candidate_id="same")
+        counts.append(len(fetched))
+        assert [
+            (row["sample_key"], row["precursor_mz"]) for row in result["candidates"]
+        ] == [("A", 400), ("B", 401)]
+        summary = read_alignment_explanation(report)
+        fetched.clear()
+        page = read_review_evidence(
+            report, candidate_keys=[("same", "B")], summary=summary
+        )
+        assert list(page.candidates) == [("same", "B")]
+        assert page.candidates["same", "B"].fields["precursor_mz"] == 401
+        page_counts.append(len(fetched))
+    assert counts[0] == counts[1]
+    assert page_counts[0] == page_counts[1]
+    fetched.clear()
+    plain = read_alignment_explanation(reports[-1])
+    summary_rows = len(fetched)
+    fetched.clear()
+    with_examples, examples = read_summary_with_examples(reports[-1])
+    assert with_examples == plain
+    assert examples == [
+        {"candidate_id": f"other-{i}", "sample_stem": "A"} for i in (0, 1, 10, 11, 12)
+    ]
+    assert len(fetched) == summary_rows + 5
 
 
 def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):

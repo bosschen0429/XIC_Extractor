@@ -737,8 +737,11 @@ def test_run_alignment_cli_writes_timing_json(
     assert code == 0
     payload = json.loads(timing_path.read_text(encoding="utf-8"))
     assert payload["pipeline"] == "alignment"
-    assert payload["records"][0]["stage"] == "alignment.read_candidates"
-    assert payload["records"][0]["metrics"] == {"candidate_count": 0}
+    assert [row["stage"] for row in payload["records"]] == [
+        "alignment.read_batch_index",
+        "alignment.read_candidates",
+    ]
+    assert payload["records"][-1]["metrics"] == {"candidate_count": 0}
     assert "Timing JSON:" in capsys.readouterr().out
 
 
@@ -833,8 +836,8 @@ def test_run_alignment_cli_stops_memory_sampler_on_failure(
     assert code == 2
     assert (sampler.start_count, sampler.stop_count) == (1, 1)
     payload = json.loads((tmp_path / "timing.json").read_text())
-    assert payload["records"][0]["stage"] == "alignment.failed_runtime"
-    assert payload["records"][0]["metrics"] == {"completed_partitions": 33}
+    assert payload["records"][-1]["stage"] == "alignment.failed_runtime"
+    assert payload["records"][-1]["metrics"] == {"completed_partitions": 33}
     assert any(
         row["metric"] == "process_tree_sampled_peak_rss_bytes"
         for row in payload["measurement_observations"]
@@ -901,7 +904,7 @@ def test_run_alignment_cli_writes_live_timing_json(
     assert code == 0
     payload = json.loads(live_path.read_text(encoding="utf-8"))
     assert payload["schema_version"] == "timing.live"
-    assert payload["recent_records"][0]["stage"] == "alignment.run_config"
+    assert payload["recent_records"][-1]["stage"] == "alignment.run_config"
     assert "records" not in payload
     assert "Timing live JSON:" in capsys.readouterr().out
 
@@ -1024,8 +1027,11 @@ def test_run_alignment_cli_rejects_missing_dll_dir(
     assert "dll directory does not exist" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("expected", (1, 8, 85))
 def test_run_alignment_cli_rejects_expected_sample_count_mismatch(
+    expected: int,
     tmp_path: Path,
+    monkeypatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
@@ -1037,6 +1043,11 @@ def test_run_alignment_cli_rejects_expected_sample_count_mismatch(
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
 
+    monkeypatch.setattr(
+        run_alignment,
+        "read_analysis_set",
+        lambda *a, **kw: pytest.fail("count mismatch opened RAW metadata"),
+    )
     code = run_alignment.main(
         [
             "--preset",
@@ -1048,12 +1059,17 @@ def test_run_alignment_cli_rejects_expected_sample_count_mismatch(
             "--dll-dir",
             str(dll_dir),
             "--expected-sample-count",
-            "85",
+            str(expected),
+            "--sample-metadata",
+            str(tmp_path / "sequence.tsv"),
         ]
     )
 
     assert code == 2
-    assert "expected 85 discovery batch samples, found 2" in capsys.readouterr().err
+    assert (
+        f"expected {expected} discovery batch samples, found 2"
+        in capsys.readouterr().err
+    )
 
 
 def test_run_alignment_cli_rejects_duplicate_sample_stems(
@@ -1090,12 +1106,14 @@ def test_run_alignment_cli_rejects_duplicate_sample_stems(
     assert "S1" in stderr
 
 
-def test_run_alignment_cli_normal_run_does_not_require_all_raw_paths(
+def test_expected_count_alone_does_not_require_all_raw_paths(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_owner_closed_batch_index(batch_index, [("S1", "S1.raw", "s1.csv")])
+    _write_owner_closed_batch_index(
+        batch_index, [(f"S{i}", f"S{i}.raw", f"s{i}.csv") for i in range(85)]
+    )
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1114,6 +1132,8 @@ def test_run_alignment_cli_normal_run_does_not_require_all_raw_paths(
             str(batch_index),
             "--raw-dir",
             str(raw_dir),
+            "--expected-sample-count",
+            "85",
             "--dll-dir",
             str(dll_dir),
         ]
@@ -1245,7 +1265,7 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
         assert hashlib.sha256(reference_path.read_bytes()).hexdigest() in stdout
     if reference_kind is None:
         expected = (
-            run_alignment._repo_root()
+            Path(__file__).resolve().parents[1]
             / "xic_extractor"
             / "configuration"
             / "data"
@@ -1268,7 +1288,6 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
     assert "Input indexing / RAW backend: process" in stdout
     assert "Source fingerprint backend: thread" in stdout
     assert "owner_validated" not in stdout
-    assert "FULL COHORT canonical contract: not requested" in stdout
     assert "Python executable:" in stdout
     assert "run_alignment module:" in stdout
     assert "Working directory:" in stdout
@@ -1372,7 +1391,11 @@ def test_run_alignment_cli_preflight_only_rejects_missing_candidate_csv(
     assert "missing.csv" in stderr
 
 
-def test_run_alignment_cli_preflight_only_rejects_missing_raw_file(
+@pytest.mark.parametrize(
+    "mode", [["--preflight-only"], ["--require-all-raw"], ["--stop-after", "grouping"]]
+)
+def test_missing_raw_stops_before_acquisition(
+    mode,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -1393,7 +1416,7 @@ def test_run_alignment_cli_preflight_only_rejects_missing_raw_file(
             str(raw_dir),
             "--dll-dir",
             str(dll_dir),
-            "--preflight-only",
+            *mode,
         ]
     )
 
@@ -1403,90 +1426,42 @@ def test_run_alignment_cli_preflight_only_rejects_missing_raw_file(
     assert "S1" in stderr
 
 
-def test_run_alignment_cli_rejects_noncanonical_full_cohort_contract(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_owner_closed_batch_index(
-        batch_index, [(f"S{i}", f"S{i}.raw", f"s{i}.csv") for i in range(85)]
+def test_grouping_count_is_not_a_full_cohort_launch(tmp_path, monkeypatch):
+    index = tmp_path / "index.csv"
+    rows = [(f"S{i}", f"S{i}.raw", f"s{i}.csv") for i in range(85)]
+    _write_owner_closed_batch_index(index, rows)
+    for _, raw, _ in rows:
+        (tmp_path / raw).touch()
+    monkeypatch.setattr(run_alignment.sys, "executable", str(tmp_path / "other-python"))
+    reached = []
+
+    def group(request, context, *, save_snapshot):
+        reached.append(request.discovery_batch_index.path)
+        return tmp_path
+
+    monkeypatch.setattr(run_alignment, "run_untargeted_grouping", group)
+    assert (
+        run_alignment.main(
+            [
+                "--preset",
+                "dna_dr",
+                "--discovery-batch-index",
+                str(index),
+                "--raw-dir",
+                str(tmp_path),
+                "--dll-dir",
+                str(tmp_path),
+                "--expected-sample-count",
+                "85",
+                "--stop-after",
+                "grouping",
+                "--output-level",
+                "debug",
+            ]
+        )
+        == 0
     )
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-
-    code = run_alignment.main(
-        [
-            "--preset",
-            "dna_dr",
-            "--discovery-batch-index",
-            str(batch_index),
-            "--raw-dir",
-            str(raw_dir),
-            "--dll-dir",
-            str(dll_dir),
-            "--expected-sample-count",
-            "85",
-            "--output-level",
-            "debug",
-        ]
-    )
-
-    assert code == 2
-    stderr = capsys.readouterr().err
-    assert "FULL COHORT canonical launch contract failed" in stderr
-    assert "--output-level must be 'production' or 'validation-minimal'" in stderr
-    assert "--timing-live-output is required" in stderr
-
-
-def test_run_alignment_cli_rejects_full_cohort_wrong_python_environment(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    _write_owner_closed_batch_index(
-        batch_index, [(f"S{i}", f"S{i}.raw", f"s{i}.csv") for i in range(85)]
-    )
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-    output_dir = tmp_path / "alignment"
-    monkeypatch.setattr(
-        run_alignment.sys,
-        "executable",
-        str(tmp_path / "wrong-python" / "python.exe"),
-    )
-
-    code = run_alignment.main(
-        [
-            "--preset",
-            "dna_dr",
-            "--discovery-batch-index",
-            str(batch_index),
-            "--raw-dir",
-            str(raw_dir),
-            "--dll-dir",
-            str(dll_dir),
-            "--output-dir",
-            str(output_dir),
-            "--expected-sample-count",
-            "85",
-            "--output-level",
-            "validation-minimal",
-            "--timing-output",
-            str(output_dir / "timing.json"),
-            "--timing-live-output",
-            str(output_dir / "timing.live.json"),
-            "--preflight-only",
-        ]
-    )
-
-    assert code == 2
-    stderr = capsys.readouterr().err
-    assert "Python executable must be under this worktree .venv" in stderr
+    assert reached == [index]
 
 
 @pytest.mark.parametrize(
@@ -1630,7 +1605,7 @@ def test_run_alignment_cli_istd_input_is_explicit_or_validated_before_raw(
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
     template = (
-        run_alignment._repo_root()
+        Path(__file__).resolve().parents[1]
         / "xic_extractor"
         / "configuration"
         / "data"

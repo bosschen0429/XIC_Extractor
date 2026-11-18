@@ -77,7 +77,9 @@ For current CID-NL tissue validation, use the shared maintained entry point:
 
     .venv\Scripts\python.exe -m scripts.run_tissue_validation --dataset 8
 
-Use `--dataset 85` for the full cohort. Normal execution validates local inputs,
+Use `--dataset 85` from this worktree’s virtual environment for formal full-cohort
+validation. A sample count on the standalone Alignment CLI checks only the index
+size. Normal tissue execution validates local inputs,
 prints and saves the effective plan, then runs Discovery followed by Alignment.
 Add `--preflight-only` to inspect that plan without running analysis; it is not
 a required extra invocation. `--help` owns runtime overrides; the plan owns the

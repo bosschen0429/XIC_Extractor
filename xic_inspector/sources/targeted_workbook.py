@@ -197,7 +197,7 @@ class TargetedWorkbookSource:
         self._records_by_key = {
             (row["SampleName"], row["Target"]): row for row in self.records
         }
-        self.summary = {
+        self.summary: dict[str, Any] = {
             "schema_version": "targeted_workbook",
             "source_kind": "targeted_workbook",
             "plot_evidence_capability": "metadata_only",

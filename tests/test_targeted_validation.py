@@ -540,17 +540,9 @@ def test_run_validation_specs_rejects_wrong_raw_count(tmp_path: Path) -> None:
 
 
 def test_cli_refuses_full85_without_confirmation(tmp_path: Path, capsys) -> None:
-    exit_code = main(
-        [
-            "--suite",
-            "tissue-full-cohort",
-            "--output-root",
-            str(tmp_path / "validation_harness"),
-            "--run-id",
-            "run1",
-            "--dry-run",
-        ]
-    )
-
-    assert exit_code == 2
+    args = ["--suite", "tissue-full-cohort", "--output-root", str(tmp_path / "out")]
+    assert main([*args, "--dry-run"]) == 0
+    assert "tissue-full-cohort" in capsys.readouterr().out
+    assert not (tmp_path / "out").exists()
+    assert main(args) == 2
     assert "requires --confirm-full-run" in capsys.readouterr().err

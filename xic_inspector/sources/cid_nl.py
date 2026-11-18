@@ -387,9 +387,9 @@ def _support_origin(sample_id, observation_refs, cell, curves, assessments):
 class CidNlSource:
     """A full-audit report: every item is built in memory for selection."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, summary: dict[str, Any] | None = None) -> None:
         self.path = path
-        self.evidence = read_review_evidence(path)
+        self.evidence = read_review_evidence(path, summary=summary)
         self._bind(self.evidence.summary)
         self._items: dict[str, ItemEvidence] = {}
 

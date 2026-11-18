@@ -685,12 +685,20 @@ def test_role_query_combines_filters_and_retains_role_target_options(role_workbo
 
 
 def test_workspace_role_query_roundtrips_and_all_restores_legacy_targets(
-    role_workbook, tmp_path
+    role_workbook, tmp_path, monkeypatch
 ):
+    from unittest.mock import Mock
+
+    import openpyxl
+
+    loads = Mock(wraps=openpyxl.load_workbook)
+    monkeypatch.setattr(openpyxl, "load_workbook", loads)
     before = role_workbook.read_bytes()
     workspace = review_workspace(config_dir=tmp_path / "config")
     try:
         initial = workspace.open(str(role_workbook))
+        assert loads.call_count == 1
+        assert initial["matched_count"] == 6
         page = workspace.query({"target_role": "ISTD", "target_id": "Compound B"})
         assert page["target_role"] == "ISTD"
         assert page["target_names"] == ["Analyte-looking standard", "Standard B"]

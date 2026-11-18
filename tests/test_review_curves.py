@@ -102,11 +102,24 @@ def test_cells_with_values_show_their_run_curves_without_raw(tmp_path, monkeypat
     assert saved == {"S1", "S2"}
     assert not curves.needs_raw(saved)
 
-    bundle, unusable = review_curve_bundle(
-        reports["review"], curves, key=group_id, sample_ids=saved
-    )
+    from tools.diagnostics.explain_cid_nl_run import main
+    from xic_inspector.sources.curve_bundle import read_curve_bundle
 
-    assert unusable == []
+    path = tmp_path / "saved.json"
+    assert (
+        main(
+            [
+                "--report",
+                str(reports["review"]),
+                "--group-id",
+                group_id,
+                "--curve-bundle",
+                str(path),
+            ]
+        )
+        == 0
+    )
+    bundle = read_curve_bundle(path)
     audit = _full_audit_curves(reports["audit"])
     keys = {loc.sample_key: loc.physical_peak_key for loc in curves.locations}
     traces = bundle.transitions[0].traces
@@ -185,6 +198,23 @@ def test_saved_curves_stay_with_their_own_cell(tmp_path):
     }
     assert not curves.needs_raw(("S1", "S2"))
     assert curves.needs_raw(("S1", "S3"))
+    from tools.diagnostics.explain_cid_nl_run import main
+
+    bundle_path = tmp_path / "incomplete.json"
+    assert (
+        main(
+            [
+                "--report",
+                str(report),
+                "--group-id",
+                "G1",
+                "--curve-bundle",
+                str(bundle_path),
+            ]
+        )
+        == 2
+    )
+    assert not bundle_path.exists()
 
 
 def test_unsaved_samples_read_raw_at_their_recorded_coordinates(tmp_path, monkeypatch):

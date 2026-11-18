@@ -225,8 +225,12 @@ def test_cli_writes_review_rows_and_distribution_without_mutating_inputs(
     manifest = tmp_path / "input.json"
     manifest.write_text(json.dumps({"groups": entries}), encoding="utf-8")
     before = {p: p.read_bytes() for p in tmp_path.iterdir()}
-    args = ["--manifest", str(manifest), "--output-dir", str(tmp_path / "review")]
-    assert main([*args, "--preflight-only"]) == 0
+    inputs = ["--manifest", str(manifest)]
+    args = [*inputs, "--output-dir", str(tmp_path / "review")]
+    assert main([*inputs, "--preflight-only"]) == 0
+    with pytest.raises(SystemExit) as missing_output:
+        main(inputs)
+    assert missing_output.value.code == 2
     assert not (tmp_path / "review").exists()
     assert main(args) == 0
     report = json.loads((tmp_path / "review/reference_consistency.json").read_text())

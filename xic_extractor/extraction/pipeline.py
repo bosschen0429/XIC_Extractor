@@ -9,7 +9,7 @@ from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader import preflight_raw_reader
 from xic_extractor.raw_reader_errors import RawReaderError
 
-from .targeted_inputs import resolve_targeted_inputs, resolve_targeted_raw_paths
+from .targeted_inputs import resolve_targeted_inputs
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import RunOutput
@@ -29,12 +29,11 @@ def run_pipeline(
     if reader_errors:
         raise RawReaderError(" ".join(reader_errors))
 
-    raw_paths = resolve_targeted_raw_paths(config)
     resolved_inputs = resolve_targeted_inputs(
         config,
-        raw_paths=raw_paths,
         injection_order=injection_order,
     )
+    raw_paths = list(resolved_inputs.raw_paths)
     acquisition_kwargs: dict[str, Any] = (
         {}
         if acquisition_sources_by_sample is None

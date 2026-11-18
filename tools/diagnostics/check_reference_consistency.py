@@ -30,7 +30,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
     parser.add_argument("--dll-dir", type=Path)
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--output-dir", type=Path, help="Directory for the diagnostic report"
+    )
     parser.add_argument("--preflight-only", action="store_true")
     parser.add_argument(
         "--rt-min", type=float, default=1.0, help="Full-trace start in minutes"
@@ -69,6 +71,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Minimum half-prominence width in scans; rejects smoothed impulses",
     )
     args = parser.parse_args(argv)
+    if not args.preflight_only and args.output_dir is None:
+        parser.error("--output-dir is required to write the diagnostic report")
     try:
         policy = ReferencePolicy(
             args.mapping_residual_min,

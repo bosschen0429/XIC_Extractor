@@ -23,6 +23,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
     resolve_signal_processing_profile,
 )
+from xic_extractor.discovery.csv_reader import DiscoveryBatchIndex
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.sample_metadata import SampleMetadata
@@ -66,7 +67,7 @@ class UntargetedRequest:
     I/O. Policies own their accepted options; canonical configs are not copied.
     """
 
-    discovery_batch_index: Path
+    discovery_batch_index: Path | DiscoveryBatchIndex
     raw_dir: Path
     dll_dir: Path
     output_dir: Path

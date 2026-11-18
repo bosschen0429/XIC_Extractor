@@ -342,7 +342,7 @@ class PreparedReport:
 
 def prepare_report(
     report: Path,
-    selection: SelectionRequest,
+    selection: SelectionRequest | Callable[[dict[str, Any]], SelectionRequest],
     *,
     expected_source: EvidenceLocator
     | CurveBundleLocator
@@ -354,7 +354,8 @@ def prepare_report(
     _output_path: Path | None = None,
 ) -> PreparedReport:
     """Validate and select evidence without writing or acquiring any data."""
-    selection.validate()
+    if isinstance(selection, SelectionRequest):
+        selection.validate()
 
     report_path = Path(report).resolve()
     output_path = Path(_output_path).resolve() if _output_path is not None else None
@@ -384,6 +385,10 @@ def prepare_report(
         raise InspectorError(3, str(exc), cause=exc) from exc
     except ExplanationError as exc:
         raise InspectorError(4, f"Invalid source: {exc}", cause=exc) from exc
+
+    if not isinstance(selection, SelectionRequest):
+        selection = selection(summary)
+        selection.validate()
 
     if selection.nearest_mz is not None:
         from xic_inspector.sources.cid_nl_query import IndexedCidNlSource

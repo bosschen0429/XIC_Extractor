@@ -508,11 +508,8 @@ def test_pyinstaller_collects_discovery_default_background_library() -> None:
     ) in collected
 
 
-@pytest.mark.packaging_build
-@pytest.mark.serial_ci
-def test_built_wheel_contains_workbench_and_matching_target_template(
-    packaging_source: Path,
-) -> None:
+@pytest.fixture(scope="module")
+def built_wheel(packaging_source: Path) -> Path:
     artifact_root = packaging_source.parent / "wheel-artifacts"
     uv_cache_root = packaging_source.parent / "uv-cache"
     artifact_root.mkdir()
@@ -535,7 +532,17 @@ def test_built_wheel_contains_workbench_and_matching_target_template(
 
     wheels = list(artifact_root.glob("*.whl"))
     assert len(wheels) == 1
-    with zipfile.ZipFile(wheels[0]) as wheel:
+    return wheels[0]
+
+
+@pytest.mark.packaging_build
+@pytest.mark.serial_ci
+def test_built_wheel_contains_workbench_and_matching_target_template(
+    packaging_source: Path,
+    built_wheel: Path,
+) -> None:
+    uv_cache_root = packaging_source.parent / "uv-cache"
+    with zipfile.ZipFile(built_wheel) as wheel:
         runtime_config = json.loads(
             wheel.read(
                 "xic_extractor/configuration/data/thermo_dotnet.runtimeconfig.json"
@@ -580,7 +587,7 @@ def test_built_wheel_contains_workbench_and_matching_target_template(
             "--target",
             str(install_target),
             "--no-deps",
-            str(wheels[0]),
+            str(built_wheel),
         ),
         cwd=packaging_source.parent,
         timeout_seconds=300,
@@ -613,29 +620,9 @@ def test_built_wheel_contains_workbench_and_matching_target_template(
 @pytest.mark.serial_ci
 def test_built_wheel_exposes_public_cid_nl_activation_surface(
     packaging_source: Path,
+    built_wheel: Path,
 ) -> None:
-    artifact_root = packaging_source.parent / "public-activation-wheel-artifacts"
-    uv_cache_root = packaging_source.parent / "uv-public"
-    artifact_root.mkdir()
-    _run_packaging_command(
-        (
-            "uv",
-            "build",
-            "--cache-dir",
-            str(uv_cache_root),
-            "--wheel",
-            "--out-dir",
-            str(artifact_root),
-            "--python",
-            sys.executable,
-            str(packaging_source),
-        ),
-        cwd=packaging_source.parent,
-        timeout_seconds=300,
-    )
-
-    wheels = list(artifact_root.glob("*.whl"))
-    assert len(wheels) == 1
+    uv_cache_root = packaging_source.parent / "uv-cache"
     install_target = packaging_source.parent / "public-activation-installed-wheel"
     _run_packaging_command(
         (
@@ -649,7 +636,7 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
             "--target",
             str(install_target),
             "--no-deps",
-            str(wheels[0]),
+            str(built_wheel),
         ),
         cwd=packaging_source.parent,
         timeout_seconds=300,

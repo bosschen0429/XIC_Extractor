@@ -34,6 +34,7 @@ from xic_extractor.matrix_curation.published import (
 )
 from xic_inspector.api import (
     InspectorCancelled,
+    InspectorError,
     PreparedReport,
     SelectionRequest,
     prepare_curve_view,
@@ -45,7 +46,9 @@ from xic_inspector.rendering.html_builder import (
     build_report_html,
     write_report_atomically,
 )
-from xic_inspector.sources.targeted_workbook import TargetedWorkbookLocator
+from xic_inspector.sources.targeted_workbook import (
+    TargetedWorkbookLocator,
+)
 from xic_workbench.analysis_workspace import AnalysisWorkspace
 from xic_workbench.errors import WorkspaceBusy as WorkspaceBusy
 
@@ -185,32 +188,37 @@ class ReviewWorkspace:
             curation = read_published_curation(folder) if folder else None
         with self._lock:
             self._require_open()
-            try:
-                summary = read_evidence_summary(path)
-            except ExplanationUnavailableError:
-                raise
-            except ExplanationError as exc:
-                # The technical reason travels as detail, not as the headline.
-                rerun = "Alignment" if path.suffix.lower() == ".sqlite" else "分析"
-                raise ValueError(
-                    f"無法讀取這份結果（舊版本或已損壞）；請重新執行 {rerun}。"
-                ) from exc
-            sample_ids = tuple(sample["sample_key"] for sample in summary["samples"])
-            if not sample_ids:
-                raise ValueError("這份結果沒有可檢閱的樣本。")
-            reviewed = summary.get("retention") == "review"
-            # A full audit is browsed as published, without Matrix scopes.
-            curation = curation if reviewed else None
-            page = prepare_report(
-                path,
-                SelectionRequest(
+
+            def first_page(summary: dict[str, Any]) -> SelectionRequest:
+                sample_ids = tuple(
+                    sample["sample_key"] for sample in summary["samples"]
+                )
+                if not sample_ids:
+                    raise ValueError("這份結果沒有可檢閱的樣本。")
+                reviewed = summary.get("retention") == "review"
+                return SelectionRequest(
                     strategy="query",
                     sample_ids=sample_ids,
                     limit=25,
                     review_scope="matrix" if reviewed else "all",
-                    curation_removed_ids=_removed_ids(curation),
-                ),
-            )
+                    curation_removed_ids=_removed_ids(curation) if reviewed else (),
+                )
+
+            try:
+                page = prepare_report(path, first_page)
+            except InspectorError as exc:
+                cause = exc.__cause__
+                if not isinstance(cause, ExplanationError):
+                    raise
+                if isinstance(cause, ExplanationUnavailableError):
+                    raise cause from None
+                rerun = "Alignment" if path.suffix.lower() == ".sqlite" else "分析"
+                raise ValueError(
+                    f"無法讀取這份結果（舊版本或已損壞）；請重新執行 {rerun}。"
+                ) from cause
+            # A full audit is browsed as published, without Matrix scopes.
+            if page.payload["selection"].get("review_scope") != "matrix":
+                curation = None
             # Failed opens never displace the previously usable batch.
             self._report, self._page, self._curation = path, page, curation
             self._targeted_raws = {}

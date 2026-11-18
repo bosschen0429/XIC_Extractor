@@ -34,8 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        required=True,
-        help="JSON sidecar; readable TSV written alongside",
+        help="JSON sidecar for a run; readable TSV written alongside",
     )
     parser.add_argument(
         "--sld",
@@ -59,6 +58,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Check paths, DLLs and count RAW without opening RAW",
     )
     args = parser.parse_args(argv)
+    if not args.preflight_only and args.output is None:
+        parser.error("--output is required to write the timeline")
+    if args.output is not None and args.output.suffix.lower() != ".json":
+        raise ValueError("--output must have a .json suffix")
     started = perf_counter()
     policy = PerturbationPolicy(
         args.max_previous_run_min, args.max_previous_run_fraction, args.max_idle_min
@@ -72,8 +75,6 @@ def main(argv: list[str] | None = None) -> int:
     for path in args.sld:
         if not path.is_file():
             raise ValueError(f"Sequence file is missing: {path}")
-    if args.output.suffix.lower() != ".json":
-        raise ValueError("--output must have a .json suffix")
     if args.preflight_only:
         print(
             json.dumps(

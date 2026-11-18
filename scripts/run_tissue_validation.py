@@ -59,8 +59,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     (output_dir / "timing").mkdir()
 
     stage_timings: dict[str, dict[str, float | int]] = {}
-    for stage in ("discovery", "alignment_preflight", "alignment"):
-        command = plan["commands"][stage]
+    for stage, command in plan["commands"].items():
         log_path = output_dir / "logs" / f"{stage}.log"
         started = time.perf_counter()
         returncode = _run_command(command, log_path)
@@ -118,6 +117,13 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
     dataset = int(args.dataset)
+    if dataset == 85 and not Path(sys.executable).absolute().is_relative_to(
+        _REPO_ROOT / ".venv"
+    ):
+        raise ValueError(
+            "Python executable must be under this worktree .venv for 85RAW "
+            f"validation; got {sys.executable}"
+        )
     execution_profile = load_execution_profile(
         parallel_workers=args.workers,
         alignment_workers=args.alignment_workers,
@@ -209,6 +215,7 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         str(alignment_dir),
         "--raw-workers",
         str(execution_profile.alignment_workers),
+        "--require-all-raw",
         "--expected-sample-count",
         str(dataset),
         "--output-level",
@@ -273,7 +280,6 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         },
         "commands": {
             "discovery": discovery_command,
-            "alignment_preflight": alignment_command + ["--preflight-only"],
             "alignment": alignment_command,
         },
     }
