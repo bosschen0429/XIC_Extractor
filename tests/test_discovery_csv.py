@@ -62,13 +62,13 @@ def test_event_table_ends_with_the_located_peak_and_attachment() -> None:
 def test_peak_csv_round_trips_through_the_reader(tmp_path: Path) -> None:
     peak = _peak(
         matched_tag_names=("DNA_dR", "R"),
-        status="overlap",
+        status="no_nl_event",
         ms1_apex_mz=258.1083,
     )
     path = write_discovery_peaks_csv(tmp_path / "nested" / "peaks.csv", [peak])
 
     (row,) = _read_csv(path)
-    assert row["status"] == "overlap"
+    assert row["status"] == "no_nl_event"
     assert row["matched_tag_names"] == "DNA_dR;R"
     (restored,) = read_discovery_peaks_csv(path)
     assert restored == peak

@@ -292,7 +292,10 @@ def physical_backfill_observation(
     location_reliable: bool = True,
     evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
 ) -> PeakObservation | None:
-    """Measure one backfill trace; only a clean selected peak is observed."""
+    """Measure one backfill trace; an available selected peak is observed.
+
+    Overlap review travels with the observation instead of withholding it.
+    """
     evaluation = evaluate_physical_peak(
         prepare_physical_signal(trace.rt, trace.intensity, profile=profile),
         query_rt_min=query_rt_min,
@@ -307,7 +310,7 @@ def physical_backfill_observation(
     )
     if evaluation_sink is not None:
         evaluation_sink(evaluation)
-    if evaluation.state != "available" or evaluation.requires_overlap_review:
+    if evaluation.state != "available":
         return None
     return mint_physical_peak_observations(
         sample=sample,

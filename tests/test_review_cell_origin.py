@@ -45,5 +45,6 @@ def test_origin_names_only_the_peak_providing_the_matrix_value(
         value=value,
         variant="numeric" if value is not None else "not_quantifiable",
         source="trapezoid_counts_seconds_on_canonical_signal",
+        review_reasons=(),
     )
     assert review_cell(decision)["support_origin"] == expected

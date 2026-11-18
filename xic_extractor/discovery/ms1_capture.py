@@ -435,9 +435,7 @@ def _measured_peak(
         ms1_search_rt_max=window.rt_max,
         query_rt_min=question.query_rt_min,
         status=_peak_status(
-            doubly_charged=doubly_charged,
-            overlap=evaluation.requires_overlap_review,
-            attached_event_count=len(attached),
+            doubly_charged=doubly_charged, attached_event_count=len(attached)
         ),
         ms1_apex_mz=apex_mz,
         evidence_score=score_discovery_evidence(
@@ -471,14 +469,14 @@ def _measured_peak(
     return peak, representative, peak_attachments
 
 
-def _peak_status(
-    *, doubly_charged: bool, overlap: bool, attached_event_count: int
-) -> PeakStatus:
-    """The first problem that holds the peak, then NL attachment."""
+def _peak_status(*, doubly_charged: bool, attached_event_count: int) -> PeakStatus:
+    """The first problem that holds the peak, then NL attachment.
+
+    Overlap review does not hold a peak: its value is kept and the cell carries
+    the review.
+    """
     if doubly_charged:
         return "doubly_charged"
-    if overlap:
-        return "overlap"
     if attached_event_count < 1:
         return "no_nl_event"
     return "admitted"

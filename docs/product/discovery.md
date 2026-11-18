@@ -113,7 +113,6 @@ this table wins.
 | --- | --- | --- |
 | `blank` | Demoted by [blank qualification](#blank-qualification) | No |
 | `doubly_charged` | The MS1 ion reads as a doubly charged isotope ([accurate-mass reading](#accurate-mass-reading)) | No |
-| `overlap` | A shoulder or overlapping envelope whose MS2 cannot be attributed to one peak | No |
 | `no_nl_event` | A measurable MS1 peak without an [attached](#cid-nl-support-relations), precursor-verified NL event | No; review only |
 | `admitted` | At least one attached event and none of the above | Yes |
 
@@ -123,6 +122,11 @@ support scans or authorize Backfill. A legitimate group can still find a new
 MS1-only observation in another sample through [Backfill](backfill.md); that
 observation cannot resurrect a rejected peak or create a new group. A batch with
 no admitted peak completes with no subjects and an empty Matrix.
+
+A shoulder or overlapping envelope does not hold a peak. MS1 shape alone does
+not dismiss a peak with attached NL support; its area is measured on the
+unresolved envelope, and its Matrix cell carries the review reason
+`physical_shoulder_overlap`.
 
 ### Physical qualification
 

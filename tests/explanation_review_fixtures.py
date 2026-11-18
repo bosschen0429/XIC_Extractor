@@ -183,6 +183,7 @@ def _quality_review_report(
             value=value,
             source="raw_trapezoid",
             selected_integration=observation.integration,
+            review_reasons=(),
         )
         cells.append(review_cell(decision))
         # Backfill admissions have no owning member; their risks stay on the cell.

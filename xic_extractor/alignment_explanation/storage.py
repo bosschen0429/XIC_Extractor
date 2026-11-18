@@ -118,6 +118,7 @@ TABLES: dict[str, tuple[str, ...]] = {
         "evidence_states",
         "reason_codes",
         "signal_quality",
+        "review_reasons",
         "risks",
         "observation",
     ),
@@ -198,7 +199,8 @@ _DDL = {
         "variant TEXT NOT NULL, value REAL, apex_rt_min REAL, source TEXT, "
         "support_origin TEXT NOT NULL, peaks TEXT NOT NULL, position_rt_min REAL, "
         "evidence_states TEXT NOT NULL, reason_codes TEXT NOT NULL, "
-        "signal_quality TEXT NOT NULL, risks BLOB, observation BLOB, "
+        "signal_quality TEXT NOT NULL, review_reasons TEXT NOT NULL, "
+        "risks BLOB, observation BLOB, "
         "PRIMARY KEY(group_id, sample))"
     ),
     "method_assessments": (

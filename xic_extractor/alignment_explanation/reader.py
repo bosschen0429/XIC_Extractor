@@ -555,7 +555,8 @@ class _Report:
         query = (
             "SELECT g.feature_id,c.sample,c.variant,c.value,c.apex_rt_min,c.source,"
             "c.support_origin,c.peaks,c.evidence_states,c.reason_codes,"
-            "c.signal_quality,c.observation,c.group_id,c.risks FROM cells c "
+            "c.signal_quality,c.review_reasons,c.observation,c.group_id,c.risks "
+            "FROM cells c "
             "JOIN groups g ON g.id=c.group_id"
         )
         rows: Iterable[tuple[Any, ...]]
@@ -570,7 +571,7 @@ class _Report:
                 )
             )
         rows = list(rows)
-        member_risks = self._member_risks("final_group", (row[12] for row in rows))
+        member_risks = self._member_risks("final_group", (row[13] for row in rows))
         result: dict[str, dict[str, dict[str, Any]]] = {}
         for (
             feature_id,
@@ -584,6 +585,7 @@ class _Report:
             evidence_states,
             reason_codes,
             signal_quality,
+            review_reasons,
             observation,
             group,
             stored_risks,
@@ -615,6 +617,7 @@ class _Report:
                     }
                     for quality in json.loads(signal_quality)
                 ],
+                "review_reasons": json.loads(review_reasons),
                 "membership_risks": risks,
                 **(
                     {}

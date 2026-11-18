@@ -94,6 +94,7 @@ ALIGNMENT_CELLS_COLUMNS = (
     "noise_sigma",
     "signal_to_noise",
     "low_signal_to_noise",
+    "review_reasons",
     "source_candidate_id",
 )
 
@@ -637,6 +638,7 @@ def _cell_fields(
         "low_signal_to_noise": quality.low_signal_to_noise
         if quality is not None and quality.low_signal_to_noise is not None
         else "",
+        "review_reasons": ";".join(cell.review_reasons),
         "source_candidate_id": candidate_ids.get(sample_stem, ""),
     }
 
