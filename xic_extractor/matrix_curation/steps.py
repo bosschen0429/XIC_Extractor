@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 import numpy as np
 
+from xic_extractor.matrix_curation.mass_rt_windows import MzRtWindow
 from xic_extractor.sample_metadata import SampleMetadata
 
 
@@ -55,6 +57,7 @@ class CurationInputs:
     sample_binding: SampleBinding
     # Empty when per-cell evidence can be read; otherwise why not.
     cell_evidence_problem: str = ""
+    nucleoside_list: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +70,7 @@ class CurationMatrix:
     # Per Matrix row, published cells by explanation sample key; loaded only
     # when an enabled step needs it.
     cells: tuple[Mapping[str, CellEvidence], ...] | None = None
+    nucleoside_windows: tuple[MzRtWindow, ...] = ()
 
 
 @dataclass(frozen=True)

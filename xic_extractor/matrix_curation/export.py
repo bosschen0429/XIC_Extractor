@@ -16,11 +16,12 @@ import numpy as np
 
 from xic_extractor.alignment_explanation.storage import EXPLANATION_ARTIFACT_NAME
 from xic_extractor.matrix_curation.finite_fraction import FINITE_FRACTION_STEP
-from xic_extractor.matrix_curation.istd import (
-    IstdWindow,
-    match_istd,
-    windows_from_target_snapshot,
+from xic_extractor.matrix_curation.istd import windows_from_target_snapshot
+from xic_extractor.matrix_curation.known_nucleosides import (
+    KNOWN_NUCLEOSIDES_STEP,
+    read_nucleoside_list,
 )
+from xic_extractor.matrix_curation.mass_rt_windows import MzRtWindow, match_labels
 from xic_extractor.matrix_curation.published import (
     CURATED_MATRIX_NAME,
     DECISIONS_NAME,
@@ -63,7 +64,11 @@ from xic_extractor.tabular_io import (
 )
 
 # A later step joins by adding itself here; the page and outputs follow.
-STEPS: tuple[CurationStep, ...] = (SAME_COMPOUND_STEP, FINITE_FRACTION_STEP)
+STEPS: tuple[CurationStep, ...] = (
+    SAME_COMPOUND_STEP,
+    KNOWN_NUCLEOSIDES_STEP,
+    FINITE_FRACTION_STEP,
+)
 DECISION_KEY_COLUMNS = (
     "source_matrix_row_index",
     "feature_id",
@@ -92,7 +97,7 @@ def cell_evidence_problem(source: CurationSource) -> str:
     return ""
 
 
-def read_run_istd(source: CurationSource) -> tuple[IstdWindow, ...] | None:
+def read_run_istd(source: CurationSource) -> tuple[MzRtWindow, ...] | None:
     """The internal standards the run declared, or None when it cannot be read."""
     if source.target_snapshot is None:
         return None
@@ -201,6 +206,7 @@ def describe_steps(
     metadata: Sequence[SampleMetadata] | None,
     *,
     missing_samples: str,
+    nucleoside_list: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Each step with its parameters and, when it cannot run, the reason."""
     with source.matrix_path.open(encoding="utf-8-sig", newline="") as stream:
@@ -212,6 +218,7 @@ def describe_steps(
     inputs = CurationInputs(
         bind_samples(header[2:], metadata, missing=missing_samples),
         cell_evidence_problem(source),
+        nucleoside_list,
     )
     return [
         {
@@ -264,8 +271,9 @@ def prepare_matrix_curation(
     sample_metadata: Sequence[SampleMetadata] | None,
     sample_source: str,
     steps: Mapping[str, Mapping[str, object]],
-    istd_windows: Sequence[IstdWindow] | None = None,
+    istd_windows: Sequence[MzRtWindow] | None = None,
     istd_source: str = "",
+    nucleoside_list: Path | None = None,
 ) -> CurationEvaluation:
     """Evaluate once without writing; preview and export consume these decisions.
 
@@ -308,7 +316,7 @@ def prepare_matrix_curation(
     )
     needs_cells = any(step.needs_cell_evidence for step in enabled)
     inputs = CurationInputs(
-        binding, cell_evidence_problem(source) if needs_cells else ""
+        binding, cell_evidence_problem(source) if needs_cells else "", nucleoside_list
     )
     for step in enabled:
         reason = step.unavailable_reason(inputs)
@@ -326,15 +334,17 @@ def prepare_matrix_curation(
                     f"matrix row {index + 1}, sample {column!r}: "
                     f"invalid numeric value {token!r}"
                 ) from exc
+    enabled_list = nucleoside_list if KNOWN_NUCLEOSIDES_STEP.key in steps else None
     matrix = CurationMatrix(
         sample_binding=binding,
         values=values,
         features=features,
+        nucleoside_windows=read_nucleoside_list(enabled_list) if enabled_list else (),
         cells=load_cell_evidence(source, features) if needs_cells else None,
     )
     windows = tuple(istd_windows or ())
     istd_labels = [
-        match_istd(feature.matrix_mz, feature.matrix_rt, windows)
+        match_labels(feature.matrix_mz, feature.matrix_rt, windows)
         for feature in features
     ]
     final_keep = [True] * len(features)
@@ -473,6 +483,9 @@ def prepare_matrix_curation(
                 else ""
             ),
             "sample_metadata": sample_source,
+            **(
+                {"nucleoside_list": str(enabled_list.resolve())} if enabled_list else {}
+            ),
         },
         "feature_count": len(rows),
         "kept_feature_count": len(kept_rows),
@@ -524,14 +537,14 @@ def export_matrix_curation(
     sample_source: str,
     steps: Mapping[str, Mapping[str, object]],
     output_dir: Path,
-    istd_windows: Sequence[IstdWindow] | None = None,
+    istd_windows: Sequence[MzRtWindow] | None = None,
     istd_source: str = "",
+    nucleoside_list: Path | None = None,
 ) -> Path:
     """Write the curated Matrix and per-feature decisions into a new folder.
 
-    Each enabled step judges the original Matrix on its own. A feature is kept
-    when it is an internal standard or every enabled step keeps it. Sources are
-    never modified.
+    Each enabled step judges only the remaining rows. Internal standards are
+    protected at every step. Sources are never modified.
     """
     evaluation = prepare_matrix_curation(
         source=source,
@@ -540,6 +553,7 @@ def export_matrix_curation(
         steps=steps,
         istd_windows=istd_windows,
         istd_source=istd_source,
+        nucleoside_list=nucleoside_list,
     )
     output_dir.mkdir(parents=True, exist_ok=False)
     for name, table in evaluation.tables.items():

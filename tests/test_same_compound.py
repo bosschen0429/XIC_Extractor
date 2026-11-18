@@ -6,11 +6,8 @@ from pathlib import Path
 import pytest
 
 from tests.matrix_review_fixtures import current_matrix_review_row
-from xic_extractor.matrix_curation.istd import (
-    IstdWindow,
-    istd_window,
-    windows_from_target_snapshot,
-)
+from xic_extractor.matrix_curation.istd import windows_from_target_snapshot
+from xic_extractor.matrix_curation.mass_rt_windows import MzRtWindow, mz_rt_window
 from xic_extractor.matrix_curation.same_compound import (
     CONFIRMED_MH,
     RELATIONS,
@@ -843,15 +840,17 @@ def test_group_review_follows_other_steps_and_counts_empty_groups():
 
 
 def test_istd_window_uses_range_or_expected_rt():
-    assert istd_window(
+    assert mz_rt_window(
         label="d3", mz=245.0, rt_min=11.0, rt_max=13.0, expected_rt_min=12.0
-    ) == IstdWindow("d3", 245.0, 11.0, 13.0)
+    ) == MzRtWindow("d3", 245.0, 11.0, 13.0)
     # Workbench lists record rt_min == rt_max; that is no range.
-    assert istd_window(
+    assert mz_rt_window(
         label="d3", mz=245.0, rt_min=12.0, rt_max=12.0, expected_rt_min=12.0
-    ) == IstdWindow("d3", 245.0, 11.25, 12.75)
+    ) == MzRtWindow("d3", 245.0, 11.25, 12.75)
     assert (
-        istd_window(label="x", mz=245.0, rt_min=None, rt_max=None, expected_rt_min=None)
+        mz_rt_window(
+            label="x", mz=245.0, rt_min=None, rt_max=None, expected_rt_min=None
+        )
         is None
     )
 
@@ -874,7 +873,7 @@ def test_istd_window_uses_range_or_expected_rt():
         }
     )
     assert windows_from_target_snapshot(snapshot) == (
-        IstdWindow("d3", 245.0, 11.25, 12.75),
+        MzRtWindow("d3", 245.0, 11.25, 12.75),
     )
     assert windows_from_target_snapshot(None) == ()
 
@@ -952,7 +951,7 @@ def synthetic_cells(monkeypatch):
     )
 
 
-def _export(tmp_path, name, steps, istd=None):
+def _export(tmp_path, name, steps, istd=None, *, nucleoside_list=None):
     from xic_extractor.matrix_curation.export import export_matrix_curation
     from xic_extractor.matrix_curation.source import locate_curation_source
 
@@ -965,6 +964,7 @@ def _export(tmp_path, name, steps, istd=None):
         steps=steps,
         output_dir=output,
         istd_windows=istd,
+        nucleoside_list=nucleoside_list,
         istd_source="fixture" if istd else "",
     )
     _, decisions = read_tsv_with_header(output / "feature_decisions.tsv")
@@ -973,6 +973,57 @@ def _export(tmp_path, name, steps, istd=None):
         {row["feature_id"]: row for row in decisions},
         json.loads(summary.read_text(encoding="utf-8")),
     )
+
+
+def test_nucleoside_removal_is_attributed_only_to_rows_entering_the_step(
+    tmp_path, synthetic_cells
+):
+    _curation_folder(tmp_path / "alignment")
+    _samples(tmp_path / "samples.tsv")
+    listing = tmp_path / "windows.tsv"
+    listing.write_text(
+        "label\tmz\texpected_rt_min\nroot\t300\t10\n"
+        "derivative\t321.981944\t10\nprotected\t500\t20\n",
+        encoding="utf-8",
+    )
+    protection = (MzRtWindow("standard", 500, 19, 21),)
+    steps = {"finite_fraction": {"min_finite_fraction": 0.6}, "same_compound": {}}
+    _, before, _ = _export(tmp_path, "off", steps, protection, nucleoside_list=listing)
+    _, after, summary = _export(
+        tmp_path,
+        "on",
+        steps | {"known_nucleosides": {}},
+        protection,
+        nucleoside_list=listing,
+    )
+    assert [row["decision"] for row in before.values()] == [
+        row["decision"] for row in after.values()
+    ]
+    assert before["F000001"]["decision_reason"] == "dropped_by:finite_fraction"
+    assert after["F000001"]["decision_reason"] == "dropped_by:known_nucleosides"
+    assert after["F000001"]["finite_fraction_decision"] == "not_evaluated"
+    assert after["F000002"]["decision_reason"] == "dropped_by:same_compound"
+    assert after["F000002"]["same_compound_representative_feature_id"] == "F000001"
+    assert after["F000002"]["known_nucleosides_decision"] == "not_evaluated"
+    assert after["F000002"]["known_nucleosides_label"] == ""
+    assert after["F000003"]["known_nucleosides_label"] == "protected"
+    assert after["F000003"]["known_nucleosides_decision"] == "drop"
+    assert after["F000003"]["decision_reason"] == "istd_protected"
+    assert summary["inputs"]["nucleoside_list"] == str(listing)
+    assert [
+        (s["key"], s["input_feature_count"], s["removed_feature_count"])
+        for s in summary["steps"]
+    ] == [
+        ("same_compound", 4, 1),
+        ("known_nucleosides", 3, 1),
+        ("finite_fraction", 2, 1),
+    ]
+    # With collapse disabled, a match at the root does not remove its adduct.
+    listing.write_text("label\tmz\texpected_rt_min\nroot\t300\t10\n", encoding="utf-8")
+    _, alone, _ = _export(
+        tmp_path, "alone", {"known_nucleosides": {}}, nucleoside_list=listing
+    )
+    assert alone["F000002"]["decision"] == "keep"
 
 
 def test_export_excludes_unassigned_derivative_without_inventing_a_parent(
@@ -1074,7 +1125,7 @@ def test_derivatives_are_removed_before_feature_filtering_and_istd_is_protected(
     assert review == []
 
     # The standard at m/z 300 elutes at 9-11 min: F000004 at 15 min is not it.
-    istd = (IstdWindow("d0", 300.0, 9.0, 11.0),)
+    istd = (MzRtWindow("d0", 300.0, 9.0, 11.0),)
     _, protected, summary = _export(
         tmp_path, "istd", {"finite_fraction": fraction, "same_compound": {}}, istd
     )

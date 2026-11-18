@@ -17,7 +17,10 @@ export function createCurationSession(
   { request, startJob, preferences = {}, adoptPreferences = () => {} },
   clock = browserClock,
 ) {
-  let sources = owned({ source_dir: "", sample_metadata_path: "", istd_path: "" });
+  const emptySources = {
+    source_dir: "", sample_metadata_path: "", istd_path: "", nucleoside_path: "",
+  };
+  let sources = owned(emptySources);
   let runSource = "";
   let samples = null;
   let detection = null;
@@ -67,9 +70,14 @@ export function createCurationSession(
       : "請選擇 Alignment 輸出資料夾。";
   }
   function replaceSources(values) {
+    // Changing a list in this Matrix must not reset the other step choices.
+    if (values.source_dir !== sources.source_dir) settings = owned({});
+    else if (detection)
+      settings = owned(Object.fromEntries(detection.steps
+        .filter((step) => !step.unavailable_reason)
+        .map((step) => [step.key, settings[step.key]])));
     sources = owned(values);
     detection = null;
-    settings = owned({});
     sourceError = "";
     invalidate();
     publish();
@@ -78,14 +86,16 @@ export function createCurationSession(
   function stepSettingsFor(steps) {
     const draft = {};
     for (const step of steps) {
-      const saved = remembered[step.key];
+      const saved = settings[step.key] ?? remembered[step.key];
       const parameters = {};
       for (const parameter of step.parameters)
         parameters[parameter.key] = String(
           saved?.parameters?.[parameter.key] ?? "",
         );
       draft[step.key] = {
-        enabled: !step.unavailable_reason && (saved?.enabled ?? true),
+        enabled:
+          !step.unavailable_reason &&
+          (saved?.enabled ?? step.key !== "known_nucleosides"),
         parameters,
       };
     }
@@ -195,11 +205,7 @@ export function createCurationSession(
       if (disposed) return;
       runSource = sourceDir.trim();
       samples = owned(runSamples ?? null);
-      replaceSources({
-        source_dir: runSource,
-        sample_metadata_path: "",
-        istd_path: "",
-      });
+      replaceSources({ ...emptySources, source_dir: runSource });
       schedule(0);
     },
     setSources(values, { refresh = false } = {}) {

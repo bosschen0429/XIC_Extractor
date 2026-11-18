@@ -4792,6 +4792,47 @@ def _open_curation_folder(page, tmp_path, fake_runs):
     return output
 
 
+def test_picking_a_nucleoside_list_preserves_draft_and_exports_only_when_enabled(
+    workbench, fake_runs, tmp_path, monkeypatch
+):
+    from xic_extractor.tabular_io import read_tsv_with_header
+
+    page = workbench
+    source = _open_curation_folder(page, tmp_path, fake_runs)
+    toggle = page.locator("#curation-step-known_nucleosides")
+    expect(toggle).to_be_disabled()
+    listing = tmp_path / "chosen.tsv"
+    listing.write_text("label\tmz\texpected_rt_min\nX\t103\t2.5\n", encoding="utf-8")
+
+    def choose(kind, current):
+        assert kind == "nucleosides"
+        return str(listing)
+
+    monkeypatch.setattr("xic_workbench.server.choose_path", choose)
+    page.locator("#curation-input-tools > summary").click()
+    page.locator('[data-browse="curation-nucleosides"]').click()
+    expect(toggle).to_be_enabled()
+    expect(toggle).not_to_be_checked()
+    preview = page.locator("#curation-preview")
+    expect(preview).to_contain_text("保留 2 列")
+    toggle.check()
+    expect(preview).to_contain_text("保留 1 列")
+    page.locator("#curation-export").click()
+    expect(page.locator("#curation-result")).to_contain_text(
+        "1保留 feature", timeout=BACKGROUND_JOB_TIMEOUT_MS
+    )
+    (folder,) = source.glob("matrix_curation_*")
+    _, decisions = read_tsv_with_header(folder / "feature_decisions.tsv")
+    assert [
+        (r["known_nucleosides_label"], r["decision_reason"]) for r in decisions
+    ] == [
+        ("", "kept_by_all_steps"),
+        ("", "dropped_by:finite_fraction"),
+        ("X", "dropped_by:known_nucleosides"),
+        ("", "dropped_by:finite_fraction"),
+    ]
+
+
 def test_reselecting_same_curation_metadata_refreshes_preview(
     workbench, fake_runs, tmp_path, monkeypatch
 ):

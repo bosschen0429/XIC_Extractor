@@ -11,13 +11,47 @@ detection, peak identity, or the source Matrix.
 ## Steps
 
 Enabled steps run in a fixed sequence: remove supported isotope/adduct and other
-derivative ions with `same_compound`, then apply `finite_fraction` to the remaining
-features. Removed derivatives are not evaluated by later filters or promoted
+derivative ions with `same_compound`, exclude listed windows with
+`known_nucleosides`, then apply `finite_fraction` to the remaining features.
+Only enabled steps run. Removed derivatives are not evaluated by later filters or promoted
 when their representative is filtered out. Internal standards remain protected
 at every step (see [Internal standards](#internal-standards)). A step that lacks a required input is shown as
 unavailable with the reason. Steps are listed in
 `matrix_curation.export.STEPS`; a new step adds itself there and the page, CLI
 options and output columns follow.
+
+### Known nucleoside windows (opt-in)
+
+Select a curation TSV under **改用其他來源（選用） → 核苷清單 TSV** and
+enable **排除清單核苷**, or use:
+
+```console
+xic-matrix-curation --source-dir <alignment> --same-compound --known-nucleosides --nucleoside-list <windows.tsv>
+```
+
+The [example TSV](examples/known_nucleosides.tsv) contains protonated dG, dT,
+dA and dC reference masses and RT windows for one DNA-digest LC method. It
+is **not a default**. Adapt RT windows to your chromatography. Each row needs
+a nonblank `label`, positive finite `mz`, and either `rt_min < rt_max` in
+minutes or, with both bounds absent, `expected_rt_min` (±0.75 min).
+A complete range takes precedence. An enabled step with a missing, empty or
+invalid list cannot export. A list alone does not enable the CLI step.
+
+The bound Review's `group_center_mz` must be within 10 ppm of a reference
+**and** its `group_center_rt` inside the inclusive window. No prevalence or
+sample metadata is required. A label means a window match, not confirmed
+identity or internal-standard status. With `same_compound` off, no related
+rows are removed by association.
+
+When enabled, `feature_decisions.tsv` includes `known_nucleosides_label`
+(sorted distinct matches joined by semicolons), `known_nucleosides_decision`
+and `known_nucleosides_reason`. Previously removed rows are `not_evaluated`.
+A match records `drop` / `window_match`, even when ISTD protection keeps the
+row. Otherwise its final reason is `dropped_by:known_nucleosides`; if it
+would have failed the later fraction step anyway, only the attribution changes.
+The summary records the list path and the actual stage counts, not the number
+of matching labels. With the step off there are no list-specific outputs.
+To undo the exclusion, disable it and export the same source to a new folder.
 
 ### Finite-value fraction
 
@@ -322,7 +356,7 @@ computer. Untargeted runs never start curation automatically.
 
 For batches, `xic-matrix-curation --source-dir <folder> --min-finite-fraction
 <value> --same-compound` runs the same owner; a step runs when its parameters
-or, for `same_compound`, its flag are given. `--istd-list` selects a target
+or its flag are given. `--istd-list` selects a target
 list; without it the run's own standards are used.
 `--sample-metadata` selects a file; without it the saved result's sample data is
 used. For an older output, `--dll-dir` explicitly enables the RAW-header

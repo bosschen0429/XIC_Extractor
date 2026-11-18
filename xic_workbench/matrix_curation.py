@@ -14,7 +14,8 @@ from xic_extractor.matrix_curation.export import (
     read_run_istd,
     read_sample_metadata_file,
 )
-from xic_extractor.matrix_curation.istd import IstdWindow, read_istd_file
+from xic_extractor.matrix_curation.istd import read_istd_file
+from xic_extractor.matrix_curation.mass_rt_windows import MzRtWindow
 from xic_extractor.matrix_curation.published import (
     CURATED_MATRIX_NAME,
     DECISIONS_NAME,
@@ -67,7 +68,7 @@ def resolve_samples(
 
 def resolve_istd(
     source: CurationSource, *, istd_path: str = ""
-) -> tuple[tuple[IstdWindow, ...] | None, dict[str, str] | None]:
+) -> tuple[tuple[MzRtWindow, ...] | None, dict[str, str] | None]:
     """Pick the internal standard list: a chosen file, else the run's own list."""
     if istd_path.strip():
         path = Path(istd_path.strip())
@@ -76,6 +77,11 @@ def resolve_istd(
     if windows:
         return windows, {"kind": "run", "label": "本次分析宣告的內標清單"}
     return None, None
+
+
+def _nucleoside_list(values: dict[str, Any]) -> Path | None:
+    path = str(values.get("nucleoside_path") or "").strip()
+    return Path(path) if path else None
 
 
 def describe_source(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
@@ -101,7 +107,12 @@ def describe_source(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
         ),
         "istd_source": istd_source,
         "istd_count": len(istd or ()),
-        "steps": describe_steps(source, metadata, missing_samples=MISSING_SAMPLES),
+        "steps": describe_steps(
+            source,
+            metadata,
+            missing_samples=MISSING_SAMPLES,
+            nucleoside_list=_nucleoside_list(values),
+        ),
         "output_dir": str(default_output_dir(source)),
     }
 
@@ -127,6 +138,7 @@ def run_curation(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]:
         sample_metadata=metadata,
         sample_source=_summary_label(sample_source),
         steps=steps,
+        nucleoside_list=_nucleoside_list(values),
         output_dir=output_dir,
         istd_windows=istd,
         istd_source=_istd_label(source, istd_source),
@@ -173,6 +185,7 @@ def preview_curation(config_dir: Path, values: dict[str, Any]) -> dict[str, Any]
         sample_metadata=metadata,
         sample_source=_summary_label(sample_source),
         steps=steps,
+        nucleoside_list=_nucleoside_list(values),
         istd_windows=istd,
         istd_source=_istd_label(source, istd_source),
     ).preview

@@ -19,6 +19,7 @@ export function loadCurationSource(sourceDir, samples) {
   $("curation-source_dir").value = sourceDir;
   $("curation-sample_metadata").value = "";
   $("curation-istd").value = "";
+  $("curation-nucleosides").value = "";
   curation.load(sourceDir, samples);
 }
 const folderKey = (path) =>
@@ -258,6 +259,10 @@ export function bindCuration() {
     "curation-",
     "預設沿用該次分析的內標清單；找不到時才需選擇。",
   );
+  pathField(
+    $("curation-overrides"), "nucleosides", "核苷清單 TSV（選填）",
+    "nucleosides", "", "curation-",
+  );
   let displayedDetection;
   let displayedError;
   curation.subscribe((snapshot) => {
@@ -287,6 +292,7 @@ export function bindCuration() {
     source_dir: $("curation-source_dir"),
     sample_metadata_path: $("curation-sample_metadata"),
     istd_path: $("curation-istd"),
+    nucleoside_path: $("curation-nucleosides"),
   };
   const editSources = (event) => {
     curation.setSources(
