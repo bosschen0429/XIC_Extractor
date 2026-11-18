@@ -38,6 +38,28 @@ INJECTION_ORDER_COLUMNS = ["Sample_Name", "Injection_Order"]
 SAMPLE_METADATA_OUTPUT_COLUMNS = SAMPLE_METADATA_COLUMNS
 
 
+def write_sequence_manifest_outputs(
+    output_dir: Path, rows: tuple[SequenceManifestRow, ...]
+) -> tuple[Path, Path, Path, Path, Path]:
+    manifest_tsv = output_dir / "instrument_qc_sequence_manifest.tsv"
+    injection_order_csv = output_dir / "instrument_qc_injection_order.csv"
+    sample_metadata_tsv = output_dir / "instrument_qc_sample_metadata.tsv"
+    manifest_json = output_dir / "instrument_qc_sequence_manifest.json"
+    manifest_md = output_dir / "instrument_qc_sequence_manifest.md"
+    write_sequence_manifest_tsv(manifest_tsv, rows)
+    write_injection_order_csv(injection_order_csv, rows)
+    write_sample_metadata_tsv(sample_metadata_tsv, rows)
+    write_sequence_manifest_json(manifest_json, rows)
+    write_sequence_manifest_markdown(manifest_md, rows)
+    return (
+        manifest_tsv,
+        injection_order_csv,
+        sample_metadata_tsv,
+        manifest_json,
+        manifest_md,
+    )
+
+
 def write_sequence_manifest_tsv(
     path: Path,
     rows: Iterable[SequenceManifestRow],

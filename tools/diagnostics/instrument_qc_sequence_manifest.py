@@ -7,16 +7,13 @@ from typing import Sequence
 
 from xic_extractor.instrument_qc.sequence_manifest import build_sequence_manifest
 from xic_extractor.instrument_qc.sequence_manifest_writers import (
-    write_injection_order_csv,
-    write_sequence_manifest_json,
-    write_sequence_manifest_markdown,
-    write_sequence_manifest_tsv,
+    write_sequence_manifest_outputs,
 )
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Build docs-derived instrument QC sequence manifest.",
+        description="Match a method DOCX to RAW names; write QC manifest and metadata.",
     )
     parser.add_argument("--method-doc", type=Path, required=True)
     parser.add_argument("--raw-dir", type=Path, required=True)
@@ -54,21 +51,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    output_dir = args.output_dir
-    manifest_tsv = output_dir / "instrument_qc_sequence_manifest.tsv"
-    injection_order_csv = output_dir / "instrument_qc_injection_order.csv"
-    manifest_json = output_dir / "instrument_qc_sequence_manifest.json"
-    manifest_md = output_dir / "instrument_qc_sequence_manifest.md"
-
-    write_sequence_manifest_tsv(manifest_tsv, rows)
-    write_injection_order_csv(injection_order_csv, rows)
-    write_sequence_manifest_json(manifest_json, rows)
-    write_sequence_manifest_markdown(manifest_md, rows)
-
-    print(f"Wrote {manifest_tsv}")
-    print(f"Wrote {injection_order_csv}")
-    print(f"Wrote {manifest_json}")
-    print(f"Wrote {manifest_md}")
+    for path in write_sequence_manifest_outputs(args.output_dir, rows):
+        print(f"Wrote {path}")
     return 0
 
 

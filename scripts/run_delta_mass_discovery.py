@@ -14,7 +14,11 @@ from xic_extractor.raw_reader_errors import RawReaderError
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--raw-dir", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--raw", type=Path, help="Analyze only this Thermo RAW file.")
+    source.add_argument(
+        "--raw-dir", type=Path, help="Analyze every RAW in this directory."
+    )
     parser.add_argument("--dll-dir", type=Path, required=True)
     parser.add_argument(
         "--preset", required=True, help="Built-in name or preset TOML path."
@@ -25,7 +29,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         strategy = resolve_delta_mass_discovery(args.preset)
         outputs = run_delta_mass_discovery(
-            raw_dir=args.raw_dir,
+            raw_dir=args.raw_dir if args.raw is None else args.raw.parent,
+            raw_paths=None if args.raw is None else (args.raw,),
             dll_dir=args.dll_dir,
             output_dir=args.output_dir,
             strategy=strategy,

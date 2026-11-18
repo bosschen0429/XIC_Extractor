@@ -102,7 +102,7 @@ compact summary or exact candidate details without reading RAW.
 **Input**: `alignment_explanation.sqlite`, optionally an exact candidate ID.
 **Output**: Readable text or JSON; `--compact-to` writes compact review from an
 existing full report; `--curve-bundle` writes one candidate's or group's review
-curves for Inspector, saved where the run kept them and read from RAW otherwise.
+curves for Inspector. Supply RAW/DLL directories only for unsaved curves.
 **Status**: Maintained diagnostic workflow. Retains owner assessment, initial
 CrossSample and final disposition facts; does not recalculate decisions or grant
 Matrix authority. Existing `alignment_health_packet.py` summarizes machine-level
@@ -199,6 +199,7 @@ scoring, or values.
 ### `targeted_validation.py`
 
 **Purpose**: Run Targeted real-data validation suites and workbook comparisons.
+Preview any suite with `--dry-run`; full-cohort execution requires `--confirm-full-run`.
 **Topic group**: `targeted_validation.py` + `_suites`, `_run` (3 files)
 **Status note**: Tissue suites and the parallel benchmark share `_run`, which
 executes the canonical finalized Targeted application through publication.
@@ -298,7 +299,7 @@ are not daily).
 
 ### `instrument_qc_sequence_manifest.py`
 
-**Purpose**: Build docs-derived instrument QC sequence manifest.
+**Purpose**: Match method DOCX entries to RAW names and write the sequence manifest, injection order and `instrument_qc_sample_metadata.tsv` without running trends.
 **Status note**: The `run_instrument_qc.py --method-doc` flow writes the sequence manifest, legacy `instrument_qc_injection_order.csv`, and additive `instrument_qc_sample_metadata.tsv` using `sample_metadata`. The sample-metadata sidecar projects matched RAW rows and raw-dir-only instrument-QC rows as metadata only; roles do not alter instrument-QC trend values or matrix outputs.
 
 ---
@@ -350,7 +351,7 @@ evidence sidecar.
 
 ### `grouping_experiment.py`
 
-**Purpose:** Query arbitrary measured-mass ranges in saved Discovery and replay
+**Purpose:** Compare saved `members.tsv` tables from the same observations directly, query arbitrary measured-mass ranges in saved Discovery, or replay
 a formal grouping snapshot with parameter, RT coordinate or code changes without
 RAW or Backfill.
 
@@ -367,6 +368,7 @@ the formal grouping owner. Snapshot and table I/O live in
 loop over saved Discovery candidates for scalar CID-NL presets:
 
 ```powershell
+.venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment compare --before output/baseline/members.tsv --after output/variant/members.tsv --output-dir output/diff
 .venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment query --discovery-batch-index <index.csv> --mz-range 242.12:242.13 --output-dir output/query
 .venv/Scripts/python.exe -m scripts.run_alignment --stop-after grouping --save-grouping-inputs <usual Alignment arguments> --output-dir output/grouping
 .venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment replay --inputs output/grouping/grouping-inputs.json.gz --set preferred_rt_sec=30 --output-dir output/grouping-tight
@@ -402,7 +404,10 @@ membership; new snapshots omit it.
 Replay needs only that snapshot, with no RAW, DLL, acquisition or Backfill.
 `--compare-to <previous replay dir>` compares group membership with another
 replay of the same snapshot, such as one produced by another commit, and writes
-`membership-diff.tsv` (merges and splits with their apex RT gap and samples).
+`membership-diff.tsv` (merges and splits with their owners, samples and apex RT gap).
+If both tables already exist, use `compare` instead. Both commands compare shared
+owner IDs, report unmatched counts, and reject a comparison with no common owner.
+Saved tables can only resolve gaps to the precision of their observed RT values.
 `--set FIELD=JSON` changes an `AlignmentConfig` value; only fields consumed by
 grouping affect replay. Owner detection and integration changes require a new
 snapshot.

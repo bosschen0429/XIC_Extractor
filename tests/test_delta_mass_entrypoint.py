@@ -24,25 +24,11 @@ from xic_extractor.ms1_scan_index import build_ms1_scan_index
 from xic_extractor.xic_models import XICTrace
 
 
-@pytest.mark.parametrize("signal_gate", [False, True])
-@pytest.mark.parametrize("mass_policy", ["none", "easy_ic_restore"])
-@pytest.mark.parametrize("composite", [False, True])
-@pytest.mark.parametrize(
-    "ratio_max, expected_ratio_status", [(0.6, "within_range"), (0.45, "above_range")]
-)
-def test_raw_cli_preserves_sample_attribution_and_batches_trace_acquisition(
-    tmp_path,
-    monkeypatch,
-    composite,
-    ratio_max,
-    expected_ratio_status,
-    signal_gate,
-    mass_policy,
-):
+@pytest.fixture
+def raw_cli_case(tmp_path, monkeypatch, composite, ratio_max, signal_gate, mass_policy):
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    for sample in ("first", "second"):
-        (raw_dir / f"{sample}.raw").touch()
+    (raw_dir / "first.raw").touch()
     preset = tmp_path / "synthetic.toml"
     preset.write_text(
         """name = "Synthetic"
@@ -204,11 +190,34 @@ smoothing_window_sec = 1
                 for r in requests
             )
 
+    opened = []
+
     def open_reader(path, dll_dir, *, mass_recalibration):
+        opened.append(path)
         assert mass_recalibration == MassRecalibration(mass_policy)
         return Raw(path)
 
     monkeypatch.setattr(delta_mass_pipeline, "open_raw", open_reader)
+    return raw_dir, preset, extra_args, batches, opened
+
+
+@pytest.mark.parametrize("signal_gate", [False, True])
+@pytest.mark.parametrize("mass_policy", ["none", "easy_ic_restore"])
+@pytest.mark.parametrize("composite", [False, True])
+@pytest.mark.parametrize(
+    "ratio_max, expected_ratio_status", [(0.6, "within_range"), (0.45, "above_range")]
+)
+def test_raw_cli_preserves_sample_attribution_and_batches_trace_acquisition(
+    tmp_path,
+    raw_cli_case,
+    composite,
+    ratio_max,
+    expected_ratio_status,
+    signal_gate,
+    mass_policy,
+):
+    raw_dir, preset, extra_args, batches, _ = raw_cli_case
+    (raw_dir / "second.raw").touch()
     output = tmp_path / "result"
     assert (
         main(
@@ -302,6 +311,46 @@ smoothing_window_sec = 1
         (output / name / "detected_features.csv").is_file()
         for name in ("first", "second")
     )
+
+
+@pytest.mark.parametrize(
+    ("composite", "ratio_max", "signal_gate", "mass_policy"),
+    [
+        (True, 0.6, False, "none"),
+    ],
+)
+def test_selected_raw_matches_the_single_file_baseline(tmp_path, raw_cli_case):
+    raw_dir, preset, evidence, _, opened = raw_cli_case
+    first = raw_dir / "first.raw"
+    settings = ["--dll-dir", str(tmp_path), "--preset", str(preset)]
+    baseline, selected = tmp_path / "baseline", tmp_path / "selected"
+    assert (
+        main(
+            [
+                "--raw-dir",
+                str(raw_dir),
+                "--output-dir",
+                str(baseline),
+                *settings,
+                *evidence,
+            ]
+        )
+        == 0
+    )
+    (raw_dir / "second.raw").touch()
+    opened.clear()
+    args = ["--raw", str(first), "--output-dir", str(selected), *settings]
+    assert main(args) == 2  # Composite still requires CID-NL evidence.
+    assert not opened
+    assert main([*args, *evidence]) == 0
+    assert opened == [first]
+    for name in (
+        "delta_mass_candidates.csv",
+        "delta_mass_positions.csv",
+        "first/detected_features.csv",
+    ):
+        assert (selected / name).read_bytes() == (baseline / name).read_bytes()
+    assert not (selected / "second").exists()
 
 
 @pytest.mark.parametrize("separate_tables", [False, True])
