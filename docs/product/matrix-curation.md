@@ -116,11 +116,14 @@ direct detections leave insufficient:
   Both use the Review's `group_center_mz` (the group's centre m/z, the mean
   of its members' m/z); this is not per-sample mass evidence. `precursor_mz` is
   never used as MS1 m/z.
-- **Ratio screening:** on all supporting samples whose published values are
-  finite and positive, the median absolute deviation of `log10(light/heavy)` (no scale
-  constant) is at most 0.1 for isotopes and 0.15 otherwise, over at least 3
-  samples. A variable monomer-adduct ratio can instead use the independently
-  supported carrier evidence below; isotope ratio checks are never waived.
+- **Isotope ratio screening:** on all supporting samples whose published
+  values are finite and positive, the median absolute deviation of
+  `log10(light/heavy)` (no scale constant) is at most 0.1, over at least 3
+  samples. Adducts, salt clusters and multimers have no ratio check: their
+  yield follows each sample's salt content and concentration, so a varying
+  ratio is no evidence of different compounds. In 8RAW, dropping the former
+  adduct limit (0.15) added about one shifted-mass decoy pair per twenty new
+  real pairs.
 - **Isotope abundance:** every supporting sample's heavy/light ratio stays at
   or under `n·(p13/p12)` (13C), `C(n,2)·(p13/p12)²` (13C₂) or `n·(p15/p14)`
   (15N), with `n = floor(M/12)` or `floor(M/14)` and `M` the neutral mass at
@@ -168,33 +171,6 @@ derivatives are excluded by the single-pair checks, but they do not establish
 the lighter row as [M+H]⁺. They are not interchangeable with the Mg-formate/
 acetate mass differences.
 
-#### Variable monomer-adduct ratios
-
-A cross-sample adduct ratio above the MAD limit is not, by itself, evidence
-that the rows are different compounds. A Na/K/NH₄/Mg/Ca monomer-adduct pair
-that fails only ratio stability can still contribute to exclusion when:
-
-- the same reference has at least two **other, different** monomer carrier
-  forms that independently pass the original mass, co-elution and stable-ratio
-  checks;
-- the reference, candidate and those two witness rows all co-elute directly,
-  with at least three jointly supporting samples. Two rows of the same carrier
-  do not count as two forms; backfill and transitive co-elution do not count.
-
-The original single-pair outcomes supply the witnesses. A newly corroborated
-variable-ratio row cannot bootstrap another candidate. Neutral salt additions,
-dimers and isotopes do not use this exception; their existing single-pair or
-joint-family rules remain in force. The final direct-co-elution check with an
-ultimate root only attributes a representative; it does not keep a row.
-
-The relation outcome is `collapse_corroborated_adduct`; its actual ratio MAD
-remains in the table. Review kind `variable_ratio_adduct_supported` records
-the reference, witness feature IDs, ratio MAD and final step decision, including
-`decision=drop` when excluded. No output columns or RAW-reading path are added.
-This is multi-ion evidence from the published Matrix, not a claim that normal
-curation has read within-peak curves or MS2. Bounded 8RAW trace/mass checks
-support the rule, not cross-batch validation.
-
 #### Ion families without a detected [M+H]⁺
 
 A joint neutral-mass hypothesis can exclude non-[M+H]⁺ rows even when the
@@ -209,8 +185,7 @@ protonated monomer has no Matrix row. It requires all of:
   the seed monomer and the protonated dimer. A chain of co-eluting rows is not
   sufficient.
 
-Cross-sample adduct ratios need not be constant for this joint hypothesis;
-the ratio screen and isotope thresholds are unchanged. A compatible
+The isotope ratio screen and thresholds are unchanged. A compatible
 metal dimer (`[2M-H+Mg]+`, `[2M-H+Ca]+`, `[2M-2H+Na+Mg]+`,
 `[2M-2H+2Mg+HCOO]+` or `[2M-2H+2Mg+CH3COO]+`) can join an established family
 only with its own supported `M+2_unassigned` companion and direct co-elution
@@ -332,7 +307,7 @@ the source folder.
 | `analysis_matrix.tsv` | Kept rows in original order with original tokens and all sample columns |
 | `feature_decisions.tsv` | Every source row: `source_matrix_row_index`, `feature_id`, `Mz`, `RT`, `istd_label`, each enabled step's columns, the final `decision` and `decision_reason` (`kept_by_all_steps`, `dropped_by:<steps>` or `istd_protected`) |
 | `same_compound_relations.tsv` | Each mass-related row pair that co-elutes in some sample: relation, `e_ppm`, both-direct samples, supporting samples (backfilled ones only when direct co-elution is insufficient), the backfilled share of them, backfilled samples without an apex, largest apex difference, median light/heavy ratio, log-ratio MAD, outcome and whether it contributed to excluding the heavier row; an excluded row need not have a unique parent |
-| `same_compound_review.tsv` | Pairs and groups to review: unstable ratio, ≈1.998 unexplained by the isotope rules, review-only relation, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), an ion family removed by a later feature filter, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
+| `same_compound_review.tsv` | Pairs and groups to review: unstable isotope ratio, ≈1.998 unexplained by the isotope rules, review-only relation, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), an ion family removed by a later feature filter, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
 | `sample_metadata.tsv` | Matrix column → sample identity, role, group, order and exclusion |
 | `matrix_curation_summary.json` | Enabled steps and parameters, input paths, sample data source and counts |
 
@@ -353,7 +328,7 @@ how many rows were removed into it, a note rather than a threshold). Its two
 tables are written only when it runs. The summary records each step's
 parameters and counts, including the `same_compound` thresholds, removals by
 relation, removals through the group, `removed_representative_undetermined_count`,
-`removed_non_protonated_family_count`, `used_variable_ratio_adduct_pair_count`,
+`removed_non_protonated_family_count`,
 review counts and `empty_group_count` (uniquely assigned groups with no row left), and
 the internal standard source and protected count.
 `source_matrix_row_index` is the 1-based row position in the source Matrix;

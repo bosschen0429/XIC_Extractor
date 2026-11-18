@@ -616,14 +616,14 @@ def test_backfilled_ratios_must_stay_stable():
     # The two direct samples agree; the backfilled ones scatter fourfold.
     unstable = row(
         "H",
-        321.981944,
-        ratios=(0.5, 0.5, 2.0, 2.0, 2.0, 0.5),
+        301.003355,
+        ratios=(0.05, 0.05, 0.2, 0.2, 0.2, 0.05),
         direct=TWO_DIRECT,
     )
     decisions, result = decide(row("L", 300.0), unstable)
 
     assert decisions["H"][0] is True
-    assert outcome(result, "[M+Na]+") == {"ratio_unstable"}
+    assert outcome(result, "13C_M+1") == {"ratio_unstable"}
 
 
 def test_backfilled_isotope_ratio_obeys_the_abundance_ceiling():
@@ -645,7 +645,7 @@ def test_backfilled_isotope_ratio_obeys_the_abundance_ceiling():
     ("relation", "heavy_mz", "ratios"),
     [
         # Backfilled ratios scatter fourfold around the direct ones.
-        ("[M+Na]+", 321.981944, (0.5, 0.5, 0.5, 2.0, 2.0, 2.0)),
+        ("13C_M+1", 301.003355, (0.05, 0.05, 0.05, 0.2, 0.2, 0.2)),
         # Backfilled heavy/light exceeds the 24-carbon ceiling of m/z 300.
         ("13C_M+1", 301.003355, (0.15, 0.15, 0.15, 0.5, 0.5, 0.5)),
     ],
@@ -706,8 +706,8 @@ def test_coelution_needs_most_shared_direct_samples():
     assert outcome(result, "[M+Na]+") == {"coelution_insufficient"}
 
 
-def test_unstable_ratio_and_review_only_relations_are_reviewed():
-    unstable = row("U", 321.981944, ratios=(0.5, 2.0, 0.5, 2.0, 0.5, 2.0))
+def test_unstable_isotope_ratio_and_review_only_relations_are_reviewed():
+    unstable = row("U", 301.003355, ratios=(0.05, 0.2, 0.05, 0.2, 0.05, 0.2))
     methylated = row("M", 314.01565, scale=0.5)
     decisions, result = decide(row("L", 300.0), unstable, methylated)
 
@@ -716,6 +716,24 @@ def test_unstable_ratio_and_review_only_relations_are_reviewed():
         ("review_only_relation", "M"),
         ("unstable_ratio", "U"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("heavy_mz", "relation", "removed"),
+    [
+        (321.981944, "[M+Na]+", True),
+        (2 * 300.0 - 1.00727647, "[2M+H]+", True),
+        (382.003073617830, "+NaCH3COO", True),
+        (301.003355, "13C_M+1", False),
+    ],
+)
+def test_only_isotopes_need_a_stable_cross_sample_ratio(heavy_mz, relation, removed):
+    # Adduct and cluster yields follow each sample's salt and concentration.
+    varying = row("H", heavy_mz, ratios=(0.05, 0.2, 0.05, 0.2, 0.05, 0.2))
+    decisions, result = decide(row("L", 300.0), varying)
+
+    assert decisions["H"][0] is not removed
+    assert outcome(result, relation) == {"collapse" if removed else "ratio_unstable"}
 
 
 def variable_adduct_family(
@@ -747,128 +765,6 @@ def variable_adduct_family(
             base_rt=80.0,
         ),
     )
-
-
-def test_two_supported_carriers_can_corroborate_a_variable_adduct_ratio():
-    decisions, result = decide(*variable_adduct_family())
-    assert decisions["ratio_MH"][0] is True
-    assert decisions["ratio_Mg"][:3] == (
-        False,
-        "derived_from_representative",
-        "ratio_MH",
-    )
-    assert decisions["ratio_Mg_M2"][:3] == (False, "derived_through_group", "ratio_MH")
-    assert outcome(result, "[M+Mg+CH3COO]+") == {"collapse_corroborated_adduct"}
-    relation = next(
-        r for r in result.relation_rows if r["relation"] == "[M+Mg+CH3COO]+"
-    )
-    assert relation["used_for_collapse"] == "TRUE"
-    proof = next(
-        r
-        for r in result.review_rows
-        if r["review_kind"] == "variable_ratio_adduct_supported"
-    )
-    assert proof["feature_id"] == "ratio_Mg"
-    assert set(str(proof["related_feature_ids"]).split(";")) == {
-        "ratio_MH",
-        "ratio_Na",
-        "ratio_K",
-    }
-
-
-@pytest.mark.parametrize(
-    ("direct", "shift"),
-    [
-        (False, 0.0),
-        ((True, True, False, False, False, False), 0.0),
-        (True, 8.8),
-    ],
-)
-def test_a_single_backfilled_or_noncoeluting_carrier_cannot_rescue_an_adduct(
-    direct, shift
-):
-    decisions, result = decide(
-        *variable_adduct_family(potassium_direct=direct, potassium_shift=shift)
-    )
-    assert decisions["ratio_Mg"][0] is True
-    assert outcome(result, "[M+Mg+CH3COO]+") == {"ratio_unstable"}
-
-
-def test_two_rows_of_the_same_carrier_are_not_independent_corroboration():
-    rows = [r for r in variable_adduct_family() if r[0].feature_id != "ratio_K"]
-    decisions, _ = decide(*rows, row("second_Na", 621.982, scale=0.4, base_rt=80.0))
-    assert decisions["ratio_Mg"][0] is True
-
-
-@pytest.mark.parametrize("has_second_other_carrier", [False, True])
-def test_candidate_carrier_does_not_count_as_another_supported_form(
-    has_second_other_carrier,
-):
-    rows = [
-        *variable_adduct_family()[:3],
-        row("variable_Na", 621.984, ratios=(0.5, 2.0) * 3, base_rt=80.0),
-    ]
-    if has_second_other_carrier:
-        rows.append(row("stable_Mg", 681.990521, scale=0.4, base_rt=80.0))
-    decisions, result = decide(*rows)
-
-    assert decisions["variable_Na"][0] is (not has_second_other_carrier)
-    relation = next(
-        r for r in result.relation_rows if r["heavy_feature_id"] == "variable_Na"
-    )
-    assert relation["outcome"] == (
-        "collapse_corroborated_adduct" if has_second_other_carrier else "ratio_unstable"
-    )
-    assert relation["used_for_collapse"] == (
-        "TRUE" if has_second_other_carrier else "FALSE"
-    )
-    reviews = [
-        r
-        for r in result.review_rows
-        if r["review_kind"] == "variable_ratio_adduct_supported"
-        and r["feature_id"] == "variable_Na"
-    ]
-    if has_second_other_carrier:
-        assert set(reviews[0]["related_feature_ids"].split(";")) == {
-            "ratio_MH",
-            "ratio_K",
-            "stable_Mg",
-        }
-    else:
-        assert reviews == []
-
-
-def test_carrier_corroboration_needs_mutual_not_only_reference_coelution():
-    decisions, _ = decide(
-        *variable_adduct_family(potassium_shift=4.4, magnesium_shift=-4.4)
-    )
-    # Each witness co-elutes with the reference, but K and Mg are 8.8 s apart.
-    assert decisions["ratio_Mg"][0] is True
-
-
-@pytest.mark.parametrize(
-    ("mz", "relation"),
-    [
-        (601.003355, "13C_M+1"),
-        (1198.99272353, "[2M+H]+"),
-        (682.00307361783, "+NaCH3COO"),
-    ],
-)
-def test_monomer_carriers_do_not_override_isotope_dimer_or_salt_ratio_checks(
-    mz, relation
-):
-    rows = variable_adduct_family()[:3]
-    decisions, result = decide(
-        *rows,
-        row(
-            "variable_other",
-            mz,
-            base_rt=80.0,
-            ratios=(0.05, 0.15, 0.05, 0.15, 0.05, 0.15),
-        ),
-    )
-    assert decisions["variable_other"][0] is True
-    assert outcome(result, relation) == {"ratio_unstable"}
 
 
 def test_representative_much_weaker_than_removed_member_is_reviewed():

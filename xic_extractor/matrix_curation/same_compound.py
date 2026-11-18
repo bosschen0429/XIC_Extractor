@@ -39,7 +39,6 @@ MAX_APEX_SEC = 5.5
 MIN_SUPPORT_SAMPLES = 3
 MIN_SUPPORT_FRACTION = 0.8
 ISOTOPE_MAX_LOG_MAD = 0.1
-OTHER_MAX_LOG_MAD = 0.15
 K41_MEDIAN_RANGE = (11.0, 18.0)
 ISOTOPE_RATIO_SAMPLE_FACTOR = 2.0
 ISOTOPE_RATIO_SAMPLE_FRACTION = 0.8
@@ -152,7 +151,6 @@ RELATIONS: tuple[Relation, ...] = (
     Relation("H2O_loss", "review", 18.010565),
     Relation("+116.047_dR", "annotation", 116.04734),
 )
-_COLLAPSE_OUTCOMES = frozenset({"collapse", "collapse_corroborated_adduct"})
 
 
 @dataclass(frozen=True)
@@ -263,11 +261,14 @@ def relation_outcome(
         return "coelution_insufficient"
     if relation.kind == "review":
         return "review_only"
+    # Adduct and cluster yields follow each sample's salt and concentration,
+    # so their cross-sample ratio is no evidence of different compounds.
+    if relation.kind == "adduct":
+        return "collapse"
     if len(pair.ratios) < MIN_SUPPORT_SAMPLES:
         return "ratio_unavailable"
     mad = pair.log_mad
-    limit = ISOTOPE_MAX_LOG_MAD if relation.kind == "isotope" else OTHER_MAX_LOG_MAD
-    if mad is None or mad > limit:
+    if mad is None or mad > ISOTOPE_MAX_LOG_MAD:
         return "ratio_unstable"
     if relation.key == "41K":
         low, high = K41_MEDIAN_RANGE
@@ -362,15 +363,10 @@ def collapse_same_compound(
                 pair_outcomes[key] = relation_outcome(
                     by_key[key], mz[pair[0]], evidence[pair], metal_carrier=True
                 )
-    corroboration = _corroborate_variable_adducts(mz, cells, evidence, outcomes, by_key)
     edges: dict[tuple[int, int], tuple[str, ...]] = {}
     for pair, pair_outcomes in outcomes.items():
         folding = tuple(
-            sorted(
-                key
-                for key, value in pair_outcomes.items()
-                if value in _COLLAPSE_OUTCOMES
-            )
+            sorted(key for key, value in pair_outcomes.items() if value == "collapse")
         )
         if folding:
             edges[pair] = folding
@@ -489,110 +485,11 @@ def collapse_same_compound(
         removed,
         ambiguous_roots,
     )
-    corroboration_reviews = tuple(
-        review_row(
-            "variable_ratio_adduct_supported",
-            features[heavy].feature_id,
-            [features[light].feature_id]
-            + sorted(features[index].feature_id for index in witnesses),
-            relation="|".join(
-                sorted(
-                    key
-                    for key, outcome in outcomes[(light, heavy)].items()
-                    if outcome == "collapse_corroborated_adduct"
-                )
-            ),
-            log_ratio_mad=_number(evidence[(light, heavy)].log_mad),
-            decision="drop" if heavy in removed else "keep",
-        )
-        for (light, heavy), witnesses in corroboration.items()
-    )
     return SameCompoundResult(
         tuple(decisions),
         relation_rows,
-        review_rows + family_reviews + corroboration_reviews,
+        review_rows + family_reviews,
     )
-
-
-def _corroborate_variable_adducts(
-    mz: Sequence[float],
-    cells: Sequence[Mapping[str, CellEvidence]],
-    evidence: dict[tuple[int, int], PairEvidence],
-    outcomes: dict[tuple[int, int], dict[str, str]],
-    by_key: Mapping[str, Relation],
-) -> dict[tuple[int, int], tuple[int, ...]]:
-    """Replace an unstable monomer-adduct ratio with independent carrier evidence.
-
-    Two different other monomer carriers must already pass the single-pair
-    checks. The reference, candidate and both witnesses must co-elute directly,
-    including at least three jointly supporting samples. Promoted candidates
-    never become stable-ratio witnesses for further promotions. Isotopes,
-    neutral salt additions and multimers retain their own rules.
-    """
-    carriers = {
-        key
-        for key, _ in FAMILY_MONOMERS
-        if key in by_key
-        and by_key[key].kind == "adduct"
-        and by_key[key].confirms_mh
-        and by_key[key].mz_factor == 1
-    }
-    stable: dict[int, list[tuple[int, str]]] = defaultdict(list)
-    for (light, heavy), labels in outcomes.items():
-        stable[light].extend(
-            (heavy, key)
-            for key, value in labels.items()
-            if key in carriers and value == "collapse"
-        )
-
-    def get_pair(a: int, b: int) -> PairEvidence:
-        pair = (a, b) if mz[a] <= mz[b] else (b, a)
-        if pair not in evidence:
-            evidence[pair] = pair_evidence(cells[pair[0]], cells[pair[1]])
-        return evidence[pair]
-
-    supported = {}
-    for (light, heavy), labels in outcomes.items():
-        if not any(
-            key in carriers and value == "ratio_unstable"
-            for key, value in labels.items()
-        ):
-            continue
-        candidate_support = set(evidence[(light, heavy)].direct_support)
-        witnesses = []
-        for witness, key in stable[light]:
-            # Another row of the candidate's carrier is not another ion form.
-            if key in labels:
-                continue
-            pair = get_pair(witness, heavy)
-            if not pair.coelutes_directly:
-                continue
-            joint = (
-                candidate_support
-                & set(evidence[(light, witness)].direct_support)
-                & set(pair.direct_support)
-            )
-            if len(joint) >= MIN_SUPPORT_SAMPLES:
-                witnesses.append((witness, key, joint))
-        proof: set[int] = set()
-        for position, (first, first_key, first_support) in enumerate(witnesses):
-            for second, second_key, second_support in witnesses[position + 1 :]:
-                if first == second or first_key == second_key:
-                    continue
-                pair = get_pair(first, second)
-                if (
-                    pair.coelutes_directly
-                    and len(first_support & second_support & set(pair.direct_support))
-                    >= MIN_SUPPORT_SAMPLES
-                ):
-                    proof.update((first, second))
-        if proof:
-            supported[(light, heavy)] = tuple(sorted(proof))
-    for pair_key in supported:
-        for key, value in outcomes[pair_key].items():
-            if key in carriers and value == "ratio_unstable":
-                outcomes[pair_key][key] = "collapse_corroborated_adduct"
-    return supported
 
 
 def _metal_carriers(outcomes: Mapping[tuple[int, int], Mapping[str, str]]) -> set[int]:
@@ -889,7 +786,7 @@ def _relation_rows(
                     "outcome": outcome,
                     "used_for_collapse": (
                         "TRUE"
-                        if outcome in _COLLAPSE_OUTCOMES and heavy in removed
+                        if outcome == "collapse" and heavy in removed
                         else "FALSE"
                     ),
                 }
@@ -1211,9 +1108,6 @@ class SameCompoundStep:
                     "min_support_samples": MIN_SUPPORT_SAMPLES,
                     "min_support_fraction": MIN_SUPPORT_FRACTION,
                     "isotope_max_log_ratio_mad": ISOTOPE_MAX_LOG_MAD,
-                    "other_max_log_ratio_mad": OTHER_MAX_LOG_MAD,
-                    "variable_adduct_min_other_carrier_forms": 2,
-                    "variable_adduct_min_joint_support_samples": MIN_SUPPORT_SAMPLES,
                     "k41_median_light_heavy_range": list(K41_MEDIAN_RANGE),
                     "k41_sample_factor": ISOTOPE_RATIO_SAMPLE_FACTOR,
                     "k41_sample_fraction": ISOTOPE_RATIO_SAMPLE_FRACTION,
@@ -1251,11 +1145,6 @@ class SameCompoundStep:
                 "removed_non_protonated_family_count": sum(
                     decision.reason == "non_protonated_ion_family"
                     for decision in result.decisions
-                ),
-                "used_variable_ratio_adduct_pair_count": sum(
-                    row["outcome"] == "collapse_corroborated_adduct"
-                    and row["used_for_collapse"] == "TRUE"
-                    for row in result.relation_rows
                 ),
                 "removed_by_relation": dict(sorted(used.items())),
             },
