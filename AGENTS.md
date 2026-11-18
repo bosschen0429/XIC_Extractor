@@ -40,9 +40,15 @@ XIC-specific task routing and invariants; global rules own general defaults.
 - **Domain purity:** core algorithms work on in-memory domain models. Never mix
   RAW/DLL I/O, multiprocessing, byte hashing or output formatting into
   mathematical or alignment algorithms.
+- **Shortest path to evidence:** when designing or using an entry point, start
+  with the question and the valid inputs already available. Make the shortest
+  path that answers it the default: compare saved results directly, replay only
+  to recompute a decision, and read RAW only when the evidence requires it.
+  Require a stage, environment or check only for the claim that depends on it;
+  a sample-count assertion is not a request for formal run validation.
 - **Batch cost:** prepare shared inputs outside loops; measure call counts before
-  scaling. Deep diagnostics, full re-validation and audits run on demand unless
-  no cheaper check can decide this output's correctness.
+  scaling. Within one operation, reuse unchanged inputs and results; recheck at
+  a later boundary when a change there could invalidate the result.
 - **Current state only:** code, comments, tests and docs describe current
   behavior and non-obvious constraints. History stays in Git and PRs.
 - **Module naming:** name modules for their capability, following
