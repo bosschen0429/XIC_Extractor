@@ -586,6 +586,30 @@ def test_backfilled_isotope_ratio_obeys_the_abundance_ceiling():
     assert outcome(result, "13C_M+1") == {"isotope_abundance_exceeded"}
 
 
+@pytest.mark.parametrize(
+    ("relation", "heavy_mz", "ratios"),
+    [
+        # Backfilled ratios scatter fourfold around the direct ones.
+        ("[M+Na]+", 321.981944, (0.5, 0.5, 0.5, 2.0, 2.0, 2.0)),
+        # Backfilled heavy/light exceeds the 24-carbon ceiling of m/z 300.
+        ("13C_M+1", 301.003355, (0.15, 0.15, 0.15, 0.5, 0.5, 0.5)),
+    ],
+)
+def test_backfill_never_overrides_sufficient_direct_evidence(
+    relation, heavy_mz, ratios
+):
+    three_direct = (True, True, True, False, False, False)
+    decisions, result = decide(
+        row("L", 300.0), row("H", heavy_mz, ratios=ratios, direct=three_direct)
+    )
+
+    assert decisions["H"][:3] == (False, "derived_from_representative", "L")
+    found = relation_row(result, relation)
+    assert found["outcome"] == "collapse"
+    assert found["support_samples"] == found["ratio_samples"] == 3
+    assert found["backfill_coeluting_samples"] == 0
+
+
 def test_backfill_alone_never_establishes_coelution():
     only_backfill = row("H", 321.981944, scale=0.5, direct=False)
     decisions, result = decide(row("L", 300.0), only_backfill)

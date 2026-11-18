@@ -147,7 +147,8 @@ _COLLAPSE_OUTCOMES = frozenset({"collapse", "collapse_corroborated_adduct"})
 @dataclass(frozen=True)
 class PairEvidence:
     both_direct: int
-    # Samples whose two cells, direct or backfilled, have co-eluting apices.
+    # Samples whose two cells have co-eluting apices: the direct ones, plus
+    # backfilled ones when direct co-elution alone is insufficient.
     support: tuple[str, ...]
     # The supporting samples where both cells are direct detections.
     direct_support: tuple[str, ...]
@@ -172,10 +173,7 @@ class PairEvidence:
     @property
     def coelutes_directly(self) -> bool:
         """Co-elution from direct detections alone, for rules that waive ratios."""
-        return (
-            len(self.direct_support) >= MIN_SUPPORT_SAMPLES
-            and len(self.direct_support) >= MIN_SUPPORT_FRACTION * self.both_direct
-        )
+        return _direct_coelution(len(self.direct_support), self.both_direct)
 
     @property
     def log_mad(self) -> float | None:
@@ -195,15 +193,15 @@ def pair_evidence(
 ) -> PairEvidence:
     """Same-sample co-elution of two rows from each cell's recorded apex.
 
-    A backfilled cell counts like a direct one when it has an apex; only
-    direct pairs enter the share of consistently co-eluting samples.
+    Backfilled cells only complete missing evidence: when direct detections
+    alone co-elute, they are the whole evidence. Otherwise a backfilled cell
+    with an apex counts like a direct one, and only direct pairs enter the
+    share of consistently co-eluting samples.
     """
     both_direct = 0
-    support: list[str] = []
-    direct_support: list[str] = []
-    diffs: list[float] = []
     backfill_unavailable = 0
-    ratios: list[float] = []
+    # (sample, apex difference, light/heavy or None, both direct)
+    coeluting: list[tuple[str, float, float | None, bool]] = []
     for sample in sorted(light.keys() & heavy.keys()):
         a, b = light[sample], heavy[sample]
         direct = a.direct and b.direct
@@ -212,21 +210,28 @@ def pair_evidence(
             backfill_unavailable += not direct
             continue
         apart = abs(a.apex_rt_min - b.apex_rt_min) * 60.0
-        if apart > MAX_APEX_SEC:
-            continue
-        support.append(sample)
-        if direct:
-            direct_support.append(sample)
-        diffs.append(apart)
-        if _positive(a.value) and _positive(b.value):
-            ratios.append(a.value / b.value)
+        if apart <= MAX_APEX_SEC:
+            ratio = (
+                a.value / b.value if _positive(a.value) and _positive(b.value) else None
+            )
+            coeluting.append((sample, apart, ratio, direct))
+    direct_support = tuple(sample for sample, *_, direct in coeluting if direct)
+    if _direct_coelution(len(direct_support), both_direct):
+        coeluting = [item for item in coeluting if item[3]]
     return PairEvidence(
         both_direct=both_direct,
-        support=tuple(support),
-        direct_support=tuple(direct_support),
-        max_apex_diff_sec=max(diffs) if diffs else None,
+        support=tuple(sample for sample, *_ in coeluting),
+        direct_support=direct_support,
+        max_apex_diff_sec=max((apart for _, apart, *_ in coeluting), default=None),
         backfill_apex_unavailable=backfill_unavailable,
-        ratios=tuple(ratios),
+        ratios=tuple(ratio for _, _, ratio, _ in coeluting if ratio is not None),
+    )
+
+
+def _direct_coelution(direct_support: int, both_direct: int) -> bool:
+    return (
+        direct_support >= MIN_SUPPORT_SAMPLES
+        and direct_support >= MIN_SUPPORT_FRACTION * both_direct
     )
 
 
