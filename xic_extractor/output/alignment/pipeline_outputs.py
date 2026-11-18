@@ -148,15 +148,21 @@ def row_output_paths(outputs: AlignmentRunOutputs) -> dict[str, Path]:
 
 def write_completed_untargeted_outputs_atomic(
     outputs: AlignmentRunOutputs,
-    completed: FinalizedUntargetBatchApplicationResult,
+    completed: FinalizedUntargetBatchApplicationResult | None,
     *,
     metadata: dict[str, str],
     rt_calibration: BatchRtCalibration | None,
     timing_recorder: TimingRecorder,
     consume_child: Callable[[UntargetChildOutputs, int], None] | None = None,
     before_write: Callable[[], None] | None = None,
+    render_rows: Callable[[Mapping[str, Path]], int] | None = None,
+    extra_tables: Mapping[Path, Callable[[Path], None]] | None = None,
 ) -> int:
-    """Render every requested TSV in one pass, then publish them atomically."""
+    """Render every requested TSV in one pass, then publish them atomically.
+
+    ``render_rows`` replaces rendering ``completed``'s rows (several
+    independently aligned batches); ``extra_tables`` are published with them.
+    """
     if before_write is not None:
         before_write()
     row_paths = row_output_paths(outputs)
@@ -165,15 +171,21 @@ def write_completed_untargeted_outputs_atomic(
         paths.append(outputs.run_metadata_json)
     if outputs.rt_anchors_tsv is not None:
         paths.append(outputs.rt_anchors_tsv)
+    paths.extend(extra_tables or {})
     row_count = 0
 
     def render_all(temp_paths: Mapping[Path, Path]) -> None:
         nonlocal row_count
-        row_count = write_alignment_tsvs(
-            {name: temp_paths[path] for name, path in row_paths.items()},
-            completed,
-            consume_child=consume_child,
-        )
+        row_temp_paths = {name: temp_paths[path] for name, path in row_paths.items()}
+        if render_rows is not None:
+            row_count = render_rows(row_temp_paths)
+        else:
+            assert completed is not None
+            row_count = write_alignment_tsvs(
+                row_temp_paths, completed, consume_child=consume_child
+            )
+        for path, write_table in (extra_tables or {}).items():
+            write_table(temp_paths[path])
         if outputs.run_metadata_json is not None:
             _write_metadata_json(temp_paths[outputs.run_metadata_json], metadata)
         if outputs.rt_anchors_tsv is not None:

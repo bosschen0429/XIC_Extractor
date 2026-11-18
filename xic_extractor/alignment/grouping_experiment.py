@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -45,6 +45,25 @@ class GroupingInputs:
     alignment_config: AlignmentConfig
     worksets: tuple[GroupingWorkset, ...]
     candidate_ids_by_owner: Mapping[str, tuple[str, ...]]
+
+
+def combine_grouping_inputs(batches: Sequence[GroupingInputs]) -> GroupingInputs:
+    """Independently grouped batches side by side; each workset keeps its batch."""
+    return GroupingInputs(
+        sample_stems=tuple(stem for item in batches for stem in item.sample_stems),
+        injection_order={
+            stem: order
+            for item in batches
+            for stem, order in item.injection_order.items()
+        },
+        alignment_config=batches[0].alignment_config,
+        worksets=tuple(workset for item in batches for workset in item.worksets),
+        candidate_ids_by_owner={
+            owner: ids
+            for item in batches
+            for owner, ids in item.candidate_ids_by_owner.items()
+        },
+    )
 
 
 def replay_grouping(

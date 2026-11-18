@@ -2,17 +2,32 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
+from xic_extractor.alignment.batch_correspondence import (
+    BatchCorrespondence,
+    BatchFeature,
+    batch_feature,
+    batch_istds,
+    choose_reference_batch,
+    compose_calibrations,
+    correspond_batches,
+)
+from xic_extractor.alignment.cross_sample.peak_groups import (
+    CrossSamplePeakGroupHypothesis,
+)
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
+from xic_extractor.alignment.grouping_experiment import combine_grouping_inputs
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 from xic_extractor.applications.untargeted.istd_reference import (
     extract_batch_known_istd_reference,
     read_known_istd_reference,
 )
 from xic_extractor.applications.untargeted.publication import (
+    publish_batch_untargeted_outputs,
     publish_untargeted_outputs,
     untargeted_child_projection,
 )
@@ -37,6 +52,11 @@ from xic_extractor.discovery.csv_reader import (
 )
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.execution.timing import TimingRecorder
+from xic_extractor.output.alignment.batch_correspondence_table import (
+    BATCH_CORRESPONDENCE_ARTIFACT_NAME,
+    batch_correspondence_summary,
+    write_batch_correspondence_table,
+)
 from xic_extractor.output.alignment.output_levels import (
     AlignmentOutputLevel,
     artifact_names_for_output_level,
@@ -54,6 +74,13 @@ from xic_extractor.untargeted_execution.alignment import (
     complete_untargeted_alignment,
     execute_prepared_alignment,
     prepare_untargeted_alignment_inputs,
+)
+from xic_extractor.untargeted_execution.batch_split import (
+    latest_acquisition_reader,
+    split_discovery_batch,
+)
+from xic_extractor.untargeted_execution.execution_result import (
+    CompletedUntargetBatchWorkflowResult,
 )
 from xic_extractor.untargeted_execution.grouping_experiment import (
     PreparedGroupingExperiment,
@@ -155,42 +182,84 @@ def run_untargeted_application(
         raise InterruptedError(
             "Alignment cancelled before retained untargeted execution"
         )
+    batches = split_discovery_batch(batch, request.sample_metadata)
+    completed_by_batch: dict[str, CompletedUntargetBatchWorkflowResult] = {}
     try:
-        completed = complete_untargeted_alignment(
-            discovery_batch=batch,
-            peaks_by_sample=peaks_by_sample,
-            raw_dir=request.raw_dir,
-            dll_dir=request.dll_dir,
-            output_dir=request.output_dir,
-            settings=request.discovery_settings,
-            peak_config=request.peak_config,
-            alignment_config=request.alignment_config,
-            sample_metadata=request.sample_metadata,
-            known_istd_reference=resolved_known_istd_reference,
-            timing_recorder=recorder,
-            signal_processing_profile=signal_processing_profile,
-            raw_workers=request.execution.raw_workers,
-            raw_worker_backend=request.execution.raw_worker_backend,
-            should_cancel=context.should_cancel,
-            progress_callback=context.progress_callback,
-            retain_partition_memory=False,
-            retain_acquisition_cache=request.execution.retain_acquisition_cache,
-            acquisition_cache_dir=request.execution.acquisition_cache_dir,
-            max_partition_jobs=request.execution.max_partition_jobs,
-            mass_recalibration_by_sample=(
-                mass_recalibration_by_sample
-                if request.discovery_settings.mass_recalibration
-                is not MassRecalibration.NONE
-                else None
-            ),
-            project_child=untargeted_child_projection(outputs, request.publication),
-        )
-    except RuntimeError as exc:
-        raise AlignmentProcessExecutionError(str(exc)) from exc
+        for batch_id, batch_input in batches:
+            completed_by_batch[batch_id] = complete_untargeted_alignment(
+                discovery_batch=batch_input,
+                peaks_by_sample=(
+                    peaks_by_sample
+                    if len(batches) == 1
+                    else DiscoveryInputSource(batch_input)
+                ),
+                raw_dir=request.raw_dir,
+                dll_dir=request.dll_dir,
+                output_dir=request.output_dir,
+                settings=request.discovery_settings,
+                peak_config=request.peak_config,
+                alignment_config=request.alignment_config,
+                sample_metadata=request.sample_metadata,
+                known_istd_reference=resolved_known_istd_reference,
+                timing_recorder=recorder,
+                signal_processing_profile=signal_processing_profile,
+                raw_workers=request.execution.raw_workers,
+                raw_worker_backend=request.execution.raw_worker_backend,
+                should_cancel=context.should_cancel,
+                progress_callback=context.progress_callback,
+                retain_partition_memory=False,
+                retain_acquisition_cache=request.execution.retain_acquisition_cache,
+                acquisition_cache_dir=request.execution.acquisition_cache_dir,
+                max_partition_jobs=request.execution.max_partition_jobs,
+                mass_recalibration_by_sample=(
+                    _batch_mass_recalibration(mass_recalibration_by_sample, batch_input)
+                    if request.discovery_settings.mass_recalibration
+                    is not MassRecalibration.NONE
+                    else None
+                ),
+                project_child=untargeted_child_projection(outputs, request.publication),
+            )
+    except BaseException as exc:
+        for completed in completed_by_batch.values():
+            completed.close()
+        if isinstance(exc, RuntimeError):
+            raise AlignmentProcessExecutionError(str(exc)) from exc
+        raise
     if context.progress_callback:
         context.progress_callback({"stage": "publish_matrix"})
-    return publish_untargeted_outputs(
-        completed,
+    if len(completed_by_batch) == 1:
+        (completed,) = completed_by_batch.values()
+        return publish_untargeted_outputs(
+            completed,
+            output_dir=request.output_dir,
+            outputs=outputs,
+            policy=request.publication,
+            metadata=metadata,
+            timing_recorder=recorder,
+            should_cancel=context.should_cancel,
+        )
+    try:
+        correspondence, features = _correspond_batches(
+            request,
+            {
+                batch_id: (
+                    completed.initial_groups,
+                    completed.sample_rt_frame.calibration_for_snapshot
+                    if completed.sample_rt_frame is not None
+                    else None,
+                )
+                for batch_id, completed in completed_by_batch.items()
+            },
+            dict(batches),
+        )
+    except BaseException:
+        for completed in completed_by_batch.values():
+            completed.close()
+        raise
+    return publish_batch_untargeted_outputs(
+        completed_by_batch,
+        correspondence,
+        features,
         output_dir=request.output_dir,
         outputs=outputs,
         policy=request.publication,
@@ -198,6 +267,20 @@ def run_untargeted_application(
         timing_recorder=recorder,
         should_cancel=context.should_cancel,
     )
+
+
+def _batch_mass_recalibration(
+    mass_recalibration_by_sample: dict[str, PreparedRawMassRecalibration] | None,
+    batch: DiscoveryBatchInput,
+) -> dict[str, PreparedRawMassRecalibration] | None:
+    """One batch's prepared mass recalibrations; the whole map for one batch."""
+    if not mass_recalibration_by_sample:
+        return mass_recalibration_by_sample
+    return {
+        sample: prepared
+        for sample, prepared in mass_recalibration_by_sample.items()
+        if sample in batch.sample_order
+    }
 
 
 def _prepare_mass_recalibration(
@@ -318,7 +401,6 @@ def run_untargeted_grouping(
     context = context or UntargetedExecutionContext()
     recorder = context.timing_recorder or TimingRecorder.disabled("alignment")
     batch = _admitted_batch(request.discovery_batch_index, recorder)
-    peaks_by_sample = DiscoveryInputSource(batch)
     mass_recalibration_by_sample = _prepare_mass_recalibration(
         request, batch, recorder, context
     )
@@ -330,9 +412,86 @@ def run_untargeted_grouping(
         save_snapshot and snapshot.exists()
     ):
         raise ValueError(f"grouping output already exists: {request.output_dir}")
+    batches = split_discovery_batch(batch, request.sample_metadata)
+    with recorder.stage("alignment.grouping") as stage:
+        groupings = {
+            batch_id: _group_batch(
+                request,
+                context,
+                recorder,
+                batch_input,
+                mass_recalibration_by_sample,
+                known_istd_reference,
+            )
+            for batch_id, batch_input in batches
+        }
+        stage.metrics["partition_count"] = sum(
+            item.total_partition_count for item in groupings.values()
+        )
+        stage.metrics["group_count"] = sum(
+            len(item.groups) for item in groupings.values()
+        )
+    provenance = {
+        "discovery_batch_index": str(batch.path.resolve()),
+        "partition_count": sum(
+            item.total_partition_count for item in groupings.values()
+        ),
+        "initial_job_count": sum(item.initial_job_count for item in groupings.values()),
+    }
+    if len(groupings) == 1:
+        (grouping,) = groupings.values()
+        inputs, groups, calibration = (
+            grouping.inputs,
+            grouping.groups,
+            grouping.rt_calibration,
+        )
+        correspondence_summary = None
+    else:
+        correspondence, features = _correspond_batches(
+            request,
+            {
+                batch_id: (item.groups, item.rt_calibration)
+                for batch_id, item in groupings.items()
+            },
+            dict(batches),
+        )
+        inputs = combine_grouping_inputs([item.inputs for item in groupings.values()])
+        groups = tuple(group for item in groupings.values() for group in item.groups)
+        calibration = compose_calibrations(
+            {batch_id: item.rt_calibration for batch_id, item in groupings.items()},
+            correspondence,
+        )
+        write_batch_correspondence_table(
+            request.output_dir / "batch_correspondence.tsv", correspondence, features
+        )
+        correspondence_summary = batch_correspondence_summary(correspondence)
+    with recorder.stage("alignment.write_grouping_results"):
+        summary = write_grouping_result(request.output_dir, inputs, groups)
+        if correspondence_summary is not None:
+            summary["batch_correspondence"] = correspondence_summary
+        write_json(
+            request.output_dir / "summary.json", {**summary, "source": provenance}
+        )
+        write_rt_anchor_table(request.output_dir / "rt_anchors.tsv", calibration)
+    if save_snapshot:
+        with recorder.stage("alignment.write_grouping_snapshot"):
+            write_grouping_inputs(snapshot, inputs, provenance=provenance)
+    return request.output_dir
+
+
+def _group_batch(
+    request: UntargetedRequest,
+    context: UntargetedExecutionContext,
+    recorder: TimingRecorder,
+    batch: DiscoveryBatchInput,
+    mass_recalibration_by_sample: dict[str, PreparedRawMassRecalibration] | None,
+    known_istd_reference: KnownIstdReference | None,
+) -> PreparedGroupingExperiment:
+    """Group one batch exactly as if it were the run's only input."""
+    batch_recalibration = _batch_mass_recalibration(mass_recalibration_by_sample, batch)
     plan = prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
-        peaks_by_sample=peaks_by_sample,
+        peaks_by_sample=DiscoveryInputSource(batch),
         raw_dir=request.raw_dir,
         dll_dir=request.dll_dir,
         output_dir=request.output_dir,
@@ -347,57 +506,70 @@ def run_untargeted_grouping(
         verified_acquisition_sources=(
             {
                 sample: prepared.acquisition
-                for sample, prepared in mass_recalibration_by_sample.items()
+                for sample, prepared in batch_recalibration.items()
             }
-            if mass_recalibration_by_sample
+            if batch_recalibration
             else None
         ),
     )
-    with recorder.stage("alignment.grouping") as stage:
-        grouping = cast(
-            PreparedGroupingExperiment,
-            execute_prepared_alignment(
-                plan,
-                output_dir=request.output_dir,
-                alignment_config=request.alignment_config,
-                known_istd_reference=known_istd_reference,
-                timing_recorder=recorder,
-                acquisition_cache_dir=request.execution.acquisition_cache_dir,
-                retain_acquisition_cache=request.execution.retain_acquisition_cache,
-                raw_workers=request.execution.raw_workers,
-                raw_worker_backend=request.execution.raw_worker_backend,
-                max_partition_jobs=request.execution.max_partition_jobs,
-                should_cancel=context.should_cancel,
-                grouping_only=True,
-                mass_recalibration_by_sample=(
-                    mass_recalibration_by_sample
-                    if request.discovery_settings.mass_recalibration
-                    is not MassRecalibration.NONE
-                    else None
-                ),
+    return cast(
+        PreparedGroupingExperiment,
+        execute_prepared_alignment(
+            plan,
+            output_dir=request.output_dir,
+            alignment_config=request.alignment_config,
+            known_istd_reference=known_istd_reference,
+            timing_recorder=recorder,
+            acquisition_cache_dir=request.execution.acquisition_cache_dir,
+            retain_acquisition_cache=request.execution.retain_acquisition_cache,
+            raw_workers=request.execution.raw_workers,
+            raw_worker_backend=request.execution.raw_worker_backend,
+            max_partition_jobs=request.execution.max_partition_jobs,
+            should_cancel=context.should_cancel,
+            grouping_only=True,
+            mass_recalibration_by_sample=(
+                batch_recalibration
+                if request.discovery_settings.mass_recalibration
+                is not MassRecalibration.NONE
+                else None
             ),
-        )
-        stage.metrics["partition_count"] = grouping.total_partition_count
-        stage.metrics["group_count"] = len(grouping.groups)
-    provenance = {
-        "discovery_batch_index": str(batch.path.resolve()),
-        "partition_count": grouping.total_partition_count,
-        "initial_job_count": grouping.initial_job_count,
-    }
-    with recorder.stage("alignment.write_grouping_results"):
-        summary = write_grouping_result(
-            request.output_dir, grouping.inputs, grouping.groups
-        )
-        write_json(
-            request.output_dir / "summary.json", {**summary, "source": provenance}
-        )
-        write_rt_anchor_table(
-            request.output_dir / "rt_anchors.tsv", grouping.rt_calibration
-        )
-    if save_snapshot:
-        with recorder.stage("alignment.write_grouping_snapshot"):
-            write_grouping_inputs(snapshot, grouping.inputs, provenance=provenance)
-    return request.output_dir
+        ),
+    )
+
+
+def _correspond_batches(
+    request: UntargetedRequest,
+    grouped: Mapping[
+        str,
+        tuple[Iterable[CrossSamplePeakGroupHypothesis], BatchRtCalibration | None],
+    ],
+    batches: Mapping[str, DiscoveryBatchInput],
+) -> tuple[BatchCorrespondence, tuple[BatchFeature, ...]]:
+    """Pair each batch's Matrix groups with the reference batch's."""
+    features = tuple(
+        batch_feature(batch_id, group, calibration)
+        for batch_id, (groups, calibration) in grouped.items()
+        for group in groups
+        if group.destination == "matrix"
+    )
+    sizes = {batch_id: len(batch.sample_order) for batch_id, batch in batches.items()}
+    correspondence = correspond_batches(
+        features,
+        (
+            istd
+            for batch_id, (_groups, calibration) in grouped.items()
+            for istd in batch_istds(batch_id, calibration)
+        ),
+        batch_sizes=sizes,
+        reference_batch=choose_reference_batch(
+            sizes,
+            latest_acquisition_reader(
+                batches, raw_dir=request.raw_dir, dll_dir=request.dll_dir
+            ),
+        ),
+        precursor_tolerance_ppm=request.discovery_settings.precursor_mz_tolerance_ppm,
+    )
+    return correspondence, features
 
 
 # No level writes these any more. They stay owned so that a copy left by an
@@ -417,6 +589,7 @@ _CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES = (
     "alignment_owner_backfill_candidate_audit.tsv",
     "skipped_evidence_ledger.tsv",
     "alignment_run_metadata.json",
+    BATCH_CORRESPONDENCE_ARTIFACT_NAME,
 )
 
 

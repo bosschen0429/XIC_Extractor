@@ -34,7 +34,7 @@ input selection.
 | Mechanism | Current source and use |
 | --- | --- |
 | Known-ISTD reference | Exact identity bindings and measured coordinates. Bootstrap comparison uses the shared fitter with ISTDs only; final calibration combines those measurements with ordinary anchors. |
-| Sample RT calibration | One frozen map fitted from the complete request's measured ISTDs and ordinary bootstrap correspondences. Final Grouping, Backfill localization/admission, and replay consume this map through `SampleRtFrame`. |
+| Sample RT calibration | One frozen map per batch, fitted from its measured ISTDs and ordinary bootstrap correspondences. Final Grouping, Backfill localization/admission, and replay consume this map through `SampleRtFrame`. |
 | Batch drift model | Frozen batch state (B), sample shift (M) and drift anchors, measured against the frozen map; see [Drift beyond the map](#drift-beyond-the-map). |
 | Peak trajectory | Ordered correspondences and direct/MS1-only positions, used for membership constraints and sample-local localization. |
 | Calibration diagnostic | Uses the same fit owner with detected-cell inputs and an interleaved held-out comparison. Its files do not alter production results. |
@@ -173,6 +173,72 @@ ISTD knots leave the channel columns empty, as does a composition channel's
 neutral loss. The table is a projection of the persisted knots, not another
 calculation; without a calibration it has only its header. Per-sample anchor
 RTs are not written.
+
+## Declared batches
+
+A run whose sample metadata declares more than one batch ID aligns each batch
+alone, as if it were the only input: subject minting, worksets, bootstrap,
+calibration, drift, final grouping and Backfill see only that batch's samples.
+[`batch_correspondence`](../../xic_extractor/alignment/batch_correspondence.py)
+is the one step that relates the batches; it pairs finished Matrix groups and
+never changes a batch's membership. One declared batch, or no metadata, takes
+the single-batch path unchanged. There is no cross-batch Backfill.
+
+- **Reference batch**: the batch with the most samples; on equal sizes, the
+  batch whose latest RAW acquisition is later. Batch IDs and input order do not
+  decide it.
+- **Feature**: a batch's Matrix-destination group, placed at the median of its
+  members' calibrated RT (raw apex for a sample without an estimate). Two
+  features share a channel when their neutral loss tags match and their
+  precursor m/z agree within the Discovery precursor tolerance both ways.
+- **Coarse prediction**: the batch's ISTD knots against the reference batch's,
+  with offsets interpolated linearly and the endpoint offset beyond them. Its
+  search half-width is `max(0.2 min, 2 × largest leave-one-out ISTD error)`.
+- **Anchors**: a feature pair unique both ways inside that window, with both
+  features meeting the ordinary anchor threshold of their own batch. Pairs
+  within 0.05 min of each other in both batches form one elution family and
+  vote once; a family containing an ISTD takes the ISTD's coordinates. Every
+  excluded candidate keeps its reason: `no_candidate`, `outside_window`,
+  `ambiguous`, `counterpart_below_threshold` or `competitor`.
+- **Batch map**: the non-reference batch is fitted as one sample by the sample
+  calibration fitter, with the same LOESS, pool-adjacent-violators, eight-position
+  floor and graded query. With fewer than two ISTDs in common the batch has no
+  map and its features stay unpaired (`unpaired_no_map`).
+- **Pairing**: every feature is searched through the map, with half-width
+  `max(0.2 min, 2 × largest leave-one-out ISTD error of the map)`. A feature
+  pairs only when the match is unique both ways. More than one candidate in the
+  window is `unpaired_ambiguous` and lists the candidates; a reverse match that
+  points elsewhere lists that competitor. An unpaired feature keeps its own row.
+
+The multiplier 2 and the 0.2 min floor are fixed before results are read; the
+multiplier changes only on leave-one-out ISTD evidence.
+
+Outputs:
+
+- The Matrix writes a paired row once, with the reference batch's Mz and RT and
+  both batches' cells. An unpaired row of another batch is written with its RT
+  converted through the batch map. A batch's absent samples are empty in the
+  Matrix and `not_searched` in status and cells; no cell is recomputed.
+- `alignment_batch_correspondence.tsv` (`batch_correspondence.tsv` with
+  `--stop-after grouping`) has one row per feature: `batch_id`, `group_id`,
+  `neutral_loss_tag`, `precursor_mz`, `batch_rt_min`, `reference_rt_min`,
+  `sample_count`, `anchor` (ISTD label or `pair`), `state`,
+  `partner_group_id` and `competitor_group_ids`.
+- Run metadata `batch_correspondence` records each map's status, knot and
+  anchor counts, coarse ISTDs, leave-one-out errors, half-widths, and anchors
+  and exclusion reasons per 4 min reference RT segment, with feature states and
+  paired and single-batch row counts. `rt_drift_summary` is keyed by batch.
+- The review TSV adds `batch_ids` and `batch_pairing`. Counts add up; the other
+  judgement columns list each batch's distinct values.
+- The explanation report records a paired row as the reference batch's group,
+  joined by its partner's members and cells, with the less certain
+  disposition. Initial groups, drift coefficients and empty-cell positions stay
+  each batch's own; an empty cell of the other batch is inspected at the
+  reference group's centre m/z.
+- The RT anchor table lists every batch's knots in that batch's own coordinate,
+  distinguished by `cohort`; knot IDs restart per batch. The persisted
+  calibration follows each sample's map with its batch map, so replay reads the
+  reference batch's coordinate.
 
 ## Drift beyond the map
 

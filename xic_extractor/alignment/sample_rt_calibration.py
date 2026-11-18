@@ -299,55 +299,24 @@ def build_batch_rt_calibration(
         measured_istds,
         channels_by_feature or {},
     )
-    sample_knots: dict[str, tuple[tuple[float, float], ...]] = {}
-    anchor_counts: dict[str, int] = {}
-    estimate_support: dict[str, RtEstimateSupport | None] = {}
-    for sample in samples:
-        points = tuple(
-            (
-                observations_by_knot[knot.knot_id][sample],
-                knot.reference_rt_min,
-            )
-            for knot in knots
-            if sample in observations_by_knot[knot.knot_id]
+    fits = {
+        sample: fit_sample_rt_calibration(
+            sample,
+            tuple(
+                (
+                    observations_by_knot[knot.knot_id][sample],
+                    knot.reference_rt_min,
+                )
+                for knot in knots
+                if sample in observations_by_knot[knot.knot_id]
+            ),
+            fraction=policy.loess_fraction,
+            standards=tuple(standards.get(sample, ())),
+            has_ordinary_support=sample in ordinary_samples,
         )
-        # Conflicting measured standard order cannot be resolved by fitting the
-        # same sparse standards to themselves. Ordinary corroboration is a
-        # distinct source; without it, keep the contradiction unavailable.
-        ordered_points = tuple(sorted(points))
-        sample_knots[sample] = (
-            ordered_points
-            if sample not in ordinary_samples and not _is_usable(ordered_points)
-            else _fit_sample_knots(
-                points,
-                policy.loess_fraction,
-                standard_points=tuple(
-                    (observed, reference)
-                    for _, observed, reference in standards.get(sample, ())
-                ),
-            )
-        )
-        anchor_counts[sample] = len({x for x, _ in points})
-        locations = _distinct_anchor_positions(points)
-        if len(locations) < 2:
-            estimate_support[sample] = None
-            continue
-        shifts = [reference - observed for observed, reference in locations]
-        shift = float(median(shifts))
-        fitted_knots = sample_knots[sample] if _is_usable(sample_knots[sample]) else ()
-        fit_residuals = [
-            abs(fitted - reference)
-            for observed, reference in locations
-            if (fitted := interpolate_calibrated_rt_min(observed, fitted_knots))
-            is not None
-        ]
-        estimate_support[sample] = RtEstimateSupport(
-            tuple(observed for observed, _ in locations),
-            shift,
-            float(median(abs(value - shift) for value in shifts)),
-            float(median(fit_residuals)) if fit_residuals else None,
-        )
-    usable = {s for s, k in sample_knots.items() if _is_usable(k)}
+        for sample in samples
+    }
+    usable = {s for s, fit in fits.items() if fit.status == "calibrated"}
 
     front_knots = knots[: policy.front_knot_count]
     front_shifts: dict[str, float] = {}
@@ -371,31 +340,20 @@ def build_batch_rt_calibration(
         else None
     )
 
-    calibrations: dict[str, SampleRtCalibration] = {}
-    for sample in samples:
-        prior = prior_injections.get(sample)
-        front = front_shifts.get(sample)
-        calibrations[sample] = SampleRtCalibration(
-            sample_stem=sample,
-            status=_sample_status(sample_knots[sample], sample in usable),
-            knots=sample_knots[sample] if sample in usable else (),
-            front_shift_min=front,
-            prior_injection=prior,
-            perturbation_status=_perturbation_status(prior, front, center, tolerance),
-            anchor_count=anchor_counts[sample],
-            estimate_support=estimate_support[sample],
-            standard_residuals=tuple(
-                (label, observed, reference, fitted - reference)
-                for label, observed, reference in standards.get(sample, ())
-                if sample in usable
-                and (
-                    fitted := interpolate_calibrated_rt_min(
-                        observed, sample_knots[sample]
-                    )
-                )
-                is not None
+    calibrations = {
+        sample: replace(
+            fit,
+            front_shift_min=front_shifts.get(sample),
+            prior_injection=prior_injections.get(sample),
+            perturbation_status=_perturbation_status(
+                prior_injections.get(sample),
+                front_shifts.get(sample),
+                center,
+                tolerance,
             ),
         )
+        for sample, fit in fits.items()
+    }
     return BatchRtCalibration(
         policy=policy,
         knots=knots,
@@ -403,6 +361,77 @@ def build_batch_rt_calibration(
         front_shift_center_min=center,
         front_shift_mad_min=mad,
         perturbation_tolerance_min=tolerance,
+    )
+
+
+def ordinary_anchor_min_samples(cohort_size: int) -> int:
+    """Measured samples an ordinary correspondence needs to anchor its cohort."""
+    return max(3, math.ceil(cohort_size * _MIN_ORDINARY_COHORT_FRACTION))
+
+
+def fit_sample_rt_calibration(
+    sample_stem: str,
+    points: Sequence[tuple[float, float]],
+    *,
+    fraction: float,
+    standards: Sequence[tuple[str, float, float]] = (),
+    has_ordinary_support: bool = True,
+) -> SampleRtCalibration:
+    """Fit one coordinate's (observed, reference) anchors into a graded map.
+
+    ``standards`` are (label, observed, reference) identity landmarks among the
+    points. Without ordinary support, standards alone are not refitted: their
+    own order must already be a usable map. Timeline facts stay with the batch.
+    """
+    ordered_points = tuple(sorted(points))
+    fitted = (
+        ordered_points
+        if not has_ordinary_support and not _is_usable(ordered_points)
+        else _fit_sample_knots(
+            points,
+            fraction,
+            standard_points=tuple(
+                (observed, reference) for _, observed, reference in standards
+            ),
+        )
+    )
+    usable = _is_usable(fitted)
+    locations = _distinct_anchor_positions(points)
+    support = None
+    if len(locations) >= 2:
+        shifts = [reference - observed for observed, reference in locations]
+        shift = float(median(shifts))
+        fit_residuals = [
+            abs(value - reference)
+            for observed, reference in locations
+            if (
+                value := interpolate_calibrated_rt_min(
+                    observed, fitted if usable else ()
+                )
+            )
+            is not None
+        ]
+        support = RtEstimateSupport(
+            tuple(observed for observed, _ in locations),
+            shift,
+            float(median(abs(value - shift) for value in shifts)),
+            float(median(fit_residuals)) if fit_residuals else None,
+        )
+    return SampleRtCalibration(
+        sample_stem=sample_stem,
+        status=_sample_status(fitted, usable),
+        knots=fitted if usable else (),
+        front_shift_min=None,
+        prior_injection=None,
+        perturbation_status="unmeasured",
+        anchor_count=len({x for x, _ in points}),
+        estimate_support=support,
+        standard_residuals=tuple(
+            (label, observed, reference, value - reference)
+            for label, observed, reference in standards
+            if usable
+            and (value := interpolate_calibrated_rt_min(observed, fitted)) is not None
+        ),
     )
 
 
@@ -446,10 +475,7 @@ def _anchor_coordinates(
                 required = (
                     2
                     if is_standard
-                    else max(
-                        3,
-                        math.ceil(cohort_sizes[cohort] * _MIN_ORDINARY_COHORT_FRACTION),
-                    )
+                    else ordinary_anchor_min_samples(cohort_sizes[cohort])
                 )
                 if len(observed) < required:
                     continue

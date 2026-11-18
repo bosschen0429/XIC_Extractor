@@ -14,9 +14,10 @@ import csv
 import hashlib
 import math
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
@@ -706,3 +707,244 @@ def _warning(
     if backfilled_count > 0 and detected_count == 0:
         return "high_backfill_dependency"
     return ""
+
+
+BATCH_REVIEW_COLUMNS = (*ALIGNMENT_REVIEW_COLUMNS, "batch_ids", "batch_pairing")
+
+
+@dataclass(frozen=True, slots=True)
+class BatchRowSource:
+    """One independently aligned batch's projected rows.
+
+    ``feature_key`` names the correspondence feature a row carries, or None
+    for a row the correspondence did not consider (an archived group).
+    """
+
+    batch_id: str
+    completed: FinalizedUntargetBatchApplicationResult
+    feature_key: Callable[[UntargetGroupRows], str | None]
+
+
+def write_batch_alignment_tsvs(
+    paths: Mapping[str, Path],
+    sources: Sequence[BatchRowSource],
+    *,
+    reference_batch: str,
+    partners: Mapping[tuple[str, str], tuple[tuple[str, str], ...]],
+    states: Mapping[tuple[str, str], str],
+    to_reference_rt: Callable[[str, float], float | None],
+    consume_row: Callable[[str, Sequence[tuple[str, int, int]]], None] | None = None,
+) -> int:
+    """Write independently aligned batches as one set of TSVs.
+
+    A reference row carries its paired rows' cells; every other row keeps its
+    own batch's cells, and another batch's samples are ``not_searched``. Rows
+    are rendered from each batch's own projection; no cell is recomputed.
+    ``consume_row`` receives each written row's feature ID and the place
+    (batch, child index, offset in the child) of each of its parts.
+    """
+    global_order = untarget_sample_order(
+        sample for source in sources for sample in source.completed.canonical_samples
+    )
+    headers = {**_output_headers(global_order), "review": BATCH_REVIEW_COLUMNS}
+    orders = {
+        source.batch_id: untarget_sample_order(source.completed.canonical_samples)
+        for source in sources
+    }
+    paired_elsewhere = {
+        member
+        for key, members in partners.items()
+        if key[0] == reference_batch
+        for member in members
+    }
+    located: dict[tuple[str, str], tuple[UntargetGroupRows, tuple[str, int, int]]] = {}
+    for source in sources:
+        if source.batch_id == reference_batch:
+            continue
+        for child_index, child in enumerate(source.completed.child_outputs):
+            groups = cast(UntargetChildOutputs, child).groups
+            for offset, group in enumerate(groups):
+                key = source.feature_key(group)
+                if key is not None and (source.batch_id, key) in paired_elsewhere:
+                    if (source.batch_id, key) in located:
+                        raise ValueError(f"two written rows carry one feature: {key}")
+                    located[(source.batch_id, key)] = (
+                        group,
+                        (source.batch_id, child_index, offset),
+                    )
+
+    source_candidate_owners: dict[str, str] = {}
+    seen_physical_peaks: set[tuple[str, str]] = set()
+    written_partners: set[tuple[str, str]] = set()
+    group_count = 0
+    matrix_row_count = 0
+    ordered_sources = sorted(
+        sources, key=lambda item: (item.batch_id != reference_batch, item.batch_id)
+    )
+    with ExitStack() as stack:
+        writers = {}
+        for name, path in paths.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            handle = stack.enter_context(
+                path.open("w", newline="", encoding="utf-8", buffering=1024 * 1024)
+            )
+            writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+            writer.writerow([escape_excel_formula(column) for column in headers[name]])
+            writers[name] = writer
+        for source in ordered_sources:
+            for child_index, child in enumerate(source.completed.child_outputs):
+                groups = cast(UntargetChildOutputs, child).groups
+                for offset, group in enumerate(groups):
+                    key = source.feature_key(group)
+                    member = (source.batch_id, key or "")
+                    if key is not None and member in paired_elsewhere:
+                        continue
+                    parts = [(source.batch_id, group)]
+                    places = [(source.batch_id, child_index, offset)]
+                    if key is not None and source.batch_id == reference_batch:
+                        for partner in partners.get(member, ()):
+                            partner_group, partner_place = located[partner]
+                            parts.append((partner[0], partner_group))
+                            places.append(partner_place)
+                            written_partners.add(partner)
+                    group_count += 1
+                    feature_id = format_value(feature_id_label(group_count))
+                    peaks = {peak for _, part in parts for peak in part.physical_peaks}
+                    duplicate_peaks = seen_physical_peaks.intersection(peaks)
+                    if duplicate_peaks:
+                        raise ValueError(
+                            "writer projection reused physical observations across "
+                            "rows: "
+                            + ", ".join(sorted(key for key, _ in duplicate_peaks))
+                        )
+                    seen_physical_peaks.update(peaks)
+                    matrix_row_index = ""
+                    if group.destination == "matrix":
+                        for _, part in parts:
+                            for candidate_id in part.source_candidate_ids:
+                                previous = source_candidate_owners.setdefault(
+                                    candidate_id, feature_id
+                                )
+                                if previous != feature_id:
+                                    raise ValueError(
+                                        "source peak cannot contribute to multiple "
+                                        f"product hypothesis rows: {candidate_id}"
+                                    )
+                        matrix_row_count += 1
+                        matrix_row_index = format_value(matrix_row_count)
+                    mapped_batch = (
+                        source.batch_id if source.batch_id != reference_batch else None
+                    )
+                    for name, row_writer in writers.items():
+                        rows = _merge_batch_rows(
+                            name,
+                            [
+                                (orders[batch_id], dict(part.rows).get(name, ()))
+                                for batch_id, part in parts
+                            ],
+                            global_order,
+                            headers[name],
+                            partial(_reference_rt_text, to_reference_rt, mapped_batch),
+                        )
+                        for row in rows:
+                            if name == "matrix":
+                                row_writer.writerow(row)
+                            elif name == "review":
+                                row_writer.writerow(
+                                    (
+                                        feature_id,
+                                        matrix_row_index,
+                                        *row[2:],
+                                        ";".join(batch_id for batch_id, _ in parts),
+                                        states.get(member, "") if key else "",
+                                    )
+                                )
+                            else:
+                                row_writer.writerow((feature_id, *row[1:]))
+                    if consume_row is not None:
+                        consume_row(feature_id, places)
+    if written_partners != paired_elsewhere:
+        raise ValueError(
+            "paired features without a written reference row: "
+            + ", ".join(sorted(key for _, key in paired_elsewhere - written_partners))
+        )
+    return group_count
+
+
+def _reference_rt_text(
+    to_reference_rt: Callable[[str, float], float | None],
+    batch_id: str | None,
+    text: str,
+) -> str:
+    """A non-reference row's written RT in the reference batch's coordinate."""
+    if batch_id is None or not text:
+        return text
+    mapped = to_reference_rt(batch_id, float(text))
+    return text if mapped is None else format_value(mapped)
+
+
+def _merge_batch_rows(
+    name: str,
+    parts: Sequence[tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]],
+    global_order: tuple[str, ...],
+    header: tuple[str, ...],
+    reference_rt: Callable[[str], str],
+) -> tuple[tuple[str, ...], ...]:
+    """One output's rows for a written row assembled from its batches' rows."""
+    present = [(order, rows) for order, rows in parts if rows]
+    if not present:
+        return ()
+    if name in {"cells", "backfill"}:
+        by_sample = {row[1]: row for _, rows in present for row in rows}
+        if name == "backfill":
+            return tuple(by_sample[stem] for stem in global_order if stem in by_sample)
+        empty = ("",) * (len(header) - 3)
+        return tuple(
+            by_sample.get(stem) or ("", stem, "not_searched", *empty)
+            for stem in global_order
+        )
+    if name in {"matrix", "status"}:
+        fixed = 2 if name == "matrix" else 4
+        values: dict[str, str] = {}
+        for order, rows in present:
+            values.update(zip(order, rows[0][fixed:], strict=True))
+        first = list(present[0][1][0][:fixed])
+        first[fixed - 1] = reference_rt(first[fixed - 1])
+        missing = "" if name == "matrix" else "not_searched"
+        return ((*first, *(values.get(stem, missing) for stem in global_order)),)
+    if name == "review":
+        columns = ALIGNMENT_REVIEW_COLUMNS
+        records = [dict(zip(columns, rows[0], strict=True)) for _, rows in present]
+        merged = dict(records[0])
+        merged["group_center_rt"] = reference_rt(merged["group_center_rt"])
+        for count in (
+            "detected_count",
+            "not_searched_count",
+            "unresolved_count",
+            "accepted_cell_count",
+            "accepted_backfill_count",
+        ):
+            merged[count] = str(sum(int(record[count]) for record in records))
+        merged["not_searched_count"] = str(
+            int(merged["not_searched_count"])
+            + len(global_order)
+            - sum(len(order) for order, _ in present)
+        )
+        # Each batch's own judgement, listed once per distinct value.
+        for joined in (
+            "identity_reason",
+            "membership_risk_flags",
+            "rt_time_coefficient",
+            "rt_sample_shift_coefficient",
+            "warning",
+        ):
+            merged[joined] = ";".join(
+                dict.fromkeys(
+                    value
+                    for record in records
+                    for value in record[joined].split(";")
+                    if value
+                )
+            )
+        return (tuple(merged[column] for column in columns),)
+    raise ValueError(f"unknown Untargeted output: {name}")
