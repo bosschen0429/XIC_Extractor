@@ -204,7 +204,10 @@ the single-batch path unchanged. There is no cross-batch Backfill.
   calibration fitter, with the same LOESS, pool-adjacent-violators, eight-position
   floor and graded query. With fewer than two ISTDs in common the batch has no
   map and its features stay unpaired (`unpaired_no_map`).
-- **Pairing**: every feature is searched through the map, with half-width
+- **Pairing**: a Matrix feature bound to a known ISTD pairs with the other
+  batch's feature bound to the same ISTD, by identity and without an RT
+  search; neither is a candidate for any other feature. Every other
+  feature is searched through the map, with half-width
   `max(0.2 min, 2 × largest leave-one-out ISTD error of the map)`. A feature
   pairs only when the match is unique both ways. More than one candidate in the
   window is `unpaired_ambiguous` and lists the candidates; a reverse match that
@@ -222,7 +225,8 @@ Outputs:
 - `alignment_batch_correspondence.tsv` (`batch_correspondence.tsv` with
   `--stop-after grouping`) has one row per feature: `batch_id`, `group_id`,
   `neutral_loss_tag`, `precursor_mz`, `batch_rt_min`, `reference_rt_min`,
-  `sample_count`, `anchor` (ISTD label or `pair`), `state`,
+  `sample_count`, `known_identity_label`, `anchor` (ISTD label or `pair`),
+  `state`,
   `partner_group_id` and `competitor_group_ids`.
 - Run metadata `batch_correspondence` records each map's status, knot and
   anchor counts, coarse ISTDs, leave-one-out errors, half-widths, and anchors

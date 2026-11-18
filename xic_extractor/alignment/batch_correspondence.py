@@ -73,6 +73,8 @@ class BatchFeature:
     precursor_mz: float
     reference_rt_min: float
     sample_count: int
+    # The known ISTD this feature is bound to; such features pair by identity.
+    known_identity_label: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,11 +230,29 @@ def correspond_batches(
             floor_min=floor_min,
         )
         maps.append(batch_map)
+        by_identity = _identity_pairs(batch_features, reference)
+        identity_partners = {partner.key for partner in by_identity.values()}
+        unbound = [item for item in batch_features if item.key not in by_identity]
+        unbound_reference = [
+            item for item in reference if item.key not in identity_partners
+        ]
         forward = batch_map.to_reference if batch_map.calibration is not None else None
         reverse = (
             batch_map.from_reference if batch_map.calibration is not None else None
         )
         for feature in batch_features:
+            identity_partner = by_identity.get(feature.key)
+            if identity_partner is not None:
+                decisions[(batch, feature.key)] = FeatureCorrespondence(
+                    batch,
+                    feature.key,
+                    "paired",
+                    ((reference_batch, identity_partner.key),),
+                    None if forward is None else forward(feature.reference_rt_min),
+                    (),
+                )
+                reference_partners[identity_partner.key].append((batch, feature.key))
+                continue
             if forward is None or reverse is None:
                 decisions[(batch, feature.key)] = FeatureCorrespondence(
                     batch, feature.key, "unpaired_no_map", (), None, ()
@@ -240,8 +260,8 @@ def correspond_batches(
                 continue
             match_state, partner, rivals = _match(
                 feature,
-                reference,
-                batch_features,
+                unbound_reference,
+                unbound,
                 forward,
                 reverse,
                 batch_map.search_half_width_min,
@@ -257,14 +277,14 @@ def correspond_batches(
             )
             if partner is not None:
                 reference_partners[partner.key].append((batch, feature.key))
-        for feature in reference:
+        for feature in unbound_reference:
             if forward is None or reverse is None:
                 reference_reasons[feature.key].append(("unpaired_no_map", ()))
                 continue
             match_state, _partner, rivals = _match(
                 feature,
-                batch_features,
-                reference,
+                unbound,
+                unbound_reference,
                 reverse,
                 forward,
                 batch_map.search_half_width_min,
@@ -573,6 +593,29 @@ def _fit(
     )
 
 
+def _identity_pairs(
+    features: Sequence[BatchFeature], reference: Sequence[BatchFeature]
+) -> dict[str, BatchFeature]:
+    """Features bound to the same known ISTD in both batches, by identity."""
+    by_label: dict[str, BatchFeature] = {}
+    for feature in reference:
+        label = feature.known_identity_label
+        if label is not None and by_label.setdefault(label, feature) is not feature:
+            raise ValueError(f"two Matrix features bound to one identity: {label}")
+    pairs: dict[str, BatchFeature] = {}
+    seen: set[str] = set()
+    for feature in features:
+        label = feature.known_identity_label
+        if label is None:
+            continue
+        if label in seen:
+            raise ValueError(f"two Matrix features bound to one identity: {label}")
+        seen.add(label)
+        if label in by_label:
+            pairs[feature.key] = by_label[label]
+    return pairs
+
+
 def batch_feature(
     batch_id: str,
     group: CrossSamplePeakGroupHypothesis,
@@ -599,6 +642,9 @@ def batch_feature(
         precursor_mz=group.group_center_mz,
         reference_rt_min=float(median(positions)),
         sample_count=len({owner.sample_stem for owner in group.owners}),
+        known_identity_label=None
+        if group.inference_basis is None
+        else group.inference_basis.known_identity_label,
     )
 
 

@@ -173,3 +173,20 @@ def test_reference_batch_is_largest_then_latest_acquired():
     assert choose_reference_batch({"a": 12, "b": 83}) == "b"
     times = {"a": 2, "b": 1}
     assert choose_reference_batch({"a": 5, "b": 5}, times.__getitem__) == "a"
+
+
+def test_istds_bound_to_one_identity_pair_by_identity_not_by_rt():
+    # The old batch carries the ISTD and an unbound twin 0.04 min apart; RT
+    # alone could not choose between them.
+    features = _anchor_features() + [
+        BatchFeature("old", "istd", "dR", 261.1273, 9.0 + SHIFT, 10, "hmdC"),
+        BatchFeature("old", "twin", "dR", 261.1273, 9.04 + SHIFT, 7),
+        BatchFeature("new", "istd", "dR", 261.1273, 9.0, 82, "hmdC"),
+    ]
+
+    result = _run(features)
+
+    assert _state(result, "old", "istd").partners == (("new", "istd"),)
+    assert _state(result, "new", "istd").partners == (("old", "istd"),)
+    # The bound pair is not a candidate for the twin.
+    assert _state(result, "old", "twin").state == "unpaired_no_candidate"

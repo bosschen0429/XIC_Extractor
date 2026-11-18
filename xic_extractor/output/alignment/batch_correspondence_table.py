@@ -24,6 +24,7 @@ BATCH_CORRESPONDENCE_COLUMNS = (
     "batch_rt_min",
     "reference_rt_min",
     "sample_count",
+    "known_identity_label",
     "anchor",
     "state",
     "partner_group_id",
@@ -55,6 +56,7 @@ def write_batch_correspondence_table(
                 if decision.reference_rt_min is None
                 else decision.reference_rt_min,
                 "sample_count": feature.sample_count,
+                "known_identity_label": feature.known_identity_label or "",
                 "anchor": anchors.get((decision.batch_id, decision.key), ""),
                 "state": decision.state,
                 "partner_group_id": ";".join(key for _, key in decision.partners),
