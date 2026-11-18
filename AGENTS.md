@@ -10,15 +10,15 @@ XIC-specific task routing and invariants; global rules own general defaults.
 | Product terminology | [`domain-glossary.md`](docs/product/domain-glossary.md) |
 | Product behavior or method evidence | [`docs/product/README.md`](docs/product/README.md) |
 | Readiness claim, scientific decision, or change to published values | [`product-validation-contract.md`](docs/agent/product-validation-contract.md) and [Writer Authority](docs/product/decision-policy.md#writer-authority) |
-| Choosing, adding or running tests (local default: `python -m tools.testing.test_selection`); UI demonstration | [`testing.md`](docs/agent/testing.md) |
+| Choosing, adding or running tests; UI demonstration | [`testing.md`](docs/agent/testing.md) |
 | Owner boundary, persisted schema, runtime lifecycle, write authority, public contract | [`architecture-contract.md`](docs/architecture-contract.md) |
 | UI information hierarchy, interactions, wording, styling or theme roles | [`ui-design.md`](docs/ui-design.md) |
 | Imports in startup-sensitive or lightweight readers | [Dependency Direction](docs/architecture-contract.md#dependency-direction) |
-| Issue scope, implementation completion, push, PR, review, long RAW run | [`delivery.md`](docs/agent/delivery.md) |
-| Current-format Untargeted output as test input | Regenerate with `.venv\Scripts\python.exe -m scripts.run_tissue_validation --dataset 8`; older runs under `output/` are not current-format input |
+| Issue scope, implementation completion, push, PR or review | [`delivery.md`](docs/agent/delivery.md) |
+| Current-format Untargeted output as test input | Regenerate with the [8RAW runner](docs/agent/local-execution.md#validation-scale); older runs under `output/` are not current-format input |
 | Scripts and diagnostics | [`script-tool-lifecycle.md`](docs/agent/script-tool-lifecycle.md) to add or retire one; [`INDEX.md`](tools/diagnostics/INDEX.md) to pick one; [`diagnostic-ledger.md`](docs/agent/diagnostic-ledger.md) before repeating evidence |
 | Docs, skills, hooks, rules or agent config | [`codex-operating-system.md`](docs/agent/codex-operating-system.md) |
-| GitHub issue mechanics or triage | [`issue-tracker.md`](docs/agent/issue-tracker.md) and [`triage-labels.md`](docs/agent/triage-labels.md) |
+| GitHub issues | [Operations](docs/agent/issue-tracker.md); [labels](docs/agent/triage-labels.md) for triage |
 | File placement, tracking, where a document belongs | [`project-layout.md`](docs/project-layout.md) |
 
 ## Always On
@@ -51,7 +51,7 @@ XIC-specific task routing and invariants; global rules own general defaults.
   ignored `output/`; a tracked artifact needs a current consumer.
 - **Performance:** use `xic-performance-diagnosis` for timing, locality or
   performance comparisons.
-- **Evidence:** report the Evidence label and actual oracle. Passing tests prove
-  regression coverage, not scientific or production readiness.
+- **Evidence:** say what the check actually established. For scientific or
+  readiness claims, use the [evidence labels](docs/agent/product-validation-contract.md#evidence-labels).
 - **Merge:** acceptance evidence and hosted checks on the final remote SHA
   must both be satisfied; see [Acceptance Review](docs/agent/delivery.md#acceptance-review).
