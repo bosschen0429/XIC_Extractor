@@ -111,15 +111,10 @@ when settings need inspection, and keep timing outputs in the task-specific
 output directory.
 
 The live timing file is the heartbeat for interrupted runs; the final timing
-file is the completed history. Performance interpretation belongs to
-xic-performance-diagnosis. Current CLI help owns exact spelling and available
-flags.
+file is the completed history. Use `xic-performance-diagnosis` to interpret it.
 
 ## Shell Traps
 
-- Use PowerShell command syntax. Bash heredocs, export, and Unix continuations
-  fail before Python runs.
-- Invoke a PowerShell helper from the active shell with `& <script.ps1> ...`.
-- Prefer CLI help over copying command examples into docs.
-- Keep run outputs under ignored output/ and local inputs under ignored
-  local_validation_artifacts/.
+The Windows examples above use PowerShell. Match the syntax to the active
+shell; formal RAW validation still requires Windows Native. Keep run outputs
+under ignored `output/` and local inputs under ignored `local_validation_artifacts/`.

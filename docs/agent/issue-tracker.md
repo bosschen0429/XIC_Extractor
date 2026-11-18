@@ -18,7 +18,8 @@ GitHub shares one number space across issues and PRs, so a bare `#42` may be eit
 
 ## When a skill says "publish to the issue tracker"
 
-Create a GitHub issue.
+For an authorized publication, create a GitHub issue. A request for a draft
+ends with the draft; the skill's publishing step is not authorization.
 
 ## When a skill says "fetch the relevant ticket"
 

@@ -10,9 +10,9 @@ construction rules are in source and executable checks.
 Targeted 用已知 target 約束搜尋並輸出固定列；Untargeted 找一般候選並輸出
 feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政策及 writer。
 
-閱讀順序：[Repo 結構樹](project-layout.md#repository-tree) →
-[入口](#entry-points-and-handoffs) → [模組責任表](#ownership-map) →
-[依賴方向](#dependency-direction)。只想理解分析概念，從
+找檔案位置看 [Repo 結構樹](project-layout.md#repository-tree)；追工作流程看
+[入口](#entry-points-and-handoffs)；判斷誰負責某個行為看 [模組責任表](#ownership-map)；
+檢查 import 邊界看 [依賴方向](#dependency-direction)。只想理解分析概念，從
 [人讀版核心導覽](development/core-modules-explainer.html)開始。
 
 ### Entry Points And Handoffs
