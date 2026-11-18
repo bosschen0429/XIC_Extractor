@@ -221,6 +221,14 @@ the single-batch path unchanged. There is no cross-batch Backfill.
 The multiplier 2 and the 0.2 min floor are fixed before results are read; the
 multiplier changes only on leave-one-out ISTD evidence.
 
+Limit: outside the range of its anchors the map extrapolates from the
+endpoint, and the search window does not widen with the extrapolation
+distance. Leave-one-out errors measure only between ISTDs, so drift that bends
+beyond the outermost ISTD is invisible to both the coarse window and the map.
+The method therefore needs ISTDs covering the early and late ends of the
+gradient; without them, nonlinear drift there can pair a feature with a
+neighboring same-channel feature instead of its counterpart.
+
 Outputs:
 
 - The Matrix writes a paired row once, with the reference batch's Mz and RT and
