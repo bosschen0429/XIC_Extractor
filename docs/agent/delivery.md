@@ -50,19 +50,7 @@ final change only affects documentation.
 
 ## PR Body
 
-Write for a reviewer who judges intent and behavior without reading every
-line, in the user's language and product terms. Use the `pr` skill and the
-[PR template](../../.github/pull_request_template.md): what changes and why,
-what supports it, and what happens if it is wrong.
-
-- Report the checks actually run and what they confirmed; keep manual
-  inspection distinct from execution. Never invent a before/after run or a
-  scientific readiness claim.
-- Put commands and detailed evidence in a collapsed block or a link.
-- Link the Issue instead of repeating it. Leave construction history out.
-
-Status reports lead with the result and keep facts, inference and unknowns
-apart.
+Use the `pr` skill to write or revise the PR body.
 
 ## Closing
 
