@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import gzip
 import json
 import math
@@ -55,7 +54,7 @@ from xic_extractor.rt_calibration_codec import (
     rt_drift_from_payload,
     rt_drift_payload,
 )
-from xic_extractor.tabular_io import write_delimited_rows
+from xic_extractor.tabular_io import read_delimited_rows, write_delimited_rows
 
 _RtModel = tuple[BatchRtWarp | None, BatchRtCalibration | None, RtDriftModel | None]
 
@@ -511,34 +510,65 @@ def group_signature(groups: Sequence[CrossSamplePeakGroupHypothesis]) -> tuple:
     )
 
 
-def compare_membership(
-    previous_members: Path,
-    groups: Sequence[CrossSamplePeakGroupHypothesis],
-) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Group merges and splits against a previous replay of the same snapshot.
+def _members_by_owner(
+    source: Path | Sequence[Mapping[str, Any]],
+) -> dict[str, Mapping[str, Any]]:
+    rows = (
+        read_delimited_rows(
+            source,
+            required_columns=(
+                "owner_id",
+                "group_id",
+                "sample_stem",
+                "mz",
+                "observed_rt",
+            ),
+        )
+        if isinstance(source, Path)
+        else source
+    )
+    owners = {row["owner_id"]: row for row in rows}
+    if len(owners) != len(rows):
+        raise ValueError("Duplicate membership owner_id")
+    return owners
 
-    Owner identities come from the shared snapshot, so another code version's
-    `members.tsv` maps onto the current groups. The gap is the spread of the
-    parts' median observed apex RT.
-    """
-    with previous_members.open(encoding="utf-8", newline="") as stream:
-        before = {
-            row["owner_id"]: row["group_id"]
-            for row in csv.DictReader(stream, delimiter="	")
-        }
-    owners = {owner.owner_id: owner for group in groups for owner in group.owners}
-    after = {
-        owner.owner_id: group.group_hypothesis_id
-        for group in groups
-        for owner in group.owners
-    }
+
+def write_membership_comparison(
+    previous_members: Path,
+    current_members: Path | Sequence[Mapping[str, Any]],
+    output_dir: Path,
+) -> dict[str, int]:
+    """Compare partitions of shared observations, independent of display IDs."""
+    previous = _members_by_owner(previous_members)
+    owners = _members_by_owner(current_members)
+    before = {key: row["group_id"] for key, row in previous.items()}
+    after = {key: row["group_id"] for key, row in owners.items()}
     shared = before.keys() & after.keys()
+    if not shared:
+        raise ValueError("No comparable owners in the two membership tables")
     rows = [
         *_membership_changes("merge", after, before, shared, owners),
         *_membership_changes("split", before, after, shared, owners),
     ]
-    return rows, {
+    write_table(
+        output_dir / "membership-diff.tsv",
+        rows,
+        (
+            "change",
+            "group_id",
+            "mz",
+            "part_count",
+            "part_sizes",
+            "part_apex_rt",
+            "apex_gap_sec",
+            "part_samples",
+            "part_owners",
+        ),
+    )
+    return {
         "compared_owner_count": len(shared),
+        "before_only_owner_count": len(before) - len(shared),
+        "after_only_owner_count": len(after) - len(shared),
         "merge_count": sum(row["change"] == "merge" for row in rows),
         "split_count": sum(row["change"] == "split" for row in rows),
         "merge_within_10s_count": sum(
@@ -555,7 +585,7 @@ def _membership_changes(
     whole: Mapping[str, str],
     parts: Mapping[str, str],
     shared: set[str],
-    owners: Mapping[str, SampleLocalMS1Owner],
+    owners: Mapping[str, Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     """Rows where one group of `whole` holds owners of several `parts` groups."""
     by_whole: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
@@ -566,9 +596,7 @@ def _membership_changes(
         if len(split) < 2:
             continue
         medians = {
-            part: statistics.median(
-                owners[o].peak.integration.rt_apex_min for o in members
-            )
+            part: statistics.median(float(owners[o]["observed_rt"]) for o in members)
             for part, members in split.items()
         }
         ordered = sorted(split, key=lambda part: (medians[part], part))
@@ -577,14 +605,19 @@ def _membership_changes(
                 "change": change,
                 "group_id": whole_id,
                 "mz": statistics.median(
-                    owners[o].peak.mz for members in split.values() for o in members
+                    float(owners[o]["mz"])
+                    for members in split.values()
+                    for o in members
                 ),
                 "part_count": len(split),
                 "part_sizes": "|".join(str(len(split[part])) for part in ordered),
                 "part_apex_rt": "|".join(f"{medians[part]:.4f}" for part in ordered),
                 "apex_gap_sec": (medians[ordered[-1]] - medians[ordered[0]]) * 60.0,
+                "part_owners": "|".join(
+                    ",".join(sorted(split[part])) for part in ordered
+                ),
                 "part_samples": "|".join(
-                    ",".join(sorted(owners[o].sample_stem for o in split[part]))
+                    ",".join(sorted(owners[o]["sample_stem"] for o in split[part]))
                     for part in ordered
                 ),
             }
@@ -598,6 +631,7 @@ def write_grouping_result(
     groups: Sequence[CrossSamplePeakGroupHypothesis],
     *,
     baseline: Sequence[CrossSamplePeakGroupHypothesis] = (),
+    compare_to: Path | None = None,
     rt_coordinates: RtFrame | None = None,
 ) -> dict[str, Any]:
     before = {owner.owner_id: group for group in baseline for owner in group.owners}
@@ -652,8 +686,8 @@ def write_grouping_result(
                         inputs.candidate_ids_by_owner.get(owner.owner_id, ())
                     ),
                     "sample_stem": owner.sample_stem,
-                    "mz": owner.peak.mz,
-                    "observed_rt": owner.peak.integration.rt_apex_min,
+                    "mz": repr(float(owner.peak.mz)),
+                    "observed_rt": repr(float(owner.peak.integration.rt_apex_min)),
                     "comparison_rt": comparison_rt,
                     "comparison_rt_basis": risk.rt_basis
                     if risk is not None
@@ -765,13 +799,19 @@ def write_grouping_result(
         ],
         ("sample_stem", "observation_count"),
     )
-    return {
+    summary: dict[str, Any] = {
         "sample_count": len(inputs.sample_stems),
         "observation_count": len(members),
         "group_count": len(groups),
         "changed_observation_count": len(changes),
         "groups_by_disposition": dict(Counter(group.disposition for group in groups)),
     }
+    if compare_to is not None:
+        summary["compared_to"] = str(compare_to)
+        summary["membership_diff"] = write_membership_comparison(
+            compare_to / "members.tsv", members, output
+        )
+    return summary
 
 
 def signal_quality_from_payload(value: object) -> SignalQuality | None:

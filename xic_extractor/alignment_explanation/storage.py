@@ -309,7 +309,7 @@ def present_tables(db: sqlite3.Connection) -> set[str]:
     }
 
 
-def read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
+def read_completed_metadata(connection: sqlite3.Connection) -> dict[str, Any]:
     """Admit only the current format; older reports must be regenerated."""
     tables = present_tables(connection)
     if "run" not in tables:
@@ -355,15 +355,18 @@ def read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
         raise ExplanationError(
             "檢閱資料含有目前版本不再產生的支持來源；請重新執行 Alignment。"
         )
-    summary = {**stored, **_derived_counts(connection)}
-    summary = {key: summary[key] for key in sorted(summary)}
-    summary["samples"] = [
+    stored["samples"] = [
         {"sample_key": key, "sample_stem": stem}
         for key, stem in connection.execute(
             "SELECT sample_key,sample_stem FROM samples ORDER BY id"
         )
     ]
-    return summary
+    return stored
+
+
+def read_completed_summary(connection: sqlite3.Connection) -> dict[str, Any]:
+    summary = {**read_completed_metadata(connection), **_derived_counts(connection)}
+    return {key: summary[key] for key in sorted(summary)}
 
 
 def _derived_counts(connection: sqlite3.Connection) -> dict[str, Any]:

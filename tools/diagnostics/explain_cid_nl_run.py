@@ -41,8 +41,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--group-id", help="Exact group ID for selected curve acquisition"
     )
-    parser.add_argument("--raw-dir", type=Path)
-    parser.add_argument("--dll-dir", type=Path)
+    parser.add_argument(
+        "--raw-dir", type=Path, help="Required only to read unsaved curves."
+    )
+    parser.add_argument(
+        "--dll-dir", type=Path, help="Required only to read unsaved curves."
+    )
     parser.add_argument("--curve-padding-min", type=float, default=0.5)
     args = parser.parse_args(argv)
     if sum(option is not None for option in (args.compact_to, args.curve_bundle)) > 1:
@@ -54,15 +58,6 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"--curve-bundle must name a new file: {args.curve_bundle}")
     try:
         if args.curve_bundle is not None:
-            if (
-                args.compact_to is not None
-                or args.raw_dir is None
-                or args.dll_dir is None
-            ):
-                parser.error(
-                    "--curve-bundle needs --raw-dir and --dll-dir "
-                    "and cannot accompany --compact-to"
-                )
             from xic_extractor.alignment_explanation.reader import (
                 read_review_curves,
             )

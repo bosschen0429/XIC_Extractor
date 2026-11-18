@@ -22,18 +22,18 @@ from __future__ import annotations
 import sqlite3
 
 _PEAK_CANDIDATES = """
-    SELECT terminal_peak AS peak, id AS candidate FROM main.candidates
+    SELECT terminal_peak AS peak, id AS candidate FROM {candidates}
     WHERE terminal_peak IS NOT NULL
     UNION
     SELECT j.value, c.id FROM main.method_assessments a, json_each(a.peaks) j
-    JOIN main.candidates c
+    JOIN {candidates} c
       ON c.method_subject = a.method_subject AND c.sample = a.sample
     WHERE a.detector_invocation_id = 'untargeted-cid-nl-backfill'
       AND a.method_result = 'SUPPORT'"""
 
 _MEMBER_CANDIDATES = """
     SELECT m.id AS member, c.id AS candidate FROM main.members m
-    JOIN main.candidates c
+    JOIN {candidates} c
       ON c.sample = m.sample AND c.hypothesis_id = m.subject_id
     WHERE m.subject_kind = 'peak_hypothesis'
     UNION
@@ -60,14 +60,14 @@ _INITIAL_GROUP_CANDIDATES = """
     SELECT DISTINCT m.initial_group AS group_id, mc.candidate
     FROM temp.member_candidates mc
     JOIN main.members m ON m.id = mc.member
-    JOIN main.candidates c ON c.id = mc.candidate
+    JOIN {candidates} c ON c.id = mc.candidate
     JOIN methods ON methods.group_id = m.initial_group
       AND methods.method_subject = c.method_subject"""
 
 _CURVE_CANDIDATES = """
     SELECT cu.payload_id, c.id AS candidate FROM main.curves cu
     JOIN main.samples s ON s.sample_key = cu.sample_id
-    JOIN main.candidates c ON c.candidate_id = cu.candidate_id AND c.sample = s.id"""
+    JOIN {candidates} c ON c.candidate_id = cu.candidate_id AND c.sample = s.id"""
 
 # name: (query, prerequisites, index columns)
 _RELATIONS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
@@ -87,16 +87,26 @@ _RELATIONS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
 }
 
 
-def relation(db: sqlite3.Connection, name: str) -> str:
-    """Compute a relation on this connection once; return its table name."""
+def relation(
+    db: sqlite3.Connection, name: str, *, candidate_id: str | None = None
+) -> str:
+    """Compute each relation once on the request connection (one candidate scope)."""
     query, prerequisites, columns = _RELATIONS[name]
     exists = db.execute(
         "SELECT 1 FROM temp.sqlite_master WHERE type='table' AND name=?", (name,)
     ).fetchone()
     if exists is None:
         for prerequisite in prerequisites:
-            relation(db, prerequisite)
-        db.execute(f"CREATE TEMP TABLE {name} AS {query}")
+            relation(db, prerequisite, candidate_id=candidate_id)
+        candidates = (
+            "main.candidates"
+            if candidate_id is None
+            else "(SELECT * FROM main.candidates WHERE candidate_id=:candidate_id)"
+        )
+        db.execute(
+            f"CREATE TEMP TABLE {name} AS {query.format(candidates=candidates)}",
+            {"candidate_id": candidate_id},
+        )
         for column in columns:
             db.execute(f"CREATE INDEX temp.{name}_{column} ON {name}({column})")
     return f"temp.{name}"

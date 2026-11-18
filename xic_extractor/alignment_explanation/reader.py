@@ -30,11 +30,13 @@ from .storage import (
     encode_object,
     open_readonly,
     present_tables,
+    read_completed_metadata,
     read_completed_summary,
 )
 
 CandidateKey = tuple[str, str]
 
+_PEAKS = "SELECT id,physical_peak_key,mz,rt_apex_min,ppm FROM peaks"
 _GROUPS = "SELECT id,feature_id,disposition,destination,center_mz,ppm FROM groups"
 
 
@@ -102,8 +104,15 @@ def _in(column: str, chunk: Sequence[Any]) -> str:
 class _Report:
     """Request-local lookups over one completed report."""
 
-    def __init__(self, db: sqlite3.Connection, summary: Mapping[str, Any]):
+    def __init__(
+        self,
+        db: sqlite3.Connection,
+        summary: Mapping[str, Any],
+        *,
+        candidate_id: str | None = None,
+    ):
         self.db = db
+        self.candidate_id = candidate_id
         self.summary = summary
         self.full = summary["retention"] == "full_audit"
         self.tables = present_tables(db)
@@ -111,27 +120,33 @@ class _Report:
         self._risk_owner_groups: dict[int, list[Any]] = {}
         self.samples = [sample["sample_key"] for sample in summary["samples"]]
         self.stems = [sample["sample_stem"] for sample in summary["samples"]]
-        self.peaks: dict[int, tuple[str, float | None, float | None, float | None]] = {
-            row[0]: row[1:]
-            for row in db.execute(
-                "SELECT id,physical_peak_key,mz,rt_apex_min,ppm FROM peaks"
+        # Bulk review loads its dictionaries together. For one exact ID, peaks
+        # can also belong to other members of a related group; resolve those
+        # primary keys as the member, assessment and cell records reference them.
+        self.peaks: dict[int, tuple[str, float | None, float | None, float | None]] = (
+            {row[0]: row[1:] for row in db.execute(_PEAKS)}
+            if candidate_id is None
+            else {}
+        )
+        subjects = (
+            "SELECT id,method_subject_id,subject_kind,precursor_mz,"
+            "precursor_tolerance_ppm,neutral_loss_da,composition FROM method_subjects"
+        )
+        candidates = (
+            "SELECT id,candidate_id,sample,precursor_mz,ms1_apex_mz,"
+            "neutral_loss_tag,peak_status,method_subject,terminal_variant,"
+            "hypothesis_id,terminal_peak FROM candidates"
+        )
+        params = () if candidate_id is None else (candidate_id,)
+        if candidate_id is not None:
+            candidates += " WHERE candidate_id=?"
+            subjects += (
+                " WHERE id IN (SELECT method_subject FROM candidates "
+                "WHERE candidate_id=?)"
             )
-        }
-        self.subjects = {
-            row[0]: row[1:]
-            for row in db.execute(
-                "SELECT id,method_subject_id,subject_kind,precursor_mz,"
-                "precursor_tolerance_ppm,neutral_loss_da,composition "
-                "FROM method_subjects"
-            )
-        }
+        self.subjects = {row[0]: row[1:] for row in db.execute(subjects, params)}
         self.candidate_rows = {
-            row[0]: row
-            for row in db.execute(
-                "SELECT id,candidate_id,sample,precursor_mz,ms1_apex_mz,"
-                "neutral_loss_tag,peak_status,method_subject,terminal_variant,"
-                "hypothesis_id,terminal_peak FROM candidates ORDER BY id"
-            )
+            row[0]: row for row in db.execute(candidates + " ORDER BY id", params)
         }
         self.candidate_ids = {
             (row[1], self.samples[row[2]]): row_id
@@ -147,7 +162,7 @@ class _Report:
     ) -> dict[int, list[Any]]:
         """Records of a relation view each given candidate relates to."""
         result: dict[int, list[Any]] = defaultdict(list)
-        table = relation(self.db, view)
+        table = relation(self.db, view, candidate_id=self.candidate_id)
         for chunk in _chunks(candidates):
             for candidate, record in self.db.execute(
                 f"SELECT candidate,{column} FROM {table} "
@@ -157,8 +172,18 @@ class _Report:
                 result[candidate].append(record)
         return result
 
+    def peak(
+        self, peak_id: int
+    ) -> tuple[str, float | None, float | None, float | None]:
+        if peak_id not in self.peaks:
+            row = self.db.execute(_PEAKS + " WHERE id=?", (peak_id,)).fetchone()
+            if row is None:
+                raise ExplanationError(f"missing referenced peak: {peak_id}")
+            self.peaks[peak_id] = row[1:]
+        return self.peaks[peak_id]
+
     def peak_keys(self, encoded: str) -> list[str]:
-        return [self.peaks[peak_id][0] for peak_id in json.loads(encoded)]
+        return [self.peak(peak_id)[0] for peak_id in json.loads(encoded)]
 
     # Candidates --------------------------------------------------------
 
@@ -189,7 +214,7 @@ class _Report:
             "variant": row[8],
         }
         if row[9] is not None:
-            key, mz, rt, ppm = self.peaks[row[10]]
+            key, mz, rt, ppm = self.peak(row[10])
             record.update(
                 hypothesis_id=row[9],
                 physical_peak_keys=[key],
@@ -336,7 +361,7 @@ class _Report:
                 sid = self.samples[sample]
                 peak_ids = json.loads(peaks)
                 for peak_id in peak_ids:
-                    key, mz, rt, peak_ppm = self.peaks[peak_id]
+                    key, mz, rt, peak_ppm = self.peak(peak_id)
                     extractions.append(
                         {
                             "mz": mz,
@@ -576,7 +601,7 @@ class _Report:
                 "signal_quality": [
                     {
                         **quality,
-                        "observation_id": self.peaks[quality["observation_id"]][0],
+                        "observation_id": self.peak(quality["observation_id"])[0],
                     }
                     for quality in json.loads(signal_quality)
                 ],
@@ -623,11 +648,18 @@ class _Report:
             group_rows = list(self.db.execute(_GROUPS + " ORDER BY id"))
             cells = self.cells(None)
         else:
-            group_rows = [
-                row
-                for row in self.db.execute(_GROUPS + " ORDER BY id")
-                if row[0] in group_candidates or row[1] in row_ids
-            ]
+            related_rows = {
+                row[0]: row
+                for column, ids in (
+                    ("id", sorted(group_candidates)),
+                    ("feature_id", row_ids),
+                )
+                for chunk in _chunks(ids)
+                for row in self.db.execute(
+                    _GROUPS + " WHERE " + _in(column, chunk), chunk
+                )
+            }
+            group_rows = [related_rows[key] for key in sorted(related_rows)]
             cells = self.cells(row_ids)
         read_groups = self.groups(group_rows, group_candidates, cells)
         group_refs = {
@@ -798,12 +830,12 @@ def read_alignment_explanation(
     the groups it relates to are read with their result rows and cells.
     """
     with open_readonly(path) as connection:
-        summary = read_completed_summary(connection)
         if candidate_id is None:
-            return summary
-        report = _Report(connection, summary)
+            return read_completed_summary(connection)
+        summary = read_completed_metadata(connection)
+        report = _Report(connection, summary, candidate_id=candidate_id)
         keys = sorted(
-            (key for key in report.candidate_ids if key[0] == candidate_id),
+            report.candidate_ids,
             key=lambda key: key[1],
         )
         if not keys:

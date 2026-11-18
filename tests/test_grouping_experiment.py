@@ -4,7 +4,6 @@ import csv
 import gzip
 import json
 from dataclasses import replace
-from types import SimpleNamespace
 
 import pytest
 
@@ -359,13 +358,21 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
                 "replay",
                 "--inputs",
                 str(snapshot),
+                "--compare-to",
+                str(output),
                 "--output-dir",
                 str(tmp_path / "replay"),
             ]
         )
         == 0
     )
-    assert (tmp_path / "replay" / "members.tsv").is_file()
+    diff = json.loads((tmp_path / "replay" / "summary.json").read_text())[
+        "membership_diff"
+    ]
+    assert (
+        diff["compared_owner_count"] > 0
+        and diff["split_count"] == diff["merge_count"] == 0
+    )
     for name in ("groups", "members", "decisions", "samples"):
         assert (output / f"{name}.tsv").read_bytes() == (
             tmp_path / "replay" / f"{name}.tsv"
@@ -436,8 +443,15 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
     assert group_signature(
         replay_grouping(restored, rt_coordinates=SampleRtFrame())
     ) != group_signature(expected)
+    from unittest.mock import Mock
+
+    counted_replay = Mock(wraps=replay_grouping)
+    monkeypatch.setattr(
+        "tools.diagnostics.grouping_experiment.replay_grouping", counted_replay
+    )
     output = tmp_path / "istd-replay"
     assert main(["replay", "--inputs", str(snapshot), "--output-dir", str(output)]) == 0
+    assert counted_replay.call_count == 1
     with (output / "members.tsv").open(encoding="utf-8") as stream:
         members = list(csv.DictReader(stream, delimiter="\t"))
     for member in members:
@@ -823,49 +837,62 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
     assert all(group.disposition == "established" for group in groups)
 
 
-def test_compare_membership_reports_merges_and_splits_against_previous_replay(
-    tmp_path,
+def test_saved_memberships_compare_splits_and_merges_without_replay(
+    tmp_path, monkeypatch
 ):
+    from xic_extractor.diagnostics.grouping_experiment_io import write_table
 
-    from xic_extractor.diagnostics.grouping_experiment_io import (
-        compare_membership,
-        write_table,
+    monkeypatch.setattr(
+        "tools.diagnostics.grouping_experiment.replay_grouping",
+        lambda *a, **kw: pytest.fail("comparison must not regroup observations"),
     )
-
-    def owner(owner_id, sample, rt):
-        return SimpleNamespace(
-            owner_id=owner_id,
-            sample_stem=sample,
-            peak=SimpleNamespace(mz=300.0, integration=SimpleNamespace(rt_apex_min=rt)),
-        )
-
-    a, b, c = owner("a", "s1", 10.0), owner("b", "s2", 10.0), owner("c", "s3", 10.1)
-    d, e = owner("d", "s1", 12.0), owner("e", "s2", 12.05)
-    previous = tmp_path / "members.tsv"
-    write_table(
-        previous,
-        [
-            {"group_id": group, "owner_id": owner_id}
-            for group, owner_id in (
-                ("G1", "a"),
-                ("G1", "b"),
-                ("G2", "c"),
-                ("G3", "d"),
-                ("G3", "e"),
-            )
-        ],
-        ("group_id", "owner_id"),
-    )
-    groups = [
-        SimpleNamespace(group_hypothesis_id="H1", owners=(a, b, c)),
-        SimpleNamespace(group_hypothesis_id="H2", owners=(d,)),
-        SimpleNamespace(group_hypothesis_id="H3", owners=(e,)),
+    observations = [
+        ("a", "s1", 10.0),
+        ("b", "s2", 10.0),
+        ("c", "s3", 10.1),
+        ("d", "s1", 12.0),
+        ("e", "s2", 12.05),
+        ("f", "s3", 17.0),
     ]
 
-    rows, counts = compare_membership(previous, groups)
+    def members(name, groups):
+        path = tmp_path / name
+        write_table(
+            path,
+            [
+                {
+                    "group_id": group,
+                    "owner_id": owner,
+                    "sample_stem": sample,
+                    "observed_rt": rt,
+                    "mz": 300.0,
+                }
+                for group, (owner, sample, rt) in zip(groups, observations, strict=True)
+            ],
+            ("group_id", "owner_id", "sample_stem", "observed_rt", "mz"),
+        )
+        return path
 
+    before = members("before.tsv", ["G1", "G1", "G2", "G3", "G3", "G4"])
+    after = members("after.tsv", ["H1", "H1", "H1", "H2", "H3", "renamed"])
+    out = tmp_path / "diff"
+    args = [
+        "compare",
+        "--before",
+        str(before),
+        "--after",
+        str(after),
+        "--output-dir",
+        str(out),
+    ]
+    assert main(args) == 0
+    counts = json.loads((out / "summary.json").read_text())["membership_diff"]
+    with (out / "membership-diff.tsv").open() as stream:
+        rows = list(csv.DictReader(stream, delimiter="\t"))
     assert counts == {
-        "compared_owner_count": 5,
+        "compared_owner_count": 6,
+        "before_only_owner_count": 0,
+        "after_only_owner_count": 0,
         "merge_count": 1,
         "split_count": 1,
         "merge_within_10s_count": 1,
@@ -873,6 +900,11 @@ def test_compare_membership_reports_merges_and_splits_against_previous_replay(
     }
     merge = next(row for row in rows if row["change"] == "merge")
     assert (merge["group_id"], merge["part_sizes"]) == ("H1", "2|1")
-    assert round(merge["apex_gap_sec"], 6) == 6.0
+    assert round(float(merge["apex_gap_sec"]), 6) == 6.0
     split = next(row for row in rows if row["change"] == "split")
     assert (split["group_id"], split["part_samples"]) == ("G3", "s1|s2")
+    assert merge["part_owners"] == "a,b|c"
+    after.write_text(after.read_text().splitlines()[0] + "\n")
+    with pytest.raises(SystemExit) as error:
+        main(args)
+    assert error.value.code == 2
