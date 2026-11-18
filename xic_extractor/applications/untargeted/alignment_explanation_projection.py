@@ -33,6 +33,7 @@ if TYPE_CHECKING:
         FinalizedUntargetApplicationResult,
     )
     from xic_extractor.alignment.rt_frame import SampleRtFrame
+    from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
     from xic_extractor.discovery.models import DiscoveryPeak
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         CidNlMethodAssessment,
@@ -529,6 +530,35 @@ def write_alignment_explanation(
         return explanation.finalize(matrix_path)
 
 
+@dataclass(frozen=True)
+class ExplanationBatch:
+    """One completed batch with the Discovery inputs its report declares."""
+
+    completed: CompletedUntargetBatchWorkflowResult
+    peaks_by_sample: Mapping[str, Sequence[DiscoveryPeak]]
+    precursor_mz_by_candidate: Mapping[str, float]
+    neutral_loss_by_tag: Mapping[str, float]
+    ms1_apex_mz_by_candidate: Mapping[str, float] | None = None
+
+
+@dataclass(frozen=True)
+class BatchExplanationReplay:
+    """Replay independently aligned batches' children into one report.
+
+    ``consume(child, batch, label, merge_into)`` replays one child of the
+    batch at index ``batch``. ``label(offset)`` is the feature ID of the
+    child's written group at ``offset``; ``merge_into`` maps an offset to an
+    already replayed final group whose result row the group joins. It returns
+    each offset's final group ID.
+    """
+
+    consume: Callable[
+        [UntargetChildOutputs, int, Callable[[int], str], Mapping[int, str]],
+        dict[int, str],
+    ]
+    finalize: Callable[[Path], Path]
+
+
 @contextmanager
 def prepare_alignment_explanation(
     path: Path,
@@ -548,16 +578,62 @@ def prepare_alignment_explanation(
     The children were projected with the same ``full_audit`` and
     ``curve_mz_ranges``.
     """
-    measured_mz = ms1_apex_mz_by_candidate or {}
+    frame = completed.sample_rt_frame
+    with prepare_batch_alignment_explanation(
+        path,
+        (
+            ExplanationBatch(
+                completed,
+                peaks_by_sample,
+                precursor_mz_by_candidate,
+                neutral_loss_by_tag,
+                ms1_apex_mz_by_candidate,
+            ),
+        ),
+        alignment_config=alignment_config,
+        calibration=frame.calibration_for_snapshot if frame is not None else None,
+        progress_callback=progress_callback,
+        full_audit=full_audit,
+        curve_mz_ranges=curve_mz_ranges,
+    ) as replay:
+
+        def consume_child(child: UntargetChildOutputs, first_group: int) -> None:
+            replay.consume(
+                child,
+                0,
+                lambda offset: feature_id_label(first_group + offset + 1),
+                {},
+            )
+
+        yield PreparedAlignmentExplanation(consume_child, replay.finalize)
+
+
+@contextmanager
+def prepare_batch_alignment_explanation(
+    path: Path,
+    batches: Sequence[ExplanationBatch],
+    *,
+    alignment_config: AlignmentConfig,
+    calibration: BatchRtCalibration | None,
+    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    full_audit: bool = False,
+    curve_mz_ranges: Sequence[tuple[float, float]] = (),
+) -> Iterator[BatchExplanationReplay]:
+    """One report for independently aligned batches; the first is the reference.
+
+    Each batch declares its own samples, candidates, subjects, assessments and
+    initial groups; ``calibration`` is the run's replay calibration.
+    """
     with ExplanationReportWriter(
         path,
         review_only=not full_audit,
         curve_mz_ranges=curve_mz_ranges,
     ) as sink:
-        application = completed.application_result
-        subjects = application.method_subjects
-        memberships = dict(subjects.candidate_memberships)
-        samples = {sample.raw_stem: sample for sample in application.canonical_samples}
+        samples = {
+            sample.raw_stem: sample
+            for batch in batches
+            for sample in batch.completed.application_result.canonical_samples
+        }
         sink.declare_samples(
             [
                 {"sample_key": sample.sample_name, "sample_stem": stem}
@@ -622,64 +698,9 @@ def prepare_alignment_explanation(
             if completed_count % 256:
                 report_progress(stage, completed_count, total)
 
-        for stem, declared in peaks_by_sample.items():
-            sid = samples[stem].sample_name
-            for candidate in phase_items("candidates", declared):
-                key = candidate.peak_id, sid
-                subject_id = memberships[candidate.peak_id]
-                sink.add_candidate(
-                    *key,
-                    precursor_mz=precursor_mz_by_candidate[candidate.peak_id],
-                    ms1_apex_mz=measured_mz.get(candidate.peak_id),
-                    neutral_loss_tag=candidate.neutral_loss_tag,
-                    peak_status=candidate.status,
-                    method_subject_id=subject_id,
-                )
-
-        capture_evidence = completed.capture_evidence
-        for evidence in phase_items(
-            "capture_evidence",
-            capture_evidence if full_audit or curve_mz_ranges else (),
-        ):
-            sid = evidence.sample_key
-            stage = (
-                "backfill_observation"
-                if evidence.capture_stage == "method_backfill"
-                else evidence.capture_stage
-            )
-            _emit_curve_payload(
-                sink,
-                evidence.observation_ref,
-                sid,
-                candidate_id=evidence.candidate_id,
-                kind=stage,
-                trace=evidence.trace,
-                evaluation=evidence.physical_evaluation,
-                provenance=_fields(
-                    evidence,
-                    "processing_attempt_id",
-                    "method_subject_id",
-                ),
-            )
-
-        for subject in phase_items("method_subjects", subjects.subjects):
-            sink.add_method_subject(
-                {
-                    **_fields(
-                        subject,
-                        "method_subject_id",
-                        "subject_kind",
-                        "precursor_mz",
-                        "precursor_tolerance_ppm",
-                        "neutral_loss_da",
-                    ),
-                    "composition": asdict(subject.composition)
-                    if subject.composition
-                    else None,
-                }
-            )
-
-        def emit_assessment(assessment: CidNlMethodAssessment) -> None:
+        def emit_assessment(
+            assessment: CidNlMethodAssessment, capture_evidence: bool
+        ) -> None:
             content = assessment
             # The same settled attempt can reach this projection through more
             # than one completed relation; its content is the record.
@@ -724,25 +745,98 @@ def prepare_alignment_explanation(
             )
             emitted_assessments.add(content)
 
-        for assessment in phase_items(
-            "method_assessments", completed.method_assessments
-        ):
-            emit_assessment(assessment)
+        for batch in batches:
+            completed = batch.completed
+            application = completed.application_result
+            subjects = application.method_subjects
+            memberships = dict(subjects.candidate_memberships)
+            measured_mz = batch.ms1_apex_mz_by_candidate or {}
+            for stem, declared in batch.peaks_by_sample.items():
+                sid = samples[stem].sample_name
+                for candidate in phase_items("candidates", declared):
+                    key = candidate.peak_id, sid
+                    subject_id = memberships[candidate.peak_id]
+                    sink.add_candidate(
+                        *key,
+                        precursor_mz=batch.precursor_mz_by_candidate[candidate.peak_id],
+                        ms1_apex_mz=measured_mz.get(candidate.peak_id),
+                        neutral_loss_tag=candidate.neutral_loss_tag,
+                        peak_status=candidate.status,
+                        method_subject_id=subject_id,
+                    )
 
-        for excluded in phase_items("exclusions", application.excluded_candidates):
-            key = excluded.candidate_id, excluded.sample_key
-            refs = (*excluded.method_assessments, *excluded.composite_assessments)
-            sink.add_exclusion(*key, excluded.reason_code)
-            for assessment in refs:
-                emit_assessment(assessment)
+            capture_evidence = completed.capture_evidence
+            for evidence in phase_items(
+                "capture_evidence",
+                capture_evidence if full_audit or curve_mz_ranges else (),
+            ):
+                sid = evidence.sample_key
+                stage = (
+                    "backfill_observation"
+                    if evidence.capture_stage == "method_backfill"
+                    else evidence.capture_stage
+                )
+                _emit_curve_payload(
+                    sink,
+                    evidence.observation_ref,
+                    sid,
+                    candidate_id=evidence.candidate_id,
+                    kind=stage,
+                    trace=evidence.trace,
+                    evaluation=evidence.physical_evaluation,
+                    provenance=_fields(
+                        evidence,
+                        "processing_attempt_id",
+                        "method_subject_id",
+                    ),
+                )
+
+            for subject in phase_items("method_subjects", subjects.subjects):
+                sink.add_method_subject(
+                    {
+                        **_fields(
+                            subject,
+                            "method_subject_id",
+                            "subject_kind",
+                            "precursor_mz",
+                            "precursor_tolerance_ppm",
+                            "neutral_loss_da",
+                        ),
+                        "composition": asdict(subject.composition)
+                        if subject.composition
+                        else None,
+                    }
+                )
+
+            for assessment in phase_items(
+                "method_assessments", completed.method_assessments
+            ):
+                emit_assessment(assessment, bool(capture_evidence))
+
+            for excluded in phase_items("exclusions", application.excluded_candidates):
+                key = excluded.candidate_id, excluded.sample_key
+                refs = (*excluded.method_assessments, *excluded.composite_assessments)
+                sink.add_exclusion(*key, excluded.reason_code)
+                for assessment in refs:
+                    emit_assessment(assessment, bool(capture_evidence))
 
         child_count = 0
         matrix_row_count = 0
-        child_total = len(application.child_outputs)
+        child_total = sum(
+            len(batch.completed.application_result.child_outputs) for batch in batches
+        )
         report_progress("children", 0, child_total)
 
-        def consume_child(child: UntargetChildOutputs, first_group: int) -> None:
+        def consume(
+            child: UntargetChildOutputs,
+            batch: int,
+            label: Callable[[int], str],
+            merge_into: Mapping[int, str],
+        ) -> dict[int, str]:
             nonlocal child_count, matrix_row_count
+            capture_evidence = bool(batches[batch].completed.capture_evidence)
+            merged: dict[str, str] = {}
+            final_groups: dict[int, str] = {}
             for name, args, kwargs in cast(
                 "tuple[_Write, ...]", child.explanation or ()
             ):
@@ -753,61 +847,79 @@ def prepare_alignment_explanation(
                         sink.add_curve_payload(**kwargs)
                 elif name == "add_final_group":
                     offset = kwargs["feature_id"]
-                    sink.add_final_group(
-                        *args,
-                        **{
-                            **kwargs,
-                            "feature_id": None
-                            if offset is None
-                            else feature_id_label(first_group + offset + 1),
-                        },
-                    )
+                    if offset in merge_into:
+                        merged[args[0]] = merge_into[offset]
+                        sink.extend_final_group(
+                            merge_into[offset],
+                            disposition=kwargs["disposition"],
+                            members=kwargs["members"],
+                        )
+                    else:
+                        sink.add_final_group(
+                            *args,
+                            **{
+                                **kwargs,
+                                "feature_id": None if offset is None else label(offset),
+                            },
+                        )
+                    if offset is not None:
+                        final_groups[offset] = merged.get(args[0]) or args[0]
                 else:
+                    group_id = merged.get(args[0]) or args[0]
                     if name == "set_row_destination":
+                        if args[0] in merged:
+                            continue
                         matrix_row_count += args[1] == "matrix"
-                    getattr(sink, name)(*args, **kwargs)
+                    getattr(sink, name)(group_id, *args[1:], **kwargs)
             child_count += 1
             if child_count % 256 == 0:
                 report_progress("children", child_count, child_total)
+            return final_groups
 
         def finalize(matrix_path: Path) -> Path:
             if child_count != child_total:
                 raise ValueError("explanation did not consume every finalized child")
             if child_count % 256:
                 report_progress("children", child_count, child_total)
-            for group in phase_items("initial_groups", completed.initial_groups):
-                inference_basis = (
-                    group.inference_basis
-                    if isinstance(group, CrossSamplePeakGroupHypothesis)
-                    else None
-                )
-                sink.add_initial_group(
-                    disposition=group.disposition,
-                    members=[
-                        {
-                            **_fields(
-                                member, "sample_key", "subject_kind", "subject_id"
-                            ),
-                            "physical_peak_keys": [
-                                locate(peak) for peak in member.physical_peaks
-                            ],
-                        }
-                        for member in group.member_subjects
-                    ],
-                    inference_basis=None
-                    if inference_basis is None
-                    else asdict(inference_basis),
-                    inference_decisions=None
-                    if inference_basis is None
-                    else [asdict(decision) for decision in group.inference_decisions],
-                )
+            for batch in batches:
+                for group in phase_items(
+                    "initial_groups", batch.completed.initial_groups
+                ):
+                    inference_basis = (
+                        group.inference_basis
+                        if isinstance(group, CrossSamplePeakGroupHypothesis)
+                        else None
+                    )
+                    sink.add_initial_group(
+                        disposition=group.disposition,
+                        members=[
+                            {
+                                **_fields(
+                                    member, "sample_key", "subject_kind", "subject_id"
+                                ),
+                                "physical_peak_keys": [
+                                    locate(peak) for peak in member.physical_peaks
+                                ],
+                            }
+                            for member in group.member_subjects
+                        ],
+                        inference_basis=None
+                        if inference_basis is None
+                        else asdict(inference_basis),
+                        inference_decisions=None
+                        if inference_basis is None
+                        else [
+                            asdict(decision) for decision in group.inference_decisions
+                        ],
+                    )
 
             report_progress("finalizing", sink.record_count, None)
             with Path(matrix_path).open("rb") as handle:
                 matrix_hash = hashlib.file_digest(handle, "sha256").hexdigest()
+            reference = batches[0].completed.application_result
             summary: dict[str, Any] = {
                 **_RUN_CONTRACT_SUMMARY,
-                "processing_attempt_id": application.processing_attempt_id,
+                "processing_attempt_id": reference.processing_attempt_id,
                 "samples": [
                     {
                         "sample_stem": stem,
@@ -818,7 +930,13 @@ def prepare_alignment_explanation(
                 "acquisition_sources": [
                     asdict(source)
                     for source in sorted(
-                        application.acquisition_sources,
+                        (
+                            source
+                            for batch in batches
+                            for source in (
+                                batch.completed.application_result.acquisition_sources
+                            )
+                        ),
                         key=lambda source: source.acquisition_source_id,
                     )
                 ],
@@ -826,7 +944,13 @@ def prepare_alignment_explanation(
                 "matrix_path": str(matrix_path),
                 "matrix_sha256": matrix_hash,
                 "alignment_config": asdict(alignment_config),
-                "neutral_loss_by_tag": dict(sorted(neutral_loss_by_tag.items())),
+                "neutral_loss_by_tag": dict(
+                    sorted(
+                        (tag, loss)
+                        for batch in batches
+                        for tag, loss in batch.neutral_loss_by_tag.items()
+                    )
+                ),
                 "retention": "full_audit" if full_audit else "review",
                 "selection_evidence_capability": "recorded_decisions",
                 "curve_retention": "all"
@@ -836,12 +960,12 @@ def prepare_alignment_explanation(
                 else "none",
                 "curve_mz_ranges": list(curve_mz_ranges),
                 "audit_availability": {
-                    name: "recorded" if getattr(completed, name) else "unavailable"
+                    name: "recorded"
+                    if all(getattr(batch.completed, name) for batch in batches)
+                    else "unavailable"
                     for name in ("method_assessments", "initial_groups")
                 },
             }
-            frame = completed.sample_rt_frame
-            calibration = frame.calibration_for_snapshot if frame is not None else None
             summary["sample_rt_calibration"] = (
                 rt_calibration_payload(calibration) if calibration is not None else None
             )
@@ -852,4 +976,4 @@ def prepare_alignment_explanation(
             }
             return sink.finalize(summary)
 
-        yield PreparedAlignmentExplanation(consume_child, finalize)
+        yield BatchExplanationReplay(consume, finalize)

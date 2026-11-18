@@ -28,6 +28,9 @@ CandidateKey = tuple[str, str]
 # m/z, apex RT and the query ppm of one physical peak; None when not recorded.
 PeakCoordinates = tuple[float | None, float | None, float | None]
 
+# Final group dispositions from most to least certain.
+_DISPOSITION_CERTAINTY = ("established", "provisional", "unresolved", "rejected")
+
 # Curve envelope fields stored as the curve's columns, not in its payload.
 _CURVE_COLUMNS = ("sample_id", "kind", "candidate_id", "physical_peak_key")
 
@@ -350,6 +353,22 @@ class ExplanationReportWriter:
             center_mz,
             ppm,
         ]
+        for member in members:
+            self._member(member, initial=None, final=group_id)
+
+    def extend_final_group(
+        self,
+        group_id: str,
+        *,
+        disposition: str,
+        members: Sequence[Mapping[str, Any]],
+    ) -> None:
+        """Another batch's paired group joins this result row.
+
+        Its members join the row; the row keeps the less certain disposition.
+        """
+        row = self._groups[group_id]
+        row[2] = max(row[2], disposition, key=_DISPOSITION_CERTAINTY.index)
         for member in members:
             self._member(member, initial=None, final=group_id)
 

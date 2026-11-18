@@ -156,6 +156,11 @@ that measurement as the sample's cell, so its area and bounds equal the peak
 table. Scheduling partitions pack worksets for execution only; they do not
 restrict scientific comparison or RT calibration.
 
+Each declared batch is aligned alone and its finished Matrix groups are then
+paired with the reference batch's; see
+[Declared batches](rt-calibration.md#declared-batches). Grouping, Backfill and
+calibration never compare samples of different batches.
+
 Non-composite method subjects with the same scalar neutral loss form connected
 worksets through resolver intervals and known-reference comparison envelopes.
 Different losses, disconnected scopes, and composite subjects retain separate
