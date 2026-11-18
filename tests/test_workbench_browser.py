@@ -82,6 +82,7 @@ def _unsaved(page, kind: str) -> bool:
 def test_help_opens_task_guide_without_changing_the_analysis(
     workbench, tmp_path, theme
 ):
+    from xic_extractor.configuration.paths import dna_dr_nucleosides_path
     from xic_extractor.configuration.target_list_files import load_target_list
     from xic_extractor.configuration.targets import read_istd_targets
 
@@ -91,14 +92,18 @@ def test_help_opens_task_guide_without_changing_the_analysis(
     original_raw = page.locator("#t-data_dir").input_value()
     page.get_by_role("button", name="使用說明與快捷鍵").click()
     expect(page.get_by_role("heading", name="使用說明與快捷鍵")).to_be_visible()
-    # Both analyses read the one example list, offered only here.
-    expect(page.locator('a[href^="/examples/"]')).to_have_count(1)
     with page.expect_download() as download:
         page.get_by_role("link", name="下載目標清單範例 XLSX").click()
     example = tmp_path / "example.xlsx"
     download.value.save_as(example)
     assert load_target_list(example).targets
     assert read_istd_targets(example).targets
+    with page.expect_download() as windows:
+        page.get_by_role("link", name="下載核苷清單範例 TSV（DNA dR）").click()
+    downloaded = tmp_path / windows.value.suggested_filename
+    windows.value.save_as(downloaded)
+    assert downloaded.name == dna_dr_nucleosides_path().name
+    assert downloaded.read_bytes() == dna_dr_nucleosides_path().read_bytes()
     with page.expect_popup() as opened:
         page.get_by_role("link", name="開啟使用說明").click()
     guide = opened.value

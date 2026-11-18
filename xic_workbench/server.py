@@ -89,7 +89,12 @@ _ASSETS = {
     ),
     "/assets/analysis.css": ("analysis.css", "text/css; charset=utf-8"),
 }
-_EXAMPLES = {"/examples/targets.xlsx"}
+_EXAMPLES = {
+    "/examples/targets.xlsx": (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ),
+    "/examples/dna_dr_nucleosides.tsv": "text/tab-separated-values; charset=utf-8",
+}
 _INSPECTOR_ASSETS = {
     "/assets/inspector.js": ("inspector.js", "text/javascript; charset=utf-8"),
     "/assets/delta_mass.js": ("delta_mass.js", "text/javascript; charset=utf-8"),
@@ -297,7 +302,7 @@ def create_server(
                 self._send(
                     200,
                     resource.read_bytes(),
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    _EXAMPLES[url.path],
                     Content_Disposition=f'attachment; filename="{name}"',
                 )
             elif url.path == "/api/session":

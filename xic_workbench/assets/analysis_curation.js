@@ -262,7 +262,7 @@ export function bindCuration() {
   );
   pathField(
     $("curation-overrides"), "nucleosides", "自訂核苷清單 TSV（選填）",
-    "nucleosides", "", "curation-",
+    "nucleosides", "", "curation-", "格式範例可在右上角「？」下載。",
   ).placeholder = "留白使用方法預設";
   let displayedDetection;
   let displayedError;
