@@ -1,9 +1,15 @@
 """In-memory CID-NL peak owners for membership tests; no RAW or runtime setup."""
 
+from collections.abc import Sequence
+
 from tests.owner_peak_fixtures import measured_peak
 from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
+)
+from xic_extractor.alignment.rt_anchors import RtAnchorObservation
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    mint_untargeted_cid_nl_method_subject,
 )
 
 
@@ -49,4 +55,28 @@ def cid_nl_owner(
         primary_identity_event=event,
         supporting_events=supporting_events,
         assignment_reason="same_apex_window",
+    )
+
+
+def agreed_group_observations(
+    groups: Sequence[Sequence[SampleLocalMS1Owner]],
+) -> tuple[RtAnchorObservation, ...]:
+    """Anchor observations of owners in agreed bootstrap groups, one per group.
+
+    Each owner is measured in the DNA_dR channel at its event precursor m/z.
+    """
+    return tuple(
+        RtAnchorObservation(
+            mint_untargeted_cid_nl_method_subject(
+                precursor_mz=owner.primary_identity_event.precursor_mz,
+                precursor_tolerance_ppm=10.0,
+                neutral_loss_da=116.0474,
+            ),
+            owner.sample_stem,
+            owner.owner_id,
+            owner.peak.integration.rt_apex_min,
+            f"group-{index}",
+        )
+        for index, group in enumerate(groups)
+        for owner in group
     )

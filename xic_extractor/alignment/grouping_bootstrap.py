@@ -15,7 +15,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
-    FeatureMembershipBasis,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     bind_retained_peak_hypotheses_to_assessment_universe,
@@ -43,14 +42,6 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
     MeasuredPeakHypothesis,
 )
 from xic_extractor.sample_metadata import SampleMetadata
-
-_CALIBRATION_ANCHOR_BASES: frozenset[FeatureMembershipBasis] = frozenset(
-    {
-        "bidirectional_membership_agreement",
-        "known_identity_constraint",
-        "peak_trajectory",
-    }
-)
 
 
 class GroupingBootstrapError(ValueError):
@@ -81,16 +72,6 @@ class InitialGroupingScope:
         object.__setattr__(self, "rt_interval", rt_interval)
         object.__setattr__(self, "groups", groups)
 
-    @property
-    def calibration_anchor_groups(self) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
-        """Only agreed bootstrap groups can contribute calibration observations."""
-        return tuple(
-            group.owners
-            for group in self.groups
-            if group.inference_basis is not None
-            and group.inference_basis.basis in _CALIBRATION_ANCHOR_BASES
-        )
-
 
 @final
 @dataclass(frozen=True, slots=True)
@@ -108,25 +89,6 @@ class RetainedGroupingCandidate:
     @property
     def peak_hypothesis_id(self) -> str:
         return self.peak_hypothesis.hypothesis_id
-
-
-def measured_calibration_anchor_groups(
-    scope: InitialGroupingScope,
-    candidates: Sequence[RetainedGroupingCandidate],
-) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
-    """Combine membership agreement with independently measured method support."""
-    supported_ids = {
-        candidate.peak_hypothesis_id
-        for candidate in candidates
-        if candidate.direct_support_assessment is not None
-    }
-    # An observation-only owner can carry nominal method-query masses in its
-    # IdentityEvent. That projection is not measured support for calibration.
-    return tuple(
-        anchors
-        for owners in scope.calibration_anchor_groups
-        if (anchors := tuple(o for o in owners if o.owner_id in supported_ids))
-    )
 
 
 def bootstrap_cid_nl_initial_population(

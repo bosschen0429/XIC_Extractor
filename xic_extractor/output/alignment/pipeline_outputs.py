@@ -41,6 +41,7 @@ class AlignmentRunOutputs:
     cells_tsv: Path | None = None
     status_matrix_tsv: Path | None = None
     run_metadata_json: Path | None = None
+    rt_anchors_tsv: Path | None = None
     owner_backfill_evaluation_coverage: BackfillEvaluationCoverageBatch | None = None
     # No live workflow result is published. The run closes its partition
     # store before returning, so a result handed back here would load its
@@ -91,6 +92,11 @@ def output_paths(
         run_metadata_json=(
             output_dir / "alignment_run_metadata.json"
             if emit_target_snapshot_metadata or "alignment_review.tsv" in artifacts
+            else None
+        ),
+        rt_anchors_tsv=(
+            output_dir / "alignment_rt_anchors.tsv"
+            if "alignment_rt_anchors.tsv" in artifacts
             else None
         ),
     )

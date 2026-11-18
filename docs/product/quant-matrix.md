@@ -101,7 +101,9 @@ risk flags do not independently authorize a value or row.
 
 Alignment additionally exposes `alignment_review.tsv` for group review and
 bound Matrix row references,
-`alignment_backfill_cell_evidence.tsv` for Backfill evidence, conditional
+`alignment_backfill_cell_evidence.tsv` for Backfill evidence,
+`alignment_rt_anchors.tsv` for the frozen RT calibration knots (see
+[RT anchor table](rt-calibration.md#rt-anchor-table)), conditional
 `alignment_run_metadata.json`, and versioned `alignment-results` metadata.
 These are public schema surfaces, not independent scientific authority.
 The standard fast public validation profile remains `validation-minimal`;

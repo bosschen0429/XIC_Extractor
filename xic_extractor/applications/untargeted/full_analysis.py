@@ -397,6 +397,7 @@ def _alignment_available_outputs(
         ("backfill_cell_evidence_tsv", outputs.backfill_cell_evidence_tsv),
         ("cells_tsv", outputs.cells_tsv),
         ("status_matrix_tsv", outputs.status_matrix_tsv),
+        ("rt_anchors_tsv", outputs.rt_anchors_tsv),
         ("run_metadata_json", outputs.run_metadata_json),
     )
     found = [

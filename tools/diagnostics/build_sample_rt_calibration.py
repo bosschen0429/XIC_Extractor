@@ -315,7 +315,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     payload = {
         "schema": "sample_rt_calibration",
-        "schema_version": 3,
+        "schema_version": 4,
         "evidence_status": "diagnostic_only",
         "alignment_cells": str(args.alignment_cells.resolve()),
         "injection_timeline": (

@@ -13,11 +13,6 @@ from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
 )
-from xic_extractor.alignment.grouping_bootstrap import (
-    InitialGroupingScope,
-    RetainedGroupingCandidate,
-    measured_calibration_anchor_groups,
-)
 from xic_extractor.alignment.grouping_workflow import (
     build_initial_cid_nl_cross_sample_groups,
     regroup_cid_nl_cross_sample_groups,
@@ -25,15 +20,15 @@ from xic_extractor.alignment.grouping_workflow import (
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
-from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.result.application_result import (
     UntargetedCandidateExclusion,
 )
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
-from xic_extractor.alignment.rt_drift import (
-    BatchRtModelAccumulator,
+from xic_extractor.alignment.rt_anchors import (
     RtAnchorObservation,
+    rt_anchor_observations,
 )
+from xic_extractor.alignment.rt_drift import BatchRtModelAccumulator
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibrationAccumulator
 from xic_extractor.discovery.models import DiscoveryPeak
@@ -67,16 +62,6 @@ class CidNlGrouping:
     rt_frame: SampleRtFrame
 
     @property
-    def rt_anchor_groups(self) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
-        return tuple(
-            owners
-            for workset in self.worksets
-            for owners in measured_calibration_anchor_groups(
-                workset.grouping_scope, workset.retained_candidates
-            )
-        )
-
-    @property
     def rt_anchor_observations(self) -> tuple[RtAnchorObservation, ...]:
         return tuple(
             observation
@@ -85,45 +70,6 @@ class CidNlGrouping:
                 workset.grouping_scope, workset.retained_candidates
             )
         )
-
-
-def rt_anchor_observations(
-    scope: InitialGroupingScope,
-    candidates: Sequence[RetainedGroupingCandidate],
-) -> tuple[RtAnchorObservation, ...]:
-    """Direct-supported, quantifiable owners keyed by their method channel.
-
-    Membership is not consulted: uniqueness per channel and sample is decided
-    once all partitions have contributed.
-    """
-    owners = {owner.owner_id: owner for group in scope.groups for owner in group.owners}
-    observations = set()
-    for candidate in candidates:
-        assessment = candidate.direct_support_assessment
-        owner = owners.get(candidate.peak_hypothesis_id)
-        # An observation-only owner can carry nominal method-query masses;
-        # only measured support establishes a peak in the channel.
-        if (
-            assessment is None
-            or owner is None
-            or owner.primary_identity_event is None
-            or not owner.quantification_eligible
-        ):
-            continue
-        observations.add(
-            RtAnchorObservation(
-                assessment.method_subject.method_subject_id,
-                owner.sample_stem,
-                owner.owner_id,
-                owner.peak.integration.rt_apex_min,
-            )
-        )
-    return tuple(
-        sorted(
-            observations,
-            key=lambda item: (item.channel, item.sample_stem, item.owner_id),
-        )
-    )
 
 
 class CidNlBatchGrouping:
@@ -152,8 +98,9 @@ class CidNlBatchGrouping:
         self._rt_frame: SampleRtFrame | None = None
 
     def add_initial(self, prepared: CidNlGrouping) -> None:
-        self._calibration.add_groups(prepared.rt_anchor_groups)
-        self._drift.add_observations(prepared.rt_anchor_observations)
+        observations = prepared.rt_anchor_observations
+        self._calibration.add_observations(observations)
+        self._drift.add_observations(observations)
         self._bootstrap_frame = self._bootstrap_frame.with_sources(
             known_istd_reference=prepared.known_istd_reference
         )

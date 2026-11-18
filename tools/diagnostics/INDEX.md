@@ -159,9 +159,9 @@ Matrix access.
   medians, with the CLI's `--loess-fraction`. The frozen result must increase
   strictly on both axes. A calibrated RT exists only inside that sample's
   supported anchor span. Strong fits require at least eight distinct measured
-  positions with nonzero final robust weight. The v3 sidecar also freezes
-  qualified measured support for explicitly weak median/boundary-shift queries;
-  these do not upgrade strong support. See the
+  positions with nonzero final robust weight. The sidecar (`schema_version` 4)
+  also freezes qualified measured support for explicitly weak
+  median/boundary-shift queries; these do not upgrade strong support. See the
   [graded RT contract](../../docs/product/rt-calibration.md#graded-query-support)
   for final membership and localization behavior.
 - Measured data decides a perturbation; the
@@ -383,7 +383,9 @@ extraction at that mass.
 
 `--stop-after grouping` runs the formal initial assessment, RT calibration and
 grouping, then writes `groups.tsv`, `members.tsv`, `decisions.tsv`, `samples.tsv`,
-`changes.tsv` and `summary.json` directly from that result. It stops before
+`changes.tsv`, `summary.json` and the
+[RT anchor table](../../docs/product/rt-calibration.md#rt-anchor-table)
+`rt_anchors.tsv` directly from that result. It stops before
 Backfill and Matrix publication. It requires the matching RAW files and current
 Discovery owner-closure artifacts. There is no automatic diagnostic replay.
 Add `--save-grouping-inputs` only when later regrouping needs a retained input;

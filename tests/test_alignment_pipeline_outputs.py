@@ -183,13 +183,15 @@ def test_writer_instrumentation_preserves_output_bytes(
 
     baseline_files = {
         path.name: path
-        for path in baseline_outputs.__dict__.values()
-        if isinstance(path, Path)
+        for field, path in baseline_outputs.__dict__.items()
+        # Publication writes the anchor table from the frozen calibration.
+        if isinstance(path, Path) and field != "rt_anchors_tsv"
     }
     candidate_files = {
         path.name: path
-        for path in candidate_outputs.__dict__.values()
-        if isinstance(path, Path)
+        for field, path in candidate_outputs.__dict__.items()
+        # Publication writes the anchor table from the frozen calibration.
+        if isinstance(path, Path) and field != "rt_anchors_tsv"
     }
     assert baseline_files.keys() == candidate_files.keys()
     assert all(

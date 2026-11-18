@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 
 from tests.alignment_pipeline_helpers import resolved_elution_context
+from tests.membership_fixtures import agreed_group_observations
 from tests.owner_peak_fixtures import measured_peak, with_peak
 from tests.window_feature_membership_fixtures import (
     _synthetic_owner,
@@ -1414,7 +1415,7 @@ def test_estimated_warp_recovers_an_injected_early_shift() -> None:
     calibration = BatchRtCalibrationAccumulator(
         sample_stems=tuple(orders), sample_cohorts=dict.fromkeys(orders, "batch")
     )
-    calibration.add_groups(groups)
+    calibration.add_observations(agreed_group_observations(groups))
     warp = calibration.freeze()
     assert len(warp.knots) == 36
     assert warp.offset_min("s10", 7.0) * 60.0 < -25.0
