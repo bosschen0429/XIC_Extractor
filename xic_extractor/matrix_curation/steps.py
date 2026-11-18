@@ -51,13 +51,19 @@ class CellEvidence:
 
 
 @dataclass(frozen=True)
+class NucleosideList:
+    path: Path
+    label: str
+
+
+@dataclass(frozen=True)
 class CurationInputs:
     """What the source offers, so a step can say whether it can run."""
 
     sample_binding: SampleBinding
     # Empty when per-cell evidence can be read; otherwise why not.
     cell_evidence_problem: str = ""
-    nucleoside_list: Path | None = None
+    nucleoside_list: NucleosideList | None = None
 
 
 @dataclass(frozen=True)

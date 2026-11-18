@@ -19,6 +19,7 @@ from xic_extractor.matrix_curation.finite_fraction import FINITE_FRACTION_STEP
 from xic_extractor.matrix_curation.istd import windows_from_target_snapshot
 from xic_extractor.matrix_curation.known_nucleosides import (
     KNOWN_NUCLEOSIDES_STEP,
+    method_nucleosides,
     read_nucleoside_list,
 )
 from xic_extractor.matrix_curation.mass_rt_windows import MzRtWindow, match_labels
@@ -44,6 +45,7 @@ from xic_extractor.matrix_curation.steps import (
     CurationMatrix,
     CurationStep,
     FeatureIdentity,
+    NucleosideList,
     SampleBinding,
     StepResult,
     StepTable,
@@ -58,6 +60,7 @@ from xic_extractor.sample_metadata import (
 )
 from xic_extractor.tabular_io import (
     escape_excel_formula,
+    file_sha256,
     read_tsv_with_header_snapshot,
     validate_delimited_header,
     write_tsv,
@@ -78,23 +81,48 @@ DECISION_KEY_COLUMNS = (
 )
 
 
-def cell_evidence_problem(source: CurationSource) -> str:
-    """Why per-cell detection evidence cannot be read, or an empty string."""
+def _run_evidence(source: CurationSource) -> tuple[dict[str, Any], str]:
+    """Published method metadata, or why the explanation is unavailable."""
     from xic_extractor.alignment_explanation.errors import ExplanationError
     from xic_extractor.alignment_explanation.reader import (
         read_explanation_metadata,
     )
 
     if source.explanation_path is None:
-        return (
+        return {}, (
             f"資料夾中沒有 {EXPLANATION_ARTIFACT_NAME}，無法取得每格的直接偵測證據；"
             "請重新執行 Alignment 產生新輸出。"
         )
     try:
-        read_explanation_metadata(source.explanation_path)
+        return read_explanation_metadata(source.explanation_path), ""
     except ExplanationError as exc:
-        return f"無法讀取 {EXPLANATION_ARTIFACT_NAME}：{exc}"
-    return ""
+        return {}, f"無法讀取 {EXPLANATION_ARTIFACT_NAME}：{exc}"
+
+
+def _curation_inputs(
+    source: CurationSource,
+    binding: SampleBinding,
+    steps: Sequence[CurationStep],
+    selected_list: Path | None,
+    *,
+    matrix_digest: str | None = None,
+) -> CurationInputs:
+    reference = (
+        NucleosideList(selected_list, f"自訂清單：{selected_list.name}")
+        if selected_list
+        else None
+    )
+    lookup = KNOWN_NUCLEOSIDES_STEP in steps and reference is None
+    if not lookup and not any(step.needs_cell_evidence for step in steps):
+        return CurationInputs(binding, nucleoside_list=reference)
+    metadata, problem = _run_evidence(source)
+    # Bind the method to this Matrix, not the open Workbench preset or a
+    # similarly named RAW folder. Mixed/unknown channels have no default.
+    if lookup and (builtin := method_nucleosides(metadata.get("neutral_loss_by_tag"))):
+        digest = matrix_digest or file_sha256(source.matrix_path)
+        if digest.lower() == metadata.get("matrix_sha256"):
+            reference = builtin
+    return CurationInputs(binding, problem, reference)
 
 
 def read_run_istd(source: CurationSource) -> tuple[MzRtWindow, ...] | None:
@@ -115,9 +143,6 @@ def load_cell_evidence(
         read_published_cells,
     )
 
-    problem = cell_evidence_problem(source)
-    if problem:
-        raise ValueError(problem)
     by_feature: dict[str, dict[str, CellEvidence]] = {
         feature.feature_id: {} for feature in features
     }
@@ -215,9 +240,10 @@ def describe_steps(
             path=source.matrix_path,
             required_columns=("Mz", "RT"),
         )
-    inputs = CurationInputs(
+    inputs = _curation_inputs(
+        source,
         bind_samples(header[2:], metadata, missing=missing_samples),
-        cell_evidence_problem(source),
+        STEPS,
         nucleoside_list,
     )
     return [
@@ -227,6 +253,11 @@ def describe_steps(
             "description": step.description,
             "parameters": [asdict(parameter) for parameter in step.parameters],
             "unavailable_reason": step.unavailable_reason(inputs),
+            **(
+                {"list_label": inputs.nucleoside_list.label}
+                if step is KNOWN_NUCLEOSIDES_STEP and inputs.nucleoside_list
+                else {}
+            ),
         }
         for step in STEPS
     ]
@@ -289,9 +320,7 @@ def prepare_matrix_curation(
         raise ValueError("請至少啟用一個整理步驟。")
     parameters = {step.key: _step_parameters(step, steps[step.key]) for step in enabled}
 
-    # The snapshot reader also rejects rows whose cell count disagrees with
-    # the header; its digest is not needed here.
-    header, rows, _ = read_tsv_with_header_snapshot(
+    header, rows, matrix_digest = read_tsv_with_header_snapshot(
         source.matrix_path, required_columns=("Mz", "RT"), encoding="utf-8-sig"
     )
     review_header, review_rows, _ = read_tsv_with_header_snapshot(
@@ -315,8 +344,8 @@ def prepare_matrix_curation(
         header[2:], sample_metadata, missing="找不到樣本資料；請選擇樣本資料 TSV。"
     )
     needs_cells = any(step.needs_cell_evidence for step in enabled)
-    inputs = CurationInputs(
-        binding, cell_evidence_problem(source) if needs_cells else "", nucleoside_list
+    inputs = _curation_inputs(
+        source, binding, enabled, nucleoside_list, matrix_digest=matrix_digest
     )
     for step in enabled:
         reason = step.unavailable_reason(inputs)
@@ -334,7 +363,11 @@ def prepare_matrix_curation(
                     f"matrix row {index + 1}, sample {column!r}: "
                     f"invalid numeric value {token!r}"
                 ) from exc
-    enabled_list = nucleoside_list if KNOWN_NUCLEOSIDES_STEP.key in steps else None
+    enabled_list = (
+        inputs.nucleoside_list.path
+        if KNOWN_NUCLEOSIDES_STEP in enabled and inputs.nucleoside_list
+        else None
+    )
     matrix = CurationMatrix(
         sample_binding=binding,
         values=values,

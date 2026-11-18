@@ -21,3 +21,7 @@ def runtime_root() -> Path:
 
 def targets_template_path() -> Path:
     return Path(__file__).with_name("data") / "targets.xlsx"
+
+
+def dna_dr_nucleosides_path() -> Path:
+    return Path(__file__).with_name("data") / "dna_dr_nucleosides.tsv"

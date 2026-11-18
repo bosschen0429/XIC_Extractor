@@ -1,4 +1,4 @@
-"""Exclude remaining Matrix rows in user-supplied nucleoside reference windows."""
+"""Exclude remaining rows in method-specific or user-supplied nucleoside windows."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import math
 from collections.abc import Mapping
 from pathlib import Path
 
+from xic_extractor.configuration.paths import dna_dr_nucleosides_path
 from xic_extractor.matrix_curation.mass_rt_windows import (
     MzRtWindow,
     match_labels,
@@ -14,10 +15,20 @@ from xic_extractor.matrix_curation.mass_rt_windows import (
 from xic_extractor.matrix_curation.steps import (
     CurationInputs,
     CurationMatrix,
+    NucleosideList,
     StepParameter,
     StepResult,
 )
 from xic_extractor.tabular_io import read_delimited_rows
+
+
+def method_nucleosides(neutral_loss_by_tag: object) -> NucleosideList | None:
+    """Only this complete published channel signature has reference RT windows."""
+    if neutral_loss_by_tag == {"DNA_dR": 116.0474}:
+        return NucleosideList(
+            dna_dr_nucleosides_path(), "內建 DNA dR 清單：dG、dT、dA、dC"
+        )
+    return None
 
 
 def read_nucleoside_list(path: Path) -> tuple[MzRtWindow, ...]:
@@ -76,7 +87,9 @@ class KnownNucleosidesStep:
 
     def unavailable_reason(self, inputs: CurationInputs) -> str:
         return (
-            "" if inputs.nucleoside_list else "請在「改用其他來源」選擇核苷清單 TSV。"
+            ""
+            if inputs.nucleoside_list
+            else "此結果沒有適用的內建清單。可在「改用其他來源」選擇自訂核苷 TSV。"
         )
 
     def evaluate(

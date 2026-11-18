@@ -940,8 +940,8 @@ def synthetic_cells(monkeypatch):
         "F000004": {},
     }
     monkeypatch.setattr(
-        "xic_extractor.matrix_curation.export.cell_evidence_problem",
-        lambda source: "",
+        "xic_extractor.matrix_curation.export._run_evidence",
+        lambda source: ({}, ""),
     )
     monkeypatch.setattr(
         "xic_extractor.matrix_curation.export.load_cell_evidence",
@@ -1058,7 +1058,7 @@ def test_export_excludes_unassigned_derivative_without_inventing_a_parent(
     write_tsv(source / "alignment_review.tsv", review, MATRIX_REVIEW_COLUMNS)
     _samples(tmp_path / "samples.tsv")
     monkeypatch.setattr(
-        "xic_extractor.matrix_curation.export.cell_evidence_problem", lambda source: ""
+        "xic_extractor.matrix_curation.export._run_evidence", lambda source: ({}, "")
     )
     monkeypatch.setattr(
         "xic_extractor.matrix_curation.export.load_cell_evidence",

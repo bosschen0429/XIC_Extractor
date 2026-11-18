@@ -64,7 +64,6 @@ def test_cli_excludes_only_matching_nucleosides_without_sample_data(tmp_path):
 @pytest.mark.parametrize(
     ("row", "problem"),
     [
-        (None, "TSV"),
         ("missing", "windows.tsv"),
         ("", "沒有資料列"),
         (" \t101\t1\t3\t", "label"),
@@ -92,16 +91,107 @@ def test_enabled_nucleoside_step_rejects_bad_list_before_export(
         str(output),
         "--known-nucleosides",
     ]
-    if row is not None:
-        listing = tmp_path / "windows.tsv"
-        args.extend(["--nucleoside-list", str(listing)])
-        if row != "missing":
-            listing.write_text(
-                "label\tmz\trt_min\trt_max\texpected_rt_min\n" + row, encoding="utf-8"
-            )
+    listing = tmp_path / "windows.tsv"
+    args.extend(["--nucleoside-list", str(listing)])
+    if row != "missing":
+        listing.write_text(
+            "label\tmz\trt_min\trt_max\texpected_rt_min\n" + row, encoding="utf-8"
+        )
     assert main(args) == 2
     assert problem in capsys.readouterr().err
     assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("method", "bound"),
+    [
+        ({"DNA_dR": 116.0474}, True),
+        ({"RNA_ribose": 132.0423}, True),
+        ({"RNA_MeR": 146.0579}, True),
+        ({"DNA_dR": 116.0474, "RNA_ribose": 132.0423}, True),
+        ({"DNA_dR": 116.0474}, False),
+        (None, False),
+    ],
+)
+def test_nucleoside_windows_follow_published_method_unless_replaced(
+    tmp_path, method, bound
+):
+    from scripts.run_matrix_curation import main
+    from tests.alignment_explanation_fixtures import explanation_summary
+    from tests.matrix_review_fixtures import current_matrix_review_row
+    from xic_extractor.alignment_explanation.writer import ExplanationReportWriter
+    from xic_extractor.output.alignment.matrix_output_contract import (
+        MATRIX_REVIEW_COLUMNS,
+    )
+    from xic_extractor.tabular_io import file_sha256
+    from xic_workbench.matrix_curation import describe_source
+
+    rows = [("268.1040", "14.5"), ("268.1040", "18.5")]
+    write_tsv(
+        tmp_path / "alignment_matrix.tsv",
+        [{"Mz": mz, "RT": rt, "S": "1"} for mz, rt in rows],
+        ("Mz", "RT", "S"),
+    )
+    write_tsv(
+        tmp_path / "alignment_review.tsv",
+        [
+            current_matrix_review_row(index=i, mz=mz, rt=rt, feature_id=f"F{i:06d}")
+            for i, (mz, rt) in enumerate(rows, 1)
+        ],
+        MATRIX_REVIEW_COLUMNS,
+    )
+    if method is not None:
+        with ExplanationReportWriter(
+            tmp_path / "alignment_explanation.sqlite", review_only=True
+        ) as writer:
+            writer.finalize(
+                explanation_summary(
+                    {
+                        "neutral_loss_by_tag": method,
+                        "samples": [{"sample_key": "S"}],
+                        "matrix_sha256": file_sha256(
+                            tmp_path / "alignment_matrix.tsv", uppercase=False
+                        )
+                        if bound
+                        else "0" * 64,
+                    },
+                    review_only=True,
+                )
+            )
+    available = bound and method == {"DNA_dR": 116.0474}
+    info = describe_source(tmp_path, {"source_dir": str(tmp_path)})
+    step = next(s for s in info["steps"] if s["key"] == "known_nucleosides")
+    assert (not step["unavailable_reason"]) == available
+    if available:
+        assert "DNA dR" in step["list_label"]
+    custom = tmp_path / "late.tsv"
+    custom.write_text(
+        "label\tmz\texpected_rt_min\nlate\t268.1040\t18.5\n", encoding="utf-8"
+    )
+    for name, flags, labels in [
+        ("builtin", [], ["dG", ""]),
+        ("override", ["--nucleoside-list", str(custom)], ["", "late"]),
+    ]:
+        output = tmp_path / name
+        status = main(
+            [
+                "--source-dir",
+                str(tmp_path),
+                "--output-dir",
+                str(output),
+                "--known-nucleosides",
+                *flags,
+            ]
+        )
+        if name == "builtin" and not available:
+            assert status == 2 and not output.exists()
+            continue
+        assert status == 0
+        _, decisions = read_tsv_with_header(output / "feature_decisions.tsv")
+        assert [r["known_nucleosides_label"] for r in decisions] == labels
+        assert [r["decision"] for r in decisions] == [
+            "drop" if label else "keep" for label in labels
+        ]
 
 
 @pytest.mark.parametrize("reorder", [False, True])

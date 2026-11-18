@@ -58,7 +58,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--nucleoside-list",
         type=Path,
-        help="Reference windows TSV for --known-nucleosides (no default)",
+        help="Override the run method's nucleoside windows with a curation TSV",
     )
     parser.add_argument(
         "--istd-list",

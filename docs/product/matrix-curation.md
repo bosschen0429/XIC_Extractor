@@ -22,16 +22,23 @@ options and output columns follow.
 
 ### Known nucleoside windows (opt-in)
 
-Select a curation TSV under **改用其他來源（選用） → 核苷清單 TSV** and
-enable **排除清單核苷**, or use:
+For a DNA dR result, enable **排除清單核苷** to preview the built-in list
+without choosing a file, or use:
 
 ```console
-xic-matrix-curation --source-dir <alignment> --same-compound --known-nucleosides --nucleoside-list <windows.tsv>
+xic-matrix-curation --source-dir <alignment> --same-compound --known-nucleosides
 ```
 
-The [example TSV](examples/known_nucleosides.tsv) contains protonated dG, dT,
-dA and dC reference masses and RT windows for one DNA-digest LC method. It
-is **not a default**. Adapt RT windows to your chromatography. Each row needs
+The [built-in DNA dR TSV](../../xic_extractor/configuration/data/dna_dr_nucleosides.tsv)
+contains protonated dG, dT, dA and dC reference masses and RT windows for one
+DNA-digest LC method. It is offered only when the published explanation matches
+the Matrix digest and declares the single DNA_dR (116.0474 Da) channel. That
+identifies the channel, not the LC gradient. RNA ribose, RNA MeR, mixed and
+unidentified methods do **not** inherit the DNA list.
+
+For other chromatography or a method without a built-in list, use **改用其他來源
+→ 自訂核苷清單 TSV** or `--nucleoside-list <windows.tsv>`. This replaces, not
+extends, the method default and does not require an explanation. Each row needs
 a nonblank `label`, positive finite `mz`, and either `rt_min < rt_max` in
 minutes or, with both bounds absent, `expected_rt_min` (±0.75 min).
 A complete range takes precedence. An enabled step with a missing, empty or

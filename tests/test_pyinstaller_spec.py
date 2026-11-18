@@ -543,6 +543,8 @@ def test_built_wheel_contains_workbench_and_matching_target_template(
 ) -> None:
     uv_cache_root = packaging_source.parent / "uv-cache"
     with zipfile.ZipFile(built_wheel) as wheel:
+        nucleosides = "xic_extractor/configuration/data/dna_dr_nucleosides.tsv"
+        assert wheel.read(nucleosides) == (PROJECT_ROOT / nucleosides).read_bytes()
         runtime_config = json.loads(
             wheel.read(
                 "xic_extractor/configuration/data/thermo_dotnet.runtimeconfig.json"
@@ -708,6 +710,7 @@ def test_final_pyinstaller_archive_runs_html_workbench_smoke(
     assert final_output.is_dir()
     templates = list(final_output.glob(f"**/{TARGET_TEMPLATE_ARCHIVE_PATH.as_posix()}"))
     assert len(templates) == 1
+    assert templates[0].with_name("dna_dr_nucleosides.tsv").is_file()
     assert (
         templates[0].read_bytes()
         == (PROJECT_ROOT / TARGET_TEMPLATE_RELATIVE).read_bytes()

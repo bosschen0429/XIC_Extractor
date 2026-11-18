@@ -137,6 +137,7 @@ function renderCuration(snapshot) {
     toggle.append(input, el("span", `${index + 1}. ${step.label}`));
     toggle.title = step.description;
     block.append(toggle);
+    if (step.list_label) block.append(el("small", step.list_label, "subtle"));
     for (const parameter of step.parameters) {
       const field = el("label", undefined, "field");
       const value = el("input");
@@ -260,9 +261,9 @@ export function bindCuration() {
     "預設沿用該次分析的內標清單；找不到時才需選擇。",
   );
   pathField(
-    $("curation-overrides"), "nucleosides", "核苷清單 TSV（選填）",
+    $("curation-overrides"), "nucleosides", "自訂核苷清單 TSV（選填）",
     "nucleosides", "", "curation-",
-  );
+  ).placeholder = "留白使用方法預設";
   let displayedDetection;
   let displayedError;
   curation.subscribe((snapshot) => {
