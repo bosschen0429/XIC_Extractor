@@ -122,8 +122,11 @@ direct detections leave insufficient:
 - **Isotope abundance:** every supporting sample's heavy/light ratio stays at
   or under `n·(p13/p12)` (13C), `C(n,2)·(p13/p12)²` (13C₂) or `n·(p15/p14)`
   (15N), with `n = floor(M/12)` or `floor(M/14)` and `M` the neutral mass at
-  the relation's charge assuming a proton. This is a loose upper bound; a stable
-  median does not hide one sample's contradiction.
+  the relation's charge assuming a proton. When the lighter row has a supported
+  `M+2_unassigned` companion (below), a single-heavy-atom ceiling also admits
+  25Mg from two Mg atoms (`+2·(p25/p24)`, NIST Mg), the most those models
+  allow. This is a loose upper bound; a stable median does not hide one
+  sample's contradiction.
 
 The single-pair rules remove the heavier row when it relates to the lighter one by:
 

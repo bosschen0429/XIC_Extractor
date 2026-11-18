@@ -44,6 +44,9 @@ ISOTOPE_RATIO_SAMPLE_FRACTION = 0.8
 # NIST: one 26Mg substitution in one/two Mg atoms, or one 41K in two K.
 # These overlapping models classify a derivative, not its element identity.
 UNASSIGNED_ISOTOPE_RATIOS = (0.7899 / 0.1101, 0.7899 / (2 * 0.1101), K39_PER_K41 / 2)
+# 25Mg in the most Mg atoms those models allow, added to a single-heavy-atom
+# ceiling when the light row has a supported M+2_unassigned companion.
+METAL_M1_ALLOWANCE = 2 * 0.1000 / 0.7899
 UNASSIGNED_ISOTOPE_MEDIAN_FACTORS = (0.8, 1.3)
 # A kept representative this much weaker than a removed member is reviewed.
 WEAK_REPRESENTATIVE_RATIO = 0.1
@@ -101,18 +104,24 @@ class Relation:
     def predict(self, light_mz: float) -> float:
         return self.mz_factor * light_mz + self.delta
 
-    def abundance_ceiling(self, light_mz: float) -> float | None:
+    def abundance_ceiling(
+        self, light_mz: float, metal_carrier: bool = False
+    ) -> float | None:
         """Largest heavy/light ratio if every atom of the neutral were this element.
 
         The neutral mass assumes a proton, which overestimates it for any other
-        cation and keeps the ceiling loose.
+        cation and keeps the ceiling loose. A metal carrier's single-heavy-atom
+        peak may also hold 25Mg.
         """
         if self.abundance is None:
             return None
         element_mass, per_atom, count = self.abundance
         neutral = self.charge * (light_mz - PROTON)
         atoms = max(0, math.floor(neutral / element_mass))
-        return math.comb(atoms, count) * per_atom**count
+        ceiling = math.comb(atoms, count) * per_atom**count
+        if metal_carrier and count == 1:
+            ceiling += METAL_M1_ALLOWANCE
+        return ceiling
 
 
 RELATIONS: tuple[Relation, ...] = (
@@ -235,7 +244,12 @@ def _direct_coelution(direct_support: int, both_direct: int) -> bool:
     )
 
 
-def relation_outcome(relation: Relation, light_mz: float, pair: PairEvidence) -> str:
+def relation_outcome(
+    relation: Relation,
+    light_mz: float,
+    pair: PairEvidence,
+    metal_carrier: bool = False,
+) -> str:
     """Whether this relation folds the heavier row into the lighter one."""
     if relation.kind == "annotation":
         return "annotation_only"
@@ -278,7 +292,7 @@ def relation_outcome(relation: Relation, light_mz: float, pair: PairEvidence) ->
             ):
                 return "collapse"
         return "isotope_ratio_incompatible"
-    ceiling = relation.abundance_ceiling(light_mz)
+    ceiling = relation.abundance_ceiling(light_mz, metal_carrier)
     if ceiling is not None and any(1.0 / ratio > ceiling for ratio in pair.ratios):
         return "isotope_abundance_exceeded"
     return "collapse"
@@ -333,6 +347,15 @@ def collapse_same_compound(
             key: relation_outcome(by_key[key], mz[pair[0]], evidence[pair])
             for key in matched
         }
+    metal = _metal_carriers(outcomes)
+    for pair, pair_outcomes in outcomes.items():
+        if pair[0] not in metal:
+            continue
+        for key, value in pair_outcomes.items():
+            if value == "isotope_abundance_exceeded":
+                pair_outcomes[key] = relation_outcome(
+                    by_key[key], mz[pair[0]], evidence[pair], metal_carrier=True
+                )
     corroboration = _corroborate_variable_adducts(mz, cells, evidence, outcomes, by_key)
     edges: dict[tuple[int, int], tuple[str, ...]] = {}
     for pair, pair_outcomes in outcomes.items():
@@ -574,6 +597,15 @@ def _corroborate_variable_adducts(
     return supported
 
 
+def _metal_carriers(outcomes: Mapping[tuple[int, int], Mapping[str, str]]) -> set[int]:
+    """Rows with a supported Mg/K-compatible M+2_unassigned companion."""
+    return {
+        light
+        for (light, _), labels in outcomes.items()
+        if labels.get("M+2_unassigned") == "collapse"
+    }
+
+
 @dataclass(frozen=True)
 class _IonFamily:
     neutral_mass: float
@@ -606,11 +638,7 @@ def _ion_family_decisions(
             evidence[pair] = pair_evidence(cells[pair[0]], cells[pair[1]])
         return evidence[pair].coelutes_directly
 
-    metal_isotopes = {
-        light
-        for (light, _), labels in outcomes.items()
-        if labels.get("M+2_unassigned") == "collapse"
-    }
+    metal_isotopes = _metal_carriers(outcomes)
     if not metal_isotopes:
         return list(decisions), ()
     families = _find_ion_families(mz, coelutes, metal_isotopes)

@@ -162,6 +162,38 @@ def test_each_sample_must_fit_the_isotope_abundance_ceiling():
     assert outcome(result, "13C_M+1") == {"isotope_abundance_exceeded"}
 
 
+@pytest.mark.parametrize(
+    ("companion", "heavy_scale", "expected"),
+    [
+        # m/z 400 allows heavy/light <= 0.357 from carbon alone; two 25Mg add
+        # 0.253.
+        (True, 0.38, "collapse"),
+        (False, 0.38, "isotope_abundance_exceeded"),
+        (True, 0.7, "isotope_abundance_exceeded"),
+    ],
+)
+def test_a_metal_carrier_m1_ceiling_admits_25mg(companion, heavy_scale, expected):
+    rows = [row("L", 400.0), row("H", 401.003355, scale=heavy_scale)]
+    if companion:
+        # Two-Mg 26Mg model: light/heavy 3.587.
+        rows.append(row("M2", 401.997551, scale=1 / 3.587))
+    decisions, result = decide(*rows)
+
+    assert decisions["H"][0] is (expected != "collapse")
+    found = relation_row_between(result, "L", "H", "13C_M+1")
+    assert found["outcome"] == expected
+
+
+def relation_row_between(result, light, heavy, relation):
+    (found,) = (
+        row
+        for row in result.relation_rows
+        if (row["light_feature_id"], row["heavy_feature_id"], row["relation"])
+        == (light, heavy, relation)
+    )
+    return found
+
+
 def test_dr116_difference_is_only_annotated():
     decisions, result = decide(row("L", 300.0), row("H", 416.04734, scale=0.5))
 
