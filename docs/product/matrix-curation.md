@@ -185,8 +185,7 @@ The original single-pair outcomes supply the witnesses. A newly corroborated
 variable-ratio row cannot bootstrap another candidate. Neutral salt additions,
 dimers and isotopes do not use this exception; their existing single-pair or
 joint-family rules remain in force. The final direct-co-elution check with an
-ultimate root still applies, so corroboration does not rescue a row whose only
-connection to that root is through intervening rows.
+ultimate root only attributes a representative; it does not keep a row.
 
 The relation outcome is `collapse_corroborated_adduct`; its actual ratio MAD
 remains in the table. Review kind `variable_ratio_adduct_supported` records
@@ -252,19 +251,20 @@ relation table. ≈1.998 pairs not explained by either isotope rule are reviewed
 
 Representatives are rows that no folding relation derives from another row. A
 row is removed when folding relations, each passing its own checks, reach it
-from at least one root and its direct detections do not contradict co-elution
-with that root: at least one sample has both detected directly and co-eluting,
-and at least 80% of their both-direct samples co-elute. A root sparse enough to
-share fewer than 3 samples still qualifies, since every folding edge on the
-path has its own supporting samples. With one such root its representative is
-recorded. With
-several, it is still excluded: its representative field is blank, its reason
-is `derived_representative_undetermined`, and its candidate roots are recorded
-in the review with `decision=drop`. The candidate roots are not merged or
-arbitrarily selected. A sodium adduct's 13C isotope is therefore
-removed into the protonated row through the adduct, while a row that co-elutes
-with the representative only through other rows (A–B and B–C 4.4 s apart, A–C
-8.8 s) is kept and reviewed. When
+from a root. Its representative is the one root whose direct detections do not
+contradict co-elution with it: at least one sample has both detected directly
+and co-eluting, and at least 80% of their both-direct samples co-elute. A root
+sparse enough to share fewer than 3 samples still qualifies. With several such
+roots, or none, the row is still excluded: its representative field is blank,
+its reason is `derived_representative_undetermined`, and its candidate roots
+(the qualifying ones, else every root reaching it) are recorded in the review
+with `decision=drop`. The candidate roots are not merged or arbitrarily
+selected. A sodium adduct's 13C isotope is therefore removed into the
+protonated row through the adduct. A row that co-elutes with the root only
+through other rows (A–B and B–C 4.4 s apart, A–C 8.8 s) is removed without a
+representative. In 8RAW, shifted-mass decoy relations mixed with the real ones
+removed the same rows with or without a root co-elution requirement, while the
+requirement kept derivatives of saturated peaks whose apices scatter. When
 several relations fit one pair they are all recorded and
 `same_compound_relation_undetermined` is TRUE. Results depend on m/z and cell
 evidence only, never on row order, `feature_id` or the order of the relation
@@ -332,7 +332,7 @@ the source folder.
 | `analysis_matrix.tsv` | Kept rows in original order with original tokens and all sample columns |
 | `feature_decisions.tsv` | Every source row: `source_matrix_row_index`, `feature_id`, `Mz`, `RT`, `istd_label`, each enabled step's columns, the final `decision` and `decision_reason` (`kept_by_all_steps`, `dropped_by:<steps>` or `istd_protected`) |
 | `same_compound_relations.tsv` | Each mass-related row pair that co-elutes in some sample: relation, `e_ppm`, both-direct samples, supporting samples (backfilled ones only when direct co-elution is insufficient), the backfilled share of them, backfilled samples without an apex, largest apex difference, median light/heavy ratio, log-ratio MAD, outcome and whether it contributed to excluding the heavier row; an excluded row need not have a unique parent |
-| `same_compound_review.tsv` | Pairs and groups to review: unstable ratio, ≈1.998 unexplained by the isotope rules, review-only relation, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), no direct co-elution with a root, an ion family removed by a later feature filter, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
+| `same_compound_review.tsv` | Pairs and groups to review: unstable ratio, ≈1.998 unexplained by the isotope rules, review-only relation, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), an ion family removed by a later feature filter, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
 | `sample_metadata.tsv` | Matrix column → sample identity, role, group, order and exclusion |
 | `matrix_curation_summary.json` | Enabled steps and parameters, input paths, sample data source and counts |
 

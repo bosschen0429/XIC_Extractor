@@ -1,7 +1,7 @@
 """Exclude supported derivative ion forms from a statistical Matrix.
 
 Isotope, adduct and dimer rows are excluded when supported derivation paths
-reach them from a directly co-eluting root. Neither an exact element identity
+reach them from a root. Neither an exact element identity
 nor a unique root is required to exclude a derivative. Mass relations compare
 row-center m/z; they are not per-sample mass evidence.
 """
@@ -333,11 +333,10 @@ def collapse_same_compound(
 ) -> SameCompoundResult:
     """Decide which rows fold into which representative.
 
-    A removed row is reached from at least one root through folding relations,
-    each passing its own checks, and its direct detections co-elute with that
-    root's without contradiction; a sparse root needs no further samples.
-    Multiple roots leave its attribution blank, not its artifact classification
-    undecided. Rows contradicted by every root are kept. Results
+    A removed row is reached from a root through folding relations, each
+    passing its own checks. Its representative is the one root whose direct
+    detections do not contradict co-elution with it; with none or several, its
+    attribution is blank, not its artifact classification undecided. Results
     depend only on m/z, cells and relations, never on row order, feature ID or
     the order of the relation list.
     """
@@ -394,8 +393,8 @@ def collapse_same_compound(
                     stack.append(child)
                     reached_from[child].add(root)
     representative: dict[int, int] = {}
+    # Candidate roots of a removed row whose representative is undetermined.
     ambiguous_roots: dict[int, set[int]] = {}
-    unresolved: dict[int, str] = {}
     for heavy in parents:
         coeluting_roots = set()
         for root in reached_from[heavy]:
@@ -405,10 +404,8 @@ def collapse_same_compound(
                 coeluting_roots.add(root)
         if len(coeluting_roots) == 1:
             representative[heavy] = next(iter(coeluting_roots))
-        elif coeluting_roots:
-            ambiguous_roots[heavy] = coeluting_roots
         else:
-            unresolved[heavy] = "no_direct_coelution_with_representative"
+            ambiguous_roots[heavy] = coeluting_roots or reached_from[heavy]
     removed = representative.keys() | ambiguous_roots.keys()
     members: dict[int, list[int]] = defaultdict(list)
     for heavy, root in representative.items():
@@ -461,10 +458,9 @@ def collapse_same_compound(
         decisions.append(
             RowDecision(
                 keep=True,
-                reason=unresolved.get(
-                    index,
-                    "representative" if members.get(index) else "no_folding_relation",
-                ),
+                reason="representative"
+                if members.get(index)
+                else "no_folding_relation",
                 ion_form=CONFIRMED_MH if confirmed else UNCONFIRMED,
                 member_count=len(members.get(index, ())),
             )
@@ -479,9 +475,6 @@ def collapse_same_compound(
         for index, decision in enumerate(decisions)
         if decision.representative is not None
     }
-    unresolved = {
-        index: reason for index, reason in unresolved.items() if index not in removed
-    }
     relation_rows = _relation_rows(
         features, matches, outcomes, evidence, removed, by_key
     )
@@ -493,10 +486,8 @@ def collapse_same_compound(
         evidence,
         edges,
         representative,
-        unresolved,
         removed,
         ambiguous_roots,
-        parents,
     )
     corroboration_reviews = tuple(
         review_row(
@@ -923,10 +914,8 @@ def _review_rows(
     evidence: Mapping[tuple[int, int], PairEvidence],
     edges: Mapping[tuple[int, int], tuple[str, ...]],
     representative: Mapping[int, int],
-    unresolved: Mapping[int, str],
     removed: Container[int],
     ambiguous_roots: Mapping[int, set[int]],
-    parents: Mapping[int, set[int]],
 ) -> tuple[dict[str, object], ...]:
     fid = [feature.feature_id for feature in features]
     rows: list[dict[str, object]] = []
@@ -979,8 +968,6 @@ def _review_rows(
                 relation="|".join(edges.get((root, heavy), ("via_group",))),
                 median_light_heavy_ratio=_number(ratio),
             )
-    for heavy, reason in unresolved.items():
-        add(reason, heavy, sorted(parents[heavy], key=lambda index: fid[index]))
     for heavy, candidates in ambiguous_roots.items():
         add(
             "derived_representative_undetermined",

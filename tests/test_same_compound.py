@@ -259,7 +259,7 @@ def test_element_uncertainty_follows_a_derivative_path():
     assert result.decisions[2].undetermined is True
 
 
-def test_removed_row_coelutes_directly_with_its_representative():
+def test_a_derivative_contradicting_its_root_has_no_representative():
     # A-B and B-C co-elute 4.4 s apart; A-C are 8.8 s apart.
     decisions, result = decide(
         row("A", 300.0),
@@ -269,10 +269,11 @@ def test_removed_row_coelutes_directly_with_its_representative():
 
     assert decisions["A"][:2] == (True, "representative")
     assert decisions["B"][:3] == (False, "derived_from_representative", "A")
-    # C is reached from A only through B and never co-elutes with A.
-    assert decisions["C"][:2] == (True, "no_direct_coelution_with_representative")
+    # C derives from B, but never co-elutes with A: excluded, unattributed.
+    assert decisions["C"][:3] == (False, "derived_representative_undetermined", None)
     assert outcome(result, "13C2_M+2") == set()
-    assert review_kinds(result) == [("no_direct_coelution_with_representative", "C")]
+    assert result.review_rows[0]["review_kind"] == "derived_representative_undetermined"
+    assert result.review_rows[0]["related_feature_ids"] == "A"
 
 
 def test_protonated_row_with_sodium_adduct_and_isotopes_is_confirmed_and_kept():
@@ -546,7 +547,7 @@ def test_parallel_metal_multimers_can_support_a_variable_adduct_ratio(
         assert decisions["MgTrimer_M2"][2] == "MH"
 
 
-def test_competing_paths_still_need_direct_coelution_with_a_root():
+def test_competing_paths_without_a_coeluting_root_list_every_root():
     decisions, result = decide(
         row("A", 300.0),
         row("B", 279.021411),
@@ -554,8 +555,12 @@ def test_competing_paths_still_need_direct_coelution_with_a_root():
         row("H", 302.006710, scale=0.0225, shift_sec=8.8),
     )
     assert decisions["P"][:3] == (False, "derived_representative_undetermined", None)
-    assert decisions["H"][:2] == (True, "no_direct_coelution_with_representative")
-    assert ("no_direct_coelution_with_representative", "H") in review_kinds(result)
+    assert decisions["H"][:3] == (False, "derived_representative_undetermined", None)
+    assert {
+        row["related_feature_ids"]
+        for row in result.review_rows
+        if row["review_kind"] == "derived_representative_undetermined"
+    } == {"A;B"}
 
 
 def only_in(scenario, samples):
