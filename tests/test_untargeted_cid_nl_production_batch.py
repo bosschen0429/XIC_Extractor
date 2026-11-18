@@ -495,6 +495,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         outputs,
         writer_inputs,
         timing_recorder=TimingRecorder.disabled("writer"),
+        rt_calibration=None,
         metadata=alignment_metadata(
             discovery_batch_index=tmp_path / "discovery_batch_index.csv",
             raw_dir=tmp_path,
@@ -505,6 +506,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
     )
     assert {path.name for path in writer_dir.iterdir() if path.is_file()} == {
         "alignment_matrix.tsv",
+        "alignment_rt_anchors.tsv",
         "alignment_run_metadata.json",
         "alignment_review.tsv",
     }
@@ -1218,6 +1220,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             outputs,
             weighted_matrix,
             timing_recorder=TimingRecorder.disabled("writer"),
+            rt_calibration=None,
             metadata=alignment_metadata(
                 discovery_batch_index=tmp_path / "discovery_batch_index.csv",
                 raw_dir=tmp_path,
@@ -1348,6 +1351,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         outputs,
         writer_inputs,
         timing_recorder=TimingRecorder.disabled("writer"),
+        rt_calibration=None,
         metadata=alignment_metadata(
             discovery_batch_index=tmp_path / "discovery_batch_index.csv",
             raw_dir=tmp_path,
@@ -1408,6 +1412,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         published_outputs,
         writer_inputs,
         timing_recorder=TimingRecorder.disabled("writer"),
+        rt_calibration=None,
         metadata={},
     )
     write_alignment_explanation(

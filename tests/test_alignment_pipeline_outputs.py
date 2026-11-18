@@ -183,15 +183,13 @@ def test_writer_instrumentation_preserves_output_bytes(
 
     baseline_files = {
         path.name: path
-        for field, path in baseline_outputs.__dict__.items()
-        # Publication writes the anchor table from the frozen calibration.
-        if isinstance(path, Path) and field != "rt_anchors_tsv"
+        for path in baseline_outputs.__dict__.values()
+        if isinstance(path, Path)
     }
     candidate_files = {
         path.name: path
-        for field, path in candidate_outputs.__dict__.items()
-        # Publication writes the anchor table from the frozen calibration.
-        if isinstance(path, Path) and field != "rt_anchors_tsv"
+        for path in candidate_outputs.__dict__.values()
+        if isinstance(path, Path)
     }
     assert baseline_files.keys() == candidate_files.keys()
     assert all(
@@ -284,7 +282,38 @@ def test_outer_transaction_restores_prior_outputs_without_leaking_temp_files(
     assert leftovers == ()
 
 
-def test_matrix_only_output_plan_writes_only_the_matrix(tmp_path: Path) -> None:
+def test_failed_anchor_table_restores_the_published_matrix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_dir = tmp_path / "out"
+    matrix_path = output_dir / "alignment_matrix.tsv"
+    anchors_path = output_dir / "alignment_rt_anchors.tsv"
+    output_dir.mkdir(parents=True)
+    matrix_path.write_bytes(b"prior matrix")
+    anchors_path.write_bytes(b"prior anchors")
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("injected anchor writer failure")
+
+    monkeypatch.setattr(pipeline_outputs_module, "write_rt_anchor_table", fail)
+
+    with pytest.raises(RuntimeError, match="injected anchor writer failure"):
+        _write(
+            pipeline_outputs_module.AlignmentRunOutputs(
+                matrix_tsv=matrix_path, rt_anchors_tsv=anchors_path
+            ),
+            _matrix(("Sample_A", "Sample_B")),
+            metadata={},
+        )
+
+    assert matrix_path.read_bytes() == b"prior matrix"
+    assert anchors_path.read_bytes() == b"prior anchors"
+
+
+def test_production_output_plan_writes_the_matrix_and_rt_anchors(
+    tmp_path: Path,
+) -> None:
     outputs = output_paths(
         tmp_path / "out",
         output_level="production",
@@ -295,7 +324,8 @@ def test_matrix_only_output_plan_writes_only_the_matrix(tmp_path: Path) -> None:
     _write(outputs, _matrix(("Sample_A", "Sample_B")), metadata={})
 
     assert sorted(path.name for path in (tmp_path / "out").iterdir()) == [
-        "alignment_matrix.tsv"
+        "alignment_matrix.tsv",
+        "alignment_rt_anchors.tsv",
     ]
 
 
@@ -362,6 +392,7 @@ def _write(outputs, batch, *, metadata, timing_recorder=None) -> int:
         outputs,
         projected(batch),
         metadata=metadata,
+        rt_calibration=None,
         timing_recorder=timing_recorder or TimingRecorder.disabled("alignment"),
     )
 

@@ -29,7 +29,6 @@ from xic_extractor.output.alignment.pipeline_outputs import (
     row_output_paths,
     write_completed_untargeted_outputs_atomic,
 )
-from xic_extractor.output.alignment.rt_anchor_table import write_rt_anchor_table
 from xic_extractor.output.alignment.tsv_writer import (
     UntargetChildOutputs,
     project_untarget_child_rows,
@@ -155,22 +154,20 @@ def publish_untargeted_outputs(
                         curve_mz_ranges=policy.explanation_curve_mz_ranges,
                     )
                 )
+        frame = completed.sample_rt_frame
         write_completed_untargeted_outputs_atomic(
             outputs,
             completed.application_result,
             metadata=metadata,
+            rt_calibration=(
+                frame.calibration_for_snapshot if frame is not None else None
+            ),
             timing_recorder=timing_recorder,
             consume_child=_explanation_sink(explanation),
             before_write=lambda: _ensure_output_publication_not_cancelled(
                 should_cancel
             ),
         )
-        if outputs.rt_anchors_tsv is not None:
-            frame = completed.sample_rt_frame
-            write_rt_anchor_table(
-                outputs.rt_anchors_tsv,
-                frame.calibration_for_snapshot if frame is not None else None,
-            )
         db_path: Path | None = None
         if explanation is not None:
             assert matrix_path is not None
