@@ -257,7 +257,8 @@ RAW acquisition owners.
 **Usage**: `python -m tools.diagnostics.check_reference_consistency --help`.
 An explicit JSON manifest contains `groups`, each with `name`, `targets_csv`,
 and optional `raw_files`. Relative paths resolve against the manifest directory.
-Use `--preflight-only` before RAW acquisition. Requests deduplicate m/z and ppm
+Use `--preflight-only` before RAW acquisition; it needs no `--output-dir`.
+Requests deduplicate m/z and ppm
 within each RAW; each RAW opens once. Outputs are `reference_consistency.json`
 (including leave-one-out errors, policy, input hashes and RAW identities) and
 `reference_review.tsv`. Mapping-only warnings are informational; RAW multi-cluster
@@ -273,6 +274,7 @@ reference input review needs this oracle; no matrix or reference-writing authori
   `xic_extractor.raw_reader`; contract in
   [`sample-metadata-qc.md`](../../docs/product/sample-metadata-qc.md#injection-timeline-diagnostic).
 - **Use:** `python -m tools.diagnostics.build_injection_timeline --help`.
+  Use `--preflight-only` without `--output` to check inputs without writing.
 - **Outputs:** injection timeline JSON and TSV with recursive chronology,
   copy provenance, previous injection/idle, persisted perturbation policy, and
   optional sequence comparisons. No spectra are acquired; each discovered RAW

@@ -202,12 +202,13 @@ def test_cli_persists_policy_provenance_and_review_values(
         str(tmp_path),
         "--dll-dir",
         str(tmp_path),
-        "--output",
-        str(out),
     ]
     assert cli.main([*args, "--preflight-only"]) == 0
+    with pytest.raises(SystemExit) as missing_output:
+        cli.main(args)
+    assert missing_output.value.code == 2
     assert not out.exists()
-    assert cli.main(args) == 0
+    assert cli.main([*args, "--output", str(out)]) == 0
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["schema"] == "injection_timeline"
     assert data["schema_version"] == 1
