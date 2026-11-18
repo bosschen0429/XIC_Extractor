@@ -10,7 +10,6 @@ declared; they are always kept.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -18,7 +17,7 @@ from pathlib import Path
 from xic_extractor.matrix_curation.export import (
     STEPS,
     default_output_dir,
-    export_matrix_curation,
+    prepare_matrix_curation,
     read_run_istd,
     read_run_samples,
     read_sample_metadata_file,
@@ -123,18 +122,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"run metadata: {source.source_dir / RUN_METADATA_NAME}" if istd else ""
             )
         output_dir = args.output_dir or default_output_dir(source)
-        summary = json.loads(
-            export_matrix_curation(
-                source=source,
-                sample_metadata=metadata,
-                sample_source=sample_source,
-                steps=steps,
-                nucleoside_list=args.nucleoside_list,
-                output_dir=output_dir,
-                istd_windows=istd,
-                istd_source=istd_source,
-            ).read_text(encoding="utf-8")
+        evaluation = prepare_matrix_curation(
+            source=source,
+            sample_metadata=metadata,
+            sample_source=sample_source,
+            steps=steps,
+            nucleoside_list=args.nucleoside_list,
+            istd_windows=istd,
+            istd_source=istd_source,
         )
+        evaluation.write_to(output_dir)
+        summary = evaluation.summary
     except (OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2

@@ -289,11 +289,24 @@ def _step_parameters(
 
 @dataclass(frozen=True)
 class CurationEvaluation:
-    """The same owner decisions feed a read-only preview and the existing writer."""
+    """One set of decisions for preview and publication."""
 
     tables: Mapping[str, StepTable]
     summary: dict[str, Any]
     preview: dict[str, Any]
+
+    def write_to(self, output_dir: Path) -> Path:
+        """Publish these exact tables into a new directory, summary last."""
+        output_dir.mkdir(parents=True, exist_ok=False)
+        for name, table in self.tables.items():
+            write_tsv(output_dir / name, table.rows, table.columns)
+        # Written last: a folder without the summary is an incomplete export.
+        summary_path = output_dir / SUMMARY_NAME
+        summary_path.write_text(
+            json.dumps(self.summary, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return summary_path
 
 
 def prepare_matrix_curation(
@@ -561,40 +574,3 @@ def prepare_matrix_curation(
             "steps": preview_steps,
         },
     )
-
-
-def export_matrix_curation(
-    *,
-    source: CurationSource,
-    sample_metadata: Sequence[SampleMetadata] | None,
-    sample_source: str,
-    steps: Mapping[str, Mapping[str, object]],
-    output_dir: Path,
-    istd_windows: Sequence[MzRtWindow] | None = None,
-    istd_source: str = "",
-    nucleoside_list: Path | None = None,
-) -> Path:
-    """Write the curated Matrix and per-feature decisions into a new folder.
-
-    Each enabled step judges only the remaining rows. Internal standards are
-    protected at every step. Sources are never modified.
-    """
-    evaluation = prepare_matrix_curation(
-        source=source,
-        sample_metadata=sample_metadata,
-        sample_source=sample_source,
-        steps=steps,
-        istd_windows=istd_windows,
-        istd_source=istd_source,
-        nucleoside_list=nucleoside_list,
-    )
-    output_dir.mkdir(parents=True, exist_ok=False)
-    for name, table in evaluation.tables.items():
-        write_tsv(output_dir / name, table.rows, table.columns)
-    # Written last: a folder without the summary is an incomplete export.
-    summary_path = output_dir / SUMMARY_NAME
-    summary_path.write_text(
-        json.dumps(evaluation.summary, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    return summary_path

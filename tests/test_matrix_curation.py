@@ -35,6 +35,43 @@ def _files(folder: Path) -> list[Path]:
     return sorted(path for path in folder.iterdir())
 
 
+def _curate_nucleosides(source, output, listing=None):
+    from scripts.run_matrix_curation import main
+
+    args = [
+        "--source-dir",
+        str(source),
+        "--output-dir",
+        str(output),
+        "--known-nucleosides",
+    ]
+    if listing is not None:
+        args.extend(["--nucleoside-list", str(listing)])
+    return main(args)
+
+
+def _write_features(tmp_path, observations):
+    from tests.matrix_review_fixtures import current_matrix_review_row
+    from xic_extractor.output.alignment.matrix_output_contract import (
+        MATRIX_REVIEW_COLUMNS,
+        public_matrix_mz_text,
+    )
+
+    matrix, review = [], []
+    for i, (mz, rt) in enumerate(observations, 1):
+        matrix.append(
+            {"Mz": public_matrix_mz_text(str(mz)), "RT": str(rt), "S": str(i)}
+        )
+        review.append(
+            current_matrix_review_row(
+                index=i, mz=str(mz), rt=str(rt), feature_id=f"F{i:06d}"
+            )
+        )
+    write_tsv(tmp_path / "alignment_matrix.tsv", matrix, ("Mz", "RT", "S"))
+    write_tsv(tmp_path / "alignment_review.tsv", review, MATRIX_REVIEW_COLUMNS)
+    return matrix
+
+
 def test_cli_excludes_only_matching_nucleosides_without_sample_data(tmp_path):
     source = alignment_output(tmp_path / "alignment")
     listing = tmp_path / "windows.tsv"
@@ -80,24 +117,15 @@ def test_cli_excludes_only_matching_nucleosides_without_sample_data(tmp_path):
 def test_enabled_nucleoside_step_rejects_bad_list_before_export(
     tmp_path, row, problem, capsys
 ):
-    from scripts.run_matrix_curation import main
 
     source = alignment_output(tmp_path / "alignment")
     output = tmp_path / "result"
-    args = [
-        "--source-dir",
-        str(source),
-        "--output-dir",
-        str(output),
-        "--known-nucleosides",
-    ]
     listing = tmp_path / "windows.tsv"
-    args.extend(["--nucleoside-list", str(listing)])
     if row != "missing":
         listing.write_text(
             "label\tmz\trt_min\trt_max\texpected_rt_min\n" + row, encoding="utf-8"
         )
-    assert main(args) == 2
+    assert _curate_nucleosides(source, output, listing) == 2
     assert problem in capsys.readouterr().err
     assert not output.exists()
 
@@ -116,30 +144,12 @@ def test_enabled_nucleoside_step_rejects_bad_list_before_export(
 def test_nucleoside_windows_follow_published_method_unless_replaced(
     tmp_path, method, bound
 ):
-    from scripts.run_matrix_curation import main
     from tests.alignment_explanation_fixtures import explanation_summary
-    from tests.matrix_review_fixtures import current_matrix_review_row
     from xic_extractor.alignment_explanation.writer import ExplanationReportWriter
-    from xic_extractor.output.alignment.matrix_output_contract import (
-        MATRIX_REVIEW_COLUMNS,
-    )
     from xic_extractor.tabular_io import file_sha256
     from xic_workbench.matrix_curation import describe_source
 
-    rows = [("268.1040", "14.5"), ("268.1040", "18.5")]
-    write_tsv(
-        tmp_path / "alignment_matrix.tsv",
-        [{"Mz": mz, "RT": rt, "S": "1"} for mz, rt in rows],
-        ("Mz", "RT", "S"),
-    )
-    write_tsv(
-        tmp_path / "alignment_review.tsv",
-        [
-            current_matrix_review_row(index=i, mz=mz, rt=rt, feature_id=f"F{i:06d}")
-            for i, (mz, rt) in enumerate(rows, 1)
-        ],
-        MATRIX_REVIEW_COLUMNS,
-    )
+    _write_features(tmp_path, [(268.1040, 14.5), (268.1040, 18.5)])
     if method is not None:
         with ExplanationReportWriter(
             tmp_path / "alignment_explanation.sqlite", review_only=True
@@ -168,21 +178,12 @@ def test_nucleoside_windows_follow_published_method_unless_replaced(
     custom.write_text(
         "label\tmz\texpected_rt_min\nlate\t268.1040\t18.5\n", encoding="utf-8"
     )
-    for name, flags, labels in [
-        ("builtin", [], ["dG", ""]),
-        ("override", ["--nucleoside-list", str(custom)], ["", "late"]),
+    for name, listing, labels in [
+        ("builtin", None, ["dG", ""]),
+        ("override", custom, ["", "late"]),
     ]:
         output = tmp_path / name
-        status = main(
-            [
-                "--source-dir",
-                str(tmp_path),
-                "--output-dir",
-                str(output),
-                "--known-nucleosides",
-                *flags,
-            ]
-        )
+        status = _curate_nucleosides(tmp_path, output, listing)
         if name == "builtin" and not available:
             assert status == 2 and not output.exists()
             continue
@@ -198,13 +199,6 @@ def test_nucleoside_windows_follow_published_method_unless_replaced(
 def test_membership_uses_bound_full_precision_mass_and_rt_not_id_or_order(
     tmp_path, reorder
 ):
-    from scripts.run_matrix_curation import main
-    from tests.matrix_review_fixtures import current_matrix_review_row
-    from xic_extractor.output.alignment.matrix_output_contract import (
-        MATRIX_REVIEW_COLUMNS,
-        public_matrix_mz_text,
-    )
-
     # ±0.015625 is exactly ±10 ppm of 1562.5. All four near-boundary masses
     # round to just two distinct values in the public Matrix.
     observations = [
@@ -217,38 +211,14 @@ def test_membership_uses_bound_full_precision_mass_and_rt_not_id_or_order(
     ]
     if reorder:
         observations.reverse()
-    matrix, review = [], []
-    for i, (mz, rt) in enumerate(observations, 1):
-        matrix.append(
-            {"Mz": public_matrix_mz_text(str(mz)), "RT": str(rt), "S": str(i)}
-        )
-        review.append(
-            current_matrix_review_row(
-                index=i, mz=str(mz), rt=str(rt), feature_id=f"F{i:06d}"
-            )
-        )
-    write_tsv(tmp_path / "alignment_matrix.tsv", matrix, ("Mz", "RT", "S"))
-    write_tsv(tmp_path / "alignment_review.tsv", review, MATRIX_REVIEW_COLUMNS)
+    matrix = _write_features(tmp_path, observations)
     listing = tmp_path / "windows.tsv"
     listing.write_text(
         "label\tmz\trt_min\trt_max\texpected_rt_min\nx\t1562.5\t4\t6\t12\n",
         encoding="utf-8",
     )
     output = tmp_path / "result"
-    assert (
-        main(
-            [
-                "--source-dir",
-                str(tmp_path),
-                "--output-dir",
-                str(output),
-                "--nucleoside-list",
-                str(listing),
-                "--known-nucleosides",
-            ]
-        )
-        == 0
-    )
+    assert _curate_nucleosides(tmp_path, output, listing) == 0
     _, selected = read_tsv_with_header(output / "analysis_matrix.tsv")
     assert selected == [
         r
@@ -553,7 +523,6 @@ def test_workbench_job_matches_cli_and_writes_inside_the_source(tmp_path):
 @pytest.mark.parametrize("protected", [False, True])
 def test_preview_matches_export_without_writing_or_changing_inputs(tmp_path, protected):
     from xic_extractor.matrix_curation.export import (
-        export_matrix_curation,
         prepare_matrix_curation,
         read_sample_metadata_file,
     )
@@ -562,14 +531,14 @@ def test_preview_matches_export_without_writing_or_changing_inputs(tmp_path, pro
 
     folder, samples = _inputs(tmp_path)
     before = {str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
-    arguments = dict(
+    evaluation = prepare_matrix_curation(
         source=locate_curation_source(folder),
         sample_metadata=read_sample_metadata_file(samples),
         sample_source=str(samples),
         steps={"finite_fraction": {"min_finite_fraction": 2 / 3}},
         istd_windows=(MzRtWindow("blank-only", 104, 2, 3),) if protected else (),
     )
-    preview = prepare_matrix_curation(**arguments).preview
+    preview = evaluation.preview
     assert {
         str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()
     } == before
@@ -580,7 +549,7 @@ def test_preview_matches_export_without_writing_or_changing_inputs(tmp_path, pro
     assert step["protected"] == int(protected)
     assert step["undetermined"] == 0
     output = tmp_path / "export"
-    export_matrix_curation(**arguments, output_dir=output)
+    evaluation.write_to(output)
     _, rows = read_tsv_with_header(output / "analysis_matrix.tsv")
     assert len(rows) == preview["kept"]
     assert [row["Mz"] for row in rows] == (

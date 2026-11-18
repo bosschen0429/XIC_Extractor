@@ -952,21 +952,20 @@ def synthetic_cells(monkeypatch):
 
 
 def _export(tmp_path, name, steps, istd=None, *, nucleoside_list=None):
-    from xic_extractor.matrix_curation.export import export_matrix_curation
+    from xic_extractor.matrix_curation.export import prepare_matrix_curation
     from xic_extractor.matrix_curation.source import locate_curation_source
 
     source = locate_curation_source(tmp_path / "alignment")
     output = tmp_path / name
-    summary = export_matrix_curation(
+    summary = prepare_matrix_curation(
         source=source,
         sample_metadata=load_sample_metadata(tmp_path / "samples.tsv"),
         sample_source="samples.tsv",
         steps=steps,
-        output_dir=output,
         istd_windows=istd,
         nucleoside_list=nucleoside_list,
         istd_source="fixture" if istd else "",
-    )
+    ).write_to(output)
     _, decisions = read_tsv_with_header(output / "feature_decisions.tsv")
     return (
         output,

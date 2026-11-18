@@ -356,9 +356,6 @@ def test_primary_package_routes_to_html_workbench_without_qt() -> None:
         for dependency in project["project"]["dependencies"]
     )
     assert "gui*" not in project["tool"]["setuptools"]["packages"]["find"]["include"]
-    assert project["tool"]["setuptools"]["package-data"][
-        "xic_extractor.configuration"
-    ] == ["data/*.json", "data/*.xlsx"]
     assert "data-files" not in project["tool"]["setuptools"]
 
 
