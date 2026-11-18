@@ -460,6 +460,23 @@ class RawFileHandle:
         self._acquisition_rt_bounds = (start, end)
         return self._acquisition_rt_bounds
 
+    def ms1_scan_mass_range(self) -> tuple[float, float]:
+        """Return the widest m/z range acquired by this RAW's MS1 scan filters."""
+        if self._thermo.ms1_order is None:
+            raise RawReaderError("MS1 scan range requires the vendor MS1 order")
+        ranges = [
+            (float(mass_range.Low), float(mass_range.High))
+            for scan_filter in self._raw_file.GetFilters()
+            if scan_filter.MSOrder == self._thermo.ms1_order
+            for mass_range in (
+                scan_filter.GetMassRange(index)
+                for index in range(int(scan_filter.MassRangeCount))
+            )
+        ]
+        if not ranges:
+            raise RawReaderError("RAW has no MS1 scan filter with a mass range")
+        return min(low for low, _ in ranges), max(high for _, high in ranges)
+
     def iter_ms2_scans(
         self, rt_min: float | None = None, rt_max: float | None = None
     ) -> Iterator[Ms2ScanEvent]:

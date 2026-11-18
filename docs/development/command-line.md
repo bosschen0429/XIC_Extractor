@@ -69,6 +69,23 @@ These partial workflows are CLI uses. The GUI always runs the complete analysis
 from a RAW directory, including Backfill; it has no mode selector.
 
 
+## DDA Exclusion List CLI
+
+從空白針產生 Targeted Mass Exclusion 清單：先建立 recipe，填入空白 RAW、各方法載入的
+inclusion list、要排除的已知物質，以及每份清單的 scan range、exclusion 容差與是否帶 RT，再執行：
+
+```powershell
+uv run xic-exclusion-list --new recipe.toml
+```
+
+```powershell
+uv run xic-exclusion-list recipe.toml
+```
+
+每個 `[[lists]]` 在 recipe 旁產生一份可匯入的 `<name>.csv`，另有 `exclusion_report.txt`
+列出每一列因 target 被移除或切開的原因。規則見 [DDA exclusion lists](../product/dda-exclusion-list.md)。
+
+
 ## Alignment CLI Inputs
 
 The Alignment CLI resolves ISTD input before RAW acquisition. An explicit

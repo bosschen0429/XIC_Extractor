@@ -247,6 +247,7 @@ this section states the shape and does not restate the contracts.
 | `alignment/` | cross-sample grouping, repair composition, Backfill and Alignment adapters | a second runtime owner, transport authority, or reading Targeted acquisition results |
 | `output/` | schema rendering and the Targeted product result model; `output/alignment/` writes Matrix artifacts | evidence recomputation, application store lifetime or RAW access |
 | `alignment_explanation/` | shared SQLite format, retention codecs, atomic publication and completed-evidence queries | scientific decisions, RAW acquisition, or Inspector presentation policy |
+| `exclusion_list/` | blank background ions, target-safe row selection and import CSVs for DDA exclusion lists | Untargeted discovery, the background library used by Discovery, or instrument method files |
 | `diagnostics/` | reusable diagnostics and method-specific projections of completed facts | published product artifacts, CLI parsing, production mutation, or domain recomputation |
 | `xic_inspector/` | read-only review API/CLI, source adapters, selection and offline HTML rendering | RAW acquisition, scientific recomputation, identity/Matrix decisions, or write authority |
 | `xic_workbench/` and `scripts/` | HTML interaction, local transport, and thin orchestration | reusable domain behavior or scientific authority |
