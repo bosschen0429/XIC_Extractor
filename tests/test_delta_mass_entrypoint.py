@@ -367,7 +367,7 @@ def test_cid_nl_join_records_unmatched_reason_and_reproduces_from_published_tabl
     edge_peak_mz = base_mz * (1 + 19.99999e-6)
     peaks = [
         ("edge", "matched", "admitted", edge_peak_mz, 2.0),
-        ("crowded", "overlapping", "overlap", 500.0, 3.0),
+        ("crowded", "overlapping", "no_nl_event", 500.0, 3.0),
         ("crowded", "split", "doubly_charged", 500.0, 3.1),
         ("late", "late-peak", "admitted", 600.0, 5.0),
         ("alone", "other-ion", "admitted", 700.0, 2.0),
@@ -442,7 +442,7 @@ def test_cid_nl_join_records_unmatched_reason_and_reproduces_from_published_tabl
         for r in published
     ] == [
         ("matched", "matched", "", ""),
-        ("unmatched", "", "not_admitted", "doubly_charged;overlap"),
+        ("unmatched", "", "not_admitted", "doubly_charged;no_nl_event"),
         ("unmatched", "", "outside_rt_tolerance", ""),
         ("unmatched", "", "no_cid_nl_peak", ""),
     ]
