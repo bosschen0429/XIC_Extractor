@@ -163,15 +163,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
     try:
-        _validate_expected_full_cohort_contract(args)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    try:
         resolved_raw_paths = _validate_launch_artifacts(
             discovery_batch,
             raw_dir=raw_dir,
-            require_all_raw=(args.preflight_only or args.expected_sample_count == 85),
+            require_all_raw=(
+                args.preflight_only
+                or args.require_all_raw
+                or args.stop_after == "grouping"
+            ),
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -471,9 +470,14 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--expected-sample-count",
         type=_positive_int,
         help=(
-            "Expected discovery_batch_index sample count. Use 8 or 85 for scoped "
-            "validation gates to fail fast when the wrong batch index is passed."
+            "Expected discovery_batch_index sample count. This only checks the "
+            "size of the input batch; it does not select a validation tier."
         ),
+    )
+    parser.add_argument(
+        "--require-all-raw",
+        action="store_true",
+        help="Check that all indexed RAWs exist before acquisition.",
     )
     parser.add_argument(
         "--preflight-only",
@@ -656,33 +660,6 @@ def _validate_unique_sample_stems(
         )
 
 
-def _validate_expected_full_cohort_contract(args: argparse.Namespace) -> None:
-    if args.expected_sample_count != 85:
-        return
-
-    failures: list[str] = []
-    if args.output_level not in {"production", "validation-minimal"}:
-        failures.append(
-            "--output-level must be 'production' or 'validation-minimal'; "
-            f"got {args.output_level!r}"
-        )
-    if args.timing_output is None:
-        failures.append("--timing-output is required for canonical FULL COHORT runs")
-    if args.timing_live_output is None:
-        failures.append(
-            "--timing-live-output is required for canonical FULL COHORT runs"
-        )
-    if not _is_repo_venv_python():
-        failures.append(
-            "Python executable must be under this worktree .venv for canonical "
-            f"FULL COHORT runs; got {sys.executable}"
-        )
-
-    if failures:
-        joined = "\n- ".join(failures)
-        raise ValueError(f"FULL COHORT canonical launch contract failed:\n- {joined}")
-
-
 def _resolve_preset(args: argparse.Namespace) -> tuple[Preset, BoundCidNlRecipe]:
     if args.preset is None:
         raise PresetError(
@@ -711,29 +688,6 @@ def _resolve_preset(args: argparse.Namespace) -> tuple[Preset, BoundCidNlRecipe]
             f"Alignment does not support discovery settings in preset {preset.name}"
         )
     return preset, recipe
-
-
-def _expect_arg(
-    failures: list[str],
-    flag: str,
-    actual: object,
-    expected: object,
-) -> None:
-    if actual != expected:
-        failures.append(f"{flag} must be {expected!r}; got {actual!r}")
-
-
-def _is_repo_venv_python() -> bool:
-    repo_venv = (_repo_root() / ".venv").resolve()
-    try:
-        python_executable = Path(sys.executable).resolve()
-    except OSError:
-        return False
-    return python_executable.is_relative_to(repo_venv)
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
 
 
 def _truncated_count_suffix(count: int) -> str:
@@ -765,10 +719,6 @@ def _print_preflight_summary(
     print(f"RAW paths found: {len(resolved_raw_paths)}")
     if args.expected_sample_count is not None:
         print(f"Expected sample count: {args.expected_sample_count}")
-    print(
-        "FULL COHORT canonical contract: "
-        f"{'enforced' if args.expected_sample_count == 85 else 'not requested'}"
-    )
     print(f"Python executable: {sys.executable}")
     print(f"run_alignment module: {Path(__file__).resolve()}")
     print(f"Working directory: {Path.cwd().resolve()}")

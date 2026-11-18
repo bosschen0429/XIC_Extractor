@@ -39,7 +39,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         expanded = SUITE_CHOICES
     else:
         expanded = suite_names
-    if "tissue-full-cohort" in expanded and not args.confirm_full_run:
+    if (
+        not args.dry_run
+        and "tissue-full-cohort" in expanded
+        and not args.confirm_full_run
+    ):
         print("tissue-full-cohort requires --confirm-full-run", file=sys.stderr)
         return 2
 
@@ -87,7 +91,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "Suites:\n"
             "  manual-2raw   manual-truth area/RT comparison\n"
             "  tissue-fixture-cohort  targeted workbook smoke or A/B comparison\n"
-            "  tissue-full-cohort opt-in full targeted workbook gate; requires "
+            "  tissue-full-cohort full targeted workbook; execution requires "
             "--confirm-full-run\n\n"
             "Workflow:\n"
             "  inspect  use --dry-run to inspect commands without running\n"
