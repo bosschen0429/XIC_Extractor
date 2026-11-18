@@ -94,22 +94,23 @@ and recorded in the summary. It needs the run's `alignment_explanation.sqlite` i
 the current table layout (compact review or full audit) and is unavailable
 without its published cell values.
 
-Evidence counts only directly detected cells (`discovery_support`) and their
-observation apex:
+Evidence uses each published cell's recorded apex, whether the cell was
+detected directly (`discovery_support`) or backfilled:
 
-- **Co-elution:** a supporting sample has both rows detected directly with
-  apices at most 3 s apart. A pair needs at least 3 supporting samples and at
-  least 80% of the samples where both rows were detected directly. Row RT is not
-  used. Backfilled cells never count; when they alone would complete the
-  co-elution, the pair is reviewed. A backfilled cell without a recorded apex is
-  counted as unavailable.
+- **Co-elution:** a supporting sample has both cells' apices at most 3 s apart.
+  A pair needs at least 3 supporting samples, at least one of them with both
+  rows detected directly, and at least 80% of the samples where both rows were
+  detected directly must support it. Row RT is not used. A backfilled cell
+  without a recorded apex is counted as unavailable. Backfill searches near each
+  sample's expected RT, so a backfilled apex is weaker co-elution evidence; the
+  ratio and abundance checks below include those samples and guard it.
 - **Mass relation:** `e_ppm = 1e6 × (observed − predicted) / predicted` with
   `|e_ppm| ≤ 10`, where the predicted heavier m/z comes from the lighter row.
   Both use the Review's `group_center_mz` (the group's centre m/z, the mean
   of its members' m/z); this is not per-sample mass evidence. `precursor_mz` is
   never used as MS1 m/z.
-- **Ratio screening:** on supporting samples whose published values are finite
-  and positive, the median absolute deviation of `log10(light/heavy)` (no scale
+- **Ratio screening:** on all supporting samples whose published values are
+  finite and positive, the median absolute deviation of `log10(light/heavy)` (no scale
   constant) is at most 0.1 for isotopes and 0.15 otherwise, over at least 3
   samples. A variable monomer-adduct ratio can instead use the independently
   supported carrier evidence below; isotope ratio checks are never waived.
@@ -316,8 +317,8 @@ the source folder.
 | --- | --- |
 | `analysis_matrix.tsv` | Kept rows in original order with original tokens and all sample columns |
 | `feature_decisions.tsv` | Every source row: `source_matrix_row_index`, `feature_id`, `Mz`, `RT`, `istd_label`, each enabled step's columns, the final `decision` and `decision_reason` (`kept_by_all_steps`, `dropped_by:<steps>` or `istd_protected`) |
-| `same_compound_relations.tsv` | Each mass-related row pair that co-elutes in some sample: relation, `e_ppm`, direct, supporting and backfill sample counts, largest apex difference, median light/heavy ratio, log-ratio MAD, outcome and whether it contributed to excluding the heavier row; an excluded row need not have a unique parent |
-| `same_compound_review.tsv` | Pairs and groups to review: unstable ratio, ≈1.998 unexplained by the isotope rules, review-only relation, backfill-only co-elution, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), no direct co-elution with a root, an ion family removed by a later feature filter, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
+| `same_compound_relations.tsv` | Each mass-related row pair that co-elutes in some sample: relation, `e_ppm`, both-direct samples, supporting samples (direct and backfilled), the backfilled share of them, backfilled samples without an apex, largest apex difference, median light/heavy ratio, log-ratio MAD, outcome and whether it contributed to excluding the heavier row; an excluded row need not have a unique parent |
+| `same_compound_review.tsv` | Pairs and groups to review: unstable ratio, ≈1.998 unexplained by the isotope rules, review-only relation, representative ≥10× weaker than a removed member, excluded derivatives with unassigned parent (`decision=drop`), supported non-[M+H]⁺ families (neutral mass, models and witnesses), no direct co-elution with a root, an ion family removed by a later feature filter, and recurring unexplained mass differences between rows this step keeps, most frequent first. A pair already inside one group, or between two removed ions, is not reviewed again |
 | `sample_metadata.tsv` | Matrix column → sample identity, role, group, order and exclusion |
 | `matrix_curation_summary.json` | Enabled steps and parameters, input paths, sample data source and counts |
 
@@ -378,7 +379,8 @@ pairs incompatible with the intensity models), per-sample abundance, direct co-e
 representative, removal through the group, ion-form
 labels, unassigned isotope and parent exclusion, ion families with/without a
 protonated row, missing/indirect family witnesses, metal dimers, rule-order,
-row-order and ID invariance, backfill exclusion, internal
+row-order and ID invariance, backfilled co-elution and its ratio, abundance
+and direct-anchor limits, internal
 standard matching and derivative-before-feature-filter ordering. Its thresholds come from a read-only
 dr95 diagnostic, not cross-batch validation.
 `tests/test_matrix_curation.py` checks independently calculated fractions and

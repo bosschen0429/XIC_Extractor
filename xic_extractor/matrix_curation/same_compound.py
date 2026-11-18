@@ -147,18 +147,34 @@ _COLLAPSE_OUTCOMES = frozenset({"collapse", "collapse_corroborated_adduct"})
 @dataclass(frozen=True)
 class PairEvidence:
     both_direct: int
+    # Samples whose two cells, direct or backfilled, have co-eluting apices.
     support: tuple[str, ...]
+    # The supporting samples where both cells are direct detections.
+    direct_support: tuple[str, ...]
     max_apex_diff_sec: float | None
-    backfill_coeluting: int
     backfill_apex_unavailable: int
     # light/heavy on support samples whose values are finite and positive.
     ratios: tuple[float, ...]
 
     @property
+    def backfill_coeluting(self) -> int:
+        return len(self.support) - len(self.direct_support)
+
+    @property
     def coelutes(self) -> bool:
+        """Enough co-eluting samples, anchored by consistent direct co-elution."""
         return (
             len(self.support) >= MIN_SUPPORT_SAMPLES
-            and len(self.support) >= MIN_SUPPORT_FRACTION * self.both_direct
+            and bool(self.direct_support)
+            and len(self.direct_support) >= MIN_SUPPORT_FRACTION * self.both_direct
+        )
+
+    @property
+    def coelutes_directly(self) -> bool:
+        """Co-elution from direct detections alone, for rules that waive ratios."""
+        return (
+            len(self.direct_support) >= MIN_SUPPORT_SAMPLES
+            and len(self.direct_support) >= MIN_SUPPORT_FRACTION * self.both_direct
         )
 
     @property
@@ -177,35 +193,38 @@ class PairEvidence:
 def pair_evidence(
     light: Mapping[str, CellEvidence], heavy: Mapping[str, CellEvidence]
 ) -> PairEvidence:
-    """Same-sample co-elution of two rows; only direct detections count."""
+    """Same-sample co-elution of two rows from each cell's recorded apex.
+
+    A backfilled cell counts like a direct one when it has an apex; only
+    direct pairs enter the share of consistently co-eluting samples.
+    """
     both_direct = 0
     support: list[str] = []
+    direct_support: list[str] = []
     diffs: list[float] = []
-    backfill_coeluting = backfill_unavailable = 0
+    backfill_unavailable = 0
     ratios: list[float] = []
     for sample in sorted(light.keys() & heavy.keys()):
         a, b = light[sample], heavy[sample]
-        apart = (
-            None
-            if a.apex_rt_min is None or b.apex_rt_min is None
-            else abs(a.apex_rt_min - b.apex_rt_min) * 60.0
-        )
-        if a.direct and b.direct:
-            both_direct += 1
-            if apart is not None and apart <= MAX_APEX_SEC:
-                support.append(sample)
-                diffs.append(apart)
-                if _positive(a.value) and _positive(b.value):
-                    ratios.append(a.value / b.value)
-        elif apart is None:
-            backfill_unavailable += 1
-        elif apart <= MAX_APEX_SEC:
-            backfill_coeluting += 1
+        direct = a.direct and b.direct
+        both_direct += direct
+        if a.apex_rt_min is None or b.apex_rt_min is None:
+            backfill_unavailable += not direct
+            continue
+        apart = abs(a.apex_rt_min - b.apex_rt_min) * 60.0
+        if apart > MAX_APEX_SEC:
+            continue
+        support.append(sample)
+        if direct:
+            direct_support.append(sample)
+        diffs.append(apart)
+        if _positive(a.value) and _positive(b.value):
+            ratios.append(a.value / b.value)
     return PairEvidence(
         both_direct=both_direct,
         support=tuple(support),
+        direct_support=tuple(direct_support),
         max_apex_diff_sec=max(diffs) if diffs else None,
-        backfill_coeluting=backfill_coeluting,
         backfill_apex_unavailable=backfill_unavailable,
         ratios=tuple(ratios),
     )
@@ -513,19 +532,19 @@ def _corroborate_variable_adducts(
             for key, value in labels.items()
         ):
             continue
-        candidate_support = set(evidence[(light, heavy)].support)
+        candidate_support = set(evidence[(light, heavy)].direct_support)
         witnesses = []
         for witness, key in stable[light]:
             # Another row of the candidate's carrier is not another ion form.
             if key in labels:
                 continue
             pair = get_pair(witness, heavy)
-            if not pair.coelutes:
+            if not pair.coelutes_directly:
                 continue
             joint = (
                 candidate_support
-                & set(evidence[(light, witness)].support)
-                & set(pair.support)
+                & set(evidence[(light, witness)].direct_support)
+                & set(pair.direct_support)
             )
             if len(joint) >= MIN_SUPPORT_SAMPLES:
                 witnesses.append((witness, key, joint))
@@ -536,8 +555,8 @@ def _corroborate_variable_adducts(
                     continue
                 pair = get_pair(first, second)
                 if (
-                    pair.coelutes
-                    and len(first_support & second_support & set(pair.support))
+                    pair.coelutes_directly
+                    and len(first_support & second_support & set(pair.direct_support))
                     >= MIN_SUPPORT_SAMPLES
                 ):
                     proof.update((first, second))
@@ -580,7 +599,7 @@ def _ion_family_decisions(
         pair = (a, b) if mz[a] <= mz[b] else (b, a)
         if pair not in evidence:
             evidence[pair] = pair_evidence(cells[pair[0]], cells[pair[1]])
-        return evidence[pair].coelutes
+        return evidence[pair].coelutes_directly
 
     metal_isotopes = {
         light
@@ -810,7 +829,7 @@ def _relation_rows(
     for (light, heavy), matched in matches.items():
         pair = evidence[(light, heavy)]
         # Pairs that never co-elute in any sample are different compounds.
-        if not pair.support and not pair.backfill_coeluting:
+        if not pair.support:
             continue
         a, b = features[light], features[heavy]
         for key, error in matched.items():
@@ -910,19 +929,6 @@ def _review_rows(
                 add("unstable_ratio", heavy, [light], **detail)
             elif outcome == "review_only":
                 add("review_only_relation", heavy, [light], **detail)
-            elif (
-                outcome == "coelution_insufficient"
-                and key != "+116.047_dR"
-                and len(pair.support) < MIN_SUPPORT_SAMPLES
-                and len(pair.support) + pair.backfill_coeluting >= MIN_SUPPORT_SAMPLES
-            ):
-                add(
-                    "backfill_only_coelution",
-                    heavy,
-                    [light],
-                    backfill_coeluting_samples=pair.backfill_coeluting,
-                    **detail,
-                )
     for heavy, root in representative.items():
         ratio = evidence[(root, heavy)].median_ratio
         if ratio is not None and ratio <= WEAK_REPRESENTATIVE_RATIO:
@@ -979,8 +985,8 @@ def _recurring_differences(
             direct_mask[index] |= 1 << ordinal.setdefault(sample, len(ordinal))
             if cell.apex_rt_min is not None:
                 by_sample[sample].append((cell.apex_rt_min, index))
-    # Supporting samples per pair: both direct, apices within the limit, as
-    # pair_evidence counts them.
+    # Directly supporting samples per pair: both direct, apices within the
+    # limit, as pair_evidence counts its direct support.
     together: Counter[tuple[int, int]] = Counter()
     for detections in by_sample.values():
         detections.sort()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -525,19 +526,88 @@ def test_competing_paths_still_need_direct_coelution_with_a_root():
     assert ("no_direct_coelution_with_representative", "H") in review_kinds(result)
 
 
-def test_backfilled_cells_never_count_toward_coelution():
+# Two directly co-eluting samples, too few alone; four backfilled samples.
+TWO_DIRECT = (True, True, False, False, False, False)
+
+
+def without_apex(scenario, samples):
+    feature, cells = scenario
+    return feature, {
+        sample: replace(cell, apex_rt_min=None) if sample in samples else cell
+        for sample, cell in cells.items()
+    }
+
+
+def relation_row(result, relation):
+    (found,) = (row for row in result.relation_rows if row["relation"] == relation)
+    return found
+
+
+def test_backfilled_apices_complete_direct_coelution():
+    decisions, result = decide(
+        row("L", 300.0), row("H", 321.981944, scale=0.5, direct=TWO_DIRECT)
+    )
+
+    assert decisions["H"][:3] == (False, "derived_from_representative", "L")
+    found = relation_row(result, "[M+Na]+")
+    assert found["outcome"] == "collapse"
+    assert found["both_direct_samples"] == 2
+    assert found["support_samples"] == found["ratio_samples"] == 6
+    assert found["backfill_coeluting_samples"] == 4
+    assert review_kinds(result) == []
+
+
+def test_backfilled_ratios_must_stay_stable():
+    # The two direct samples agree; the backfilled ones scatter fourfold.
+    unstable = row(
+        "H",
+        321.981944,
+        ratios=(0.5, 0.5, 2.0, 2.0, 2.0, 0.5),
+        direct=TWO_DIRECT,
+    )
+    decisions, result = decide(row("L", 300.0), unstable)
+
+    assert decisions["H"][0] is True
+    assert outcome(result, "[M+Na]+") == {"ratio_unstable"}
+
+
+def test_backfilled_isotope_ratio_obeys_the_abundance_ceiling():
+    # m/z 300 allows at most 24 carbons: heavy/light <= 0.26. One backfilled
+    # sample at 0.5 leaves the median and MAD unchanged.
+    exceeded = row(
+        "H",
+        301.003355,
+        ratios=(0.15, 0.15, 0.15, 0.15, 0.5, 0.15),
+        direct=TWO_DIRECT,
+    )
+    decisions, result = decide(row("L", 300.0), exceeded)
+
+    assert decisions["H"][0] is True
+    assert outcome(result, "13C_M+1") == {"isotope_abundance_exceeded"}
+
+
+def test_backfill_alone_never_establishes_coelution():
     only_backfill = row("H", 321.981944, scale=0.5, direct=False)
     decisions, result = decide(row("L", 300.0), only_backfill)
-    assert decisions["H"][0] is True
-    assert review_kinds(result) == [("backfill_only_coelution", "H")]
 
-    # Two direct samples plus four backfilled ones are still too few.
-    mixed = row(
-        "H", 321.981944, scale=0.5, direct=(True, True, False, False, False, False)
+    assert decisions["H"][0] is True
+    found = relation_row(result, "[M+Na]+")
+    assert found["outcome"] == "coelution_insufficient"
+    assert found["support_samples"] == found["backfill_coeluting_samples"] == 6
+    assert review_kinds(result) == []
+
+
+def test_backfilled_cells_without_an_apex_do_not_count():
+    mixed = without_apex(
+        row("H", 321.981944, scale=0.5, direct=TWO_DIRECT), SAMPLES[2:]
     )
     decisions, result = decide(row("L", 300.0), mixed)
+
     assert decisions["H"][0] is True
-    assert review_kinds(result) == [("backfill_only_coelution", "H")]
+    found = relation_row(result, "[M+Na]+")
+    assert found["outcome"] == "coelution_insufficient"
+    assert found["support_samples"] == 2
+    assert found["backfill_apex_unavailable_samples"] == 4
 
 
 def test_coelution_needs_most_shared_direct_samples():
