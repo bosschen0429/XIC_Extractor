@@ -260,11 +260,11 @@ def test_element_uncertainty_follows_a_derivative_path():
 
 
 def test_removed_row_coelutes_directly_with_its_representative():
-    # A-B and B-C co-elute 2.4 s apart; A-C are 4.8 s apart.
+    # A-B and B-C co-elute 4.4 s apart; A-C are 8.8 s apart.
     decisions, result = decide(
         row("A", 300.0),
-        row("B", 301.003355, scale=0.15, shift_sec=2.4),
-        row("C", 302.006710, scale=0.15 * 0.15, shift_sec=4.8),
+        row("B", 301.003355, scale=0.15, shift_sec=4.4),
+        row("C", 302.006710, scale=0.15 * 0.15, shift_sec=8.8),
     )
 
     assert decisions["A"][:2] == (True, "representative")
@@ -442,10 +442,10 @@ def test_backfilled_dimer_cannot_establish_an_ion_family(direct):
 
 def test_ion_family_does_not_use_transitive_coelution_to_delete_a_member():
     rows = [r for r in sodium_family() if r[0].feature_id != "MgAc"]
-    # Na and DimerH are 4.8 s apart: the metal rows must not bridge that gap.
+    # Na and DimerH are 8.8 s apart: the metal rows must not bridge that gap.
     rows = [r for r in rows if r[0].feature_id != "DimerH"]
-    rows.append(row("DimerH", 455.188488252321, scale=0.3, shift_sec=4.8))
-    rows.append(row("MgAc", 310.088403352921, scale=0.8, shift_sec=2.4))
+    rows.append(row("DimerH", 455.188488252321, scale=0.3, shift_sec=8.8))
+    rows.append(row("MgAc", 310.088403352921, scale=0.8, shift_sec=4.4))
     decisions, _ = decide(*rows)
     assert decisions["Na"][0] is True
 
@@ -506,7 +506,7 @@ def test_family_never_assigns_a_removed_protonated_candidate_as_representative()
 
 
 @pytest.mark.parametrize(
-    ("isotope_supported", "calcium_shift"), [(False, 0.0), (True, 0.0), (True, 4.8)]
+    ("isotope_supported", "calcium_shift"), [(False, 0.0), (True, 0.0), (True, 8.8)]
 )
 def test_parallel_metal_multimers_can_support_a_variable_adduct_ratio(
     isotope_supported, calcium_shift
@@ -550,8 +550,8 @@ def test_competing_paths_still_need_direct_coelution_with_a_root():
     decisions, result = decide(
         row("A", 300.0),
         row("B", 279.021411),
-        row("P", 301.003355, scale=0.15, shift_sec=2.4),
-        row("H", 302.006710, scale=0.0225, shift_sec=4.8),
+        row("P", 301.003355, scale=0.15, shift_sec=4.4),
+        row("H", 302.006710, scale=0.0225, shift_sec=8.8),
     )
     assert decisions["P"][:3] == (False, "derived_representative_undetermined", None)
     assert decisions["H"][:2] == (True, "no_direct_coelution_with_representative")
@@ -776,7 +776,7 @@ def test_two_supported_carriers_can_corroborate_a_variable_adduct_ratio():
     [
         (False, 0.0),
         ((True, True, False, False, False, False), 0.0),
-        (True, 4.8),
+        (True, 8.8),
     ],
 )
 def test_a_single_backfilled_or_noncoeluting_carrier_cannot_rescue_an_adduct(
@@ -835,9 +835,9 @@ def test_candidate_carrier_does_not_count_as_another_supported_form(
 
 def test_carrier_corroboration_needs_mutual_not_only_reference_coelution():
     decisions, _ = decide(
-        *variable_adduct_family(potassium_shift=2.4, magnesium_shift=-2.4)
+        *variable_adduct_family(potassium_shift=4.4, magnesium_shift=-4.4)
     )
-    # Each witness co-elutes with the reference, but K and Mg are 4.8 s apart.
+    # Each witness co-elutes with the reference, but K and Mg are 8.8 s apart.
     assert decisions["ratio_Mg"][0] is True
 
 
@@ -895,8 +895,8 @@ def _scenario():
     return (
         (
             row("A", 300.0),
-            row("B", 301.003355, scale=0.15, shift_sec=2.4),
-            row("C", 302.006710, scale=0.0225, shift_sec=4.8),
+            row("B", 301.003355, scale=0.15, shift_sec=4.4),
+            row("C", 302.006710, scale=0.0225, shift_sec=8.8),
             row("MH", 400.0, base_rt=20.0),
             row("MH_13C", 401.003355, scale=0.15, base_rt=20.0),
             row("Na", 421.981944, scale=0.5, base_rt=20.0),

@@ -33,7 +33,9 @@ N15_PER_N14 = 0.00364 / 0.99636
 K39_PER_K41 = 13.857
 
 MZ_PPM = 10.0
-MAX_APEX_SEC = 3.0
+# Two MS1 scans at the ~2.5 s cycle of the CID-NL method: in 8RAW, mass-related
+# pairs are as enriched over shifted-mass decoys at 3-5.5 s as at 1-3 s.
+MAX_APEX_SEC = 5.5
 MIN_SUPPORT_SAMPLES = 3
 MIN_SUPPORT_FRACTION = 0.8
 ISOTOPE_MAX_LOG_MAD = 0.1
@@ -1169,7 +1171,7 @@ class SameCompoundStep:
     label = "同化合物收斂"
     description = (
         "移除同一化合物的同位素、Na⁺／K⁺／NH₄⁺ 與 Mg／Ca adduct、鹽簇與聚集離子，"
-        "保留有證據的 [M+H]⁺。判定依據是同一樣本出峰時間相差 ≤3 秒，"
+        "保留有證據的 [M+H]⁺。判定依據是同一樣本出峰時間相差 ≤5.5 秒，"
         "且質量差與強度比例符合預期。"
     )
     parameters: tuple[StepParameter, ...] = ()

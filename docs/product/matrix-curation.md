@@ -98,8 +98,10 @@ Evidence uses each published cell's recorded apex. Directly detected cells
 (`discovery_support`) come first; backfilled cells only complete evidence that
 direct detections leave insufficient:
 
-- **Co-elution:** a supporting sample has both cells' apices at most 3 s apart.
-  A pair needs at least 3 supporting samples, at least one of them with both
+- **Co-elution:** a supporting sample has both cells' apices at most 5.5 s
+  apart: two MS1 scans of the ~2.5 s CID-NL cycle. In 8RAW, mass-related pairs
+  are as enriched over shifted-mass decoys at 3–5.5 s as at 1–3 s (local
+  evidence, not cross-batch validation). A pair needs at least 3 supporting samples, at least one of them with both
   rows detected directly, and at least 80% of the samples where both rows were
   detected directly must support it. Row RT is not used. When the direct
   samples alone meet these conditions, they are the pair's whole evidence and
@@ -261,8 +263,8 @@ is `derived_representative_undetermined`, and its candidate roots are recorded
 in the review with `decision=drop`. The candidate roots are not merged or
 arbitrarily selected. A sodium adduct's 13C isotope is therefore
 removed into the protonated row through the adduct, while a row that co-elutes
-with the representative only through other rows (A–B and B–C 2.4 s apart, A–C
-4.8 s) is kept and reviewed. When
+with the representative only through other rows (A–B and B–C 4.4 s apart, A–C
+8.8 s) is kept and reviewed. When
 several relations fit one pair they are all recorded and
 `same_compound_relation_undetermined` is TRUE. Results depend on m/z and cell
 evidence only, never on row order, `feature_id` or the order of the relation
