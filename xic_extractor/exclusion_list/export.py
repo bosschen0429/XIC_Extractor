@@ -8,17 +8,21 @@ import statistics
 from pathlib import Path
 
 from xic_extractor.configuration.atomic_write import atomic_write_text
+from xic_extractor.exclusion_list import ExclusionListError
 from xic_extractor.exclusion_list.build import BuildResult
-from xic_extractor.exclusion_list.recipe import ExclusionListError, Recipe
-from xic_extractor.exclusion_list.selection import WHOLE_RUN, ExclusionList, Target
+from xic_extractor.exclusion_list.recipe import REPORT_NAME, Recipe
+from xic_extractor.exclusion_list.selection import (
+    MZ_DIGITS,
+    RT_DIGITS,
+    WHOLE_RUN,
+    ExclusionList,
+    Target,
+)
 
-REPORT_NAME = "exclusion_report.txt"
 RT_COLUMNS = ["t start (min)", "t stop (min)"]
 
 
-def write_exclusion_lists(
-    result: BuildResult, recipe: Recipe, output_dir: Path
-) -> Path:
+def write_exclusion_lists(result: BuildResult, recipe: Recipe) -> Path:
     """Write one import CSV per list and the report; return the report path."""
     for exclusion in result.lists:
         rt = exclusion.spec.rt
@@ -28,24 +32,27 @@ def write_exclusion_lists(
         writer.writerows(
             [
                 r.compound,
-                f"{r.mz:.6f}",
-                *([f"{r.start:.3f}", f"{r.stop:.3f}"] if rt else []),
+                f"{r.mz:.{MZ_DIGITS}f}",
+                *(
+                    [f"{r.start:.{RT_DIGITS}f}", f"{r.stop:.{RT_DIGITS}f}"]
+                    if rt
+                    else []
+                ),
             ]
             for r in exclusion.rows
         )
-        _publish(output_dir / f"{exclusion.spec.name}.csv", output.getvalue())
-    report = output_dir / REPORT_NAME
+        _publish(recipe.output_dir / exclusion.spec.csv_name, output.getvalue())
+    report = recipe.output_dir / REPORT_NAME
     _publish(report, render_report(result, recipe))
     return report
 
 
 def render_report(result: BuildResult, recipe: Recipe) -> str:
     settings = recipe.settings
-    low, high = result.scan_range
+    ranges = ", ".join(f"{low:g}-{high:g}" for low, high in result.scan_ranges)
     sources = len({target.source for target in recipe.targets})
     lines = [
-        f"Blank: {recipe.blank.name} (MS1 {low:g}-{high:g}, "
-        f"run end {result.run_end:g} min)",
+        f"Blank: {recipe.blank.name} (MS1 {ranges}, run end {result.run_end:g} min)",
         f"Targets: {len(recipe.targets)} from {sources} file(s); "
         f"named exclusions: {len(recipe.named)}",
         f"Method: intensity threshold {settings.intensity_threshold:g}, "
@@ -63,7 +70,7 @@ def render_report(result: BuildResult, recipe: Recipe) -> str:
 def list_summary(exclusion: ExclusionList) -> str:
     background = len(exclusion.rows) - exclusion.named_rows
     return (
-        f"{exclusion.spec.name}.csv: {len(exclusion.rows)} rows "
+        f"{exclusion.spec.csv_name}: {len(exclusion.rows)} rows "
         f"(named {exclusion.named_rows}, background {background}), "
         f"{len(exclusion.conflicts)} removed or cut to keep targets triggerable"
     )

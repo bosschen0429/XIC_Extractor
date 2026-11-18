@@ -24,7 +24,9 @@ def test_persistent_ion_spans_the_run_and_an_eluting_ion_gets_a_padded_window():
     points = [(s, 300.0, 1e6) for s in range(SCANS)]
     points += [(s, 450.0, 5e5) for s in range(60, 100)]
 
-    windows = find_background_windows(centroids(points), run_end=10.0)
+    windows = find_background_windows(
+        centroids(points), run_end=10.0, intensity_threshold=25000
+    )
 
     spans = {round(w.mz, 3): (w.start, w.stop) for w in windows}
     assert spans[300.0] == (0.0, 10.0)
@@ -36,7 +38,9 @@ def test_ions_10_ppm_apart_stay_separate():
     points = [(s, light, 1e6) for s in range(SCANS)]
     points += [(s, heavy, 1e6) for s in range(SCANS)]
 
-    windows = find_background_windows(centroids(points), run_end=10.0)
+    windows = find_background_windows(
+        centroids(points), run_end=10.0, intensity_threshold=25000
+    )
 
     assert sorted(round(w.mz, 5) for w in windows) == [round(light, 5), round(heavy, 5)]
 
@@ -44,7 +48,9 @@ def test_ions_10_ppm_apart_stay_separate():
 def test_gaps_longer_than_12_scans_split_an_ion_into_two_windows():
     points = [(s, 500.0, 1e6) for s in [*range(10, 40), *range(120, 150)]]
 
-    windows = find_background_windows(centroids(points), run_end=10.0)
+    windows = find_background_windows(
+        centroids(points), run_end=10.0, intensity_threshold=25000
+    )
 
     assert len(windows) == 2
     merged = whole_run_windows(windows, run_end=10.0)
@@ -57,7 +63,11 @@ def test_top_n_ranks_only_ions_inside_the_methods_scan_range():
     points = [(s, 300.0, 1e5) for s in range(SCANS)]
     points += [(s, 900.0 + i, 1e6) for s in range(SCANS) for i in range(25)]
     data = centroids(points)
-    windows = [w for w in find_background_windows(data, run_end=10.0) if w.mz < 301]
+    windows = [
+        w
+        for w in find_background_windows(data, run_end=10.0, intensity_threshold=25000)
+        if w.mz < 301
+    ]
 
     assert top_n_counts(data, windows, (145.0, 1000.0)).tolist() == [0]
     assert top_n_counts(data, windows, (145.0, 800.0)).tolist() == [SCANS]

@@ -20,7 +20,10 @@ A target with an RT window protects that window only, so a timed row is cut
 around it. A target without RT, or any target in a list without RT, protects the
 whole run, so the row is dropped. Every target file in the recipe applies to every
 list, including files that only some methods load. The report names each row
-that was removed or cut and the target that caused it.
+that was removed or cut and the target that caused it. Protection uses the m/z
+written to the CSV (six decimals); timed cuts round away from the target window
+at the exported precision of 0.001 min. Leave both RT cells empty for a
+whole-run target in a file that also contains timed targets.
 
 ## What Fills The List
 
@@ -34,7 +37,9 @@ its precursor slots.
 
 An ion seen in at least half of the blank's scans excludes the whole run;
 otherwise each run of scans where it elutes becomes a window padded by 0.5 min.
-A row that another row already covers in m/z and RT is not listed twice.
+A row that another emitted row already covers in m/z and RT is not listed twice.
+If the named rows alone exceed `max_entries` after splitting, the command
+reports the required count without writing any lists.
 
 ## RT Windows
 
@@ -55,3 +60,4 @@ different gradient uses a list without RT, where each ion is one whole-run row.
 - `tests/test_exclusion_list_selection.py`
 - `tests/test_exclusion_list_background.py`
 - `tests/test_exclusion_list_recipe.py`
+- `tests/test_exclusion_list_cli.py`

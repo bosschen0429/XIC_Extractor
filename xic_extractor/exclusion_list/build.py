@@ -9,13 +9,14 @@ from pathlib import Path
 
 import numpy as np
 
+from xic_extractor.exclusion_list import ExclusionListError
 from xic_extractor.exclusion_list.background import (
     Ms1Centroids,
     find_background_windows,
     top_n_counts,
     whole_run_windows,
 )
-from xic_extractor.exclusion_list.recipe import ExclusionListError, Recipe
+from xic_extractor.exclusion_list.recipe import Recipe
 from xic_extractor.exclusion_list.selection import (
     ExclusionList,
     ListSpec,
@@ -26,7 +27,7 @@ from xic_extractor.ms1_scan_index import MS1Scan
 
 @dataclass(frozen=True, slots=True)
 class BuildResult:
-    scan_range: tuple[float, float]
+    scan_ranges: tuple[tuple[float, float], ...]
     run_end: float
     lists: tuple[ExclusionList, ...]
 
@@ -36,11 +37,13 @@ def build_exclusion_lists(recipe: Recipe, dll_dir: Path) -> BuildResult:
     from xic_extractor.raw_reader import open_raw
 
     with open_raw(recipe.blank, dll_dir) as handle:
-        scan_range = handle.ms1_scan_mass_range()
-        _check_scan_ranges(recipe.lists, scan_range)
+        scan_ranges = handle.ms1_scan_mass_ranges()
+        _check_scan_ranges(recipe.lists, scan_ranges)
         run_end = float(math.ceil(handle.acquisition_rt_bounds()[1]))
         centroids = _centroids(handle.read_ms1_scan_index(centroid=True))
-    eluting = find_background_windows(centroids, run_end)
+    eluting = find_background_windows(
+        centroids, run_end, recipe.settings.intensity_threshold
+    )
     whole_run = whole_run_windows(eluting, run_end)
     lists = []
     for spec in recipe.lists:
@@ -56,18 +59,19 @@ def build_exclusion_lists(recipe: Recipe, dll_dir: Path) -> BuildResult:
                 run_end,
             )
         )
-    return BuildResult(scan_range, run_end, tuple(lists))
+    return BuildResult(scan_ranges, run_end, tuple(lists))
 
 
 def _check_scan_ranges(
-    specs: Sequence[ListSpec], acquired: tuple[float, float]
+    specs: Sequence[ListSpec], acquired: Sequence[tuple[float, float]]
 ) -> None:
     for spec in specs:
         low, high = spec.scan_range
-        if low < acquired[0] or high > acquired[1]:
+        if not any(a <= low and high <= b for a, b in acquired):
+            ranges = ", ".join(f"{a:g}-{b:g}" for a, b in acquired)
             raise ExclusionListError(
                 f"{spec.name}: scan_range {low:g}-{high:g} lies outside the blank's "
-                f"MS1 range {acquired[0]:g}-{acquired[1]:g}"
+                f"MS1 coverage ({ranges})"
             )
 
 

@@ -7,7 +7,8 @@ blank = "Blank_background.raw"
 
 # Inclusion lists the methods load: these ions must still trigger MS2.
 # CSV with an "m/z" column; optional "Compound" and "t start (min)" / "t stop (min)".
-# A target without RT is protected for the whole run.
+# Leave both RT cells empty for a whole-run target. Use --output-dir if a target
+# pattern would also match an output CSV.
 targets = ["targets/*.csv"]
 
 # Known compounds to exclude; they are listed first. CSV, or an Excel sheet.
@@ -21,7 +22,7 @@ named_exclusions = [
 [method]
 intensity_threshold = 25000      # MS2 intensity threshold; weaker ions never trigger, so they use no entry
 inclusion_tolerance_ppm = 20     # Targeted Mass Inclusion tolerance
-max_entries = 1000               # entries a list may hold
+max_entries = 1000               # row limit, including named rows split around targets
 
 # One table per distinct list. Methods with the same scan range, exclusion tolerance and LC run share one.
 [[lists]]

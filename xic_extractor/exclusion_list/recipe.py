@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.exclusion_list import ExclusionListError
 from xic_extractor.exclusion_list.selection import (
     WHOLE_RUN,
     ListSpec,
@@ -37,20 +38,20 @@ _UNNAMED = {"", "x"}
 _EXCEL_SUFFIXES = {".xlsx", ".xlsm"}
 
 
-class ExclusionListError(ValueError):
-    """A recipe, a file it cites or an output cannot be used as given."""
+REPORT_NAME = "exclusion_report.txt"
 
 
 @dataclass(frozen=True, slots=True)
 class Recipe:
     blank: Path
+    output_dir: Path
     targets: tuple[Target, ...]
     named: tuple[NamedExclusion, ...]
     settings: MethodSettings
     lists: tuple[ListSpec, ...]
 
 
-def read_recipe(path: Path) -> Recipe:
+def read_recipe(path: Path, output_dir: Path | None = None) -> Recipe:
     try:
         document = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
@@ -62,26 +63,32 @@ def read_recipe(path: Path) -> Recipe:
     blank = base / _required(document, "blank", str, "recipe")
     if not blank.is_file():
         raise ExclusionListError(f"blank RAW not found: {blank}")
-    targets = tuple(
-        target
-        for pattern in _required(document, "targets", list, "recipe")
-        for file in _matching_files(base, pattern)
-        for target in read_targets(file)
-    )
-    named = tuple(
-        entry
-        for source in document.get("named_exclusions", [])
-        for entry in _read_named_source(base, source)
-    )
     lists = tuple(
         _list_spec(table) for table in _required(document, "lists", list, "recipe")
     )
     if not lists:
         raise ExclusionListError("recipe: add at least one [[lists]] table")
-    names = [spec.name for spec in lists]
-    if len(set(names)) != len(names):
-        raise ExclusionListError("recipe: every [[lists]] name must be unique")
-    return Recipe(blank, targets, named, _settings(document.get("method", {})), lists)
+    output_dir = output_dir or base
+    outputs = {(output_dir / spec.csv_name).resolve() for spec in lists}
+    if len(outputs) != len(lists):
+        raise ExclusionListError("recipe: every [[lists]] output path must be unique")
+    outputs.add((output_dir / REPORT_NAME).resolve())
+    _check_input_path(path, outputs)
+    _check_input_path(blank, outputs)
+    targets = tuple(
+        target
+        for pattern in _required(document, "targets", list, "recipe")
+        for file in _matching_files(base, pattern, outputs)
+        for target in read_targets(file)
+    )
+    named = tuple(
+        entry
+        for source in document.get("named_exclusions", [])
+        for entry in _read_named_source(base, source, outputs)
+    )
+    return Recipe(
+        blank, output_dir, targets, named, _settings(document.get("method", {})), lists
+    )
 
 
 def read_targets(path: Path) -> tuple[Target, ...]:
@@ -104,9 +111,17 @@ def read_targets(path: Path) -> tuple[Target, ...]:
         row = row + [""] * (len(header) - len(row))
         mz = _number(row[mz_col], f"{path.name} line {line} m/z")
         start, stop = WHOLE_RUN
-        if start_col is not None and stop_col is not None:
+        if (
+            start_col is not None
+            and stop_col is not None
+            and (row[start_col].strip() or row[stop_col].strip())
+        ):
             start = _number(row[start_col], f"{path.name} line {line} t start")
             stop = _number(row[stop_col], f"{path.name} line {line} t stop")
+            if not 0 <= start < stop:
+                raise ExclusionListError(
+                    f"{path.name} line {line}: require 0 <= t start < t stop"
+                )
         name = row[name_col].strip() if name_col is not None else ""
         targets.append(Target(name, mz, start, stop, path.name))
     return tuple(targets)
@@ -141,13 +156,16 @@ def read_named_exclusions(
     return tuple(entries)
 
 
-def _read_named_source(base: Path, source: Any) -> tuple[NamedExclusion, ...]:
+def _read_named_source(
+    base: Path, source: Any, outputs: set[Path]
+) -> tuple[NamedExclusion, ...]:
     if not isinstance(source, dict):
         raise ExclusionListError(
             'named_exclusions: write each entry as { file = "...", sheet = "..." }'
         )
     _only_keys(source, {"file", "sheet"}, "named_exclusions")
     path = base / _required(source, "file", str, "named_exclusions")
+    _check_input_path(path, outputs)
     if not path.is_file():
         raise ExclusionListError(f"named exclusion file not found: {path}")
     return read_named_exclusions(path, source.get("sheet"))
@@ -212,10 +230,26 @@ def _positive(value: Any, field: str) -> float:
     )
 
 
-def _matching_files(base: Path, pattern: Any) -> list[Path]:
+def _check_input_path(path: Path, outputs: set[Path]) -> None:
+    if path.resolve() in outputs:
+        raise ExclusionListError(
+            f"output would overwrite input {path}; use --output-dir"
+        )
+
+
+def _matching_files(base: Path, pattern: Any, outputs: set[Path]) -> list[Path]:
     if not isinstance(pattern, str):
         raise ExclusionListError("targets: list file paths or patterns as text")
+    # Check even on the first run, before the output exists: otherwise a second
+    # run of the same recipe would read its previous exclusions as targets.
+    absolute_pattern = str((base / pattern).resolve())
+    if any(output.match(absolute_pattern) for output in outputs):
+        raise ExclusionListError(
+            f"targets '{pattern}' matches an output; use --output-dir"
+        )
     files = sorted(Path(p) for p in glob.glob(str(base / pattern)))
+    for file in files:
+        _check_input_path(file, outputs)
     if not files:
         raise ExclusionListError(f"targets: nothing matches '{pattern}'")
     return files

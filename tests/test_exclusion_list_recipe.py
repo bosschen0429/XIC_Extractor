@@ -4,8 +4,8 @@ import openpyxl
 import pytest
 
 from scripts.run_exclusion_list import main
+from xic_extractor.exclusion_list import ExclusionListError
 from xic_extractor.exclusion_list.recipe import (
-    ExclusionListError,
     read_named_exclusions,
     read_recipe,
     read_targets,
@@ -60,6 +60,18 @@ def test_misspelled_recipe_key_is_reported(tmp_path):
 
     with pytest.raises(ExclusionListError, match="exclusion_ppm"):
         read_recipe(recipe)
+
+
+def test_optional_rt_is_per_target_and_requires_a_complete_interval(tmp_path):
+    path = tmp_path / "targets.csv"
+    header = "m/z,t start (min),t stop (min)\n"
+    path.write_text(header + "300,10,12\n500,,\n")
+    timed, untimed = read_targets(path)
+    assert (timed.start, timed.stop) == (10, 12)
+    assert (untimed.start, untimed.stop) == (0, math.inf)
+    path.write_text(header + "500,10,\n")
+    with pytest.raises(ExclusionListError):
+        read_targets(path)
 
 
 def test_starter_recipe_loads_once_its_files_exist(tmp_path):

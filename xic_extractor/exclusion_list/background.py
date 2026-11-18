@@ -60,7 +60,7 @@ class BackgroundWindow:
 
 
 def find_background_windows(
-    centroids: Ms1Centroids, run_end: float
+    centroids: Ms1Centroids, run_end: float, intensity_threshold: float
 ) -> tuple[BackgroundWindow, ...]:
     """Return eluting windows of every recurring ion, ordered by ion m/z.
 
@@ -68,7 +68,7 @@ def find_background_windows(
     Otherwise runs of at least 12 scans, split at gaps over 12 scans, become
     windows padded by 0.5 min; overlapping windows merge.
     """
-    keep = centroids.intensity >= INTENSITY_FLOOR
+    keep = centroids.intensity >= min(INTENSITY_FLOOR, intensity_threshold)
     mz, intensity, scan = (
         centroids.mz[keep],
         centroids.intensity[keep],
@@ -168,6 +168,8 @@ def _assign_ions(
         smooth * SMOOTH_BINS >= MIN_POINTS
     )
     peaks = np.flatnonzero(is_peak)
+    if not peaks.size:
+        return peaks, mz[:0], intensity[:0], scan[:0]
     peaks = peaks[np.r_[True, np.diff(peaks) > 2]]  # one peak per plateau
     position = np.searchsorted(peaks, bins)
     left = np.clip(position - 1, 0, len(peaks) - 1)

@@ -11,13 +11,18 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 
+from xic_extractor.exclusion_list import ExclusionListError
 from xic_extractor.exclusion_list.background import BackgroundWindow
 from xic_extractor.mass_accuracy import mz_window, within_ppm
 
 MIN_WINDOW_MIN = 0.5
 WHOLE_RUN = (0.0, math.inf)
+MZ_DIGITS = 6
+RT_DIGITS = 3
+_RT_STEP = Decimal(1).scaleb(-RT_DIGITS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +59,10 @@ class ListSpec:
     scan_range: tuple[float, float]
     exclusion_tolerance_ppm: float
     rt: bool
+
+    @property
+    def csv_name(self) -> str:
+        return f"{self.name}.csv"
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,30 +120,42 @@ def select_exclusion_list(
         return free
 
     named_rows: list[ExclusionRow] = []
-    accepted: list[NamedExclusion] = []
+
+    def covered_by_named(mz: float, start: float, stop: float) -> bool:
+        return any(
+            _covers(row.mz, row.start, row.stop, mz, start, stop, tolerance)
+            for row in named_rows
+        )
+
     for index, entry in enumerate(named, 1):
-        if not low <= entry.mz <= high:
+        mz = round(entry.mz, MZ_DIGITS)
+        if not low <= mz <= high:
             outside.append(entry)
             continue
-        if any(within_ppm(entry.mz, other.mz, tolerance) for other in accepted):
-            continue
-        accepted.append(entry)
         label = f"EX{index:03d}"
-        free = protect(f"{label} {entry.name}", entry.mz, 0.0, run_end)
+        free = protect(f"{label} {entry.name}", mz, 0.0, run_end)
         for part, (start, stop) in enumerate(free, 1):
+            if covered_by_named(mz, start, stop):
+                continue
             compound = (
                 f"{label}_R{part}_{_compound_text(entry.name)}"
                 if spec.rt
                 else f"{label}_{_compound_text(entry.name)}"
             )
-            named_rows.append(ExclusionRow(compound, entry.mz, start, stop))
+            named_rows.append(ExclusionRow(compound, mz, start, stop))
 
     room = settings.max_entries - len(named_rows)
+    if room < 0:
+        raise ExclusionListError(
+            f"{spec.name}: {len(named_rows)} named rows after target protection "
+            f"exceed max_entries={settings.max_entries}"
+        )
     ranked = sorted(
         (
-            (count, window)
+            (count, replace(window, mz=mz))
             for count, window in zip(top_n, windows, strict=True)
-            if low <= window.mz <= high and window.apex >= settings.intensity_threshold
+            if low <= (mz := round(window.mz, MZ_DIGITS)) <= high
+            and window.apex >= settings.intensity_threshold
         ),
         key=lambda item: (-item[0], -item[1].area, item[1].mz, item[1].start),
     )
@@ -142,22 +163,9 @@ def select_exclusion_list(
     for _, window in ranked:
         if len(kept) >= room:
             break
-        if any(
-            _covers(
-                row.mz,
-                row.start,
-                row.stop,
-                window.mz,
-                window.start,
-                window.stop,
-                tolerance,
-            )
-            for row in named_rows
-        ):
-            continue
         candidate = f"m/z {window.mz:.4f} {_span(window.start, window.stop, run_end)}"
         for start, stop in protect(candidate, window.mz, window.start, window.stop):
-            if any(
+            if covered_by_named(window.mz, start, stop) or any(
                 _covers(other.mz, a, b, window.mz, start, stop, tolerance)
                 for other, a, b in kept
             ):
@@ -190,13 +198,17 @@ def _free_windows(
     settings: MethodSettings,
 ) -> tuple[tuple[tuple[float, float], ...], tuple[Target, ...]]:
     excluded_low, excluded_high = mz_window(mz, spec.exclusion_tolerance_ppm)
-    free = [(start, stop)]
+    # Test the exact bounds the CSV will carry, including for uncut rows.
+    free = [(round(start, RT_DIGITS), round(stop, RT_DIGITS))]
     hits: list[Target] = []
     for target in targets:
         included_low, included_high = mz_window(
             target.mz, settings.inclusion_tolerance_ppm
         )
         if excluded_high < included_low or included_high < excluded_low:
+            continue
+        if not spec.rt:
+            hits.append(target)
             continue
         remaining = []
         for a, b in free:
@@ -206,13 +218,18 @@ def _free_windows(
             if target not in hits:
                 hits.append(target)
             if target.start > a:
-                remaining.append((a, target.start))
+                remaining.append((a, _cut_rt(target.start, ROUND_FLOOR)))
             if target.stop < b:
-                remaining.append((target.stop, b))
+                remaining.append((_cut_rt(target.stop, ROUND_CEILING), b))
         free = remaining
     if hits and not spec.rt:
         return (), tuple(hits)
     return tuple(w for w in free if w[1] - w[0] >= MIN_WINDOW_MIN), tuple(hits)
+
+
+def _cut_rt(value: float, rounding: str) -> float:
+    """Round away from the protected interval on the CSV's decimal RT grid."""
+    return float(Decimal(str(value)).quantize(_RT_STEP, rounding=rounding))
 
 
 def _covers(

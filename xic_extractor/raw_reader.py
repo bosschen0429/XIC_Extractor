@@ -460,8 +460,8 @@ class RawFileHandle:
         self._acquisition_rt_bounds = (start, end)
         return self._acquisition_rt_bounds
 
-    def ms1_scan_mass_range(self) -> tuple[float, float]:
-        """Return the widest m/z range acquired by this RAW's MS1 scan filters."""
+    def ms1_scan_mass_ranges(self) -> tuple[tuple[float, float], ...]:
+        """Return the union of acquired MS1 m/z intervals, preserving gaps."""
         if self._thermo.ms1_order is None:
             raise RawReaderError("MS1 scan range requires the vendor MS1 order")
         ranges = [
@@ -475,7 +475,13 @@ class RawFileHandle:
         ]
         if not ranges:
             raise RawReaderError("RAW has no MS1 scan filter with a mass range")
-        return min(low for low, _ in ranges), max(high for _, high in ranges)
+        merged: list[tuple[float, float]] = []
+        for low, high in sorted(ranges):
+            if merged and low <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], high))
+            else:
+                merged.append((low, high))
+        return tuple(merged)
 
     def iter_ms2_scans(
         self, rt_min: float | None = None, rt_max: float | None = None

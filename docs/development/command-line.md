@@ -84,6 +84,7 @@ uv run xic-exclusion-list recipe.toml
 
 每個 `[[lists]]` 在 recipe 旁產生一份可匯入的 `<name>.csv`，另有 `exclusion_report.txt`
 列出每一列因 target 被移除或切開的原因。規則見 [DDA exclusion lists](../product/dda-exclusion-list.md)。
+若輸入檔名或 target 的萬用字元會涵蓋輸出檔，請用 `--output-dir results` 將結果放到不同目錄。
 
 
 ## Alignment CLI Inputs

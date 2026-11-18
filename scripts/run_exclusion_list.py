@@ -19,7 +19,8 @@ from collections.abc import Sequence
 from importlib.resources import files
 from pathlib import Path
 
-from xic_extractor.exclusion_list.recipe import ExclusionListError, read_recipe
+from xic_extractor.exclusion_list import ExclusionListError
+from xic_extractor.exclusion_list.recipe import read_recipe
 from xic_extractor.raw_reader_errors import RawReaderError
 from xic_extractor.thermo_reader_install import default_thermo_reader_dir
 
@@ -57,11 +58,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     from xic_extractor.exclusion_list.export import list_summary, write_exclusion_lists
 
     try:
-        recipe = read_recipe(args.recipe)
+        recipe = read_recipe(args.recipe, args.output_dir)
         result = build_exclusion_lists(recipe, args.dll_dir)
-        report = write_exclusion_lists(
-            result, recipe, args.output_dir or args.recipe.parent
-        )
+        report = write_exclusion_lists(result, recipe)
     except (ExclusionListError, RawReaderError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
