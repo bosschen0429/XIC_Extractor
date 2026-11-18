@@ -74,7 +74,7 @@ def _parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="FIELD=JSON",
-        help="Override an AlignmentConfig field",
+        help="Override an AlignmentConfig field (Backfill does not affect grouping)",
     )
     calibration = replay.add_mutually_exclusive_group()
     calibration.add_argument(
@@ -172,9 +172,12 @@ def main(argv: list[str] | None = None) -> int:
                 if calibration is not None
                 else None
             )
-            # An explicit sample calibration replaces (rather than retaining)
-            # each workset's drift model. Identical effective inputs need no replay.
-            variant = config != inputs.alignment_config or (
+            # Compare the validated configs without the Backfill-only switch.
+            grouping_config_changed = config != replace(
+                inputs.alignment_config, backfill_enabled=config.backfill_enabled
+            )
+            # An explicit sample calibration also replaces each workset's drift model.
+            variant = grouping_config_changed or (
                 calibration is not None
                 and any(
                     workset.rt_drift is not None

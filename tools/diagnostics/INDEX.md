@@ -17,7 +17,7 @@
 > renames a diagnostic entry-point. The file is grouped by **purpose**, not
 > alphabetically — open the table of contents below to navigate.
 
-## Choose The Workflow
+## Choose the Workflow
 
 `scripts/` and `tools/` contain different kinds of adapters; their directory
 does not determine whether an operation is a user feature. Start with the
@@ -25,13 +25,17 @@ workflow owner rather than chaining similarly named commands.
 
 | Task | Entry and owner |
 | --- | --- |
+| Compare two saved `members.tsv` tables from the same observations | `tools.diagnostics.grouping_experiment compare` — no snapshot or regrouping; [details](#grouping_experimentpy) |
+| Regroup from a saved `grouping-inputs.json.gz` snapshot | `tools.diagnostics.grouping_experiment replay` — no RAW or Backfill; [details](#grouping_experimentpy) |
+| Produce initial groups from a Discovery batch index and matching RAW files | `scripts.run_alignment --stop-after grouping`; add `--save-grouping-inputs` only to retain a replay snapshot; [details](#grouping_experimentpy) |
+| Query measured candidates in a saved Discovery batch | `tools.diagnostics.grouping_experiment query` — no RAW or grouping; [details](#grouping_experimentpy) |
+| Build the QC sample metadata table from a method DOCX and RAW filenames | `tools.diagnostics.instrument_qc_sequence_manifest` — no RAW reader or trend extraction; [details](#instrument_qc_sequence_manifestpy) |
+| Extract instrument QC trends from RAW | `scripts.run_instrument_qc`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns its inputs and claims |
 | Extract, discover, or align samples | [GUI and CLI user guides](../../docs/user/README.md) |
 | Inspect chromatograms | GUI **開啟 Inspector** or `xic-inspector`; [Workbench and review](../../docs/product/workbench.md) owns what review may mean |
 | Select Matrix features for downstream analysis | GUI **矩陣整理** or `xic-matrix-curation`; [Matrix Curation](../../docs/product/matrix-curation.md) owns the steps and output |
-| Review instrument QC | `scripts.run_instrument_qc`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns its inputs and claims |
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
 | Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/local-execution.md#validation-scale) own prerequisites |
-| Query Discovery or experiment with grouping / RT calibration | `scripts.run_alignment --stop-after grouping` outputs groups directly; add `--save-grouping-inputs` for later `tools.diagnostics.grouping_experiment replay`; see [Grouping experiments](#grouping_experimentpy) |
 | Score one peak quantified in several Matrix rows | `tools.diagnostics.duplicate_quantification --alignment-dir <validation output>`; [Duplicate quantification](#duplicate_quantificationpy) |
 | Maintain CI or command safety | `tools.testing.test_selection` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |
 
