@@ -4,6 +4,7 @@ import csv
 import gzip
 import json
 from dataclasses import replace
+from unittest.mock import Mock
 
 import pytest
 
@@ -443,8 +444,6 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
     assert group_signature(
         replay_grouping(restored, rt_coordinates=SampleRtFrame())
     ) != group_signature(expected)
-    from unittest.mock import Mock
-
     counted_replay = Mock(wraps=replay_grouping)
     monkeypatch.setattr(
         "tools.diagnostics.grouping_experiment.replay_grouping", counted_replay
@@ -835,6 +834,83 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         frozenset(("c", "d")),
     }
     assert all(group.disposition == "established" for group in groups)
+
+
+def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatch):
+    # The two observed precursor masses are ~30 ppm apart at the same apex.
+    # They fit the original 50 ppm envelope, but not the 20 ppm variant.
+    a = _owner("a", "peak", precursor_mz=500.0)
+    b = _owner("b", "peak", precursor_mz=500.015)
+    assert a.cross_sample_member_subject is not None
+    assert b.cross_sample_member_subject is not None
+    a = replace(a, owner_id=a.cross_sample_member_subject.subject_id)
+    b = replace(b, owner_id=b.cross_sample_member_subject.subject_id)
+    snapshot = tmp_path / "inputs.gz"
+    write_grouping_inputs(
+        snapshot,
+        GroupingInputs(
+            sample_stems=("a", "b"),
+            injection_order={"a": 1, "b": 2},
+            alignment_config=AlignmentConfig(),
+            worksets=(GroupingWorkset("mass-window", (a, b), (), None),),
+            candidate_ids_by_owner={},
+        ),
+        provenance={},
+    )
+    counted_replay = Mock(wraps=replay_grouping)
+    monkeypatch.setattr(
+        "tools.diagnostics.grouping_experiment.replay_grouping", counted_replay
+    )
+
+    def run(name, *options):
+        output = tmp_path / name
+        counted_replay.reset_mock()
+        assert (
+            main(
+                [
+                    "replay",
+                    "--inputs",
+                    str(snapshot),
+                    "--output-dir",
+                    str(output),
+                    *options,
+                ]
+            )
+            == 0
+        )
+        return output
+
+    def rows(output, filename):
+        with (output / filename).open(encoding="utf-8", newline="") as stream:
+            return list(csv.DictReader(stream, delimiter="\t"))
+
+    def membership(output):
+        groups = {}
+        for row in rows(output, "members.tsv"):
+            groups.setdefault(row["group_id"], set()).add(row["owner_id"])
+        return {frozenset(owners) for owners in groups.values()}
+
+    baseline = run("baseline")
+    assert counted_replay.call_count == 1
+    assert membership(baseline) == {frozenset((a.owner_id, b.owner_id))}
+
+    backfill_only = run("no-backfill", "--set", "backfill_enabled=false")
+    assert counted_replay.call_count == 1
+    assert (backfill_only / "members.tsv").read_bytes() == (
+        baseline / "members.tsv"
+    ).read_bytes()
+    assert rows(backfill_only, "changes.tsv") == []
+
+    variant = run("variant", "--set", "max_ppm=20", "--compare-to", str(baseline))
+    assert counted_replay.call_count == 2
+    assert membership(variant) == {frozenset((a.owner_id,)), frozenset((b.owner_id,))}
+    assert {
+        (row["owner_id"], row["before_members"], row["after_members"])
+        for row in rows(variant, "changes.tsv")
+    } == {(a.owner_id, "2", "1"), (b.owner_id, "2", "1")}
+    summary = json.loads((variant / "summary.json").read_text())
+    assert summary["membership_diff"]["split_count"] == 1
+    assert summary["membership_diff"]["merge_count"] == 0
 
 
 def test_saved_memberships_compare_splits_and_merges_without_replay(
