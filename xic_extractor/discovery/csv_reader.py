@@ -54,9 +54,16 @@ class DiscoveryBatchInput:
     peak_receipts: dict[str, DiscoveryPeakUniverseReceipt]
 
 
+@dataclass(frozen=True)
+class DiscoveryBatchIndex(DiscoveryBatchInput):
+    """Admitted index rows and the path they were read from."""
+
+    path: Path
+
+
 def read_discovery_batch_index(
     path: Path,
-) -> DiscoveryBatchInput:
+) -> DiscoveryBatchIndex:
     rows, fieldnames = _read_csv_rows(path)
     require_current_discovery_columns(
         path, fieldnames, DISCOVERY_BATCH_INDEX_COLUMNS, table="batch index"
@@ -110,7 +117,8 @@ def read_discovery_batch_index(
             _resolve_artifact_path(path.parent, event_csv) if event_csv else None
         )
         peak_receipts[sample_stem] = receipt
-    return DiscoveryBatchInput(
+    return DiscoveryBatchIndex(
+        path=path,
         sample_order=tuple(sample_order),
         peak_csvs=peak_csvs,
         raw_files=raw_files,

@@ -31,6 +31,7 @@ from xic_extractor.diagnostics.grouping_experiment_io import (
 )
 from xic_extractor.discovery.batch_contract import DiscoveryPeakUniverseReceipt
 from xic_extractor.discovery.csv_reader import (
+    DiscoveryBatchIndex,
     DiscoveryBatchInput,
     read_discovery_batch_index,
 )
@@ -65,6 +66,15 @@ class AlignmentProcessExecutionError(RuntimeError):
     """Raised when retained Untargeted execution fails before publication."""
 
 
+def _admitted_batch(
+    index: Path | DiscoveryBatchIndex, recorder: TimingRecorder
+) -> DiscoveryBatchIndex:
+    if isinstance(index, DiscoveryBatchIndex):
+        return index
+    with recorder.stage("alignment.read_batch_index"):
+        return read_discovery_batch_index(index)
+
+
 def run_untargeted_application(
     request: UntargetedRequest,
     context: UntargetedExecutionContext | None = None,
@@ -88,8 +98,7 @@ def run_untargeted_application(
             "require_discovery_owner_closure": True,
         },
     )
-    with recorder.stage("alignment.read_batch_index"):
-        batch = read_discovery_batch_index(request.discovery_batch_index)
+    batch = _admitted_batch(request.discovery_batch_index, recorder)
     with recorder.stage("alignment.read_candidates") as stage:
         peaks_by_sample = DiscoveryInputSource(batch)
         stage.metrics["candidate_count"] = len(peaks_by_sample.locations)
@@ -113,7 +122,7 @@ def run_untargeted_application(
     )
 
     metadata = alignment_metadata(
-        discovery_batch_index=request.discovery_batch_index,
+        discovery_batch_index=batch.path,
         raw_dir=request.raw_dir,
         dll_dir=request.dll_dir,
         output_level=request.publication.output_level,
@@ -308,8 +317,7 @@ def run_untargeted_grouping(
     """
     context = context or UntargetedExecutionContext()
     recorder = context.timing_recorder or TimingRecorder.disabled("alignment")
-    with recorder.stage("alignment.read_batch_index"):
-        batch = read_discovery_batch_index(request.discovery_batch_index)
+    batch = _admitted_batch(request.discovery_batch_index, recorder)
     peaks_by_sample = DiscoveryInputSource(batch)
     mass_recalibration_by_sample = _prepare_mass_recalibration(
         request, batch, recorder, context
@@ -372,7 +380,7 @@ def run_untargeted_grouping(
         stage.metrics["partition_count"] = grouping.total_partition_count
         stage.metrics["group_count"] = len(grouping.groups)
     provenance = {
-        "discovery_batch_index": str(request.discovery_batch_index.resolve()),
+        "discovery_batch_index": str(batch.path.resolve()),
         "partition_count": grouping.total_partition_count,
         "initial_job_count": grouping.initial_job_count,
     }
