@@ -62,10 +62,21 @@ def test_misspelled_recipe_key_is_reported(tmp_path):
         read_recipe(recipe)
 
 
-def test_starter_recipe_uses_only_known_keys(tmp_path):
+def test_starter_recipe_loads_once_its_files_exist(tmp_path):
     recipe = tmp_path / "recipe.toml"
-
     assert main([str(recipe), "--new"]) == 0
-    # Valid keys get as far as resolving the blank the user has yet to fill in.
-    with pytest.raises(ExclusionListError, match="blank RAW not found"):
-        read_recipe(recipe)
+    (tmp_path / "Blank_background.raw").write_bytes(b"")
+    (tmp_path / "targets").mkdir()
+    (tmp_path / "targets" / "list.csv").write_text("m/z\n300\n", encoding="utf-8")
+    workbook = openpyxl.Workbook()
+    workbook.active.title = "Sheet1"
+    workbook.active.append(("m/z", "name"))
+    workbook.save(tmp_path / "named_exclusions.xlsx")
+
+    loaded = read_recipe(recipe)
+
+    assert [(s.name, s.scan_range, s.rt) for s in loaded.lists] == [
+        ("EX_oral", (145.0, 800.0), True),
+        ("EX_short_gradient", (200.0, 700.0), False),
+    ]
+    assert loaded.settings.max_entries == 1000
