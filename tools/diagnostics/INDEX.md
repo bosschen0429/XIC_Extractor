@@ -374,7 +374,9 @@ loop over saved Discovery candidates for scalar CID-NL presets:
 ```
 
 Replay reads retained snapshots that still carry the retired owner
-`identity_conflict` flag and ignores it; production never set it.
+`identity_conflict` flag and ignores it; production never set it. A snapshot
+whose frozen calibration knots lack cohort, ISTD label and channels is
+rejected; save a new snapshot.
 
 Repeat `--mz-range LOWER:UPPER` for several regions. Query reads Discovery only
 and reports measured-mass candidates plus every sample, including zero-match
