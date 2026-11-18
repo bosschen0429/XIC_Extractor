@@ -668,6 +668,11 @@ class UntargetedPartitionPipelineAdapter:
                 injection_order=self._plan.context.rt_frame.injection_order,
                 alignment_config=self._alignment_config,
                 initial_job_count=self._initial_job_count,
+                rt_calibration=(
+                    frame.calibration_for_snapshot
+                    if (frame := self._batch_preparation.frozen_rt_frame) is not None
+                    else None
+                ),
             )
         return compose_untargeted_batch(
             self._plan,

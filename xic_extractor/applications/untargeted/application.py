@@ -383,13 +383,8 @@ def run_untargeted_grouping(
         write_json(
             request.output_dir / "summary.json", {**summary, "source": provenance}
         )
-        # Every workset carries the batch's one frozen calibration.
         write_rt_anchor_table(
-            request.output_dir / "rt_anchors.tsv",
-            next(
-                (workset.rt_calibration for workset in grouping.inputs.worksets),
-                None,
-            ),
+            request.output_dir / "rt_anchors.tsv", grouping.rt_calibration
         )
     if save_snapshot:
         with recorder.stage("alignment.write_grouping_snapshot"):
