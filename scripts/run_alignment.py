@@ -386,7 +386,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=Path("output") / "alignment",
         help=(
             "Output directory for selected Alignment artifacts. The default "
-            "writes only alignment_matrix.tsv."
+            "writes alignment_matrix.tsv and alignment_rt_anchors.tsv."
         ),
     )
     parser.add_argument(

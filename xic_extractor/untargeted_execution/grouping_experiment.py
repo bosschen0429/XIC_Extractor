@@ -16,12 +16,15 @@ from xic_extractor.alignment.grouping_experiment import (
     GroupingWorkset,
 )
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
+from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 
 
 @dataclass(frozen=True, slots=True)
 class PreparedGroupingExperiment:
     inputs: GroupingInputs
     groups: tuple[CrossSamplePeakGroupHypothesis, ...]
+    # The batch's frozen calibration; it exists even when no workset does.
+    rt_calibration: BatchRtCalibration | None
     selected_partition_count: int
     total_partition_count: int
     initial_job_count: int
@@ -34,6 +37,7 @@ def grouping_experiment_from_prepared(
     injection_order: Mapping[str, int],
     alignment_config: AlignmentConfig,
     initial_job_count: int,
+    rt_calibration: BatchRtCalibration | None,
 ) -> PreparedGroupingExperiment:
     worksets = []
     groups: list[CrossSamplePeakGroupHypothesis] = []
@@ -95,6 +99,7 @@ def grouping_experiment_from_prepared(
     return PreparedGroupingExperiment(
         inputs=inputs,
         groups=tuple(groups),
+        rt_calibration=rt_calibration,
         selected_partition_count=partition_count,
         total_partition_count=partition_count,
         initial_job_count=initial_job_count,

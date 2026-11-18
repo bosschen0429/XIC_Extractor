@@ -154,10 +154,14 @@ def publish_untargeted_outputs(
                         curve_mz_ranges=policy.explanation_curve_mz_ranges,
                     )
                 )
+        frame = completed.sample_rt_frame
         write_completed_untargeted_outputs_atomic(
             outputs,
             completed.application_result,
             metadata=metadata,
+            rt_calibration=(
+                frame.calibration_for_snapshot if frame is not None else None
+            ),
             timing_recorder=timing_recorder,
             consume_child=_explanation_sink(explanation),
             before_write=lambda: _ensure_output_publication_not_cancelled(

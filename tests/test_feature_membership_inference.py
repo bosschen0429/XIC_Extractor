@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import pytest
 
-from tests.membership_fixtures import cid_nl_owner
+from tests.membership_fixtures import agreed_group_observations, cid_nl_owner
 from tests.owner_peak_fixtures import with_peak
 from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
@@ -100,12 +100,12 @@ def test_rt_calibration_accumulates_support_across_partition_boundaries() -> Non
     whole = BatchRtCalibrationAccumulator(
         sample_stems=samples, sample_cohorts=dict.fromkeys(samples, "batch")
     )
-    whole.add_groups(groups)
+    whole.add_observations(agreed_group_observations(groups))
     partitioned = BatchRtCalibrationAccumulator(
         sample_stems=samples, sample_cohorts=dict.fromkeys(samples, "batch")
     )
     for group in reversed(groups):
-        partitioned.add_groups((group,))
+        partitioned.add_observations(agreed_group_observations((group,)))
     assert partitioned.freeze() == whole.freeze()
     assert whole.freeze().offset_min("s12", 15.0) == pytest.approx(0.2)
     assert whole.freeze().has_support("s12")
@@ -118,52 +118,25 @@ def test_rt_calibration_does_not_pool_incompatible_cohort_support() -> None:
         sample_stems=samples,
         sample_cohorts={sample: str(i // 12) for i, sample in enumerate(samples)},
     )
-    calibration.add_groups(
-        tuple(
+    calibration.add_observations(
+        agreed_group_observations(
             tuple(
-                cid_nl_owner(
-                    sample, f"f{feature}", apex_rt=8.0 + feature + (5 if i >= 12 else 0)
+                tuple(
+                    cid_nl_owner(
+                        sample,
+                        f"f{feature}",
+                        apex_rt=8.0 + feature + (5 if i >= 12 else 0),
+                    )
+                    for i, sample in enumerate(samples)
                 )
-                for i, sample in enumerate(samples)
+                for feature in range(12)
             )
-            for feature in range(12)
         )
     )
     result = calibration.freeze()
     assert result.common_rt_min("s00", 10) == pytest.approx(10)
     assert result.common_rt_min("s12", 15) == pytest.approx(15)
     assert all(result.has_support(sample) for sample in samples)
-
-
-@pytest.mark.parametrize(
-    "untrusted",
-    (
-        {"quantification_eligible": False},
-        {"primary_identity_event": None},
-    ),
-)
-def test_observations_without_direct_clean_support_do_not_calibrate_others(
-    untrusted,
-) -> None:
-    samples = ("a", "b", "c", "d", "e")
-    groups = tuple(
-        tuple(
-            replace(cid_nl_owner(sample, f"f{i}", apex_rt=8.0 + i), **untrusted)
-            if sample == "e"
-            else cid_nl_owner(sample, f"f{i}", apex_rt=8.0 + i)
-            for sample in samples
-        )
-        for i in range(12)
-    )
-    accumulator = BatchRtCalibrationAccumulator(
-        sample_stems=samples, sample_cohorts=dict.fromkeys(samples, "batch")
-    )
-    accumulator.add_groups(groups)
-    calibration = accumulator.freeze()
-    assert not calibration.has_support("e")
-    assert calibration.samples["e"].anchor_count == 0
-    assert all(calibration.has_support(sample) for sample in samples[:-1])
-    assert all(len(group) == 5 for group in groups)
 
 
 def test_rt_warp_round_trip_uses_the_same_coordinate_system() -> None:

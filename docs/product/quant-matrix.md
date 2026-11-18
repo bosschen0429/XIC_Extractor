@@ -57,7 +57,8 @@ integration, and Backfill counts direct support by sample.
 - Changes to selected values require the owning product contract and
   method-appropriate evidence.
 
-The default `production` Matrix artifact is `alignment_matrix.tsv`. Alignment's
+The default `production` Matrix artifact is `alignment_matrix.tsv`; every level
+also writes the [RT anchor table](rt-calibration.md#rt-anchor-table). Alignment's
 method-neutral per-cell evidence is `alignment_explanation.sqlite`, published
 after the Matrix; see [retained evidence](workbench.md#retained-evidence-and-diagnostics).
 Identity, review, provenance, Backfill evidence, HTML and workbook artifacts
@@ -101,7 +102,9 @@ risk flags do not independently authorize a value or row.
 
 Alignment additionally exposes `alignment_review.tsv` for group review and
 bound Matrix row references,
-`alignment_backfill_cell_evidence.tsv` for Backfill evidence, conditional
+`alignment_backfill_cell_evidence.tsv` for Backfill evidence,
+`alignment_rt_anchors.tsv` for the frozen RT calibration knots (see
+[RT anchor table](rt-calibration.md#rt-anchor-table)), conditional
 `alignment_run_metadata.json`, and versioned `alignment-results` metadata.
 These are public schema surfaces, not independent scientific authority.
 The standard fast public validation profile remains `validation-minimal`;

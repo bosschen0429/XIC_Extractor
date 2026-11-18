@@ -908,3 +908,70 @@ def test_saved_memberships_compare_splits_and_merges_without_replay(
     with pytest.raises(SystemExit) as error:
         main(args)
     assert error.value.code == 2
+
+
+def test_grouping_anchor_table_lists_istd_knots_without_any_workset(
+    tmp_path, monkeypatch
+):
+    import xic_extractor.applications.untargeted.application as application
+    from tests.alignment_pipeline_helpers import write_batch
+    from xic_extractor.alignment.sample_rt_calibration import (
+        RtCalibrationPolicy,
+        build_batch_rt_calibration,
+    )
+    from xic_extractor.applications.untargeted.request import UntargetedRequest
+    from xic_extractor.untargeted_execution.grouping_experiment import (
+        PreparedGroupingExperiment,
+    )
+
+    plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
+    monkeypatch.setattr(
+        application, "prepare_untargeted_alignment_inputs", lambda **kwargs: plan
+    )
+    # No ordinary candidate is supported, but both samples measured ISTD1.
+    calibration = build_batch_rt_calibration(
+        {},
+        sample_stems=("S0", "S1"),
+        prior_injections={},
+        policy=RtCalibrationPolicy(),
+        measured_istds=(("ISTD1", "S0", 2.0), ("ISTD1", "S1", 2.2)),
+    )
+
+    def grouping_without_worksets(*_args, output_dir, **_kwargs):
+        output_dir.mkdir(parents=True)
+        return PreparedGroupingExperiment(
+            inputs=GroupingInputs(
+                sample_stems=("S0", "S1"),
+                injection_order={},
+                alignment_config=AlignmentConfig(),
+                worksets=(),
+                candidate_ids_by_owner={},
+            ),
+            groups=(),
+            rt_calibration=calibration,
+            selected_partition_count=0,
+            total_partition_count=0,
+            initial_job_count=0,
+        )
+
+    monkeypatch.setattr(
+        application, "execute_prepared_alignment", grouping_without_worksets
+    )
+
+    output = application.run_untargeted_grouping(
+        UntargetedRequest(
+            discovery_batch_index=write_batch(tmp_path, ("S0", "S1")),
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            output_dir=tmp_path / "grouping",
+            alignment_config=AlignmentConfig(),
+            discovery_settings=plan.context.settings,
+            peak_config=plan.context.peak_config,
+        )
+    )
+
+    with (output / "rt_anchors.tsv").open(encoding="utf-8", newline="") as stream:
+        rows = list(csv.DictReader(stream, delimiter="\t"))
+    assert [(r["kind"], r["istd_label"], r["reference_rt_min"]) for r in rows] == [
+        ("istd", "ISTD1", "2.1")
+    ]

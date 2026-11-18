@@ -13,7 +13,6 @@ from tests.cid_nl_peak_support_no_raw_fixture import (
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
-from xic_extractor.alignment.cid_nl_initial_grouping import rt_anchor_observations
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_bootstrap import (
     bootstrap_cid_nl_initial_population,
@@ -22,6 +21,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
 )
+from xic_extractor.alignment.rt_anchors import rt_anchor_observations
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.peak_detection.cid_nl_evidence import (

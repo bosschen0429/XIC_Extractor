@@ -44,6 +44,7 @@ from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
     alignment_metadata,
 )
+from xic_extractor.output.alignment.rt_anchor_table import write_rt_anchor_table
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_mass_recalibration import PreparedRawMassRecalibration
 from xic_extractor.raw_mass_recalibration_batch import prepare_batch_mass_recalibration
@@ -381,6 +382,9 @@ def run_untargeted_grouping(
         )
         write_json(
             request.output_dir / "summary.json", {**summary, "source": provenance}
+        )
+        write_rt_anchor_table(
+            request.output_dir / "rt_anchors.tsv", grouping.rt_calibration
         )
     if save_snapshot:
         with recorder.stage("alignment.write_grouping_snapshot"):

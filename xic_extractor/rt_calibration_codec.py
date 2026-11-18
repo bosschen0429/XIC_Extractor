@@ -97,7 +97,15 @@ def rt_calibration_from_payload(value: dict[str, Any]) -> BatchRtCalibration:
     return BatchRtCalibration(
         policy=RtCalibrationPolicy(**policy),
         knots=tuple(
-            CalibrationKnot(**{**row, "feature_ids": tuple(row["feature_ids"])})
+            CalibrationKnot(
+                **{
+                    **row,
+                    "channels": tuple(
+                        (float(mz), None if loss is None else float(loss))
+                        for mz, loss in row["channels"]
+                    ),
+                }
+            )
             for row in value["knots"]
         ),
         samples=samples,
