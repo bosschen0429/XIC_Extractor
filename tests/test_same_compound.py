@@ -558,6 +558,24 @@ def test_competing_paths_still_need_direct_coelution_with_a_root():
     assert ("no_direct_coelution_with_representative", "H") in review_kinds(result)
 
 
+def only_in(scenario, samples):
+    feature, cells = scenario
+    return feature, {sample: cells[sample] for sample in samples}
+
+
+def test_a_sparse_root_without_contradiction_still_represents_the_chain():
+    # The protonated root shares only s1 with the sodium adduct's 13C row,
+    # where they co-elute; each folding edge has its own supporting samples.
+    decisions, _ = decide(
+        only_in(row("L", 300.0), SAMPLES[:3]),
+        row("N", 321.981944, scale=0.5),
+        only_in(row("H", 322.985299, scale=0.08), SAMPLES[:1] + SAMPLES[3:]),
+    )
+
+    assert decisions["N"][:3] == (False, "derived_from_representative", "L")
+    assert decisions["H"][:3] == (False, "derived_through_group", "L")
+
+
 # Two directly co-eluting samples, too few alone; four backfilled samples.
 TWO_DIRECT = (True, True, False, False, False, False)
 

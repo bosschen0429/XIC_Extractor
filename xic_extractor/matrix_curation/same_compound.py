@@ -171,13 +171,17 @@ class PairEvidence:
         return len(self.support) - len(self.direct_support)
 
     @property
-    def coelutes(self) -> bool:
-        """Enough co-eluting samples, anchored by consistent direct co-elution."""
+    def direct_consistent(self) -> bool:
+        """Some direct co-elution, and direct detections mostly agree."""
         return (
-            len(self.support) >= MIN_SUPPORT_SAMPLES
-            and bool(self.direct_support)
+            bool(self.direct_support)
             and len(self.direct_support) >= MIN_SUPPORT_FRACTION * self.both_direct
         )
+
+    @property
+    def coelutes(self) -> bool:
+        """Enough co-eluting samples, anchored by consistent direct co-elution."""
+        return len(self.support) >= MIN_SUPPORT_SAMPLES and self.direct_consistent
 
     @property
     def coelutes_directly(self) -> bool:
@@ -327,10 +331,11 @@ def collapse_same_compound(
 ) -> SameCompoundResult:
     """Decide which rows fold into which representative.
 
-    A removed row is reached from at least one directly co-eluting root through
-    folding relations, each passing its own checks. Multiple roots leave its
-    attribution blank, not its artifact classification undecided. Rows that
-    only co-elute through others are kept. Results
+    A removed row is reached from at least one root through folding relations,
+    each passing its own checks, and its direct detections co-elute with that
+    root's without contradiction; a sparse root needs no further samples.
+    Multiple roots leave its attribution blank, not its artifact classification
+    undecided. Rows contradicted by every root are kept. Results
     depend only on m/z, cells and relations, never on row order, feature ID or
     the order of the relation list.
     """
@@ -394,7 +399,7 @@ def collapse_same_compound(
         for root in reached_from[heavy]:
             if (root, heavy) not in evidence:
                 evidence[(root, heavy)] = pair_evidence(cells[root], cells[heavy])
-            if evidence[(root, heavy)].coelutes:
+            if evidence[(root, heavy)].direct_consistent:
                 coeluting_roots.add(root)
         if len(coeluting_roots) == 1:
             representative[heavy] = next(iter(coeluting_roots))

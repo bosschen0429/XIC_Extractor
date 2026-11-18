@@ -250,8 +250,12 @@ relation table. ≈1.998 pairs not explained by either isotope rule are reviewed
 
 Representatives are rows that no folding relation derives from another row. A
 row is removed when folding relations, each passing its own checks, reach it
-from at least one root and it co-elutes directly with that root by the rule
-above. With one directly co-eluting root its representative is recorded. With
+from at least one root and its direct detections do not contradict co-elution
+with that root: at least one sample has both detected directly and co-eluting,
+and at least 80% of their both-direct samples co-elute. A root sparse enough to
+share fewer than 3 samples still qualifies, since every folding edge on the
+path has its own supporting samples. With one such root its representative is
+recorded. With
 several, it is still excluded: its representative field is blank, its reason
 is `derived_representative_undetermined`, and its candidate roots are recorded
 in the review with `decision=drop`. The candidate roots are not merged or
