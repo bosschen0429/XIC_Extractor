@@ -10,7 +10,7 @@ from pathlib import Path
 from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_explanation,
-    read_candidate_examples,
+    read_summary_with_examples,
 )
 
 
@@ -116,12 +116,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(json.dumps(result, indent=2))
             return 0
-        result = read_alignment_explanation(args.report, candidate_id=args.candidate_id)
-        examples = (
-            read_candidate_examples(Path(args.report))
-            if args.candidate_id is None and not args.json
-            else []
-        )
+        if args.candidate_id is None and not args.json:
+            result, examples = read_summary_with_examples(Path(args.report))
+        else:
+            result = read_alignment_explanation(
+                args.report, candidate_id=args.candidate_id
+            )
+            examples = []
     except (ExplanationError, OSError) as exc:
         if args.json:
             print(

@@ -87,9 +87,7 @@ _RELATIONS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
 }
 
 
-def relation(
-    db: sqlite3.Connection, name: str, *, candidate_id: str | None = None
-) -> str:
+def relation(db: sqlite3.Connection, name: str, *, scoped: bool = False) -> str:
     """Compute each relation once on the request connection (one candidate scope)."""
     query, prerequisites, columns = _RELATIONS[name]
     exists = db.execute(
@@ -97,16 +95,9 @@ def relation(
     ).fetchone()
     if exists is None:
         for prerequisite in prerequisites:
-            relation(db, prerequisite, candidate_id=candidate_id)
-        candidates = (
-            "main.candidates"
-            if candidate_id is None
-            else "(SELECT * FROM main.candidates WHERE candidate_id=:candidate_id)"
-        )
-        db.execute(
-            f"CREATE TEMP TABLE {name} AS {query.format(candidates=candidates)}",
-            {"candidate_id": candidate_id},
-        )
+            relation(db, prerequisite, scoped=scoped)
+        candidates = "temp.requested_candidates" if scoped else "main.candidates"
+        db.execute(f"CREATE TEMP TABLE {name} AS {query.format(candidates=candidates)}")
         for column in columns:
             db.execute(f"CREATE INDEX temp.{name}_{column} ON {name}({column})")
     return f"temp.{name}"

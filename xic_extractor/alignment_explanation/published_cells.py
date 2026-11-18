@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .reader import (
-    read_explanation_summary,
+    read_explanation_metadata,
     read_row_cell_values,
 )
 from .storage import EXPLANATION_ARTIFACT_NAME
@@ -43,7 +43,7 @@ def read_published_cells(alignment_dir: Path) -> tuple[PublishedCell, ...]:
         if record["matrix_row_index"]
     }
     explanation = alignment_dir / EXPLANATION_ARTIFACT_NAME
-    summary = read_explanation_summary(explanation)
+    summary = read_explanation_metadata(explanation)
     samples = {
         sample["sample_key"]: sample["sample_stem"] for sample in summary["samples"]
     }

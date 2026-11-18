@@ -28,6 +28,7 @@ from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
     read_review_evidence,
+    read_summary_with_examples,
 )
 from xic_extractor.alignment_explanation.writer import (
     ExplanationReportWriter,
@@ -444,6 +445,7 @@ def test_exact_candidate_loads_only_its_evidence_across_samples(tmp_path, monkey
 
     monkeypatch.setattr(sqlite3, "connect", counted_connect)
     counts = []
+    page_counts = []
     for report in reports:
         fetched.clear()
         result = read_alignment_explanation(report, candidate_id="same")
@@ -451,7 +453,26 @@ def test_exact_candidate_loads_only_its_evidence_across_samples(tmp_path, monkey
         assert [
             (row["sample_key"], row["precursor_mz"]) for row in result["candidates"]
         ] == [("A", 400), ("B", 401)]
+        summary = read_alignment_explanation(report)
+        fetched.clear()
+        page = read_review_evidence(
+            report, candidate_keys=[("same", "B")], summary=summary
+        )
+        assert list(page.candidates) == [("same", "B")]
+        assert page.candidates["same", "B"].fields["precursor_mz"] == 401
+        page_counts.append(len(fetched))
     assert counts[0] == counts[1]
+    assert page_counts[0] == page_counts[1]
+    fetched.clear()
+    plain = read_alignment_explanation(reports[-1])
+    summary_rows = len(fetched)
+    fetched.clear()
+    with_examples, examples = read_summary_with_examples(reports[-1])
+    assert with_examples == plain
+    assert examples == [
+        {"candidate_id": f"other-{i}", "sample_stem": "A"} for i in (0, 1, 10, 11, 12)
+    ]
+    assert len(fetched) == summary_rows + 5
 
 
 def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):

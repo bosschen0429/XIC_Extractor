@@ -49,7 +49,7 @@ def open_source(path):
     summary = read_summary(path)
     if summary["retention"] == "review":
         return IndexedCidNlSource(path, summary)
-    return CidNlSource(path)
+    return CidNlSource(path, summary)
 
 
 __all__ = [

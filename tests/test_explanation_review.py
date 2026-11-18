@@ -20,7 +20,7 @@ from xic_extractor.alignment_explanation.errors import ExplanationError
 from xic_extractor.alignment_explanation.reader import (
     read_alignment_curves,
     read_alignment_explanation,
-    read_explanation_summary,
+    read_explanation_metadata,
     read_review_evidence,
 )
 from xic_extractor.alignment_explanation.writer import (
@@ -96,12 +96,12 @@ def test_explanation_from_an_older_alignment_is_rejected_on_open(
         matrix_path=matrix,
         alignment_config=config,
     )
-    read_explanation_summary(source)
+    read_explanation_metadata(source)
     with sqlite3.connect(source) as db:
         db.execute(stale_content)
     # Rejected where it is opened, not decoded differently by review or curation.
     with pytest.raises(ExplanationError, match="請重新執行 Alignment"):
-        read_explanation_summary(source)
+        read_explanation_metadata(source)
     with pytest.raises(ExplanationError, match="請重新執行 Alignment"):
         read_review_evidence(source)
 

@@ -235,7 +235,7 @@ def test_review_overview_does_not_retain_decoded_cells_for_the_population(
 
     sample_count = 32
     report, _ = create_review_batch(tmp_path, sample_count=sample_count)
-    summary = alignment_explanation.read_explanation_summary(report)
+    summary = alignment_explanation.read_alignment_explanation(report)
 
     def forbidden(*args, **kwargs):
         raise AssertionError("overview decoded cold scientific details")
@@ -395,9 +395,14 @@ def test_review_follows_the_latest_curation_unless_one_is_opened(tmp_path):
         workspace.close()
 
 
-def test_full_audit_result_is_browsed_as_published_beside_a_curation(tmp_path):
+def test_full_audit_result_is_browsed_as_published_beside_a_curation(
+    tmp_path, monkeypatch
+):
     """A full audit has no Matrix scopes, so no curation label sits over it."""
+    from unittest.mock import Mock
+
     from tests.matrix_curation_fixtures import published_curation
+    from xic_extractor.alignment_explanation import reader
 
     create_inspector_report(
         tmp_path, extend=lambda writer: writer.set_row_destination("G1", "matrix")
@@ -416,12 +421,41 @@ def test_full_audit_result_is_browsed_as_published_beside_a_curation(tmp_path):
         ],
         min_finite_fraction=0.5,
     )
+    read_summary = Mock(wraps=reader.read_completed_summary)
+    monkeypatch.setattr(reader, "read_completed_summary", read_summary)
     workspace = review_workspace(config_dir=tmp_path / "config")
     try:
         page = workspace.open(str(tmp_path))
+        read_summary.assert_called_once()
         assert page["curation"] is None
         assert page["result_artifact"]["name"] == "alignment_matrix.tsv"
         assert [item["group_id"] for item in page["items"]] == ["G1"]
+    finally:
+        workspace.close()
+
+
+def test_first_bundle_page_reads_the_json_once(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from tests.xic_inspector_curve_bundle_fixtures import _fixture_bundle
+    from xic_inspector.sources.curve_bundle import write_curve_bundle
+
+    bundle = tmp_path / "saved.json"
+    write_curve_bundle(_fixture_bundle(), bundle)
+    read_bytes = Path.read_bytes
+    reads = []
+
+    def counted(path):
+        if path == bundle:
+            reads.append(path)
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", counted)
+    workspace = review_workspace(config_dir=tmp_path / "config")
+    try:
+        page = workspace.open(str(bundle))
+        assert page["selected_count"] == 1
+        assert reads == [bundle]
     finally:
         workspace.close()
 
