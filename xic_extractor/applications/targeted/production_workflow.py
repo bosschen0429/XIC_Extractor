@@ -45,7 +45,6 @@ from xic_extractor.extraction.targeted_inputs import (
     ResolvedTargetedInputs,
     build_targeted_acquisition_sources,
     resolve_targeted_inputs,
-    resolve_targeted_raw_paths,
 )
 from xic_extractor.extraction.targeted_istd_backfill import (
     resolve_targeted_istd_backfill,
@@ -78,7 +77,6 @@ class TargetedProductionInputSnapshot:
     """Admitted Targeted inputs and their exact acquisition identity bindings."""
 
     config: ExtractionConfig
-    raw_paths: tuple[Path, ...]
     raw_file_states: tuple[tuple[int, int, int, int, int], ...]
     resolved_inputs: ResolvedTargetedInputs
     targets: tuple[Target, ...]
@@ -90,7 +88,7 @@ class TargetedProductionInputSnapshot:
         states_by_stem = {
             path.stem: state
             for path, state in zip(
-                self.raw_paths,
+                self.resolved_inputs.raw_paths,
                 self.raw_file_states,
                 strict=True,
             )
@@ -665,7 +663,7 @@ def _prepare_targeted_production_workflow(
         if expected_inputs is None
         else _validate_targeted_production_input_snapshot(request, expected_inputs)
     )
-    raw_paths = list(current_inputs.raw_paths)
+    raw_paths = list(current_inputs.resolved_inputs.raw_paths)
     if len(raw_paths) != len(acquisition_evidence.file_results):
         raise RuntimeError("Targeted acquisition returned partial sample coverage")
     results_by_raw_path = _bind_results_to_raw_paths(
@@ -730,14 +728,13 @@ def snapshot_targeted_production_inputs(
 ) -> TargetedProductionInputSnapshot:
     """Snapshot local RAW revisions and scientific inputs for a production phase."""
 
-    raw_paths = resolve_targeted_raw_paths(request.config)
-    if not raw_paths:
-        raise ConfigError("No RAW files were found for Targeted extraction.")
     resolved_inputs = resolve_targeted_inputs(
         request.config,
-        raw_paths=raw_paths,
         injection_order=request.injection_order,
     )
+    raw_paths = resolved_inputs.raw_paths
+    if not raw_paths:
+        raise ConfigError("No RAW files were found for Targeted extraction.")
     raw_file_states = _raw_file_states(raw_paths)
     acquisition_sources = build_targeted_acquisition_sources(
         raw_paths=raw_paths,
@@ -748,7 +745,6 @@ def snapshot_targeted_production_inputs(
         raise RuntimeError("Targeted production inputs changed during preparation")
     return TargetedProductionInputSnapshot(
         config=deepcopy(request.config),
-        raw_paths=tuple(raw_paths),
         raw_file_states=raw_file_states,
         resolved_inputs=resolved_inputs,
         targets=request.targets,
@@ -760,17 +756,14 @@ def _validate_targeted_production_input_snapshot(
     request: TargetedApplicationRequest,
     expected: TargetedProductionInputSnapshot,
 ) -> TargetedProductionInputSnapshot:
-    raw_paths = resolve_targeted_raw_paths(request.config)
     resolved_inputs = resolve_targeted_inputs(
         request.config,
-        raw_paths=raw_paths,
         injection_order=request.injection_order,
     )
     if (
         request.config != expected.config
-        or tuple(raw_paths) != expected.raw_paths
-        or _raw_file_states(raw_paths) != expected.raw_file_states
         or resolved_inputs != expected.resolved_inputs
+        or _raw_file_states(resolved_inputs.raw_paths) != expected.raw_file_states
         or request.targets != expected.targets
     ):
         raise RuntimeError("Targeted production inputs changed during acquisition")
@@ -778,7 +771,7 @@ def _validate_targeted_production_input_snapshot(
 
 
 def _raw_file_states(
-    raw_paths: list[Path],
+    raw_paths: tuple[Path, ...],
 ) -> tuple[tuple[int, int, int, int, int], ...]:
     return tuple(
         (

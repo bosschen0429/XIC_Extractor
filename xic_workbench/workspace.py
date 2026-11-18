@@ -45,7 +45,10 @@ from xic_inspector.rendering.html_builder import (
     build_report_html,
     write_report_atomically,
 )
-from xic_inspector.sources.targeted_workbook import TargetedWorkbookLocator
+from xic_inspector.sources.targeted_workbook import (
+    TargetedWorkbookLocator,
+    TargetedWorkbookSource,
+)
 from xic_workbench.analysis_workspace import AnalysisWorkspace
 from xic_workbench.errors import WorkspaceBusy as WorkspaceBusy
 
@@ -186,7 +189,16 @@ class ReviewWorkspace:
         with self._lock:
             self._require_open()
             try:
-                summary = read_evidence_summary(path)
+                workbook = (
+                    TargetedWorkbookSource(path)
+                    if path.suffix.lower() == ".xlsx"
+                    else None
+                )
+                summary = (
+                    workbook.summary
+                    if workbook is not None
+                    else read_evidence_summary(path)
+                )
             except ExplanationUnavailableError:
                 raise
             except ExplanationError as exc:
@@ -202,7 +214,7 @@ class ReviewWorkspace:
             # A full audit is browsed as published, without Matrix scopes.
             curation = curation if reviewed else None
             page = prepare_report(
-                path,
+                workbook if workbook is not None else path,
                 SelectionRequest(
                     strategy="query",
                     sample_ids=sample_ids,

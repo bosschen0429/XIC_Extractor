@@ -4,7 +4,6 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from xic_extractor.analysis_set import AnalysisSet
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -21,6 +20,7 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 @dataclass(frozen=True)
 class ResolvedTargetedInputs:
+    raw_paths: tuple[Path, ...]
     injection_order: dict[str, int]
     sample_metadata: tuple[SampleMetadata, ...] = ()
 
@@ -28,33 +28,23 @@ class ResolvedTargetedInputs:
 def resolve_targeted_inputs(
     config: ExtractionConfig,
     *,
-    raw_paths: list[Path],
     injection_order: dict[str, int] | None,
 ) -> ResolvedTargetedInputs:
-    by_path = {entry.raw_path: entry for entry in _analysis_set(config).entries}
-    selected = [by_path[path] for path in raw_paths]
-    return ResolvedTargetedInputs(
-        injection_order=(
-            injection_order
-            if injection_order is not None
-            else {entry.raw_stem: entry.injection_order for entry in selected}
-        ),
-        sample_metadata=tuple(entry.metadata for entry in selected),
-    )
-
-
-def resolve_targeted_raw_paths(config: ExtractionConfig) -> list[Path]:
-    return sorted(_analysis_set(config).raw_paths)
-
-
-def _analysis_set(config: ExtractionConfig) -> AnalysisSet:
     # 上機資訊 annotates roles; the RAW headers own order and sample names.
-    return read_analysis_set(
+    analysis_set = read_analysis_set(
         config.data_dir,
         config.dll_dir,
         analysis="targeted",
         sequence_source=config.injection_order_source,
         include_context=False,
+    )
+    entries = sorted(analysis_set.analyzed, key=lambda entry: entry.raw_path)
+    return ResolvedTargetedInputs(
+        raw_paths=tuple(entry.raw_path for entry in entries),
+        injection_order=injection_order
+        if injection_order is not None
+        else {entry.raw_stem: entry.injection_order for entry in entries},
+        sample_metadata=tuple(entry.metadata for entry in entries),
     )
 
 

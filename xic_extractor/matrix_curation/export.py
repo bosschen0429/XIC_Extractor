@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import math
 from collections import Counter
@@ -56,8 +57,8 @@ from xic_extractor.sample_metadata import (
 )
 from xic_extractor.tabular_io import (
     escape_excel_formula,
-    read_tsv_with_header,
     read_tsv_with_header_snapshot,
+    validate_delimited_header,
     write_tsv,
 )
 
@@ -202,9 +203,12 @@ def describe_steps(
     missing_samples: str,
 ) -> list[dict[str, Any]]:
     """Each step with its parameters and, when it cannot run, the reason."""
-    header, _ = read_tsv_with_header(
-        source.matrix_path, required_columns=("Mz", "RT"), encoding="utf-8-sig"
-    )
+    with source.matrix_path.open(encoding="utf-8-sig", newline="") as stream:
+        header = validate_delimited_header(
+            next(csv.reader(stream, delimiter="\t"), ()),
+            path=source.matrix_path,
+            required_columns=("Mz", "RT"),
+        )
     inputs = CurationInputs(
         bind_samples(header[2:], metadata, missing=missing_samples),
         cell_evidence_problem(source),

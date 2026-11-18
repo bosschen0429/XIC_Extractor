@@ -9,10 +9,8 @@ import xic_extractor.processing_identity as processing_identity_module
 from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.targeted_inputs import (
-    ResolvedTargetedInputs,
     build_targeted_acquisition_sources,
     resolve_targeted_inputs,
-    resolve_targeted_raw_paths,
 )
 from xic_extractor.injection_timeline import InjectionHeader
 from xic_extractor.processing_identity import (
@@ -350,7 +348,6 @@ def test_sample_metadata_alias_projection_binds_targeted_sources(
     config = replace(_config(tmp_path), injection_order_source=metadata_path)
     resolved = resolve_targeted_inputs(
         config,
-        raw_paths=[raw_path],
         injection_order=None,
     )
 
@@ -395,10 +392,7 @@ def test_targeted_and_untargeted_read_one_sequence_owner(
     _create_synthetic_docx(sequence)
     config = replace(_config(tmp_path), injection_order_source=sequence)
 
-    raw_paths = resolve_targeted_raw_paths(config)
-    targeted = resolve_targeted_inputs(
-        config, raw_paths=raw_paths, injection_order=None
-    )
+    targeted = resolve_targeted_inputs(config, injection_order=None)
     untargeted = {
         row["raw_stem"]: row
         for row in load_samples(tmp_path, dll_dir=tmp_path, sequence_source=sequence)[
@@ -438,12 +432,6 @@ def _source_identity(path: Path):
 def _raw(path: Path, content: bytes) -> Path:
     path.write_bytes(content)
     return path
-
-
-def _resolved_inputs() -> ResolvedTargetedInputs:
-    return ResolvedTargetedInputs(
-        injection_order={"sample_a": 1, "sample_b": 2},
-    )
 
 
 def _config(tmp_path: Path) -> ExtractionConfig:

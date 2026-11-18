@@ -178,14 +178,12 @@ def test_queued_targeted_metadata_membership_is_frozen(tmp_path, monkeypatch):
 
     class Service:
         def execute_application(self, request):
-            selected = targeted_inputs.resolve_targeted_raw_paths(request.config)
             inputs = targeted_inputs.resolve_targeted_inputs(
                 request.config,
-                raw_paths=selected,
                 injection_order=None,
             )
             assert request.config.injection_order_source.read_bytes() == original_order
-            captured.append((request, selected, inputs))
+            captured.append((request, inputs.raw_paths, inputs))
             return SimpleNamespace(
                 active_output=SimpleNamespace(file_results=[], diagnostics=[]),
                 published_paths=(),
