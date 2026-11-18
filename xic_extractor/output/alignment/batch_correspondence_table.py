@@ -111,7 +111,10 @@ def batch_correspondence_summary(
             ),
             "coarse_half_width_min": batch_map.coarse_half_width_min,
             "loo_error_min": dict(sorted(batch_map.loo_error_min.items())),
-            "search_half_width_min": batch_map.search_half_width_min,
+            "search_window": [
+                {"reference_rt_min": rt, "half_width_min": width}
+                for rt, width in batch_map.search_window
+            ],
             "anchors_by_reference_rt_min": _by_segment(anchors_by_segment),
             "anchor_exclusions_by_rt_min": {
                 segment: dict(sorted(counts.items()))

@@ -7,15 +7,19 @@ that batch's own reference coordinate.
 
 1. Measured ISTDs give a coarse prediction: their offsets interpolated
    linearly, the nearest endpoint's offset outside them. The coarse window's
-   half-width is ``k`` times the largest ISTD leave-one-out error, at least
-   ``floor``.
+   half-width is ``k`` times the largest coarse ISTD leave-one-out error, at
+   least ``floor``.
 2. Features at the batch's ordinary-anchor prevalence pair as anchors when the
    window holds exactly one same-channel feature in both directions. Anchors
    whose RTs agree within ``family`` in both batches vote once.
 3. The ISTDs and anchors fit the sample-calibration owner's robust map from
    the batch's coordinate to the reference batch's.
 4. Every feature then pairs through that map, again only when unique in both
-   directions; every same-channel feature of a batch competes.
+   directions; every same-channel feature of a batch competes. The search
+   window follows RT: at a reference-batch RT its half-width is ``k`` times the
+   map's ISTD leave-one-out errors interpolated between the neighboring ISTDs
+   (the nearest ISTD's outside them), at least ``floor``. A feature's window is
+   taken at its own reference-batch RT.
 
 Pairing is a property of the feature sets, not of IDs, input order or which
 batch is listed first. Ambiguity is reported, never resolved by choosing.
@@ -113,7 +117,11 @@ class BatchMap:
     excluded_anchors: tuple[ExcludedAnchor, ...]
     calibration: SampleRtCalibration | None
     loo_error_min: Mapping[str, float]
-    search_half_width_min: float
+    # (reference-batch RT, search half-width) at each ISTD, in RT order.
+    search_window: tuple[tuple[float, float], ...]
+
+    def search_half_width_at(self, reference_rt_min: float) -> float:
+        return _interpolate(self.search_window, reference_rt_min)
 
     def to_reference(self, rt_min: float) -> float | None:
         if self.calibration is None:
@@ -240,6 +248,23 @@ def correspond_batches(
         reverse = (
             batch_map.from_reference if batch_map.calibration is not None else None
         )
+
+        def half_width(
+            item: BatchFeature,
+            batch_map: BatchMap = batch_map,
+            forward: Callable[[float], float | None] | None = forward,
+        ) -> float | None:
+            position = (
+                item.reference_rt_min
+                if item.batch_id == reference_batch
+                else None
+                if forward is None
+                else forward(item.reference_rt_min)
+            )
+            return (
+                None if position is None else batch_map.search_half_width_at(position)
+            )
+
         for feature in batch_features:
             identity_partner = by_identity.get(feature.key)
             if identity_partner is not None:
@@ -264,7 +289,7 @@ def correspond_batches(
                 unbound,
                 forward,
                 reverse,
-                batch_map.search_half_width_min,
+                half_width,
                 channel,
             )
             decisions[(batch, feature.key)] = FeatureCorrespondence(
@@ -287,7 +312,7 @@ def correspond_batches(
                 unbound_reference,
                 reverse,
                 forward,
-                batch_map.search_half_width_min,
+                half_width,
                 channel,
             )
             reference_reasons[feature.key].append(
@@ -359,13 +384,14 @@ def _match(
     own: Sequence[BatchFeature],
     forward: Callable[[float], float | None],
     reverse: Callable[[float], float | None],
-    half_width: float,
+    half_width: Callable[[BatchFeature], float | None],
     channel: Callable[[BatchFeature, BatchFeature], bool],
 ) -> tuple[PairingState, BatchFeature | None, list[BatchFeature]]:
     predicted = forward(feature.reference_rt_min)
-    if predicted is None:
+    width = half_width(feature)
+    if predicted is None or width is None:
         return "unpaired_no_map", None, []
-    any_channel, found = _window(feature, others, predicted, half_width, channel)
+    any_channel, found = _window(feature, others, predicted, width, channel)
     if not any_channel:
         return "unpaired_no_candidate", None, []
     if not found:
@@ -374,9 +400,10 @@ def _match(
         return "unpaired_ambiguous", None, found
     partner = found[0]
     back = reverse(partner.reference_rt_min)
-    if back is None:
+    back_width = half_width(partner)
+    if back is None or back_width is None:
         return "unpaired_no_map", None, []
-    _, returned = _window(partner, own, back, half_width, channel)
+    _, returned = _window(partner, own, back, back_width, channel)
     if [item.key for item in returned] != [feature.key]:
         return (
             "unpaired_ambiguous",
@@ -407,6 +434,16 @@ def _offset_predictor(
     return predict
 
 
+def _interpolate(points: Sequence[tuple[float, float]], x: float) -> float:
+    """Linear interpolation over sorted ``(x, y)``; the nearest y outside."""
+    if x <= points[0][0]:
+        return points[0][1]
+    for (x0, y0), (x1, y1) in zip(points, points[1:], strict=False):
+        if x <= x1:
+            return y0 + (x - x0) / (x1 - x0) * (y1 - y0) if x1 > x0 else y1
+    return points[-1][1]
+
+
 def _fit_batch_map(
     batch: str,
     batch_features: Sequence[BatchFeature],
@@ -429,7 +466,7 @@ def _fit_batch_map(
         for label in labels
     )
     if len(istds) < 2:
-        return BatchMap(batch, istds, {}, math.nan, (), (), None, {}, math.nan)
+        return BatchMap(batch, istds, {}, math.nan, (), (), None, {}, ())
     coarse_loo = {
         label: abs(
             _offset_predictor([(x, y) for other, x, y in istds if other != label])(x)
@@ -454,7 +491,7 @@ def _fit_batch_map(
             batch_features,
             forward,
             reverse,
-            coarse_half_width,
+            lambda _item: coarse_half_width,
             channel,
         )
         if partner is not None and partner.sample_count < reference_floor:
@@ -486,8 +523,16 @@ def _fit_batch_map(
         estimate = held_out.estimate_rt(x) if held_out is not None else None
         if estimate is not None:
             loo[label] = abs(estimate.rt_min - y)
-    search_half_width = (
-        max(floor_min, multiplier * max(loo.values())) if loo else coarse_half_width
+    search_window = (
+        tuple(
+            sorted(
+                (y, max(floor_min, multiplier * loo[label]))
+                for label, _x, y in istds
+                if label in loo
+            )
+        )
+        if loo
+        else tuple(sorted((y, coarse_half_width) for _label, _x, y in istds))
     )
     return BatchMap(
         batch_id=batch,
@@ -498,7 +543,7 @@ def _fit_batch_map(
         excluded_anchors=tuple(excluded),
         calibration=calibration,
         loo_error_min=loo,
-        search_half_width_min=search_half_width,
+        search_window=search_window,
     )
 
 

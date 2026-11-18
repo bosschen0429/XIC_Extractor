@@ -207,9 +207,14 @@ the single-batch path unchanged. There is no cross-batch Backfill.
 - **Pairing**: a Matrix feature bound to a known ISTD pairs with the other
   batch's feature bound to the same ISTD, by identity and without an RT
   search; neither is a candidate for any other feature. Every other
-  feature is searched through the map, with half-width
-  `max(0.2 min, 2 × largest leave-one-out ISTD error of the map)`. A feature
-  pairs only when the match is unique both ways. More than one candidate in the
+  feature is searched through the map. The search window follows RT: at each
+  ISTD its half-width is `max(0.2 min, 2 × that ISTD's leave-one-out error of
+  the map)`, interpolated linearly between neighboring ISTDs in the reference
+  batch's coordinate and held at the nearest ISTD's value before the first and
+  after the last. Each feature's window is taken at its own reference-batch RT,
+  so a region the ISTDs measure well keeps a narrow window and a poorly
+  measured region a wide one. A feature pairs only when the match is unique
+  both ways. More than one candidate in the
   window is `unpaired_ambiguous` and lists the candidates; a reverse match that
   points elsewhere lists that competitor. An unpaired feature keeps its own row.
 
@@ -229,7 +234,8 @@ Outputs:
   `state`,
   `partner_group_id` and `competitor_group_ids`.
 - Run metadata `batch_correspondence` records each map's status, knot and
-  anchor counts, coarse ISTDs, leave-one-out errors, half-widths, and anchors
+  anchor counts, coarse ISTDs, leave-one-out errors, the coarse half-width,
+  the search window (half-width at each ISTD's reference RT), and anchors
   and exclusion reasons per 4 min reference RT segment, with feature states and
   paired and single-batch row counts. `rt_drift_summary` is keyed by batch.
 - The review TSV adds `batch_ids` and `batch_pairing`. Counts add up; the other

@@ -190,3 +190,33 @@ def test_istds_bound_to_one_identity_pair_by_identity_not_by_rt():
     assert _state(result, "new", "istd").partners == (("old", "istd"),)
     # The bound pair is not a candidate for the twin.
     assert _state(result, "old", "twin").state == "unpaired_no_candidate"
+
+
+def test_search_window_follows_the_map_error_of_neighboring_istds():
+    # The last ISTD alone departs from the shift, so only the late map is
+    # uncertain: a competitor 0.5 min away is ambiguous late but not early.
+    istds = [
+        istd
+        for index, rt in enumerate(ISTD_RT)
+        for istd in (
+            BatchIstd("new", f"I{index}", rt),
+            BatchIstd("old", f"I{index}", rt + (1.3 if rt == ISTD_RT[-1] else SHIFT)),
+        )
+    ]
+    features = [item for item in _anchor_features() if item.reference_rt_min < 25]
+    features += [
+        BatchFeature("old", "early", "dR", 500.0, 20.0 + SHIFT, 10),
+        BatchFeature("new", "early", "dR", 500.0, 20.0, 60),
+        BatchFeature("new", "early_rival", "dR", 500.0, 20.5, 60),
+        BatchFeature("old", "late", "dR", 600.0, 38.0 + SHIFT, 10),
+        BatchFeature("new", "late", "dR", 600.0, 38.0, 60),
+        BatchFeature("new", "late_rival", "dR", 600.0, 38.5, 60),
+    ]
+    result = _run(features, istds)
+    batch_map = result.map_for("old")
+    assert batch_map is not None
+    assert batch_map.search_half_width_at(20.0) == pytest.approx(0.2)
+    assert batch_map.search_half_width_at(38.0) > 1.0
+    assert _state(result, "old", "early").partners == (("new", "early"),)
+    assert _state(result, "new", "early_rival").state == "unpaired_outside_window"
+    assert _state(result, "old", "late").state == "unpaired_ambiguous"
