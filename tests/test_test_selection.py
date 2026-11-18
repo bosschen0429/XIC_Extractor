@@ -1337,3 +1337,11 @@ def test_ci_required_check_accepts_only_success_or_planned_browser_skip(
     assert (completed.returncode == 0) == expected_success, (
         completed.stdout + completed.stderr
     )
+
+
+def test_known_empty_diff_does_not_scan_a_repository(tmp_path):
+    # A nonexistent package cannot be graphed. An empty diff doesn't need one.
+    plan = test_selection.plan_for_change(
+        [], root=tmp_path, packages=("not_a_package",), base_expression=""
+    )
+    assert plan.files == ()

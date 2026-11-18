@@ -134,7 +134,9 @@ def plan_for_change(
 
     relevant = set(relevant_markers(changed))
     files: tuple[str, ...] | None = None
-    if not any(FULL_RUN_INPUTS.match(path) for path in changed):
+    if not changed:
+        files = ()
+    elif not any(FULL_RUN_INPUTS.match(path) for path in changed):
         repository = _Repository(root, packages, test_package)
         selected: set[str] = set()
         for path in changed:
