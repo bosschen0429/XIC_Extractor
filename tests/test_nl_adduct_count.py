@@ -6,13 +6,14 @@ from xic_extractor.diagnostics.nl_adduct_count import (
     Anchor,
     Candidate,
     RunCount,
-    anchor_rt_map,
     build_units,
     cumulative,
     group_candidates,
     other_sugar_checks,
     overlap,
+    rt_map,
     shape_pairs,
+    shared_rt_pairs,
     synced,
     union_runs,
 )
@@ -134,7 +135,7 @@ def test_controls_union_cumulative_and_shared_compounds_after_rt_mapping():
         Anchor("dA", 252.1091, 19.6 + shift),
     )
     controls = [
-        _run((_c("a", 400.0, 20.2), _c("u", mz, 30.2, events=1)), anchors=anchors(0.2))
+        _run((_c("a", 400.0, 14.4), _c("u", mz, 30.2, events=1)), anchors=anchors(0.2))
         for mz in (500.0, 510.0)
     ]
     consensus = union_runs(controls)
@@ -144,11 +145,11 @@ def test_controls_union_cumulative_and_shared_compounds_after_rt_mapping():
         ((1,), True),
     ]
     assert cumulative(consensus, 2) == {"counted": [1, 1], "unconfirmed": [1, 2]}
-    main = _run((_c("a", 400.0, 19.9),), anchors=anchors(0.0))
-    # 19.9 maps to 20.1, within 0.3 min of 20.2 only after mapping by anchors.
+    main = _run((_c("a", 400.0, 14.0),), anchors=anchors(0.0))
+    # 14.0 maps to 14.2, within 0.3 min of 14.4 only after mapping by nucleosides.
     assert overlap(main, controls, consensus) == [
         {
-            "unit": "400.0000@19.90",
+            "unit": "400.0000@14.00",
             "kind": "other",
             "control_injections": 2,
             "control_unconfirmed": False,
@@ -156,9 +157,46 @@ def test_controls_union_cumulative_and_shared_compounds_after_rt_mapping():
     ]
 
 
-def test_anchor_rt_map_interpolates_and_shifts_past_the_ends():
-    rt_map = anchor_rt_map(
-        (Anchor("dC", 0, 8.0), Anchor("dA", 0, 20.0), Anchor("dU", 0, None)),
-        {"dC": 9.0, "dA": 20.5},
+def test_compounds_extend_rt_pairs_only_past_nucleosides_and_one_to_one():
+    nucleosides = lambda shift: (  # noqa: E731
+        Anchor("dC", 228.0979, 8.66 + shift),
+        Anchor("dA", 252.1091, 19.6 + shift),
     )
-    assert [rt_map(rt) for rt in (4.0, 8.0, 14.0, 30.0)] == [5.0, 9.0, 14.75, 30.5]
+    control = _run(
+        (
+            _c("inside", 300.0, 15.0),  # odd shift inside the nucleoside range
+            _c("late", 400.0, 30.0),  # batches agree after the last nucleoside
+            _c("twin1", 450.0, 32.0),
+            _c("twin2", 450.0, 32.5),  # two partners: ambiguous
+            _c("x", 500.0, 35.0),
+        ),
+        anchors=nucleosides(0.4),
+    )
+    main = _run(
+        (
+            _c("inside", 300.0, 14.0),
+            _c("late", 400.0, 30.0),
+            _c("twin", 450.0, 32.2),
+            _c("x", 500.0, 35.1),
+        ),
+        anchors=nucleosides(0.0),
+    )
+    consensus = union_runs([control])
+    assert shared_rt_pairs(main, [control], consensus) == [
+        (8.66, 9.06),
+        (19.6, 20.0),
+        (30.0, 30.0),
+        (35.1, 35.0),
+    ]
+    # Without the late compound pairs, the +0.4 nucleoside shift would carry on.
+    assert {row["unit"] for row in overlap(main, [control], consensus)} == {
+        "400.0000@30.00",
+        "450.0000@32.20",
+        "500.0000@35.10",
+    }
+
+
+def test_rt_map_interpolates_and_shifts_past_the_ends():
+    mapped = rt_map([(20.0, 20.5), (8.0, 9.0)])
+    assert [mapped(rt) for rt in (4.0, 8.0, 14.0, 30.0)] == [5.0, 9.0, 14.75, 30.5]
+    assert rt_map([])(12.0) == 12.0
