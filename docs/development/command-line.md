@@ -4,7 +4,7 @@
 
 ## Source Setup
 
-依 [repo README](../../README.md#run-the-html-workbench) 安裝與啟動。開發環境、RAW 路徑與驗證尺度依 [Local Execution](../agent/local-execution.md)。
+依[開發者入口](README.md#從原始碼執行)安裝與啟動。開發環境、RAW 路徑與驗證尺度依 [Local Execution](../agent/local-execution.md)。
 
 ## Reader CLI
 

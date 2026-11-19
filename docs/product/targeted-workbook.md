@@ -141,4 +141,4 @@ sidecar is published, and Targeted runs have no replay entry point.
   routing: `xic_extractor.output.review_queue_model`.
 - Saved-workbook reader: `xic_inspector.sources.targeted_workbook`
   ([Workbench and review](workbench.md)).
-- Column meanings for users: [result files](../user/results.md#targeted-excel).
+- Column meanings for users: [Targeted guide](../user/targeted.md#excel-結果).
