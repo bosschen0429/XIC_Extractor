@@ -10,29 +10,58 @@ from xic_extractor.evidence.neutral_loss import NLResult
 from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.output.detection import MissingTargetedProductProjectionError
 from xic_extractor.output.messages import build_diagnostic_records
-from xic_extractor.output.review_queue_model import review_queue_rows
 from xic_extractor.output.sheet_results import _build_data_sheet
+from xic_extractor.output.workbook_styles import FOCUS, INK, MUTED
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
+_COUNTED = {"counted_detection": "TRUE", "product_state": "detected_clean"}
+_MISSED = {"counted_detection": "FALSE", "product_state": "not_counted"}
 
-def test_data_sheet_preserves_measurements_and_compact_review_fields() -> None:
+
+def test_data_sheet_preserves_measurements_and_marks_labels_to_look_at() -> None:
     rows = [
-        _long_row("Tumor_1", "Analyte", "9.1234", "12345.6", "OK"),
-        _long_row("Tumor_2", "Analyte", "9.2", "22345.6", "WARN_12.3ppm"),
-        _long_row("Tumor_3", "Analyte", "ND", "ND", "ND"),
+        _long_row(
+            "Tumor_1", "Analyte", "9.1234", "12345.6", "OK", **_COUNTED, basis="NL 確認"
+        ),
+        _long_row(
+            "Tumor_2",
+            "Analyte",
+            "9.2",
+            "22345.6",
+            "NO_MS2",
+            **_COUNTED,
+            basis="ISTD 位置",
+            doubts="無 MS2、訊號缺口",
+        ),
+        _long_row(
+            "Tumor_3", "Analyte", "ND", "ND", "", **_MISSED, basis="無可用 MS1 峰"
+        ),
+        _long_row(
+            "Tumor_4", "Analyte", "9.3", "100", "", **_MISSED, basis="肩峰／重疊"
+        ),
     ]
     wb = Workbook()
     ws = wb.active
-    _build_data_sheet(ws, rows, review_rows=review_queue_rows(rows, []))
+    _build_data_sheet(ws, rows)
     records = _sheet_records(ws)
     assert [(r["SampleName"], r["RT"], r["Area"]) for r in records] == [
         ("Tumor_1", 9.1234, 12345.6),
         ("Tumor_2", 9.2, 22345.6),
         ("Tumor_3", "ND", "ND"),
+        ("Tumor_4", 9.3, 100),
     ]
-    assert records[0]["NL Evidence"] == "已觀察到"
-    assert records[1]["NL Evidence"] == "已觀察到（質量偏差偏大）"
-    assert records[1]["Review Reason"].replace("\n", "") == "中性丟失質量偏差偏大"
+    assert [(r["依據"], r["疑點"] or "") for r in records] == [
+        ("NL 確認", ""),
+        ("ISTD 位置", "無 MS2、訊號缺口"),
+        ("無可用 MS1 峰", ""),
+        ("肩峰／重疊", ""),
+    ]
+    # The accent marks only the label cells that need a look.
+    accent = [
+        (ws[f"G{row}"].font.color.rgb[-6:], ws[f"H{row}"].font.color.rgb[-6:])
+        for row in range(2, 6)
+    ]
+    assert accent == [(INK, INK), (INK, FOCUS), (MUTED, MUTED), (FOCUS, MUTED)]
     # RT precedes Area; intensities read as scientific notation. Numbers align
     # right and text left so a column scans by magnitude.
     assert ws["C2"].number_format == "0.00"
@@ -44,7 +73,7 @@ def test_data_sheet_preserves_measurements_and_compact_review_fields() -> None:
     assert records[0]["PeakWidth"] == 0.4
     assert ws["E2"].number_format == "0.00E+00"
     assert ws.freeze_panes == "C2"
-    assert ws.tables["TargetedResults"].ref == "A1:N4"
+    assert ws.tables["TargetedResults"].ref == "A1:M5"
     assert ws.auto_filter.ref is None
     wb.close()
 
@@ -55,7 +84,7 @@ def test_data_sheet_keeps_each_filtered_row_self_identifying() -> None:
         _long_row("Tumor_1", "B", "9.2", "200", "OK"),
     ]
     wb = Workbook()
-    _build_data_sheet(wb.active, rows, review_rows=[])
+    _build_data_sheet(wb.active, rows)
     records = _sheet_records(wb.active)
     assert not wb.active.merged_cells.ranges
     assert [(r["SampleName"], r["Target"], r["Group"]) for r in records] == [
@@ -65,7 +94,7 @@ def test_data_sheet_keeps_each_filtered_row_self_identifying() -> None:
     wb.close()
 
 
-def test_data_sheet_preserves_reason_without_dumping_projection_codes() -> None:
+def test_data_sheet_shows_saved_labels_without_dumping_projection_codes() -> None:
     row = _long_row(
         "SampleA",
         "Analyte",
@@ -74,23 +103,22 @@ def test_data_sheet_preserves_reason_without_dumping_projection_codes() -> None:
         "OK",
         counted_detection="FALSE",
         product_state="ambiguous",
+        basis="證據衝突",
     )
     row.update(
         {
-            "Reason": "A measured peak needs review.",
-            "Projection Reason": "conflict: targeted_rt_conflict",
-            "Projection Conflict Reasons": "targeted_rt_conflict",
+            "Projection Reason": "conflict: ambiguous_evidence",
+            "Projection Conflict Reasons": "ambiguous_evidence",
         }
     )
     wb = Workbook()
-    _build_data_sheet(wb.active, [row], review_rows=review_queue_rows([row], []))
+    _build_data_sheet(wb.active, [row])
     record = _sheet_records(wb.active)[0]
-    assert record["Reason"] == row["Reason"]
+    assert record["依據"] == "證據衝突"
     assert record["Area"] == 123
     assert record["Counted Detection"] == "FALSE"
-    assert record["Review Reason"].replace("\n", "") == "證據衝突，身分未定"
     assert not any(header.startswith("Projection ") for header in record)
-    assert "Legacy Authority Status" not in record
+    assert {"Reason", "Review Reason", "NL Evidence"}.isdisjoint(record)
     wb.close()
 
 
@@ -99,125 +127,12 @@ def test_data_sheet_forces_sample_names_and_target_labels_to_literal_text() -> N
     wb = Workbook()
     ws = wb.active
 
-    _build_data_sheet(ws, rows, review_rows=review_queue_rows(rows, []))
+    _build_data_sheet(ws, rows)
 
     assert ws["A2"].value == "'+Sample"
     assert ws["A2"].data_type != "f"
     assert ws["B2"].value == "'=Bad"
     assert ws["B2"].data_type != "f"
-
-
-def test_review_queue_aggregates_diagnostics_by_sample_target() -> None:
-    rows = [
-        _long_row(
-            "Tumor_1",
-            "Analyte",
-            "9.0",
-            "10000",
-            "NL_FAIL",
-            reason="concerns: nl_support (major); local_sn (minor)",
-        ),
-        _long_row(
-            "Tumor_1",
-            "Analyte",
-            "9.1",
-            "11000",
-            "OK",
-            reason="all checks passed",
-        ),
-    ]
-    diagnostics = [
-        {
-            "SampleName": "Tumor_1",
-            "Target": "Analyte",
-            "Issue": "NL_FAIL",
-            "Reason": "strict observed neutral loss missing",
-        },
-        {
-            "SampleName": "Tumor_1",
-            "Target": "Analyte",
-            "Issue": "ANCHOR_MISMATCH",
-            "Reason": "selected RT is far from anchor",
-        },
-    ]
-
-    review_rows = review_queue_rows(rows, diagnostics)
-
-    assert len(review_rows) == 1
-    assert review_rows[0]["Priority"] == "1"
-    assert review_rows[0]["Sample"] == "Tumor_1"
-    assert review_rows[0]["Target"] == "Analyte"
-    assert review_rows[0]["Status"] == "Review"
-    assert review_rows[0]["Why"] == "MS2 未見預期的中性丟失"
-    assert review_rows[0]["Issue Count"] == "2"
-    assert review_rows[0]["Evidence"] == "NL_FAIL; ANCHOR_MISMATCH"
-
-
-def test_review_queue_does_not_reopen_confirmed_results_from_diagnostic_history():
-    row = _long_row(
-        "Recovered",
-        "ISTD",
-        "9.1",
-        "123",
-        "NL_FAIL",
-        role="ISTD",
-        counted_detection="TRUE",
-        product_state="detected_clean",
-    ) | {
-        "Review State": "none",
-        "Projection Support Reasons": "cross_sample_backfill_identity",
-    }
-    diagnostics = [
-        {"SampleName": "Recovered", "Target": "ISTD", "Issue": issue, "Reason": issue}
-        for issue in (
-            "NL_FAIL",
-            "MULTI_PEAK",
-            "ANCHOR_RT_MISMATCH",
-            "BACKFILL_ACCEPTED",
-        )
-    ]
-    assert review_queue_rows([row], diagnostics) == []
-
-
-def test_review_queue_clean_product_has_no_issue() -> None:
-    rows = [
-        _long_row(
-            "Tumor_1",
-            "Analyte",
-            "9.3",
-            "40000",
-            "OK",
-            reason="decision: detected_clean; support: ms1_peak_present",
-            counted_detection="TRUE",
-            product_state="detected_clean",
-        )
-    ]
-
-    review_rows = review_queue_rows(rows, [])
-
-    assert review_rows == []
-
-
-def test_review_queue_does_not_turn_ordinary_nd_into_attention() -> None:
-    row = _long_row(
-        "Absent",
-        "Analyte",
-        "ND",
-        "ND",
-        "NO_MS2",
-        counted_detection="FALSE",
-        product_state="not_counted",
-    ) | {"Projection Not Counted Reasons": "missing_positive_ms1_peak"}
-    diagnostics = [{"SampleName": "Absent", "Target": "Analyte", "Issue": "NO_SIGNAL"}]
-    assert review_queue_rows([row], diagnostics) == []
-    # A missing spiked internal standard is actionable, unlike an absent analyte.
-    istd = row | {"Role": "ISTD"}
-    assert review_queue_rows([istd], diagnostics)[0]["Why"] == "ISTD 未檢出"
-    failed = row | {"Projection Exclusion Reasons": "file_error"}
-    assert review_queue_rows([failed], diagnostics)[0]["Why"] == "RAW 處理失敗"
-    # Missing signal must not conceal an independent unresolved conflict.
-    row["Projection Conflict Reasons"] = "identity_conflict"
-    assert review_queue_rows([row], diagnostics)[0]["Status"] == "Review"
 
 
 def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
@@ -241,6 +156,7 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
             "NO_MS2",
             counted_detection="FALSE",
             product_state="not_counted",
+            basis="無 MS2",
         ),
     ]
     rows[1].update(
@@ -274,139 +190,11 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
         ("Sample A", 123, "TRUE"),
         ("Sample B", 456, "FALSE"),
     ]
-    assert records[1]["Review Reason"] == "未設定配對 ISTD，無法確認身分"
+    assert records[1]["依據"] == "無 MS2"
     assert "targeted_workbook_layout_version" not in {
         row[0] for row in wb["Run Metadata"].values
     }
     wb.close()
-
-
-@pytest.mark.parametrize(
-    ("qualification", "istd_pair", "why"),
-    [
-        # The MS1 shape failed, so the paired ISTD could not lend identity.
-        ("", "", "MS1 峰形未通過：肩峰／重疊"),
-        # A qualified MS1 peak lacks only an identity source.
-        ("ms1_coherent", "", "未設定配對 ISTD，無法確認身分"),
-        ("ms1_coherent", "d3-8-oxodG", "配對 ISTD 在此樣本未計入，無法確認身分"),
-        ("cross_sample_backfill_localization", "", "未設定配對 ISTD，無法確認身分"),
-    ],
-)
-def test_review_names_the_decisive_ms1_evidence_not_missing_ms2(
-    qualification, istd_pair, why
-):
-    row = _long_row(
-        "TumorBC2312_DNA",
-        "8-oxodG",
-        "16.4936",
-        "513298",
-        "NO_MS2",
-        istd_pair=istd_pair,
-        counted_detection="FALSE",
-        product_state="not_counted",
-    )
-    row.update(
-        {
-            "Projection Support Reasons": (
-                "ms1_peak_present;paired_istd_anchor_support;trace_coherent"
-            )
-            + (f";{qualification}" if qualification else ""),
-            "Projection Review Reasons": (
-                "missing_ms2_not_observed;physical_shoulder_overlap;"
-                "trace_morphology_review"
-            ),
-            "Projection Not Counted Reasons": "missing_ms2_policy_not_counted",
-        }
-    )
-    queue = review_queue_rows([row], [])
-    wb = Workbook()
-    _build_data_sheet(wb.active, [row], review_rows=queue)
-    saved = _sheet_records(wb.active)[0]
-    assert saved["RT"] == 16.4936
-    assert saved["Area"] == 513298
-    assert saved["Counted Detection"] == "FALSE"
-    assert saved["Review Reason"] == why
-    # Under CID a missing neutral loss is a given fact, not the thing to check.
-    assert "MS2" not in why
-    wb.close()
-
-
-@pytest.mark.parametrize(
-    ("shape_review", "why"),
-    [
-        ("trace_morphology_review", "MS1 峰形未通過：形狀不連續或不完整"),
-        ("", "MS1 峰形未通過，無法由配對 ISTD 確認身分"),
-    ],
-)
-def test_an_unqualified_ms1_peak_is_not_blamed_on_the_paired_istd(shape_review, why):
-    row = _long_row(
-        "TumorBC2312_DNA",
-        "8-oxodG",
-        "16.4936",
-        "513298",
-        "NO_MS2",
-        istd_pair="d3-8-oxodG",
-        counted_detection="FALSE",
-        product_state="not_counted",
-    )
-    row.update(
-        {
-            # A hard quality flag removed trace coherence, so the paired ISTD
-            # could not lend identity whether or not it was counted.
-            "Projection Support Reasons": "ms1_peak_present;ms1_coherent",
-            "Projection Review Reasons": shape_review,
-            "Projection Not Counted Reasons": "missing_ms2_policy_not_counted",
-        }
-    )
-    [review] = review_queue_rows([row], [])
-    assert review["Why"] == why
-
-
-def test_a_counted_result_noted_only_for_missing_neutral_loss_stays_quiet():
-    row = _long_row(
-        "Sample A",
-        "Analyte",
-        "9.1",
-        "123",
-        "NO_MS2",
-        counted_detection="TRUE",
-        product_state="detected_flagged",
-    )
-    row.update(
-        {
-            "Review State": "flagged",
-            "Projection Support Reasons": "ms1_peak_present;ms1_coherent",
-            "Projection Review Reasons": "missing_ms2_not_observed",
-        }
-    )
-    # Under CID a missing MS2 scan is a given fact, not a concern to list.
-    assert review_queue_rows([row], []) == []
-
-
-@pytest.mark.parametrize(
-    "review_reason",
-    ["physical_shoulder_overlap", "trace_morphology_review", "targeted_rt_review"],
-)
-def test_counted_review_names_its_concern_not_missing_ms2(review_reason):
-    row = _long_row(
-        "Sample A",
-        "Analyte",
-        "9.1",
-        "123",
-        "NO_MS2",
-        counted_detection="TRUE",
-        product_state="detected_flagged",
-    )
-    row.update(
-        {
-            "Review State": "flagged",
-            "Projection Support Reasons": "ms1_coherent;paired_istd_identity",
-            "Projection Review Reasons": review_reason,
-        }
-    )
-    [review] = review_queue_rows([row], [])
-    assert review["Why"]
-    assert "MS2" not in review["Why"]
 
 
 def test_run_blocks_product_long_results_without_projection_fields(
@@ -478,56 +266,6 @@ def test_run_blocks_legacy_wide_csv_without_product_projection(
         run(config, targets)
 
 
-def test_review_queue_evidence_uses_short_tags() -> None:
-    rows = [
-        _long_row(
-            "BenignfatBC1055_DNA",
-            "8-oxodG",
-            "17.177",
-            "1850221.22",
-            "NL_FAIL",
-            reason="concerns: rt_prior (major); weak candidate: too_broad",
-        )
-    ]
-    diagnostics = [
-        {
-            "SampleName": "BenignfatBC1055_DNA",
-            "Target": "8-oxodG",
-            "Issue": "NL_FAIL",
-            "Reason": (
-                "selected candidate has 2 candidate-aligned MS2 trigger scans; "
-                "strict observed neutral loss 116.047 Da not detected in any "
-                "aligned scan; "
-                "alignment=region"
-            ),
-        },
-        {
-            "SampleName": "BenignfatBC1055_DNA",
-            "Target": "8-oxodG",
-            "Issue": "ANCHOR_RT_MISMATCH",
-            "Reason": (
-                "Paired analyte peak RT 17.177 min deviates 0.71 min from "
-                "ISTD anchor at 16.470 min (allowed +/-0.50 min)"
-            ),
-        },
-        {
-            "SampleName": "BenignfatBC1055_DNA",
-            "Target": "8-oxodG",
-            "Issue": "MULTI_PEAK",
-            "Reason": (
-                "4 qualified physical candidates in selection window; "
-                "selected RT 17.1770 min"
-            ),
-        },
-    ]
-
-    queue = review_queue_rows(rows, diagnostics)
-
-    assert queue[0]["Evidence"] == "NL_FAIL; anchor dRT=0.71 min; multi_peak=4"
-    assert "selected candidate has" not in queue[0]["Evidence"]
-    assert len(queue[0]["Evidence"]) < 80
-
-
 def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
     tmp_path: Path,
 ) -> None:
@@ -585,9 +323,9 @@ def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
     )
     assert "selected RT 9.0000 min" in records[0].reason
     record = _sheet_records(workbook["XIC Results"])[0]
-    assert record["Review Reason"] is None
-    # An informational event is not a worklist entry; its full text stays on
-    # the hidden trace sheet so a past selection can still be explained.
+    assert record["疑點"] is None
+    # An informational event adds no label; its full text stays on the hidden
+    # trace sheet so a past selection can still be explained.
     assert "需檢查" not in workbook.sheetnames
     assert workbook["診斷事件"].sheet_state == "hidden"
     assert any(
@@ -614,9 +352,10 @@ def _long_row(
     *,
     role: str = "Analyte",
     istd_pair: str = "",
-    reason: str = "all checks passed",
     counted_detection: str | None = None,
     product_state: str = "",
+    basis: str = "",
+    doubts: str = "",
 ) -> dict[str, str]:
     row = {
         "SampleName": sample_name,
@@ -627,19 +366,13 @@ def _long_row(
         "RT": rt,
         "Area": area,
         "NL": nl,
-        "NL Evidence": {
-            "OK": "已觀察到",
-            "WARN": "已觀察到（質量偏差偏大）",
-            "NL_FAIL": "所選峰未見預期的中性丟失",
-            "NO_MS2": "所選峰沒有對應的 MS2",
-            "ERROR": "處理錯誤",
-        }.get(nl.split("_")[0] if nl.startswith("WARN_") else nl, "無資料"),
         "Int": "1000",
         "IntSmoothed": "900",
         "PeakStart": "8.9",
         "PeakEnd": "9.3",
         "PeakWidth": "0.4000",
-        "Reason": reason,
+        "依據": basis,
+        "疑點": doubts,
     }
     if counted_detection is not None:
         row.update(

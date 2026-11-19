@@ -135,11 +135,10 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         "Area",
         "IntSmoothed",
         "Counted Detection",
-        "Review Reason",
+        "依據",
+        "疑點",
         "PeakStart",
         "PeakEnd",
-        "NL Evidence",
-        "Reason",
         "Group",
         "Int",
         "PeakWidth",
@@ -158,15 +157,14 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert record["IntSmoothed"] == 450.0
     assert record["Int"] == 500.0
     assert record["PeakWidth"] == 0.3
-    assert record["NL Evidence"] == "已觀察到（質量偏差偏大）"
-    assert record["Review Reason"].replace("\n", "") == "證據需檢查"
+    assert (record["依據"], record["疑點"]) == ("NL 偏差大", "訊號缺口")
     assert not ws.merged_cells.ranges
     assert ws.freeze_panes == "C2"
     result_columns = {cell.value: cell.column_letter for cell in ws[1]}
-    # Measurements, counted status and review reasons show; evidence collapses.
-    for header in headers[:7]:
+    # Measurements, counted status and the labels show; evidence collapses.
+    for header in headers[:8]:
         assert ws.column_dimensions[result_columns[header]].hidden is not True
-    for header in headers[7:]:
+    for header in headers[8:]:
         assert ws.column_dimensions[result_columns[header]].hidden is True
 
     ws_metadata = wb["Run Metadata"]
@@ -198,7 +196,7 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     )
     saved = report.payload["items"][0]["details"]
     assert saved["records"][0]["Area"] == 123.45
-    assert saved["review_queue"][0]["Why"].replace("\n", "") == "證據需檢查"
+    assert saved["records"][0]["疑點"] == "訊號缺口"
 
 
 def test_workbook_keeps_an_event_without_a_result_on_the_worklist(tmp_path):
@@ -206,8 +204,9 @@ def test_workbook_keeps_an_event_without_a_result_on_the_worklist(tmp_path):
 
     config = _config(tmp_path)
     original = _run_output(with_diagnostics=False)
-    # A RAW file that failed to open has no result row; its message must stay
-    # readable because no XIC view can explain it.
+    # A RAW file that failed to open has no result row; it stays on the
+    # worklist, and its message on the trace sheet, because no XIC view can
+    # explain it.
     diagnostic = DiagnosticRecord(
         sample_name="Another sample",
         target_label="",
@@ -225,10 +224,8 @@ def test_workbook_keeps_an_event_without_a_result_on_the_worklist(tmp_path):
     headers = [cell.value for cell in rows[0]]
     record = {h: cell for h, cell in zip(headers, rows[1], strict=True)}
     assert record["樣本"].value == "Another sample"
-    assert record["結果"].value == "未記錄判定"
-    assert record["原因"].value.startswith("RAW 處理失敗：")
-    assert record["原因"].value.endswith(diagnostic.reason)
-    assert record["原因"].data_type != "f"
+    assert record["結果"].value is None
+    assert record["依據"].value == "RAW 失敗"
     # The full event also stays on the hidden trace sheet, as literal text.
     events = book["診斷事件"]
     assert events.sheet_state == "hidden"
@@ -244,7 +241,7 @@ def test_workbook_keeps_an_event_without_a_result_on_the_worklist(tmp_path):
     book.close()
 
 
-def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
+def test_workbook_shows_backfill_labels_without_changing_saved_counts(tmp_path):
     from xic_extractor.output.workbook_builder import write_workbook_from_rows
     from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
 
@@ -258,21 +255,22 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
             "PeakStart": "8.5",
             "PeakEnd": "9.5",
             "NL": "NL_FAIL",
-            "NL Evidence": "所選峰未見預期的中性丟失",
             "Counted Detection": counted,
             "Product State": state,
-            "Projection Support Reasons": support,
+            "依據": basis,
+            "疑點": doubts,
         }
-        for sample, rt, area, counted, state, support in (
+        for sample, rt, area, counted, state, basis, doubts in (
             (
                 "Recovered",
                 "9.1",
                 "123.45",
                 "TRUE",
                 "detected_flagged",
-                "cross_sample_backfill_identity",
+                "回填",
+                "未見 NL",
             ),
-            ("Held", "9.2", "678.90", "FALSE", "not_counted", ""),
+            ("Held", "9.2", "678.90", "FALSE", "not_counted", "未見 NL", ""),
         )
     ]
     diagnostics = [
@@ -298,9 +296,12 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
         for row in summary[summary.tables["TargetedReview"].ref]
     ]
     records = {row[1]: dict(zip(values[0], row, strict=True)) for row in values[1:]}
-    assert "Recovered" not in records
-    assert records["Held"]["結果"] == "未計入"
-    assert "找不到" in records["Held"]["原因"]
+    # Backfill events stay on the trace sheet; the labels say what was seen.
+    assert (records["Recovered"]["結果"], records["Recovered"]["疑點"]) == (
+        "已計入",
+        "未見 NL",
+    )
+    assert (records["Held"]["結果"], records["Held"]["依據"]) == ("未計入", "未見 NL")
     assert records["Held"]["Area"] == 678.90
     book.close()
     source = TargetedWorkbookSource(path)
@@ -311,7 +312,7 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
         ("Recovered", 123.45, 9.1, "TRUE"),
         ("Held", 678.90, 9.2, "FALSE"),
     ]
-    assert source.records[0]["Review Reason"] is None
+    assert source.records[0]["依據"] == "回填"
 
 
 def _config(
@@ -399,9 +400,11 @@ def _run_output(*, with_diagnostics: bool) -> RunOutput:
             product_state="detected_flagged",
             counted_detection=True,
             review_state="flagged",
-            projection_reason="decision: detected_flagged; review: local_sn_minor",
+            projection_reason=(
+                "decision: detected_flagged; review: targeted_acquired_signal_gaps"
+            ),
             support_reasons=("ms1_peak_present",),
-            review_reasons=("local_sn_minor",),
+            review_reasons=("targeted_acquired_signal_gaps",),
         ),
     )
     diagnostics = []
@@ -423,26 +426,16 @@ def _run_output(*, with_diagnostics: bool) -> RunOutput:
 @pytest.mark.parametrize(
     "review_reason, expected",
     [
-        ("trace_morphology_review", "峰形需檢查"),
-        ("physical_shoulder_overlap", "肩峰重疊需檢查"),
-        ("sample_review", "證據需檢查"),
+        ("trace_morphology_review", "峰形不完整"),
+        ("physical_shoulder_overlap", "肩峰／重疊"),
+        ("targeted_competing_regions", "多個候選峰"),
     ],
 )
-def test_counted_backfill_review_names_quality_not_identity(
+def test_counted_backfill_doubt_names_quality_not_identity(
     review_reason: str,
     expected: str,
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.output.review_queue_model import _review_why
-
-    row = {
-        "Product State": "detected_flagged",
-        "Counted Detection": "TRUE",
-        "Projection Support Reasons": "cross_sample_backfill_identity",
-        "Projection Review Reasons": review_reason,
-    }
-    assert _review_why("PROJECTION_FLAGGED", row, "BACKFILL_ACCEPTED") == expected
-
     from xic_extractor.output.excel_pipeline import write_excel_from_run_output
     from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
 
@@ -465,7 +458,8 @@ def test_counted_backfill_review_names_quality_not_identity(
         output_path=tmp_path / "final-peak-review.xlsx",
     )
     saved = TargetedWorkbookSource(path).records[0]
-    assert saved["Review Reason"] == expected
+    # The fixture's neutral loss was seen with a large mass error.
+    assert (saved["依據"], saved["疑點"]) == ("回填", f"NL 偏差大、{expected}")
     assert saved["Counted Detection"] == "TRUE"
     assert saved["RT"] == result.reported_rt
     assert saved["Area"] == result.reported_peak_area

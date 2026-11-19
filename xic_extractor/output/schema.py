@@ -13,9 +13,10 @@ TARGETED_LONG_CSV_SCHEMA_VERSION = "targeted_long_csv"
 TARGETED_DIAGNOSTIC_CSV_SCHEMA_VERSION = "targeted_diagnostics_csv"
 
 # The delivered workbook is a measurement table, not the internal long-row dump.
-# Measurements, counted status and review reasons show; the collapsed secondary
-# columns retain peak evidence. A target's role lives on Targets, and a
-# nonempty Review Reason is the review mark.
+# Measurements, counted status and the two label columns show; the collapsed
+# secondary columns retain peak evidence. A target's role lives on Targets.
+# `依據` and `疑點` hold fixed labels (`result_labels`), which also decide
+# whether a row needs a look.
 WORKBOOK_RESULT_HEADERS: tuple[str, ...] = (
     "SampleName",
     "Target",
@@ -23,11 +24,10 @@ WORKBOOK_RESULT_HEADERS: tuple[str, ...] = (
     "Area",
     "IntSmoothed",
     "Counted Detection",
-    "Review Reason",
+    "依據",
+    "疑點",
     "PeakStart",
     "PeakEnd",
-    "NL Evidence",
-    "Reason",
     "Group",
     "Int",
     "PeakWidth",
@@ -70,14 +70,14 @@ LONG_COLUMNS: tuple[OutputColumn, ...] = (
         "Area",
         description="Gaussian15-smoothed positive AsLS residual area (counts·s)",
     ),
-    OutputColumn("NL Evidence"),
     OutputColumn("NL", advanced=True),
     OutputColumn("Int", advanced=True, description="raw apex intensity"),
     OutputColumn("IntSmoothed", description="selected smoothed peak apex intensity"),
     OutputColumn("PeakStart", description="integration start RT (min)"),
     OutputColumn("PeakEnd", description="integration end RT (min)"),
     OutputColumn("PeakWidth", advanced=True),
-    OutputColumn("Reason"),
+    OutputColumn("依據", description="the fact the saved decision rests on"),
+    OutputColumn("疑點", description="facts left uncertain, separated by 、"),
     *(
         OutputColumn(header, advanced=True)
         for header in TARGETED_PRODUCT_PROJECTION_HEADERS

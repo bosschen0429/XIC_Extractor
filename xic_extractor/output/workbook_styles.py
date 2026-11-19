@@ -33,9 +33,8 @@ TEXT_HEADERS = frozenset(
     {
         "SampleName",
         "Target",
-        "Review Reason",
-        "NL Evidence",
-        "Reason",
+        "依據",
+        "疑點",
         "Group",
         "Counted Detection",
     }

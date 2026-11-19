@@ -434,10 +434,10 @@ function renderTargetedOverview(summary) {
     switch (target.focus_kind) {
       case "minority_counted": return "是否抓錯峰";
       case "minority_not_counted": return "是否漏抓";
-      case "mixed": return target.focus_samples.length ? "沒有明顯多數，看檢閱註記" : "";
+      case "mixed": return target.focus_samples.length ? "沒有明顯多數，看需要看的結果" : "";
       default:
-        // Quality notes on counted peaks affect quantitation; they stay one level down.
-        return target.counted && target.review ? `${target.review} 筆檢閱註記` : "";
+        // Labels that need a look on counted peaks affect quantitation; they stay one level down.
+        return target.counted && target.needs_look ? `${target.needs_look} 筆需要看` : "";
     }
   };
   for (const target of summary.targets) {
@@ -904,7 +904,7 @@ async function startCurves() {
     const ids = curveSequence(), index = ids.indexOf($("xic-sample").value);
     $("xic-position").textContent = index < 0 ? "" : `${index + 1} / ${ids.length}`;
     const note = state.curveNotes?.[$("xic-sample").value];
-    $("xic-note").textContent = note && note !== "—" ? `檢閱註記：${note}` : "";
+    $("xic-note").textContent = note || "";
     $("xic-note").hidden = !$("xic-note").textContent;
   }
   if (targeted && !$("xic-dialog").open) {

@@ -293,7 +293,8 @@ RT/score labels alone do not create product review actions. Explicit
 batch-context displacement, missing calibration, viable competition and
 uncertain transfer are separate actionable explanations. A finalized paired
 ISTD identity can resolve those localization concerns; it does not clear
-independent morphology, signal-gap or mixed-area concerns. Unresolved morphology or overlap concerns can require quality
+independent morphology, signal-gap or mixed-area concerns, or a missing
+neutral loss or MS2, which stays a doubt. Unresolved morphology or overlap concerns can require quality
 review independently of identity. Reason labels describe source
 evidence; they do not start a second candidate ranking.
 
@@ -418,7 +419,7 @@ those facts itself.
   inference retain their evidence basis and parent-MS1 support requirements.
 - Each retained physical candidate receives one completed target-scoped MS2
   answer from the shared CID-NL relation. Ranking, qualitative support, trace
-  diagnostics and the published `NL Evidence` consume that answer. A neighbouring
+  diagnostics and the published NL labels consume that answer. A neighbouring
   precursor's matching loss cannot supply trace strength or a positive label.
 - Only positive, individually attributed CID-NL support receives chemical ranking
   priority. No MS2 and MS2 without qualified support are both unconfirmed; neither
@@ -487,9 +488,8 @@ those facts itself.
 - A typed no-write clears the retained peak before rendering.
 - Missing NL alone is not another writer veto.
 - Accepted MS1-only cells in Untargeted output follow the same distinction.
-- The main workbook table shows measurements, counted status and review
-  reasons. Secondary columns retain integration boundaries, `NL Evidence`
-  and the full plain-language `Reason`.
+- The main workbook table shows measurements, counted status and the fixed
+  labels `依據` and `疑點`. Secondary columns retain integration boundaries.
 - Internal projection codes remain in the internal long-row model, not the
   delivered workbook. The workbook consumes the finished owner decisions;
   its display layout does not change scientific or count policy.
@@ -558,7 +558,7 @@ inputs. A different sample cannot replace missing current-sample identity suppor
 | --- | --- |
 | Targeted CSV/workbook fields | Public output for target decisions |
 | RT / Area / PeakStart / PeakEnd | Retained cell-owner measurements |
-| `NL Evidence` / `Reason` | Human-readable observations and review context |
+| `依據` / `疑點` | Fixed labels: the observation a result rests on, and what is left uncertain |
 | `Product State` / `Counted Detection` / `Review State` | Advanced product-policy fields; do not veto a retained numeric value |
 | Region and selected-envelope candidates | Boundary and candidate-evaluation evidence |
 | Current-sample paired RT reference | Method offset transferred by a credible observed ISTD |

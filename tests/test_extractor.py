@@ -850,10 +850,10 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
         },
     ]
     for row, expected in zip(long_rows, expected_rows, strict=True):
-        actual = _core_long_row(row)
-        assert actual.pop("Reason").startswith(expected.pop("Reason").rstrip("。"))
-        assert actual == expected
+        assert _core_long_row(row) == expected
+        # The other target shares this ion region; the doubt names it.
         assert "targeted_shared_ion_region:" in row["Projection Review Reasons"]
+        assert "共用離子區段（" in row["疑點"]
     assert [row["Counted Detection"] for row in long_rows] == ["TRUE", "TRUE"]
     assert [row["Product State"] for row in long_rows] == ["detected_flagged"] * 2
     assert all(not row["Projection Conflict Reasons"] for row in long_rows)
@@ -1468,7 +1468,7 @@ def test_run_reports_nd_without_peak_scoped_nl(
             "PeakStart": "ND",
             "PeakEnd": "ND",
             "PeakWidth": "ND",
-            "Reason": "搜尋範圍內沒有可定量的 MS1 峰。",
+            "依據": "無可用 MS1 峰",
         }
     ]
     assert long_rows[0]["Projection Reason"] == (
@@ -1512,7 +1512,7 @@ def test_run_reports_file_error_rows(
             "PeakStart": "ERROR",
             "PeakEnd": "ERROR",
             "PeakWidth": "ERROR",
-            "Reason": "RAW 檔無法處理。",
+            "依據": "RAW 失敗",
         }
     ]
     assert long_rows[0]["Product State"] == "excluded"
@@ -2626,7 +2626,7 @@ def _core_long_row(row: dict[str, str]) -> dict[str, str]:
         "PeakStart",
         "PeakEnd",
         "PeakWidth",
-        "Reason",
+        "依據",
     )
     return {header: row[header] for header in core_headers}
 
@@ -2672,7 +2672,7 @@ def _formatted_long_success_row(
         "PeakStart": peak[f"{label}_PeakStart"],
         "PeakEnd": peak[f"{label}_PeakEnd"],
         "PeakWidth": peak[f"{label}_PeakWidth"],
-        "Reason": "MS2 見到預期的中性丟失。" if nl == "OK" else "MS1 峰形合格。",
+        "依據": "NL 確認" if nl == "OK" else "僅 MS1 峰",
     }
 
 

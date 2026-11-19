@@ -83,8 +83,8 @@ def write_rare_detection_workbook(path):
             "Area",
             "PeakStart",
             "PeakEnd",
-            "Review Reason",
-            "Reason",
+            "依據",
+            "疑點",
             "Counted Detection",
         ]
     )
@@ -98,7 +98,7 @@ def write_rare_detection_workbook(path):
                 55.5 if hit else "ND",
                 None,
                 None,
-                None if hit else "NL missing",
+                "ISTD 位置" if hit else "未見 NL",
                 None,
                 "TRUE" if hit else "FALSE",
             ]
@@ -111,7 +111,7 @@ def write_rare_detection_workbook(path):
                 1000 + index,
                 None,
                 None,
-                None,
+                "NL 確認",
                 None,
                 "TRUE",
             ]

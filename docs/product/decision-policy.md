@@ -119,16 +119,16 @@ The selected integration, original trace, and method evidence remain retained.
 NL or an ISTD identity cannot override inadequate MS1 quantitative support.
 The rule applies only to Target decisions; completed Untargeted group-cell
 decisions retain their existing policy. The writer renders this no-write as
-blank numeric cells with an explicit not-quantifiable explanation, not zero or
-ND. It does not re-evaluate the signal.
+blank numeric cells with the `不足以定量` label, not zero or ND. It does not
+re-evaluate the signal.
 
-## Targeted Measurement / Reason / Counted Detection Precedence
+## Targeted Measurement / Labels / Counted Detection Precedence
 
-Targeted workbook rows present retained RT, area, integration boundaries,
-`NL Evidence`, and a plain-language `Reason`. The finalized cell decision owns
-numeric availability. The Targeted product projection is the single owner of
-counted detection and review; writers render its answer rather than deriving
-another grade from source evidence.
+Targeted workbook rows present retained RT, area, integration boundaries and
+the fixed labels `依據` and `疑點`. The finalized cell decision owns numeric
+availability. The Targeted product projection is the single owner of counted
+detection and review; writers render its answer rather than deriving another
+grade from source evidence.
 
 Invariants:
 
@@ -137,13 +137,16 @@ Invariants:
   numeric columns render the retained finalized peak even when counting is
   false. The HTML summary median uses the retained numeric population
   independently of its detection tally.
-- `_display_reason` describes the retained MS1 measurement and projection
-  review reasons through `display_measurement_reason`. Without a projection,
-  diagnostic rows use the stored `result.reason`. `projection.projection_reason`
+- `result_labels` maps the saved projection codes and the selected peak's NL
+  observation to one `依據` label and zero or more `疑點` labels. Every reason
+  code a projection can save has a label or is declared hidden; an unknown
+  code fails the write instead of disappearing. `projection.projection_reason`
   feeds the separate `Projection Reason` column.
-- `NL Evidence` distinguishes observed support, no support within tolerance,
-  no MS2 spectrum, and an unrequested check. Blank NL configuration is
-  `Not requested`, not failed evidence.
+- When identity comes from the paired ISTD or Backfill, the projection keeps
+  the missing neutral loss or MS2 as a review reason, so it reads as a
+  `疑點`. It does not change counting or the reported value.
+- A target without a configured neutral loss has no NL label; its identity is
+  `僅 MS1 峰` or its specificity clauses.
 - Internal count/product/review codes and raw NL tokens remain advanced
   evidence. They do not replace the main measurement and evidence explanation.
   Missing support or shape concerns do not themselves establish absence.

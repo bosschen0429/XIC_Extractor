@@ -35,8 +35,9 @@ must be regenerated. Human sheets may change layout; they never change saved
 values or decisions.
 
 An `XIC Results` row holds only what belongs to that result. A target's role
-is read from `Targets`; a nonempty `Review Reason` is the review mark; the
-neutral-loss observation is `NL Evidence` alone.
+is read from `Targets`. `依據` and `疑點` hold fixed labels from one table
+(`xic_extractor.output.result_labels`); whether a row needs a look is derived
+from them, so no flag column exists.
 
 `Targets.Specificity` states each target's specificity and parameters, for
 example `MS1 only`, `CID-NL 116.0474` or `CID-NL 116.0474 + Delta Mass +1.0034`.
@@ -62,39 +63,44 @@ decisions.
 
 ## Content rules
 
+- Each result carries fixed labels, never generated sentences. `依據` holds
+  exactly one label: the observation the saved result rests on. `疑點` holds
+  zero or more labels joined by `、`: what is left uncertain. A label names an
+  observed fact and its column gives its role, so the same fact is the same
+  word in either column, and an observation `依據` already names is not
+  repeated in `疑點`. Labels carry no numbers; the one parameter is the partner
+  targets in `共用離子區段（A / B）`. Exact RT, area and offsets stay on
+  `診斷事件`, and the peak is read in the XIC view.
+- A result needs a look when its `依據` label is marked for a look or its
+  `疑點` is nonempty. Each label has one fixed mark; the one exception is
+  `無可用 MS1 峰`, which needs a look only for an ISTD, read from `Targets`.
+- Identity is named by its source: the paired ISTD position (`ISTD 位置`),
+  the target's own neutral loss (`NL 確認`), Backfill for an ISTD (`回填`), the
+  specificity clauses (`特異性條件`) or, when no neutral loss is required, the
+  MS1 peak (`僅 MS1 峰`). The method expects a neutral loss, so when identity
+  comes from elsewhere a missing neutral loss or MS2 scan stays a doubt
+  (`未見 NL`, `無 MS2`, `NL 偏差大`); it is the `依據` only when it decided the
+  result.
 - `需先看` is the minority outcome of each target (at most 20% of recorded
-  decisions), or, without a clear majority, the targets' saved review conditions.
+  decisions), or, without a clear majority, the results that need a look.
   The worklist on `摘要` and the workbench count the same result rows; the
-  headline counts every worklist row.
-- A minority outcome without a saved review condition states the saved decision
-  against the majority. It adds no scientific flag.
+  headline counts every worklist row. A worklist row shows the saved labels;
+  a minority outcome adds no flag of its own.
 - A diagnostic event without a delivered result (a RAW file that failed to open)
-  stays on the worklist with its message in the reason, because no XIC view can
-  explain it.
+  stays on the worklist as `RAW 失敗`, because no XIC view can explain it; its
+  message stays on `診斷事件`.
 - Every diagnostic event is kept as literal text on the hidden `診斷事件` sheet.
   The delivered XLSX is the run's only artifact, and the XIC view shows the peak
   but not why a selection was made. The sheet is for tracing a past decision,
   not for reading the batch.
 - `面積` projects every saved Area, including zero, ND and blank, independent of
   counted detection. It calculates no ratio.
-- A finalized `not_quantifiable` decision leaves the numeric cells blank and
-  explains that signal was observed but cannot support reliable quantity.
+- A finalized `not_quantifiable` decision leaves the numeric cells blank with
+  `依據` `不足以定量`: signal was observed but cannot support reliable quantity.
   It is not rendered as zero or ND. The original XIC remains reviewable;
   its diagnostic integral is not substituted for the withheld value.
-- A review reason names the evidence the saved decision rests on; the reader
-  checks it in the XIC view, so the workbook adds no separate suggested check.
-  A counted analyte
-  rests on its MS1 peak at the paired ISTD position (or on observed neutral
-  loss); an uncounted one names the failed MS1 check or the missing identity
-  source. Under CID a missing neutral loss or MS2 scan is a given fact, so it is
-  never the reason or the review level. An answer that follows from
-  the evidence stays quiet: a counted result without a saved concern (a missing
-  neutral loss is none) is not listed.
-- `XIC Results` `Reason` (the workbench's 原始選峰紀錄) states the same basis
-  first, then other saved concerns; a missing neutral loss is not listed. The
-  workbench shows `NL Evidence` up front only when a neutral loss was observed.
-- Reasons use plain domain words (RT, MS1, XIC, ISTD, 中性丟失); internal codes
-  stay out of the visible sheets.
+- Labels use plain domain words (RT, MS1, ISTD, NL); internal codes stay out of
+  the visible sheets. The user guide explains every label.
 
 ## Run Metadata
 
@@ -126,7 +132,7 @@ sidecar is published, and Targeted runs have no replay entry point.
 | Numbers right-aligned, text left-aligned | Columns scan by magnitude |
 | No gridlines, fills or stripes; one hairline between rows | Non-data ink competes with values |
 | Two text inks; grey marks not counted or ND | Grey repeats `Counted Detection`, which remains its own column |
-| One accent colour, used only for `Review Reason` in `XIC Results` | The landing sheet's worklist is already the exception |
+| One accent colour, used only on the `依據` or `疑點` cell that needs a look in `XIC Results` | The landing sheet's worklist is already the exception |
 | Area and intensities in `0.00E+00`; RT in `0.00` | Large values compare by exponent; storage keeps full precision |
 | Visible headers are plain words; record-sheet columns are documented in the user guide | No sheet exists only to translate another |
 | No charts, KPI cards or decorative layout | The summary table already carries the counts |
@@ -137,8 +143,7 @@ sidecar is published, and Targeted runs have no replay entry point.
 
 - Writer: `xic_extractor.output.workbook_builder` and its `sheet_*` modules.
 - Focus and worklist: `xic_extractor.output.targeted_overview`.
-- Decisive evidence wording: `xic_extractor.output.reason_display`; review
-  routing: `xic_extractor.output.review_queue_model`.
+- Result labels and their look marks: `xic_extractor.output.result_labels`.
 - Saved-workbook reader: `xic_inspector.sources.targeted_workbook`
   ([Workbench and review](workbench.md)).
 - Column meanings for users: [Targeted guide](../user/targeted.md#excel-結果).

@@ -2725,7 +2725,8 @@ def test_curve_history_restores_snapshot_after_pending_load(
     expect(review.get_by_text("原始 scan 點", exact=True)).to_be_visible()
     expect(curves).to_have_count(2)
     expect(review.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
-    expect(review.locator(".tx-provenance")).to_contain_text("尚未比對是否為分析原檔")
+    # A curve read again from RAW adds no standing caution under the charts.
+    expect(review.locator(".tx-provenance")).to_have_count(0)
     # The result table never navigates away; each ion has its own y scale.
     assert (
         page.locator("#recorded-review").evaluate(
@@ -3057,9 +3058,8 @@ def test_saved_method_and_delta_evidence_is_visible_and_readonly(workbench, tmp_
             "Area",
             "PeakStart",
             "PeakEnd",
-            "Reason",
-            "Review",
-            "Review Reason",
+            "依據",
+            "疑點",
             "Counted Detection",
         ]
     )
@@ -3071,8 +3071,7 @@ def test_saved_method_and_delta_evidence_is_visible_and_readonly(workbench, tmp_
             123.5,
             1.9,
             2.1,
-            "Delta Mass 配對符合",
-            "",
+            "特異性條件",
             "",
             "TRUE",
         ]
@@ -3162,14 +3161,13 @@ def test_earlier_workbook_evidence_shows_without_the_delta_mass_sheet(
             "Area",
             "PeakStart",
             "PeakEnd",
-            "Reason",
-            "Review",
-            "Review Reason",
+            "依據",
+            "疑點",
             "Counted Detection",
         ]
     )
     results.append(
-        ["Sample A", "Custom target", 2, 123.5, 1.9, 2.1, "", "", "", "TRUE"]
+        ["Sample A", "Custom target", 2, 123.5, 1.9, 2.1, "特異性條件", "", "TRUE"]
     )
     metadata = book.create_sheet("Run Metadata")
     metadata.append(["Key", "Value"])
@@ -4644,15 +4642,14 @@ def _grouped_workbook(path: Path, groups: dict[str, str]) -> Path:
             "Area",
             "PeakStart",
             "PeakEnd",
-            "Review",
-            "Review Reason",
-            "Reason",
+            "依據",
+            "疑點",
             "Counted Detection",
         ]
     )
     for sample, group in groups.items():
         results.append(
-            [sample, group, "Analyte", 9.0, 10.0, 8.9, 9.1, None, None, None, "TRUE"]
+            [sample, group, "Analyte", 9.0, 10.0, 8.9, 9.1, "僅 MS1 峰", None, "TRUE"]
         )
     metadata = book.create_sheet("Run Metadata")
     metadata.append(["Key", "Value"])

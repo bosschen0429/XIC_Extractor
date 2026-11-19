@@ -83,7 +83,8 @@ loads: an empty cell, or a candidate outside the Matrix. These reads are new
 diagnostic views, not product measurements. RAW and DLL sources belong to the selected result's
 **RAW 曲線**, not the result opener. Targeted curves always read
 RAW and start from the sample row; the XIC view steps through the rows the
-target list shows (all, or 需先看) and repeats each row's review note.
+target list shows (all, or 需先看) and repeats each row's saved `依據` and
+`疑點` labels.
 
 - A sample is read from the RAW file of the same name with the run's saved mass
   recalibration. The file is not checked against the analysed acquisition; a
@@ -142,8 +143,9 @@ Review starts with results that differ from the rest of their target. Within a
 target, the saved counted outcome shared by at most 20% of recorded decisions is
 the minority: a rare counted result may be a wrong peak, and a rare not-counted
 result may be a missed one. An outcome shared by every sample is a batch fact
-and needs no review. Without a clear majority, rows with saved review
-conditions set the reading order. `summarize_targeted_results` owns this order
+and needs no review. Without a clear majority, the rows whose saved labels
+need a look ([Targeted workbook](targeted-workbook.md#content-rules)) set the
+reading order. `summarize_targeted_results` owns this order
 for the workbench and the workbook summary, so their 先看 counts match. It does
 not reclassify results.
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
+from xic_extractor.output.result_labels import basis_needs_look
 from xic_extractor.output.schema import WORKBOOK_DETAIL_HEADERS, WORKBOOK_RESULT_HEADERS
 from xic_extractor.output.workbook_styles import (
     FOCUS,
@@ -22,29 +23,29 @@ from xic_extractor.output.workbook_styles import (
 _CENTERED = frozenset({"Counted Detection"})
 
 
-def _build_data_sheet(
-    ws, rows: list[dict[str, str]], *, review_rows: list[dict[str, str]]
-) -> None:
-    """Present the finished measurements and review routing once, per sample.
+def _build_data_sheet(ws, rows: list[dict[str, str]]) -> None:
+    """Present the finished measurements and their labels once, per sample.
 
     Not-counted rows read in grey; `Counted Detection` stays the recorded fact.
+    The accent marks the label cell that needs a look.
     """
     headers = WORKBOOK_RESULT_HEADERS
     numeric = frozenset(headers) - TEXT_HEADERS
-    review_by_key = {(r["Sample"], r["Target"]): r for r in review_rows}
     _prepare_sheet(ws, repeat_rows="1:1")
     _write_header(ws, 1, headers, numeric)
     for row_index, row in enumerate(rows, start=2):
-        review = review_by_key.get(
-            (row.get("SampleName", ""), row.get("Target", "")), {}
-        )
-        values = row | {"Review Reason": review.get("Why", "")}
-        counted = values.get("Counted Detection", "").upper() == "TRUE"
+        counted = row.get("Counted Detection", "").upper() == "TRUE"
+        focus = {
+            "依據": basis_needs_look(
+                row.get("依據"), is_istd=row.get("Role", "").upper() == "ISTD"
+            ),
+            "疑點": bool(row.get("疑點")),
+        }
         for column, header in enumerate(headers, start=1):
-            value = _measurement_value(header, values.get(header, ""))
+            value = _measurement_value(header, row.get(header, ""))
             cell = ws.cell(row=row_index, column=column, value=value)
             color = INK if counted else MUTED
-            if header == "Review Reason" and value:
+            if focus.get(header):
                 color = FOCUS
             elif header in numeric and not _is_number(value):
                 color = MUTED
@@ -60,13 +61,12 @@ def _build_data_sheet(
     last_column = get_column_letter(len(headers))
     _add_table(ws, "TargetedResults", f"A1:{last_column}{max(1, len(rows) + 1)}")
     _fit_columns(ws, maximum=34)
-    ws.column_dimensions[_letter("Review Reason")].width = 36
     for header in WORKBOOK_DETAIL_HEADERS:
         dimension = ws.column_dimensions[_letter(header)]
         dimension.hidden = True
         dimension.outlineLevel = 1
     ws.freeze_panes = "C2"
-    ws.print_area = f"A1:{_letter('Review Reason')}{max(2, len(rows) + 1)}"
+    ws.print_area = f"A1:{_letter('疑點')}{max(2, len(rows) + 1)}"
 
 
 def _letter(header: str) -> str:
