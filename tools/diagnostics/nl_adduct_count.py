@@ -10,10 +10,12 @@ from pathlib import Path
 
 from xic_extractor.configuration import paths
 from xic_extractor.diagnostics.nl_adduct_count import cumulative, overlap, union_runs
-from xic_extractor.diagnostics.nl_adduct_count_acquisition import count_run
+from xic_extractor.diagnostics.nl_adduct_count_acquisition import (
+    count_run,
+    read_nucleosides,
+)
 from xic_extractor.presets.apply import bind_cid_nl_recipe
 from xic_extractor.presets.loader import load_preset
-from xic_extractor.tabular_io import read_delimited_rows
 
 NUCLEOSIDES = Path(paths.__file__).with_name("data") / "nl_adduct_nucleosides.tsv"
 
@@ -21,19 +23,7 @@ NUCLEOSIDES = Path(paths.__file__).with_name("data") / "nl_adduct_nucleosides.ts
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     preset = bind_cid_nl_recipe(load_preset(args.preset), "full")
-    nucleosides = [
-        {
-            **row,
-            "mz": float(row["mz"]),
-            "rt_min": float(row["rt_min"]),
-            "rt_max": float(row["rt_max"]),
-        }
-        for row in read_delimited_rows(
-            args.nucleosides,
-            required_columns=("label", "mz", "neutral_loss_tag", "rt_min", "rt_max"),
-            encoding="utf-8-sig",
-        )
-    ]
+    nucleosides = read_nucleosides(args.nucleosides)
     runs = [
         count_run(
             directory,

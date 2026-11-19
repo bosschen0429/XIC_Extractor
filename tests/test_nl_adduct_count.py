@@ -1,6 +1,7 @@
 from collections import Counter
 
 import numpy as np
+import pytest
 
 from xic_extractor.diagnostics.nl_adduct_count import (
     Anchor,
@@ -17,6 +18,7 @@ from xic_extractor.diagnostics.nl_adduct_count import (
     synced,
     union_runs,
 )
+from xic_extractor.diagnostics.nl_adduct_count_acquisition import read_nucleosides
 
 DR = 116.0474
 DC = (Anchor("dC", 228.0979, 8.66), Anchor("dU", 229.0822, None))
@@ -200,3 +202,24 @@ def test_rt_map_interpolates_and_shifts_past_the_ends():
     mapped = rt_map([(20.0, 20.5), (8.0, 9.0)])
     assert [mapped(rt) for rt in (4.0, 8.0, 14.0, 30.0)] == [5.0, 9.0, 14.75, 30.5]
     assert rt_map([])(12.0) == 12.0
+
+
+def test_nucleoside_table_pairs_windows_with_tags_and_locates_bad_rows(tmp_path):
+    path = tmp_path / "nucleosides.tsv"
+    header = "label\tmz\tneutral_loss_tag\trt_min\trt_max\n"
+    path.write_text(header + "dC\t228.09788\tDNA_dR\t8.05\t9.55\n", encoding="utf-8")
+    ((window, tag),) = read_nucleosides(path)
+    assert (window.label, window.mz, window.rt_low_min, tag) == (
+        "dC",
+        228.09788,
+        8.05,
+        "DNA_dR",
+    )
+    for row, message in (
+        ("dC\t228.09788\t\t8.05\t9.55", ":2：缺少 neutral_loss_tag"),
+        ("dC\t228.09788\tDNA_dR\t9.55\t8.05", ":2：rt_min 與 rt_max 需成對"),
+        ("dC\tx\tDNA_dR\t8.05\t9.55", ":2：mz 必須是有限數字"),
+    ):
+        path.write_text(header + row + "\n", encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            read_nucleosides(path)

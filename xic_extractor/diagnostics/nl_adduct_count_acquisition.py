@@ -24,7 +24,10 @@ from xic_extractor.discovery.csv_reader import (
     read_discovery_peaks_csv,
 )
 from xic_extractor.mass_accuracy import mz_tolerance_da
+from xic_extractor.matrix_curation.known_nucleosides import read_nucleoside_list
+from xic_extractor.matrix_curation.mass_rt_windows import MzRtWindow
 from xic_extractor.raw_reader import open_raw
+from xic_extractor.tabular_io import read_delimited_rows
 from xic_extractor.xic_models import XICRequest
 
 ANCHOR_PPM = 20.0
@@ -34,14 +37,27 @@ SHAPE_PPM = 10.0
 SHAPE_HALF_WINDOW_MIN = 0.5
 
 
+def read_nucleosides(path: Path) -> list[tuple[MzRtWindow, str]]:
+    """Nucleoside windows and the neutral-loss tag their sugar gives."""
+    tags = [
+        row["neutral_loss_tag"].strip()
+        for row in read_delimited_rows(
+            path, required_columns=("neutral_loss_tag",), encoding="utf-8-sig"
+        )
+    ]
+    for line, tag in enumerate(tags, 2):
+        if not tag:
+            raise ValueError(f"{path}:{line}：缺少 neutral_loss_tag。")
+    return list(zip(read_nucleoside_list(path), tags, strict=True))
+
+
 def count_run(
     discovery_dir: Path,
     *,
     dll_dir: Path,
     neutral_loss_by_tag: dict[str, float],
-    nucleosides: list[dict],
+    nucleosides: list[tuple[MzRtWindow, str]],
 ) -> RunCount:
-    """``nucleosides`` rows: label, mz, rt_min, rt_max and their neutral_loss_tag."""
     index = read_discovery_batch_index(discovery_dir / "discovery_batch_index.csv")
     (sample,) = index.sample_order
     raw, events = index.raw_files[sample], index.event_csvs[sample]
@@ -61,8 +77,8 @@ def count_run(
             loss = item.event.configured_neutral_loss_da
     if loss is None:
         raise ValueError(f"{discovery_dir}: no event locates an admitted peak")
-    same = [n for n in nucleosides if n["neutral_loss_tag"] in neutral_loss_by_tag]
-    other = [n for n in nucleosides if n["neutral_loss_tag"] not in neutral_loss_by_tag]
+    same = [w for w, tag in nucleosides if tag in neutral_loss_by_tag]
+    other = [w for w, tag in nucleosides if tag not in neutral_loss_by_tag]
 
     recalibration = MassRecalibration.EASY_IC_RESTORE
     with open_raw(raw, dll_dir, mass_recalibration=recalibration) as handle:
@@ -114,24 +130,24 @@ def count_run(
     return RunCount(sample, candidates, groups, units, frozenset(removed), anchors)
 
 
-def _apices(handle, rows) -> tuple[Anchor, ...]:
+def _apices(handle, windows: list[MzRtWindow]) -> tuple[Anchor, ...]:
     low, high = handle.acquisition_rt_bounds()
     traces = handle.extract_xic_many(
         [
             XICRequest(
-                n["mz"], max(low, n["rt_min"]), min(high, n["rt_max"]), ANCHOR_PPM
+                w.mz, max(low, w.rt_low_min), min(high, w.rt_high_min), ANCHOR_PPM
             )
-            for n in rows
+            for w in windows
         ]
     )
     anchors = []
-    for n, trace in zip(rows, traces, strict=True):
+    for w, trace in zip(windows, traces, strict=True):
         y = np.asarray(trace.intensity)
         seen = len(y) and y.max() > ANCHOR_MIN_INTENSITY
         anchors.append(
             Anchor(
-                n["label"],
-                n["mz"],
+                w.label,
+                w.mz,
                 float(np.asarray(trace.rt)[y.argmax()]) if seen else None,
             )
         )
