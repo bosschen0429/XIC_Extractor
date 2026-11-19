@@ -181,9 +181,12 @@ class TargetedWorkbookSource:
             for row in self.targets
             if str(row["Role"]).strip().upper() == "ISTD"
         }
+        # XIC Results carries no Role; the saved Targets sheet is its source.
+        roles = {row["Label"]: row["Role"] for row in self.targets}
         # The saved labels say which results need a look.
         overview = summarize_targeted_results(
-            self.records, rows_needing_look(self.records, istd_targets)
+            [{**row, "Role": roles[row["Target"]]} for row in self.records],
+            rows_needing_look(self.records, istd_targets),
         )
         # Group is recorded per sample; it colours that sample in every view.
         sample_groups: dict[str, str] = {}
