@@ -26,10 +26,7 @@ EXAMPLES = ("targets.xlsx",)
 GUIDE_PAGES = (
     ("README.md", "開始使用"),
     ("targeted.md", "Targeted 分析"),
-    ("target-list.md", "目標清單"),
     ("untargeted.md", "Untargeted 分析"),
-    ("methods.md", "分析方法"),
-    ("results.md", "結果檔案"),
     ("concepts.md", "判讀原理"),
 )
 THEME_SCRIPT = (
