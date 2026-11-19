@@ -51,6 +51,8 @@ class UntargetedInputPlan:
         ],
     ]
     dll_dir: Path
+    # Only differs when reviewed Discovery peaks helped define a query channel.
+    drift_reference_subjects: UntargetedCidNlMethodSubjectBatch | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,24 +232,36 @@ def prepare_indexed_untargeted_plan(
         }
         return located, {stem: () for stem in source}
 
-    subject_batch = mint_cid_nl_subject_membership(
-        candidates=_subject_candidates(
-            [
-                (
-                    None
-                    if composition is not None
-                    else settings.neutral_loss_by_tag[
-                        source.locations[cid].neutral_loss_tag
-                    ],
-                    cid,
-                )
-                for cid in feature_ids
-            ],
-            precursor_by_id,
-        ),
-        precursor_by_id=precursor_by_id,
-        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-        composition=composition,
+    ordered = _subject_candidates(
+        [
+            (
+                None
+                if composition is not None
+                else settings.neutral_loss_by_tag[
+                    source.locations[cid].neutral_loss_tag
+                ],
+                cid,
+            )
+            for cid in feature_ids
+        ],
+        precursor_by_id,
+    )
+
+    def bind(
+        pairs: tuple[tuple[float | None, str], ...],
+    ) -> UntargetedCidNlMethodSubjectBatch:
+        return mint_cid_nl_subject_membership(
+            candidates=pairs,
+            precursor_by_id=precursor_by_id,
+            precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+            composition=composition,
+        )
+
+    subject_batch = bind(ordered)
+    reference = tuple(
+        pair
+        for pair in ordered
+        if not source.locations[pair[1]].requires_overlap_review
     )
     receipts = source.batch.peak_receipts
     expectations = {
@@ -276,4 +290,7 @@ def prepare_indexed_untargeted_plan(
         excluded_candidates=(),
         partition_input_loader=load_partition,
         dll_dir=dll_dir,
+        drift_reference_subjects=bind(reference)
+        if len(reference) != len(ordered)
+        else None,
     )

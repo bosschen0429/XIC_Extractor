@@ -364,6 +364,9 @@ def _parse_peak_row(
         ms1_search_rt_max=number("ms1_search_rt_max"),
         query_rt_min=number("query_rt_min"),
         status=_parse_status(path, row_number, row),
+        requires_overlap_review=_parse_bool(
+            path, row_number, row, "requires_overlap_review"
+        ),
         ms1_apex_mz=optional("ms1_apex_mz"),
         evidence_score=integer("evidence_score"),
         precursor_mz_basis=_parse_precursor_mz_basis(path, row_number, row),

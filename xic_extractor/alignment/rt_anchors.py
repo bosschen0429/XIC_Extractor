@@ -3,7 +3,7 @@
 An anchor observation is a direct-supported, quantifiable peak and its apex RT.
 Sample RT calibration fits its knots from the observations of agreed bootstrap
 groups; the drift model reads each method channel's observations. Both read the
-observations produced here, once per initial grouping.
+observations produced here for their respective bootstrap populations.
 """
 
 from __future__ import annotations

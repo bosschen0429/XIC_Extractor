@@ -126,7 +126,10 @@ no admitted peak completes with no subjects and an empty Matrix.
 A shoulder or overlapping envelope does not hold a peak. MS1 shape alone does
 not dismiss a peak with attached NL support; its area is measured on the
 unresolved envelope, and its Matrix cell carries the review reason
-`physical_shoulder_overlap`.
+`physical_shoulder_overlap`. Discovery records its own physical assessment in
+`requires_overlap_review` independently of admission. Alignment needs this
+column to form its batch drift reference; regenerate an older peak table
+without it rather than treating missing review information as a clean peak.
 
 ### Physical qualification
 

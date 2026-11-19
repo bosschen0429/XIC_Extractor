@@ -35,7 +35,7 @@ input selection.
 | --- | --- |
 | Known-ISTD reference | Exact identity bindings and measured coordinates. Bootstrap comparison uses the shared fitter with ISTDs only; final calibration combines those measurements with ordinary anchors. |
 | Sample RT calibration | One frozen map per batch, fitted from its measured ISTDs and ordinary bootstrap correspondences. Final Grouping, Backfill localization/admission, and replay consume this map through `SampleRtFrame`. |
-| Batch drift model | Frozen batch state (B), sample shift (M) and drift anchors, measured against the frozen map; see [Drift beyond the map](#drift-beyond-the-map). |
+| Batch drift model | Frozen batch state (B), sample shift (M) and drift anchors, measured on the reference population without shoulder overlap; see [Drift beyond the map](#drift-beyond-the-map). |
 | Peak trajectory | Ordered correspondences and direct/MS1-only positions, used for membership constraints and sample-local localization. |
 | Calibration diagnostic | Uses the same fit owner with detected-cell inputs and an interleaved held-out comparison. Its files do not alter production results. |
 
@@ -45,8 +45,13 @@ support, a primary identity event and quantification-eligible integration,
 with its method channel, apex RT and, when its bootstrap group is agreed, that
 group. Bootstrap takes measured support from the retained assessment binding,
 not nominal method-query masses projected into an observation-only owner. The
-same observations feed calibration and the [drift model](#drift-beyond-the-map);
-neither filters them again.
+published RT map retains admitted overlap peaks. The [drift model](#drift-beyond-the-map)
+instead forms its channels from Discovery peaks without shoulder review, leaves
+Alignment measurements with shoulder review out of that reference, and fits its
+own bootstrap knots with the same measured ISTDs. Removing a peak only after
+grouping is not equivalent: that peak may have set a channel center or changed
+which bootstrap correspondences agreed. This reference supplies only B and M;
+final rows and their coefficients are inferred on the full population.
 
 [`sample_rt_calibration`](../../xic_extractor/alignment/sample_rt_calibration.py)
 turns each agreed bootstrap group into one ordinary correspondence and fits the

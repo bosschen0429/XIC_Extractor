@@ -10,6 +10,7 @@ from typing import get_args
 import pytest
 
 from tests.membership_fixtures import cid_nl_owner
+from xic_extractor.alignment.cid_nl_initial_grouping import CidNlBatchGrouping
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureMembershipBasis,
 )
@@ -17,6 +18,7 @@ from xic_extractor.alignment.rt_anchors import (
     RtAnchorObservation,
     rt_anchor_observations,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibrationAccumulator,
 )
@@ -58,6 +60,46 @@ def _group(group_id, owners, basis):
         owners=tuple(owners),
         inference_basis=None if basis is None else SimpleNamespace(basis=basis),
     )
+
+
+def test_drift_is_measured_on_its_own_reference_not_the_published_map():
+    # Stable clean correspondences give an identity frame. In the full
+    # population the agreed correspondences themselves shift with injection.
+    samples = {f"s{i:02}": i for i in range(12)}
+    frame = SampleRtFrame(
+        injection_order=samples, sample_cohorts=dict.fromkeys(samples, "batch")
+    )
+    full, clean = CidNlBatchGrouping(frame), CidNlBatchGrouping(frame)
+    for i, base in enumerate((4.0, 8.0, 12.0, 16.0, 20.0, 24.0, 28.0, 32.0)):
+        for pop, moves in ((clean, False), (full, True)):
+            pop.add_anchor_observations(
+                tuple(
+                    _observation(
+                        s,
+                        f"g{i}",
+                        base + ((n - 5.5) * 0.1 if moves else 0.0),
+                        precursor_mz=400.0 + i,
+                    )
+                    for s, n in samples.items()
+                )
+            )
+    movers = tuple(
+        RtAnchorObservation(_subject(m), s, f"{s}-{m}", base + (n - 5.5) * 0.1, None)
+        for m, base in ((510.0, 10.0), (520.0, 22.0))
+        for s, n in samples.items()
+    )
+    clean.add_anchor_observations(movers)
+    full.add_anchor_observations(movers)
+    full.freeze_calibration(drift_reference=clean)
+    fitted = full.frozen_rt_frame
+    for s in ("s00", "s11"):
+        at = 10.0 + (samples[s] - 5.5) * 0.1
+        assert fitted.calibration_for_snapshot.samples[s].calibrated_rt(
+            at
+        ) == pytest.approx(10.0)
+    assert {a.channel for a in fitted.drift_model.anchors} == {
+        _subject(m).method_subject_id for m in (510.0, 520.0)
+    }
 
 
 def test_observations_need_direct_quantifiable_support_and_agreed_groups():

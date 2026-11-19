@@ -32,6 +32,7 @@ PEAK_STATUSES: tuple[PeakStatus, ...] = (
 
 DISCOVERY_PEAK_COLUMNS = (
     "status",
+    "requires_overlap_review",
     "evidence_score",
     "attached_event_count",
     "peak_id",
@@ -168,6 +169,8 @@ class DiscoveryPeak:
     located_events: tuple[DiscoveryEvent, ...] = dataclass_field(
         default=(), compare=False
     )
+    # Measurement quality is independent of admission and NL attachment.
+    requires_overlap_review: bool = False
 
     @property
     def is_clean_peak(self) -> bool:
