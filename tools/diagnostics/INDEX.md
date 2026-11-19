@@ -113,6 +113,26 @@ Matrix authority. Existing `alignment_health_packet.py` summarizes machine-level
 health; it does not contain excluded candidate and initial weak-edge facts from
 default runs.
 
+### `nl_adduct_count.py`
+
+**Purpose**: Count adducts among one sample's neutral-loss Discovery candidates
+before Alignment: each compound once, with ions derived from another candidate
+(known Δm, synchronized peak shape) or from a nucleoside removed, and
+single-MS2 compounds listed as unconfirmed. Optional replicate controls give
+per-injection counts, cumulative distinct counts and compounds shared with the
+sample (RT mapped through nucleoside apices).
+**Topic group**: `nl_adduct_count.py` + package-owned
+`xic_extractor.diagnostics.nl_adduct_count` (rules) and
+`nl_adduct_count_acquisition` (RAW).
+**Input**: single-sample Discovery output directories, the RAW they name, and a
+nucleoside TSV (default `configuration/data/nl_adduct_nucleosides.tsv`). The
+`--preset` neutral-loss tags choose the same-sugar nucleosides (co-elution
+removes); other-sugar nucleosides remove only on a synchronized peak shape.
+**Output**: `nl_adduct_count.json` and per-candidate `nl_adduct_candidates.tsv`
+with each candidate's fate.
+**Status**: diagnostic_only. Screens Discovery candidates; Matrix Curation
+judges the published Matrix. A count, not chemical identity.
+
 ---
 
 CLI reports and audits over alignment outputs (cells, families, owner
