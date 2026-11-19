@@ -166,6 +166,22 @@ _COHERENT = "ms1_peak_present; ms1_coherent; trace_coherent"
             },
             ("回填", "未見 NL"),
         ),
+        # A large NL mass error stays a doubt when identity came from elsewhere.
+        (
+            {
+                "NL": "WARN_31.0ppm",
+                "Projection Support Reasons": f"{_COHERENT}; paired_istd_identity",
+            },
+            ("ISTD 位置", "NL 偏差大"),
+        ),
+        (
+            {
+                "Role": "ISTD",
+                "NL": "WARN_31.0ppm",
+                "Projection Support Reasons": "cross_sample_backfill_identity",
+            },
+            ("回填", "NL 偏差大"),
+        ),
         # Doubts read in table order, each once.
         (
             {
@@ -196,6 +212,15 @@ def _labels_without_repeat(row: dict[str, str]) -> tuple[str, str]:
     basis, doubts = result_labels(row)
     # An observation 依據 already names is not listed again as a doubt.
     assert basis not in doubts.split("、")
+    # A reported peak whose NL was not seen cleanly always names it, so no NL
+    # label means the neutral loss was seen within tolerance.
+    if row["RT"] not in {"", "ND", "ERROR"} and row["NL"] not in {"", "OK"}:
+        assert {basis, *doubts.split("、")} & {
+            "未見 NL",
+            "無 MS2",
+            "NL 偏差大",
+            "ISTD 未計入",
+        }
     return basis, doubts
 
 

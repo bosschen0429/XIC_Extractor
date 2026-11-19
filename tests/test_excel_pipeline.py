@@ -458,7 +458,8 @@ def test_counted_backfill_doubt_names_quality_not_identity(
         output_path=tmp_path / "final-peak-review.xlsx",
     )
     saved = TargetedWorkbookSource(path).records[0]
-    assert (saved["依據"], saved["疑點"]) == ("回填", expected)
+    # The fixture's neutral loss was seen with a large mass error.
+    assert (saved["依據"], saved["疑點"]) == ("回填", f"NL 偏差大、{expected}")
     assert saved["Counted Detection"] == "TRUE"
     assert saved["RT"] == result.reported_rt
     assert saved["Area"] == result.reported_peak_area

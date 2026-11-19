@@ -188,6 +188,10 @@ def doubt_labels(row: Mapping[str, object], basis: str) -> tuple[str, ...]:
         & MISSING_NL_NOT_COUNTED
         if (label := _nl_doubt_label(nl, code)) is not None
     }
+    # A neutral loss seen with a large mass error has no review code; the
+    # selected peak's token is its source.
+    if nl.startswith("WARN"):
+        found.add("NL 偏差大")
     shared = ""
     for code in _codes(row, "Projection Review Reasons", keep_parameters=True):
         name, _, partners = code.partition(":")
