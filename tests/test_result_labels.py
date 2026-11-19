@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from scripts.check_architecture_census import (
@@ -319,3 +321,23 @@ def test_needs_look_follows_the_label_table():
     assert not needs_look("無可用 MS1 峰", "", is_istd=False)
     assert needs_look("無可用 MS1 峰", "", is_istd=True)
     assert set(BASIS_NEEDS_LOOK) >= {"NL 確認", "RAW 失敗"}
+
+
+def test_user_guide_explains_every_label_with_a_figure():
+    guide = ROOT / "docs/user/targeted.md"
+    rows = {
+        cells[0].strip("`").partition("（")[0]: cells
+        for line in guide.read_text(encoding="utf-8").splitlines()
+        if line.startswith("| `")
+        and (cells := [cell.strip() for cell in line.strip("|").split("|")])
+        and len(cells) == 5
+    }
+    labels_in_table = set(BASIS_NEEDS_LOOK) | set(DOUBT_LABELS)
+    assert labels_in_table <= set(rows)
+    look_word = {True: "是", False: "否", None: "只有 ISTD"}
+    for label in labels_in_table:
+        _, figure, _, _, look = rows[label]
+        image = re.fullmatch(r"!\[[^\]]+\]\((assets/labels/[a-z0-9-]+\.svg)\)", figure)
+        assert image and (guide.parent / image[1]).is_file(), label
+        # The guide states the same look mark the table applies.
+        assert look == look_word[BASIS_NEEDS_LOOK.get(label, True)], label

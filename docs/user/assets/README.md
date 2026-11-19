@@ -7,6 +7,12 @@ Files used by the [user guides](../README.md) and the developer maps.
 - `targeted-workspace.png` and `untargeted-workspace.png` are Workbench
   screenshots embedded in the Targeted and Untargeted pages. Retake them when
   the setup pages change, with local paths replaced by neutral example paths.
+- `labels/<slug>.svg` are the synthetic figures beside each result label in the
+  Targeted page. Each is a short hand-edited SVG with its own light background,
+  so it reads in either guide theme; it carries no text, because the guide
+  names the label and the legend. A label added to
+  `xic_extractor/output/result_labels.py` needs a row and a figure there
+  (`tests/test_result_labels.py`).
 
 The SVG maps below are implementation responsibility maps linked from the
 [developer reading path](../../development/README.md). They are not embedded

@@ -202,6 +202,15 @@ img {
   border-radius: 10px;
   box-shadow: var(--shadow);
 }
+/* A small figure inside a table row stays beside its text. */
+td img {
+  width: 160px;
+  margin: 2px 0;
+  transform: none;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: none;
+}
 
 /* Steps: a top-level numbered list reads like the Workbench step cards. */
 .doc > ol {

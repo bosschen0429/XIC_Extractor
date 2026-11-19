@@ -124,10 +124,6 @@
     range.append(node('span', 'RT'), start, node('span', '–'), end, node('span', 'min'), apply, nearby, full);
     review.append(toolbar, range);
     const charts = node('div', undefined, 'tx-charts'); review.append(charts);
-    const provenance = node('details', undefined, 'tx-provenance');
-    provenance.append(node('summary', '本次 RAW 讀取設定 · 尚未比對是否為分析原檔'));
-    provenance.append(node('p', '曲線依樣本名稱從目前 RAW 讀取；無法確認與原分析是同一份檔。峰界與面積沿用保存結果，不重新積分。'));
-    const extraction = node('p'); provenance.append(extraction); review.append(provenance);
     let item, sample, rtWindow;
     const traces = () => item.curves.filter(curve => curve.sample_id === sample);
     const extent = () => [Math.min(...traces().map(c => c.raw_rts[0])), Math.max(...traces().map(c => c.raw_rts[c.raw_rts.length - 1]))];
@@ -190,7 +186,6 @@
         markup += rawPoints.map(([rt, intensity]) => `<circle data-kind="raw" cx="${x(rt)}" cy="${y(intensity)}" r="2.2"><title>RT ${rt.toFixed(4)} min · ${number(intensity)}</title></circle>`).join('');
         setHTML(svg, markup); card.append(svg); charts.append(card);
       }
-      extraction.textContent = traces().map(c => `${c.quality_flags.target_label}：m/z ${c.provenance.mz} ± ${c.provenance.ppm} ppm`).join('；');
     }
     function selectSample() {
       sample = sampleSelect.value; sampleName.textContent = sample;
@@ -240,6 +235,15 @@
     // The saved labels are shown as stored; they are never combined into prose.
     const labelNote = record => [record['依據'] && `依據：${record['依據']}`, record['疑點'] && `疑點：${record['疑點']}`]
       .filter(Boolean).join('　');
+    // A label never breaks inside itself; a list wraps only between labels.
+    const labelCell = text => {
+      const cell = element('td', undefined, 'tgt-reason');
+      String(text).split('、').forEach((label, index) => {
+        if (index) cell.append('、');
+        cell.append(element('span', label, 'tgt-label'));
+      });
+      return cell;
+    };
     const isNumber = v => typeof v === 'number' && Number.isFinite(v);
     // Intensities span decades, so they read as Excel-style scientific notation.
     const scientific = v => {
@@ -333,7 +337,7 @@
           if (istd && counted(istd['Counted Detection']) !== '已計入') istdArea.append(element('span', 'ISTD 未計入', 'tgt-badge'));
           row.append(element('td', istd ? value(istd.RT) : '—', 'tgt-number tgt-istd'), istdArea);
         }
-        row.append(element('td', record['依據'] || '—', 'tgt-reason'), element('td', record['疑點'] || '', 'tgt-reason'));
+        row.append(labelCell(record['依據'] || '—'), labelCell(record['疑點'] || ''));
         if (canLoadCurves) {
           const cell = element('td');
           const view = element('button', '看 XIC', 'tgt-xic');

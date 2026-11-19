@@ -2725,7 +2725,8 @@ def test_curve_history_restores_snapshot_after_pending_load(
     expect(review.get_by_text("原始 scan 點", exact=True)).to_be_visible()
     expect(curves).to_have_count(2)
     expect(review.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
-    expect(review.locator(".tx-provenance")).to_contain_text("尚未比對是否為分析原檔")
+    # A curve read again from RAW adds no standing caution under the charts.
+    expect(review.locator(".tx-provenance")).to_have_count(0)
     # The result table never navigates away; each ion has its own y scale.
     assert (
         page.locator("#recorded-review").evaluate(
