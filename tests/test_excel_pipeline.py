@@ -342,7 +342,8 @@ def test_saved_workbook_overview_takes_roles_from_targets(tmp_path):
         diagnostics=[],
         output_path=tmp_path / "roles.xlsx",
     )
-    overview = TargetedWorkbookSource(path).summary["overview"]
+    source = TargetedWorkbookSource(path)
+    overview = source.summary["overview"]
     # XIC Results carries no Role; the saved Targets sheet is its only source.
     assert {t["label"]: t["role"] for t in overview["targets"]} == {
         "A": "Analyte",
@@ -350,6 +351,8 @@ def test_saved_workbook_overview_takes_roles_from_targets(tmp_path):
     }
     assert (overview["analyte_counted"], overview["analyte_total"]) == (1, 2)
     assert (overview["istd_counted"], overview["istd_total"]) == (2, 2)
+    assert source.target_names_for_role("Analyte") == ["A"]
+    assert source.target_names_for_role("ISTD") == ["IS"]
 
 
 def _config(
