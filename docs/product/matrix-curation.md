@@ -185,7 +185,9 @@ protonated monomer has no Matrix row. It requires all of:
   the seed monomer and the protonated dimer. A chain of co-eluting rows is not
   sufficient.
 
-The isotope ratio screen and thresholds are unchanged. A compatible
+For any ion family, its `M+2_unassigned` witness must pass co-elution and
+isotope-ratio checks on direct detections alone. Backfill can still support
+single-pair collapse. A compatible
 metal dimer (`[2M-H+Mg]+`, `[2M-H+Ca]+`, `[2M-2H+Na+Mg]+`,
 `[2M-2H+2Mg+HCOO]+` or `[2M-2H+2Mg+CH3COO]+`) can join an established family
 only with its own supported `M+2_unassigned` companion and direct co-elution

@@ -30,6 +30,8 @@ from xic_extractor.tabular_io import read_tsv_with_header, write_tsv
 
 SAMPLES = tuple(f"s{index}" for index in range(1, 7))
 SAMPLE_SCALE = (1.0, 2.0, 3.0, 5.0, 8.0, 13.0)
+# Two directly co-eluting samples, too few alone; four backfilled samples.
+TWO_DIRECT = (True, True, False, False, False, False)
 
 
 def row(
@@ -433,7 +435,41 @@ def test_mass_compatible_family_requires_independent_dimer_and_isotope_witnesses
     assert all(d[1] != "non_protonated_ion_family" for d in decisions.values())
 
 
-@pytest.mark.parametrize("direct", [False, (True, True, False, False, False, False)])
+@pytest.mark.parametrize(
+    ("carrier", "kept"),
+    [
+        ("MgFA", ("Na", "MgFA", "MgAc", "DimerH", "MetalDimer")),
+        ("MetalDimer", ("MetalDimer",)),
+    ],
+)
+def test_backfill_can_collapse_a_metal_isotope_but_not_support_a_family(carrier, kept):
+    companion = carrier + "_M2"
+    rows = [
+        (
+            feature,
+            {
+                sample: replace(cell, direct=direct)
+                for (sample, cell), direct in zip(
+                    cells.items(), TWO_DIRECT, strict=True
+                )
+            },
+        )
+        if feature.feature_id == companion
+        else (feature, cells)
+        for feature, cells in sodium_family()
+    ]
+    decisions, result = decide(*rows)
+
+    assert all(decisions[name][0] for name in kept)
+    assert decisions[companion][:3] == (False, "derived_from_representative", carrier)
+    pair = relation_row_between(result, carrier, companion, "M+2_unassigned")
+    assert pair["backfill_coeluting_samples"] == 4
+    assert pair["outcome"] == "collapse"
+    if carrier == "MetalDimer":
+        assert decisions["Na"][:2] == (False, "non_protonated_ion_family")
+
+
+@pytest.mark.parametrize("direct", [False, TWO_DIRECT])
 def test_backfilled_dimer_cannot_establish_an_ion_family(direct):
     rows = [r for r in sodium_family() if r[0].feature_id != "DimerH"]
     rows.append(row("DimerH", 455.188488252321, scale=0.3, direct=direct))
@@ -507,10 +543,16 @@ def test_family_never_assigns_a_removed_protonated_candidate_as_representative()
 
 
 @pytest.mark.parametrize(
-    ("isotope_supported", "calcium_shift"), [(False, 0.0), (True, 0.0), (True, 8.8)]
+    ("isotope_direct", "calcium_shift", "qualified"),
+    [
+        (None, 0.0, False),
+        (True, 0.0, True),
+        (True, 8.8, False),
+        (TWO_DIRECT, 0.0, False),
+    ],
 )
 def test_parallel_metal_multimers_can_support_a_variable_adduct_ratio(
-    isotope_supported, calcium_shift
+    isotope_direct, calcium_shift, qualified
 ):
     # C10H13N5O4 neutral: two different metal carriers constrain the same trimer.
     neutral = 267.09675390
@@ -529,17 +571,17 @@ def test_parallel_metal_multimers_can_support_a_variable_adduct_ratio(
             shift_sec=calcium_shift,
         ),
     ]
-    if isotope_supported:
+    if isotope_direct is not None:
         rows.append(
             row(
                 "MgTrimer_M2",
                 3 * neutral + 22.976668084861 + 1.997551271,
                 scale=0.3 * 0.1101 / 0.7899,
+                direct=isotope_direct,
             )
         )
     decisions, _ = decide(*rows)
     assert decisions["MH"][0] is True
-    qualified = isotope_supported and calcium_shift == 0.0
     assert decisions["MgTrimer"][0] is (not qualified)
     assert decisions["CaTrimer"][0] is (not qualified)
     if qualified:
@@ -579,10 +621,6 @@ def test_a_sparse_root_without_contradiction_still_represents_the_chain():
 
     assert decisions["N"][:3] == (False, "derived_from_representative", "L")
     assert decisions["H"][:3] == (False, "derived_through_group", "L")
-
-
-# Two directly co-eluting samples, too few alone; four backfilled samples.
-TWO_DIRECT = (True, True, False, False, False, False)
 
 
 def without_apex(scenario, samples):

@@ -354,9 +354,14 @@ def collapse_same_compound(
             key: relation_outcome(by_key[key], mz[pair[0]], evidence[pair])
             for key in matched
         }
-    metal = _metal_carriers(outcomes)
+    metal_isotope_pairs = {
+        pair
+        for pair, pair_outcomes in outcomes.items()
+        if pair_outcomes.get("M+2_unassigned") == "collapse"
+    }
+    metal_carriers = {light for light, _ in metal_isotope_pairs}
     for pair, pair_outcomes in outcomes.items():
-        if pair[0] not in metal:
+        if pair[0] not in metal_carriers:
             continue
         for key, value in pair_outcomes.items():
             if value == "isotope_abundance_exceeded":
@@ -463,7 +468,7 @@ def collapse_same_compound(
         )
 
     decisions, family_reviews = _ion_family_decisions(
-        features, cells, decisions, evidence, outcomes
+        features, cells, decisions, evidence, metal_isotope_pairs
     )
     removed = {index for index, decision in enumerate(decisions) if not decision.keep}
     representative = {
@@ -492,15 +497,6 @@ def collapse_same_compound(
     )
 
 
-def _metal_carriers(outcomes: Mapping[tuple[int, int], Mapping[str, str]]) -> set[int]:
-    """Rows with a supported Mg/K-compatible M+2_unassigned companion."""
-    return {
-        light
-        for (light, _), labels in outcomes.items()
-        if labels.get("M+2_unassigned") == "collapse"
-    }
-
-
 @dataclass(frozen=True)
 class _IonFamily:
     neutral_mass: float
@@ -514,7 +510,7 @@ def _ion_family_decisions(
     cells: Sequence[Mapping[str, CellEvidence]],
     decisions: Sequence[RowDecision],
     evidence: dict[tuple[int, int], PairEvidence],
-    outcomes: Mapping[tuple[int, int], Mapping[str, str]],
+    metal_isotope_pairs: set[tuple[int, int]],
 ) -> tuple[list[RowDecision], tuple[dict[str, object], ...]]:
     """Exclude supported non-[M+H]+ families, even without a protonated row.
 
@@ -523,7 +519,7 @@ def _ion_family_decisions(
     With [M+H]+, parallel Mg/Ca multimers and a metal-isotope companion supply
     the independent witnesses instead.
     Cross-sample adduct ratios are not required to be constant in this joint
-    hypothesis; the isotope witness still passes its original abundance gates.
+    hypothesis; the isotope witness must pass without backfilled evidence.
     """
     mz = [feature.matrix_mz for feature in features]
 
@@ -533,7 +529,9 @@ def _ion_family_decisions(
             evidence[pair] = pair_evidence(cells[pair[0]], cells[pair[1]])
         return evidence[pair].coelutes_directly
 
-    metal_isotopes = _metal_carriers(outcomes)
+    metal_isotopes = {
+        pair[0] for pair in metal_isotope_pairs if evidence[pair].coelutes_directly
+    }
     if not metal_isotopes:
         return list(decisions), ()
     families = _find_ion_families(mz, coelutes, metal_isotopes)
