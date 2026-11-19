@@ -107,7 +107,7 @@ def test_summary_headline_counts_events_without_a_result():
         "Issue": "FILE_ERROR",
         "Reason": "RAW file could not be opened",
     }
-    overview = summarize_targeted_results(rows, [])
+    overview = summarize_targeted_results(rows, [], istd_targets=set())
     worklist = focus_worklist(overview, rows, [failed])
     sheet = Workbook().active
     build_overview_sheet(sheet, overview, worklist=worklist, provenance="v1")
@@ -136,7 +136,7 @@ def test_worklist_lists_only_results_that_differ_from_the_majority():
         for row in _saved_rows()
     ]
     look = rows_needing_look(rows, {"Standard"})
-    overview = summarize_targeted_results(rows, look)
+    overview = summarize_targeted_results(rows, look, istd_targets={"Standard"})
     assert overview.needs_look_count == 2
     worklist = focus_worklist(overview, rows, [])
     sheet = Workbook().active
@@ -157,7 +157,7 @@ def test_minority_counted_without_a_doubt_shows_its_identity_basis():
         for r in _saved_rows()
         if r["Target"] == "Common"
     ]
-    overview = summarize_targeted_results(rows, [])
+    overview = summarize_targeted_results(rows, [], istd_targets=set())
     [record] = focus_worklist(overview, rows, [])
     # Listed for its outcome; the reader tests the identity its count rests on.
     assert (record["Sample"], record["Outcome"], record["依據"], record["疑點"]) == (
@@ -181,13 +181,13 @@ def test_summary_counts_analytes_and_names_only_istds_missing_somewhere():
         {
             "SampleName": sample,
             "Target": target,
-            "Role": role,
             "Counted Detection": "TRUE" if sample in hits else "FALSE",
         }
-        for (target, role), hits in counted.items()
+        for (target, _), hits in counted.items()
         for sample in samples
     ]
-    overview = summarize_targeted_results(rows, [])
+    istds = {target for target, role in counted if role == "ISTD"}
+    overview = summarize_targeted_results(rows, [], istd_targets=istds)
     worklist = focus_worklist(overview, rows, [])
     sheet = Workbook().active
     build_overview_sheet(sheet, overview, worklist=worklist, provenance="v1")

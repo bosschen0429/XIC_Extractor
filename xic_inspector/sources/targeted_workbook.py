@@ -68,6 +68,11 @@ def _table(book, name: str, required: set[str]) -> list[dict[str, Any]]:
     return records
 
 
+def _role(target: dict[str, Any]) -> str:
+    """The one reading of a saved Targets.Role cell."""
+    return str(target["Role"] or "").strip().casefold()
+
+
 class TargetedWorkbookSource:
     """A self-contained saved-result source; labels are not RAW identities."""
 
@@ -176,14 +181,15 @@ class TargetedWorkbookSource:
         self._records_by_target = defaultdict(list)
         for row in self.records:
             self._records_by_target[row["Target"]].append(row)
-        istd_targets = {
-            row["Label"]
-            for row in self.targets
-            if str(row["Role"]).strip().upper() == "ISTD"
-        }
+        # A role belongs to the target; Targets.Role is its only saved record.
+        istd_targets = frozenset(
+            row["Label"] for row in self.targets if _role(row) == "istd"
+        )
         # The saved labels say which results need a look.
         overview = summarize_targeted_results(
-            self.records, rows_needing_look(self.records, istd_targets)
+            self.records,
+            rows_needing_look(self.records, istd_targets),
+            istd_targets=istd_targets,
         )
         # Group is recorded per sample; it colours that sample in every view.
         sample_groups: dict[str, str] = {}
@@ -219,8 +225,7 @@ class TargetedWorkbookSource:
         return [
             target["Label"]
             for target in self.targets
-            if isinstance(target["Role"], str)
-            and target["Role"].strip().casefold() == role.casefold()
+            if _role(target) == role.casefold()
         ]
 
     def curve_targets(

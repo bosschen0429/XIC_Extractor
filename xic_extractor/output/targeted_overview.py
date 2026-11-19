@@ -65,8 +65,13 @@ def rows_needing_look(
 def summarize_targeted_results(
     rows: Sequence[Mapping[str, object]],
     look_rows: Sequence[Mapping[str, object]],
+    *,
+    istd_targets: Collection[str],
 ) -> TargetedOverview:
-    """Count recorded decisions once; never infer missing decisions from values."""
+    """Count recorded decisions once; never infer missing decisions from values.
+
+    A role belongs to the target, so the caller names its ISTD targets.
+    """
     by_target: dict[str, list[Mapping[str, object]]] = defaultdict(list)
     look_by_target: dict[str, list[Mapping[str, object]]] = defaultdict(list)
     for row in rows:
@@ -85,7 +90,7 @@ def summarize_targeted_results(
         targets.append(
             TargetOverview(
                 label=label,
-                role=str(records[0].get("Role") or ""),
+                role="ISTD" if label in istd_targets else "Analyte",
                 total=len(records),
                 counted=len(counted),
                 count_unknown=sum(
@@ -110,8 +115,8 @@ def summarize_targeted_results(
         focus_count=sum(len(target.focus_samples) for target in targets),
         focus_target_count=sum(bool(target.focus_samples) for target in targets),
         minority_share=MINORITY_SHARE,
-        analyte_counted=sum(t.counted for t in targets if t.role != "ISTD"),
-        analyte_total=sum(t.total for t in targets if t.role != "ISTD"),
+        analyte_counted=sum(t.counted for t in targets if t.role == "Analyte"),
+        analyte_total=sum(t.total for t in targets if t.role == "Analyte"),
         istd_counted=sum(t.counted for t in targets if t.role == "ISTD"),
         istd_total=sum(t.total for t in targets if t.role == "ISTD"),
         targets=tuple(targets),

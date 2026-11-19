@@ -66,7 +66,9 @@ def test_rows_needing_look_follow_their_labels_and_role():
 
 def test_overview_summarizes_decisions_not_numeric_availability():
     rows = _labelled_rows()
-    overview = summarize_targeted_results(rows, rows_needing_look(rows, {"ISTD"}))
+    overview = summarize_targeted_results(
+        rows, rows_needing_look(rows, {"ISTD"}), istd_targets={"ISTD"}
+    )
     assert (overview.sample_count, overview.result_count) == (2, 4)
     assert (overview.counted_count, overview.needs_look_count) == (2, 2)
     assert [target.label for target in overview.targets] == ["ISTD", "Analyte"]
@@ -88,10 +90,10 @@ def test_overview_summarizes_decisions_not_numeric_availability():
 
 def test_overview_does_not_infer_missing_legacy_decisions():
     row = _rows()[0] | {"Counted Detection": None}
-    overview = summarize_targeted_results([row], [])
+    overview = summarize_targeted_results([row], [], istd_targets=set())
     assert (overview.counted_count, overview.count_unknown) == (0, 1)
     assert overview.targets[0].median_area is None
-    empty = summarize_targeted_results([], [])
+    empty = summarize_targeted_results([], [], istd_targets=set())
     assert empty.result_count == empty.counted_count == empty.needs_look_count == 0
     assert empty.targets == ()
 
@@ -109,7 +111,6 @@ def test_review_focus_is_the_minority_outcome_of_each_target():
         {
             "SampleName": sample,
             "Target": target,
-            "Role": "ISTD" if target == "ISTD" else "Analyte",
             "Counted Detection": "TRUE" if sample in hits else "FALSE",
         }
         for target, hits in counted.items()
@@ -119,7 +120,7 @@ def test_review_focus_is_the_minority_outcome_of_each_target():
         *(r for r in rows if r["Target"] == "Absent"),
         next(r for r in rows if (r["SampleName"], r["Target"]) == ("S1", "Split")),
     ]
-    overview = summarize_targeted_results(rows, look)
+    overview = summarize_targeted_results(rows, look, istd_targets={"ISTD"})
     focus = {t.label: (t.focus_kind, t.focus_samples) for t in overview.targets}
     # A shared absence is the batch fact; the rare detection is what may be wrong.
     assert focus == {

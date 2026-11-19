@@ -315,6 +315,46 @@ def test_workbook_shows_backfill_labels_without_changing_saved_counts(tmp_path):
     assert source.records[0]["依據"] == "回填"
 
 
+def test_saved_workbook_overview_takes_roles_from_targets(tmp_path):
+    from xic_extractor.output.workbook_builder import write_workbook_from_rows
+    from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
+
+    rows = [
+        {
+            "SampleName": sample,
+            "Target": target,
+            "Role": role,
+            "RT": "9.0",
+            "Area": "100",
+            "Counted Detection": counted,
+            "Product State": "detected_clean" if counted == "TRUE" else "not_counted",
+        }
+        for sample in ("S1", "S2")
+        for target, role, counted in (
+            ("A", "Analyte", "TRUE" if sample == "S1" else "FALSE"),
+            ("IS", "ISTD", "TRUE"),
+        )
+    ]
+    path = write_workbook_from_rows(
+        _config(tmp_path),
+        [replace(_target("A"), istd_pair="IS"), replace(_target("IS"), is_istd=True)],
+        rows,
+        diagnostics=[],
+        output_path=tmp_path / "roles.xlsx",
+    )
+    source = TargetedWorkbookSource(path)
+    overview = source.summary["overview"]
+    # XIC Results carries no Role; the saved Targets sheet is its only source.
+    assert {t["label"]: t["role"] for t in overview["targets"]} == {
+        "A": "Analyte",
+        "IS": "ISTD",
+    }
+    assert (overview["analyte_counted"], overview["analyte_total"]) == (1, 2)
+    assert (overview["istd_counted"], overview["istd_total"]) == (2, 2)
+    assert source.target_names_for_role("Analyte") == ["A"]
+    assert source.target_names_for_role("ISTD") == ["IS"]
+
+
 def _config(
     tmp_path: Path,
 ) -> ExtractionConfig:

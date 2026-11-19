@@ -47,7 +47,9 @@ def write_workbook_from_rows(
 ) -> Path:
     _require_product_projection(rows)
     istd_targets = {target.label for target in targets if target.is_istd}
-    overview = summarize_targeted_results(rows, rows_needing_look(rows, istd_targets))
+    overview = summarize_targeted_results(
+        rows, rows_needing_look(rows, istd_targets), istd_targets=istd_targets
+    )
     metadata_rows = build_metadata_rows(config)
     run = dict(metadata_rows)
     wb = Workbook()
