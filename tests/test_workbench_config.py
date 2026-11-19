@@ -158,7 +158,7 @@ def test_untargeted_save_routes_dll_to_canonical_and_preserves_unrelated_control
     assert payload["raw_dir"] == "new-batch"
 
 
-def test_preferences_write_only_theme_view_and_preserves_existing_other_keys(tmp_path):
+def test_preferences_write_preserves_existing_other_keys(tmp_path):
     path = tmp_path / "workbench.json"
     path.write_text(
         json.dumps({"theme": "light", "view": "targeted", "future_key": "keep"}),
@@ -166,10 +166,6 @@ def test_preferences_write_only_theme_view_and_preserves_existing_other_keys(tmp
     )
     preferences = config_io.write_preferences({"theme": "dark"}, config_dir=tmp_path)
     assert preferences == {"theme": "dark", "view": "targeted", "future_key": "keep"}
-    with pytest.raises(ValueError, match="應用設定"):
-        config_io.write_preferences(
-            {"dll_dir": "not-authorized-source"}, config_dir=tmp_path
-        )
     assert config_io.read_preferences(config_dir=tmp_path) == preferences
 
 

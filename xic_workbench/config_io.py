@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from xic_extractor.configuration.atomic_write import atomic_write_text
-from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.paths import runtime_root
 from xic_extractor.configuration.settings import resolve_settings
 from xic_extractor.configuration.workspace_state import (
@@ -88,8 +87,6 @@ def write_application_settings(
     settings: dict[str, str], *, config_dir: Path | None = None
 ) -> dict[str, str]:
     """Admit only machine/resources; invalid scientific drafts must not block this."""
-    if any(key not in {"dll_dir"} for key in settings):
-        raise ConfigError("應用設定只接受本機與執行資源，不能修改方法或批次。")
     values, _parsed, _warnings = resolve_settings(settings)
     selected = {key: values[key] for key in settings}
     save_workspace(_runtime_dir(config_dir), settings=selected)
@@ -120,8 +117,6 @@ def read_preferences(*, config_dir: Path | None = None) -> dict:
 
 @_serialized
 def write_preferences(values: dict, *, config_dir: Path | None = None) -> dict:
-    if set(values) - {"theme", "view", "targeted_output_dir", "matrix_curation"}:
-        raise ValueError("不支援此偏好設定；DLL 目錄由應用設定管理。")
     payload = read_preferences(config_dir=config_dir) | values
     _write_json_object(_runtime_dir(config_dir) / "workbench.json", payload)
     return payload

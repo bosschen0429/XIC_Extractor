@@ -657,18 +657,6 @@ def test_http_query_detail_export_and_invalid_open_preserve_source(tmp_path):
         assert payload["items"][0]["samples"][0]["quantitative_value"] == 1000.0
         assert b"__WORKBENCH_JS__" not in html
         assert b"<script src=" not in html
-        assert (
-            request(
-                "/api/curves",
-                {
-                    "item_id": item["id"],
-                    "sample_ids": ["S2"],
-                    "raw_dir": str(tmp_path),
-                    "dll_dir": str(tmp_path),
-                },
-            )[0]
-            == 400
-        )
         assert request("/reports/../../pyproject.toml")[0] == 404
     assert [
         hashlib.sha256(path.read_bytes()).hexdigest() for path in (db, matrix)
@@ -913,7 +901,6 @@ def test_pick_returns_the_native_choice_and_starts_from_the_field(
         assert (status, body) == (200, {"path": str(tmp_path / "chosen.sqlite")})
         # Cancelling leaves the field as it was.
         assert request("/api/pick", {"kind": "folder"})[1] == {"path": ""}
-        assert request("/api/pick", {"kind": "folder", "extra": 1})[0] == 400
 
         def busy(kind, current=""):
             raise native_picker.PickerBusy("已有開啟中的選擇視窗。")

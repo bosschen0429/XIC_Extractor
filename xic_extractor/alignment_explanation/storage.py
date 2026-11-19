@@ -400,7 +400,7 @@ def open_readonly(path: str | Path) -> Iterator[sqlite3.Connection]:
     path = Path(path)
     if not path.is_file():
         raise ExplanationUnavailableError(
-            f"explanation unavailable: {path}; rerun Alignment（請重新執行 Alignment）"
+            f"找不到這份結果的檢閱資料（{path.name}）；請重新執行 Untargeted 分析。"
         )
     try:
         with closing(

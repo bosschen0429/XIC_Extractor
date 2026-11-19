@@ -62,7 +62,7 @@ def _text(value: Any, name: str) -> str:
 def _ids(value: Any) -> tuple[str, ...]:
     if not isinstance(value, list) or not value or len(value) > 1000:
         raise ValueError("請至少選擇一個樣本。")
-    return tuple(dict.fromkeys(_text(v, "樣本 ID") for v in value))
+    return tuple(dict.fromkeys(value))
 
 
 class ReviewWorkspace:
@@ -230,34 +230,13 @@ class ReviewWorkspace:
             return self._page_response()
 
     def query(self, values: dict[str, Any]) -> dict[str, Any]:
-        allowed = {
-            "group_id",
-            "target_id",
-            "target_role",
-            "sample_id",
-            "attention_only",
-            "nearest_mz",
-            "mz_min",
-            "mz_max",
-            "rt_min",
-            "rt_max",
-            "offset",
-            "limit",
-            "review_scope",
-        }
-        if set(values) - allowed:
-            raise ValueError("查詢包含不支援的欄位。")
         with self._lock:
             self._require_open()
             if self._report is None or self._page is None:
                 raise ValueError("請先開啟一個批次。")
             group_id = values.get("group_id", "")
-            if not isinstance(group_id, str):
-                raise ValueError("分組 ID 必須是文字。")
             target_id = values.get("target_id", "")
             sample_id = values.get("sample_id", "")
-            if not isinstance(target_id, str) or not isinstance(sample_id, str):
-                raise ValueError("目標與樣本名稱必須是文字。")
             request = SelectionRequest(
                 strategy="query",
                 review_scope=values.get(
@@ -472,9 +451,6 @@ class ReviewWorkspace:
             return copy.deepcopy(self._detail)
 
     def start_curves(self, values: dict[str, Any]) -> dict[str, Any]:
-        allowed = {"item_id", "sample_ids", "raw_dir", "dll_dir", "padding_min"}
-        if set(values) - allowed:
-            raise ValueError("曲線要求包含不支援的欄位。")
         samples = _ids(values.get("sample_ids"))
         with self._lock:
             self._require_open()
@@ -488,12 +464,6 @@ class ReviewWorkspace:
                 and self._page is not None
             )
             description = self._detail["item"]
-            if not any(
-                description[k] for k in ("group_id", "candidate_id", "target_id")
-            ):
-                raise ValueError("此項目沒有可供擷取的分組或候選身份。")
-            if set(samples) - set(description["curve_sample_ids"]):
-                raise ValueError("所選樣本沒有擷取座標，無法取得曲線。")
             self._replace_job()
             curves = self._curves
             raw_needed = curves is None or curves.needs_raw(samples)
