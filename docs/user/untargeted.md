@@ -11,7 +11,7 @@
 | RAW 資料夾 | 是 | 同一批要一起對齊的 Thermo `.raw` 檔 |
 | 分析方法 | 是 | 內建 dR、R、MeR 等，或匯入自訂方法檔，見下方[分析方法](#分析方法) |
 | 內標清單 | 否 | 和 Targeted 相同格式的[目標清單](targeted.md#目標清單)，只讀內標列，見[內標清單](#內標清單) |
-| 上機資訊 | 否 | 上機序列表（Word、Excel、CSV 或 TSV）；匯入後帶入樣本角色、組別與排除 |
+| 上機資訊 | 否 | 上機時的序列表檔案（Word、Excel、CSV 或 TSV）；匯入後帶入樣本角色、組別與排除 |
 
 第一次使用要先備妥 RawFileReader，見[開始使用](README.md#第一次使用準備-rawfilereader)。
 
@@ -70,14 +70,14 @@ Delta Mass 方法只找候選，不做跨樣本對齊，也不產生矩陣。Pt 
 
 ## 看結果
 
-結果卡片列出 RAW 檔案數、**矩陣群組** 數與 **全部樣本都有值** 的群組數。
+結果卡片列出 RAW 檔案數、**矩陣群組**（進入矩陣的 feature）數，以及其中 **全部樣本都有值** 的數目。
 
 | 想做什麼 | 按哪裡 |
 | --- | --- |
 | 拿原始面積矩陣 | **下載 Alignment 矩陣**（`alignment_matrix.tsv`） |
 | 確認某個 feature 的峰形與每格來源 | **檢閱結果** |
 | 收斂成統計用的矩陣 | **整理矩陣**，見下一節 |
-| 各樣本候選表、輸出資料夾、自訂匯出 | **其他檔案**（含 **開啟輸出資料夾**、**自訂 Inspector 匯出**） |
+| 各樣本候選表、結果資料夾、自訂匯出 | **其他檔案**（含 **開啟輸出資料夾**、**自訂 Inspector 匯出**） |
 
 按 **檢閱結果** 後：
 
@@ -110,8 +110,8 @@ Delta Mass 方法只找候選，不做跨樣本對齊，也不產生矩陣。Pt 
 | 檔案 | 內容 |
 | --- | --- |
 | `alignment_matrix.tsv` | 主要結果：feature × 樣本的面積矩陣 |
-| `alignment_review.tsv` | 每個群組一列：中心 m/z 與 RT、偵測數、是否進矩陣、警示 |
-| `alignment_explanation.sqlite` | 檢閱畫面用的判斷與曲線，不需要自己開 |
+| `alignment_review.tsv` | 每個 feature 一列：中心 m/z 與 RT、偵測數、是否進矩陣、警示 |
+| `alignment_explanation.sqlite` | 檢閱畫面用的判定與曲線，不需要自己開 |
 | `alignment_run_metadata.json` | 本次的輸入與設定 |
 | `sample_metadata.tsv` | 本次使用的樣本角色、注射順序與排除 |
 | `<樣本>/discovery_peaks.csv` | 該樣本找到的 MS1 峰，以及哪些進入對齊 |
@@ -133,12 +133,12 @@ Delta Mass 方法只找候選，不做跨樣本對齊，也不產生矩陣。Pt 
 
 | 欄 | 意思 |
 | --- | --- |
-| `feature_id` | 群組編號，如 `F000001`；只在這份結果內有效 |
+| `feature_id` | feature 編號，如 `F000001`；只在這份結果內有效 |
 | `matrix_row_index` | 在矩陣的第幾列；空白表示沒進矩陣 |
-| `group_center_mz`、`group_center_rt` | 群組中心 m/z 與 RT（完整精度） |
+| `group_center_mz`、`group_center_rt` | feature 中心 m/z 與 RT（完整精度） |
 | `detected_count` | 直接偵測到的樣本數 |
 | `accepted_cell_count`、`accepted_backfill_count` | 有值的格數，以及其中由回填取得的格數 |
-| `identity_reason` | 群組的判定；只有 `established` 進矩陣 |
+| `identity_reason` | feature 的判定；只有 `established` 進矩陣 |
 | `warning` | `no_anchor`、`high_not_searched` 或 `high_backfill_dependency`（有回填值但沒有直接偵測） |
 
 ### 整理矩陣的資料夾
