@@ -1,7 +1,7 @@
 """Exclude supported derivative ion forms from a statistical Matrix.
 
 Isotope, adduct and dimer rows are excluded when supported derivation paths
-reach them from a directly co-eluting root. Neither an exact element identity
+reach them from a root. Neither an exact element identity
 nor a unique root is required to exclude a derivative. Mass relations compare
 row-center m/z; they are not per-sample mass evidence.
 """
@@ -33,17 +33,21 @@ N15_PER_N14 = 0.00364 / 0.99636
 K39_PER_K41 = 13.857
 
 MZ_PPM = 10.0
-MAX_APEX_SEC = 3.0
+# Two MS1 scans at the ~2.5 s cycle of the CID-NL method: in 8RAW, mass-related
+# pairs are as enriched over shifted-mass decoys at 3-5.5 s as at 1-3 s.
+MAX_APEX_SEC = 5.5
 MIN_SUPPORT_SAMPLES = 3
 MIN_SUPPORT_FRACTION = 0.8
 ISOTOPE_MAX_LOG_MAD = 0.1
-OTHER_MAX_LOG_MAD = 0.15
 K41_MEDIAN_RANGE = (11.0, 18.0)
 ISOTOPE_RATIO_SAMPLE_FACTOR = 2.0
 ISOTOPE_RATIO_SAMPLE_FRACTION = 0.8
 # NIST: one 26Mg substitution in one/two Mg atoms, or one 41K in two K.
 # These overlapping models classify a derivative, not its element identity.
 UNASSIGNED_ISOTOPE_RATIOS = (0.7899 / 0.1101, 0.7899 / (2 * 0.1101), K39_PER_K41 / 2)
+# 25Mg in the most Mg atoms those models allow, added to a single-heavy-atom
+# ceiling when the light row has a supported M+2_unassigned companion.
+METAL_M1_ALLOWANCE = 2 * 0.1000 / 0.7899
 UNASSIGNED_ISOTOPE_MEDIAN_FACTORS = (0.8, 1.3)
 # A kept representative this much weaker than a removed member is reviewed.
 WEAK_REPRESENTATIVE_RATIO = 0.1
@@ -101,18 +105,24 @@ class Relation:
     def predict(self, light_mz: float) -> float:
         return self.mz_factor * light_mz + self.delta
 
-    def abundance_ceiling(self, light_mz: float) -> float | None:
+    def abundance_ceiling(
+        self, light_mz: float, metal_carrier: bool = False
+    ) -> float | None:
         """Largest heavy/light ratio if every atom of the neutral were this element.
 
         The neutral mass assumes a proton, which overestimates it for any other
-        cation and keeps the ceiling loose.
+        cation and keeps the ceiling loose. A metal carrier's single-heavy-atom
+        peak may also hold 25Mg.
         """
         if self.abundance is None:
             return None
         element_mass, per_atom, count = self.abundance
         neutral = self.charge * (light_mz - PROTON)
         atoms = max(0, math.floor(neutral / element_mass))
-        return math.comb(atoms, count) * per_atom**count
+        ceiling = math.comb(atoms, count) * per_atom**count
+        if metal_carrier and count == 1:
+            ceiling += METAL_M1_ALLOWANCE
+        return ceiling
 
 
 RELATIONS: tuple[Relation, ...] = (
@@ -141,25 +151,42 @@ RELATIONS: tuple[Relation, ...] = (
     Relation("H2O_loss", "review", 18.010565),
     Relation("+116.047_dR", "annotation", 116.04734),
 )
-_COLLAPSE_OUTCOMES = frozenset({"collapse", "collapse_corroborated_adduct"})
 
 
 @dataclass(frozen=True)
 class PairEvidence:
     both_direct: int
+    # Samples whose two cells have co-eluting apices: the direct ones, plus
+    # backfilled ones when direct co-elution alone is insufficient.
     support: tuple[str, ...]
+    # The supporting samples where both cells are direct detections.
+    direct_support: tuple[str, ...]
     max_apex_diff_sec: float | None
-    backfill_coeluting: int
     backfill_apex_unavailable: int
     # light/heavy on support samples whose values are finite and positive.
     ratios: tuple[float, ...]
 
     @property
-    def coelutes(self) -> bool:
+    def backfill_coeluting(self) -> int:
+        return len(self.support) - len(self.direct_support)
+
+    @property
+    def direct_consistent(self) -> bool:
+        """Some direct co-elution, and direct detections mostly agree."""
         return (
-            len(self.support) >= MIN_SUPPORT_SAMPLES
-            and len(self.support) >= MIN_SUPPORT_FRACTION * self.both_direct
+            bool(self.direct_support)
+            and len(self.direct_support) >= MIN_SUPPORT_FRACTION * self.both_direct
         )
+
+    @property
+    def coelutes(self) -> bool:
+        """Enough co-eluting samples, anchored by consistent direct co-elution."""
+        return len(self.support) >= MIN_SUPPORT_SAMPLES and self.direct_consistent
+
+    @property
+    def coelutes_directly(self) -> bool:
+        """Co-elution from direct detections alone, for rules that waive ratios."""
+        return _direct_coelution(len(self.direct_support), self.both_direct)
 
     @property
     def log_mad(self) -> float | None:
@@ -177,41 +204,56 @@ class PairEvidence:
 def pair_evidence(
     light: Mapping[str, CellEvidence], heavy: Mapping[str, CellEvidence]
 ) -> PairEvidence:
-    """Same-sample co-elution of two rows; only direct detections count."""
+    """Same-sample co-elution of two rows from each cell's recorded apex.
+
+    Backfilled cells only complete missing evidence: when direct detections
+    alone co-elute, they are the whole evidence. Otherwise a backfilled cell
+    with an apex counts like a direct one, and only direct pairs enter the
+    share of consistently co-eluting samples.
+    """
     both_direct = 0
-    support: list[str] = []
-    diffs: list[float] = []
-    backfill_coeluting = backfill_unavailable = 0
-    ratios: list[float] = []
+    backfill_unavailable = 0
+    # (sample, apex difference, light/heavy or None, both direct)
+    coeluting: list[tuple[str, float, float | None, bool]] = []
     for sample in sorted(light.keys() & heavy.keys()):
         a, b = light[sample], heavy[sample]
-        apart = (
-            None
-            if a.apex_rt_min is None or b.apex_rt_min is None
-            else abs(a.apex_rt_min - b.apex_rt_min) * 60.0
-        )
-        if a.direct and b.direct:
-            both_direct += 1
-            if apart is not None and apart <= MAX_APEX_SEC:
-                support.append(sample)
-                diffs.append(apart)
-                if _positive(a.value) and _positive(b.value):
-                    ratios.append(a.value / b.value)
-        elif apart is None:
-            backfill_unavailable += 1
-        elif apart <= MAX_APEX_SEC:
-            backfill_coeluting += 1
+        direct = a.direct and b.direct
+        both_direct += direct
+        if a.apex_rt_min is None or b.apex_rt_min is None:
+            backfill_unavailable += not direct
+            continue
+        apart = abs(a.apex_rt_min - b.apex_rt_min) * 60.0
+        if apart <= MAX_APEX_SEC:
+            ratio = (
+                a.value / b.value if _positive(a.value) and _positive(b.value) else None
+            )
+            coeluting.append((sample, apart, ratio, direct))
+    direct_support = tuple(sample for sample, *_, direct in coeluting if direct)
+    if _direct_coelution(len(direct_support), both_direct):
+        coeluting = [item for item in coeluting if item[3]]
     return PairEvidence(
         both_direct=both_direct,
-        support=tuple(support),
-        max_apex_diff_sec=max(diffs) if diffs else None,
-        backfill_coeluting=backfill_coeluting,
+        support=tuple(sample for sample, *_ in coeluting),
+        direct_support=direct_support,
+        max_apex_diff_sec=max((apart for _, apart, *_ in coeluting), default=None),
         backfill_apex_unavailable=backfill_unavailable,
-        ratios=tuple(ratios),
+        ratios=tuple(ratio for _, _, ratio, _ in coeluting if ratio is not None),
     )
 
 
-def relation_outcome(relation: Relation, light_mz: float, pair: PairEvidence) -> str:
+def _direct_coelution(direct_support: int, both_direct: int) -> bool:
+    return (
+        direct_support >= MIN_SUPPORT_SAMPLES
+        and direct_support >= MIN_SUPPORT_FRACTION * both_direct
+    )
+
+
+def relation_outcome(
+    relation: Relation,
+    light_mz: float,
+    pair: PairEvidence,
+    metal_carrier: bool = False,
+) -> str:
     """Whether this relation folds the heavier row into the lighter one."""
     if relation.kind == "annotation":
         return "annotation_only"
@@ -219,11 +261,14 @@ def relation_outcome(relation: Relation, light_mz: float, pair: PairEvidence) ->
         return "coelution_insufficient"
     if relation.kind == "review":
         return "review_only"
+    # Adduct and cluster yields follow each sample's salt and concentration,
+    # so their cross-sample ratio is no evidence of different compounds.
+    if relation.kind == "adduct":
+        return "collapse"
     if len(pair.ratios) < MIN_SUPPORT_SAMPLES:
         return "ratio_unavailable"
     mad = pair.log_mad
-    limit = ISOTOPE_MAX_LOG_MAD if relation.kind == "isotope" else OTHER_MAX_LOG_MAD
-    if mad is None or mad > limit:
+    if mad is None or mad > ISOTOPE_MAX_LOG_MAD:
         return "ratio_unstable"
     if relation.key == "41K":
         low, high = K41_MEDIAN_RANGE
@@ -254,7 +299,7 @@ def relation_outcome(relation: Relation, light_mz: float, pair: PairEvidence) ->
             ):
                 return "collapse"
         return "isotope_ratio_incompatible"
-    ceiling = relation.abundance_ceiling(light_mz)
+    ceiling = relation.abundance_ceiling(light_mz, metal_carrier)
     if ceiling is not None and any(1.0 / ratio > ceiling for ratio in pair.ratios):
         return "isotope_abundance_exceeded"
     return "collapse"
@@ -289,10 +334,10 @@ def collapse_same_compound(
 ) -> SameCompoundResult:
     """Decide which rows fold into which representative.
 
-    A removed row is reached from at least one directly co-eluting root through
-    folding relations, each passing its own checks. Multiple roots leave its
-    attribution blank, not its artifact classification undecided. Rows that
-    only co-elute through others are kept. Results
+    A removed row is reached from a root through folding relations, each
+    passing its own checks. Its representative is the one root whose direct
+    detections do not contradict co-elution with it; with none or several, its
+    attribution is blank, not its artifact classification undecided. Results
     depend only on m/z, cells and relations, never on row order, feature ID or
     the order of the relation list.
     """
@@ -309,15 +354,24 @@ def collapse_same_compound(
             key: relation_outcome(by_key[key], mz[pair[0]], evidence[pair])
             for key in matched
         }
-    corroboration = _corroborate_variable_adducts(mz, cells, evidence, outcomes, by_key)
+    metal_isotope_pairs = {
+        pair
+        for pair, pair_outcomes in outcomes.items()
+        if pair_outcomes.get("M+2_unassigned") == "collapse"
+    }
+    metal_carriers = {light for light, _ in metal_isotope_pairs}
+    for pair, pair_outcomes in outcomes.items():
+        if pair[0] not in metal_carriers:
+            continue
+        for key, value in pair_outcomes.items():
+            if value == "isotope_abundance_exceeded":
+                pair_outcomes[key] = relation_outcome(
+                    by_key[key], mz[pair[0]], evidence[pair], metal_carrier=True
+                )
     edges: dict[tuple[int, int], tuple[str, ...]] = {}
     for pair, pair_outcomes in outcomes.items():
         folding = tuple(
-            sorted(
-                key
-                for key, value in pair_outcomes.items()
-                if value in _COLLAPSE_OUTCOMES
-            )
+            sorted(key for key, value in pair_outcomes.items() if value == "collapse")
         )
         if folding:
             edges[pair] = folding
@@ -340,25 +394,21 @@ def collapse_same_compound(
                     stack.append(child)
                     reached_from[child].add(root)
     representative: dict[int, int] = {}
+    # Candidate roots of a removed row whose representative is undetermined.
     ambiguous_roots: dict[int, set[int]] = {}
-    unresolved: dict[int, str] = {}
     for heavy in parents:
         coeluting_roots = set()
         for root in reached_from[heavy]:
             if (root, heavy) not in evidence:
                 evidence[(root, heavy)] = pair_evidence(cells[root], cells[heavy])
-            if evidence[(root, heavy)].coelutes:
+            if evidence[(root, heavy)].direct_consistent:
                 coeluting_roots.add(root)
         if len(coeluting_roots) == 1:
             representative[heavy] = next(iter(coeluting_roots))
-        elif coeluting_roots:
-            ambiguous_roots[heavy] = coeluting_roots
         else:
-            unresolved[heavy] = "no_direct_coelution_with_representative"
+            ambiguous_roots[heavy] = coeluting_roots or reached_from[heavy]
     removed = representative.keys() | ambiguous_roots.keys()
-    members: dict[int, list[int]] = defaultdict(list)
-    for heavy, root in representative.items():
-        members[root].append(heavy)
+    assigned_roots = set(representative.values())
 
     # Element/relationship uncertainty travels with the derivation path.
     # A 13C child of an unassigned M+2 ion is not a confirmed 13C-only identity.
@@ -395,29 +445,17 @@ def collapse_same_compound(
                 )
             )
             continue
-        confirmed = any(
-            (index, member) in edges
-            and all(
-                by_key[key].kind == "adduct" and by_key[key].confirms_mh
-                for key in edges[(index, member)]
-            )
-            for member in children.get(index, ())
-            if member in removed
-        )
         decisions.append(
             RowDecision(
                 keep=True,
-                reason=unresolved.get(
-                    index,
-                    "representative" if members.get(index) else "no_folding_relation",
-                ),
-                ion_form=CONFIRMED_MH if confirmed else UNCONFIRMED,
-                member_count=len(members.get(index, ())),
+                reason="representative"
+                if index in assigned_roots
+                else "no_folding_relation",
             )
         )
 
     decisions, family_reviews = _ion_family_decisions(
-        features, cells, decisions, evidence, outcomes
+        features, cells, decisions, evidence, metal_isotope_pairs
     )
     removed = {index for index, decision in enumerate(decisions) if not decision.keep}
     representative = {
@@ -425,9 +463,24 @@ def collapse_same_compound(
         for index, decision in enumerate(decisions)
         if decision.representative is not None
     }
-    unresolved = {
-        index: reason for index, reason in unresolved.items() if index not in removed
+    member_counts = Counter(representative.values())
+    adduct_roots = {
+        root
+        for member, root in representative.items()
+        if (keys := edges.get((root, member)))
+        and all(
+            by_key[key].kind == "adduct" and by_key[key].confirms_mh for key in keys
+        )
     }
+    for index, decision in enumerate(decisions):
+        if decision.keep:
+            # A family classification, including ambiguity, takes precedence.
+            decisions[index] = replace(
+                decision,
+                member_count=member_counts[index],
+                ion_form=decision.ion_form
+                or (CONFIRMED_MH if index in adduct_roots else UNCONFIRMED),
+            )
     relation_rows = _relation_rows(
         features, matches, outcomes, evidence, removed, by_key
     )
@@ -439,115 +492,14 @@ def collapse_same_compound(
         evidence,
         edges,
         representative,
-        unresolved,
         removed,
         ambiguous_roots,
-        parents,
-    )
-    corroboration_reviews = tuple(
-        review_row(
-            "variable_ratio_adduct_supported",
-            features[heavy].feature_id,
-            [features[light].feature_id]
-            + sorted(features[index].feature_id for index in witnesses),
-            relation="|".join(
-                sorted(
-                    key
-                    for key, outcome in outcomes[(light, heavy)].items()
-                    if outcome == "collapse_corroborated_adduct"
-                )
-            ),
-            log_ratio_mad=_number(evidence[(light, heavy)].log_mad),
-            decision="drop" if heavy in removed else "keep",
-        )
-        for (light, heavy), witnesses in corroboration.items()
     )
     return SameCompoundResult(
         tuple(decisions),
         relation_rows,
-        review_rows + family_reviews + corroboration_reviews,
+        review_rows + family_reviews,
     )
-
-
-def _corroborate_variable_adducts(
-    mz: Sequence[float],
-    cells: Sequence[Mapping[str, CellEvidence]],
-    evidence: dict[tuple[int, int], PairEvidence],
-    outcomes: dict[tuple[int, int], dict[str, str]],
-    by_key: Mapping[str, Relation],
-) -> dict[tuple[int, int], tuple[int, ...]]:
-    """Replace an unstable monomer-adduct ratio with independent carrier evidence.
-
-    Two different other monomer carriers must already pass the single-pair
-    checks. The reference, candidate and both witnesses must co-elute directly,
-    including at least three jointly supporting samples. Promoted candidates
-    never become stable-ratio witnesses for further promotions. Isotopes,
-    neutral salt additions and multimers retain their own rules.
-    """
-    carriers = {
-        key
-        for key, _ in FAMILY_MONOMERS
-        if key in by_key
-        and by_key[key].kind == "adduct"
-        and by_key[key].confirms_mh
-        and by_key[key].mz_factor == 1
-    }
-    stable: dict[int, list[tuple[int, str]]] = defaultdict(list)
-    for (light, heavy), labels in outcomes.items():
-        stable[light].extend(
-            (heavy, key)
-            for key, value in labels.items()
-            if key in carriers and value == "collapse"
-        )
-
-    def get_pair(a: int, b: int) -> PairEvidence:
-        pair = (a, b) if mz[a] <= mz[b] else (b, a)
-        if pair not in evidence:
-            evidence[pair] = pair_evidence(cells[pair[0]], cells[pair[1]])
-        return evidence[pair]
-
-    supported = {}
-    for (light, heavy), labels in outcomes.items():
-        if not any(
-            key in carriers and value == "ratio_unstable"
-            for key, value in labels.items()
-        ):
-            continue
-        candidate_support = set(evidence[(light, heavy)].support)
-        witnesses = []
-        for witness, key in stable[light]:
-            # Another row of the candidate's carrier is not another ion form.
-            if key in labels:
-                continue
-            pair = get_pair(witness, heavy)
-            if not pair.coelutes:
-                continue
-            joint = (
-                candidate_support
-                & set(evidence[(light, witness)].support)
-                & set(pair.support)
-            )
-            if len(joint) >= MIN_SUPPORT_SAMPLES:
-                witnesses.append((witness, key, joint))
-        proof: set[int] = set()
-        for position, (first, first_key, first_support) in enumerate(witnesses):
-            for second, second_key, second_support in witnesses[position + 1 :]:
-                if first == second or first_key == second_key:
-                    continue
-                pair = get_pair(first, second)
-                if (
-                    pair.coelutes
-                    and len(first_support & second_support & set(pair.support))
-                    >= MIN_SUPPORT_SAMPLES
-                ):
-                    proof.update((first, second))
-        if proof:
-            supported[(light, heavy)] = tuple(sorted(proof))
-    for pair_key in supported:
-        for key, value in outcomes[pair_key].items():
-            if key in carriers and value == "ratio_unstable":
-                outcomes[pair_key][key] = "collapse_corroborated_adduct"
-    return supported
 
 
 @dataclass(frozen=True)
@@ -563,7 +515,7 @@ def _ion_family_decisions(
     cells: Sequence[Mapping[str, CellEvidence]],
     decisions: Sequence[RowDecision],
     evidence: dict[tuple[int, int], PairEvidence],
-    outcomes: Mapping[tuple[int, int], Mapping[str, str]],
+    metal_isotope_pairs: set[tuple[int, int]],
 ) -> tuple[list[RowDecision], tuple[dict[str, object], ...]]:
     """Exclude supported non-[M+H]+ families, even without a protonated row.
 
@@ -572,7 +524,7 @@ def _ion_family_decisions(
     With [M+H]+, parallel Mg/Ca multimers and a metal-isotope companion supply
     the independent witnesses instead.
     Cross-sample adduct ratios are not required to be constant in this joint
-    hypothesis; the isotope witness still passes its original abundance gates.
+    hypothesis; the isotope witness must pass without backfilled evidence.
     """
     mz = [feature.matrix_mz for feature in features]
 
@@ -580,12 +532,10 @@ def _ion_family_decisions(
         pair = (a, b) if mz[a] <= mz[b] else (b, a)
         if pair not in evidence:
             evidence[pair] = pair_evidence(cells[pair[0]], cells[pair[1]])
-        return evidence[pair].coelutes
+        return evidence[pair].coelutes_directly
 
     metal_isotopes = {
-        light
-        for (light, _), labels in outcomes.items()
-        if labels.get("M+2_unassigned") == "collapse"
+        pair[0] for pair in metal_isotope_pairs if evidence[pair].coelutes_directly
     }
     if not metal_isotopes:
         return list(decisions), ()
@@ -644,20 +594,13 @@ def _ion_family_decisions(
             via=tuple(sorted(set(decision.via) | {old_root})),
             undetermined=True,
         )
-    counts = Counter(d.representative for d in result if d.representative is not None)
-    for index, decision in enumerate(result):
+    for index, models in forms.items():
+        decision = result[index]
         if decision.keep:
             result[index] = replace(
                 decision,
-                member_count=counts[index],
-                ion_form=(
-                    CONFIRMED_MH
-                    if forms.get(index) == {"[M+H]+"}
-                    else UNCONFIRMED
-                    if index in forms
-                    else decision.ion_form
-                ),
-                undetermined=decision.undetermined or len(forms.get(index, ())) > 1,
+                ion_form=CONFIRMED_MH if models == {"[M+H]+"} else UNCONFIRMED,
+                undetermined=decision.undetermined or len(models) > 1,
             )
     reviews = tuple(
         review_row(
@@ -810,7 +753,7 @@ def _relation_rows(
     for (light, heavy), matched in matches.items():
         pair = evidence[(light, heavy)]
         # Pairs that never co-elute in any sample are different compounds.
-        if not pair.support and not pair.backfill_coeluting:
+        if not pair.support:
             continue
         a, b = features[light], features[heavy]
         for key, error in matched.items():
@@ -839,7 +782,7 @@ def _relation_rows(
                     "outcome": outcome,
                     "used_for_collapse": (
                         "TRUE"
-                        if outcome in _COLLAPSE_OUTCOMES and heavy in removed
+                        if outcome == "collapse" and heavy in removed
                         else "FALSE"
                     ),
                 }
@@ -864,10 +807,8 @@ def _review_rows(
     evidence: Mapping[tuple[int, int], PairEvidence],
     edges: Mapping[tuple[int, int], tuple[str, ...]],
     representative: Mapping[int, int],
-    unresolved: Mapping[int, str],
     removed: Container[int],
     ambiguous_roots: Mapping[int, set[int]],
-    parents: Mapping[int, set[int]],
 ) -> tuple[dict[str, object], ...]:
     fid = [feature.feature_id for feature in features]
     rows: list[dict[str, object]] = []
@@ -910,19 +851,6 @@ def _review_rows(
                 add("unstable_ratio", heavy, [light], **detail)
             elif outcome == "review_only":
                 add("review_only_relation", heavy, [light], **detail)
-            elif (
-                outcome == "coelution_insufficient"
-                and key != "+116.047_dR"
-                and len(pair.support) < MIN_SUPPORT_SAMPLES
-                and len(pair.support) + pair.backfill_coeluting >= MIN_SUPPORT_SAMPLES
-            ):
-                add(
-                    "backfill_only_coelution",
-                    heavy,
-                    [light],
-                    backfill_coeluting_samples=pair.backfill_coeluting,
-                    **detail,
-                )
     for heavy, root in representative.items():
         ratio = evidence[(root, heavy)].median_ratio
         if ratio is not None and ratio <= WEAK_REPRESENTATIVE_RATIO:
@@ -933,8 +861,6 @@ def _review_rows(
                 relation="|".join(edges.get((root, heavy), ("via_group",))),
                 median_light_heavy_ratio=_number(ratio),
             )
-    for heavy, reason in unresolved.items():
-        add(reason, heavy, sorted(parents[heavy], key=lambda index: fid[index]))
     for heavy, candidates in ambiguous_roots.items():
         add(
             "derived_representative_undetermined",
@@ -979,8 +905,8 @@ def _recurring_differences(
             direct_mask[index] |= 1 << ordinal.setdefault(sample, len(ordinal))
             if cell.apex_rt_min is not None:
                 by_sample[sample].append((cell.apex_rt_min, index))
-    # Supporting samples per pair: both direct, apices within the limit, as
-    # pair_evidence counts them.
+    # Directly supporting samples per pair: both direct, apices within the
+    # limit, as pair_evidence counts its direct support.
     together: Counter[tuple[int, int]] = Counter()
     for detections in by_sample.values():
         detections.sort()
@@ -1125,7 +1051,7 @@ class SameCompoundStep:
     label = "同化合物收斂"
     description = (
         "移除同一化合物的同位素、Na⁺／K⁺／NH₄⁺ 與 Mg／Ca adduct、鹽簇與聚集離子，"
-        "保留有證據的 [M+H]⁺。判定依據是同一樣本出峰時間相差 ≤3 秒，"
+        "保留有證據的 [M+H]⁺。判定依據是同一樣本出峰時間相差 ≤5.5 秒，"
         "且質量差與強度比例符合預期。"
     )
     parameters: tuple[StepParameter, ...] = ()
@@ -1178,9 +1104,6 @@ class SameCompoundStep:
                     "min_support_samples": MIN_SUPPORT_SAMPLES,
                     "min_support_fraction": MIN_SUPPORT_FRACTION,
                     "isotope_max_log_ratio_mad": ISOTOPE_MAX_LOG_MAD,
-                    "other_max_log_ratio_mad": OTHER_MAX_LOG_MAD,
-                    "variable_adduct_min_other_carrier_forms": 2,
-                    "variable_adduct_min_joint_support_samples": MIN_SUPPORT_SAMPLES,
                     "k41_median_light_heavy_range": list(K41_MEDIAN_RANGE),
                     "k41_sample_factor": ISOTOPE_RATIO_SAMPLE_FACTOR,
                     "k41_sample_fraction": ISOTOPE_RATIO_SAMPLE_FRACTION,
@@ -1218,11 +1141,6 @@ class SameCompoundStep:
                 "removed_non_protonated_family_count": sum(
                     decision.reason == "non_protonated_ion_family"
                     for decision in result.decisions
-                ),
-                "used_variable_ratio_adduct_pair_count": sum(
-                    row["outcome"] == "collapse_corroborated_adduct"
-                    and row["used_for_collapse"] == "TRUE"
-                    for row in result.relation_rows
                 ),
                 "removed_by_relation": dict(sorted(used.items())),
             },
