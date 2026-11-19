@@ -22,7 +22,8 @@ START_PAGE = Path("開始使用.html")
 
 EXAMPLES = ("targets.xlsx",)
 
-# Every authored Markdown page, in reading order, with its navigation label.
+# Every authored Markdown page, in navigation order, with its label. Each task
+# page is self-contained, so pages link only through this bar, not a linear pager.
 GUIDE_PAGES = (
     ("README.md", "開始使用"),
     ("targeted.md", "Targeted 分析"),
@@ -62,25 +63,11 @@ def _markdown_html(source: str, page: str) -> str:
     title = next((t.content for t in tokens if t.type == "inline"), "XIC Extractor")
     if "XIC Extractor" not in title:
         title += " · XIC Extractor"
-    names = [name for name, _ in GUIDE_PAGES]
     links = "".join(
         f'<a href="{name}"{' aria-current="page"' if name == page else ""}>'
         f"{escape(label)}</a>"
         for name, label in GUIDE_PAGES
     )
-    pager = ""
-    if page in names:
-        index = names.index(page)
-        if index > 0:
-            name, label = GUIDE_PAGES[index - 1]
-            pager += (
-                f'<a class="prev" href="{name}"><span>上一頁</span>{escape(label)}</a>'
-            )
-        if index + 1 < len(names):
-            name, label = GUIDE_PAGES[index + 1]
-            pager += (
-                f'<a class="next" href="{name}"><span>下一頁</span>{escape(label)}</a>'
-            )
     return (
         '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -90,8 +77,7 @@ def _markdown_html(source: str, page: str) -> str:
         '<header class="topbar"><a class="brand" href="README.md">'
         "<b>XIC Extractor</b><span>使用說明</span></a>"
         f'<nav aria-label="使用說明">{links}</nav></header>'
-        f'<main class="doc">{body}</main>'
-        f'<footer class="pager">{pager}</footer></body></html>'
+        f'<main class="doc">{body}</main></body></html>'
     )
 
 
