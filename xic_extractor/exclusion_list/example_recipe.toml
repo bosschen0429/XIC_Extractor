@@ -1,0 +1,38 @@
+# Exclusion-list recipe. Paths are relative to this file.
+# Run:  xic-exclusion-list recipe.toml
+# Each [[lists]] becomes <name>.csv next to this file, plus exclusion_report.txt.
+
+# Solvent blank acquired with a full-scan MS1 method whose scan range covers every list below.
+blank = "Blank_background.raw"
+
+# Inclusion lists the methods load: these ions must still trigger MS2.
+# CSV with an "m/z" column; optional "Compound" and "t start (min)" / "t stop (min)".
+# Leave both RT cells empty for a whole-run target. Use --output-dir if a target
+# pattern would also match an output CSV.
+targets = ["targets/*.csv"]
+
+# Known compounds to exclude; they are listed first. CSV, or an Excel sheet.
+# Needs an "m/z" column and a name (a "Compound" column, or the column right of m/z).
+# Rows named "x" or left blank are skipped.
+named_exclusions = [
+  { file = "named_exclusions.xlsx", sheet = "Sheet1" },
+]
+
+# Values copied from the methods (same in every method that loads these lists).
+[method]
+intensity_threshold = 25000      # MS2 intensity threshold; weaker ions never trigger, so they use no entry
+inclusion_tolerance_ppm = 20     # Targeted Mass Inclusion tolerance
+max_entries = 1000               # row limit, including named rows split around targets
+
+# One table per distinct list. Methods with the same scan range, exclusion tolerance and LC run share one.
+[[lists]]
+name = "EX_oral"
+scan_range = [145, 800]          # MS1 scan range of the method
+exclusion_tolerance_ppm = 20     # Targeted Mass Exclusion tolerance of the method
+rt = true                        # true only if the method runs the blank's LC gradient
+
+[[lists]]
+name = "EX_short_gradient"
+scan_range = [200, 700]
+exclusion_tolerance_ppm = 20
+rt = false                       # different gradient: every row excludes its m/z for the whole run

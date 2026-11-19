@@ -460,6 +460,29 @@ class RawFileHandle:
         self._acquisition_rt_bounds = (start, end)
         return self._acquisition_rt_bounds
 
+    def ms1_scan_mass_ranges(self) -> tuple[tuple[float, float], ...]:
+        """Return the union of acquired MS1 m/z intervals, preserving gaps."""
+        if self._thermo.ms1_order is None:
+            raise RawReaderError("MS1 scan range requires the vendor MS1 order")
+        ranges = [
+            (float(mass_range.Low), float(mass_range.High))
+            for scan_filter in self._raw_file.GetFilters()
+            if scan_filter.MSOrder == self._thermo.ms1_order
+            for mass_range in (
+                scan_filter.GetMassRange(index)
+                for index in range(int(scan_filter.MassRangeCount))
+            )
+        ]
+        if not ranges:
+            raise RawReaderError("RAW has no MS1 scan filter with a mass range")
+        merged: list[tuple[float, float]] = []
+        for low, high in sorted(ranges):
+            if merged and low <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], high))
+            else:
+                merged.append((low, high))
+        return tuple(merged)
+
     def iter_ms2_scans(
         self, rt_min: float | None = None, rt_max: float | None = None
     ) -> Iterator[Ms2ScanEvent]:
