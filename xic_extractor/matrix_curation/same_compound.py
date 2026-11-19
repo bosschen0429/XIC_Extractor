@@ -408,9 +408,7 @@ def collapse_same_compound(
         else:
             ambiguous_roots[heavy] = coeluting_roots or reached_from[heavy]
     removed = representative.keys() | ambiguous_roots.keys()
-    members: dict[int, list[int]] = defaultdict(list)
-    for heavy, root in representative.items():
-        members[root].append(heavy)
+    assigned_roots = set(representative.values())
 
     # Element/relationship uncertainty travels with the derivation path.
     # A 13C child of an unassigned M+2 ion is not a confirmed 13C-only identity.
@@ -447,23 +445,12 @@ def collapse_same_compound(
                 )
             )
             continue
-        confirmed = any(
-            (index, member) in edges
-            and all(
-                by_key[key].kind == "adduct" and by_key[key].confirms_mh
-                for key in edges[(index, member)]
-            )
-            for member in children.get(index, ())
-            if member in removed
-        )
         decisions.append(
             RowDecision(
                 keep=True,
                 reason="representative"
-                if members.get(index)
+                if index in assigned_roots
                 else "no_folding_relation",
-                ion_form=CONFIRMED_MH if confirmed else UNCONFIRMED,
-                member_count=len(members.get(index, ())),
             )
         )
 
@@ -476,6 +463,24 @@ def collapse_same_compound(
         for index, decision in enumerate(decisions)
         if decision.representative is not None
     }
+    member_counts = Counter(representative.values())
+    adduct_roots = {
+        root
+        for member, root in representative.items()
+        if (keys := edges.get((root, member)))
+        and all(
+            by_key[key].kind == "adduct" and by_key[key].confirms_mh for key in keys
+        )
+    }
+    for index, decision in enumerate(decisions):
+        if decision.keep:
+            # A family classification, including ambiguity, takes precedence.
+            decisions[index] = replace(
+                decision,
+                member_count=member_counts[index],
+                ion_form=decision.ion_form
+                or (CONFIRMED_MH if index in adduct_roots else UNCONFIRMED),
+            )
     relation_rows = _relation_rows(
         features, matches, outcomes, evidence, removed, by_key
     )
@@ -589,20 +594,13 @@ def _ion_family_decisions(
             via=tuple(sorted(set(decision.via) | {old_root})),
             undetermined=True,
         )
-    counts = Counter(d.representative for d in result if d.representative is not None)
-    for index, decision in enumerate(result):
+    for index, models in forms.items():
+        decision = result[index]
         if decision.keep:
             result[index] = replace(
                 decision,
-                member_count=counts[index],
-                ion_form=(
-                    CONFIRMED_MH
-                    if forms.get(index) == {"[M+H]+"}
-                    else UNCONFIRMED
-                    if index in forms
-                    else decision.ion_form
-                ),
-                undetermined=decision.undetermined or len(forms.get(index, ())) > 1,
+                ion_form=CONFIRMED_MH if models == {"[M+H]+"} else UNCONFIRMED,
+                undetermined=decision.undetermined or len(models) > 1,
             )
     reviews = tuple(
         review_row(

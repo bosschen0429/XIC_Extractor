@@ -248,9 +248,9 @@ evidence only, never on row order, `feature_id` or the order of the relation
 list.
 
 A representative's ion form is `confirmed_[M+H]+` when an adduct or dimer row
-(other than a neutral salt cluster) derived directly from it was removed into it,
-or a supported family assigns
-it only the [M+H]⁺ form, and `unconfirmed` otherwise.
+(other than a neutral salt cluster) derives directly from it and is assigned to
+it after family resolution, or a supported family assigns it only the [M+H]⁺
+form. Otherwise it is `unconfirmed`.
 Isotopes are not evidence of the ion form, and no other form is inferred.
 `unconfirmed` is not reviewed. Retained unclassified roots are not claimed to
 be known [M+H]⁺; this step does not perform complete ion identification.

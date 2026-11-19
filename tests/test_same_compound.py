@@ -356,6 +356,7 @@ def test_competing_representatives_do_not_rescue_a_supported_derivative():
     assert result.decisions[2].undetermined is True
     assert ("derived_representative_undetermined", "H") in review_kinds(result)
     assert decisions["A"][0] is decisions["B"][0] is True
+    assert decisions["A"][4] == decisions["B"][4] == UNCONFIRMED
     assert all(r["used_for_collapse"] == "TRUE" for r in result.relation_rows)
 
 
@@ -433,6 +434,19 @@ def test_mass_compatible_family_requires_independent_dimer_and_isotope_witnesses
     decisions, _ = decide(*rows)
     assert decisions["Na"][0] is True
     assert all(d[1] != "non_protonated_ion_family" for d in decisions.values())
+
+
+def test_a_family_member_does_not_confirm_its_previous_adduct_root():
+    # The Na row can also be a potassium adduct of a lower-mass ion, but the
+    # family takes precedence and does not assign Na to that candidate root.
+    decisions, result = decide(row("Candidate", 212.123944602091), *sodium_family())
+
+    assert relation_row_between(result, "Candidate", "Na", "[M+K]+")["outcome"] == (
+        "collapse"
+    )
+    assert decisions["Na"][:3] == (False, "non_protonated_ion_family", None)
+    assert decisions["Candidate"][0] is True
+    assert decisions["Candidate"][4] == UNCONFIRMED
 
 
 @pytest.mark.parametrize(
@@ -1151,13 +1165,15 @@ def test_export_excludes_unassigned_derivative_without_inventing_a_parent(
     assert decisions["F000003"]["decision"] == "drop"
     assert decisions["F000003"]["same_compound_representative_feature_id"] == ""
     assert decisions["F000003"]["same_compound_via_feature_ids"] == "F000001;F000002"
+    assert decisions["F000001"]["same_compound_ion_form"] == UNCONFIRMED
+    assert decisions["F000002"]["same_compound_ion_form"] == UNCONFIRMED
     _, kept = read_tsv_with_header(output / "analysis_matrix.tsv")
     assert [r["Mz"] for r in kept] == ["300.0000", "279.0214"]
     _, reviews = read_tsv_with_header(output / "same_compound_review.tsv")
     assert reviews[0]["related_feature_ids"] == "F000001;F000002"
     assert reviews[0]["detail"] == "decision=drop"
     assert summary["steps"][0]["removed_representative_undetermined_count"] == 1
-    assert summary["steps"][0]["confirmed_mh_count"] == 1
+    assert summary["steps"][0]["confirmed_mh_count"] == 0
 
 
 def test_derivatives_are_removed_before_feature_filtering_and_istd_is_protected(
