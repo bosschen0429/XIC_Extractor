@@ -86,7 +86,7 @@ def write_work(
 def write_application_settings(
     settings: dict[str, str], *, config_dir: Path | None = None
 ) -> dict[str, str]:
-    """Admit only machine/resources; invalid scientific drafts must not block this."""
+    """Invalid scientific drafts must not block saving machine settings."""
     values, _parsed, _warnings = resolve_settings(settings)
     selected = {key: values[key] for key in settings}
     save_workspace(_runtime_dir(config_dir), settings=selected)

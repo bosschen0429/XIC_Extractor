@@ -1,7 +1,7 @@
 # Matrix Curation
 
 Matrix curation runs independently switchable steps on a published Alignment
-Matrix and writes the result to a new folder. The workbench **矩陣整理** page
+Matrix and writes the result to a new folder. The workbench **整理矩陣** page
 and `xic-matrix-curation` share the same owner: `xic_extractor.matrix_curation`
 holds the steps, export and RAW-header sample reading, and
 `xic_workbench.matrix_curation` adds the workbench's own sample sources. Curation reads only the published files. It does not reopen RAW
