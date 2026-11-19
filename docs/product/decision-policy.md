@@ -97,6 +97,10 @@ serializes as chemical absence, zero or a selected value.
 | Review | Retained reason and review state | Review can coexist with a numeric value |
 
 Same-feature MS1 Backfill can be numeric without becoming a direct detection.
+A group can ask its Backfill question of an already measured MS1 peak. It
+reuses the measurement, not the Discovery decision: the original CID/NL
+evidence is unchanged and the candidate competes for row ownership just as
+a newly measured Backfill would.
 An observed Target-local peak can likewise be numeric while its count policy is
 false. These conclusions use the shared value owner; a writer must not turn
 either accepted value into ND by inspecting count or review. A

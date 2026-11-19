@@ -26,6 +26,7 @@ from xic_extractor.untargeted_execution.partition.cid_nl_backfill_acquisition im
     acquire_untargeted_cid_nl_backfill_trace_batch,
     backfill_untargeted_cid_nl_sample_subject,
     physical_backfill_observation,
+    reuse_cid_nl_backfill_peak,
 )
 
 
@@ -653,3 +654,44 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
     assert assessment.candidate_peaks[0].integration.area_ms1_morphology == (
         evaluation.answer.selected_segment.area_counts_seconds
     )
+
+
+@pytest.mark.parametrize("query,eligible", [(8.0, True), (8.55, False)])
+def test_reused_hold_peak_needs_its_own_group_window(tmp_path, query, eligible):
+    from tests.untargeted_cid_nl_real_data_adapter_fixtures import (
+        build_sample_adapter_scenario,
+    )
+    from xic_extractor.peak_detection.cid_nl_method_assessment import (
+        is_ms1_only_cid_nl_backfill_assessment,
+    )
+
+    scenario = build_sample_adapter_scenario(tmp_path)
+    source = _FakeRaw((7.98, 8.0, 8.02))
+    source.scans = tuple(replace(scan, precursor_mz=500.5) for scan in source.scans)
+    peaks = scenario.discover(source)
+    raw, _ = scenario.open_raw(source)
+    capture = scenario.adapt(peaks, raw=raw)
+    original = capture.assessment_input.assessment
+    assert original.method_result == "HOLD" and original.evidence_observations
+    attempt = reuse_cid_nl_backfill_peak(
+        target=UntargetedCidNlBackfillTarget(
+            "bounded-group",
+            original.method_subject,
+            500.0,
+            query,
+            query_rt_tolerance_sec=6.0,
+        ),
+        capture=capture,
+        source=scenario.fixture.source(scenario.fixture.sample("S1")),
+        peak_config=scenario.peak_config,
+    )
+    assert (attempt is not None) is eligible
+    if attempt is not None:
+        assert attempt.group_hypothesis_id == "bounded-group"
+        assert attempt.acquisition is capture.acquisition
+        assert is_ms1_only_cid_nl_backfill_assessment(attempt.assessment)
+        assert (
+            attempt.assessment.candidate_peaks[0].integration
+            == original.candidate_peaks[0].integration
+        )
+        assert not is_ms1_only_cid_nl_backfill_assessment(original)
