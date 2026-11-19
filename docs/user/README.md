@@ -27,7 +27,7 @@
 | 已知化合物的目標清單 | 每個樣本 × 每個目標的面積（Excel） | [Targeted 分析](targeted.md) |
 | 一種探索方法，例如 dR 中性丟失 | 全部 feature × 樣本的面積矩陣 | [Untargeted 分析](untargeted.md) |
 
-每頁從準備、執行到看結果一次說完。Untargeted 的內標清單沿用 Targeted 的[目標清單](targeted.md#目標清單)格式。
+每頁從準備、執行到看結果一次說完。Untargeted 的 ISTD 清單沿用 Targeted 的[目標清單](targeted.md#目標清單)格式。
 
 ## 看結果前必知
 

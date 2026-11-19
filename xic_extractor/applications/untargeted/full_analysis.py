@@ -291,7 +291,7 @@ class UntargetedAnalysis:
     def _alignment_progress(self, event: Mapping[str, object]) -> None:
         labels = {
             "mass_recalibration": "確認 RAW 質量校正",
-            "known_istd_reference": "量測內標 RT 參考",
+            "known_istd_reference": "量測 ISTD RT 參考",
             "alignment_inputs": "準備跨樣本觀察資料",
             "partition_start": "讀取 RAW 與搜尋缺格（Backfill）",
             "partition_compose": "整合樣本定量證據",

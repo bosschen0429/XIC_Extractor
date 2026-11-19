@@ -451,7 +451,7 @@ class AnalysisWorkspace:
                     )
                 )
             if not values.get("path"):
-                return {"message": "本次不使用內標清單。"}
+                return {"message": "本次不使用 ISTD 清單。"}
             selection = read_istd_targets(Path(values["path"]))
             if profiles is not None:
                 selection = selection.for_method(profiles)
@@ -461,7 +461,7 @@ class AnalysisWorkspace:
 
             source, destination = Path(values["path"]), Path(values["destination"])
             if destination.resolve() == targets_template_path().resolve():
-                raise ValueError("請另存副本，保留隨附內標範本。")
+                raise ValueError("請另存副本，保留隨附 ISTD 範本。")
             if source.resolve() == destination.resolve():
                 raise ValueError("請選擇新的副本位置。")
             destination.parent.mkdir(parents=True, exist_ok=True)

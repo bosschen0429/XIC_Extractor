@@ -212,7 +212,7 @@ def test_review_queue_does_not_turn_ordinary_nd_into_attention() -> None:
     assert review_queue_rows([row], diagnostics) == []
     # A missing spiked internal standard is actionable, unlike an absent analyte.
     istd = row | {"Role": "ISTD"}
-    assert review_queue_rows([istd], diagnostics)[0]["Why"] == "內標未檢出"
+    assert review_queue_rows([istd], diagnostics)[0]["Why"] == "ISTD 未檢出"
     failed = row | {"Projection Exclusion Reasons": "file_error"}
     assert review_queue_rows([failed], diagnostics)[0]["Why"] == "RAW 處理失敗"
     # Missing signal must not conceal an independent unresolved conflict.

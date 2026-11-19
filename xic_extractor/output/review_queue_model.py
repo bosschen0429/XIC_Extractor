@@ -261,9 +261,9 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
     if row.get("Role", "").upper() == "ISTD" and "missing_positive_ms1_peak" in row.get(
         "Projection Not Counted Reasons", ""
     ):
-        return "內標未檢出"
+        return "ISTD 未檢出"
     if "paired_istd_position_mismatch" in row.get("Projection Review Reasons", ""):
-        return "峰偏離配對內標位置，需確認身分"
+        return "峰偏離配對 ISTD 位置，需確認身分"
     if "BACKFILL_HOLD" in evidence and counted == "FALSE":
         return "回填找不到唯一的峰"
     if "BACKFILL_ACCEPTED" in evidence and counted == "FALSE":

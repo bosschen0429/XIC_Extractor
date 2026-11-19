@@ -47,7 +47,7 @@ export function artifactDetails(artifacts, folder = "") {
     details.append(el("p", folder, "subtle mono"));
     details.append(
       button(
-        "開啟輸出資料夾",
+        "開啟結果資料夾",
         () => api("/api/open-local", { path: folder }),
         "",
         "folder",
@@ -78,7 +78,7 @@ function resultBase(kind, result) {
     {
       targeted: "Targeted 分析結果",
       untargeted: "Untargeted 分析結果",
-      curation: "矩陣整理結果",
+      curation: "整理結果",
     }[kind],
   );
   const titleBlock = el("div");
@@ -147,7 +147,7 @@ export function renderResults() {
       metric(metrics, result.delta_mass.candidate_count, "Delta Mass 候選");
       metric(metrics, result.sample_count, "RAW 檔案");
     } else {
-      metric(metrics, result.overview?.matrix_count, "矩陣群組");
+      metric(metrics, result.overview?.matrix_count, "矩陣 feature");
       metric(metrics, result.overview?.complete_count, "全部樣本都有值");
     }
     container.append(metrics);

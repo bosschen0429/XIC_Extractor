@@ -29,7 +29,7 @@ export function createCurationSession(
   let approved = null;
   let preview = null;
   let sourceError = "";
-  let message = "請選擇 Alignment 輸出資料夾。";
+  let message = "請選擇 Untargeted 結果資料夾。";
   let revision = 0;
   let requestPending = false;
   let timer = null;
@@ -67,7 +67,7 @@ export function createCurationSession(
     preview = null;
     message = sources.source_dir
       ? "正在更新預覽…"
-      : "請選擇 Alignment 輸出資料夾。";
+      : "請選擇 Untargeted 結果資料夾。";
   }
   function replaceSources(values) {
     // Changing a list in this Matrix must not reset the other step choices.

@@ -153,9 +153,9 @@
         head.append(identity, metadata); card.append(head);
         const failures = flags.reference_support_failures || [];
         const supportReason = failures.includes('insufficient_original_xic_support')
-          ? '原始訊號支撐不足：近內標段少於 2 個高於基線的原始 scan；平滑後的鐘形不代表完整峰。'
+          ? '原始訊號支撐不足：近 ISTD 段少於 2 個高於基線的原始 scan；平滑後的鐘形不代表完整峰。'
           : failures.includes('insufficient_original_xic_continuity')
-          ? '原始訊號支撐不足：近內標段沒有連續的有效原始 scan。' : '';
+          ? '原始訊號支撐不足：近 ISTD 段沒有連續的有效原始 scan。' : '';
         if (supportReason) {
           card.append(node('p', `ND 訊號檢查 · ${supportReason} 僅依本次讀取的 XIC，不改寫判定。`, 'tx-support-note'));
         }
@@ -238,7 +238,7 @@
       ? `預期 RT ${value(start)} min` : `設定 RT ${range(start, end)}`;
     const counted = v => v === true || v === 'TRUE' ? '是' : v === false || v === 'FALSE' ? '否' : '未記錄';
     const reviewWhy = review => review?.Why === '峰不在內標位置，報 ND'
-      ? 'ND；未記錄近內標訊號的排除原因，請看原始 scan'
+      ? 'ND；未記錄近 ISTD 訊號的排除原因，請看原始 scan'
       : review?.Why || '—';
     const isNumber = v => typeof v === 'number' && Number.isFinite(v);
     // Intensities span decades, so they read as Excel-style scientific notation.

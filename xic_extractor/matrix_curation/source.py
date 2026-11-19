@@ -30,7 +30,7 @@ class CurationSource:
 def locate_curation_source(source_dir: Path) -> CurationSource:
     """Find the published Matrix, its bound Review and the run's RAW folder."""
     if not source_dir.is_dir():
-        raise ValueError(f"找不到 Alignment 輸出資料夾：{source_dir}")
+        raise ValueError(f"找不到 Untargeted 結果資料夾：{source_dir}")
     matrix, review = source_dir / MATRIX_NAME, source_dir / REVIEW_NAME
     if not matrix.is_file():
         raise ValueError(f"資料夾中沒有 {MATRIX_NAME}：{source_dir}")

@@ -54,7 +54,7 @@ _HEADER_NOTES = {
         "mz": "基準 m/z（定量離子）。",
         "expected_rt_min": "預期 RT（分鐘）。",
         "role": "analyte 或 istd。",
-        "istd_pair": "配對內標的 label；內標列留空。",
+        "istd_pair": "配對 ISTD 的 label；ISTD 列留空。",
         "cid_nl_loss_da": "選填。中性丟失（Da），如 116.0474。",
         "delta_mass_mz": (
             "選填。伴隨離子與 mz 的精確質量差，逗號分隔，如 +1.0021, +4.0052。"

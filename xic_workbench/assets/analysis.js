@@ -132,7 +132,7 @@ try {
   pathField(
     $("istd-path-field"),
     "targets_csv",
-    "內標清單",
+    "ISTD 清單",
     "targets",
     state.config.untargeted.targets_csv,
   ).placeholder = "留空不使用 · 可拖入 XLSX、CSV、TSV";
