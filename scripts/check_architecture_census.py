@@ -442,6 +442,55 @@ def validate_production_entry_boundaries(repo_root: Path) -> list[str]:
     return problems
 
 
+# Every module that writes a reason code into a Targeted projection; the label
+# table in `xic_extractor/output/result_labels.py` must cover their codes.
+TARGETED_REASON_PRODUCERS = (
+    "xic_extractor/peak_detection/evidence_semantics.py",
+    "xic_extractor/peak_detection/selection_decision.py",
+    "xic_extractor/extraction/targeted_product_projection.py",
+    "xic_extractor/extraction/targeted_batch_selection.py",
+    "xic_extractor/applications/targeted/production_workflow.py",
+    "xic_extractor/output/csv_writers.py",
+)
+TARGETED_CELL_DECISION = "xic_extractor/alignment/cell_decision/owner.py"
+_REASON_CODE_SHAPE = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)+:?$")
+
+
+def targeted_reason_code_literals(repo_root: Path) -> frozenset[str]:
+    """Code-shaped string literals in the Targeted reason producers."""
+    found: set[str] = set()
+    for path_key in TARGETED_REASON_PRODUCERS:
+        tree = ast.parse((repo_root / path_key).read_text(encoding="utf-8"))
+        found.update(
+            node.value.rstrip(":")
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and _REASON_CODE_SHAPE.match(node.value)
+        )
+    return frozenset(found)
+
+
+def targeted_no_write_variants(repo_root: Path) -> frozenset[str]:
+    """No-write variants a Targeted cell decision can return.
+
+    The Targeted publication saves each one as ``finalized_<variant>``.
+    """
+    tree = ast.parse((repo_root / TARGETED_CELL_DECISION).read_text(encoding="utf-8"))
+    target_paths = {"_decide_target", "_payload_from_integration"}
+    return frozenset(
+        str(call.args[0].value)
+        for function in ast.walk(tree)
+        if isinstance(function, ast.FunctionDef) and function.name in target_paths
+        for call in ast.walk(function)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Name)
+        and call.func.id == "NoWriteCellDecision"
+        and call.args
+        and isinstance(call.args[0], ast.Constant)
+    )
+
+
 PPM_ARITHMETIC_OWNER = "xic_extractor/mass_accuracy.py"
 _PPM_SCALES = (1e6, 1e-6)
 

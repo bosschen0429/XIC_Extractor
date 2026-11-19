@@ -139,7 +139,6 @@ def decision_semantics_from_signal_set(
         if "no_ms2_cap" in caps and not signals.count_no_ms2_as_detected
         else ()
     )
-    exclusion_reasons = _decision_exclusion_reasons(concerns, caps)
     ambiguity_reasons = _decision_ambiguity_reasons(signals, concerns)
 
     if "chrom_peak_segment_context" in support_reasons and len(support_reasons) == 1:
@@ -148,10 +147,8 @@ def decision_semantics_from_signal_set(
             "chrom_peak_segment_requires_correlated_evidence",
         )
 
-    if exclusion_reasons:
-        decision_class: DecisionClass = "excluded"
-    elif ambiguity_reasons:
-        decision_class = "ambiguous"
+    if ambiguity_reasons:
+        decision_class: DecisionClass = "ambiguous"
     elif not_counted_reasons:
         decision_class = "not_counted"
     elif conflict_reasons or review_reasons:
@@ -168,7 +165,6 @@ def decision_semantics_from_signal_set(
         conflict_reasons=conflict_reasons,
         review_reasons=review_reasons,
         not_counted_reasons=not_counted_reasons,
-        exclusion_reasons=exclusion_reasons,
         ambiguity_reasons=ambiguity_reasons,
     )
 
@@ -249,18 +245,6 @@ def _decision_review_reasons(
         reasons.append("trace_morphology_review")
     if caps & {"anchor_mismatch_cap"} or "anchor_mismatch" in concerns:
         reasons.append("paired_istd_rt_review")
-    return tuple(reasons)
-
-
-def _decision_exclusion_reasons(
-    concerns: frozenset[str],
-    caps: frozenset[str],
-) -> tuple[str, ...]:
-    reasons: list[str] = []
-    if concerns & {"wrong_identity", "physically_implausible"}:
-        reasons.append("explicit_identity_exclusion")
-    if "explicit_exclusion_cap" in caps:
-        reasons.append("explicit_exclusion_cap")
     return tuple(reasons)
 
 

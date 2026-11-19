@@ -1141,9 +1141,7 @@ def test_targeted_curve_range_changes_and_restores_the_drawn_points(
     expect(line).to_have_attribute("points", original_points)
 
 
-def test_targeted_rows_keep_rare_and_neutral_loss_evidence_in_place(
-    review_page, tmp_path
-):
+def test_targeted_rows_keep_rare_detection_and_labels_in_place(review_page, tmp_path):
     from openpyxl import load_workbook
 
     from tests.xic_inspector_targeted_workbook_fixtures import (
@@ -1156,13 +1154,8 @@ def test_targeted_rows_keep_rare_and_neutral_loss_evidence_in_place(
     book = load_workbook(workbook)
     book["Targets"]["E2"] = book["Targets"]["F2"] = 9.25
     results = book["XIC Results"]
-    results.cell(2, 7, "峰不在內標位置，報 ND")
-    nl_column = results.max_column + 1
-    results.cell(1, nl_column, "NL Evidence")
-    for row in range(2, results.max_row + 1):
-        # Only S1's Analyte (row 2) observed its neutral loss.
-        observed = row == 2
-        results.cell(row, nl_column, "已觀察到" if observed else "所選峰沒有對應的 MS2")
+    results.cell(2, 7, "偏離 ISTD 位置")
+    results.cell(2, 8, "多個候選峰")
     book.save(workbook)
     book.close()
     payload = prepare_report(
@@ -1177,9 +1170,10 @@ def test_targeted_rows_keep_rare_and_neutral_loss_evidence_in_place(
     )
     review = page.locator("#host")
     expect(review.locator(".tgt-context")).to_contain_text("預期 RT 9.25 min")
-    expect(review.locator(".tgt-reason").first).to_contain_text(
-        "未記錄近 ISTD 訊號的排除原因"
-    )
+    # The saved labels read as stored, each in its own column.
+    first = review.locator(".tgt-table tbody tr").first
+    expect(first.locator(".tgt-reason").nth(0)).to_have_text("偏離 ISTD 位置")
+    expect(first.locator(".tgt-reason").nth(1)).to_have_text("多個候選峰")
     rows = review.locator(".tgt-table tbody tr")
     # Rows stay in run order; the rare detection is marked where it ran.
     expect(rows.nth(2).locator(".tgt-sample")).to_have_text("S3")
@@ -1191,18 +1185,10 @@ def test_targeted_rows_keep_rare_and_neutral_loss_evidence_in_place(
     detail = review.locator(".tgt-table tbody tr:nth-child(4)")
     expect(detail).to_have_class("tgt-detail-row")
     expect(detail).to_contain_text("積分範圍")
-    # A neutral loss that was not observed is a given fact under CID: it stays
-    # with the selection record instead of the first layer.
-    expect(detail.locator(".tgt-facts")).not_to_contain_text("NL 證據")
-    expect(detail.locator(".tgt-raw")).to_contain_text("NL 證據：所選峰沒有對應的 MS2")
+    # The labels already say what was seen; the detail adds no second wording.
+    expect(detail).not_to_contain_text("NL 證據")
     expect(detail).not_to_contain_text("配對 ISTD（ISTD）")
     expect(detail).not_to_contain_text("檢閱註記")
-    # An observed neutral loss supports the result, so it reads up front.
-    rows.nth(0).locator(".tgt-sample").click()
-    observed = review.locator(".tgt-table tbody tr:nth-child(2)")
-    expect(observed).to_have_class("tgt-detail-row")
-    expect(observed.locator(".tgt-facts")).to_contain_text("NL 證據")
-    expect(observed.locator(".tgt-facts")).to_contain_text("已觀察到")
 
 
 def test_low_snr_hint_is_sample_scoped_and_does_not_replace_matrix_value(

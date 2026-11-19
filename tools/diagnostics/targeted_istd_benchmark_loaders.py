@@ -111,7 +111,6 @@ def read_targeted_points(path: Path) -> dict[str, tuple[TargetedPoint, ...]]:
                 "Target",
                 "RT",
                 "Area",
-                "Reason",
             ),
             "XIC Results",
         )
@@ -132,7 +131,6 @@ def read_targeted_points(path: Path) -> dict[str, tuple[TargetedPoint, ...]]:
                     target_label=label,
                     rt=_float_value(row[cols["RT"]]),
                     area=_float_value(row[cols["Area"]]),
-                    reason=_text(row[cols["Reason"]]),
                 )
             )
         return {label: tuple(points) for label, points in grouped.items()}

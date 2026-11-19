@@ -3057,9 +3057,8 @@ def test_saved_method_and_delta_evidence_is_visible_and_readonly(workbench, tmp_
             "Area",
             "PeakStart",
             "PeakEnd",
-            "Reason",
-            "Review",
-            "Review Reason",
+            "依據",
+            "疑點",
             "Counted Detection",
         ]
     )
@@ -3071,8 +3070,7 @@ def test_saved_method_and_delta_evidence_is_visible_and_readonly(workbench, tmp_
             123.5,
             1.9,
             2.1,
-            "Delta Mass 配對符合",
-            "",
+            "特異性條件",
             "",
             "TRUE",
         ]
@@ -3162,14 +3160,13 @@ def test_earlier_workbook_evidence_shows_without_the_delta_mass_sheet(
             "Area",
             "PeakStart",
             "PeakEnd",
-            "Reason",
-            "Review",
-            "Review Reason",
+            "依據",
+            "疑點",
             "Counted Detection",
         ]
     )
     results.append(
-        ["Sample A", "Custom target", 2, 123.5, 1.9, 2.1, "", "", "", "TRUE"]
+        ["Sample A", "Custom target", 2, 123.5, 1.9, 2.1, "特異性條件", "", "TRUE"]
     )
     metadata = book.create_sheet("Run Metadata")
     metadata.append(["Key", "Value"])
@@ -4644,15 +4641,14 @@ def _grouped_workbook(path: Path, groups: dict[str, str]) -> Path:
             "Area",
             "PeakStart",
             "PeakEnd",
-            "Review",
-            "Review Reason",
-            "Reason",
+            "依據",
+            "疑點",
             "Counted Detection",
         ]
     )
     for sample, group in groups.items():
         results.append(
-            [sample, group, "Analyte", 9.0, 10.0, 8.9, 9.1, None, None, None, "TRUE"]
+            [sample, group, "Analyte", 9.0, 10.0, 8.9, 9.1, "僅 MS1 峰", None, "TRUE"]
         )
     metadata = book.create_sheet("Run Metadata")
     metadata.append(["Key", "Value"])

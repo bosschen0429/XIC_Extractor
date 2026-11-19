@@ -236,10 +236,10 @@
     // Current target lists save one expected RT as equal RT min/max.
     const rtSetting = (start, end) => start === end && start !== null && start !== undefined && start !== ''
       ? `預期 RT ${value(start)} min` : `設定 RT ${range(start, end)}`;
-    const counted = v => v === true || v === 'TRUE' ? '是' : v === false || v === 'FALSE' ? '否' : '未記錄';
-    const reviewWhy = review => review?.Why === '峰不在內標位置，報 ND'
-      ? 'ND；未記錄近 ISTD 訊號的排除原因，請看原始 scan'
-      : review?.Why || '—';
+    const counted = v => v === true || v === 'TRUE' ? '已計入' : v === false || v === 'FALSE' ? '未計入' : '未記錄';
+    // The saved labels are shown as stored; they are never combined into prose.
+    const labelNote = record => [record['依據'] && `依據：${record['依據']}`, record['疑點'] && `疑點：${record['疑點']}`]
+      .filter(Boolean).join('　');
     const isNumber = v => typeof v === 'number' && Number.isFinite(v);
     // Intensities span decades, so they read as Excel-style scientific notation.
     const scientific = v => {
@@ -263,7 +263,7 @@
       const text = n && {
         minority_counted: `${rest} / ${focus.decided} 筆未計入；標「與多數不同」的 ${n} 筆計入，確認是否抓錯峰。`,
         minority_not_counted: `${rest} / ${focus.decided} 筆計入；標「與多數不同」的 ${n} 筆未計入，確認是否漏抓。`,
-        mixed: `沒有明顯多數；標「需先看」的 ${n} 筆有檢閱註記。`,
+        mixed: `沒有明顯多數；標「需先看」的 ${n} 筆有需要看的依據或疑點。`,
       }[focus.kind];
       return text ? element('p', text, 'tgt-focus-banner') : null;
     };
@@ -273,7 +273,6 @@
       const target = item.details.target, focus = item.details.focus;
       const istdRecords = item.details.istd_records || {};
       const focusSet = new Set(focus.samples);
-      const reviews = new Map(item.details.review_queue.map(row => [row.Sample, row]));
       const section = element('section');
       if (payload.items.length > 1) section.append(element('h2', item.title));
       const context = [target.Role, target['ISTD Pair'] ? `配對 ISTD：${target['ISTD Pair']}` : null, rtSetting(target['RT min'], target['RT max'])].filter(Boolean);
@@ -294,7 +293,7 @@
       // A paired analyte reads beside its ISTD in the same sample row.
       const paired = Object.keys(istdRecords).length > 0;
       const canLoadCurves = Boolean(onRequestCurves);
-      const titles = ['樣本', 'RT (min)', '面積', '計入偵測', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '檢閱註記', ...(canLoadCurves ? ['操作'] : [])];
+      const titles = ['樣本', 'RT (min)', '面積', '結果', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '依據', '疑點', ...(canLoadCurves ? ['操作'] : [])];
       for (const title of titles) head.append(element('th', title));
       const thead = element('thead');thead.append(head);
       const body = element('tbody');
@@ -308,23 +307,11 @@
       };
       const detailFor = record => {
         const panel = element('div', undefined, 'tgt-evidence');
-        // An observed neutral loss supports the result; its absence under CID is a
-        // given fact, so it stays with the selection record instead of up front.
-        const nlObserved = String(record['NL Evidence'] || '').startsWith('已觀察到');
-        const pairs = [['積分範圍', range(record.PeakStart, record.PeakEnd)]];
-        if (nlObserved) pairs.push(['NL 證據', record['NL Evidence']]);
-        panel.append(facts(pairs));
-        const background = [record.Reason, nlObserved ? '' : record['NL Evidence'] && `NL 證據：${record['NL Evidence']}`]
-          .filter(Boolean);
-        if (background.length) {
-          const raw = element('details', undefined, 'tgt-raw');
-          raw.append(element('summary', '原始選峰紀錄'), ...background.map(text => element('p', text)));
-          panel.append(raw);
-        }
+        panel.append(facts([['積分範圍', range(record.PeakStart, record.PeakEnd)]]));
         return panel;
       };
       const rows = records.map(record => {
-        const review = reviews.get(record.SampleName), row = element('tr');
+        const row = element('tr');
         const sampleCell = element('td'), button = element('button', record.SampleName, 'tgt-sample');
         button.type = 'button';button.setAttribute('aria-expanded', 'false');
         const grouped = groupOf.get(record.SampleName);
@@ -343,10 +330,10 @@
         if (paired) {
           const istd = istdRecords[record.SampleName];
           const istdArea = element('td', istd ? scientific(istd.Area) : '—', 'tgt-number tgt-istd');
-          if (istd && counted(istd['Counted Detection']) !== '是') istdArea.append(element('span', 'ISTD 未計入', 'tgt-badge'));
+          if (istd && counted(istd['Counted Detection']) !== '已計入') istdArea.append(element('span', 'ISTD 未計入', 'tgt-badge'));
           row.append(element('td', istd ? value(istd.RT) : '—', 'tgt-number tgt-istd'), istdArea);
         }
-        row.append(element('td', reviewWhy(review), 'tgt-reason'));
+        row.append(element('td', record['依據'] || '—', 'tgt-reason'), element('td', record['疑點'] || '', 'tgt-reason'));
         if (canLoadCurves) {
           const cell = element('td');
           const view = element('button', '看 XIC', 'tgt-xic');
@@ -355,7 +342,7 @@
           view.addEventListener('click', () => {
             const shown = rows.filter(entry => !entry.row.hidden).map(entry => entry.record.SampleName);
             onRequestCurves({item_id: item.id, sample_id: record.SampleName, opener: view, sample_ids: shown,
-              notes: Object.fromEntries(shown.map(name => [name, reviews.has(name) ? reviewWhy(reviews.get(name)) : '']))});
+              notes: Object.fromEntries(rows.filter(entry => !entry.row.hidden).map(entry => [entry.record.SampleName, labelNote(entry.record)]))});
           });
           cell.append(view);
           row.append(cell);

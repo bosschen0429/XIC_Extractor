@@ -283,7 +283,7 @@
 .xic-inspector .tgt-table tr.selected { background:var(--accent-soft); }
 .xic-inspector .tgt-number { white-space:nowrap;font-variant-numeric:tabular-nums; }
 .xic-inspector .tgt-counted { text-align:center; }
-.xic-inspector .tgt-reason { min-width:150px;max-width:300px;line-height:1.6; }
+.xic-inspector .tgt-reason { min-width:96px;max-width:300px;line-height:1.6; }
 .xic-inspector .tgt-detail-row > td { text-align:left; }
 .xic-inspector .tgt-sample { border:0;background:none;padding:0;color:var(--accent);font:inherit;font-weight:600; }
 .xic-inspector .tgt-table .sample-dot { display:inline-block;margin-right:6px;vertical-align:middle; }
@@ -313,9 +313,6 @@
 .xic-inspector .tgt-istd .tgt-badge { margin-left:8px; }
 .xic-inspector .tgt-detail-row > td { padding:0 12px 12px;background:var(--accent-soft); }
 .xic-inspector .tgt-detail-row .tgt-evidence { margin:0;background:var(--surface); }
-.xic-inspector .tgt-raw { margin-top:14px;font-size:13px;color:var(--muted); }
-.xic-inspector .tgt-raw summary { cursor:pointer; }
-.xic-inspector .tgt-raw p { margin-top:6px;font-size:13px; }
 .xic-inspector .tgt-method, .xic-inspector .tgt-provenance { border-top:1px solid var(--line);padding:14px 0; }
 .xic-inspector .tgt-method summary, .xic-inspector .tgt-provenance summary { cursor:pointer;font-size:14px;color:var(--muted);font-weight:600; }
 

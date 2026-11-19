@@ -48,7 +48,6 @@ class TargetedPoint:
     target_label: str
     rt: float | None
     area: float | None
-    reason: str
 
     @property
     def positive(self) -> bool:

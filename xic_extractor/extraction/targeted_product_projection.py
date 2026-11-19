@@ -162,20 +162,25 @@ def _reported_interval_contains_rt(
     return start <= reference_rt <= end
 
 
-_MISSING_DIRECT_NL_REVIEW = frozenset(
-    {
-        "plausible_nl_dropout_review",
-        "missing_ms2_not_observed",
-        "missing_nl_support_review",
-    }
-)
-_MISSING_DIRECT_NL_NOT_COUNTED = frozenset(
-    {
-        "cid_nl_method_not_supported",
-        "missing_ms2_policy_not_counted",
-        "istd_nl_fail_without_dropout_support",
-    }
-)
+# RT priors describe how the peak was located, not an unresolved action. Keep
+# them in the source evidence, not the product review.
+LOCATING_REVIEWS = frozenset({"targeted_rt_review", "paired_istd_rt_review"})
+LOCATING_CONFLICTS = frozenset({"targeted_rt_conflict", "anchor_conflict"})
+# Peak-quality and NL conflicts are reviews of the selected peak, not a
+# contradiction about its identity.
+CONFLICTS_AS_REVIEW = {
+    "trace_morphology_conflict": "trace_morphology_review",
+    "hard_local_quality_conflict": "trace_morphology_review",
+    "hard_quality_flag_conflict": "trace_morphology_review",
+    "candidate_aligned_ms2_nl_conflict": "missing_nl_support_review",
+}
+# A missing direct NL/MS2 observation that identity from elsewhere resolves
+# for counting, mapped to the review that keeps it visible as a doubt.
+_MISSING_DIRECT_NL_REVIEW = {
+    "cid_nl_method_not_supported": "missing_nl_support_review",
+    "missing_ms2_policy_not_counted": "missing_ms2_not_observed",
+}
+_MISSING_DIRECT_NL_NOT_COUNTED = frozenset(_MISSING_DIRECT_NL_REVIEW)
 _COHERENT_MS1_PEAK = frozenset({"ms1_peak_present", "ms1_coherent", "trace_coherent"})
 # Backfill acceptance qualified the recovered peak's shape; the first capture's
 # coherence facts may describe the peak it replaced.
@@ -308,34 +313,22 @@ def build_targeted_product_projection(
     exclusion_reasons: tuple[str, ...] = (),
 ) -> TargetedProductProjection:
     support = _stable_reasons(support_reasons)
-    # RT priors describe how the peak was located, not an
-    # unresolved action. Keep them in the source evidence, not the product queue.
-    context_only = {
-        "targeted_rt_review",
-        "paired_istd_rt_review",
-        "backfill_identity_confirmed",
-    }
-    review = _stable_reasons(tuple(r for r in review_reasons if r not in context_only))
-    localization_conflicts = {"targeted_rt_conflict", "anchor_conflict"}
-    review_categories = {
-        "trace_morphology_conflict": "trace_morphology_review",
-        "hard_local_quality_conflict": "trace_morphology_review",
-        "hard_quality_flag_conflict": "trace_morphology_review",
-        "candidate_aligned_ms2_nl_conflict": "missing_nl_support_review",
-    }
+    review = _stable_reasons(
+        tuple(r for r in review_reasons if r not in LOCATING_REVIEWS)
+    )
     review = _merge_reasons(
         review,
         tuple(
-            review_categories[reason]
+            CONFLICTS_AS_REVIEW[reason]
             for reason in conflict_reasons
-            if reason in review_categories
+            if reason in CONFLICTS_AS_REVIEW
         ),
     )
     conflicts = _stable_reasons(
         tuple(
             reason
             for reason in conflict_reasons
-            if reason not in review_categories and reason not in localization_conflicts
+            if reason not in CONFLICTS_AS_REVIEW and reason not in LOCATING_CONFLICTS
         )
     )
     not_counted = _stable_reasons(not_counted_reasons)
@@ -395,18 +388,22 @@ def build_targeted_product_projection(
     )
     if identity is not None:
         support = _merge_reasons(support, (identity,))
-        # Identity from Backfill or the paired ISTD resolves missing direct
-        # NL/MS2; independent morphology or overlap concerns remain actionable.
+        # Identity from Backfill or the paired ISTD locates the peak and lets
+        # it count without direct NL/MS2; that missing observation stays a
+        # review, as do morphology and overlap concerns.
         resolved_identity_reviews = {
             "targeted_retention_context_unavailable",
             "targeted_reference_displacement",
             "targeted_retention_transfer_uncertain",
             "targeted_competing_regions",
         }
-        review = tuple(
-            r
-            for r in review
-            if r not in _MISSING_DIRECT_NL_REVIEW and r not in resolved_identity_reviews
+        review = _merge_reasons(
+            tuple(r for r in review if r not in resolved_identity_reviews),
+            tuple(
+                _MISSING_DIRECT_NL_REVIEW[r]
+                for r in not_counted
+                if r in _MISSING_DIRECT_NL_REVIEW
+            ),
         )
         not_counted = tuple(
             r for r in not_counted if r not in _MISSING_DIRECT_NL_NOT_COUNTED

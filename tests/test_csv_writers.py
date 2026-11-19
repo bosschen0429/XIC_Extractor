@@ -92,9 +92,11 @@ def _result(*, nl: NLResult | None = None) -> ExtractionResult:
             product_state="detected_flagged",
             counted_detection=True,
             review_state="flagged",
-            projection_reason="decision: detected_flagged; review: local_sn_minor",
+            projection_reason=(
+                "decision: detected_flagged; review: targeted_acquired_signal_gaps"
+            ),
             support_reasons=("ms1_peak_present",),
-            review_reasons=("local_sn_minor",),
+            review_reasons=("targeted_acquired_signal_gaps",),
         ),
     )
 
@@ -161,10 +163,11 @@ def test_not_counted_product_projection_preserves_matrix_peak_values() -> None:
             counted_detection=False,
             review_state="review_required",
             projection_reason=(
-                "decision: not_counted; not_counted: false_positive_peak"
+                "decision: not_counted; not_counted: "
+                "identification_method_not_supported"
             ),
             support_reasons=("ms1_peak_present",),
-            not_counted_reasons=("false_positive_peak",),
+            not_counted_reasons=("identification_method_not_supported",),
         ),
     )
     file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
@@ -191,15 +194,17 @@ def test_long_rows_use_targeted_product_projection() -> None:
     target = _target("WithNL")
     result = replace(
         _result(nl=NLResult("NL_FAIL", 125.0, None, 1, 0, 1)),
+        reason="decision: review only, not counted; cap: VERY_LOW due to nl fail",
         targeted_product_projection=TargetedProductProjection(
             product_state="detected_flagged",
             counted_detection=True,
             review_state="flagged",
             projection_reason=(
-                "decision: detected_flagged; review: plausible_dda_nl_dropout"
+                "decision: detected_flagged; support: paired_istd_identity; "
+                "review: plausible_nl_dropout_review"
             ),
-            support_reasons=("ms1_peak_present",),
-            review_reasons=("plausible_dda_nl_dropout",),
+            support_reasons=("ms1_peak_present", "paired_istd_identity"),
+            review_reasons=("plausible_nl_dropout_review",),
         ),
     )
     file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
@@ -207,41 +212,15 @@ def test_long_rows_use_targeted_product_projection() -> None:
     long_row = _long_output_rows(file_result, [target])[0]
 
     assert long_row["NL"] == "NL_FAIL"
-    # A possible DDA dropout is a given fact under CID, not the reason.
-    assert long_row["Reason"] == "有 MS1 峰。"
+    # The paired ISTD identified the peak; its missing NL is left as a doubt.
+    # The legacy selection text does not reach the labels.
+    assert (long_row["依據"], long_row["疑點"]) == ("ISTD 位置", "未見 NL")
     assert long_row["Product State"] == "detected_flagged"
     assert long_row["Counted Detection"] == "TRUE"
-    assert long_row["Projection Review Reasons"] == "plausible_dda_nl_dropout"
+    assert long_row["Projection Review Reasons"] == "plausible_nl_dropout_review"
 
 
-def test_long_row_reason_prefers_projection_over_legacy_not_counted_text() -> None:
-    target = _target("WithNL")
-    result = replace(
-        _result(nl=NLResult("NL_FAIL", 125.0, None, 1, 0, 1)),
-        reason="decision: review only, not counted; cap: VERY_LOW due to nl fail",
-        targeted_product_projection=TargetedProductProjection(
-            product_state="detected_flagged",
-            counted_detection=True,
-            review_state="flagged",
-            projection_reason=(
-                "decision: detected_flagged; support: role_aware_rt_support; "
-                "review: plausible_dda_nl_dropout"
-            ),
-            support_reasons=("role_aware_rt_support",),
-            review_reasons=("plausible_dda_nl_dropout",),
-        ),
-    )
-    file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
-
-    long_row = _long_output_rows(file_result, [target])[0]
-
-    assert long_row["Counted Detection"] == "TRUE"
-    assert long_row["Product State"] == "detected_flagged"
-    assert long_row["Reason"] == "MS1 峰位於預期 RT。"
-    assert "未計入" not in long_row["Reason"]
-
-
-def test_long_row_reason_follows_not_counted_projection() -> None:
+def test_long_row_labels_follow_not_counted_projection() -> None:
     target = _target("WithNL")
     result = replace(
         _result(nl=NLResult("OK", 125.0, 0.5, 1, 1, 1)),
@@ -263,10 +242,10 @@ def test_long_row_reason_follows_not_counted_projection() -> None:
 
     assert long_row["Product State"] == "not_counted"
     assert long_row["Counted Detection"] == "FALSE"
-    assert long_row["Reason"] == "沒有 MS1 峰。"
+    assert (long_row["依據"], long_row["疑點"]) == ("無可用 MS1 峰", "")
 
 
-def test_long_reason_explains_conflict_without_repeating_support() -> None:
+def test_long_labels_name_a_conflict_without_repeating_support() -> None:
     target = _target("WithNL")
     projection = TargetedProductProjection(
         product_state="ambiguous",
@@ -274,51 +253,21 @@ def test_long_reason_explains_conflict_without_repeating_support() -> None:
         review_state="review_required",
         projection_reason=(
             "decision: ambiguous; support: ms1_coherent, candidate_aligned_ms2_nl; "
-            "review: targeted_rt_review; conflict: targeted_rt_conflict"
+            "conflict: ambiguous_evidence"
         ),
         support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
-        review_reasons=("targeted_rt_review",),
-        conflict_reasons=("targeted_rt_conflict",),
+        conflict_reasons=("ambiguous_evidence",),
     )
     result = replace(_result(), targeted_product_projection=projection)
     row = _long_output_rows(FileResult("SampleA", {target.label: result}), [target])[0]
 
-    assert row["Reason"] == "證據互相矛盾：峰位置與 RT 參考或範圍衝突。"
+    assert (row["依據"], row["疑點"]) == ("證據衝突", "")
     assert row["RT"] == "9.0000"
     assert row["Area"] == "123.45"
     assert row["Counted Detection"] == "FALSE"
     assert row["Projection Reason"] == projection.projection_reason
     assert row["Projection Support Reasons"] == "ms1_coherent; candidate_aligned_ms2_nl"
-    assert row["Projection Conflict Reasons"] == "targeted_rt_conflict"
-
-    result = replace(
-        result, score_breakdown=(("Concerns", "rt_centrality_borderline"),)
-    )
-    precise_row = _long_output_rows(
-        FileResult("SampleA", {target.label: result}), [target]
-    )[0]
-    assert precise_row["Reason"] == "證據互相矛盾：峰偏離 RT 範圍中心（邊界）。"
-
-
-def test_long_reason_prioritizes_unresolved_boundaries_over_review_flags() -> None:
-    target = _target("WithNL")
-    projection = TargetedProductProjection(
-        product_state="not_counted",
-        counted_detection=False,
-        review_state="review_required",
-        projection_reason=(
-            "decision: not_counted; review: selected_envelope_split_supported"
-        ),
-        review_reasons=("selected_envelope_split_supported",),
-        not_counted_reasons=("selected_envelope_boundary_externalize",),
-    )
-    result = replace(_result(), targeted_product_projection=projection)
-    row = _long_output_rows(FileResult("SampleA", {target.label: result}), [target])[0]
-
-    assert row["Reason"] == (
-        "未計入：峰或積分邊界未定。另需注意：有多個峰段，邊界需檢查。"
-    )
-    assert row["Projection Review Reasons"] == ("selected_envelope_split_supported")
+    assert row["Projection Conflict Reasons"] == "ambiguous_evidence"
 
 
 def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
@@ -364,7 +313,7 @@ def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
     selected_long = _long_output_rows(selected_file, [target])[0]
     fallback_long = _long_output_rows(fallback_file, [target])[0]
     for header, fallback_value in fallback_long.items():
-        if header in {*TARGETED_PRODUCT_PROJECTION_HEADERS, "Reason"}:
+        if header in {*TARGETED_PRODUCT_PROJECTION_HEADERS, "依據", "疑點"}:
             continue
         assert selected_long[header] == fallback_value
     # The fixtures differ in finalized identity, not their measured values.
@@ -373,7 +322,9 @@ def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
     assert (
         selected_long["Projection Not Counted Reasons"] == "cid_nl_method_not_supported"
     )
-    assert selected_long["Reason"] == "未設定配對 ISTD，無法確認身分。"
+    # The neutral loss was seen with a large mass error and did not count; the
+    # trace-less hypothesis carries no typed evidence beyond it.
+    assert (selected_long["依據"], selected_long["疑點"]) == ("NL 偏差大", "證據單薄")
     assert selected_long["Product State"]
     assert selected_long["Counted Detection"] in {"TRUE", "FALSE"}
 
@@ -411,7 +362,7 @@ def test_csv_rows_project_selected_integration_values_when_present() -> None:
     assert long_row["PeakEnd"] == "9.3000"
     assert long_row["PeakWidth"] == "0.4200"
     assert long_row["NL"] == "WARN_12.3ppm"
-    assert long_row["Reason"] == "MS2 見到預期的中性丟失。另需注意：局部訊噪比偏弱。"
+    assert (long_row["依據"], long_row["疑點"]) == ("NL 偏差大", "訊號缺口")
 
 
 def test_csv_rows_preserve_no_peak_nd_projection() -> None:
@@ -461,8 +412,7 @@ def test_not_quantifiable_row_is_blank_not_zero_or_absence():
     )[0]
     assert row["Area"] == ""
     assert row["RT"] == ""
-    assert "不足以可靠定量" in row["Reason"]
-    assert "不代表化合物不存在" in row["Reason"]
+    assert (row["依據"], row["疑點"]) == ("不足以定量", "")
 
 
 class _Config:
@@ -489,32 +439,54 @@ def _selected_hypothesis_with_integration(
     )
 
 
+_IDENTIFIED = TargetedProductProjection(
+    product_state="detected_flagged",
+    counted_detection=True,
+    review_state="flagged",
+    projection_reason="decision: detected_flagged",
+    support_reasons=("ms1_peak_present", "paired_istd_identity"),
+    review_reasons=("missing_nl_support_review",),
+)
+
+
 @pytest.mark.parametrize(
-    ("nl", "configured", "expected"),
+    ("nl", "configured", "projection", "expected"),
     [
-        (None, False, "未設定"),
-        (NLResult("OK", 1.0, 9.0, 1, 0, 1), True, "已觀察到"),
-        (NLResult("WARN", 25.0, 9.0, 1, 0, 1), True, "已觀察到（質量偏差偏大）"),
+        (None, False, None, ("僅 MS1 峰", "訊號缺口")),
+        (NLResult("OK", 1.0, 9.0, 1, 0, 1), True, None, ("NL 確認", "訊號缺口")),
+        (
+            NLResult("WARN", 25.0, 9.0, 1, 0, 1),
+            True,
+            None,
+            ("NL 偏差大", "訊號缺口"),
+        ),
+        # The selected peak's MS2 observation names the NL doubt.
         (
             NLResult("NL_FAIL", 125.0, None, 1, 0, 1),
             True,
-            "所選峰未見預期的中性丟失",
+            _IDENTIFIED,
+            ("ISTD 位置", "未見 NL"),
         ),
         (
             NLResult("NO_MS2", None, None, 0, 0, 0),
             True,
-            "所選峰沒有對應的 MS2",
+            _IDENTIFIED,
+            ("ISTD 位置", "無 MS2"),
         ),
     ],
 )
-def test_long_csv_reports_configured_nl_observation(
-    nl: NLResult | None, configured: bool, expected: str
+def test_long_csv_labels_carry_the_configured_nl_observation(
+    nl: NLResult | None,
+    configured: bool,
+    projection: TargetedProductProjection | None,
+    expected: tuple[str, str],
 ) -> None:
     target = _target("WithNL", neutral_loss_da=116.0474 if configured else None)
-    row = _long_output_rows(
-        FileResult("SampleA", {target.label: _result(nl=nl)}), [target]
-    )[0]
-    assert row["NL Evidence"] == expected
+    result = _result(nl=nl)
+    if projection is not None:
+        result = replace(result, targeted_product_projection=projection)
+    row = _long_output_rows(FileResult("SampleA", {target.label: result}), [target])[0]
+    assert (row["依據"], row["疑點"]) == expected
     assert row["Area"] == "123.45"
 
 
@@ -522,8 +494,7 @@ def test_long_csv_reports_file_processing_error() -> None:
     row = _long_output_rows(
         FileResult("Bad", {}, error="read failed"), [_target("WithNL")]
     )[0]
-    assert row["NL Evidence"] == "處理錯誤"
-    assert row["Reason"] == "RAW 檔無法處理。"
+    assert (row["依據"], row["疑點"]) == ("RAW 失敗", "")
     assert row["Area"] == "ERROR"
     assert row["Counted Detection"] == "FALSE"
 
