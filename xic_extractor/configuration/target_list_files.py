@@ -54,7 +54,7 @@ _HEADER_NOTES = {
         "mz": "基準 m/z（定量離子）。",
         "expected_rt_min": "預期 RT（分鐘）。",
         "role": "analyte 或 istd。",
-        "istd_pair": "配對內標的 label；內標列留空。",
+        "istd_pair": "配對 ISTD 的 label；ISTD 列留空。",
         "cid_nl_loss_da": "選填。中性丟失（Da），如 116.0474。",
         "delta_mass_mz": (
             "選填。伴隨離子與 mz 的精確質量差，逗號分隔，如 +1.0021, +4.0052。"
@@ -108,11 +108,11 @@ def load_target_list(path: Path) -> TargetList:
         key = row.get("key", "")
         if key not in DELTA_MASS_SETTING_KEYS:
             raise ConfigError(
-                f"{path}/{DELTA_MASS_SETTINGS_SHEET}: 不支援的設定 {key!r}；"
-                f"可用設定：{', '.join(DELTA_MASS_SETTING_KEYS)}"
+                f"{path}/{DELTA_MASS_SETTINGS_SHEET}: 不支援的設定「{key}」；"
+                f"可用設定：{'、'.join(DELTA_MASS_SETTING_KEYS)}"
             )
         if key in settings:
-            raise ConfigError(f"{path}/{DELTA_MASS_SETTINGS_SHEET}: 設定 {key!r} 重複")
+            raise ConfigError(f"{path}/{DELTA_MASS_SETTINGS_SHEET}: 設定「{key}」重複")
         settings[key] = row.get("value", "")
     details = (
         parse_delta_mass_rows(tables.get(DELTA_MASS_SHEET, []), settings)
@@ -150,7 +150,9 @@ def _read_workbook(path: Path) -> dict[str, list[dict[str, str]]]:
     try:
         book = openpyxl.load_workbook(path, read_only=True, data_only=False)
     except (OSError, ValueError, KeyError, BadZipFile) as exc:
-        raise ConfigError(f"{path}: 無法讀取 XLSX：{exc}") from exc
+        raise ConfigError(
+            f"{path}: 無法讀取這個 XLSX；請確認檔案沒有損壞，也沒有在 Excel 中開著。"
+        ) from exc
     try:
         actual = set(book.sheetnames)
         retired = [name for name in _RETIRED_SHEETS if name in actual]
@@ -193,7 +195,8 @@ def _read_workbook(path: Path) -> dict[str, list[dict[str, str]]]:
             required = _REQUIRED_COLUMNS[name]
             if not required <= set(data[0]):
                 raise ConfigError(
-                    f"{path}/{name}: 缺少欄位 {sorted(required - set(data[0]))}"
+                    f"{path}/{name}: 缺少欄位："
+                    + "、".join(sorted(required - set(data[0])))
                 )
             tables[name] = [
                 dict(zip(data[0], row, strict=True)) for row in data[1:] if any(row)

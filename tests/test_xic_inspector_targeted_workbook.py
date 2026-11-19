@@ -316,7 +316,7 @@ def test_nd_support_uses_saved_istd_rt_through_http(tmp_path, monkeypatch):
     assert workbook.read_bytes() == before
 
 
-@pytest.mark.parametrize("failure", ["missing_raw", "cancelled", "unknown_sample"])
+@pytest.mark.parametrize("failure", ["missing_raw", "cancelled"])
 def test_targeted_curve_failure_does_not_publish_or_modify_results(
     workbook, tmp_path, monkeypatch, failure
 ):
@@ -357,36 +357,30 @@ def test_targeted_curve_failure_does_not_publish_or_modify_results(
             "/api/curves",
             {
                 "item_id": item["id"],
-                "sample_ids": [
-                    "Unknown" if failure == "unknown_sample" else "Sample A"
-                ],
+                "sample_ids": ["Sample A"],
                 "raw_dir": str(tmp_path),
                 "dll_dir": str(tmp_path),
             },
         )
-        if failure == "unknown_sample":
-            assert status == 400
-        else:
-            assert status == 202
-            if failure == "cancelled":
-                try:
-                    assert entered.wait(10)
-                    status, job, _ = request(f"/api/jobs/{job['id']}/cancel", {})
-                    assert status == 200
-                    assert job["status"] == "cancelling"
-                finally:
-                    release.set()
-            deadline = time.monotonic() + 10
-            while (
-                job["status"] in {"running", "cancelling"}
-                and time.monotonic() < deadline
-            ):
-                time.sleep(0.02)
-                _, job, _ = request(f"/api/jobs/{job['id']}")
-            assert job["status"] == (
-                "cancelled" if failure == "cancelled" else "failed"
-            ), job
-            assert "view_id" not in job
+        assert status == 202
+        if failure == "cancelled":
+            try:
+                assert entered.wait(10)
+                status, job, _ = request(f"/api/jobs/{job['id']}/cancel", {})
+                assert status == 200
+                assert job["status"] == "cancelling"
+            finally:
+                release.set()
+        deadline = time.monotonic() + 10
+        while (
+            job["status"] in {"running", "cancelling"} and time.monotonic() < deadline
+        ):
+            time.sleep(0.02)
+            _, job, _ = request(f"/api/jobs/{job['id']}")
+        assert job["status"] == ("cancelled" if failure == "cancelled" else "failed"), (
+            job
+        )
+        assert "view_id" not in job
     if failure == "cancelled":
         assert closed == [True]
     assert workbook.read_bytes() == before

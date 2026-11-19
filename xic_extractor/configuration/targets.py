@@ -74,7 +74,9 @@ def _parse_target_rows(
     try:
         settings, details = parse_delta_mass_payload(delta_mass)
     except (TypeError, ValueError, KeyError) as exc:
-        raise ConfigError(f"{path}: Delta Mass 細節不正確：{exc}") from exc
+        raise ConfigError(
+            f"{path}: Delta Mass 設定無法讀取；請在「編輯目標清單」重新設定伴隨離子。"
+        ) from exc
     targets: list[Target] = []
     seen: set[str] = set()
 

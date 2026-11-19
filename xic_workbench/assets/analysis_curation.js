@@ -90,10 +90,10 @@ function renderCuration(snapshot) {
     const istd = detection.istd_source;
     item(
       istd ? "ok" : "todo",
-      "內標清單",
+      "ISTD 清單",
       !istd
-        ? "本次未宣告內標；有使用請在「改用其他來源」補入"
-        : `${istd.kind === "file" ? `選擇的檔案 ${pathTail(istd.label)}` : istd.label}（${detection.istd_count} 個內標，一律保留）`,
+        ? "本次未宣告 ISTD；有使用請在「改用其他來源」補入"
+        : `${istd.kind === "file" ? `選擇的檔案 ${pathTail(istd.label)}` : istd.label}（${detection.istd_count} 個 ISTD，一律保留）`,
     );
   }
   // A fully carried-over run shows only the way to choose another source.
@@ -115,7 +115,7 @@ function renderCuration(snapshot) {
   if (!detection) {
     const note = el("p", undefined, error ? "result-warning" : "subtle");
     if (error) note.append(ui.icon("alert"));
-    note.append(error || "選擇 Alignment 輸出資料夾後列出整理步驟。");
+    note.append(error || "選擇 Untargeted 結果資料夾後列出整理步驟。");
     container.append(note);
     return;
   }
@@ -185,7 +185,7 @@ function renderPreview(snapshot) {
     el(
       "p",
       preview.istd_count
-        ? `本次 ${preview.istd_count} 個內標，保護 ${preview.protected} 列。`
+        ? `本次 ${preview.istd_count} 個 ISTD，保護 ${preview.protected} 列。`
         : "本次沒有 ISTD 保護。",
     ),
   );
@@ -237,7 +237,7 @@ export function bindCuration() {
   pathField(
     $("curation-overrides"),
     "source_dir",
-    "Alignment 輸出資料夾",
+    "Untargeted 結果資料夾",
     "folder",
     "",
     "curation-",
@@ -254,11 +254,11 @@ export function bindCuration() {
   pathField(
     $("curation-overrides"),
     "istd",
-    "內標清單（選填）",
+    "ISTD 清單（選填）",
     "targets",
     "",
     "curation-",
-    "預設沿用該次分析的內標清單；找不到時才需選擇。",
+    "預設沿用該次分析的 ISTD 清單；找不到時才需選擇。",
   );
   pathField(
     $("curation-overrides"), "nucleosides", "自訂核苷清單 TSV（選填）",

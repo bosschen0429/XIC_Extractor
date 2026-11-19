@@ -51,7 +51,7 @@ const jobNames = {
   targeted: "Targeted 分析",
   untargeted: "Untargeted 分析",
   samples: "讀取樣本資訊",
-  curation: "矩陣整理",
+  curation: "整理矩陣",
   inspector: "Inspector 匯出",
 };
 const jobPage = { targeted: "targeted", curation: "untargeted" };
@@ -206,7 +206,7 @@ function completeJob(snapshot, job) {
       renderResults();
       curationPublished(snapshot.results.curation);
       if (!curationResultShown())
-        done(`矩陣整理完成：${snapshot.results.curation.output_dir}`);
+        done(`整理矩陣完成：${snapshot.results.curation.output_dir}`);
     }
     else if (job.kind === "inspector") {
       done(`Inspector 匯出完成：${snapshot.results.inspector.output}`);

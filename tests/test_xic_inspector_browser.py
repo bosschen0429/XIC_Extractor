@@ -1178,7 +1178,7 @@ def test_targeted_rows_keep_rare_and_neutral_loss_evidence_in_place(
     review = page.locator("#host")
     expect(review.locator(".tgt-context")).to_contain_text("預期 RT 9.25 min")
     expect(review.locator(".tgt-reason").first).to_contain_text(
-        "未記錄近內標訊號的排除原因"
+        "未記錄近 ISTD 訊號的排除原因"
     )
     rows = review.locator(".tgt-table tbody tr")
     # Rows stay in run order; the rare detection is marked where it ran.

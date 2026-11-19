@@ -1882,7 +1882,7 @@ def test_saved_result_needs_no_curve_source_until_requested(workbench, tmp_path)
     page.locator("#source").fill(str(report))
     page.locator("#open-form button[type=submit]").click()
     expect(page.locator("#result-download")).to_be_visible()
-    page.get_by_role("button", name="瀏覽矩陣群組").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature").click()
     expect(page.locator("#selection-empty h2")).to_have_text("從清單選一筆查看")
     page.locator("#item-list button").first.click()
     expect(page.locator("#recorded-review")).to_be_visible()
@@ -1939,7 +1939,7 @@ def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
     page.locator("#source").fill(str(report))
     expect(page.locator("#raw-dir")).to_have_value("")
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="瀏覽矩陣群組").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature").click()
     expect(page.locator("#untargeted-search-mode")).to_have_value("nearest")
     expect(page.locator("#rt-min")).to_be_visible()
     expect(page.locator("#rt-min")).to_have_value("")
@@ -1957,7 +1957,7 @@ def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
     expect(page.locator("#item-list .item-distance").first).to_have_text(
         f"Δ {distance:.1f} ppm" if distance < 10 else f"Δ {round(distance):,} ppm"
     )
-    expect(page.locator("#nearest-results-note")).to_contain_text("1 組缺少有效 m/z")
+    expect(page.locator("#nearest-results-note")).to_contain_text("1 筆缺少有效 m/z")
     expect(page.locator("#list-summary")).to_contain_text("32")
     page.locator("#next").click()
     expect(titles).to_have_count(7)
@@ -1994,7 +1994,7 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
     page.locator("#source").fill(str(report))
     expect(page.locator("#raw-dir")).to_have_value("")
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="瀏覽矩陣群組").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature").click()
     page.locator("#untargeted-search-mode").select_option("exact")
     page.locator("#mz-min").fill("123.4")
     page.locator("#mz-max").fill("123.4")
@@ -2146,8 +2146,12 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     page.locator("#open-form button[type=submit]").click()
     overview = page.locator("#targeted-overview")
     # The overview leads with the Matrix; unresolved groups are context only.
-    expect(overview.get_by_role("heading", name="3 組進入矩陣")).to_be_visible()
-    expect(overview.get_by_role("button", name="瀏覽矩陣群組")).to_have_class("primary")
+    expect(
+        overview.get_by_role("heading", name="3 個 feature 進入矩陣")
+    ).to_be_visible()
+    expect(overview.get_by_role("button", name="瀏覽矩陣 feature")).to_have_class(
+        "primary"
+    )
     expect(page.locator("#review")).to_be_hidden()
     overview.get_by_role("button", name="1 部分樣本多峰留空").click()
     # A one-item list opens its item; an item without saved curves waits for load.
@@ -2158,13 +2162,13 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     expect(saved.locator("[data-inspector-id='svg-raw']")).to_have_count(0)
     page.locator("#back-to-overview").click()
     expect(overview).to_be_visible()
-    overview.get_by_role("button", name="瀏覽矩陣群組").click()
+    overview.get_by_role("button", name="瀏覽矩陣 feature").click()
     expect(page.locator("#item-list button")).to_have_count(3)
     page.locator("#back-to-overview").click()
     overview.locator("summary").click()
-    overview.get_by_role("button", name="1 組未採用").click()
-    expect(page.locator("#list-summary strong")).to_have_text("未採用群組")
-    expect(page.locator("#list-summary")).to_contain_text("1 組")
+    overview.get_by_role("button", name="1 個未採用").click()
+    expect(page.locator("#list-summary strong")).to_have_text("未採用的 feature")
+    expect(page.locator("#list-summary")).to_contain_text("1 筆")
     expect(
         page.locator("#recorded-review").locator(".cell-table tbody tr").first
     ).to_contain_text("5.000e+2")
@@ -2225,7 +2229,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     page.locator("#open-form button[type=submit]").click()
     selected_view = None
     if sample_count > 1:
-        page.get_by_role("button", name="瀏覽矩陣群組").click()
+        page.get_by_role("button", name="瀏覽矩陣 feature").click()
         page.locator("#item-list button").first.click()
         _wait_for_curve_report(page, inline=True)
         # The first group has one sample with a value, its default curve.
@@ -2335,7 +2339,7 @@ def test_raw_curve_read_never_locks_review_and_a_new_action_replaces_it(
     _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="瀏覽矩陣群組").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature").click()
     # Enter lists the matches without opening one.
     page.locator("#untargeted-search-mode").select_option("exact")
     page.locator("#group-filter > summary").click()
@@ -2385,7 +2389,7 @@ def test_starting_analysis_ends_the_curve_job_and_its_poll(
     _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="瀏覽矩陣群組").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature").click()
     page.locator("#item-list button").first.click()
     _configure_curve_sources(page, tmp_path, tmp_path)
     _check_curve_samples(page)
@@ -2433,7 +2437,7 @@ def test_saved_curves_show_without_raw_and_unsaved_items_wait_for_load(
     _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="瀏覽矩陣群組").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature").click()
     # A group with values shows its saved curves without RAW or DLL.
     page.locator("#item-list button").filter(has_text="3 / 3").click()
     review = _wait_for_curve_report(page, inline=True)
@@ -2480,7 +2484,7 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     _open_results(page)
     page.locator("#source").fill(str(report))
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="瀏覽矩陣群組").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature").click()
     _configure_curve_sources(page, tmp_path, tmp_path)
     expect(page.locator('#sample-list input[value="S3"]')).not_to_be_checked()
     # The RAW panel reads one unloaded sample alone.
@@ -3345,12 +3349,12 @@ def test_curated_result_names_its_curation_and_lists_removed_rows(workbench, tmp
     page.locator("#source").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
     expect(page.locator("#batch-curation")).to_have_text(
-        "依矩陣整理 matrix_curation_20261101_090000"
+        "依整理結果 matrix_curation_20261101_090000"
     )
     expect(page.locator("#result-download")).to_contain_text("下載整理後矩陣")
-    expect(page.locator("#targeted-overview h2")).to_have_text("2 組進入矩陣")
+    expect(page.locator("#targeted-overview h2")).to_have_text("2 個 feature 進入矩陣")
     page.locator("#targeted-overview .overview-more > summary").click()
-    page.locator("#targeted-overview button", has_text="1 組整理時移除").click()
+    page.locator("#targeted-overview button", has_text="1 個整理時移除").click()
     expect(page.locator("#list-summary")).to_contain_text("整理時移除")
     expect(page.locator("#item-list .item-reason")).to_have_text(
         ["b-missing 的 13C 同位素"]
@@ -3380,7 +3384,7 @@ def test_curated_result_names_its_curation_and_lists_removed_rows(workbench, tmp
             page.locator("#query-form button[type=submit]").click()
         publish("matrix_curation_20261102_090000")
         expect(page.locator("#batch-curation")).to_have_text(
-            "依矩陣整理 matrix_curation_20261101_090000"
+            "依整理結果 matrix_curation_20261101_090000"
         )
         pending.pop().continue_()
     finally:
@@ -3388,7 +3392,7 @@ def test_curated_result_names_its_curation_and_lists_removed_rows(workbench, tmp
             route.continue_()
         page.unroute("**/api/query")
     expect(page.locator("#batch-curation")).to_have_text(
-        "依矩陣整理 matrix_curation_20261102_090000"
+        "依整理結果 matrix_curation_20261102_090000"
     )
 
     # A curation finished while setup is shown updates the result in place.
@@ -3396,7 +3400,7 @@ def test_curated_result_names_its_curation_and_lists_removed_rows(workbench, tmp
     expect(page.locator("#analysis-result")).to_be_hidden()
     publish("matrix_curation_20261103_090000")
     expect(page.locator("#batch-curation")).to_have_text(
-        "依矩陣整理 matrix_curation_20261103_090000"
+        "依整理結果 matrix_curation_20261103_090000"
     )
     expect(page.locator("#analysis-result")).to_be_hidden()
 
@@ -3726,7 +3730,7 @@ def test_untargeted_istd_shared_upload_and_persistence(
         f"已匯入 shared.{extension}"
     )
     expect(page.locator("#istd-summary")).to_have_text(
-        "1 個適用內標；0 個不適用此方法；略過 1 個一般目標。"
+        "1 個適用 ISTD；0 個不適用此方法；略過 1 個一般目標。"
     )
     expect(page.locator("#istd-preview")).to_contain_text("standard")
     expect(page.locator("#istd-preview")).not_to_contain_text("analyte")
@@ -3749,12 +3753,12 @@ def test_untargeted_istd_shared_upload_and_persistence(
     page.get_by_role("button", name="Untargeted", exact=True).click()
     expect(page.locator("#u-targets_csv")).to_have_value(retained)
     expect(page.locator("#istd-summary")).to_have_text(
-        "1 個適用內標；0 個不適用此方法；略過 1 個一般目標。"
+        "1 個適用 ISTD；0 個不適用此方法；略過 1 個一般目標。"
     )
     _expand_section(page, "#istd-list-tools")
     page.locator("#u-targets_csv").fill("")
     page.locator("#u-targets_csv").press("Tab")
-    expect(page.locator("#istd-summary")).to_have_text("本次不使用內標清單。")
+    expect(page.locator("#istd-summary")).to_have_text("本次不使用 ISTD 清單。")
     expect(page.locator("#istd-preview")).to_be_empty()
     page.get_by_role("button", name="Targeted", exact=True).click()
     expect(page.locator("#target-preview")).to_have_text(
@@ -3781,18 +3785,18 @@ def test_untargeted_istd_applicability_tracks_method_not_nd(workbench, tmp_path)
     expect(page.locator("#istd-import-status")).to_contain_text("已匯入")
     rna = page.locator("#istd-preview tr").filter(has_text="RNA standard")
     expect(page.locator("#istd-summary")).to_have_text(
-        "1 個適用內標；1 個不適用此方法；略過 1 個一般目標。"
+        "1 個適用 ISTD；1 個不適用此方法；略過 1 個一般目標。"
     )
     expect(rna).to_contain_text("不適用此方法（略過）")
     page.locator("#u-preset").select_option("rna_ribose")
     expect(rna.locator("td").last).to_have_text("適用")
     page.locator("#u-preset").select_option("rna_mer")
-    expect(page.locator("#istd-summary")).to_contain_text("0 個適用內標")
-    expect(page.locator("#istd-summary")).to_contain_text("本次不使用內標參考")
+    expect(page.locator("#istd-summary")).to_contain_text("0 個適用 ISTD")
+    expect(page.locator("#istd-summary")).to_contain_text("本次不使用 ISTD 參考")
     expect(rna.locator("td").last).to_have_text("不適用此方法（略過）")
     expect(page.locator("#istd-preview")).not_to_contain_text("ND")
     page.locator("#u-preset").select_option("dna_dr")
-    expect(page.locator("#istd-summary")).to_contain_text("1 個適用內標")
+    expect(page.locator("#istd-summary")).to_contain_text("1 個適用 ISTD")
 
 
 def test_delayed_review_payload_cannot_replace_newer_sample_selection(
@@ -4131,7 +4135,7 @@ def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
     page.locator("#source").fill(str(report))
     expect(page.locator("#raw-dir")).to_have_value("")
     page.locator("#open-form button[type=submit]").click()
-    page.get_by_role("button", name="瀏覽矩陣群組").click()
+    page.get_by_role("button", name="瀏覽矩陣 feature").click()
     page.locator("#untargeted-search-mode").select_option(mode)
     if mode == "nearest":
         page.locator("#nearest-mz").fill("123.4")
@@ -4142,7 +4146,7 @@ def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
     page.locator("#query-form button[type=submit]").click()
     empty = page.locator("#selection-empty")
     expect(empty.locator("h2")).to_have_text("沒有符合的結果")
-    for condition in ("矩陣群組", "123.4", "RT ≥ 20"):
+    for condition in ("矩陣 feature", "123.4", "RT ≥ 20"):
         expect(empty).to_contain_text(condition)
     expect(page.locator("#page-label")).to_have_text("0 筆")
     if mode == "exact":
@@ -4972,7 +4976,7 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     expect(page.locator(".curation-step[data-step=same_compound]")).to_contain_text(
         "alignment_explanation.sqlite"
     )
-    expect(page.locator("#curation-source")).to_contain_text("內標清單")
+    expect(page.locator("#curation-source")).to_contain_text("ISTD 清單")
     from xic_workbench import matrix_curation
 
     preview = matrix_curation.preview_curation
@@ -5009,7 +5013,7 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     expect(result).to_contain_text("4原始 feature")
     expect(result.get_by_role("link", name="下載整理後矩陣")).to_be_in_viewport()
     expect(page.locator("#analysis-job")).to_be_hidden()
-    expect(page.locator("#toasts")).not_to_contain_text("矩陣整理完成")
+    expect(page.locator("#toasts")).not_to_contain_text("整理矩陣完成")
     (curated,) = run_output.glob("matrix_curation_*")
     _, kept = read_tsv_with_header(curated / "analysis_matrix.tsv")
     assert [row["Mz"] for row in kept] == ["101.0000", "103.0000"]
@@ -5026,7 +5030,7 @@ def test_matrix_curation_from_a_run_and_from_an_existing_folder(
     # The earlier curated matrix belongs to the run folder, not this one, so
     # its finished job reports itself instead.
     expect(page.locator("#curation-result")).to_be_hidden()
-    expect(page.locator("#analysis-job-title")).to_contain_text("矩陣整理 · 已完成")
+    expect(page.locator("#analysis-job-title")).to_contain_text("整理矩陣 · 已完成")
     expect(page.locator("#analysis-job")).to_be_visible()
     expect(step).to_be_disabled()
     expect(page.locator("#curation-steps")).to_contain_text("找不到本次分析的樣本資訊")

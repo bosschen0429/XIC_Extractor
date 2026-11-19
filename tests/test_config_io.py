@@ -155,6 +155,6 @@ def test_workspace_rejects_old_or_incomplete_structure_without_rewriting(
 ):
     path = tmp_path / "workspace.json"
     path.write_text(contents, encoding="utf-8")
-    with pytest.raises(ConfigError, match="重跑"):
+    with pytest.raises(ConfigError, match="原檔已保留"):
         read_settings(config_dir=tmp_path)
     assert path.read_text(encoding="utf-8") == contents
