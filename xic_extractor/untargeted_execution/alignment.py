@@ -35,6 +35,7 @@ from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution import (
+    FrozenBackfillPartition,
     execute_untargeted_plan,
 )
 from xic_extractor.untargeted_execution.execution_result import (
@@ -277,6 +278,7 @@ def execute_prepared_alignment(
     acquisition_cache_dir: Path | None = None,
     max_partition_jobs: int = 100_000,
     grouping_only: bool = False,
+    capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
     project_child: ChildOutputProjection | None = None,
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
@@ -327,6 +329,7 @@ def execute_prepared_alignment(
             pipeline_overlap=True,
             max_partition_jobs=max_partition_jobs,
             grouping_only=grouping_only,
+            capture_backfill=capture_backfill,
             project_child=project_child,
             mass_recalibration_by_sample=mass_recalibration_by_sample,
         )

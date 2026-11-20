@@ -106,7 +106,49 @@ docs/product/decision-policy.md; preset
 compatibility lives in docs/product/presets.md. Task-specific paths and accepted
 parameter values stay in the Issue or validation owner.
 
-Alignment requires a bound pure CID-NL preset. Its retained runtime owns
+### Replay only the stage you changed
+
+Add `--stop-after grouping` and the relevant capture flags to the usual
+Alignment command once. Use a fresh output directory for each trial.
+
+| Stage | Input to retain | What to compare |
+| --- | --- | --- |
+| `regroup` | `--save-grouping-inputs` → `grouping-inputs.json.gz` | Initial groups, members and reassignments |
+| `backfill` | `--save-backfill-inputs` → `backfill-inputs/` | `backfill-cells.tsv`: competing rows, sample, area, decision and status |
+| `pair-batches` | `--save-pairing-inputs` → one JSON per declared batch | `batch_correspondence.tsv`: partners, competitors and unpaired reasons; `summary.json`: reference and RT map diagnostics |
+| `matrix` | `matrix-cells.json` from Backfill with `--save-matrix-inputs`, and `matrix-join.json` from pairing | Only `alignment_matrix.tsv`, from the formal writer |
+
+**Try regrouping without RAW, a preset or a DLL.** The two fixture observations
+fit the original 50 ppm window; at 20 ppm, `members.tsv` shows two singletons
+and `changes.tsv` shows both reassignments. For real observations, substitute
+your captured snapshot. See the [grouping diagnostic](../../tools/diagnostics/INDEX.md#grouping_experimentpy)
+for baseline comparisons and calibration options.
+
+    .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs tests/fixtures/synthetic-grouping.json.gz --set max_ppm=20 --output-dir output/regroup-smoke
+
+**Replay Backfill or pairing independently.** These examples use captures in
+`output/grouping`. Only Backfill may read RAW: it reuses initial assessments
+and grouping, not the measurements needed for new Backfill queries. Pairing
+accepts batches captured together or separately, in any order.
+
+    .venv\Scripts\python.exe -m scripts.run_alignment backfill --inputs output/grouping/backfill-inputs --save-matrix-inputs --output-dir output/backfill-trial
+    .venv\Scripts\python.exe -m scripts.run_alignment pair-batches --inputs output/grouping/pairing-inputs/batch-1.json output/grouping/pairing-inputs/batch-2.json --output-dir output/pairing-trial
+
+Keep the Backfill checkpoint at its original absolute path, under the same
+user. Its Python objects are not exchange files: replay verifies the bytes
+against a user-local receipt in `~/.xic-extractor/backfill-v1/` before decoding.
+Recapture if upstream inputs or stored models change. A digest-only receipt
+can replay Backfill but lacks the sample roster needed to export Matrix inputs.
+
+**After a Matrix writer edit, run only this command.** No RAW, grouping,
+Backfill or pair fitting is needed. Multiple `--backfill` inputs must share a
+canonical injection order. The inputs retain unrounded values, samples with
+no candidates, batch-qualified partners and fitted RT maps; old report TSVs
+cannot substitute for them.
+
+    .venv\Scripts\python.exe -m scripts.run_alignment matrix --backfill output/backfill-trial/matrix-cells.json --pairing output/pairing-trial/matrix-join.json --output-dir output/matrix-trial
+
+RAW-backed Alignment requires a bound pure CID-NL preset. Its retained runtime owns
 acquisition and scheduling; CLI help defines supported execution options.
 The command validates its inputs before acquisition. Use its preflight option
 when settings need inspection, and keep timing outputs in the task-specific

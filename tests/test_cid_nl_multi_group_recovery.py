@@ -1005,18 +1005,20 @@ def test_runtime_recovers_every_authorized_rt_group(
             assert replayed[:2] == baseline[:2]
 
 
-@pytest.mark.parametrize("mz_separation_ppm", [0.0, 12.0])
-def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
-    tmp_path, monkeypatch, mz_separation_ppm
-):
-    """A shared physical peak must not be assigned to both groups."""
+def _shared_peak_inputs(tmp_path, monkeypatch, mz_separation_ppm):
+    from xic_extractor.configuration.mass_recalibration import MassRecalibration
 
     centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": (8.06,)}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
     # Keep the two synthetic discovery peaks as separate fixture groups; this
     # changes only this test input, never the production/default threshold.
     settings, peak_config = (
-        replace(_settings(), neutral_loss_profile=None, rt_max=8.6),
+        replace(
+            _settings(),
+            neutral_loss_profile=None,
+            rt_max=8.6,
+            mass_recalibration=MassRecalibration.NONE,
+        ),
         _peak_config(tmp_path),
     )
     raws, candidates = {}, {}
@@ -1059,7 +1061,8 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
             if path.stem != "Missing"
             else tuple(_without_ms1_peak(candidate) for candidate in current)
         )
-    batch = build_dense_partition(
+    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    return dict(
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -1076,7 +1079,17 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         dll_dir=tmp_path,
         signal_processing_profile=TEST_PROFILE,
     )
-    install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+
+
+@pytest.mark.parametrize("mz_separation_ppm", [0.0, 12.0])
+def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
+    tmp_path, monkeypatch, mz_separation_ppm
+):
+    """A shared physical peak must not be assigned to both groups."""
+
+    batch = build_dense_partition(
+        **_shared_peak_inputs(tmp_path, monkeypatch, mz_separation_ppm)
+    )
     result = execute_partition(
         batch.jobs,
         partition_key="runtime-fixture",
@@ -1693,3 +1706,231 @@ def _assert_alignment_uses_configured_recovery_groups(
         if stem == "Missing"
     )
     assert sum(sum(raw.chromatogram_request_counts) for raw in opened[paths[-1]]) == 2
+
+
+def _run_cached_backfill_cli(home, directory, output):
+    """Run in a fresh interpreter: the fixture supplies RAW facts, not a DLL."""
+    from pathlib import Path
+
+    from scripts.run_alignment import main
+    from xic_extractor.untargeted_execution import execution as runtime
+    from xic_extractor.untargeted_execution import partition_composition as composition
+    from xic_extractor.untargeted_execution.partition import execution as phases
+    from xic_extractor.untargeted_execution.partition import workers
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError(
+            "Replay ran initial acquisition, grouping or native RAW I/O"
+        )
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(Path, "home", lambda: Path(home))
+        patch.setattr(phases, "ensure_assemblies_loaded", lambda *_: None)
+        patch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
+        patch.setattr(workers, "open_raw", forbidden)
+        patch.setattr(phases, "_execute_initial_sample_phase", forbidden)
+        patch.setattr(runtime, "group_acquired_partition", forbidden)
+        patch.setattr(runtime.CidNlBatchGrouping, "finalize_grouping", forbidden)
+        patch.setattr(composition, "group_acquired_partition", forbidden)
+        return main(["backfill", "--inputs", directory, "--output-dir", output])
+
+
+def _backfill_request(tmp_path, options, config):
+    from tests.cid_nl_runtime_fixtures import persist_discovery_batch
+    from xic_extractor.applications.untargeted.request import UntargetedRequest
+    from xic_extractor.configuration.execution_profile import UntargetedExecutionPolicy
+    from xic_extractor.discovery.csv_reader import DiscoveryBatchIndex
+
+    batch = persist_discovery_batch(
+        raw_paths=options["raw_paths"],
+        settings=options["settings"],
+        peaks_by_sample=options["peaks_by_sample"],
+        root=tmp_path / "batch",
+    )
+    return UntargetedRequest(
+        discovery_batch_index=DiscoveryBatchIndex(
+            path=tmp_path / "batch" / "index.csv",
+            sample_order=batch.sample_order,
+            raw_files=batch.raw_files,
+            peak_csvs=batch.peak_csvs,
+            event_csvs=batch.event_csvs,
+            peak_receipts=batch.peak_receipts,
+        ),
+        sample_metadata=options["sample_metadata"],
+        alignment_config=config,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "grouping",
+        discovery_settings=options["settings"],
+        peak_config=options["peak_config"],
+        execution=UntargetedExecutionPolicy(
+            raw_workers=1,
+            raw_worker_backend="thread",
+            acquisition_cache_dir=tmp_path / "raw-facts",
+        ),
+    )
+
+
+def test_replay_backfill_from_completed_grouping(tmp_path, monkeypatch):
+    import csv
+    import subprocess
+    import sys
+    from collections import Counter
+    from pathlib import Path
+
+    from scripts.run_alignment import main
+    from tests.cid_nl_runtime_fixtures import (
+        prepare_persisted_discovery_plan,
+    )
+    from xic_extractor.applications.untargeted.application import (
+        run_untargeted_grouping,
+    )
+    from xic_extractor.configuration.signal_processing_profile import (
+        DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+    from xic_extractor.output.alignment.tsv_writer import cell_status
+    from xic_extractor.untargeted_execution.alignment import execute_prepared_alignment
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "user-state")
+    options = _shared_peak_inputs(tmp_path, monkeypatch, 0.0)
+    options["signal_processing_profile"] = DEFAULT_SIGNAL_PROCESSING_PROFILE
+    plan = prepare_persisted_discovery_plan(
+        **options, root=tmp_path / "discovery-input"
+    )
+    config = AlignmentConfig(anchor_min_seed_events=1)
+
+    def cells(child, _):
+        return tuple(
+            (
+                group.group_hypothesis_id,
+                cell.subject.canonical_sample.raw_stem,
+                cell.value,
+                cell.variant,
+                cell.source,
+                cell_status(cell),
+            )
+            for group, decisions in child.group_cells
+            for cell in decisions
+        )
+
+    result = execute_prepared_alignment(
+        plan,
+        output_dir=tmp_path / "full",
+        alignment_config=config,
+        raw_workers=1,
+        acquisition_cache_dir=tmp_path / "raw-facts",
+        project_child=cells,
+    )
+    try:
+        expected = Counter(
+            row for child in result.application_result.child_outputs for row in child
+        )
+    finally:
+        result.close()
+    request = _backfill_request(tmp_path, options, config)
+    run_untargeted_grouping(request, save_backfill_inputs=True)
+    directory = request.output_dir / "backfill-inputs"
+
+    output = tmp_path / "replay"
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from tests.test_cid_nl_multi_group_recovery import "
+            "_run_cached_backfill_cli as run; sys.exit(run(*sys.argv[1:]))",
+            str(Path.home()),
+            str(directory),
+            str(output),
+        ],
+        check=True,
+        timeout=60,
+    )
+    with (output / "backfill-cells.tsv").open(encoding="utf-8", newline="") as stream:
+        actual = Counter(
+            (
+                row["group_id"],
+                row["sample_stem"],
+                float(row["area"]) if row["area"] else None,
+                row["decision"],
+                row["source"],
+                row["status"],
+            )
+            for row in csv.DictReader(stream, delimiter="\t")
+        )
+    assert actual == expected
+    missing = [
+        (area, decision, status)
+        for _, sample, area, decision, _, status in actual.elements()
+        if sample == "Missing"
+    ]
+    assert len(missing) == 2
+    assert sorted(status for _, _, status in missing) == ["backfilled", "unresolved"]
+    assert sum(v is not None and v > 0 for v, _, _ in missing) == 1
+    assert [reason for value, reason, _ in missing if value is None] == ["unresolved"]
+
+    (directory / "0.bin").write_bytes(b"not the captured partition")
+    rejected = tmp_path / "rejected"
+    assert (
+        main(["backfill", "--inputs", str(directory), "--output-dir", str(rejected)])
+        == 2
+    )
+    assert not (rejected / "backfill-cells.tsv").exists()
+
+
+def test_matrix_preserves_empty_batch_sample_column(tmp_path, monkeypatch):
+    import csv
+    import json
+    from datetime import datetime
+    from pathlib import Path
+
+    from scripts.run_alignment import main
+    from xic_extractor.applications.untargeted import application
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "user-state")
+    options = _shared_peak_inputs(tmp_path, monkeypatch, 0.0)
+    options["peaks_by_sample"]["Missing"] = ()
+    options["sample_metadata"] = tuple(
+        replace(s, batch_id="empty" if s.raw_stem == "Missing" else "observed")
+        for s in options["sample_metadata"]
+    )
+    request = _backfill_request(
+        tmp_path, options, AlignmentConfig(anchor_min_seed_events=1)
+    )
+    monkeypatch.setattr(
+        application,
+        "latest_acquisition_reader",
+        lambda *a, **kw: lambda batch: datetime(2026, 1, 1),
+    )
+    application.run_untargeted_grouping(
+        request, save_backfill_inputs=True, save_pairing_inputs=True
+    )
+
+    def replay(stage, *args):
+        out = tmp_path / stage
+        assert main([stage, *map(str, args), "--output-dir", str(out)]) == 0
+        return out
+
+    captured = request.output_dir
+    backfill = replay(
+        "backfill", "--inputs", captured / "backfill-inputs", "--save-matrix-inputs"
+    )
+    cells = backfill / "matrix-cells.json"
+    batches = json.loads(cells.read_text())["batches"]
+    assert batches["empty"] == {"samples": {"Missing": 3}, "groups": []}
+
+    pair = replay(
+        "pair-batches",
+        "--inputs",
+        *sorted((captured / "pairing-inputs").glob("*.json")),
+    )
+    matrix = replay(
+        "matrix", "--backfill", cells, "--pairing", pair / "matrix-join.json"
+    )
+    with (matrix / "alignment_matrix.tsv").open(newline="") as stream:
+        rows = list(csv.DictReader(stream, delimiter="\t"))
+    assert rows and all(row["Missing"] == "" for row in rows)
+    formal = tmp_path / "formal"
+    application.run_untargeted_application(replace(request, output_dir=formal))
+    assert (formal / "alignment_matrix.tsv").read_bytes() == (
+        matrix / "alignment_matrix.tsv"
+    ).read_bytes()

@@ -132,11 +132,36 @@ def untarget_sample_order(
 
 
 @dataclass(frozen=True, slots=True)
+class FinalMatrixValues:
+    """One finalized group's unformatted values, in batch sample order."""
+
+    mz: float
+    rt: float
+    areas: tuple[float | None, ...]
+
+    def row(self, order: tuple[str, ...]) -> tuple[str, ...]:
+        table = serialize_public_matrix_table(
+            (
+                {
+                    "Mz": self.mz,
+                    "RT": self.rt,
+                    **{
+                        stem: "" if area is None else format_float(area)
+                        for stem, area in zip(order, self.areas, strict=True)
+                    },
+                },
+            ),
+            sample_columns=order,
+        )
+        return tuple(format_value(table.rows[0][column]) for column in table.header)
+
+
+@dataclass(frozen=True, slots=True)
 class UntargetGroupRows:
     """One written group's TSV rows before the batch numbers its rows.
 
-    Each row is its formatted cells; the first cell of every row other than a
-    Matrix row is the ``feature_id`` slot, and a review row's second cell is
+    Matrix values stay numeric until serialization; other rows are formatted.
+    Their first cell is the ``feature_id`` slot, and a review row's second cell is
     its ``matrix_row_index`` slot. Physical peaks are named by their key and a
     digest of the measured signal that makes two peaks equal.
     """
@@ -145,6 +170,15 @@ class UntargetGroupRows:
     physical_peaks: tuple[tuple[str, str], ...]
     source_candidate_ids: tuple[str, ...]
     rows: tuple[tuple[str, tuple[tuple[str, ...], ...]], ...]
+    matrix: FinalMatrixValues | None
+
+    def formatted_rows(
+        self, sample_order: tuple[str, ...]
+    ) -> dict[str, tuple[tuple[str, ...], ...]]:
+        rows = dict(self.rows)
+        if self.matrix is not None:
+            rows["matrix"] = (self.matrix.row(sample_order),)
+        return rows
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,26 +273,10 @@ def project_untarget_child_rows(
             "group_center_mz": format_value(center_mz),
             "group_center_rt": format_value(center_rt),
         }
-        if group.destination == "matrix":
-            emit(
-                "matrix",
-                serialize_public_matrix_table(
-                    (
-                        {
-                            "Mz": center_mz,
-                            "RT": center_rt,
-                            **{
-                                sample_stem: ""
-                                if cell.value is None
-                                else format_float(cell.value)
-                                for sample_stem, cell in zip(
-                                    sample_order, cells, strict=True
-                                )
-                            },
-                        },
-                    ),
-                    sample_columns=sample_order,
-                ).rows,
+        matrix_values = None
+        if group.destination == "matrix" and "matrix" in requested:
+            matrix_values = FinalMatrixValues(
+                center_mz, center_rt, tuple(cell.value for cell in cells)
             )
         emit(
             "review",
@@ -324,6 +342,7 @@ def project_untarget_child_rows(
                     (peak.physical_peak_key, peak_signal_digest(peak)) for peak in peaks
                 ),
                 source_candidate_ids=tuple(candidate_ids.values()),
+                matrix=matrix_values,
                 rows=tuple((name, tuple(values)) for name, values in rows.items()),
             )
         )
@@ -386,7 +405,7 @@ def write_alignment_tsvs(
                             )
                     matrix_row_count += 1
                     matrix_row_index = format_value(matrix_row_count)
-                for name, rows in group.rows:
+                for name, rows in group.formatted_rows(sample_order).items():
                     row_writer = writers.get(name)
                     if row_writer is None:
                         continue
@@ -721,7 +740,8 @@ class BatchRowSource:
     """
 
     batch_id: str
-    completed: FinalizedUntargetBatchApplicationResult
+    canonical_samples: Sequence[SampleMetadata]
+    child_outputs: Sequence[object]
     feature_key: Callable[[UntargetGroupRows], str | None]
 
 
@@ -744,11 +764,11 @@ def write_batch_alignment_tsvs(
     (batch, child index, offset in the child) of each of its parts.
     """
     global_order = untarget_sample_order(
-        sample for source in sources for sample in source.completed.canonical_samples
+        sample for source in sources for sample in source.canonical_samples
     )
     headers = {**_output_headers(global_order), "review": BATCH_REVIEW_COLUMNS}
     orders = {
-        source.batch_id: untarget_sample_order(source.completed.canonical_samples)
+        source.batch_id: untarget_sample_order(source.canonical_samples)
         for source in sources
     }
     paired_elsewhere = {
@@ -761,7 +781,7 @@ def write_batch_alignment_tsvs(
     for source in sources:
         if source.batch_id == reference_batch:
             continue
-        for child_index, child in enumerate(source.completed.child_outputs):
+        for child_index, child in enumerate(source.child_outputs):
             groups = cast(UntargetChildOutputs, child).groups
             for offset, group in enumerate(groups):
                 key = source.feature_key(group)
@@ -792,7 +812,7 @@ def write_batch_alignment_tsvs(
             writer.writerow([escape_excel_formula(column) for column in headers[name]])
             writers[name] = writer
         for source in ordered_sources:
-            for child_index, child in enumerate(source.completed.child_outputs):
+            for child_index, child in enumerate(source.child_outputs):
                 groups = cast(UntargetChildOutputs, child).groups
                 for offset, group in enumerate(groups):
                     key = source.feature_key(group)
@@ -835,13 +855,14 @@ def write_batch_alignment_tsvs(
                     mapped_batch = (
                         source.batch_id if source.batch_id != reference_batch else None
                     )
+                    batch_rows = [
+                        (orders[batch_id], part.formatted_rows(orders[batch_id]))
+                        for batch_id, part in parts
+                    ]
                     for name, row_writer in writers.items():
                         rows = _merge_batch_rows(
                             name,
-                            [
-                                (orders[batch_id], dict(part.rows).get(name, ()))
-                                for batch_id, part in parts
-                            ],
+                            [(order, rows.get(name, ())) for order, rows in batch_rows],
                             global_order,
                             headers[name],
                             partial(_reference_rt_text, to_reference_rt, mapped_batch),
@@ -948,3 +969,27 @@ def _merge_batch_rows(
             )
         return (tuple(merged[column] for column in columns),)
     raise ValueError(f"unknown Untargeted output: {name}")
+
+
+def feature_key_by_peaks(
+    initial_groups: Iterable[CrossSamplePeakGroupHypothesis],
+) -> Callable[[UntargetGroupRows], str | None]:
+    """A written row's correspondence feature: the Matrix group it grew from."""
+    key_by_peak = {
+        owner.peak.physical_peak_key: group.group_hypothesis_id
+        for group in initial_groups
+        if group.destination == "matrix"
+        for owner in group.owners
+    }
+
+    def feature_key(rows: UntargetGroupRows) -> str | None:
+        keys = {
+            key_by_peak[peak]
+            for peak, _digest in rows.physical_peaks
+            if peak in key_by_peak
+        }
+        if len(keys) > 1:
+            raise ValueError("one written row grew from several Matrix groups")
+        return next(iter(keys), None) if rows.destination == "matrix" else None
+
+    return feature_key

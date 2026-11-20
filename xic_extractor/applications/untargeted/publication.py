@@ -14,7 +14,6 @@ from xic_extractor.alignment.batch_correspondence import (
     compose_calibrations,
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSamplePeakGroupHypothesis,
     accepted_membership_risks,
 )
 from xic_extractor.applications.untargeted.alignment_explanation_projection import (
@@ -45,7 +44,7 @@ from xic_extractor.output.alignment.pipeline_outputs import (
 from xic_extractor.output.alignment.tsv_writer import (
     BatchRowSource,
     UntargetChildOutputs,
-    UntargetGroupRows,
+    feature_key_by_peaks,
     project_untarget_child_rows,
     untarget_sample_order,
     write_batch_alignment_tsvs,
@@ -354,8 +353,9 @@ def publish_batch_untargeted_outputs(
         sources = [
             BatchRowSource(
                 batch_id,
-                completed_by_batch[batch_id].application_result,
-                _feature_key_by_peaks(completed_by_batch[batch_id].initial_groups),
+                completed_by_batch[batch_id].application_result.canonical_samples,
+                completed_by_batch[batch_id].application_result.child_outputs,
+                feature_key_by_peaks(completed_by_batch[batch_id].initial_groups),
             )
             for batch_id in batch_order
         ]
@@ -493,27 +493,3 @@ def _write_batch_explanation(
                     for offset, group_id in written.items()
                 )
         return replay.finalize(matrix_path)
-
-
-def _feature_key_by_peaks(
-    initial_groups: Iterable[CrossSamplePeakGroupHypothesis],
-) -> Callable[[UntargetGroupRows], str | None]:
-    """A written row's correspondence feature: the Matrix group it grew from."""
-    key_by_peak = {
-        owner.peak.physical_peak_key: group.group_hypothesis_id
-        for group in initial_groups
-        if group.destination == "matrix"
-        for owner in group.owners
-    }
-
-    def feature_key(rows: UntargetGroupRows) -> str | None:
-        keys = {
-            key_by_peak[peak]
-            for peak, _digest in rows.physical_peaks
-            if peak in key_by_peak
-        }
-        if len(keys) > 1:
-            raise ValueError("one written row grew from several Matrix groups")
-        return next(iter(keys), None) if rows.destination == "matrix" else None
-
-    return feature_key

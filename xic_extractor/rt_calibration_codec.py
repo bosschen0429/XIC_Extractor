@@ -54,45 +54,10 @@ def rt_calibration_from_payload(value: dict[str, Any]) -> BatchRtCalibration:
         )
     samples = {}
     for row in value["samples"]:
-        _require_calibration_fields(
-            row,
-            {
-                "sample_stem",
-                "status",
-                "knots_observed_reference_min",
-                "front_shift_min",
-                "perturbation_status",
-                "anchor_count",
-                "standard_residuals",
-                "estimate_support",
-            },
-        )
-        knots = tuple(
-            (float(x), float(y)) for x, y in row["knots_observed_reference_min"]
-        )
-        if (
-            any(not math.isfinite(v) for pair in knots for v in pair)
-            or any(
-                x2 <= x1 or y2 <= y1
-                for (x1, y1), (x2, y2) in zip(knots, knots[1:], strict=False)
-            )
-            or len(knots) == 1
-        ):
-            raise ValueError(f"Invalid RT knots for {row['sample_stem']}")
-        stem = row["sample_stem"]
-        if stem in samples:
+        sample = sample_calibration_from_payload(row)
+        if sample.sample_stem in samples:
             raise ValueError("RT calibration has duplicate samples")
-        samples[stem] = SampleRtCalibration(
-            sample_stem=stem,
-            status=row["status"],
-            knots=knots,
-            front_shift_min=row["front_shift_min"],
-            prior_injection=None,
-            perturbation_status=row["perturbation_status"],
-            anchor_count=row["anchor_count"],
-            standard_residuals=tuple(tuple(item) for item in row["standard_residuals"]),
-            estimate_support=_read_estimate_support(row["estimate_support"]),
-        )
+        samples[sample.sample_stem] = sample
     policy = dict(value["policy"])
     return BatchRtCalibration(
         policy=RtCalibrationPolicy(**policy),
@@ -112,6 +77,44 @@ def rt_calibration_from_payload(value: dict[str, Any]) -> BatchRtCalibration:
         front_shift_center_min=value["front_shift_center_min"],
         front_shift_mad_min=value["front_shift_mad_min"],
         perturbation_tolerance_min=value["perturbation_tolerance_min"],
+    )
+
+
+def sample_calibration_from_payload(row: dict[str, Any]) -> SampleRtCalibration:
+    _require_calibration_fields(
+        row,
+        {
+            "sample_stem",
+            "status",
+            "knots_observed_reference_min",
+            "front_shift_min",
+            "perturbation_status",
+            "anchor_count",
+            "standard_residuals",
+            "estimate_support",
+        },
+    )
+    knots = tuple((float(x), float(y)) for x, y in row["knots_observed_reference_min"])
+    if (
+        any(not math.isfinite(v) for pair in knots for v in pair)
+        or any(
+            x2 <= x1 or y2 <= y1
+            for (x1, y1), (x2, y2) in zip(knots, knots[1:], strict=False)
+        )
+        or len(knots) == 1
+    ):
+        raise ValueError(f"Invalid RT knots for {row['sample_stem']}")
+    stem = row["sample_stem"]
+    return SampleRtCalibration(
+        sample_stem=stem,
+        status=row["status"],
+        knots=knots,
+        front_shift_min=row["front_shift_min"],
+        prior_injection=None,
+        perturbation_status=row["perturbation_status"],
+        anchor_count=row["anchor_count"],
+        standard_residuals=tuple(tuple(item) for item in row["standard_residuals"]),
+        estimate_support=_read_estimate_support(row["estimate_support"]),
     )
 
 
@@ -154,27 +157,31 @@ def _read_estimate_support(value: object) -> RtEstimateSupport | None:
     )
 
 
+def sample_calibration_payload(sample: SampleRtCalibration) -> dict[str, Any]:
+    return {
+        "sample_stem": sample.sample_stem,
+        "status": sample.status,
+        "knots_observed_reference_min": sample.knots,
+        "front_shift_min": sample.front_shift_min,
+        "perturbation_status": sample.perturbation_status,
+        "anchor_count": sample.anchor_count,
+        "standard_residuals": sample.standard_residuals,
+        "estimate_support": {
+            **asdict(sample.estimate_support),
+            "positions_min": list(sample.estimate_support.positions_min),
+        }
+        if sample.estimate_support is not None
+        else None,
+    }
+
+
 def rt_calibration_payload(calibration: BatchRtCalibration) -> dict[str, Any]:
     return {
         "schema": "sample_rt_calibration",
         "policy": asdict(calibration.policy),
         "knots": [asdict(knot) for knot in calibration.knots],
         "samples": [
-            {
-                "sample_stem": sample.sample_stem,
-                "status": sample.status,
-                "knots_observed_reference_min": sample.knots,
-                "front_shift_min": sample.front_shift_min,
-                "perturbation_status": sample.perturbation_status,
-                "anchor_count": sample.anchor_count,
-                "standard_residuals": sample.standard_residuals,
-                "estimate_support": {
-                    **asdict(sample.estimate_support),
-                    "positions_min": list(sample.estimate_support.positions_min),
-                }
-                if sample.estimate_support is not None
-                else None,
-            }
+            sample_calibration_payload(sample)
             for sample in calibration.samples.values()
         ],
         "front_shift_center_min": calibration.front_shift_center_min,

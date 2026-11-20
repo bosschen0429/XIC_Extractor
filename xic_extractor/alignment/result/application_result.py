@@ -70,6 +70,14 @@ class FinalizedUntargetApplicationResult:
     group_cells: tuple[GroupCells, ...]
 
     @property
+    def first_method_subject_id(self) -> str:
+        """Canonical child order when independently finalized partitions are joined."""
+        return min(
+            provider.method_subject_id
+            for provider in self.scientific_core.scope.evidence_providers
+        )
+
+    @property
     def variant(self) -> Literal["untargeted"]:
         return "untargeted"
 
