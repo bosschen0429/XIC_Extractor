@@ -555,6 +555,8 @@ def _group_batch(
             else None
         ),
     )
+    if capture is not None:
+        capture.record_samples(plan.context.samples)
     return cast(
         PreparedGroupingExperiment,
         execute_prepared_alignment(

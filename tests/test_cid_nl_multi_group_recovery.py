@@ -1735,6 +1735,42 @@ def _run_cached_backfill_cli(home, directory, output):
         return main(["backfill", "--inputs", directory, "--output-dir", output])
 
 
+def _backfill_request(tmp_path, options, config):
+    from tests.cid_nl_runtime_fixtures import persist_discovery_batch
+    from xic_extractor.applications.untargeted.request import UntargetedRequest
+    from xic_extractor.configuration.execution_profile import UntargetedExecutionPolicy
+    from xic_extractor.discovery.csv_reader import DiscoveryBatchIndex
+
+    batch = persist_discovery_batch(
+        raw_paths=options["raw_paths"],
+        settings=options["settings"],
+        peaks_by_sample=options["peaks_by_sample"],
+        root=tmp_path / "batch",
+    )
+    return UntargetedRequest(
+        discovery_batch_index=DiscoveryBatchIndex(
+            path=tmp_path / "batch" / "index.csv",
+            sample_order=batch.sample_order,
+            raw_files=batch.raw_files,
+            peak_csvs=batch.peak_csvs,
+            event_csvs=batch.event_csvs,
+            peak_receipts=batch.peak_receipts,
+        ),
+        sample_metadata=options["sample_metadata"],
+        alignment_config=config,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "grouping",
+        discovery_settings=options["settings"],
+        peak_config=options["peak_config"],
+        execution=UntargetedExecutionPolicy(
+            raw_workers=1,
+            raw_worker_backend="thread",
+            acquisition_cache_dir=tmp_path / "raw-facts",
+        ),
+    )
+
+
 def test_replay_backfill_from_completed_grouping(tmp_path, monkeypatch):
     import csv
     import subprocess
@@ -1744,18 +1780,14 @@ def test_replay_backfill_from_completed_grouping(tmp_path, monkeypatch):
 
     from scripts.run_alignment import main
     from tests.cid_nl_runtime_fixtures import (
-        persist_discovery_batch,
         prepare_persisted_discovery_plan,
     )
     from xic_extractor.applications.untargeted.application import (
         run_untargeted_grouping,
     )
-    from xic_extractor.applications.untargeted.request import UntargetedRequest
-    from xic_extractor.configuration.execution_profile import UntargetedExecutionPolicy
     from xic_extractor.configuration.signal_processing_profile import (
         DEFAULT_SIGNAL_PROCESSING_PROFILE,
     )
-    from xic_extractor.discovery.csv_reader import DiscoveryBatchIndex
     from xic_extractor.output.alignment.tsv_writer import cell_status
     from xic_extractor.untargeted_execution.alignment import execute_prepared_alignment
 
@@ -1795,38 +1827,9 @@ def test_replay_backfill_from_completed_grouping(tmp_path, monkeypatch):
         )
     finally:
         result.close()
-    directory = tmp_path / "grouping" / "backfill-inputs"
-    batch = persist_discovery_batch(
-        raw_paths=options["raw_paths"],
-        settings=options["settings"],
-        peaks_by_sample=options["peaks_by_sample"],
-        root=tmp_path / "batch",
-    )
-    run_untargeted_grouping(
-        UntargetedRequest(
-            discovery_batch_index=DiscoveryBatchIndex(
-                path=tmp_path / "batch" / "index.csv",
-                sample_order=batch.sample_order,
-                raw_files=batch.raw_files,
-                peak_csvs=batch.peak_csvs,
-                event_csvs=batch.event_csvs,
-                peak_receipts=batch.peak_receipts,
-            ),
-            sample_metadata=options["sample_metadata"],
-            alignment_config=config,
-            raw_dir=tmp_path,
-            dll_dir=tmp_path,
-            output_dir=directory.parent,
-            discovery_settings=options["settings"],
-            peak_config=options["peak_config"],
-            execution=UntargetedExecutionPolicy(
-                raw_workers=1,
-                raw_worker_backend="thread",
-                acquisition_cache_dir=tmp_path / "raw-facts",
-            ),
-        ),
-        save_backfill_inputs=True,
-    )
+    request = _backfill_request(tmp_path, options, config)
+    run_untargeted_grouping(request, save_backfill_inputs=True)
+    directory = request.output_dir / "backfill-inputs"
 
     output = tmp_path / "replay"
     subprocess.run(
@@ -1872,3 +1875,86 @@ def test_replay_backfill_from_completed_grouping(tmp_path, monkeypatch):
         == 2
     )
     assert not (rejected / "backfill-cells.tsv").exists()
+
+
+def test_matrix_preserves_empty_batch_sample_column(tmp_path, monkeypatch):
+    import csv
+    import json
+    from datetime import datetime
+    from pathlib import Path
+
+    from scripts.run_alignment import main
+    from xic_extractor.applications.untargeted import application
+
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "user-state")
+    options = _shared_peak_inputs(tmp_path, monkeypatch, 0.0)
+    options["peaks_by_sample"]["Missing"] = ()
+    options["sample_metadata"] = tuple(
+        replace(s, batch_id="empty" if s.raw_stem == "Missing" else "observed")
+        for s in options["sample_metadata"]
+    )
+    request = _backfill_request(
+        tmp_path, options, AlignmentConfig(anchor_min_seed_events=1)
+    )
+    monkeypatch.setattr(
+        application,
+        "latest_acquisition_reader",
+        lambda *a, **kw: lambda batch: datetime(2026, 1, 1),
+    )
+    application.run_untargeted_grouping(
+        request, save_backfill_inputs=True, save_pairing_inputs=True
+    )
+    out = tmp_path / "backfill"
+    assert (
+        main(
+            [
+                "backfill",
+                "--inputs",
+                str(request.output_dir / "backfill-inputs"),
+                "--output-dir",
+                str(out),
+                "--save-matrix-inputs",
+            ]
+        )
+        == 0
+    )
+    batches = json.loads((out / "matrix-cells.json").read_text())["batches"]
+    assert batches["empty"] == {"samples": {"Missing": 3}, "groups": []}
+    pair = tmp_path / "pair"
+    assert (
+        main(
+            [
+                "pair-batches",
+                "--inputs",
+                *map(
+                    str, sorted((request.output_dir / "pairing-inputs").glob("*.json"))
+                ),
+                "--output-dir",
+                str(pair),
+            ]
+        )
+        == 0
+    )
+    matrix = tmp_path / "matrix"
+    assert (
+        main(
+            [
+                "matrix",
+                "--backfill",
+                str(out / "matrix-cells.json"),
+                "--pairing",
+                str(pair / "matrix-join.json"),
+                "--output-dir",
+                str(matrix),
+            ]
+        )
+        == 0
+    )
+    with (matrix / "alignment_matrix.tsv").open(newline="") as stream:
+        rows = list(csv.DictReader(stream, delimiter="\t"))
+    assert rows and all(row["Missing"] == "" for row in rows)
+    formal = tmp_path / "formal"
+    application.run_untargeted_application(replace(request, output_dir=formal))
+    assert (formal / "alignment_matrix.tsv").read_bytes() == (
+        matrix / "alignment_matrix.tsv"
+    ).read_bytes()

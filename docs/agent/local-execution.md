@@ -165,7 +165,10 @@ inputs or the stored Python models change.
 To change **Matrix output only**, retain finalized cells once by adding
 `--save-matrix-inputs` to `run_alignment backfill`. This writes
 `matrix-cells.json`: unrounded row coordinates, sample identities, injection
-order, and decided areas (null means no write). `pair-batches` writes
+order (including samples in batches with no candidates), and decided areas
+(null means no write). To export Matrix inputs, the grouping checkpoint must
+include the batch sample roster; digest-only checkpoints still replay Backfill.
+`pair-batches` writes
 `matrix-join.json`: batch-qualified partners and the fitted RT maps. To
 render a new Matrix after a writer edit:
 

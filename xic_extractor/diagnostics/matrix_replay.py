@@ -45,25 +45,21 @@ _PAIRING = "matrix_batch_join"
 class CompletedMatrixCells:
     """Keep only the Matrix writer's inputs, never RAW or a rendered Matrix."""
 
-    def __init__(self) -> None:
-        self.batches: dict[str, dict[str, Any]] = {}
+    def __init__(self, samples: dict[str, dict[str, int | None]]) -> None:
+        if "" in samples:
+            raise ValueError("Matrix replay requires declared batch IDs")
+        self.batches: dict[str, dict[str, Any]] = {
+            batch: {"samples": roster, "children": []}
+            for batch, roster in samples.items()
+        }
 
     def append(
         self,
         composition: UntargetedPartitionComposition,
         samples: tuple[SampleMetadata, ...],
     ) -> None:
-        ids = {sample.batch_id for sample in samples}
-        if len(ids) != 1 or "" in ids:
-            raise ValueError("Matrix replay requires declared batch IDs")
-        (batch_id,) = ids
         order = untarget_sample_order(samples)
-        sample_orders = {sample.raw_stem: sample.injection_order for sample in samples}
-        batch = self.batches.setdefault(
-            batch_id, {"samples": sample_orders, "children": []}
-        )
-        if batch["samples"] != sample_orders:
-            raise ValueError(f"Inconsistent Backfill sample roster for {batch_id}")
+        batch = self.batches[samples[0].batch_id]
         key = feature_key_by_peaks(composition.initial_groups)
         for child in composition.children:
             rows: list[dict[str, Any]] = []

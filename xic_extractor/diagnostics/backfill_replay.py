@@ -20,6 +20,7 @@ from xic_extractor.execution._serialization import (
 )
 from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.output.alignment.tsv_writer import cell_status
+from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.execution import FrozenBackfillPartition
 from xic_extractor.untargeted_execution.partition_composition import (
     compose_untargeted_partition,
@@ -39,11 +40,19 @@ class BackfillCheckpoint:
     def __init__(self, directory: Path):
         self.directory = directory
         self._digests: list[str] = []
+        self._samples: dict[str, dict[str, int | None]] = {}
 
     def __enter__(self) -> BackfillCheckpoint:
         self.directory.mkdir(parents=True, exist_ok=False)
         _receipt(self.directory).unlink(missing_ok=True)
         return self
+
+    def record_samples(self, samples: tuple[SampleMetadata, ...]) -> None:
+        """A batch can have canonical samples without any Backfill partitions."""
+        for sample in samples:
+            self._samples.setdefault(sample.batch_id, {})[sample.raw_stem] = (
+                sample.injection_order
+            )
 
     def append(self, partition: FrozenBackfillPartition) -> None:
         data = owner_pickle_dumps(partition, ())
@@ -54,14 +63,28 @@ class BackfillCheckpoint:
         if exc_type is None:
             path = _receipt(self.directory)
             path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            atomic_write_text(path, json.dumps(self._digests))
+            atomic_write_text(
+                path, json.dumps({"digests": self._digests, "samples": self._samples})
+            )
 
 
-def _partitions(directory: Path) -> Iterator[FrozenBackfillPartition]:
+def _load_receipt(
+    directory: Path,
+) -> tuple[list[str], dict[str, dict[str, int | None]] | None]:
     receipt = _receipt(directory)
     if not receipt.is_file():
         raise ValueError(f"No completed local Backfill capture for {directory}")
-    for index, digest in enumerate(json.loads(receipt.read_text(encoding="utf-8"))):
+    capture = json.loads(receipt.read_text(encoding="utf-8"))
+    if isinstance(capture, list):
+        # A digest-only capture still supports replaying Backfill itself.
+        return capture, None
+    return capture["digests"], capture["samples"]
+
+
+def _partitions(
+    directory: Path, digests: list[str]
+) -> Iterator[FrozenBackfillPartition]:
+    for index, digest in enumerate(digests):
         data = (directory / f"{index}.bin").read_bytes()
         if hashlib.sha256(data).hexdigest() != digest:
             raise ValueError(
@@ -78,7 +101,14 @@ def replay_backfill(
     output = output_dir / "backfill-cells.tsv"
     if output.exists():
         raise FileExistsError(output)
-    matrix = CompletedMatrixCells() if save_matrix_inputs else None
+    digests, samples = _load_receipt(directory)
+    matrix = None
+    if save_matrix_inputs:
+        if samples is None:
+            raise ValueError(
+                "Recapture grouping with a sample roster to export Matrix inputs"
+            )
+        matrix = CompletedMatrixCells(samples)
     matrix_path = output_dir / "matrix-cells.json"
     if matrix is not None and matrix_path.exists():
         raise FileExistsError(matrix_path)
@@ -100,7 +130,7 @@ def replay_backfill(
                     "status",
                 )
             )
-            for index, frozen in enumerate(_partitions(directory)):
+            for index, frozen in enumerate(_partitions(directory, digests)):
                 with WorkerAdmissionPool() as pool:
                     result = frozen.execute(f"partition-{index:05d}-backfill", pool)
                 if result.failure is not None:
