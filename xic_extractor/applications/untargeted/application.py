@@ -2,19 +2,25 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from dataclasses import replace
+from datetime import datetime
 from functools import cache
 from pathlib import Path
 from typing import cast
 
 from xic_extractor.alignment.batch_correspondence import (
+    BatchFeature,
     GroupedBatch,
     compose_calibrations,
     pair_grouped_batches,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.grouping_experiment import combine_grouping_inputs
+from xic_extractor.alignment.grouping_experiment import (
+    GroupingInputs,
+    combine_grouping_inputs,
+)
 from xic_extractor.applications.untargeted.istd_reference import (
     extract_batch_known_istd_reference,
     read_known_istd_reference,
@@ -133,6 +139,11 @@ def run_untargeted_application(
         run_metadata_json=request.output_dir / "alignment_run_metadata.json",
     )
     _reject_alignment_output_collisions(output_dir=request.output_dir, outputs=outputs)
+    batches = split_discovery_batch(batch, request.sample_metadata)
+    if request.replay.pairing and any(not batch_id for batch_id, _ in batches):
+        raise ValueError("Saving pairing inputs requires a batch_id in sample metadata")
+    if request.replay.backfill and not request.alignment_config.backfill_enabled:
+        raise ValueError("Saving Backfill inputs requires Backfill to be enabled")
     if context.progress_callback:
         context.progress_callback({"stage": "mass_recalibration"})
     mass_recalibration_by_sample = _prepare_mass_recalibration(
@@ -178,52 +189,111 @@ def run_untargeted_application(
         raise InterruptedError(
             "Alignment cancelled before retained untargeted execution"
         )
-    batches = split_discovery_batch(batch, request.sample_metadata)
     completed_by_batch: dict[str, CompletedUntargetBatchWorkflowResult] = {}
+    groupings: list[PreparedGroupingExperiment] = []
+    project_child = untargeted_child_projection(outputs, request.publication)
     try:
-        for batch_id, batch_input in batches:
-            completed_by_batch[batch_id] = complete_untargeted_alignment(
-                discovery_batch=batch_input,
-                peaks_by_sample=(
-                    peaks_by_sample
-                    if len(batches) == 1
-                    else DiscoveryInputSource(batch_input)
-                ),
-                raw_dir=request.raw_dir,
-                dll_dir=request.dll_dir,
-                output_dir=request.output_dir,
-                settings=request.discovery_settings,
-                peak_config=request.peak_config,
-                alignment_config=request.alignment_config,
-                sample_metadata=request.sample_metadata,
-                known_istd_reference=resolved_known_istd_reference,
-                timing_recorder=recorder,
-                signal_processing_profile=signal_processing_profile,
-                raw_workers=request.execution.raw_workers,
-                raw_worker_backend=request.execution.raw_worker_backend,
-                should_cancel=context.should_cancel,
-                progress_callback=context.progress_callback,
-                retain_partition_memory=False,
-                retain_acquisition_cache=request.execution.retain_acquisition_cache,
-                acquisition_cache_dir=request.execution.acquisition_cache_dir,
-                max_partition_jobs=request.execution.max_partition_jobs,
-                mass_recalibration_by_sample=(
-                    _batch_mass_recalibration(mass_recalibration_by_sample, batch_input)
-                    if request.discovery_settings.mass_recalibration
-                    is not MassRecalibration.NONE
-                    else None
-                ),
-                project_child=untargeted_child_projection(outputs, request.publication),
-            )
+        with _backfill_capture(request.output_dir, request.replay.backfill) as capture:
+            for batch_id, batch_input in batches:
+                completed_by_batch[batch_id] = complete_untargeted_alignment(
+                    discovery_batch=batch_input,
+                    peaks_by_sample=(
+                        peaks_by_sample
+                        if len(batches) == 1
+                        else DiscoveryInputSource(batch_input)
+                    ),
+                    raw_dir=request.raw_dir,
+                    dll_dir=request.dll_dir,
+                    output_dir=request.output_dir,
+                    settings=request.discovery_settings,
+                    peak_config=request.peak_config,
+                    alignment_config=request.alignment_config,
+                    sample_metadata=request.sample_metadata,
+                    known_istd_reference=resolved_known_istd_reference,
+                    timing_recorder=recorder,
+                    signal_processing_profile=signal_processing_profile,
+                    raw_workers=request.execution.raw_workers,
+                    raw_worker_backend=request.execution.raw_worker_backend,
+                    should_cancel=context.should_cancel,
+                    progress_callback=context.progress_callback,
+                    retain_partition_memory=False,
+                    retain_acquisition_cache=request.execution.retain_acquisition_cache,
+                    acquisition_cache_dir=request.execution.acquisition_cache_dir,
+                    max_partition_jobs=request.execution.max_partition_jobs,
+                    mass_recalibration_by_sample=(
+                        _batch_mass_recalibration(
+                            mass_recalibration_by_sample, batch_input
+                        )
+                        if request.discovery_settings.mass_recalibration
+                        is not MassRecalibration.NONE
+                        else None
+                    ),
+                    project_child=project_child,
+                    capture_grouping=groupings.append
+                    if request.replay.grouping
+                    else None,
+                    capture_backfill=capture.append if capture is not None else None,
+                )
+                if capture is not None:
+                    capture.record_samples(
+                        completed_by_batch[
+                            batch_id
+                        ].application_result.canonical_samples
+                    )
     except BaseException as exc:
         for completed in completed_by_batch.values():
             completed.close()
         if isinstance(exc, RuntimeError):
             raise AlignmentProcessExecutionError(str(exc)) from exc
         raise
-    if context.progress_callback:
-        context.progress_callback({"stage": "publish_matrix"})
-    if len(completed_by_batch) == 1:
+    correspondence = None
+    features: tuple[BatchFeature, ...] = ()
+    try:
+        if groupings:
+            _write_grouping_snapshot(
+                request.output_dir / GROUPING_SNAPSHOT_NAME,
+                combine_grouping_inputs([item.inputs for item in groupings])
+                if len(groupings) > 1
+                else groupings[0].inputs,
+                provenance=_grouping_provenance(batch.path, groupings),
+                recorder=recorder,
+            )
+        if len(batches) > 1 or request.replay.pairing:
+            grouped_batches = []
+            for batch_id, batch_input in batches:
+                completed = completed_by_batch[batch_id]
+                frame = completed.sample_rt_frame
+                grouped_batches.append(
+                    GroupedBatch.from_groups(
+                        batch_id,
+                        len(batch_input.sample_order),
+                        completed.initial_groups,
+                        frame.calibration_for_snapshot if frame is not None else None,
+                    )
+                )
+            latest = cache(
+                latest_acquisition_reader(
+                    dict(batches), raw_dir=request.raw_dir, dll_dir=request.dll_dir
+                )
+            )
+            ppm = request.discovery_settings.precursor_mz_tolerance_ppm
+            if len(batches) > 1:
+                correspondence, features = pair_grouped_batches(
+                    grouped_batches,
+                    latest_acquisition=latest,
+                    precursor_tolerance_ppm=ppm,
+                )
+            if request.replay.pairing:
+                _save_pairing_inputs(
+                    request.output_dir / "pairing-inputs", grouped_batches, latest, ppm
+                )
+        if context.progress_callback:
+            context.progress_callback({"stage": "publish_matrix"})
+    except BaseException:
+        for completed in completed_by_batch.values():
+            completed.close()
+        raise
+    if correspondence is None:
         (completed,) = completed_by_batch.values()
         return publish_untargeted_outputs(
             completed,
@@ -233,31 +303,8 @@ def run_untargeted_application(
             metadata=metadata,
             timing_recorder=recorder,
             should_cancel=context.should_cancel,
+            save_matrix_inputs=request.replay.matrix,
         )
-    try:
-        batch_inputs = dict(batches)
-        grouped_batches = []
-        for batch_id, completed in completed_by_batch.items():
-            frame = completed.sample_rt_frame
-            grouped_batches.append(
-                GroupedBatch.from_groups(
-                    batch_id,
-                    len(batch_inputs[batch_id].sample_order),
-                    completed.initial_groups,
-                    frame.calibration_for_snapshot if frame is not None else None,
-                )
-            )
-        correspondence, features = pair_grouped_batches(
-            grouped_batches,
-            latest_acquisition=latest_acquisition_reader(
-                batch_inputs, raw_dir=request.raw_dir, dll_dir=request.dll_dir
-            ),
-            precursor_tolerance_ppm=request.discovery_settings.precursor_mz_tolerance_ppm,
-        )
-    except BaseException:
-        for completed in completed_by_batch.values():
-            completed.close()
-        raise
     return publish_batch_untargeted_outputs(
         completed_by_batch,
         correspondence,
@@ -268,6 +315,7 @@ def run_untargeted_application(
         metadata=metadata,
         timing_recorder=recorder,
         should_cancel=context.should_cancel,
+        save_matrix_inputs=request.replay.matrix,
     )
 
 
@@ -423,11 +471,7 @@ def run_untargeted_grouping(
         request, batch, recorder, mass_recalibration_by_sample
     )
     with (
-        (
-            BackfillCheckpoint(request.output_dir / "backfill-inputs")
-            if save_backfill_inputs
-            else nullcontext(None)
-        ) as capture,
+        _backfill_capture(request.output_dir, save_backfill_inputs) as capture,
         recorder.stage("alignment.grouping") as stage,
     ):
         groupings = {
@@ -448,13 +492,7 @@ def run_untargeted_grouping(
         stage.metrics["group_count"] = sum(
             len(item.groups) for item in groupings.values()
         )
-    provenance = {
-        "discovery_batch_index": str(batch.path.resolve()),
-        "partition_count": sum(
-            item.total_partition_count for item in groupings.values()
-        ),
-        "initial_job_count": sum(item.initial_job_count for item in groupings.values()),
-    }
+    provenance = _grouping_provenance(batch.path, tuple(groupings.values()))
     pairing_batches = (
         tuple(
             GroupedBatch.from_groups(
@@ -475,14 +513,7 @@ def run_untargeted_grouping(
     )
     ppm = request.discovery_settings.precursor_mz_tolerance_ppm
     if save_pairing_inputs:
-        directory.mkdir(parents=True, exist_ok=False)
-        for index, finished in enumerate(pairing_batches, start=1):
-            save_pairing_input(
-                directory / f"batch-{index}.json",
-                finished,
-                latest_acquisition=latest(finished.batch_id),
-                precursor_tolerance_ppm=ppm,
-            )
+        _save_pairing_inputs(directory, pairing_batches, latest, ppm)
     if len(groupings) == 1:
         (grouping,) = groupings.values()
         inputs, groups, calibration = (
@@ -516,9 +547,55 @@ def run_untargeted_grouping(
         )
         write_rt_anchor_table(request.output_dir / "rt_anchors.tsv", calibration)
     if save_snapshot:
-        with recorder.stage("alignment.write_grouping_snapshot"):
-            write_grouping_inputs(snapshot, inputs, provenance=provenance)
+        _write_grouping_snapshot(
+            snapshot, inputs, provenance=provenance, recorder=recorder
+        )
     return request.output_dir
+
+
+def _backfill_capture(
+    output_dir: Path, enabled: bool
+) -> BackfillCheckpoint | nullcontext[None]:
+    return (
+        BackfillCheckpoint(output_dir / "backfill-inputs") if enabled else nullcontext()
+    )
+
+
+def _grouping_provenance(
+    index: Path, groupings: Sequence[PreparedGroupingExperiment]
+) -> dict[str, object]:
+    return {
+        "discovery_batch_index": str(index.resolve()),
+        "partition_count": sum(item.total_partition_count for item in groupings),
+        "initial_job_count": sum(item.initial_job_count for item in groupings),
+    }
+
+
+def _write_grouping_snapshot(
+    path: Path,
+    inputs: GroupingInputs,
+    *,
+    provenance: dict[str, object],
+    recorder: TimingRecorder,
+) -> None:
+    with recorder.stage("alignment.write_grouping_snapshot"):
+        write_grouping_inputs(path, inputs, provenance=provenance)
+
+
+def _save_pairing_inputs(
+    directory: Path,
+    batches: Sequence[GroupedBatch],
+    latest: Callable[[str], datetime],
+    ppm: float,
+) -> None:
+    directory.mkdir(parents=True, exist_ok=False)
+    for index, batch in enumerate(batches, start=1):
+        save_pairing_input(
+            directory / f"batch-{index}.json",
+            batch,
+            latest_acquisition=latest(batch.batch_id),
+            precursor_tolerance_ppm=ppm,
+        )
 
 
 def _group_batch(
@@ -601,6 +678,11 @@ _CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES = (
     "skipped_evidence_ledger.tsv",
     "alignment_run_metadata.json",
     BATCH_CORRESPONDENCE_ARTIFACT_NAME,
+    GROUPING_SNAPSHOT_NAME,
+    "backfill-inputs",
+    "pairing-inputs",
+    "matrix-cells.json",
+    "matrix-join.json",
 )
 
 

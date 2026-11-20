@@ -198,6 +198,8 @@ def complete_untargeted_alignment(
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
     project_child: ChildOutputProjection,
+    capture_grouping: Callable[[PreparedGroupingExperiment], None] | None = None,
+    capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
 ) -> CompletedUntargetBatchWorkflowResult:
     """Execute and compose one owner-closed CID-NL batch exactly once.
 
@@ -248,6 +250,8 @@ def complete_untargeted_alignment(
                 max_partition_jobs=max_partition_jobs,
                 mass_recalibration_by_sample=mass_recalibration_by_sample,
                 project_child=project_child,
+                capture_grouping=capture_grouping,
+                capture_backfill=capture_backfill,
             ),
         )
         pending.callback(completed.close)
@@ -278,6 +282,7 @@ def execute_prepared_alignment(
     acquisition_cache_dir: Path | None = None,
     max_partition_jobs: int = 100_000,
     grouping_only: bool = False,
+    capture_grouping: Callable[[PreparedGroupingExperiment], None] | None = None,
     capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
     project_child: ChildOutputProjection | None = None,
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
@@ -329,6 +334,7 @@ def execute_prepared_alignment(
             pipeline_overlap=True,
             max_partition_jobs=max_partition_jobs,
             grouping_only=grouping_only,
+            capture_grouping=capture_grouping,
             capture_backfill=capture_backfill,
             project_child=project_child,
             mass_recalibration_by_sample=mass_recalibration_by_sample,

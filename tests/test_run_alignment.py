@@ -1932,7 +1932,7 @@ def test_run_alignment_stop_after_grouping_outputs_results_without_publication(
         )
 
 
-def test_saved_grouping_inputs_require_the_grouping_stop(capsys):
+def test_saved_matrix_inputs_require_completed_cells(capsys):
     with pytest.raises(SystemExit) as error:
         run_alignment.main(
             [
@@ -1946,11 +1946,13 @@ def test_saved_grouping_inputs_require_the_grouping_stop(capsys):
                 "unused",
                 "--output-dir",
                 "unused",
-                "--save-grouping-inputs",
+                "--stop-after",
+                "grouping",
+                "--save-matrix-inputs",
             ]
         )
     assert error.value.code == 2
     assert (
-        "--save-grouping-inputs requires --stop-after grouping"
+        "--save-matrix-inputs requires a complete Alignment run"
         in capsys.readouterr().err
     )

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from xic_extractor.alignment.batch_correspondence import BatchCorrespondence
+from xic_extractor.alignment.sample_rt_calibration import SampleRtCalibration
 from xic_extractor.diagnostics.grouping_experiment_io import write_json
 from xic_extractor.output.alignment.pipeline_outputs import new_alignment_artifacts
 from xic_extractor.output.alignment.tsv_writer import (
@@ -19,6 +20,7 @@ from xic_extractor.output.alignment.tsv_writer import (
     project_untarget_child_rows,
     untarget_sample_order,
     write_batch_alignment_tsvs,
+    write_projected_alignment_tsvs,
 )
 from xic_extractor.rt_calibration_codec import (
     sample_calibration_from_payload,
@@ -43,11 +45,9 @@ _PAIRING = "matrix_batch_join"
 
 
 class CompletedMatrixCells:
-    """Keep only the Matrix writer's inputs, never RAW or a rendered Matrix."""
+    """Collect Matrix projections in child order when replaying Backfill."""
 
     def __init__(self, samples: dict[str, dict[str, int | None]]) -> None:
-        if "" in samples:
-            raise ValueError("Matrix replay requires declared batch IDs")
         self.samples = samples
         self.children: dict[str, list[tuple[str, list[dict[str, object]]]]] = {
             batch_id: [] for batch_id in samples
@@ -60,43 +60,83 @@ class CompletedMatrixCells:
     ) -> None:
         order = untarget_sample_order(samples)
         children = self.children[samples[0].batch_id]
-        key = feature_key_by_peaks(composition.initial_groups)
+        key = (
+            feature_key_by_peaks(composition.initial_groups)
+            if samples[0].batch_id
+            else _no_feature_key
+        )
         for child in composition.children:
             groups = project_untarget_child_rows(
                 child, outputs=("matrix",), sample_order=order
             )
-            rows: list[dict[str, object]] = [
-                {
-                    "key": key(group),
-                    "mz": group.matrix.mz,
-                    "rt": group.matrix.rt,
-                    "areas": dict(zip(order, group.matrix.areas, strict=True)),
-                    "physical_peaks": group.physical_peaks,
-                    "source_candidate_ids": group.source_candidate_ids,
-                }
-                for group in groups
-                if group.matrix is not None
-            ]
-            children.append((child.first_method_subject_id, rows))
+            children.append(
+                (
+                    child.first_method_subject_id,
+                    list(_matrix_groups(groups, order, key)),
+                )
+            )
 
     def write(self, path: Path) -> None:
-        write_json(
+        _write_matrix_cells(
             path,
             {
-                "schema": _BACKFILL,
-                "batches": {
-                    batch_id: {
-                        "samples": self.samples[batch_id],
-                        "groups": [
-                            group
-                            for _, rows in sorted(children, key=lambda child: child[0])
-                            for group in rows
-                        ],
-                    }
-                    for batch_id, children in self.children.items()
-                },
+                batch_id: {
+                    "samples": self.samples[batch_id],
+                    "groups": [
+                        group
+                        for _, rows in sorted(children, key=lambda child: child[0])
+                        for group in rows
+                    ],
+                }
+                for batch_id, children in self.children.items()
             },
         )
+
+
+def _no_feature_key(_group: UntargetGroupRows) -> None:
+    return None
+
+
+def _matrix_groups(
+    groups: Sequence[UntargetGroupRows],
+    order: tuple[str, ...],
+    feature_key: Callable[[UntargetGroupRows], str | None],
+) -> Iterator[dict[str, object]]:
+    for group in groups:
+        if (values := group.matrix) is not None:
+            yield {
+                "key": feature_key(group),
+                "mz": values.mz,
+                "rt": values.rt,
+                "areas": dict(zip(order, values.areas, strict=True)),
+                "physical_peaks": group.physical_peaks,
+                "source_candidate_ids": group.source_candidate_ids,
+            }
+
+
+def _write_matrix_cells(path: Path, batches: dict[str, object]) -> None:
+    write_json(path, {"schema": _BACKFILL, "batches": batches})
+
+
+def save_matrix_cells(path: Path, sources: Sequence[BatchRowSource]) -> None:
+    """Serialize the same finalized row projections used by the formal writer."""
+    batches: dict[str, object] = {}
+    for source in sources:
+        order = untarget_sample_order(source.canonical_samples)
+        batches[source.batch_id] = {
+            "samples": {
+                sample.raw_stem: sample.injection_order
+                for sample in source.canonical_samples
+            },
+            "groups": [
+                group
+                for child in source.child_outputs
+                for group in _matrix_groups(
+                    cast(UntargetChildOutputs, child).groups, order, source.feature_key
+                )
+            ],
+        }
+    _write_matrix_cells(path, batches)
 
 
 def save_matrix_join(path: Path, result: BatchCorrespondence) -> None:
@@ -171,37 +211,19 @@ def _two_strings(value: object) -> tuple[str, str]:
     return require_text(a), require_text(b)
 
 
-def replay_matrix(backfill: Sequence[Path], pairing: Path, output_dir: Path) -> Path:
+def replay_matrix(
+    backfill: Sequence[Path], pairing: Path | None, output_dir: Path
+) -> Path:
     output = output_dir / "alignment_matrix.tsv"
     with new_alignment_artifacts(output) as staged:
         _render_matrix(backfill, pairing, staged[output])
     return output
 
 
-def _render_matrix(backfill: Sequence[Path], pairing: Path, output: Path) -> None:
+def _render_matrix(
+    backfill: Sequence[Path], pairing: Path | None, output: Path
+) -> None:
     try:
-        join = _document(pairing, _PAIRING)
-        reference = require_text(join["reference_batch"])
-        maps = {
-            name: None
-            if obj is None
-            else sample_calibration_from_payload(require_mapping(obj))
-            for name, obj in require_mapping(join["maps"]).items()
-        }
-        partners = {}
-        joined: set[tuple[str, str]] = set()
-        for row in require_list(join["rows"]):
-            first, *rest = [_two_strings(m) for m in require_list(row)]
-            members = (first, *rest)
-            if (
-                (rest and first[0] != reference)
-                or len({m[0] for m in members}) != len(members)
-                or joined.intersection(members)
-            ):
-                raise ValueError("Invalid or repeated feature in batch join")
-            joined.update(members)
-            partners[first] = tuple(rest)
-
         sources: list[BatchRowSource] = []
         features: set[tuple[str, str]] = set()
         for path in backfill:
@@ -210,17 +232,20 @@ def _render_matrix(backfill: Sequence[Path], pairing: Path, output: Path) -> Non
                 _batch_source(batch_id, require_mapping(batch), features)
                 for batch_id, batch in batches.items()
             )
-        batch_ids = {s.batch_id for s in sources}
-        if (
-            len(batch_ids) != len(sources)
-            or batch_ids != {reference, *maps}
-            or features != joined
-        ):
-            raise ValueError(
-                "Backfill batches or feature identities differ from the pairing result"
-            )
+        if pairing is None:
+            if len(sources) != 1:
+                raise ValueError("Multiple Matrix batches require --pairing")
+            source = sources[0]
+        else:
+            reference, maps, partners = _load_join(pairing, sources, features)
     except (KeyError, TypeError, ValueError) as exc:
         raise ValueError(f"Invalid Matrix inputs: {exc}") from exc
+
+    if pairing is None:
+        write_projected_alignment_tsvs(
+            {"matrix": output}, source.canonical_samples, source.child_outputs
+        )
+        return
 
     def to_reference(batch_id: str, rt: float) -> float | None:
         model = maps[batch_id]
@@ -235,3 +260,44 @@ def _render_matrix(backfill: Sequence[Path], pairing: Path, output: Path) -> Non
         states={},
         to_reference_rt=to_reference,
     )
+
+
+def _load_join(
+    pairing: Path, sources: Sequence[BatchRowSource], features: set[tuple[str, str]]
+) -> tuple[
+    str,
+    dict[str, SampleRtCalibration | None],
+    dict[tuple[str, str], tuple[tuple[str, str], ...]],
+]:
+    join = _document(pairing, _PAIRING)
+    reference = require_text(join["reference_batch"])
+    maps = {
+        name: None
+        if obj is None
+        else sample_calibration_from_payload(require_mapping(obj))
+        for name, obj in require_mapping(join["maps"]).items()
+    }
+    partners = {}
+    joined: set[tuple[str, str]] = set()
+    for row in require_list(join["rows"]):
+        first, *rest = [_two_strings(m) for m in require_list(row)]
+        members = (first, *rest)
+        if (
+            (rest and first[0] != reference)
+            or len({m[0] for m in members}) != len(members)
+            or joined.intersection(members)
+        ):
+            raise ValueError("Invalid or repeated feature in batch join")
+        joined.update(members)
+        partners[first] = tuple(rest)
+
+    batch_ids = {s.batch_id for s in sources}
+    if (
+        len(batch_ids) != len(sources)
+        or batch_ids != {reference, *maps}
+        or features != joined
+    ):
+        raise ValueError(
+            "Backfill batches or feature identities differ from the pairing result"
+        )
+    return reference, maps, partners

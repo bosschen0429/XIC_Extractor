@@ -1028,7 +1028,8 @@ def _shared_peak_inputs(tmp_path, monkeypatch, mz_separation_ppm):
         raw.rt = np.linspace(7.4, 8.7, 521)
         raw.intensity = sum(
             (
-                1000 * np.exp(-0.5 * ((raw.rt - center) / 0.018) ** 2)
+                (2000 if path.stem == "S2" else 1000)
+                * np.exp(-0.5 * ((raw.rt - center) / 0.018) ** 2)
                 for center in centers[path.stem]
             ),
             np.zeros_like(raw.rt),
@@ -1771,67 +1772,150 @@ def _backfill_request(tmp_path, options, config):
     )
 
 
-def test_replay_backfill_from_completed_grouping(tmp_path, monkeypatch):
+def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
+    tmp_path, monkeypatch
+):
     import csv
     import subprocess
     import sys
-    from collections import Counter
+    from collections import Counter, defaultdict
     from pathlib import Path
 
     from scripts.run_alignment import main
-    from tests.cid_nl_runtime_fixtures import (
-        prepare_persisted_discovery_plan,
-    )
-    from xic_extractor.applications.untargeted.application import (
-        run_untargeted_grouping,
-    )
-    from xic_extractor.configuration.signal_processing_profile import (
-        DEFAULT_SIGNAL_PROCESSING_PROFILE,
-    )
+    from xic_extractor.applications.untargeted import application
+    from xic_extractor.applications.untargeted.request import AlignmentReplayOptions
     from xic_extractor.output.alignment.tsv_writer import cell_status
-    from xic_extractor.untargeted_execution.alignment import execute_prepared_alignment
+    from xic_extractor.untargeted_execution import execution as runtime
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "user-state")
     options = _shared_peak_inputs(tmp_path, monkeypatch, 0.0)
-    options["signal_processing_profile"] = DEFAULT_SIGNAL_PROCESSING_PROFILE
-    plan = prepare_persisted_discovery_plan(
-        **options, root=tmp_path / "discovery-input"
+    request = _backfill_request(
+        tmp_path, options, AlignmentConfig(anchor_min_seed_events=1)
     )
-    config = AlignmentConfig(anchor_min_seed_events=1)
+    # Distinct cold caches for the two formal runs. The captured Backfill
+    # uses its own run's RAW facts when replayed in a fresh interpreter.
+    control_dir = tmp_path / "control"
+    capture_dir = tmp_path / "capture"
+    calls = Counter()
+    expected_cells = Counter()
+    expected_members = set()
+    complete = application.complete_untargeted_alignment
+    acquire = runtime.UntargetedPartitionPipelineAdapter.execute_acquisition
+    finalize = runtime.CidNlBatchGrouping.finalize_grouping
 
-    def cells(child, _):
-        return tuple(
-            (
-                group.group_hypothesis_id,
-                cell.subject.canonical_sample.raw_stem,
-                cell.value,
-                cell.variant,
-                cell.source,
-                cell_status(cell),
+    def track_acquisition(adapter, partition, **kwargs):
+        stage = "initial" if adapter._is_bootstrap(partition) else "backfill"
+        calls[stage] += 1
+        return acquire(adapter, partition, **kwargs)
+
+    def track_final_grouping(*args, **kwargs):
+        calls["grouping"] += 1
+        return finalize(*args, **kwargs)
+
+    def forbid_pairing(*args, **kwargs):
+        pytest.fail("A single batch must not enter correspondence")
+
+    def observe_formal(**kwargs):
+        project = kwargs["project_child"]
+
+        def observe_cells(child, context):
+            if kwargs["output_dir"] == control_dir:
+                expected_cells.update(
+                    (
+                        group.group_hypothesis_id,
+                        cell.subject.canonical_sample.raw_stem,
+                        cell.value,
+                        cell.variant,
+                        cell.source,
+                        cell_status(cell),
+                    )
+                    for group, decisions in child.group_cells
+                    for cell in decisions
+                )
+            return project(child, context)
+
+        result = complete(**{**kwargs, "project_child": observe_cells})
+        if kwargs["output_dir"] == control_dir:
+            expected_members.update(
+                frozenset(group.owner_ids) for group in result.initial_groups
             )
-            for group, decisions in child.group_cells
-            for cell in decisions
-        )
+        return result
 
-    result = execute_prepared_alignment(
-        plan,
-        output_dir=tmp_path / "full",
-        alignment_config=config,
-        raw_workers=1,
-        acquisition_cache_dir=tmp_path / "raw-facts",
-        project_child=cells,
+    monkeypatch.setattr(
+        runtime.UntargetedPartitionPipelineAdapter,
+        "execute_acquisition",
+        track_acquisition,
     )
-    try:
-        expected = Counter(
-            row for child in result.application_result.child_outputs for row in child
-        )
-    finally:
-        result.close()
-    request = _backfill_request(tmp_path, options, config)
-    run_untargeted_grouping(request, save_backfill_inputs=True)
-    directory = request.output_dir / "backfill-inputs"
+    monkeypatch.setattr(
+        runtime.CidNlBatchGrouping, "finalize_grouping", track_final_grouping
+    )
+    monkeypatch.setattr(application, "pair_grouped_batches", forbid_pairing)
+    monkeypatch.setattr(application, "complete_untargeted_alignment", observe_formal)
 
-    output = tmp_path / "replay"
+    application.run_untargeted_application(
+        replace(
+            request,
+            output_dir=control_dir,
+            execution=replace(
+                request.execution, acquisition_cache_dir=tmp_path / "control-facts"
+            ),
+        ),
+    )
+    assert calls == {"initial": 1, "grouping": 1, "backfill": 1}
+    calls.clear()
+    application.run_untargeted_application(
+        replace(
+            request,
+            output_dir=capture_dir,
+            replay=AlignmentReplayOptions(grouping=True, backfill=True, matrix=True),
+        ),
+    )
+    assert calls == {"initial": 1, "grouping": 1, "backfill": 1}
+    replay_names = {
+        "grouping-inputs.json.gz",
+        "backfill-inputs",
+        "pairing-inputs",
+        "matrix-cells.json",
+        "matrix-join.json",
+    }
+    assert not replay_names.intersection(path.name for path in control_dir.iterdir())
+    assert replay_names.intersection(path.name for path in capture_dir.iterdir()) == {
+        "grouping-inputs.json.gz",
+        "backfill-inputs",
+        "matrix-cells.json",
+    }
+
+    def replay(stage, *args):
+        out = tmp_path / stage
+        assert main([stage, *map(str, args), "--output-dir", str(out)]) == 0
+        return out
+
+    def tsv(path):
+        with path.open(encoding="utf-8", newline="") as stream:
+            return list(csv.DictReader(stream, delimiter="\t"))
+
+    matrix = replay("matrix", "--backfill", capture_dir / "matrix-cells.json")
+    filename = "alignment_matrix.tsv"
+    assert list(matrix.iterdir()) == [matrix / filename]
+    assert (
+        (matrix / filename).read_bytes()
+        == (capture_dir / filename).read_bytes()
+        == (control_dir / filename).read_bytes()
+    )
+    matrix_rows = tsv(matrix / filename)
+    assert len(matrix_rows) == 2
+    assert all(float(row["S1"]) < float(row["S2"]) for row in matrix_rows)
+    assert sorted(bool(row["Missing"]) for row in matrix_rows) == [False, True]
+
+    regrouped = replay("regroup", "--inputs", capture_dir / "grouping-inputs.json.gz")
+    groups = defaultdict(set)
+    for row in tsv(regrouped / "members.tsv"):
+        groups[row["group_id"]].add(row["owner_id"])
+    assert {frozenset(members) for members in groups.values()} == expected_members
+    assert sorted(map(len, expected_members)) == [2, 2]
+
+    directory = capture_dir / "backfill-inputs"
+    backfilled = tmp_path / "backfill"
     subprocess.run(
         [
             sys.executable,
@@ -1840,24 +1924,23 @@ def test_replay_backfill_from_completed_grouping(tmp_path, monkeypatch):
             "_run_cached_backfill_cli as run; sys.exit(run(*sys.argv[1:]))",
             str(Path.home()),
             str(directory),
-            str(output),
+            str(backfilled),
         ],
         check=True,
         timeout=60,
     )
-    with (output / "backfill-cells.tsv").open(encoding="utf-8", newline="") as stream:
-        actual = Counter(
-            (
-                row["group_id"],
-                row["sample_stem"],
-                float(row["area"]) if row["area"] else None,
-                row["decision"],
-                row["source"],
-                row["status"],
-            )
-            for row in csv.DictReader(stream, delimiter="\t")
+    actual = Counter(
+        (
+            row["group_id"],
+            row["sample_stem"],
+            float(row["area"]) if row["area"] else None,
+            row["decision"],
+            row["source"],
+            row["status"],
         )
-    assert actual == expected
+        for row in tsv(backfilled / "backfill-cells.tsv")
+    )
+    assert actual == expected_cells
     missing = [
         (area, decision, status)
         for _, sample, area, decision, _, status in actual.elements()
@@ -1885,6 +1968,7 @@ def test_matrix_preserves_empty_batch_sample_column(tmp_path, monkeypatch):
 
     from scripts.run_alignment import main
     from xic_extractor.applications.untargeted import application
+    from xic_extractor.applications.untargeted.request import AlignmentReplayOptions
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "user-state")
     options = _shared_peak_inputs(tmp_path, monkeypatch, 0.0)
@@ -1930,7 +2014,30 @@ def test_matrix_preserves_empty_batch_sample_column(tmp_path, monkeypatch):
         rows = list(csv.DictReader(stream, delimiter="\t"))
     assert rows and all(row["Missing"] == "" for row in rows)
     formal = tmp_path / "formal"
-    application.run_untargeted_application(replace(request, output_dir=formal))
-    assert (formal / "alignment_matrix.tsv").read_bytes() == (
-        matrix / "alignment_matrix.tsv"
-    ).read_bytes()
+    application.run_untargeted_application(
+        replace(request, output_dir=formal, replay=AlignmentReplayOptions(matrix=True))
+    )
+    assert not any(
+        (formal / name).exists()
+        for name in ("grouping-inputs.json.gz", "backfill-inputs", "pairing-inputs")
+    )
+    direct = tmp_path / "matrix-direct"
+    assert (
+        main(
+            [
+                "matrix",
+                "--backfill",
+                str(formal / "matrix-cells.json"),
+                "--pairing",
+                str(formal / "matrix-join.json"),
+                "--output-dir",
+                str(direct),
+            ]
+        )
+        == 0
+    )
+    assert (
+        (formal / "alignment_matrix.tsv").read_bytes()
+        == (matrix / "alignment_matrix.tsv").read_bytes()
+        == (direct / "alignment_matrix.tsv").read_bytes()
+    )
