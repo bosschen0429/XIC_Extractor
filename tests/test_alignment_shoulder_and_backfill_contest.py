@@ -30,6 +30,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
+    PHYSICAL_PEAK_POINT_POLICY,
     evaluate_physical_peak,
     prepare_physical_signal,
 )
@@ -119,24 +120,15 @@ def _groups(owners: tuple[SampleLocalMS1Owner, ...]):
 def _measured_on_overlap(owner: SampleLocalMS1Owner) -> SampleLocalMS1Owner:
     """The owner with its peak measured on an unresolved shoulder or overlap."""
 
-    rt = np.linspace(8.5, 9.5, 201)
+    # Two broad lobes acquired without the first lobe's rise form one envelope.
+    full_rt = np.linspace(7.0, 13.0, 301)
+    full = 1000 * np.exp(-0.5 * ((full_rt - 9.3) / 0.5) ** 2)
+    full += 700 * np.exp(-0.5 * ((full_rt - 10.4) / 0.5) ** 2)
+    acquired = (full_rt >= 9.0) & (full_rt <= 11.0)
     evaluation = evaluate_physical_peak(
-        prepare_physical_signal(
-            rt,
-            10.0 + 1200.0 * np.exp(-0.5 * ((rt - 9.0) / 0.06) ** 2),
-            profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
-        ),
+        prepare_physical_signal(full_rt[acquired] - 0.8, full[acquired]),
         query_rt_min=9.0,
-        request_context_rt_start_min=8.5,
-        request_context_rt_end_min=9.5,
-    )
-    selected = evaluation.answer.selected_segment
-    assert selected is not None
-    shoulder = replace(selected, segment_class="shoulder_candidate")
-    evaluation = replace(
-        evaluation,
-        answer=replace(evaluation.answer, selected_segment=shoulder),
-        segment_universe=replace(evaluation.segment_universe, segments=(shoulder,)),
+        selection_policy_version=PHYSICAL_PEAK_POINT_POLICY,
     )
     assert evaluation.requires_overlap_review
     return replace(owner, peak=replace(owner.peak, physical_evaluation=evaluation))
