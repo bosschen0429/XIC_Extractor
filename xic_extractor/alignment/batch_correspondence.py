@@ -27,7 +27,6 @@ batch is listed first. Ambiguity is reported, never resolved by choosing.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from statistics import median
@@ -141,7 +140,7 @@ class BatchMap:
     batch_id: str
     coarse_istds: tuple[tuple[str, float, float], ...]
     coarse_loo_error_min: Mapping[str, float]
-    coarse_half_width_min: float
+    coarse_half_width_min: float | None
     anchors: tuple[CorrespondenceAnchor, ...]
     excluded_anchors: tuple[ExcludedAnchor, ...]
     calibration: SampleRtCalibration | None
@@ -512,7 +511,7 @@ def _fit_batch_map(
         for label in labels
     )
     if len(istds) < 2:
-        return BatchMap(batch, istds, {}, math.nan, (), (), None, {}, ())
+        return BatchMap(batch, istds, {}, None, (), (), None, {}, ())
     coarse_loo = {
         label: abs(
             _offset_predictor([(x, y) for other, x, y in istds if other != label])(x)

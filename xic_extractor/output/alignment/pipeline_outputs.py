@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -192,7 +192,7 @@ def write_completed_untargeted_outputs_atomic(
             write_rt_anchor_table(temp_paths[outputs.rt_anchors_tsv], rt_calibration)
 
     with timing_recorder.stage("alignment.write_outputs"):
-        _write_artifacts_atomic(
+        write_alignment_artifacts_atomic(
             paths,
             recorder=(
                 timing_recorder
@@ -204,12 +204,23 @@ def write_completed_untargeted_outputs_atomic(
     return row_count
 
 
-def _write_artifacts_atomic(
+def alignment_artifact_collisions(paths: Iterable[Path]) -> list[Path]:
+    """Existing final, staging or backup paths owned by this publication."""
+    return [
+        candidate
+        for path in paths
+        for candidate in (path, _temp_path(path), _backup_path(path))
+        if candidate.exists()
+    ]
+
+
+def write_alignment_artifacts_atomic(
     final_paths: Sequence[Path],
     *,
     recorder: TimingRecorder,
     render_all: Callable[[Mapping[Path, Path]], None],
 ) -> None:
+    """Stage the whole artifact set and roll back failed publication."""
     temp_paths = [_temp_path(final_path) for final_path in final_paths]
     backup_paths = [_backup_path(final_path) for final_path in final_paths]
     backups: list[tuple[Path, Path]] = []

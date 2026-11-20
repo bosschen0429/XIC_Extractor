@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -15,9 +15,14 @@ from xic_extractor.alignment.batch_correspondence import (
 )
 from xic_extractor.diagnostics.grouping_experiment_io import write_json
 from xic_extractor.diagnostics.matrix_replay import save_matrix_join
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.batch_correspondence_table import (
     batch_correspondence_summary,
     write_batch_correspondence_table,
+)
+from xic_extractor.output.alignment.pipeline_outputs import (
+    alignment_artifact_collisions,
+    write_alignment_artifacts_atomic,
 )
 from xic_extractor.validation_primitives import (
     require_finite_real,
@@ -133,7 +138,8 @@ def replay_pairing(inputs: Sequence[Path], output_dir: Path) -> None:
     table = output_dir / "batch_correspondence.tsv"
     summary = output_dir / "summary.json"
     join = output_dir / "matrix-join.json"
-    if table.exists() or summary.exists() or join.exists():
+    artifacts = (join, table, summary)
+    if alignment_artifact_collisions(artifacts):
         raise ValueError(f"Pairing output already exists: {output_dir}")
     captures = [_load(path) for path in inputs]
     latest = {batch.batch_id: date for batch, date, _ in captures}
@@ -149,6 +155,15 @@ def replay_pairing(inputs: Sequence[Path], output_dir: Path) -> None:
         precursor_tolerance_ppm=captures[0][2],
     )
     output_dir.mkdir(parents=True, exist_ok=True)
-    save_matrix_join(join, result)
-    write_batch_correspondence_table(table, result, features)
-    write_json(summary, {"batch_correspondence": batch_correspondence_summary(result)})
+
+    def render(paths: Mapping[Path, Path]) -> None:
+        save_matrix_join(paths[join], result)
+        write_batch_correspondence_table(paths[table], result, features)
+        write_json(
+            paths[summary],
+            {"batch_correspondence": batch_correspondence_summary(result)},
+        )
+
+    write_alignment_artifacts_atomic(
+        artifacts, render_all=render, recorder=TimingRecorder.disabled("pair-batches")
+    )

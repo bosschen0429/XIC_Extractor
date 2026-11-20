@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable
 from contextlib import nullcontext
 from dataclasses import replace
 from functools import cache
@@ -59,6 +58,7 @@ from xic_extractor.output.alignment.output_levels import (
 )
 from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
+    alignment_artifact_collisions,
     alignment_metadata,
 )
 from xic_extractor.output.alignment.rt_anchor_table import write_rt_anchor_table
@@ -625,7 +625,7 @@ def _reject_alignment_output_collisions(
             if isinstance(path, Path) and path.parent == output_dir
         )
     )
-    collisions = _owned_path_collisions(
+    collisions = alignment_artifact_collisions(
         (output_dir / name for name in sorted(owned_names))
     )
     if collisions:
@@ -633,16 +633,3 @@ def _reject_alignment_output_collisions(
         raise FileExistsError(
             "Alignment output directory contains owned artifact collisions: " + names
         )
-
-
-def _owned_path_collisions(paths: Iterable[Path]) -> list[Path]:
-    collisions: list[Path] = []
-    for path in paths:
-        for candidate in (
-            path,
-            path.with_name(f"{path.name}.tmp"),
-            path.with_name(f"{path.name}.bak"),
-        ):
-            if candidate.exists():
-                collisions.append(candidate)
-    return collisions
