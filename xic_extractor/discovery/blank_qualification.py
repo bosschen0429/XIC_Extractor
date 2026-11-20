@@ -76,7 +76,6 @@ class BlankBackgroundLibrary:
 
         min_mz, max_mz = mz_window(target_mz, ppm_tol)
 
-        # Binary search for mass window
         ion_mzs = [ion.mz for ion in self.ions]
         left = bisect.bisect_left(ion_mzs, min_mz)
         right = bisect.bisect_right(ion_mzs, max_mz)
@@ -202,7 +201,6 @@ def extract_blank_background_library(
             last_spec = int(raw.RunHeaderEx.LastSpectrum)
 
             for scan_num in range(1, last_spec + 1, sample_step):
-                # Filter for Full MS
                 scan_filter = raw.GetFilterForScanNumber(scan_num)
                 filter_str = str(getattr(scan_filter, "ToString", lambda: "")())
                 if "Full ms [" not in filter_str:
@@ -228,10 +226,8 @@ def extract_blank_background_library(
             source_blanks=tuple(all_source_blanks),
         )
 
-    # Sort all centroids by m/z
     collected_ions.sort(key=lambda x: x[0])
 
-    # Cluster within ppm_cluster tolerance
     clusters: list[list[tuple[float, float, str]]] = []
     curr_cluster: list[tuple[float, float, str]] = []
 
@@ -251,7 +247,6 @@ def extract_blank_background_library(
     if curr_cluster:
         clusters.append(curr_cluster)
 
-    # Filter clusters by recurrence threshold
     background_ions: list[BlankBackgroundIon] = []
     for cluster in clusters:
         if len(cluster) >= min_scans:
@@ -267,7 +262,6 @@ def extract_blank_background_library(
                 )
             )
 
-    # Sort final ions by m/z
     background_ions.sort(key=lambda ion: ion.mz)
 
     return BlankBackgroundLibrary(

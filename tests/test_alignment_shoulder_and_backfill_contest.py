@@ -307,7 +307,6 @@ def test_backfill_different_apices_require_measured_same_lobe(
     peaks = []
     for index, apex in enumerate(apices):
         peak = _candidate(str(index), apex=apex)
-        # Different retained contexts of the same acquired signal.
         selection = slice(index, -2 + index)
         peak.rt = tuple(rt[selection])
         peak.intensity = tuple(raw[selection])
@@ -391,7 +390,6 @@ def test_backfill_peak_of_another_rows_member_is_contested() -> None:
     s1 = _sample_id(owners[0])
     s4 = "test-sample:S4"
     backfills = {
-        # Another row's window found S1's detected main peak.
         ("other-row", s1, "subject"): _backfill(_candidate("bf-s1", apex=9.0)),
         # Two rows' windows found S4's peak with different bounds.
         ("other-row", s4, "subject"): _backfill(_candidate("bf-s4-a", apex=9.0)),

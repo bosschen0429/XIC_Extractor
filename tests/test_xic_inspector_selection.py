@@ -102,7 +102,6 @@ def test_default_sample_uses_candidates_only_after_existing_groups() -> None:
 
 def test_scoped_strata_priority() -> None:
     """Verify scoped strata priority: attention > excluded > null > zero > rest."""
-    # NULL + nonzero -> null
     assert (
         classify_scoped_stratum(
             is_attention=False,
@@ -112,7 +111,6 @@ def test_scoped_strata_priority() -> None:
         )
         == "null"
     )
-    # Only nonzero -> rest
     assert (
         classify_scoped_stratum(
             is_attention=False,
@@ -122,7 +120,6 @@ def test_scoped_strata_priority() -> None:
         )
         == "rest"
     )
-    # 0 + nonzero -> zero
     assert (
         classify_scoped_stratum(
             is_attention=False,
@@ -132,7 +129,6 @@ def test_scoped_strata_priority() -> None:
         )
         == "zero"
     )
-    # Scoped attention has highest priority
     assert (
         classify_scoped_stratum(
             is_attention=True, is_excluded=True, has_null_cell=True, has_zero_cell=True
@@ -220,7 +216,6 @@ def test_query_pagination_and_stability() -> None:
     assert m2 == 10
     assert len(p1) == 5
     assert len(p2) == 5
-    # Union of p1 and p2 is complete and non-overlapping
     assert set(it.identifier for it in p1).isdisjoint(set(it.identifier for it in p2))
     assert set(it.identifier for it in p1) | set(it.identifier for it in p2) == set(
         it.identifier for it in items

@@ -9,11 +9,11 @@ from xic_extractor.exclusion_list.background import (
 )
 
 SCANS = 200
-RT = np.arange(SCANS) * 0.05  # 0-10 min
+RT = np.arange(SCANS) * 0.05
 
 
 def centroids(points):
-    points = sorted(points)  # the RAW index yields centroids scan by scan
+    points = sorted(points)
     scan, mz, intensity = (np.array(values) for values in zip(*points, strict=True))
     return Ms1Centroids(
         RT, scan.astype(np.int64), mz.astype(float), intensity.astype(float)

@@ -100,7 +100,6 @@ def test_blank_library_matching():
         source_blanks=("B1", "B3"),
     )
 
-    # Match exact
     matches = lib.match(250.1234, ppm_tol=5.0)
     assert len(matches) == 1
     assert matches[0][0].mz == 250.1234
@@ -112,11 +111,9 @@ def test_blank_library_matching():
     assert len(matches_8ppm) == 1
     assert matches_8ppm[0][0].mz == 250.1234
 
-    # Miss when outside tolerance
     matches_miss = lib.match(250.1254, ppm_tol=5.0)
     assert len(matches_miss) == 0
 
-    # Miss completely far mz
     assert len(lib.match(300.0, ppm_tol=10.0)) == 0
 
 
@@ -271,9 +268,7 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         assert qualified == (c_background, c_override, c_clean)
         return
 
-    # c_background is not admitted
     assert qualified[0].peak == replace(c_background.peak, status="blank")
-    # c_override and c_clean are preserved unchanged
     assert qualified[1:] == (c_override, c_clean)
 
 
@@ -321,12 +316,10 @@ def test_packaged_default_background_library_loads_successfully() -> None:
 def test_discovery_cli_blank_argument_resolution(tmp_path: Path) -> None:
     from scripts.run_discovery import _discovery_settings, _parse_args
 
-    # 1. Normal Discovery preserves candidates unless explicitly opted in.
     args_default = _parse_args(["--raw", "dummy.raw", "--dll-dir", "dll"])
     settings_default = _discovery_settings(args_default)
     assert not settings_default.enable_blank_qualification
 
-    # 2. --enable-blank-qualification -> True
     args_enable = _parse_args(
         ["--raw", "dummy.raw", "--dll-dir", "dll", "--enable-blank-qualification"]
     )
@@ -334,7 +327,6 @@ def test_discovery_cli_blank_argument_resolution(tmp_path: Path) -> None:
     assert settings_enable.enable_blank_qualification
     assert settings_enable.blank_library_path is None
 
-    # 3. --blank-library -> True with path
     custom_lib = tmp_path / "custom.json"
     custom_lib.write_text("{}", encoding="utf-8")
     args_custom = _parse_args(
@@ -344,7 +336,6 @@ def test_discovery_cli_blank_argument_resolution(tmp_path: Path) -> None:
     assert settings_custom.enable_blank_qualification
     assert settings_custom.blank_library_path == str(custom_lib)
 
-    # 4. --blank-dir -> True
     blank_dir = tmp_path / "blanks"
     blank_dir.mkdir()
     args_dir = _parse_args(
@@ -353,7 +344,6 @@ def test_discovery_cli_blank_argument_resolution(tmp_path: Path) -> None:
     settings_dir = _discovery_settings(args_dir)
     assert settings_dir.enable_blank_qualification
 
-    # 5. --no-blank-qualification explicitly disables
     args_no = _parse_args(
         [
             "--raw",
@@ -433,7 +423,6 @@ def test_run_discovery_blank_dir_uses_current_blank_content(
         "scripts.run_discovery.extract_blank_background_library", mock_extract
     )
 
-    # Mock run-spec compilation and run_discovery to avoid running the full pipeline.
     monkeypatch.setattr(
         "scripts.run_discovery.compile_discovery_processing_run_spec",
         lambda *args, **kwargs: None,

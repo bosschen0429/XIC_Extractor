@@ -187,9 +187,7 @@ def _nl_reason(
         )
 
     limit = target.nl_ppm_max if target.nl_ppm_max is not None else 0.0
-    assert (
-        target.neutral_loss_da is not None
-    )  # NL is only checked when neutral_loss_da is set
+    assert target.neutral_loss_da is not None
     nl_da = target.neutral_loss_da
     expected_product = target.mz - nl_da
 

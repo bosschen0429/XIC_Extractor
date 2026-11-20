@@ -66,7 +66,6 @@ def _bind_mock_publication_inputs(completed, kwargs):
     completed.publication_inputs = SimpleNamespace(
         peaks_by_sample=candidates.feature_view(),
         ms1_apex_mz_by_candidate=candidates.ms1_apex_mz_by_candidate,
-        # A stand-in precursor; this mocked Alignment has no physical records.
         precursor_mz_by_candidate={
             cid: location.peak_mz for cid, location in candidates.locations.items()
         },

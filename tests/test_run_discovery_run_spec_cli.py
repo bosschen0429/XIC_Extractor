@@ -25,7 +25,6 @@ from xic_extractor.raw_reader_errors import RawReaderError
 
 @pytest.fixture(autouse=True)
 def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
-    # RAW files here are placeholders; order them by their file times.
     install_fake_raw_headers(monkeypatch)
 
 

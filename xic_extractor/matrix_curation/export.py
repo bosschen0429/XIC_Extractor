@@ -66,7 +66,6 @@ from xic_extractor.tabular_io import (
     write_tsv,
 )
 
-# A later step joins by adding itself here; the page and outputs follow.
 STEPS: tuple[CurationStep, ...] = (
     SAME_COMPOUND_STEP,
     KNOWN_NUCLEOSIDES_STEP,

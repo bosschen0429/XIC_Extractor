@@ -31,7 +31,6 @@ export function showCurationResult() {
     !curated ||
     folderKey(curated.source_dir) !==
       folderKey(curation.snapshot.sources.source_dir);
-  // The finished curation job shows its card again when this one is hidden.
   document.dispatchEvent(new CustomEvent("xic:page-layout"));
 }
 export function openCuration(sourceDir, samples) {
@@ -96,7 +95,6 @@ function renderCuration(snapshot) {
         : `${istd.kind === "file" ? `選擇的檔案 ${pathTail(istd.label)}` : istd.label}（${detection.istd_count} 個 ISTD，一律保留）`,
     );
   }
-  // A fully carried-over run shows only the way to choose another source.
   $("curation-source-step").classList.toggle(
     "carried",
     Boolean(

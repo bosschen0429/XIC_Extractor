@@ -980,7 +980,6 @@ def test_coobserved_method_witness_withdraws_only_contradicted_membership(
 )
 def test_incomplete_coobserved_witness_does_not_veto_a_bootstrap_pattern(control):
     owners, geometry = _method_disambiguated_pattern_conflict()
-    # Isolate the claimed correspondence; no competing valid late seed.
     geometry = PeakTrajectories((geometry.tracks[0],))
     owners = owners[:4]
     if control == "missing_second_peak":

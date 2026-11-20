@@ -27,10 +27,8 @@ _RELATION_NAMES = {
 @dataclass(frozen=True)
 class PublishedCuration:
     folder: Path
-    # The Alignment output the curation read.
     source_dir: Path
     matrix_path: Path
-    # Removed feature_id → one line saying why.
     removed: dict[str, str]
 
 
@@ -80,11 +78,9 @@ def _removal_reason(row: dict[str, str], parameters: dict[str, dict]) -> str:
         if representative:
             line = f"{representative} 的 {relations}"
         elif "non_protonated" in row["same_compound_reason"]:
-            # Its ion family has no retained [M+H]+ row to represent it.
             line = f"{relations}，沒有保留的 [M+H]+"
         else:
             line = f"{relations}，代表特徵未定"
-        # Rows it derives from, other than the representative.
         via = row["same_compound_via_feature_ids"].replace(";", "、")
         return f"{line}（來自 {via}）" if via else line
     if step == "known_nucleosides":

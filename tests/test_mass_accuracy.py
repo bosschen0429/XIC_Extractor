@@ -143,11 +143,9 @@ def test_within_ppm_evaluates_accuracy_and_safely_handles_invalid_inputs() -> No
     assert within_ppm(within_mz, reference_mz, 20.0) is True
     assert within_ppm(outside_mz, reference_mz, 20.0) is False
 
-    # Exact boundary absorption
     boundary_mz = reference_mz + reference_mz * 20.0e-6
     assert within_ppm(boundary_mz, reference_mz, 20.0) is True
 
-    # Safe handling of invalid inputs without throwing
     assert within_ppm(-100.0, 500.0, 20.0) is False
     assert within_ppm(500.0, -100.0, 20.0) is False
     assert within_ppm(500.0, 500.0, -1.0) is False

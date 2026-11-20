@@ -83,7 +83,7 @@ def find_background_windows(
     rt = centroids.scan_rt
     windows: list[BackgroundWindow] = []
     for begin, end in zip(bounds[:-1], bounds[1:], strict=True):
-        if end - begin < MIN_SCANS:  # too few points for any window
+        if end - begin < MIN_SCANS:
             continue
         scans, first = np.unique(scan[begin:end], return_index=True)
         peak = np.maximum.reduceat(intensity[begin:end], first)
@@ -140,7 +140,7 @@ def top_n_counts(
     inside = (centroids.mz >= low) & (centroids.mz <= high)
     scan_count = len(centroids.scan_rt)
     bounds = np.searchsorted(centroids.scan, np.arange(scan_count + 1))
-    threshold = np.zeros(scan_count)  # N-th highest intensity of each scan
+    threshold = np.zeros(scan_count)
     for index in range(scan_count):
         begin, end = bounds[index], bounds[index + 1]
         acquired = centroids.intensity[begin:end][inside[begin:end]]
@@ -170,7 +170,7 @@ def _assign_ions(
     peaks = np.flatnonzero(is_peak)
     if not peaks.size:
         return peaks, mz[:0], intensity[:0], scan[:0]
-    peaks = peaks[np.r_[True, np.diff(peaks) > 2]]  # one peak per plateau
+    peaks = peaks[np.r_[True, np.diff(peaks) > 2]]
     position = np.searchsorted(peaks, bins)
     left = np.clip(position - 1, 0, len(peaks) - 1)
     right = np.clip(position, 0, len(peaks) - 1)

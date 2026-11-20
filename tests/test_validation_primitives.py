@@ -54,38 +54,30 @@ def test_parse_json_mapping_payload() -> None:
     assert raw == b'{"a":1,"b":"val"}'
     assert mapping == {"a": 1, "b": "val"}
 
-    # Accepts bytes directly
     raw2, mapping2 = parse_json_mapping_payload(b'{"k":true}', label="test")
     assert raw2 == b'{"k":true}'
     assert mapping2 == {"k": True}
 
-    # Type error on non-bytes/str
     with pytest.raises(TypeError, match="test payload must be bytes or str"):
         parse_json_mapping_payload(123, label="test")  # type: ignore[arg-type]
 
-    # Non-UTF8
     with pytest.raises(ValueError, match="test payload must be UTF-8"):
         parse_json_mapping_payload(b"\xff\xfe", label="test")
 
-    # Invalid JSON
     with pytest.raises(ValueError, match="test payload must be valid JSON"):
         parse_json_mapping_payload("{invalid}", label="test")
 
-    # Non-dict JSON
     with pytest.raises(ValueError, match="test must be one JSON object"):
         parse_json_mapping_payload("[1, 2]", label="test")
 
-    # Duplicate keys
     with pytest.raises(ValueError, match="duplicate field"):
         parse_json_mapping_payload('{"x": 1, "x": 2}', label="test")
 
-    # Enforce canonical
     with pytest.raises(ValueError, match="test is not canonical"):
         parse_json_mapping_payload(
             '{"a": 1, "b": 2}', label="test", enforce_canonical=True
         )
 
-    # Valid canonical
     c_raw, c_val = parse_json_mapping_payload(
         '{"a":1,"b":2}', label="test", enforce_canonical=True
     )
@@ -139,7 +131,6 @@ def test_require_finite_real() -> None:
     with pytest.raises(ValueError, match="val must be finite"):
         require_finite_real(float("nan"), name="val")
 
-    # non-negative & positive
     assert require_finite_real(0.0, name="v", non_negative=True) == 0.0
     with pytest.raises(ValueError, match="v must be non-negative"):
         require_finite_real(-0.1, name="v", non_negative=True)
@@ -159,7 +150,6 @@ def test_require_integer() -> None:
     with pytest.raises(ValueError, match="cnt must be an integer"):
         require_integer("42", name="cnt")
 
-    # non-negative & positive
     assert require_integer(0, name="cnt", non_negative=True) == 0
     with pytest.raises(ValueError, match="cnt must be a non-negative integer"):
         require_integer(-1, name="cnt", non_negative=True)
@@ -168,7 +158,6 @@ def test_require_integer() -> None:
     with pytest.raises(ValueError, match="cnt must be a positive integer"):
         require_integer(0, name="cnt", positive=True)
 
-    # optional integer
     assert require_optional_integer(None, name="cnt") is None
     assert require_optional_integer(5, name="cnt") == 5
 

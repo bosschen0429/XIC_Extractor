@@ -33,6 +33,10 @@ jobs:
         run: uv sync --locked --all-extras --dev
       - run: uv run ruff check xic_extractor xic_inspector xic_workbench scripts tools tests
       - run: uv run ruff format --check xic_extractor xic_inspector xic_workbench scripts tools tests
+      - name: Reject new source comments
+        env:
+          COMMENT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: uv run python scripts/check_comments.py --base "$COMMENT_BASE"
       - name: Internal-defense growth gate
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:
@@ -52,8 +56,6 @@ jobs:
         run: uv run python scripts/check_repository_docs.py
 
   plan:
-    # Keep lint/census off the test critical path. This short job is the only
-    # prerequisite for test allocation, including browser relevance.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -116,8 +118,6 @@ jobs:
   windows-integration:
     needs: plan
     name: Windows integration (3.15)
-    # Pull-request revisions are untrusted; checkout-controlled installation and
-    # tests must run on a disposable GitHub-hosted worker.
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -148,8 +148,6 @@ jobs:
         shell: pwsh
         working-directory: repo-3.15-tests
         env:
-          # xdist owns parallelism; native BLAS pools must not multiply its
-          # worker budget and starve subprocess deadlines.
           OPENBLAS_NUM_THREADS: "1"
           XIC_CI_PLAN: ${{ needs.plan.outputs.coverage }}
         run: |
@@ -158,7 +156,6 @@ jobs:
           $coverage = $env:XIC_CI_PLAN | ConvertFrom-Json
           $markerExpression = $coverage.tests.marker_expression
           $runPackagingBuild = $markerExpression -notmatch 'not packaging_build'
-          # An empty target list runs every test; a selected subset passes paths.
           $testTargets = @()
           $selectedSubset = $null -ne $coverage.tests.files
           if ($selectedSubset) {
@@ -174,7 +171,6 @@ jobs:
           if ($runSelected) {
             & .\.venv\Scripts\python.exe -m pytest -m $windowsMarkers -n 0 -v --tb=short --durations=10 @testTargets
             $windowsExitCode = $LASTEXITCODE
-            # Exit 5: the selected files hold no test these markers keep.
             if ($selectedSubset -and $windowsExitCode -eq 5) { $windowsExitCode = 0 }
           }
           $windowsElapsed = [math]::Round(((Get-Date) - $windowsStarted).TotalSeconds, 1)
@@ -200,7 +196,6 @@ jobs:
           if ($windowsExitCode -ne 0) { exit $windowsExitCode }
           exit $serialExitCode
       - name: Runner load on failure
-        # Name the processes and socket states behind a machine stall.
         if: failure()
         shell: pwsh
         run: |
@@ -270,8 +265,6 @@ jobs:
     needs: plan
     if: ${{ needs.plan.outputs.browser_required == 'true' }}
     name: Browser (Windows Chromium, shard ${{ matrix.shard }})
-    # A fresh pytest process still inherits the VM's Winsock/resource state.
-    # Keep Chromium and loopback HTTP off the scientific/build-test machine.
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -310,17 +303,12 @@ jobs:
           $testTargets = @($coverage.files)
           if ($testTargets.Count -eq 0) { throw 'Required browser coverage has no candidate files.' }
           $started = Get-Date
-          # The launch fixture already uses headless shell, never headed Chromium.
           & .\.venv\Scripts\python.exe -m playwright install --only-shell chromium
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $installElapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "- browser_install_seconds=$installElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           $started = Get-Date
-          # Relevance decides whether to run; every relevant change gets the
-          # complete lane. Zero collected tests is a failure, never a green gate.
           $browserMarkers = "($markerExpression) and browser_e2e"
-          # Separate Windows VMs own disjoint cases; don't concentrate concurrent
-          # Chromium/loopback traffic on one VM. Every matrix result is required.
           & .\.venv\Scripts\python.exe -m pytest -p tools.testing.test_sharding --test-shard "${{ matrix.shard }}/${{ strategy.job-total }}" -m $browserMarkers -n 0 -v --tb=short --durations=10 @testTargets
           $browserExitCode = $LASTEXITCODE
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
@@ -345,7 +333,6 @@ jobs:
           retention-days: 7
 
   test:
-    # Legacy branch-protection name only; this job does not run Python 3.12.
     name: test (Python 3.12)
     needs: [lint, plan, python-tests, windows-integration, browser]
     if: ${{ always() }}

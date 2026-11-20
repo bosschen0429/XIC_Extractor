@@ -888,7 +888,6 @@ def test_decisions_follow_bound_rows_not_their_order_or_ids(seed):
     shuffled, _ = decide(*rows)
     assert shuffled == expected
 
-    # IDs that sort in the opposite order change nothing either.
     renamed = {
         feature.feature_id: f"F{999 - index:03d}"
         for index, (feature, _) in enumerate(rows)
@@ -974,8 +973,6 @@ def test_istd_window_uses_range_or_expected_rt():
     )
     assert windows_from_target_snapshot(None) == ()
 
-
-# Export: the step with Feature Quality, internal standards and real folders.
 
 STUDY = ("S1", "S2", "S3")
 

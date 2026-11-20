@@ -1483,7 +1483,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         assert population_main([str(writer_dir), *requirements]) == 1
         backfill_tsv.write_text(populated, encoding="utf-8")
         assert population_main([str(writer_dir), *requirements]) == 0
-    # The written row carries the group's own tag, fragment and anchor.
     (review,) = written_rows(tmp_path / "written", writer)["review"]
     assert review["detected_count"] == "2"
     assert review["warning"] != "no_anchor"

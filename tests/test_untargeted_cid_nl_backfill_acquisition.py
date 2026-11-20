@@ -190,7 +190,6 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
         UntargetedCidNlBackfillTarget("group-c", fixture.method_subject, 500.0, 8.2),
         UntargetedCidNlBackfillTarget("group-d", fixture.method_subject, 500.012, 8.2),
     )
-    # Three canonical search queries, each with its bounded physical context.
     assert len(set(batch.requests)) == 3
     assert len(set(batch.context_requests)) == 3
     assert batch.acquisition.logical_xic_request_count == 6

@@ -126,7 +126,6 @@ def heldout_band_offsets(
             else:
                 calibrated[sample] = value
         if len(calibrated) >= min_samples:
-            # Paired comparison: the same observations before and after.
             paired_raw = [rt_by_sample[sample] for sample in calibrated]
             paired_center = median(paired_raw)
             raw_mads.append(median(abs(rt - paired_center) for rt in paired_raw))

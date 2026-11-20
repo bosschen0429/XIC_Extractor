@@ -422,7 +422,6 @@ def test_merged_physical_candidate_publishes_its_capture_conditions(
     (binding,) = result.physical_bindings
     assert binding.peak is candidate
     assert binding.final_ordinal == 0
-    # The configured tag order picks the representative before abundance.
     assert candidate.best_ms2_scan_id == 10
     assert binding.representative_event.scan_number == 10
     if fallback:
@@ -970,7 +969,6 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
 
     metrics = _acquisition_totals(result.measurements.acquisition_batches)
     assert preparation_count == 1
-    # Multiple method events on one raw peak retain one measurement.
     assert len(result.physical_bindings) == 1
     assert metrics.logical_xic_request_count == 1
     assert metrics.xic_batch_count == 1
@@ -1047,8 +1045,6 @@ def test_terminal_physical_truth_is_the_events_unattached_reason(
         ms1_centroid=lambda *_: None,
     )
 
-    # No measured peak: the event records the physical answer, and no peak
-    # row is published.
     assert result.peaks == ()
     assert result.physical_bindings == ()
     (event,) = result.attachments
@@ -1242,7 +1238,6 @@ def _inferred_apex_case(
     )
     groups = (group,)
     if companion_basis is not None:
-        # A second seed group on the same peak, from another MS2 scan.
         groups += (
             _channel(
                 (

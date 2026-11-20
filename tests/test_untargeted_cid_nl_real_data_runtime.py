@@ -745,7 +745,6 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     assert not s2_assessment.evaluation_receipt.search_completed
     assert by_stem["S1"].adapter_result.strict_scan_count == 2
     assert by_stem["S2"].adapter_result.acquisition is None
-    # One integration trace plus its separate elution-context trace.
     assert vendor_raw.chromatogram_request_counts == [2]
     assert vendor_raw.disposed is True
 
@@ -976,7 +975,6 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         path: [vendor.chromatogram_request_counts for vendor in vendors]
         for path, vendors in opened.items()
     } == {
-        # Initial sample batches retain integration and elution-context traces.
         raw_paths[0]: [[2]],
         raw_paths[1]: [[2]],
         raw_paths[2]: [[2]],
@@ -1101,7 +1099,6 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
             for job in jobs
         )
         requests_and_jobs.append((memberships, jobs))
-    # Revisit the first request after the second has selected a different universe.
     for memberships, jobs in (*requests_and_jobs, requests_and_jobs[0]):
         for job in jobs:
             member_ids = {

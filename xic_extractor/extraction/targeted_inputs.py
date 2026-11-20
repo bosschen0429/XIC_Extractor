@@ -30,7 +30,6 @@ def resolve_targeted_inputs(
     *,
     injection_order: dict[str, int] | None,
 ) -> ResolvedTargetedInputs:
-    # 上機資訊 annotates roles; the RAW headers own order and sample names.
     analysis_set = read_analysis_set(
         config.data_dir,
         config.dll_dir,

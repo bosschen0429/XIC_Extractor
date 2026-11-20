@@ -29,7 +29,6 @@ from xic_extractor.sample_metadata import (
 
 @pytest.fixture(autouse=True)
 def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
-    # RAW files here are placeholders; order them by their file times.
     install_fake_raw_headers(monkeypatch)
 
 
@@ -364,7 +363,6 @@ def test_targeted_and_untargeted_read_one_sequence_owner(
     from xic_extractor import raw_sequence
     from xic_workbench.samples import load_samples
 
-    # The Word sequence numbers Blank 1 ... Normal 4; the RAW clock disagrees.
     clock = {
         "NormalBC001_DNA": 0,
         "TumorBC001_DNA": 10,

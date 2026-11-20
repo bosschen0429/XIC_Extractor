@@ -63,17 +63,14 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
         if getattr(terminal, "hypothesis", None) is not None
         for ref in (terminal.hypothesis.peak,)
     }
-    # Spool cleanup / close
     completed.close()
 
-    # Re-read new DB
     summary = read_alignment_explanation(report_path)
     assert summary["schema_version"] == SCHEMA_VERSION
     assert summary["retention"] == "full_audit"
     assert summary["plot_evidence_capability"] == "retained_curves"
     assert summary["matrix_sha256"] == hashlib.sha256(matrix.read_bytes()).hexdigest()
 
-    # Verify curves persisted without RAW or DLL
     reread = subprocess.run(
         [
             sys.executable,
@@ -113,7 +110,6 @@ def test_missing_bound_matrix_rejects_generation(
     tmp_path,
 ) -> None:
     """An unavailable bound Matrix cannot produce a complete report."""
-    # 1. Illegal: missing matrix
     fake_db = tmp_path / "fake.sqlite"
     matrix_file = tmp_path / "missing_matrix.tsv"
     from xic_extractor.alignment_explanation.writer import (
@@ -156,12 +152,10 @@ def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) 
     )
     completed.close()
 
-    # Metadata read: only summary dict, zero curve payloads
     summary = read_alignment_explanation(report_path)
     assert "curves" not in summary
     assert summary["candidate_count"] > 0
 
-    # Generate report with limit=1: only selected curve read
     out_html = tmp_path / "report.html"
     res = generate_report(
         report_path,
@@ -191,7 +185,6 @@ def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
 
     out_html = tmp_path / "workbench.html"
 
-    # Test CLI call
     exit_code = cli_main(
         [
             "--report",
@@ -217,14 +210,11 @@ def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
     isolated_html.write_bytes(out_html.read_bytes())
 
     html_text = isolated_html.read_text(encoding="utf-8")
-    # Verify zero CDN / external network links
     assert "<script src=" not in html_text
     assert "<link rel=" not in html_text
     assert "https://" not in html_text
-    # Verify SVG and styles are inline
     assert "<style>" in html_text
     assert "<svg" in html_text
-    # The embedded JSON occupies one script element.
     data_script = html_text.split('<script id="inspector-data"')[1]
     assert "</script>" not in data_script.split("</script>")[0]
 
@@ -249,7 +239,6 @@ def test_acceptance_a7_cancel_and_atomic_replace(tmp_path, monkeypatch) -> None:
     out_html = tmp_path / "stable.html"
     out_html.write_text("Existing intact report", encoding="utf-8")
 
-    # Cancel triggered
     with pytest.raises(InspectorCancelled):
         generate_report(
             report_path,
@@ -258,7 +247,6 @@ def test_acceptance_a7_cancel_and_atomic_replace(tmp_path, monkeypatch) -> None:
             is_cancelled=lambda: True,
         )
 
-    # Intact content retained
     assert out_html.read_text(encoding="utf-8") == "Existing intact report"
     assert len(list(tmp_path.glob("*.tmp.*"))) == 0
 

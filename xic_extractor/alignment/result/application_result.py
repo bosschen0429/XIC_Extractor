@@ -106,7 +106,6 @@ class FinalizedUntargetBatchApplicationResult:
         tuple[UntargetedCandidateExclusion, ...]
         | ImmutableSequence[UntargetedCandidateExclusion]
     ) = ()
-    # Whether any child admitted a Backfill with a flagged membership risk.
     has_flagged_backfill_risk: bool = False
 
     @property

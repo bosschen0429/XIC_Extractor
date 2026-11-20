@@ -6,7 +6,6 @@ import * as ui from "./workspace_ui.js";
 
 export const $ = (id) => document.getElementById(id);
 export { ui };
-// The location holds every run; each analysis writes a new folder inside it.
 export const OUTPUT_LABEL = "結果存放位置";
 export const pathFields = [
   ["raw_dir", "RAW 資料夾", "folder"],
@@ -51,7 +50,6 @@ export function pathTail(path, parts = 2) {
     ? `…\\${segments.slice(-parts).join("\\")}`
     : String(path || "");
 }
-// busy(), lock(), pathChanged(page) and sourceChanged(page), from the entry.
 let page;
 export function connectPage(hooks) {
   page = hooks;
@@ -125,7 +123,6 @@ export function field(spec, value, prefix) {
   }
   return label;
 }
-// 上機資訊 only annotates; disagreements are listed and the RAW decides.
 export function pathField(
   container,
   key,
@@ -188,7 +185,6 @@ export function pathField(
   return input;
 }
 
-// Readiness
 export function focusField(id) {
   const node = $(id);
   if (!node) return;
@@ -198,7 +194,6 @@ export function focusField(id) {
   if (node.tagName !== "DETAILS") node.focus({ preventScroll: true });
 }
 
-// Targeted
 export function bindListUpload(
   prefix,
   receive,

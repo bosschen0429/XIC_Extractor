@@ -8,7 +8,7 @@ from xic_extractor.alignment.batch_correspondence import (
 )
 
 ISTD_RT = (9.0, 12.5, 16.5, 23.5, 25.8, 40.6)
-SHIFT = 0.3  # old batch elutes 0.3 min later than the reference batch
+SHIFT = 0.3
 SIZES = {"old": 12, "new": 83}
 
 

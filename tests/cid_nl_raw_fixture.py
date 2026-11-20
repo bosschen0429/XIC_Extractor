@@ -225,7 +225,6 @@ class _FakeThermoRaw:
         )
 
     def GetCentroidStream(self, scan_number: int, refresh: bool):
-        # This signal fixture has no background-reference centroids.
         return SimpleNamespace(Masses=[], Intensities=[])
 
     def GetSimplifiedScan(self, scan_number: int):

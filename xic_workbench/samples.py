@@ -27,7 +27,6 @@ from xic_extractor.sample_metadata import (
     parse_sample_metadata,
 )
 
-# Mirrors the role labels of the Workbench sample editor.
 ROLE_LABELS = {
     "sample": "Sample",
     "qc": "QC",

@@ -92,7 +92,6 @@ def test_projects_closed_row_binding_and_complete_cell_population(
 def test_eligibility_uses_full_owner_member_equality_and_excludes_statuses(
     tmp_path: Path,
 ) -> None:
-    # Unresolved and rejected groups are excluded from eligibility.
     _, _, result_unresolved, _ = _finalized_case(
         tmp_path,
         sample_stems=(
@@ -117,7 +116,6 @@ def test_eligibility_uses_full_owner_member_equality_and_excludes_statuses(
     assert projection_unbound.binding.variant == "unbound"
     assert projection_unbound.binding.eligible_groups == ()
 
-    # Matching established groups are retained as eligible.
     _, _, result_bound, _ = _finalized_case(
         tmp_path,
         sample_stems=(

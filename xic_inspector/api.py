@@ -107,7 +107,6 @@ class SelectionRequest:
     review_scope: str = "all"
     nearest_mz: float | None = None
     target_role: str | None = None
-    # Matrix features a matrix curation removed; they leave the matrix scopes.
     curation_removed_ids: tuple[str, ...] = ()
 
     def validate(self) -> None:
@@ -371,7 +370,6 @@ def prepare_report(
 
     _check_cancel()
 
-    # Stage: Metadata
     if on_progress:
         on_progress(ReportProgress(stage="metadata", completed=0, total=1))
 
@@ -532,7 +530,6 @@ def _prepare_selection(
             5, "Source lacks the metadata required for attention/RT selection"
         )
 
-    # Normalize sample scope
     summary_samples = summary.get("samples", [])
     # Colours span the whole source so a narrower selection keeps them.
     colors = group_colors(s["group"] for s in summary_samples if "group" in s)
@@ -543,7 +540,6 @@ def _prepare_selection(
     if not selection.sample_ids:
         normalized_sample_ids = tuple(sorted(universe_sample_ids))
     else:
-        # Intersection with universe, deduped, sorted by UTF-8 bytes
         intersected = set(selection.sample_ids) & universe_sample_ids
         normalized_sample_ids = tuple(sorted(intersected))
 
@@ -552,7 +548,6 @@ def _prepare_selection(
 
     _check_cancel()
 
-    # Stage: Selection
     normalized_set = set(normalized_sample_ids)
     from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
 
@@ -576,7 +571,6 @@ def _prepare_selection(
             raise InspectorError(4, str(exc), cause=exc) from exc
         run_total = len(all_items)
 
-        # Eligible population
         if not normalized_set:
             eligible_items = []
         else:
@@ -626,7 +620,6 @@ def _prepare_selection(
 
     _check_cancel()
 
-    # Stage: Curves
     try:
         rendered_items = source.load_render_items(
             selected_items, capability=capability, check_cancel=_check_cancel
@@ -649,7 +642,6 @@ def _prepare_selection(
 
     _check_cancel()
 
-    # Stage: Render
     case_counts = Counter(
         "/".join(
             review_case(
@@ -752,7 +744,6 @@ def generate_report(
 
     _check_cancel()
 
-    # Stage: Write
     try:
         write_report_atomically(html_str, output_path, check_cancel=_check_cancel)
     except ValueError as exc:

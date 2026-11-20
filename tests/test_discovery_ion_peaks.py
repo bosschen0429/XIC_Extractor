@@ -77,7 +77,6 @@ def test_isomers_at_one_mass_are_two_peaks_on_one_channel() -> None:
 
     assert channel.events == seeds
     assert len(result.peaks) == 2
-    # Every peak is named by the one ion XIC that measured it.
     assert all(
         peak.peak_id
         == build_discovery_peak_id(

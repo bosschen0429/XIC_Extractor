@@ -358,7 +358,6 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
         assert state["job"]["status"] == "succeeded"
         metadata = captured["request"].sample_metadata
         assert metadata is not None
-        # The RAW names and orders the sample; the sequence adds its role.
         assert [(row.sample_name, row.sample_role) for row in metadata] == [
             ("Header Alpha", "qc")
         ]
@@ -508,7 +507,6 @@ def test_untargeted_job_takes_order_and_names_from_raw_and_keeps_annotations(
         metadata = captured["request"].sample_metadata
         assert metadata is not None
         rows = {row.raw_stem: row for row in metadata}
-        # The operator's order 9 and names never override the RAW clock.
         assert (rows["Sample-A"].injection_order, rows["Sample-B"].injection_order) == (
             2,
             1,
@@ -767,7 +765,6 @@ def test_each_analysis_writes_a_new_folder_inside_the_chosen_location(tmp_path):
 
     root = tmp_path / "results" / "not-yet-created"
     first = new_run_folder(root, "untargeted", str(tmp_path / "batch-A") + "\\")
-    # Two runs started within the same second still never share a folder.
     second = new_run_folder(root, "untargeted", str(tmp_path / "batch-A"))
     assert first.parent == second.parent == root
     assert first != second and first.is_dir() and second.is_dir()

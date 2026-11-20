@@ -159,7 +159,6 @@ class PairEvidence:
     # Samples whose two cells have co-eluting apices: the direct ones, plus
     # backfilled ones when direct co-elution alone is insufficient.
     support: tuple[str, ...]
-    # The supporting samples where both cells are direct detections.
     direct_support: tuple[str, ...]
     max_apex_diff_sec: float | None
     backfill_apex_unavailable: int
@@ -310,7 +309,6 @@ class RowDecision:
     keep: bool
     reason: str
     representative: int | None = None
-    # Folding relations from the rows this one derives from directly.
     relations: tuple[str, ...] = ()
     # Those rows, when they are not the representative itself.
     via: tuple[int, ...] = ()
@@ -876,7 +874,6 @@ def _review_rows(
             str(row["relation"]),
         )
     )
-    # A frequency table, most frequent difference first.
     rows.extend(_recurring_differences(features, cells, matches, removed))
     return tuple(rows)
 

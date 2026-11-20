@@ -653,7 +653,6 @@ class TargetedBatchContext:
     def _reference_rts_by_cell(self) -> dict[tuple[str, str], float]:
         references = {}
         for population in self.populations:
-            # The supplied paired reference is already sample-local.
             intervals = (
                 self.retention_intervals(population)
                 if population.reference_istd_rt_min is None

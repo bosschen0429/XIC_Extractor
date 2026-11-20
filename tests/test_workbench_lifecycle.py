@@ -61,7 +61,7 @@ def test_reload_grace_and_expired_tabs_allow_reconnection_before_exit():
     assert not lifetime.should_exit()
     lifetime.update("reloaded-page")
     clock[0] = 200
-    assert not lifetime.should_exit()  # Resume after sleep gets a grace period.
+    assert not lifetime.should_exit()
     lifetime.update("reloaded-page")
     clock[0] = 201
     assert not lifetime.should_exit()

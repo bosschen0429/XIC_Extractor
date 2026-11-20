@@ -43,7 +43,6 @@ if TYPE_CHECKING:
     )
 
 
-# Persisted summary labels of the Untargeted CID-NL run contract.
 _RUN_CONTRACT_SUMMARY = {
     "scientific_input_schema_version": "untargeted_cid_nl_real_data_inputs",
     "processing_algorithm_version": "untargeted_cid_nl_real_data_algorithm",
@@ -217,7 +216,6 @@ def _peak_coordinates(content: Any) -> tuple[float, float, float]:
     )
 
 
-# One recorded report write: the writer method, its arguments and keywords.
 _Write = tuple[str, tuple[Any, ...], dict[str, Any]]
 
 
@@ -453,7 +451,6 @@ def project_alignment_explanation_child(
         for decision in group_cells:
             if decision.value is None:
                 continue
-            # The extraction window of the peak that gave the value.
             evidence = cast("FinalGroupCellObservation", decision.evidence)
             trace = next(
                 peak.source_trace

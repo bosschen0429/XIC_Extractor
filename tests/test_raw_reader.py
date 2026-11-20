@@ -814,7 +814,7 @@ def test_ms1_centroid_reads_the_most_intense_centroid_in_range() -> None:
 
     assert handle.ms1_centroid(7.9, 714.35, 714.38) == (714.3696, 9.0)
     assert handle.ms1_centroid(7.9, 714.40, 714.45) is None
-    assert handle.ms1_centroid(8.1, 714.35, 714.38) is None  # an MS2 scan
+    assert handle.ms1_centroid(8.1, 714.35, 714.38) is None
 
 
 def test_extract_xic_many_batches_shared_scan_window() -> None:

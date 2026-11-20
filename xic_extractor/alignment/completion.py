@@ -266,7 +266,6 @@ def _finish_variant(
         stage = WorkflowStage.POST_CELL_PROJECTION
         group_cells = project_untarget_matrix(scientific, untarget_decisions)
         stage = WorkflowStage.APPLICATION_RESULT
-        # No adapter callback intervenes between these owner completions.
         return FinalizedUntargetApplicationResult(
             scientific_core=scientific,
             group_cells=group_cells,

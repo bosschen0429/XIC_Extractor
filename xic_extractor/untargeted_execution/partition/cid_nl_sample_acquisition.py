@@ -94,7 +94,6 @@ _WRITER_ROUNDING_ABS_TOL = 5e-6
 class CidNlAcquisitionResult:
     assessment_input: UntargetedCidNlAssessmentInput
     acquisition: TraceAcquisitionBatch | None
-    # Each admitted Discovery peak id with the observation measured for it.
     candidate_observations: tuple[tuple[str, PeakObservation], ...]
     source_candidate_ids: tuple[str, ...]
     strict_scan_count: int
@@ -115,7 +114,6 @@ class UntargetedCidNlSampleTraceBatch:
     candidate_trace_indices: tuple[int, ...] | None = None
     context_trace_indices: tuple[int, ...] = ()
     elution_contexts: tuple[SampleElutionContext, ...] = ()
-    # Each peak's measurement on its acquired trace, in ``candidate_ids`` order.
     candidate_evaluations: tuple[PhysicalPeakEvaluation, ...] = ()
 
     def __post_init__(self) -> None:

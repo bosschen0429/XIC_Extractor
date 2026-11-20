@@ -243,7 +243,7 @@ class RunCount:
     candidates: tuple[Candidate, ...]
     groups: tuple[Group, ...]
     units: tuple[Unit, ...]
-    removed: frozenset[str]  # unit_ids following an other-sugar nucleoside
+    removed: frozenset[str]
     anchors: tuple[Anchor, ...]
 
     @property

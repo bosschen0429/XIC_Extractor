@@ -172,7 +172,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.sample_metadata is not None:
         metadata_path = args.sample_metadata.resolve()
         try:
-            # 上機資訊 annotates; the RAW owner supplies names and order.
             analysis_set = read_analysis_set(
                 raw_dir, dll_dir, analysis="untargeted", sequence_source=metadata_path
             )

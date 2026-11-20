@@ -56,23 +56,19 @@ def test_parse_docx_sequence(tmp_path: Path, index_header: str) -> None:
     rows = parse_sequence_file(docx_file)
     assert len(rows) == 4
 
-    # Row 1: Blank
     assert rows[0].injection_order == 1
     assert rows[0].raw_stem == "Blank_1"
     assert rows[0].sample_role == "blank"
 
-    # Row 2: Pooled QC
     assert rows[1].injection_order == 2
     assert rows[1].raw_stem == "QC_Pool_1"
     assert rows[1].sample_role == "qc"
 
-    # Row 3: Tumor
     assert rows[2].injection_order == 3
     assert rows[2].raw_stem == "Tumor tissue BC001_DNA"
     assert rows[2].sample_role == "sample"
     assert rows[2].group == ""
 
-    # Row 4: Normal
     assert rows[3].injection_order == 4
     assert rows[3].group == ""
 

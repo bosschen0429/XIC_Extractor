@@ -9,7 +9,6 @@ export function adoptAnalysis(session) {
 export const state = {
   config: null,
   targets: [],
-  // Delta Mass details: list-shared settings and each target row's ions.
   deltaMass: { settings: {}, ions: new Map() },
   method: null,
   importing: false,

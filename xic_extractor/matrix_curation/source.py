@@ -19,11 +19,8 @@ class CurationSource:
     source_dir: Path
     matrix_path: Path
     review_path: Path
-    # Where the run read its RAW, from the Alignment run metadata when present.
     raw_dir: Path | None = None
-    # The run's per-cell explanation, when the folder has one.
     explanation_path: Path | None = None
-    # The run's declared target list, from the Alignment run metadata.
     target_snapshot: str | None = None
 
 

@@ -117,7 +117,6 @@ def test_samples_take_annotations_from_metadata_but_names_and_order_from_raw(
     )
 
     assert [row["raw_stem"] for row in result["samples"]] == ["Sample-A", "Sample-B"]
-    # The metadata numbers 2 and 1 and names Alpha/Beta never override the RAW.
     assert result["samples"][0] == {
         "sample_name": "Header Sample-A",
         "raw_stem": "Sample-A",
@@ -484,7 +483,6 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
         )
         assert runner.request.execution_profile.alignment_workers == 4
         assert runner.request.targets_csv.read_text() == "label,mz\nISTD,100\n"
-        # Exercise the dispatched runner; only RAW computation is substituted.
         monkeypatch.setattr(
             runner,
             "execute",
@@ -561,7 +559,6 @@ def test_cancelled_delta_mass_run_is_not_reported_as_completed(tmp_path, monkeyp
     cancelled = []
 
     def delta_mass(*, should_cancel, **_kwargs):
-        # The stop arrives while the last RAW is being analyzed.
         cancelled.append(True)
         return SimpleNamespace(
             candidates_csv=tmp_path / "c.csv",

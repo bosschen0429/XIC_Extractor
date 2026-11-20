@@ -229,7 +229,6 @@ class ReviewQuery:
         matched, missing = [], 0
         predicate = " AND ".join(where)
         if rt_min is not None or rt_max is not None:
-            # Missing RT is counted after non-RT filters, before the range.
             rows = self._db.execute(
                 "SELECT item,MAX(rt IS NOT NULL),"
                 "MAX(rt IS NOT NULL AND (? IS NULL OR rt>=?) "

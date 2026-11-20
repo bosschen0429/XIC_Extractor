@@ -492,7 +492,6 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
         writer.add_candidate("a", "s", **candidate)
         with pytest.raises(ValueError, match="duplicate diagnostic candidate/sample"):
             writer.add_candidate("a", "s", **candidate)
-        # The same fact emitted twice is stored once.
         writer.add_exclusion("a", "s", "held")
         writer.add_exclusion("a", "s", "held")
         writer.finalize(summary)
@@ -563,7 +562,6 @@ def test_repeated_curve_record_is_stored_once_and_relates_only_its_candidate(
         payload = {**_curve_payload(), "candidate_id": "C1"}
         payload["provenance"] = {**payload["provenance"], "method_subject_id": "M3"}
         binding = dict(sample_id="S1", kind="initial_capture", record_id="obs-1")
-        # The same record written repeatedly is stored once.
         ids = {writer.add_curve_payload(**binding, payload=payload) for _ in range(3)}
         assert len(ids) == 1
         writer.finalize(explanation_summary({"neutral_loss_by_tag": {"dR": 116.0}}))

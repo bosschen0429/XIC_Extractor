@@ -12,6 +12,5 @@ from tests.discovery_ms1_capture_fixtures import (
 class _OwnerBoundBatchRaw(_BatchRaw):
     def __init__(self, source, **kwargs) -> None:
         super().__init__(source, **kwargs)
-        # Include baseline-return samples and context beyond both peak boundaries.
         self.rt = np.linspace(7.4, 8.2, 81)
         self.intensity = 100.0 * np.exp(-0.5 * ((self.rt - 7.8) / 0.06) ** 2)

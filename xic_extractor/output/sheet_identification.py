@@ -37,7 +37,6 @@ METHOD_HEADERS = (
     "Status",
     "Reason",
 )
-# Definitions repeat the list-shared Delta Mass settings on each ion row.
 _SETTING_HEADERS = (
     ("m/z Tolerance ppm", "mz_tolerance_ppm"),
     ("Apex Floor sec", "apex_floor_sec"),

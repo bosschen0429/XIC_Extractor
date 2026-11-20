@@ -44,7 +44,6 @@ def extract_batch_known_istd_reference(
         raise ValueError("No ISTD targets (is_istd=True) found in targets")
     config = replace(peak_config, dll_dir=dll_dir)
     samples = sorted(raw_paths_by_sample.items())
-    # Same RAW-batch backend choice as Targeted's run_pipeline.
     run_batch = run_process if config.parallel_mode == "process" else run_serial
     output = run_batch(
         config,

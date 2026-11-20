@@ -88,8 +88,6 @@ RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
         r"|tests/test_test_selection\.py)$"
     ),
 }
-# The main CI pytest session: the census runs once in the lint job, and serial
-# tests run after the parallel session.
 CI_BASE_MARKER_EXPRESSION = "not current_repository_census and not serial_ci"
 
 
@@ -491,9 +489,6 @@ def _run_plan(plan: SelectionPlan, pytest_args: Sequence[str]) -> int:
     return _settle_exit_codes(exit_codes, every_test=plan.files is None)
 
 
-# Mirrors CI: xdist owns parallelism, and serial_ci tests run after the parallel
-# session because their bounded subprocess or build timeouts are not
-# parallel-safe.
 SERIAL_MARKER = "serial_ci"
 
 
@@ -514,7 +509,6 @@ def _run_parallel_then_serial(
 ) -> list[int]:
     parallel_markers = _and_markers(marker_expression, f"not {SERIAL_MARKER}")
     print(f"Parallel session ({' '.join(parallel_options)})", flush=True)
-    # Native BLAS pools must not multiply the worker budget.
     environment = {"OPENBLAS_NUM_THREADS": "1", **os.environ}
     exit_codes = [
         subprocess.call(
@@ -553,7 +547,6 @@ def _settle_exit_codes(exit_codes: Sequence[int], *, every_test: bool) -> int:
     if all(code == 5 for code in exit_codes):
         if every_test:
             return 5
-        # A selected subset can contain only tests excluded by the marker gates.
         print(
             "No tests ran after filtering; no verification was performed.", flush=True
         )

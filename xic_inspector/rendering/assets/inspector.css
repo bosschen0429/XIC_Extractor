@@ -369,7 +369,6 @@
 .xic-inspector > .detail-panel { border:0;box-shadow:none;border-radius:0;background:transparent; }
 .xic-inspector[data-mode="offline"].tx-body { max-width:1100px;padding:16px 24px 12px; }
 @media(max-width:760px) { .xic-inspector[data-mode="offline"] { padding:12px; } }
-/* Compact RT window: one quiet row under the plot title. */
 .xic-inspector .rt-range { display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 8px;color:var(--muted);font-size:12px; }
 .xic-inspector .rt-range input { width:84px;min-height:28px;padding:3px 7px;font-size:12px;font-variant-numeric:tabular-nums; }
 .xic-inspector .rt-range button { min-height:28px;padding:2px 10px;font-size:12px; }
@@ -431,7 +430,6 @@
 .xic-inspector .curve-list-empty { padding:18px 4px;color:var(--muted);font-size:12px; }
 .xic-inspector .curve-main { min-width:0; }
 .xic-inspector .curve-plot-tools { display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-height:32px;margin-bottom:10px; }
-/* View controls share one 34px row; overlays sit on their own quiet line. */
 .xic-inspector .curve-plot-tools .rt-range { margin:0; }
 .xic-inspector .curve-plot-tools .rt-range input, .xic-inspector .curve-plot-tools .rt-range button { min-height:34px; }
 .xic-inspector .curve-plot-tools .overlay-controls { flex-basis:100%;margin:0;color:var(--muted); }
@@ -452,7 +450,6 @@
   .xic-inspector .curve-plot-tools .rt-range input { width:68px; }
 }
 
-/* Candidate review reuses the Inspector surface and semantic text/status roles. */
 .xic-inspector { --dm-series-1:#2a78d6;--dm-series-2:#eb6834;--dm-series-3:#1baf7a;--dm-series-4:#eda100; }
 :is([data-theme="dark"] .xic-inspector, .xic-inspector[data-theme="dark"]) { --dm-series-1:#3987e5;--dm-series-2:#d95926;--dm-series-3:#199e70;--dm-series-4:#c98500; }
 .xic-inspector .dm-review h2 { font-size:21px;overflow-wrap:anywhere; }

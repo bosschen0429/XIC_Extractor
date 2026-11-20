@@ -38,7 +38,6 @@ def test_post_measurement_centroids_do_not_decide_peak_identity(
             result = []
             for request, trace in zip(requests, traces, strict=True):
                 intensity = trace.intensity.copy()
-                # Different extraction windows include different tail signal.
                 intensity[100] += (request.mz - 500.0) * 300
                 result.append(XICTrace.from_arrays(trace.rt, intensity))
             return tuple(result)
@@ -82,7 +81,6 @@ def test_post_measurement_centroids_do_not_decide_peak_identity(
     # The three windows read the same signal except one scan of window-edge
     # tail, so they are one peak, decided from the acquired traces alone.
     assert len(result.peaks) == expected
-    # Candidate construction runs no post-area centroid reconciliation read.
     assert batches == []
     published = read_discovery_peaks_csv(
         write_discovery_peaks_csv(tmp_path / "candidates.csv", result.peaks)
@@ -124,7 +122,6 @@ class _CentroidRaw(_FakeRaw):
                 mz, scale = ion
                 centroids = np.full(len(self.rt), mz)
                 if index == 0 and self.edge_mz is not None:
-                    # The first ion's centroid jitters to one window edge.
                     centroids[list(self.edge_scans)] = self.edge_mz
                 inside = (centroids >= low) & (centroids <= high)
                 intensity = intensity + np.where(inside, self.intensity * scale, 0.0)

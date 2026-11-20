@@ -168,7 +168,6 @@ def test_workbench_curves_open_on_the_counted_peaks_not_the_saved_window(
     rts = [index / 10 for index in range(101)]
 
     def curve(sample_id, apex):
-        # A tall neighbour at 2 min and the counted peak near 6 min.
         intensity = [
             1000 * max(0.0, 1 - abs(rt - 2) * 4)
             + 100 * max(0.0, 1 - abs(rt - apex) * 4)
@@ -534,7 +533,6 @@ def test_curve_sidebar_focus_names_and_colours_stay_bound_to_each_sample(review_
     expect(row.locator(".curve-name-tail")).to_contain_text("QC3")
     button.focus()
     expect(root.get_by_role("tooltip")).to_contain_text(catalog[3]["label"])
-    # Moving onto an actual plotted point identifies and pins its sample.
     fourth = _control(root, "svg-raw").locator('polyline[data-sample-id="sample-4"]')
     point = fourth.evaluate("""line=>{
         const svg=line.ownerSVGElement, point=svg.createSVGPoint();
@@ -1032,7 +1030,6 @@ def test_hosted_views_share_signal_choice_across_remounts(review_page):
     expect(right.get_by_role("button", name="原始", exact=True)).to_have_attribute(
         "aria-pressed", "true"
     )
-    # A host replaces the view when the reviewer opens another group.
     page.evaluate(
         """payload => {
             window.views[0].destroy();
@@ -1199,7 +1196,6 @@ def test_targeted_rows_keep_rare_detection_and_labels_in_place(review_page, tmp_
     # Rows stay in run order; the rare detection is marked where it ran.
     expect(rows.nth(2).locator(".tgt-sample")).to_have_text("S3")
     expect(rows.nth(2).locator(".tgt-badge")).to_have_text("與多數不同")
-    # The same sample's paired ISTD reads in the same row.
     expect(rows.nth(2).locator(".tgt-istd").first).to_have_text("9.2")
     rows.nth(2).locator(".tgt-sample").click()
     # The evidence is the next row, not a panel after every other sample.

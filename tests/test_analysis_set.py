@@ -29,7 +29,6 @@ def test_batch_header_reads_overlap_without_changing_acquisition_order(
     rendezvous = Barrier(2, timeout=2)
 
     def read_header(path, _dll):
-        # Both independent file reads must start before either finishes.
         rendezvous.wait()
         return (
             header(str(path.resolve()), 11 if path.stem == "A" else 0),

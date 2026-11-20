@@ -409,7 +409,6 @@ def test_cid_nl_join_records_unmatched_reason_and_reproduces_from_published_tabl
         )
 
     if separate_tables:
-        # Same rows across per-sample files; no merged input is needed.
         lines = cid_csv.read_text(encoding="utf-8").splitlines(keepends=True)
         first, second = tmp_path / "first.csv", tmp_path / "second.csv"
         first.write_text("".join([lines[0], *lines[1:4]]), encoding="utf-8")

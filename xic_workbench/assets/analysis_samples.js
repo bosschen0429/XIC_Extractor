@@ -1,4 +1,3 @@
-// Shared sample roles, exclusions and optional acquisition-information import.
 import { createRowSelection } from "./analysis_row_selection.js";
 import { createSampleMetadata } from "./analysis_sample_metadata.js";
 import { analysis, state } from "./analysis_state.js";
@@ -192,7 +191,6 @@ async function relistIfChanged(page) {
     await listSamples(page);
 }
 
-// Editor selection: drag a band, Ctrl adds, Shift extends, search selects.
 const selection = createRowSelection({
   box: () => $("sample-table"),
   rowSelector: "tr[data-stem]",
@@ -283,7 +281,6 @@ function toggleExclusion() {
     .rows.filter((row) => selection.keys.has(row.raw_stem));
   apply({ excluded: !rows.every((row) => row.excluded) });
 }
-// Jobs
 
 export function bindSamples() {
   sampleMetadata.subscribe(({ pages, replaced }) => {

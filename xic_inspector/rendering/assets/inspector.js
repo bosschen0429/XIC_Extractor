@@ -294,7 +294,6 @@
       bar.setAttribute('aria-label', '篩選樣本');
       const table = element('table', undefined, 'tgt-table');
       const head = element('tr');
-      // A paired analyte reads beside its ISTD in the same sample row.
       const paired = Object.keys(istdRecords).length > 0;
       const canLoadCurves = Boolean(onRequestCurves);
       const titles = ['樣本', 'RT (min)', '面積', '結果', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '依據', '疑點', ...(canLoadCurves ? ['操作'] : [])];
@@ -342,7 +341,6 @@
           const cell = element('td');
           const view = element('button', '看 XIC', 'tgt-xic');
           view.type = 'button';view.setAttribute('aria-label', `看 ${record.SampleName} 的 ${item.title} XIC`);
-          // The drawer steps through the rows being read, with their notes.
           view.addEventListener('click', () => {
             const shown = rows.filter(entry => !entry.row.hidden).map(entry => entry.record.SampleName);
             onRequestCurves({item_id: item.id, sample_id: record.SampleName, opener: view, sample_ids: shown,
@@ -494,7 +492,6 @@
   const records=item=>Array.isArray(item?.details?.readable_records)?item.details.readable_records:[];
   const itemName=item=>`項目 ${String(items.indexOf(item)+1).padStart(2,'0')}`;
   const itemTitle=item=>item.title||'已記錄的結果';
-  // Long identifiers wrap after their separators instead of inside a word.
   const breakable=text=>esc(text).replace(/([|_\/])/g,'$1<wbr>');
   const reviewReason=(item,compact=false)=>item.delta_mass ? window.XicInspectorDeltaMass.summary(item.delta_mass,compact) : item.group_counts?countsText(item):item.reason_label;
   const badge=item=>item.badge_label||({attention:'需留意',excluded:'已排除',rest:'已記錄'}[item.stratum]||'既有結果');
@@ -542,9 +539,7 @@
   }
   const swatch=(dash,width=2,stroke='currentColor')=>`<svg class="origin-swatch" viewBox="0 0 22 8" aria-hidden="true"><line x1="0" x2="22" y1="4" y2="4" stroke="${stroke}" stroke-width="${width}" stroke-dasharray="${dash}"/></svg>`;
   const countsText=item=>{const [total,...rest]=countParts(item).map(([text])=>text);return `${total}：${rest.join(' · ')}`;};
-  // One line answers the group and doubles as the line-style legend.
   const summaryLine=item=>item.group_counts?`<p class="summary-line">${countParts(item).map(([text,style])=>`<span>${style?swatch(...style):''}${esc(text)}</span>`).join('')}</p>`:'';
-  // Groups and candidates are named by where they are; the kind is secondary.
   const identified=item=>!item.delta_mass&&['row','candidate'].includes(item.kind);
   const hasCurve=(item,sid)=>(item.curves||[]).some(c=>c.sample_id===sid&&c.raw_rts?.length);
   const anyCurve=item=>(item.curves||[]).some(c=>c.raw_rts?.length);
@@ -616,7 +611,6 @@
     const curves=selectedCurves(item), all=item.curves||[];
     return curves.find(c=>curveKey(c,all.indexOf(c))===state.capture)||curves[0]||null;
   }
-  // Baseline and baseline-positive signals overlay the page's main signal where an item retains them.
   function overlays(item){
     const curves=state.sample?selectedCurves(item):(item.curves||[]).filter(c=>state.visible.has(c.sample_id)), out=new Set();
     curves.forEach(c=>(c.processed_curves||[]).forEach(s=>{const k=s.kind==='positive_signal'?'positive':s.kind;if(['baseline','positive'].includes(k)&&(s.rts||c.raw_rts)?.length&&s.intensities?.length)out.add(k);}));
@@ -768,7 +762,6 @@
     const quantity=row.quantitative_value, sameArea=finite(curve.area)&&finite(quantity)&&Math.abs(curve.area-quantity)<=1e-9*Math.abs(quantity);
     const rawApex=curve.integration?.raw_apex_rt_min, showRaw=finite(rawApex)&&(!finite(curve.apex_rt)||Math.abs(rawApex-curve.apex_rt)>1e-7);
     return `<div class="readout-heading"><strong>${esc([c?candidateName:'',stage===candidateName?'':stage].filter(Boolean).join(' · '))}</strong><span>原始 RT</span></div>${measuredMz}<dl class="integration-grid">${[
-      // A curve saved without its integration lists only what it carries.
       ['積分範圍','bounds',finite(curve.bound_left_rt)||finite(curve.bound_right_rt)?`${drt(curve.bound_left_rt)}–${drt(curve.bound_right_rt)} min`:''],
       ['積分峰頂','apex',finite(curve.apex_rt)?drtMin(curve.apex_rt):''],
       ['原始訊號峰頂','raw-apex',showRaw?`${drt(rawApex)} min`:''],

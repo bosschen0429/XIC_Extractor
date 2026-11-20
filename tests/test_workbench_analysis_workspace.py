@@ -82,7 +82,6 @@ def test_http_list_export_and_upload_keep_metadata_without_touching_batch(tmp_pa
             uploaded["targets"][1]["future_annotation"]
             == targets[1]["future_annotation"]
         )
-        # Exchanging list files never changes the active batch.
         _, unchanged, _ = request("/api/config")
         assert unchanged["settings"] == original["settings"]
         assert unchanged["targets"] == original["targets"]

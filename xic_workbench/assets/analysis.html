@@ -57,14 +57,12 @@
           </div>
           <div class="step-body">
             <div id="target-preview" class="target-preview"></div>
-            <!-- Lists use the same label | field | action rows as every path. -->
             <div id="target-dropzone" class="path-line drop-line target-method-row">
               <label for="target-import">匯入清單</label>
               <span class="drop-target">拖曳目標清單到這裡 · XLSX、CSV、TSV</span>
               <input id="target-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
               <button id="target-import" type="button" data-analysis-idle>瀏覽</button>
             </div>
-            <!-- An empty list names every way to start: import, the example, or blank. -->
             <p id="target-start" class="target-start">
               還沒有清單？<button id="target-from-example" type="button" class="text-button" data-analysis-idle>從範例開始</button>
               或按「新增目標」。

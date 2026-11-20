@@ -69,15 +69,15 @@ def test_waterfall_matches_each_candidates_fate():
     run = _run(
         (
             _c("dc", 228.0979, 8.66),
-            _c("dc13", 229.1013, 8.66),  # known difference
+            _c("dc13", 229.1013, 8.66),
             _c("near", 350.0, 8.75),  # elutes with dC
             _c("x", 400.0, 20.0),
             _c("y", 450.0, 20.03),  # synchronized with x
-            _c("one", 500.0, 30.0, events=1),  # one MS2 event
+            _c("one", 500.0, 30.0, events=1),
             _c("late", 600.0, 45.0),
             _c("rna", 700.0, 22.3),  # follows an other-sugar nucleoside
         ),
-        pairs=[(1, 2)],  # kept order: dc, x, y, rna, one, late
+        pairs=[(1, 2)],
         removed=frozenset({"700.0000@22.30"}),
     )
     summary = run.summary()

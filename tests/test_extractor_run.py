@@ -20,7 +20,6 @@ from xic_extractor.processing_identity import (
 
 @pytest.fixture(autouse=True)
 def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
-    # RAW files here are placeholders; order them by their file times.
     install_fake_raw_headers(monkeypatch)
 
 
@@ -459,7 +458,6 @@ def test_acquire_orders_by_raw_even_with_a_sample_metadata_source(
         assert config_arg is config
         assert targets_arg is targets
         assert [path.name for path in raw_paths] == ["RawA.raw"]
-        # The metadata number 7 annotates nothing about order; the RAW does.
         assert injection_order == {"RawA": 1}
 
         return RunOutput(file_results=[], diagnostics=[])

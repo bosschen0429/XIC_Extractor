@@ -1,4 +1,3 @@
-// Untargeted method selection/editor, tuning controls and ISTD imports.
 import { deltaMassEditor, ionsError } from "./analysis_delta_mass.js";
 import { sampleMetadata } from "./analysis_samples.js";
 import { checklist, dirty } from "./analysis_setup.js";
@@ -719,7 +718,6 @@ export function bindUntargeted() {
 
   $("untargeted-save").onclick = () => act(() => saveUntargeted());
 
-  // The ISTD list is a path row: browse for a file there, or drop one on it.
   bindListUpload("istd", importIstdFiles, $("istd-path-field"));
 
   $("u-preset").onchange = () =>

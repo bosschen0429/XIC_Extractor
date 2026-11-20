@@ -80,12 +80,9 @@ class ReviewWorkspace:
         )
         self._cancel = threading.Event()
         self._report: Path | None = None
-        # Targeted RAW preparation is reused while one workbook stays open.
         self._targeted_raws: dict[Path, Any] = {}
         self._page: PreparedReport | None = None
-        # The curation the open Untargeted result follows, fixed at open.
         self._curation: PublishedCuration | None = None
-        # Curve locations of the opened detail item, read once per selection.
         self._curves: ReviewCurves | None = None
         self._job: dict[str, Any] | None = None
         self._replaced_job: dict[str, Any] | None = None
@@ -225,7 +222,6 @@ class ReviewWorkspace:
             self._replace_job()
             self._detail, self._curves = None, None
             if isinstance(page.source, EvidenceLocator):
-                # Load the curve preparation code before the first selection.
                 self._executor.submit(_load_review_curves)
             return self._page_response()
 
@@ -307,7 +303,6 @@ class ReviewWorkspace:
             if self._curation
             else None,
             "result_artifact": artifact,
-            # The result page opens matrix curation only where it can run.
             "curatable": curatable,
             "source_kind": page.payload["summary"].get("source_kind", "evidence"),
             "target_names": page.payload["summary"].get("target_names", []),
@@ -513,7 +508,6 @@ class ReviewWorkspace:
     ) -> None:
         def update(**values: Any) -> None:
             with self._lock:
-                # A replaced job's worker no longer reports.
                 if self._job is not None and self._job["id"] == job_id:
                     self._job.update(values)
 
@@ -606,7 +600,6 @@ class ReviewWorkspace:
                     }
                 ]
                 prepared.payload["samples"] = request["sample_catalog"]
-                # Sample roles are confirmed per RAW folder.
                 folder = request["raw_dir"] or RunSettings(request["report"]).raw_dir
                 if folder is not None:
                     sample_groups = review_sample_groups(

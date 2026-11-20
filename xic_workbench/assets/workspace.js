@@ -1,4 +1,3 @@
-// Result review: batch and item navigation, curve reading and Inspector views.
 import { analysis } from "./analysis_state.js";
 import { api, navigation, openSession, toast } from "./workspace_ui.js";
 const $ = (id) => document.getElementById(id);
@@ -372,7 +371,6 @@ async function openTargetedResults(target = "", attentionOnly = false) {
     element.className = className;
     return element;
   };
-// A fraction reads as a filled bar beside its exact count.
 function meter(value, total, label = "") {
   const wrap = node("span", undefined, "meter");
   const bar = node("span", undefined, "meter-bar");
@@ -402,7 +400,6 @@ function renderTargetedOverview(summary) {
     : summary.focus_count ? `先看 ${count(summary.focus_count)} 筆結果`
       : "沒有需要先看的結果";
   const title = node("h2", conclusion);
-  // The reading rule stays one hover away; the counts below show where it applies.
   title.title = `需先看：各目標中占 ${Math.round(summary.minority_share * 100)}% 以下的一方；只影響閱讀順序，不改判定。`;
   heading.append(title);
   const actions = node("div", undefined, "overview-actions");
@@ -429,7 +426,6 @@ function renderTargetedOverview(summary) {
   for (const text of ["目標", "類型", "計入", "需先看", "要確認"]) header.append(node("th", text));
   head.append(header);
   const body = node("tbody");
-  // Counts sit in their own columns; this column says only what to check.
   const focusText = target => {
     switch (target.focus_kind) {
       case "minority_counted": return "是否抓錯峰";
@@ -527,7 +523,6 @@ function renderPage(page) {
     $("untargeted-search-mode").value = "nearest";
     if (Number($("nearest-mz").value) !== page.nearest_mz)
       $("nearest-mz").value = String(page.nearest_mz);
-    // Retain the applied nearest query for pagination and reading history.
     state.filters = {nearest_mz: page.nearest_mz, review_scope: page.review_scope};
     for (const [id, key] of [["rt-min", "rt_min"], ["rt-max", "rt_max"]]) {
       $(id).value = page[key] == null ? "" : String(page[key]);
@@ -565,7 +560,6 @@ function renderPage(page) {
   $("batch-description").hidden = false;
   $("batch-description").className = "mono";
   $("batch-description").title = page.source;
-  // A curated result names the curation whose Matrix the page follows.
   $("batch-curation").hidden = !page.curation;
   $("batch-curation").textContent = page.curation ? `依整理結果 ${page.curation.name}` : "";
   $("batch-curation").title = page.curation?.path || "";
@@ -593,7 +587,6 @@ function renderPage(page) {
     node("span", untargetedScope ? `${count(page.matched_count)} 筆`
       : filtered ? `${count(page.matched_count)} / ${count(page.run_total)}` : count(page.run_total)),
   );
-  // The list itself shows the ordering through each row's distance.
   if (nearest) $("list-summary").append(node("span", `≈ m/z ${page.nearest_mz}`, "list-sort"));
   $("nearest-results-note").hidden = !(nearest && page.missing_mz_count);
   $("nearest-results-note").textContent = nearest && page.missing_mz_count
@@ -667,7 +660,6 @@ async function selectItem(item) {
     }
   }
 }
-// Samples without a saved curve are read from RAW.
 function needsRaw() {
   const saved = new Set(state.detail?.item.saved_curve_sample_ids || []);
   return [...state.samples].some(id => !saved.has(id));
@@ -811,7 +803,6 @@ async function openBatch() {
   const page = await loadBatch();
   document.dispatchEvent(new CustomEvent("xic:result-opened", {detail: page}));
 }
-// Loads the source into the review without switching the visible page.
 async function loadBatch() {
   const page = await requestPage("/api/open", { source: $("source").value });
   $("query-form").reset();
@@ -862,7 +853,6 @@ async function query(offset, filters = state.filters, select = null) {
     await selectItem(page.items[select === "last" ? page.items.length - 1 : 0]);
   return revision === navigation.revision;
 }
-// Reading continues across page boundaries of the same filtered list.
 function itemIndex() {
   return state.page && state.item
     ? state.page.items.findIndex((item) => item.id === state.item.id)
@@ -993,7 +983,6 @@ async function pollJob(jobId, view) {
   }
 }
 
-// Targeted XIC steps through the samples the reader was looking at.
 function curveSequence() {
   return state.curveSequence?.length ? state.curveSequence : state.item?.curve_sample_ids || [];
 }
@@ -1042,7 +1031,6 @@ $("query-form").addEventListener("submit", (event) => {
 });
 // Targeted filters are single choices, so each change applies immediately.
 $("target-role").addEventListener("change", () => {
-  // Choosing a category starts at all its targets, keeping the other filters.
   $("target-id").value = "";
   action(() => query(0, queryFields()), "正在更新類別結果…");
 });
@@ -1107,7 +1095,6 @@ $("item-list").addEventListener("keydown", (event) => {
   next.scrollIntoView({ block: "nearest" });
   next.click();
 });
-// "瀏覽" opens the operating system's own chooser on this computer.
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-browse]");
   if (!button || button.getAttribute("aria-busy") === "true") return;
@@ -1145,7 +1132,6 @@ export function curationPublished(result) {
   state.publishedCuration = result.source_dir;
   applyPublishedCuration();
 }
-// Review controls lock while an analysis runs.
 export function analysisBusyChanged() {
   controls();
 }
@@ -1158,7 +1144,6 @@ export function analysisStarted() {
     controls();
   }
 }
-// One session read is shared with the setup page.
 export const session = openSession();
 // One initial read is shared with the setup page, regardless of load order.
 export const ready = action(async () => {

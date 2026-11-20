@@ -47,7 +47,6 @@ _REQUIRED_COLUMNS = {
 }
 # Sheets of the earlier method workbook, which carried a fixed strategy row.
 _RETIRED_SHEETS = ("Method", LEGACY_METHOD_SHEET)
-# Header notes in a written workbook: what to fill, for someone editing in Excel.
 _HEADER_NOTES = {
     TARGETS_SHEET: {
         "label": "目標名稱，不可重複。",
@@ -77,7 +76,6 @@ class TargetList:
 
     targets: tuple[Target, ...]
     target_rows: tuple[Mapping[str, str], ...]
-    # Delta Mass details payload; None when no target uses Delta Mass.
     delta_mass: Mapping | None = field(default=None)
 
 
