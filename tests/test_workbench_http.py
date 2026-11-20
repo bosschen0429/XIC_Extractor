@@ -64,7 +64,6 @@ def test_session_handshake_failure_closes_client_server_and_workspace(
             "workspace_closed": workspace_closed.is_set(),
         }
     finally:
-        # The regression must leave no server behind even against the broken helper.
         for connection in connections:
             connection.close()
         for server in servers:

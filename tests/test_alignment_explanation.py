@@ -185,7 +185,6 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
             assert retained["method_result"] == "SUPPORT"
             row = next(group for group in detail["groups"] if "destination" in group)
             assert row["destination"] == "archive"
-    # A fresh query process can neither acquire RAW nor import the scientific stack.
     script = (
         "import sys,runpy\n"
         "def guard(event,args):\n"
@@ -429,7 +428,6 @@ def test_exact_candidate_loads_only_its_evidence_across_samples(tmp_path, monkey
             )
         reports.append(path)
 
-    # Count rows crossing SQLite's application boundary, not query text or time.
     connect = sqlite3.connect
     fetched = []
 
@@ -541,8 +539,6 @@ def test_repeated_curve_record_is_stored_once_and_relates_only_its_candidate(
     report = tmp_path / "normalized.sqlite"
     with ExplanationReportWriter(report) as writer:
         writer.declare_samples([{"sample_key": "S1", "sample_stem": "S1"}])
-        # The curve is C1's; C2 also ends on its peak and C3 shares its
-        # provenance subject.
         for candidate_id, subject in (("C1", "M1"), ("C2", "M2"), ("C3", "M3")):
             writer.add_candidate(
                 candidate_id,
@@ -598,9 +594,6 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
         writer.declare_samples(
             [{"sample_key": s, "sample_stem": s} for s in ("s1", "s2")]
         )
-        # A hypothesis sits in one initial group, so a and b reach a second
-        # group through a same-method hypothesis (a2, b2) whose member also
-        # holds their peak.
         for cid, sid, subject in (
             ("a", "s1", "Ma"),
             ("a2", "s1", "Ma"),
@@ -652,7 +645,6 @@ def test_indexed_query_preserves_many_groups_and_skips_unrelated_payloads(tmp_pa
         assert (
             connection.execute("SELECT count(*) FROM initial_groups").fetchone()[0] == 3
         )
-        # Only the last group, which relates b but not a, is unreadable.
         connection.execute(
             "UPDATE initial_groups SET inference_basis=x'00' "
             "WHERE id=(SELECT max(id) FROM initial_groups)"

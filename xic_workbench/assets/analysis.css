@@ -650,7 +650,6 @@
 #target-import-status.error { color: var(--danger); }
 #target-import-preview .table-scroll { max-height: 45vh; overflow: auto; }
 
-/* A role nothing identified asks for a look; exclusion reads as set aside. */
 #sample-rows tr.other td {
   background: var(--warn-soft);
 }
@@ -929,7 +928,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Same breakpoint as .path-line, which also moves its label onto its own row. */
 @media (max-width: 860px) {
   .analysis-page .target-method-row {
     grid-template-columns: minmax(0, 1fr) 120px;
@@ -960,7 +958,6 @@
 #curation-source-step.carried .step-body {
   margin-top: 0;
 }
-/* Curation steps carry no step numbers, so their bodies are not indented. */
 #curation-form .step-body {
   margin-left: 0;
 }

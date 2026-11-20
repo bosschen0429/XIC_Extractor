@@ -229,8 +229,6 @@ def test_paired_istd_position_identifies_or_rejects_the_analyte_peak() -> None:
 
     positions = paired_istd_positions(analyte, istd)
     assert positions.identified == {"near", "backfilled_istd", "relocated"}
-    # A peak 0.4 min from the paired position is another signal, not this
-    # analyte; without a counted ISTD there is no position to judge.
     assert positions.off_position.keys() == {"off_offset"}
     assert positions.off_position["off_offset"] == pytest.approx(0.40)
     lone = {s: r for s, r in analyte.items() if s in {"C1", "near", "off_offset"}}

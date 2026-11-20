@@ -265,8 +265,6 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
     scenario = build_sample_adapter_scenario(tmp_path)
     source_raw = _FakeRaw((8.0,))
     scan = source_raw.scans[0]
-    # The weaker product's parent window contains one ion. The stronger
-    # product's shifted window contains both ions and cannot supply support.
     products = (383.9526, 383.9536)
     intensities = (11900.0, 12000.0) if parent_supported else (12000.0, 11900.0)
     if composite:

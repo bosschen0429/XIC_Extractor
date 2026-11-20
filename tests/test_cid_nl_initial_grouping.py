@@ -168,12 +168,9 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
                 if "requirement_not_supported" in exclusion_reason
                 else ()
             )
-    # One mixed retained/excluded case protects both invariant outputs.
     if scenario != "missing_capture":
         return
 
-    # Rename transport/candidate keys without changing a measured fact, and
-    # reverse every unordered input. Compare natural peak and exclusion facts.
     renamed = {
         peak.peak_id: f"candidate-{len(peaks) - i}" for i, peak in enumerate(peaks)
     }

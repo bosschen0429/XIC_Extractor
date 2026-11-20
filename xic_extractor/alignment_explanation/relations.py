@@ -69,7 +69,6 @@ _CURVE_CANDIDATES = """
     JOIN main.samples s ON s.sample_key = cu.sample_id
     JOIN {candidates} c ON c.candidate_id = cu.candidate_id AND c.sample = s.id"""
 
-# name: (query, prerequisites, index columns)
 _RELATIONS: dict[str, tuple[str, tuple[str, ...], tuple[str, ...]]] = {
     "peak_candidates": (_PEAK_CANDIDATES, (), ("peak",)),
     "member_candidates": (_MEMBER_CANDIDATES, ("peak_candidates",), ("member",)),

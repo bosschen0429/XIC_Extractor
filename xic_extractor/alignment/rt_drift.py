@@ -26,19 +26,13 @@ from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 if TYPE_CHECKING:
     from xic_extractor.alignment.rt_anchors import RtAnchorObservation
 
-# A channel whose general-calibrated RT keeps this much robust spread drifts
-# beyond the shared map.
 _DRIFT_SPREAD_SEC = 12.0
-# Sample shift is per-sample scatter around the batch trend that another
-# elution family reproduces; smooth segment-level deviations are not M.
 _SAMPLE_SHIFT_SPREAD_SEC = 8.0
 _SYNC_CORRELATION = 0.75
 _MIN_COMMON_SAMPLES = 6
 _FAMILY_RT_MIN = 0.05
-# Drifting family members can have medians this far apart.
 _FAMILY_SEARCH_MIN = 5.0
 _SHAPE_BANDWIDTH_MIN = 1.0
-# Pattern correspondence considers the displacement of anchors this close.
 _TRACK_RT_WINDOW_MIN = 2.0 * _SHAPE_BANDWIDTH_MIN
 
 
@@ -184,8 +178,6 @@ class RtDriftModel:
                 return reference - rt_min
 
             values = set()
-            # Keep abs(reference - rt_min) <= window at floating-point edges;
-            # forming rt_min +/- window first can round a different boundary.
             low = bisect_left(references, -_TRACK_RT_WINDOW_MIN, key=relative_rt)
             high = bisect_right(references, _TRACK_RT_WINDOW_MIN, key=relative_rt)
             for _, offsets in prepared[low:high]:
@@ -595,8 +587,6 @@ def upper_pairs(size: int) -> tuple[np.ndarray, np.ndarray]:
     return _UPPER_PAIRS[size]
 
 
-# A coefficient needs enough members and enough regressor spread to be
-# estimated; otherwise it stays zero.
 MIN_COEFFICIENT_MEMBERS = 6
 _MIN_BATCH_STATE_RANGE = 0.25
 _MIN_SAMPLE_SHIFT_RANGE_MIN = 10.0 / 60.0

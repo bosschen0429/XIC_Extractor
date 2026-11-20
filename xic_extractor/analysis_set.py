@@ -64,7 +64,6 @@ class AnalysisSet:
 
     entries: tuple[AnalysisSetEntry, ...]
     sequence: SequenceMatchReport | None = None
-    # Explicit non-analysis inputs whose acquisition facts were not requested.
     unopened_context: tuple[Path, ...] = ()
 
     @property

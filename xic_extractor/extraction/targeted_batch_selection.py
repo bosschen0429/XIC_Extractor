@@ -114,9 +114,6 @@ def complete_targeted_candidate_batch(
             if assessment is None:
                 continue
             if assessment.target.is_istd:
-                # Standards already own the sample-local anchor used to
-                # transfer analyte references. Do not silently replace that
-                # anchor after its dependent priors have been established.
                 continue
             trace = assessment.trace_group.primary_trace
             builder = factory(
@@ -271,8 +268,6 @@ def complete_targeted_candidate_batch(
                     (reason,),
                     ("targeted_shared_ion_region",) if different_reference else (),
                 )
-        # Retained signals and alternatives serve batch selection only. Do not
-        # carry every candidate's arrays and evaluations into publication.
         results = {
             label: replace(result, targeted_candidate_assessment=None)
             if result.targeted_candidate_assessment is not None

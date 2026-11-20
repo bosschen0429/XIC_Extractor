@@ -425,7 +425,7 @@ def test_targeted_http_review_preserves_values_scope_and_source(workbook):
             {"sample_id": "Sample B", "target_id": "Analyte", "attention_only": True},
         )
         assert (scoped["run_total"], scoped["matched_count"]) == (2, 1)
-        assert scoped["overview"] == overview  # The landing summary is always full-run.
+        assert scoped["overview"] == overview
         assert [(s["id"], s["label"], s["group"]) for s in scoped["samples"]] == [
             ("Sample B", "Sample B", "")
         ]
@@ -489,7 +489,6 @@ def test_malformed_targeted_workbook_is_actionable(workbook, damage):
 def test_workbook_binding_and_ambiguous_directory(workbook):
     report = prepare_report(workbook, SelectionRequest(strategy="attention"))
     assert [item["title"] for item in report.payload["items"]] == ["Analyte"]
-    # Excel's lock file beside an open workbook is not a second result.
     workbook.with_name(f"~${workbook.name}").write_bytes(b"lock")
     assert resolve_source(workbook.parent) == workbook
     other = workbook.with_name("another.xlsx")

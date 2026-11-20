@@ -104,7 +104,6 @@ def _run(
         ],
         text=True,
         encoding="utf-8",
-        # Messages are Chinese; without this the child writes the console code page.
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
         capture_output=True,
         check=False,

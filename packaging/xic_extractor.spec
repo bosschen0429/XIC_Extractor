@@ -6,15 +6,11 @@ import sys
 from PyInstaller.utils.hooks import collect_data_files
 
 if sys.platform == "win32":
-    # Resolve Windows DLLs before unrelated tools on PATH (notably ICU).
-    # Package-specific directories are still supplied by PyInstaller's hooks.
     system32 = os.path.join(os.environ["SystemRoot"], "System32")
     os.environ["PATH"] = system32 + os.pathsep + os.environ.get("PATH", "")
 
 block_cipher = None
 
-# Resolve every path from the repository root, independent of the working
-# directory. PyInstaller defines SPECPATH; a plain Python run provides __file__.
 SPEC_DIR = globals().get("SPECPATH") or os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.abspath(SPEC_DIR))
 

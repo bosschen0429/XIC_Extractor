@@ -92,11 +92,6 @@ def test_savgol_candidates_use_current_source_name_and_reject_old_mode() -> None
 
 
 def test_noisy_peak_recovers_raw_area_within_noise_tolerance() -> None:
-    # Hard-shape oracle: a peak in real noise (S/N ~20) must still report a raw
-    # area close to the true Gaussian integral. The S/N is chosen so the
-    # recovered area stays well inside rel=0.05 across seeds (max ~4% over a
-    # 300-seed sweep), not merely for this one seed, keeping the test robust to
-    # platform float drift rather than relying on a lucky draw.
     rt = np.linspace(8.0, 10.0, 401)
     rng = np.random.default_rng(20260614)
     intensity = _gaussian(rt, center=9.0, sigma=0.08, height=300.0)
@@ -112,9 +107,6 @@ def test_noisy_peak_recovers_raw_area_within_noise_tolerance() -> None:
 
 
 def test_resolved_twin_area_does_not_bleed_into_neighbor() -> None:
-    # Hard-shape oracle: with two well-resolved peaks, the selected (taller)
-    # peak's raw area must match its own analytic area, not be inflated by the
-    # neighbour 0.7 min away.
     rt = np.linspace(8.0, 10.0, 401)
     intensity = _gaussian(rt, center=8.7, sigma=0.05, height=500.0)
     intensity += _gaussian(rt, center=9.4, sigma=0.06, height=1200.0)
@@ -129,12 +121,6 @@ def test_resolved_twin_area_does_not_bleed_into_neighbor() -> None:
 
 
 def test_overlapping_peaks_conserve_total_area_when_merged() -> None:
-    # Hard-shape oracle: two heavily-overlapping peaks (centres 0.10 min apart,
-    # sigma 0.06) merge into one envelope. The integrated raw area must conserve
-    # the total of both components (no area lost or double-counted). The 0.10 min
-    # separation sits well below the resolver's ~0.17 min split threshold, so the
-    # single-envelope expectation is robust to minor float drift; if the resolver
-    # is later changed to split such shoulders, update n_prominent_peaks.
     rt = np.linspace(8.0, 10.0, 401)
     intensity = _gaussian(rt, center=9.0, sigma=0.06, height=1000.0)
     intensity += _gaussian(rt, center=9.10, sigma=0.06, height=800.0)
@@ -425,8 +411,6 @@ def test_area_is_computed_from_raw_intensity_not_smoothed() -> None:
     smoothed = savgol_filter(intensity, config.smooth_window, config.smooth_polyorder)
     left = int(np.searchsorted(rt, result.peak.peak_start, side="left"))
     right = int(np.searchsorted(rt, result.peak.peak_end, side="right"))
-    # rt is in minutes; area is reported in counts·seconds, so scale both
-    # reference integrals by 60 to match the convention used by find_peak_and_area.
     raw_area = np.trapezoid(intensity[left:right], rt[left:right]) * 60.0
     smoothed_area = np.trapezoid(smoothed[left:right], rt[left:right]) * 60.0
     apex_idx = int(np.argmin(np.abs(rt - result.peak.rt)))

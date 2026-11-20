@@ -34,8 +34,6 @@ _DISPLAY_NAMES = {
     "pt_pattern_cid_nl_dr": "Pt pattern ＋ CID-NL dR",
 }
 _NUMERIC_CONTROLS = (
-    # These controls accept continuous values. HTML step is anchored at min,
-    # so a fixed increment rejects valid defaults (for example 20 from 0.01).
     ("nl_tolerance_ppm", "NL 容差 (ppm)", 0.01, 1000.0, "any"),
     ("precursor_mz_tolerance_ppm", "Precursor 容差 (ppm)", 0.01, 1000.0, "any"),
     ("product_mz_tolerance_ppm", "Product 容差 (ppm)", 0.01, 1000.0, "any"),
@@ -79,7 +77,6 @@ def method_details(preset: str | Path | Preset) -> dict[str, Any]:
     ]
     if _has_delta_mass(loaded):
         pattern = apply_to_delta_mass_discovery(loaded)
-        # Delta Mass Discovery has no page-level tuning; the editor owns it.
         return {
             "preset": preset_to_payload(loaded),
             "draft": draft,

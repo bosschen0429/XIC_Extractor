@@ -16,12 +16,8 @@ from xic_extractor.output.result_labels import (
     result_labels,
 )
 
-# Code-shaped literals in the reason producers that are not reason codes. A new
-# literal must be added to the label table or named here, so no new reason
-# reaches a workbook without a label.
 NOT_REASON_CODES = frozenset(
     {
-        # Evidence inputs: concern, cap and support signals.
         "anchor_mismatch",
         "anchor_mismatch_cap",
         "hard_quality_flag",
@@ -51,11 +47,9 @@ NOT_REASON_CODES = frozenset(
         "trace_clean",
         "trace_quality_cap",
         "unresolved_tie",
-        # Internal consistency classes, mapped to codes before saving.
         "hard_nl_conflict",
         "missing_ms2",
         "plausible_nl_dropout",
-        # Proposal and evidence-source names.
         "alignment_cell",
         "chrom_peak_segment",
         "discovery_candidate",
@@ -65,7 +59,6 @@ NOT_REASON_CODES = frozenset(
         "trace_morphology",
         "typed_candidate_evidence_facts",
         "selected_hypothesis_decision",
-        # Product states, attribute and function names.
         "detected_clean",
         "detected_flagged",
         "not_counted",
@@ -86,7 +79,6 @@ def _labelled_codes() -> set[str]:
         | labels.BASIS_SUPPORT_CODES
         | labels.HIDDEN_SUPPORT_CODES
         | {labels.OFF_PAIRED_ISTD_POSITION, labels.NOT_QUANTIFIABLE}
-        # Never saved: the projection drops or reroutes these.
         | projection.LOCATING_REVIEWS
         | projection.LOCATING_CONFLICTS
         | set(projection.CONFLICTS_AS_REVIEW)
@@ -96,12 +88,10 @@ def _labelled_codes() -> set[str]:
 def test_every_produced_reason_code_has_a_label_or_is_declared_hidden():
     produced = targeted_reason_code_literals(ROOT)
     assert produced - _labelled_codes() - NOT_REASON_CODES == set()
-    # The other direction finds table entries no module produces any more.
     assert _labelled_codes() - produced == set()
 
 
 def test_every_finalized_no_write_variant_has_a_label():
-    # The publication saves `finalized_<variant>` as the projection reason.
     assert {f"finalized_{v}" for v in targeted_no_write_variants(ROOT)} == {
         labels.SEARCHED_NO_OBSERVATION,
         labels.NOT_QUANTIFIABLE,

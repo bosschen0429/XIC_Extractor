@@ -27,7 +27,6 @@ from .review import SUPPORT_ORIGINS
 EXPLANATION_ARTIFACT_NAME = "alignment_explanation.sqlite"
 SCHEMA_VERSION = "alignment_evidence"
 
-# Summary keys written by the producer; counts are derived when read.
 STORED_SUMMARY_KEYS = frozenset(
     {
         "schema_version",
@@ -265,8 +264,6 @@ def decode_json(payload: str | bytes | None) -> Any:
     return json.loads(payload)
 
 
-# A self-describing BLOB: byte-shuffled little-endian float64, then zlib.
-# Each plane holds the same byte of every value (all RTs, then intensities).
 _REVIEW_CURVE_FLOAT64 = b"XICF64\x01"
 
 

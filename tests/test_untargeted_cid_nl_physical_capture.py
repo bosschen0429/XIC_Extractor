@@ -126,8 +126,7 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
 
         monkeypatch.setattr(type(raw), "read_ms1_mass_windows", read_parent_windows)
     if shifted_mass:
-        # The ion is inside both source windows but outside the method-center
-        # window. Respect the vendor mass ranges instead of mocking capture.
+
         def mass_filtered_chromatogram(trace_settings, start_scan, end_scan):
             vendor.chromatogram_request_counts.append(len(trace_settings))
             rt = source_raw.rt[start_scan - 1 : end_scan]
@@ -283,8 +282,6 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
     def mass_filtered_chromatogram(trace_settings, start_scan, end_scan):
         rt = source_raw.rt[start_scan - 1 : end_scan]
         signal = source_raw.intensity[start_scan - 1 : end_scan]
-        # The inferred 500.016 window includes both ions. The measured-ion
-        # window excludes the coeluting 500.024 interference.
         return SimpleNamespace(
             PositionsArray=[rt.tolist() for _ in trace_settings],
             IntensitiesArray=[
@@ -333,9 +330,6 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
     (candidate,) = discovery.peaks
     (discovered,) = discovery.physical_bindings
     (unread_binding,) = unread_discovery.physical_bindings
-    # Discovery measures the peak once more in the measured ion's window, which
-    # excludes the coeluting interference the inferred window included. The
-    # peak keeps the name of the 500.016 ion XIC that located it.
     assert candidate.peak_id == unread.peak_id
     assert "@mz500.016_" in candidate.peak_id
     assert candidate.peak_mz == pytest.approx(physical_mz)
@@ -398,8 +392,6 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
 
     fixture = build_sample_adapter_fixture(tmp_path)
     source_raw = _FakeRaw((7.8, 8.2))
-    # Resolve the valley at the configured Gaussian15 sampling footprint,
-    # while keeping both physical intervals adjacent at the shared return.
     source_raw.rt = np.linspace(7.4, 8.7, 241)
     source_raw.scans = tuple(
         replace(scan, scan_number=int(np.argmin(np.abs(source_raw.rt - scan.rt))) + 1)

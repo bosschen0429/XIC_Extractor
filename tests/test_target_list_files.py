@@ -32,7 +32,6 @@ def test_written_list_explains_its_own_columns_in_header_notes(tmp_path):
     rows = [dict(row, delta_mass_mz="+1.0021") for row in targeted_rows()]
     written = tmp_path / "with-delta.xlsx"
     files.save_target_list(files.create_target_list(rows), written)
-    # The shipped example must be written by the same writer, notes included.
     for path, sheets in [
         (written, {"Targets": TARGET_FIELDS, "Delta Mass": DELTA_MASS_HEADERS}),
         (targets_template_path(), {"Targets": TARGET_FIELDS}),

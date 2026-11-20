@@ -245,8 +245,6 @@ def _expected_retained_curve(
     observation=None,
     method_subject_id=None,
 ):
-    # Acceptance oracle starts with the original owner values, never a reader
-    # result or a re-executed signal-processing calculation.
     signal = evaluation.retained_prepared_signal if evaluation is not None else None
     provenance = {
         "processing_attempt_id": attempt_id,
@@ -422,7 +420,6 @@ def profile_replay(tmp_path, monkeypatch, request):
     paths = tuple(tmp_path / f"{stem}.raw" for stem in sample_stems)
     for path in paths:
         path.write_bytes(path.stem.encode())
-    # Observed RAW coordinates: acquisition bounds do not land on scan RTs.
     center_rt = 13.263299286133334
     precursor_mz = 307.1023254394531
     settings = replace(
@@ -589,8 +586,6 @@ def profile_replay(tmp_path, monkeypatch, request):
             rt_max = max(
                 record.peak.ms1_search_rt_max for record in discovery.physical_bindings
             )
-            # The vendor boundary includes the end scan returned for the request,
-            # which may lie just beyond the requested RT upper bound.
             vendor = opened_raws[path][0]
             start = vendor.ScanNumberFromRetentionTime(rt_min) - 1
             end = vendor.ScanNumberFromRetentionTime(rt_max)

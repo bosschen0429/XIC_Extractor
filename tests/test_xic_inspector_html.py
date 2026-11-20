@@ -330,8 +330,6 @@ def test_unrecorded_origins_and_missing_alignment_keep_curves_readable(
         line.attrib["stroke-dasharray"]
         for line in chart.findall("{http://www.w3.org/2000/svg}polyline")
     ]
-    # Old numeric cells with no recorded origin must not masquerade as detect;
-    # the explicitly empty sample still uses its thin solid line.
     assert dashes == ["1 5", "1 5", ""]
     assert 'id="plot-raw"' in rendered["card"]
     assert "原始 RT · 無對齊座標" in rendered["card"]

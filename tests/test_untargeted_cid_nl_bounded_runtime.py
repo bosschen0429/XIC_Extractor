@@ -131,8 +131,6 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
         )
         from xic_extractor.configuration.targets import parse_target_rows
 
-        # The twelve co-eluting ion views contribute one acquired position.
-        # Independent measured standards supply the map's bounding positions.
         reference = mint_known_istd_reference_from_measurements(
             parse_target_rows(
                 [
@@ -191,8 +189,6 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
             adapter.close_process_worker_pools()
             store.cleanup()
 
-    # One feature per partition, in reversed order, must reproduce the single
-    # partition holding every feature: capacity and order both change.
     all_features_together = run(24 * 12)
     assert run(24, reverse_initial=True) == all_features_together
     calibration, groups = all_features_together
@@ -670,7 +666,6 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
             candidate_memberships=memberships,
         ),
         runtime_subjects=subjects,
-        # The packing subjects are synthetic; load the planned peaks instead.
         partition_input_loader=lambda _ids: plan.partition_input_loader(planned_ids),
     )
     prepare_worksets = bounded_owner.prepare_untargeted_alignment_worksets
@@ -1252,8 +1247,6 @@ def test_failed_attempt_retry_reuses_completed_raw_facts_and_recomposes(
     failed_vendors = tuple(
         vendor for vendors in opened_runs[0].values() for vendor in vendors
     )
-    # Fully cached samples need no native handle. Measure avoided work across
-    # the complete attempt, including those samples absent from retry_vendors.
     failed_queries = sum(
         sum(vendor.chromatogram_request_counts) for vendor in failed_vendors
     )
@@ -1860,8 +1853,6 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
     from xic_extractor.untargeted_execution.partition import execution as runtime
     from xic_extractor.untargeted_execution.partition import workers as worker
 
-    # Exercise process message construction/consumption with synthetic RAW I/O.
-    # Native spawning and transport identity have their own existing coverage.
     class LocalProcessMessages(WorkerAdmissionPool):
         @property
         def backend(self):
@@ -1910,8 +1901,6 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
     from xic_extractor.execution.workers import WorkerAdmissionPool
     from xic_extractor.untargeted_execution.partition import execution as runtime
 
-    # Exercise the process request/response route with synthetic RAW I/O;
-    # native spawn and transport identity have separate existing coverage.
     class LocalProcessMessages(WorkerAdmissionPool):
         @property
         def backend(self):
@@ -2161,8 +2150,6 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
     prepared = leaf.prepared_grouping
     assert prepared is not None
     assert len(prepared.worksets) == 1
-    # N=4 and K=2: neither subject qualifies alone, but their one SUPPORT
-    # sample each belongs to the same compatible group.
     assert len(batch.jobs) == 2
     assert len({job.method_subject.method_subject_id for job in batch.jobs}) == 2
     assert len(leaf.sample_results) == 4

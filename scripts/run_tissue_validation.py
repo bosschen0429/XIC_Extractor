@@ -29,7 +29,6 @@ from xic_extractor.raw_reader import preflight_raw_reader
 from xic_extractor.raw_sequence import read_analysis_set
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-# The 85RAW root also holds injected samples outside the study design.
 _DATASET_SAMPLE_METADATA = {
     85: Path(__file__).with_name("tissue_85raw_sample_metadata.tsv"),
 }

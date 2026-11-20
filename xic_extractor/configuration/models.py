@@ -28,7 +28,6 @@ class ExtractionConfig:
     peak_min_prominence_ratio: float
     ms2_precursor_tol_da: float
     nl_min_intensity_ratio: float
-    # Internal morphology evidence budget, separate from shared signal processing.
     ms1_morphology_smoothing_window_points: int = 15
     resolver_mode: str = CANONICAL_RESOLVER_MODE
     resolver_chrom_threshold: float = 0.05
@@ -40,7 +39,6 @@ class ExtractionConfig:
     resolver_peak_duration_max: float = 2.0
     resolver_min_scans: int = 5
     count_no_ms2_as_detected: bool = False
-    # Internal Untargeted Owner Backfill acquisition budget; not a Targeted setting.
     nl_rt_anchor_half_window_min: float = 1.0
     injection_order_source: Path | None = None
     baseline_integration_method: str = "asls"
@@ -78,8 +76,6 @@ class Target:
     is_istd: bool
     istd_pair: str
     expected_rt_min: float | None = None
-    # Present only for Delta Mass targets; its conditions then carry CID-NL too,
-    # and ``neutral_loss_da`` stays None (CID-NL alone is ranking support).
     identification: TargetIdentification | None = None
 
 

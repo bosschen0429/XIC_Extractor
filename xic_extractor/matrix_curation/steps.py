@@ -71,8 +71,6 @@ class CurationMatrix:
     sample_binding: SampleBinding
     values: np.ndarray
     features: tuple[FeatureIdentity, ...] = ()
-    # Per Matrix row, published cells by explanation sample key; loaded only
-    # when an enabled step needs it.
     cells: tuple[Mapping[str, CellEvidence], ...] | None = None
     nucleoside_windows: tuple[MzRtWindow, ...] = ()
 

@@ -141,9 +141,6 @@ def test_recorded_mono_nl_match_keeps_distinct_inferred_physical_search(
     supported = [
         candidate for candidate in candidates if candidate.status == "admitted"
     ]
-    # The recorded mono passes the NL gate but its MS1 window misses the ion.
-    # Product+NL must still search its distinct window, without becoming its
-    # own independent NL witness when the parent MS1 observation is absent.
     assert len(supported) == int(parent_support)
     if parent_support:
         assert supported[0].ms1_apex_rt == pytest.approx(9.02)
@@ -297,8 +294,6 @@ def test_discovery_retained_physical_peak_cardinality(
     )
     path = write_discovery_peaks_csv(tmp_path / "peaks.csv", result.peaks)
     valid = list(read_discovery_peaks_csv(path))
-    # This retained-input test protects peak cardinality and localization, not
-    # an old smoother's exact apex scan or an unverified quantitative truth.
     assert sorted(c.ms1_apex_rt for c in valid) == pytest.approx(
         expected_apices, abs=0.06
     )
@@ -540,8 +535,6 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_measures_once(
     assert physical_calls == {"prepare": 1, "evaluate": 1}
     assert len(_read_csv(outputs.peaks_csv)) == 1
     assert not (tmp_path / "out" / "discovery_physical_facts.json").exists()
-    # The raw return touches an acquired edge; one shared bounded read
-    # precedes the final trace's single preparation.
     assert raw.raw_chromatogram_call_count == 2
 
 
@@ -719,8 +712,6 @@ def test_single_seed_discovery_acquires_complete_physical_context(
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
     full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
-    # Keep the complete baseline-return peak inside the initial context so
-    # the full-trace comparison tests acquisition, not a changed baseline fit.
     full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.06) ** 2)
 
     raw = _CadenceBoundRaw(source, full_rt, full_intensity)
@@ -898,8 +889,6 @@ def test_qualification_survives_physical_fact_reuse(
     )
 
     if rising_background:
-        # This synthetic ramp has no resolved raw peak; residual SNR alone
-        # does not guarantee a quantifiable local raw component.
         assert result.peaks == ()
         assert qualifier.call_count == 0
         return
@@ -1320,7 +1309,6 @@ def test_pipeline_publishes_inferred_precursor_ms1_ion_from_raw_handle(
 
 
 def _two_ions(inferred: float, rt: float) -> float:
-    # Alternating readings 12 ppm apart: two ions share the window.
     return inferred * (1 - 18e-6 if round(rt / 0.04) % 2 else 1 - 6e-6)
 
 
@@ -1369,9 +1357,6 @@ def test_inferred_precursor_with_a_doubly_charged_isotope_is_held_for_review(
 @pytest.mark.parametrize(
     ("isotope_ratio", "expected_status"),
     [
-        # Tissue apex MS1 read by eye: TumorBC2263 622.295 @34.28 is the
-        # weakest clear doubly charged isotope; BenignfatBC1151 894.452 @24.46
-        # is singly charged (+1.0 isotope at 26%) with a noise centroid at +0.5.
         (0.383, "doubly_charged"),
         (0.023, "no_nl_event"),
     ],
@@ -1518,8 +1503,6 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
     full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.12) ** 2)
     raw = _CadenceBoundRaw(source, full_rt, full_intensity)
     profile = SignalProcessingProfile(window_points=15)
-    # Inferred-only basis exercises apex/isotope reading. Two high-intensity
-    # inferred seeds provide the existing authority for point reacquisition.
     group = _channel(
         tuple(
             replace(
@@ -1568,7 +1551,4 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
     assert candidate.status == expected_state
     assert candidate.ms1_apex_mz == pytest.approx(apex_ion_mz)
     assert binding.peak.status == expected_state
-    # Three apex scans read the ion to centre its window; the peak then reads
-    # its three apex scans for ion and isotope once, even when two seed groups
-    # reuse the resulting fact.
     assert len(readings) == 9

@@ -348,6 +348,22 @@ same membership cost to fixed groups within its own search eligibility; see
   objective; disagreement is recorded rather than taking only their intersection.
   Bootstrap still requires its conservative directional agreement.
 
+The membership search may skip work, not alternative evidence. A hard conflict
+with an original member cannot be rescued by adding peers, but a complete
+group can be feasible when a partial extension is not. Keep the last feasible
+frontier. Rank drift against the feasible zero model: one pair over the bound
+already rejects a maximum-pair cost; RT and region terms improve by at most
+0.95 per preferred interval, and a within-group median cannot incur the
+90-second trend penalty when the whole span is shorter. The member floor
+limits fitting a coefficient, not reusing one when an owner leaves. Preserve
+the original closed-radius subtraction and tie order at numerical boundaries.
+
+For an ordered correspondence, two distinct optimal paths suffice to establish
+ambiguity; keeping one by tuple order hides it and enumerating all can be
+exponential. Contracting nodes cannot remove a pre-existing cycle. Close the
+*ordered* separations, not an undirected distinct relation: two peaks on the
+same side of a third are not thereby distinct from one another.
+
 Final decisions record the selected members, nearest evaluated alternative
 configuration, equivalent alternatives, primary and peer-fit costs and gaps,
 coordinate/evidence basis,

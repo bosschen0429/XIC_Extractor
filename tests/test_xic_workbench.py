@@ -103,8 +103,6 @@ def test_http_accepts_page_asset_burst_before_dispatch(tmp_path):
     connections = []
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     try:
-        # Chromium opens up to six HTTP/1 connections to a page's origin. Hold
-        # dispatch until the burst has arrived, rather than racing the scheduler.
         for _ in range(6):
             connections.append(
                 socket.create_connection(server.server_address, timeout=1)
@@ -350,7 +348,6 @@ def test_review_follows_the_latest_curation_unless_one_is_opened(tmp_path):
             },
         ],
     )
-    # An export still being written has no summary yet.
     (tmp_path / "matrix_curation_20261103_090000").mkdir()
 
     def counts(page):
@@ -773,7 +770,6 @@ def test_analysis_module_graph_is_served_with_javascript_mime(tmp_path):
             pending.update(
                 item.decode() for item in imports if item.decode() not in visited
             )
-        # A misspelled entry/import must not make a smaller graph pass silently.
         shipped_modules = {
             asset.name
             for asset in files("xic_workbench").joinpath("assets").iterdir()
@@ -792,7 +788,6 @@ def test_workbench_module_imports_form_no_cycle():
         for asset in files("xic_workbench").joinpath("assets").iterdir()
         if asset.name.endswith(".js")
     }
-    # Only static specifiers are visible here; a dynamic import would hide an edge.
     assert not [name for name, text in sources.items() if "import(" in text]
     graph = {
         name: set(re.findall(r"""(?:from|import)\s*["']\./([^"'/]+\.js)["']""", text))
@@ -911,7 +906,6 @@ def test_pick_returns_the_native_choice_and_starts_from_the_field(
         native_picker.choose_path("unknown")
     nested = tmp_path / "batch"
     nested.mkdir()
-    # A typed path that no longer exists starts at its nearest existing parent.
     assert native_picker._starting_folder(str(nested / "gone" / "x.raw")) == str(nested)
     assert native_picker._starting_folder("  ") == ""
 

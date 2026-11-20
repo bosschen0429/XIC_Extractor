@@ -60,14 +60,11 @@ _GIT_LOCAL_ENVIRONMENT_VARIABLES = frozenset(
 ARCHITECTURE_OWNER = "docs/architecture-contract.md"
 LAYOUT_OWNER = "docs/project-layout.md"
 
-# Historical immutable provenance may be exempted only with a path, value, and
-# reason. Current contracts have no exemptions.
 HISTORICAL_IDENTIFIER_ALLOWLIST: Mapping[tuple[str, str], str] = {}
 VERSIONED_IDENTIFIER = re.compile(
     r"(?<![a-z0-9_])([a-z][a-z0-9_]*(?:[_.]v[0-9]+|_by_[0-9]+))(?![a-z0-9_])"
 )
 
-# Pointers only. The referenced files retain authority for their claims.
 CENSUS_OWNER_REFS: Mapping[str, str] = {
     "python_modules": LAYOUT_OWNER,
     "internal_static_imports": ARCHITECTURE_OWNER,
@@ -247,7 +244,6 @@ def _test_source_boundary_problems(tree: ast.Module, path: Path) -> list[str]:
                     if arg.arg in {"tmp_path", "tmp_path_factory"}
                     else None,
                 )
-    # Helper parameters inherit the actual arguments, not a global name match.
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             for helper in lookup(node, node.func.id):
@@ -268,7 +264,6 @@ def _test_source_boundary_problems(tree: ast.Module, path: Path) -> list[str]:
             )
         seen = seen | {node}
         if isinstance(node, ast.Attribute) and node.attr in sys.stdlib_module_names:
-            # Patching module.sys.frozen still patches the standard library.
             return set()
         values: list[ast.AST | str | None]
         if isinstance(node, ast.Name):
@@ -287,7 +282,6 @@ def _test_source_boundary_problems(tree: ast.Module, path: Path) -> list[str]:
                 if isinstance(child, ast.Return) and scope(child) is node
             ]
         elif isinstance(node, ast.Call):
-            # Only path constructors/conversions propagate argument provenance.
             values = [node.func]
             if isinstance(node.func, ast.Attribute) or (
                 isinstance(node.func, ast.Name)
@@ -442,8 +436,6 @@ def validate_production_entry_boundaries(repo_root: Path) -> list[str]:
     return problems
 
 
-# Every module that writes a reason code into a Targeted projection; the label
-# table in `xic_extractor/output/result_labels.py` must cover their codes.
 TARGETED_REASON_PRODUCERS = (
     "xic_extractor/peak_detection/evidence_semantics.py",
     "xic_extractor/peak_detection/selection_decision.py",

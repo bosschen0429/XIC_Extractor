@@ -198,7 +198,6 @@ def _free_windows(
     settings: MethodSettings,
 ) -> tuple[tuple[tuple[float, float], ...], tuple[Target, ...]]:
     excluded_low, excluded_high = mz_window(mz, spec.exclusion_tolerance_ppm)
-    # Test the exact bounds the CSV will carry, including for uncut rows.
     free = [(round(start, RT_DIGITS), round(stop, RT_DIGITS))]
     hits: list[Target] = []
     for target in targets:

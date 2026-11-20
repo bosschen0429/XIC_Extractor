@@ -189,7 +189,6 @@ def _emit_curve_payload(
         "integration": asdict(integration) if integration is not None else None,
         "provenance": actual,
     }
-    # One envelope per actual content/binding; candidate associations ride on it.
     sink.add_curve_payload(
         sample_id=sample_id,
         kind=kind,
@@ -317,13 +316,10 @@ def project_alignment_explanation_child(
                 kind=ref.capture_stage,
             )
 
-    # Same row order as the TSV writer that labels rows.
     feature_offsets = {
         group.group_hypothesis_id: offset
         for offset, (group, _cells) in enumerate(child.group_cells)
     }
-    # Recorded group position of each empty cell, and the group centre and
-    # query ppm used to inspect it.
     positions: dict[tuple[str, str], float] = {}
     centers: dict[str, tuple[float, float]] = {}
     context_by_group = {
@@ -695,8 +691,6 @@ def prepare_batch_alignment_explanation(
             assessment: CidNlMethodAssessment, capture_evidence: bool
         ) -> None:
             content = assessment
-            # The same settled attempt can reach this projection through more
-            # than one completed relation; its content is the record.
             if content in emitted_assessments:
                 return
             if (

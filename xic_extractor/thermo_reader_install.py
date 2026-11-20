@@ -31,7 +31,6 @@ class _Package:
     member: str
 
 
-# Thermo publishes RawFileReader outside NuGet; OpenMcdf is its NuGet dependency.
 _PACKAGES = (
     _Package(
         f"{_THERMO_NET8_LIBS}/thermofisher.commoncore.rawfilereader.8.0.42.nupkg",

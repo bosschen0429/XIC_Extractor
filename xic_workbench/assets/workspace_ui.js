@@ -66,8 +66,6 @@ function formatDuration(seconds) {
   if (m) return `${m} 分 ${String(s).padStart(2, "0")} 秒`;
   return `${s} 秒`;
 }
-// History owns reading locations, not view mounts or filter edits. Snapshots
-// remain in this document so refresh starts from the server's current batch.
 const locations = new Map();
 const readers = new Map();
 const session = `${Date.now()}-${Math.random()}`;
@@ -127,7 +125,7 @@ function trackWindow() {
     headers: { "Content-Type": "application/json", "X-XIC-Client": "workbench" },
     body: JSON.stringify({ window: windowId, closed }),
     keepalive: true,
-  }).catch(() => {}); // Closing/crashed tabs are also covered by lease expiry.
+  }).catch(() => {});
   const resume = () => {
     clearInterval(timer);
     notify();
@@ -146,7 +144,6 @@ function trackWindow() {
     document.removeEventListener("visibilitychange", visible);
   };
 }
-// The server admits workbench requests by session; failures carry its detail.
 async function api(path, values, signal, requestHeaders = {}) {
   const response = await fetch(path, {
     signal,

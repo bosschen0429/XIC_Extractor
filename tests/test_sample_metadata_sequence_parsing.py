@@ -138,9 +138,6 @@ def test_parse_xlsx_sequence(tmp_path: Path) -> None:
 
 
 def test_sequence_disagreements_are_reported_as_written(tmp_path: Path) -> None:
-    # A stale sequence: two rows share number 7, and one row's file name and
-    # sample text name different samples. The second BC2303 text is a real
-    # duplicate, so de-duplicating names must not hide the disagreement.
     sequence = tmp_path / "sequence.xlsx"
     book = openpyxl.Workbook()
     for row in (

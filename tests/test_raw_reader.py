@@ -71,7 +71,6 @@ def test_default_ms2_acquisition_uses_each_raw_span_without_fixed_ceiling() -> N
             handle, raw_file=Path("span.raw"), settings=settings
         )
         assert tuple(seed.rt for seed in seeds) == (start, end)
-        # Existing explicit windows retain native nearest-scan mapping (Targeted too).
         assert tuple(
             event.scan.rt
             for event in handle.iter_ms2_scans(start + 0.1, end)

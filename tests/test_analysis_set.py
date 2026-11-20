@@ -480,8 +480,6 @@ def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
     from tests.sample_metadata_sequence_parsing_fixtures import _create_synthetic_docx
     from xic_extractor import raw_sequence
 
-    # Two batches in one root; the Word sequence covers the newer one only and
-    # numbers it Blank 1 ... Normal 4, against the RAW clock below.
     clock = {
         "older/Old_S1": 0,
         "newer/NormalBC001_DNA": 10,
@@ -532,8 +530,6 @@ def test_repeated_sequence_names_match_injections_not_nested_copies(
 ) -> None:
     from xic_extractor import raw_sequence
 
-    # A nested copy of A_1 is the same injection; it must not add a third
-    # candidate for the two repeated "A" rows.
     clock = {"A_1": 0, "A_2": 11, "validation/A_1": 0}
     for rel in clock:
         (tmp_path / f"{rel}.raw").parent.mkdir(parents=True, exist_ok=True)

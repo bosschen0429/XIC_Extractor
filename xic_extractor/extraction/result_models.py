@@ -76,11 +76,7 @@ class ExtractionResult:
     cid_nl_candidate_evidence: tuple[CandidateMS2Evidence, ...] = ()
     selected_cid_nl_candidate_index: int | None = None
     targeted_product_projection: TargetedProductProjection | None = None
-    # Capture retains alternatives until the complete batch is available. No
-    # RAW handle, callback or scoring closure crosses the worker boundary.
     targeted_candidate_assessment: TargetedCandidateAssessment | None = None
-    # Selection owner's scope for later method assessment, not a new ranking.
-    # None: no context decision; (): no candidate admitted. Full evidence remains.
     context_admissible_candidate_indexes: tuple[int, ...] | None = None
     method_candidate_evidence: tuple[MethodCandidateEvidence, ...] = ()
     selected_method_candidate_index: int | None = None

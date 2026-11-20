@@ -61,9 +61,6 @@ def _group(group_id, owners, basis):
 
 
 def test_published_map_and_drift_are_measured_on_the_reference_population():
-    # Stable clean correspondences give an identity frame. In the full
-    # population the agreed correspondences themselves shift with injection;
-    # that shift moves neither the published map nor the drift reference.
     samples = {f"s{i:02}": i for i in range(12)}
     frame = SampleRtFrame(
         injection_order=samples, sample_cohorts=dict.fromkeys(samples, "batch")

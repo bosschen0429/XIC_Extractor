@@ -110,8 +110,6 @@ def test_method_toml_runs_sample_local_cli_to_compatible_csvs(
         raw.acquisition_source = expected_acquisition_source
         return raw
 
-    # Only instrument I/O is substituted: CLI binding, search, physical processing,
-    # evidence composition and both writers all execute their production paths.
     monkeypatch.setattr("xic_extractor.raw_reader.open_raw", open_raw)
     for sample, apex, height in (("a", 8.0, 1000.0), ("b", 9.0, 2300.0)):
         raw_path = tmp_path / f"{sample}.raw"
@@ -343,8 +341,6 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
     monkeypatch: pytest.MonkeyPatch,
     reverse_products: bool,
 ) -> None:
-    # Both inferred ions fit one 1.6 m/z isolation around 258.3. Repeating a
-    # product is duplicate evidence; the second MS1 feature is not a duplicate.
     products = [(142.0611, 5_000.0), (142.0611, 5_000.0), (142.5611, 150_000.0)]
     if reverse_products:
         products.reverse()
@@ -1771,8 +1767,6 @@ def test_acquisition_open_observations_keep_sample_attribution_in_serial_and_spa
             return vendor_fake_discovery_opener(job, recorder)(path, dll_dir)
 
         if parallel:
-            # One real spawn worker preserves the first completed sample before
-            # the second fails; pool parallelism itself is covered elsewhere.
             run = partial(
                 run_discovery_batch_process,
                 paths,
@@ -1876,7 +1870,6 @@ def test_process_worker_records_raw_open_through_its_production_opener(
         item,
         instrument_diagnostics=True,
     )
-    # Only the vendor is substituted; the worker's own opener supplies the recorder.
     monkeypatch.setattr("xic_extractor.raw_reader.open_raw", vendor_fake_open_raw(job))
 
     result = run_discovery_sample_process_job(

@@ -165,6 +165,14 @@ output directory.
 The live timing file is the heartbeat for interrupted runs; the final timing
 file is the completed history. Use `xic-performance-diagnosis` to interpret it.
 
+Treat a Backfill replay capture as executable, not as an ordinary report. Only
+a receipt from this user's successful local capture can authorize decoding the
+owner graph; a digest supplied by the input itself is not evidence of trust.
+On Windows the cache path budget is measured below the run directory: a
+141-character prefix plus a 48-character cache path leaves 70 of the 259
+usable characters for longer installations and batch names. Paths distribute
+entries; the stored namespace, key and numeric content identify the fact.
+
 ## Shell Traps
 
 The Windows examples above use PowerShell. Match the syntax to the active

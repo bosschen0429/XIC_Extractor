@@ -78,8 +78,6 @@ def test_post_measurement_centroids_do_not_decide_peak_identity(
         settings=settings,
         ms1_centroid=lambda *_: None,
     )
-    # The three windows read the same signal except one scan of window-edge
-    # tail, so they are one peak, decided from the acquired traces alone.
     assert len(result.peaks) == expected
     assert batches == []
     published = read_discovery_peaks_csv(
@@ -143,9 +141,6 @@ def _window_seed(scan: int, mz: float):
 def test_one_ion_in_two_windows_is_one_peak_whatever_the_input_order(
     reverse: bool,
 ) -> None:
-    # One ion at 500.000; its centroid jitters to 500.011 on six scans near the
-    # apex, past the upper edge of the 499.995 window only. The second window
-    # sits 25 ppm away, beyond the precursor tolerance of the first.
     raw = _CentroidRaw(((500.0, 1.0),), edge_scans=range(96, 102), edge_mz=500.011)
     groups = tuple(
         _channel((_window_seed(scan, mz),))
@@ -163,8 +158,6 @@ def test_one_ion_in_two_windows_is_one_peak_whatever_the_input_order(
     (peak,) = result.peaks
     assert located_scan_ids(peak) == (10, 11)
     assert peak.peak_id == "TumorBC2312_DNA@mz500.0075_rt9.0000"
-    # Every event is judged against that one peak; the 499.995 precursor lies
-    # 25 ppm from it and is located but not attached.
     reasons = {
         item.event.scan_number: item.unattached_reason for item in result.attachments
     }
@@ -172,8 +165,6 @@ def test_one_ion_in_two_windows_is_one_peak_whatever_the_input_order(
 
 
 def test_distinct_ions_in_overlapping_windows_stay_apart() -> None:
-    # 13C/15N-like neighbours 25 ppm apart: each window holds one ion, so the
-    # two traces never read an equal intensity.
     raw = _CentroidRaw(((500.0, 1.0), (500.0125, 0.13)))
     groups = tuple(
         _channel((_window_seed(scan, mz),))

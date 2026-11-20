@@ -45,15 +45,6 @@ TerminalObservationVariant: TypeAlias = Literal[
 ]
 
 
-# ---------------------------------------------------------------------------
-# Exact CrossSample/Backfill handoff closure
-# ---------------------------------------------------------------------------
-#
-# A final cell is a correlation boundary. Its inputs are the exact CrossSample
-# handoff and owner-minted predecessor/completed Backfill cell evidence, not
-# caller-assembled group, terminal, provider, or repair arguments.
-
-
 FinalCellEvidenceAggregate: TypeAlias = FinalCellEvidenceState | Literal["mixed"]
 
 

@@ -209,9 +209,6 @@ def _report_status(findings: Sequence[Finding]) -> str:
 
 
 def _default_allowed_write_roots(workspace_root: Path) -> tuple[Path, ...]:
-    # External temp roots vary across the desktop app, CLI, elevated Windows
-    # sandbox users, and WSL. Treat only the active worktree as portable; callers
-    # can opt into an additional root when their current session advertises one.
     return (workspace_root.resolve(),)
 
 

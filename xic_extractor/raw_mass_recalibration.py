@@ -62,7 +62,6 @@ def mass_restoration_scale(
         )
     if result.policy is MassRecalibration.EASY_IC_RESTORE:
         assert result.baseline_lm is not None
-        # Mechanism-supported ppm approximation, not absolute recalibration.
         shift_ppm = 2.0 * (correction_ppm - result.baseline_lm)
     else:
         assert result.a is not None and result.b is not None
@@ -80,7 +79,6 @@ def is_recorded_precursor(
         and abs(precursor_mz - monoisotopic) <= _RECORDED_PRECURSOR_ROUNDING_MZ
     )
     if monoisotopic is not None and metadata.charge is not None:
-        # Both measured masses share the parent scale, including spacing.
         spacing = _CARBON_ISOTOPE_SPACING_DA * parent_scale / metadata.charge
         isotope_number = round((precursor_mz - monoisotopic) / spacing)
         if isotope_number >= 1:

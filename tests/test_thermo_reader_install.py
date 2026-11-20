@@ -19,7 +19,6 @@ def _package(member: str, payload: bytes) -> bytes:
 
 @pytest.fixture
 def packages(monkeypatch):
-    # The network boundary: two pinned packages served from memory.
     served = {
         "https://example.test/reader.nupkg": _package(
             "lib/net8.0/Reader.dll", b"reader"

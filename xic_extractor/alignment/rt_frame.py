@@ -321,7 +321,6 @@ class SampleRtFrame:
         )
 
     def drift_injection_order_gap(self, left: str, right: str) -> int | None:
-        # Edge evidence uses the drift source's order, not a metadata fallback.
         if self._drift is None:
             return None
         left_order = self._drift.injection_order(left)
@@ -384,7 +383,6 @@ class SampleRtFrame:
         Keep a supported apex in the common frame even when a tail extends
         beyond the calibration span.
         """
-        # A historical clamped offset map has no measured support bounds.
         if self._sample_calibration is None:
             return None
         start, apex, end = (

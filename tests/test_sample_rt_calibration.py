@@ -154,12 +154,10 @@ def test_failed_strong_fit_retains_explicit_weak_estimate():
     estimate = sample.estimate_rt(10.0)
     assert estimate.method == "median_shift"
     assert estimate.rt_min == pytest.approx(10.0)
-    assert estimate.anchor_count == 8  # Qualified positions, not final LOESS support.
+    assert estimate.anchor_count == 8
     assert estimate.fit_status == sample.status != "calibrated"
 
 
-# (observed, batch reference) of one 85RAW Tumor injection, rounded: its
-# 13.27/13.31 pair sits where the offset drops from about +40 s to about 0 s.
 _FOLDING_INJECTION = (
     (8.03, 8.03), (8.48, 8.59), (8.61, 8.61), (8.65, 8.61), (9.02, 9.03),
     (11.80, 12.49), (11.83, 12.51), (11.91, 12.58), (13.27, 13.29), (13.31, 13.30),
@@ -191,7 +189,6 @@ def test_local_fold_merges_only_its_positions_and_keeps_the_curve():
     assert [x for x in observed if 13.2 < x < 13.4] == [pytest.approx(13.29)]
     references = [y for _, y in sample.knots]
     assert references == sorted(set(references))
-    # The +40 s stretch and the late offsets keep their own correction.
     assert sample.estimate_rt(11.83).method == "loess"
     assert sample.calibrated_rt(11.83) - 11.83 > 0.6
     assert sample.calibrated_rt(24.59) - 24.59 > 0.9
@@ -275,7 +272,7 @@ def test_ordinary_anchor_needs_half_of_its_cohort_not_just_three_members() -> No
     detected["sparse"] = dict.fromkeys(SAMPLES[:3], 20.0)
     calibration = _calibrate(detected)
     assert not any(knot.reference_rt_min == 20.0 for knot in calibration.knots)
-    assert "sparse" in detected  # Anchor rejection does not delete a feature.
+    assert "sparse" in detected
 
 
 @pytest.mark.parametrize("positions", (8, 9))
@@ -287,7 +284,6 @@ def test_rejected_position_does_not_count_toward_final_loess_support(positions):
         for i in range(positions)
     }
     calibration = _calibrate(detected)
-    # Every other position independently specifies the identity RT map.
     expected = None if positions == 8 else pytest.approx(10.0)
     assert calibration.samples["S01"].calibrated_rt(10.0) == expected
     assert calibration.samples["S02"].calibrated_rt(10.0) == pytest.approx(10.0)
@@ -346,7 +342,7 @@ def test_shared_anchors_correct_systematic_and_rt_dependent_injection_shift(
     known = build_batch_rt_calibration({}, measured_istds=standards, **kwargs)
     joint = build_batch_rt_calibration(groups, measured_istds=standards, **kwargs)
     centre = 0.01 * (sample_count - 1) / 2
-    assert not known.has_support("S0")  # One measured position cannot define a map.
+    assert not known.has_support("S0")
     assert ordinary.samples["S0"].calibrated_rt(observed(6.5, 0)) is None
     for i, sample in enumerate(samples):
         for rt in (6.5, 12, 20, 37):
@@ -458,15 +454,11 @@ def test_measured_front_shift_decides_and_timeline_explains() -> None:
     early = (-0.6, -0.6) + (0.0,) * (len(REFERENCE_RTS) - 2)
     late = (0.4, 0.4) + (0.0,) * (len(REFERENCE_RTS) - 2)
     detected = _batch({"S01": early, "S02": late, "S03": early, "S04": late})
-    # S06 cannot be measured: it lacks the first knot.
     del detected["F0"]["S06"]
     normal = PriorInjection(False, False, False)
     priors = {s: normal for s in SAMPLES}
-    # Short method, short idle: the pre-flagged early shift.
     priors["S01"] = PriorInjection(True, True, False)
-    # Short method, long idle: not pre-flagged, gradient still unsettled.
     priors["S02"] = PriorInjection(False, True, False)
-    # S03 follows a full-length run; S04 has no timeline row.
     del priors["S04"]
     priors["S05"] = PriorInjection(True, True, False)
 
@@ -499,11 +491,9 @@ def test_first_run_after_method_change_explains_outlier() -> None:
 def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
     detected = _batch({"S01": (-0.6,) * len(REFERENCE_RTS)})
     detected.update({f"F1-view{i}": dict(detected["F1"]) for i in range(6)})
-    # A partially observed feature and one conflicting coordinate; the
-    # diagnostic independently withholds a feature from the validation fit.
     detected["heldout"] = {s: 11.0 for s in SAMPLES[:9]}
     detected["heldout"]["S01"] = 10.4
-    detected["heldout"]["S09"] = 33.0  # outside S09's anchor span
+    detected["heldout"]["S09"] = 33.0
     cells = tmp_path / "alignment_cells.tsv"
     lines = ["feature_id\tsample_stem\tstatus\tapex_rt"]
     for feature, rts in detected.items():
@@ -525,11 +515,9 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
                     {
                         "injection_order": n,
                         "raw_stem": s,
-                        # S03 is the first run after another method.
                         "header": {"instrument_method": "PRM" if n < 2 else "DDA"},
                         "possibly_perturbed": s == "S01",
                         "previous_raw_stem": "SDOLEK" if s == "S01" else "prior",
-                        # S02: within the length ratio, above the 20-min limit.
                         "previous_run_length_min": {"S01": 8.0, "S02": 30.0}.get(
                             s, 60.0
                         ),
@@ -539,7 +527,6 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
                     for n, s in enumerate(SAMPLES)
                 ]
                 + [
-                    # A blank has its own method; S05 still compares with S04.
                     {
                         "injection_order": 3.5,
                         "raw_stem": "Blank",

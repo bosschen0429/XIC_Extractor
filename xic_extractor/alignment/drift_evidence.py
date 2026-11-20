@@ -27,8 +27,6 @@ class KnownIstdReference:
     """Declared ISTD definitions and measured reference coordinates, never areas."""
 
     workbook_path: str
-    # Empty when the coordinates were measured in memory rather than read from
-    # a file; a path is never hashed in place of file content.
     workbook_sha256: str
     anchor: TargetedIstdIdentityAnchor
     coordinates: tuple[tuple[str, str, float, float], ...]
@@ -98,8 +96,6 @@ class KnownIstdReference:
         prepared = replace(
             self, _batch_context=context, _batch_knots=tuple(sample_knots)
         )
-        # Materialize the shared lookup before method/owner loops begin. The
-        # single memo is only for unchanged input, not another lookup registry.
         _ = prepared._knots_by_sample
         object.__setattr__(self, "_prepared_batch", prepared)
         return prepared

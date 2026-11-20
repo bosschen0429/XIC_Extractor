@@ -55,7 +55,6 @@ class Candidate:
     mz: float
     rt: float
     event_count: int
-    # Largest I(precursor - 2 losses) / I(precursor - 1 loss) over its MS2 events.
     second_loss_ratio: float = 0.0
 
 
@@ -74,7 +73,6 @@ class Group:
 
     members: tuple[Candidate, ...]
     relations: Mapping[str, tuple[str, ...]]
-    # One of KINDS, or "nucleoside_elution" for a group removed as derived.
     category: str
 
     @property

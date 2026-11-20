@@ -30,7 +30,6 @@ from xic_extractor.tabular_io import read_tsv_with_header, write_tsv
 
 SAMPLES = tuple(f"s{index}" for index in range(1, 7))
 SAMPLE_SCALE = (1.0, 2.0, 3.0, 5.0, 8.0, 13.0)
-# Two directly co-eluting samples, too few alone; four backfilled samples.
 TWO_DIRECT = (True, True, False, False, False, False)
 
 
@@ -98,14 +97,12 @@ def review_kinds(result):
         ("13C_M+1", 300.0, 301.003355, 0.15, UNCONFIRMED),
         ("15N_M+1", 300.0, 300.997035, 0.02, UNCONFIRMED),
         ("13C2_M+2", 300.0, 302.006710, 0.02, UNCONFIRMED),
-        # m/z 700 at z=2 is a neutral of about 1398 Da.
         ("13C_z2", 700.0, 700.501678, 0.5, UNCONFIRMED),
         ("41K", 400.0, 401.998119, 1 / 14, UNCONFIRMED),
         ("[M+Na]+", 300.0, 321.981944, 0.5, CONFIRMED_MH),
         ("[M+K]+", 300.0, 337.955882, 0.5, CONFIRMED_MH),
         ("[M+NH4]+", 300.0, 317.026549, 0.5, CONFIRMED_MH),
         ("[2M+H]+", 300.0, 2 * 300.0 - 1.00727647, 0.3, CONFIRMED_MH),
-        # M = 300 - proton; metal dimer is 2M - H + Mg/Ca (net charge +1).
         ("[2M-H+Mg]+", 300.0, 620.962115180219, 0.3, CONFIRMED_MH),
         ("[2M-H+Ca]+", 300.0, 636.939664346219, 0.3, CONFIRMED_MH),
         ("+NaHCOO", 300.0, 367.987423553370, 0.3, UNCONFIRMED),
@@ -150,8 +147,6 @@ def test_dr95_15n_mass_with_too_strong_heavy_row_is_not_an_isotope(
 
 
 def test_each_sample_must_fit_the_isotope_abundance_ceiling():
-    # light/heavy 20, 20, 0.2: the log-ratio MAD is 0, but one sample's heavy
-    # row is five times the light row.
     samples = SAMPLES[:3]
     decisions, result = decide(
         row("L", 300.0, samples=samples),
@@ -165,8 +160,6 @@ def test_each_sample_must_fit_the_isotope_abundance_ceiling():
 @pytest.mark.parametrize(
     ("companion", "heavy_scale", "expected"),
     [
-        # m/z 400 allows heavy/light <= 0.357 from carbon alone; two 25Mg add
-        # 0.253.
         (True, 0.38, "collapse"),
         (False, 0.38, "isotope_abundance_exceeded"),
         (True, 0.7, "isotope_abundance_exceeded"),
@@ -175,7 +168,6 @@ def test_each_sample_must_fit_the_isotope_abundance_ceiling():
 def test_a_metal_carrier_m1_ceiling_admits_25mg(companion, heavy_scale, expected):
     rows = [row("L", 400.0), row("H", 401.003355, scale=heavy_scale)]
     if companion:
-        # Two-Mg 26Mg model: light/heavy 3.587.
         rows.append(row("M2", 401.997551, scale=1 / 3.587))
     decisions, result = decide(*rows)
 
@@ -206,7 +198,6 @@ def test_dr116_difference_is_only_annotated():
     "ratios",
     [
         (1 / 10,) * 6,
-        # Median 14, but only four of six samples lie within 0.5-2x 13.857.
         (1 / 14, 1 / 14, 1 / 14, 1 / 14, 1 / 3, 1 / 3),
     ],
 )
@@ -220,8 +211,6 @@ def test_1998_pairs_without_potassium_ratio_are_reviewed_not_folded(ratios):
 
 @pytest.mark.parametrize("light_heavy", [7.27, 8.68, 3.19, 2.97, 6.93])
 def test_unassigned_m_plus_2_is_removed_without_claiming_an_element(light_heavy):
-    # 24Mg/26Mg = 7.174; two Mg give 3.587; two K give 6.929.
-    # The latter overlaps one Mg: identity ambiguity is not a keep decision.
     decisions, result = decide(
         row("L", 343.118794),
         row("H", 345.116345, scale=1 / light_heavy),
@@ -240,7 +229,6 @@ def test_unassigned_m_plus_2_is_removed_without_claiming_an_element(light_heavy)
 
 
 def test_unassigned_isotope_checks_individual_ratios_not_just_median_and_mad():
-    # Median 7.2 and MAD zero must not hide two samples 10x too abundant.
     decisions, result = decide(
         row("L", 343.118794),
         row("H", 345.116345, ratios=(1 / 7.2,) * 4 + (1 / 0.72,) * 2),
@@ -260,7 +248,6 @@ def test_element_uncertainty_follows_a_derivative_path():
 
 
 def test_a_derivative_contradicting_its_root_has_no_representative():
-    # A-B and B-C co-elute 4.4 s apart; A-C are 8.8 s apart.
     decisions, result = decide(
         row("A", 300.0),
         row("B", 301.003355, scale=0.15, shift_sec=4.4),
@@ -308,9 +295,7 @@ def test_protonated_row_with_sodium_adduct_and_isotopes_is_confirmed_and_kept():
 @pytest.mark.parametrize(
     ("parent_mz", "isotope_mz"),
     [
-        # A sodium adduct and its isotope, without the protonated row.
         (321.981944, 322.985299),
-        # A doubly charged parent and its isotope.
         (700.0, 700.501678),
     ],
 )
@@ -325,7 +310,6 @@ def test_parent_without_adduct_evidence_stays_unconfirmed_without_review(
 
 
 def test_several_passing_mass_hypotheses_do_not_depend_on_rule_order():
-    # At m/z 900 the heavy row lies 3.5 ppm from both 13C and 15N.
     rows = (row("L", 900.0), row("H", 901.000195, scale=0.1))
     forward, _ = decide(*rows)
     backward, _ = decide(*rows, relations=tuple(reversed(RELATIONS)))
@@ -340,7 +324,6 @@ def test_several_passing_mass_hypotheses_do_not_depend_on_rule_order():
 
 
 def test_competing_representatives_do_not_rescue_a_supported_derivative():
-    # H is A's 13C isotope and B's sodium adduct.
     decisions, result = decide(
         row("A", 300.0),
         row("B", 279.021411),
@@ -370,8 +353,6 @@ def test_mg_ca_family_keeps_protonated_row_and_removes_unassigned_isotope():
 
 
 def sodium_family(*, protonated=False):
-    # C9H13N3O4 neutral exact mass; independent NIST ion masses, not owner constants.
-    # Large changes in adduct response do not change this neutral-mass hypothesis.
     neutral = 227.09060590
     mg_response = (0.5, 2.0, 0.5, 2.0, 0.5, 2.0)
     rows = [
@@ -485,7 +466,6 @@ def test_backfilled_dimer_cannot_establish_an_ion_family(direct):
 
 def test_ion_family_does_not_use_transitive_coelution_to_delete_a_member():
     rows = [r for r in sodium_family() if r[0].feature_id != "MgAc"]
-    # Na and DimerH are 8.8 s apart: the metal rows must not bridge that gap.
     rows = [r for r in rows if r[0].feature_id != "DimerH"]
     rows.append(row("DimerH", 455.188488252321, scale=0.3, shift_sec=8.8))
     rows.append(row("MgAc", 310.088403352921, scale=0.8, shift_sec=4.4))
@@ -500,8 +480,6 @@ def test_ion_family_does_not_use_transitive_coelution_to_delete_a_member():
 def test_competing_protonated_family_is_not_mistaken_for_element_only_ambiguity(
     protonated, independent_isotope
 ):
-    # An isobaric [N+H]+ can share the [M+Na]+ feature. Unlike Na vs K
-    # attribution, this changes whether the row contains a wanted ion form.
     neutral_n = 227.09060590 + 22.989220702091 - 1.007276452321
     rows = [
         *sodium_family(protonated=protonated),
@@ -559,7 +537,6 @@ def test_family_never_assigns_a_removed_protonated_candidate_as_representative()
 def test_parallel_metal_multimers_can_support_a_variable_adduct_ratio(
     isotope_direct, calcium_shift, qualified
 ):
-    # C10H13N5O4 neutral: two different metal carriers constrain the same trimer.
     neutral = 267.09675390
     rows = [
         row("MH", neutral + 1.007276452321),
@@ -616,8 +593,6 @@ def only_in(scenario, samples):
 
 
 def test_a_sparse_root_without_contradiction_still_represents_the_chain():
-    # The protonated root shares only s1 with the sodium adduct's 13C row,
-    # where they co-elute; each folding edge has its own supporting samples.
     decisions, _ = decide(
         only_in(row("L", 300.0), SAMPLES[:3]),
         row("N", 321.981944, scale=0.5),
@@ -656,7 +631,6 @@ def test_backfilled_apices_complete_direct_coelution():
 
 
 def test_backfilled_ratios_must_stay_stable():
-    # The two direct samples agree; the backfilled ones scatter fourfold.
     unstable = row(
         "H",
         301.003355,
@@ -670,8 +644,6 @@ def test_backfilled_ratios_must_stay_stable():
 
 
 def test_backfilled_isotope_ratio_obeys_the_abundance_ceiling():
-    # m/z 300 allows at most 24 carbons: heavy/light <= 0.26. One backfilled
-    # sample at 0.5 leaves the median and MAD unchanged.
     exceeded = row(
         "H",
         301.003355,
@@ -687,9 +659,7 @@ def test_backfilled_isotope_ratio_obeys_the_abundance_ceiling():
 @pytest.mark.parametrize(
     ("relation", "heavy_mz", "ratios"),
     [
-        # Backfilled ratios scatter fourfold around the direct ones.
         ("13C_M+1", 301.003355, (0.05, 0.05, 0.05, 0.2, 0.2, 0.2)),
-        # Backfilled heavy/light exceeds the 24-carbon ceiling of m/z 300.
         ("13C_M+1", 301.003355, (0.15, 0.15, 0.15, 0.5, 0.5, 0.5)),
     ],
 )
@@ -781,7 +751,6 @@ def test_only_isotopes_need_a_stable_cross_sample_ratio(heavy_mz, relation, remo
 def variable_adduct_family(
     *, potassium_direct=True, potassium_shift=0.0, magnesium_shift=0.0
 ):
-    # Independent ion-mass differences from a common [M+H]+ reference.
     return (
         row("ratio_MH", 600.0, base_rt=80.0),
         row("ratio_Na", 621.981944, scale=0.5, base_rt=80.0),
@@ -1206,7 +1175,6 @@ def test_derivatives_are_removed_before_feature_filtering_and_istd_is_protected(
     _, review = read_tsv_with_header(output / "same_compound_review.tsv")
     assert review == []
 
-    # The standard at m/z 300 elutes at 9-11 min: F000004 at 15 min is not it.
     istd = (MzRtWindow("d0", 300.0, 9.0, 11.0),)
     _, protected, summary = _export(
         tmp_path, "istd", {"finite_fraction": fraction, "same_compound": {}}, istd
@@ -1276,7 +1244,6 @@ def test_machine_output_without_backfill_ledger_is_curated(tmp_path, monkeypatch
 
 
 def test_frequency_table_counts_a_pair_once_whichever_row_elutes_first():
-    # Each pair swaps elution order halfway through the samples.
     flip = (1.0, 1.0, 1.0, -1.0, -1.0, -1.0)
     rows = [
         member
@@ -1298,7 +1265,6 @@ def test_removed_ions_neither_repeat_differences_nor_review_pairs():
         for member in (
             row(f"X{index}", 300.0 + 50 * index, base_rt=base_rt),
             row(f"X{index}_13C", 301.003355 + 50 * index, base_rt=base_rt, scale=0.15),
-            # +CH2 relative to X: a possibly different compound to review.
             row(f"Y{index}", 314.01565 + 50 * index, base_rt=base_rt, scale=0.5),
             row(
                 f"Y{index}_13C",
@@ -1319,7 +1285,6 @@ def test_removed_ions_neither_repeat_differences_nor_review_pairs():
 
 
 def test_frequency_table_needs_most_shared_direct_samples_to_coelute():
-    # Three of five shared direct samples co-elute: below 80%.
     samples = SAMPLES[:5]
     shifts = (1.0, 1.0, 1.0, 10.0, 10.0)
     rows = [

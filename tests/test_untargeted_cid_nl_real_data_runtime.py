@@ -147,10 +147,6 @@ def test_fact_cache_rejects_wrong_identity_and_invalid_base64(tmp_path: Path) ->
         assert not path.exists()
 
 
-# Windows without long-path support stops at 259 characters. The failing report
-# had 141 characters above the cache root (install folder, output, the run
-# folder named after the batch, .cid_nl_acquisition_cache), so a 48-character
-# cap leaves 70 characters for deeper install folders and longer batch names.
 _CACHE_ROOT_RELATIVE_PATH_LIMIT = 48
 
 
@@ -210,8 +206,6 @@ def test_fact_cache_rejects_an_entry_from_another_namespace_at_its_path(
     )
     key = b"same-query"
     vendor.write("xic", key, b"vendor masses")
-    # Shortened directory names can collide; the envelope must still tell the
-    # namespaces apart instead of serving facts measured on another mass scale.
     collided = restored._path("xic", key)
     collided.parent.mkdir(parents=True)
     collided.write_bytes(vendor._path("xic", key).read_bytes())
@@ -389,7 +383,6 @@ def test_native_disk_cache_preserves_sources_requests_and_empty_traces(
             source, adapter_namespace="native-cache-parity"
         )
         source_raw = _FakeRaw(())
-        # Independent oracle: native scan i carries sample_index*1000+i.
         source_raw.intensity = (
             np.arange(len(source_raw.rt), dtype=float) + sample_index * 1000
         )

@@ -58,8 +58,6 @@ def test_gaps_longer_than_12_scans_split_an_ion_into_two_windows():
 
 
 def test_top_n_ranks_only_ions_inside_the_methods_scan_range():
-    # 25 stronger ions above m/z 800 push the ion out of the top 20 in a
-    # 145-1000 scan, but a 145-800 method never acquires them.
     points = [(s, 300.0, 1e5) for s in range(SCANS)]
     points += [(s, 900.0 + i, 1e6) for s in range(SCANS) for i in range(25)]
     data = centroids(points)

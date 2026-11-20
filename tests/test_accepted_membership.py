@@ -60,8 +60,6 @@ def test_local_density_preserves_closed_radius_and_duplicate_coordinates(correct
             rt_frame=frame,
             trajectories=PeakTrajectories(),
         )
-        # Independent direct definition retains subtraction/multiplication
-        # order: rounded rt +/- radius bounds can change edge inclusion.
         assert comparison.density == {
             key: sum(abs(rt - other) * 60 <= 120.0 for other in comparison.rts.values())
             for key, rt in comparison.rts.items()
@@ -79,8 +77,6 @@ def _infer_common_rt(owners, injection_order):
     )
 
 
-# Each four-owner split below puts injections from both ends of the batch on
-# both sides, so drift between earlier and later injections cannot explain it.
 _INTERLEAVED_FOUR = (1, 3, 0, 2)
 
 
@@ -118,8 +114,6 @@ def test_final_membership_rejects_separated_rt_populations(seconds, expected_siz
     "seconds", [(0, 2, 30, 32), (0, 2, 4, 30), (0, 10, 30, 40), (0, 2, 22, 24)]
 )
 def test_rt_populations_split_by_injection_order_remain_a_cost(seconds):
-    # Earlier injections elute together before later ones: residual drift
-    # explains the gap as well as two compounds do, so the gap is not a veto.
     owners = tuple(
         cid_nl_owner(str(i), str(i), apex_rt=10 + second / 60)
         for i, second in enumerate(seconds)
@@ -140,10 +134,6 @@ def test_population_gap_without_injection_order_keeps_the_veto():
     assert sorted(len(group.owner_ids) for group in result.groups) == [2, 2]
 
 
-# One compound in seven samples whose four earlier injections elute together
-# before the three later ones; the gap (50.01 s) sits 0.87 s below twice the
-# earlier side's range (25.44 s). Moving the earliest coordinate by 1 s moves
-# that threshold by 2 s, the size of a LOESS anchor change.
 _DRIFT_SECONDS = (0.0, 14.0, 17.5, 25.44, 75.45, 78.0, 82.0)
 
 
@@ -323,7 +313,7 @@ def test_weak_calibration_halves_only_rt_cost_not_mass_or_shape():
         costs.append(cost)
     rt_cost = 0.70 * 0.75 * 30 / config.preferred_rt_sec
     assert costs[0] - costs[1] == pytest.approx(rt_cost / 2)
-    assert costs[1] > rt_cost / 2  # Independent mass/shape penalties remain.
+    assert costs[1] > rt_cost / 2
 
 
 def test_soft_shape_contradiction_is_selected_and_recorded():
@@ -380,8 +370,6 @@ def test_same_sample_singleton_swap_is_not_a_competing_membership():
 
 @pytest.mark.parametrize("reverse", (False, True))
 def test_equal_worst_pair_cost_selects_better_average_peer_fit(reverse):
-    # Fixed extreme peers set the same maximum pair cost before and after
-    # swapping s5's peaks. The earlier peak fits the earlier band better.
     specification = (
         ("s1", "early", 10.4),
         ("s1", "late", 10.65),
@@ -463,8 +451,6 @@ def test_complete_group_cost_prevents_blind_pair_chain_union():
         trajectories=PeakTrajectories(),
     )
     a, b, c = (o.owner_id for o in owners)
-    # Cost-layer oracle: the complete group must consume the endpoint fact,
-    # not just the two favorable edges used to propose a union.
     comparison.pairs.update({(a, b): (0.2, ()), (b, c): (0.2, ()), (a, c): (1.3, ())})
     assert comparison.cost(((a, b, c),)) == pytest.approx(2.3)
     assert comparison.cost(((a, b), (c,))) == pytest.approx(2.2)
@@ -489,8 +475,6 @@ def test_group_trend_cost_preserves_ninety_second_boundary(span_min):
     )
     a, b, c = (o.owner_id for o in owners)
     comparison.pairs.update({(a, b): (0.2, ()), (b, c): (0.2, ()), (a, c): (0.2, ())})
-    # The last owner's two neighbors both have RT 10; it has the largest
-    # residual. The other two residuals are half as large.
     expected = 1.2 + 0.2 * max(0.0, span_min * 60 / 90 - 1)
     assert comparison.group_cost((a, b, c)) == pytest.approx(expected)
     assert comparison.group_cost((c, a, b)) == pytest.approx(expected)

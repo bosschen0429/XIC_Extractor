@@ -20,8 +20,6 @@ from xic_extractor.validation_primitives import require_finite_real
 
 DELTA_MASS_LABEL = "Delta Mass"
 BASE_POSITION = "base"
-# Earlier target tables named common CID-NL losses; the values are the
-# packaged CID-NL presets' losses.
 LEGACY_CID_NL_LOSSES = {"dR": 116.0474, "R": 132.0423, "MeR": 146.0579}
 
 

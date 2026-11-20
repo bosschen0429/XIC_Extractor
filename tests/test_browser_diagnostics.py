@@ -148,7 +148,6 @@ def test_both_success(workbench, review_page):
     assert len(traces) == 8, result.stdout + result.stderr
     records = {}
     for trace in traces:
-        # A readable Playwright archive needs actual trace and network entries.
         with zipfile.ZipFile(trace) as archive:
             assert archive.testzip() is None
             assert any(name.endswith(".trace") for name in archive.namelist())

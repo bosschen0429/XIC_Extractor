@@ -1,4 +1,3 @@
-// Matrix curation presentation and intention adapters; Session owns the draft.
 import { createCurationSession } from "./analysis_curation_session.js";
 import { showResult } from "./analysis_setup.js";
 import { analysis, state, updateConfig } from "./analysis_state.js";
@@ -24,7 +23,6 @@ export function loadCurationSource(sourceDir, samples) {
 }
 const folderKey = (path) =>
   (path || "").trim().replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
-// A curated matrix belongs to its source; another source never offers it.
 export function showCurationResult() {
   const curated = analysis.snapshot.results.curation;
   $("curation-result").hidden =
@@ -40,8 +38,6 @@ export function openCuration(sourceDir, samples) {
   $("result-curation").scrollIntoView({ behavior: "smooth" });
   return loadCurationSource(sourceDir, samples);
 }
-// An Untargeted result opens with curation ready, so producing a curated
-// matrix takes only its own button.
 export function prepareResult(page) {
   const panel = $("result-curation");
   const load = () => {
@@ -126,7 +122,6 @@ function renderCuration(snapshot) {
     const input = el("input");
     input.type = "checkbox";
     input.id = `curation-step-${step.key}`;
-    // Unavailable controls stay disabled; lock() only manages idle ones.
     if (unavailable) input.disabled = true;
     else {
       input.dataset.analysisIdle = "";
@@ -277,8 +272,6 @@ export function bindCuration() {
     showCurationResult();
     lock();
   });
-  // A result restored at startup is ready behind 開啟既有結果; only an
-  // explicit open, or reloading the tab that showed it, switches to it.
   document.addEventListener("xic:result-opened", (event) => {
     prepareResult(event.detail);
     showResult();
@@ -298,7 +291,6 @@ export function bindCuration() {
       Object.fromEntries(
         Object.entries(sourceFields).map(([key, field]) => [key, field.value]),
       ),
-      // A committed selection can reread changed contents at the same path.
       { refresh: event.type === "change" },
     );
   };

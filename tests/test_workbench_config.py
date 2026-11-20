@@ -152,7 +152,6 @@ def test_untargeted_save_routes_dll_to_canonical_and_preserves_unrelated_control
     assert config_io.read_settings(config_dir=tmp_path)["dll_dir"] == "shared-dll"
     payload = json.loads(path.read_text())
     assert "dll_dir" not in payload
-    # Sample roles belong to confirmed sample metadata, not workflow controls.
     assert "custom_roles" not in payload
     assert payload["sequence_source"] == "sequence.csv"
     assert payload["raw_dir"] == "new-batch"
@@ -189,7 +188,6 @@ def test_launch_dll_override_is_transient_and_both_workflows_share_it(tmp_path):
 def test_configuration_reads_are_read_only_and_discovery_does_not_parse_targeted(
     tmp_path,
 ):
-    # Legacy keys and invalid Targeted scalars are data here, not a migration trigger.
     paths = {
         "settings.csv": "key,value\nms2_precursor_tol_da,not-a-number\n",
         "workbench.json": json.dumps({"dll_dir": "old-preference", "theme": "dark"}),

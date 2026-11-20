@@ -170,8 +170,6 @@ CONFLICTS_AS_REVIEW = {
     "hard_quality_flag_conflict": "trace_morphology_review",
     "candidate_aligned_ms2_nl_conflict": "missing_nl_support_review",
 }
-# A missing direct NL/MS2 observation that identity from elsewhere resolves
-# for counting, mapped to the review that keeps it visible as a doubt.
 _MISSING_DIRECT_NL_REVIEW = {
     "cid_nl_method_not_supported": "missing_nl_support_review",
     "missing_ms2_policy_not_counted": "missing_ms2_not_observed",
@@ -179,7 +177,6 @@ _MISSING_DIRECT_NL_REVIEW = {
 _MISSING_DIRECT_NL_NOT_COUNTED = frozenset(_MISSING_DIRECT_NL_REVIEW)
 _COHERENT_MS1_PEAK = frozenset({"ms1_peak_present", "ms1_coherent", "trace_coherent"})
 _BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
-# The Backfill apex floor: closer RT agreement is not resolvable (12 s).
 _PAIRED_OFFSET_FLOOR_MIN = 0.2
 
 
@@ -188,7 +185,6 @@ class PairedIstdPositions:
     """Where analyte peaks sit relative to their counted paired isotope ISTD."""
 
     identified: frozenset[str] = frozenset()
-    # Sample -> minutes the selected peak lies from the paired-ISTD position.
     off_position: Mapping[str, float] = field(default_factory=dict)
 
 
@@ -221,7 +217,6 @@ def paired_istd_positions(
         if sample in counted_istd
         and _counted(result)
         and (rt := _finite(result.reported_rt)) is not None
-        # A contradictory counted peak cannot calibrate away its own mismatch.
         and abs(rt - counted_istd[sample] - expected_offset_min)
         <= _PAIRED_OFFSET_FLOOR_MIN
     ]

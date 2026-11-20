@@ -1,12 +1,5 @@
 import { el } from "./analysis_ui.js";
 
-// options:
-//   box()        the scroll container that holds the rows and the band
-//   rowSelector  CSS selector of a selectable row inside box()
-//   startSelector  where a drag may start (defaults to rowSelector)
-//   keyOf(tr)    the selection key of a row element
-//   order()      keys of the visible rows, in display order
-//   onChange()   called whenever the selection changes
 export function createRowSelection(options) {
   const startSelector = options.startSelector || options.rowSelector;
   const selection = {
@@ -42,7 +35,6 @@ export function createRowSelection(options) {
     },
   };
   let drag = null;
-  // A drag ends with a click on its last row; only that click is not a selection.
   let suppressed = { key: null, until: 0 };
 
   function start(event) {
@@ -59,7 +51,6 @@ export function createRowSelection(options) {
       moved: false,
     };
     event.preventDefault();
-    // Keep keyboard shortcuts with the table, not a previously focused field.
     box.focus({ preventScroll: true });
   }
   function move(event) {
@@ -73,7 +64,6 @@ export function createRowSelection(options) {
       drag.band = el("div", undefined, "select-band");
       box.append(drag.band);
     }
-    // Holding near an edge keeps scrolling so a long range needs one gesture.
     if (event.clientY > bounds.bottom - 28) box.scrollTop += 14;
     else if (event.clientY < bounds.top + 28) box.scrollTop -= 14;
     const y1 = Math.max(

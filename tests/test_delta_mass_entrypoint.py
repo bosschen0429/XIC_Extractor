@@ -151,8 +151,6 @@ smoothing_window_sec = 1
             )
 
         def GetSimplifiedScan(self, scan):
-            # Each mass peak has two above-noise profile flanks. They are not
-            # additional ions, even though seeded m/z bins can separate them.
             return SimpleNamespace(
                 Masses=[
                     self.base_mz - 0.025,
@@ -336,7 +334,7 @@ def test_selected_raw_matches_the_single_file_baseline(tmp_path, raw_cli_case):
     (raw_dir / "second.raw").touch()
     opened.clear()
     args = ["--raw", str(first), "--output-dir", str(selected), *settings]
-    assert main(args) == 2  # Composite still requires CID-NL evidence.
+    assert main(args) == 2
     assert not opened
     assert main([*args, *evidence]) == 0
     assert opened == [first]

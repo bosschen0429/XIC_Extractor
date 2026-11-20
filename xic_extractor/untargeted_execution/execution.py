@@ -263,8 +263,6 @@ class UntargetedPartitionPipelineAdapter:
         self._retain_partition_spool = bool(retain_partition_spool)
         self._grouping_only = grouping_only
         self._rt_reference_only = rt_reference_only
-        # A complete partition with the same channels, candidates and clean
-        # Alignment measurements has exactly the same bootstrap evidence.
         self._clean_anchors: dict[
             UntargetedCidNlMethodSubjectBatch, tuple[RtAnchorObservation, ...]
         ] = {}
@@ -405,8 +403,6 @@ class UntargetedPartitionPipelineAdapter:
                 ),
             )
             dll_dir = plan.dll_dir
-            # Both acquisition lanes share the full process budget. A lane
-            # waiting on grouping/composition does not strand half the workers.
             self._process_pools = (
                 WorkerAdmissionPool(
                     max_workers=self._partition_raw_workers,
@@ -852,7 +848,6 @@ def execute_untargeted_plan(
         raise ValueError("Grouping replay requires a scalar CID-NL preset")
 
     requested_acquisition_workers = 2 if pipeline_overlap and raw_workers >= 2 else 1
-    # A shared cache directory outlives the run; the default one is the run's own.
     cache_dir = (
         Path(acquisition_cache_dir)
         if acquisition_cache_dir is not None
@@ -892,9 +887,6 @@ def execute_untargeted_plan(
         return result
     finally:
         adapter.close_process_worker_pools()
-        # The cache only accelerates acquisition, which is finished. A failed
-        # attempt keeps it because the recovery marker allows a retry that
-        # would otherwise reread every RAW file.
         if (
             completed_once
             and acquisition_cache_dir is None

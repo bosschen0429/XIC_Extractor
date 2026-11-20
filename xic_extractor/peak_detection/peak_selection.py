@@ -76,8 +76,6 @@ def select_peak_and_area(
             and relaxed_candidate is not None
             and relaxed_search_result is not None
         ):
-            # External search can introduce a new proposal. Recovery within the
-            # supplied set must preserve the keys of already-bound evidence.
             relaxed_candidate, relaxed_search_result = mark_relaxed_candidate(
                 relaxed_candidate,
                 relaxed_search_result,

@@ -154,7 +154,6 @@ def _directional_inference(
         sample_owners = tuple(
             sorted(by_sample[sample_stem], key=lambda item: item.owner_id)
         )
-        # Seed members go first, so the sample's other owners see that occupancy.
         seeded_rows = tuple(
             owner
             for owner in sample_owners
@@ -241,8 +240,6 @@ def _directional_inference(
         assignments, ambiguous = _solve_sample_assignment(
             supported_rows, candidates_by_owner, counts
         )
-        # A pattern seed carries its own cross-sample support, as in the
-        # window graph; competition only decides which feature it joins.
         uncertain.update(
             owner_id for owner_id in ambiguous if owner_id not in seed_by_owner
         )

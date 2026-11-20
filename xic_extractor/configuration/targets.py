@@ -209,7 +209,6 @@ def _parse_target_row(
     )
     policy = DEFAULT_CID_NL_MASS_POLICY
     plain_loss = loss if identification is None else None
-    # Existing in-memory consumers retain a center pair, not a search window.
     return Target(
         label=label,
         mz=mz,

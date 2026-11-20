@@ -69,7 +69,6 @@ class TimingRecorder:
             process_memory_sampler or ProcessTreeMemorySampler()
         )
         self._timer = timer
-        # Run wall uses its own clock so it cannot consume an injected timer.
         self._wall_clock = wall_clock
         self._started_at = wall_clock()
         self._top_level_wall_sec = 0.0
@@ -197,8 +196,6 @@ class TimingRecorder:
         self._heartbeat = progress
         if self.live_output_path is None:
             return
-        # Use a separate monotonic clock so progress cannot consume an injected
-        # stage-duration timer. Only active stages guarantee a final flush.
         now = perf_counter()
         if (
             self._span_stack
@@ -304,9 +301,6 @@ class TimingRecorder:
             entry = self._span_stack.pop()
             exclusive = max(0.0, elapsed - float(entry[2]))
             if self._span_stack:
-                # Charge nested wall time to the active parent. The parent is
-                # not recorded until its scope closes, so retain the child
-                # duration on the stack rather than summing completed records.
                 self._span_stack[-1][2] += max(0.0, elapsed)
             else:
                 self._top_level_wall_sec += max(0.0, elapsed)

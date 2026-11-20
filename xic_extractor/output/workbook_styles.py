@@ -66,7 +66,6 @@ def _prepare_sheet(
     ws.sheet_format.customHeight = True
     ws.page_setup.orientation = "landscape" if landscape else "portrait"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
-    # Wide sheets continue across pages instead of shrinking to unreadable text.
     ws.sheet_properties.pageSetUpPr.fitToPage = fit_width
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
@@ -167,6 +166,4 @@ def _add_table(ws, name: str, reference: str) -> None:
     table = Table(displayName=name, ref=reference)
     table.tableStyleInfo = TableStyleInfo(showRowStripes=False, showColumnStripes=False)
     ws.add_table(table)
-    # A Table owns its filter. A second worksheet filter on the same range
-    # makes desktop Excel repair the workbook and remove the Table.
     ws.auto_filter.ref = None

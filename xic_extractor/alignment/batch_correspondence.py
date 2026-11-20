@@ -144,7 +144,6 @@ class BatchMap:
     excluded_anchors: tuple[ExcludedAnchor, ...]
     calibration: SampleRtCalibration | None
     loo_error_min: Mapping[str, float]
-    # (reference-batch RT, search half-width) at each ISTD, in RT order.
     search_window: tuple[tuple[float, float], ...]
 
     def search_half_width_at(self, reference_rt_min: float) -> float:
@@ -400,7 +399,6 @@ def _channel_matcher(
     tolerance_ppm: float,
 ) -> Callable[[BatchFeature, BatchFeature], bool]:
     def same_channel(feature: BatchFeature, other: BatchFeature) -> bool:
-        # Both directions use the same rule, so pairing ignores batch order.
         return feature.neutral_loss_tag == other.neutral_loss_tag and (
             within_ppm(feature.precursor_mz, other.precursor_mz, tolerance_ppm)
             and within_ppm(other.precursor_mz, feature.precursor_mz, tolerance_ppm)

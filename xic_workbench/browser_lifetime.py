@@ -54,6 +54,5 @@ class BrowserLifetime:
             if self._windows:
                 return False
             if self._empty_since is None:
-                # After sleep/crash, allow a resumed tab to reconnect first.
                 self._empty_since = now
             return now - self._empty_since >= self._grace

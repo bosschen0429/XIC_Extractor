@@ -91,10 +91,6 @@ def _window_candidate_edges(
                     * 60.0
                 )
             )
-            # A crowded window can contain only distant singletons, so it
-            # cannot rely on established-band bridging to compare them.
-            # Use that bridge's RT tolerance for dense distant pairs too;
-            # an unobserved injection gap is not extra RT evidence.
             if distant_dense_pair:
                 rt_limit_sec = config.preferred_rt_sec
             elif sparse_fallback:
@@ -114,10 +110,6 @@ def _window_candidate_edges(
                 shape_conflicts[left.owner_id].add(right.owner_id)
                 shape_conflicts[right.owner_id].add(left.owner_id)
                 continue
-            # The tolerance describes the full separation of the
-            # endpoints, as it does for owner-to-band costs. Measuring
-            # only to their midpoint halves the mass evidence and can
-            # turn distinct coeluting bands into near-equal alternatives.
             precursor_fraction = (
                 absolute_ppm_error(
                     max(left.peak.mz, right.peak.mz),
@@ -136,9 +128,6 @@ def _window_candidate_edges(
                 if sparse_fallback or distant_dense_pair
                 else config.preferred_rt_sec
             )
-            # Retain the uncertainty allowance for per-sample competition.
-            # It must not make a distant pair outrank closer RT support when
-            # committing unions: a missing injection is not stronger evidence.
             ambiguity_rt_scale = (
                 rt_scale
                 if sparse_fallback or distant_dense_pair
@@ -187,14 +176,9 @@ def _ambiguous_window_edges(
             *(neighbors[candidate_id] for candidate_id in alternatives)
         ) - {owner_id}
         if len({owner_by_id[item].sample_stem for item in shared_neighbors}) >= 2:
-            # A doublet in one sample competes for many other owners;
-            # isolate its alternatives without discarding their band.
             ambiguous_window.update(alternatives)
         else:
             ambiguous_window.add(owner_id)
-    # A contested pairing to one sample does not invalidate independent
-    # reciprocal support from another. Keep that support, but do not use
-    # the contested arcs to grow a band. Unsupported doublets stay weak.
     independently_supported = {
         owner_id
         for owner_id, neighbor_id in preferred_arcs

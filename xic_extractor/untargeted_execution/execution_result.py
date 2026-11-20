@@ -58,8 +58,6 @@ class UntargetedPublicationInputs:
 @dataclass(frozen=True, slots=True)
 class CompletedUntargetBatchWorkflowResult:
     application_result: FinalizedUntargetBatchApplicationResult
-    # Diagnostic handoff only; these retained owner facts grant no completion
-    # or Matrix authority and do not change scientific result equality.
     method_assessments: (
         tuple[CidNlMethodAssessment, ...] | ImmutableSequence[CidNlMethodAssessment]
     ) = field(default=(), repr=False, compare=False)

@@ -51,8 +51,6 @@ class DiscoverySettings:
             resolve_mass_recalibration(self.mass_recalibration),
         )
         profiles = self.neutral_loss_profiles
-        # The singular field also aliases profiles[0] after normalization.
-        # dataclasses.replace carries both fields; do not append that alias again.
         if self.neutral_loss_profile is not None and (
             not profiles or self.neutral_loss_profile != profiles[0]
         ):

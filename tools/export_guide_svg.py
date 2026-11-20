@@ -34,8 +34,6 @@ def export_svg(html: str) -> str:
     if root.get("data-preset") != "classic":
         raise ValueError("Only the classic preset is supported")
 
-    # The current guides use nodes and edges, not structural frames. Do not
-    # silently discard a future frame's context-sensitive paint.
     classes = {name for e in root.iter() for name in e.get("class", "").split()}
     if classes & {"c-region", "c-security-group", "c-lane", "phase-rule", "phase-chip"}:
         raise ValueError("Structural-frame paint is not supported")
@@ -44,9 +42,6 @@ def export_svg(html: str) -> str:
         for child in list(parent):
             if child.tag == "style":
                 parent.remove(child)
-        # Project the two active node-UI rules into static paint hooks before
-        # removing viewer metadata. The remaining internal rules target dark
-        # themes, other presets, or structural frames (rejected above).
         if "data-node-id" in parent.attrib:
             for child in parent:
                 if child.tag == "rect" and "c-mask" not in child.get("class", ""):
@@ -56,8 +51,6 @@ def export_svg(html: str) -> str:
                 if child.tag == "rect" and "c-mask" in child.get("class", "").split():
                     child.set("class", child.get("class", "") + " edge-label")
 
-    # Keep only definitions reachable from the visible diagram, then follow
-    # references inside live definitions. Merely being inside defs is not use.
     defs = root.find("defs")
     if defs is not None:
         definitions = {child.get("id"): child for child in defs}
@@ -74,8 +67,6 @@ def export_svg(html: str) -> str:
                 defs.remove(child)
 
     classes = {name for e in root.iter() for name in e.get("class", "").split()}
-    # These are flat semantic paint rules in Archify 3.1, not a general CSS parser.
-    # Never copy @font-face, viewer layouts, animation or interactive-state rules.
     styles = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", html, re.S))
     styles = re.sub(r"/\*.*?\*/", "", styles, flags=re.S)
     light = re.search(r'\[data-theme="light"\]\s*\{([^{}]+)\}', styles)
@@ -128,7 +119,6 @@ def export_svg(html: str) -> str:
         if element.get("id") not in referenced_ids:
             element.attrib.pop("id", None)
         if element is not root:
-            # Group titles retain the label, without a false "focus" action.
             element.attrib.pop("aria-label", None)
             if re.fullmatch(r"--step:\s*\d+", element.get("style", "")):
                 del element.attrib["style"]

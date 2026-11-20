@@ -159,11 +159,6 @@ def candidate_selection_decision_record(
             ("negative_abundance", -facts.abundance),
         )
     if facts.rt.role == "ISTD" and reference is not None and not strict_selection_rt:
-        # Known-standard localization precedes trace-strength tie-breaks. Two
-        # peaks sharing the configured NL are not interchangeable identities.
-        # Keep physical completeness first, then continuous reference distance:
-        # drift outside a fixed proximity radius must not erase this identity
-        # preference. This neither crops acquisition nor supplies method support.
         gate = (
             (
                 "istd_reference_completeness_rank",

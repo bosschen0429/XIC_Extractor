@@ -267,8 +267,6 @@ def bootstrap_cid_nl_initial_population(
     method_subject_intervals = tuple(
         cid_nl_method_subject_resolver_interval(subject) for subject in method_subjects
     )
-    # With no hypotheses, searched_no_observation requires completed receipts;
-    # their owner guarantees numeric query bounds.
     grouping_scope = InitialGroupingScope(
         peak_trajectories=correspondence,
         mz_interval=(

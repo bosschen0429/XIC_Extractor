@@ -165,9 +165,6 @@ def test_calibrated_band_outweighs_free_shift_pattern_seed(reverse: bool) -> Non
             )
         )
     )
-    # The first landmark's width extends beyond calibration support. The raw
-    # two-peak pattern can therefore match after a free shift, despite the
-    # measured apex coordinates placing the owners in different bands.
     trajectories = resolve_peak_trajectories(
         owners,
         (
@@ -245,9 +242,6 @@ def test_partial_region_calibration_keeps_supported_common_apices(
         frozenset(("a-early", "b-early", "c-main")),
         frozenset(("a-late", "b-late", "c-late")),
     }
-    # Three-member groups retain the cost policy rather than a hard RT split.
-    # a-early's edge extends beyond its calibrated support; its apex does not.
-    # Unknown edges cannot discard measured apex coordinates or import raw edges.
     assert {d.accepted_risk.rt_basis for d in result.sparse_decisions} == {
         "drift_corrected"
     }
@@ -316,9 +310,6 @@ def test_unrelated_calibration_preserves_unsupported_raw_pattern(
 def test_retained_m298_configuration_preserves_sample_occupancy(
     reverse: bool,
 ) -> None:
-    # Retained m298 geometry, rounded in its already-calibrated frame.
-    # The high-mass owners form two concentrated populations 43.6 seconds
-    # apart; the larger within-population range is only 2.0 seconds.
     rows = (
         ("a", "a-early", 9, 13.29663, 298.139679, 182.092172, 13.08574, 13.83271),
         ("b", "b-early", 10, 13.24687, 298.139889, 182.092161, 13.00025, 13.62336),
@@ -404,9 +395,6 @@ def test_injection_gap_does_not_discount_rt_in_union_priority(reverse: bool) -> 
             product_mz=167.0638763455,
         ),
     )
-    # The observed peak is 0.54 s from the early peak, not the late peak
-    # 17.44 s away. A larger injection gap must not make that RT error cheaper
-    # when supported pairings compete for the first irreversible union.
     result = infer_feature_memberships(
         owners[::-1] if reverse else owners,
         config=CID_NL_ALIGNMENT_CONFIG,
@@ -628,8 +616,6 @@ def test_final_mixed_frame_comparison_does_not_relax_backfill_regions():
 
 @pytest.mark.parametrize("bootstrap", (False, True))
 def test_region_separation_is_soft_for_final_and_strict_for_backfill(bootstrap):
-    # Band a spans more than one member's narrow region (a1 and a4 exclude each
-    # other's apex); band b lies outside band a's consensus region.
     owners = tuple(
         with_peak(
             _synthetic_owner(sample, sample, apex),
@@ -717,8 +703,6 @@ def test_intermediate_shape_does_not_transitively_merge_incompatible_peaks(
 
 def test_singleton_shape_disagreement_is_retained_after_band_extension() -> None:
     offsets = np.linspace(-0.6, 0.6, 121)
-    # "broader" differs only from the one narrow member (0.74 < 0.80) and
-    # matches the rest of the band (0.94); the ramp matches none of it.
     gaussian = {
         **{f"seed-{i}": 0.07 for i in range(1, 15)},
         "narrow": 0.03,
@@ -905,9 +889,6 @@ def test_bootstrap_pattern_seed_extends_to_an_unobserved_context_sample() -> Non
 
 
 def _method_disambiguated_pattern_conflict():
-    # The sample a doublet distinguishes two method envelopes. A shifted
-    # pattern incorrectly links b's early owner to c's late owner, and its
-    # borrowed a position makes that track distinct from the valid late track.
     owners = [
         _synthetic_owner("a", "a:early", 10.0),
         _synthetic_owner("a", "a:late", 11.5, product_mz=383.9726),
@@ -957,9 +938,6 @@ def test_coobserved_method_witness_withdraws_only_contradicted_membership(
         else {frozenset(("u:independent",)), frozenset(("v:independent",))}
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == expected
-    # Final selection scores the independent raw pair's actual 168 s gap;
-    # it is no longer a mandatory seed with zero RT cost.
-    # Membership qualification must not mutate geometry used by localization.
     assert geometry.trajectory_for(owners[2:4]) == before
     assert dict(before.sample_apices)["a"] == 13.0
 
@@ -1013,9 +991,6 @@ def test_incomplete_coobserved_witness_does_not_veto_a_bootstrap_pattern(control
         rules=CID_NL_GROUPING_RULES,
     )
     if control.endswith("member"):
-        # Weak members cannot seed an assigned Feature in the first place.
-        # Compare the full result to the same input without the second anchor:
-        # neither can authorize the new witness-based withdrawal.
         without_anchor = infer_feature_memberships(
             [o for o in owners if o.owner_id != "a:late"],
             config=AlignmentConfig(),
@@ -1095,8 +1070,6 @@ def test_single_sample_pattern_does_not_split_a_bootstrap_band() -> None:
 
 
 def test_directional_extension_disagreement_keeps_the_pattern_seed() -> None:
-    # The forward pass reaches b through a; the reverse pass reaches the seed
-    # through c, which is beyond the preferred RT distance from b.
     owners = [
         _synthetic_owner("a", "a:p", 10.0),
         _synthetic_owner("b", "b:p", 10.05),
@@ -1170,7 +1143,6 @@ def test_directional_competition_does_not_demote_an_assigned_pattern_seed(
         peak_trajectories=trajectories,
         rules=CID_NL_GROUPING_RULES,
     )
-    # b competes equally with a's two peaks before the pattern seed is complete.
     assert any(
         decision.owner_id == "b:p"
         and decision.reason == "alternative_assignment_has_equal_objective"
@@ -1230,9 +1202,6 @@ def test_alternating_direct_peaks_follow_ms1_pattern_not_nearest_absolute_rt() -
 def test_never_compared_pattern_observations_do_not_split_one_band(
     injection_orders: tuple[int, ...],
 ) -> None:
-    # Each block shares the same doublet context, but the 13 injections
-    # between the blocks hold no related context. Not having compared two
-    # blocks is not evidence that they observed different peaks.
     owners = []
     contexts = []
     orders = {}
@@ -1269,9 +1238,6 @@ def test_never_compared_pattern_observations_do_not_split_one_band(
 def test_single_peak_owner_keeps_ordinary_rt_gate(
     isolated_rt: float, bootstrap: bool
 ) -> None:
-    # x has one landmark, so its nearest-RT link to the late peak is not an
-    # ordered-pattern witness. Its owner, over a minute from the late band,
-    # must not be seeded into that band or exempted from the RT gate.
     owners = [
         _synthetic_owner("a", "a:early", 10.0),
         _synthetic_owner("a", "a:late", 10.7),
@@ -1355,8 +1321,6 @@ def test_full85_bands_preserve_coherent_members_and_separate_rt_outlier(
             for group in result.groups
         )
     elif case == "tier1_03":
-        # The frozen common frame places this owner 61.88 seconds before the
-        # other 62 owners, whose complete range is only 20.01 seconds.
         assert {frozenset(group.owner_ids) for group in result.groups} == {
             frozenset(("tier1_03:54",)),
             frozenset(
@@ -1649,9 +1613,6 @@ def test_singleton_ambiguity_uses_remaining_band_choices(
     ) + (_synthetic_owner("probe", "between", 10.09),)
     if occupy_early_band:
         owners += (_synthetic_owner("probe", "early-probe", 10.0),)
-    # Pairwise uncertainty at the distant injection makes the probe peaks
-    # compete. Once early-probe joins the early band, only the late band can
-    # admit between. Without that occupied slot, both choices remain viable.
     result = infer_feature_memberships(
         tuple(reversed(owners)) if reverse else owners,
         config=AlignmentConfig(),
@@ -1729,8 +1690,6 @@ def test_ambiguous_distant_pair_does_not_erase_independent_local_support() -> No
 def test_distant_samples_form_distinct_bands_in_a_crowded_mass_window(
     spacing: int, reverse: bool
 ) -> None:
-    # Nearby peaks inflate local detection density; none of the samples has
-    # a neighbor within 16 injections from which to establish a band first.
     orders = {f"s{i}": 1 + i * spacing for i in range(4)}
     owners = tuple(
         _synthetic_owner(sample, f"{band}-{sample}", rt + i * 0.01)
@@ -1836,9 +1795,6 @@ def test_separated_band_bridge_respects_indirect_peak_order(
     reverse: bool,
     ordered_chain: bool,
 ) -> None:
-    # A and C never co-occur. A < B < C forbids their union; A < B > C
-    # does not. Keep A/C less than 20 seconds apart to isolate physical order
-    # from the independent common-RT population constraint.
     middle_rt = 10.15 if ordered_chain else 10.5
     owners = tuple(
         _synthetic_owner(f"{band}{i}", f"{band}{i}", rt)

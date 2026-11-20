@@ -241,7 +241,6 @@ def prepare_cid_nl_grouping(
         if candidate_id not in observation_by_candidate
         or method_subject_id in unsupported_subjects
     )
-    # Keep the global request scope while closing only these compatible subjects.
     scope = UntargetedSearchScope(
         schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
         method_subjects=request_subjects,

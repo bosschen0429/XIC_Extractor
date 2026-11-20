@@ -14,8 +14,6 @@ from xic_inspector.sources.delta_mass import DeltaMassReviewSource
 
 
 def __getattr__(name):
-    # Preserve the existing public names without loading the SQLite adapter
-    # (and its alignment imports) for a portable bundle.
     if name == "EvidenceSource":
         from xic_inspector.sources.cid_nl import CidNlSource
 

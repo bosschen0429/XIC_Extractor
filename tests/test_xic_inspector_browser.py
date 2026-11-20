@@ -215,7 +215,6 @@ def test_workbench_curves_open_on_the_counted_peaks_not_the_saved_window(
     expect(chart).to_have_attribute("aria-label", "峰頂置中層析圖")
     assert float(chart.get_attribute("data-domain-start")) == pytest.approx(-19.5)
     assert float(chart.get_attribute("data-domain-end")) == pytest.approx(19.5)
-    # The neighbour outside the view no longer sets the scale.
     assert float(chart.get_attribute("data-signal-high")) < 200
     expect(chart.locator('line[data-marker="peak-center"]')).to_have_count(1)
     root.get_by_role("button", name="原始 RT", exact=True).click()
@@ -268,7 +267,6 @@ def test_peak_centering_preserves_full_shape_intensity_and_rt_evidence(
     ):
         assert [p[0] for p in points[sid]] == pytest.approx(expected_x, abs=1e-4)
         assert [p[1] for p in points[sid]] == pytest.approx(expected_y, abs=1e-4)
-    # The longer tail (90 s), not an apex +/- 30 s window, determines the view.
     assert float(chart.get_attribute("data-domain-end")) > 90
     assert float(chart.get_attribute("data-domain-start")) == pytest.approx(
         -float(chart.get_attribute("data-domain-end"))
@@ -319,7 +317,6 @@ def test_peak_centering_does_not_invent_apexes_or_missing_tails(review_page):
     item["curves"].append(no_bounds)
     item["samples"].append({"sample_id": "No center", "quantitative_value": None})
     payload["samples"].append({"id": "No center", "label": "No center"})
-    # Loaded exactly from the left to the right bound: the whole peak, no margin.
     edge = deepcopy(item["curves"][0])
     edge["sample_id"] = "Edge"
     item["curves"].append(edge)
@@ -342,13 +339,11 @@ def test_peak_centering_does_not_invent_apexes_or_missing_tails(review_page):
     root = page.locator("#host")
     expect(root).to_contain_text("峰界中點置中：No apex")
     expect(root).to_contain_text("未記錄峰頂或完整峰界，無法置中：No center")
-    # Coverage is judged against the saved bounds, not the padded view window.
     expect(
         root.locator(".alignment-summary", has_text="曲線未涵蓋整個峰")
     ).to_have_text("曲線未涵蓋整個峰：B")
     chart = _control(root, "svg-raw")
     expect(chart.locator("polyline")).to_have_count(4)
-    # The missing apex is not re-picked from the signal: midpoint is 10.15 min.
     assert chart.locator('polyline[data-sample-id="No apex"]').evaluate("""line=>{
       const d=line.ownerSVGElement.dataset;
       return +d.domainStart+(line.points[3].x-d.chartLeft)/d.chartWidth*
@@ -558,7 +553,6 @@ def test_curve_sidebar_focus_names_and_colours_stay_bound_to_each_sample(review_
     ).uncheck()
     expect(pinned).to_have_attribute("aria-pressed", "false")
     expect(root.get_by_role("button", name="解除聚焦", exact=True)).to_be_hidden()
-    # Main and enlarged charts must not share a clip-path ID or clip width.
     button.click()
     root.get_by_role("button", name="放大層析圖").click()
     enlarged = _control(root, "zoom-container").locator(
@@ -745,7 +739,6 @@ def test_multiple_views_keep_controls_theme_dialogs_and_lifetime_local(
         != ink
     )
 
-    # A renderer dialog must close itself, not the workbench's surrounding drawer.
     page.evaluate(
         """() => {
             const host = document.getElementById('host-dialog');
@@ -1117,7 +1110,6 @@ def test_targeted_curve_rendering_preserves_raw_spikes_and_independent_scales(
         )
         == 1
     )
-    # The raw impulse is much taller than its smoothed peak, but still fits.
     assert raw.evaluate_all("""points => points.every(point => {
         const svg = point.ownerSVGElement;
         const y = point.cy.baseVal.value;
@@ -1129,7 +1121,6 @@ def test_targeted_curve_rendering_preserves_raw_spikes_and_independent_scales(
     lines = review.locator('polyline[data-kind="smoothed"]')
     ys = lines.evaluate_all("""lines => lines.map(line =>
         [...line.points].map(point => point.y))""")
-    # The same shape spans the same height despite a 1000-fold ion intensity gap.
     assert ys[0] == ys[1]
     assert max(ys[0]) - min(ys[0]) > 100
 

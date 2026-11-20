@@ -63,9 +63,6 @@ from xic_extractor.peak_detection.signal_quality import (
 _BACKFILL_POLICIES = frozenset(
     {PHYSICAL_PEAK_BACKFILL_POLICY, PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY}
 )
-# Top ripples flag both a peak with a shoulder and a slice of a continuous
-# plateau cut out by missing scans. An overlap-review peak qualifies only when
-# the acquired signal just outside it stays below this fraction of its apex.
 OVERLAP_SURROUNDING_FLANK_MIN = 0.5
 OVERLAP_SURROUNDING_LEVEL_LIMIT = 0.5
 
@@ -249,8 +246,6 @@ def enumerate_physical_segment_universe(
             )
 
         def enumerate_signal(policy: ChromPeakSegmentPolicy):
-            # Raw valleys constrain ownership. Preparation remains on the whole
-            # acquired trace; neither Gaussian nor AsLS is cropped or refitted.
             if raw_components:
                 return ChromPeakSegmentEnumeration(
                     status="OK",
@@ -287,9 +282,6 @@ def enumerate_physical_segment_universe(
                 s.interval.start_index == 0 or s.interval.end_index == len(rt)
                 for s in segments
             ):
-                # Context-dependent baseline estimates can bridge a nearly
-                # returned peak to an acquired edge. Only recover a fully
-                # observed return; complete segments keep their exact values.
                 near_baseline = enumerate_signal(
                     replace(
                         segment_policy,
@@ -335,9 +327,6 @@ def enumerate_physical_segment_universe(
                 physical_segments = _censoring_aware_segments(
                     prepared, physical_segments
                 )
-            # Targeted retains the full acquired context for later batch
-            # selection. Global background complexity cannot erase a clear
-            # local body; the acquisition itself bounds this finite universe.
             if (
                 selection_policy_version != PHYSICAL_PEAK_ENVELOPE_POLICY
                 and len(physical_segments) > prepared.profile.segment_universe_limit
@@ -473,7 +462,6 @@ def _hit_enrichment(raw: np.ndarray, left: int, right: int) -> bool:
     if hits < 6:
         return False
     density = hits / width
-    # The denser flank prevents a background step from masquerading as a peak.
     for flank in (before, after):
         background_hits = int(np.count_nonzero(flank))
         if density < 4.0 * max(background_hits / len(flank), 1.0 / len(flank)):
@@ -506,8 +494,6 @@ def _has_continuous_core_support(
     starts = np.flatnonzero(edges == 1)
     stops = np.flatnonzero(edges == -1)
     if len(starts) < 3:
-        # This protects an already resolved morphology peak; it does not mint
-        # one from isolated hits or impose the smoothing width as a scan minimum.
         return bool(np.any(stops - starts >= 2))
     if not np.any(stops - starts >= window_points):
         return False
@@ -548,8 +534,6 @@ def _censoring_aware_segments(
         first, last = int(detected[0]), int(detected[-1])
         if _positive_runs(raw[first : last + 1]) < 3:
             continue
-        # One observed exterior zero at each boundary retains the measured
-        # trapezoid shoulders, including the zeros, without inventing tails.
         left, right = max(0, first - 1), min(len(raw), last + 2)
         if not _hit_enrichment(raw, left, right):
             continue
@@ -692,9 +676,6 @@ def _admissible_physical_segments(
             or search_rt_window[0] <= segment.apex_rt_min <= search_rt_window[1]
         )
         if not candidates and selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY:
-            # A complete peak can contain the forecast while its apex misses the
-            # window. Recover only containing segments, never nearby context peaks.
-            # The answer still enforces uniqueness, complete support and contrast.
             candidates = tuple(
                 segment
                 for segment in universe.segments
@@ -839,9 +820,6 @@ def _physical_segment_support_failure(
         float(np.min(signal[: apex_offset + 1])),
         float(np.min(signal[apex_offset:])),
     )
-    # Only acquired observations in this apex's half-prominence core support
-    # its top. Low neighbors elsewhere in a long envelope cannot certify an
-    # impulse. Keep this core separate from the local-valley contrast below.
     top_level = float(signal[apex_offset]) - 0.5 * prominence
     top_left = top_right = apex_offset
     while top_left > 0 and signal[top_left - 1] >= top_level:
@@ -857,8 +835,6 @@ def _physical_segment_support_failure(
         for left, right in zip(original, original[1:], strict=False)
     ):
         return "insufficient_original_xic_continuity"
-    # Hit density can identify additional censored clusters; it does not
-    # establish the absence of an already observed morphology peak.
     prominence = local_apex_prominence(signal, apex_offset)
     rt = np.asarray(prepared.rt[left:right], dtype=float)
     noise_sigma = short_scale_noise_sigma(rt, acquired) or 0.0
@@ -1138,8 +1114,6 @@ def validate_physical_peak_question(question: PhysicalPeakQuestion) -> None:
     )
     query_rt = _finite_physical_float(question.query_rt_min, field="query_rt_min")
     if question.selection_policy_version == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY:
-        # The live raw basin is worker-local. A completed reader validates the
-        # persisted references, not another segmentation of the recorded trace.
         if any(
             segment not in question.universe.segments
             for segment in question.admissible_segments

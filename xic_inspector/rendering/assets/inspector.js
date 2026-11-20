@@ -1,8 +1,6 @@
 (() => {
   let nextInstance = 0;
   const mounted = new WeakMap();
-  // The page owns the curve display choice: every live view, and a view a host
-  // mounts later for another group, draws curves on the same signal basis.
   const display = {signal: 'smoothed', overlays: new Set()};
   const displayViews = new Set();
   const signalSwitchMarkup = `<div class="signal-switch" role="group" aria-label="曲線訊號（套用所有項目）" title="套用到所有項目與檢視" hidden><div class="axis-switch"><button type="button" data-signal="raw">原始</button><button type="button" data-signal="smoothed">平滑</button></div></div>`;
@@ -32,7 +30,6 @@
   root.className = 'xic-inspector';
   root.dataset.mode = mode;
   const instanceId = `xic-inspector-${++nextInstance}-`;
-  // Hosts own acquisition and navigation; offline never exposes a live request.
   const onRequestCurves = mode !== 'offline' && typeof options.onRequestCurves === 'function' ? options.onRequestCurves : null;
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const $ = id => root.querySelector(`[data-inspector-id="${id}"]`);
@@ -59,8 +56,6 @@
     timers.add(id);
   };
   function setHTML(element, content) {
-    // Prefix DOM and SVG reference identities at the markup boundary, not in
-    // the scientific presentation helpers that produce the same plot for both hosts.
     element.innerHTML = String(content)
       .replace(/(^|\s)id="([^"]+)"/g, (_, space, id) => `${space}data-inspector-id="${id}" id="${instanceId}${id}"`)
       .replace(/(^|\s)for="([^"]+)"/g, (_, space, id) => `${space}for="${instanceId}${id}"`)
@@ -79,8 +74,6 @@
   }
 
   function renderTargetedCurves(payload) {
-    // A target and its ISTD are two known ions, not competing candidates.
-    // Share their time axis, but keep absolute intensity scales independent.
     const node = (tag, text, cls) => {
       const el = document.createElement(tag);
       if (text !== undefined) el.textContent = text;
@@ -228,14 +221,11 @@
     const value = (v, digits = 4) => v === null || v === undefined || v === ''
       ? '未提供' : typeof v === 'number' ? v.toLocaleString('en-US', {maximumFractionDigits: digits}) : String(v);
     const range = (start, end) => `${value(start)} – ${value(end)} min`;
-    // Current target lists save one expected RT as equal RT min/max.
     const rtSetting = (start, end) => start === end && start !== null && start !== undefined && start !== ''
       ? `預期 RT ${value(start)} min` : `設定 RT ${range(start, end)}`;
     const counted = v => v === true || v === 'TRUE' ? '已計入' : v === false || v === 'FALSE' ? '未計入' : '未記錄';
-    // The saved labels are shown as stored; they are never combined into prose.
     const labelNote = record => [record['依據'] && `依據：${record['依據']}`, record['疑點'] && `疑點：${record['疑點']}`]
       .filter(Boolean).join('　');
-    // A label never breaks inside itself; a list wraps only between labels.
     const labelCell = text => {
       const cell = element('td', undefined, 'tgt-reason');
       String(text).split('、').forEach((label, index) => {
@@ -245,7 +235,6 @@
       return cell;
     };
     const isNumber = v => typeof v === 'number' && Number.isFinite(v);
-    // Intensities span decades, so they read as Excel-style scientific notation.
     const scientific = v => {
       if (!isNumber(v)) return value(v);
       const [mantissa, exponent] = v.toExponential(2).split('e');
@@ -283,7 +272,6 @@
       section.append(element('p', context.join(' · '), 'tgt-context'));
       const banner = focusBanner(focus);
       if (banner) section.append(banner);
-      // Rows keep the saved injection order; minority rows are highlighted, not moved.
       const records = item.details.records;
       const filters = [
         ['all', '全部', () => true],
@@ -353,7 +341,6 @@
           const same = openRow?.row === row;
           closeDetail();
           if (same) return;
-          // Evidence opens under its row, so choosing a sample never moves the reader away.
           const detail = element('tr', undefined, 'tgt-detail-row'), cell = element('td');
           cell.colSpan = titles.length;cell.append(detailFor(record));detail.append(cell);
           row.after(detail);row.classList.add('selected');button.setAttribute('aria-expanded', 'true');
@@ -375,7 +362,6 @@
         bar.append(button);
       }
       if (bar.children.length > 1) section.append(bar);
-      // Opened to read first: start on the minority rows, one click from all.
       const readFirst = payload.selection?.attention_only || payload.selection?.strategy === 'attention';
       applyFilter(readFirst && filters[1].count ? filters[1] : filters[0]);
       table.append(thead, body);
@@ -396,8 +382,6 @@
         definitions.append(facts([['m/z 容差 (ppm)', ions[0]['m/z Tolerance ppm']], ['共洗脫容差下限 (s)', ions[0]['Apex Floor sec']], ['最低峰形 r', ions[0]['Min Shape r']]]));
         method.append(definitions);
       }
-      // Saved answers stand on their own; earlier workbooks carry no Delta Mass
-      // sheet and recorded their own all/any combination.
       const methodEvidence = item.details.method_evidence || [];
       if (methodEvidence.length || (item.details.delta_mass_evidence || []).length) {
         const combinationLabel = methodEvidence.some(record => record['Combine'] === 'any') ? '任一符合' : '全部符合';
@@ -436,7 +420,6 @@
     const labels = {generated_at: '建立時間', app_version: '版本', target_config_hash: '目標設定識別', parallel_mode: '執行模式', parallel_workers: 'Workers', limited_identity_gate: 'Limited identity gate'};
     provenance.append(facts(payload.summary.method_context.filter(([key]) => labels[key]).map(([key, saved]) => [labels[key], saved])));
     review.append(provenance);
-    // The online host states the readonly result scope beside this surface.
     if (offline) review.append(element('p', '唯讀結果 · 未保存逐點曲線。', 'tgt-note'));
     root.append(review);
   }
@@ -472,8 +455,6 @@
     root.querySelector('.advanced-filters > summary').textContent = '篩選';
     $('search').placeholder = '搜尋樣本、m/z、判讀';
   }
-  // The host supplies the complete saved-source catalog, even when this view
-  // contains fewer traces. Colour identity must not depend on loaded curves.
   const catalog=Array.isArray(options.samples)?options.samples:samples;
   const sampleById=new Map([...samples,...catalog].map(s=>[s.id,s]));
   const sampleColors=new Map(catalog.map((s,index)=>[s.id,index]));
@@ -514,25 +495,20 @@
   function originClass(origin){return ['discovery_support','backfill_support'].includes(origin?.kind)?origin.kind:'unavailable';}
   function curveOrigin(item,sampleId){return itemRows(item).find(row=>row.sample_id===sampleId)?.support_origin||{kind:'unavailable'};}
   function originDash(origin){return {discovery_support:'',backfill_support:'6 4',unavailable:'1 5'}[originClass(origin)];}
-  // Line style distinguishes support origins; when no sample records an origin there is nothing to distinguish.
   const originsRecorded=item=>itemRows(item).some(r=>originClass(r.support_origin)!=='unavailable');
   function curveDash(item,origin){return originsRecorded(item)||itemRows(item).some(r=>has(r,'quantitative_value'))?originDash(origin):'';}
-  // Distinct trace roles in one sample are measured channels of that sample, not competing candidates.
   function channelRoles(item,sid){const ws=witnesses(item).filter(w=>witnessSample(w)===sid),roles=ws.map(w=>w.role);return ws.length>1&&roles.every(Boolean)&&new Set(roles).size===roles.length?roles:null;}
   const channelDashes=['','7 4','2 3','10 3 2 3','1 4'];
   function channelStyles(item){
     const roles=[];itemRows(item).forEach(r=>(channelRoles(item,r.sample_id)||[]).forEach(role=>{if(!roles.includes(role))roles.push(role);}));
     return new Map(roles.map((role,i)=>[role,channelDashes[i%channelDashes.length]]));
   }
-  // Channels share their sample's colour, so line style tells them apart unless it already tells support origins apart.
   function lineDash(item){
     const styles=originsRecorded(item)?new Map():channelStyles(item),roleOf=new Map(witnesses(item).map(w=>[candidateId(w),w.role]));
     return (curve,origin)=>emptySample(item,curve.sample_id)?'':styles.get(roleOf.get(curve.candidate_id))??curveDash(item,origin);
   }
   const emptySample=(item,sid)=>itemRows(item).some(r=>r.sample_id===sid&&has(r,'quantitative_value')&&r.quantitative_value===null);
   const curveColor=(item,sid)=>emptySample(item,sid)?'var(--curve-empty)':color(sid);
-  // The source counts samples once; the view only places that summary.
-  // The source counts samples once; these only place the counts.
   function countParts(item){
     const c=item.group_counts;if(!c)return [];
     return [[`${itemRows(item).length} 個樣本`,null],[`${c.detect} detect`,['',2]],[`${c.backfill} backfill`,['6 4',2]],[`${c.empty} 空值`,['',1,'var(--curve-empty)']],...(c.unrecorded?[[`${c.unrecorded} 來源未記錄`,['1 5',2]]]:[]),...(c.missing?[[`${c.missing} 無單一結果`,null]]:[])];
@@ -549,7 +525,6 @@
     const empty=row.quantitative_value===null;
     return `${swatch(empty?'':curveDash(item,row.support_origin),empty?1:2.5,curveColor(item,row.sample_id))}${empty?'':esc(originLabel(row.support_origin))}`;
   }
-  // Only a sample whose curves cannot be read like the others gets words.
   function sampleLimits(item,row){
     const curves=(item.curves||[]).filter(c=>c.sample_id===row.sample_id&&c.raw_rts?.length),aligned=curves.filter(c=>c.aligned_rts?.length).length;
     if(!curves.length)return anyCurve(item)?['無曲線']:[];
@@ -564,7 +539,6 @@
     const rows=itemRows(item), byId=new Map();
     const add=(id,sid,label)=>{if(!id||byId.has(id))return;const row=rows.find(r=>r.sample_id===sid),order=injectionOrders[label];
       const refs=row?.support_origin?.capture_refs||[],all=(item.curves||[]).filter(c=>c.sample_id===sid);
-      // Group curves require the source's exact support binding, including missing bindings.
       const curves=refs.length?all.filter(c=>refs.includes(c.evidence_ref)):['group','row'].includes(item.kind)?[]:all;
       byId.set(id,{id,sid,label:sampleName(sid),row,order:finite(order)?order:null,curves});};
     (item.relationship_members||[]).forEach(m=>add(m.subject_id,m.sample_id,m.sample_label));
@@ -629,9 +603,7 @@
     const curves=selectedCurves(item), all=item.curves||[];
     if(!state.sample)state.capture='';
     else if(!curves.some(c=>curveKey(c,all.indexOf(c))===state.capture))state.capture=curves[0]?curveKey(curves[0],all.indexOf(curves[0])):'';
-    // Keep the selected signal when absent; never substitute raw for smoothed.
   }
-  // Center the saved projection; never re-pick an apex or change signal values.
   function curveTimeBasis(curve,axis){
     return axis==='centered'?(curve.aligned_rts?.length?'aligned':'raw'):axis;
   }
@@ -711,16 +683,11 @@
   const itemForEvidence=()=>items.find(i=>i.id===state.id);
   function evidenceButtons(refs,context,label='查看定量依據'){
     const values=[...new Set((Array.isArray(refs)?refs:[]).filter(Boolean).map(recordRefText).filter(ref=>records(itemForEvidence()).some(r=>recordRefText(r.ref)===ref)))];
-    // Several references are told apart by their readable record title when the report embeds one.
     const titled=ref=>records(items.find(i=>i.id===state.id)).find(r=>recordRefText(r.ref)===ref)?.title;
     return values.length?`<div class="evidence-actions">${values.map((ref,i)=>`<button type="button" class="evidence-link" data-evidence-ref="${esc(ref)}" data-evidence-context="${esc(context)}">${values.length>1?esc(titled(ref)||`${label} ${i+1}`):label}</button>`).join('')}</div>`:'';
   }
-  // The sample table answers each cell; offline it also picks the plotted curves.
   function cellTable(item){
     const offline=mode!=='result',plotted=offline&&anyCurve(item);
-    // The host plot focuses curves itself, so result rows carry no action. Result
-    // rows flow into columns of at least eight rows; one header row per possible
-    // column labels it (CSS clips the ones past the columns that fit).
     const rows=itemRows(item),nameChars=Math.max(0,...rows.map(r=>sampleName(r.sample_id).length)),maxColumns=Math.min(6,Math.max(1,Math.ceil(rows.length/8)));
     const labels='<th>樣本</th><th class="num">Area</th><th>來源</th>';
     const head=offline
@@ -758,7 +725,6 @@
     const measuredMz=c&&Object.prototype.hasOwnProperty.call(c.witness||{},"ms1_apex_mz")?`<p data-readout="measured-mz">實測 MS1 apex m/z：${finite(c.witness.ms1_apex_mz)?c.witness.ms1_apex_mz.toFixed(6):"未提供"}</p>`:"";
     if(!curve)return `<div class="integration-empty"><strong>${esc(sampleName(state.sample))}</strong>${measuredMz}<p>沒有保存曲線</p></div>`;
     const candidateName=c?(c.witness?.label||c.witness?.title||c.witness?.role||`候選 ${c.index+1}`):'',stage=curve.stage_label||curve.kind||'保留曲線';
-    // A curve area equal to the published value would repeat it; another peak's area stays for comparison.
     const quantity=row.quantitative_value, sameArea=finite(curve.area)&&finite(quantity)&&Math.abs(curve.area-quantity)<=1e-9*Math.abs(quantity);
     const rawApex=curve.integration?.raw_apex_rt_min, showRaw=finite(rawApex)&&(!finite(curve.apex_rt)||Math.abs(rawApex-curve.apex_rt)>1e-7);
     return `<div class="readout-heading"><strong>${esc([c?candidateName:'',stage===candidateName?'':stage].filter(Boolean).join(' · '))}</strong><span>原始 RT</span></div>${measuredMz}<dl class="integration-grid">${[
@@ -856,8 +822,6 @@
   function showCurveTooltip(id,event,element,detail='',origin=''){
     const row=curveUi.model.rows.find(row=>row.id===id),tip=$('curve-tooltip');
     if(!row||!tip)return;
-    // Modal content lives in the browser's top layer, outside the main chart's
-    // stacking context. Keep its tooltip in that same dialog.
     const host=element.closest('dialog[open]')||$('curve-workspace');
     if(tip.parentElement!==host)host.append(tip);
     curveUi.hover=row.available?id:null;applyCurveEmphasis();
@@ -900,7 +864,6 @@
     return curveUi.axis==='aligned'&&item&&!curvesHaveAlignedRts(item)?'raw':curveUi.axis;
   }
   function timeAxisTitle(axis){return axis==='centered'?'峰頂置中':axis==='aligned'?'對齊時間':'原始時間';}
-  // Centered offsets are seconds; one decimal matches the scan spacing.
   function windowValue(value,axis){return axis==='centered'?fixed(value,1):drt(value);}
   function timeValue(value,axis){return `${windowValue(value,axis)} ${axis==='centered'?'秒':'min'}`;}
   function curvePeakWindow(curve,axis){
@@ -934,8 +897,6 @@
       const series=seriesList(curve,axis);
       if(!series.length){if(axis==='aligned'&&seriesList(curve,'raw').length)add('未提供校正座標',curve);continue;}
       if(axis!=='raw'&&(curve.rt_alignment_methods?.includes('raw_fallback')||!curve.aligned_rts?.length))add(axis==='centered'?'無 RT 估計，以原始時間置中':'無 RT 估計，顯示原始 RT',curve);
-      // Coverage is judged on the saved bounds; the view's padding only frames them.
-      // Without bounds the view falls back to the loaded range; that needs no note.
       const left=curveTime(curve,axis,'bound_left_rt'),right=curveTime(curve,axis,'bound_right_rt');
       if(!finite(left)||!finite(right)||right<=left)continue;
       for(const s of series){
@@ -944,7 +905,6 @@
         if(lo>left+1e-9||hi<right-1e-9)add('曲線未涵蓋整個峰',curve);
       }
     }
-    // Past a few names a count reads faster; the full list stays on hover.
     return [...notes].map(([message,names])=>{
       const list=[...names],many=list.length>3;
       return `<p class="alignment-summary partial"${many?` title="${esc(list.join('、'))}"`:''}>${message}：${many?`${list.length} 個樣本`:list.map(esc).join('、')}</p>`;
@@ -1131,7 +1091,6 @@
     return `<div class="rt-range"><span aria-hidden="true">${centered?'秒':'RT'}</span><input id="plot-rt-start" type="number" step="any" value="${window?windowValue(window[0],axis):''}" aria-label="${centered?'顯示距中心起點（秒）':'顯示 RT 起點'}"><span aria-hidden="true">–</span><input id="plot-rt-end" type="number" step="any" value="${window?windowValue(window[1],axis):''}" aria-label="${centered?'顯示距中心終點（秒）':'顯示 RT 終點'}"><button type="button" data-rt-view="apply" aria-label="套用範圍">套用</button><button type="button" class="text-action" data-rt-view="full" aria-label="完整已載入範圍">全部</button></div>`;
   }
   function fieldValue(value){
-    // Serialized objects/lists from source records read as key-value lines instead of raw JSON text.
     if(typeof value==='string'&&/^\s*[\[{]/.test(value)){try{const parsed=JSON.parse(value);if(Array.isArray(parsed)&&parsed.every(v=>v===null||typeof v!=='object'))return esc(parsed.map(v=>v??'未提供').join('、')||'（空）');if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed)){const entries=Object.entries(parsed);return entries.length?`<dl class="kv">${entries.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v!==null&&typeof v==='object'?JSON.stringify(v):v??'未提供')}</dd>`).join('')}</dl>`:'（空）';}}catch(_){}}
     return value===''?'<span class="muted">（空）</span>':esc(value??'未提供');
   }
@@ -1208,7 +1167,6 @@
       renderCurveWorkspace(item);
       return;
     }
-    // A group reads answer first: who it is, how its samples split, each sample, then curves.
     const head=identified(item)
       ?`<div class="detail-top"><div><p class="detail-eyebrow">${esc([itemTitle(item),item.method_label].filter(Boolean).join(' · '))}</p><h2>m/z ${mz(item.precursor_mz)} · RT ${rtMin(item.rt_apex_min)}</h2></div>${item.badge_label==='需留意'?'<span class="badge badge-attention">需留意</span>':''}</div>${summaryLine(item)}`
       :`<div class="detail-top"><div><p class="detail-eyebrow">${itemName(item)}${item.method_label?` · ${esc(item.method_label)}`:''}</p><h2>${breakable(itemTitle(item))}</h2><p class="detail-reason">${esc(item.reason_label||'未記錄項目判定說明。')}</p></div><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div>${summary(item)}`;

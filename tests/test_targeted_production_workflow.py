@@ -232,8 +232,6 @@ def test_publication_uses_final_peak_evidence_not_stale_selected_summary(tmp_pat
         ),
         target,
     )
-    # Model the stale selected summary left by a previous selected peak. The
-    # complete retained population is the authority at final selection.
     output.file_results[0].results[target.label] = replace(
         first,
         candidate_ms2_evidence=second.candidate_ms2_evidence,

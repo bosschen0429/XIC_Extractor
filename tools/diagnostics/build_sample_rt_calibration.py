@@ -282,8 +282,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         prior_injections={s: prior for s, (prior, _) in timeline.items()},
         policy=policy,
     )
-    # Keep exact duplicate acquired patterns on one side of the split. This
-    # validation fit is separate from the final map consumed by runtime.
     unique: dict[tuple[tuple[str, float], ...], str] = {}
     for feature in sorted(detected):
         unique.setdefault(tuple(sorted(detected[feature].items())), feature)

@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from xic_extractor.mass_accuracy import absolute_ppm_error
 
 WINDOW_MZ_PPM = 10.0
-# Half-width around expected_rt_min when a reference declares no RT range.
 EXPECTED_RT_HALF_WIDTH_MIN = 0.75
 
 

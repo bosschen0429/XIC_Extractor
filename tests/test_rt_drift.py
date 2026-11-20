@@ -34,7 +34,6 @@ from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 
 SAMPLES = tuple(f"s{i:02}" for i in range(12))
 ORDERS = {sample: index + 1 for index, sample in enumerate(SAMPLES)}
-# Per-sample shift (minutes): not monotone in injection order.
 SHIFT = dict(
     zip(
         SAMPLES,
@@ -87,8 +86,6 @@ def test_compound_following_sample_shift_forms_one_group():
 
 @pytest.mark.parametrize("segment_shift", (0.0, 0.8))
 def test_complementary_isomers_that_do_not_drift_stay_separate(segment_shift):
-    # Each isomer occupies one injection segment. Segment-level shift is the
-    # tissue confound: the shift jitter inside each segment still differs.
     shift = {
         sample: value + (segment_shift if index >= 6 else 0.0)
         for index, (sample, value) in enumerate(SHIFT.items())
@@ -119,8 +116,6 @@ def test_unknown_sample_shift_affects_only_that_member():
 
 
 def test_settled_model_judges_a_moved_owner_instead_of_its_refit():
-    # Each refit after one owner leaves perturbs the coefficients; with this
-    # jitter, removing an interior owner raised the group's own refit cost.
     jitter = (0.1, 0.08, -0.02, -0.07, 0.0, -0.03, 0.09, -0.06, -0.01, 0.03, 0.12, 0.0)
     owners = tuple(
         cid_nl_owner(sample, "drift", apex_rt=round(10.0 + 1.1 * SHIFT[sample] + j, 3))
@@ -250,14 +245,10 @@ def test_proposed_groups_reuse_exact_pair_costs_when_the_comparison_grows():
         assert math.isfinite(expected.evidence)
         assert actual.group_cost(key) == expected.evidence
         assert actual.coefficients(key) == expected.coefficients
-        # A self-comparison remains a hard conflict, not a packed off-diagonal
-        # entry that could poison a later valid group's cost.
         assert actual.pair(owners[2].owner_id, owners[2].owner_id)[0] == math.inf
 
 
 def test_anchor_without_shift_response_keeps_samples_whose_shift_is_unknown():
-    # M comes from two synchronized families observed in s00-s10; the flat
-    # channel also has s11, where M is unknown and its zero response needs none.
     measured = SAMPLES[:-1]
     calibrated = {
         "a": {s: 10.0 + SHIFT[s] for s in measured},
@@ -282,7 +273,6 @@ def test_several_supported_peaks_leave_that_channel_sample_unknown():
         sample_cohorts=dict.fromkeys(SAMPLES, ""), injection_order=ORDERS
     )
 
-    # Two drifting channels in different elution families follow SHIFT.
     def subject(channel):
         return SimpleNamespace(method_subject_id=channel)
 
@@ -317,7 +307,6 @@ def test_anchor_displacement_lets_a_drifted_main_peak_match_its_main_peak():
 
     left = [ElutionLandmark(10.0, 100.0, 0.2), ElutionLandmark(10.6, 10.0, 0.2)]
     right = [ElutionLandmark(10.6, 100.0, 0.2), ElutionLandmark(11.2, 10.0, 0.2)]
-    # Without drift the main peak can only meet the minor peak: one pair.
     assert _match_patterns(left, right, max_shift=0.0) is None
     match = _match_patterns(left, right, max_shift=0.0, shift_hypotheses=(0.6,))
     assert match is not None and match.pairs == ((0, 0), (1, 1))
@@ -348,8 +337,6 @@ def test_anchor_lookup_preserves_the_closed_displacement_window(query_rt):
         )
         for index, reference in enumerate(references)
     )
-    # The scientific window is evaluated by the original subtraction, not by
-    # separately rounded query +/- window bounds.
     expected = tuple(
         sorted(
             anchor.coefficients.time

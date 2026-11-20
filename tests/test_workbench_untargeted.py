@@ -405,7 +405,6 @@ def test_saved_custom_method_snapshot_preserves_full_effective_values(tmp_path):
     draft = method_details("dna_dr")["draft"]
     path = tmp_path / "custom.toml"
     save_method(draft, path)
-    # A full owner-written TOML includes fields without editor controls.
     loaded = method_details(path)["draft"]
     loaded["overrides"]["ms2_precursor_tol_da"] = 0.37
     values = _request_values(tmp_path)

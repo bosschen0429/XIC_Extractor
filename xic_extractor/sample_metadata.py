@@ -26,7 +26,6 @@ SAMPLE_METADATA_COLUMNS: tuple[str, ...] = (
 )
 SampleRole = Literal["sample", "qc", "std", "blank", "other"]
 SAMPLE_ROLES: tuple[SampleRole, ...] = ("sample", "qc", "std", "blank", "other")
-# Earlier files used finer roles; they are read as these, never written.
 _LEGACY_ROLES: Mapping[str, SampleRole] = {
     "study_sample": "sample",
     "pooled_qc": "qc",
@@ -618,7 +617,6 @@ def match_sample_metadata(
             if len(repeated_rows[base]) > 1 or (not candidates and len(repeated) > 1):
                 candidates.update(repeated)
         candidates_by_row.append(candidates)
-    # Colliding source rows must not claim a RAW based on iteration order.
     claims: dict[str, int] = {}
     for candidates in candidates_by_row:
         for stem in candidates:

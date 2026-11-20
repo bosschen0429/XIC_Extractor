@@ -60,8 +60,6 @@ class BrowserDiagnostics:
             errors.append(str(error))
             self.record("pageerror", context=context, text=str(error))
 
-        # Keep all transport failures as evidence, including intentional navigation
-        # cancellations. Console errors/page exceptions remain the failure gate.
         page.context.on(
             "requestfailed",
             lambda request: self.record(

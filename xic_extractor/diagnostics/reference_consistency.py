@@ -151,7 +151,7 @@ def _mapping_prediction(
     x = sorted(knots)
     query = reference_rt(source[held])
     if len(x) < 2 or not x[0] <= query <= x[-1]:
-        return None  # No extrapolation evidence at unsupported edges.
+        return None
     y = [float(np.median(knots[value])) for value in x]
     fitted = isotonic_regression(y, increasing=True).x
     return float(np.interp(query, x, fitted))
@@ -173,8 +173,6 @@ def _mapping_errors(
                 if _same_target(targets[label], peers[label])
             )
             anchors = set(shared)
-            # Remove the largest self-inconsistent anchor, then reassess.
-            # Excluded labels remain held-out predictions and warning rows.
             while len(anchors) > 3:
                 residuals = [
                     (abs(reference_rt(targets[label]) - predicted), label)
@@ -360,8 +358,6 @@ def check_reference_consistency(
                 for group, ordinals in peers.items()
                 if group != row["group"] and (vote := _majority(ordinals)) is not None
             ]
-            # Incomparable groups abstain; they do not turn a lone comparable
-            # peer into a majority. With one method, compare its own samples.
             consensus = (
                 _majority(cross_group, len(other_groups))
                 if other_groups

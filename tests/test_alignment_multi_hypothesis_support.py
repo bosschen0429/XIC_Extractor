@@ -346,8 +346,6 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
     mixed = projected["mixed"].primary_identity_event
     direct_event = projected["direct"].primary_identity_event
     assert mixed is not None and direct_event is not None
-    # Analytical means of accepted independent references: (500.002, 500.006),
-    # products (383.9536, 383.9526); the constructed 500.0 is not measured.
     assert mixed.precursor_mz == pytest.approx(500.004, abs=1e-9, rel=0)
     assert mixed.product_mz == pytest.approx(383.9531, abs=1e-9, rel=0)
     assert mixed.observed_neutral_loss_da == pytest.approx(116.0509, abs=1e-9, rel=0)

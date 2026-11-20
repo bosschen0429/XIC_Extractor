@@ -149,8 +149,6 @@ def test_same_ion_valleys_remain_separate_under_supported_sample_drift(
     workbook = tmp_path / "output" / "correspondence.xlsx"
     output = _run_formal_selection(config, targets, workbook_path=workbook)
     results = {file.sample_name: file.results for file in output.file_results}
-    # Equal analytical Gaussians separated by their midpoint valley. The
-    # broad-body baseline and outer truncation are not an identity oracle.
     unit_area = 10000 * 0.7 * math.sqrt(2 * math.pi) * 60
     for sample, shift, scale in (("Reference", 0, 1), ("Shifted", -2, 2)):
         left, right = results[sample]["T0"], results[sample]["T1"]
@@ -222,8 +220,6 @@ def test_boundary_cid_nl_keeps_possible_lobes_without_merging_or_individual_supp
             return rt, 10 + signal
 
         def iter_ms2_scans(self, *_args):
-            # One event is unique to a remote peak. The other lies at the
-            # shared valley, not strictly inside either target lobe.
             for number, center in enumerate((3, 9), start=1):
                 scan = Ms2Scan(
                     scan_number=number,
@@ -376,9 +372,6 @@ def test_ms1_only_localizes_then_integrates_without_shape_veto(
     monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: raw)
     targets = [target]
     if signal_kind == "far_only":
-        # Independent reference-linked bodies establish the sample's RT frame.
-        # A single target alone does not supply a scientifically justified
-        # universal maximum RT error.
         targets += [
             replace(
                 _target("AnchorA", neutral_loss_da=None, rt_min=4, rt_max=4), mz=400
@@ -558,8 +551,6 @@ def test_many_background_regions_do_not_erase_a_clear_targeted_body(
 
         def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
             rt = np.arange(0.0, 60.005, 0.01)
-            # More background lobes than the generic universe budget. Their
-            # count cannot delete a clearly observed, unrelated main body.
             background = sum(
                 50.0 * np.exp(-0.5 * ((rt - center) / 0.025) ** 2)
                 for center in np.arange(1.0, 59.0, 0.32)
@@ -583,7 +574,6 @@ def test_many_background_regions_do_not_erase_a_clear_targeted_body(
     monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: Raw())
     result = _run(config, [target]).file_results[0].results["Main"]
     assert result.reported_rt == pytest.approx(30.0, abs=0.03)
-    # Independent Gaussian area oracle, with truncated boundary/baseline room.
     expected_area = 20000.0 * 0.16 * np.sqrt(2 * np.pi) * 60
     assert result.reported_peak_area == pytest.approx(expected_area, rel=0.08)
     assert len(result.candidate_physical_evaluations) > 128
@@ -2008,9 +1998,6 @@ def test_paired_analyte_with_nl_remains_counted_despite_target_anchor_mismatch(
     expected_peak = _formatted_peak_columns(
         "Analyte", output.file_results[0].results["Analyte"]
     )
-    # The fixture supplies a symmetric Gaussian on a fixed acquired
-    # grid. Its nearest sample to the known center is the independent apex
-    # oracle; the mocked ranking result does not own physical peak facts.
     assert len(raw.windows) == 2
     sampled_rt = np.arange(raw.windows[1][0], raw.windows[1][1] + 0.0025, 0.0025)
     expected_apex_rt = sampled_rt[np.argmin(np.abs(sampled_rt - 13.06))]

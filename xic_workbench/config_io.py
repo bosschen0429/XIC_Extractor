@@ -24,9 +24,6 @@ if TYPE_CHECKING:
 ROOT = runtime_root()
 CONFIG_DIR = ROOT / "config"
 
-# Workbench requests run on threads. Windows refuses to replace a state file
-# another thread has open, and a read-modify-write would erase a concurrent
-# edit, so every read and write of the state files here runs alone.
 _state_lock = threading.RLock()
 
 

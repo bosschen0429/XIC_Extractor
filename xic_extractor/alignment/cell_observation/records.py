@@ -127,8 +127,6 @@ def _direct_member_integration(
                 )
         return direct_hypothesis.peak.integration
     if peak_observation is not None:
-        # Final members bind owner-backed hypotheses; an observation alone
-        # cannot mint the exact member.
         raise CellObservationContractError(
             "direct observation does not mint the exact final member"
         )

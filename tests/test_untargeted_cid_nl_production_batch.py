@@ -390,7 +390,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
 ) -> None:
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
-    # The atomic phase must contain two disjoint method worksets.
     settings = replace(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
     )
@@ -543,7 +542,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     for raw_path in raw_paths:
         raw_path.write_bytes(f"production-hold:{raw_path.stem}".encode())
-    # Nearby rejected and supported observations must not share admission.
     settings = replace(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
     )

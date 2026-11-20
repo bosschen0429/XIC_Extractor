@@ -69,8 +69,6 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
         (different_loss,),
         (composite,),
     )
-    # A confirmed identity's search envelope must be compared together before
-    # partition dispatch, even if two resolver windows do not directly overlap.
     assert cid_nl_alignment_subject_worksets(
         (first, overlapping, disconnected, different_loss, composite),
         comparison_mz_intervals=((499.99, 500.06),),

@@ -175,7 +175,6 @@ def _set_level_members(
                 "strictly unique relation belongs to individual support"
             )
 
-    # Boundary sets retain touching neighbors after individual eligibility closes.
     component = set(containing)
     changed = True
     while changed:

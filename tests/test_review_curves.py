@@ -216,8 +216,6 @@ def test_saved_curves_stay_with_their_own_cell(tmp_path):
 
 
 def test_unsaved_samples_read_raw_at_their_recorded_coordinates(tmp_path, monkeypatch):
-    # The precursors 499/501 differ from the measured ions, and S3 has a
-    # Backfill value without a Discovery candidate.
     expected = {"S1": (499.012, 20.0), "S2": (501.018, 17.0), "S3": (500.123, 23.0)}
     report, _ = _group_with_missing_apex_review(tmp_path, extraction_by_sample=expected)
     acquired = {}

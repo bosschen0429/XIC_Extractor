@@ -24,7 +24,6 @@ from xic_extractor.output.workbook_styles import (
 )
 from xic_extractor.output.workbook_values import _excel_text
 
-# Both tables share columns A-B, so each width suits either table's column.
 _WORKLIST = (
     ("目標", "Target"),
     ("樣本", "Sample"),
@@ -115,7 +114,6 @@ def _write_worklist(ws, header_row: int, worklist) -> int:
                 cell,
                 color=MUTED if measured and not _is_number(value) else INK,
                 numeric=measured,
-                # Every cell starts at the top so wrapped rows read as one line.
                 wrap=True,
             )
             if measured and _is_number(value):

@@ -213,6 +213,23 @@ the published Matrix hash. It cannot authorize a writer or prove readiness.
 contract. Source tests verify the Python and resource contract only; a frozen
 release is verified only by its artifact build and smoke run.
 
+## Browser and desktop boundaries
+
+An offline report embeds data, not another round of template input. Escape
+every less-than sign in serialized JSON and substitute tokens in one pass;
+otherwise a value can end a script or become a host placeholder. Keep SVG
+references local to their mounted plot; a modal's tooltip belongs in the
+dialog's top layer, not the main plot's stacking context.
+
+The loopback server reuses HTTP connections for assets and status polls. Close
+a connection with an unread or unsupported body rather than parse its tail as
+the next request; consume a bounded body before rejecting its headers to avoid
+a Windows reset during upload. Do not acknowledge an undelivered completion.
+The private launcher capability stays valid after the browser loses its cookie.
+Serialize state-file reads and writes: an outstanding Windows read can deny
+replacement, and concurrent read-modify-write can lose an edit. Read-only
+previews do not hold that mutable-state lock.
+
 ## Verification
 
 | Contract | Focused checks |

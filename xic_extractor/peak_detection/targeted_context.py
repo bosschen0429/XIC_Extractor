@@ -157,16 +157,12 @@ class TargetedPopulationContext:
 
     @cached_property
     def calibration_region(self) -> TargetedRegionContext | None:
-        # Paired references already live in the sample frame. Their offsets
-        # cannot calibrate displacement from the method frame for other targets.
         if self.reference_istd_rt_min is not None:
             return None
         regions = self.competitors
         if len(regions) != 1:
             return None
         region = regions[0]
-        # An unresolved total remains measurable, but its changing mixture of
-        # lobes is not a localized homologue or a precise RT calibration point.
         return region if region.observed_component_count == 1 else None
 
 
@@ -260,9 +256,6 @@ def _select_istd_reference_region(
     candidates = population.regions
     if positive:
         reference_body = min(positive, key=reference_order)
-        # A weak near-reference residue cannot displace a confirmed standard.
-        # Compare against that reference's body, not unrelated global MS1 signal;
-        # a smaller confirmed standard must survive a dominant interference.
         candidates = tuple(
             r
             for r in candidates
@@ -271,10 +264,6 @@ def _select_istd_reference_region(
             >= reference_body.body_support * ANCHOR_SELECTION_MIN_INTENSITY_RATIO
         )
 
-    # Each measured body spans a range of distances from the reference. Remove
-    # bodies that are wholly farther away than another substantive body before
-    # chemistry votes. Overlapping ranges remain competitors: NL can still
-    # prefer a farther apex, without a fixed RT window or a nearest-apex veto.
     closest_extent = min(
         max(
             abs(r.segment.left_rt_min - reference),
@@ -348,9 +337,6 @@ class TargetedBatchContext:
     def _retention_intervals(
         self, population: TargetedPopulationContext
     ) -> tuple[tuple[float, float], ...]:
-        # Reference-overlapping observations seed tentative homologues. Without
-        # this independent link, unrelated peaks can fabricate a coherent but
-        # false RT-shift mode (including several different precursor masses).
         anchors = tuple(
             p
             for p in self._populations_by_sample[population.sample_name]
@@ -358,8 +344,6 @@ class TargetedBatchContext:
             and not _same_ion(p, population)
             and p.calibration_region is not None
         )
-        # Two labels for the same ion are not independent corroboration. Keep
-        # multiple supported shift modes, rather than imposing one global shift.
         return tuple(
             _offset_bounds(p, p.competitors[0])
             for p in anchors
@@ -376,10 +360,6 @@ class TargetedBatchContext:
     def plausible(
         self, population: TargetedPopulationContext, region: TargetedRegionContext
     ) -> bool:
-        # A baseline bow on constant/monotonic raw background is a measurable
-        # residual, not an independent chromatographic body. Preserve its
-        # measurement/method facts without promoting it after a real remote
-        # peak has been ruled out.
         if not region.independent_body_supported:
             return False
         if population.reference_istd_rt_min is not None:
@@ -388,8 +368,6 @@ class TargetedBatchContext:
             return True
         intervals = self.retention_intervals(population)
         if not intervals:
-            # No supported transfer model: preserve a provisional mapping and
-            # expose that missing context, not a universal guessed RT limit.
             return True
         margin = self.retention_uncertainty_min(population)
         limits = (
@@ -403,8 +381,6 @@ class TargetedBatchContext:
 
     @cached_property
     def _retention_uncertainty_by_ion(self) -> dict[tuple[float, float], float]:
-        # The batch-wide uncertainty excludes this ion, not a particular cell.
-        # All samples/assays with the same mass window consume the same answer.
         ions = {(p.mz, p.ppm_tol): p for p in self.populations}
         return {
             ion: self._retention_uncertainty(population)
@@ -412,9 +388,6 @@ class TargetedBatchContext:
         }
 
     def _retention_uncertainty(self, population: TargetedPopulationContext) -> float:
-        # Supported shift modes are not exact physical exclusion limits. Carry
-        # the widths and between-sample spread of independent, reference-linked
-        # bodies into plausibility. Supplied references remain uncertain priors.
         offsets: dict[str, list[float]] = {}
         widths = []
         for sample in self._populations_by_sample.values():
@@ -452,8 +425,6 @@ class TargetedBatchContext:
     def _conflicting_segments(
         self, population: TargetedPopulationContext
     ) -> frozenset[PhysicalSegment]:
-        # Consume one cell's pairwise evidence, then retain its answer rather
-        # than every sample-pair/anchor tuple for the lifetime of the batch.
         transfers = self._peer_region_transfers(population)
         return frozenset(
             region.segment
@@ -467,7 +438,7 @@ class TargetedBatchContext:
         self, population: TargetedPopulationContext
     ) -> tuple[TargetedPeerRegionTransfer, ...]:
         if population.reference_istd_rt_min is not None:
-            return ()  # The paired-position owner governs this stronger prior.
+            return ()
         supported = self.retention_intervals(population)
         anchors = tuple(
             (p, region)
@@ -484,9 +455,6 @@ class TargetedBatchContext:
                 continue
             chosen = self._local_choices[(peer.sample_name, peer.target_label)]
             peer_supported = self.retention_intervals(peer)
-            # An uncertain remote assignment must not teach other samples its
-            # identity. Require direct corroboration, not the broad fallback
-            # uncertainty hull used to preserve provisional measurements.
             if (
                 chosen is None
                 or not self._identity_specific(peer, chosen)
@@ -509,9 +477,6 @@ class TargetedBatchContext:
                     for interval in peer_supported
                 ):
                     continue
-                # Preserve signed sample-pair modes and observed boundary
-                # uncertainty. Between-sample drift is already accounted for
-                # here; do not add that same spread as a symmetric RT allowance.
                 displacements.append(
                     (
                         region.segment.left_rt_min - other_region.segment.right_rt_min,
@@ -544,9 +509,6 @@ class TargetedBatchContext:
         for transfer in transfers:
             if transfer.matches(region, transfer.assigned_region):
                 return False
-            # A single acquired peer detection cannot mint quantity, but it
-            # still locates an alternate ion band. Do not discard it before
-            # asking whether the current candidate belongs to that other band.
             if not any(
                 other != transfer.assigned_region
                 and other.acquired_positive_count > 0
@@ -591,10 +553,6 @@ class TargetedBatchContext:
         if not peers:
             direct = tuple(r for r in candidates if r.contains_acquired_rt(reference))
             if direct:
-                # Without a homologous peer, an actually observed body at the
-                # supplied RT is stronger identity evidence than an unrelated
-                # large contour. Missing points at the top do not break a body
-                # bracketed by acquired observations.
                 candidates = direct
         if peers:
             reference += median(
@@ -686,19 +644,12 @@ class TargetedBatchContext:
     ) -> tuple[TargetedRegionContext, ...]:
         references = self.reference_rts(population)
         regions = tuple(r for r in population.regions if r.independent_body_supported)
-        # Set evidence keeps each possible lobe in the identity comparison;
-        # it does not give any lobe individual support or force their sum.
         positive = tuple(
             r for r in regions if r.chemical_support or r.chemical_set_membership
         )
         regions = positive or regions
         reference = self.reference_rt(population)
         if len(references) > 1:
-            # A large lobe better explained by another declared RT must not set
-            # the abundance floor for this target. This is an interpretation
-            # preference after method/context assessment, not a deletion of the
-            # original candidates. Missing own regions fall back to a shared,
-            # explicitly uncertain interpretation rather than a forced ND.
             own = tuple(
                 r
                 for r in regions
@@ -709,9 +660,6 @@ class TargetedBatchContext:
             )
             if own:
                 regions = own
-            # A total spanning several references cannot erase an available
-            # valley-bounded interpretation specific to this target. If no
-            # such interpretation exists, retain the shared total with review.
             specific = tuple(
                 r
                 for r in regions
@@ -726,8 +674,6 @@ class TargetedBatchContext:
                 regions = specific
         eligible = replace(population, regions=regions)
         prominent = eligible.competitors
-        # A weaker body at the reference remains an identity alternative when
-        # another sample consumes this population; abundance is not a veto.
         return tuple(
             r
             for r in eligible.comparison_regions
@@ -768,8 +714,6 @@ class TargetedBatchContext:
         width = median(p.width_min for p in peers)
         if width <= 0 or region.width_min <= 0:
             return abs(region.segment.apex_rt_min - reference)
-        # Keep RT displacement, width and the complete normalized contour in
-        # the comparison. None is an admissibility or ideal-shape gate.
         rt_difference = abs(region.segment.apex_rt_min - reference) / width
         width_difference = abs(float(np.log(region.width_min / width)))
         contour_difference = median(

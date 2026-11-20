@@ -78,8 +78,6 @@ def test_two_counterparts_in_window_stay_unpaired_as_ambiguous():
 
 
 def test_reverse_competitor_blocks_a_forward_unique_match():
-    # One new feature, two old features: forward from each old feature is
-    # unique, but the new feature's window holds both.
     features = _anchor_features() + [
         BatchFeature("new", "y", "dR", 500.0, 20.0, 40),
         BatchFeature("old", "x1", "dR", 500.0, 20.0 + SHIFT, 10),
@@ -176,8 +174,6 @@ def test_reference_batch_is_largest_then_latest_acquired():
 
 
 def test_istds_bound_to_one_identity_pair_by_identity_not_by_rt():
-    # The old batch carries the ISTD and an unbound twin 0.04 min apart; RT
-    # alone could not choose between them.
     features = _anchor_features() + [
         BatchFeature("old", "istd", "dR", 261.1273, 9.0 + SHIFT, 10, "hmdC"),
         BatchFeature("old", "twin", "dR", 261.1273, 9.04 + SHIFT, 7),
@@ -192,8 +188,6 @@ def test_istds_bound_to_one_identity_pair_by_identity_not_by_rt():
 
 
 def test_search_window_follows_the_map_error_of_neighboring_istds():
-    # The last ISTD alone departs from the shift, so only the late map is
-    # uncertain: a competitor 0.5 min away is ambiguous late but not early.
     istds = [
         istd
         for index, rt in enumerate(ISTD_RT)

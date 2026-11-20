@@ -76,7 +76,6 @@ class DesktopInstance:
         try:
             record = json.loads(self._record.read_text(encoding="utf-8"))
         except FileNotFoundError, ValueError:
-            # The lock owner may still be starting or replacing an old record.
             return None
         url = record.get("url") if isinstance(record, dict) else None
         if not isinstance(url, str):
@@ -113,7 +112,6 @@ class DesktopInstance:
             if response.status == 200 and data.get("desktop_key") == self.key:
                 return url
         except OSError, http.client.HTTPException, ValueError:
-            # A previous server can exit between reading the record and connecting.
             return None
         finally:
             connection.close()
@@ -141,5 +139,4 @@ class DesktopInstance:
                 self._record.unlink(missing_ok=True)
                 self._handoff.unlink(missing_ok=True)
         finally:
-            # Closing releases the OS lock even after an interrupted startup.
             self._stream.close()

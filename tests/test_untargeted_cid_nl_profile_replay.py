@@ -195,9 +195,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         children_of(completed.application_result)
     )
     assert len(trace.retained_contexts) == len(trace.consumed_contexts)
-    # This fixture keeps the frozen partition; Backfill can add risk decisions.
-    # The completed content, including those decisions, must survive finalization
-    # and the spool. Python object identity is not a persisted contract.
     assert len(trace.completed_contexts) == len(trace.retained_contexts)
     if case.family_precursor_delta:
         assert any(
@@ -293,8 +290,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert matrix_row["S1"] == ""
             assert matrix_row["S2"]
             assert matrix_row["S3"]
-            # The fixture XIC ignores m/z, so S4's group-window trace holds a
-            # complete peak without CID-NL: an MS1-only Backfill value.
             (s4_cell,) = (
                 cell
                 for cell in child.scientific_core.cell_observations
@@ -398,9 +393,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         scientific = child.scientific_core
         assert len(scientific.final_population) == 2
         assert len(scientific.cell_observations) == 2 * len(inputs.sample_stems)
-        # Each sample's SUPPORT belongs to its own group. A group with K direct
-        # supports revisits the other samples' windows, which hold no peak;
-        # below K the other samples stay unsearched outside-group cells.
         revisited = min(case.group_sizes) >= 2
         assert sum(
             cell.evidence_states
@@ -551,8 +543,6 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
         assert len(retained_unavailable.trace.rt) > 0
         assert all(value == 0.0 for value in retained_unavailable.trace.intensity)
 
-        # The external vendor can return an empty chromatogram for a valid
-        # native scan window. Keep the acquisition and scientific owners live.
         vendor = inputs.opened_raws[inputs.paths[0]][-1]
         vendor_chromatogram = vendor.GetChromatogramData
 
@@ -587,9 +577,6 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
         inputs.source_raws[inputs.paths[0]].intensity = original_intensity
         recovery_raw.__exit__(None, None, None)
 
-    # The actual recovery owner ran above under this request and attempt.
-    # Exercise its production sink directly, without altering the completed
-    # scientific population or manufacturing a new recovery identity.
     from xic_extractor.alignment_explanation.writer import (
         ExplanationReportWriter,
     )

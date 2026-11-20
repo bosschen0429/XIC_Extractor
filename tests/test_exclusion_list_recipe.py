@@ -34,7 +34,7 @@ def test_named_sheet_skips_rows_marked_x_and_reads_the_column_right_of_mz(tmp_pa
 
 def test_target_csv_with_bom_and_rt_columns(tmp_path):
     path = tmp_path / "list.csv"
-    path.write_text(  # Excel writes a BOM before the first header
+    path.write_text(
         "m/z,t start (min),t stop (min)\n252.11,15.5,19.5\n", encoding="utf-8-sig"
     )
     plain = tmp_path / "plain.csv"

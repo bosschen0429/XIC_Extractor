@@ -502,8 +502,6 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
         ),
     )
     fixture = build_sample_adapter_fixture(tmp_path)
-    # Selected and recorded monoisotopic ions sit 15 ppm either side of the
-    # subject; each passes the per-loss NL relation for both configured losses.
     source_raw = _FakeRaw((8.0,))
     scan = source_raw.scans[0]
     source_raw.scans = (
@@ -655,8 +653,6 @@ def test_backfill_containing_peak_closes_assessment_outside_apex_window(
     [
         ((7.98, 8.0, 8.02), (8.0,), 8.0, 8.0),
         ((7.98, 8.0, 8.02), (8.0,), 8.55, None),
-        # Re-asked at one peak's query, the other peak's record selects this
-        # peak's segment too; only the record that measured it is reused.
         ((8.0, 8.3), (8.0, 8.3), 8.0, 8.0),
         ((8.0, 8.3), (8.0, 8.3), 8.3, 8.3),
     ],

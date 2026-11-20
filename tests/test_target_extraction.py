@@ -236,7 +236,6 @@ def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUni
         state="available",
         reason="available",
     )
-    # Both segments have acquired flanks and multiple supported core samples.
     prepared = PreparedSignal(
         projection=projection,
         profile=profile,
@@ -392,9 +391,6 @@ def test_batch_applies_sample_drift_once(
             return iter(())
 
     files = []
-    # The unshifted sample links standards to their declared RTs. In the
-    # shifted sample the distractor exposes either double displacement or a
-    # method-frame drift diluted by already sample-local paired references.
     for sample, drift in (("reference", 0.0), ("shifted", 2.0)):
         results = {}
         for target in [*standards, *paired_references, analyte]:
@@ -956,10 +952,6 @@ def test_istd_reference_selection_is_not_nearest_apex_always(
     regions = (confirmed,) if scenario == "real_drift" else (unconfirmed, confirmed)
     if scenario == "real_drift":
         reference = 30.0
-    # Adjacent physical bodies have overlapping reference-distance ranges:
-    # positive chemistry can still choose the farther apex. A tiny near body
-    # cannot displace a confirmed drifting standard; global MS1 dominance is
-    # likewise not permission to erase a smaller confirmed reference peak.
     for ordered in (regions, regions[::-1]):
         population = TargetedPopulationContext(
             sample_name="sample",

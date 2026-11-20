@@ -35,8 +35,6 @@ def test_peak_nl_support_uses_shared_matching_and_retains_competing_peak_ambigui
     feature = DetectedFeature(
         "sample-a", "peak", None, 100, 2, 1.8, 2.2, 100, None, "OK", None, "external"
     )
-    # One measured 100 -> 80 loss inside, another outside the saved peak,
-    # and an unrelated 999 -> 979 loss at the same RT.
     scans = (
         Ms2Scan(11, 2.0, 100, np.array([80.0, 55.0]), np.array([20.0, 100.0]), 100.0),
         Ms2Scan(22, 2.5, 100, np.array([80.0]), np.array([100.0]), 100.0),
@@ -178,9 +176,7 @@ def test_batch_cli_answers_each_candidate_without_manual_scan_selection(
             )
 
         def iter_ms2_scans(self, lo, hi):
-            assert (
-                lo <= 1.8 and hi >= 2.2
-            )  # complete peak, not 0.05-min display padding
+            assert lo <= 1.8 and hi >= 2.2
             precursor = 100.0 if self.name == "sample-a" else 200.0
             product = 80.0 if self.name == "sample-a" else 180.03
             yield Ms2ScanEvent(

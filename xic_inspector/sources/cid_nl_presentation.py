@@ -50,8 +50,6 @@ def blank_reason(cell: dict[str, Any]) -> str | None:
     if variant == "searched_no_observation" or "searched_no_observation" in states:
         return "找過，沒有可用的峰"
     if "insufficient_method_evidence" in reasons:
-        # _method_result emits this only after evaluation, with no candidate
-        # peaks and no qualifying CID-NL relation. It does not mean zero signal.
         return _REASON_LABELS["insufficient_method_evidence"]
     if variant == "not_quantifiable":
         return "有峰，但無法定量"
@@ -179,7 +177,6 @@ def _item_labels(view: ItemEvidence, samples, route):
     if view.item.kind == "row":
         labels["group_counts"] = {
             **_group_counts(samples),
-            # Left-empty with several possible peaks: context for the overview.
             "unresolved": len(
                 {
                     c["sample_key"]
@@ -218,8 +215,6 @@ def build_sample(
     note = None
     if view.item.kind == "row":
         note = "沒有單一定量結果" if len(cells) != 1 else blank_reason(cells[0])
-    # How the area was measured accompanies that area, not the risks that flag
-    # the sample.
     area_notes = [
         REVIEW_LABELS.get(reason) or reason
         for cell in cells

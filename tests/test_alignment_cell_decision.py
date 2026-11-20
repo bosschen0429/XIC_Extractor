@@ -171,8 +171,6 @@ def test_target_quantification_requires_joint_signal_and_support_failure(
     from xic_extractor.peak_detection.integration_result import IntegrationResult
     from xic_extractor.peak_detection.signal_quality import SignalQuality
 
-    # A support-policy truth table, not a generated chromatographic oracle.
-    # Sparse scans alone and low S/N alone must not suppress a value.
     integration = IntegrationResult(0, 4, 8, 4, 8, 1, 1, 120)
     quality = SignalQuality("available", 1, 2 if low_snr else 20, low_snr)
     integration = replace(integration, signal_quality=quality)

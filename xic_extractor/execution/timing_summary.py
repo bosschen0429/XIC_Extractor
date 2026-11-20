@@ -78,9 +78,6 @@ def _measurement_summary(
         scope = text_value(observation.get("scope"))
         if metric:
             grouped[(metric, scope)].append(observation)
-    # Record metrics are accepted only when they use the exact canonical name.
-    # In particular, Alignment's extract_xic aliases must not become Discovery
-    # measurements by inference.
     canonical_fields = tuple(_MEASUREMENT_FIELDS)
     for record in records:
         metrics = record.metrics or {}

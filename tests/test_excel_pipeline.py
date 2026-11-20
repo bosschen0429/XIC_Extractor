@@ -45,7 +45,6 @@ def test_workbook_filters_belong_to_tables_not_overlapping_worksheet_ranges(tmp_
             if name.startswith("xl/worksheets/sheet"):
                 sheet = ElementTree.fromstring(archive.read(name))
                 if sheet.find("s:tableParts", ns) is not None:
-                    # Excel repairs/removes tables when a worksheet filter overlaps.
                     assert sheet.find("s:autoFilter", ns) is None, name
             elif name.startswith("xl/tables/"):
                 table = ElementTree.fromstring(archive.read(name))

@@ -90,14 +90,10 @@ def write_partition_payload(
     temporary = path.with_suffix(".tmp")
     if path.exists():
         raise FileExistsError(f"partition artifact already exists: {path}")
-    # Exclusive creation happens outside cleanup: an existing file belongs
-    # to another writer and must never be deleted by this attempt.
     stream = temporary.open("xb", buffering=1024 * 1024)
     try:
         with stream:
             writer = _PartitionWriter(stream)
-            # Non-tuple fields share a header; tuple fields have independent
-            # records so consumers need not restore the entire payload graph.
             header = (
                 type(payload),
                 {
@@ -129,9 +125,6 @@ def write_partition_payload(
                 if name not in lengths:
                     continue
                 values = getattr(payload, name)
-                # Individually addressable fields need independent identity-safe
-                # graph restoration; exclusions are addressed by canonical
-                # candidate position.
                 width = 1 if name in individually_addressable_fields else 2048
                 entries = []
                 cached_chunks: list[tuple[Any, ...]] | None = (

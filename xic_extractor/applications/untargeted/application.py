@@ -350,7 +350,6 @@ def _prepare_mass_recalibration(
             ).items()
         }
     if request.known_istd_reference is None and request.targets_csv is not None:
-        # Only the ISTD reference needs Targeted calibration; Discovery has none.
         policy = request.peak_config.mass_recalibration
     if policy is MassRecalibration.NONE:
         return {}
@@ -657,9 +656,6 @@ def _group_batch(
     )
 
 
-# No level writes these any more. They stay owned so that a copy left by an
-# earlier run is still reported as a stale artifact instead of being mistaken
-# for this run's output.
 _RETIRED_ALIGNMENT_ARTIFACT_NAMES = (
     "alignment_results.xlsx",
     "review_report.html",

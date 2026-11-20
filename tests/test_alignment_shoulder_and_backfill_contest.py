@@ -120,7 +120,6 @@ def _groups(owners: tuple[SampleLocalMS1Owner, ...]):
 def _measured_on_overlap(owner: SampleLocalMS1Owner) -> SampleLocalMS1Owner:
     """The owner with its peak measured on an unresolved shoulder or overlap."""
 
-    # Two broad lobes acquired without the first lobe's rise form one envelope.
     full_rt = np.linspace(7.0, 13.0, 301)
     full = 1000 * np.exp(-0.5 * ((full_rt - 9.3) / 0.5) ** 2)
     full += 700 * np.exp(-0.5 * ((full_rt - 10.4) / 0.5) ** 2)
@@ -194,7 +193,6 @@ def test_regroup_preserves_overlap_disposition(tmp_path, all_overlap, expected):
 
 
 def test_shoulder_split_from_most_of_its_peaks_leaves_the_matrix() -> None:
-    # S7's main peak was not detected, so its shoulder has no neighbour.
     owners = (
         *(_main(f"S{index}") for index in range(1, 7)),
         *(_shoulder(f"S{index}") for index in (1, 2, 3)),
@@ -268,8 +266,6 @@ def _candidate(
             query_ppm_tol=query_ppm, acquisition_source_id="source"
         ),
     )
-    # These view-only fixtures have no context beyond their measured points.
-    # The minted completion fixtures exercise separately retained context.
     peak.source_trace = peak
     return peak
 
@@ -391,7 +387,6 @@ def test_backfill_peak_of_another_rows_member_is_contested() -> None:
     s4 = "test-sample:S4"
     backfills = {
         ("other-row", s1, "subject"): _backfill(_candidate("bf-s1", apex=9.0)),
-        # Two rows' windows found S4's peak with different bounds.
         ("other-row", s4, "subject"): _backfill(_candidate("bf-s4-a", apex=9.0)),
         (group.group_hypothesis_id, s4, "subject"): _backfill(
             _candidate("bf-s4-b", apex=9.0)
@@ -478,7 +473,6 @@ def test_backfill_peak_at_another_apex_or_mass_is_not_contested() -> None:
         (500.0, 5.0, 500.0075, 5.0, False),
         (500.0, 5.0, 500.01055, 20.0, True),
         (500.0, 20.0, 500.025, 20.0, False),
-        # Exact windows [999, 1001] and [1001, 1003] share their endpoint.
         (1000.0, 1000.0, 1002.0, 1e6 / 1002.0, True),
         (1000.0, 1000.0, 1002.0, 0.5e6 / 1002.0, False),
     ],
@@ -553,8 +547,6 @@ def _two_bands(early: tuple[str, ...], late: tuple[str, ...], *, gap: float):
 def test_grouping_uses_corrected_coordinates_for_separated_bands(
     calibrated: bool,
 ) -> None:
-    # Alternating injections at 9.0 and 10.8 min contradict one local band,
-    # despite disjoint samples and overlapping Backfill windows.
     groups = _two_bands(
         tuple(f"S{i}" for i in range(0, 12, 2)),
         tuple(f"S{i}" for i in range(1, 12, 2)),

@@ -153,9 +153,6 @@ class PhysicalPeakCapture:
             for request, members in final_contexts.items()
             for member in members
         }
-        # Different mass windows are never substituted during acquisition.
-        # Only equality over the complete final acquired range can establish
-        # that two compatible windows observed the very same signal.
         signal_owners: dict[XICRequest, XICRequest] = {}
         owner_members: dict[XICRequest, list[XICRequest]] = {}
         for request in sorted(
@@ -262,8 +259,6 @@ class PhysicalPeakCapture:
         if segment is not None:
             ordinal, evaluation = measurements[segment]
         else:
-            # Unassigned queries retain an explicit no-selection answer. There
-            # is no measurement to repeat and no prepared-signal evaluation.
             evaluation = population.unselected(search.query_rt_min)
             ordinal = self._next_work_ordinal
             self._next_work_ordinal += 1

@@ -83,8 +83,6 @@ def test_raw_zero_valley_keeps_a_smaller_nl_peak_separate_from_bigger_neighbor()
 
 
 def test_component_contrast_ignores_uncut_ripple_but_never_uses_interior_minimum():
-    # One resolved component with an uncut top ripple and a lower interior point.
-    # Both measured endpoints, not that minimum, limit its contrast.
     signal = np.asarray([60.0, 10.0, 100.0, 99.0, 101.0, 55.0])
     assert local_apex_prominence(signal, 4) == 41.0
     assert local_apex_prominence(np.asarray([60.0, 100.0, 55.0]), 1) == 40.0

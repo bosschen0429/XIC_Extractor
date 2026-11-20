@@ -117,15 +117,11 @@ export function renderJob() {
   $("target-samples-review").hidden = !sampleSummary;
   if (sampleSummary) renderSampleSummary(sampleSummary, "target-samples");
   const card = $("analysis-job");
-  // Curation starts from a result; every other job belongs to a setup page.
-  // A hidden card leaves completion and failure to the toast below.
   const onResult = showingResult();
   const slot = document.querySelector(
     `[data-job-slot="${onResult ? "curation" : state.view}"]`,
   );
   if (slot && card.parentElement !== slot) slot.append(card);
-  // A completed analysis is summarized by its result card at the top of the
-  // setup page; a completed curation only while its card is on screen.
   const summarizedByResult =
     job?.status === "succeeded" &&
     (job.kind === "samples" ||
@@ -251,13 +247,9 @@ export function bindJobs(initial) {
   }));
   sampleMetadata.restore(analysis.snapshot);
   $("analysis-stop").onclick = () => act(() => analysis.cancel());
-  // A page switch, or opening the panel that can reveal the result card
-  // replacing a finished job, re-places the job card.
   document.addEventListener("xic:page-layout", renderJob);
   $("result-curation").addEventListener("toggle", renderJob);
   let wasBusy = false;
-  // Bootstrap attaches observation once the initial views are ready. Merely
-  // restoring a job must not race the initial Review/ISTD restoration.
   return () =>
     analysis.subscribe((snapshot, completed) => {
       if (wasBusy !== snapshot.busy) {

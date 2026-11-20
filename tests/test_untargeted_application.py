@@ -528,8 +528,6 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
             alignment_config=config,
         )
 
-    # The reference keeps each child beside its outputs, as a scientific
-    # fixture does; the published run stores only the production projection.
     expected = execute("expected", project_composed_child)
     completed = execute(
         "runtime",
@@ -601,7 +599,6 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
 
     def counted_read(store, *args):
         nonlocal restores
-        # The preceding loop item may still be live; earlier partitions must be gone.
         assert live_outputs() <= 1
         values = read_record(store, *args)
         for value in values:
@@ -1153,7 +1150,6 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
         f"{stem}@mz701_rt7.8000" for stem in ("sample-a", "sample-b")
     }
     assert {row["status"] for row in cells} == {"detected"}
-    # Fixture apex = 100 baseline + (sample index + 1) * 500.
     heights = {row["sample_stem"]: float(row["height"]) for row in cells}
     assert heights == {"sample-a": 600.0, "sample-b": 1100.0}
     areas = {row["sample_stem"]: float(row["area"]) for row in cells}

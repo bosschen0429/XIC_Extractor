@@ -332,8 +332,6 @@ class PartitionPipelineScheduler:
                             del acq_out, comp_out
                             progress("partition_released", index + 1)
                     else:
-                        # Composition keeps one partition resident while each
-                        # acquisition lane can prepare its next partition.
                         admission_credits = threading.Semaphore(acquisition_workers + 1)
                         handoff_queue: queue.Queue[
                             tuple[
@@ -572,7 +570,6 @@ class PartitionPipelineScheduler:
                 check_cancellation()
                 return application_result
             except Exception:
-                # Any failure leaves the remaining partitions unadmitted.
                 partition_failed = True
                 raise
             finally:
@@ -609,8 +606,6 @@ class PartitionPipelineScheduler:
             try:
                 checkpoint = store.preserve_failed_results()
             except Exception as preservation_error:
-                # Keep the original failure and every sealed file even if the
-                # diagnostic metadata cannot be written (for example, disk full).
                 exc.add_note(f"Could not retain replay metadata: {preservation_error}")
                 raise exc from preservation_error
             if checkpoint is not None:

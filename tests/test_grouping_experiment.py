@@ -57,8 +57,6 @@ def test_retained_snapshot_ignores_only_retired_alignment_keys(tmp_path):
     write_grouping_inputs(path, inputs, provenance={})
     with gzip.open(path, "rt", encoding="utf-8") as stream:
         payload = json.load(stream)
-    # Compatibility for saved grouping snapshots, not a permissive config API.
-    # Remove this case only when those snapshots are no longer supported.
     payload["alignment_config"].update(
         duplicate_fold_ppm=5.0,
         duplicate_fold_rt_sec=2.0,
@@ -432,9 +430,7 @@ def test_istd_experiment_and_saved_replay_use_formal_batch_coordinates(
     )
     assert formal_frame.common_rt_min("S1", 8) == pytest.approx(6)
     expected = replay_grouping(prepared.inputs, rt_coordinates=formal_frame)
-    assert (
-        len(expected) == 2
-    )  # The observed 8 min peaks are 2 min apart after calibration.
+    assert len(expected) == 2
     assert group_signature(prepared.groups) == group_signature(expected)
     snapshot = tmp_path / "istd.json.gz"
     write_grouping_inputs(snapshot, prepared.inputs, provenance={})
@@ -512,15 +508,11 @@ def test_replay_members_report_the_selected_coordinate_basis(tmp_path, mode):
         sample: query + (shifts[sample] if mode == "missing_peer" else 0.5)
         for sample in samples
     }
-    # Check the numbers before the additional basis column so a regression
-    # cannot hide behind a missing explanatory field.
     assert {row["sample_stem"]: float(row["comparison_rt"]) for row in members} == (
         pytest.approx(expected_rts)
     )
     for member in members:
         measured = query + shifts[member["sample_stem"]]
-        # All three measured standards have median reference position + 0.5.
-        # One unsupported peer instead makes this whole comparison use raw RT.
         expected_rt = expected_rts[member["sample_stem"]]
         assert float(member["observed_rt"]) == measured
         assert float(member["comparison_rt"]) == pytest.approx(expected_rt)
@@ -624,9 +616,6 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         mint_cid_nl_method_assessment,
     )
 
-    # The independently specified calibration maps two physical peaks to 10.0
-    # and 10.7 min. Direct owners alternate between them; no same-sample owner
-    # exclusion can substitute for correctly matching their surrounding peaks.
     offsets = {"a": 0.0, "b": shift, "c": 0.02, "d": shift + 0.02}
     selected = {"a": 10.0, "b": 10.0, "c": 10.7, "d": 10.7}
     fixture = build_processing_identity_no_raw_fixture(
@@ -835,8 +824,6 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
 
 
 def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatch):
-    # The two observed precursor masses are ~30 ppm apart at the same apex.
-    # They fit the original 50 ppm envelope, but not the 20 ppm variant.
     snapshot = Path(__file__).parent / "fixtures" / "synthetic-grouping.json.gz"
     a, b = "a|hypothesis|peak", "b|hypothesis|peak"
     counted_replay = Mock(wraps=replay_grouping)
@@ -986,7 +973,6 @@ def test_grouping_anchor_table_lists_istd_knots_without_any_workset(
     monkeypatch.setattr(
         application, "prepare_untargeted_alignment_inputs", lambda **kwargs: plan
     )
-    # No ordinary candidate is supported, but both samples measured ISTD1.
     calibration = build_batch_rt_calibration(
         {},
         sample_stems=("S0", "S1"),

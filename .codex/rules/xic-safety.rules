@@ -1,5 +1,3 @@
-# XIC Extractor repo-local command policy.
-# Keep only destructive Git actions that can discard user work.
 
 prefix_rule(
     pattern = ["git", "reset", "--hard"],

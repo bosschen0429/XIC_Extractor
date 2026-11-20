@@ -280,8 +280,6 @@ def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
         )
     )
     assert selected is not None
-    # Built without a trace, the hypothesis has no morphology area; give it the
-    # measured area the legacy row reports so only finalized identity differs.
     legacy_peak = legacy.peak_result.peak
     assert legacy_peak is not None
     selected = replace(
@@ -314,14 +312,11 @@ def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
         if header in {*TARGETED_PRODUCT_PROJECTION_HEADERS, "依據", "疑點"}:
             continue
         assert selected_long[header] == fallback_value
-    # The fixtures differ in finalized identity, not their measured values.
     assert fallback_long["Counted Detection"] == "TRUE"
     assert selected_long["Counted Detection"] == "FALSE"
     assert (
         selected_long["Projection Not Counted Reasons"] == "cid_nl_method_not_supported"
     )
-    # The neutral loss was seen with a large mass error and did not count; the
-    # trace-less hypothesis carries no typed evidence beyond it.
     assert (selected_long["依據"], selected_long["疑點"]) == ("NL 偏差大", "證據單薄")
     assert selected_long["Product State"]
     assert selected_long["Counted Detection"] in {"TRUE", "FALSE"}

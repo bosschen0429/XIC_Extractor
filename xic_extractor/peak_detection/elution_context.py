@@ -28,8 +28,6 @@ class ElutionLandmark:
     apex_rt: float
     height: float
     width: float
-    # Unique point ownership in this context's formal physical universe.
-    # Missing ownership is not evidence that this is a separate peak.
     physical_segment: PhysicalSegment | None = None
 
     def __post_init__(self) -> None:

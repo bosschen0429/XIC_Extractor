@@ -142,7 +142,6 @@ export function renderResults() {
     const { container, downloads, details } = resultBase("untargeted", result);
     const metrics = el("div", undefined, "result-metrics");
     if (result.delta_mass) {
-      // Delta Mass Discovery yields diagnostic candidates, not an aligned matrix.
       metric(metrics, result.delta_mass.candidate_count, "Delta Mass 候選");
       metric(metrics, result.sample_count, "RAW 檔案");
     } else {

@@ -1,5 +1,3 @@
-// Curation draft, source discovery and preview-backed export admission.
-// Presentation submits edits and reads snapshots; it never compares requests.
 const browserClock = {
   setTimeout: (callback, delay) => setTimeout(callback, delay),
   clearTimeout: (timer) => clearTimeout(timer),
@@ -70,7 +68,6 @@ export function createCurationSession(
       : "請選擇 Untargeted 結果資料夾。";
   }
   function replaceSources(values) {
-    // Changing a list in this Matrix must not reset the other step choices.
     if (values.source_dir !== sources.source_dir) settings = owned({});
     else if (detection)
       settings = owned(Object.fromEntries(detection.steps

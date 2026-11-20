@@ -62,7 +62,6 @@ def test_review_groups_use_confirmed_roles_by_raw_stem_without_raw_reads(tmp_pat
         {"sample_key": "unavailable-sample"},
     ]
     assert review_sample_groups(config, raw_dir, source) == {}
-    # There are no RAW files or headers here; only confirmed folder annotations.
     save_batch_samples(
         config,
         raw_dir,

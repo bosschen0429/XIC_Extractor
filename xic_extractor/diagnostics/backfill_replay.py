@@ -28,8 +28,6 @@ from xic_extractor.untargeted_execution.partition_composition import (
 
 
 def _receipt(directory: Path) -> Path:
-    # The decoded owner graph can execute code. Never accept a digest from the
-    # input itself: only this user's successful local capture grants trust.
     identity = hashlib.sha256(
         os.fsencode(os.path.normcase(directory.resolve()))
     ).hexdigest()
@@ -76,7 +74,6 @@ def _load_receipt(
         raise ValueError(f"No completed local Backfill capture for {directory}")
     capture = json.loads(receipt.read_text(encoding="utf-8"))
     if isinstance(capture, list):
-        # A digest-only capture still supports replaying Backfill itself.
         return capture, None
     return capture["digests"], capture["samples"]
 

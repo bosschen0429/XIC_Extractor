@@ -495,7 +495,7 @@ def test_isolated_one_or_two_scan_pulses_do_not_supply_complete_peak_evidence(
     assert (
         physical_peak_support_failures_at_reference(prepared.prepared, universe, 0.0)
         == ()
-    )  # No containing segment is not proof of insufficient raw support.
+    )
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
         query_rt_min=1.5,
@@ -597,8 +597,6 @@ def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
 ) -> None:
     rt = np.arange(401, dtype=float) / 100.0
     raw = np.zeros(401)
-    # One dense detection cluster, with no detected background. Intensity
-    # valleys are censoring gaps, not evidence for separate chromatographic peaks.
     positions = np.arange(160, 241)
     positions = positions[(positions % 3 == 0) | (positions == 199)]
     raw[positions] = 100.0 + 200.0 * np.exp(-(((positions - 200) / 25.0) ** 2))
@@ -682,9 +680,6 @@ def test_strong_continuous_peak_with_sparse_tail_keeps_original_segment(
     assert result.answer.selected_segment is not None and result.integration is not None
     selected = result.answer.selected_segment
     assert selected is not None
-    # The continuous Gaussian returns to baseline before the sparse tail.
-    # Envelope/baseline revisions may change ordinary boundaries, but density
-    # must not absorb the sparse tail beginning at 2.42 min.
     assert 1.6 <= selected.left_rt_min < 2.0
     assert 2.0 < selected.right_rt_min < rt[242]
     assert selected.evidence_sources == (
@@ -727,11 +722,8 @@ def test_compact_continuous_doublet_keeps_component_areas(
         for height, center in components
     )
     raw[raw < 15.0] = 0.0
-    # A weak isolated hit connects the density windows, but supplies neither
-    # a third chromatographic peak nor permission to merge the true doublet.
     raw[int(np.argmin(abs(rt - 2.65)))] = 20.0
     prepared = prepare_physical_signal(rt, raw)
-    # Both contexts include complete acquired flanks for the same components.
     local = (rt >= 1.0) & (rt <= 4.5)
     focused_prepared = prepare_physical_signal(rt[local], raw[local])
     selected = []
@@ -748,8 +740,6 @@ def test_compact_continuous_doublet_keeps_component_areas(
         )
         facts = result.answer.selected_segment
         assert facts.apex_rt_min == pytest.approx(center, abs=scan_spacing)
-        # The analytical tenth-height Gaussian interval retains erf(sqrt(log 10))
-        # of its mass; neither smoothing nor the gap hit may add the other peak.
         expected_area = (
             height
             * sigma
@@ -787,8 +777,6 @@ def test_continuous_peak_with_isolated_dropouts_keeps_morphology_area(
     rt = np.arange(801, dtype=float) / 100.0
     raw = background + 10000.0 * np.exp(-0.5 * ((rt - 4.0) / 0.35) ** 2)
     raw[raw < 1.0] = 0.0
-    # Several isolated missing observations split the binary runs, while long
-    # acquired stretches still support the ordinary chromatographic envelope.
     raw[[370, 389, 423, 439]] = 0.0
     prepared = prepare_physical_signal(rt, raw)
     result = evaluate_physical_peak(
@@ -873,8 +861,6 @@ def test_shallow_valley_does_not_create_independent_components(dropout: bool) ->
         raw[453:456] = 0.0
     result = _physical_candidates(rt, raw)
     assert result.status == "OK"
-    # The analytical valley is about 80% of either apex, not a clear split.
-    # A brief missing-scan notch cannot turn this unresolved envelope into two.
     assert len(result.candidates) == 1
     peak = result.candidates[0].peak
     assert peak.peak_start < 2.0 < 2.54 < peak.peak_end
@@ -891,8 +877,6 @@ def test_peak_top_requires_adjacent_acquired_support(apex_scan_count: int) -> No
         prepare_physical_signal(rt, raw),
         query_rt_min=2.0,
     )
-    # Low acquired neighbors on the broad background cannot support a smoothed
-    # impulse's apex. Two actual adjacent high observations remain sufficient.
     assert result.state == ("available" if apex_scan_count == 2 else "unavailable")
     if apex_scan_count == 1:
         assert result.reason == "insufficient_original_xic_support"
@@ -1015,7 +999,7 @@ def test_acquired_peak_top_not_low_alternating_neighbors_supplies_support(
         raw[raw < 1.0] = 0.0
         raw[[25, 29, 32, 69, 73]] = 10.0
     else:
-        raw[::2] *= 0.1  # Jagged, but original signal remains continuous.
+        raw[::2] *= 0.1
     prepared = prepare_physical_signal(rt, raw)
     result = evaluate_physical_peak(
         prepared,
@@ -1026,9 +1010,6 @@ def test_acquired_peak_top_not_low_alternating_neighbors_supplies_support(
         assert result.state == "unavailable"
         assert result.answer.selected_segment is None and result.integration is None
         if policy == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY:
-            # The query itself is the acquired 10%-height valley between two
-            # alternating raw maxima, not a uniquely owned raw peak. This is
-            # still non-numeric; no original-support gate has been relaxed.
             middle = len(raw) // 2
             assert raw[middle] < 0.5 * min(raw[middle - 1], raw[middle + 1])
             assert result.reason == "ambiguous_segment_candidates"
@@ -1052,8 +1033,6 @@ def test_overlapping_components_keep_one_envelope_and_review(
     point_count: int,
     width: float,
 ) -> None:
-    # Three analytically present components have elevated intervening valleys.
-    # One unresolved envelope is measurable, not the individual constituents.
     rt, raw = _overlapping_triplet_trace(point_count, width)
     profile = SignalProcessingProfile()
     prepared = prepare_physical_signal(rt, raw, profile=profile)
@@ -1082,8 +1061,6 @@ def test_background_fluctuation_cannot_borrow_height_from_its_baseline(
     scale: float,
     background: float,
 ) -> None:
-    # Scaled acquired background with isolated impulses. The smoothed local
-    # maximum has little relief above its valleys, despite its residual height.
     raw = (
         scale
         * np.asarray(
@@ -1175,17 +1152,11 @@ def test_background_component_generator_respects_query_ownership_policy(
         selection_policy_version=policy,
     )
     if policy == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY and slope:
-        # The generator reveals an injected Gaussian, but no measured NL or
-        # baseline decomposition is available to a raw-basin question. On this
-        # rising total signal the retained raw owner is the clipped right edge,
-        # not an independently resolved component at the injected center.
         assert int(np.argmax(raw)) == len(raw) - 1
         from scipy.signal import find_peaks
 
         (local_maximum,) = find_peaks(raw)[0]
         valley = local_maximum + int(np.argmin(raw[local_maximum:]))
-        # Independent input topology: its shallow raw dip does not meet the
-        # fixed clear-valley split, nor the fixed envelope-relative prominence.
         assert raw[valley] > 0.5 * raw[local_maximum]
         assert raw[local_maximum] - raw[valley] < (
             prepared.prepared.profile.segment_min_prominence_fraction * max(raw)
@@ -1311,9 +1282,6 @@ def test_wide_supported_peak_does_not_use_uncut_top_ripples_as_contrast_valleys(
     amplitude = 12000.0
     rng = np.random.default_rng(479)
     analytic_envelope = amplitude * np.exp(-0.5 * ((rt - center) / sigma) ** 2)
-    # Bounded raw measurement noise is at most 1.25% of the analytic apex.
-    # The known broad positive is one resolved component. Its small surface
-    # ripples cannot create contrast boundaries that segmentation did not cut.
     raw = 300.0 + analytic_envelope + rng.uniform(-150.0, 150.0, rt.size)
 
     result = evaluate_physical_peak(
@@ -1359,7 +1327,6 @@ def test_clear_doublet_closes_at_relative_return_before_the_deeper_valley() -> N
     assert right.answer.selected_segment.apex_rt_min == pytest.approx(
         right_center, abs=0.03
     )
-    # Each lobe returns below 10% before the very deep inter-peak valley.
     assert left_center < left.answer.selected_segment.right_rt_min < valley_rt
     assert valley_rt < right.answer.selected_segment.left_rt_min < right_center
     assert left.answer.selected_segment.right_rt_min == pytest.approx(
@@ -1396,8 +1363,6 @@ def test_tenth_height_return_uses_canonical_apex_not_coarse_envelope(sigma) -> N
     prepared = prepare_physical_signal(rt, raw)
     assert prepared.prepared is not None
     signal = np.asarray(prepared.prepared.positive_signal)
-    # An isolated Gaussian has one contiguous region above its canonical 10%
-    # level. Include exactly the acquired samples bracketing that return.
     above = np.flatnonzero(signal > 0.1 * np.max(signal))
     left, right = int(above[0]) - 1, int(above[-1]) + 1
     peak = evaluate_physical_peak(
@@ -1416,8 +1381,6 @@ def test_tenth_height_return_uses_canonical_apex_not_coarse_envelope(sigma) -> N
         query_rt_min=float(rt[right + 1]),
         selection_policy_version=DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     )
-    # The analytical single Gaussian has no separating raw valley here.
-    # Its canonical 10% return still controls area, not NL membership.
     assert tail.state == "available"
     assert _measurement(tail) == _measurement(peak)
 
@@ -1461,9 +1424,6 @@ def test_group_window_selects_only_one_complete_peak(
 
 
 def _hmdc_tail_noise_trace() -> tuple[np.ndarray, np.ndarray]:
-    # Observed d3-5-hmdC MS1 XIC (TumorBC2264, intensity / 100) in a group
-    # window. Sparse tail noise keeps the smoothed signal above zero after the
-    # peak, so an exact zero return never closes the right boundary.
     rt = np.asarray(
         [
             7.98338,
@@ -1742,8 +1702,6 @@ def test_brief_apex_dropout_does_not_create_two_quantitative_components(
     assert len(answer.segment_universe.segments) == 1
     assert answer.answer.selected_segment.left_rt_min < 3.4
     assert answer.answer.selected_segment.right_rt_min > 6.6
-    # A 10%-height return retains about 96.8% of Gaussian mass, not the entire
-    # positive tail. A false split would still lose about half the envelope.
     assert prepared.prepared is not None
     observed_mass = float(np.trapezoid(prepared.prepared.positive_signal, rt)) * 60.0
     assert (

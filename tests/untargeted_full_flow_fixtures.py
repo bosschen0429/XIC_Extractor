@@ -25,7 +25,6 @@ def install_full_flow_raws(monkeypatch, directory, *, delta_mass=False):
     paths = tuple(directory / f"{stem}.raw" for stem in ("first", "second"))
     for path in paths:
         path.write_bytes(path.stem.encode())
-    # Resource choices only: no method, grouping or publication policy is mocked.
     monkeypatch.setattr(
         "xic_extractor.configuration.execution_profile.os.cpu_count", lambda: 2
     )

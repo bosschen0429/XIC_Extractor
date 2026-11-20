@@ -186,8 +186,6 @@ def _blank_library_binding(
         if library is None:
             cache[key] = None, None
         else:
-            # Different sample directories can select the same packaged object.
-            # Retain that object so its identity cannot be recycled in this call.
             if id(library) not in libraries:
                 content = serialize_background_library(library)
                 digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
@@ -227,7 +225,6 @@ def validate_processing_run_spec_call(
     snapshots: dict[str, tuple[str | None, str | None]] = {}
     libraries: _LibrarySnapshots = {}
     for path, item in zip(raw_paths, inputs, strict=True):
-        # None digest is a bound absence, not permission to select a new library.
         if item.blank_library_sha256 is None or item.blank_library_content is not None:
             hydrated.append(item)
             continue

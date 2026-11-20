@@ -12,7 +12,6 @@ import {
   requestPath,
 } from "./analysis_ui.js";
 
-// Editor-only state; sampleMetadata owns committed rows and async adoption.
 let editing = "untargeted";
 const roles = ["sample", "qc", "std", "blank", "other"];
 const roleLabels = {
@@ -92,7 +91,6 @@ function renderNotes(list, notes) {
   list.replaceChildren(...notes.map((note) => el("li", note)));
   list.hidden = !notes.length;
 }
-// The latest Targeted run reports what it read; the step card lists notes only.
 export function renderSampleSummary(summary, prefix = "samples") {
   const notes = summaryNotes(summary);
   const unmatched = summary.unmatched_sequence_names?.length;
@@ -126,7 +124,6 @@ function renderSequenceLine(page) {
   $(sampleId(page, "sequence-name")).title = path;
   $(sampleId(page, "sequence-browse")).textContent = path ? "更換" : "選擇";
 }
-// Roles this flow does not analyze are listed apart, so nobody excludes them by hand.
 function roleSummary(page, rows) {
   const counts = new Map();
   for (const sample of rows.filter((row) => !row.excluded))
@@ -152,14 +149,10 @@ export function renderRoleSummary(page) {
   renderSequenceLine(page);
 }
 
-// Listing reads every RAW header, so roles and order are known before a run.
 export async function listSamples(page, importSequence = false) {
   const spec = samplePages[page];
   if (!$(spec.rawDir).value.trim()) return;
-  // Another analysis owns the job slot; file names still give every row a role.
   if (isBusy()) {
-    // A running sample read already delivers header facts for these inputs;
-    // a filename preview would supersede it with less.
     if (analysis?.snapshot.job?.kind === "samples") return;
     await sampleMetadata.preview(page);
     return;
@@ -173,7 +166,6 @@ export async function listSamples(page, importSequence = false) {
   });
 }
 const stemKey = (stem) => stem.toLowerCase();
-// New RAW from a running instrument appear by name; only then reread headers.
 async function relistIfChanged(page) {
   const set = sampleMetadata.forPage(page);
   if (!set.rows.length) return listSamples(page);
@@ -198,8 +190,6 @@ const selection = createRowSelection({
   order: () => visibleRows().map((row) => row.raw_stem),
   onChange: () => renderSelection(),
 });
-// File Explorer order: case-insensitive, digit runs by value (Blank_2 < Blank_10).
-// Display only; committed rows keep injection order.
 const byRawName = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 function visibleRows() {
   const filter = $("sample-filter").value.trim().toLowerCase();
@@ -215,7 +205,6 @@ function visibleRows() {
 function clearSelection() {
   selection.clear();
 }
-// Job state changes outside this module call this through lock().
 export function renderSampleActions() {
   if ($("sample-editor")?.open) renderSelection();
 }
@@ -308,7 +297,6 @@ export function bindSamples() {
         $("sample-editor").showModal();
         await relistIfChanged(page);
       });
-    // A different 上機資訊 makes the loaded rows stale; list again with it.
     $(spec.sequence).addEventListener("input", () => {
       sampleMetadata.clear(page);
       renderSequenceLine(page);

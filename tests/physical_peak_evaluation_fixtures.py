@@ -6,8 +6,6 @@ import numpy as np
 
 
 def _context_sensitive_trace() -> tuple[np.ndarray, np.ndarray]:
-    # Scaled observed XIC, with RT in minutes at 1.5 seconds per scan.
-    # Removing one exterior scan leaves the retained Gaussian peak exact.
     raw = np.asarray(
         [
             236.132,
@@ -66,8 +64,6 @@ def _context_sensitive_trace() -> tuple[np.ndarray, np.ndarray]:
 def _short_peak_with_separate_noise_hits() -> tuple[np.ndarray, np.ndarray]:
     rt = np.arange(387, dtype=float) * 0.04
     raw = np.zeros_like(rt)
-    # A ten-scan observed peak rises and falls. Earlier, smaller hits and
-    # scattered background observations do not establish its absence.
     raw[187:206] = 10000.0 * np.asarray(
         [
             0.103516,

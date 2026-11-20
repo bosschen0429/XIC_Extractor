@@ -203,7 +203,6 @@ def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
     assert exit_code == 0
     assert out_html.is_file()
 
-    # Copy only HTML to inspect its embedded resources independently.
     empty_dir = tmp_path / "completely_isolated_env"
     empty_dir.mkdir()
     isolated_html = empty_dir / "portable_report.html"

@@ -39,12 +39,12 @@ def test_groups_join_coeluting_known_differences_and_take_their_category():
     groups = group_candidates(
         (
             _c("m", 300.10, 20.0),
-            _c("iso", 301.1034, 20.05),  # 13C
-            _c("insrc", 416.1474, 20.02),  # +1 neutral loss in source
-            _c("far", 301.1034, 20.3),  # same Δm, too far in RT
+            _c("iso", 301.1034, 20.05),
+            _c("insrc", 416.1474, 20.02),
+            _c("far", 301.1034, 20.3),
             _c("dc", 228.0979, 8.70),
             _c("dc_other_rt", 228.0979, 11.0),
-            _c("du", 229.0822, 30.0),  # unseen anchor still names its mass
+            _c("du", 229.0822, 30.0),
             _c("near", 350.0, 8.80),
             _c("two", 500.0, 25.0, ratio=0.1),
         ),
@@ -70,12 +70,12 @@ def test_waterfall_matches_each_candidates_fate():
         (
             _c("dc", 228.0979, 8.66),
             _c("dc13", 229.1013, 8.66),
-            _c("near", 350.0, 8.75),  # elutes with dC
+            _c("near", 350.0, 8.75),
             _c("x", 400.0, 20.0),
-            _c("y", 450.0, 20.03),  # synchronized with x
+            _c("y", 450.0, 20.03),
             _c("one", 500.0, 30.0, events=1),
             _c("late", 600.0, 45.0),
-            _c("rna", 700.0, 22.3),  # follows an other-sugar nucleoside
+            _c("rna", 700.0, 22.3),
         ),
         pairs=[(1, 2)],
         removed=frozenset({"700.0000@22.30"}),
@@ -119,8 +119,8 @@ def test_shape_sync_needs_close_apex_different_mass_and_same_shape():
     peak = np.exp(-(((rt - 22.3) / 0.05) ** 2))
     shifted = np.exp(-(((rt - 22.45) / 0.05) ** 2))
     assert synced(peak, peak * 3, rt, rt)
-    assert not synced(peak, shifted, rt, rt)  # apex 0.15 min apart
-    assert not synced(peak, np.ones_like(peak))  # flat trace has no shape
+    assert not synced(peak, shifted, rt, rt)
+    assert not synced(peak, np.ones_like(peak))
 
 
 def test_other_sugar_check_skips_same_sugar_nucleosides_and_unseen_anchors():
@@ -148,7 +148,6 @@ def test_controls_union_cumulative_and_shared_compounds_after_rt_mapping():
     ]
     assert cumulative(consensus, 2) == {"counted": [1, 1], "unconfirmed": [1, 2]}
     main = _run((_c("a", 400.0, 14.0),), anchors=anchors(0.0))
-    # 14.0 maps to 14.2, within 0.3 min of 14.4 only after mapping by nucleosides.
     assert overlap(main, controls, consensus) == [
         {
             "unit": "400.0000@14.00",
@@ -166,10 +165,10 @@ def test_compounds_extend_rt_pairs_only_past_nucleosides_and_one_to_one():
     )
     control = _run(
         (
-            _c("inside", 300.0, 15.0),  # odd shift inside the nucleoside range
-            _c("late", 400.0, 30.0),  # batches agree after the last nucleoside
+            _c("inside", 300.0, 15.0),
+            _c("late", 400.0, 30.0),
             _c("twin1", 450.0, 32.0),
-            _c("twin2", 450.0, 32.5),  # two partners: ambiguous
+            _c("twin2", 450.0, 32.5),
             _c("x", 500.0, 35.0),
         ),
         anchors=nucleosides(0.4),
@@ -190,7 +189,6 @@ def test_compounds_extend_rt_pairs_only_past_nucleosides_and_one_to_one():
         (30.0, 30.0),
         (35.1, 35.0),
     ]
-    # Without the late compound pairs, the +0.4 nucleoside shift would carry on.
     assert {row["unit"] for row in overlap(main, [control], consensus)} == {
         "400.0000@30.00",
         "450.0000@32.20",

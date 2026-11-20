@@ -38,9 +38,6 @@ ChromPeakSegmentClass = Literal[
     "low_scan_segment",
 ]
 
-# A separable valley must be this many short-scale noise sigmas below the
-# smaller adjacent lobe. Calibrated on the #1049 reviewed doublets (B) against
-# noise ripples, zero dropouts (A) and broad single components (W).
 SEPARABLE_VALLEY_NOISE_SIGMA = 3.0
 
 
@@ -200,8 +197,6 @@ def enumerate_chrom_peak_segments(
             active_policy,
         )
     if not seeds and active_policy.morphology_trace_method == "rt_envelope":
-        # Coarse smoothing can lower a supported narrow peak below the seed
-        # height floor; its own scans still reach ordinary qualification.
         seeds = _apex_seeds(residual, context_interval, active_policy)
         if active_policy.min_prominence_noise_sigma > 0.0:
             seeds = _supported_apex_seeds(
@@ -220,7 +215,6 @@ def enumerate_chrom_peak_segments(
             morphology_trace_values=tuple(float(value) for value in morphology_trace),
         )
 
-    # Coarse lobes own their separating valley as well as their seeds.
     relations = _adjacent_relations(morphology_trace, seeds, active_policy)
     groups: list[
         tuple[
@@ -436,8 +430,6 @@ def _apex_seeds(
     )
     peaks = _local_peak_indices(context)
     if policy.min_prominence_fraction_of_apex > 0:
-        # Remove small surface ripples before asking which adjacent lobes a
-        # valley separates. Their height cannot hide a larger sustained trough.
         interior = [index for index in peaks if 0 < index < len(context) - 1]
         prominences = peak_prominences(context, interior)[0]
         supported = {
@@ -484,8 +476,6 @@ def _supported_apex_seeds(
     context: TraceInterval,
     policy: ChromPeakSegmentPolicy,
 ) -> tuple[_ApexSeed, ...]:
-    # Measure the whole contour before neighboring ripple can truncate it.
-    # Edge maxima remain candidates: missing context is not noise evidence.
     start, end = context.start_index, context.end_index
     interior = tuple(seed for seed in seeds if start < seed.index < end - 1)
     prominences, left_bases, right_bases = peak_prominences(
@@ -502,9 +492,6 @@ def _supported_apex_seeds(
         left, right = start + int(left), start + int(right) + 1
         prominence_by_index[seed.index] = float(prominence)
         noise = short_scale_noise_sigma(rt[left:right], acquired[left:right]) or 0.0
-        # A subordinate bump cannot dilute its noise estimate with distant
-        # zero background. Include the acquired contour toward an adjacent
-        # higher lobe when both belong to the same connected envelope.
         position = seed_positions[seed.index]
         for neighbor_position in (position - 1, position + 1):
             if not 0 <= neighbor_position < len(seeds):
@@ -582,9 +569,6 @@ def _split_at_separable_valleys(
     for index, (part_start, part_end) in enumerate(
         zip(bounds, bounds[1:], strict=False)
     ):
-        # A coarse seed can sit on the cut itself; the lobe's own maximum
-        # anchors its boundary walk. Coarse seeds stay only when several
-        # remain unresolved inside this part.
         apex = part_start + int(np.argmax(residual[part_start:part_end]))
         height = float(residual[apex])
         part_seeds = {s.index: s for s in seeds if part_start <= s.index < part_end}
@@ -685,15 +669,11 @@ def _deepest_separable_valley(
         lobe_end = last + 1
         while lobe_end < count - 1 and values[lobe_end + 1] > threshold:
             lobe_end += 1
-        # One scan cannot be the smaller lobe that sets the valley depth; a
-        # single scan above the other side's maximum may still stand apart.
         left_peak, right_peak = left_max[first - 1], right_max[last + 1]
         if (first - lobe_start < 2 and left_peak <= right_peak) or (
             lobe_end - last < 2 and right_peak <= left_peak
         ):
             continue
-        # Beyond the lobe the signal returns for two scans, or it returns and
-        # the range ends there (a range can start at an earlier cut).
         left_bounded = lobe_start <= 1 or values[lobe_start - 2] <= threshold
         right_bounded = lobe_end >= count - 2 or values[lobe_end + 2] <= threshold
         if not (left_bounded and right_bounded):
@@ -802,10 +782,6 @@ def _segment_from_seed(
             right = min(basin_right, right + 1)
     relation_labels = _relation_labels(left_relation, right_relation)
     if policy.morphology_trace_method == "rt_envelope":
-        # Qualification may discard a lobe as an independent candidate, but
-        # that is not evidence that its parent envelope is a clean component.
-        # Keep canonical contour complexity as review evidence, separately
-        # from the coarser envelope's quantitative boundaries.
         contour = boundary_signal[left:right]
         peaks = find_peaks(contour)[0]
         prominences = peak_prominences(contour, peaks)[0]
@@ -873,8 +849,6 @@ def _seed_interval_indices(
         context_interval,
     )
     if policy.include_baseline_return_samples:
-        # Retain the scans bracketing the return to baseline. An MS2 event can
-        # fall between the last positive MS1 scan and that return scan.
         left = max(context_interval.start_index, left - 1)
         right = min(context_interval.end_index, right + 1)
     if left_relation is not None:

@@ -1526,8 +1526,6 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         analyte,
         label="ISTD",
         mz=255.0,
-        # Legacy geometric targets use interval midpoints as their expected RT.
-        # Preserve the known 0.1 min analyte/ISTD offset in both hint variants.
         rt_min=analyte.rt_min - 0.1,
         rt_max=analyte.rt_max - 0.1,
         is_istd=True,
@@ -1938,7 +1936,6 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
     from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 
     mz, loss = 255.0, 116.0474
-    # Steady drift along injection order spans more than the grouping RT limit.
     apex = {"S1": 1.0, "S2": 1.8, "S3": 2.6, "S4": 3.4, "S5": 4.2}
     data = tmp_path / "raw"
     data.mkdir()

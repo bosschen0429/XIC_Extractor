@@ -1009,8 +1009,6 @@ def _shared_peak_inputs(
 
     centers = {**dict.fromkeys(observed, (8.0, 8.12)), "Missing": (8.06,)}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
-    # Keep the two synthetic discovery peaks as separate fixture groups; this
-    # changes only this test input, never the production/default threshold.
     settings, peak_config = (
         replace(
             _settings(),
@@ -1181,8 +1179,6 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         raw = MassAwareRaw(nl_centers[path.stem])
         raw.rt = np.linspace(7.4, 8.7, 521)
         if sloped_background and path.stem == "Missing":
-            # The two recovery windows clip a sloped background differently, so
-            # the one peak they read integrates to two baseline-corrected areas.
             raw.rt = np.linspace(6.8, 9.4, 1041)
         raw.intensity = sum(
             (
@@ -1420,7 +1416,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         assert attempt.assessment.reason_codes == ("no_unique_qualifying_relation",)
         assert len(attempt.assessment.candidate_peaks) == 1
     else:
-        # No physical peak occupies the predicted position between the two peaks.
         assert attempt.assessment.reason_codes == ("insufficient_method_evidence",)
         assert attempt.assessment.candidate_peaks == ()
     completed = complete_dense_partition(
@@ -1499,9 +1494,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
 def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
     tmp_path, monkeypatch
 ):
-    # Missing has CID-NL support only for its own peak at 9.6 min; its peak in
-    # the S1/S2 group at 8.0 min carries no MS2. Support elsewhere must not
-    # stop the group-bounded revisit.
     ms1_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (8.0, 9.6)}
     nl_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (9.6,)}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ms1_centers)
@@ -1642,8 +1634,6 @@ def _assert_alignment_uses_configured_recovery_groups(
         output_dir=tmp_path / "alignment",
         settings=settings,
         peak_config=peak_config,
-        # Keep the 7.2-second S3 offset outside the configured RT group;
-        # default continuity tolerances would legitimately include S3.
         alignment_config=AlignmentConfig(
             anchor_min_seed_events=2, preferred_rt_sec=2.0
         ),
@@ -1785,8 +1775,6 @@ def test_full_alignment_captures_competing_rows_and_single_batch_matrix(
     request = _backfill_request(
         tmp_path, options, AlignmentConfig(anchor_min_seed_events=1)
     )
-    # Distinct cold caches for the two formal runs. The captured Backfill
-    # uses its own run's RAW facts when replayed in a fresh interpreter.
     control_dir = tmp_path / "control"
     capture_dir = tmp_path / "capture"
     calls = Counter()
@@ -2058,8 +2046,6 @@ def test_matrix_joins_independently_captured_named_batches(tmp_path, monkeypatch
         for sample in options["sample_metadata"]
     )
     options["sample_metadata"] = samples
-    # Seed one shared identity so the test exercises a real paired row, even
-    # without enough ISTDs to fit a cross-batch RT map.
     target = Target(
         label="shared",
         mz=500.0,

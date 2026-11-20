@@ -70,8 +70,6 @@ def _membership_trajectories(
     if not witnesses:
         return geometry
 
-    # Prepare shared method envelopes once. Shape has its own membership gate;
-    # it cannot disambiguate the two direct peaks for this witness rule.
     anchors = {
         owner_id: _FeatureTrack.from_owner(
             replace(supported[owner_id], peak_shape=None),

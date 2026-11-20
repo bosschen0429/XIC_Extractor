@@ -526,8 +526,6 @@ progress:indeterminate::-webkit-progress-bar {
   }
 }
 
-/* Top bar */
-/* Every band shares the active page's content column. */
 body {
   --page-width: 1440px;
   --gutter: 24px;
@@ -928,7 +926,6 @@ th.num {
   padding: 4px 10px 4px 6px;
   font-size: 13px;
 }
-/* Optional curation reads as one more result card, not loose text. */
 #result-curation {
   margin-top: 16px;
   border: 1px solid var(--border);
@@ -1094,7 +1091,6 @@ th.num {
 .overview-table th { color: var(--muted); background: var(--surface-2); font-size: 13px; font-weight: 550; }
 .overview-table th, .overview-table td { padding: 14px 16px; border-bottom: 1px solid var(--line); }
 .overview-table .text-button { padding: 0; text-align: center; }
-/* Only the cell to read first carries the highlight; rows stay neutral. */
 .overview-table .focus-link { padding: 2px 10px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-weight: 600; }
 .overview-quantities { margin: 24px 0; }
 .overview-quantities summary { cursor: pointer; color: var(--muted); }
@@ -1631,8 +1627,6 @@ kbd {
   }
 }
 
-/* Keep the target/sample controls, but do not dedicate a column to the
-   single target already selected in the dropdown. */
 .review-grid.single-target { grid-template-columns: minmax(0, 1fr); }
 .single-target .list-panel { position: static; max-height: none; }
 .single-target .list-panel form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
@@ -1747,7 +1741,6 @@ kbd {
     justify-content: space-between;
   }
 }
-/* Targeted: names and counts align left; only the cell to read first is marked. */
 .overview-targets { text-align: left; font-size: 14px; }
 .overview-targets th, .overview-targets td { padding: 10px 14px; }
 .overview-targets .text-button { text-align: left; }

@@ -11,7 +11,6 @@ from xic_extractor.tabular_io import read_delimited_rows
 SUMMARY_NAME = "matrix_curation_summary.json"
 CURATED_MATRIX_NAME = "analysis_matrix.tsv"
 DECISIONS_NAME = "feature_decisions.tsv"
-# The default output name; its timestamp orders a result's curations.
 FOLDER_PREFIX = "matrix_curation_"
 
 _RELATION_NAMES = {

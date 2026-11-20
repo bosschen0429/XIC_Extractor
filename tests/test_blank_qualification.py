@@ -105,8 +105,6 @@ def test_blank_library_matching():
     assert matches[0][0].mz == 250.1234
     assert abs(matches[0][1]) < 0.001
 
-    # Match within 10 ppm
-    # 250.1234 * 8 / 1e6 = 0.00200098 -> 250.1254 is ~8 ppm away
     matches_8ppm = lib.match(250.1254, ppm_tol=10.0)
     assert len(matches_8ppm) == 1
     assert matches_8ppm[0][0].mz == 250.1234
@@ -163,10 +161,6 @@ def test_default_background_library_packaged_and_loadable():
     assert len(lib.ions) == 34659
     assert len(lib.source_blanks) == 11
 
-    # The packaged library stays loadable on request, but a run never inherits
-    # it. It was measured on a 15-minute gradient; applying it to a run acquired
-    # on another method would mark peaks as system background
-    # against a background population that run never saw.
     assert resolve_background_library() is None
     assert resolve_background_library(raw_dir=None, library_path=path) is not None
 
@@ -235,9 +229,7 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
             representative_event=SimpleNamespace(precursor_mz=precursor_mz),
         )
 
-    # FC = 80000 / 100000 = 0.8 < 3.0: system background.
     c_background = peak(300.1002, 80000.0)
-    # FC = 400000 / 50000 = 8.0 >= 3.0: high-abundance override.
     c_override = peak(400.2001, 400000.0)
     c_clean = peak(550.3000, 150000.0)
 

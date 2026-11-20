@@ -138,16 +138,10 @@ def _events_from_scan_profile(
                 observed_loss_da=observed_loss_da,
             )
             if not matches:
-                # The selected precursor's direct window owns its products. An
-                # additional recorded reference only claims a product it
-                # supports, so its NL miss stays available for inference.
                 if basis == "scan_precursor":
                     direct_indices.add(int(index))
                 continue
 
-            # A recorded mono NL match does not prove which MS1 window has a
-            # physical candidate. Preserve a distinct inferred search until the
-            # physical owner can qualify it with independent precursor evidence.
             if basis == "scan_precursor" or precursor_mz == inferred_precursors[index]:
                 direct_indices.add(int(index))
             direct_candidates.append(

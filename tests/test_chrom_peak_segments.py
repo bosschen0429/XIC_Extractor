@@ -312,8 +312,6 @@ def test_rt_envelope_preserves_canonical_clear_valley_between_supported_peaks(
     assert left.right_rt_min <= right.left_rt_min
     assert [left.apex_rt_min, right.apex_rt_min] == pytest.approx([0.94, 1.06])
     analytic_area = 1000.0 * sigma * np.sqrt(2.0 * np.pi) * 60.0
-    # A 10%-height return retains about 96.8% of an isolated Gaussian mass;
-    # sampled bracketing and the shared valley can retain a little more.
     assert all(
         0.96 * analytic_area < segment.area_counts_seconds < 1.01 * analytic_area
         for segment in (left, right)
@@ -357,8 +355,6 @@ def test_clear_valley_classification_uses_one_signal_scale() -> None:
         answer = evaluate_physical_peak(prepared, query_rt_min=center)
         assert answer.state == "available"
         assert len(answer.segment_universe.segments) == 2
-        # The analytical valley is ~22% of either apex, below the 30%
-        # clear-valley limit, even though envelope smoothing lowers the apex.
         assert not answer.requires_overlap_review
 
 
@@ -403,8 +399,6 @@ def test_local_doublet_and_weak_peak_survive_remote_connected_ripple(
         -0.5 * ((rt - 2.35) / width) ** 2
     )
     if trailing_ripple:
-        # Brief tail troughs keep these fine-scale maxima connected to the
-        # second lobe, even across the next coarse basin's boundary.
         signal *= 1.0 + (0.3 * np.cos(2 * np.pi * (rt - 2.35) / 0.04) * (rt > 2.8))
         signal += 20.0 * np.exp(-0.5 * ((rt - 3.4) / 0.12) ** 2)
     signal += 8.0 * np.exp(-0.5 * ((rt - 1.6) / 0.025) ** 2)
@@ -433,9 +427,6 @@ def test_local_doublet_and_weak_peak_survive_remote_connected_ripple(
     expected = [1.6, 2.08, 2.35] + ([3.4] if trailing_ripple else [])
     if reverse:
         expected = sorted(5.0 - center for center in expected)
-    # Restore the unresolved pair, not a candidate for every tail ripple.
-    # The independently generated weak peak is below 10% of the main peak;
-    # it must not be erased by a main-relative restoration cutoff.
     assert apexes == pytest.approx(expected, abs=0.015)
     weak_center = 3.4 if reverse else 1.6
     weak = min(result.segments, key=lambda s: abs(s.apex_rt_min - weak_center))
@@ -447,14 +438,12 @@ def _values(text: str) -> list[float]:
     return [float(value) for value in text.split()]
 
 
-# Acquired excerpts (kilocounts) of regions reviewed in #1049 (case IDs in
-# output/1049_phase_b/b_classification.csv); the oracle is the reviewed class.
 _DOUBLET_553_RT = _values(
     """
     14.992 15.013 15.038 15.076 15.118 15.159 15.201 15.242 15.284 15.325 15.363
     15.404 15.446 15.487 15.528 15.57 15.611 15.653 15.694
     """
-)  # O29 (B): 553.141 in NormalBC2312, raw valley ~0.36 of the smaller lobe
+)
 _DOUBLET_553 = _values(
     """
     0 0 22.7 195 505.8 503.1 395.2 235.6 181.3 209.1 236.7 240.6 376.5 708.7
@@ -466,15 +455,12 @@ _DROPOUT_328_RT = _values(
     14.001 14.03 14.065 14.107 14.148 14.19 14.231 14.273 14.314 14.356 14.397
     14.438 14.48 14.521 14.563 14.604 14.646
     """
-)  # O07 (A): one component whose raw alternates with zero dropouts
+)
 _DROPOUT_328 = _values(
     """
     0 0 15.6 30.3 72.4 43.8 73.3 0 63.5 0 60.2 55.1 52.3 25.7 16.8 0 0
     """
 )
-# O28 (W): 359.045 in NormalBC2312, a main peak at 6.13 after a 3 min plateau.
-# A real dip separates the last plateau hump, but that hump is no peak of its
-# own: the plateau never returns below the valley level.
 _PLATEAU_359_RT = _values(
     """
     3.266 3.307 3.349 3.39 3.432 3.473 3.506 3.54 3.57 3.609 3.631 3.657 3.681
@@ -576,8 +562,6 @@ def test_discovery_components_split_the_reviewed_doublet():
 def test_each_side_of_a_cut_keeps_the_valley_as_its_return():
     from xic_extractor.peak_detection.chrom_peak_segments import separable_valleys
 
-    # Three resolved lobes; the first cut leaves one low scan of its valley at
-    # the start of the right-hand range, which still counts as a return there.
     raw = np.asarray(
         [100.0] * 10 + [1.0, 1.0] + [100.0] * 10 + [1.0, 1.0] + [100.0] * 10
     )

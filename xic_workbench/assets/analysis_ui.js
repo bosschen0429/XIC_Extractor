@@ -1,6 +1,3 @@
-// Transport and reusable DOM/form controls shared by analysis views. Views
-// import this module, so it imports no view: the entry connects what the page
-// coordinates across them.
 import { state } from "./analysis_state.js";
 import * as ui from "./workspace_ui.js";
 

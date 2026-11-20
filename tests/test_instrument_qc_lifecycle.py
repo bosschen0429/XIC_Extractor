@@ -291,8 +291,6 @@ def test_lifecycle_rollback_failure_retains_original_history(tmp_path, monkeypat
         )
     assert previous.runs_tsv.read_bytes() == previous_runs
     assert previous.sdolek_tsv.read_bytes() != previous_rows
-    # Recovery must still be able to recover the original, even when replacing
-    # the published file is denied. Do not pin the private backup directory name.
     assert previous_rows in [
         path.read_bytes() for path in root.rglob("*") if path.is_file()
     ]

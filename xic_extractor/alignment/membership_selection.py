@@ -37,7 +37,6 @@ OwnerPartition = tuple[tuple[OwnerFacts, ...], ...]
 _RT_POPULATION_MIN_MEMBERS = 4
 _RT_POPULATION_MIN_GAP_SEC = 20.0
 _RT_POPULATION_RANGE_RATIO = 2.0
-# One nonzero drift coefficient costs what this RT difference costs a pair.
 _COEFFICIENT_COST_SEC = 10.0
 
 
@@ -73,7 +72,6 @@ class _PairArrays:
     rt_weights: np.ndarray
     starts: np.ndarray
     ends: np.ndarray
-    # Pairs whose both peak regions are known; a region gap applies only there.
     regional: np.ndarray
 
     @classmethod
@@ -339,8 +337,6 @@ class MembershipComparison:
         self.density = {}
         left = right = 0
         for key, rt in ordered_rts:
-            # Keep the original closed-radius arithmetic at floating-point
-            # boundaries; forming rt +/- radius in minutes can round differently.
             while (rt - ordered_rts[left][1]) * 60 > radius_sec:
                 left += 1
             while right < len(ordered_rts) and (
@@ -358,8 +354,6 @@ class MembershipComparison:
             self.drift.batch_state_lookup() if self.drift is not None else None
         )
         self._pair_terms: dict[tuple[str, str], _PairTerms | None] = {}
-        # Packed upper triangle: every feasible pair's fixed numeric terms
-        # are converted once, then gathered for each proposed group.
         self._pair_positions = {p: i for i, p in enumerate(sorted(self.owners))}
         size = len(self.owners)
         self._pair_row_offsets = {
@@ -372,8 +366,6 @@ class MembershipComparison:
         self._batch_states: dict[tuple[str, ...], Mapping[str, float]] = {}
         self._fixed_coefficients = dict(fixed_coefficients or {})
         self._settled: tuple[tuple[frozenset[str], DriftCoefficients], ...] = ()
-        # Per-sample drift of the fixed models that single pairs are scored
-        # in; one entry per fixed original group.
         self._pair_frames: dict[
             tuple[DriftCoefficients, tuple[str, ...]], Mapping[str, float] | None
         ] = {}
@@ -609,8 +601,6 @@ class MembershipComparison:
         return min(model.evidence for model in self._group_models(group))
 
     def _group_models(self, group: tuple[str, ...]) -> tuple[_GroupModel, ...]:
-        # Production partitions are already canonical; reuse their models
-        # without sorting the same group again for every proposal.
         cached = self._models.get(group)
         if cached is not None:
             return cached
@@ -625,8 +615,6 @@ class MembershipComparison:
                 else ()
             )
             if candidates:
-                # A drift model matters only if it can cost less than a
-                # feasible zero model; it is reported infinite once it cannot.
                 bound = math.inf if zero.population_gap else zero.evidence
                 models.extend(
                     self._evaluate(key, coefficients, bound=bound, inputs=inputs)
@@ -643,13 +631,8 @@ class MembershipComparison:
         if self.drift is None:
             return ()
         span_sec = (max(self.rts[p] for p in key) - min(self.rts[p] for p in key)) * 60
-        # RT and region terms change by at most 0.95 per preferred interval of
-        # span; below one coefficient's cost no fit can pay for itself.
         if span_sec * 0.95 / self.config.preferred_rt_sec < self._coefficient_cost:
             return ()
-        # The member floor limits estimating new coefficients. A settled model
-        # stays available to smaller proposals, so removing one owner from a
-        # minimum-size drifting group is not priced in the unadjusted frame.
         fitted: tuple[DriftCoefficients, ...] = ()
         if len(key) >= MIN_COEFFICIENT_MEMBERS:
             batch_state = self._batch_state(key)
@@ -778,16 +761,12 @@ class MembershipComparison:
             + model_cost
             >= bound
         ):
-            # The group's cost is its costliest pair, so one pair already
-            # above the bound rejects the model without scoring the others.
             return _GroupModel(coefficients, math.inf, False)
         offsets, unknown = self._frame(
             self._sample_offsets(coefficients, basis or key), key
         )
         pair_cost: float | None
         if inputs is not None and (offsets or unknown):
-            # Only a finite zero model admits drift candidates, so every pair
-            # is feasible; their fixed terms are shared across the models.
             pair_cost = inputs.pairs().max_cost(self, key, offsets, unknown)
             if not math.isfinite(pair_cost) or 1.0 + pair_cost + model_cost >= bound:
                 return _GroupModel(coefficients, math.inf, False)
@@ -938,8 +917,6 @@ class MembershipComparison:
         rts = np.array(
             [self.rts[p] - (offsets.get(p, 0.0) if offsets else 0.0) for p in key]
         )
-        # A neighbor median stays inside the group's RT range. A range of
-        # at most 90 seconds therefore cannot incur the trend penalty.
         if len(key) <= 2 or (rts.max() - rts.min()) * 60 <= 90.0:
             return 0.0
         found = (
@@ -976,7 +953,6 @@ class MembershipComparison:
         distance = np.abs(orders[None, :] - orders[ordered][:, None])
         position = np.broadcast_to(np.arange(size), distance.shape)
         rank = np.broadcast_to(ranks, distance.shape)
-        # Self sorts last; lexsort is stable and its last key is primary.
         distance = np.where(
             position == ordered[:, None], np.iinfo(np.int64).max, distance
         )
@@ -1013,7 +989,6 @@ class MembershipComparison:
         split = max(range(1, len(rts)), key=lambda i: rts[i] - rts[i - 1])
         gap_sec = (rts[split] - rts[split - 1]) * 60
         side_range_sec = max(rts[split - 1] - rts[0], rts[-1] - rts[split]) * 60
-        # Coordinate subtraction can put an exact threshold a few ulps below it.
         threshold_sec = max(
             _RT_POPULATION_MIN_GAP_SEC, _RT_POPULATION_RANGE_RATIO * side_range_sec
         )
@@ -1138,8 +1113,6 @@ class MembershipComparison:
             active.remove(right)
             union = tuple(sorted((*left, *right)))
             if propose_whole_bands and math.isfinite(self.group_cost(union)):
-                # Accepted growth is a tree: retain the last feasible frontier
-                # even if a later, larger proposal introduces a population gap.
                 members = set(union)
                 feasible_bands = {
                     band for band in feasible_bands if members.isdisjoint(band)
@@ -1172,14 +1145,11 @@ class MembershipComparison:
             candidate = canonical_partition(
                 [g for g in others if g != target] + [new_current, new_target]
             )
-            # Swapping two same-sample singletons is not a different membership.
             if candidate != partition and math.isfinite(self.cost(candidate)):
                 variants.add(candidate)
         ordered = sorted(variants, key=lambda p: (self.cost(p), self.partition_key(p)))
         if not ordered:
             return ()
-        # Only the best primary-cost tier can win. Do not scan every pair in
-        # more expensive alternatives merely to order their unused tie-breaks.
         best_cost = self.cost(ordered[0])
         best = [p for p in ordered if self.cost(p) == best_cost]
         rest = [p for p in ordered if self.cost(p) != best_cost]

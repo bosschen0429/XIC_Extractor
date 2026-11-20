@@ -74,7 +74,5 @@ def write_untargeted_config(
     ):
         from xic_workbench.methods import save_method
 
-        # Applying an edited method only changes the browser draft. The existing
-        # local method file is written together with an explicit save or run.
         save_method(config["preset_snapshot"], current_method)
     _write_json_object(path, merged)

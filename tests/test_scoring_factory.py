@@ -161,7 +161,6 @@ def test_same_prepared_shape_is_shared_by_analyte_and_selected_istd(
     assert ctx.half_width_ratio == metrics[0]
     assert ctx.fwhm_ratio == 1.0
     assert build_candidate_evidence_facts(candidate, ctx).trace.width_quality == "clean"
-    # These carriers describe the existing S/N view, independent of shape.
     assert ctx.active_trace_source == "gaussian15_positive_asls_residual"
 
 
