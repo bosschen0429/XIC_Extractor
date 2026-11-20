@@ -1,5 +1,3 @@
-' Double-click to open the browser workspace without a console window.
-' Keep the batch file as the single owner of Python/uv runtime selection.
 Option Explicit
 Dim shell, fs, env, root, logs, logPath, command, i, code
 Set shell = CreateObject("WScript.Shell")
@@ -15,8 +13,6 @@ logPath = fs.BuildPath(logs, fs.GetTempName & ".log")
 env("XIC_BACKGROUND_LAUNCH") = "1"
 env("XIC_GUI_BATCH") = fs.BuildPath(root, "launch_gui.bat")
 env("XIC_GUI_LOG") = logPath
-' Expand arguments once in cmd, not in WScript.Run (which expands %names%).
-' Quoted environment values preserve spaces, ampersands and literal percent signs.
 command = """%XIC_GUI_BATCH%"""
 For i = 0 To WScript.Arguments.Count - 1
     If InStr(WScript.Arguments(i), Chr(34)) > 0 Then
@@ -27,7 +23,6 @@ For i = 0 To WScript.Arguments.Count - 1
     command = command & " ""%XIC_GUI_ARG_" & i & "%"""
 Next
 command = command & " > ""%XIC_GUI_LOG%"" 2>&1"
-' Store the command in a tiny batch file to avoid WScript.Run expanding values.
 Dim runner, stream
 runner = logPath & ".cmd"
 Set stream = fs.CreateTextFile(runner, True, False)

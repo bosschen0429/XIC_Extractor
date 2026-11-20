@@ -17,10 +17,6 @@ from xic_workbench.config_io import write_settings, write_targets
 from xic_workbench.server import create_server
 from xic_workbench.user_guide import read_user_guide
 
-# Deadlines are hang watchdogs, not latency requirements. Hosted CI VMs can
-# stall for several seconds at a time, so CI scales every browser wait by one
-# factor; local runs keep Playwright's defaults.
-
 
 @pytest.fixture
 def config_dir(tmp_path):
@@ -87,7 +83,6 @@ def workbench(
         cleanup.callback(server.shutdown)
         context = browser.new_context(viewport={"width": 1280, "height": 800})
         cleanup.callback(context.close)
-        # DOM snapshots carry the failure state; screencast frames add renderer load.
         context.tracing.start(snapshots=True, sources=True)
         cleanup.callback(
             context.tracing.stop,

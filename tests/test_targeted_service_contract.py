@@ -15,7 +15,6 @@ from xic_extractor.extraction.result_models import FileResult, RunOutput
 
 @pytest.fixture(autouse=True)
 def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
-    # RAW files here are placeholders; order them by their file times.
     install_fake_raw_headers(monkeypatch)
 
 

@@ -1,4 +1,3 @@
-// Setup/result navigation, readiness checklists and unsaved-setting state.
 import { sampleId, sampleMetadata, samplePages } from "./analysis_samples.js";
 import { setDirty, setView, state } from "./analysis_state.js";
 import {
@@ -202,7 +201,6 @@ function sampleItems(page) {
 }
 
 export function bindSetup() {
-  // Sample roles count toward readiness wherever they change.
   sampleMetadata.subscribe(({ pages }) => pages.forEach(checklist));
   document
     .querySelectorAll("[data-view]")

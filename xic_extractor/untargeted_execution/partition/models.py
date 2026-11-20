@@ -240,7 +240,6 @@ def build_sample_jobs(
         if not isinstance(subject, CidNlMethodSubject):
             raise UntargetedPartitionError("method_subject has the wrong owner type")
         _required_text(work_unit_key, field="work_unit_key")
-        # Only these two fields vary; every shared field was validated above.
         job = copy(first)
         object.__setattr__(job, "method_subject", subject)
         object.__setattr__(job, "work_unit_key", work_unit_key)
@@ -293,7 +292,6 @@ class UntargetedSampleResult:
                 and attempt.group_hypothesis_id == group_hypothesis_id
             )
         else:
-            # The standalone single-subject runtime predates workset grouping.
             half_window = self.job.peak_config.nl_rt_anchor_half_window_min
             matches = tuple(
                 attempt

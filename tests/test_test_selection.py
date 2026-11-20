@@ -1115,7 +1115,6 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
             )
         )
         if index == 0 and results[-1].returncode:
-            # GitHub does not schedule jobs whose required plan failed.
             break
     assert next((r.returncode for r in results if r.returncode), 0) == expected_exit, (
         "\n".join(r.stdout + r.stderr for r in results)
@@ -1173,8 +1172,6 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
         assert browser[-len(browser_files) :] == browser_files
         browser_expression = Expression.compile(browser[browser.index("-m", 2) + 1])
 
-    # The original selection must be partitioned exactly once, including the
-    # browser/non-browser boundary and the existing relevance gates.
     selected_expression = Expression.compile(selection)
     markers = (
         "browser_e2e",
@@ -1212,7 +1209,6 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
         ("before", ("README.md",), "false"),
         ("before", ("xic_workbench/server.py",), "true"),
         ("before", ("tests/test_delta_mass_review_browser.py",), "true"),
-        # A new branch has no pushed range; everything stays selected.
         ("0" * 40, ("README.md",), "true"),
     ],
 )

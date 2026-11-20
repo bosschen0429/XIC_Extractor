@@ -1,4 +1,3 @@
-// Analysis workflow composition, job presentation and completion effects.
 import {
   artifactDetails,
   renderResults,
@@ -74,10 +73,8 @@ async function acceptedStart(kind, values, job, acceptSampleRead) {
     updateConfig({ settings: { ...values.settings } });
     dirtyTargeted(false);
   }
-  // Reading samples reports once, when it finishes.
   if (kind !== "samples") status("分析已開始；關閉分頁不會中斷。");
 }
-// Every file is processed, but the job is still writing its results.
 const publishing = (snapshot, job) =>
   snapshot.running && job.total > 0 && job.completed >= job.total;
 
@@ -202,7 +199,6 @@ function completeJob(snapshot, job) {
         done(`已讀取 ${result.samples.length} 個樣本。`);
       }
     } else if (job.kind === "curation") {
-      // A visible curation result card is the notice.
       renderResults();
       curationPublished(snapshot.results.curation);
       if (!curationResultShown())

@@ -240,7 +240,6 @@ def build_item_evidence(
         cards=tuple(cards),
         route=route,
         reason=group.disposition if group is not None else "unavailable",
-        # The labels name the first related group's recorded disposition.
         state=evidence.groups[min(groups)].disposition
         if groups
         else route.get("reason"),

@@ -53,7 +53,6 @@ from xic_extractor.processing_identity import build_local_acquisition_source_ide
 
 @pytest.fixture(autouse=True)
 def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
-    # RAW files here are placeholders; order them by their file times.
     install_fake_raw_headers(monkeypatch)
 
 
@@ -418,7 +417,6 @@ def test_publication_returns_concrete_public_result_models(
     assert ext_b.targeted_product_projection is not None
     assert ext_b.targeted_product_projection.counted_detection is True
 
-    # Multi-sample attribution: distinct samples carry distinct quantitative values
     assert ext_a.reported_peak_area != ext_b.reported_peak_area
     assert ext_b.reported_peak_area == pytest.approx(
         ext_a.reported_peak_area * 2.5, rel=1e-2
@@ -1350,11 +1348,11 @@ def test_service_accepts_raw_order_that_differs_from_canonical_order(
     monkeypatch.setattr(targeted_inputs, "read_analysis_set", resolutions)
 
     def acquire(*args, **kwargs):
-        assert resolutions.call_count == 1  # One snapshot before acquisition.
+        assert resolutions.call_count == 1
         return output
 
     execution = TargetedApplicationService(acquire).execute_application(request)
-    assert resolutions.call_count == 2  # Independent post-acquisition check.
+    assert resolutions.call_count == 2
 
     assert execution.published_paths
     assert (
@@ -1588,7 +1586,6 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         "open_raw",
         lambda path, *_a, **_k: nullcontext(Raw(path.stem)),
     )
-    # RAW enumeration order is not canonical sample-identity order.
     from xic_extractor.applications.targeted import production_workflow
 
     original_execute = production_workflow._execute_target
@@ -1939,7 +1936,6 @@ def test_publication_lists_samples_in_injection_order(tmp_path: Path) -> None:
         finalized, excel_output_path=request.excel_output_path
     )
 
-    # Readers follow the run as acquired, not the RAW file names.
     files = published.output.file_results
     assert [fr.sample_name for fr in files] == ["SampleB", "SampleA"]
     areas = [fr.results[target.label].reported_peak_area for fr in files]

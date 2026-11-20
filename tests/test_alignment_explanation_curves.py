@@ -104,7 +104,6 @@ def test_rejects_undeclared_curve_kind_and_keys() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test_reject.sqlite"
         with ExplanationReportWriter(db_path) as writer:
-            # Undeclared kind
             with pytest.raises(ExplanationError, match="undeclared curve kind"):
                 writer.add_curve_payload(
                     sample_id="S1",
@@ -113,7 +112,6 @@ def test_rejects_undeclared_curve_kind_and_keys() -> None:
                     payload={"kind": "fraudulent_curve_kind"},
                 )
 
-            # Undeclared key
             with pytest.raises(ExplanationError, match="undeclared curve payload keys"):
                 writer.add_curve_payload(
                     sample_id="S1",

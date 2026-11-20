@@ -1175,7 +1175,7 @@ def test_background_component_generator_respects_query_ownership_policy(
 ) -> None:
     rt = np.linspace(0.0, 10.0, 101)
     if slope:
-        rt += 0.01 * np.sin(np.arange(len(rt)))  # Uneven acquired RT spacing.
+        rt += 0.01 * np.sin(np.arange(len(rt)))
     raw = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / width) ** 2) + background + slope * rt
     prepared = prepare_physical_signal(rt, raw)
     result = evaluate_physical_peak(

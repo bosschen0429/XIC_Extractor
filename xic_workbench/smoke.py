@@ -70,7 +70,6 @@ def run_smoke(report_path: Path) -> int:
             return data
 
         config = json.loads(request("/api/config"))
-        # Check every registered asset in the delivered app, including ES modules.
         for asset in _ASSETS:
             if not request(asset):
                 raise RuntimeError(f"Empty frontend asset: {asset}")

@@ -159,7 +159,6 @@ class DiscoveryPeak:
     ms1_search_rt_max: float
     query_rt_min: float
     status: PeakStatus
-    # Qualified MS1 ion reading at the apex of an inferred precursor.
     ms1_apex_mz: float | None = None
     evidence_score: int = 0
     precursor_mz_basis: GroupPrecursorMzBasis = "scan_precursor"

@@ -263,17 +263,14 @@ def test_error_code_2_invalid_request() -> None:
         db_path, _, _ = create_inspector_report(tmp)
         out_html = tmp / "report.html"
 
-        # Invalid limit
         with pytest.raises(InspectorError) as exc_info:
             generate_report(db_path, SelectionRequest(limit=0), out_html)
         assert exc_info.value.code == 2
 
-        # Invalid offset
         with pytest.raises(InspectorError) as exc_info:
             generate_report(db_path, SelectionRequest(offset=-1), out_html)
         assert exc_info.value.code == 2
 
-        # Non-query parameters passed to sample
         with pytest.raises(InspectorError) as exc_info:
             generate_report(
                 db_path,
@@ -282,12 +279,10 @@ def test_error_code_2_invalid_request() -> None:
             )
         assert exc_info.value.code == 2
 
-        # Query strategy with zero filters
         with pytest.raises(InspectorError) as exc_info:
             generate_report(db_path, SelectionRequest(strategy="query"), out_html)
         assert exc_info.value.code == 2
 
-        # Empty/whitespace identifier
         with pytest.raises(InspectorError) as exc_info:
             generate_report(db_path, SelectionRequest(sample_ids=("  ",)), out_html)
         assert exc_info.value.code == 2
@@ -309,7 +304,6 @@ def test_error_code_4_source_invalid_mismatched_matrix() -> None:
         db_path, matrix_path, _ = create_inspector_report(tmp)
         out_html = tmp / "report.html"
 
-        # Tamper with matrix file
         matrix_path.write_text("tampered content", encoding="utf-8")
 
         with pytest.raises(InspectorError) as exc_info:
@@ -322,12 +316,10 @@ def test_error_code_6_output_aliasing_source() -> None:
         tmp = Path(tmpdir)
         db_path, matrix_path, _ = create_inspector_report(tmp)
 
-        # Output aliases source DB
         with pytest.raises(InspectorError) as exc_info:
             generate_report(db_path, SelectionRequest(), db_path)
         assert exc_info.value.code == 6
 
-        # Output aliases matrix
         with pytest.raises(InspectorError) as exc_info:
             generate_report(db_path, SelectionRequest(), matrix_path)
         assert exc_info.value.code == 6
@@ -348,9 +340,7 @@ def test_cancellation_preserves_old_html_and_code_130() -> None:
                 is_cancelled=lambda: True,
             )
         assert exc_info.value.code == 130
-        # Check old HTML is untouched
         assert out_html.read_text(encoding="utf-8") == "Old unmodified HTML content"
-        # Check no temporary files remained
         assert len(list(tmp.glob("*.tmp.*"))) == 0
 
 
@@ -366,11 +356,9 @@ def test_normalized_sample_scope_semantics() -> None:
         )
         out_html = tmp / "report.html"
 
-        # 1. No sample filter -> All universe samples
         res1 = generate_report(db_path, SelectionRequest(strategy="sample"), out_html)
         assert res1.sample_ids == ("S_A", "S_B")
 
-        # 2. Specific valid sample -> Subsets and sorted
         res2 = generate_report(
             db_path,
             SelectionRequest(strategy="sample", sample_ids=("S_B",)),
@@ -378,7 +366,6 @@ def test_normalized_sample_scope_semantics() -> None:
         )
         assert res2.sample_ids == ("S_B",)
 
-        # 3. Unknown-only sample scope -> Empty tuple
         res3 = generate_report(
             db_path,
             SelectionRequest(strategy="sample", sample_ids=("UNKNOWN_S",)),
@@ -395,7 +382,6 @@ def test_cli_execution() -> None:
         db_path, _, _ = create_inspector_report(tmp)
         out_html = tmp / "cli_report.html"
 
-        # CLI success
         code = cli_main(
             [
                 "--report",
@@ -412,7 +398,6 @@ def test_cli_execution() -> None:
         assert code == 0
         assert out_html.is_file()
 
-        # CLI invalid request -> exit code 2
         bad_code = cli_main(
             [
                 "--report",
@@ -1006,7 +991,6 @@ def test_excluded_candidate_exposes_exact_exclusion_without_curve(tmp_path):
     for candidate_id, other_id in (("C2", "C3"), ("C3", "C2")):
         item = candidates[candidate_id]
         sample = item["samples"][0]
-        # An exclusion is named by its candidate and sample.
         expected_ref = json.dumps([candidate_id, "S2"], separators=(",", ":"))
         assert item["stratum"] == "excluded"
         assert item["curves"] == []

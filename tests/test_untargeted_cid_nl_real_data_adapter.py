@@ -787,7 +787,6 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
     assert assessment.method_result == "SUPPORT"
     assert len(assessment.candidate_peaks) == 2
     assert len(assessment.individual_support_refs) == 1
-    # Only the recorded precursor supplies NL support.
     assert result.strict_scan_count == 1
     hypotheses = compose_peak_hypotheses_from_assessment_universe(
         sample=scenario.fixture.sample("S1"),

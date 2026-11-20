@@ -35,7 +35,6 @@ def application_bundle(tmp_path: Path) -> Path:
     (bundle / "_internal").mkdir(parents=True)
     (bundle / "XIC_Extractor.exe").write_bytes(b"application")
     (bundle / "_internal" / "runtime.dll").write_bytes(b"dependency")
-    # Only the app payload is published, even if the build folder has extras.
     (bundle / "developer-notes.txt").write_text("not a user document")
     return bundle
 
@@ -105,7 +104,6 @@ def test_distribution_has_offline_guides_examples_and_no_developer_tree(
                 if unquote(url.fragment) not in pages[target].ids:
                     failures.append(f"Missing anchor: {page.name}: {reference}")
     assert not failures, "\n".join(failures)
-    # Every page shares one stylesheet and lists every page in reading order.
     targeted = (app / "docs/user/targeted.html").read_text("utf-8")
     assert "assets/guide.css" in targeted
     assert "assets/targeted-workspace.png" in targeted

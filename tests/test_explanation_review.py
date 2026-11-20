@@ -159,7 +159,6 @@ def test_indexed_selection_keeps_witness_scope_counts_and_bounded_loading(
             writer.add_terminal(
                 cid, sid, variant="observed", hypothesis_id=cid, physical_peak_key=peak
             )
-        # Each member is its candidate's terminal hypothesis.
         for gid, rid, keys in (
             ("G1", "row-α", [("C1", "S1"), ("C2", "S2")]),
             ("G2", None, [("C3", "S1")]),

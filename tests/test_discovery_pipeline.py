@@ -382,7 +382,6 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
     precursor_by_peak = {
         row["peak_id"]: row["precursor_mz"] for row in _read_csv(outputs.events_csv)
     }
-    # Each inferred ion is its own measured peak.
     assert {round(float(precursor_by_peak[row["peak_id"]]), 4) for row in rows} == set(
         amplitudes
     )

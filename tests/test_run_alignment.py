@@ -1716,7 +1716,6 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
     )
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
-    # The RAW clock runs S2 before S1, against the metadata numbers 12 and 3.
     for stem, seconds in (("S1", 600), ("S2", 0)):
         raw = raw_dir / f"{stem}.raw"
         raw.write_bytes(b"")
@@ -1763,7 +1762,6 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
     assert run_alignment.main(argv) == 0
     stdout = capsys.readouterr().out
     if explicit_metadata:
-        # Names and order come from the RAW; the metadata adds the rest.
         assert captured["request"].sample_metadata == (
             SampleMetadata(
                 sample_name="S2",

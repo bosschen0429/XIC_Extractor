@@ -134,7 +134,6 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         strict=True,
     ):
         candidates, _publication = captured[acquisition.sample_stem]
-        # Only the m/z 700 and 701 ions have MS1 signal: two measured peaks.
         assert {item.precursor_mz_basis for item in candidates} == {
             "scan_precursor",
             "product_plus_neutral_loss",
@@ -143,7 +142,6 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         expected_path = tmp_path / f"{acquisition.sample_stem}.csv"
         write_discovery_peaks_csv(expected_path, candidates)
         assert output.peaks_csv.read_bytes() == expected_path.read_bytes()
-        # The m/z 500 and 501 events are recorded without a peak.
         events = _read_csv(output.events_csv)
         assert {row["peak_id"] for row in events if row["peak_id"]} <= {
             item.peak_id for item in candidates

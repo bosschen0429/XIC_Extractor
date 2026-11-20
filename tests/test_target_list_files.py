@@ -41,7 +41,6 @@ def test_written_list_explains_its_own_columns_in_header_notes(tmp_path):
         for sheet, owned in sheets.items():
             notes = {cell.value: cell.comment for cell in book[sheet][1]}
             assert all(notes[name] for name in owned), (path, sheet)
-            # A user's own column is kept as written, without a note.
             assert not any(notes[name] for name in set(notes) - set(owned))
 
 

@@ -1,4 +1,3 @@
-// Target tables, per-target specificity and Targeted batch settings.
 import { sampleMetadata, samplePages } from "./analysis_samples.js";
 import {
   deltaMassEditor,
@@ -59,7 +58,6 @@ export function dirtyTargeted(value = true) {
     250,
   );
 }
-// Settings problems stay in view beside the paths they concern.
 function showSettingsWarnings(warnings) {
   $("targeted-warnings").replaceChildren(
     ...(warnings || []).map((warning) => el("p", warning, "settings-warning")),
@@ -86,7 +84,6 @@ export function renderSettings(values) {
   const outputDir =
     $("t-output_dir")?.value ?? state.config.targeted_output_dir;
   data.replaceChildren();
-  // Paths use the same rows as Untargeted: RAW, run inputs, output, machine.
   for (const spec of state.config.targeted_form.settings) {
     if (
       spec.kind === "readonly" ||
@@ -192,7 +189,6 @@ export async function saveTargeted(quiet = false) {
   if (!quiet) done(receipt.message);
 }
 const isIstd = (row) => row.role === "istd";
-// Delta Mass details of one target; the row's Δm/z cell follows from them.
 function targetIons(row) {
   return state.deltaMass.ions.get(row) || [];
 }
@@ -230,7 +226,6 @@ export function specificityLabel(row) {
   if (delta) parts.push(`Delta Mass ${delta}`);
   return parts.join(" ＋ ") || "MS1 only";
 }
-// The payload the server admits with the rows: shared settings and ions.
 function deltaMassPayload() {
   const ions = Object.fromEntries(
     state.targets
@@ -256,7 +251,6 @@ export function targetCount() {
 }
 function renderTargetPreview() {
   const preview = $("target-preview");
-  // An empty list leaves the drop zone as the only thing to act on.
   preview.hidden = !state.targets.length;
   if (!state.targets.length) {
     preview.replaceChildren();
@@ -304,8 +298,6 @@ function renderTargetPreview() {
   preview.replaceChildren(...nodes);
 }
 
-// Target editor: rows are selected like samples — drag a band over the row
-// numbers, Ctrl adds, Shift extends, and a search selects what it finds.
 const selection = createRowSelection({
   box: () => $("target-table"),
   rowSelector: "tr[data-target]",
@@ -455,7 +447,6 @@ function pairingSelect(row, where) {
   });
   return input;
 }
-// One target's companion ions, shown under its row with the actual m/z.
 function renderExpanded(tr, row) {
   tr.nextElementSibling?.classList.contains("target-delta-row") &&
     tr.nextElementSibling.remove();
@@ -645,7 +636,6 @@ export function bindTargeted() {
       done(result.message);
     });
   bindListUpload("target", previewTargetFiles);
-  // The bundled example becomes the current list, ready to edit; nothing to download.
   $("target-from-example").onclick = () =>
     act(async () => {
       const blob = await fetch("/examples/targets.xlsx").then((response) => {

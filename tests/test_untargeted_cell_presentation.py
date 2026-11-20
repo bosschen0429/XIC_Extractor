@@ -165,9 +165,7 @@ S1, S2, S2_OTHER, S3 = (
         ([_competition([S1, S2], [[S1], [S2, S3]])], [[S3]]),
         # The alternative leaves the peak out; the selected peer is not a rival.
         ([_competition([S1, S2], [[S1], [S2]])], [[]]),
-        # Another peak of the same sample sits in an unchanged group.
         ([_competition([S1, S2], [[S1], [S2], [S2_OTHER, S3]])], [[]]),
-        # Each risk is read on its own.
         (
             [
                 _competition([S1, S2], [[S1], [S2, S3]]),
@@ -175,7 +173,6 @@ S1, S2, S2_OTHER, S3 = (
             ],
             [[S3], []],
         ),
-        # No recorded alternative names nothing.
         ([_competition([S1, S2], None)], []),
     ],
 )

@@ -66,7 +66,6 @@ def test_support_origin_styles_fixture_curves_in_both_views(
         assert line.attrib["data-support-origin"] == origin
         assert line.attrib["stroke-dasharray"] == dash
         assert len(line.attrib["points"].split()) == 3
-        # The table's origin swatch is the plotted line's legend.
         assert f">Sample {i}<" in rendered["table"]
         assert f'stroke-dasharray="{dash}"' in rendered["table"]
         assert f'data-support-origin="{origin}"' in rendered["lanes"]
@@ -255,7 +254,6 @@ def test_build_and_write_report_atomically() -> None:
         content = out.read_text(encoding="utf-8")
         assert "測試報告" in content
         assert "retained_curves" in content
-        # Check no temporary files left
         tmp_files = list(out.parent.glob("*.tmp.*"))
         assert len(tmp_files) == 0
 
@@ -264,7 +262,6 @@ def test_write_report_rejects_over_budget_50mib() -> None:
     """Verify that reports exceeding 50 MiB are rejected and cleaned up."""
     with tempfile.TemporaryDirectory() as tmpdir:
         out = Path(tmpdir) / "large.html"
-        # Synthetic large content > 50 MiB
         oversized = "A" * (MAX_HTML_SIZE_BYTES + 1024)
         with pytest.raises(ValueError, match="exceeds 50 MiB limit"):
             write_report_atomically(oversized, out)

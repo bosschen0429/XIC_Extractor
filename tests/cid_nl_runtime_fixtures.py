@@ -223,8 +223,6 @@ def install_runtime_raws(
 
     monkeypatch.setattr("xic_extractor.raw_reader._load_thermo_api", _forbid_vendor_api)
 
-    # This fixture supplies spectra, not vendor headers; the analysis-set owner
-    # still orders the synthetic files without opening fake bytes natively.
     install_fake_raw_headers(monkeypatch)
     for filename in EXPECTED_THERMO_DLLS:
         (tmp_path / filename).write_bytes(b"dll")

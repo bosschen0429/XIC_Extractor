@@ -115,7 +115,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         for cell in cells
         for support in cell.group_context.supports
     )
-    # Owner-produced arrays survive the runtime partition handoff.
     persisted_capture_evidence = tuple(completed.capture_evidence)
     runtime_captures = tuple(
         evidence
@@ -553,7 +552,7 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
         assert retained_unavailable.observation_ref is None
         assert retained_unavailable.physical_evaluation.state == "unavailable"
         signal = retained_unavailable.physical_evaluation.retained_prepared_signal
-        assert signal is None  # The owner skips preparation for an all-zero trace.
+        assert signal is None
         assert len(retained_unavailable.trace.rt) > 0
         assert all(value == 0.0 for value in retained_unavailable.trace.intensity)
 

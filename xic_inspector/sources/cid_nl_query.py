@@ -195,7 +195,6 @@ class IndexedCidNlSource(CidNlSource):
             for item_id in ids:
                 primary = item(item_id)
                 if request.strategy == "query":
-                    # Filtering is complete; only mark the page's witnesses.
                     with_matches, _, _ = filter_by_query([primary], **criteria, limit=1)
                     primary = replace(
                         primary, matched_witnesses=with_matches[0].matched_witnesses

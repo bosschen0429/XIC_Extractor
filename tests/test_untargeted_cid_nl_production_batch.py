@@ -579,7 +579,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     for raw_path, raw in source_raws.items():
         if raw_path.stem in rejected_samples:
             raw.intensity[:] = 0
-    # A sample without MS1 signal publishes no Discovery peak.
     support_candidates = _current_candidates(
         source_raws[raw_paths[0]],
         raw_file=raw_paths[0],

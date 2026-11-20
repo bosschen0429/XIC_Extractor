@@ -63,7 +63,6 @@ def test_required_population_fails_only_on_default_or_missing_output(
             arguments += ["--require-populated", item]
         return main(arguments)
 
-    # A constant real value and a varying column are populated.
     assert run("review.tsv", "review.tsv:tag", "review.tsv:anchored") == 0
     # A column that only ever holds its default, an empty artifact, a missing
     # column or artifact each fail the promoted check.

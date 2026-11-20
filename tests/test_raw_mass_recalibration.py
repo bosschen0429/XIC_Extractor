@@ -18,7 +18,6 @@ from xic_extractor.xic_models import XICRequest
 
 TRUE_MZ = 500.0
 NEIGHBOUR_MZ = TRUE_MZ * (1 + 20e-6)
-# Scan 1 is a normal period, scan 3 a shifted period; scan 2 is an MS2 scan.
 LM_BY_SCAN = {1: 1.0, 2: 12.0, 3: 12.5}
 RT_BY_SCAN = {1: 10.0, 2: 10.01, 3: 10.02}
 
@@ -581,7 +580,6 @@ _GRID_SPECTRA = {
         [1000.0, 1.0, 2.0, 4.0, 2000.0, 8.0],
     ),
     2: ([], []),
-    # Scan 3 is MS2 and contributes no XIC point.
     4: ([100.0, 100.0005, 150.0], [16.0, 0.0, 32.0]),
     5: ([150.0], [64.0]),
 }
@@ -641,7 +639,6 @@ def test_batched_recalibrated_xics_match_hand_sums_in_request_order():
     no_ms1 = XICRequest(mz=100.0, rt_min=3.0, rt_max=3.0, ppm_tol=10.0)
     # Same m/z and window, narrower ppm: only the centre centroid is inside.
     narrow = XICRequest(mz=100.0, rt_min=1.0, rt_max=5.0, ppm_tol=2.0)
-    # Same start as the peak window, earlier end.
     early = XICRequest(mz=100.0, rt_min=1.0, rt_max=2.0, ppm_tol=10.0)
     expected = {
         peak: [(1.0, 7.0), (2.0, 0.0), (4.0, 16.0), (5.0, 0.0)],
@@ -656,7 +653,6 @@ def test_batched_recalibrated_xics_match_hand_sums_in_request_order():
         vendor = _GridVendor()
         traces = _grid_handle(vendor).extract_xic_many(order)
         assert [_pairs(trace) for trace in traces] == [expected[r] for r in order]
-        # Each MS1/MS2 scan in the batch is read from the vendor once.
         assert vendor.centroid_reads == 4
     duplicates = [t for r, t in zip(order, traces, strict=True) if r == peak]
     assert duplicates[0].intensity is not duplicates[1].intensity

@@ -139,7 +139,7 @@ def test_boundary_shift_preserves_order_and_inverse_of_supported_curve():
     assert estimates[-1].method == "boundary_shift"
     assert estimates[-1].outside_anchor_range_min == pytest.approx(0.01)
     assert sample.estimate_observed_rt(17.5).rt_min == pytest.approx(16.818181818)
-    assert sample.calibrated_rt(17.01) is None  # Strong-support API stays bounded.
+    assert sample.calibrated_rt(17.01) is None
 
 
 def test_failed_strong_fit_retains_explicit_weak_estimate():
@@ -606,5 +606,5 @@ def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
     early = rows["S01", "10-15"]
     assert float(early["raw_median_offset_min"]) == pytest.approx(-0.6, abs=0.01)
     assert abs(float(early["calibrated_median_offset_min"])) < 0.01
-    assert ("S09", "10-15") not in rows  # Held-out RT 33 is outside support.
+    assert ("S09", "10-15") not in rows
     assert ("S09", "20-30") in rows

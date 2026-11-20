@@ -1,5 +1,3 @@
-// Row selection shared by the sample and target editors: drag a band over rows,
-// Ctrl adds or removes one row, Shift extends from the last row clicked.
 import { el } from "./analysis_ui.js";
 
 // options:
@@ -21,7 +19,6 @@ export function createRowSelection(options) {
     set(keys) {
       selection.keys = new Set(keys);
     },
-    // Forget keys that no longer exist, for example after rows are removed.
     retain(known) {
       selection.keys = new Set([...selection.keys].filter((key) => known.has(key)));
       if (!known.has(selection.anchor)) selection.anchor = null;

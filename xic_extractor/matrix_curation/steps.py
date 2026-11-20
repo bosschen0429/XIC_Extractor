@@ -91,7 +91,6 @@ class StepResult:
     rows: tuple[Mapping[str, object], ...]
     keep: tuple[bool, ...]
     summary: Mapping[str, Any] = field(default_factory=dict)
-    # Extra output files of this step, by file name.
     tables: Mapping[str, StepTable] = field(default_factory=dict)
 
 

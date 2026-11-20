@@ -33,7 +33,7 @@ class CanonicalItem:
     serialized_ref: str
     sample_ids: tuple[str, ...]
     witnesses: tuple[Witness, ...]
-    stratum: str  # 'attention' | 'excluded' | 'null' | 'zero' | 'rest'
+    stratum: str
     is_attention: bool = False
     details: dict[str, Any] = field(default_factory=dict)
     matched_witnesses: tuple[Witness, ...] = ()

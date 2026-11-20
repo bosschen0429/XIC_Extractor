@@ -195,8 +195,6 @@ class _Report:
     def peak_keys(self, encoded: str) -> list[str]:
         return [self.peak(peak_id)[0] for peak_id in json.loads(encoded)]
 
-    # Candidates --------------------------------------------------------
-
     def candidate(self, row_id: int) -> dict[str, Any]:
         row = self.candidate_rows[row_id]
         return {
@@ -320,8 +318,6 @@ class _Report:
                 curves=tuple(curves.get(row_id, ())),
             )
         return result
-
-    # Groups ------------------------------------------------------------
 
     def members(self, column: str, group_ids: Iterable[int]) -> dict[int, list[Any]]:
         ids = sorted(set(group_ids))
@@ -956,7 +952,6 @@ def read_alignment_curves(
             if codec != "zlib-json-utf8":
                 raise ExplanationError(f"unsupported curve payload codec: {codec}")
             payload_data = decode_json(blob)
-            # These fields are stored once, as the curve's columns.
             payload_data.update(
                 sample_id=sample_id,
                 kind=kind,

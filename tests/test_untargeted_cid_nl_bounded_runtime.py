@@ -1588,7 +1588,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
 
     plan, _ = _plan(tmp_path, monkeypatch, scenario="recovery")
     monkeypatch.setattr(runtime_owner, "ensure_assemblies_loaded", lambda *_args: None)
-    overlap_count = min(raw_workers, 3)  # Three samples have initial candidates.
+    overlap_count = min(raw_workers, 3)
     barrier = Barrier(overlap_count)
     lock = Lock()
     coordinator = get_ident()
@@ -1702,7 +1702,6 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     assert live_jobs == 0
     assert append_order == ["partition-00000-backfill", "partition-00001-backfill"]
     assert len(handle_threads) == 8
-    # Every initial acquisition finishes before either Backfill phase.
     assert barrier_checks == [6, 7]
     assert overlap_count <= peak_handles <= raw_workers
     assert len(intervals) == overlap_count
@@ -2485,7 +2484,6 @@ def test_result_store_close_failure_is_reported_once(tmp_path, monkeypatch, reta
         result.close()
         assert len(calls) == 1
     finally:
-        # Release the deliberately failed store without retrying workflow close.
         if retain:
             StreamedResultStore.cleanup(calls[0])
         else:

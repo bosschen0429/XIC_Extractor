@@ -12,7 +12,6 @@ _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
         "上機資訊",
         "file",
         {
-            # The same 上機資訊 files as Untargeted.
             "browse": "metadata",
             "help": "Word、Excel、CSV 或 TSV。補充樣本角色、組別與排除標記；"
             "注射順序與樣本名稱以 RAW 為準。",

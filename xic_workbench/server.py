@@ -109,8 +109,6 @@ _ARTIFACT_HTML_CSP = (
 
 
 class _WorkbenchHTTPServer(ThreadingHTTPServer):
-    # Browsers open parallel connections for the page's assets. The Python 3.12
-    # default backlog of five can reject that burst before the accept loop runs.
     request_queue_size = socket.SOMAXCONN
 
     browser_lifetime: BrowserLifetime | None = None

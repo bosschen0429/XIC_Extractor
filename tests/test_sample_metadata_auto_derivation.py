@@ -11,7 +11,6 @@ from xic_extractor.untargeted_execution.partition.request import (
 
 
 def test_infer_sample_role() -> None:
-    # 1. Keywords in sample_name / comment
     assert infer_sample_role("Unknown", sample_name="QC_01") == "qc"
     assert infer_sample_role("Unknown", sample_name="NAA_QC_01") == "qc"
     assert infer_sample_role("Unknown", sample_name="Pooled_QC1") == "qc"
@@ -21,13 +20,11 @@ def test_infer_sample_role() -> None:
     assert infer_sample_role("Unknown", sample_name="Calibrator_Level_1") == "std"
     assert infer_sample_role("Unknown", sample_name="STD_100uM") == "std"
 
-    # 2. Thermo SampleType
     assert infer_sample_role("QC", sample_name="Run01") == "qc"
     assert infer_sample_role("Blank", sample_name="Run02") == "blank"
     assert infer_sample_role("Standard", sample_name="Run03") == "std"
     assert infer_sample_role("Unknown", sample_name="Subject_001") == "sample"
 
-    # 3. Fallbacks
     assert infer_sample_role("", sample_name="Subject_002") == "sample"
     assert infer_sample_role(None, sample_name="") == "other"
 
@@ -43,7 +40,7 @@ def test_metadata_by_stem_rejects_duplicate_injection_order_within_same_batch() 
         SampleMetadata(
             sample_name="S2",
             raw_stem="S2",
-            injection_order=1,  # Duplicate in same batch
+            injection_order=1,
             batch_id="Batch1",
         ),
     )

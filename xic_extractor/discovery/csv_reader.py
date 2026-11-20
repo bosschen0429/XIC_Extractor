@@ -273,7 +273,6 @@ def parse_discovery_event_row(
             isolation_offset_da=optional("isolation_offset_da"),
             master_scan_number=optional_int("master_scan_number"),
         )
-        # An event without vendor precursor metadata writes five blanks.
         metadata = None if recorded == Ms2PrecursorMetadata() else recorded
         observation = (
             None

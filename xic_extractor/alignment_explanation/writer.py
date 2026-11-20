@@ -28,13 +28,11 @@ CandidateKey = tuple[str, str]
 # m/z, apex RT and the query ppm of one physical peak; None when not recorded.
 PeakCoordinates = tuple[float | None, float | None, float | None]
 
-# Final group dispositions from most to least certain.
 _DISPOSITION_CERTAINTY = ("established", "provisional", "unresolved", "rejected")
 
 # Curve envelope fields stored as the curve's columns, not in its payload.
 _CURVE_COLUMNS = ("sample_id", "kind", "candidate_id", "physical_peak_key")
 
-# The fields of one cell as the decision owner reports them.
 _CELL_FIELDS = frozenset(
     {
         "feature_id",
@@ -145,8 +143,6 @@ class ExplanationReportWriter:
             raise RuntimeError("explanation writer is not active")
         return self.connection
 
-    # Peaks and subjects -------------------------------------------------
-
     def add_peak(
         self,
         sample_key: str,
@@ -203,8 +199,6 @@ class ExplanationReportWriter:
             self.add_method_subject({"method_subject_id": method_subject_id})
         return int(self._subjects[method_subject_id][0])
 
-    # Candidates ---------------------------------------------------------
-
     def add_candidate(
         self,
         candidate_id: str,
@@ -255,8 +249,6 @@ class ExplanationReportWriter:
                 sample_key, (physical_peak_key,)
             )[0]
 
-    # Method evidence ----------------------------------------------------
-
     def add_assessment(
         self,
         payload: Mapping[str, Any],
@@ -291,8 +283,6 @@ class ExplanationReportWriter:
         key = candidate_id, sample_key
         if self._exclusions.setdefault(key, reason_code) != reason_code:
             raise ValueError(f"conflicting candidate exclusion: {key}")
-
-    # Groups -------------------------------------------------------------
 
     def _sample(self, sample_key: str) -> None:
         if sample_key not in self._samples:
@@ -499,8 +489,6 @@ class ExplanationReportWriter:
         """
         self._cell_curves[group_id, sample_key] = curve
 
-    # Curves -------------------------------------------------------------
-
     def add_curve_payload(
         self,
         sample_id: str,
@@ -558,8 +546,6 @@ class ExplanationReportWriter:
         elif row[4] != subject:
             raise ValueError(f"one curve names two method subjects: {record_id}")
         return int(row[0])
-
-    # Publication --------------------------------------------------------
 
     def finalize(self, summary: Mapping[str, Any]) -> Path:
         db = self._connection()

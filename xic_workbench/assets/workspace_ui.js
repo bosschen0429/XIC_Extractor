@@ -1,5 +1,3 @@
-// Shared UI primitives for the workspace shell: request transport, icons,
-// toasts, confirmation, theme, navigation history and window tracking.
 const $ = (id) => document.getElementById(id);
 function icon(name, cls = "") {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -112,7 +110,6 @@ window.addEventListener("popstate", (event) => {
   const location = locations.get(position);
   if (!location) return;
   const currentRevision = revision;
-  // Restore readers after the browser completes the history transition.
   setTimeout(() => {
     if (revision !== currentRevision) return;
     restoring = true;

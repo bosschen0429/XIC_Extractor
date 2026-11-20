@@ -93,7 +93,6 @@ def test_targeted_dispatch_freezes_inputs_until_completion(tmp_path, monkeypatch
         ]
         receipt_dir = Path(receipts[0])
         assert not receipt_dir.exists()
-        # The dispatched run writes its own new folder under the result location.
         run_folder = request.config.output_csv.parent
         assert run_folder.parent == tmp_path / "output"
         assert "_targeted" in run_folder.name
@@ -205,7 +204,6 @@ def test_queued_targeted_metadata_membership_is_frozen(tmp_path, monkeypatch):
         assert jobs.state()["job"]["status"] == "succeeded"
         request, selected, inputs = captured[0]
         assert [path.stem for path in selected] == ["A"]
-        # Order comes from the RAW, never from the sequence numbers.
         assert inputs.injection_order == {"A": 1}
         assert not request.config.injection_order_source.exists()
         assert request.config.injection_order_source != order_source

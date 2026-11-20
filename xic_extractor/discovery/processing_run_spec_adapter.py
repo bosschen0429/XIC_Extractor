@@ -85,7 +85,6 @@ def compile_discovery_processing_run_spec_with_expectations(
     if type(fingerprint_workers) is not int or fingerprint_workers < 1:
         raise ValueError("fingerprint_workers must be a positive integer")
 
-    # Fail before touching the filesystem for invalid semantic inputs.
     CidNlDiscoveryMethodSpec(settings=discovery_settings)
     if not isinstance(signal_processing_profile, SignalProcessingProfile):
         raise TypeError("signal_processing_profile must be a SignalProcessingProfile")

@@ -83,11 +83,6 @@ def _execute_shared_process_task(task: SharedProcessTask) -> SharedProcessResult
     )
 
 
-# ---------------------------------------------------------------------------
-# StreamedResultStore Tests
-# ---------------------------------------------------------------------------
-
-
 def test_streamed_result_store_basic_roundtrip(tmp_path: Path) -> None:
     store = StreamedResultStore(tmp_path / "spool", ())
     payload = MockPayload(
@@ -189,7 +184,7 @@ def test_streamed_result_store_unknown_shared_identity_rejected() -> None:
     bio = io.BytesIO()
     # A memo reference cannot bind an authority absent from this record.
     bio.write(pickle.PROTO + b"\x04")
-    bio.write(pickle.BINGET + b"\x63")  # 99
+    bio.write(pickle.BINGET + b"\x63")
     bio.write(pickle.STOP)
     bio.seek(0)
 
@@ -228,14 +223,8 @@ def test_streamed_result_store_cleanup_idempotent(tmp_path: Path) -> None:
     assert not spool_dir.exists()
     assert len(store._field_caches) == 0
 
-    # Idempotent cleanup must not raise
     store.cleanup()
     assert not spool_dir.exists()
-
-
-# ---------------------------------------------------------------------------
-# PartitionPipelineScheduler Tests
-# ---------------------------------------------------------------------------
 
 
 class MockAdapter:
@@ -364,7 +353,6 @@ def test_scheduler_execute_success(tmp_path: Path) -> None:
     assert result["application_result"]["total_children"] == 2
     assert result["child_outputs"] == ("child-0", "child-1")
 
-    # Verify progress event sequence
     stages = [
         ev["stage"] for ev in progress_events if ev.get("event") == "partition_progress"
     ]
@@ -492,7 +480,6 @@ def test_scheduler_execute_cancellation_cleans_up(tmp_path: Path) -> None:
     def should_cancel() -> bool:
         nonlocal call_count
         call_count += 1
-        # Cancel during the second partition processing
         return call_count >= 5
 
     def cleanup() -> None:
@@ -510,7 +497,6 @@ def test_scheduler_execute_cancellation_cleans_up(tmp_path: Path) -> None:
             acquisition_cleanup=cleanup,
         )
 
-    # Verify spool directory was cleaned up
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 0
     assert cleanup_calls == 1
@@ -538,7 +524,6 @@ def test_scheduler_execute_acquisition_failure_cleans_up(tmp_path: Path) -> None
             acquisition_cleanup=cleanup,
         )
 
-    # Verify spool directory was cleaned up
     spool_dirs = list(output_dir.glob(".partition_spool-*"))
     assert len(spool_dirs) == 0
     assert cleanup_calls == 1

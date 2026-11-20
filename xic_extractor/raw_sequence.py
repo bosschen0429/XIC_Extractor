@@ -109,8 +109,6 @@ def read_analysis_set(
             )
             continue
         header_paths.append((index, path))
-    # Each task owns and closes its vendor handle. Results retain path association;
-    # acquisition clocks, not thread completion order, determine injection order.
     with ThreadPoolExecutor(max_workers=8) as pool:
         pending = [
             (index, path, pool.submit(_analysis_header, path, dll_dir))

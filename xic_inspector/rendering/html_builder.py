@@ -13,7 +13,7 @@ from typing import Any
 
 from xic_inspector.rendering.template import HTML_TEMPLATE
 
-MAX_HTML_SIZE_BYTES = 50 * 1024 * 1024  # 50 MiB hard cap
+MAX_HTML_SIZE_BYTES = 50 * 1024 * 1024
 
 
 def serialize_safe_inline_json(data: Any) -> str:

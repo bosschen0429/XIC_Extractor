@@ -1,4 +1,3 @@
-// Completed-result summaries, artifact viewing and Inspector export selection.
 import { openCuration, showCurationResult } from "./analysis_curation.js";
 import { analysis } from "./analysis_state.js";
 import { $, act, api, button, el, ui } from "./analysis_ui.js";
@@ -189,7 +188,6 @@ export function renderResults() {
         ),
       );
     container.append(actions, details);
-    // The matrix download sits with the result actions, not on its own row.
     actions.append(...downloads.childNodes);
   }
   const curated = analysis.snapshot.results.curation;
@@ -203,7 +201,6 @@ export function renderResults() {
     showCurationResult();
   }
 }
-// Matrix curation
 async function openInspectorExport(source) {
   exportSource = source;
   $("export-output").value = source.replace(

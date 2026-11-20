@@ -899,7 +899,6 @@ def test_pick_returns_the_native_choice_and_starts_from_the_field(
             "/api/pick", {"kind": "report", "path": str(tmp_path)}
         )
         assert (status, body) == (200, {"path": str(tmp_path / "chosen.sqlite")})
-        # Cancelling leaves the field as it was.
         assert request("/api/pick", {"kind": "folder"})[1] == {"path": ""}
 
         def busy(kind, current=""):
@@ -1016,7 +1015,6 @@ def test_http_curve_reads_never_block_review_and_leave_results_readable(
         assert status == 202 and second["id"] != first["id"]
         status, replaced, _ = request(f"/api/jobs/{first['id']}")
         assert status == 200 and replaced["status"] == "cancelled"
-        # Searching during a read is answered and ends the read.
         assert request("/api/query", {})[0] == 200
         assert request("/api/review")[1]["job"] is None
 

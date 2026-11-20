@@ -390,7 +390,6 @@ def test_retained_memory_sequence_and_selected_bypass_file_reads(tmp_path, monke
 
     monkeypatch.setattr(Path, "open", tracking_open)
 
-    # Reading sequence and selected should not open any files
     seq = store.sequence("child_outputs")
     assert tuple(seq) == (10, 20, 30)
     assert seq[1] == 20
@@ -416,7 +415,6 @@ def test_partition_result_store_cleanup(tmp_path: Path) -> None:
     assert not spool_dir.exists()
     assert len(store._field_caches) == 0
 
-    # Idempotent cleanup
     store.cleanup()
     assert not spool_dir.exists()
 
@@ -544,7 +542,6 @@ def test_preserved_results_reject_master_pickled_store(tmp_path):
     store.append("partition", Payload((1,)))
     store.seal()
     index = tmp_path / "master-index.pickle"
-    # Master serialized the runtime object itself, not a record-index document.
     index.write_bytes(owner_pickle_dumps(store, ()))
     with pytest.raises(ValueError, match="rerun the analysis"):
         open_preserved_results(index)

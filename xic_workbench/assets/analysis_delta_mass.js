@@ -9,7 +9,6 @@ const SVG = "http://www.w3.org/2000/svg";
 export function ionName(offset) {
   return `${offset < 0 ? "-" : "+"}${Math.abs(offset).toFixed(4)}`;
 }
-// Exact text of an offset in a target-table cell.
 export function formatOffset(offset) {
   return `${offset < 0 ? "-" : "+"}${Math.abs(offset)}`;
 }
@@ -175,7 +174,6 @@ export function deltaMassEditor(options) {
     const problem = ionsError(options.ions, options);
     error.textContent = problem;
     error.hidden = !problem;
-    // What to fill, for someone who has never seen a companion ion.
     const hint = el(
       "p",
       "伴隨離子：同一 RT 一起出現的其他 MS1 離子。Δm/z 填精確質量差，如 +6.0201。",
@@ -210,7 +208,6 @@ function svgNode(tag, attrs, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
-// Base and companion ions; the intensity-ratio range is a band on a log axis.
 export function previewPlot(ions, { baseMz = null } = {}) {
   const shown = ions.filter((ion) => Number.isFinite(ion.offset_mz));
   const points = [

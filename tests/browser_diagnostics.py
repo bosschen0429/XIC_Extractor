@@ -138,7 +138,6 @@ def pytest_runtest_makereport(item, call):
                 )
                 report.sections.append(("Browser evidence", str(diagnostics.directory)))
             else:
-                # Only our unique directory, after every fixture has finished.
                 shutil.rmtree(diagnostics.directory)
         else:
             diagnostics.phase = (

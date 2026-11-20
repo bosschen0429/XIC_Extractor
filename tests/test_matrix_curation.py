@@ -290,7 +290,6 @@ def test_cli_keeps_original_rows_and_records_each_decision(tmp_path):
         "kept_by_all_steps",
         "dropped_by:finite_fraction",
     ]
-    # The fixture run declared no internal standards.
     assert {row["istd_label"] for row in decisions} == {""}
     _, matched = read_tsv_with_header(output / "sample_metadata.tsv")
     assert [row["matrix_column"] for row in matched] == list(SAMPLES)
@@ -483,7 +482,6 @@ def test_workbench_job_matches_cli_and_writes_inside_the_source(tmp_path):
     raw_dir = tmp_path / "raw"
     source = alignment_output(tmp_path / "alignment", raw_dir=raw_dir)
     save_batch_samples(config, raw_dir, sample_payload())
-    # Launch the shipped entry point: no workspace, job or application substitute.
     with _launch(config) as (_process, url):
         status, state = _request(
             url,

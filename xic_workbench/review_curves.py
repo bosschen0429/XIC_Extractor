@@ -45,7 +45,6 @@ from xic_inspector.sources.curve_bundle import (
 
 RUN_METADATA_NAME = "alignment_run_metadata.json"
 SAVED_ROLE = "分析時保存的曲線"
-# The Matrix value of the cell, as recorded by the run.
 PUBLISHED_VALUE_METHOD = "published_matrix_value"
 
 

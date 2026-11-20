@@ -84,6 +84,8 @@ dev = [
     "ipython>=8.39.0",
     "mypy>=1.20.1",
     "pre-commit>=4.6.1",
+    "pygments>=2.19,<3",
+    "pyyaml>=6,<7",
     "ruff>=0.15.11",
 ]
 
@@ -335,7 +337,6 @@ forbidden_modules = [
     "hashlib",
     "scripts",
 ]
-# Direct imports only, as the retired AST check verified.
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
@@ -354,7 +355,6 @@ forbidden_modules = [
     "xic_extractor.output",
     "scripts.run_alignment",
 ]
-# Direct imports only, as the retired AST check verified.
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
@@ -373,7 +373,6 @@ forbidden_modules = [
     "xic_extractor.discovery.delta_mass_pipeline",
     "xic_extractor.discovery.delta_mass_strategy",
 ]
-# Direct imports only, as the retired AST check verified.
 allow_indirect_imports = true
 ignore_imports = [
     # Complete-analysis composition may route diagnostics; Alignment and writers may not.

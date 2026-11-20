@@ -74,7 +74,6 @@ def test_publication_timing_covers_the_published_tables(tmp_path: Path) -> None:
         timing_recorder=recorder,
     ).outputs
 
-    # Both NL events reference one measured peak; publication retains it once.
     assert len(read_discovery_peaks_csv(outputs.peaks_csv)) == 1
     by_stage = {record.stage: record for record in recorder.records}
     assert by_stage["discover.write_peaks_csv"].metrics == {"row_count": 1}

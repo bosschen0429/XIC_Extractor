@@ -179,7 +179,6 @@ class AnalysisWorkspace:
 
         return {
             "config_dir": str(self.config_dir),
-            # The setup separates samples each flow analyzes from the rest.
             "analyzed_roles": {
                 kind: sorted(roles) for kind, roles in ANALYZED_ROLES.items()
             },

@@ -343,7 +343,6 @@ def _prepare_mass_recalibration(
 
     policy = request.discovery_settings.mass_recalibration
     if policy is not MassRecalibration.NONE:
-        # Discovery already computed each RAW's result; bind it to the path.
         return {
             stem: _bind_discovery_mass_recalibration(path, batch.peak_receipts[stem])
             for stem, path in existing_raw_paths(

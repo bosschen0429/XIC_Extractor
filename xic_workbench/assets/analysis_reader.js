@@ -1,4 +1,3 @@
-// Shared RAW reader setup and debounced environment validation.
 import { sampleMetadata, samplePages } from "./analysis_samples.js";
 import { checklist, dirty } from "./analysis_setup.js";
 import {

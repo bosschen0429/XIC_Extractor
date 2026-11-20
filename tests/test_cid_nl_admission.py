@@ -279,7 +279,6 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
         peaks_by_sample=candidates,
         root=tmp_path / "discovery",
     )
-    # The RAW changes between Discovery and Alignment.
     changed = raws[paths[1]]
     if alignment_signal == "flat":
         changed.intensity[:] = 0.0
@@ -315,7 +314,6 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
     )
     (kept,) = candidates["Clean1"]
     (dropped,) = candidates["Clean2"]
-    # Discovery's admission still declares both peaks.
     assert {cid for cid, _ in plan.subject_batch.candidate_memberships} == {
         kept.peak_id,
         dropped.peak_id,
@@ -401,7 +399,6 @@ def test_alignment_rejects_raw_replaced_after_discovery_without_recalibration(
         peaks_by_sample=candidates,
         root=tmp_path / "discovery",
     )
-    # The same-named RAW is replaced after Discovery.
     paths[1].write_bytes(b"another acquisition under the same name")
 
     with pytest.raises(ValueError, match="RAW changed after Discovery.*Clean2"):

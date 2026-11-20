@@ -20,15 +20,12 @@ def witness_matches_criteria(
     rt_max: float | None = None,
 ) -> bool:
     """Check whether a single witness chain satisfies all query criteria."""
-    # Sample check
     if sample_ids is not None and witness.sample_key not in sample_ids:
         return False
 
-    # Candidate check
     if candidate_ids is not None and witness.candidate_id not in candidate_ids:
         return False
 
-    # Group check
     if group_ids is not None:
         if (
             witness.group_hypothesis_id is None
@@ -36,7 +33,6 @@ def witness_matches_criteria(
         ):
             return False
 
-    # m/z check (inclusive bounds)
     if mz_min is not None:
         if witness.precursor_mz is None or witness.precursor_mz < mz_min:
             return False
@@ -44,7 +40,6 @@ def witness_matches_criteria(
         if witness.precursor_mz is None or witness.precursor_mz > mz_max:
             return False
 
-    # RT check (inclusive bounds; requires actual apex in minutes)
     if rt_min is not None:
         if witness.rt_apex_min is None or witness.rt_apex_min < rt_min:
             return False
@@ -112,7 +107,6 @@ def filter_by_query(
     missing_rt_count = 0
 
     for item in items:
-        # Check full criteria
         matched_witnesses = [
             w
             for w in item.witnesses
@@ -132,7 +126,6 @@ def filter_by_query(
                 replace(item, matched_witnesses=tuple(matched_witnesses))
             )
         elif has_rt_filter:
-            # Passed non-RT criteria but had no RT apex across witnesses
             candidate_non_rt_witnesses = [
                 w
                 for w in item.witnesses
@@ -150,11 +143,9 @@ def filter_by_query(
             ):
                 missing_rt_count += 1
 
-    # Sorted by canonical item ref UTF-8 bytes
     sorted_matched = sorted(matched_items, key=lambda it: it.sort_key)
     matched_count = len(sorted_matched)
 
-    # Apply offset and limit
     selected = sorted_matched[offset : offset + limit]
     return selected, matched_count, missing_rt_count
 

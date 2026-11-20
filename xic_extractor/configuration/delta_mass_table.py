@@ -29,7 +29,6 @@ _ION_FIELDS = (
 )
 DELTA_MASS_SETTINGS_SHEET = "Delta Mass Settings"
 DELTA_MASS_SETTINGS_HEADERS = ("key", "value", "description")
-# Delta Mass Settings keys of the list-shared settings.
 DELTA_MASS_SETTING_KEYS = {
     "delta_mass_mz_tolerance_ppm": "mz_tolerance_ppm",
     "delta_mass_apex_floor_sec": "apex_floor_sec",

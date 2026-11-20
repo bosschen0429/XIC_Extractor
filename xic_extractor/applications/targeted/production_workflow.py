@@ -325,7 +325,6 @@ def _build_publication_output(
         cells,
         targets_by_label,
     )
-    # Every published reader follows the run as acquired, not RAW file names.
     files.sort(key=lambda item: (item[0] is None, item[0] or 0, item[1].sample_name))
     return RunOutput(
         file_results=[

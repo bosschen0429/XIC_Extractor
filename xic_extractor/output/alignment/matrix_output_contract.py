@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from xic_extractor.output.alignment.output_rows import format_value
 from xic_extractor.tabular_io import escape_excel_formula
 
-# The Review fields that bind a Review row to its Matrix row.
 MATRIX_REVIEW_COLUMNS = (
     "feature_id",
     "matrix_row_index",

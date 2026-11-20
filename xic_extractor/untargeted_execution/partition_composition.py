@@ -381,7 +381,6 @@ def group_acquired_partition(
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> CidNlGrouping:
     """Hand acquired in-memory facts to Alignment, retaining no eligibility policy."""
-    # A sample acquisition shares its contexts across method-subject jobs.
     context_batches = {
         id(
             result.adapter_result.elution_contexts

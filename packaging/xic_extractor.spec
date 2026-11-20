@@ -1,4 +1,3 @@
-# packaging/xic_extractor.spec
 # -*- mode: python ; coding: utf-8 -*-
 
 import os

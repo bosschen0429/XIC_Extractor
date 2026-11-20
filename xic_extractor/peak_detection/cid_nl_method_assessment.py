@@ -82,7 +82,6 @@ class CidNlMethodRelations:
     set_relation_event_indexes: tuple[int, ...]
 
     def __deepcopy__(self, memo: dict[int, object]) -> CidNlMethodRelations:
-        # Geometry, precursor answers, policy and relation indexes are immutable.
         return self
 
     @property

@@ -82,7 +82,6 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
         self._feature_ids: dict[str, tuple[str, ...]] = {}
         # Discovery's apex MS1 readings; they only set the reported row m/z.
         self.ms1_apex_mz_by_candidate: dict[str, float] = {}
-        # The representative event's precursor, from its event-table row.
         self.precursor_mz_by_candidate: dict[str, float] = {}
         for stem in batch.sample_order:
             path = batch.peak_csvs[stem]

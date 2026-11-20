@@ -208,7 +208,6 @@ def bootstrap_cid_nl_initial_population(
     )
     if not owners and not searched_no_observation:
         raise GroupingBootstrapError("bootstrap assessments have no peak observations")
-    # Bind every retained physical owner, including MS1-only observations.
     rt_frame = rt_frame.bind_owners(tuple(owners))
     correspondence = resolve_peak_trajectories(
         owners,

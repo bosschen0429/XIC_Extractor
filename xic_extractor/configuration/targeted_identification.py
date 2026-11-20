@@ -173,9 +173,6 @@ def target_specificity(target) -> str:
     return " + ".join(parts) or "MS1 only"
 
 
-# --- Delta Mass details: one JSON-able payload for workspace, GUI and receipts ---
-
-
 def delta_mass_payload(
     settings: DeltaMassSettings,
     ions_by_target: Mapping[str, tuple[QuantRelativeIon, ...]],

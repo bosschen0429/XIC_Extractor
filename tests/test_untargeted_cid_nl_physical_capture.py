@@ -109,7 +109,6 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
     if precursor_case == "inferred":
         from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 
-        # Discovery reads the fixture scans with their precursor metadata.
         monkeypatch.setattr(
             type(raw),
             "iter_ms2_scans",

@@ -37,7 +37,6 @@ def _windows_network_arguments(channel: str | None) -> tuple[str, ...]:
 @pytest.fixture(scope="module")
 def browser():
     expect.set_options(timeout=5_000 * DEADLINE_SCALE)
-    # CI leaves the channel unset and uses the browser pinned by uv.lock.
     channel = os.environ.get("XIC_PLAYWRIGHT_CHANNEL") or None
     arguments = _windows_network_arguments(channel) if sys.platform == "win32" else ()
     with sync_playwright() as playwright:

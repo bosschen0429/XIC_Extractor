@@ -22,28 +22,24 @@ from xic_extractor.xic_models import XICTrace
 
 
 def test_mint_known_istd_reference_validates_inputs() -> None:
-    # Requires at least one ISTD
     with pytest.raises(ValueError, match="at least one ISTD target"):
         mint_known_istd_reference_from_measurements(
             targets=[_make_target("Analyte1", is_istd=False)],
             coordinates={},
         )
 
-    # Requires unique target labels
     with pytest.raises(ValueError, match="unique ISTD target labels"):
         mint_known_istd_reference_from_measurements(
             targets=[_make_target("ISTD1"), _make_target("ISTD1")],
             coordinates={},
         )
 
-    # Rejects undeclared targets in coordinates
     with pytest.raises(ValueError, match="undeclared ISTD target"):
         mint_known_istd_reference_from_measurements(
             targets=[_make_target("ISTD1")],
             coordinates={("UnknownTarget", "Sample1"): 2.5},
         )
 
-    # Rejects negative RT
     with pytest.raises(ValueError, match="reference RT must be nonnegative"):
         mint_known_istd_reference_from_measurements(
             targets=[_make_target("ISTD1")],

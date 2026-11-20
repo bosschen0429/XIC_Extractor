@@ -261,7 +261,7 @@ def test_final_membership_uses_weak_common_frame_without_mixing_raw(
             )
             assert risk.rt_estimate.rt_min == 16
             assert "low_rt_support" in risk.risk_flags
-    assert not frame.has_support("a")  # No promotion of bootstrap support.
+    assert not frame.has_support("a")
 
 
 def test_weak_final_owner_is_selected_without_granting_quantitation():

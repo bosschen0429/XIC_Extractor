@@ -881,7 +881,6 @@ def write_architecture_census_json(
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-# Construction-time hooks where this repository grew self-validation and sealing.
 CONSTRUCTION_HOOKS = frozenset({"__post_init__", "__init_subclass__"})
 
 
