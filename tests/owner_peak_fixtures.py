@@ -83,7 +83,6 @@ def with_peak(
     right = old.rt_right_min if end_rt is None else end_rt
     rt, intensity = peak.rt, peak.intensity
     if not rt[0] <= apex <= rt[-1]:
-        # A moved apex needs a selected trace that contains it.
         rt = tuple(sorted({left, apex, right}))
         intensity = tuple(old.height_raw if point == apex else 1.0 for point in rt)
     changed = replace(

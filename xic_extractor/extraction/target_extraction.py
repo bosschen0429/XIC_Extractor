@@ -258,8 +258,6 @@ def extract_one_target(
         paired_target=paired_target,
         sample_drift=sample_drift,
     )
-    # Coverage comes from the acquired sample, never a method RT window or NL anchor.
-    # Missing MS2 still receives the same exact-mass MS1 candidate enumeration.
     selection_rt_min, selection_rt_max = raw.acquisition_rt_bounds()
     context_rt_min, context_rt_max = selection_rt_min, selection_rt_max
     anchor_rt = target_reference_rt

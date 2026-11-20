@@ -90,7 +90,6 @@ def format_discovery_csv_value(column: str, value: object) -> str:
     if isinstance(value, Path):
         return escape_excel_formula(_stable_path_text(value))
     if isinstance(value, float):
-        # Alignment reads these values back; display rounding would move them.
         return format_machine_float(value)
     return escape_excel_formula(str(value))
 

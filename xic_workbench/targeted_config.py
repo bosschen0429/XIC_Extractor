@@ -4,7 +4,6 @@ from typing import Any
 
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
-# Labels and controls are presentation only.
 _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
     ("data_dir", "RAW 資料夾", "folder", {}),
     (

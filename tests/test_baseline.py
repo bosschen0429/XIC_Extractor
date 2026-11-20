@@ -141,7 +141,6 @@ def test_rt_baseline_uniform_grid_matches_index_space_scaling() -> None:
     rt_baseline = asls_baseline_on_rt(rt, intensity, lam=physical_lam)
     index_baseline = asls_baseline(intensity, lam=physical_lam / spacing**4)
 
-    # Trapezoidal end cells differ from the legacy equal-weight objective.
     assert rt_baseline[10:-10] == pytest.approx(
         index_baseline[10:-10], rel=2e-3, abs=0.02
     )

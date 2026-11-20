@@ -425,7 +425,7 @@ def test_targeted_http_review_preserves_values_scope_and_source(workbook):
             {"sample_id": "Sample B", "target_id": "Analyte", "attention_only": True},
         )
         assert (scoped["run_total"], scoped["matched_count"]) == (2, 1)
-        assert scoped["overview"] == overview  # The landing summary is always full-run.
+        assert scoped["overview"] == overview
         assert [(s["id"], s["label"], s["group"]) for s in scoped["samples"]] == [
             ("Sample B", "Sample B", "")
         ]
@@ -489,7 +489,6 @@ def test_malformed_targeted_workbook_is_actionable(workbook, damage):
 def test_workbook_binding_and_ambiguous_directory(workbook):
     report = prepare_report(workbook, SelectionRequest(strategy="attention"))
     assert [item["title"] for item in report.payload["items"]] == ["Analyte"]
-    # Excel's lock file beside an open workbook is not a second result.
     workbook.with_name(f"~${workbook.name}").write_bytes(b"lock")
     assert resolve_source(workbook.parent) == workbook
     other = workbook.with_name("another.xlsx")
@@ -515,8 +514,6 @@ def test_review_filter_lists_targets_and_keeps_every_sample(workbook):
         workbook, SelectionRequest(strategy="query", attention_only=True)
     )
     [item] = report.payload["items"]
-    # The filter picks the target to read first; its rows are read against
-    # the samples they depart from, so none are dropped.
     assert [(r["SampleName"], r["Area"]) for r in item["details"]["records"]] == [
         ("Sample A", "ND"),
         ("Sample B", 123.456),
@@ -547,7 +544,6 @@ def test_review_filter_opens_the_rare_detection_not_the_shared_absence(tmp_path)
         "counted": 1,
         "decided": 5,
     }
-    # The paired ISTD of the same sample is the anchor for judging that peak.
     assert details["istd_records"]["S3"] == {
         "Target": "ISTD",
         "RT": 9.2,
@@ -719,8 +715,6 @@ def test_group_colors_follow_names_not_order_or_case() -> None:
 
     assert forward == backward
     assert len(set(forward.values())) == PALETTE_SIZE
-    # A colour comes from the group's own name: without a collision, adding
-    # another group to the batch leaves it unchanged.
     alone = {name: group_colors([name])[name] for name in ("Tumor", "Normal")}
     assert alone["Tumor"] != alone["Normal"]
     assert group_colors(["Normal", "Tumor"]) == alone
@@ -741,7 +735,6 @@ def test_samples_carry_their_recorded_group_colour(workbook):
         workbook, SelectionRequest(strategy="sample", sample_ids=("Sample B",))
     )
 
-    # Colours span the whole workbook, so a one-sample selection keeps them.
     colors = group_colors(["A", ""])
     assert report.payload["samples"] == [
         {

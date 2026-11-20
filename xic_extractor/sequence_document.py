@@ -42,8 +42,6 @@ def parse_sequence_tables(
         if not table:
             continue
         header = [_normalize_header(cell) for cell in table[0]]
-        # Laboratory exports may leave the numbered first column untitled.
-        # The four acquisition columns still distinguish it from inventory tables.
         if header[1:5] != ["file name", "instrument method", "sample", "inj"] or header[
             0
         ] not in {"id", ""}:

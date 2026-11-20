@@ -22,8 +22,6 @@ START_PAGE = Path("開始使用.html")
 
 EXAMPLES = ("targets.xlsx",)
 
-# Every authored Markdown page, in navigation order, with its label. Each task
-# page is self-contained, so pages link only through this bar, not a linear pager.
 GUIDE_PAGES = (
     ("README.md", "開始使用"),
     ("targeted.md", "Targeted 分析"),

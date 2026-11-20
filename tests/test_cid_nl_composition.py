@@ -309,9 +309,6 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
         == "product_mz_out_of_tolerance"
     )
 
-    # Composition membership retains its typed provenance gate. With both
-    # assessments removed these become ordinary owners, whose product scatter
-    # is scored by the separate window-grouping rule.
     for population, expected_groups in (
         (tuple(owners), 1),
         ((owners[0], crossed), 2),

@@ -14,7 +14,6 @@ def existing_raw_paths(
         raw_file = raw_files.get(sample_stem)
         candidates: list[Path] = []
         if raw_file is not None and str(raw_file):
-            # Analysis members may sit in subfolders of raw_dir.
             if raw_file.is_absolute() and raw_file.resolve().is_relative_to(
                 raw_dir.resolve()
             ):

@@ -190,7 +190,7 @@ def extract_blank_background_library(
 ) -> BlankBackgroundLibrary:
     """Extract stable recurring background ions across specified Blank RAW files."""
     all_source_blanks: list[str] = []
-    collected_ions: list[tuple[float, float, str]] = []  # (mz, intensity, source_stem)
+    collected_ions: list[tuple[float, float, str]] = []
 
     for blank_path in blank_paths:
         stem = blank_path.stem

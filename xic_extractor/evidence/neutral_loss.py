@@ -56,7 +56,6 @@ class MS2ProductEvidence:
     ms1_precursor_observation: Ms1PrecursorObservation | None = None
 
     def __deepcopy__(self, memo: dict[int, object]) -> MS2ProductEvidence:
-        # Product facts and precursor metadata contain only frozen scalar/tuple data.
         return self
 
     def assess_precursor_loss(
@@ -107,7 +106,6 @@ class CandidateMS2Evidence:
     best_product_evidence: MS2ProductEvidence | None = None
 
     def __deepcopy__(self, memo: dict[int, object]) -> CandidateMS2Evidence:
-        # Trace summaries and product facts have no mutable signal arrays.
         return self
 
     def to_token(self) -> str:

@@ -126,8 +126,6 @@ def _solve_sample_assignment(
                 _UNASSIGNED_COST,
                 min(arcs[key][feature_key] for key in rows if key != owner_id),
             )
-            # The stable ID breaks only the diagnostic representation tie.
-            # Equal/near-equal optima remain ambiguous and cannot add membership.
             if alternative <= best + ambiguity_margin:
                 ambiguous.add(owner_id)
             continue

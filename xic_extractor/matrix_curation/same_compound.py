@@ -27,14 +27,11 @@ from xic_extractor.matrix_curation.steps import (
 )
 
 PROTON = 1.00727647
-# NIST natural abundances.
 C13_PER_C12 = 0.0107 / 0.9893
 N15_PER_N14 = 0.00364 / 0.99636
 K39_PER_K41 = 13.857
 
 MZ_PPM = 10.0
-# Two MS1 scans at the ~2.5 s cycle of the CID-NL method: in 8RAW, mass-related
-# pairs are as enriched over shifted-mass decoys at 3-5.5 s as at 1-3 s.
 MAX_APEX_SEC = 5.5
 MIN_SUPPORT_SAMPLES = 3
 MIN_SUPPORT_FRACTION = 0.8
@@ -42,22 +39,14 @@ ISOTOPE_MAX_LOG_MAD = 0.1
 K41_MEDIAN_RANGE = (11.0, 18.0)
 ISOTOPE_RATIO_SAMPLE_FACTOR = 2.0
 ISOTOPE_RATIO_SAMPLE_FRACTION = 0.8
-# NIST: one 26Mg substitution in one/two Mg atoms, or one 41K in two K.
-# These overlapping models classify a derivative, not its element identity.
 UNASSIGNED_ISOTOPE_RATIOS = (0.7899 / 0.1101, 0.7899 / (2 * 0.1101), K39_PER_K41 / 2)
-# 25Mg in the most Mg atoms those models allow, added to a single-heavy-atom
-# ceiling when the light row has a supported M+2_unassigned companion.
 METAL_M1_ALLOWANCE = 2 * 0.1000 / 0.7899
 UNASSIGNED_ISOTOPE_MEDIAN_FACTORS = (0.8, 1.3)
-# A kept representative this much weaker than a removed member is reviewed.
 WEAK_REPRESENTATIVE_RATIO = 0.1
 RECURRING_DELTA_WIDTH = 0.005
 RECURRING_MIN_PAIRS = 3
 FAMILY_MIN_MONOMER_FORMS = 3
 
-# Neutral molecule -> singly charged ion, using NIST monoisotopic masses.
-# Without [M+H]+, a family needs several monomer carriers AND a protonated
-# dimer AND a metal-isotope witness; one mass match never suffices.
 FAMILY_MONOMERS = (
     ("[M+H]+", 1.007276452321),
     ("[M+Na]+", 22.989220702091),
@@ -72,8 +61,6 @@ FAMILY_DIMER_H_OFFSET = 1.007276452321
 FAMILY_METAL_MULTIMER_COUNTS = (2, 3)
 MG_MINUS_H_ION_OFFSET = 22.976668084861
 CA_MINUS_H_ION_OFFSET = 38.954217250861
-# Extensions also require their own supported M+2 companion. Complex salt
-# combinations remain hypotheses, not an exhaustive formula search.
 FAMILY_METAL_DIMERS = (
     ("[2M-H+Mg]+", MG_MINUS_H_ION_OFFSET),
     ("[2M-H+Ca]+", CA_MINUS_H_ION_OFFSET),
@@ -91,15 +78,11 @@ class Relation:
     """The heavier row derived from the lighter one."""
 
     key: str
-    # isotope / adduct collapse; review is listed only; annotation is noted only.
     kind: str
     delta: float
     charge: int = 1
-    # Isotopes with an abundance ceiling: (element mass, heavy/light per atom,
-    # number of heavy atoms).
     abundance: tuple[float, float, int] | None = None
     mz_factor: int = 1
-    # A neutral salt can attach to any ion; it does not establish its carrier.
     confirms_mh: bool = True
 
     def predict(self, light_mz: float) -> float:
@@ -156,13 +139,10 @@ RELATIONS: tuple[Relation, ...] = (
 @dataclass(frozen=True)
 class PairEvidence:
     both_direct: int
-    # Samples whose two cells have co-eluting apices: the direct ones, plus
-    # backfilled ones when direct co-elution alone is insufficient.
     support: tuple[str, ...]
     direct_support: tuple[str, ...]
     max_apex_diff_sec: float | None
     backfill_apex_unavailable: int
-    # light/heavy on support samples whose values are finite and positive.
     ratios: tuple[float, ...]
 
     @property
@@ -212,7 +192,6 @@ def pair_evidence(
     """
     both_direct = 0
     backfill_unavailable = 0
-    # (sample, apex difference, light/heavy or None, both direct)
     coeluting: list[tuple[str, float, float | None, bool]] = []
     for sample in sorted(light.keys() & heavy.keys()):
         a, b = light[sample], heavy[sample]
@@ -260,8 +239,6 @@ def relation_outcome(
         return "coelution_insufficient"
     if relation.kind == "review":
         return "review_only"
-    # Adduct and cluster yields follow each sample's salt and concentration,
-    # so their cross-sample ratio is no evidence of different compounds.
     if relation.kind == "adduct":
         return "collapse"
     if len(pair.ratios) < MIN_SUPPORT_SAMPLES:
@@ -310,9 +287,7 @@ class RowDecision:
     reason: str
     representative: int | None = None
     relations: tuple[str, ...] = ()
-    # Those rows, when they are not the representative itself.
     via: tuple[int, ...] = ()
-    # Element or attribution unresolved; this does not imply keep=True.
     undetermined: bool = False
     ion_form: str = ""
     member_count: int = 0
@@ -380,7 +355,6 @@ def collapse_same_compound(
         parents[heavy].add(light)
         children[light].add(heavy)
     roots = {index for index in range(len(features)) if not parents.get(index)}
-    # Folding edges always go to a higher m/z, so every path is finite.
     reached_from: dict[int, set[int]] = defaultdict(set)
     for root in roots:
         stack = [root]
@@ -392,7 +366,6 @@ def collapse_same_compound(
                     stack.append(child)
                     reached_from[child].add(root)
     representative: dict[int, int] = {}
-    # Candidate roots of a removed row whose representative is undetermined.
     ambiguous_roots: dict[int, set[int]] = {}
     for heavy in parents:
         coeluting_roots = set()
@@ -408,8 +381,6 @@ def collapse_same_compound(
     removed = representative.keys() | ambiguous_roots.keys()
     assigned_roots = set(representative.values())
 
-    # Element/relationship uncertainty travels with the derivation path.
-    # A 13C child of an unassigned M+2 ion is not a confirmed 13C-only identity.
     uncertain_paths: set[int] = set()
     for index in sorted(parents, key=lambda index: mz[index]):
         if index in ambiguous_roots or any(
@@ -472,7 +443,6 @@ def collapse_same_compound(
     }
     for index, decision in enumerate(decisions):
         if decision.keep:
-            # A family classification, including ambiguity, takes precedence.
             decisions[index] = replace(
                 decision,
                 member_count=member_counts[index],
@@ -503,7 +473,6 @@ def collapse_same_compound(
 @dataclass(frozen=True)
 class _IonFamily:
     neutral_mass: float
-    # (row index, compatible ion form); no chemical identity is asserted.
     members: tuple[tuple[int, str], ...]
     witnesses: frozenset[int]
 
@@ -556,8 +525,6 @@ def _ion_family_decisions(
     result = list(decisions)
     for index, models in conflicting_forms.items():
         decision = result[index]
-        # A competing family form cannot independently prove this row unwanted.
-        # Other derivative evidence, such as an isotope relation, still applies.
         if not decision.keep and all(key in models for key in decision.relations):
             result[index] = RowDecision(
                 keep=True,
@@ -576,8 +543,6 @@ def _ion_family_decisions(
             via=tuple(sorted(witnesses[index] - {index, root})),
             undetermined=True,
         )
-    # Existing isotope/adduct descendants stay excluded, but a removed Na row
-    # must no longer be presented as a retained [M+H]+ representative.
     for index, decision in enumerate(result):
         old_root = decision.representative
         if old_root is None or index in excluded or old_root not in excluded:
@@ -650,8 +615,6 @@ def _find_ion_families(
 
     found: dict[tuple[tuple[int, str], ...], _IonFamily] = {}
     for seed in order:
-        # A measured [M+H]+ plus parallel metal dimers/trimers is another joint
-        # hypothesis. No cross-sample adduct-ratio cutoff is substituted here.
         neutral = mz[seed] - FAMILY_DIMER_H_OFFSET
         if neutral > 0:
             for count in FAMILY_METAL_MULTIMER_COUNTS:
@@ -750,7 +713,6 @@ def _relation_rows(
     rows = []
     for (light, heavy), matched in matches.items():
         pair = evidence[(light, heavy)]
-        # Pairs that never co-elute in any sample are different compounds.
         if not pair.support:
             continue
         a, b = features[light], features[heavy]
@@ -890,7 +852,6 @@ def _recurring_differences(
     their representative's and would repeat it once per removed ion.
     """
     by_sample: dict[str, list[tuple[float, int]]] = defaultdict(list)
-    # Samples each row detected directly, as bits, for the co-elution share.
     ordinal: dict[str, int] = {}
     direct_mask = [0] * len(cells)
     for index, row in enumerate(cells):
@@ -902,8 +863,6 @@ def _recurring_differences(
             direct_mask[index] |= 1 << ordinal.setdefault(sample, len(ordinal))
             if cell.apex_rt_min is not None:
                 by_sample[sample].append((cell.apex_rt_min, index))
-    # Directly supporting samples per pair: both direct, apices within the
-    # limit, as pair_evidence counts its direct support.
     together: Counter[tuple[int, int]] = Counter()
     for detections in by_sample.values():
         detections.sort()

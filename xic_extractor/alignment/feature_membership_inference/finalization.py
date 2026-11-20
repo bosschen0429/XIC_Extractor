@@ -77,7 +77,6 @@ def _accepted_final_memberships(
                 base = canonical_partition(
                     [tuple(p for p in g if p not in ids) for g in partition]
                 )
-                # Names order solver columns by measured features, not group IDs.
                 bands = {
                     f"band:{i:08d}": group
                     for i, group in enumerate(
@@ -217,8 +216,6 @@ def _consensus_groups(
         disagreement = forward.groups[forward_index] != reverse.groups[reverse_index]
         seeded = any(owner_id in seeded_owner_ids for owner_id in owner_ids)
         if seeded:
-            # An unresolved extension does not revoke an assigned pattern union.
-            # Keep its competition undecided without demoting the seed it joined.
             unresolved_extensions = {
                 owner_id
                 for owner_id in owner_ids
@@ -263,8 +260,6 @@ def _consensus_groups(
                 )
             )
         elif disagreement:
-            # Both passes keep a seed whole, so a disputed intersection holds
-            # the seed and only the extensions both passes share.
             groups.append(
                 FeatureMembershipGroup(
                     owner_ids=owner_ids,

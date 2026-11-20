@@ -448,7 +448,6 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
                 rid,
                 feature_id=rid,
                 disposition="completed",
-                # Every row's member holds C1's terminal peak.
                 members=[witness_member("S1", f"{rid}-member", "obs-01")],
             )
 
@@ -488,7 +487,6 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
         for item in items
     )
     assert reads == [({"sample_ids": ("S1",), "record_ids": ("obs-01",)}, 1)]
-    # Scientific values come from each row's cell, never from the curve apex.
     assert (
         "quantitative_value"
         not in next(i for i in items if json.loads(i["id"])[-1] == "row-02")["samples"][
@@ -509,7 +507,6 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
             physical_peak_key="obs-02",
         )
 
-    # A final group without a result row, witnessed in two samples.
     report, _, _ = create_inspector_report(
         tmp_path,
         prepare=second_witness,
@@ -551,7 +548,6 @@ def test_real_source_query_uses_one_scoped_candidate_observation(tmp_path):
     )
     assert result.selected_count == 1
     item = read_report_payload(output)["items"][0]
-    # A group without a row is named by its record number.
     assert json.loads(item["id"])[-1] == "1"
     assert [w["candidate_id"] for w in item["matched_refs"]] == ["C1"]
     assert [w["sample_key"] for w in item["witnesses"]] == ["S1"]
@@ -679,8 +675,6 @@ def test_selected_capture_stages_preserve_each_payload_and_reject_partial_loss(
     assert {c["evidence_ref"] for c in curves} >= set(payload_ids)
     before = output.read_bytes()
     with sqlite3.connect(report) as connection:
-        # The terminal obs still has its initial payload; an unreadable distinct
-        # stage of that same observation must still fail completion.
         connection.execute(
             "UPDATE curves SET payload=x'00' WHERE payload_id=?", (payload_ids[1],)
         )
@@ -709,11 +703,8 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(tmp_pat
             },
             candidate_physical_peak_keys=("obs-01",),
         )
-        # Records without a natural key share one numbering.
         refs["method"] = refs["capture"] + 1
 
-    # Every stored cell records its own origin; without a cell the origin is
-    # read from the exact method, capture and observation.
     report, _, _ = create_inspector_report(
         tmp_path,
         candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
@@ -754,8 +745,6 @@ def test_recovery_origin_survives_zero_terminal_final_cell_binding(tmp_path):
             candidate_physical_peak_keys=("obs-01",),
         )
 
-    # C1 has no terminal observation; the final group member and its cell hold
-    # the recovered peak.
     report, _, _ = create_inspector_report(
         tmp_path,
         candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
@@ -802,7 +791,6 @@ def test_backfill_curve_is_not_shown_on_rows_sharing_its_method_subject(tmp_path
         return payload
 
     def second_row(writer):
-        # G2 shares C1's method subject: detected in S2, backfilled in S1.
         writer.add_peak("S1", "obs-bf", (None, 1.5, None))
         member = add_witness(
             writer, "C2", "S2", rt=1.0, precursor_mz=500.0, method_subject_id="M1"
@@ -829,7 +817,6 @@ def test_backfill_curve_is_not_shown_on_rows_sharing_its_method_subject(tmp_path
             "peak-C2-S2",
             inspector_curve_payload("S2", "C2", "peak-C2-S2"),
         )
-        # G2's Backfill in S1, and G1's attempt in S2 that found no peak.
         writer.add_curve_payload(
             "S1", "backfill_observation", "obs-bf", backfill_curve("S1", "obs-bf")
         )
@@ -892,7 +879,6 @@ def test_curve_replays_final_rt_estimate_including_boundary_shift(tmp_path):
     payload = read_report_payload(output)
     curve = payload["items"][0]["curves"][0]
     assert curve["raw_rts"] == [0.8, 0.9, 1.0, 1.1, 1.2]
-    # y=2*x inside [0.9,1.1]; hold endpoint shifts 0.9/1.1 outside.
     assert curve["aligned_rts"] == pytest.approx([1.7, 1.8, 2.0, 2.2, 2.3])
     assert curve["aligned_bound_left_rt"] == pytest.approx(1.8)
     assert curve["aligned_bound_right_rt"] == pytest.approx(2.2)
@@ -903,7 +889,6 @@ def test_curve_replays_final_rt_estimate_including_boundary_shift(tmp_path):
 
 def test_obsolete_istd_display_calibration_requires_rerun_alignment(tmp_path):
     report, _, _ = create_inspector_report(tmp_path)
-    # An older run kept its display calibration in the ISTD reference.
     with sqlite3.connect(report) as connection:
         summary = json.loads(
             connection.execute("SELECT payload FROM run").fetchone()[0]
@@ -928,7 +913,6 @@ def test_saved_cell_is_answered_on_its_sample_without_internal_records(tmp_path)
     assert sample["decision_refs"] == []
     curve = item["curves"][0]
     assert curve["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
-    # The card shows the published (baseline-removed) area, never raw area.
     assert curve["area"] == 2400.0
 
 
@@ -1090,7 +1074,6 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
     )
     assert item["reason"] == state and item["route"] == row["route"]
     for sample in item["samples"]:
-        # Old stored unavailable stays unknown, even with MS1 backfill evidence.
         assert sample["support_origin"]["label"] == "來源未記錄"
         assert sample["risk_labels"] == []
     assert item["curves"][0]["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
@@ -1430,7 +1413,6 @@ def test_target_role_rejects_portable_curve_bundles(tmp_path):
 )
 def test_old_explanation_requires_rerun(tmp_path: Path, old_schema: str) -> None:
     path, _matrix, _digest = create_inspector_report(tmp_path)
-    # Older reports kept the summary in a key/value metadata table.
     with sqlite3.connect(path) as connection:
         summary = json.loads(
             connection.execute("SELECT payload FROM run").fetchone()[0]

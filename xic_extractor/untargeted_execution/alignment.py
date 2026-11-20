@@ -97,8 +97,6 @@ def prepare_untargeted_alignment_inputs(
         raw_paths[sample_stem] for sample_stem in discovery_batch.sample_order
     )
     if sample_metadata is not None:
-        # Supplied metadata also lists excluded and context injections, which
-        # Discovery did not analyze; align the samples in the batch.
         by_stem = {row.raw_stem: row for row in sample_metadata}
         missing_stems = [
             stem for stem in discovery_batch.sample_order if stem not in by_stem
@@ -141,8 +139,6 @@ def prepare_untargeted_alignment_inputs(
             fingerprint_workers=raw_workers,
             verified_acquisition_sources=verified_acquisition_sources,
         )
-        # Discovery's event table and the RAW Alignment reads must be the same
-        # acquisition, with or without mass recalibration.
         changed = [
             stem
             for stem, expectation in zip(

@@ -139,9 +139,6 @@ class _Report:
         self._risk_owner_groups: dict[int, list[Any]] = {}
         self.samples = [sample["sample_key"] for sample in summary["samples"]]
         self.stems = [sample["sample_stem"] for sample in summary["samples"]]
-        # Bulk review loads its dictionaries together. For one exact ID, peaks
-        # can also belong to other members of a related group; resolve those
-        # primary keys as the member, assessment and cell records reference them.
         self.peaks: dict[int, tuple[str, float | None, float | None, float | None]] = (
             {row[0]: row[1:] for row in db.execute(_PEAKS)} if not self.scoped else {}
         )
@@ -520,7 +517,6 @@ class _Report:
                     }
                     for decision in decode_json(decisions)
                 ]
-            # The written record keeps every field in sorted order.
             result[str(group_id)] = json.loads(encode_object(record))
         return result
 
@@ -743,8 +739,6 @@ class ReviewCurves:
         )
 
 
-# The saved curve of the cell whose value a peak gave: the cell's value has
-# that peak's apex.
 _SAVED_CURVE = (
     "(SELECT cc.curve FROM cells v, json_each(v.peaks) vp "
     "JOIN cell_curves cc ON cc.group_id=v.group_id AND cc.sample=v.sample "

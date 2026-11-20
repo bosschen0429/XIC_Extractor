@@ -141,9 +141,6 @@ def test_recorded_mono_nl_match_keeps_distinct_inferred_physical_search(
     supported = [
         candidate for candidate in candidates if candidate.status == "admitted"
     ]
-    # The recorded mono passes the NL gate but its MS1 window misses the ion.
-    # Product+NL must still search its distinct window, without becoming its
-    # own independent NL witness when the parent MS1 observation is absent.
     assert len(supported) == int(parent_support)
     if parent_support:
         assert supported[0].ms1_apex_rt == pytest.approx(9.02)
@@ -216,7 +213,6 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
         for row in _read_csv(outputs.events_csv)
         if row["peak_id"] in peak_ids
     ) == [100, 200]
-    # More physical questions must not repeat RAW acquisition.
     assert raw.raw_chromatogram_call_count == 1
 
 
@@ -298,18 +294,12 @@ def test_discovery_retained_physical_peak_cardinality(
     )
     path = write_discovery_peaks_csv(tmp_path / "peaks.csv", result.peaks)
     valid = list(read_discovery_peaks_csv(path))
-    # This retained-input test protects peak cardinality and localization, not
-    # an old smoother's exact apex scan or an unverified quantitative truth.
     assert sorted(c.ms1_apex_rt for c in valid) == pytest.approx(
         expected_apices, abs=0.06
     )
-    # Method queries on one raw basin share one retained measurement; events
-    # without a measured peak publish no physical record.
     assert len(result.physical_bindings) == len(expected_apices)
     assert len(result.attachments) == len(seeds)
     if fixture_name == "discovery_same_peak_seeds":
-        # Both tail NL events locate the same acquired raw basin even outside
-        # its quantitative tenth-height return.
         (peak,) = valid
         assert {event.peak_id for event in result.attachments if event.peak_id} <= {
             peak.peak_id
@@ -416,8 +406,6 @@ def test_merged_physical_candidate_publishes_its_capture_conditions(
         signal_processing_profile=profile,
         ms1_centroid=lambda *_: None,
     )
-    # The physical peak is measured and represented once; each attached event
-    # keeps its own parent-ion proof in the event table.
     (candidate,) = result.peaks
     (binding,) = result.physical_bindings
     assert binding.peak is candidate
@@ -425,7 +413,6 @@ def test_merged_physical_candidate_publishes_its_capture_conditions(
     assert candidate.best_ms2_scan_id == 10
     assert binding.representative_event.scan_number == 10
     if fallback:
-        # Both events read the same parent MS1 window, so it is read once.
         assert len(parent_batches) == 1 and len(parent_batches[0]) == 1
     assert candidate.admitted
     assert candidate.matched_tag_names == ("dR", "R")
@@ -446,8 +433,6 @@ def test_merged_physical_candidate_publishes_its_capture_conditions(
     assert restored == candidate
     assert restored.query_rt_min == evaluation.question.query_rt_min
     assert raw.raw_chromatogram_call_count == 1
-    # The published capture conditions alone measure the peak again: its XIC
-    # window at peak_mz, queried at query_rt_min, on the same RAW.
     window = raw.extract_xic_many(
         (
             replace(
@@ -550,8 +535,6 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_measures_once(
     assert physical_calls == {"prepare": 1, "evaluate": 1}
     assert len(_read_csv(outputs.peaks_csv)) == 1
     assert not (tmp_path / "out" / "discovery_physical_facts.json").exists()
-    # The raw return touches an acquired edge; one shared bounded read
-    # precedes the final trace's single preparation.
     assert raw.raw_chromatogram_call_count == 2
 
 
@@ -703,7 +686,6 @@ def test_short_discovery_request_reacquires_points_without_assuming_peak_support
     assert first.traces[0].coordinate.trace_point_count < profile.window_points
     assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
     if physical_state == "unavailable":
-        # No peak survives the reacquired support check; events record it.
         assert result.peaks == ()
         assert {event.unattached_reason for event in result.attachments} == {
             "insufficient_original_xic_support"
@@ -730,8 +712,6 @@ def test_single_seed_discovery_acquires_complete_physical_context(
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
     full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
-    # Keep the complete baseline-return peak inside the initial context so
-    # the full-trace comparison tests acquisition, not a changed baseline fit.
     full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.06) ** 2)
 
     raw = _CadenceBoundRaw(source, full_rt, full_intensity)
@@ -862,7 +842,6 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
     assert initial_request.rt_min == pytest.approx(11.463)
     assert initial_request.rt_max == pytest.approx(12.700)
     candidate = result.peaks[0]
-    # Measurement localization uses the acquired raw apex, not an NL query.
     assert candidate.query_rt_min == pytest.approx(12.15, abs=0.04)
     assert candidate.ms1_search_rt_min == initial_request.rt_min
     assert candidate.ms1_search_rt_max == initial_request.rt_max
@@ -888,8 +867,6 @@ def test_qualification_survives_physical_fact_reuse(
     )
     raw = _OwnerBoundBatchRaw(source)
     raw.rt = np.linspace(7.45, 8.15, 141)
-    # A rising background is not acquired noise: the completed raw SNR stays
-    # strong even when raw apex-to-edge contrast is low.
     background = 1000.0 + (1000.0 * (raw.rt - raw.rt[0]) if rising_background else 0.0)
     noise = np.random.default_rng(0).normal(size=raw.rt.size)
     raw.intensity = (
@@ -912,15 +889,11 @@ def test_qualification_survives_physical_fact_reuse(
     )
 
     if rising_background:
-        # This synthetic ramp has no resolved raw peak; residual SNR alone
-        # does not guarantee a quantifiable local raw component.
         assert result.peaks == ()
         assert qualifier.call_count == 0
         return
     (candidate,) = result.peaks
     assert candidate.status == "admitted"
-    # Raw extent requests one bounded shared read, but does not reprepare or
-    # requalify the final trace for repeated NL events.
     assert result.measurements.reacquisition_request_count == 1
     assert raw.raw_chromatogram_call_count == 2
     assert qualifier.call_count == 1
@@ -1011,7 +984,6 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
             np.linspace(7.0, 8.5, 31),
             np.asarray([0.0] * 16 + [100.0, 0.0, 100.0] + [0.0] * 12),
             "unavailable",
-            # Raw valley separation leaves an isolated unsupported impulse.
             "insufficient_original_xic_support",
             15,
         ),
@@ -1106,7 +1078,6 @@ def test_discovery_publishes_physical_qualification(
         ms1_centroid=lambda *_: None,
     )
     if trace_case == "alternating_amplitude":
-        # Alternating impulses leave no measured raw owner at this query.
         assert result.peaks == ()
         (event,) = result.attachments
         assert event.unattached_reason
@@ -1116,14 +1087,12 @@ def test_discovery_publishes_physical_qualification(
     assert evaluation.state == "available"
     assert evaluation.answer.selected_segment is not None
     assert candidate.ms1_apex_rt == evaluation.answer.selected_segment.apex_rt_min
-    # Shallow valleys stay in one envelope, whose apex is the highest lobe.
     expected_apex = query_rt + (2.0 if trace_case == "overlapping_components" else 0)
     assert candidate.ms1_apex_rt == pytest.approx(expected_apex, abs=0.02)
     assert rt[0] < evaluation.answer.selected_segment.left_rt_min < query_rt
     assert query_rt < evaluation.answer.selected_segment.right_rt_min < rt[-1]
     if trace_case == "overlapping_components":
         assert evaluation.requires_overlap_review
-        # Overlap review does not hold the peak.
         assert candidate.status == "admitted"
 
     from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
@@ -1193,8 +1162,6 @@ def test_physical_fact_sharing_uses_one_raw_peak(
         ms1_centroid=lambda *_: None,
     )
 
-    # Sub-ppm mass changes and repeated NL events share one ion channel, so
-    # they neither acquire twice nor mint another measurement.
     assert [len(batch) for batch in raw.request_batches] == [1]
     assert prepare.call_count == 1
     assert evaluate.call_count == 1
@@ -1202,7 +1169,6 @@ def test_physical_fact_sharing_uses_one_raw_peak(
     if same_question:
         candidate = result.peaks[0]
         assert candidate.matched_tag_names == ("dR", "R")
-        # One scan matching two tags is two events: (scan, tag, product).
         assert candidate.attached_event_count == 2
         assert candidate.status == "admitted"
     else:
@@ -1290,8 +1256,6 @@ def test_inferred_precursor_is_measured_once_in_the_window_of_its_apex_ion(
     (candidate,) = result.peaks
     assert result.physical_bindings[0].representative_event.precursor_mz == (group.mz)
     assert candidate.ms1_apex_mz == pytest.approx(apex_mz)
-    # The peak's one measurement is the apex ion's window, which Alignment
-    # reads; the peak keeps the name of the ion XIC that located it.
     assert candidate.peak_mz == pytest.approx(apex_mz)
     assert raw.request_batches[-1][0].mz == candidate.peak_mz
     assert candidate.peak_id == "TumorBC2312_DNA@mz500_rt12.1400"
@@ -1345,7 +1309,6 @@ def test_pipeline_publishes_inferred_precursor_ms1_ion_from_raw_handle(
 
 
 def _two_ions(inferred: float, rt: float) -> float:
-    # Alternating readings 12 ppm apart: two ions share the window.
     return inferred * (1 - 18e-6 if round(rt / 0.04) % 2 else 1 - 6e-6)
 
 
@@ -1394,9 +1357,6 @@ def test_inferred_precursor_with_a_doubly_charged_isotope_is_held_for_review(
 @pytest.mark.parametrize(
     ("isotope_ratio", "expected_status"),
     [
-        # Tissue apex MS1 read by eye: TumorBC2263 622.295 @34.28 is the
-        # weakest clear doubly charged isotope; BenignfatBC1151 894.452 @24.46
-        # is singly charged (+1.0 isotope at 26%) with a noise centroid at +0.5.
         (0.383, "doubly_charged"),
         (0.023, "no_nl_event"),
     ],
@@ -1471,8 +1431,6 @@ def test_held_inferred_peak_remains_in_review(
     assert candidate.status == "doubly_charged"
     assert candidate.ms1_apex_rt == pytest.approx(10.0)
     assert candidate.ms1_apex_mz == pytest.approx(apex_ion_mz)
-    # The held peak stays published; its inferred event reads no parent MS1
-    # yet still names the peak it locates.
     (event,) = _read_csv(outputs.events_csv)
     assert event["peak_id"] == candidate.peak_id
     assert event["unattached_reason"] == "parent_ms1_unavailable"
@@ -1518,8 +1476,6 @@ def test_a_selected_precursor_carries_a_peak_with_two_ions(
 
     assert sum(c.status == "admitted" for c in result.peaks) == 1
     if companion_basis is not None:
-        # Different precursor-evidence origins locate one peak, not measured
-        # copies; only the recorded precursor's event attaches.
         (candidate,) = result.peaks
         assert [event.scan_number for event in candidate.located_events] == [10, 11]
         assert candidate.attached_event_count == 1
@@ -1547,8 +1503,6 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
     full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.12) ** 2)
     raw = _CadenceBoundRaw(source, full_rt, full_intensity)
     profile = SignalProcessingProfile(window_points=15)
-    # Inferred-only basis exercises apex/isotope reading. Two high-intensity
-    # inferred seeds provide the existing authority for point reacquisition.
     group = _channel(
         tuple(
             replace(
@@ -1581,7 +1535,6 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
     assert result.measurements.remeasurement_request_count == 1
     assert first.traces[0].coordinate.trace_point_count < profile.window_points
     assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
-    # The apex ion's window keeps the reacquired RT context.
     (remeasured_trace,) = remeasured.traces
     assert remeasured_trace.coordinate.request.mz == pytest.approx(apex_ion_mz)
     assert (
@@ -1598,7 +1551,4 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
     assert candidate.status == expected_state
     assert candidate.ms1_apex_mz == pytest.approx(apex_ion_mz)
     assert binding.peak.status == expected_state
-    # Three apex scans read the ion to centre its window; the peak then reads
-    # its three apex scans for ion and isotope once, even when two seed groups
-    # reuse the resulting fact.
     assert len(readings) == 9

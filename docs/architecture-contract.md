@@ -343,6 +343,20 @@ writer, or publication authority.
 - Timing counts describe cost and locality only; they do not select a cell,
   value, state, or writer decision.
 
+A Windows spawn worker reads its initializer after importing the main module:
+pass a shared-memory name, not a payload that serializes each worker's startup.
+Overlapping batches share the executor's capacity. On stop, observe outstanding
+work after the wait; a result closes its RAW handle before publication, but
+failure or cancellation must drain active siblings before returning.
+
+The partition store uses native memo references to preserve object identity.
+Independently addressable tuple fields must restore without loading the whole
+graph; exclusions bind by canonical candidate position. Trusted objects are
+shared by memo reference, not looked up again for every scalar in a trace. Exclusive creation
+does not transfer ownership of an existing file to the failed writer.
+Run wall time and progress use separate clocks from stage timing; charge nested
+wall time to the parent on the stack, not by summing finished stages.
+
 ## Module Naming
 
 Name modules and commands for the capability they provide, so a reader needs no

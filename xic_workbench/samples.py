@@ -35,8 +35,6 @@ ROLE_LABELS = {
     "other": "Other",
 }
 _SAMPLE_FIELDS = tuple(SAMPLE_METADATA_COLUMNS[1:])
-# Kept in the shared sample-metadata format so Targeted, Untargeted and the CLI
-# read confirmed annotations through the same sequence-source path.
 ANNOTATIONS_DIR = "sample_metadata"
 
 
@@ -216,8 +214,6 @@ def load_samples(
             if sequence_source
             else None
         )
-        # Preview names are RAW aliases, not acquired sample identities. Neither
-        # document order nor directory enumeration becomes injection chronology.
         matched_stems = set(report.matched_raw_stems) if report is not None else set()
         preview_rows = (
             report.rows

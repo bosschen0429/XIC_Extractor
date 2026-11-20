@@ -56,14 +56,11 @@ def test_data_sheet_preserves_measurements_and_marks_labels_to_look_at() -> None
         ("無可用 MS1 峰", ""),
         ("肩峰／重疊", ""),
     ]
-    # The accent marks only the label cells that need a look.
     accent = [
         (ws[f"G{row}"].font.color.rgb[-6:], ws[f"H{row}"].font.color.rgb[-6:])
         for row in range(2, 6)
     ]
     assert accent == [(INK, INK), (INK, FOCUS), (MUTED, MUTED), (FOCUS, MUTED)]
-    # RT precedes Area; intensities read as scientific notation. Numbers align
-    # right and text left so a column scans by magnitude.
     assert ws["C2"].number_format == "0.00"
     assert ws["D2"].number_format == "0.00E+00"
     assert ws["A2"].alignment.horizontal == "left"
@@ -176,8 +173,6 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
         "Run Metadata",
     ]
     assert wb.active.title == "摘要"
-    # The reader sees the conclusion, the areas, every result and the targets;
-    # settings and trace records stay in the file, hidden.
     assert [ws.title for ws in wb.worksheets if ws.sheet_state == "visible"] == [
         "摘要",
         "面積",
@@ -279,7 +274,6 @@ def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
             max_smoothed=1000.0,
             n_prominent_peaks=2,
         ),
-        # Window evidence belongs to the higher neighbor, not the selected peak.
         nl=NLResult("OK", 1.0, 8.5, 2, 0, 2),
         reason="concerns: rt_prior (minor)",
     )
@@ -324,8 +318,6 @@ def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
     assert "selected RT 9.0000 min" in records[0].reason
     record = _sheet_records(workbook["XIC Results"])[0]
     assert record["疑點"] is None
-    # An informational event adds no label; its full text stays on the hidden
-    # trace sheet so a past selection can still be explained.
     assert "需檢查" not in workbook.sheetnames
     assert workbook["診斷事件"].sheet_state == "hidden"
     assert any(

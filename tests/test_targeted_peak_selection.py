@@ -213,7 +213,6 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
     )
     candidates = physical_candidates_result(prepared, universe).candidates
     assert len(candidates) == 2
-    # Audit annotations cannot rebind a candidate to a different physical peak.
     candidates = tuple(
         replace(candidate, proposal_sources=("physical_segment:unrelated_audit",))
         for candidate in candidates
@@ -246,8 +245,6 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
         )
     first_ms2 = replace(_ms2_evidence(), best_scan_rt=first.peak.rt)
     second_ms2 = replace(_ms2_evidence(), best_scan_rt=second.peak.rt)
-    # The handoff consumes the first-stage choice, even when another candidate
-    # has a stronger score and more strict-NL support labels.
     peak_result = PeakDetectionResult(
         status="OK",
         peak=selected.peak,

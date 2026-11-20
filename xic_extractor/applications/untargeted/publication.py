@@ -165,7 +165,6 @@ def publish_untargeted_outputs(
         extra_tables = {}
         if save_matrix_inputs:
             result = completed.application_result
-            # A named single batch can be paired with separately captured batches.
             batch_id = result.canonical_samples[0].batch_id
             source = BatchRowSource(
                 batch_id,
@@ -365,7 +364,6 @@ def publish_batch_untargeted_outputs(
             (decision.batch_id, decision.key): decision
             for decision in correspondence.features
         }
-        # Reference batch first: a paired row's explanation record is its group.
         batch_order = sorted(
             completed_by_batch,
             key=lambda batch_id: (batch_id != reference_batch, batch_id),

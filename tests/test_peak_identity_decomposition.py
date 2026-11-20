@@ -167,7 +167,6 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> N
         (500.0, pytest.approx(7.30), pytest.approx(8.50), 20.0),
         (500.0, pytest.approx(7.50), pytest.approx(8.70), 20.0),
     ]
-    # Different seed windows locate and measure the same peak identity.
     assert _discovery_ms1_peak_probe(first) == _discovery_ms1_peak_probe(second)
     assert first.peak_id == second.peak_id
 

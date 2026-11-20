@@ -120,7 +120,6 @@ def acquire_delta_mass_review(
                 )
                 for p in candidate.positions
             )
-            # NL asks about complete saved peaks, not just display padding.
             windows = [
                 candidate.rt_window,
                 *(
@@ -200,7 +199,6 @@ def acquire_delta_mass_review(
                         )
                         continue
                     scan = event.scan
-                    # The vendor RT-to-scan lookup can include the nearest endpoint.
                     if not lo <= scan.rt <= hi:
                         continue
                     spectra[scan.scan_number] = ReviewSpectrum(
@@ -291,8 +289,6 @@ def acquire_delta_mass_review(
                             settings=nl_settings,
                         ),
                     )
-                    # The NL answer owns relevance. Do not duplicate thousands
-                    # of unrelated context spectra in every candidate's report.
                     related_scans = {
                         scan
                         for n in result.neutral_losses

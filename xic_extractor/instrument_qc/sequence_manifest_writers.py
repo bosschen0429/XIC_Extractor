@@ -221,14 +221,12 @@ def _sample_role(row: SequenceManifestRow) -> SampleRole:
         return "blank"
     if row.instrument_qc_class.value == "POOLED_QC":
         return "qc"
-    # Other rows are told apart the same way RAW without a written role are.
     return infer_sample_role(
         None, sample_name=row.raw_stem, comment=row.instrument_method
     )
 
 
 def _format_tabular_value(value: object) -> str:
-    # Injection order and sample metadata must round-trip exact RAW identities.
     if value is None:
         return ""
     return str(value)

@@ -159,8 +159,6 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
         ],
     )
 
-    # Replace machine configuration and vendor acquisition, not membership,
-    # finalization, CLI input binding, or either publication path.
     def prepare(config_dir, *, settings_overrides, **kwargs):
         return PreparedTargetedConfig(
             replace(
@@ -202,8 +200,6 @@ def test_cli_flows_share_tsv_groups_and_excluded_population(tmp_path, monkeypatc
     }
     assert extracted == ["Case_A", "Control"]
 
-    # The complete Untargeted flow selects Discovery inputs through its CLI's
-    # AnalysisSet entry, then passes the same TSV to the Alignment CLI.
     raw_paths = tuple(_raw_paths_from_dir(config.data_dir, tmp_path, metadata))
     assert {path.stem for path in raw_paths} == {"Case_A", "Control"}
     settings = _settings()

@@ -195,7 +195,6 @@ def _raw_traces(
             else saved.policy,
         ) as raw:
             if saved is not None:
-                # The run's own result, instead of probing every scan again.
                 raw.use_mass_recalibration_result(saved)
             acquired = len(traces)
             for location in sample_locations:

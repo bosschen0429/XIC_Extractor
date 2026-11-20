@@ -45,7 +45,6 @@ _REQUIRED_COLUMNS = {
     DELTA_MASS_SHEET: {"Target", "Delta m/z"},
     DELTA_MASS_SETTINGS_SHEET: {"key", "value"},
 }
-# Sheets of the earlier method workbook, which carried a fixed strategy row.
 _RETIRED_SHEETS = ("Method", LEGACY_METHOD_SHEET)
 _HEADER_NOTES = {
     TARGETS_SHEET: {
@@ -231,7 +230,6 @@ def _save_workbook(path: Path, tables: Mapping) -> None:
                         for key in fields
                     ]
                 )
-            # Text storage preserves exact decimal strings and labels (including '=').
             for cells in sheet:
                 for cell in cells:
                     cell.data_type = "s"

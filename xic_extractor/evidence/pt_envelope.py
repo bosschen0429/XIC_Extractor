@@ -13,8 +13,6 @@ from statistics import median
 
 POSITION_LABELS = ("base", "plus_1", "plus_2", "plus_4")
 _POSITIONS = (0, 1, 2, 4)
-# NIST Atomic Weights and Isotopic Compositions, nominal offsets from 194Pt,
-# 35Cl and 32S. https://physics.nist.gov/PhysRefData/Compositions/index.html
 _PT = {-4: 0.00012, -2: 0.00782, 0: 0.3286, 1: 0.3378, 2: 0.2521, 4: 0.07356}
 _CL = {0: 0.7576, 2: 0.2424}
 _S = {0: 0.9499, 1: 0.0075, 2: 0.0425, 4: 0.0001}
@@ -57,7 +55,6 @@ def _expected(carbon: int, chlorine: int, sulfur: int) -> tuple[float, ...]:
         distribution = _convolve(distribution, _CL)
     for _ in range(sulfur):
         distribution = _convolve(distribution, _S)
-    # At most eight 13C atoms can reach the observed +4 position from 190Pt.
     carbon_distribution = {
         k: comb(carbon, k) * 0.0107**k * 0.9893 ** (carbon - k)
         for k in range(min(carbon, 8) + 1)

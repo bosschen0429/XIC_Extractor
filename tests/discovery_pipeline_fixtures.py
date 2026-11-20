@@ -121,7 +121,6 @@ class _OwnerBoundFakeRawHandle:
     ) -> tuple[float, float] | None:
         return None
 
-    # What the default easy_ic_restore reader reports without lock-mass trailers.
     mass_recalibration_result = MassRecalibrationResult(
         "unavailable",
         reason="missing_lock_mass_trailers",

@@ -164,7 +164,6 @@ def cid_nl_index_queries(
 
 def cid_nl_composition_index_key(owner: SampleLocalMS1Owner) -> tuple[str, str] | None:
     assessment = owner.cid_nl_composite_assessment
-    # Range lookup only proposes candidates; the hard gate closes exact binding.
     return (
         None
         if assessment is None
@@ -384,7 +383,6 @@ def _index_query_alternatives(
 
 
 def _requires_directional_membership(owners: Sequence[SampleLocalMS1Owner]) -> bool:
-    # Composition can bridge scalar tags; ordinary window bands cannot.
     return any(has_cid_nl_composition(owner) for owner in owners)
 
 

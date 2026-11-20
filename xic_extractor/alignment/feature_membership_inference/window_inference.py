@@ -100,9 +100,6 @@ def _window_inference(
         )
         windows: list[list[SampleLocalMS1Owner]] = []
         for owner in sorted_owners:
-            # A fixed window start can cut a coherent band when an unrelated
-            # lower-mass owner happens to arrive first. Keep local mass
-            # neighbourhoods connected, then enforce tolerance per edge.
             if not windows or owner.peak.mz - windows[-1][-1].peak.mz > mz_tolerance_da(
                 windows[-1][-1].peak.mz, config.max_ppm
             ):

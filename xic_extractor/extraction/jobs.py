@@ -171,9 +171,6 @@ def _run_jobs(
                     )
         completed = len(results) == len(pending_jobs)
     finally:
-        # A delivered result has already closed its RAW context. Idle process
-        # teardown can overlap downstream publication; cancellation and failures
-        # in the runner still drain active work before returning.
         executor.shutdown(wait=not completed, cancel_futures=not completed)
     return results
 

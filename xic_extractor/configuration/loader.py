@@ -123,8 +123,6 @@ def prepare_targeted_config(
         config = replace(
             config, target_config_hash=compute_target_config_hash(targets_path)
         )
-        # The already admitted targets stay authoritative; the private CSVs are
-        # receipts, not a second input boundary to reparse during the same run.
         return PreparedTargetedConfig(config, targets, receipt_dir, workspace)
     except BaseException:
         workspace.cleanup()

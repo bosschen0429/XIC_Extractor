@@ -51,8 +51,6 @@ def test_alignment_and_delta_mass_read_one_peak_mass(tmp_path, apex_mz):
     (peak,) = _current_candidates(
         _FakeRaw((8.0,)), raw_file=raw_path, settings=_settings()
     )
-    # An inferred precursor whose apex reading differs from its XIC center:
-    # the producer writes one peak mass and every consumer reads it.
     peak_mz = 500.0 if apex_mz is None else apex_mz
     peak = replace(
         peak,
@@ -191,7 +189,6 @@ def test_held_rows_never_become_alignment_roots(tmp_path, monkeypatch, with_supp
             c.peak_id for job in partition.jobs for c in job.candidates
         } == expected_ids
         assert all(not job.support_candidates for job in partition.jobs)
-        # A Backfill measurement that needs overlap review keeps its peak.
         sample = next(s for s in plan.context.samples if s.raw_stem == "Overlap")
         raw = raws[paths[1]]
         evaluations = []
@@ -333,7 +330,6 @@ def test_alignment_measurement_decides_admission_through_the_whole_run(
     }
     if alignment_signal == "flat":
         assert measured == {kept.peak_id}
-        # The batch still accounts for every declared peak exactly once.
         (exclusion,) = completed.application_result.excluded_candidates
         assert exclusion.candidate_id == dropped.peak_id
         assert exclusion.peak_status == "admitted"

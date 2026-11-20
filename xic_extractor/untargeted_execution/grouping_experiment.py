@@ -23,7 +23,6 @@ from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 class PreparedGroupingExperiment:
     inputs: GroupingInputs
     groups: tuple[CrossSamplePeakGroupHypothesis, ...]
-    # The batch's frozen calibration; it exists even when no workset does.
     rt_calibration: BatchRtCalibration | None
     selected_partition_count: int
     total_partition_count: int

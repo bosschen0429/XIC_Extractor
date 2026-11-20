@@ -37,7 +37,6 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
         "measure": 0,
         "descriptor": 0,
     }
-    # This is the unchanged physical owner, not a substitute peak detector.
     from xic_extractor.peak_detection import physical_peak_evaluation as owner
     from xic_extractor.peak_detection import physical_peak_population as population
 
@@ -125,8 +124,6 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
         replay.evaluation.answer.selected_segment.area_counts_seconds
         == left.evaluation.answer.selected_segment.area_counts_seconds
     )
-    # Two physical peaks are measured once each, regardless of NL duplicates
-    # or a later query for the same raw basin.
     assert counts == {
         "prepare": 1,
         "enumerate": 1,
@@ -160,8 +157,6 @@ def test_sparse_extension_reunites_contexts_without_repeating_extension():
     assert left.search.request.rt_max == 6.5
     assert left.evaluation.segment_universe == right.evaluation.segment_universe
     assert right.evaluation.answer.selected_segment.apex_rt_min == pytest.approx(6.0)
-    # One bounded extension does not override the owner's remaining uncertainty
-    # or keep enlarging the population until an acceptable answer is obtained.
     assert left.evaluation.reason == "incomplete_peak_context"
     assert left.evaluation.answer.selected_segment is None
 
@@ -190,9 +185,6 @@ def test_mass_channel_uses_existing_ppm_rule_without_isotope_or_ppm_merging():
         ),
     )
     captured = capture.capture(searches)
-    # Every mass window is actually read. Equality over the complete final
-    # signal, not candidate mass tolerance alone, permits shared preparation.
-    # Different ppm windows and isotope-separated channels stay separate.
     assert captured[0].search.request == captured[1].search.request
     assert captured[0].work_ordinal == captured[1].work_ordinal
     assert captured[2].search.request.ppm_tol == 10.0
@@ -247,8 +239,6 @@ def test_seed_grouping_order_and_duplicates_do_not_change_physical_peaks():
         assert len(result.physical_bindings) == 2
         assert {b.final_ordinal for b in result.physical_bindings} == {0, 1}
         assert sorted(c.ms1_apex_rt for c in measured) == pytest.approx([5.0, 5.15])
-        # The analytic second Gaussian remains one raw basin past its 10%
-        # quantitative return; its tail event is not an orphan component.
         assert {located_scan_ids(c) for c in measured} == {(10,), (11, 12)}
         assert result.measurements.initial_request_count == 1
         snapshot = sorted(
@@ -318,8 +308,6 @@ def test_mass_channels_take_the_first_channel_whose_every_member_is_within_ppm()
         PhysicalPeakSearch(
             f"s{index}",
             5.0,
-            # Unique, mutually overlapping RT windows: a context's RT span then
-            # names exactly one mass channel.
             XICRequest(
                 float(500.0 + rng.integers(0, 120) * 0.0015),
                 index * 1e-3,
@@ -359,8 +347,6 @@ def test_mass_channels_take_the_first_channel_whose_every_member_is_within_ppm()
     assert sorted(map(sorted, by_span.values())) == sorted(
         sorted(s.selection_subject_id for s in members) for members in expected
     )
-    # The input must exercise non-transitive chains: neighbours within ppm of
-    # each other that still belong to different channels.
     channel_of = {
         search.selection_subject_id: index
         for index, members in enumerate(expected)

@@ -212,8 +212,6 @@ def test_long_rows_use_targeted_product_projection() -> None:
     long_row = _long_output_rows(file_result, [target])[0]
 
     assert long_row["NL"] == "NL_FAIL"
-    # The paired ISTD identified the peak; its missing NL is left as a doubt.
-    # The legacy selection text does not reach the labels.
     assert (long_row["依據"], long_row["疑點"]) == ("ISTD 位置", "未見 NL")
     assert long_row["Product State"] == "detected_flagged"
     assert long_row["Counted Detection"] == "TRUE"
@@ -282,8 +280,6 @@ def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
         )
     )
     assert selected is not None
-    # Built without a trace, the hypothesis has no morphology area; give it the
-    # measured area the legacy row reports so only finalized identity differs.
     legacy_peak = legacy.peak_result.peak
     assert legacy_peak is not None
     selected = replace(
@@ -316,14 +312,11 @@ def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
         if header in {*TARGETED_PRODUCT_PROJECTION_HEADERS, "依據", "疑點"}:
             continue
         assert selected_long[header] == fallback_value
-    # The fixtures differ in finalized identity, not their measured values.
     assert fallback_long["Counted Detection"] == "TRUE"
     assert selected_long["Counted Detection"] == "FALSE"
     assert (
         selected_long["Projection Not Counted Reasons"] == "cid_nl_method_not_supported"
     )
-    # The neutral loss was seen with a large mass error and did not count; the
-    # trace-less hypothesis carries no typed evidence beyond it.
     assert (selected_long["依據"], selected_long["疑點"]) == ("NL 偏差大", "證據單薄")
     assert selected_long["Product State"]
     assert selected_long["Counted Detection"] in {"TRUE", "FALSE"}
@@ -460,7 +453,6 @@ _IDENTIFIED = TargetedProductProjection(
             None,
             ("NL 偏差大", "訊號缺口"),
         ),
-        # The selected peak's MS2 observation names the NL doubt.
         (
             NLResult("NL_FAIL", 125.0, None, 1, 0, 1),
             True,
@@ -505,7 +497,6 @@ def test_long_csv_reports_file_processing_error() -> None:
         ("Control", "qc", "Control"),
         ("", "qc", "QC"),
         ("other", "qc", "QC"),
-        # Ungrouped study samples and blanks stay distinguishable by role.
         ("", "sample", "Sample"),
         ("", "blank", "Blank"),
     ],

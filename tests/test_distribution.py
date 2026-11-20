@@ -78,8 +78,6 @@ def test_distribution_has_offline_guides_examples_and_no_developer_tree(
             PROJECT_ROOT / "xic_extractor/configuration/data" / name
         ).read_bytes()
 
-    # Follow the rendered links, not the renderer's destination table. This
-    # catches missing images, Markdown/HTML name collisions and dead anchors.
     pages = {
         p.resolve(): GuideLinks(p.read_text(encoding="utf-8"))
         for p in app.rglob("*.html")

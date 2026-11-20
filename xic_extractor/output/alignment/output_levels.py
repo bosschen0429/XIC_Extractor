@@ -4,9 +4,6 @@ from typing import Literal
 
 from xic_extractor.alignment_explanation.storage import EXPLANATION_ARTIFACT_NAME
 
-# The explanation report is a per-cell projection of results already written
-# elsewhere. The debug level produces it; validation-minimal
-# keeps the compact form so a run can be scored without a rerun.
 AlignmentOutputLevel = Literal[
     "production",
     "machine",

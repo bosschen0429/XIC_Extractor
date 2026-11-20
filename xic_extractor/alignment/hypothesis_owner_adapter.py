@@ -67,7 +67,6 @@ def _compose_cid_nl_peak_hypotheses_from_assessment(
         raise HypothesisOwnerAdapterError("assessment belongs to a different sample")
     if assessment.method_result != "SUPPORT":
         return ()
-    # The assessment's own candidate object is the peak each hypothesis binds.
     candidate_by_peak = {peak: peak for peak in assessment.candidate_peaks}
     supports_by_peak: dict[PeakObservation, list[DdaCidNlPeakSupport]] = {}
     for relation in assessment.individual_support_refs:
@@ -224,8 +223,6 @@ def owner_from_cid_nl_assessment_support(
         assessment=assessment,
         hypothesis=hypothesis,
     )
-    # Accepted relations resolve independent precursor references; inferred
-    # evidence can still carry its constructed precursor/loss fields.
     measured = support_relations
     aggregate_precursor_mz = math.fsum(
         relation.precursor_mz for relation in measured

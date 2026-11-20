@@ -199,8 +199,6 @@ def test_nucleoside_windows_follow_published_method_unless_replaced(
 def test_membership_uses_bound_full_precision_mass_and_rt_not_id_or_order(
     tmp_path, reorder
 ):
-    # ±0.015625 is exactly ±10 ppm of 1562.5. All four near-boundary masses
-    # round to just two distinct values in the public Matrix.
     observations = [
         (1562.484375, 4),
         (1562.515625, 6),
@@ -364,8 +362,6 @@ def test_describe_steps_reads_only_a_valid_header(tmp_path):
 
     folder = alignment_output(tmp_path / "alignment")
     matrix = folder / "alignment_matrix.tsv"
-    # Lower the CSV field limit below one data value, but not below the header.
-    # A body-reading description would raise csv.Error even for an available step.
     with matrix.open("a", encoding="utf-8") as stream:
         stream.write("9" * 200 + "\n")
     previous = csv.field_size_limit(100)
@@ -395,7 +391,6 @@ def test_workbench_sample_data_never_uses_imported_reader_paths(tmp_path, monkey
     def detect(**values):
         return describe_source(config, {"source_dir": str(source), **values})
 
-    # The run's RAW folder is not on this computer: nothing to bind.
     missing = detect()
     assert missing["sample_source"] is None
 
@@ -566,7 +561,6 @@ def test_published_curation_reads_the_export_and_says_why_each_row_left(tmp_path
 
     assert curation.source_dir == source.resolve()
     assert curation.matrix_path == output / "analysis_matrix.tsv"
-    # Eligible S1-S3: F000002 has one finite value, F000004 none.
     assert curation.removed == {
         "F000002": "有效值比例 1/3，低於門檻 0.5",
         "F000004": "有效值比例 0/3，低於門檻 0.5",

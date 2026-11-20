@@ -14,9 +14,6 @@ LABEL_RT_CENTRALITY = "rt_centrality"
 LABEL_NOISE_SHAPE = "noise_shape"
 LABEL_PEAK_WIDTH = "peak_width"
 
-# These thresholds are scoring/selection heuristics, not product-presence
-# authority. Promotion to a hard detection policy needs a contract and
-# biological-matrix validation artifact.
 _SYMMETRY_SOFT_LOW, _SYMMETRY_SOFT_HIGH = 0.5, 2.0
 _SYMMETRY_HARD_LOW, _SYMMETRY_HARD_HIGH = 0.3, 3.0
 _RT_PRIOR_SIGMA_SOFT = 2.0

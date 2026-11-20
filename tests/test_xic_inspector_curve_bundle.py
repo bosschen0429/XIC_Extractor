@@ -268,7 +268,6 @@ def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_v
         positive_signal=ChromatogramCurve(first.raw.rt, (0.0, 3.0, 6.0, 0.0)),
         quality_flags={"counted_detection": False, "formal_area": 9999},
     )
-    # The paired curve has its own area; it must not replace sample one's value.
     paired = replace(
         first,
         trace_id="paired-istd",
@@ -319,10 +318,7 @@ def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_v
         "return JSON.stringify({readout:readout(items[0]),"
         "table:cellTable(items[0])});",
     )
-    # Areas read in one format wherever they appear. Another peak's area stays
-    # beside the formal value for comparison.
     assert 'data-readout="area">1.205e+2 <span>counts·s' in rendered["readout"]
-    # The saved apex belongs to the value, not to the raw signal.
     assert 'data-readout="raw-apex"' not in rendered["readout"]
     assert 'data-readout="quantity">1.725e+1' in rendered["readout"]
     expected = (
@@ -420,7 +416,6 @@ def test_distinct_trace_roles_read_as_channels_of_one_sample(tmp_path):
     transition = _fixture_bundle().transitions[0]
     base = replace(transition.traces[0], trace_id="s1-base", role="base")
     plus = replace(base, trace_id="s1-plus_1", role="plus_1", mz=502.2)
-    # Two traces sharing a role in one sample remain competing candidates.
     first = replace(transition.traces[1], trace_id="s2-a", role="reacquisition")
     second = replace(first, trace_id="s2-b", mz=501.3)
     source, output = tmp_path / "channels.json", tmp_path / "review.html"
@@ -496,8 +491,6 @@ def test_bundle_replays_final_graded_rt_for_each_sample_and_signal(tmp_path):
             estimate_support=RtEstimateSupport((5.0, 6.0), shift, 0.1, 0.01),
         )
 
-    # Independently chosen piecewise maps; their endpoints deliberately differ
-    # from the global median to distinguish endpoint from median extrapolation.
     samples = {
         "sample-one": sample("sample-one", ((5.0, 6.0), (6.0, 8.0)), 1.5),
         "sample-two": sample("sample-two", ((5.0, 4.0), (6.0, 4.5)), -1.25),
@@ -520,8 +513,6 @@ def test_bundle_replays_final_graded_rt_for_each_sample_and_signal(tmp_path):
     write_curve_bundle(bundle, path)
     payload = prepare_report(path, SelectionRequest()).payload
     curves = {c["sample_id"]: c for c in payload["items"][0]["curves"]}
-    # Raw RTs [4,5,6,7], y=2*x-4 / 0.5*x+1.5 inside [5,6];
-    # outer coordinates retain each nearest endpoint offset.
     expected = {
         "sample-1": [5, 6, 8, 9],
         "sample-2": [3, 4, 4.5, 5.5],

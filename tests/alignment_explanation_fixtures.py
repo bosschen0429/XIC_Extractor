@@ -112,8 +112,6 @@ def run_alignment_fixture(tmp_path, monkeypatch, scenario):
     install_runtime_raws(monkeypatch, sources_by_path=sources, tmp_path=tmp_path)
     config = AlignmentConfig(
         anchor_min_seed_events=3 if scenario == "review_only" else 1,
-        # Moderate support must also lie outside the preferred RT band;
-        # aligned moderate owners are eligible through batch continuity.
         preferred_rt_sec=2.0 if scenario == "review_only" else 60.0,
     )
     runtime = execute_dense_partition(

@@ -698,8 +698,6 @@ def _write_run_config_sheet(
 
 
 def _identity_check_passes(score: ManualValidationScore) -> bool:
-    # The manual 2RAW set has known chromatographic problems (tailing, double
-    # peaks), so area and RT differences are reported for review, not judged.
     return score.missing_manual_peaks == 0 and score.istd_misses == 0
 
 

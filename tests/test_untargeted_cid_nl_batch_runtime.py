@@ -77,8 +77,6 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         def capture_without_peak(**kwargs):
             acquisition, observations = acquire_peaks(**kwargs)
             if kwargs["sample"].raw_stem == "Missing":
-                # Measurement may reject every peak after acquiring the XIC.
-                # Exercise that runtime boundary with the real acquisition retained.
                 return acquisition, ()
             return acquisition, observations
 

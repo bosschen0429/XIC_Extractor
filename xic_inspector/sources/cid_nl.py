@@ -111,7 +111,6 @@ def build_item_evidence(
         for ref, assessment in candidate.assessments:
             link(assessments, ref, assessment, key)
         for ref in candidate.groups:
-            # A candidate's other recorded rows belong to their own items.
             if evidence.groups[ref].feature_id in (None, gid):
                 groups.setdefault(ref, set()).add(key)
         for ref in candidate.initial_groups:
@@ -208,7 +207,6 @@ def build_item_evidence(
         witnesses=tuple(witnesses),
         stratum=stratum,
         is_attention=bool(triggers),
-        # Selection reads the review facts; rendering presents the triggers.
         details={"attention_triggers": triggers, "review_summary": review_summary},
     )
     row = group if kind == "row" else None
@@ -255,7 +253,6 @@ def build_item_evidence(
         cells=tuple(cells),
         support_origins=origins,
         review_summary=review_summary,
-        # A featureless group or a candidate names no published row.
         members=members if kind == "row" else (),
         measured_mz={
             key: evidence.candidates[key].fields["ms1_apex_mz"] for key in scoped
@@ -364,7 +361,6 @@ def _support_origin(sample_id, observation_refs, cell, curves, assessments):
         and facts["method_result"] == "SUPPORT"
         and observation_set.intersection(facts["candidate_physical_peak_keys"])
     ]
-    # A Backfill capture relates no candidate, so only Discovery is derived here.
     capture_kinds = {facts["kind"] for _, facts in captures}
     invocations = {facts["detector_invocation_id"] for _, facts in methods}
     if "initial_capture" in capture_kinds and any(
@@ -453,8 +449,6 @@ class CidNlSource:
         )
 
     def _render(self, views: list[ItemEvidence], *, capability, check_cancel):
-        # Read each sample's selected exact references once. This avoids the
-        # candidate-ID/sample cross product when IDs are shared across samples.
         refs_by_sample: dict[str, set[str]] = {}
         captures_by_item = {
             view.item.serialized_ref: [

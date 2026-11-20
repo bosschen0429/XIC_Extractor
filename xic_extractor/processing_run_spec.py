@@ -88,8 +88,6 @@ class ProcessingAcquisitionInput:
     sample_stem: str
     acquisition_source: AcquisitionSourceIdentity
     blank_library_sha256: str | None = None
-    # Runtime transport only: the canonical run binds its digest, not repeated
-    # copies of a cohort library in every sample's persisted sidecar.
     blank_library_content: str | None = dataclass_field(
         default=None, compare=False, repr=False
     )
@@ -454,7 +452,6 @@ def _method_content(
                 "blank_fold_change_threshold": _float_text(
                     settings.blank_fold_change_threshold
                 ),
-                # Absent means the vendor masses were used unchanged.
                 **(
                     {"mass_recalibration": settings.mass_recalibration.value}
                     if settings.mass_recalibration is not MassRecalibration.NONE

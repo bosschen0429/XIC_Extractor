@@ -19,7 +19,6 @@ MAX_HTML_SIZE_BYTES = 50 * 1024 * 1024
 def serialize_safe_inline_json(data: Any) -> str:
     """Serialize data to JSON, strictly escaping </script> tags."""
     raw_json = json.dumps(data, ensure_ascii=False, indent=None)
-    # Escape every '<', including mixed-case HTML end tags, using valid JSON.
     return (
         raw_json.replace("&", r"\u0026")
         .replace("<", r"\u003c")
@@ -53,8 +52,6 @@ def build_report_html(
             "source_db_name": source_db_name,
         }
     )
-    # A single replacement pass keeps user text from being interpreted as a
-    # second template token. Payload and host metadata remain separate contracts.
     replacements = {
         "__REPORT_TITLE__": html.escape(title),
         "__EVIDENCE_CAPABILITY__": html.escape(evidence_capability),

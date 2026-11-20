@@ -21,7 +21,6 @@ from xic_extractor.configuration.targeted_identification import (
 
 LEGACY_METHOD_FIELD = "method"
 LEGACY_TAG_FIELD = "cid_nl_tag"
-# The earlier workbook sheet of named methods; such workbooks are no longer read.
 LEGACY_METHOD_SHEET = "Identification Methods"
 _SETTING_FIELDS = (
     "apex_floor_sec",
@@ -130,7 +129,6 @@ def _convert(method: Mapping) -> tuple[float | None, tuple, DeltaMassSettings]:
                 offset_mz=float(p["offset_mz"]),
                 ratio_min=float(p.get("ratio_min", 0.1)),
                 ratio_max=float(p.get("ratio_max", 10.0)),
-                # The earlier method default did not compare shape.
                 compare_shape=bool(p.get("compare_shape", False)),
             )
             for p in positions
@@ -145,8 +143,6 @@ def _convert(method: Mapping) -> tuple[float | None, tuple, DeltaMassSettings]:
             },
         )
     if not ions:
-        # A named CID-NL-only method required the loss; the CID-NL column alone
-        # only ranks peaks, so converting it would silently admit more peaks.
         raise ValueError(
             "只有 CID-NL 條件的方法是必要條件，新的 CID-NL 欄只用於排序；"
             "請改用 CID-NL 欄並確認選峰，或加入 Delta Mass"

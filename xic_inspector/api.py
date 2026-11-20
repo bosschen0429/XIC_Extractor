@@ -64,7 +64,6 @@ def resolve_source(path: Path) -> Path:
     ):
         if candidate.is_file():
             return candidate
-    # Excel keeps "~$name.xlsx" lock files beside workbooks that are open.
     workbooks = sorted(p for p in path.glob("*.xlsx") if not p.name.startswith("~$"))
     if len(workbooks) == 1:
         return workbooks[0]
@@ -423,8 +422,6 @@ def prepare_report(
         if expected_source is not None and expected_source != source_locator:
             raise InspectorError(4, "Source does not match expected_source contract")
     else:
-        # The SQLite source is bound to its published Matrix. Self-contained
-        # workbook/bundle sources instead carry their own binding.
         matrix_path_str = summary.get("matrix_path")
         if not matrix_path_str:
             raise InspectorError(4, "Source summary missing matrix_path")
@@ -531,7 +528,6 @@ def _prepare_selection(
         )
 
     summary_samples = summary.get("samples", [])
-    # Colours span the whole source so a narrower selection keeps them.
     colors = group_colors(s["group"] for s in summary_samples if "group" in s)
     universe_sample_ids = {
         s["sample_key"] for s in summary_samples if "sample_key" in s

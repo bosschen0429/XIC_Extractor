@@ -61,8 +61,6 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
     raws, candidates = {}, {}
     for index, path in enumerate(paths):
         path.write_bytes(path.stem.encode())
-        # The composite's required losses are present across the batch, but
-        # not together in either sample. Pooling cannot grant participation.
         raw = _FakeRaw(
             (8.0,),
             neutral_loss_das=(
@@ -76,8 +74,6 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
             else _current_candidates(raw, raw_file=path, settings=settings)
         )
         if scenario in {"unsupported", "unsupported_unsearched"}:
-            # The acquired MS1 peak is still usable but displaced from the
-            # retained CID-NL event; a capture alone is not method support.
             raw.intensity = np.roll(raw.intensity, 60)
         if scenario == "rejected" or scenario == "missing_capture" and index == 1:
             raw.intensity[:] = 0.0
@@ -172,12 +168,9 @@ def test_owner_decides_membership_and_exact_exclusion_from_acquired_evidence(
                 if "requirement_not_supported" in exclusion_reason
                 else ()
             )
-    # One mixed retained/excluded case protects both invariant outputs.
     if scenario != "missing_capture":
         return
 
-    # Rename transport/candidate keys without changing a measured fact, and
-    # reverse every unordered input. Compare natural peak and exclusion facts.
     renamed = {
         peak.peak_id: f"candidate-{len(peaks) - i}" for i, peak in enumerate(peaks)
     }

@@ -115,8 +115,6 @@ def _curation_inputs(
     if not lookup and not any(step.needs_cell_evidence for step in steps):
         return CurationInputs(binding, nucleoside_list=reference)
     metadata, problem = _run_evidence(source)
-    # Bind the method to this Matrix, not the open Workbench preset or a
-    # similarly named RAW folder. Mixed/unknown channels have no default.
     if lookup and (builtin := method_nucleosides(metadata.get("neutral_loss_by_tag"))):
         digest = matrix_digest or file_sha256(source.matrix_path)
         if digest.lower() == metadata.get("matrix_sha256"):
@@ -206,7 +204,6 @@ def bind_samples(
     columns = tuple(sample_columns)
     if metadata is None:
         return SampleBinding(columns, None, missing)
-    # The metadata owner already rejects duplicate and ambiguous aliases.
     aliases: dict[str, SampleMetadata] = {}
     for row in metadata:
         for alias in {row.sample_name, row.raw_stem}:
@@ -296,7 +293,6 @@ class CurationEvaluation:
         output_dir.mkdir(parents=True, exist_ok=False)
         for name, table in self.tables.items():
             write_tsv(output_dir / name, table.rows, table.columns)
-        # Written last: a folder without the summary is an incomplete export.
         summary_path = output_dir / SUMMARY_NAME
         summary_path.write_text(
             json.dumps(self.summary, indent=2, ensure_ascii=False) + "\n",
@@ -399,7 +395,6 @@ def prepare_matrix_curation(
             else None,
         )
         result = step.evaluate(remaining, parameters[step.key])
-        # Preserve source-row lineage without evaluating already removed ions.
         skipped = {
             column: "not_evaluated" if column.endswith("_decision") else ""
             for column in result.columns

@@ -361,7 +361,6 @@ def test_targeted_analyzes_every_role_and_untargeted_only_samples_and_qc() -> No
         "Tumor_1",
     ]
     assert [e.raw_stem for e in untargeted.analyzed] == ["QC1", "Tumor_1"]
-    # Exclusion is the only way out of Targeted, and it keeps the role.
     assert (targeted.entries[-1].sample_role, targeted.entries[-1].context_reason) == (
         "sample",
         "excluded",
@@ -384,7 +383,6 @@ def test_listing_keeps_unreadable_raw_without_deciding_membership() -> None:
         for row in listed.sample_metadata
     ] == [("S1", "sample", 1), ("Blank_9", "blank", None)]
     assert listed.unreadable == (Path("/b/Blank_9.raw"),)
-    # Targeted analyzes a blank, so its unreadable header now stops the run.
     with pytest.raises(ValueError, match="Blank_9.raw"):
         select_analysis_set(timeline, rows, unreadable=unread, analysis="targeted")
 
@@ -482,8 +480,6 @@ def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
     from tests.sample_metadata_sequence_parsing_fixtures import _create_synthetic_docx
     from xic_extractor import raw_sequence
 
-    # Two batches in one root; the Word sequence covers the newer one only and
-    # numbers it Blank 1 ... Normal 4, against the RAW clock below.
     clock = {
         "older/Old_S1": 0,
         "newer/NormalBC001_DNA": 10,
@@ -534,8 +530,6 @@ def test_repeated_sequence_names_match_injections_not_nested_copies(
 ) -> None:
     from xic_extractor import raw_sequence
 
-    # A nested copy of A_1 is the same injection; it must not add a third
-    # candidate for the two repeated "A" rows.
     clock = {"A_1": 0, "A_2": 11, "validation/A_1": 0}
     for rel in clock:
         (tmp_path / f"{rel}.raw").parent.mkdir(parents=True, exist_ok=True)

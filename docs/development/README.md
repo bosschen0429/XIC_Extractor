@@ -37,6 +37,8 @@ Windows 發布套件與所有 CI lane 使用同一份鎖定的 Python 3.15 依�
 Linux 負責一般 CI 測試，包含 .NET/CoreCLR 整合；Windows 保留作業系統相關、瀏覽器與打包檢查。
 目前不宣稱完整支援 Linux 上的分析或桌面套件。
 
+打包時先找 Windows 自己的 DLL，再找 PATH 上的工具，以免載入另一份 ICU；套件專用目錄仍由 PyInstaller hook 提供。發行包收錄 PyInstaller 授權，因為其中包含 bootloader exception。
+
 ## 測試
 
 本機修改預設執行 `.venv\Scripts\python.exe -m tools.testing.test_selection`。

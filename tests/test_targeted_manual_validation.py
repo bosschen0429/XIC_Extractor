@@ -236,8 +236,6 @@ def _identity_check_status(tmp_path: Path, peaks: list[ProgramPeakRow]) -> str:
 
 
 def test_identity_check_ignores_area_and_rt_deviations(tmp_path: Path) -> None:
-    # A tailing analyte integrated 50% larger and 0.5 min later than the manual
-    # sheet is a deviation to review, not an identity failure.
     peaks = [
         ProgramPeakRow("SampleA", "ISTD", True, 10.0, 1000.0, 10000.0, True),
         ProgramPeakRow("SampleA", "Analyte", False, 11.5, 2000.0, 30000.0, True),

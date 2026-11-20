@@ -1,11 +1,7 @@
-// Delta Mass ion table and preview shared by the Targeted and Untargeted editors.
-// Ions are plain objects {label, offset_mz, ratio_min, ratio_max, compare_shape};
-// the base ion (Δ 0) is the header, never a row.
 import { button, el } from "./analysis_ui.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 
-// Persisted name of an ion added in the editor: ASCII sign, four decimals.
 export function ionName(offset) {
   return `${offset < 0 ? "-" : "+"}${Math.abs(offset).toFixed(4)}`;
 }
@@ -25,14 +21,12 @@ export function parseOffsets(text) {
     throw new Error("Δm/z 以逗號分隔，如 +1.0021, -2.0157。");
   return values;
 }
-// Shown to four significant digits; an untouched cell keeps the exact values.
 export function formatRatioRange(ion) {
   const show = (value) => String(Number(Number(value).toPrecision(4)));
   return ion.ratio_min === ion.ratio_max
     ? show(ion.ratio_min)
     : `${show(ion.ratio_min)}–${show(ion.ratio_max)}`;
 }
-// One cell: "0.514–2.056", "0.2-0.8" or "0.2~0.8"; one number means equal bounds.
 export function parseRatioRange(text) {
   const match = String(text)
     .trim()
@@ -52,15 +46,12 @@ export function newIon(offset, defaults = {}) {
     ...defaults,
   };
 }
-// Bulk entry keeps an existing ion's details when its Δ is unchanged.
 export function ionsForOffsets(offsets, existing = []) {
   return offsets.map((offset) => {
     const kept = existing.find((ion) => ion.offset_mz === offset);
     return kept ? { ...kept } : newIon(offset);
   });
 }
-// Ions whose ratio cell holds text that is not a range; the stored values are
-// stale until the cell is corrected, so saving must stop.
 const unreadableRatios = new WeakSet();
 export function ionsError(ions, { allowNegative }) {
   for (const [index, ion] of ions.entries()) {
@@ -81,10 +72,6 @@ export function ionsError(ions, { allowNegative }) {
   return "";
 }
 
-// options: ions (mutated in place), base ("基準＝…" header text), baseMz
-// (actual m/z for the preview, or null for Δ), allowNegative, showShape,
-// empty (shown while there is no ion), onChange(), and extraHead/extraCells
-// for page-specific columns.
 export function deltaMassEditor(options) {
   const root = el("div", undefined, "delta-editor");
   const render = () => {
@@ -110,7 +97,6 @@ export function deltaMassEditor(options) {
         const value = offset.value.trim() === "" ? null : Number(offset.value);
         if (value !== ion.offset_mz) {
           ion.offset_mz = Number.isFinite(value) ? value : null;
-          // A changed Δ is a new ion; it takes its offset's name.
           if (ion.offset_mz !== null) ion.label = ionName(ion.offset_mz);
         }
         if (ion.offset_mz !== null) offset.value = formatOffset(ion.offset_mz);
@@ -180,7 +166,6 @@ export function deltaMassEditor(options) {
       "subtle delta-hint",
     );
     const parts = [hint];
-    // Without an ion the condition is off; say how it turns on and from which base.
     if (!options.ions.length && options.empty)
       parts.push(el("p", options.empty, "delta-empty"));
     root.replaceChildren(...parts, scroll, add, error, previewPlot(options.ions, options));

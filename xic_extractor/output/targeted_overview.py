@@ -10,8 +10,6 @@ from statistics import median
 
 from xic_extractor.output.result_labels import needs_look
 
-# A detection outcome shared by at most this share of a target's recorded
-# decisions is the unusual one: it is where a wrong peak or a missed peak hides.
 MINORITY_SHARE = 0.2
 
 
@@ -104,7 +102,6 @@ def summarize_targeted_results(
                 rt_max=max(numeric_rts) if numeric_rts else None,
             )
         )
-    # Unusual outcomes come first; result order is otherwise kept.
     targets.sort(key=lambda target: not target.focus_samples)
     return TargetedOverview(
         sample_count=len({row["SampleName"] for row in rows}),

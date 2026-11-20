@@ -1056,7 +1056,6 @@ def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
         replace(mono, precursor_metadata=None)
     with pytest.raises(CidNlEvidenceContractError, match="singly charged"):
         replace(mono, precursor_metadata=replace(metadata, charge=2))
-    # A product-derived claim still obeys physical isolation bounds.
     with pytest.raises(CidNlEvidenceContractError, match="inference tolerance"):
         replace(
             mono,

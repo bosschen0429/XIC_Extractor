@@ -117,9 +117,6 @@ def write_grouping_inputs(
             id(workset.rt_drift),
         )
         if identity not in model_indices:
-            # Partition restoration can make equal copies of the frozen batch
-            # model. Include anchor-owner bindings, which dataclass equality
-            # deliberately excludes, when sharing the persisted facts.
             model = {
                 "rt_warp": asdict(workset.rt_warp)
                 if workset.rt_warp is not None
@@ -178,8 +175,6 @@ def write_grouping_inputs(
         )
 
 
-# Saved snapshots may contain these retired, non-semantic settings.
-# Unknown keys still reach AlignmentConfig and fail rather than hiding typos.
 _RETIRED_ALIGNMENT_CONFIG_KEYS = frozenset(
     {
         "anchor_min_scan_support_score",
@@ -333,8 +328,6 @@ def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
     if member_subject is None:
         raise ValueError("Grouping snapshot requires formal member subjects")
     integration = owner.peak.integration
-    # The snapshot keeps the owner's measured values beside its member peak,
-    # which carries the trace; scan indices are only used by integration.
     return {
         "owner_id": owner.owner_id,
         "sample_stem": owner.sample_stem,
@@ -370,7 +363,6 @@ def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
 
 
 def _peak_payload(peak: PeakObservation) -> dict[str, Any]:
-    # A snapshot keeps each member peak's measured values, not its acquisition.
     return {
         "sample_key": peak.sample_key,
         "mz": peak.mz,
@@ -381,8 +373,6 @@ def _peak_payload(peak: PeakObservation) -> dict[str, Any]:
 
 
 def _read_peak(value: dict[str, Any]) -> PeakObservation:
-    # Replay compares member peaks by their measured values only; the snapshot
-    # retains no trace or query context to restore.
     return PeakObservation(
         sample_key=value["sample_key"],
         mz=value["mz"],
@@ -416,8 +406,6 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
     value["supporting_events"] = tuple(
         IdentityEvent(**item) for item in value["supporting_events"]
     )
-    # Retained snapshots may include the retired, non-semantic audit envelope
-    # and the retired owner flags that production always wrote as False.
     value.pop("region_audit", None)
     value.pop("identity_conflict", None)
     value.pop("is_provisional", None)
@@ -453,8 +441,6 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
 def _read_owner_peak(
     value: dict[str, Any], physical_peaks: tuple[PeakObservation, ...]
 ) -> PeakObservation:
-    # The selected integration carries the owner's measured values and the
-    # member peak its trace; the written copies are the same values.
     for key in (
         "precursor_mz",
         "owner_apex_rt",
@@ -677,8 +663,6 @@ def write_grouping_result(
                 else owner.peak.integration.rt_apex_min
             )
             if risk is not None:
-                # The selected universe can reject an available calibration,
-                # or use a weak estimate that the strong-only map cannot supply.
                 if risk.rt_basis == "raw":
                     comparison_rt = owner.peak.integration.rt_apex_min
                 elif risk.rt_estimate is not None:

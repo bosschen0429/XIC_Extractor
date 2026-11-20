@@ -59,7 +59,6 @@ def resolve_settings(
     *,
     settings_path: Path = Path("workspace.json"),
 ) -> tuple[dict[str, str], _ParsedSettings, list[str]]:
-    # Validate both inputs before merge so an override cannot hide a retired key.
     fill_setting_defaults(raw)
     fill_setting_defaults(overrides or {})
     values, warnings = fill_setting_defaults({**raw, **(overrides or {})})

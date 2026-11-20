@@ -29,7 +29,6 @@ def pytest_configure(config: pytest.Config) -> None:
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_sessionstart(session: pytest.Session) -> None:
-    # Share pytest's factory with fixtures and xdist, before workers start.
     factory: pytest.TempPathFactory = (
         session.config._tmp_path_factory  # type: ignore[attr-defined]
     )

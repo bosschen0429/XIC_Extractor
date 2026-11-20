@@ -117,8 +117,6 @@ def prepare_local_peak_shape(
             start -= 1
         while stop + 1 < source_count and primary[stop + 1] > 0:
             stop += 1
-        # Keep the original RT support, but exclude disconnected signal only
-        # from this private correspondence derivative, not from quantitation.
         primary[:start] = 0
         primary[stop + 1 :] = 0
         peak_height = float(np.max(primary))
@@ -180,8 +178,6 @@ def _joint_shape_correlations(
     correlations = np.full((size, size), np.nan)
     counts = np.zeros((size, size), dtype=int)
     exact_pairs = np.zeros((size, size), dtype=bool)
-    # Small tiles bound temporary point arrays. Center each joint subset
-    # explicitly, avoiding cancellation in E[x*x] - E[x]**2 for flat subsets.
     for start in range(0, size, 32):
         left_slice = slice(start, start + 32)
         for stop in range(start, size, 32):
@@ -212,7 +208,6 @@ def _joint_shape_correlations(
                 )
                 usable = (count >= 5) & (left_std > 1e-12) & (right_std > 1e-12)
             similarity = np.where(usable, np.clip(similarity, -1, 1), np.nan)
-            # Preserve the exact standalone decision at its flat-signal boundary.
             exact = (left_std <= 1e-12 + roundoff) | (right_std <= 1e-12 + roundoff)
             correlations[left_slice, right_slice] = similarity
             correlations[right_slice, left_slice] = similarity.T
@@ -232,8 +227,6 @@ class LocalPeakShapeComparisons:
     """
 
     def __init__(self, shapes: Iterable[LocalPeakShape]) -> None:
-        # Retain the objects while indexing by identity; comparing a prepared
-        # pair must not hash every grid value again.
         self._shapes = tuple(shapes)
         rows: dict[LocalPeakShape, tuple[_ShapeComparisonBlock, int]] = {}
         groups: dict[tuple[float, int], list[LocalPeakShape]] = defaultdict(list)
@@ -296,9 +289,6 @@ def _local_shape_comparison_result(
                 count,
             )
         if min(left.half_height_point_count, right.half_height_point_count) < 5:
-            # Sparse primary peaks cannot support fine-shape disagreement. A
-            # localized peak versus signal sustained at BOTH observed edges
-            # is a coarser contrast that does not require resolving peak width.
             edges = (left.edge_intensity_ratio, right.edge_intensity_ratio)
             localized = any(edge is not None and max(edge) < 0.5 for edge in edges)
             sustained = any(edge is not None and min(edge) >= 0.5 for edge in edges)

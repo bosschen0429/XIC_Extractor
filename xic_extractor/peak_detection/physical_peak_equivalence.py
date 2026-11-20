@@ -82,8 +82,6 @@ def compare_physical_peak_views(
         left_mass[0], right_mass[0]
     ) > min(left_mass[1], right_mass[1]):
         return "distinct"
-    # A lobe must be interpreted using the producing method, never today's
-    # default. Missing or different methods do not establish lobe identity.
     if left.profile is None or left.profile != right.profile:
         return "unresolved"
     traces = tuple(
@@ -107,25 +105,16 @@ def compare_physical_peak_views(
     )
     if same_apex and _same_peak_with_off_apex_difference(selected_traces, overlaps):
         return "same"
-    # A shared selected lobe is sufficient evidence. Unrelated ions outside
-    # these selections must not erase it merely because more context is kept.
     selected_relation = _compare_measured_lobes(
         selected_traces, apices, profile=left.profile
     )
     if selected_relation != "unresolved":
         return selected_relation
-    # Integration bounds belong to quantitation, not view identity. If they
-    # lack shared context around both apices, use the already acquired context
-    # rather than treating the cropped selections as proof of separation.
     acquired_relation = _compare_measured_lobes(traces, apices, profile=left.profile)
     if acquired_relation != "unresolved" or not any(
         view.comparison_trace is not None for view in (left, right)
     ):
         return acquired_relation
-    # Compare the original acquisition questions on one common RT envelope.
-    # Batched context can be much wider: feeding all of it to baseline/lobe
-    # evaluation would change the question and can split or hide the lobe.
-    # The extra samples are comparison evidence, never a replacement integral.
     lower = min(trace[0][0] for trace in traces)
     upper = max(trace[-1][0] for trace in traces)
     comparison_traces = tuple(
@@ -143,9 +132,6 @@ def compare_physical_peak_views(
     )
     if relation != "unresolved":
         return relation
-    # A cropped context can join two edge-truncated tails without establishing
-    # a complete peak. Reuse the wider acquired envelope when it can close the
-    # owner support gate; never turn an incomplete lobe into identity proof.
     return _compare_measured_lobes(
         tuple(
             tuple(

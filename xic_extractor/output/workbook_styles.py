@@ -26,7 +26,6 @@ MUTED = "9AA5B1"
 FOCUS = "B45309"
 _RULE = Side(style="thin", color="E5E9EE")
 _HEAD_RULE = Side(style="thin", color="8C99A6")
-# The reader's sheets; the rest are records for the workbench and tools, hidden.
 READING_SHEETS = ("摘要", "面積", "XIC Results", "Targets")
 LINE_HEIGHT = 16
 TEXT_HEADERS = frozenset(
@@ -67,7 +66,6 @@ def _prepare_sheet(
     ws.sheet_format.customHeight = True
     ws.page_setup.orientation = "landscape" if landscape else "portrait"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
-    # Wide sheets continue across pages instead of shrinking to unreadable text.
     ws.sheet_properties.pageSetUpPr.fitToPage = fit_width
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
@@ -168,6 +166,4 @@ def _add_table(ws, name: str, reference: str) -> None:
     table = Table(displayName=name, ref=reference)
     table.tableStyleInfo = TableStyleInfo(showRowStripes=False, showColumnStripes=False)
     ws.add_table(table)
-    # A Table owns its filter. A second worksheet filter on the same range
-    # makes desktop Excel repair the workbook and remove the Table.
     ws.auto_filter.ref = None

@@ -13,16 +13,11 @@ import {
 } from "./analysis_ui.js";
 import { navigation } from "./workspace_ui.js";
 
-// Starting an analysis saves the setup, so only leaving the page can lose it;
-// the page asks before unloading then.
 export function dirty(kind, value = true) {
   setDirty(kind, value);
   checklist(kind);
 }
-// The page shows either the next analysis's setup or one opened result,
-// never a result appended under an unrelated setup form.
 export const showingResult = () => document.body.dataset.mode === "result";
-// A reload returns to the result it showed; a new window starts at setup.
 export const reloadedOnResult = (() => {
   try {
     return sessionStorage.getItem("xic-mode") === "result";
@@ -35,11 +30,9 @@ export function showMode(mode) {
   try {
     sessionStorage.setItem("xic-mode", mode);
   } catch {
-    /* per-tab convenience only */
   }
   $("analysis-root").hidden = mode === "result";
   $("analysis-result").hidden = mode !== "result";
-  // The job card follows the visible page, so feedback is never hidden.
   document.dispatchEvent(new CustomEvent("xic:page-layout"));
   document
     .querySelectorAll(".view-tabs [data-view]")
@@ -54,7 +47,6 @@ export function showResult() {
   if (!showingResult()) navigation.push();
   showMode("result");
   window.scrollTo(0, 0);
-  // Do not leave focus on a run control moved inside the optional, closed panel.
   $("batch-title").tabIndex = -1;
   $("batch-title").focus({ preventScroll: true });
 }
@@ -164,7 +156,6 @@ export function checklist(kind) {
     }),
   );
 }
-// Sample readiness covers roles and exclusions; statistical groups are not inputs.
 function sampleItems(page) {
   const set = sampleMetadata.forPage(page);
   const edit = sampleId(page, "samples-edit");

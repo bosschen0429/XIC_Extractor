@@ -24,7 +24,6 @@ if TYPE_CHECKING:
         CidNlMethodSubject,
     )
 
-# Only membership that both directions or an identity agree on calibrates.
 _CALIBRATION_GROUP_BASES: frozenset[FeatureMembershipBasis] = frozenset(
     {
         "bidirectional_membership_agreement",

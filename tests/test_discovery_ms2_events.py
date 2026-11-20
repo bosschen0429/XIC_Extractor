@@ -298,7 +298,6 @@ def test_default_inferred_precursor_radius_uses_nominal_isolation_half_width(
     scan_offset_da: float,
     expected_seed_count: int,
 ) -> None:
-    # The method's full isolation width is 1.6 Da, so its nominal radius is 0.8.
     product_mz = 184.11322021484375
     inferred_precursor_mz = product_mz + NEUTRAL_LOSS_DA
     raw = _FakeRaw(
@@ -405,7 +404,6 @@ def test_multi_profile_seeds_of_one_ion_share_one_channel() -> None:
 
     (channel,) = build_discovery_ions(seeds, settings=settings)
 
-    # Each tag keeps its own event; one ion is one channel for every tag.
     assert [seed.neutral_loss_tag for seed in seeds] == ["dR", "R", "MeR"]
     assert {seed.neutral_loss_tag for seed in channel.events} == {"dR", "R", "MeR"}
 
@@ -546,7 +544,6 @@ def test_recorded_mono_and_selected_ions_keep_distinct_direct_evidence(charge):
         (301.165, "scan_precursor"),
     ]
     channels = build_discovery_ions(seeds, settings=_settings())
-    # The recorded monoisotopic and selected ions are two measured ions.
     assert [channel.mz for channel in channels] == [300.1615, 301.165]
 
 
@@ -555,9 +552,6 @@ def test_reference_product_failing_neutral_loss_still_infers_precursor_seed():
 
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 
-    # The product lies within the coarse direct-product window of the recorded
-    # monoisotopic reference (loss residual 0.015 Da) but fails the 20 ppm
-    # neutral-loss gate, so it must remain an inferred-precursor candidate.
     product_mz = 383.9376
     event = _scan_event(precursor_mz=500.5, masses=[product_mz], intensities=[100.0])
     metadata = Ms2PrecursorMetadata(

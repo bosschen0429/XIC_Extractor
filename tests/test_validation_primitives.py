@@ -116,7 +116,6 @@ def test_parse_canonical_float_hex() -> None:
     with pytest.raises(
         ValueError, match="rt must be canonical finite hexadecimal text"
     ):
-        # Not canonical (should be 0x1.8000000000000p+0)
         parse_canonical_float_hex("0x1.8p0", field="rt")
 
 

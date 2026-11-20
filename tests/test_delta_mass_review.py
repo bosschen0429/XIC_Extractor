@@ -190,7 +190,7 @@ def test_selected_raws_are_batched_and_saved_evidence_is_not_reclassified(
     partner = review.candidates[0].positions[1]
     assert partner.delta_da == 3.0000001234
     assert partner.feature_mz == 103.0000001234
-    assert partner.query_mz == 103.0  # Display precision must not change acquisition.
+    assert partner.query_mz == 103.0
     assert [c[1] for c in calls if c[0] == "open"] == ["sample-a", "sample-b"]
     assert [c for c in calls if c[0] == "xic"] == [
         ("xic", "sample-a", 6),
@@ -279,9 +279,7 @@ def test_review_queries_the_exact_discovery_center_not_the_partner_mass(
     assert partner.raw_intensity[1] == 103.0000001234
     assert partner.expected_mz == 103.0000001234
     assert partner.observed_mz == 103.008
-    assert (
-        partner.query_mz == 103.008
-    )  # Precursor/NL evidence keeps its measured center.
+    assert partner.query_mz == 103.008
 
 
 def test_discovery_directory_points_to_review_export_not_alignment(tmp_path):

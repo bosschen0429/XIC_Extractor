@@ -127,7 +127,6 @@ def test_writer_timing_observations_are_truthful_with_live_output(
     by_metric = {}
     for row in observations:
         by_metric.setdefault(row["metric"], []).append(row)
-    # One shared render writes every file, so per-file render time is unknown.
     assert all(
         row["value"] is None and row["availability"] == "unavailable"
         for row in by_metric["writer_render_time_sec"]

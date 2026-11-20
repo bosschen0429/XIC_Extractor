@@ -22,11 +22,10 @@ def traces_for(ratios):
 
 
 def test_synchronous_core_ignores_a_partner_maximum_outside_the_base_peak():
-    # Independent n=0 natural Pt ratios, not a snapshot from the implementation.
     ratios = (1, 0.3378 / 0.3286, 0.2521 / 0.3286, 0.07356 / 0.3286)
     traces = list(traces_for(ratios))
     values = list(traces[3].intensity)
-    values[23] = 100_000  # +14 seconds, outside the shared core and flanks.
+    values[23] = 100_000
     traces[3] = replace(traces[3], intensity=tuple(values))
     result = compare_pt_envelope(tuple(traces), base_mz=200, rt_apex_min=2)
     assert result.status == "available"
@@ -38,7 +37,6 @@ def test_synchronous_core_ignores_a_partner_maximum_outside_the_base_peak():
 
 
 def test_sulfur_composition_is_compared_without_claiming_identity():
-    # Pt*S probabilities at 0,1,2,4; explicit isotope combinations give the oracle.
     envelope = (
         0.3286 * 0.9499 + 0.00782 * 0.0425 + 0.00012 * 0.0001,
         0.3378 * 0.9499 + 0.3286 * 0.0075,
@@ -47,7 +45,7 @@ def test_sulfur_composition_is_compared_without_claiming_identity():
     )
     ratios = tuple(v / envelope[0] for v in envelope)
     result = compare_pt_envelope(traces_for(ratios), base_mz=230, rt_apex_min=2)
-    assert result.status == "available"  # Never match/nonmatch.
+    assert result.status == "available"
     assert result.model == "Pt+C+S"
     assert result.carbon_count == 0
     assert result.spread == pytest.approx(1)

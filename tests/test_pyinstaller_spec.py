@@ -271,7 +271,6 @@ def test_pyinstaller_system_icu_wins_over_foreign_path_dll(monkeypatch, tmp_path
     from PyInstaller.depend.bindepend import resolve_library_path
 
     system_dir = Path(os.environ["SystemRoot"]) / "System32"
-    # An unrelated but valid PE image reproduces a same-name foreign DLL on PATH.
     foreign_dir = tmp_path / "foreign-tool"
     foreign_dir.mkdir()
     shutil.copy2(system_dir / "kernel32.dll", foreign_dir / "icuuc.dll")
@@ -295,7 +294,6 @@ def test_pyinstaller_system_icu_wins_over_foreign_path_dll(monkeypatch, tmp_path
 
 @pytest.fixture(scope="module")
 def packaging_source(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    # Leave room for isolated build environments and their package paths.
     temp_root = tmp_path_factory.mktemp("pkg")
     source_root = temp_root / "source"
     source_root.mkdir()
@@ -304,7 +302,6 @@ def packaging_source(tmp_path_factory: pytest.TempPathFactory) -> Path:
     shutil.copy2(PROJECT_ROOT / "MANIFEST.in", source_root / "MANIFEST.in")
     for directory in PACKAGING_SOURCE_DIRECTORIES:
         if directory == "config":
-            # A package must not depend on or copy a developer's ignored state.
             (source_root / "config").mkdir()
             shutil.copy2(
                 PROJECT_ROOT / "config/env.example", source_root / "config/env.example"
@@ -714,7 +711,6 @@ def test_final_pyinstaller_archive_runs_html_workbench_smoke(
     )
     assert not list(final_output.rglob("settings.example.csv"))
     assert not list(final_output.rglob("targets.example.csv"))
-    # Exercise the archive that would be delivered, rather than rebuilding a probe.
     version = tomllib.loads(
         (packaging_source / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]["version"]
@@ -784,11 +780,9 @@ def test_package_metadata_treats_git_refs_as_data(tmp_path, case):
     is_tag = case not in {"branch", "expression_branch"}
     ref = f"refs/{'tags' if is_tag else 'heads'}/{ref_name}"
     source = _build_workflow_script("meta")
-    # Run the Windows workflow's shell logic with this OS's test interpreter.
     source = source.replace(
         r".\.venv\Scripts\python.exe", "'" + sys.executable.replace("'", "''") + "'"
     )
-    # Model Actions' source interpolation so the regression reaches the shell.
     source = source.replace("${{ github.ref }}", ref).replace(
         "${{ github.ref_name }}", ref_name
     )

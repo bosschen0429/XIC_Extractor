@@ -350,8 +350,6 @@ def _build_publication_output(
     )
 
 
-# A peak away from the paired-ISTD position is another signal; it is not
-# reported as this analyte's quantity.
 OFF_PAIRED_ISTD_POSITION = "analyte_peak_off_paired_istd_position"
 
 
@@ -573,10 +571,6 @@ def _projection_with_reported_peak_quality(
     review_reasons = projection.review_reasons
     conflict_reasons = projection.conflict_reasons
     if backfill_supported or not _same_physical_peak(captured, reported):
-        # These reasons are issued by selected-candidate morphology/quality
-        # facts (or its selected shoulder), not by the sample. A new physical
-        # answer cannot inherit them from the replaced capture. Unknown and
-        # sample-level reasons remain intact; Backfill acceptance is not clean.
         peak_local_review = {"trace_morphology_review", "physical_shoulder_overlap"}
         peak_local_conflicts = {
             "trace_morphology_conflict",

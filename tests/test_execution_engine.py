@@ -182,7 +182,6 @@ def test_streamed_result_store_shared_objects_identity(
 def test_streamed_result_store_unknown_shared_identity_rejected() -> None:
     shared_objects = (object(),)
     bio = io.BytesIO()
-    # A memo reference cannot bind an authority absent from this record.
     bio.write(pickle.PROTO + b"\x04")
     bio.write(pickle.BINGET + b"\x63")
     bio.write(pickle.STOP)
@@ -1001,8 +1000,6 @@ def test_worker_admission_pool_process_shares_owner_once_and_restores_identity(
     assert sorted(result.value for result in second_results) == [30, 40]
     assert all(result.owner is owner for result in results)
     assert all(result.initialized for result in results)
-    # Reusing an executor does not promise that every worker receives a task in
-    # every batch. Observe lifetime directly, not the OS's task distribution.
     assert len(created) == 1
     assert 1 <= len({result.worker_pid for result in results}) <= 2
     assert all(result.worker_pid != os.getpid() for result in results)
@@ -1010,8 +1007,6 @@ def test_worker_admission_pool_process_shares_owner_once_and_restores_identity(
     assert metrics is not None
     assert metrics.shared_bootstrap_bytes == first_metrics.shared_bootstrap_bytes
     assert metrics.shared_bootstrap_bytes >= 2_000_000
-    # A spawned worker reads its initargs only after re-importing the main
-    # module, so a large payload there would start the workers one at a time.
     assert len(pickle.dumps(initargs[0])) < 4096
     assert metrics.task_request_bytes < 10_000
     assert metrics.task_response_bytes < 10_000
@@ -1189,8 +1184,6 @@ def test_worker_admission_pool_concurrent_batches_share_one_executor_and_budget(
         task_arg_fn=lambda value: SharedProcessTask(shared_owner, value),
         on_completed=lambda _c, _t, _item, result: results.append(result),
     )
-    # Hold the first wave until the configured capacity is actually occupied;
-    # task duration and OS scheduling must not determine the observation.
     overlap_requested = True
     threads = [threading.Thread(target=run_batch, args=(name,)) for name in ("a", "b")]
     for thread in threads:
@@ -1337,7 +1330,6 @@ def test_reserved_partition_written_elsewhere_reads_back_identically(
         },
     )
     assert sealed.size_bytes == written["size"]
-    # Adoption reads the landed size rather than accepting a reported one.
     assert sealed.size_bytes == reservation.path.stat().st_size
 
     restored = store.read(0)

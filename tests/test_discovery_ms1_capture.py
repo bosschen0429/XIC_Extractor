@@ -83,11 +83,9 @@ def test_physical_capture_accepts_search_coordinates_without_method_evidence() -
     facts = first.evaluation.answer.selected_segment
     assert facts is not None
     assert facts.apex_rt_min == pytest.approx(9.02)
-    # Gaussian integral, converted from counts*minutes to counts*seconds.
     assert facts.area_counts_seconds == pytest.approx(
         1000.0 * 0.04 * np.sqrt(2.0 * np.pi) * 60.0, rel=0.06
     )
-    # NL is a lookup coordinate; the retained measurement is localized at raw apex.
     assert first.search.query_rt_min == search.query_rt_min
     assert first.evaluation.question.query_rt_min == pytest.approx(9.02)
     assert first.trace_quality == "clean"
@@ -126,9 +124,6 @@ def test_capture_runs_physical_peak_detection() -> None:
             "parent_ms1_ion_ambiguous",
             "no_nl_event",
         ),
-        # The 10%-height return of this Gaussian is 9.02 - 0.086 min. A parent
-        # scan within the attachment tolerance of that bound still supports it;
-        # one further out on the same raw basin does not.
         ((500.001,), 8.88, "compatible", "admitted"),
         ((500.001,), 8.6, "compatible", "no_nl_event"),
     ],
@@ -188,7 +183,6 @@ def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
 @pytest.mark.parametrize(
     ("scan_rt", "state"),
     [
-        # The Gaussian's 10%-height return ends at 9.02 + 0.086 min.
         (9.05, "admitted"),
         (9.17, "admitted"),
         (9.25, "no_nl_event"),
@@ -234,8 +228,6 @@ def test_parent_scan_on_a_neighbor_peak_does_not_support_this_peak(
     raw = _FakeRaw(rt=rt, intensity=intensity)
 
     def read_windows(self, requests):
-        # The parent MS1 scan is within the attachment tolerance of this peak's
-        # left bound; with the neighbor present it lies on the neighbor's apex.
         return (Ms1PrecursorObservation(9, 8.85, (500.001,)),)
 
     monkeypatch.setattr(_FakeRaw, "read_ms1_mass_windows", read_windows, raising=False)
@@ -404,9 +396,6 @@ def test_single_raw_basin_keeps_events_outside_quantitative_return(
         ms1_centroid=lambda *_: None,
     )
 
-    # Each analytic input is one positive Gaussian with no intervening raw
-    # valley. Its 10% return is an integration bound, not a different NL owner:
-    # both events locate the one peak, attached or outside its bounds.
     (peak,) = result.peaks
     assert peak.ms1_apex_rt - representative_event_rt(peak) == pytest.approx(0.26)
     events = {event.ms2_scan_number: event for event in result.attachments}
@@ -488,8 +477,6 @@ def test_verified_multitag_peak_persists_each_tags_best_scan(
     assert candidate.matched_tag_names == ("dR", "R")
     assert _scan_ids(candidate) == (10, 11, 20, 21)
     assert candidate.best_ms2_scan_id == expected_by_tag["dR"].scan_number
-    # Each tag's per-scan facts reach the event table and Alignment as the
-    # peak's located events.
     assert set(candidate.located_events) == set(seeds)
 
 
@@ -709,8 +696,6 @@ def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
     batches = result.measurements.acquisition_batches
     runtime_metrics = _acquisition_totals(batches)
     acquired = [trace for batch in batches for trace in batch.traces]
-    # exact_trace is a strictly increasing ramp: both questions require the
-    # one bounded continuation. The two overlapping channels share each round.
     assert result.measurements.initial_request_count == 2
     assert result.measurements.reacquisition_request_count == 2
     assert runtime_metrics.logical_xic_request_count == 4

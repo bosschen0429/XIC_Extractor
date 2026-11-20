@@ -23,16 +23,12 @@ class _OwnerPickler(pickle.Pickler):
         super().__init__(stream, protocol=pickle.HIGHEST_PROTOCOL)
         self.dispatch_table = copyreg.dispatch_table.copy()
         self.dispatch_table[MappingProxyType] = _reduce_mapping_proxy
-        # Native memo references retain exact authorities without a Python
-        # persistent_id callback for every scalar in traces and evidence.
         unique = {id(value): value for value in shared_objects}
         self.memo = {
             identity: (index, value)
             for index, (identity, value) in enumerate(unique.items())
         }
         if unique:
-            # Prime the native reader through pickle instructions, without
-            # assigning its implementation-specific memo table.
             stream.write(
                 pickle.PROTO
                 + bytes((pickle.HIGHEST_PROTOCOL,))

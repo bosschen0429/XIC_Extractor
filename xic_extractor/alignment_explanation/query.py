@@ -52,7 +52,6 @@ class IndexedItem:
     group_id: str | None
     sample_ids: tuple[str, ...]
     candidate_sample_id: str | None
-    # sample, candidate, precursor m/z, apex RT, observation, sample label
     witnesses: tuple[tuple[str, str, float | None, float | None, str | None, str], ...]
 
 
@@ -70,8 +69,6 @@ class _Item:
 
 def _query_views(db: sqlite3.Connection) -> None:
     groups = relation(db, "group_candidates")
-    # Positive handles are group row IDs; negative handles are ungrouped
-    # candidate row IDs. Neither is displayed or persisted as an item ref.
     db.execute(f"""CREATE TEMP VIEW review_item_candidates AS
         SELECT group_id AS item, candidate FROM {groups}
         UNION ALL
@@ -241,7 +238,6 @@ class ReviewQuery:
                 if rt_match:
                     matched.append(key)
         else:
-            # No RT predicate needs the peak/member joins used to resolve RT.
             matched = [
                 row[0]
                 for row in self._db.execute(
@@ -317,8 +313,6 @@ class ReviewQuery:
                 "SUM(observed),MAX(attention),MAX(excluded),MAX(nulls),MAX(zeros),"
                 + origins
             )
-        # Scope before aggregation: an outer predicate on an aggregate view does
-        # not necessarily stop SQLite from evaluating every sample's rules.
         rows = self._db.execute(
             f"""WITH member_samples AS MATERIALIZED (
                 SELECT final_group AS item,sample,MAX(peaks!='[]') AS observed,
@@ -359,8 +353,6 @@ class ReviewQuery:
             {"scope": self._scope(scope)},
         )
         if attention_only:
-            # Attention has no coverage/origin ranking. Select by the same
-            # recorded attention rules without calculating sampling strata.
             eligible = 0
             chosen = []
             for key, _, attention in rows:

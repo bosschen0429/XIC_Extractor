@@ -16,12 +16,8 @@ from xic_extractor.output.result_labels import (
     result_labels,
 )
 
-# Code-shaped literals in the reason producers that are not reason codes. A new
-# literal must be added to the label table or named here, so no new reason
-# reaches a workbook without a label.
 NOT_REASON_CODES = frozenset(
     {
-        # Evidence inputs: concern, cap and support signals.
         "anchor_mismatch",
         "anchor_mismatch_cap",
         "hard_quality_flag",
@@ -51,11 +47,9 @@ NOT_REASON_CODES = frozenset(
         "trace_clean",
         "trace_quality_cap",
         "unresolved_tie",
-        # Internal consistency classes, mapped to codes before saving.
         "hard_nl_conflict",
         "missing_ms2",
         "plausible_nl_dropout",
-        # Proposal and evidence-source names.
         "alignment_cell",
         "chrom_peak_segment",
         "discovery_candidate",
@@ -65,7 +59,6 @@ NOT_REASON_CODES = frozenset(
         "trace_morphology",
         "typed_candidate_evidence_facts",
         "selected_hypothesis_decision",
-        # Product states, attribute and function names.
         "detected_clean",
         "detected_flagged",
         "not_counted",
@@ -86,7 +79,6 @@ def _labelled_codes() -> set[str]:
         | labels.BASIS_SUPPORT_CODES
         | labels.HIDDEN_SUPPORT_CODES
         | {labels.OFF_PAIRED_ISTD_POSITION, labels.NOT_QUANTIFIABLE}
-        # Never saved: the projection drops or reroutes these.
         | projection.LOCATING_REVIEWS
         | projection.LOCATING_CONFLICTS
         | set(projection.CONFLICTS_AS_REVIEW)
@@ -96,12 +88,10 @@ def _labelled_codes() -> set[str]:
 def test_every_produced_reason_code_has_a_label_or_is_declared_hidden():
     produced = targeted_reason_code_literals(ROOT)
     assert produced - _labelled_codes() - NOT_REASON_CODES == set()
-    # The other direction finds table entries no module produces any more.
     assert _labelled_codes() - produced == set()
 
 
 def test_every_finalized_no_write_variant_has_a_label():
-    # The publication saves `finalized_<variant>` as the projection reason.
     assert {f"finalized_{v}" for v in targeted_no_write_variants(ROOT)} == {
         labels.SEARCHED_NO_OBSERVATION,
         labels.NOT_QUANTIFIABLE,
@@ -111,7 +101,6 @@ def test_every_finalized_no_write_variant_has_a_label():
 def test_every_review_label_is_a_doubt_label():
     named = {label for label in labels.REVIEW_LABELS.values() if label}
     assert named - {"NL"} <= set(DOUBT_LABELS)
-    # Each doubt has a source.
     assert set(DOUBT_LABELS) - named == {"未見 NL", "無 MS2", "NL 偏差大"}
 
 
@@ -148,7 +137,6 @@ _COHERENT = "ms1_peak_present; ms1_coherent; trace_coherent"
             {"Projection Support Reasons": "identification_method_supported"},
             ("特異性條件", ""),
         ),
-        # Identity from the paired ISTD; the missing MS2 stays a doubt.
         (
             {
                 "NL": "NO_MS2",
@@ -166,7 +154,6 @@ _COHERENT = "ms1_peak_present; ms1_coherent; trace_coherent"
             },
             ("回填", "未見 NL"),
         ),
-        # A large NL mass error stays a doubt when identity came from elsewhere.
         (
             {
                 "NL": "WARN_31.0ppm",
@@ -182,7 +169,6 @@ _COHERENT = "ms1_peak_present; ms1_coherent; trace_coherent"
             },
             ("回填", "NL 偏差大"),
         ),
-        # Doubts read in table order, each once.
         (
             {
                 "Projection Review Reasons": (
@@ -210,10 +196,7 @@ def test_counted_results_name_their_identity_and_doubts(fields, expected):
 
 def _labels_without_repeat(row: dict[str, str]) -> tuple[str, str]:
     basis, doubts = result_labels(row)
-    # An observation 依據 already names is not listed again as a doubt.
     assert basis not in doubts.split("、")
-    # A reported peak whose NL was not seen cleanly always names it, so no NL
-    # label means the neutral loss was seen within tolerance.
     if row["RT"] not in {"", "ND", "ERROR"} and row["NL"] not in {"", "OK"}:
         assert {basis, *doubts.split("、")} & {
             "未見 NL",
@@ -235,7 +218,6 @@ def _labels_without_repeat(row: dict[str, str]) -> tuple[str, str]:
             },
             ("無可用 MS1 峰", ""),
         ),
-        # A rejected peak is reported as ND, so its doubts are not listed.
         (
             {
                 "RT": "ND",
@@ -254,7 +236,6 @@ def _labels_without_repeat(row: dict[str, str]) -> tuple[str, str]:
             },
             ("不足以定量", ""),
         ),
-        # The shape failed, so the paired ISTD could not lend identity.
         (
             {
                 "NL": "NO_MS2",
@@ -278,8 +259,6 @@ def _labels_without_repeat(row: dict[str, str]) -> tuple[str, str]:
             },
             ("峰形不完整", "無 MS2"),
         ),
-        # A qualified peak not identified by its counted ISTD: the ISTD was
-        # not counted here, which already says the analyte had no NL.
         (
             {
                 "NL": "NL_FAIL",
@@ -313,7 +292,6 @@ def _labels_without_repeat(row: dict[str, str]) -> tuple[str, str]:
             {"Projection Conflict Reasons": "ambiguous_evidence"},
             ("證據衝突", ""),
         ),
-        # Shared signal with another RT reference cannot be separated.
         (
             {
                 "Projection Conflict Reasons": "targeted_shared_ion_region",
@@ -342,7 +320,6 @@ def test_needs_look_follows_the_label_table():
     assert needs_look("肩峰／重疊", "", is_istd=False)
     assert needs_look("共用離子區段（B）", "", is_istd=False)
     assert not needs_look("偏離 ISTD 位置", "", is_istd=False)
-    # A missing analyte is a finished ND; a missing spiked ISTD is not.
     assert not needs_look("無可用 MS1 峰", "", is_istd=False)
     assert needs_look("無可用 MS1 峰", "", is_istd=True)
     assert set(BASIS_NEEDS_LOOK) >= {"NL 確認", "RAW 失敗"}
@@ -364,5 +341,4 @@ def test_user_guide_explains_every_label_with_a_figure():
         _, figure, _, _, look = rows[label]
         image = re.fullmatch(r"!\[[^\]]+\]\((assets/labels/[a-z0-9-]+\.svg)\)", figure)
         assert image and (guide.parent / image[1]).is_file(), label
-        # The guide states the same look mark the table applies.
         assert look == look_word[BASIS_NEEDS_LOOK.get(label, True)], label

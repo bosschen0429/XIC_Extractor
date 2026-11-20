@@ -17,8 +17,6 @@ def integrate_area_counts_seconds(
     left: int,
     right: int,
 ) -> float:
-    # Thermo returns rt in minutes, but LC-MS convention (Xcalibur, MassHunter,
-    # manual integration) reports area in counts.seconds, so convert here.
     area_counts_minutes = float(
         np.trapezoid(intensity_values[left:right], rt_values[left:right])
     )

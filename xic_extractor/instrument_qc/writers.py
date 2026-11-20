@@ -166,7 +166,6 @@ def _write_tsv_rows(
 
 
 def _format_csv_value(value: object) -> str:
-    # Trend and HCD TSVs are also inputs to the calibration evidence reader.
     if value is None:
         return ""
     return str(value)

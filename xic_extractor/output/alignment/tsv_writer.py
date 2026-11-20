@@ -559,8 +559,6 @@ def _selected_cell_source(
         raise ValueError(
             "direct writer cell requires one source MeasuredPeakHypothesis identity"
         )
-    # A source outside Discovery has no candidate ID; the physical source remains
-    # retained on the completed observation.
     return direct_candidate_ids.get(
         (decision.subject.canonical_sample.sample_name, hypothesis_ids[0])
     )
@@ -715,7 +713,6 @@ def _review_row(
         "accepted_cell_count": sum(cell.value is not None for cell in cells),
         "accepted_backfill_count": backfilled_count,
         "membership_risk_flags": ";".join(risk_flags),
-        # Response to the batch's RT state (unit shape) and to sample shift.
         "rt_time_coefficient": drift.time,
         "rt_sample_shift_coefficient": drift.sample_shift,
         "warning": _warning(
@@ -968,7 +965,6 @@ def _merge_batch_rows(
             + len(global_order)
             - sum(len(order) for order, _ in present)
         )
-        # Each batch's own judgement, listed once per distinct value.
         for joined in (
             "identity_reason",
             "membership_risk_flags",

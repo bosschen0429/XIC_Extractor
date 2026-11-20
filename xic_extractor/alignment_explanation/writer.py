@@ -25,12 +25,10 @@ from .storage import (
 )
 
 CandidateKey = tuple[str, str]
-# m/z, apex RT and the query ppm of one physical peak; None when not recorded.
 PeakCoordinates = tuple[float | None, float | None, float | None]
 
 _DISPOSITION_CERTAINTY = ("established", "provisional", "unresolved", "rejected")
 
-# Curve envelope fields stored as the curve's columns, not in its payload.
 _CURVE_COLUMNS = ("sample_id", "kind", "candidate_id", "physical_peak_key")
 
 _CELL_FIELDS = frozenset(
@@ -91,8 +89,6 @@ class ExplanationReportWriter:
         self._last_record_id = 0
         self._curves: dict[tuple[Any, ...], list[Any]] = {}
         self._cell_curves: dict[tuple[str, str], bytes] = {}
-        # Compared peer groups recur across members and Backfill decisions.
-        # OwnerFacts and ordered groups each have one persisted representation.
         self._risk_owners: dict[tuple[Any, ...], tuple[int, str]] = {}
         self._risk_owner_groups: dict[tuple[int, ...], tuple[int, bytes]] = {}
 
@@ -185,7 +181,6 @@ class ExplanationReportWriter:
         ]
         existing = self._subjects.get(sid)
         if existing is not None and all(value is None for value in existing[2:]):
-            # A candidate named this subject first; its facts arrive now.
             existing[2:] = row[2:]
         elif existing is None:
             self._subjects[sid] = row
@@ -215,7 +210,6 @@ class ExplanationReportWriter:
         key = candidate_id, sample_key
         if key in self._candidates:
             raise ValueError("duplicate diagnostic candidate/sample")
-        # Register the subject now; finalize writes subjects before candidates.
         self._subject_id(method_subject_id)
         self._candidates[key] = {
             "id": len(self._candidates) + 1,
@@ -383,8 +377,6 @@ class ExplanationReportWriter:
             risk = decision.get("accepted_risk")
             owner = decision.get("owner_id")
             if risk is not None and isinstance(owner, str) and owner in owners:
-                # An accepted risk belongs to its member; cells read it there.
-                # Its flags are a column so selection reads them undecoded.
                 row = self._members[owners[owner], owner]
                 row[5] = _compressed(
                     self._risk_references({**risk, "risk_flags": None})

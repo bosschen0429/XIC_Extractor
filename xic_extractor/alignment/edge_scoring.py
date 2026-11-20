@@ -83,7 +83,6 @@ def evaluate_owner_edge(
         rt_frame=rt_frame,
     )
     if failure:
-        # Method permission applies only after all shared physical gates pass.
         corrected_delta_sec = (
             rt_frame.corrected_pair_delta_sec(left, right)
             if failure_allows_rt_continuity
@@ -197,7 +196,6 @@ def _score_and_decide(
     if drift_prior_source == "batch_anchor_calibration":
         corrected = corrected_delta_supplier()
         if corrected is not None:
-            # One authoritative coordinate, not competing raw/corrected votes.
             score = _score(
                 rt_raw_delta_sec=corrected,
                 rt_drift_corrected_delta_sec=None,

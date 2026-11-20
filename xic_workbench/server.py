@@ -139,14 +139,10 @@ def create_server(
     """Serve only packaged frontend files and reports produced by this session."""
     session = secrets.token_urlsafe(32)
     cookie_name = f"xic_session_{secrets.token_hex(8)}"
-    # A private launch capability stays valid for this server's lifetime so the
-    # desktop launcher can reopen it even after the browser loses its cookie.
     launch_capability = secrets.token_urlsafe(32)
 
     class Handler(BaseHTTPRequestHandler):
         server: ThreadingHTTPServer
-        # Every response has a Content-Length. Reuse browser connections instead
-        # of allocating a new Windows socket for every asset and status poll.
         protocol_version = "HTTP/1.1"
 
         def log_message(self, format, *args):
@@ -163,9 +159,6 @@ def create_server(
                 data = json.dumps(
                     json_value(data), ensure_ascii=False, allow_nan=False
                 ).encode("utf-8")
-            # Rejections may leave a request body unread. GET bodies and chunked
-            # transfer are not consumed by this transport either; never interpret
-            # their remaining bytes as a new request on a persistent connection.
             if (
                 status >= 400
                 or self.headers.get("Transfer-Encoding")
@@ -191,8 +184,6 @@ def create_server(
                 ConnectionResetError,
                 ConnectionAbortedError,
             ) as exc:
-                # Unwind the action: an undelivered job completion must not be
-                # acknowledged, and an error response must not be sent twice.
                 raise _ResponseDisconnected() from exc
 
         def _has_session(self):
@@ -294,7 +285,6 @@ def create_server(
                 )
                 self._send(200, data, content_type)
             elif url.path in _EXAMPLES:
-                # Fixed public resources only; no arbitrary filesystem access.
                 name = url.path.rsplit("/", 1)[-1]
                 resource = files("xic_extractor.configuration").joinpath("data", name)
                 self._send(
@@ -355,8 +345,6 @@ def create_server(
             length = int(self.headers.get("Content-Length", "0"))
             if not 0 < length <= 2 * 1024 * 1024:
                 raise ValueError("要求大小超過限制。")
-            # Consume the bounded body before rejecting headers: closing while
-            # the client is still sending can reset the connection on Windows.
             body = self.rfile.read(length)
             self._guard(api=True)
             if self.headers.get_content_type() != "application/json":
@@ -394,8 +382,6 @@ def create_server(
                     read_headers=False,
                 )
             elif path == "/api/matrix-curation/preview":
-                # Read-only computation runs on this HTTP request thread, without
-                # holding the mutable workspace lock or blocking status/queries.
                 result = workspace.preview_curation(values)
             elif path == "/api/analysis/start":
                 self._send(

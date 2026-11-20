@@ -65,7 +65,6 @@ class FeatureMembershipGroup:
     basis: FeatureMembershipBasis
     reason: str
     known_identity_label: str | None = None
-    # Response to batch state and sample shift; Backfill reuses it unchanged.
     rt_drift: DriftCoefficients = DriftCoefficients()
 
 
@@ -87,9 +86,6 @@ class SparseFeatureDecision:
     reason: str
     cost: float | None = None
     witness_owner_ids: tuple[str, ...] = ()
-    # Which witness carried the decision and on which RT coordinate. The
-    # witness list alone cannot answer either, so an audit cannot tell whether
-    # a membership stood on raw or drift-corrected RT without these.
     selected_witness_owner_id: str | None = None
     rt_basis: RTEvidenceBasis | None = None
     rt_raw_delta_sec: float | None = None
@@ -156,7 +152,6 @@ class BatchRtWarp:
         return self.common_rt_min(owner.sample_stem, owner.peak.integration.rt_apex_min)
 
     def common_rt_min(self, sample_stem: str, observed_rt: float) -> float:
-        # Knots are keyed by common RT; re-key them by observed RT to invert.
         knots = self._knots(sample_stem)
         return observed_rt - _interpolated_offset(
             tuple((rt + offset, offset) for rt, offset in knots), observed_rt

@@ -11,9 +11,6 @@ from playwright.sync_api import expect, sync_playwright
 @cache
 def _windows_network_arguments(channel: str | None) -> tuple[str, ...]:
     """Preserve Playwright's defaults while disabling Windows' faulty port allocator."""
-    # https://github.com/microsoft/playwright/issues/43545
-    # Repeating --disable-features replaces, rather than extends, the stock list.
-    # Read that list once per channel instead of maintaining a copy of it here.
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
             channel=channel, args=["--enable-automation"]

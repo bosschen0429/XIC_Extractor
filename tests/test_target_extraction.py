@@ -236,7 +236,6 @@ def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUni
         state="available",
         reason="available",
     )
-    # Both segments have acquired flanks and multiple supported core samples.
     prepared = PreparedSignal(
         projection=projection,
         profile=profile,
@@ -392,9 +391,6 @@ def test_batch_applies_sample_drift_once(
             return iter(())
 
     files = []
-    # The unshifted sample links standards to their declared RTs. In the
-    # shifted sample the distractor exposes either double displacement or a
-    # method-frame drift diluted by already sample-local paired references.
     for sample, drift in (("reference", 0.0), ("shifted", 2.0)):
         results = {}
         for target in [*standards, *paired_references, analyte]:
@@ -608,7 +604,6 @@ def test_target_identity_does_not_promote_coisolated_mass_compatibility(
         assert result.reported_rt == pytest.approx(expected_rt, abs=0.03)
     assert result.selected_cid_nl_supported is supported
     assert bool(result.cid_nl_relations.supported_candidate_indexes) is supported
-    # The inferred observation remains inspectable, rather than being erased.
     assert len(result.cid_nl_products) == 1
     product = result.cid_nl_products[0]
     assert product.assess_precursor_loss(target.neutral_loss_da, 20).supports_nl
@@ -841,8 +836,6 @@ def test_target_peak_evidence_does_not_reward_missing_or_foreign_ms2(
         scoring_context_factory=build_scoring_context_factory(config=config),
     )
     result = results[target.label]
-    # A missing DDA observation is not a chemical advantage over the reference
-    # peak; a neighbouring precursor's class loss is not this target's evidence.
     assert result.reported_rt == pytest.approx(8.0, abs=0.03)
     assert not result.selected_cid_nl_supported
     assert result.candidate_ms2_evidence is not None
@@ -899,8 +892,6 @@ def test_istd_reference_body_competes_with_remote_nl_peak(tmp_path, local_ms2):
         scoring_context_factory=build_scoring_context_factory(config=config),
     )
     result = results[target.label]
-    # The measured reference body, not the distant class-loss observation, is
-    # this standard's identity. Selecting it must not manufacture missing NL.
     assert result.reported_rt == pytest.approx(23.0, abs=0.03)
     assert not result.selected_cid_nl_supported
     assert result.candidate_ms2_evidence.nl_status == (
@@ -961,10 +952,6 @@ def test_istd_reference_selection_is_not_nearest_apex_always(
     regions = (confirmed,) if scenario == "real_drift" else (unconfirmed, confirmed)
     if scenario == "real_drift":
         reference = 30.0
-    # Adjacent physical bodies have overlapping reference-distance ranges:
-    # positive chemistry can still choose the farther apex. A tiny near body
-    # cannot displace a confirmed drifting standard; global MS1 dominance is
-    # likewise not permission to erase a smaller confirmed reference peak.
     for ordered in (regions, regions[::-1]):
         population = TargetedPopulationContext(
             sample_name="sample",
@@ -1026,8 +1013,6 @@ def test_reference_istd_keeps_broad_peak_instead_of_clean_remote_nl_peak(
         scoring_context_factory=build_scoring_context_factory(config=config),
     )
     result = results[target.label]
-    # Poor local relief cannot erase the reference-supported broad body in
-    # either Targeted role. The clean 10.9-minute peak is not a substitute.
     assert result.reported_rt == pytest.approx(17.5, abs=0.05)
     assert result.selected_cid_nl_supported
     selected = next(

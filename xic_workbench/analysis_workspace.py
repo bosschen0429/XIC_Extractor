@@ -81,7 +81,6 @@ def _validate_path(value: str, kind: Any) -> dict[str, Any]:
         return {"usable": False, "message": "尚未選擇路徑"}
     path = Path(value).expanduser()
     if kind == "output" and not path.exists():
-        # Each run creates its folder here, so only the nearest parent matters.
         parent = next((p for p in path.parents if p.exists()), None)
         if parent is not None and parent.is_dir():
             return {"usable": True, "message": "開始分析時建立"}
@@ -153,7 +152,6 @@ class AnalysisWorkspace:
         try:
             settings, _parsed, warnings = resolve_settings(raw, overrides)
         except ConfigError as exc:
-            # Opening the workspace must stay possible so the value can be fixed.
             settings, warnings = {**raw, **overrides}, []
             warnings.append(f"workspace.json 有無效值，修正後才能執行 Targeted：{exc}")
         if overrides:
@@ -244,7 +242,6 @@ class AnalysisWorkspace:
             and job.get("status") == "succeeded"
             and job.get("kind") in state["results"]
         ):
-            # Only a new successful publication may replace an earlier snapshot.
             self._result_versions[job["kind"]] = job["job_id"]
         for kind, result in state["results"].items():
             version = self._result_versions.setdefault(kind, kind)
@@ -282,7 +279,6 @@ class AnalysisWorkspace:
             key = uuid.uuid4().hex
             served = path
             if path.suffix.lower() == ".html":
-                # Active content is frozen before its URL becomes browser-reachable.
                 snapshot_folder = self._artifact_folder / key
                 snapshot_folder.mkdir()
                 served = snapshot_folder / path.name
@@ -434,7 +430,6 @@ class AnalysisWorkspace:
 
             profiles = None
             if "preset_snapshot" in values:
-                # A Delta Mass method's applicable standards follow its CID-NL tags.
                 profiles = tuple(
                     NeutralLossProfile(tag.name, tag.value)
                     for tag in preset_from_payload(values["preset_snapshot"]).tags

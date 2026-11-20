@@ -43,7 +43,6 @@ def _worklist_values(sheet):
 def test_area_matrix_keeps_saved_values_beside_the_paired_istd():
     sheet = Workbook().active
     build_area_matrix_sheet(sheet, _saved_rows())
-    # The analyte leads and its ISTD follows, so a ratio is one formula away.
     assert [sheet.cell(4, column).value for column in (1, 2, 3)] == [
         "樣本",
         "Common",
@@ -70,7 +69,6 @@ def test_area_matrix_keeps_saved_values_beside_the_paired_istd():
         "",
         500,
     ]
-    # Grey repeats the saved count decision; the value itself is kept.
     assert sheet["B7"].font.color.rgb != sheet["B5"].font.color.rgb
     assert sheet["C7"].font.color.rgb == sheet["B5"].font.color.rgb
     assert all(cell.data_type != "f" for row in sheet for cell in row)
@@ -88,7 +86,6 @@ def test_area_matrix_groups_analytes_that_share_an_istd():
     ]
     sheet = Workbook().active
     build_area_matrix_sheet(sheet, rows)
-    # Each analyte sharing the ISTD sits beside the others, then the ISTD.
     assert [sheet.cell(4, column).value for column in range(2, 6)] == [
         "A",
         "B",
@@ -111,17 +108,14 @@ def test_summary_headline_counts_events_without_a_result():
     worklist = focus_worklist(overview, rows, [failed])
     sheet = Workbook().active
     build_overview_sheet(sheet, overview, worklist=worklist, provenance="v1")
-    # The failed RAW file is on the worklist, so the headline cannot say "none".
     assert sheet["A1"].value == "先看 1 筆結果"
     [(_, sample, outcome, basis, doubts, _, _)] = _worklist_values(sheet)[1:]
-    # It has no result; its message stays on 診斷事件.
     assert (sample, outcome, basis, doubts) == ("S2", "", "RAW 失敗", "")
 
 
 def test_worklist_lists_only_results_that_differ_from_the_majority():
     labels = {
         ("S3", "Common"): ("無 MS2", ""),
-        # A doubt on a uniform target stays in XIC Results only.
         ("S1", "Standard"): ("NL 確認", "峰形不完整"),
     }
     rows = [
@@ -159,7 +153,6 @@ def test_minority_counted_without_a_doubt_shows_its_identity_basis():
     ]
     overview = summarize_targeted_results(rows, [], istd_targets=set())
     [record] = focus_worklist(overview, rows, [])
-    # Listed for its outcome; the reader tests the identity its count rests on.
     assert (record["Sample"], record["Outcome"], record["依據"], record["疑點"]) == (
         "S3",
         "已計入",
@@ -192,7 +185,6 @@ def test_summary_counts_analytes_and_names_only_istds_missing_somewhere():
     sheet = Workbook().active
     build_overview_sheet(sheet, overview, worklist=worklist, provenance="v1")
     assert sheet["A1"].value == "先看 2 筆結果"
-    # ISTD status is one batch fact that names only the exception.
     assert sheet["A2"].value == "5 個樣本 · 4 個目標 · ISTD 計入 9/10（Gap 4/5） · v1"
     header = next(
         row

@@ -147,9 +147,6 @@ class TargetedCandidateAssessment:
             target_label=self.target.label,
             mz=self.target.mz,
             ppm_tol=self.target.ppm_tol,
-            # Batch displacement is measured from method RTs, not from the
-            # sample-drift-adjusted selection prior. Paired transfer remains
-            # governed by its existing sample-local anchor.
             reference_rt_min=self.preferred_rt
             if self.paired_istd_anchor_rt is not None and self.preferred_rt is not None
             else (
@@ -210,8 +207,6 @@ class TargetedCandidateAssessment:
                 max_smoothed=self.candidates.max_smoothed,
                 n_prominent_peaks=0,
             )
-        # Score and retain the complete measurable population. Quality describes
-        # the selected measurement; it does not get another vote on its identity.
         measurable = tuple(
             candidate
             for candidate, evaluation in self.candidate_evaluations.items()
@@ -315,8 +310,6 @@ class TargetedCandidateAssessment:
 
 
 def targeted_physical_peak_policy(target: Target, reference_rt: float | None) -> str:
-    # Targeted MS1 and CID-NL share measurable-body admission. Method support and
-    # reference identity are assessed after the full region population exists.
     if target.is_istd and reference_rt is not None:
         return PHYSICAL_PEAK_REFERENCE_POLICY
     return PHYSICAL_PEAK_ENVELOPE_POLICY
@@ -375,8 +368,6 @@ def assess_targeted_candidate_population(
             neutral_loss_tolerance_ppm=target.nl_ppm_max or 20.0,
             precursor_reference_requirement=TARGETED_PRECURSOR_REFERENCE,
         )
-        # The broad acquisition probe may include neighbouring precursor ions;
-        # only the declared exact-mass method population enters this assessment.
         products = tuple(
             product
             for product in products
@@ -547,7 +538,6 @@ def select_targeted_peak(
         candidate_evaluations=candidate_evaluations,
     )
     if physical_evaluation.state != "available":
-        # The final physical owner withdraws the ranked value and selection authority.
         peak_result = replace(
             peak_result,
             status=(
@@ -687,8 +677,6 @@ def _discovery_method_products(
         if event.scan is not None
     }
     tolerance_da = mz_tolerance_da(target.mz, target.ppm_tol)
-    # Resolve only within this target's mass question. A scan can carry distinct
-    # valid recorded references for different targets of the same chemistry.
     seeds = resolve_discovery_scan_events(
         tuple(
             seed for seed in seeds if abs(seed.precursor_mz - target.mz) <= tolerance_da

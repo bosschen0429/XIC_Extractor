@@ -142,8 +142,6 @@ def construct_cross_sample_peak_group_hypotheses(
     for basis in inference.groups:
         group = tuple(by_id[owner_id] for owner_id in basis.owner_ids)
         if basis.disposition == "unresolved_conflict":
-            # The input contradicts a unique selected observation per sample.
-            # Do not turn one known identity into multiple published groups.
             raise CrossSampleContractError(
                 "known identity has conflicting sample observations; "
                 "selection is unresolved and identity cannot be split"
@@ -201,8 +199,6 @@ def _hypothesis_from_owner_group(
         if not events
         else sum(event.observed_neutral_loss_da for event in events) / len(events)
     )
-    # A peak measured on an unresolved shoulder or overlap keeps its area, but
-    # a group made only of such peaks has no member showing a peak of its own.
     settled = len(members) >= 2 and not all(
         owner.peak.requires_overlap_review for owner in group
     )

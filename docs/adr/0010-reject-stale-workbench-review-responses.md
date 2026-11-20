@@ -33,6 +33,14 @@ order alone cannot decide which result to display.
   reading or request the saved snapshot again; it does not revive a discarded
   payload.
 
+A history entry identifies a result and its curation, not just its evidence
+file: two curations of the same run can name different items. The server owns
+one active query, so restore it **after** earlier queries finish, even when their
+replies were discarded. Only then reuse the matching reading snapshot. A new
+batch supersedes old links; reload starts from the server's current batch.
+Curve feedback belongs to its plot or drawer and cannot clear a current query
+error. If a new curation finishes while review is busy, adopt it on unlock.
+
 The [browser regressions](../../tests/test_workbench_browser.py) hold the old
 payload, switch or close, then release it and let its consumer run before
 checking the mount and feedback. They distinguish the expected view from any

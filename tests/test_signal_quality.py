@@ -14,7 +14,6 @@ from xic_extractor.peak_detection.signal_quality import (
 def test_three_point_noise_uses_rt_weights_and_sigma_units():
     rt = np.array([0.0, 1.0, 3.0, 4.0, 6.0, 7.0])
     raw = np.array([5.0, 8.0, 4.0, 12.0, 6.0, 10.0])
-    # Independent scalar interpolation and error propagation oracle.
     residuals = []
     for i in range(1, len(rt) - 1):
         left = (rt[i + 1] - rt[i]) / (rt[i + 1] - rt[i - 1])
@@ -28,7 +27,6 @@ def test_three_point_noise_uses_rt_weights_and_sigma_units():
     sigma = short_scale_noise_sigma(rt, raw)
     assert sigma == pytest.approx(1.4826 * mad)
     assert short_scale_noise_sigma(rt, raw + 50 + 7 * rt) == pytest.approx(sigma)
-    # Unit conversion preserves the old contrast boundary on both sides.
     for old_threshold in (4.0, 3.0 * 1.4826, 5.0):
         for relative_height in (0.99, 1.01):
             height = old_threshold * mad * relative_height

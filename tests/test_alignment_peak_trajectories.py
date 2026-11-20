@@ -164,7 +164,6 @@ def test_forecast_requires_agreement_with_direct_reference_trajectory(pattern_of
         **kwargs,
     )["missing"]
 
-    # A conflict withholds permission; it does not invent a replacement peak.
     assert result.location == prediction
     assert result.reliable is (pattern_offset == 0.0)
     if pattern_offset == 0.0:
@@ -352,9 +351,6 @@ def test_equal_pattern_paths_do_not_authorize_observed_backfill_location(reverse
         )["c"]
         .location
     )
-    # Both ordered two-peak paths have equal height error and a best normalized
-    # RT residual of 2/3. Neither may become an observed Backfill coordinate;
-    # choosing 11.0 would exclude the equally supported 10.5 from its 12s gate.
     assert location.observed_rt == (None if tied else 10.5)
 
 
@@ -377,8 +373,6 @@ def test_missing_position_uses_ms1_trajectory_points_not_another_rt_answer():
         ),
         backfill_half_window_min=0.5,
     )
-    # Two supported owners alone have median 10.2. The MS1-only point in s1
-    # completes the straight trajectory 10 + 0.2 * injection order.
     assert location.query_rt == pytest.approx(10.6)
     assert location.observed_rt is None
 
@@ -419,10 +413,6 @@ def test_order_survives_height_reversal_and_overlapping_absolute_rts(
 def test_single_peak_samples_cannot_hide_an_informative_doublet(reverse):
     from tests.alignment_pipeline_helpers import resolved_elution_context
 
-    # Both end samples have a measured doublet; the later sample contributes
-    # only its front peak as an owner. Twelve intervening single-peak samples
-    # used to consume both endpoints' six-neighbor budgets, even though no
-    # single-peak comparison can establish an ordered correspondence.
     contexts = [
         resolved_elution_context("first", ((10.0, 100.0), (10.6, 60.0))),
         resolved_elution_context("last", ((10.1, 100.0), (10.7, 60.0))),
@@ -475,12 +465,8 @@ def test_pattern_calibration_requires_support_for_both_samples(second_sample_sup
         rt_frame=frame,
     )
     if second_sample_supported:
-        # A measured zero correction is incompatible with a 1.6-minute pattern
-        # displacement. It cannot authorize an observed cross-sample location.
         assert result.tracks == ()
     else:
-        # An absent correction is not measured zero. The uncalibrated doublet
-        # still supplies its rigid displacement, without rewriting observations.
         assert [(track.owner_ids, track.sample_apices) for track in result.tracks] == [
             (("a:early", "b:early"), (("a", 10.0), ("b", 11.6)))
         ]
@@ -574,8 +560,6 @@ def test_single_peak_continuation_cannot_overrule_an_ordered_pair() -> None:
         config=AlignmentConfig(),
         injection_order={"a": 1, "b": 2, "c": 3, "d": 30},
     )
-    # c's lone peak is nearest to d's early peak, but it cannot join or
-    # locate the ordered early track. Nor is its owner bound to any track.
     (early,) = result.tracks
     assert early.owner_ids == ("a:early", "b:early", "d:early")
     assert dict(early.sample_apices) == {"a": 10.0, "b": 10.05, "d": 10.65}
@@ -593,9 +577,6 @@ def test_single_peak_continuation_cannot_overrule_an_ordered_pair() -> None:
 def test_single_peak_continuation_is_not_an_observed_position(
     isolated_rt: float, label: str, pattern_rts: tuple[float, float]
 ) -> None:
-    # x has one peak with no second landmark to witness which ordered peak it
-    # is. Its nearest-RT link may continue membership, but it is not an
-    # observation of this trajectory and cannot become the Backfill query.
     contexts = [
         _context("a", ((10.0, 60.0), (10.7, 100.0))),
         _context("b", ((10.05, 60.0), (10.75, 100.0))),
@@ -621,13 +602,10 @@ def test_single_peak_continuation_is_not_an_observed_position(
         backfill_half_window_min=0.5,
     )
     assert location.observed_rt is None
-    # Two pattern observations leave no slope to fit; their median is used.
     assert location.query_rt == pytest.approx(sum(pattern_rts) / 2.0)
 
 
 def test_tracks_never_observed_together_share_their_positions() -> None:
-    # Two seven-injection blocks see the same doublet but are never compared.
-    # A group that joins their owners keeps the MS1-only positions of both.
     orders = {f"s{order:02d}": order for order in (*range(1, 8), *range(21, 28))}
     contexts = [_context(sample, ((10.0, 100.0), (10.6, 60.0))) for sample in orders]
     owners = [
@@ -710,8 +688,6 @@ def test_mass_neighborhoods_keep_boundary_owners_and_ms1_only_positions(
         config=AlignmentConfig(preferred_ppm=20.0),
         injection_order={"a": 1, "b": 2, "c": 3},
     )
-    # Ppm uses each context's reference mass. The inclusive boundary binds;
-    # just outside it, no owner can grant pattern authority to the MS1 points.
     assert {track.owner_ids: track.sample_apices for track in result.tracks} == (
         expected if abs(owner_offset_ppm) <= 20.0 else {}
     )
@@ -759,8 +735,6 @@ def test_membership_exclusion_requires_distinct_physical_segments(shared_lobe, r
         for peak in contexts[0].landmarks
     )
     unrelated = prepare_physical_signal(rt, unrelated_signal)
-    # A production partition also carries other ions' contexts on these same
-    # native scan coordinates. Their resolved doublets are not this ion's proof.
     contexts.extend(
         project_elution_context(unrelated, sample_stem=sample, mz=700.0)
         for sample in ("a", "b", "ms1_only")
@@ -772,12 +746,8 @@ def test_membership_exclusion_requires_distinct_physical_segments(shared_lobe, r
         injection_order={"a": 1, "b": 2, "ms1_only": 3},
     )
     assert len(model.tracks) == 2
-    # Correspondence can retain two useful landmarks within one lobe. Only
-    # the physical segment owner can make their tracks mutually exclusive.
     assert model.permits_membership(owner.owner_id for owner in owners) is shared_lobe
     if shared_lobe:
-        # Allowing membership does not pick an arbitrary shoulder as the
-        # missing sample's observed Backfill position. Direct apices survive.
         assert dict(model.trajectory_for(owners).sample_apices) == {
             owner.sample_stem: owner.peak.integration.rt_apex_min for owner in owners
         }
@@ -860,8 +830,6 @@ def test_backfill_frame_scope_does_not_borrow_an_outside_population_reference():
     ).for_sample_stems(frozenset({"a", "b", "target"}))
     trajectory = PeakTrajectory((), (("a", 10.0), ("b", 12.0), ("outside", 30.0)))
     location = trajectory.locate("target", rt_frame=frame, backfill_half_window_min=1.0)
-    # Only a and b belong to the original consumer population: the existing
-    # two-reference median is 11, irrespective of the outside peak's RT.
     assert location.query_rt == 11.0
     assert location.basis == "trajectory_fit"
     assert not location.observed
@@ -969,8 +937,6 @@ def test_backfill_noisy_extrapolation_stays_at_supported_boundary(
 
 
 def _direct_conflict_case(second_owner_rt, *, independent_branch=False):
-    # Same-sample early/late evidence from the reduced 659.346 case. Cross-sample
-    # shifts of 160-175 s are deliberately valid, not a distinct-peak oracle.
     owners = [
         with_peak(
             _owner("BC1095", "reference", 32.988294154916666),
@@ -1061,8 +1027,6 @@ def test_direct_conflict_withdraws_only_dependent_locations(
     )
     original_tracks = model.tracks
     assert model.permits_membership(owner.owner_id for owner in owners)
-    # The pattern itself still has the late points: localization cannot rewrite
-    # matching, membership, or the selected direct observations.
     assert any(
         dict(track.sample_apices).get("BC1165") == 35.79459419948333
         for track in original_tracks
@@ -1075,7 +1039,6 @@ def test_direct_conflict_withdraws_only_dependent_locations(
         expected["independent"] = 32.988294154916666 - 2.9
     assert dict(trajectory.sample_apices) == pytest.approx(expected)
     assert model.tracks == original_tracks
-    # Forecasts must consume the filtered points, not just relabel a bad point.
     frame = SampleRtFrame(injection_order=orders)
     locations = trajectory.backfill_locations(
         ("BC1116", "independent"),
@@ -1126,7 +1089,6 @@ def test_direct_binding_does_not_invent_conflict_from_drift_offset_or_missing_bi
 
 def test_same_selected_segment_does_not_make_two_landmarks_distinct_peaks():
     owners, contexts, orders = _direct_conflict_case(33.103192714116666)
-    # Two maxima inside one selected segment do not establish distinct peaks.
     owners[1] = with_peak(owners[1], end_rt=35.9)
     model = resolve_peak_trajectories(
         owners, contexts, config=AlignmentConfig(), injection_order=orders
@@ -1160,7 +1122,6 @@ def test_retained_247_locations_survive_a_separate_contradicted_link():
         config=AlignmentConfig(),
         injection_order=data["injection_order"],
     )
-    # There is a real same-sample contradiction, not an already-clean track.
     assert any(
         dict(track.sample_apices).get("BenignfatBC1228_DNA") == 13.119102411466667
         for track in model.tracks
@@ -1264,8 +1225,6 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
             )
         )
         retained.append(RetainedGroupingCandidate(sample, hypothesis, assessment))
-    # Keep the correspondence geometry while using the canonical no-RAW
-    # fixture's m/z and genuine method-support/member identities.
     contexts = [
         replace(context, mz=context.mz - 659.3459114397047 + 500.0)
         for context in contexts
@@ -1283,8 +1242,6 @@ def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
         peak_trajectories=model,
     )
     scope = InitialGroupingScope((499.0, 501.0), (28.0, 37.0), (group,), model)
-    # The planner reads only this frozen scope and retained support, not the
-    # acquisition/capture envelope of a runtime workset.
     workset = SimpleNamespace(grouping_scope=scope, retained_candidates=tuple(retained))
     questions = plan_grouped_cid_nl_backfills(
         (workset,),

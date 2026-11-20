@@ -91,8 +91,6 @@ def test_build_metadata_sheet_writes_headers_values_layout_and_styles() -> None:
 
     _build_metadata_sheet(ws, build_metadata_rows(_config(Path("output"))))
 
-    # Value comes last so a long saved setting extends into empty space
-    # instead of hiding behind its description.
     assert [ws.cell(1, column).value for column in (1, 2, 3)] == [
         "Key",
         "說明",

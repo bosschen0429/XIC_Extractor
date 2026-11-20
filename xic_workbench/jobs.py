@@ -156,7 +156,6 @@ class AnalysisJobs:
                 in {"targeted", "untargeted", "inspector", "samples"},
             }
             if kind == "samples":
-                # Both flows read samples; the job card follows the asking page.
                 self._current["page"] = values.get("page") or "untargeted"
             self._executor.submit(self._execute, kind, values)
             return self.state()
@@ -228,9 +227,6 @@ class AnalysisJobs:
 
         if values.get("raw_dir") and values.get("dll_dir"):
             raw_dir = Path(values["raw_dir"])
-            # A folder's confirmed metadata decides the run, whatever rows the
-            # page still holds; without annotations the alignment owner resolves
-            # default metadata.
             if sample_annotations_path(self.config_dir, raw_dir).is_file() or (
                 values.get("samples") is None and values.get("sequence_source")
             ):
@@ -248,7 +244,6 @@ class AnalysisJobs:
                 )
         from xic_extractor.configuration.loader import default_output_dir
 
-        # The saved setting stays the location; this run writes a new folder in it.
         output_root = str(values.get("output_dir") or "").strip()
         root = Path(output_root) if output_root else default_output_dir(self.config_dir)
         run_dir = new_run_folder(root, "untargeted", str(values.get("raw_dir") or ""))
@@ -274,7 +269,6 @@ class AnalysisJobs:
 
                 result = present_result(result)
             inputs = values["settings"] if kind == "targeted" else values
-            # Bind review acquisition to this run, not the next editable batch.
             result["review_paths"] = {
                 "raw_dir": str(
                     inputs.get("data_dir" if kind == "targeted" else "raw_dir") or ""

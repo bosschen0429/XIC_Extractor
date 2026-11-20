@@ -98,7 +98,6 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
     settings = replace(
         _settings(),
         neutral_loss_profile=None,
-        # Retain two chemical hypotheses while their MS1 capture contexts overlap.
         product_mz_tolerance_ppm=1.0,
         rt_min=12.8,
         rt_max=13.4,
@@ -127,8 +126,7 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
 
         monkeypatch.setattr(type(raw), "read_ms1_mass_windows", read_parent_windows)
     if shifted_mass:
-        # The ion is inside both source windows but outside the method-center
-        # window. Respect the vendor mass ranges instead of mocking capture.
+
         def mass_filtered_chromatogram(trace_settings, start_scan, end_scan):
             vendor.chromatogram_request_counts.append(len(trace_settings))
             rt = source_raw.rt[start_scan - 1 : end_scan]
@@ -151,7 +149,6 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
 
         monkeypatch.setattr(vendor, "GetChromatogramData", mass_filtered_chromatogram)
     source = fixture.source("S1")
-    # Discovery reads each inferred event's parent MS1 before grouping ions.
     seeds = read_parent_ms1_observations(
         raw,
         collect_strict_nl_events(
@@ -167,7 +164,6 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
         signal_processing_profile=profile,
         ms1_centroid=lambda *_: None,
     )
-    # Both requests observe one channel/peak; retain both NL events on one result.
     assert len(discovery.peaks) == 1
     assert set(located_scan_ids(discovery.peaks[0])) == {
         seed.scan_number for seed in seeds
@@ -175,7 +171,6 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
     (candidate,) = discovery.peaks
     (discovered,) = discovery.physical_bindings
     if not fresh_available:
-        # RAW no longer shows the peak under the same acquisition identity.
         source_raw.intensity = np.zeros_like(source_raw.rt)
     result = adapt_current_discovery_sample_subject(
         processing_attempt_id=fixture.processing_attempt_id,
@@ -190,7 +185,6 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
     )
     assessment = result.assessment_input.assessment
     assert result.acquisition is not None
-    # The peak table's capture conditions name one XIC: its window at peak_mz.
     (acquired,) = result.acquisition.traces
     assert acquired.coordinate.request == XICRequest(
         mz=candidate.peak_mz,
@@ -199,20 +193,15 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
         ppm_tol=settings.precursor_mz_tolerance_ppm,
     )
     if not fresh_available:
-        # Alignment's own measurement decides admission: a peak it cannot
-        # measure does not enter Alignment, and nothing fails.
         assert result.candidate_observations == ()
         assert assessment.candidate_peaks == ()
         return
     if not shifted_mass:
         assert assessment.method_result == "SUPPORT"
         assert len(assessment.individual_support_refs) == 2
-    # Both candidates select the same MS1 peak, shifted traces included, so the
-    # universe holds that peak once.
     assert len(assessment.candidate_peaks) == 1
     ((candidate_id, measured),) = result.candidate_observations
     assert candidate_id == candidate.peak_id
-    # Equal RAW, window, query RT and settings give Discovery's measurement.
     assert measured.physical_evaluation == discovered.physical_evaluation
     assert measured.sample_key == fixture.sample("S1").sample_name
     assert (
@@ -220,7 +209,6 @@ def test_alignment_remeasures_the_discovery_peak_and_preserves_support(
         == source.acquisition_source_id
     )
     integration = physical_peak_observation_integration(measured.physical_evaluation)
-    # A candidate that selected an already retained peak supports it.
     (observed,) = assessment.candidate_peaks
     assert observed == measured
     assert observed.integration.area_ms1_morphology == integration.area_ms1_morphology
@@ -294,8 +282,6 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
     def mass_filtered_chromatogram(trace_settings, start_scan, end_scan):
         rt = source_raw.rt[start_scan - 1 : end_scan]
         signal = source_raw.intensity[start_scan - 1 : end_scan]
-        # The inferred 500.016 window includes both ions. The measured-ion
-        # window excludes the coeluting 500.024 interference.
         return SimpleNamespace(
             PositionsArray=[rt.tolist() for _ in trace_settings],
             IntensitiesArray=[
@@ -344,9 +330,6 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
     (candidate,) = discovery.peaks
     (discovered,) = discovery.physical_bindings
     (unread_binding,) = unread_discovery.physical_bindings
-    # Discovery measures the peak once more in the measured ion's window, which
-    # excludes the coeluting interference the inferred window included. The
-    # peak keeps the name of the 500.016 ion XIC that located it.
     assert candidate.peak_id == unread.peak_id
     assert "@mz500.016_" in candidate.peak_id
     assert candidate.peak_mz == pytest.approx(physical_mz)
@@ -383,7 +366,6 @@ def test_apex_ion_window_is_measured_once_and_adopted_by_alignment(
         e.precursor_mz == pytest.approx(500.016)
         for e in assessment.evidence_observations
     )
-    # Alignment measures that peak again in the same window and gets the same.
     ((_, measured),) = result.candidate_observations
     assert measured.source_trace.mz == candidate.peak_mz
     assert measured.source_trace.rt_min == candidate.ms1_search_rt_min
@@ -410,8 +392,6 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
 
     fixture = build_sample_adapter_fixture(tmp_path)
     source_raw = _FakeRaw((7.8, 8.2))
-    # Resolve the valley at the configured Gaussian15 sampling footprint,
-    # while keeping both physical intervals adjacent at the shared return.
     source_raw.rt = np.linspace(7.4, 8.7, 241)
     source_raw.scans = tuple(
         replace(scan, scan_number=int(np.argmin(np.abs(source_raw.rt - scan.rt))) + 1)

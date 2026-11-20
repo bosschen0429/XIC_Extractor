@@ -66,7 +66,6 @@ def test_three_cell_questions_keep_origins_values_and_real_risks(tmp_path):
         "S3": "來源未記錄",
     }
     assert samples["S1"]["risk_labels"] == ["低 SNR"]
-    # MS1-only backfill and a related HOLD are not risks; the empty cell says why.
     assert samples["S2"]["risk_labels"] == [] and "note" not in samples["S2"]
     assert samples["S3"]["note"] == "找過，沒有 MS1 峰也沒有 MS2 支持"
     assert [s.get("quantitative_value") for s in samples.values()] == [123, 456, None]
@@ -109,8 +108,6 @@ def test_competition_names_the_other_group_by_sample_and_measured_rt(tmp_path):
 
 
 def test_shoulder_overlap_is_noted_with_its_own_area_without_raising_risk(tmp_path):
-    # The area stays published; only the sample measured on an unseparated
-    # shoulder or overlap says so, beside that area rather than as a risk.
     report, _, _ = create_inspector_report(
         tmp_path,
         samples=[{"sample_key": sid, "sample_stem": sid} for sid in ("S1", "S2")],
@@ -161,9 +158,7 @@ S1, S2, S2_OTHER, S3 = (
 @pytest.mark.parametrize(
     ("risks", "expected"),
     [
-        # The alternative moves this peak to another group: name its peers.
         ([_competition([S1, S2], [[S1], [S2, S3]])], [[S3]]),
-        # The alternative leaves the peak out; the selected peer is not a rival.
         ([_competition([S1, S2], [[S1], [S2]])], [[]]),
         ([_competition([S1, S2], [[S1], [S2], [S2_OTHER, S3]])], [[]]),
         (

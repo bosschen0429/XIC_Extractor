@@ -62,7 +62,6 @@ def test_review_groups_use_confirmed_roles_by_raw_stem_without_raw_reads(tmp_pat
         {"sample_key": "unavailable-sample"},
     ]
     assert review_sample_groups(config, raw_dir, source) == {}
-    # There are no RAW files or headers here; only confirmed folder annotations.
     save_batch_samples(
         config,
         raw_dir,
@@ -88,7 +87,6 @@ def test_review_groups_use_confirmed_roles_by_raw_stem_without_raw_reads(tmp_pat
             ),
         ],
     )
-    # Curves group by confirmed role; stored study groups are not shown.
     assert review_sample_groups(config, raw_dir, source) == {
         "canonical-study": "Sample",
         "canonical-qc": "QC",
@@ -149,7 +147,6 @@ def test_confirmed_annotations_are_the_folder_source_until_reimported(
     rows[1].update(group="", excluded=True, exclusion_reason="spray failed")
     save_batch_samples(config, raw_dir, rows)
 
-    # A different 上機資訊 path does not silently replace confirmed annotations.
     other = _sequence(tmp_path / "other.csv", [("Liver_A1", "Blank", "Other")])
     refreshed = read_batch_samples(
         config, raw_dir, dll_dir=tmp_path, sequence_source=other
@@ -160,8 +157,6 @@ def test_confirmed_annotations_are_the_folder_source_until_reimported(
     assert by_stem["Liver_B1"]["excluded"] is True
     assert by_stem["QC_1"]["sample_role"] == "qc"
 
-    # Re-importing takes roles from the list but keeps confirmed groups and
-    # exclusions the list does not supply.
     reimported = read_batch_samples(
         config, raw_dir, dll_dir=tmp_path, sequence_source=other, import_sequence=True
     )
@@ -256,7 +251,6 @@ def test_confirmed_annotations_reach_raw_whose_header_cannot_be_read(
     reread = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
     broken = next(row for row in reread if row["raw_stem"] == "Broken")
     assert (broken["sample_role"], broken["excluded"]) == ("blank", True)
-    # The confirmed exclusion keeps the unreadable RAW out of a Targeted run.
     targeted = read_analysis_set(
         raw_dir,
         tmp_path,

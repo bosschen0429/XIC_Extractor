@@ -38,7 +38,6 @@ def test_untargeted_config_round_trips_only_supported_fields(tmp_path) -> None:
     assert "mode" not in restored
     assert "backfill_enabled" not in restored
     assert "alignment_enabled" not in restored
-    # Roles now live in the folder's confirmed sample metadata.
     assert "custom_roles" not in restored
     assert "unknown" not in restored
     assert restored["output_dir"]
@@ -406,7 +405,6 @@ def test_saved_custom_method_snapshot_preserves_full_effective_values(tmp_path):
     draft = method_details("dna_dr")["draft"]
     path = tmp_path / "custom.toml"
     save_method(draft, path)
-    # A full owner-written TOML includes fields without editor controls.
     loaded = method_details(path)["draft"]
     loaded["overrides"]["ms2_precursor_tol_da"] = 0.37
     values = _request_values(tmp_path)

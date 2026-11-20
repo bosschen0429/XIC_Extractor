@@ -494,16 +494,12 @@ def test_retained_candidate_batch_preserves_observation_values(
         assert reference.generation_provenance == projected.generation_provenance
         segment = evaluation.answer.selected_segment
         assert segment is not None and evaluation.integration is not None
-        # Reported height is the smoothed trace at the apex, not the segment's
-        # baseline-positive height; the fixture keeps the two apart.
         assert (
             projected.integration.height_smoothed
             == evaluation.integration.height_smoothed
             == prepared.prepared.smoothed[segment.apex_index]
         )
         assert segment.height != projected.integration.height_smoothed
-        # Provenance addresses the acquired trace; the integration addresses
-        # the selected subtrace.
         assert projected.generation_provenance.selected_trace_indices == tuple(
             range(segment.start_index, segment.end_index)
         )

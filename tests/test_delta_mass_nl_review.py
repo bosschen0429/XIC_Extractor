@@ -35,8 +35,6 @@ def test_peak_nl_support_uses_shared_matching_and_retains_competing_peak_ambigui
     feature = DetectedFeature(
         "sample-a", "peak", None, 100, 2, 1.8, 2.2, 100, None, "OK", None, "external"
     )
-    # One measured 100 -> 80 loss inside, another outside the saved peak,
-    # and an unrelated 999 -> 979 loss at the same RT.
     scans = (
         Ms2Scan(11, 2.0, 100, np.array([80.0, 55.0]), np.array([20.0, 100.0]), 100.0),
         Ms2Scan(22, 2.5, 100, np.array([80.0]), np.array([100.0]), 100.0),
@@ -70,7 +68,6 @@ def test_peak_nl_support_uses_shared_matching_and_retains_competing_peak_ambigui
         (m.scan_number, m.product_mz, m.observed_loss_da, m.product_base_ratio)
         for m in result.matches
     ] == [(11, 80.0, 20.0, 0.2)]
-    # A second saved detector interval overlaps: do not invent unique ownership.
     overlap = replace(feature, feature_id="other", rt_start_min=1.9, rt_end_min=2.3)
     ambiguous = assess_review_neutral_losses(
         candidate, features=(feature, overlap), seeds=seeds, settings=settings
@@ -179,9 +176,7 @@ def test_batch_cli_answers_each_candidate_without_manual_scan_selection(
             )
 
         def iter_ms2_scans(self, lo, hi):
-            assert (
-                lo <= 1.8 and hi >= 2.2
-            )  # complete peak, not 0.05-min display padding
+            assert lo <= 1.8 and hi >= 2.2
             precursor = 100.0 if self.name == "sample-a" else 200.0
             product = 80.0 if self.name == "sample-a" else 180.03
             yield Ms2ScanEvent(
@@ -276,7 +271,6 @@ def test_batch_cli_answers_each_candidate_without_manual_scan_selection(
         (ids[1], "not_established", ""),
         (ids[2], "not_established", ""),
     ]
-    # NL support cannot promote a saved Delta Mass rejection into the intersection.
     rejected = replace(review, candidates=(replace(a, status="rejected"),))
     write_delta_mass_nl_summary(rejected, output.with_suffix(".nl.csv"))
     row = next(csv.DictReader(output.with_suffix(".nl.csv").open(encoding="utf-8-sig")))
