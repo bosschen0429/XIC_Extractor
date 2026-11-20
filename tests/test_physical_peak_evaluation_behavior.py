@@ -13,6 +13,7 @@ from tests.physical_peak_evaluation_fixtures import (
     _short_peak_with_separate_noise_hits,
 )
 from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.background_shape import (
@@ -37,6 +38,9 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
     PhysicalPeakEvaluation,
+)
+from xic_extractor.peak_detection.physical_peak_population import (
+    measure_physical_peak_population,
 )
 from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
 
@@ -86,6 +90,55 @@ def test_background_contrast_rejects_weak_peak_for_capture_and_backfill(
             backfill.answer.selected_segment.area_counts_seconds
             == detected.answer.selected_segment.area_counts_seconds
         )
+
+
+@pytest.mark.parametrize("backfill", [False, True], ids=["discovery", "backfill"])
+@pytest.mark.parametrize(
+    "plateau,expected_state",
+    [(60000.0, "unavailable"), (0.0, "available")],
+    ids=["plateau_slice", "isolated_shoulder_pair"],
+)
+def test_overlap_peak_must_rise_above_its_surroundings(
+    backfill: bool, plateau: float, expected_state: str
+) -> None:
+    """The same shoulder pair is flagged for overlap in both traces.
+
+    On a plateau cut by missing-scan gaps, the signal just outside the slice is
+    60% of its apex, so the slice is background; alone, the pair is a peak.
+    Discovery and Backfill apply the same check.
+    """
+    rt = np.round(np.arange(0.0, 12.0, 0.02), 4)
+    raw = np.where((rt >= 2.0) & (rt <= 10.0), plateau, 0.0) + sum(
+        40000.0 * np.exp(-0.5 * ((rt - centre) / 0.10) ** 2) for centre in (5.85, 6.15)
+    )
+    raw[((rt >= 4.9) & (rt <= 5.0)) | ((rt >= 7.0) & (rt <= 7.1))] = 0.0
+    population = measure_physical_peak_population(
+        rt,
+        raw,
+        context_rt_start_min=0.0,
+        context_rt_end_min=12.0,
+        profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+    segment = population.segment_at(5.85)
+    assert segment is not None and segment.requires_overlap_review
+    evaluation = (
+        evaluate_physical_peak(
+            prepare_physical_signal(rt, raw, profile=DEFAULT_SIGNAL_PROCESSING_PROFILE),
+            query_rt_min=5.85,
+            request_context_rt_start_min=0.0,
+            request_context_rt_end_min=12.0,
+            selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+        )
+        if backfill
+        else population.evaluate(5.85)
+    )
+    assert evaluation.state == expected_state
+    if expected_state == "unavailable":
+        assert evaluation.reason == "overlap_not_above_surroundings"
+        assert evaluation.integration is None
+    else:
+        assert evaluation.requires_overlap_review
+        assert evaluation.integration is not None
 
 
 @pytest.mark.parametrize("query_rt", [0.8, 1.2])

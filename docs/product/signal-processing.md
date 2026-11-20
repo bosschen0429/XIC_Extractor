@@ -197,6 +197,21 @@ that paper does not validate this chromatographic gate or its threshold.
 These checks address missing acquired support and insufficient local contrast,
 not every form of noise or chemical identity.
 
+### Overlap surroundings
+
+Top ripples flag a peak with a shoulder and a slice of a continuous plateau
+alike. Missing scans can cut such a plateau, and a slice whose boundaries sit
+on them passes local relief. Discovery and Backfill therefore qualify an
+overlap-review peak only when it rises above the acquired signal just outside
+it. Each side's level is the median of the nonzero raw scans within 0.5 min
+outside the selected segment; zero scans are missing observations, and a
+shorter acquired context supplies what it has. When the higher side's level is
+at least half the segment's raw apex, the peak fails with
+`overlap_not_above_surroundings`. A neighboring peak inside that flank raises
+the level as background does. Peaks without overlap review keep local relief
+only. The flank and the one-half limit are product policy chosen on a reviewed
+sample of overlap peaks, not a calibrated error rate.
+
 Known-reference ISTD localization answers a narrower question than discovering
 local maxima: small surface ripples should not erase a supported broad contour
 before the known RT and method evidence can locate it. The reference-specific

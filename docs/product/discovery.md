@@ -123,10 +123,12 @@ MS1-only observation in another sample through [Backfill](backfill.md); that
 observation cannot resurrect a rejected peak or create a new group. A batch with
 no admitted peak completes with no subjects and an empty Matrix.
 
-A shoulder or overlapping envelope does not hold a peak. MS1 shape alone does
-not dismiss a peak with attached NL support; its area is measured on the
-unresolved envelope, and its cell carries the review reason
-`physical_shoulder_overlap`. The Workbench curve view shows the reason after that
+A shoulder or overlapping envelope alone does not hold a peak. Top ripples also
+flag a slice of a continuous plateau cut out by missing scans, so such a peak
+must [rise above its surroundings](signal-processing.md#overlap-surroundings);
+otherwise it is held as `overlap_not_above_surroundings`. A qualified peak's
+area is measured on the unresolved envelope, and its cell carries the review
+reason `physical_shoulder_overlap`. The Workbench curve view shows the reason after that
 sample's published area when the sample is hovered or focused; it is not a
 sample risk, and the Matrix holds only the value. A group made only of such
 peaks stays [provisional](alignment.md#group-identity-and-disposition) and does

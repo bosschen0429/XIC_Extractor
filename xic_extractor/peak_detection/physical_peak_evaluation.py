@@ -60,6 +60,15 @@ from xic_extractor.peak_detection.signal_quality import (
     short_scale_noise_sigma,
 )
 
+_BACKFILL_POLICIES = frozenset(
+    {PHYSICAL_PEAK_BACKFILL_POLICY, PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY}
+)
+# Top ripples flag both a peak with a shoulder and a slice of a continuous
+# plateau cut out by missing scans. An overlap-review peak qualifies only when
+# the acquired signal just outside it stays below this fraction of its apex.
+OVERLAP_SURROUNDING_FLANK_MIN = 0.5
+OVERLAP_SURROUNDING_LEVEL_LIMIT = 0.5
+
 
 def prepare_physical_signal(
     rt_values: object,
@@ -863,20 +872,48 @@ def _physical_segment_support_failure(
     prominence = local_apex_prominence(signal, apex_offset)
     rt = np.asarray(prepared.rt[left:right], dtype=float)
     noise_sigma = short_scale_noise_sigma(rt, acquired) or 0.0
+    backfill = selection_policy_version in _BACKFILL_POLICIES
     minimum_contrast = (
-        BACKFILL_MIN_CONTRAST_SIGMA
-        if selection_policy_version
-        in {PHYSICAL_PEAK_BACKFILL_POLICY, PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY}
-        else DISCOVERY_MIN_CONTRAST_SIGMA
+        BACKFILL_MIN_CONTRAST_SIGMA if backfill else DISCOVERY_MIN_CONTRAST_SIGMA
     )
     if prominence < minimum_contrast * noise_sigma:
         return (
             "insufficient_backfill_peak_contrast"
-            if selection_policy_version
-            in {PHYSICAL_PEAK_BACKFILL_POLICY, PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY}
+            if backfill
             else "insufficient_local_peak_contrast"
         )
+    if (
+        (backfill or selection_policy_version == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY)
+        and selected.requires_overlap_review
+        and _surrounding_level_fraction(prepared, selected)
+        >= OVERLAP_SURROUNDING_LEVEL_LIMIT
+    ):
+        return "overlap_not_above_surroundings"
     return ""
+
+
+def _surrounding_level_fraction(
+    prepared: PreparedSignal, selected: PhysicalSegment
+) -> float:
+    """The higher side's acquired level just outside the segment, over its apex.
+
+    Each side's level is the median of its nonzero raw scans: zero scans are
+    missing observations, not a level. Acquired context shorter than the flank
+    supplies what it has; a side without nonzero scans has level zero.
+    """
+    rt = np.asarray(prepared.rt, dtype=float)
+    raw = np.asarray(prepared.raw, dtype=float)
+    apex = float(np.max(raw[selected.start_index : selected.end_index]))
+    if apex <= 0.0:
+        return 0.0
+    left = slice(None, selected.start_index)
+    right = slice(selected.end_index, None)
+    sides = (
+        raw[left][rt[left] >= selected.left_rt_min - OVERLAP_SURROUNDING_FLANK_MIN],
+        raw[right][rt[right] <= selected.right_rt_min + OVERLAP_SURROUNDING_FLANK_MIN],
+    )
+    levels = [float(np.median(side[side > 0.0])) for side in sides if any(side > 0.0)]
+    return max(levels, default=0.0) / apex
 
 
 def answer_physical_peak_question(
