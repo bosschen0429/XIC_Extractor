@@ -67,6 +67,12 @@ from xic_extractor.untargeted_execution.input_planning import (
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "regroup":
+        from tools.diagnostics.grouping_experiment import regroup_main
+
+        return regroup_main(argv[1:])
+
     args = _parse_args(argv)
     try:
         execution_profile = load_execution_profile(alignment_workers=args.raw_workers)
@@ -347,7 +353,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Publish finalized pure CID-NL Alignment "
-            "from an owner-closed discovery batch index."
+            "from an owner-closed discovery batch index. To recompute only grouping "
+            "from a saved snapshot (no RAW or DLL), use: %(prog)s regroup --help."
         ),
     )
     parser.add_argument(
@@ -547,7 +554,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--save-grouping-inputs",
         action="store_true",
-        help="With --stop-after grouping, save compact inputs for diagnostic replay.",
+        help="With --stop-after grouping, save grouping-inputs.json.gz for regroup.",
     )
     parser.add_argument("--emit-alignment-cells", action="store_true")
     parser.add_argument(

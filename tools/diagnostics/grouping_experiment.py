@@ -10,6 +10,7 @@ import argparse
 import json
 import math
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import asdict, replace
 from pathlib import Path
 from time import perf_counter
@@ -64,11 +65,22 @@ def _parser() -> argparse.ArgumentParser:
     compare.add_argument(
         "--after", type=Path, required=True, help="Variant members.tsv"
     )
-    for command in (query, replay, compare):
+    for command in (query, compare):
         command.add_argument("--output-dir", required=True, type=Path)
     query.add_argument("--discovery-batch-index", required=True, type=Path)
     query.add_argument("--mz-range", action="append", type=_range, required=True)
-    replay.add_argument("--inputs", required=True, type=Path)
+    _add_replay_arguments(replay)
+    return parser
+
+
+def _add_replay_arguments(replay: argparse.ArgumentParser) -> None:
+    replay.add_argument(
+        "--inputs",
+        required=True,
+        type=Path,
+        help="Snapshot saved with --stop-after grouping --save-grouping-inputs",
+    )
+    replay.add_argument("--output-dir", required=True, type=Path)
     replay.add_argument(
         "--set",
         action="append",
@@ -91,11 +103,24 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="Previous replay output dir of the same snapshot (e.g. another commit)",
     )
-    return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = _parser()
+def regroup_main(argv: Sequence[str]) -> int:
+    parser = argparse.ArgumentParser(
+        usage="%(prog)s regroup --inputs SNAPSHOT --output-dir DIR [options]",
+        description="Recompute initial scalar CID-NL groups from frozen observations "
+        "without Discovery, RAW, DLL, Backfill or Matrix publication.",
+    )
+    _add_replay_arguments(parser)
+    parser.set_defaults(command="replay")
+    return _execute(parser, argv)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    return _execute(_parser(), argv)
+
+
+def _execute(parser: argparse.ArgumentParser, argv: Sequence[str] | None) -> int:
     args = parser.parse_args(argv)
     started = perf_counter()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -214,7 +239,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
     except (ValueError, OSError, KeyError, TypeError) as exc:
-        parser.exit(2, f"grouping-experiment: {exc}\n")
+        parser.exit(2, f"{parser.prog}: {exc}\n")
 
 
 if __name__ == "__main__":

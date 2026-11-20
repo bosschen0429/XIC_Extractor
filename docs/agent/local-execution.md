@@ -106,7 +106,26 @@ docs/product/decision-policy.md; preset
 compatibility lives in docs/product/presets.md. Task-specific paths and accepted
 parameter values stay in the Issue or validation owner.
 
-Alignment requires a bound pure CID-NL preset. Its retained runtime owns
+For a grouping-only code or parameter change, replay measured observations
+instead of launching Alignment. From a bootstrapped worktree, this synthetic
+two-sample case needs no local data, preset or DLL:
+
+    .venv\Scripts\python.exe -m scripts.run_alignment regroup --inputs tests/fixtures/synthetic-grouping.json.gz --set max_ppm=20 --output-dir output/regroup-smoke
+
+The frozen masses (500.000 and 500.015 at the same apex) fit the snapshot's
+50 ppm window but not 20 ppm: inspect `members.tsv` for the two singleton
+groups and `changes.tsv` for both reassignments. This is an engineering check,
+not tissue validation.
+
+For your own data, add `--stop-after grouping --save-grouping-inputs` to the
+usual Alignment command once, then pass its `grouping-inputs.json.gz` to
+`regroup` across edits or worktrees. A Discovery index or Matrix alone does
+not retain those observed owners. Replay tests initial membership, not new
+peak detection, batch-to-batch matching, Backfill or published quantities.
+See the [grouping diagnostic](../../tools/diagnostics/INDEX.md#grouping_experimentpy)
+for baseline comparisons and calibration options.
+
+RAW-backed Alignment requires a bound pure CID-NL preset. Its retained runtime owns
 acquisition and scheduling; CLI help defines supported execution options.
 The command validates its inputs before acquisition. Use its preflight option
 when settings need inspection, and keep timing outputs in the task-specific

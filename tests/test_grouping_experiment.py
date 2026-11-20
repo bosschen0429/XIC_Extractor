@@ -4,10 +4,12 @@ import csv
 import gzip
 import json
 from dataclasses import replace
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
 
+from scripts.run_alignment import main as run_alignment
 from tests.alignment_pipeline_helpers import _owner, resolved_elution_context
 from tests.owner_peak_fixtures import with_peak
 from tests.untargeted_cid_nl_bounded_runtime_fixtures import _plan
@@ -354,9 +356,9 @@ def test_application_outputs_formal_groups_with_an_optional_snapshot(
     assert group_signature(replay_grouping(restored)) == group_signature(groups)
     monkeypatch.setattr(workers, "_open_job_raw", forbidden)
     assert (
-        main(
+        run_alignment(
             [
-                "replay",
+                "regroup",
                 "--inputs",
                 str(snapshot),
                 "--compare-to",
@@ -839,24 +841,8 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
 def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatch):
     # The two observed precursor masses are ~30 ppm apart at the same apex.
     # They fit the original 50 ppm envelope, but not the 20 ppm variant.
-    a = _owner("a", "peak", precursor_mz=500.0)
-    b = _owner("b", "peak", precursor_mz=500.015)
-    assert a.cross_sample_member_subject is not None
-    assert b.cross_sample_member_subject is not None
-    a = replace(a, owner_id=a.cross_sample_member_subject.subject_id)
-    b = replace(b, owner_id=b.cross_sample_member_subject.subject_id)
-    snapshot = tmp_path / "inputs.gz"
-    write_grouping_inputs(
-        snapshot,
-        GroupingInputs(
-            sample_stems=("a", "b"),
-            injection_order={"a": 1, "b": 2},
-            alignment_config=AlignmentConfig(),
-            worksets=(GroupingWorkset("mass-window", (a, b), (), None),),
-            candidate_ids_by_owner={},
-        ),
-        provenance={},
-    )
+    snapshot = Path(__file__).parent / "fixtures" / "synthetic-grouping.json.gz"
+    a, b = "a|hypothesis|peak", "b|hypothesis|peak"
     counted_replay = Mock(wraps=replay_grouping)
     monkeypatch.setattr(
         "tools.diagnostics.grouping_experiment.replay_grouping", counted_replay
@@ -866,9 +852,9 @@ def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatc
         output = tmp_path / name
         counted_replay.reset_mock()
         assert (
-            main(
+            run_alignment(
                 [
-                    "replay",
+                    "regroup",
                     "--inputs",
                     str(snapshot),
                     "--output-dir",
@@ -892,7 +878,7 @@ def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatc
 
     baseline = run("baseline")
     assert counted_replay.call_count == 1
-    assert membership(baseline) == {frozenset((a.owner_id, b.owner_id))}
+    assert membership(baseline) == {frozenset((a, b))}
 
     backfill_only = run("no-backfill", "--set", "backfill_enabled=false")
     assert counted_replay.call_count == 1
@@ -903,11 +889,11 @@ def test_replay_only_recomputes_when_grouping_inputs_change(tmp_path, monkeypatc
 
     variant = run("variant", "--set", "max_ppm=20", "--compare-to", str(baseline))
     assert counted_replay.call_count == 2
-    assert membership(variant) == {frozenset((a.owner_id,)), frozenset((b.owner_id,))}
+    assert membership(variant) == {frozenset((a,)), frozenset((b,))}
     assert {
         (row["owner_id"], row["before_members"], row["after_members"])
         for row in rows(variant, "changes.tsv")
-    } == {(a.owner_id, "2", "1"), (b.owner_id, "2", "1")}
+    } == {(a, "2", "1"), (b, "2", "1")}
     summary = json.loads((variant / "summary.json").read_text())
     assert summary["membership_diff"]["split_count"] == 1
     assert summary["membership_diff"]["merge_count"] == 0
