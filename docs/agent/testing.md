@@ -164,8 +164,8 @@ engineering regression coverage only. Manual-2RAW, lane-specific subsets, and
 require them.
 
 Use the [local execution guide](local-execution.md#validation-scale) for the
-method-specific RAW runner. The hosted check named `test (Python 3.12)` is an
-aggregate gate, not evidence that a Python 3.12 interpreter ran.
+method-specific RAW runner. The hosted `test gate` check aggregates test-lane
+results; its name does not identify a Python version.
 
 ## Verification
 

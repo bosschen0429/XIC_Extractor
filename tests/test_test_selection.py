@@ -1278,7 +1278,7 @@ def test_ci_required_check_accepts_only_success_or_planned_browser_skip(
         pytest.skip("PowerShell is required to exercise the Windows CI gate")
     jobs = yaml.safe_load(Path(".github/workflows/ci.yml").read_text("utf-8"))["jobs"]
     gate = jobs["test"]
-    assert gate["name"] == "test (Python 3.12)"
+    assert gate["name"] == "test gate"
     assert set(gate["needs"]) == {
         "lint",
         "plan",
