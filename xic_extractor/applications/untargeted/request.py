@@ -60,6 +60,16 @@ def untargeted_peak_config(
 
 
 @dataclass(frozen=True, slots=True)
+class AlignmentReplayOptions:
+    """Inputs to retain from this run for local stage replay."""
+
+    grouping: bool = False
+    backfill: bool = False
+    pairing: bool = False
+    matrix: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class UntargetedRequest:
     """Alignment intent from completed Discovery; not a full-analysis request.
 
@@ -85,6 +95,7 @@ class UntargetedRequest:
     publication: UntargetedPublicationPolicy = field(
         default_factory=UntargetedPublicationPolicy
     )
+    replay: AlignmentReplayOptions = field(default_factory=AlignmentReplayOptions)
 
     def resolve_processing_profile(self) -> SignalProcessingProfile:
         """Resolve request dependencies at the formal application entry."""

@@ -23,6 +23,7 @@ from xic_extractor.applications.untargeted.alignment_explanation_projection impo
     prepare_batch_alignment_explanation,
     project_alignment_explanation_child,
 )
+from xic_extractor.diagnostics.matrix_replay import save_matrix_cells, save_matrix_join
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.batch_correspondence_table import (
@@ -127,6 +128,7 @@ def publish_untargeted_outputs(
     metadata: dict[str, str],
     timing_recorder: TimingRecorder,
     should_cancel: Callable[[], bool] | None,
+    save_matrix_inputs: bool = False,
 ) -> AlignmentRunOutputs:
     """Publish completed owner results and close their private stores on every exit."""
     with closing(completed), ExitStack() as output_stack:
@@ -160,6 +162,22 @@ def publish_untargeted_outputs(
                     )
                 )
         frame = completed.sample_rt_frame
+        extra_tables = {}
+        if save_matrix_inputs:
+            result = completed.application_result
+            # A named single batch can be paired with separately captured batches.
+            batch_id = result.canonical_samples[0].batch_id
+            source = BatchRowSource(
+                batch_id,
+                result.canonical_samples,
+                result.child_outputs,
+                feature_key_by_peaks(completed.initial_groups)
+                if batch_id
+                else lambda _: None,
+            )
+            extra_tables[output_dir / "matrix-cells.json"] = lambda path: (
+                save_matrix_cells(path, (source,))
+            )
         write_completed_untargeted_outputs_atomic(
             outputs,
             completed.application_result,
@@ -172,6 +190,7 @@ def publish_untargeted_outputs(
             before_write=lambda: _ensure_output_publication_not_cancelled(
                 should_cancel
             ),
+            extra_tables=extra_tables,
         )
         db_path: Path | None = None
         if explanation is not None:
@@ -304,6 +323,7 @@ def publish_batch_untargeted_outputs(
     metadata: dict[str, str],
     timing_recorder: TimingRecorder,
     should_cancel: Callable[[], bool] | None,
+    save_matrix_inputs: bool = False,
 ) -> AlignmentRunOutputs:
     """Publish independently aligned batches as one Matrix and its reports.
 
@@ -387,6 +407,18 @@ def publish_batch_untargeted_outputs(
                 consume_row=record_row if write_explanation else None,
             )
 
+        extra_tables: dict[Path, Callable[[Path], None]] = {
+            output_dir / BATCH_CORRESPONDENCE_ARTIFACT_NAME: lambda path: (
+                write_batch_correspondence_table(path, correspondence, features)
+            )
+        }
+        if save_matrix_inputs:
+            extra_tables[output_dir / "matrix-cells.json"] = lambda path: (
+                save_matrix_cells(path, sources)
+            )
+            extra_tables[output_dir / "matrix-join.json"] = lambda path: (
+                save_matrix_join(path, correspondence)
+            )
         write_completed_untargeted_outputs_atomic(
             outputs,
             None,
@@ -397,11 +429,7 @@ def publish_batch_untargeted_outputs(
                 should_cancel
             ),
             render_rows=render_rows,
-            extra_tables={
-                output_dir / BATCH_CORRESPONDENCE_ARTIFACT_NAME: lambda path: (
-                    write_batch_correspondence_table(path, correspondence, features)
-                )
-            },
+            extra_tables=extra_tables,
         )
         evidence: EvidenceLocator | None = None
         if write_explanation:

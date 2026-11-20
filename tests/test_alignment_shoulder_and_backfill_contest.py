@@ -154,6 +154,45 @@ def test_only_a_group_with_a_peak_measured_apart_enters_the_matrix() -> None:
     assert (mixed.disposition, mixed.destination) == ("established", "matrix")
 
 
+@pytest.mark.parametrize(
+    ("all_overlap", "expected"),
+    [(True, ("provisional", "archive")), (False, ("established", "matrix"))],
+)
+def test_regroup_preserves_overlap_disposition(tmp_path, all_overlap, expected):
+    from xic_extractor.alignment.grouping_experiment import (
+        GroupingInputs,
+        GroupingWorkset,
+        replay_grouping,
+    )
+    from xic_extractor.diagnostics.grouping_experiment_io import (
+        read_grouping_inputs,
+        write_grouping_inputs,
+    )
+
+    samples = ("S1", "S2")
+    owners = []
+    for sample in samples:
+        owner = _main(sample)
+        if all_overlap or sample == "S2":
+            owner = _measured_on_overlap(owner)
+        assert owner.cross_sample_member_subject is not None
+        owners.append(
+            replace(owner, owner_id=owner.cross_sample_member_subject.subject_id)
+        )
+    inputs = GroupingInputs(
+        samples,
+        {"S1": 1, "S2": 2},
+        _CONFIG,
+        (GroupingWorkset("channel", tuple(owners), (), None),),
+        {},
+    )
+    path = tmp_path / "grouping-inputs.json.gz"
+    write_grouping_inputs(path, inputs, provenance={})
+    restored, _ = read_grouping_inputs(path)
+    (group,) = replay_grouping(restored)
+    assert (group.disposition, group.destination) == expected
+
+
 def test_shoulder_split_from_most_of_its_peaks_leaves_the_matrix() -> None:
     # S7's main peak was not detected, so its shoulder has no neighbour.
     owners = (

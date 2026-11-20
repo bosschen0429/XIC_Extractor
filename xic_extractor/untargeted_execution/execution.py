@@ -250,6 +250,7 @@ class UntargetedPartitionPipelineAdapter:
         retain_partition_spool: bool = False,
         grouping_only: bool = False,
         rt_reference_only: bool = False,
+        capture_grouping: Callable[[PreparedGroupingExperiment], None] | None = None,
         capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
         mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
         | None = None,
@@ -267,6 +268,7 @@ class UntargetedPartitionPipelineAdapter:
         self._clean_anchors: dict[
             UntargetedCidNlMethodSubjectBatch, tuple[RtAnchorObservation, ...]
         ] = {}
+        self._capture_grouping = capture_grouping
         self._capture_backfill = capture_backfill
         self._project_child = project_child
         self._plan = plan
@@ -756,11 +758,8 @@ class UntargetedPartitionPipelineAdapter:
             PartitionCompositionOutput[PersistedUntargetedPartition]
         ],
     ) -> FinalizedUntargetBatchApplicationResult | PreparedGroupingExperiment:
-        if self._grouping_only:
-            sample_stems = tuple(
-                sample.raw_stem for sample in self._plan.context.samples
-            )
-            return grouping_experiment_from_prepared(
+        if self._grouping_only or self._capture_grouping is not None:
+            experiment = grouping_experiment_from_prepared(
                 (
                     cast(
                         _GroupingInputs,
@@ -770,7 +769,9 @@ class UntargetedPartitionPipelineAdapter:
                     ).prepared
                     for index in range(self._bootstrap_count)
                 ),
-                sample_stems=sample_stems,
+                sample_stems=tuple(
+                    sample.raw_stem for sample in self._plan.context.samples
+                ),
                 injection_order=self._plan.context.rt_frame.injection_order,
                 alignment_config=self._alignment_config,
                 initial_job_count=self._initial_job_count,
@@ -780,6 +781,10 @@ class UntargetedPartitionPipelineAdapter:
                     else None
                 ),
             )
+            if self._grouping_only:
+                return experiment
+            assert self._capture_grouping is not None
+            self._capture_grouping(experiment)
         return compose_untargeted_batch(
             self._plan,
             store=store,
@@ -820,6 +825,7 @@ def execute_untargeted_plan(
     acquisition_cache_dir: Path | None = None,
     pipeline_overlap: bool = False,
     grouping_only: bool = False,
+    capture_grouping: Callable[[PreparedGroupingExperiment], None] | None = None,
     capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
@@ -840,7 +846,7 @@ def execute_untargeted_plan(
         raise ValueError("raw_workers must be a positive integer")
     if raw_worker_backend not in {"process", "thread"}:
         raise ValueError("raw_worker_backend must be 'process' or 'thread'")
-    if grouping_only and any(
+    if (grouping_only or capture_grouping is not None) and any(
         subject.composition is not None for subject in plan.subject_batch.subjects
     ):
         raise ValueError("Grouping replay requires a scalar CID-NL preset")
@@ -863,6 +869,7 @@ def execute_untargeted_plan(
         acquisition_cache_dir=cache_dir,
         retain_partition_spool=retain_partition_spool,
         grouping_only=grouping_only,
+        capture_grouping=capture_grouping,
         capture_backfill=capture_backfill,
         mass_recalibration_by_sample=mass_recalibration_by_sample,
         project_child=project_child,

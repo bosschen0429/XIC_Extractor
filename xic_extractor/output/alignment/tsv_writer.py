@@ -356,6 +356,21 @@ def write_alignment_tsvs(
     *,
     consume_child: Callable[[UntargetChildOutputs, int], None] | None = None,
 ) -> int:
+    return write_projected_alignment_tsvs(
+        paths,
+        completed.canonical_samples,
+        completed.child_outputs,
+        consume_child=consume_child,
+    )
+
+
+def write_projected_alignment_tsvs(
+    paths: Mapping[str, Path],
+    canonical_samples: Sequence[SampleMetadata],
+    child_outputs: Sequence[object],
+    *,
+    consume_child: Callable[[UntargetChildOutputs, int], None] | None = None,
+) -> int:
     """Number and write the requested TSVs from the batch's projected rows in
     one bounded pass, and return the group count.
 
@@ -363,7 +378,7 @@ def write_alignment_tsvs(
     written before it, so its review records name the same ``feature_id``.
     """
 
-    sample_order = untarget_sample_order(completed.canonical_samples)
+    sample_order = untarget_sample_order(canonical_samples)
     headers = _output_headers(sample_order)
     source_candidate_owners: dict[str, str] = {}
     seen_physical_peaks: set[tuple[str, str]] = set()
@@ -380,7 +395,7 @@ def write_alignment_tsvs(
             writer.writerow([escape_excel_formula(column) for column in headers[name]])
             writers[name] = writer
 
-        for child in completed.child_outputs:
+        for child in child_outputs:
             child = cast(UntargetChildOutputs, child)
             first_group = group_count
             for group in child.groups:

@@ -29,6 +29,7 @@ from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,
 )
 from xic_extractor.applications.untargeted.request import (
+    AlignmentReplayOptions,
     UntargetedExecutionContext,
     UntargetedRequest,
     untargeted_peak_config,
@@ -241,6 +242,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 explanation_curve_mz_ranges=tuple(args.explanation_curve_mz_range),
                 emit_alignment_status_matrix=args.emit_alignment_status_matrix,
             ),
+            replay=AlignmentReplayOptions(
+                grouping=args.save_grouping_inputs,
+                backfill=args.save_backfill_inputs,
+                pairing=args.save_pairing_inputs,
+                matrix=args.save_matrix_inputs,
+            ),
         )
         context = UntargetedExecutionContext(timing_recorder=timing_recorder)
         profiler = cProfile.Profile() if args.profile == "cprofile" else None
@@ -370,7 +377,7 @@ def _run_stage_replay(argv: Sequence[str]) -> int:
         "--inputs",
         required=True,
         type=Path,
-        help="Directory captured with --stop-after grouping --save-backfill-inputs",
+        help="Directory captured with --save-backfill-inputs",
     )
     backfill.add_argument(
         "--save-matrix-inputs",
@@ -389,7 +396,7 @@ def _run_stage_replay(argv: Sequence[str]) -> int:
     )
     matrix = stages.add_parser(
         "matrix",
-        description="Write only the Matrix from completed Backfill and pairing.",
+        description="Write only the Matrix from finalized cell values.",
     )
     matrix.add_argument(
         "--backfill",
@@ -399,7 +406,9 @@ def _run_stage_replay(argv: Sequence[str]) -> int:
         help="Completed matrix-cells.json file(s)",
     )
     matrix.add_argument(
-        "--pairing", required=True, type=Path, help="Completed matrix-join.json"
+        "--pairing",
+        type=Path,
+        help="Completed matrix-join.json (required for multiple batches)",
     )
     for stage in (backfill, pairing, matrix):
         stage.add_argument("--output-dir", required=True, type=Path)
@@ -637,17 +646,22 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--save-grouping-inputs",
         action="store_true",
-        help="With --stop-after grouping, save grouping-inputs.json.gz for regroup.",
+        help="Save grouping-inputs.json.gz for regroup.",
     )
     parser.add_argument(
         "--save-backfill-inputs",
         action="store_true",
-        help="With --stop-after grouping, save local inputs for Backfill replay.",
+        help="Save local inputs for Backfill replay.",
     )
     parser.add_argument(
         "--save-pairing-inputs",
         action="store_true",
-        help="With --stop-after grouping, save one input per batch for pair-batches.",
+        help="Save one input per declared batch for pair-batches.",
+    )
+    parser.add_argument(
+        "--save-matrix-inputs",
+        action="store_true",
+        help="Save finalized Matrix inputs and, for multiple batches, the frozen join.",
     )
     parser.add_argument("--emit-alignment-cells", action="store_true")
     parser.add_argument(
@@ -695,12 +709,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--emit-alignment-status-matrix", action="store_true")
     args = parser.parse_args(argv)
-    if args.save_grouping_inputs and args.stop_after != "grouping":
-        parser.error("--save-grouping-inputs requires --stop-after grouping")
-    if args.save_backfill_inputs and args.stop_after != "grouping":
-        parser.error("--save-backfill-inputs requires --stop-after grouping")
-    if args.save_pairing_inputs and args.stop_after != "grouping":
-        parser.error("--save-pairing-inputs requires --stop-after grouping")
+    if args.save_matrix_inputs and args.stop_after == "grouping":
+        parser.error("--save-matrix-inputs requires a complete Alignment run")
     if args.save_backfill_inputs and not args.backfill:
         parser.error("--save-backfill-inputs cannot capture a --no-backfill plan")
     return args

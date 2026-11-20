@@ -55,6 +55,7 @@ from xic_extractor.rt_calibration_codec import (
     rt_drift_payload,
 )
 from xic_extractor.tabular_io import read_delimited_rows, write_delimited_rows
+from xic_extractor.validation_primitives import require_boolean
 
 _RtModel = tuple[BatchRtWarp | None, BatchRtCalibration | None, RtDriftModel | None]
 
@@ -345,6 +346,7 @@ def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
         "owner_peak_end_rt": integration.rt_right_min,
         "owner_area": integration.area_raw_counts_seconds,
         "owner_height": integration.height_raw,
+        "requires_overlap_review": owner.peak.requires_overlap_review,
         "primary_identity_event": (
             asdict(owner.primary_identity_event)
             if owner.primary_identity_event is not None
@@ -469,6 +471,10 @@ def _read_owner_peak(
         member_peak,
         integration=replace(
             integration, raw_scan_indices=tuple(range(len(member_peak.rt)))
+        ),
+        retained_overlap_review=require_boolean(
+            value.pop("requires_overlap_review", False),
+            field="requires_overlap_review",
         ),
     )
 

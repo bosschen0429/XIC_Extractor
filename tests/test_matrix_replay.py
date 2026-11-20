@@ -54,21 +54,20 @@ def test_matrix_only_joins_batch_qualified_groups_and_keeps_missing_cells(tmp_pa
     }
     out = tmp_path / "replay"
 
-    def run():
+    def run(*join_args):
         return main(
             [
                 "matrix",
                 "--backfill",
                 old,
                 new,
-                "--pairing",
-                save("join", pairing),
+                *join_args,
                 "--output-dir",
                 str(out),
             ]
         )
 
-    assert run() == 0
+    assert run("--pairing", save("join", pairing)) == 0
     matrix = out / "alignment_matrix.tsv"
     with matrix.open(newline="", encoding="utf-8") as stream:
         assert list(csv.reader(stream, delimiter="\t")) == [
@@ -77,8 +76,12 @@ def test_matrix_only_joins_batch_qualified_groups_and_keeps_missing_cells(tmp_pa
             ["302.0000", "2", "0.00000e+00", "", "", ""],
         ]
     assert list(out.iterdir()) == [matrix]
+    out = tmp_path / "missing-join"
+    assert run() == 2
+    assert not (out / "alignment_matrix.tsv").exists()
+
     # A pairing file from a different grouping must not silently drop a row.
     out = tmp_path / "stale"
     pairing["rows"].pop()
-    assert run() == 2
+    assert run("--pairing", save("join", pairing)) == 2
     assert not (out / "alignment_matrix.tsv").exists()
