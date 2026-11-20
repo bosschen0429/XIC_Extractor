@@ -689,8 +689,7 @@ class UntargetedPartitionPipelineAdapter:
             )
             anchors = self._batch_preparation.add_initial(prepared)
             if not any(
-                obs.physical_evaluation is not None
-                and obs.physical_evaluation.requires_overlap_review
+                obs.requires_overlap_review
                 for result in leaf.sample_results
                 for _, obs in result.adapter_result.candidate_observations
             ):

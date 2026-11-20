@@ -126,8 +126,7 @@ class ProductionCellDecision:
             if (
                 observation is not None
                 and observation.integration is self.selected_integration
-                and observation.physical_evaluation is not None
-                and observation.physical_evaluation.requires_overlap_review
+                and observation.requires_overlap_review
             ):
                 return ("physical_shoulder_overlap",)
         return ()

@@ -94,6 +94,15 @@ class PeakObservation:
         object.__setattr__(self, "intensity", intensity)
 
     @property
+    def requires_overlap_review(self) -> bool:
+        """Whether this peak was measured on an unresolved shoulder or overlap."""
+
+        return (
+            self.physical_evaluation is not None
+            and self.physical_evaluation.requires_overlap_review
+        )
+
+    @property
     def physical_identity(self) -> PeakObservation:
         """This peak without advisory measurement quality, for in-process joins."""
 

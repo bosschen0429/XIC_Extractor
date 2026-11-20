@@ -192,6 +192,12 @@ def test_one_measured_lobe_keeps_one_direct_claim_or_one_backfill_winner(
             ("S", 8.06),
         )
     }
+    if broad_context and not fresh_context:
+        # A group made only of envelope peaks is not a Matrix row. Here one
+        # member per group shows its own peak where its envelope peer peaks.
+        for stem, peer in (("A", "B"), ("C", "D")):
+            apex = pairs[peer][1].candidate_peaks[0].integration.rt_apex_min
+            pairs[stem] = _view(fixture, stem, center=apex)
     owners = {}
     for stem, (sample, assessment) in pairs.items():
         (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(

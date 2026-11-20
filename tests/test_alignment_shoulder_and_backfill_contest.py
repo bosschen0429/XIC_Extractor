@@ -29,6 +29,10 @@ from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    evaluate_physical_peak,
+    prepare_physical_signal,
+)
 
 _CONFIG = AlignmentConfig()
 _MZ = 261.1273
@@ -110,6 +114,52 @@ def _groups(owners: tuple[SampleLocalMS1Owner, ...]):
     by_rt = {round(group.group_center_rt, 1): group for group in groups}
     assert set(by_rt) == {8.6, 9.0}
     return groups, by_rt[8.6], by_rt[9.0]
+
+
+def _measured_on_overlap(owner: SampleLocalMS1Owner) -> SampleLocalMS1Owner:
+    """The owner with its peak measured on an unresolved shoulder or overlap."""
+
+    rt = np.linspace(8.5, 9.5, 201)
+    evaluation = evaluate_physical_peak(
+        prepare_physical_signal(
+            rt,
+            10.0 + 1200.0 * np.exp(-0.5 * ((rt - 9.0) / 0.06) ** 2),
+            profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        ),
+        query_rt_min=9.0,
+        request_context_rt_start_min=8.5,
+        request_context_rt_end_min=9.5,
+    )
+    selected = evaluation.answer.selected_segment
+    assert selected is not None
+    shoulder = replace(selected, segment_class="shoulder_candidate")
+    evaluation = replace(
+        evaluation,
+        answer=replace(evaluation.answer, selected_segment=shoulder),
+        segment_universe=replace(evaluation.segment_universe, segments=(shoulder,)),
+    )
+    assert evaluation.requires_overlap_review
+    return replace(owner, peak=replace(owner.peak, physical_evaluation=evaluation))
+
+
+def test_only_a_group_with_a_peak_measured_apart_enters_the_matrix() -> None:
+    def group(owners: tuple[SampleLocalMS1Owner, ...]):
+        (only,) = construct_cross_sample_peak_group_hypotheses(
+            owners,
+            config=_CONFIG,
+            rt_frame=SampleRtFrame(),
+            rules=CID_NL_GROUPING_RULES,
+        )
+        return only
+
+    overlap_only = group(tuple(_measured_on_overlap(_main(s)) for s in ("S1", "S2")))
+    mixed = group((_main("S1"), _measured_on_overlap(_main("S2"))))
+
+    assert (overlap_only.disposition, overlap_only.destination) == (
+        "provisional",
+        "archive",
+    )
+    assert (mixed.disposition, mixed.destination) == ("established", "matrix")
 
 
 def test_shoulder_split_from_most_of_its_peaks_leaves_the_matrix() -> None:

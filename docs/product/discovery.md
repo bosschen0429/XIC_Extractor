@@ -128,7 +128,8 @@ not dismiss a peak with attached NL support; its area is measured on the
 unresolved envelope, and its cell carries the review reason
 `physical_shoulder_overlap`. The Workbench curve view shows the reason after that
 sample's published area when the sample is hovered or focused; it is not a
-sample risk, and the Matrix holds only the value.
+sample risk, and the Matrix holds only the value. A group made only of such
+peaks stays [provisional](alignment.md#group-identity-and-disposition).
 Discovery records its own physical assessment in
 `requires_overlap_review` independently of admission. Alignment needs this
 column to form its batch drift reference; regenerate an older peak table
