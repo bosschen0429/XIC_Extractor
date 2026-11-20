@@ -40,39 +40,26 @@ FIRST_PARTY_PACKAGES = (
     "tests",
 )
 
-# Inputs that configure every test session. A change here runs the whole suite.
 FULL_RUN_INPUTS = re.compile(
     r"^(pyproject\.toml|uv\.lock|(.*/)?conftest\.py"
     r"|tools/testing/(test_selection|test_sharding|pytest_temp)\.py)$"
 )
-# Text files a register-reading test can open; one that lists a changed path
-# links that path to the tests reading it.
 DATA_SUFFIXES = frozenset(
     {".csv", ".json", ".md", ".toml", ".tsv", ".txt", ".yaml", ".yml"}
 )
 
 ALL_TESTS = "ALL"
 
-# Code that globs Python files reads source as text, so any module can feed it;
-# so can every test that runs such code.
 SOURCE_SCAN = re.compile(r"""\.r?glob\(\s*[rf]?["'][^"']*\.py["']""")
 
-# Path-level relevance for inputs not represented by Python imports alone.
-# Browser relevance also follows the selected tests' actual pytest markers;
-# adding a browser test or moving its dependencies needs no path registration.
 RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
     "browser_e2e": re.compile(
         r"^(xic_workbench/|xic_inspector/|docs/user/"
-        # Shared test-support modules (fixtures, fakes, browser diagnostics)
-        # can feed browser journeys; any change to them runs the browser lane.
         r"|tests/(?!test_)[^/]+\.py$"
         r"|tools/testing/(test_selection|test_sharding|pytest_temp)\.py$"
         r"|\.github/workflows/ci\.yml$"
         r"|pyproject\.toml$|uv\.lock$)"
     ),
-    # Include whole shipped package roots: an installed/frozen import can depend
-    # on any of their code or data. A shortlist of entry points misses package
-    # inputs and resources, including the offline user documentation.
     "packaging_build": re.compile(
         r"^((pyproject\.toml|uv\.lock|MANIFEST\.in)$"
         r"|\.github/workflows/(build|ci)\.yml$"
@@ -80,8 +67,6 @@ RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
         r"|docs/user/"
         r"|(xic_extractor|xic_inspector|xic_workbench|scripts|tools|packaging|config)/)"
     ),
-    # PowerShell replays of the CI workflow steps read only the workflow and the
-    # selection tooling those steps call.
     "ci_workflow": re.compile(
         r"^(\.github/workflows/ci\.yml"
         r"|tools/testing/(test_selection|test_sharding|pytest_temp)\.py"
@@ -143,9 +128,6 @@ def plan_for_change(
                 break
             selected.update(tests)
             if path.endswith(".py") or path.split("/", 1)[0] in repository.packages:
-                # Documentation indexes and ambiguous asset basenames widen the
-                # regression selection, not browser-runtime relevance. Package
-                # consumers follow imports and executable resource references.
                 consumers = repository.dependent_tests(path, follow_data=False) or ()
                 if any("browser_e2e" in repository.test_markers[t] for t in consumers):
                     relevant.add("browser_e2e")
@@ -157,7 +139,6 @@ def plan_for_change(
             )
             files = tuple(sorted(selected))
     if files is None:
-        # An unplaceable change cannot establish that browser consumers are safe.
         relevant.add("browser_e2e")
     exclusions = [f"not {m}" for m in RELEVANCE_RULES if m not in relevant]
     return SelectionPlan(
@@ -181,8 +162,6 @@ class _Repository:
         }
         self.graph = grimp.build_graph(*packages, cache_dir=None)
         self.test_modules = {_module_name(path): path for path in self.test_sources}
-        # Test files that name a path are matched directly; counting them as
-        # owners would also select every test that imports their helpers.
         self.module_sources = {
             module: _dependency_source(path)
             for package in packages
@@ -213,14 +192,11 @@ class _Repository:
         """Tests a change to ``path`` can affect; None when none can be placed."""
         tests = self.source_scanners.copy() if path.endswith(".py") else set()
         if follow_data:
-            # A register or document that lists the path is checked by the
-            # tests that read that register.
             for listing in _naming(self.data_sources, (path,)) - {path}:
                 tests.update(self.dependent_tests(listing, follow_data=False) or ())
         if path.endswith(".py"):
             module = _module_name(path)
             if module not in self.graph.modules:
-                # A deleted or unpackaged module has no graph node to follow.
                 return None
             references = (*self._file_references(path, directories=False), module)
             owners = {module}
@@ -228,8 +204,6 @@ class _Repository:
             package = _owning_package(path)
             owners = {package} if package in self.graph.modules else set()
             references = (*self._file_references(path, directories=True), *owners)
-        # Code that names the file in a string (importlib.resources, a
-        # subprocess command, a data path) depends on it like an importer.
         document_path = path if path.endswith(".md") else None
         owners.update(
             _naming(self.module_sources, references, document_path=document_path)
@@ -259,18 +233,12 @@ class _Repository:
         references.append(parts[-1])
         if not directories:
             return tuple(references)
-        # Resource keys (e.g. preset names) can identify data without a suffix
-        # at the caller. Documents instead need filename evidence, not just an
-        # unrelated setting key such as "alignment".
         if Path(path).suffix != ".md":
             stem = Path(path).stem
             references.extend((f'"{stem}"', f"'{stem}'"))
-        # A package root is named by nearly every path inside it; its imports
-        # are what the graph follows, so start below it.
         top = 2 if parts[0] in self.packages else 1
         parents = [Path(*parts[:i]).as_posix() for i in range(top, len(parts))]
         if parts[0] == self.test_package:
-            # Tests name their own fixtures relative to the test directory.
             parents += ["/".join(parts[1:i]) for i in range(2, len(parts))]
         for directory in parents:
             references.extend((directory + "/", f'"{directory}"', f"'{directory}'"))
@@ -326,7 +294,6 @@ def _dependency_source(path: Path) -> str:
             continue
         if token.type == tokenize.STRING:
             line, column = token.start
-            # AST columns count UTF-8 bytes; tokenize columns count characters.
             position = (line, len(lines[line - 1][:column].encode("utf-8")))
             if any(start <= position < end for start, end in docstrings):
                 continue
@@ -352,8 +319,6 @@ def _naming(
     *,
     document_path: str | None = None,
 ) -> set[str]:
-    # Keep constructed document names ('guide' + '.md' or f'{name}.md') without
-    # treating every matching setting key as a document reader.
     suffix = Path(document_path).suffix if document_path is not None else ""
     stem = Path(document_path).stem if document_path is not None else ""
     quoted_stems = (f'"{stem}"', f"'{stem}'")
@@ -379,7 +344,6 @@ def changed_paths(base: str, head: str | None = None) -> list[str] | None:
     Returns None when git cannot answer, so callers fall back to running every
     test instead of silently skipping them.
     """
-    # A rename must report its old path too: code still naming it is affected.
     diff = ["git", "diff", "--no-renames", "--name-only", base]
     diff += [head] if head else []
     commands = [diff]
@@ -427,8 +391,6 @@ def ci_plan(
     )
 
 
-# Packaging builds verify installed and frozen artifacts. CI runs them for every
-# change that can affect packaging; local runs include them only on request.
 LOCAL_SKIPPED_MARKERS = ("packaging_build",)
 
 

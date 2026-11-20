@@ -877,7 +877,6 @@ def test_renamed_module_reports_its_old_path_and_runs_every_test(
 
     changed = test_selection.changed_paths("HEAD~1", "HEAD")
 
-    # selpkg/consumer.py still imports the old module; only a full run sees it.
     assert changed is not None and "selpkg/core.py" in changed
     assert _select(selection_repo, *changed) is None
 
@@ -918,8 +917,6 @@ def test_ci_windows_integration_uses_hosted_runner() -> None:
     assert jobs["windows-integration"]["runs-on"] == "windows-latest"
 
 
-# PowerShell stand-ins for the expensive child commands of a CI step. The step
-# itself still owns ordering, argument quoting and exit codes.
 _CI_COMMAND_FAKES = r"""
 $ErrorActionPreference = 'Stop'
 function .\.venv\Scripts\python.exe {
@@ -1063,8 +1060,6 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
     coverage = test_selection.ci_plan(base, "head", event=event)
     assert coverage is not None
     selection = coverage.tests.marker_expression
-    # The workflow consumes a plan; these file cases exercise ALL, empty and
-    # subset arguments independently of the dependency graph tested above.
     coverage = CIPlan(
         tests=SelectionPlan(files=files, marker_expression=selection),
         browser=coverage.browser,
@@ -1084,8 +1079,6 @@ def test_ci_runs_the_selected_plan_without_losing_failures(
     output_path = tmp_path / "outputs.txt"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output_path))
     (tmp_path / ".venv" / "Scripts").mkdir(parents=True)
-    # Run the actual workflow control flow; only the expensive child commands
-    # are replaced. PowerShell still owns ordering, argument quoting and exit.
     results = []
     for index, step in enumerate(steps):
         if index:
@@ -1336,7 +1329,6 @@ def test_ci_required_check_accepts_only_success_or_planned_browser_skip(
 
 
 def test_known_empty_diff_does_not_scan_a_repository(tmp_path):
-    # A nonexistent package cannot be graphed. An empty diff doesn't need one.
     plan = test_selection.plan_for_change(
         [], root=tmp_path, packages=("not_a_package",), base_expression=""
     )
