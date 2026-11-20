@@ -11,6 +11,8 @@ from collections.abc import Mapping
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
+from xic_extractor.output.reason_display import reason_text
+
 if TYPE_CHECKING:
     from xic_inspector.sources.cid_nl import Card, CardRef, ItemEvidence
 
@@ -216,11 +218,17 @@ def build_sample(
     note = None
     if view.item.kind == "row":
         note = "沒有單一定量結果" if len(cells) != 1 else blank_reason(cells[0])
+    # How the area was measured accompanies that area, not the risks that flag
+    # the sample.
+    area_notes = [
+        reason_text(reason) for cell in cells for reason in cell["review_reasons"]
+    ]
     return {
         "sample_id": sid,
         "sample_stem": sample_labels.get(sid, sid),
         "support_origin": view.support_origins[sid],
         **({"quantitative_value": values[0]} if len(values) == 1 else {}),
+        **({"area_notes": area_notes} if area_notes else {}),
         **({"note": note} if note else {}),
         "risk_labels": [
             *(label for cell in cells for label in cell_risks(cell)),
