@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable, Mapping
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
@@ -39,6 +40,7 @@ from xic_extractor.configuration.mass_recalibration import (
     MassRecalibration,
     serialize_mass_recalibration_result,
 )
+from xic_extractor.diagnostics.backfill_replay import BackfillCheckpoint
 from xic_extractor.diagnostics.grouping_experiment_io import (
     write_grouping_inputs,
     write_grouping_result,
@@ -392,6 +394,7 @@ def run_untargeted_grouping(
     context: UntargetedExecutionContext | None = None,
     *,
     save_snapshot: bool = False,
+    save_backfill_inputs: bool = False,
 ) -> Path:
     """Write the formal initial groups; optionally retain compact replay inputs.
 
@@ -413,7 +416,14 @@ def run_untargeted_grouping(
     ):
         raise ValueError(f"grouping output already exists: {request.output_dir}")
     batches = split_discovery_batch(batch, request.sample_metadata)
-    with recorder.stage("alignment.grouping") as stage:
+    with (
+        (
+            BackfillCheckpoint(request.output_dir / "backfill-inputs")
+            if save_backfill_inputs
+            else nullcontext(None)
+        ) as capture,
+        recorder.stage("alignment.grouping") as stage,
+    ):
         groupings = {
             batch_id: _group_batch(
                 request,
@@ -422,6 +432,7 @@ def run_untargeted_grouping(
                 batch_input,
                 mass_recalibration_by_sample,
                 known_istd_reference,
+                capture,
             )
             for batch_id, batch_input in batches
         }
@@ -486,6 +497,7 @@ def _group_batch(
     batch: DiscoveryBatchInput,
     mass_recalibration_by_sample: dict[str, PreparedRawMassRecalibration] | None,
     known_istd_reference: KnownIstdReference | None,
+    capture: BackfillCheckpoint | None,
 ) -> PreparedGroupingExperiment:
     """Group one batch exactly as if it were the run's only input."""
     batch_recalibration = _batch_mass_recalibration(mass_recalibration_by_sample, batch)
@@ -527,6 +539,7 @@ def _group_batch(
             max_partition_jobs=request.execution.max_partition_jobs,
             should_cancel=context.should_cancel,
             grouping_only=True,
+            capture_backfill=capture.append if capture is not None else None,
             mass_recalibration_by_sample=(
                 batch_recalibration
                 if request.discovery_settings.mass_recalibration

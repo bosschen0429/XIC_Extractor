@@ -125,6 +125,27 @@ peak detection, batch-to-batch matching, Backfill or published quantities.
 See the [grouping diagnostic](../../tools/diagnostics/INDEX.md#grouping_experimentpy)
 for baseline comparisons and calibration options.
 
+To change **Backfill** without repeating initial acquisition or grouping, add
+`--stop-after grouping --save-backfill-inputs` to the usual scalar CID-NL
+Alignment command once. Point the replay at that run's directory:
+
+    .venv\Scripts\python.exe -m scripts.run_alignment backfill --inputs output/grouping/backfill-inputs --output-dir output/backfill-trial
+
+The diagnostic runs the current Backfill and cell-decision code with the
+captured settings and all competitors. `backfill-cells.tsv` identifies each
+group/sample, area (empty for no write), decision and status. No Matrix or
+cross-batch correspondence is published. Only Backfill can request RAW data;
+original RAW paths, the reader and source checks still apply. The acquisition
+cache is not a grouping checkpoint. Old group tables and membership snapshots
+cannot supply the initial assessments.
+
+Capture is opt-in. Keep the checkpoint at its original absolute path on the
+same machine/user. Its partition files are private Python execution objects,
+not exchange files: replay verifies the actual bytes against a separate
+user-local receipt under `~/.xic-extractor/backfill-v1/` before decoding.
+Other worktrees can read the original directory; capture again if upstream
+inputs or the stored Python models change.
+
 RAW-backed Alignment requires a bound pure CID-NL preset. Its retained runtime owns
 acquisition and scheduling; CLI help defines supported execution options.
 The command validates its inputs before acquisition. Use its preflight option

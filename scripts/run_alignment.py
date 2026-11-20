@@ -73,6 +73,29 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         return regroup_main(argv[1:])
 
+    if argv and argv[0] == "backfill":
+        from xic_extractor.diagnostics.backfill_replay import replay_backfill
+
+        parser = argparse.ArgumentParser(
+            usage="%(prog)s backfill --inputs DIR --output-dir DIR",
+            description="Rerun Backfill on a completed local grouping checkpoint.",
+        )
+        parser.add_argument(
+            "--inputs",
+            required=True,
+            type=Path,
+            help="Directory captured with --stop-after grouping --save-backfill-inputs",
+        )
+        parser.add_argument("--output-dir", required=True, type=Path)
+        replay = parser.parse_args(argv[1:])
+        try:
+            output = replay_backfill(replay.inputs, replay.output_dir)
+            print(f"Backfill decisions: {output}")
+        except (OSError, ValueError, RawReaderError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        return 0
+
     args = _parse_args(argv)
     try:
         execution_profile = load_execution_profile(alignment_workers=args.raw_workers)
@@ -246,7 +269,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 profiler.enable()
             if args.stop_after == "grouping":
                 grouping_output = run_untargeted_grouping(
-                    request, context, save_snapshot=args.save_grouping_inputs
+                    request,
+                    context,
+                    save_snapshot=args.save_grouping_inputs,
+                    save_backfill_inputs=args.save_backfill_inputs,
                 )
             else:
                 outputs = run_untargeted_application(request, context)
@@ -285,6 +311,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.stop_after == "grouping":
         print(f"Grouping results: {grouping_output}")
+        if args.save_backfill_inputs:
+            print(f"Backfill inputs: {grouping_output / 'backfill-inputs'}")
         return 0
     if outputs.review_tsv is not None:
         print(f"Alignment review TSV: {outputs.review_tsv}")
@@ -354,7 +382,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         description=(
             "Publish finalized pure CID-NL Alignment "
             "from an owner-closed discovery batch index. To recompute only grouping "
-            "from a saved snapshot (no RAW or DLL), use: %(prog)s regroup --help."
+            "from a saved snapshot, use: %(prog)s regroup --help. "
+            "To rerun only Backfill, use: %(prog)s backfill --help."
         ),
     )
     parser.add_argument(
@@ -556,6 +585,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         action="store_true",
         help="With --stop-after grouping, save grouping-inputs.json.gz for regroup.",
     )
+    parser.add_argument(
+        "--save-backfill-inputs",
+        action="store_true",
+        help="With --stop-after grouping, save local inputs for Backfill replay.",
+    )
     parser.add_argument("--emit-alignment-cells", action="store_true")
     parser.add_argument(
         "--retain-acquisition-cache",
@@ -604,6 +638,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.save_grouping_inputs and args.stop_after != "grouping":
         parser.error("--save-grouping-inputs requires --stop-after grouping")
+    if args.save_backfill_inputs and args.stop_after != "grouping":
+        parser.error("--save-backfill-inputs requires --stop-after grouping")
+    if args.save_backfill_inputs and not args.backfill:
+        parser.error("--save-backfill-inputs cannot capture a --no-backfill plan")
     return args
 
 

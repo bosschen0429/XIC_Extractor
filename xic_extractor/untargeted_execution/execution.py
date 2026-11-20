@@ -75,6 +75,38 @@ class _GroupingInputs:
 
 
 @dataclass(frozen=True, slots=True)
+class FrozenBackfillPartition:
+    """A complete set of competing groups and its already acquired assessments."""
+
+    batch: UntargetedPartitionInputs
+    grouping: CidNlGrouping
+    initial_results: tuple[UntargetedInitialSampleResult, ...]
+
+    def execute(
+        self,
+        partition_key: str,
+        pool: WorkerAdmissionPool,
+        *,
+        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> UntargetedPartitionResult:
+        return execute_partition(
+            self.batch.jobs,
+            pool=pool,
+            partition_key=partition_key,
+            alignment_config=self.grouping.alignment_config,
+            prepare_grouping=lambda _: self.grouping,
+            backfill_templates=self.batch.sample_job_templates,
+            initial_results=self.initial_results,
+            initial_only=False,
+            raw_workers=pool.max_workers,
+            raw_worker_backend=pool.backend,
+            progress_callback=progress_callback,
+            should_cancel=should_cancel,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class _GroupingPartition:
     """Grouping checkpoint in the result table, with optional initial acquisition."""
 
@@ -214,6 +246,7 @@ class UntargetedPartitionPipelineAdapter:
         acquisition_cache_dir: Path | None = None,
         retain_partition_spool: bool = False,
         grouping_only: bool = False,
+        capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
         mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
         | None = None,
         project_child: ChildOutputProjection | None = None,
@@ -224,6 +257,7 @@ class UntargetedPartitionPipelineAdapter:
             raise ValueError("composing children requires an output projection")
         self._retain_partition_spool = bool(retain_partition_spool)
         self._grouping_only = grouping_only
+        self._capture_backfill = capture_backfill
         self._project_child = project_child
         self._plan = plan
         self._alignment_config = alignment_config
@@ -477,10 +511,15 @@ class UntargetedPartitionPipelineAdapter:
                 initial.prepared, progress_callback=progress_callback
             )
             check_cancellation()
+            final = _GroupingInputs(initial.batch, prepared)
             self._final_groupings[partition.index] = store.append(
                 f"partition-{partition.index:05d}-grouping",
-                _GroupingPartition(_GroupingInputs(initial.batch, prepared)),
+                _GroupingPartition(final),
             )
+            if self._capture_backfill is not None:
+                self._capture_backfill(
+                    self._backfill_partition(store, partition.index, final)
+                )
             if progress_callback is not None:
                 progress_callback(
                     {
@@ -490,6 +529,20 @@ class UntargetedPartitionPipelineAdapter:
                         "total": self._bootstrap_count,
                     }
                 )
+
+    def _backfill_partition(
+        self, store: StreamedResultStore, index: int, final: _GroupingInputs
+    ) -> FrozenBackfillPartition:
+        return FrozenBackfillPartition(
+            replace(final.batch, prepared_grouping=None),
+            final.prepared,
+            cast(
+                tuple[UntargetedInitialSampleResult, ...],
+                store.read_tuple(
+                    self._initial_partitions[index].index, "initial_results"
+                ),
+            ),
+        )
 
     def execute_acquisition(
         self,
@@ -504,65 +557,39 @@ class UntargetedPartitionPipelineAdapter:
         ]
     ]:
         initial_only = self._is_bootstrap(partition)
-        initial_results = None
-        grouping_callback: Callable[
-            [tuple[UntargetedInitialSampleResult, ...]], CidNlGrouping
-        ]
         if initial_only:
             batch = self.materialize_partition(partition)
-            grouping_callback = partial(
-                group_acquired_partition,
-                batch,
+            execute = partial(
+                execute_partition,
+                batch.jobs,
+                partition_key=partition.partition_key,
+                prepare_grouping=partial(
+                    group_acquired_partition,
+                    batch,
+                    alignment_config=self._alignment_config,
+                    known_istd_reference=self._known_istd_reference,
+                    progress_callback=progress_callback,
+                    bootstrap_only=True,
+                ),
+                backfill_templates=batch.sample_job_templates,
                 alignment_config=self._alignment_config,
-                known_istd_reference=self._known_istd_reference,
-                progress_callback=progress_callback,
-                bootstrap_only=True,
+                raw_workers=self._partition_raw_workers,
+                raw_worker_backend=self._raw_worker_backend,
+                initial_only=True,
+                initial_results=None,
             )
         else:
             store = self._initial_store
             if store is None:
                 raise RuntimeError("Backfill requires frozen batch calibration")
-            initial_partition = self._initial_partitions[
-                partition.index - self._bootstrap_count
-            ]
-            # Reuse the final phase answer and the original acquisition records.
-            final_grouping_inputs = cast(
+            index = partition.index - self._bootstrap_count
+            final = cast(
                 _GroupingInputs,
-                store.read_header_field(
-                    self._final_groupings[
-                        partition.index - self._bootstrap_count
-                    ].index,
-                    "grouping",
-                ),
+                store.read_header_field(self._final_groupings[index].index, "grouping"),
             )
-            batch = replace(final_grouping_inputs.batch, prepared_grouping=None)
-            initial_results = cast(
-                tuple[UntargetedInitialSampleResult, ...],
-                store.read_tuple(initial_partition.index, "initial_results"),
-            )
-
-            def final_grouping(
-                _: tuple[UntargetedInitialSampleResult, ...],
-            ) -> CidNlGrouping:
-                return final_grouping_inputs.prepared
-
-            grouping_callback = final_grouping
-
-        def run(pool: WorkerAdmissionPool) -> UntargetedPartitionResult:
-            return execute_partition(
-                batch.jobs,
-                pool=pool,
-                prepare_grouping=grouping_callback,
-                backfill_templates=batch.sample_job_templates,
-                partition_key=partition.partition_key,
-                alignment_config=self._alignment_config,
-                progress_callback=progress_callback,
-                should_cancel=should_cancel,
-                raw_workers=self._partition_raw_workers,
-                raw_worker_backend=self._raw_worker_backend,
-                initial_only=initial_only,
-                initial_results=initial_results,
-            )
+            frozen = self._backfill_partition(store, index, final)
+            batch = frozen.batch
+            execute = partial(frozen.execute, partition_key=partition.partition_key)
 
         if self._raw_worker_backend == "process":
             if self._process_pools_closed:
@@ -584,7 +611,11 @@ class UntargetedPartitionPipelineAdapter:
                 thread_name_prefix="cid-nl-sample",
             )
         with pool_context as pool:
-            leaf = run(pool=pool)
+            leaf = execute(
+                pool=pool,
+                progress_callback=progress_callback,
+                should_cancel=should_cancel,
+            )
         return PartitionAcquisitionOutput(
             result=(replace(batch, prepared_grouping=leaf.prepared_grouping), leaf),
             failure=leaf.failure,
@@ -714,6 +745,7 @@ def execute_untargeted_plan(
     acquisition_cache_dir: Path | None = None,
     pipeline_overlap: bool = False,
     grouping_only: bool = False,
+    capture_backfill: Callable[[FrozenBackfillPartition], None] | None = None,
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
     project_child: ChildOutputProjection | None = None,
@@ -756,6 +788,7 @@ def execute_untargeted_plan(
         acquisition_cache_dir=cache_dir,
         retain_partition_spool=retain_partition_spool,
         grouping_only=grouping_only,
+        capture_backfill=capture_backfill,
         mass_recalibration_by_sample=mass_recalibration_by_sample,
         project_child=project_child,
     )
