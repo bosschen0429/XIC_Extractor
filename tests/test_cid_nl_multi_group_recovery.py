@@ -1005,10 +1005,12 @@ def test_runtime_recovers_every_authorized_rt_group(
             assert replayed[:2] == baseline[:2]
 
 
-def _shared_peak_inputs(tmp_path, monkeypatch, mz_separation_ppm):
+def _shared_peak_inputs(
+    tmp_path, monkeypatch, mz_separation_ppm, *, observed=("S1", "S2")
+):
     from xic_extractor.configuration.mass_recalibration import MassRecalibration
 
-    centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": (8.06,)}
+    centers = {**dict.fromkeys(observed, (8.0, 8.12)), "Missing": (8.06,)}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
     # Keep the two synthetic discovery peaks as separate fixture groups; this
     # changes only this test input, never the production/default threshold.
@@ -1022,13 +1024,13 @@ def _shared_peak_inputs(tmp_path, monkeypatch, mz_separation_ppm):
         _peak_config(tmp_path),
     )
     raws, candidates = {}, {}
-    for path in paths:
+    for index, path in enumerate(paths, start=1):
         path.write_bytes(path.stem.encode())
         raw = _FakeRaw(centers[path.stem])
         raw.rt = np.linspace(7.4, 8.7, 521)
         raw.intensity = sum(
             (
-                (2000 if path.stem == "S2" else 1000)
+                (1000 if path.stem == "Missing" else 1000 * index)
                 * np.exp(-0.5 * ((raw.rt - center) / 0.018) ** 2)
                 for center in centers[path.stem]
             ),
@@ -2041,3 +2043,101 @@ def test_matrix_preserves_empty_batch_sample_column(tmp_path, monkeypatch):
         == (matrix / "alignment_matrix.tsv").read_bytes()
         == (direct / "alignment_matrix.tsv").read_bytes()
     )
+
+
+def test_matrix_joins_independently_captured_named_batches(tmp_path, monkeypatch):
+    import csv
+    import json
+    from datetime import datetime
+
+    from scripts.run_alignment import main
+    from xic_extractor.alignment.drift_evidence import (
+        mint_known_istd_reference_from_measurements,
+    )
+    from xic_extractor.applications.untargeted import application
+    from xic_extractor.applications.untargeted.request import AlignmentReplayOptions
+    from xic_extractor.configuration.models import Target
+    from xic_extractor.untargeted_execution.batch_split import split_discovery_batch
+
+    options = _shared_peak_inputs(
+        tmp_path, monkeypatch, 0.0, observed=("S1", "S2", "S3", "S4")
+    )
+    samples = tuple(
+        replace(sample, batch_id="B" if sample.raw_stem in {"S3", "S4"} else "A")
+        for sample in options["sample_metadata"]
+    )
+    options["sample_metadata"] = samples
+    # Seed one shared identity so the test exercises a real paired row, even
+    # without enough ISTDs to fit a cross-batch RT map.
+    target = Target(
+        label="shared",
+        mz=500.0,
+        rt_min=7.96,
+        rt_max=8.04,
+        ppm_tol=20,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20,
+        nl_ppm_max=20,
+        is_istd=True,
+        istd_pair="",
+    )
+    reference = mint_known_istd_reference_from_measurements(
+        (target,), {("shared", stem): 8.0 for stem in ("S1", "S2", "S3", "S4")}
+    )
+    request = replace(
+        _backfill_request(tmp_path, options, AlignmentConfig(anchor_min_seed_events=1)),
+        known_istd_reference=reference,
+    )
+    monkeypatch.setattr(
+        application,
+        "latest_acquisition_reader",
+        lambda *a, **kw: lambda batch: datetime(2026, 1, 1),
+    )
+
+    def replay(stage, *args):
+        out = tmp_path / stage
+        assert main([stage, *map(str, args), "--output-dir", str(out)]) == 0
+        return out
+
+    captures = []
+    for batch_id, batch_index in split_discovery_batch(
+        request.discovery_batch_index, samples
+    ):
+        out = tmp_path / batch_id
+        application.run_untargeted_application(
+            replace(
+                request,
+                discovery_batch_index=batch_index,
+                sample_metadata=tuple(s for s in samples if s.batch_id == batch_id),
+                output_dir=out,
+                replay=AlignmentReplayOptions(matrix=True, pairing=True),
+            )
+        )
+        assert not (out / "matrix-join.json").exists()
+        captures.append(out)
+
+    pair_inputs = [out / "pairing-inputs" / "batch-1.json" for out in captures]
+    cells = [out / "matrix-cells.json" for out in captures]
+    paired = replay("pair-batches", "--inputs", *pair_inputs)
+    matrix = replay(
+        "matrix", "--backfill", *cells, "--pairing", paired / "matrix-join.json"
+    )
+
+    for pair_input, cell_input in zip(pair_inputs, cells, strict=True):
+        pair_doc = json.loads(pair_input.read_text(encoding="utf-8"))
+        cell_doc = json.loads(cell_input.read_text(encoding="utf-8"))
+        groups = cell_doc["batches"][pair_doc["batch_id"]]["groups"]
+        assert {g["key"] for g in groups} == {f["key"] for f in pair_doc["features"]}
+
+    formal = tmp_path / "formal"
+    application.run_untargeted_application(replace(request, output_dir=formal))
+    replayed = matrix / "alignment_matrix.tsv"
+    assert replayed.read_bytes() == (formal / replayed.name).read_bytes()
+    with replayed.open(encoding="utf-8", newline="") as stream:
+        header, *rows = csv.reader(stream, delimiter="\t")
+    assert header == ["Mz", "RT", "S1", "S2", "S3", "S4", "Missing"]
+    assert len(rows) == 3
+    (shared,) = [row for row in rows if row[2] and row[4]]
+    areas = list(map(float, shared[2:6]))
+    assert 0 < areas[0] < areas[1] < areas[2] < areas[3]
+    assert any(not row[6] for row in rows)
