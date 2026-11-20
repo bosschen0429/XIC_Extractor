@@ -201,10 +201,14 @@ def _hypothesis_from_owner_group(
         if not events
         else sum(event.observed_neutral_loss_da for event in events) / len(events)
     )
+    # A peak measured on an unresolved shoulder or overlap keeps its area, but
+    # a group made only of such peaks has no member showing a peak of its own.
+    settled = len(members) >= 2 and not all(
+        owner.peak.requires_overlap_review for owner in group
+    )
     return CrossSamplePeakGroupHypothesis(
         member_subjects=members,
-        disposition=disposition
-        or ("established" if len(members) >= 2 else "provisional"),
+        disposition=disposition or ("established" if settled else "provisional"),
         owners=group,
         group_center_mz=center[0],
         group_center_rt=center[1],

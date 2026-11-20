@@ -97,20 +97,34 @@ class CidNlBatchGrouping:
         )
         self._rt_frame: SampleRtFrame | None = None
 
-    def add_initial(self, prepared: CidNlGrouping) -> None:
+    def add_initial(self, prepared: CidNlGrouping) -> tuple[RtAnchorObservation, ...]:
         observations = prepared.rt_anchor_observations
-        self._calibration.add_observations(observations)
-        self._drift.add_observations(observations)
+        self.add_anchor_observations(observations)
         self._bootstrap_frame = self._bootstrap_frame.with_sources(
             known_istd_reference=prepared.known_istd_reference
         )
+        return observations
 
-    def freeze_calibration(self) -> None:
-        calibration = self._calibration.freeze(
+    def add_anchor_observations(
+        self, observations: Sequence[RtAnchorObservation]
+    ) -> None:
+        self._calibration.add_observations(observations)
+        self._drift.add_observations(observations)
+
+    def freeze_calibration(
+        self, *, reference: CidNlBatchGrouping | None = None
+    ) -> None:
+        """Fit the published map and the drift model on one bootstrap population.
+
+        ``reference`` holds that population when it differs from this one,
+        i.e. without peaks measured on an unresolved shoulder or overlap.
+        """
+        source = reference if reference is not None else self
+        calibration = source._calibration.freeze(
             measured_istds=self._bootstrap_frame.measured_istd_coordinates
         )
         self._rt_frame = self._bootstrap_frame.with_sample_calibration(
-            calibration, self._drift.freeze(calibration)
+            calibration, source._drift.freeze(calibration)
         )
 
     @property
@@ -225,7 +239,7 @@ def prepare_cid_nl_grouping(
         )
         for candidate_id, method_subject_id in (subject_batch.candidate_memberships)
         # An unmeasured candidate cannot seed grouping: Discovery held the peak,
-        # or Alignment could not measure a usable, overlap-free peak.
+        # or Alignment could not measure a usable peak.
         if candidate_id not in observation_by_candidate
         or method_subject_id in unsupported_subjects
     )

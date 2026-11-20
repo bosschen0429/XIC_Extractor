@@ -20,7 +20,6 @@ PeakStatus = Literal[
     "admitted",
     "blank",
     "doubly_charged",
-    "overlap",
     "no_nl_event",
 ]
 """Whether a peak enters Alignment, and if not, the first reason that holds it."""
@@ -28,12 +27,12 @@ PEAK_STATUSES: tuple[PeakStatus, ...] = (
     "admitted",
     "blank",
     "doubly_charged",
-    "overlap",
     "no_nl_event",
 )
 
 DISCOVERY_PEAK_COLUMNS = (
     "status",
+    "requires_overlap_review",
     "evidence_score",
     "attached_event_count",
     "peak_id",
@@ -170,6 +169,8 @@ class DiscoveryPeak:
     located_events: tuple[DiscoveryEvent, ...] = dataclass_field(
         default=(), compare=False
     )
+    # Measurement quality is independent of admission and NL attachment.
+    requires_overlap_review: bool = False
 
     @property
     def is_clean_peak(self) -> bool:

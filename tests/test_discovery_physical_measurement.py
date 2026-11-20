@@ -1127,7 +1127,8 @@ def test_discovery_publishes_physical_qualification(
     assert query_rt < evaluation.answer.selected_segment.right_rt_min < rt[-1]
     if trace_case == "overlapping_components":
         assert evaluation.requires_overlap_review
-        assert candidate.status == "overlap"
+        # Overlap review does not hold the peak.
+        assert candidate.status == "admitted"
 
     from xic_extractor.discovery.csv_reader import read_discovery_peaks_csv
     from xic_extractor.discovery.csv_writer import write_discovery_peaks_csv

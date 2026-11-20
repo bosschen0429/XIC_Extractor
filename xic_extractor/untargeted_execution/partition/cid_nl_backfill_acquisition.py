@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from xic_extractor.acquisition_contract import (
     NATIVE_SCAN_COORDINATE_KIND,
@@ -25,6 +25,7 @@ from xic_extractor.discovery.models import DiscoveryEvent
 from xic_extractor.discovery.ms2_events import discovery_events_from_scan
 from xic_extractor.discovery.settings import DiscoverySettings
 from xic_extractor.discovery.strict_event_receipts import resolve_discovery_scan_events
+from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelation,
 )
@@ -54,13 +55,16 @@ from xic_extractor.peak_detection.observations import (
     mint_physical_peak_observations,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
+    answer_physical_peak_question,
     evaluate_physical_peak,
+    mint_physical_peak_question,
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_BACKFILL_POLICY,
     PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PhysicalPeakEvaluation,
+    PreparedSignalResult,
 )
 from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
@@ -76,6 +80,11 @@ from xic_extractor.untargeted_execution.partition.cid_nl_raw_source import (
     _within_ppm,
 )
 from xic_extractor.xic_models import XICRequest
+
+if TYPE_CHECKING:
+    from xic_extractor.untargeted_execution.partition.cid_nl_sample_acquisition import (
+        CidNlAcquisitionResult,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -281,6 +290,23 @@ def _backfill_xic_request(
     )
 
 
+def _backfill_policy(location_reliable: bool) -> str:
+    return (
+        PHYSICAL_PEAK_BACKFILL_POLICY
+        if location_reliable
+        else PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
+    )
+
+
+def _backfill_window(
+    query: float, half_window: float, tolerance_sec: float | None = None
+) -> tuple[float, float]:
+    radius = (
+        half_window if tolerance_sec is None else min(half_window, tolerance_sec / 60)
+    )
+    return max(0.0, query - radius), query + radius
+
+
 def physical_backfill_observation(
     *,
     sample: SampleMetadata,
@@ -292,22 +318,21 @@ def physical_backfill_observation(
     location_reliable: bool = True,
     evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
 ) -> PeakObservation | None:
-    """Measure one backfill trace; only a clean selected peak is observed."""
+    """Measure one backfill trace; an available selected peak is observed.
+
+    Overlap review travels with the observation instead of withholding it.
+    """
     evaluation = evaluate_physical_peak(
         prepare_physical_signal(trace.rt, trace.intensity, profile=profile),
         query_rt_min=query_rt_min,
         request_context_rt_start_min=trace.rt_min,
         request_context_rt_end_min=trace.rt_max,
-        selection_policy_version=(
-            PHYSICAL_PEAK_BACKFILL_POLICY
-            if location_reliable
-            else PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
-        ),
+        selection_policy_version=_backfill_policy(location_reliable),
         search_rt_window=search_rt_window,
     )
     if evaluation_sink is not None:
         evaluation_sink(evaluation)
-    if evaluation.state != "available" or evaluation.requires_overlap_review:
+    if evaluation.state != "available":
         return None
     return mint_physical_peak_observations(
         sample=sample,
@@ -470,13 +495,9 @@ def backfill_untargeted_cid_nl_sample_subject(
         raise CidNlAcquisitionError("group_center_mz must be finite and positive")
     source = acquisition_source
     half_window = peak_config.nl_rt_anchor_half_window_min
-    query_rt_min = max(0.0, float(query_rt) - half_window)
-    query_rt_max = float(query_rt) + half_window
+    query_rt_min, query_rt_max = _backfill_window(query_rt, half_window)
     selection_window = (
-        (
-            max(query_rt_min, float(query_rt) - query_rt_tolerance_sec / 60.0),
-            min(query_rt_max, float(query_rt) + query_rt_tolerance_sec / 60.0),
-        )
+        _backfill_window(query_rt, half_window, query_rt_tolerance_sec)
         if query_rt_tolerance_sec is not None
         else None
     )
@@ -616,6 +637,61 @@ def backfill_untargeted_cid_nl_sample_subject(
                 support_policy=support_policy,
             )
         )
+    return _close_backfill_attempt(
+        sample=sample,
+        source=source,
+        method_subject=method_subject,
+        group_hypothesis_id=group_hypothesis_id,
+        query_rt=query_rt,
+        query_rt_basis=query_rt_basis,
+        physical_mz=request.mz,
+        query_rt_min=query_rt_min,
+        query_rt_max=query_rt_max,
+        support_policy=support_policy,
+        initial_receipt=initial_assessment.evaluation_receipt
+        if initial_assessment is not None
+        else None,
+        observations=observations,
+        backfill_evidence=backfill_evidence,
+        backfill_support=backfill_support,
+        backfill_sets=backfill_sets,
+        acquisition=acquisition,
+        capture_evidence=tuple(
+            RetainedCaptureEvidence(
+                sample_key=sample.sample_name,
+                processing_attempt_id=processing_attempt_id,
+                method_subject_id=method_subject.method_subject_id,
+                candidate_id=None,
+                capture_stage="method_backfill",
+                trace=trace,
+                physical_evaluation=evaluation,
+                observation_ref=observation,
+            )
+            for evaluation in physical_evaluations
+        ),
+    )
+
+
+def _close_backfill_attempt(
+    *,
+    sample: SampleMetadata,
+    source: AcquisitionSourceIdentity,
+    method_subject: CidNlMethodSubject,
+    group_hypothesis_id: str | None,
+    query_rt: float,
+    query_rt_basis: str,
+    physical_mz: float,
+    query_rt_min: float,
+    query_rt_max: float,
+    support_policy: DdaCidNlPeakSupportPolicy,
+    initial_receipt: CidNlEvaluationReceipt | None,
+    observations: tuple[PeakObservation, ...],
+    backfill_evidence: tuple[CidNlEvidenceObservation, ...],
+    backfill_support: tuple[DdaCidNlPeakSupport, ...],
+    backfill_sets: tuple[DdaCidNlCandidateSetRelation, ...],
+    acquisition: TraceAcquisitionBatch,
+    capture_evidence: tuple[RetainedCaptureEvidence, ...],
+) -> UntargetedCidNlBackfillAttemptResult:
     try:
         assessment = mint_cid_nl_method_assessment(
             sample=sample,
@@ -643,11 +719,11 @@ def backfill_untargeted_cid_nl_sample_subject(
                 search_completed=True,
                 reason_code=None,
                 evidence_scope=(
-                    initial_assessment.evaluation_receipt.evidence_scope
-                    if initial_assessment is not None and backfill_evidence
+                    initial_receipt.evidence_scope
+                    if initial_receipt is not None and backfill_evidence
                     else "subject_window"
                 ),
-                physical_query_mz=request.mz,
+                physical_query_mz=physical_mz,
             ),
             candidate_peaks=observations,
             evidence_refs=backfill_evidence,
@@ -671,18 +747,106 @@ def backfill_untargeted_cid_nl_sample_subject(
         group_hypothesis_id=group_hypothesis_id,
         query_rt=float(query_rt),
         query_rt_basis=query_rt_basis,
-        capture_evidence=tuple(
+        capture_evidence=capture_evidence,
+    )
+
+
+def reuse_cid_nl_backfill_peak(
+    *,
+    target: UntargetedCidNlBackfillTarget,
+    capture: CidNlAcquisitionResult,
+    source: AcquisitionSourceIdentity,
+    peak_config: ExtractionConfig,
+) -> UntargetedCidNlBackfillAttemptResult | None:
+    """Ask the group's physical question of measured segments, without new RAW reads.
+
+    The initial method assessment (including all declared NL events) stays intact.
+    A set-level or incomplete composite relation is not missing Direct support.
+    Never create a new segment by narrowing an ambiguous chemical universe.
+    """
+    initial = capture.assessment_input.assessment
+    if (
+        initial.reason_codes != ("no_unique_qualifying_relation",)
+        or capture.acquisition is None
+    ):
+        return None
+    sample = capture.assessment_input.sample
+    query = target.sample_query_rt
+    window = _backfill_window(
+        query, peak_config.nl_rt_anchor_half_window_min, target.query_rt_tolerance_sec
+    )
+    matches = {}
+    for record in capture.capture_evidence:
+        peak = record.observation_ref
+        if (
+            peak is None
+            or peak not in initial.candidate_peaks
+            or not within_ppm(
+                peak.mz,
+                target.physical_mz,
+                target.method_subject.precursor_tolerance_ppm,
+            )
+        ):
+            continue
+        ev = record.physical_evaluation
+        if ev is None or ev.retained_prepared_signal is None:
+            continue
+        question = mint_physical_peak_question(
+            ev.prepared,
+            ev.segment_universe,
+            query_rt_min=query,
+            selection_policy_version=_backfill_policy(target.query_rt_reliable),
+            search_rt_window=window,
+        )
+        answer = answer_physical_peak_question(
+            PreparedSignalResult(ev.prepared, ev.retained_prepared_signal, ()),
+            ev.segment_universe,
+            question,
+        )
+        if (
+            answer.state == "available"
+            and answer.answer.selected_segment == ev.answer.selected_segment
+        ):
+            matches[peak.physical_identity] = (record, answer)
+    if len(matches) != 1:
+        return None
+    record, answer = next(iter(matches.values()))
+    (observed,) = mint_physical_peak_observations(
+        sample=sample,
+        trace=record.trace,
+        evaluations=(answer,),
+        resolver_mode=peak_config.resolver_mode,
+        signal_processing_profile=answer.prepared.profile,
+        capture_stage="method_backfill",
+    )
+    return _close_backfill_attempt(
+        sample=sample,
+        source=source,
+        method_subject=target.method_subject,
+        group_hypothesis_id=target.group_hypothesis_id,
+        query_rt=query,
+        query_rt_basis=target.query_rt_basis,
+        physical_mz=target.physical_mz,
+        query_rt_min=window[0],
+        query_rt_max=window[1],
+        support_policy=initial.evaluation_receipt.support_policy,
+        initial_receipt=None,
+        observations=(observed,),
+        backfill_evidence=(),
+        backfill_support=(),
+        backfill_sets=(),
+        acquisition=capture.acquisition,
+        capture_evidence=(
             RetainedCaptureEvidence(
                 sample_key=sample.sample_name,
-                processing_attempt_id=processing_attempt_id,
-                method_subject_id=method_subject.method_subject_id,
+                processing_attempt_id=record.processing_attempt_id,
+                method_subject_id=target.method_subject.method_subject_id,
                 candidate_id=None,
                 capture_stage="method_backfill",
-                trace=trace,
-                physical_evaluation=evaluation,
-                observation_ref=observation,
-            )
-            for evaluation in physical_evaluations
+                trace=record.trace,
+                physical_evaluation=answer,
+                observation_ref=observed,
+            ),
         ),
     )
 

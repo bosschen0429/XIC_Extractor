@@ -748,6 +748,7 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         prepared_worksets,
         acquisition_cache_dir=None,
         sparse=False,
+        rt_reference_only=False,
         mass_recalibration_by_sample=None,
     ):
         assert prepared_worksets.plan is _plan
@@ -759,6 +760,7 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
             prepared_worksets=prepared_worksets,
             acquisition_cache_dir=acquisition_cache_dir,
             sparse=sparse,
+            rt_reference_only=rt_reference_only,
             mass_recalibration_by_sample=mass_recalibration_by_sample,
         )
 

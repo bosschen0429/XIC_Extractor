@@ -108,6 +108,39 @@ def test_competition_names_the_other_group_by_sample_and_measured_rt(tmp_path):
     assert "cost_gap" not in str(sample)
 
 
+def test_shoulder_overlap_is_noted_with_its_own_area_without_raising_risk(tmp_path):
+    # The area stays published; only the sample measured on an unseparated
+    # shoulder or overlap says so, beside that area rather than as a risk.
+    report, _, _ = create_inspector_report(
+        tmp_path,
+        samples=[{"sample_key": sid, "sample_stem": sid} for sid in ("S1", "S2")],
+        cells=[
+            {
+                "sample_key": "S1",
+                "value": 123.0,
+                "variant": "numeric",
+                "support_origin": "discovery_support",
+                "review_reasons": ["physical_shoulder_overlap"],
+            },
+            {
+                "sample_key": "S2",
+                "value": 456.0,
+                "variant": "numeric",
+                "support_origin": "backfill_support",
+            },
+        ],
+    )
+    item = prepare_report(
+        report, SelectionRequest(strategy="query", group_ids=("G1",))
+    ).payload["items"][0]
+    samples = {sample["sample_id"]: sample for sample in item["samples"]}
+    assert samples["S1"]["area_notes"] == ["肩峰／重疊"]
+    assert "area_notes" not in samples["S2"]
+    assert [samples[sid]["quantitative_value"] for sid in ("S1", "S2")] == [123, 456]
+    assert [samples[sid]["risk_labels"] for sid in ("S1", "S2")] == [[], []]
+    assert item["badge_label"] == "已記錄"
+
+
 def _competition(selected, alternative, equivalents=()):
     return {
         "risk_flags": ["accepted_competition"],
