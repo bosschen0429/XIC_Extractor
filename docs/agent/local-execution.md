@@ -161,6 +161,22 @@ user-local receipt under `~/.xic-extractor/backfill-v1/` before decoding.
 Other worktrees can read the original directory; capture again if upstream
 inputs or the stored Python models change.
 
+To change **Matrix output only**, retain finalized cells once by adding
+`--save-matrix-inputs` to `run_alignment backfill`. This writes
+`matrix-cells.json`: unrounded row coordinates, sample identities, injection
+order, and decided areas (null means no write). `pair-batches` writes
+`matrix-join.json`: batch-qualified partners and the fitted RT maps. To
+render a new Matrix after a writer edit:
+
+    .venv\Scripts\python.exe -m scripts.run_alignment matrix --backfill output/backfill-trial/matrix-cells.json --pairing output/pairing-trial/matrix-join.json --output-dir output/matrix-trial
+
+Only `alignment_matrix.tsv` is written, using the formal writer. No RAW,
+Discovery, grouping, Backfill, or pair fitting is run. Separate Backfill files
+may be supplied together if they share one canonical injection order across
+batches. Feature or sample mismatches are errors, not implied missing values.
+Older decision and correspondence TSVs alone lack the publication order and
+fitted RT map; do not rebuild those facts from rounded report columns.
+
 RAW-backed Alignment requires a bound pure CID-NL preset. Its retained runtime owns
 acquisition and scheduling; CLI help defines supported execution options.
 The command validates its inputs before acquisition. Use its preflight option

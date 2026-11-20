@@ -132,6 +132,31 @@ def untarget_sample_order(
 
 
 @dataclass(frozen=True, slots=True)
+class FinalMatrixValues:
+    """One finalized group's unformatted values, in batch sample order."""
+
+    mz: float
+    rt: float
+    areas: tuple[float | None, ...]
+
+    def row(self, order: tuple[str, ...]) -> tuple[str, ...]:
+        table = serialize_public_matrix_table(
+            (
+                {
+                    "Mz": self.mz,
+                    "RT": self.rt,
+                    **{
+                        stem: "" if area is None else format_float(area)
+                        for stem, area in zip(order, self.areas, strict=True)
+                    },
+                },
+            ),
+            sample_columns=order,
+        )
+        return tuple(format_value(table.rows[0][column]) for column in table.header)
+
+
+@dataclass(frozen=True, slots=True)
 class UntargetGroupRows:
     """One written group's TSV rows before the batch numbers its rows.
 
@@ -182,6 +207,8 @@ def project_untarget_child_rows(
     outputs: Iterable[str],
     sample_order: tuple[str, ...],
     membership_risks_by_owner: Mapping[str, AcceptedMembershipRisk] | None = None,
+    capture_matrix: Callable[[UntargetGroupRows, FinalMatrixValues], None]
+    | None = None,
 ) -> tuple[UntargetGroupRows, ...]:
     """Format one child's groups for the requested TSVs (``matrix``,
     ``review``, ``backfill``, ``cells``, ``status``) without batch numbering."""
@@ -239,27 +266,13 @@ def project_untarget_child_rows(
             "group_center_mz": format_value(center_mz),
             "group_center_rt": format_value(center_rt),
         }
-        if group.destination == "matrix":
-            emit(
-                "matrix",
-                serialize_public_matrix_table(
-                    (
-                        {
-                            "Mz": center_mz,
-                            "RT": center_rt,
-                            **{
-                                sample_stem: ""
-                                if cell.value is None
-                                else format_float(cell.value)
-                                for sample_stem, cell in zip(
-                                    sample_order, cells, strict=True
-                                )
-                            },
-                        },
-                    ),
-                    sample_columns=sample_order,
-                ).rows,
+        matrix_values = None
+        if group.destination == "matrix" and ("matrix" in requested or capture_matrix):
+            matrix_values = FinalMatrixValues(
+                center_mz, center_rt, tuple(cell.value for cell in cells)
             )
+            if "matrix" in requested:
+                rows["matrix"] = [matrix_values.row(sample_order)]
         emit(
             "review",
             (
@@ -327,6 +340,8 @@ def project_untarget_child_rows(
                 rows=tuple((name, tuple(values)) for name, values in rows.items()),
             )
         )
+        if capture_matrix is not None and matrix_values is not None:
+            capture_matrix(projected[-1], matrix_values)
     return tuple(projected)
 
 
@@ -721,7 +736,8 @@ class BatchRowSource:
     """
 
     batch_id: str
-    completed: FinalizedUntargetBatchApplicationResult
+    canonical_samples: Sequence[SampleMetadata]
+    child_outputs: Sequence[object]
     feature_key: Callable[[UntargetGroupRows], str | None]
 
 
@@ -744,11 +760,11 @@ def write_batch_alignment_tsvs(
     (batch, child index, offset in the child) of each of its parts.
     """
     global_order = untarget_sample_order(
-        sample for source in sources for sample in source.completed.canonical_samples
+        sample for source in sources for sample in source.canonical_samples
     )
     headers = {**_output_headers(global_order), "review": BATCH_REVIEW_COLUMNS}
     orders = {
-        source.batch_id: untarget_sample_order(source.completed.canonical_samples)
+        source.batch_id: untarget_sample_order(source.canonical_samples)
         for source in sources
     }
     paired_elsewhere = {
@@ -761,7 +777,7 @@ def write_batch_alignment_tsvs(
     for source in sources:
         if source.batch_id == reference_batch:
             continue
-        for child_index, child in enumerate(source.completed.child_outputs):
+        for child_index, child in enumerate(source.child_outputs):
             groups = cast(UntargetChildOutputs, child).groups
             for offset, group in enumerate(groups):
                 key = source.feature_key(group)
@@ -792,7 +808,7 @@ def write_batch_alignment_tsvs(
             writer.writerow([escape_excel_formula(column) for column in headers[name]])
             writers[name] = writer
         for source in ordered_sources:
-            for child_index, child in enumerate(source.completed.child_outputs):
+            for child_index, child in enumerate(source.child_outputs):
                 groups = cast(UntargetChildOutputs, child).groups
                 for offset, group in enumerate(groups):
                     key = source.feature_key(group)
@@ -948,3 +964,27 @@ def _merge_batch_rows(
             )
         return (tuple(merged[column] for column in columns),)
     raise ValueError(f"unknown Untargeted output: {name}")
+
+
+def feature_key_by_peaks(
+    initial_groups: Iterable[CrossSamplePeakGroupHypothesis],
+) -> Callable[[UntargetGroupRows], str | None]:
+    """A written row's correspondence feature: the Matrix group it grew from."""
+    key_by_peak = {
+        owner.peak.physical_peak_key: group.group_hypothesis_id
+        for group in initial_groups
+        if group.destination == "matrix"
+        for owner in group.owners
+    }
+
+    def feature_key(rows: UntargetGroupRows) -> str | None:
+        keys = {
+            key_by_peak[peak]
+            for peak, _digest in rows.physical_peaks
+            if peak in key_by_peak
+        }
+        if len(keys) > 1:
+            raise ValueError("one written row grew from several Matrix groups")
+        return next(iter(keys), None) if rows.destination == "matrix" else None
+
+    return feature_key

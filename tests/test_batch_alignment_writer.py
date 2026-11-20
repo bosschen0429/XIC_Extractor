@@ -117,7 +117,9 @@ def _source(batch_id, groups):
             return None
         return rows.physical_peaks[0][0].split(":")[0]
 
-    return BatchRowSource(batch_id, completed, feature_key)
+    return BatchRowSource(
+        batch_id, completed.canonical_samples, completed.child_outputs, feature_key
+    )
 
 
 def _write(tmp_path, sources, partners):

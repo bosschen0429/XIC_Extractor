@@ -14,6 +14,7 @@ from xic_extractor.alignment.batch_correspondence import (
     pair_grouped_batches,
 )
 from xic_extractor.diagnostics.grouping_experiment_io import write_json
+from xic_extractor.diagnostics.matrix_replay import save_matrix_join
 from xic_extractor.output.alignment.batch_correspondence_table import (
     batch_correspondence_summary,
     write_batch_correspondence_table,
@@ -131,7 +132,8 @@ def replay_pairing(inputs: Sequence[Path], output_dir: Path) -> None:
         raise ValueError("pair-batches requires at least two batch inputs")
     table = output_dir / "batch_correspondence.tsv"
     summary = output_dir / "summary.json"
-    if table.exists() or summary.exists():
+    join = output_dir / "matrix-join.json"
+    if table.exists() or summary.exists() or join.exists():
         raise ValueError(f"Pairing output already exists: {output_dir}")
     captures = [_load(path) for path in inputs]
     latest = {batch.batch_id: date for batch, date, _ in captures}
@@ -147,5 +149,6 @@ def replay_pairing(inputs: Sequence[Path], output_dir: Path) -> None:
         precursor_tolerance_ppm=captures[0][2],
     )
     output_dir.mkdir(parents=True, exist_ok=True)
+    save_matrix_join(join, result)
     write_batch_correspondence_table(table, result, features)
     write_json(summary, {"batch_correspondence": batch_correspondence_summary(result)})

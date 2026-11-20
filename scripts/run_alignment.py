@@ -73,6 +73,33 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         return regroup_main(argv[1:])
 
+    if argv and argv[0] == "matrix":
+        from xic_extractor.diagnostics.matrix_replay import replay_matrix
+
+        parser = argparse.ArgumentParser(
+            prog="run_alignment matrix",
+            description="Write only the Matrix from completed Backfill and pairing.",
+        )
+        parser.add_argument(
+            "--backfill",
+            required=True,
+            nargs="+",
+            type=Path,
+            help="Completed matrix-cells.json file(s)",
+        )
+        parser.add_argument(
+            "--pairing", required=True, type=Path, help="Completed matrix-join.json"
+        )
+        parser.add_argument("--output-dir", required=True, type=Path)
+        args = parser.parse_args(argv[1:])
+        try:
+            matrix = replay_matrix(args.backfill, args.pairing, args.output_dir)
+        except (OSError, ValueError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(f"Matrix: {matrix}")
+        return 0
+
     if argv and argv[0] == "pair-batches":
         from xic_extractor.diagnostics.batch_pairing import replay_pairing
 
@@ -113,9 +140,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             help="Directory captured with --stop-after grouping --save-backfill-inputs",
         )
         parser.add_argument("--output-dir", required=True, type=Path)
+        parser.add_argument(
+            "--save-matrix-inputs",
+            action="store_true",
+            help="Save finalized values for Matrix replay.",
+        )
         replay = parser.parse_args(argv[1:])
         try:
-            output = replay_backfill(replay.inputs, replay.output_dir)
+            output = replay_backfill(
+                replay.inputs,
+                replay.output_dir,
+                save_matrix_inputs=replay.save_matrix_inputs,
+            )
             print(f"Backfill decisions: {output}")
         except (OSError, ValueError, RawReaderError) as exc:
             print(str(exc), file=sys.stderr)
@@ -413,7 +449,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "from an owner-closed discovery batch index. To recompute only grouping "
             "from a saved snapshot, use: %(prog)s regroup --help. "
             "To rerun only Backfill, use: %(prog)s backfill --help. "
-            "To match finished batches, use: %(prog)s pair-batches --help."
+            "To match finished batches, use: %(prog)s pair-batches --help. "
+            "To write only the Matrix, use: %(prog)s matrix --help."
         ),
     )
     parser.add_argument(

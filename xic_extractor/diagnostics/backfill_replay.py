@@ -13,6 +13,7 @@ from tempfile import NamedTemporaryFile
 from typing import cast
 
 from xic_extractor.configuration.atomic_write import atomic_write_text
+from xic_extractor.diagnostics.matrix_replay import CompletedMatrixCells
 from xic_extractor.execution._serialization import (
     owner_pickle_dumps,
     owner_pickle_loads,
@@ -69,12 +70,18 @@ def _partitions(directory: Path) -> Iterator[FrozenBackfillPartition]:
         yield cast(FrozenBackfillPartition, owner_pickle_loads(data, ()))
 
 
-def replay_backfill(directory: Path, output_dir: Path) -> Path:
+def replay_backfill(
+    directory: Path, output_dir: Path, *, save_matrix_inputs: bool = False
+) -> Path:
     """Write diagnostic row/sample decisions, never a production Matrix."""
     output_dir.mkdir(parents=True, exist_ok=True)
     output = output_dir / "backfill-cells.tsv"
     if output.exists():
         raise FileExistsError(output)
+    matrix = CompletedMatrixCells() if save_matrix_inputs else None
+    matrix_path = output_dir / "matrix-cells.json"
+    if matrix is not None and matrix_path.exists():
+        raise FileExistsError(matrix_path)
     stream = NamedTemporaryFile(
         mode="w", newline="", encoding="utf-8", dir=output_dir, delete=False
     )
@@ -104,6 +111,8 @@ def replay_backfill(directory: Path, output_dir: Path) -> Path:
                     alignment_config=frozen.grouping.alignment_config,
                     known_istd_reference=frozen.grouping.known_istd_reference,
                 )
+                if matrix is not None:
+                    matrix.append(composition, frozen.batch.context.samples)
                 for child in composition.children:
                     for group, cells in child.group_cells:
                         for cell in cells:
@@ -118,6 +127,8 @@ def replay_backfill(directory: Path, output_dir: Path) -> Path:
                                     cell_status(cell),
                                 )
                             )
+        if matrix is not None:
+            matrix.write(matrix_path)
         temporary.replace(output)
     finally:
         temporary.unlink(missing_ok=True)
