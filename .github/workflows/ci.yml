@@ -356,15 +356,3 @@ jobs:
               exit 1
             }
           }
-
-  legacy-test-context:
-    name: test (Python 3.12)
-    needs: test
-    if: ${{ always() }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Mirror test gate
-        env:
-          TEST_GATE_RESULT: ${{ needs.test.result }}
-        run: test "$TEST_GATE_RESULT" = success
