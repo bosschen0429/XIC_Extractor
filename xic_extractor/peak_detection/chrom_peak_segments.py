@@ -59,7 +59,6 @@ class ChromPeakSegmentPolicy:
     min_prominence_noise_sigma: float = 0.0
     min_prominence_fraction_of_envelope: float = 0.04
     min_prominence_fraction_of_apex: float = 0.0
-    # Minimum RT span of a separable acquired valley (in addition to two scans).
     valley_min_duration_min: float | None = None
 
     def baseline_return_threshold(self, apex_residual: float) -> float:
@@ -246,9 +245,6 @@ def enumerate_chrom_peak_segments(
             )
             group_start = index + 1
     if active_policy.morphology_trace_method == "rt_envelope":
-        # Smoothing can bury a valley the acquired scans still resolve. Split
-        # each coarse component at its separable acquired valleys; anything
-        # not separable stays one component measured as a whole.
         groups = [
             part
             for group in groups
@@ -531,11 +527,6 @@ def _supported_apex_seeds(
             )
         if prominence >= policy.min_prominence_noise_sigma * noise:
             supported.add(seed.index)
-    # Noise significance does not make a bump a separate chromatographic peak.
-    # Compare its prominence with the whole connected envelope before using a
-    # neighboring valley as a quantitative boundary. Baseline-separated weak
-    # peaks form their own groups, so a strong remote peak cannot erase them.
-    # Unsupported groups still reach the ordinary support/contrast gates.
     group: list[_ApexSeed] = []
     for index, seed in enumerate(seeds):
         group.append(seed)
@@ -776,9 +767,6 @@ def _segment_from_seed(
     policy: ChromPeakSegmentPolicy,
     envelope_seeds: tuple[_ApexSeed, ...],
 ) -> ChromPeakSegment:
-    # The RT envelope establishes supported lobes and separating valleys.
-    # Its convolution tails are not acquired quantitative support: close the
-    # interval on the unchanged canonical signal used for area and apex.
     boundary_signal = (
         np.maximum(intensity - baseline, 0.0)
         if policy.morphology_trace_method == "rt_envelope"
@@ -803,9 +791,6 @@ def _segment_from_seed(
     apex_index = seed.index
     if policy.morphology_trace_method == "rt_envelope":
         apex_index = left + int(np.argmax(boundary_signal[left:right]))
-        # The envelope locates the basin, not its quantitative return height.
-        # Trim its outer tails against the selected canonical apex, preserving
-        # interior dropout notches and the separating-valley limits above.
         threshold = policy.baseline_return_threshold(float(boundary_signal[apex_index]))
         basin_left, basin_right = left, right
         while left < apex_index and boundary_signal[left] <= threshold:

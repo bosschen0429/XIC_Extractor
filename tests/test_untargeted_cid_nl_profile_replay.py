@@ -220,7 +220,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             strict=True,
         )
     )
-    # Bootstrap terminals cross a disk handoff; preserve content, not addresses.
     assert sorted(trace.retained_terminals, key=lambda item: item.candidate_id) == (
         sorted(trace.consumed_terminals, key=lambda item: item.candidate_id)
     )
@@ -233,7 +232,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert child.scientific_core.lineage == ()
         assert child.scientific_core.grouping_result == context
     children = children_of(completed.application_result)
-    # Completed owner answers flow through projection, spool and writer once.
     assert len(trace.projection_builds) == len(children)
     if case.family_context:
         assert len(matrix_rows) == 1
@@ -317,7 +315,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             stem = result.job.sample.raw_stem
             (candidate,) = batch.context.peaks_by_sample[stem]
             assert candidate.peak_mz == representative_event(candidate).precursor_mz
-            # Alignment measures the peak again and gets Discovery's peak.
             ((_, observation),) = result.adapter_result.candidate_observations
             assert observation.source_trace.mz == candidate.peak_mz
             assert observation.physical_evaluation is not None
@@ -372,7 +369,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         assert cell.value == peak.area_counts_seconds
         assert cell.selected_integration.area_raw_counts_seconds != cell.value
         assert cell.selected_integration.rt_apex_min == peak.apex_rt_min
-        # Reported height keeps the baseline that the segment height removes.
         assert cell.selected_integration.height_smoothed > peak.height
     expected_row_count = sum(size > 1 for size in case.group_sizes)
     assert len(matrix_rows) == expected_row_count
@@ -497,7 +493,6 @@ def test_profile_replay_retains_positive_and_empty_backfill_evidence(
     assert integ.area_ms1_morphology == selected.area_counts_seconds
     prepared = observation.physical_evaluation.retained_prepared_signal
     assert prepared is not None
-    # Reported height is the Gaussian trace at the apex, without baseline removal.
     assert integ.height_smoothed == prepared.smoothed[selected.apex_index]
     assert integ.height_smoothed > selected.height
     assert recovered.assessment.method_result == "HOLD"

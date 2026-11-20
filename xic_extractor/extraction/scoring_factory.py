@@ -44,7 +44,6 @@ def build_scoring_context_factory(
         ]
         | None = None,
     ) -> ScoringContextBuilder:
-        # Expected RT is an identity prior, not a peak-generation or confidence window.
         rt_prior = (
             target_reference_rt
             if target_reference_rt is not None

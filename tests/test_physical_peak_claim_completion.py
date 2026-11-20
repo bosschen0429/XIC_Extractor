@@ -486,8 +486,6 @@ def test_acquired_valley_keeps_lobes_distinct_at_any_smoothing_width(window_poin
         )
         for apex in (4.94, 5.06)
     ]
-    # The split is read from the acquired scans, so canonical smoothing width
-    # cannot merge two lobes that the scans separate.
     assert compare_physical_peak_views(*views) == "distinct"
 
 

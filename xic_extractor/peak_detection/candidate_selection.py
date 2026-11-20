@@ -95,8 +95,6 @@ def candidate_selection_decision_record(
         else float(facts.quality_penalty)
     )
     gate_terms = decision_gate_terms(semantics)
-    # Paired-ISTD mismatch demotes localization, not counted detection. Keep
-    # that selection tier independent of the shared evidence decision class.
     paired_istd_mismatch = (
         facts.rt.paired_istd_status == "far"
         and "candidate_aligned_ms2_nl" not in semantics.support_reasons
@@ -174,9 +172,6 @@ def candidate_selection_decision_record(
             ("istd_reference_distance", distance),
             *gate,
         )
-    # Only positive, peak-owned method support precedes RT hints. An unobserved
-    # DDA product is not negative identity evidence, and a scan-free unrelated
-    # peak must not beat the reference peak simply by having no MS2 opportunity.
     gate = (("chemical_evidence_rank", float(_chemical_rank(facts))), *gate)
     tie_break = tuple(term for term in tie_break if term[0] != "chemical_evidence_rank")
     return DecisionRecord(

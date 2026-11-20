@@ -120,7 +120,6 @@ _SHAPE_REVIEW = frozenset({"physical_shoulder_overlap", "trace_morphology_review
 _MISSING_MS2_CODES = frozenset(
     {"missing_ms2_not_observed", "missing_ms2_policy_not_counted"}
 )
-# 依據 that already state the selected peak's NL observation or its absence.
 _NL_BASES = frozenset({"NL 確認", "NL 偏差大", "未見 NL", "無 MS2", "ISTD 未計入"})
 
 
@@ -165,8 +164,6 @@ def basis_label(row: Mapping[str, object]) -> str:
     if not_counted and not_counted <= MISSING_NL_NOT_COUNTED:
         if str(row.get("Role", "")).upper() == "ISTD" or not row.get("ISTD Pair"):
             return _missing_nl_label(nl, not_counted)
-        # A qualified peak at a counted paired ISTD takes its identity, so an
-        # unidentified qualified peak means the ISTD was not counted here.
         return "ISTD 未計入" if qualified else "峰形不完整"
     raise ValueError(f"No 依據 label for saved decision: {reason or not_counted}")
 

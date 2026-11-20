@@ -224,8 +224,6 @@ def owner_from_cid_nl_assessment_support(
         assessment=assessment,
         hypothesis=hypothesis,
     )
-    # Accepted relations resolve independent precursor references; inferred
-    # evidence can still carry its constructed precursor/loss fields.
     measured = support_relations
     aggregate_precursor_mz = math.fsum(
         relation.precursor_mz for relation in measured

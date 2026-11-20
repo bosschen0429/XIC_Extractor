@@ -556,8 +556,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         )
     observations: tuple[PeakObservation, ...] = ()
     physical_evaluations: list[PhysicalPeakEvaluation] = []
-    # Complete observations keep their original signal and integral. Only
-    # clipped context permits one bounded reconsideration of the same search.
     for capture_request, capture_acquired in (
         (request, acquired),
         (context_request, context_acquired),

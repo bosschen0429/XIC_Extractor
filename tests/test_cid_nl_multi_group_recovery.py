@@ -670,7 +670,6 @@ def test_runtime_recovers_every_authorized_rt_group(
             for attempt in missing.backfill_attempts
         )
         if recovery_peaks == (8.0, 12.0) and shared_support == "separate":
-            # Discarded local rows cannot supply NL to the new observations.
             assert all(
                 attempt.assessment.method_result == "HOLD"
                 for attempt in missing.backfill_attempts
@@ -946,8 +945,6 @@ def test_runtime_recovers_every_authorized_rt_group(
         if recovery_is_support:
             assert all(decision.value is not None for decision in decisions)
         else:
-            # One group-bounded MS1 peak without CID-NL evidence fills the
-            # Matrix as MS1-only Backfill; it never counts as a detection.
             ms1_only_cells = tuple(
                 cell
                 for cell in missing_cells
@@ -1118,7 +1115,6 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         attempt.assessment.candidate_peaks[0].physical_peak_key
         for attempt in missing.backfill_attempts
     )
-    # Ions within the precursor tolerance share one Discovery ion channel.
     assert len(set(physical_ids)) == 1
 
     (child,) = children_of(completed.application_result)
@@ -1171,7 +1167,6 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
 
         def _trace(self, request):
             trace = super()._trace(request)
-            # The fixture contains one ion, not one independent signal per query.
             if abs(physical_mz - request.mz) > request.mz * request.ppm_tol * 1e-6:
                 return replace(trace, intensity=np.zeros_like(trace.intensity))
             return trace
@@ -1338,7 +1333,6 @@ def _assert_backfill_risk_publication(tmp_path, completed, writer, candidates):
         for item in payload["items"]
         for sample in item["samples"]
     }
-    # The stored competition reaches its own sample's row, and no other.
     flagged = {sid for sid, names in labels.items() if any("可能" in n for n in names)}
     assert flagged == {accepted[0]["sample_key"]}
     assert matrix.read_bytes() == original
@@ -1683,8 +1677,6 @@ def _assert_alignment_uses_configured_recovery_groups(
 
     recovered = next(cell for cell in missing_cells if predecessor_center(cell) == 8.0)
     no_input = next(cell for cell in missing_cells if predecessor_center(cell) != 8.0)
-    # The partition store restores the empty recovery assessment from the
-    # completed runtime and leaves the other no-input position unsearched.
     assert all(
         cell.peak_observation is None and cell.peak_hypothesis is None
         for cell in recovered.predecessor_cells

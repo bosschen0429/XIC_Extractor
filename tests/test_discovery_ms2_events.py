@@ -405,7 +405,6 @@ def test_multi_profile_seeds_of_one_ion_share_one_channel() -> None:
 
     (channel,) = build_discovery_ions(seeds, settings=settings)
 
-    # Each tag keeps its own event; one ion is one channel for every tag.
     assert [seed.neutral_loss_tag for seed in seeds] == ["dR", "R", "MeR"]
     assert {seed.neutral_loss_tag for seed in channel.events} == {"dR", "R", "MeR"}
 

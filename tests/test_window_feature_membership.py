@@ -256,7 +256,6 @@ def test_partial_region_calibration_keeps_supported_common_apices(
         for d in result.sparse_decisions
         if d.owner_id == "a-early"
     )
-    # Membership does not erase the caller's original localization geometry.
     assert not trajectories.permits_membership(("a-early", "b-late"))
 
 
@@ -710,8 +709,6 @@ def test_intermediate_shape_does_not_transitively_merge_incompatible_peaks(
             {"narrow", "wide"}.issubset(group.owner_ids) for group in result.groups
         )
     else:
-        # Accepting the whole group must retain its endpoint contradiction,
-        # even though the intermediate peak agrees with both endpoints.
         assert any(
             "shape_disagreement" in decision.accepted_risk.soft_contradictions
             for decision in result.sparse_decisions
@@ -865,7 +862,6 @@ def test_pattern_and_unobserved_context_samples_extend_one_trajectory(reverse) -
         frozenset(("a:late", "b:late")),
     }
     assert all(group.disposition == "assigned" for group in result.groups)
-    # Pattern seeds join the whole-window graph; the band is the decision.
     assert {group.basis for group in result.groups} == {"window_level_rt_band"}
 
 
@@ -1612,8 +1608,6 @@ def test_one_sample_doublet_does_not_split_the_other_seventy_nine() -> None:
 
 @pytest.mark.parametrize("reverse", (False, True))
 def test_mass_resolved_coeluting_bands_survive_smooth_rt_drift(reverse: bool) -> None:
-    # Distinct measured inputs remain distinct; this does not decide whether
-    # two method subjects describe the same chemical compound.
     bands = tuple(
         tuple(
             _synthetic_owner(
@@ -1723,7 +1717,6 @@ def test_ambiguous_distant_pair_does_not_erase_independent_local_support() -> No
         and {owner.owner_id for owner in local} <= set(group.owner_ids)
         for group in result.groups
     )
-    # A choice is now made, without admitting both same-sample candidates.
     assert sorted(len(group.owner_ids) for group in result.groups) == [1, 3]
     assert all(
         len(set(group.owner_ids) & {o.owner_id for o in distant}) <= 1

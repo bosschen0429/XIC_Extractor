@@ -96,7 +96,6 @@ class ProductionCellDecision:
     subject: CellSubject
     evidence: CellEvidence
     payload: CellDecisionPayload
-    # Retain the chosen observation even when its area is not quantifiable.
     selected_integration: IntegrationResult | None
 
     @property
@@ -299,8 +298,6 @@ def _decide_group(
             "Group nonmember cannot use observation evidence"
         )
     if "ms1_only_backfill_observation" in states:
-        # A nonmember value never counts as a detection. Any competing lane
-        # leaves the single MS1 peak as unresolved.
         integrations = observation.integrations
         if state == "ms1_only_backfill_observation" and len(integrations) == 1:
             integration = integrations[0]

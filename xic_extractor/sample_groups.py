@@ -26,7 +26,6 @@ def canonicalize_sample_groups(groups: Iterable[str]) -> tuple[str, ...]:
     )
 
 
-# Without an explicit group, the role still tells study samples from blanks.
 _ROLE_GROUPS = {
     "sample": "Sample",
     "qc": "QC",

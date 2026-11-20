@@ -384,7 +384,6 @@ def _index_query_alternatives(
 
 
 def _requires_directional_membership(owners: Sequence[SampleLocalMS1Owner]) -> bool:
-    # Composition can bridge scalar tags; ordinary window bands cannot.
     return any(has_cid_nl_composition(owner) for owner in owners)
 
 

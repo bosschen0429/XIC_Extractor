@@ -19,7 +19,6 @@ from xic_extractor.configuration.delta_mass import (
 from xic_extractor.validation_primitives import require_finite_real
 
 DELTA_MASS_LABEL = "Delta Mass"
-# The quantitation ion is the declared target m/z; it does not occupy an ion row.
 BASE_POSITION = "base"
 # Earlier target tables named common CID-NL losses; the values are the
 # packaged CID-NL presets' losses.

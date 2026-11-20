@@ -238,8 +238,6 @@ def prepare_cid_nl_grouping(
             ),
         )
         for candidate_id, method_subject_id in (subject_batch.candidate_memberships)
-        # An unmeasured candidate cannot seed grouping: Discovery held the peak,
-        # or Alignment could not measure a usable peak.
         if candidate_id not in observation_by_candidate
         or method_subject_id in unsupported_subjects
     )

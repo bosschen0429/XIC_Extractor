@@ -163,8 +163,6 @@ def run_untargeted_application(
         peak_config=request.peak_config,
         signal_processing_profile=signal_processing_profile,
     )
-    # Source-bound Discovery receipts carry each RAW's mass result.
-    # Publication renders these facts; it never recomputes a mass policy.
     metadata["mass_recalibration_by_sample"] = json.dumps(
         {
             sample: json.loads(

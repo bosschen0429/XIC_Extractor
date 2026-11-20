@@ -87,7 +87,6 @@ def test_physical_capture_accepts_search_coordinates_without_method_evidence() -
     assert facts.area_counts_seconds == pytest.approx(
         1000.0 * 0.04 * np.sqrt(2.0 * np.pi) * 60.0, rel=0.06
     )
-    # NL is a lookup coordinate; the retained measurement is localized at raw apex.
     assert first.search.query_rt_min == search.query_rt_min
     assert first.evaluation.question.query_rt_min == pytest.approx(9.02)
     assert first.trace_quality == "clean"
@@ -488,8 +487,6 @@ def test_verified_multitag_peak_persists_each_tags_best_scan(
     assert candidate.matched_tag_names == ("dR", "R")
     assert _scan_ids(candidate) == (10, 11, 20, 21)
     assert candidate.best_ms2_scan_id == expected_by_tag["dR"].scan_number
-    # Each tag's per-scan facts reach the event table and Alignment as the
-    # peak's located events.
     assert set(candidate.located_events) == set(seeds)
 
 

@@ -80,7 +80,6 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
         self._headers: dict[str, tuple[str, ...]] = {}
         self._stats: dict[str, tuple[int, int]] = {}
         self._feature_ids: dict[str, tuple[str, ...]] = {}
-        # Discovery's apex MS1 readings; they only set the reported row m/z.
         self.ms1_apex_mz_by_candidate: dict[str, float] = {}
         self.precursor_mz_by_candidate: dict[str, float] = {}
         for stem in batch.sample_order:
@@ -186,8 +185,6 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryPeak, ...]]):
                 row_number += 1
         if self._stat(path) != before:
             raise ValueError("Discovery event table changed while indexing")
-        # Discovery chooses the representative among the attached events when
-        # any attaches, else among all located events; its tag names the peak.
         for peak_id, rows in representative_rows.items():
             pool = [item for item in rows if item[0] or peak_id not in attached_ids]
             if pool:

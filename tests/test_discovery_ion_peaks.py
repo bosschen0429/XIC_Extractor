@@ -120,7 +120,6 @@ def test_coeluting_ions_within_the_tolerance_share_one_channel() -> None:
 
     (channel,) = build_discovery_ions(seeds, settings=_settings())
 
-    # The stronger event's measured ion sets the XIC mass.
     assert channel.mz == 500.0080
 
 
@@ -188,7 +187,6 @@ def test_every_event_attaches_to_one_peak_or_records_why_not() -> None:
     assert events[10].peak_id and not events[10].unattached_reason
     assert events[20].unattached_reason == "parent_ms1_unavailable"
     assert events[30].unattached_reason == "rt_outside_peak"
-    # The second peak was measured on the channel, but no event attaches.
     (unattached_peak,) = (p for p in result.peaks if not p.attached_event_count)
     assert unattached_peak.status == "no_nl_event"
     assert not unattached_peak.admitted

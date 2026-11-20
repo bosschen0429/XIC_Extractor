@@ -23,9 +23,6 @@ from xic_extractor.discovery.models import EventAttachment
 def test_representative_precursor_follows_discovery_choice_within_one_scan(
     tmp_path: Path, stronger_attaches: bool, expected: float
 ) -> None:
-    # One MS2 scan holds two inferred events of the peak's tag. Discovery
-    # chooses among attached events when any attaches, then by abundance; the
-    # stronger event here does not attach unless the case says so.
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
     raw_path.write_bytes(b"representative-precursor")
     peak = _peak(

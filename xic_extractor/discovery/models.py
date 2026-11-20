@@ -163,12 +163,9 @@ class DiscoveryPeak:
     evidence_score: int = 0
     precursor_mz_basis: GroupPrecursorMzBasis = "scan_precursor"
     matched_tag_names: tuple[str, ...] = ()
-    # Every strict NL event locating this peak, attached or not. The event
-    # table persists them; readers restore them by ``peak_id``.
     located_events: tuple[DiscoveryEvent, ...] = dataclass_field(
         default=(), compare=False
     )
-    # Measurement quality is independent of admission and NL attachment.
     requires_overlap_review: bool = False
 
     @property

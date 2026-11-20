@@ -75,7 +75,6 @@ def test_new_ions_are_named_by_offset_and_default_to_record_only_ratios():
     ).targets[0]
     ions = target.identification.delta_mass.ions
     assert [ion.label for ion in ions] == ["+4.0052", "-2.0157"]
-    # Stored offsets keep full precision; only the name is rounded.
     assert ions[0].offset_mz == 4.005213
     assert all(
         (ion.ratio_min, ion.ratio_max, ion.compare_shape) == (0.1, 10.0, True)
@@ -325,7 +324,6 @@ def test_delta_mass_reaches_finalized_workbook_and_readonly_inspector(
     assert by_sample["missing"].reported_peak_area is None
     book = load_workbook(path, read_only=True, data_only=True)
     try:
-        # Delta Mass evidence is saved record for the workbench, kept hidden.
         assert {"Delta Mass", "Method Evidence", "Delta Mass Evidence"} <= set(
             book.sheetnames
         )

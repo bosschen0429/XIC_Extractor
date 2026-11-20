@@ -303,7 +303,6 @@ def test_raw_apex_tolerance_uses_acquired_scan_times_without_relaxing_shape(kind
         settings,
     )[0]
     position = candidate.positions[2]
-    # Includes zero-intensity scans; using only positive points would change cadence.
     assert position.apex_threshold_sec == pytest.approx(2.5 * 1.25)
     assert position.shape_r_threshold == 0.9
     assert candidate.status == ("candidate" if kind == "adjacent" else "rejected")
@@ -522,7 +521,6 @@ def test_lowest_position_requires_measured_net_height_and_background_support(
         )
         y = baseline + sign * h * np.exp(-0.5 * (seconds / 3) ** 2)
         y[seconds <= -20] = baseline + np.arange(-5, 6) * noise
-        # An adjacent peak must not become this peak's background or shape input.
         y[seconds >= 20] = 1e6
         mask = (
             abs(seconds) < 20
@@ -614,7 +612,6 @@ def test_base_support_uses_pooled_raw_net_heights_without_a_heavy_ratio_gate(
     for request in prepared.requests:
         seconds = np.arange(-30, 31, dtype=float)
         times = 1 + seconds / 60
-        # Different backgrounds and identical table heights must not determine support.
         y = 1000 * (request.mz - 299) + heights[request.mz] * np.maximum(
             0, 1 - np.abs(seconds) / 8
         )

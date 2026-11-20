@@ -474,14 +474,12 @@ def _wait_for_analysis_status(page, status):
 
 
 def _check_curve_samples(page):
-    # Samples without a saved curve are read from RAW once checked and loaded.
     for box in page.locator('#sample-list input[data-available="true"]').all():
         box.check()
 
 
 def _wait_for_curve_report(page, *, inline=False):
     review = page.locator("#inline-curve-review" if inline else "#xic-review")
-    # The view becomes visible only after acquisition and report mounting finish.
     expect(review).to_be_visible(timeout=BACKGROUND_JOB_TIMEOUT_MS)
     return review
 
@@ -776,7 +774,6 @@ def test_targeted_reports_sequence_warnings_before_analysis_and_after_reload(
         "build_canonical_targeted_application_service",
         lambda _: Service(),
     )
-    # A saved batch setting names the 上機資訊; the run reads it directly.
     _choose_sequence(
         page, "#t-injection_order_source", str(sequence), list_samples=False
     )
@@ -797,8 +794,6 @@ def test_targeted_reports_sequence_warnings_before_analysis_and_after_reload(
     expect(page.locator("#target-samples-conflicts")).to_contain_text(
         "序號 7 出現 2 次"
     )
-    # Targeted analyzes a blank too, so its unreadable header stops the run
-    # unless the blank is excluded.
     (raw / "Blank_bad.raw").touch()
     page.locator('button[form="targeted-form"]').click()
     expect(page.locator("#analysis-job-title")).to_contain_text("執行失敗")
@@ -929,7 +924,6 @@ def test_targeted_bulk_specificity_selects_like_samples(
     expect(cid).to_have_value("162.0528")
     expect(delta).to_have_text("+1.0034, -2.0157")
     expect(_target_specificity(page, 3)[0]).to_have_value("116.0474")
-    # Only filled toolbar fields are written; a search selects what it finds.
     page.locator("#target-filter").fill("Fourth")
     expect(page.locator("#target-selection")).to_have_text("已選 1 個目標")
     page.locator("#target-bulk-cid").fill("")
@@ -948,7 +942,6 @@ def test_targeted_bulk_specificity_selects_like_samples(
     assert rows["Second"]["delta_mass_mz"] == "+1.003355, -2.0157"
     assert rows["Third"]["cid_nl_loss_da"] == "116.0474"
     assert rows["Fourth"]["delta_mass_mz"] == "+2"
-    # Each target keeps its own copy of the ion details.
     second = state["delta_mass"]["ions"]["Second"]
     assert [ion["label"] for ion in second] == ["+1.0034", "-2.0157"]
     assert all(ion["compare_shape"] for ion in second)
@@ -1021,7 +1014,6 @@ def test_unreadable_ratio_range_blocks_saving_the_target_list(workbench, config_
     editor.get_by_role("textbox", name="強度比範圍（第 1 個伴隨離子）").fill("0.8-0.2")
     before = (config_dir / "workspace.json").read_bytes()
     page.locator("#target-editor-done").click()
-    # The cell no longer matches the stored 0.1–10; nothing is saved.
     expect(page.locator("#target-editor")).to_be_visible()
     expect(page.locator("#target-editor-error")).to_contain_text("強度比請填下限–上限")
     assert (config_dir / "workspace.json").read_bytes() == before
@@ -1045,7 +1037,6 @@ def test_target_ions_follow_their_row_not_a_label_typed_through(
     page.locator("#target-import-file").set_input_files(table)
     page.locator("#target-import-confirm").click()
     page.locator("#target-edit").click()
-    # A plain table lists Δm/z only; its ions take the defaults.
     page.get_by_role(
         "button", name="編輯 Delta Mass Δm/z（第 1 列）", exact=True
     ).click()
@@ -1106,7 +1097,6 @@ def test_untargeted_delta_mass_method_edits_with_shared_terms(workbench, tmp_pat
     dialog = page.locator("#method-editor")
     expect(page.locator("#method-dm-on")).to_be_checked()
     expect(page.locator("#method-cid-on")).not_to_be_checked()
-    # One kind of evidence: no combination to choose.
     expect(page.locator("#method-combine-field")).to_be_hidden()
     advanced = dialog.locator("details.method-advanced")
     expect(advanced).not_to_have_attribute("open", "")
@@ -1118,7 +1108,6 @@ def test_untargeted_delta_mass_method_edits_with_shared_terms(workbench, tmp_pat
     advanced.get_by_label("最低峰形 r").fill("0.85")
     expect(advanced).to_have_attribute("open", "")
     page.locator("#method-cid-on").check()
-    # The engine combines Delta Mass only with dR, and only when both match.
     expect(page.locator("#method-combine-field")).to_be_hidden()
     expect(page.locator("#method-combine-fixed")).to_have_text("組合：兩者都要符合")
     expect(
@@ -1128,7 +1117,6 @@ def test_untargeted_delta_mass_method_edits_with_shared_terms(workbench, tmp_pat
         "固定為 DNA_dR 116.0474 Da"
     )
     expect(advanced).to_have_attribute("open", "")
-    # Untargeted Δm/z is measured up from the lightest ion.
     dialog.get_by_role("button", name="＋ 伴隨離子").click()
     added = dialog.get_by_role("textbox", name="Δm/z（第 4 個伴隨離子）")
     added.fill("-1")
@@ -1156,7 +1144,6 @@ def test_untargeted_delta_mass_method_edits_with_shared_terms(workbench, tmp_pat
     page.locator("#method-edit").click()
     expect(dialog.locator("details.method-advanced")).not_to_have_attribute("open", "")
     expect(page.locator("#method-combine-fixed")).to_be_visible()
-    # CID-NL alone keeps the choice between all and any.
     page.locator("#method-dm-on").uncheck()
     dialog.get_by_role("button", name="＋ 中性丟失").click()
     expect(page.locator("#method-combine-field")).to_be_visible()
@@ -1507,7 +1494,6 @@ def test_template_batch_folder_reads_as_unselected_and_still_saves(
         config_dir=config_dir,
     )
     page.reload()
-    # The shipped example path is not a user choice; the field must look empty.
     expect(page.locator("#t-data_dir")).to_have_value("")
     expect(page.locator("#target-checklist")).to_contain_text("尚未選擇資料夾")
     page.locator("#target-save").click()
@@ -1524,7 +1510,6 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     page = workbench
     labels = page.locator("#targeted-data .path-line:visible > label")
     expect(labels).to_have_text(["RAW 資料夾", "結果存放位置"])
-    # 上機資訊 belongs to the sample step both flows share.
     for step in ("targeted", "untargeted"):
         expect(
             page.locator(f'[data-sample-step="{step}"] .sequence-line > span').first
@@ -1532,7 +1517,6 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     expect(page.locator("#t-output_dir")).to_have_value(
         str(config_dir.parent / "output")
     )
-    # A location that does not exist yet is created by the run, not an error.
     chosen = tmp_path / "chosen-output"
     page.locator("#t-output_dir").fill(str(chosen))
     page.locator("#t-output_dir").press("Tab")
@@ -1543,7 +1527,6 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     )
     fake_runs.release.set()
     _wait_for_analysis_status(page, "已完成")
-    # Each run writes its own new folder inside the location; none is reused.
     fake_runs.release.clear()
     _start(page, "targeted")
     expect(page.locator("#analysis-job-message")).to_contain_text(
@@ -1726,7 +1709,6 @@ def test_analysis_feedback_retains_results_and_requires_stop_confirmation(
         page.clock.run_for(1000)
     expect(page.locator("#analysis-job-title")).to_contain_text("執行中")
     expect(page.locator("#analysis-progress")).to_have_attribute("value", "1")
-    # Every file processed but still writing results: no stalled 100% bar.
     state["job"].update(completed=2)
     with page.expect_response("**/api/analysis"):
         page.clock.run_for(1000)
@@ -1950,8 +1932,6 @@ def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
     page.locator("#previous").click()
     expect(titles.nth(0)).to_have_text("m/z 123.3980")
 
-    # Optional RT narrows eligibility without changing distance order and
-    # remains applied when pagination requests the next candidate slice.
     page.locator("#rt-min").fill("0.5")
     page.locator("#query-form button[type=submit]").click()
     expect(titles.nth(0)).to_have_text("m/z 123.4200")
@@ -1987,7 +1967,6 @@ def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
     page.locator("#group-id").fill("multi-witness")
     page.locator("#query-form button[type=submit]").click()
     expect(page.locator("#item-list button")).to_have_count(1)
-    # Exact matching still uses any eligible witness, not the displayed m/z.
     expect(page.locator("#item-list .item-top strong")).to_have_text("m/z 350.0000")
     expect(page.locator("#nearest-results-note")).to_be_hidden()
     page.locator("#untargeted-search-mode").select_option("nearest")
@@ -2127,7 +2106,6 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     expect(page.locator("#raw-dir")).to_have_value("")
     page.locator("#open-form button[type=submit]").click()
     overview = page.locator("#targeted-overview")
-    # The overview leads with the Matrix; unresolved groups are context only.
     expect(
         overview.get_by_role("heading", name="3 個 feature 進入矩陣")
     ).to_be_visible()
@@ -2136,7 +2114,6 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     )
     expect(page.locator("#review")).to_be_hidden()
     overview.get_by_role("button", name="1 部分樣本多峰留空").click()
-    # A one-item list opens its item; an item without saved curves waits for load.
     expect(page.locator("#item-list button")).to_have_count(1)
     expect(page.locator("#inline-curve-status")).to_contain_text("勾選樣本後按")
     saved = page.locator("#recorded-review")
@@ -2413,13 +2390,10 @@ def test_saved_curves_show_without_raw_and_unsaved_items_wait_for_load(
     page.locator("#source").fill(str(report))
     page.locator("#open-form button[type=submit]").click()
     page.get_by_role("button", name="瀏覽矩陣 feature").click()
-    # A group with values shows its saved curves without RAW or DLL.
     page.locator("#item-list button").filter(has_text="3 / 3").click()
     review = _wait_for_curve_report(page, inline=True)
     expect(review.locator("[data-inspector-id='svg-raw'] polyline")).to_have_count(3)
     assert len(curve_requests) == 1
-    # With a RAW source set, an item without saved curves still reads nothing
-    # until samples are checked and loaded.
     _configure_curve_sources(page, tmp_path, tmp_path)
     page.locator("#back-to-overview").click()
     overview = page.locator("#targeted-overview")
@@ -2516,7 +2490,6 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
     expect(saved.filter(has_text="S3")).to_contain_text("空值")
     assert opened == ["S1.raw", "S2.raw", "S3.raw"]
     assert [path.read_bytes() for path in (report, matrix)] == originals
-    # A loaded view keeps the confirmed display context it was prepared with.
     view_id = review.get_attribute("data-view-id")
     save_batch_samples(
         config_dir,
@@ -2552,7 +2525,6 @@ def test_group_position_curves_are_labelled_and_leave_saved_empty_cell_unchanged
         offline.locator('[data-inspector-id="svg-raw"] polyline[data-sample-id="S1"]')
     ).to_have_count(1)
     offline.close()
-    # The saved table leaves curve focus to the plot's own sample list.
     expect(saved.get_by_role("button")).to_have_count(0)
 
 
@@ -2693,9 +2665,7 @@ def test_curve_history_restores_snapshot_after_pending_load(
     expect(review.get_by_text("原始 scan 點", exact=True)).to_be_visible()
     expect(curves).to_have_count(2)
     expect(review.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
-    # A curve read again from RAW adds no standing caution under the charts.
     expect(review.locator(".tx-provenance")).to_have_count(0)
-    # The result table never navigates away; each ion has its own y scale.
     assert (
         page.locator("#recorded-review").evaluate(
             "container => container.dataset.viewId"
@@ -3341,7 +3311,6 @@ def test_curated_result_names_its_curation_and_lists_removed_rows(workbench, tmp
             str(tmp_path),
         )
 
-    # Completion arrives once: a review query in flight defers it, not drops it.
     pending = []
     page.route("**/api/query", lambda route: pending.append(route))
     try:
@@ -3360,7 +3329,6 @@ def test_curated_result_names_its_curation_and_lists_removed_rows(workbench, tmp
         "依整理結果 matrix_curation_20261102_090000"
     )
 
-    # A curation finished while setup is shown updates the result in place.
     page.locator("#result-back").click()
     expect(page.locator("#analysis-result")).to_be_hidden()
     publish("matrix_curation_20261103_090000")
@@ -3388,7 +3356,6 @@ def test_targeted_row_xic_without_raw_points_at_the_missing_folder(workbench, tm
     row_button.scroll_into_view_if_needed()
     expect(page.locator("#raw-dir")).not_to_be_in_viewport()
     row_button.click()
-    # The request stops before RAW work and the reason is where the user looks.
     expect(page.locator("#xic-dialog")).to_be_hidden()
     expect(page.locator("#raw-dir")).to_be_focused()
     expect(page.locator("#raw-dir")).to_be_in_viewport()
@@ -3416,8 +3383,6 @@ def test_read_first_opens_on_minority_rows_and_clearing_lists_all(workbench, tmp
     expect(review.locator(".tgt-filter button")).to_have_text(
         ["全部（5）", "需先看（1）"]
     )
-    # A filter change applies at once; no separate search press is needed.
-    # The wider list opens nothing until the target is chosen again.
     target = page.locator(".item[aria-current=true] .item-top strong").inner_text()
     page.locator("#target-attention").uncheck()
     expect(page.locator("#selection-empty h2")).to_have_text("從清單選一筆查看")
@@ -3456,7 +3421,6 @@ def test_sample_restore_is_bound_to_current_inputs(
     _wait_for_analysis_status(page, "已完成")
     with page.expect_response(lambda r: r.url.endswith("/api/untargeted/save")):
         page.locator("#untargeted-save").click()
-    # Restoration must not depend on the most recent job being a samples job.
     _view(page, "targeted")
     fake_runs.release.set()
     _start(page, "targeted")
@@ -3474,7 +3438,6 @@ def test_sample_restore_is_bound_to_current_inputs(
         if changed_input == "dll_dir":
             _set_reader_path(page, str(tmp_path / "new_source"))
         elif changed_input == "sequence_source":
-            # Not listed again here: a saved batch setting changes the path only.
             _choose_sequence(
                 page,
                 "#sequence-source",
@@ -3511,7 +3474,6 @@ def test_empty_list_starts_from_the_example_and_exports_without_changing_batch(
     page = workbench
     batch = page.locator("#t-data_dir").input_value()
     dll = page.locator("#t-dll_dir").input_value()
-    # A loaded list offers no example; an empty one names all three starts.
     expect(page.locator("#target-start")).to_be_hidden()
     expect(page.locator("#target-edit")).to_have_text("檢視與編輯")
     page.locator("#target-edit").click()
@@ -3856,8 +3818,6 @@ def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
     expect(report.locator(".tx-sample-name")).to_have_text("S3")
     expect(report.get_by_label("樣本", exact=True)).to_have_value("S3")
     expect(report.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
-    # The fixture has no saved bounds: preserve unavailable RT and saved Areas,
-    # rather than inventing either from the newly read RAW intensities.
     expect(report.locator(".tx-chart-meta").nth(0)).to_contain_text(
         "保存 RT — · 面積 5.55e+1"
     )
@@ -3900,7 +3860,6 @@ def role_review(workbench, tmp_path):
     records = list(results.values)[1:]
     results.delete_rows(2, results.max_row - 1)
     for analyte, standard in zip(records[::2], records[1::2], strict=True):
-        # Neutral names ensure groups come from Targets.Role, not label inference.
         results.append([analyte[0], "Alpha", *analyte[2:]])
         results.append([standard[0], "Beta", *standard[2:]])
         results.append([standard[0], "Gamma", *standard[2:]])
@@ -4175,7 +4134,6 @@ def _relist_samples(page, field="#t-data_dir"):
 
 
 def _choose_sequence(page, field, value, *, list_samples=True):
-    # The OS picker fills the 上機資訊 path; a saved batch setting only sets it.
     page.locator(field).evaluate(
         "(node, [value, list]) => {node.value = value;"
         " node.dispatchEvent(new Event('input', {bubbles: true}));"
@@ -4252,7 +4210,6 @@ def test_sample_editor_selects_by_drag_search_and_shift_and_marks_other_rows(
                 SampleMetadata(
                     stem,
                     stem,
-                    # Nothing identified Run_17; it stays Other until someone looks.
                     sample_role="other"
                     if stem == "Run_17"
                     else "qc"
@@ -4345,7 +4302,6 @@ def test_sample_editor_lists_raw_names_in_file_explorer_order(
     _wait_for_analysis_status(page, "已完成")
     page.locator("#t-samples-edit").click()
     rows = page.locator("#sample-rows tr[data-stem] td:first-child")
-    # Case-insensitive; digit runs compare by value, so Blank_2 precedes Blank_10.
     expect(rows).to_have_text(
         [
             "blank_1",
@@ -4376,7 +4332,6 @@ def test_sample_editor_lists_raw_names_in_file_explorer_order(
     page.locator("#sample-filter").fill("")
     expect(page.locator("#sample-rows tr.excluded")).to_have_count(6)
 
-    # Saved rows keep injection order; only the editor display is sorted.
     saved = load_sample_metadata(sample_annotations_path(config_dir, batch))
     assert [row.raw_stem for row in saved] == list(injected)
     assert [row.raw_stem for row in saved if not row.excluded] == ["Tumor_1"]
@@ -4404,7 +4359,6 @@ def test_sample_click_right_after_a_drag_selects_that_row(
     page.mouse.move(last["x"] + 20, last["y"] + last["height"] / 2, steps=6)
     page.mouse.up()
     expect(page.locator("#sample-selection")).to_have_text("選取的 3 個 設為")
-    # Only the click that ends the drag is ignored; the next one selects.
     _sample_row(page, "S4").click()
     _sample_row(page, "S5").click(modifiers=["Shift"])
     expect(page.locator("#sample-selection")).to_have_text("選取的 2 個 設為")
@@ -4546,8 +4500,6 @@ def test_both_flows_share_roles_and_exclusions_without_statistical_groups(
         True,
     )
 
-    # Untargeted on the same folder reads the same confirmed metadata and
-    # names the role it does not analyze apart from the user's exclusion.
     _view(page, "untargeted")
     page.locator("#u-raw_dir").fill(str(batch))
     page.locator("#u-raw_dir").press("Tab")
@@ -4564,7 +4516,6 @@ def test_both_flows_share_roles_and_exclusions_without_statistical_groups(
         "排除的樣本1 個：TumorBC2_DNA"
     )
 
-    # The Targeted run reads the confirmed file for this run only.
     _view(page, "targeted")
     _start(page, "targeted")
     expect(page.locator("#analysis-job-message")).to_contain_text(

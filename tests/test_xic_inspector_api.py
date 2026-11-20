@@ -488,7 +488,6 @@ def test_row_curves_follow_exact_witnesses_and_shared_payload_is_read_once(
         for item in items
     )
     assert reads == [({"sample_ids": ("S1",), "record_ids": ("obs-01",)}, 1)]
-    # Scientific values come from each row's cell, never from the curve apex.
     assert (
         "quantitative_value"
         not in next(i for i in items if json.loads(i["id"])[-1] == "row-02")["samples"][
@@ -712,8 +711,6 @@ def test_sample_support_origin_uses_exact_method_capture_and_observation(tmp_pat
         # Records without a natural key share one numbering.
         refs["method"] = refs["capture"] + 1
 
-    # Every stored cell records its own origin; without a cell the origin is
-    # read from the exact method, capture and observation.
     report, _, _ = create_inspector_report(
         tmp_path,
         candidate={"method_subject_id": "M1", "neutral_loss_tag": "dR"},
@@ -928,7 +925,6 @@ def test_saved_cell_is_answered_on_its_sample_without_internal_records(tmp_path)
     assert sample["decision_refs"] == []
     curve = item["curves"][0]
     assert curve["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
-    # The card shows the published (baseline-removed) area, never raw area.
     assert curve["area"] == 2400.0
 
 

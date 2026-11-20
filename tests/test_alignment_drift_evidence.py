@@ -94,8 +94,6 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
         }
         assert frame.has_direct_reference_pair(*owners)
         assert frame.corrected_pair_delta_sec(*owners) == pytest.approx(0)
-        # The identity source supplies no order-gap evidence; metadata must not
-        # silently replace that absence when the two contexts are consolidated.
         assert frame.drift_injection_order_gap("early", "late") is None
     assert tuple(owner.peak.integration.rt_apex_min for owner in owners) == (8.0, 9.0)
 
@@ -343,8 +341,6 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
         owner_id="different-peak",
     )
     assert_unavailable_pair_uses_only_raw(other_rt, lookup)
-    # An overlapping SUPPORT owner prevents a unique binding; removing it later
-    # from a group must not recreate reference authority.
     ambiguous = reference.bind((early, late, replace(late, owner_id="overlap")))
     assert_unavailable_pair_uses_only_raw(late, ambiguous)
     workbook["XIC Results"]["C5"] = "ND"

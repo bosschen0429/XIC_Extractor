@@ -80,7 +80,6 @@ def test_cells_with_values_show_their_run_curves_without_raw(tmp_path, monkeypat
             alignment_config=config,
             full_audit=full_audit,
         )
-    # The run's settings travel beside its report, as Alignment publishes them.
     _write_metadata_json(
         tmp_path / "review" / "alignment_run_metadata.json",
         {
@@ -128,7 +127,6 @@ def test_cells_with_values_show_their_run_curves_without_raw(tmp_path, monkeypat
         expected = audit[trace.sample_id, keys[trace.sample_id]]
         assert list(trace.raw.rt) == expected["rt"]
         assert list(trace.raw.intensity) == expected["raw"]
-        # Processing follows the run's profile, not the default one.
         assert list(trace.gaussian15.intensity) == expected["smoothed"]
         assert list(trace.baseline.intensity) == expected["baseline"]
         assert list(trace.positive_signal.intensity) == expected["positive"]
@@ -446,7 +444,6 @@ def test_raw_reads_replay_each_samples_saved_mass_result(tmp_path, monkeypatch, 
     traces = {t.sample_label: t for t in bundle.transitions[0].traces}
     assert max(traces["S1"].raw.intensity) == pytest.approx(1000)
     assert max(traces["S2"].raw.intensity) == pytest.approx(2000)
-    # A saved result is replayed; the RAW is not probed again.
     assert replayed == ({"S1": saved_outcome, "S2": "none"} if saved else {})
 
 

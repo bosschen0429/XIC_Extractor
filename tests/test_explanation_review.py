@@ -520,7 +520,6 @@ def test_persisted_membership_fields_reject_wrong_types(tmp_path, field, value):
     import zlib
 
     report, _ = _competition_review_report(tmp_path)
-    # An accepted risk is persisted once, with its group member.
     with sqlite3.connect(report) as db:
         member, payload = db.execute(
             "SELECT id,accepted_risk FROM members WHERE accepted_risk IS NOT NULL"

@@ -212,8 +212,6 @@ def test_long_rows_use_targeted_product_projection() -> None:
     long_row = _long_output_rows(file_result, [target])[0]
 
     assert long_row["NL"] == "NL_FAIL"
-    # The paired ISTD identified the peak; its missing NL is left as a doubt.
-    # The legacy selection text does not reach the labels.
     assert (long_row["依據"], long_row["疑點"]) == ("ISTD 位置", "未見 NL")
     assert long_row["Product State"] == "detected_flagged"
     assert long_row["Counted Detection"] == "TRUE"
@@ -460,7 +458,6 @@ _IDENTIFIED = TargetedProductProjection(
             None,
             ("NL 偏差大", "訊號缺口"),
         ),
-        # The selected peak's MS2 observation names the NL doubt.
         (
             NLResult("NL_FAIL", 125.0, None, 1, 0, 1),
             True,
@@ -505,7 +502,6 @@ def test_long_csv_reports_file_processing_error() -> None:
         ("Control", "qc", "Control"),
         ("", "qc", "QC"),
         ("other", "qc", "QC"),
-        # Ungrouped study samples and blanks stay distinguishable by role.
         ("", "sample", "Sample"),
         ("", "blank", "Blank"),
     ],

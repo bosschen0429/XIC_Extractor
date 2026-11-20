@@ -169,8 +169,6 @@ def _directional_inference(
                 config,
                 rt_frame=rt_frame,
             ):
-                # Pattern agreement cannot override a contradictory measured
-                # region or shape introduced by an intervening member.
                 continue
             decisions.append(
                 SparseFeatureDecision(

@@ -155,8 +155,6 @@ class KnownIstdReference:
                         owner.primary_identity_event.observed_neutral_loss_da
                     ),
                 )[2]
-                # The measured coordinate above identifies the physical peak;
-                # expected RT must not clip a shifted, already measured ISTD.
                 and abs(owner.peak.mz - target.mz)
                 <= mz_tolerance_da(target.mz, target.ppm_tol)
             )

@@ -108,7 +108,6 @@ def review_kinds(result):
         # M = 300 - proton; metal dimer is 2M - H + Mg/Ca (net charge +1).
         ("[2M-H+Mg]+", 300.0, 620.962115180219, 0.3, CONFIRMED_MH),
         ("[2M-H+Ca]+", 300.0, 636.939664346219, 0.3, CONFIRMED_MH),
-        # Neutral salt clusters can attach to any cation, not only [M+H]+.
         ("+NaHCOO", 300.0, 367.987423553370, 0.3, UNCONFIRMED),
         ("+NaCH3COO", 300.0, 382.003073617830, 0.3, UNCONFIRMED),
         ("[M+Mg+HCOO]+", 300.0, 367.974871, 0.3, CONFIRMED_MH),
@@ -132,7 +131,6 @@ def test_each_folding_relation_removes_the_heavier_row(
         "",
     )
     assert decisions["L"] == (True, "representative", None, (), ion_form)
-    # Isotope-only groups are common; their unconfirmed form is not reviewed.
     assert result.review_rows == ()
 
 
@@ -271,7 +269,6 @@ def test_a_derivative_contradicting_its_root_has_no_representative():
 
     assert decisions["A"][:2] == (True, "representative")
     assert decisions["B"][:3] == (False, "derived_from_representative", "A")
-    # C derives from B, but never co-elutes with A: excluded, unattributed.
     assert decisions["C"][:3] == (False, "derived_representative_undetermined", None)
     assert outcome(result, "13C2_M+2") == set()
     assert result.review_rows[0]["review_kind"] == "derived_representative_undetermined"
@@ -299,8 +296,6 @@ def test_protonated_row_with_sodium_adduct_and_isotopes_is_confirmed_and_kept():
         "MH",
         ("[M+Na]+",),
     )
-    # The Na isotope relates to MH only through other rows, but co-elutes
-    # with MH itself.
     assert decisions["Na_13C"][:4] == (
         False,
         "derived_through_group",
@@ -396,7 +391,6 @@ def sodium_family(*, protonated=False):
             scale=0.4 * 0.1101 / 0.7899,
         ),
         row("Na_13C", neutral + 22.989220702091 + 1.003355, scale=0.1),
-        # A complex without independent isotope support stays a candidate.
         row("WeakComplex", neutral + 232.975742006891, scale=0.2),
         row("BiologicalH2", neutral + 22.989220702091 + 2.015650, scale=0.6),
     ]
@@ -437,8 +431,6 @@ def test_mass_compatible_family_requires_independent_dimer_and_isotope_witnesses
 
 
 def test_a_family_member_does_not_confirm_its_previous_adduct_root():
-    # The Na row can also be a potassium adduct of a lower-mass ion, but the
-    # family takes precedence and does not assign Na to that candidate root.
     decisions, result = decide(row("Candidate", 212.123944602091), *sodium_family())
 
     assert relation_row_between(result, "Candidate", "Na", "[M+K]+")["outcome"] == (
@@ -546,7 +538,6 @@ def test_competing_protonated_family_is_not_mistaken_for_element_only_ambiguity(
 
 
 def test_family_never_assigns_a_removed_protonated_candidate_as_representative():
-    # A co-eluting isobar can also satisfy another ion's isotope relation.
     decisions, _ = decide(
         *sodium_family(protonated=True),
         row("OtherRoot", 228.097882352321 - 1.003355, scale=10.0),
@@ -780,7 +771,6 @@ def test_unstable_isotope_ratio_and_review_only_relations_are_reviewed():
     ],
 )
 def test_only_isotopes_need_a_stable_cross_sample_ratio(heavy_mz, relation, removed):
-    # Adduct and cluster yields follow each sample's salt and concentration.
     varying = row("H", heavy_mz, ratios=(0.05, 0.2, 0.05, 0.2, 0.05, 0.2))
     decisions, result = decide(row("L", 300.0), varying)
 
@@ -939,7 +929,6 @@ def test_istd_window_uses_range_or_expected_rt():
     assert mz_rt_window(
         label="d3", mz=245.0, rt_min=11.0, rt_max=13.0, expected_rt_min=12.0
     ) == MzRtWindow("d3", 245.0, 11.0, 13.0)
-    # Workbench lists record rt_min == rt_max; that is no range.
     assert mz_rt_window(
         label="d3", mz=245.0, rt_min=12.0, rt_max=12.0, expected_rt_min=12.0
     ) == MzRtWindow("d3", 245.0, 11.25, 12.75)
@@ -1111,7 +1100,6 @@ def test_nucleoside_removal_is_attributed_only_to_rows_entering_the_step(
         ("known_nucleosides", 3, 1),
         ("finite_fraction", 2, 1),
     ]
-    # With collapse disabled, a match at the root does not remove its adduct.
     listing.write_text("label\tmz\texpected_rt_min\nroot\t300\t10\n", encoding="utf-8")
     _, alone, _ = _export(
         tmp_path, "alone", {"known_nucleosides": {}}, nucleoside_list=listing
@@ -1215,7 +1203,6 @@ def test_derivatives_are_removed_before_feature_filtering_and_istd_is_protected(
     ] == [("group_removed_by_feature_filter", "F000001", "F000002")]
     step = summary["steps"][0]
     assert (step["removed_feature_count"], step["empty_group_count"]) == (1, 1)
-    # Without another step nothing can empty a group.
     _, review = read_tsv_with_header(output / "same_compound_review.tsv")
     assert review == []
 
@@ -1326,7 +1313,6 @@ def test_removed_ions_neither_repeat_differences_nor_review_pairs():
     assert {fid for fid, value in decisions.items() if not value[0]} == {
         f"{name}{index}_13C" for name in "XY" for index in range(3)
     }
-    # Only the kept rows' pair is reviewed, not the same pair of their isotopes.
     assert sorted(review_kinds(result)) == [
         ("review_only_relation", f"Y{index}") for index in range(3)
     ]

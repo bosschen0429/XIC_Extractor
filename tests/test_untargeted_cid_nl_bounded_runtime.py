@@ -245,8 +245,6 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
                 if representative_event(c).precursor_mz < 500.5
             )
         if index == 21:
-            # The target MS1 signal remains without independent MS2 support.
-            # A correct Backfill query cannot supply it.
             raw.scans = tuple(s for s in raw.scans if s.precursor_mz < 500.5)
     plan = prepare_persisted_discovery_plan(
         raw_paths=paths,
@@ -1531,7 +1529,6 @@ def test_final_grouping_failure_stops_before_any_backfill(
             ),
             project_child=project_composed_child,
         )
-    # Final grouping is a shared phase boundary, before Backfill admission.
     assert len(finalized) >= 2
     assert not admitted
     assert not any(admitted_first for _, admitted_first in finalized)
@@ -1881,8 +1878,6 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
         keys = {job.work_unit_key for job in request.jobs}
         assert keys == set(request.backfill_targets_by_key)
         assert set(request.backfill_support_by_key) == keys
-        # Recovery consumes only the support policy and the missing-MS1
-        # initial assessment. Full initial adapter results stay in the parent.
         assert not hasattr(request, "adapter_results_by_key")
         assert all(
             isinstance(ctx, worker._BackfillSupportContext)
@@ -2432,10 +2427,8 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
         )
         for output in restored.sequence("child_outputs")
     )
-    # The spool keeps partition write order; the result restores canonical order.
     assert sorted(recovered, key=repr) == sorted(child_ids, key=repr)
 
-    # The point of the index: one record, addressed by position, off disk.
     first_child_partition = next(
         position
         for position, lengths in enumerate(restored._field_lengths)

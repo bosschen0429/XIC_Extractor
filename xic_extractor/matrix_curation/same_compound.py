@@ -91,7 +91,6 @@ class Relation:
     """The heavier row derived from the lighter one."""
 
     key: str
-    # isotope / adduct collapse; review is listed only; annotation is noted only.
     kind: str
     delta: float
     charge: int = 1
@@ -310,7 +309,6 @@ class RowDecision:
     reason: str
     representative: int | None = None
     relations: tuple[str, ...] = ()
-    # Those rows, when they are not the representative itself.
     via: tuple[int, ...] = ()
     # Element or attribution unresolved; this does not imply keep=True.
     undetermined: bool = False
@@ -750,7 +748,6 @@ def _relation_rows(
     rows = []
     for (light, heavy), matched in matches.items():
         pair = evidence[(light, heavy)]
-        # Pairs that never co-elute in any sample are different compounds.
         if not pair.support:
             continue
         a, b = features[light], features[heavy]

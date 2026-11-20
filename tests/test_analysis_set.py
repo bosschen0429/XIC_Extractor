@@ -361,7 +361,6 @@ def test_targeted_analyzes_every_role_and_untargeted_only_samples_and_qc() -> No
         "Tumor_1",
     ]
     assert [e.raw_stem for e in untargeted.analyzed] == ["QC1", "Tumor_1"]
-    # Exclusion is the only way out of Targeted, and it keeps the role.
     assert (targeted.entries[-1].sample_role, targeted.entries[-1].context_reason) == (
         "sample",
         "excluded",
@@ -384,7 +383,6 @@ def test_listing_keeps_unreadable_raw_without_deciding_membership() -> None:
         for row in listed.sample_metadata
     ] == [("S1", "sample", 1), ("Blank_9", "blank", None)]
     assert listed.unreadable == (Path("/b/Blank_9.raw"),)
-    # Targeted analyzes a blank, so its unreadable header now stops the run.
     with pytest.raises(ValueError, match="Blank_9.raw"):
         select_analysis_set(timeline, rows, unreadable=unread, analysis="targeted")
 

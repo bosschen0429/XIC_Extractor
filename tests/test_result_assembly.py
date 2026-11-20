@@ -746,7 +746,6 @@ def test_confirmed_backfill_counts_and_keeps_missing_nl_as_review(quality_review
         ),
     )
     assert projection.counted_detection is True
-    # Backfill identity lets the ISTD count; its missing NL stays to be read.
     assert projection.review_reasons == (
         "plausible_nl_dropout_review",
         "missing_ms2_not_observed",

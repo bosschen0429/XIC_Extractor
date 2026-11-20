@@ -158,7 +158,6 @@ def test_paired_rows_share_one_row_and_single_batch_rows_keep_their_batch(tmp_pa
     assert count == 3
     matrix = tables["matrix"]
     assert matrix[0] == ["Mz", "RT", "o1", "o2", "n1", "n2", "n3"]
-    # An unpaired old row keeps its own areas but uses the reference batch's RT.
     assert [[float(v) if v else None for v in row] for row in matrix[1:]] == [
         [300, 10, 11, 12, 13, 14, 15],
         [300, 30, None, None, 23, 24, 25],

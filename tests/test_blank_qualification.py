@@ -219,7 +219,6 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
     )
 
     def peak(precursor_mz: float, height: float) -> _Binding:
-        # Qualification reads the peak height and its representative precursor.
         return _Binding(
             peak=_peak(
                 sample_stem="test",

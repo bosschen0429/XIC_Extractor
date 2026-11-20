@@ -147,7 +147,6 @@ def test_earlier_workbook_with_named_methods_is_rejected(tmp_path):
         ),
         (
             {"conditions": [{"kind": "cid_nl", "tag": "dR"}]},
-            # A required CID-NL condition must not become ranking-only support.
             "必要條件",
         ),
     ],

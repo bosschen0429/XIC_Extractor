@@ -26,7 +26,6 @@ MUTED = "9AA5B1"
 FOCUS = "B45309"
 _RULE = Side(style="thin", color="E5E9EE")
 _HEAD_RULE = Side(style="thin", color="8C99A6")
-# The reader's sheets; the rest are records for the workbench and tools, hidden.
 READING_SHEETS = ("摘要", "面積", "XIC Results", "Targets")
 LINE_HEIGHT = 16
 TEXT_HEADERS = frozenset(

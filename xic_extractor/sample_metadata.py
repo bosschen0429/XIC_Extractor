@@ -69,7 +69,6 @@ class SampleMetadata:
     sample_name: str
     raw_stem: str
     injection_order: int | None = None
-    # None means not specified: the RAW header and file name decide the role.
     sample_role: SampleRole | None = None
     batch_id: str = ""
     prep_batch_id: str = ""

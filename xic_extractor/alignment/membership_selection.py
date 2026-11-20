@@ -32,7 +32,6 @@ from xic_extractor.mass_accuracy import absolute_ppm_error, within_ppm
 from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_shapes
 
 Partition = tuple[tuple[str, ...], ...]
-# A recorded owner is located by its sample, measured m/z and native apex RT.
 OwnerFacts = tuple[str, float, float]
 OwnerPartition = tuple[tuple[OwnerFacts, ...], ...]
 _RT_POPULATION_MIN_MEMBERS = 4
@@ -82,7 +81,6 @@ class _PairArrays:
         first, second = upper_pairs(len(key))
         values = comparison._prepare_pair_values()
         columns = values[comparison._pair_indices(key)].T
-        # Missing shape evidence contributes no disagreement cost.
         columns[4, np.isnan(columns[4])] = 0.0
         regions = [comparison.regions[p] for p in key]
         starts = np.array([r[0] if r[0] is not None else np.nan for r in regions])  # type: ignore[index]
@@ -354,7 +352,6 @@ class MembershipComparison:
         self.group_costs: dict[tuple[str, ...], float] = {}
         self.population_gaps: dict[tuple[str, ...], bool] = {}
         self.group_peer_fits: dict[tuple[str, ...], float] = {}
-        # Drift beyond the general map is modeled only on the common frame.
         drift = rt_frame.drift_model if self.rt_basis == "drift_corrected" else None
         self.drift = drift if drift is not None and drift.anchors else None
         self._batch_lookup = (

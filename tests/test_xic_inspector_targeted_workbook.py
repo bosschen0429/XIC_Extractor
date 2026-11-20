@@ -515,8 +515,6 @@ def test_review_filter_lists_targets_and_keeps_every_sample(workbook):
         workbook, SelectionRequest(strategy="query", attention_only=True)
     )
     [item] = report.payload["items"]
-    # The filter picks the target to read first; its rows are read against
-    # the samples they depart from, so none are dropped.
     assert [(r["SampleName"], r["Area"]) for r in item["details"]["records"]] == [
         ("Sample A", "ND"),
         ("Sample B", 123.456),
@@ -547,7 +545,6 @@ def test_review_filter_opens_the_rare_detection_not_the_shared_absence(tmp_path)
         "counted": 1,
         "decided": 5,
     }
-    # The paired ISTD of the same sample is the anchor for judging that peak.
     assert details["istd_records"]["S3"] == {
         "Target": "ISTD",
         "RT": 9.2,
@@ -719,8 +716,6 @@ def test_group_colors_follow_names_not_order_or_case() -> None:
 
     assert forward == backward
     assert len(set(forward.values())) == PALETTE_SIZE
-    # A colour comes from the group's own name: without a collision, adding
-    # another group to the batch leaves it unchanged.
     alone = {name: group_colors([name])[name] for name in ("Tumor", "Normal")}
     assert alone["Tumor"] != alone["Normal"]
     assert group_colors(["Normal", "Tumor"]) == alone
@@ -741,7 +736,6 @@ def test_samples_carry_their_recorded_group_colour(workbook):
         workbook, SelectionRequest(strategy="sample", sample_ids=("Sample B",))
     )
 
-    # Colours span the whole workbook, so a one-sample selection keeps them.
     colors = group_colors(["A", ""])
     assert report.payload["samples"] == [
         {

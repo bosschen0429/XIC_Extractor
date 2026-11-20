@@ -170,7 +170,6 @@ class CidNlEvaluationReceipt:
     search_completed: bool
     reason_code: str | None
     evidence_scope: Literal["subject_window", "declared_scans"] = "subject_window"
-    # Untargeted Backfill queries the frozen group while retaining subject lineage.
     physical_query_mz: float | None = None
 
     def __post_init__(self) -> None:

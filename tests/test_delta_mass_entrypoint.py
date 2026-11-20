@@ -90,8 +90,6 @@ smoothing_window_sec = 1
                 ],
             )
             writer.writeheader()
-            # The join reads peak_mz, the peak's mass; the representative event's
-            # precursor can sit outside the join window on a dense peak.
             writer.writerow(
                 dict(
                     peak_id="cid-first",
@@ -103,8 +101,6 @@ smoothing_window_sec = 1
                     ms1_apex_rt=1 + 4 / 60,
                 )
             )
-            # A measured second-sample peak without an attached event cannot
-            # supply dR support, even when its mass and RT match exactly.
             writer.writerow(
                 dict(
                     peak_id="cid-second",

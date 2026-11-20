@@ -605,7 +605,6 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
         assert live_outputs() <= 1
         values = read_record(store, *args)
         for value in values:
-            # Publication never restores a finalized child from the store.
             assert type(value) is not FinalizedUntargetApplicationResult
             if type(value) is UntargetChildOutputs:
                 restores += 1
@@ -663,8 +662,6 @@ def test_pipeline_publishes_projected_children_and_cleans_up(
             result = run()
             assert matrix_path.read_bytes() == matrix_bytes
             if not emit_explanation and not has_membership_risk:
-                # Nothing replays the children's report writes, so no report
-                # is written and the run still releases every output.
                 assert not report_path.exists()
                 assert result.evidence is None
             else:
@@ -1066,8 +1063,6 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
         )
     )
 
-    # Exercise the declared CLI's real application and publication path with
-    # the same scientific fixture; recipe/config parsing has its own CLI tests.
     from scripts import run_alignment as cli
 
     monkeypatch.setattr(
@@ -1152,8 +1147,6 @@ def test_reduced_discovery_persistence_keeps_inferred_peak_and_qualifies_alignme
     assert (cli_output / "alignment_review.tsv").read_bytes() == (
         alignment.review_tsv.read_bytes()
     )
-    # Product-derived m/z 700 keeps its peak row below, but supplies no
-    # independent NL support. Only selected-precursor m/z 701 reaches Matrix.
     assert [row["Mz"] for row in matrix] == ["701.0000"]
     by_candidate = {row["source_candidate_id"]: row for row in cells}
     assert set(by_candidate) == {

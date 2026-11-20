@@ -1168,7 +1168,6 @@ def test_targeted_rows_keep_rare_detection_and_labels_in_place(review_page, tmp_
 
     page = review_page
     workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
-    # Current Targeted workbooks store one expected RT as equal RT min/max.
     book = load_workbook(workbook)
     book["Targets"]["E2"] = book["Targets"]["F2"] = 9.25
     results = book["XIC Results"]
@@ -1188,21 +1187,17 @@ def test_targeted_rows_keep_rare_detection_and_labels_in_place(review_page, tmp_
     )
     review = page.locator("#host")
     expect(review.locator(".tgt-context")).to_contain_text("預期 RT 9.25 min")
-    # The saved labels read as stored, each in its own column.
     first = review.locator(".tgt-table tbody tr").first
     expect(first.locator(".tgt-reason").nth(0)).to_have_text("偏離 ISTD 位置")
     expect(first.locator(".tgt-reason").nth(1)).to_have_text("多個候選峰")
     rows = review.locator(".tgt-table tbody tr")
-    # Rows stay in run order; the rare detection is marked where it ran.
     expect(rows.nth(2).locator(".tgt-sample")).to_have_text("S3")
     expect(rows.nth(2).locator(".tgt-badge")).to_have_text("與多數不同")
     expect(rows.nth(2).locator(".tgt-istd").first).to_have_text("9.2")
     rows.nth(2).locator(".tgt-sample").click()
-    # The evidence is the next row, not a panel after every other sample.
     detail = review.locator(".tgt-table tbody tr:nth-child(4)")
     expect(detail).to_have_class("tgt-detail-row")
     expect(detail).to_contain_text("積分範圍")
-    # The labels already say what was seen; the detail adds no second wording.
     expect(detail).not_to_contain_text("NL 證據")
     expect(detail).not_to_contain_text("配對 ISTD（ISTD）")
     expect(detail).not_to_contain_text("檢閱註記")
@@ -1291,7 +1286,6 @@ def test_accepted_competition_is_visible_only_on_its_sample(
         payload,
     )
     root = page.locator("#risk-view")
-    # The visible risk wording is what a reviewer searches for.
     _control(root, "search").fill("同組")
     expect(_control(root, "record-list").locator(".record-button")).to_have_count(1)
     _control(root, "search").fill(flag)

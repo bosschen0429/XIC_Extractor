@@ -240,8 +240,6 @@ def enumerate_physical_segment_universe(
                 )
             )
         if selection_policy_version == PHYSICAL_PEAK_ENVELOPE_POLICY:
-            # Valleys carry separation evidence even above the baseline. Keep
-            # sustained lobes separate, while small top ripples stay together.
             segment_policy = replace(
                 segment_policy,
                 clear_valley_max_fraction=1 - LOCALIZED_VALLEY_MIN_DROP_FRACTION,
@@ -555,9 +553,6 @@ def _censoring_aware_segments(
         left, right = max(0, first - 1), min(len(raw), last + 2)
         if not _hit_enrichment(raw, left, right):
             continue
-        # A supported continuous core already has morphology-owned bounds and
-        # area. Sparse tail hits do not make it censored; binary density must
-        # neither widen that peak nor merge it with neighbouring detections.
         continuous_peaks = 0
         for segment in segments:
             if not left <= segment.apex_index < right:
@@ -705,7 +700,6 @@ def _admissible_physical_segments(
                 for segment in universe.segments
                 if segment.left_rt_min <= query_rt <= segment.right_rt_min
             )
-        # The prior resolves ambiguity only among eligible candidates.
         if selection_policy_version in {
             PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
             PHYSICAL_PEAK_BACKFILL_POLICY,
@@ -820,8 +814,6 @@ def _physical_segment_support_failure(
         return "incomplete_peak_context"
     if "local_hit_density_enrichment" in selected.evidence_sources:
         return ""
-    # Smoothing may spread acquired impulses into a peak. Acquired background
-    # is not support; reuse the prepared baseline for the original XIC.
     acquired = np.asarray(
         prepared.raw[selected.start_index : selected.end_index], dtype=float
     )
@@ -837,8 +829,6 @@ def _physical_segment_support_failure(
         PHYSICAL_PEAK_ENVELOPE_POLICY,
         PHYSICAL_PEAK_REFERENCE_POLICY,
     }:
-        # Require acquired signal, not a Gaussian envelope manufactured from
-        # one impulse. Top shape/contrast cannot veto a supported total envelope.
         if np.count_nonzero(original) < 2:
             return "insufficient_original_xic_support"
         return ""
@@ -963,8 +953,6 @@ def answer_physical_peak_question(
                 question.selection_policy_version
                 == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
             ):
-                # Shared acquired support and local contrast qualify the peak.
-                # Overlap remains review evidence on the measured interval.
                 background_qualified = True
     answer = PhysicalPeakAnswer(
         schema_version="physical_peak_answer",

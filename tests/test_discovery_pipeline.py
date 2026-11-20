@@ -387,10 +387,8 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
     )
     assert len({row["peak_id"] for row in rows}) == 2
     assert {row["best_ms2_scan_id"] for row in rows} == {"19561"}
-    # Neither inferred ion has a parent MS1 reading, so no event attaches.
     assert {row["status"] for row in rows} == {"no_nl_event"}
     events = _read_csv(outputs.events_csv)
-    # The repeated product of one scan is one event, not two.
     assert len(events) == 2
     assert {row["unattached_reason"] for row in events} == {"parent_ms1_unavailable"}
 
@@ -1345,7 +1343,6 @@ def test_pipeline_scores_ms1_scan_support_against_the_profile_target(
     )
 
     rows = _read_csv(outputs.peaks_csv)
-    # The published capture conditions measure the peak again, as Alignment does.
     window_start = float(rows[0]["ms1_search_rt_min"])
     window_end = float(rows[0]["ms1_search_rt_max"])
     (trace,) = raw.extract_xic_many(

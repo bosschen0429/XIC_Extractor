@@ -550,7 +550,6 @@ def test_discovery_review_rows_cannot_become_alignment_roots(
     peak_config = _peak_config(tmp_path)
 
     def observation_only_raw(peak_rts: tuple[float, ...]) -> _FakeRaw:
-        # An inferred precursor retains MS1 but cannot supply strict NL support.
         raw = _FakeRaw(tuple(rt - 0.01 for rt in peak_rts))
         raw.scans = tuple(replace(scan, precursor_mz=500.5) for scan in raw.scans)
         raw.intensity[:] = [
@@ -968,8 +967,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         }
         left, right = context.group.owners
         assert context.rt_frame.has_direct_reference_pair(left, right)
-        # One identity anchor closes the known group, but cannot define a
-        # general RT map or override the final shared coordinate owner.
         assert context.rt_frame.corrected_pair_delta_sec(left, right) is None
     without_rt_context = replace(contexts[0], rt_frame=SampleRtFrame())
     assert without_rt_context.group is contexts[0].group
@@ -1142,8 +1139,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                     physical_id = direct.physical_peak_key
                     if physical_id not in member_ids:
                         assert decision.subject.canonical_sample.raw_stem == ("Hold")
-                        # The group-bounded MS1 peak fills the Matrix without
-                        # joining the group or its presentation facts.
                         assert decision.evidence.evidence_states == (
                             "ms1_only_backfill_observation",
                         )
@@ -1174,7 +1169,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 expected_cell_apexes[sample_stem]
             )
 
-    # The written m/z is the group's own centre, the one its Backfill used.
     assert float(row["group_center_mz"]) == written_group.group_center_mz
 
     weighted_values = dict(zip(sample_stems, (1.0, 9.0, 2.0, 9.0), strict=True))
@@ -1398,8 +1392,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         summarize_duplicate_quantification,
     )
 
-    # Workbench omits the optional cell ledger. Every consumer must still get
-    # the selected apex from the saved owner decision, including MS1-only cells.
     published = tmp_path / "published"
     published_outputs = output_paths(
         published,

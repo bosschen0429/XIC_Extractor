@@ -380,7 +380,6 @@ def test_group_merge_selects_one_direct_integration_among_lanes(
     merged = group_from_members(
         member_subjects=left.member_subjects + right.member_subjects,
     )
-    # CID-NL composition gives each spine a cell only for its searched sample.
     predecessor_cells = (left_spine.cells[0], right_spine.cells[0])
     coverage = _coverage_for_groups(
         fixture,

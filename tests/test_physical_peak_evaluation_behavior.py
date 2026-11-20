@@ -71,9 +71,6 @@ def test_background_contrast_rejects_weak_peak_for_capture_and_backfill(
         query_rt_min=1.0,
         selection_policy_version=PHYSICAL_PEAK_REFERENCE_POLICY,
     )
-    # Targeted reference availability records a measurable body, not a
-    # Discovery/background detection claim. Weak contrast remains uncertainty
-    # for contextual identity and review; it does not erase the measurement.
     assert reference.state == "available"
     assert reference.integration is not None
     backfill = evaluate_physical_peak(
@@ -574,8 +571,6 @@ def test_heavily_interrupted_peak_without_contrast_persists_unavailable(
     rt = np.linspace(0.0, 10.0, 101)
     raw = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.8) ** 2)
     raw[::2] = 0.0
-    # Known Gaussian signal with acquisition gaps still supplies observed
-    # adjacent support at its apex; missing detections do not prove absence.
     raw[50] = 1000.0
     profile = SignalProcessingProfile()
     prepared = prepare_physical_signal(rt, raw, profile=profile)
@@ -618,8 +613,6 @@ def test_censored_hit_cluster_uses_observed_area_and_persists_warning(
         positions = np.arange(130, 271, 7)
         raw[positions] = 200.0
     elif intensity_pattern == "brief_continuous_run":
-        # One fully acquired smoothing window inside an otherwise censored
-        # cluster does not establish ordinary support across the whole core.
         raw[193:209] = 100.0 + 200.0 * np.exp(
             -(((np.arange(193, 209) - 200) / 25.0) ** 2)
         )
@@ -839,8 +832,6 @@ def test_tail_dropout_neither_splits_nor_merges_a_resolved_doublet() -> None:
         assert (
             result.state == "available" and result.answer.selected_segment is not None
         )
-        # Zero scans are censored: the notch is no valley and cannot hide the
-        # acquired valley that separates the pair.
         assert len(result.segment_universe.segments) == 2
         assert result.answer.selected_segment.apex_rt_min < 2.2
         assert result.answer.selected_segment.right_rt_min < 3.5
@@ -1258,8 +1249,6 @@ def test_current_discovery_qualification_persists_exactly(
         )
         assert answer.state == ("unavailable" if background else "available")
         if background:
-            # The whole background contour reaches the acquired edge. Neither
-            # workflow may turn one local fluctuation into a measured peak.
             assert answer.reason == "incomplete_peak_context"
 
 
@@ -1614,8 +1603,6 @@ def _hmdc_tail_noise_trace() -> tuple[np.ndarray, np.ndarray]:
 def test_shared_owner_closes_observed_tail_at_measurement_noise(
     policy: str, expected_reason: str
 ) -> None:
-    # The edge candidate remains part of a whole-context uniqueness question;
-    # the group prior selects the complete central peak without hiding the edge.
     rt, raw = _hmdc_tail_noise_trace()
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
@@ -1726,14 +1713,10 @@ def test_middle_query_selects_the_unresolved_envelope_not_a_component(
         assert answer.answer.selected_segment.apex_rt_min == pytest.approx(
             12.5, abs=0.15
         )
-        # Only the left valley is clear. The middle and right lobes share one
-        # envelope and cannot claim separate component-specific areas.
         assert 9.4 < answer.answer.selected_segment.left_rt_min < 10.3
         assert answer.answer.selected_segment.right_rt_min > 13.0
         assert answer.requires_overlap_review
     assert answers[0].integration == answers[1].integration
-    # Measurement is unchanged; the Discovery interval is raw-valley-owned,
-    # whereas ordinary point segmentation reports its canonical valley label.
     assert _measurement(answers[0]) == _measurement(answers[1])
     assert (
         set(answers[0].answer.selected_segment.evidence_sources)

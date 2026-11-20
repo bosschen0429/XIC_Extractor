@@ -65,7 +65,6 @@ class FeatureMembershipGroup:
     basis: FeatureMembershipBasis
     reason: str
     known_identity_label: str | None = None
-    # Response to batch state and sample shift; Backfill reuses it unchanged.
     rt_drift: DriftCoefficients = DriftCoefficients()
 
 

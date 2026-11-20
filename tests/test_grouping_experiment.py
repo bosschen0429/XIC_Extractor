@@ -212,8 +212,6 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
         payload = json.load(stream)
     assert "backfill_half_window_min" not in payload
     if saved_acquisition_window is not None:
-        # Retained diagnostic snapshots carry acquisition metadata. It is not
-        # membership evidence and must not alter the restored grouping inputs.
         payload["backfill_half_window_min"] = saved_acquisition_window
         with gzip.open(path, "wt", encoding="utf-8") as stream:
             json.dump(payload, stream)
@@ -234,7 +232,6 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
         frozenset(group.owner_ids) for group in replay_grouping(restored)
     } == expected
 
-    # Legacy captures remain readable, but cannot invent measured resolution.
     for workset in payload["worksets"]:
         workset.update(payload["rt_models"][workset.pop("rt_model_index")])
         workset["elution_contexts"] = [
@@ -822,7 +819,6 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
             g.group_hypothesis_id for g in groups
         }
         for group in groups:
-            # Localization consumes the rebuilt geometry but keeps raw positions.
             trajectory = scope.peak_trajectories.trajectory_for(group.owners)
             points = dict(trajectory.sample_apices)
             expected = selected[group.owners[0].sample_stem]

@@ -369,8 +369,6 @@ def project_alignment_explanation_child(
             locate(ref)
         if refs:
             continue
-        # Empty cells remain inspectable at the recorded physical group
-        # position. This is explicitly diagnostic, not an invented peak.
         context = (
             final_cell.effective_cells[0].group_context
             if final_cell.effective_cells
@@ -416,8 +414,6 @@ def project_alignment_explanation_child(
             center_mz=position[0] if position else None,
             ppm=position[1] if position else None,
         )
-    # Member risks are stored with the member; a cell keeps only the
-    # Backfill risks no member owns.
     risks_by_group_sample: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(
         list
     )

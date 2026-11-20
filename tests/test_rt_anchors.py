@@ -29,8 +29,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 
 DR = 116.0474
 
-# Only memberships that both directional passes, an ordered pattern, or an
-# exact known identity agree on may calibrate batch RT.
 _SUPPLIES_RT_CALIBRATION: dict[FeatureMembershipBasis, bool] = {
     "bidirectional_membership_agreement": True,
     "known_identity_constraint": True,

@@ -125,8 +125,6 @@ def test_overlapping_queries_share_peak_population_and_prepare_once(monkeypatch)
         replay.evaluation.answer.selected_segment.area_counts_seconds
         == left.evaluation.answer.selected_segment.area_counts_seconds
     )
-    # Two physical peaks are measured once each, regardless of NL duplicates
-    # or a later query for the same raw basin.
     assert counts == {
         "prepare": 1,
         "enumerate": 1,
@@ -160,8 +158,6 @@ def test_sparse_extension_reunites_contexts_without_repeating_extension():
     assert left.search.request.rt_max == 6.5
     assert left.evaluation.segment_universe == right.evaluation.segment_universe
     assert right.evaluation.answer.selected_segment.apex_rt_min == pytest.approx(6.0)
-    # One bounded extension does not override the owner's remaining uncertainty
-    # or keep enlarging the population until an acceptable answer is obtained.
     assert left.evaluation.reason == "incomplete_peak_context"
     assert left.evaluation.answer.selected_segment is None
 
@@ -190,9 +186,6 @@ def test_mass_channel_uses_existing_ppm_rule_without_isotope_or_ppm_merging():
         ),
     )
     captured = capture.capture(searches)
-    # Every mass window is actually read. Equality over the complete final
-    # signal, not candidate mass tolerance alone, permits shared preparation.
-    # Different ppm windows and isotope-separated channels stay separate.
     assert captured[0].search.request == captured[1].search.request
     assert captured[0].work_ordinal == captured[1].work_ordinal
     assert captured[2].search.request.ppm_tol == 10.0

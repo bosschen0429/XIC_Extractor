@@ -179,8 +179,6 @@ def test_shoulder_envelope_preserves_mass_and_weak_isolated_peak() -> None:
     assert envelope.apex_rt_min == pytest.approx(3.0, abs=0.08)
     assert envelope.interval.rt_start_min < 3.0 - 1.2
     assert envelope.interval.rt_end_min > 4.8 + 1.2
-    # The unresolved envelope preserves the observed sum, not two claimed
-    # deconvolved, compound-specific Gaussian areas.
     known_overlap_area = (10000.0 + 8000.0) * 0.6 * np.sqrt(2 * np.pi) * 60.0
     assert envelope.area_baseline_corrected == (
         pytest.approx(known_overlap_area, rel=0.01)
@@ -222,8 +220,6 @@ def test_remote_small_pulses_do_not_split_an_unresolved_shoulder(
         acquired_intensity_values=signal,
     )
 
-    # A persistent but shallow valley does not establish independent peaks.
-    # Remote pulses cannot change that relation or erase overlap review.
     principal = [s for s in result.segments if 6.0 < s.apex_rt_min < 11.0]
     assert len(principal) == 1
     assert all("shoulder_overlap" in s.evidence_sources for s in principal)

@@ -135,7 +135,6 @@ def test_fixed_original_conflict_does_not_poison_a_compatible_extension(
             physical_order=((a, b),),
         ),
     )
-    # The earlier accepted partition is fixed; this pass cannot repartition it.
     assert comparison.group_cost((a, b)) == float("inf")
     assert (comparison.pair(a, candidate)[0] < 1) is not candidate_conflicts
     assert comparison.pair(b, candidate)[0] < 1

@@ -138,7 +138,6 @@ def test_complete_diagnostic_routes_keep_candidates_sample_bound_without_matrix(
             for r in supported
         )
         assert Path(result["delta_mass"]["cid_nl_peaks_csv"]).is_file()
-        # The merged table is a download, not the composite's analysis input.
         merged = Path(result["delta_mass"]["cid_nl_peaks_csv"])
         merged.unlink()
         replay = run_delta_mass_discovery(

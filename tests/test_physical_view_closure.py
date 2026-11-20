@@ -162,7 +162,6 @@ def test_one_ion_in_two_windows_is_one_peak_whatever_the_input_order(
 
     (peak,) = result.peaks
     assert located_scan_ids(peak) == (10, 11)
-    # The kept measurement is the window that loses no centroid.
     assert peak.peak_id == "TumorBC2312_DNA@mz500.0075_rt9.0000"
     # Every event is judged against that one peak; the 499.995 precursor lies
     # 25 ppm from it and is located but not attached.

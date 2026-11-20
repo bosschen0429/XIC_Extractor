@@ -311,10 +311,6 @@ def test_physical_backfill_does_not_choose_among_clipped_tail_candidates(
     )
 
     evaluation = result.capture_evidence[0].physical_evaluation
-    # The acquired window contains only the declining tail. Its two clipped
-    # candidates are ambiguous, not authority to select one or invent an apex
-    # outside the observed window. The ordinary wider-query case above covers
-    # receipt propagation when an outside-apex-window peak is actually eligible.
     assert evaluation.state == "unavailable"
     assert evaluation.reason == "ambiguous_segment_candidates"
     assert evaluation.answer.selected_segment is None and evaluation.integration is None
@@ -474,7 +470,6 @@ def test_physical_backfill_context_is_not_search_permission(
                 first.answer.selected_segment.right_rt_min
                 == original.answer.selected_segment.right_rt_min
             )
-        # A measured MS1 peak alone still cannot assert method SUPPORT.
         assert batched.assessment.method_result != "SUPPORT"
     else:
         assert first.state == "unavailable" and first.answer.selected_segment is None

@@ -30,8 +30,6 @@ from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 
 
 def test_peak_table_writes_each_peak_fact_once() -> None:
-    # Event values live in the event table; the peak's measurement is
-    # Alignment's, from these capture conditions.
     assert DISCOVERY_PEAK_COLUMNS == (
         "status",
         "requires_overlap_review",
@@ -139,8 +137,6 @@ def test_peak_rows_follow_the_review_queue() -> None:
         settings=settings,  # type: ignore[arg-type]
     )
 
-    # Two attached events at the event RT on an unshouldered peak lead; then
-    # stronger evidence; blank background last.
     assert [item.peak.peak_id for item in ordered] == [
         "lead-strong-intense",
         "lead-strong",
@@ -251,7 +247,6 @@ def test_event_table_round_trips_the_evidence_alignment_assesses(
             isolation_offset_da=-0.25,
             master_scan_number=33620,
         ),
-        # Two centroids is the ambiguous parent ion the old table left blank.
         ms1_precursor_observation=Ms1PrecursorObservation(
             33620, 38.7412, (961.4281, 961.4302)
         ),

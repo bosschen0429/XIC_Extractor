@@ -179,8 +179,6 @@ class PhysicalPeakCapture:
         final_requests = {
             search: signal_owners[request] for search, request in final_requests.items()
         }
-        # A population, not a question, owns the canonical preparation and all
-        # segment measurements. NL count cannot change this work.
         for request in owner_members:
             self._measure_population(
                 request, traces[request], probed_components.get(request)
@@ -292,12 +290,6 @@ def _shared_contexts(
 ) -> dict[XICRequest, tuple[PhysicalPeakSearch, ...]]:
     """Share RT planning, retaining every distinct mass window's read semantics."""
     channels: list[list[PhysicalPeakSearch]] = []
-    # Discovery's existing mass grouping requires every member within ppm of
-    # every other member. No transitive mass chaining or isotope merging.
-    # Searches arrive in ascending (ppm, m/z), so each channel's first member is
-    # its lowest and farthest m/z: the search is within ppm of every member iff
-    # it is within ppm of the first. A channel that fails stays failed for every
-    # later search, so only the oldest live channel can accept the next one.
     live = 0
     for search in sorted(
         searches,

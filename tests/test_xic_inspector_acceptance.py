@@ -265,15 +265,11 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
     from tests.cid_nl_raw_fixture import _settings
 
     batch_index = write_batch(tmp_path, ("S1", "S2"))
-    # The pipeline reads candidates through DiscoveryInputSource; the CSV
-    # reader it used to call by name lives elsewhere now.
     monkeypatch.setattr(
         application.DiscoveryInputSource,
         "feature_view",
         lambda _source: candidates,
     )
-    # The runtime fixture supplies actual completed science; exercise the real
-    # public publication interface, SQLite writer, locator mint and close path.
     monkeypatch.setattr(
         application,
         "complete_untargeted_alignment",

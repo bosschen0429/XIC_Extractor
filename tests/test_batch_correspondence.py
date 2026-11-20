@@ -188,7 +188,6 @@ def test_istds_bound_to_one_identity_pair_by_identity_not_by_rt():
 
     assert _state(result, "old", "istd").partners == (("new", "istd"),)
     assert _state(result, "new", "istd").partners == (("old", "istd"),)
-    # The bound pair is not a candidate for the twin.
     assert _state(result, "old", "twin").state == "unpaired_no_candidate"
 
 

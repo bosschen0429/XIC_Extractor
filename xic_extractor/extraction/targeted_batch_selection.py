@@ -93,8 +93,6 @@ def complete_targeted_candidate_batch(
     }
     if not assessments:
         return output
-    # Retention context ranks the measured regions; it does not redefine
-    # their integration boundaries or recombine neighboring lobes.
     batch = TargetedBatchContext(
         tuple(assessment.population_context() for assessment in assessments.values())
     )
@@ -103,8 +101,6 @@ def complete_targeted_candidate_batch(
     replaced_keys = {
         key for key, assessment in assessments.items() if not assessment.target.is_istd
     }
-    # Peak-local diagnostics refer to the final batch choice, not capture's
-    # temporary single-sample answer. Keep file-level and unrelated diagnostics.
     diagnostics = [
         d
         for d in output.diagnostics

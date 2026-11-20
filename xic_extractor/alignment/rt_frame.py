@@ -108,7 +108,6 @@ class SampleRtFrame:
     injection_order: Mapping[str, int] = field(default_factory=dict)
     sample_cohorts: Mapping[str, str] = field(default_factory=dict)
     sample_universe: frozenset[str] | None = None
-    # Pooled QC injections share one matrix; they define batch state.
     qc_samples: frozenset[str] = frozenset()
     _drift: DriftEvidenceLookup | KnownIstdOwnerLookup | None = field(
         default=None,

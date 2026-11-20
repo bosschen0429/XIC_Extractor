@@ -16,7 +16,6 @@ TARGET_FIELDS = (
     "cid_nl_loss_da",
     "delta_mass_mz",
 )
-# Blank specificity columns mean MS1 only; tables may omit them.
 REQUIRED_TARGET_FIELDS = TARGET_FIELDS[:5]
 LEGACY_TARGET_FIELDS = (
     "rt_min",

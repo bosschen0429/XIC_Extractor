@@ -411,7 +411,6 @@ def _apply_signal_gate(
         peak = trace.intensity[np.abs(seconds) <= settings.shape_window_sec]
         if not flanks or not len(peak):
             continue
-        # A neighboring peak/tail on one side must not set the background.
         flank = min(flanks, key=lambda values: float(np.median(values)))
         background = float(np.median(flank))
         position.raw_peak_height = float(np.max(peak))

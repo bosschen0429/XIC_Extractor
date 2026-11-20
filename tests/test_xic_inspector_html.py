@@ -333,7 +333,6 @@ def test_unrecorded_origins_and_missing_alignment_keep_curves_readable(
     # Old numeric cells with no recorded origin must not masquerade as detect;
     # the explicitly empty sample still uses its thin solid line.
     assert dashes == ["1 5", "1 5", ""]
-    # Without alignment the one plot stays on raw RT and says so at its axis.
     assert 'id="plot-raw"' in rendered["card"]
     assert "原始 RT · 無對齊座標" in rendered["card"]
     assert "data-time-axis" not in rendered["card"]

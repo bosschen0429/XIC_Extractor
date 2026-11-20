@@ -16,8 +16,6 @@ from xic_extractor.sample_metadata import (
 )
 
 AnalysisKind = Literal["targeted", "untargeted"]
-# Exclusion is the only user control over analysis; roles only label, except
-# that Untargeted builds its feature matrix from samples and QC.
 ANALYZED_ROLES: Mapping[AnalysisKind, frozenset[SampleRole]] = {
     "targeted": frozenset(SAMPLE_ROLES),
     "untargeted": frozenset({"sample", "qc"}),

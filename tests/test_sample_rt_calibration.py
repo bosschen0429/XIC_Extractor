@@ -260,7 +260,6 @@ def test_loess_requires_eight_distinct_measured_positions(positions: int) -> Non
         f"F{i}": {s: 8.0 + i + (0.2 if s == "S01" else 0) for s in SAMPLES}
         for i in range(positions)
     }
-    # Repeated ion views cannot turn seven acquired positions into eight.
     detected.update({f"alias{i}": dict(detected["F0"]) for i in range(20)})
     sample = _calibrate(detected).samples["S01"]
     assert sample.anchor_count == positions
@@ -395,8 +394,6 @@ def test_identity_landmark_corrects_locally_without_unbounded_influence(
         s: 15.3 if s == "a" else standard_reference + (0.2 if s == "b" else 0)
         for s in samples
     }
-    # The same acquired position already has an ordinary correspondence.
-    # Naming its known identity must not add a vote or move other fitted knots.
     detected["ordinary_view"] = measured
     kwargs = dict(
         sample_stems=samples, prior_injections={}, policy=RtCalibrationPolicy()
@@ -417,7 +414,6 @@ def test_identity_landmark_corrects_locally_without_unbounded_influence(
     if standard_reference == 16.65:
         assert calibrated == pytest.approx(standard_reference, abs=0.1)
     else:
-        # An identity/coordinate contradiction cannot pull a whole RT region.
         assert abs(calibrated - before.calibrated_rt(15.3)) < 0.5
         assert abs(calibrated - standard_reference) > 10
     assert known.samples["b"].calibrated_rt(measured["b"]) == pytest.approx(
@@ -502,7 +498,6 @@ def test_first_run_after_method_change_explains_outlier() -> None:
 
 def test_cli_writes_calibration_and_heldout_evidence(tmp_path: Path) -> None:
     detected = _batch({"S01": (-0.6,) * len(REFERENCE_RTS)})
-    # Multiple views of one acquired peak must stay on one side of the split.
     detected.update({f"F1-view{i}": dict(detected["F1"]) for i in range(6)})
     # A partially observed feature and one conflicting coordinate; the
     # diagnostic independently withholds a feature from the validation fit.

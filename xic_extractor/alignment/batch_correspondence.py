@@ -76,7 +76,6 @@ class BatchFeature:
     precursor_mz: float
     reference_rt_min: float
     sample_count: int
-    # The known ISTD this feature is bound to; such features pair by identity.
     known_identity_label: str | None = None
 
 
@@ -646,7 +645,6 @@ def _elution_families(
         )
         keys = tuple(sorted(key for vote in members for key in vote.feature_keys))
         if standards:
-            # Distinct ISTDs never merge into one another's vote.
             anchors.extend(
                 CorrespondenceAnchor(
                     vote.rt_min, vote.reference_rt_min, vote.istd_label, keys

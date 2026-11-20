@@ -357,8 +357,6 @@ class PeakTrajectory:
             ),
         )[:_TRAJECTORY_NEIGHBORS]
         if order is None or not nearest:
-            # Without same-cohort temporal support, the trajectory has only a
-            # reference position. Do not extrapolate from another batch's order.
             return PeakLocation(
                 float(np.median([rt for _, rt in self.sample_apices])),
                 "trajectory_reference",
@@ -626,9 +624,6 @@ class _LocalizationLinks:
                 continue
             left = owner.peak.integration.rt_left_min
             right = owner.peak.integration.rt_right_min
-            # A nearby landmark alone does not establish a physical binding.
-            # Both the direct binding and its selected segment must witness
-            # that the borrowed point is outside this same-sample peak.
             if not left <= self.nodes[bound].landmark.apex_rt <= right:
                 continue
             contradicted.update(
@@ -958,7 +953,6 @@ def resolve_peak_trajectories(
                 raw_pairs.add((first, second))
                 if roots[first] != roots[second]:
                     raw_linked_nodes.update((first, second))
-        # Already-connected matches still authorize locations.
         for i, j in match.pairs:
             first, second = left.nodes[i], right.nodes[j]
             neighbors[first].add(second)
@@ -1190,8 +1184,6 @@ def _local_patterns(
         indices = add_pattern(context, start, end)
         owner_nodes[owner.owner_id] = indices[selected - start]
 
-    # Context from an MS1-only sample must remain usable as a location, even
-    # though that sample contributed no direct owner to this grouping scope.
     seeds = tuple(patterns.values())
     seed_index = _MassIndex([seed.mz for seed in seeds], config.preferred_ppm)
     seed_centers = [
@@ -1264,7 +1256,6 @@ def _neighbor_pairs(
         for pattern in patterns
     ]
     for index, pattern in enumerate(patterns):
-        # A single peak cannot establish an ordered correspondence.
         if len(pattern.nodes) < 2:
             continue
         center = centers[index]

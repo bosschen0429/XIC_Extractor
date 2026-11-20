@@ -168,7 +168,6 @@ def _compose_application_result(
             )
         else:
             untarget_adapter = cast(UntargetWorkflowAdapter, adapter)
-            # The adapter contract admits Untarget only with completed grouping.
             assert untarget_adapter.completed_grouping is not None
             context = untarget_adapter.completed_grouping
         closed_coverage = (

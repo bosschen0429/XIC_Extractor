@@ -1000,7 +1000,6 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
             source = _FakeRaw((8.0,))
             scan = source.scans[0]
             number = scan.scan_number + offset
-            # Distinct ions: one measured peak per channel, not one peak thrice.
             source.scans = (
                 replace(
                     scan,

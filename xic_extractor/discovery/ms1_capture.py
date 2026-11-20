@@ -64,8 +64,6 @@ _DOUBLY_CHARGED_ISOTOPE_SPACING_MZ = 1.0033548 / 2
 # scan. Tissue peaks read as doubly charged carry it at 38-88% of the ion; a
 # singly charged ion with a noise centroid at +0.5 carried it at 2%.
 _DOUBLY_CHARGED_ISOTOPE_MIN_RATIO = 0.10
-# An NL event supports an MS1 peak only when its MS2 scan, and the parent MS1
-# scan of an inferred precursor, fall within the peak bounds plus this margin.
 _NL_PEAK_ATTACHMENT_TOLERANCE_MIN = 0.1
 
 
@@ -299,10 +297,6 @@ def _one_measurement_per_ion_peak(
         if mz is not None and mz == capture_by_work[ordinal].search.request.mz
     }
     for ordinal, captured in zip(moved, remeasured, strict=True):
-        # The new window measures the peak only when it selects a peak with the
-        # same raw apex. Extra signal in that window can merge or split peaks so
-        # the segment at the apex is another peak; that window, like one that
-        # selects nothing there, keeps the first measurement and its reading.
         if (
             captured.evaluation.answer.selected_segment is not None
             and captured.evaluation.question.query_rt_min
@@ -406,15 +400,12 @@ def _measured_peak(
         for event in located_events
     }
     attached = [event for event in located_events if not reasons[event]]
-    # Every event locating this peak is its MS2 evidence, handed to Alignment
-    # through the event table; only attached events admit it.
     evidence = located_events
     representative = select_representative_event(
         attached or located_events, settings=settings
     )
     question = evaluation.question
     window = captured.acquired_trace.coordinate.request
-    # A peak keeps the XIC center of the ion that first measured it as its name.
     peak_id = build_discovery_peak_id(
         sample_stem=representative.sample_stem,
         xic_mz=ion_mz,

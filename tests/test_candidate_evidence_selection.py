@@ -172,8 +172,6 @@ def test_paired_istd_localization_demotion_precedes_review_blocker_count() -> No
     far_record = candidate_selection_decision_record(scored[0], scored)
     near_record = candidate_selection_decision_record(scored[1], scored)
 
-    # Both are review evidence, not different product-counting classes. The
-    # near peak wins localization even with more independent review concerns.
     assert far_record.decision_class == near_record.decision_class == "review"
     assert len(near_record.blockers) > len(far_record.blockers)
     for population in (scored, list(reversed(scored))):

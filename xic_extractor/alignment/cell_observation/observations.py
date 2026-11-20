@@ -388,7 +388,6 @@ def _derive_lane_evidence_state(
             raise CellObservationContractError(
                 "outside-group lane cannot supply local observation evidence"
             )
-        # A merged sibling may supply a direct lane; this lane adds no value.
         return "not_searched"
     no_request_decision = association.position.no_request_decision
     if association.position.planning_reason == "backfill_disabled":

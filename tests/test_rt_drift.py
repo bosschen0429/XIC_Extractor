@@ -321,7 +321,6 @@ def test_anchor_displacement_lets_a_drifted_main_peak_match_its_main_peak():
     assert _match_patterns(left, right, max_shift=0.0) is None
     match = _match_patterns(left, right, max_shift=0.0, shift_hypotheses=(0.6,))
     assert match is not None and match.pairs == ((0, 0), (1, 1))
-    # A complete undrifted match keeps winning over a partial drifted one.
     still = _match_patterns(left, left, max_shift=0.0, shift_hypotheses=(0.6,))
     assert still is not None and still.pairs == ((0, 0), (1, 1))
 
@@ -390,7 +389,6 @@ def test_backfill_tie_break_scores_extensions_in_the_original_model():
         comparison.owners
     )
     assert comparison.fixed_peer_fit(((extended, original),)) == pytest.approx(expected)
-    # The same extension scored as a free group would refit its own model.
     assert comparison.coefficients(extended) != fixed
     assert comparison.fixed_group_model(extended, original).coefficients == fixed
 
@@ -410,16 +408,12 @@ def test_borrowed_batch_state_is_shared_only_by_queries_without_an_own_anchor():
     )
     lookup = model.batch_state_lookup()
     borrowed = dict(lookup(("a",), 11.0))
-    # Both anchors contribute; the blend is neither anchor's shape.
     assert borrowed not in (rising, falling)
-    # A group sharing an anchor's owner keeps that anchor's shape at an RT
-    # already answered by a borrowed shape, in either query order.
     assert lookup(("own-late", "b"), 11.0) == falling
     assert lookup(("b", "c"), 11.0) == borrowed
     reversed_lookup = model.batch_state_lookup()
     assert reversed_lookup(("own-early",), 11.0) == rising
     assert reversed_lookup(("d",), 11.0) == borrowed
-    # Another frozen model at the same RT borrows its own anchors' shapes.
     late_only = RtDriftModel((DriftAnchor("late", 13.0, 1, True, falling),))
     other = late_only.batch_state_lookup()(("a",), 11.0)
     assert other != borrowed

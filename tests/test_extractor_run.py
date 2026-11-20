@@ -203,8 +203,6 @@ def test_run_no_nl_reference_selects_each_samples_component(
     for file in output.file_results:
         result = file.results[target.label]
         reference_apex = expected[file.sample_name][0]
-        # The generated lobes have a sustained, resolved valley. A credible
-        # paired reference selects its own region, not the stronger interferent.
         measured_apex = reference_apex
         assert result.reported_rt == pytest.approx(measured_apex, abs=0.03)
         if pair_state == "credible":

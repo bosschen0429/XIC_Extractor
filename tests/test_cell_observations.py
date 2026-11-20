@@ -301,8 +301,6 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
 def test_backfill_attempt_with_same_values_reuses_the_initial_assessment(
     tmp_path: Path,
 ) -> None:
-    # A Backfill attempt that measured the same values is the same assessment,
-    # even when it reaches the cells through other peak and relation objects.
     fixture, assessments, groups = _outside_group_fixture(tmp_path, (8.0, 12.0))
     sample, initial = assessments[0]
     relinked = replace(
@@ -583,7 +581,6 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
     assert all(
         item.group is merged
         and len(item.position_associations) == 2
-        # A lane without discovery input keeps its position but has no cell.
         and len(item.predecessor_cells) == (2 if outside_support else 1)
         and sorted(item.evidence_states) == ["direct_observation", "not_searched"]
         for item in forward

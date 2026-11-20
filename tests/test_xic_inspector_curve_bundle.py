@@ -268,7 +268,6 @@ def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_v
         positive_signal=ChromatogramCurve(first.raw.rt, (0.0, 3.0, 6.0, 0.0)),
         quality_flags={"counted_detection": False, "formal_area": 9999},
     )
-    # The paired curve has its own area; it must not replace sample one's value.
     paired = replace(
         first,
         trace_id="paired-istd",
@@ -319,10 +318,7 @@ def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_v
         "return JSON.stringify({readout:readout(items[0]),"
         "table:cellTable(items[0])});",
     )
-    # Areas read in one format wherever they appear. Another peak's area stays
-    # beside the formal value for comparison.
     assert 'data-readout="area">1.205e+2 <span>counts·s' in rendered["readout"]
-    # The saved apex belongs to the value, not to the raw signal.
     assert 'data-readout="raw-apex"' not in rendered["readout"]
     assert 'data-readout="quantity">1.725e+1' in rendered["readout"]
     expected = (

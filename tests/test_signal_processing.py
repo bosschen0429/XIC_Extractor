@@ -66,7 +66,6 @@ def _gaussian(
 def test_clean_gaussian_peak_returns_raw_apex_and_area() -> None:
     rt = np.linspace(8.0, 10.0, 401)
     intensity = _gaussian(rt, center=9.0, sigma=0.08, height=1000.0)
-    # rt is in minutes, area is reported in counts·seconds (LC-MS convention).
     expected_area = 1000.0 * 0.08 * np.sqrt(2 * np.pi) * 60.0
 
     result = find_peak_and_area(rt, intensity, _config())
@@ -454,13 +453,10 @@ def test_area_is_reported_in_counts_seconds_not_counts_minutes() -> None:
     assert result.status == "OK"
     assert result.peak is not None
 
-    # Reference integral in the native rt units (minutes).
     left = int(np.searchsorted(rt_minutes, result.peak.peak_start, side="left"))
     right = int(np.searchsorted(rt_minutes, result.peak.peak_end, side="right"))
     area_counts_minutes = np.trapezoid(intensity[left:right], rt_minutes[left:right])
 
-    # The output must be 60× the raw-minutes integral — anything else means we
-    # accidentally reverted to counts·minutes and area will look ~60× too small.
     assert result.peak.area == pytest.approx(area_counts_minutes * 60.0, rel=1e-6)
 
 

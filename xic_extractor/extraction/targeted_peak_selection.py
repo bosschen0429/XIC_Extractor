@@ -210,8 +210,6 @@ class TargetedCandidateAssessment:
                 max_smoothed=self.candidates.max_smoothed,
                 n_prominent_peaks=0,
             )
-        # Score and retain the complete measurable population. Quality describes
-        # the selected measurement; it does not get another vote on its identity.
         measurable = tuple(
             candidate
             for candidate, evaluation in self.candidate_evaluations.items()
@@ -315,8 +313,6 @@ class TargetedCandidateAssessment:
 
 
 def targeted_physical_peak_policy(target: Target, reference_rt: float | None) -> str:
-    # Targeted MS1 and CID-NL share measurable-body admission. Method support and
-    # reference identity are assessed after the full region population exists.
     if target.is_istd and reference_rt is not None:
         return PHYSICAL_PEAK_REFERENCE_POLICY
     return PHYSICAL_PEAK_ENVELOPE_POLICY

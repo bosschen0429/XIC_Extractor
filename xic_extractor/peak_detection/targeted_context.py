@@ -133,8 +133,6 @@ class TargetedPopulationContext:
     reference_rt_min: float
     regions: tuple[TargetedRegionContext, ...]
     reference_istd_rt_min: float | None = None
-    # Capture's sample-local prior is the fallback when batch transfer has no
-    # independent support; it is not the origin for another displacement.
     sample_reference_rt_min: float | None = None
 
     @cached_property
@@ -385,9 +383,6 @@ class TargetedBatchContext:
         if not region.independent_body_supported:
             return False
         if population.reference_istd_rt_min is not None:
-            # An existing method-specific paired-position owner governs this
-            # reference. A derived batch model must not overrule that stronger
-            # input before the canonical coelution assessment is performed.
             return True
         if region.contains_acquired_rt(population.reference_rt_min):
             return True

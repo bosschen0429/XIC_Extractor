@@ -206,7 +206,6 @@ def bind_samples(
     columns = tuple(sample_columns)
     if metadata is None:
         return SampleBinding(columns, None, missing)
-    # The metadata owner already rejects duplicate and ambiguous aliases.
     aliases: dict[str, SampleMetadata] = {}
     for row in metadata:
         for alias in {row.sample_name, row.raw_stem}:
@@ -399,7 +398,6 @@ def prepare_matrix_curation(
             else None,
         )
         result = step.evaluate(remaining, parameters[step.key])
-        # Preserve source-row lineage without evaluating already removed ions.
         skipped = {
             column: "not_evaluated" if column.endswith("_decision") else ""
             for column in result.columns

@@ -49,7 +49,6 @@ def test_duplicate_quantification_classifies_row_pairs_by_direct_detections():
     assert summary["cell_pair_kinds"] == {"BD": 3, "DD": 1}
 
 
-# Machine is what Workbench Untargeted publishes: no backfill ledger.
 @pytest.mark.parametrize("level", ("machine", "validation-minimal", "debug"))
 def test_duplicate_quantification_reads_published_output_levels(
     tmp_path, monkeypatch, level
