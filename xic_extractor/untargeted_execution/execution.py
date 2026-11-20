@@ -99,7 +99,7 @@ def materialize_untargeted_partition(
     prepared_worksets: PreparedUntargetedAlignmentWorksets | None = None,
     acquisition_cache_dir: Path | None = None,
     sparse: bool = False,
-    drift_reference_only: bool = False,
+    rt_reference_only: bool = False,
     mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
     | None = None,
 ) -> UntargetedPartitionInputs:
@@ -151,7 +151,7 @@ def materialize_untargeted_partition(
                 ],
                 subject_partition=subject_batch,
                 support_candidates=support[stem],
-                drift_reference_only=drift_reference_only,
+                rt_reference_only=rt_reference_only,
                 acquisition_cache_dir=acquisition_cache_dir,
             )
         )
@@ -217,7 +217,7 @@ class UntargetedPartitionPipelineAdapter:
         acquisition_cache_dir: Path | None = None,
         retain_partition_spool: bool = False,
         grouping_only: bool = False,
-        drift_reference_only: bool = False,
+        rt_reference_only: bool = False,
         mass_recalibration_by_sample: Mapping[str, PreparedRawMassRecalibration]
         | None = None,
         project_child: ChildOutputProjection | None = None,
@@ -228,7 +228,7 @@ class UntargetedPartitionPipelineAdapter:
             raise ValueError("composing children requires an output projection")
         self._retain_partition_spool = bool(retain_partition_spool)
         self._grouping_only = grouping_only
-        self._drift_reference_only = drift_reference_only
+        self._rt_reference_only = rt_reference_only
         # A complete partition with the same channels, candidates and clean
         # Alignment measurements has exactly the same bootstrap evidence.
         self._clean_anchors: dict[
@@ -455,7 +455,7 @@ class UntargetedPartitionPipelineAdapter:
             prepared_worksets=self._prepared_worksets,
             acquisition_cache_dir=self._acquisition_cache_dir,
             sparse=True,
-            drift_reference_only=self._drift_reference_only,
+            rt_reference_only=self._rt_reference_only,
             mass_recalibration_by_sample=self._mass_recalibration_by_sample,
         )
 
@@ -474,8 +474,8 @@ class UntargetedPartitionPipelineAdapter:
         if len(self._initial_partitions) != self._bootstrap_count:
             raise RuntimeError("initial acquisition phase is incomplete")
         check_cancellation()
-        reference = self._prepare_drift_reference(check_cancellation, progress_callback)
-        self._batch_preparation.freeze_calibration(drift_reference=reference)
+        reference = self._prepare_rt_reference(check_cancellation, progress_callback)
+        self._batch_preparation.freeze_calibration(reference=reference)
         self._initial_store = store
         for partition in self.bootstrap_partitions:
             check_cancellation()
@@ -503,13 +503,13 @@ class UntargetedPartitionPipelineAdapter:
                     }
                 )
 
-    def _prepare_drift_reference(
+    def _prepare_rt_reference(
         self,
         check_cancellation: Callable[[], None],
         progress_callback: Callable[[Mapping[str, object]], None] | None,
     ) -> CidNlBatchGrouping | None:
         """Bootstrap unreviewed channels on their own knots without finalizing rows."""
-        subjects = self._plan.drift_reference_subjects
+        subjects = self._plan.rt_reference_subjects
         if subjects is None and len(self._clean_anchors) == self._bootstrap_count:
             return None
         subjects = subjects if subjects is not None else self._plan.subject_batch
@@ -518,7 +518,7 @@ class UntargetedPartitionPipelineAdapter:
             subject_batch=subjects,
             runtime_subjects=subjects.subjects,
             context=replace(self._plan.context, method_subject=subjects),
-            drift_reference_subjects=None,
+            rt_reference_subjects=None,
         )
         reference = CidNlBatchGrouping(plan.context.rt_frame)
         lane = UntargetedPartitionPipelineAdapter(
@@ -531,7 +531,7 @@ class UntargetedPartitionPipelineAdapter:
             acquisition_cache_dir=self._acquisition_cache_dir,
             mass_recalibration_by_sample=self._mass_recalibration_by_sample,
             grouping_only=True,
-            drift_reference_only=True,
+            rt_reference_only=True,
         )
 
         def cancelled() -> bool:

@@ -62,9 +62,10 @@ def _group(group_id, owners, basis):
     )
 
 
-def test_drift_is_measured_on_its_own_reference_not_the_published_map():
+def test_published_map_and_drift_are_measured_on_the_reference_population():
     # Stable clean correspondences give an identity frame. In the full
-    # population the agreed correspondences themselves shift with injection.
+    # population the agreed correspondences themselves shift with injection;
+    # that shift moves neither the published map nor the drift reference.
     samples = {f"s{i:02}": i for i in range(12)}
     frame = SampleRtFrame(
         injection_order=samples, sample_cohorts=dict.fromkeys(samples, "batch")
@@ -90,13 +91,13 @@ def test_drift_is_measured_on_its_own_reference_not_the_published_map():
     )
     clean.add_anchor_observations(movers)
     full.add_anchor_observations(movers)
-    full.freeze_calibration(drift_reference=clean)
+    full.freeze_calibration(reference=clean)
     fitted = full.frozen_rt_frame
     for s in ("s00", "s11"):
         at = 10.0 + (samples[s] - 5.5) * 0.1
         assert fitted.calibration_for_snapshot.samples[s].calibrated_rt(
             at
-        ) == pytest.approx(10.0)
+        ) == pytest.approx(at)
     assert {a.channel for a in fitted.drift_model.anchors} == {
         _subject(m).method_subject_id for m in (510.0, 520.0)
     }

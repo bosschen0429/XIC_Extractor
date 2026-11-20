@@ -52,7 +52,7 @@ class UntargetedInputPlan:
     ]
     dll_dir: Path
     # Only differs when reviewed Discovery peaks helped define a query channel.
-    drift_reference_subjects: UntargetedCidNlMethodSubjectBatch | None = None
+    rt_reference_subjects: UntargetedCidNlMethodSubjectBatch | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,7 +290,7 @@ def prepare_indexed_untargeted_plan(
         excluded_candidates=(),
         partition_input_loader=load_partition,
         dll_dir=dll_dir,
-        drift_reference_subjects=bind(reference)
+        rt_reference_subjects=bind(reference)
         if len(reference) != len(ordered)
         else None,
     )

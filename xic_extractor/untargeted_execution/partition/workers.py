@@ -200,7 +200,7 @@ def _execute_initial_assessment(state: _RuntimeJobState) -> None:
                 settings=job.settings,
                 peak_config=job.peak_config,
                 raw=None,
-                drift_reference_only=job.drift_reference_only,
+                rt_reference_only=job.rt_reference_only,
                 signal_processing_profile=job.signal_processing_profile,
             )
     except Exception as exc:
@@ -259,7 +259,7 @@ def _execute_initial_assessment_batch(
                 peak_config=state.job.peak_config,
                 raw=raw,
                 _preacquired_traces=trace_batch,
-                drift_reference_only=state.job.drift_reference_only,
+                rt_reference_only=state.job.rt_reference_only,
                 signal_processing_profile=state.job.signal_processing_profile,
             )
     except Exception as exc:

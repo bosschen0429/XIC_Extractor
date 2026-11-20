@@ -133,7 +133,8 @@ peaks stays [provisional](alignment.md#group-identity-and-disposition) and does
 not reach the Matrix.
 Discovery records its own physical assessment in
 `requires_overlap_review` independently of admission. Alignment needs this
-column to form its batch drift reference; regenerate an older peak table
+column to form the reference population of its RT calibration and drift model;
+regenerate an older peak table
 without it rather than treating missing review information as a clean peak.
 
 ### Physical qualification

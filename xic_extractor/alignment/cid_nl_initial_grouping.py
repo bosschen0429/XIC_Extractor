@@ -112,21 +112,19 @@ class CidNlBatchGrouping:
         self._drift.add_observations(observations)
 
     def freeze_calibration(
-        self, *, drift_reference: CidNlBatchGrouping | None = None
+        self, *, reference: CidNlBatchGrouping | None = None
     ) -> None:
-        calibration = self._calibration.freeze(
+        """Fit the published map and the drift model on one bootstrap population.
+
+        ``reference`` holds that population when it differs from this one,
+        i.e. without peaks measured on an unresolved shoulder or overlap.
+        """
+        source = reference if reference is not None else self
+        calibration = source._calibration.freeze(
             measured_istds=self._bootstrap_frame.measured_istd_coordinates
         )
-        reference = drift_reference if drift_reference is not None else self
-        reference_map = (
-            calibration
-            if reference is self
-            else reference._calibration.freeze(
-                measured_istds=self._bootstrap_frame.measured_istd_coordinates
-            )
-        )
         self._rt_frame = self._bootstrap_frame.with_sample_calibration(
-            calibration, reference._drift.freeze(reference_map)
+            calibration, source._drift.freeze(calibration)
         )
 
     @property
