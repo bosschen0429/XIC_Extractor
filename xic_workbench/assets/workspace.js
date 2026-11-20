@@ -101,7 +101,6 @@ let pageRequest = Promise.resolve();
 function requestPage(path, values) {
   // The server owns one active query. A history restore must run after any
   // earlier query, even when navigation discarded that query's UI response.
-  // A new page ends the running curve read on the server.
   setCurveJob(null);
   const request = pageRequest.then(() => api(path, values)).then(page => {
     serverPage = page;
@@ -237,8 +236,6 @@ function controls() {
   $("xic-retry").disabled = busy || analysisBusy;
   syncQueryMode();
 }
-// A request that replaces the server's curve job first ends the poll of the
-// old one, so the poll never asks for a job the server no longer has.
 let pollAbort = null;
 function setCurveJob(job) {
   if (state.job?.id !== job?.id) {
@@ -349,8 +346,6 @@ navigation.register("review", {
     if (saved.curves && sameResult(saved.page, state.page)) {
       $("xic-sample").value = saved.sample;
       if (!$("xic-dialog").open) $("xic-dialog").showModal();
-      // History retains the reading's receipt even if filters replace its mount.
-      // The acquisition fills in its id when it finishes while the drawer is closed.
       const view = saved.curveView || state.curveView;
       if (view?.id) showCurveView(view);
     } else if ($("xic-dialog").open) $("xic-dialog").close();
@@ -645,7 +640,6 @@ function renderPage(page) {
 }
 async function selectItem(item) {
   const revision = navigation.revision;
-  // The server ends the previous item's curve read with this selection.
   setCurveJob(null);
   const detail = await api("/api/detail", { item_id: item.id });
   if (revision === navigation.revision) {
@@ -911,7 +905,6 @@ async function startCurves() {
   const previousJob = state.job;
   setCurveJob(null);
   if (state.curveCache.has(key)) {
-    // A cache hit sends no new /curves request to replace the server's read.
     if (previousJob) await api(`/api/jobs/${previousJob.id}/cancel`, {});
     showCurveView({...state.curveCache.get(key)});
     return;
@@ -957,7 +950,6 @@ function updateProgress(job) {
     `${job.phase}${job.total ? ` · ${job.completed}/${job.total}` : ""} · ${job.message}`;
   curveStatus(job.message, job.status === "failed" ? "error" : "working");
 }
-// A poll follows one job; a newer action that replaced it ends the poll.
 async function pollJob(jobId, view) {
   if (state.job?.id !== jobId) return;
   try {
@@ -1002,8 +994,6 @@ $("xic-dialog").addEventListener("cancel", (event) => {
 });
 $("xic-dialog").addEventListener("close", () => {
   if ($("xic-dialog").open) return;
-  // Keep a completed reading view, including its RT range, across Back/Forward.
-  // Pending payloads are not reading state and must not mount after closing.
   if (!reviewSlots.get("xic-review")?.handle) {
     clearReview("xic-review");
     if (state.page?.source_kind === "targeted_workbook" && state.curveView?.id)

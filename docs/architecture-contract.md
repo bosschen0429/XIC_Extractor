@@ -296,6 +296,9 @@ submits intentions, without request equality checks or lifecycle timers.
 Preview admission concerns the frontend draft, not scientific writer authority;
 curation calculations and publication remain with their Python owners.
 
+For saved-result and curve review, see the decision on
+[late review responses](adr/0010-reject-stale-workbench-review-responses.md).
+
 ## Evidence And Decision Boundaries
 
 Evidence providers enter through `EvidenceVector`, `PeakHypothesis`, model
