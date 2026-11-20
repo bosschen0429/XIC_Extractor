@@ -10,8 +10,6 @@ from .models import (
     SparseFeatureDecision,
 )
 from .models import FeatureMembershipBasis as FeatureMembershipBasis
-from .sample_assignment import _Candidate as _Candidate
-from .sample_assignment import _solve_sample_assignment as _solve_sample_assignment
 from .window_bands import rt_trend_supports_union
 
 __all__ = [
