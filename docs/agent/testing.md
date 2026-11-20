@@ -92,7 +92,8 @@ strength name their overrides beside the expected outcome.
 tools.testing.test_selection derives which tests a change can affect from the
 import graph and the paths tests and code name; a new test file needs no
 registration. Pull-request CI runs that selection, master runs every test, and
-anything the derivation cannot place runs every test.
+anything the derivation cannot place runs every test. See the
+[selection decision](../adr/0007-select-tests-by-their-inputs.md) for what counts as a reader.
 
 For local changes, use the selector as the default validation entry point:
 
