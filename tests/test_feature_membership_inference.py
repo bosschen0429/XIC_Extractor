@@ -14,11 +14,13 @@ from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
     FeatureMembershipInferenceResult,
-    _Candidate,
-    _solve_sample_assignment,
 )
 from xic_extractor.alignment.feature_membership_inference import (
     infer_feature_memberships as _infer_feature_memberships,
+)
+from xic_extractor.alignment.feature_membership_inference.sample_assignment import (
+    _Candidate,
+    _solve_sample_assignment,
 )
 from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
